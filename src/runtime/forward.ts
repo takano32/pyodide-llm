@@ -21,7 +21,7 @@ export { BATCH };
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.ts";
 import { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.ts";
 import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory } from "./forward/memory.ts";
-import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
+import { gpuWeightBytes, aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan,
   GPU_ALONE } from "./forward/alone.ts";
 import { createForward } from "./forward/engine.ts";
@@ -42,8 +42,8 @@ export type { Spawn, Thread } from "./forward/threads.ts";
 export type Outside = { size: number; read(offset: number, length: number): Uint8Array; start(plan: Handed): Engine; engine?: Engine };
 type Handed = Plan & { toJs?(options: { dict_converter: typeof Object.fromEntries }): Plan };
 export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
-  PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, GPU_WEIGHT_BYTES,
-  GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
+  PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, gpuWeightBytes,
+  aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
   aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, needsWide, pastWide,
   automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS };
 

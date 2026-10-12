@@ -143,7 +143,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
   // opened for its int8 conversion (T232: or its ternary one, where the page asked for that) where it may (the choice
   // is the sink's, once the header is known), let go otherwise
   const keptDtype = model.conversion?.dtype ?? "int8";
-  const mayKeep = remote && ["int8", "ternary"].includes(keptDtype) && gpuOnlyPossible(keptDtype);
+  const mayKeep = remote && gpuOnlyPossible(keptDtype);
   let keep = mayKeep ? await keptModule!.keeper({ ...(model as Remote), conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
   const into = checkpointSink(keep), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go

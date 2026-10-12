@@ -32,7 +32,7 @@ const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
-  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0, sharedClassifier: true };
+  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0, sharedClassifier: true };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, kind: "int8", group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
@@ -603,6 +603,10 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     // (T375.2: a kind of layer that keeps a state and is neither of the two: not on the GPU, without a line for it)
     [{ stateful: true }, {}, {}, /^layers that keep a state are not on the GPU yet$/],
     [{ rotated: 1024 }, {}, {}, /^a rotated basis is not on the GPU yet$/],
+    // (T375.5, T484: the GPU's layers are RMSNorms with a gated FFN or LayerNorms with GPT-2's; another pair of the two
+    // facts, which the CPU's engine runs, is not handed to the GPU's worker to find out)
+    [{ gatedFfn: false }, { w3: null }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
+    [{ layerNorm: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{}, {}, { sharedMemory: false }, /^the page is not cross-origin isolated$/],
     [{ headSize: 6 }, {}, {}, /^heads of a size that is no multiple of 4 are not on the GPU$/],
     [{}, { wq: { rows: 8, n: 8, kind: "f32", layer: () => [0] } }, {}, /^float32 weights are not on the GPU yet$/],
@@ -617,8 +621,8 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");
-  assert.equal(fitOf({}, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2) has no w3");
-  assert.deepEqual(Object.keys(fitOf({}, { w3: null }).matrices()), ["wq", "wk", "wv", "wo", "w1", "w2"]);
+  assert.equal(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2's, with its LayerNorms) has no w3");
+  assert.deepEqual(Object.keys(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).matrices()), ["wq", "wk", "wv", "wo", "w1", "w2"]);
   assert.equal(fitOf({}, { w1: matrixOf(24, 128, 0, { kind: "ternary", group: 128 }), w2: matrixOf(8, 128, 0, { kind: "ternary", group: 128 }) }).unfit(), null, "ternary weights in groups of 128");
   const steps = [
     [{}, { wcls: { rows: 100, n: 8, kind: "f32", layer: () => [0] } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],

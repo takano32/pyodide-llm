@@ -5,24 +5,31 @@
 // Their tensors: a matrix in (win: 3 dim rows), the taps (conv) and a matrix out (wout). Their state is the
 // convolution's rows alone, taps of dim values a layer, which position 0 clears.
 import type { Kind, Layers } from "./kinds.ts";
-import type { Plan } from "../contracts/plan.ts";
+import type { Sizes } from "./sizes.ts";
 
-const convolutionNumbers = ({ convolution }: Plan) => {
+const convolutionNumbers = ({ numbers: { convolution } }: Sizes) => {
   if (!convolution) throw new Error("The plan has a layer that keeps a state, and not the numbers of the layers of its kind.");
   return convolution;
 };
+// the bytes of one layer's rows: the last taps tokens' values before the convolution, dim of them a token
+const rowsBytes = (sizes: Sizes) => convolutionNumbers(sizes).taps * sizes.dim * 4;
+// what count of them keep (the bytes of each): their rows
+const kept = (sizes: Sizes, count: number) => [count * rowsBytes(sizes)];
 
 export const convolution: Kind = {
+  // an LFM2's form has a letter a layer: "c" for one of these, "a" for one that attends
+  layers: ({ convolution }, count) => (convolution ? Array.from({ length: count }, (_, l) => convolution.layers[l] === "c") : null),
   // what the matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)
-  frame(plan) {
-    convolutionNumbers(plan);
-    return { arrays: [["mixed", 3 * plan.dim * 4]] };
+  frame(sizes) {
+    convolutionNumbers(sizes);
+    return { arrays: [["mixed", 3 * sizes.dim * 4]] };
   },
-  make({ plan, k, room, floats, matrix, at, S, matmuls }, count): Layers {
-    const { dim } = plan, { taps: tapsCount } = convolutionNumbers(plan), D = dim * 4;
+  state: kept,
+  make({ plan, sizes, k, room, floats, matrix, at, S, matmuls }, count): Layers {
+    const { dim } = plan, { taps: tapsCount } = convolutionNumbers(sizes), D = dim * 4;
     const { xb, xb2, mixed } = at;
     const wout = matrix("wout"), taps = floats("conv"), win = matrix("win");
-    const convBytes = tapsCount * dim * 4, convRows = room.alloc(count * convBytes);
+    const convBytes = rowsBytes(sizes), [convRows] = kept(sizes, count).map((bytes) => room.alloc(bytes));
     return {
       clear() {
         room.F.fill(0, convRows / 4, (convRows + count * convBytes) / 4);

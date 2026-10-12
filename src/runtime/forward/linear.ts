@@ -12,31 +12,45 @@
 // eps = 1e-6 / n; q is divided by sqrt(n) more.
 import { KIND } from "../jobs.ts";
 import type { Kind, Layers } from "./kinds.ts";
-import type { Plan } from "../contracts/plan.ts";
+import type { Sizes } from "./sizes.ts";
 
-// the numbers of the linear-attention layers and their widths (the plan's: mixed, what the convolution runs over;
-// read, what the output matrix reads)
-const linearNumbers = ({ linear, widths }: Plan) => {
+// the numbers of the linear-attention layers and their widths (mixed, what the convolution runs over; read, what the
+// output matrix reads), as what sizes the model has them: the plan's, or the form's and widths() below
+const linearNumbers = ({ numbers: { linear }, widths }: Sizes) => {
   if (!linear || !widths.linear) throw new Error("The plan has a layer that keeps a state, and not the numbers of the layers of its kind.");
   return { ...linear, ...widths.linear };
 };
+// what count of them keep (the bytes of each): the states, the convolution's rows, and the two weights of the l2 norms
+const kept = (sizes: Sizes, count: number) => {
+  const { value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: tapsCount, mixed } = linearNumbers(sizes);
+  const stateBytes = valueHeads * keyDim * valueDim * 4, convBytes = tapsCount * mixed * 4;
+  return { stateBytes, convBytes, blocks: [2 * count * stateBytes, count * convBytes, keyDim * 4, keyDim * 4] };
+};
 
 export const linear: Kind = {
+  // every every-th layer of a Qwen3.5 attends over all the positions, the others are these (layout.py's linear_layers())
+  layers: ({ linear }, count) => (linear ? Array.from({ length: count }, (_, l) => (l + 1) % linear.every !== 0) : null),
+  // (layout.py's linear_widths(): q and k of the key heads, v of the value heads)
+  widths({ linear }) {
+    if (!linear) return {};
+    const keys = linear.key_heads * linear.key_dim, read = linear.value_heads * linear.value_dim;
+    return { linear: { mixed: 2 * keys + read, keys, read } };
+  },
   // q, k and v before and after the convolution, z, and the delta rule's work (beta and decay of every value head,
   // then its delta); xb holds what the delta rule reads (as wide as v)
-  frame(plan) {
-    const { mixed, read, value_heads: valueHeads } = linearNumbers(plan);
+  frame(sizes) {
+    const { mixed, read, value_heads: valueHeads } = linearNumbers(sizes);
     return { arrays: [["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4], ["work", (2 * valueHeads + read) * 4]], widest: read };
   },
-  make({ plan, eps, k, room, floats, matrix, at, S, matmuls, phase }, count): Layers {
-    const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: tapsCount, mixed: mixedWidth, read: readWidth } = linearNumbers(plan);
+  state: (sizes, count) => kept(sizes, count).blocks,
+  make({ plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase }, count): Layers {
+    const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: tapsCount, mixed: mixedWidth, read: readWidth } = linearNumbers(sizes);
     const { dim } = plan, { xb, xb2, mixed, conv, z, work } = at, D = dim * 4;
     const wqkv = matrix("wqkv"), wz = matrix("wz"), wout = matrix("wout");
     const wb = floats("wb"), wa = floats("wa"), taps = floats("conv"), dtBias = floats("dt_bias"), decays = floats("decay");
     const deltaNorm = floats("delta_norm");
-    const stateBytes = valueHeads * keyDim * valueDim * 4, convBytes = tapsCount * mixedWidth * 4;
-    const states = room.alloc(2 * count * stateBytes), convRows = room.alloc(count * convBytes);
-    const qUnit = room.alloc(keyDim * 4), kUnit = room.alloc(keyDim * 4);
+    const { stateBytes, convBytes, blocks } = kept(sizes, count);
+    const [states, convRows, qUnit, kUnit] = blocks.map((bytes) => room.alloc(bytes));
     const flips = new Uint8Array(count);
     room.F.fill(1 / keyDim, qUnit / 4, qUnit / 4 + keyDim);
     room.F.fill(1 / Math.sqrt(keyDim), kUnit / 4, kUnit / 4 + keyDim);

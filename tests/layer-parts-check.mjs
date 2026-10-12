@@ -6,8 +6,9 @@
 //
 //   node tests/layer-parts-check.mjs
 //
-// What it sees of each kind: what it puts in a token's frame; that it takes its tensors by their names and its state
-// of the memory it is handed; a step of several tokens (what goes out as matmuls and phases, in what order, at what
+// What it sees of each kind: what it puts in a token's frame and says it keeps besides, of what sizes the model
+// (T375.5: sizes.ts's Sizes, the plan's or the form's), and what it says of a form (which layers are its own, its
+// widths); that it takes its tensors by their names and of the memory what it said it keeps; a step of several tokens (what goes out as matmuls and phases, in what order, at what
 // addresses); that position 0's clear() empties its state and nothing else; that a kind which keeps keys and values
 // has no clear(); and that a plan without a kind's numbers is refused as the kind is asked.
 // What it does not see: the numbers (tests/plan-facts-check.mjs and tests/forward-check.mjs hold the engine to NumPy).
@@ -47,12 +48,13 @@ function memoryOf(bytes = 1 << 20) {
 }
 // what a part is handed: the tensors the model has (a matrix is its name, a vector an address of its own), the frame
 // (every name an address, S apart), and everything asked of the kernels, of matmuls() and of phase() in said, in order
-function coreOf(plan, { has = [], cache } = {}) {
+// (sizes: what sizes the model, as the kind's frame() and state() are asked with)
+function coreOf(plan, { has = [], cache, sizes } = {}) {
   const said = [], room = memoryOf();
   const vectors = new Map(), names = ["x", "xb", "xb2", "q", "kNow", "vNow", "before", "hb", "hb2", "gate", "mixed", "conv", "z", "work", "att"];
   const at = Object.fromEntries(names.map((name, i) => [name, 1000 * (i + 1)]));
   const core = {
-    plan, eps: 1e-5, room, at, S: 100000, cache, said,
+    plan, sizes, eps: 1e-5, room, at, S: 100000, cache, said,
     k: new Proxy({}, { get: (_, name) => (...args) => { said.push([name, ...args]); return 0; } }),
     matrix: (name) => (has.includes(name) ? { name } : null),
     floats: (name) => (has.includes(name) ? (vectors.has(name) ? vectors.get(name) : vectors.set(name, 7e6 + 1e5 * vectors.size).get(name)) : 0),
@@ -123,13 +125,19 @@ const S = 100000;
 // ---- the layers that attend
 {
   const plan = { dim: 64, n_heads: 4, n_kv_heads: 2, head_size: 16, seq_len: 48, rotary: 16, widths: { q: 64, kv: 32 }, tensors: {} };
-  assert.deepEqual(attention.frame(plan), { arrays: [], apart: [["att", 48 * 4 * 4]] }, "the scores of a token, apart from its frame");
-  assert.deepEqual(attention.frame({ ...plan, tensors: { wg: {} } }).arrays, [["gate", 64 * 4]], "and a gate where the model has the matrix of one");
+  const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 64, kv: 32 }, gate: false, numbers: {} };
+  assert.deepEqual(attention.frame(sizes), { arrays: [], apart: [["att", 48 * 4 * 4]] }, "the scores of a token, apart from its frame");
+  assert.deepEqual(attention.frame({ ...sizes, gate: true }).arrays, [["gate", 64 * 4]], "and a gate where the layers gate their output");
+  // (T375.5) what footprint() reads of the kind: its layers keep keys and values, and nothing besides; and it says no
+  // layer of a form is its own (a layer that no kind claims attends)
+  assert.deepEqual([attention.cached, attention.state, attention.layers, attention.widths], [true, undefined, undefined, undefined]);
   const stand = (has, half = false) => {
     const room = memoryOf(), cacheSaid = [];
     const cache = keyValueCache({ room, k: new Proxy({}, { get: (_, name) => (...args) => cacheSaid.push([name, ...args]) }), kvDim: 32, half, start: 16, seqLen: 48 });
     cache.hold(5);  // (another kind's layers before these)
-    const made = coreOf(plan, { has, cache }), layers = attention.make(made.core, 3);
+    const made = coreOf(plan, { has, cache, sizes }), layers = attention.make(made.core, 3);
+    // (what says the kind's layers are cached is true: it took its places in the cache)
+    assert.equal(cache.hold(0), 5 + 3);
     cache.place();
     return { ...made, layers, cache, cacheSaid };
   };
@@ -167,14 +175,22 @@ const S = 100000;
 // ---- the linear-attention layers
 {
   const numbers = { every: 2, key_heads: 2, value_heads: 4, key_dim: 8, value_dim: 8, conv: 3 };
-  const plan = { dim: 16, linear: numbers, widths: { linear: { mixed: 64, keys: 16, read: 32 } } };
-  assert.deepEqual(linear.frame(plan), { arrays: [["mixed", 256], ["conv", 256], ["z", 128], ["work", (8 + 32) * 4]], widest: 32 });
-  assert.throws(() => linear.frame({ ...plan, linear: null }), /not the numbers of the layers of its kind/);
-  assert.throws(() => linear.make(coreOf({ ...plan, widths: { linear: null } }).core, 1), /not the numbers of the layers of its kind/);
-  const { core, said, room, at, vector } = coreOf(plan, { has: ["wqkv", "wz", "wout", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm"] });
+  const plan = { dim: 16 }, sizes = { dim: 16, widths: { linear: { mixed: 64, keys: 16, read: 32 } }, numbers: { linear: numbers } };
+  assert.deepEqual(linear.frame(sizes), { arrays: [["mixed", 256], ["conv", 256], ["z", 128], ["work", (8 + 32) * 4]], widest: 32 });
+  assert.throws(() => linear.frame({ ...sizes, numbers: { linear: null } }), /not the numbers of the layers of its kind/);
+  assert.throws(() => linear.make(coreOf(plan, { sizes: { ...sizes, widths: { linear: null } } }).core, 1), /not the numbers of the layers of its kind/);
+  // (T375.5) what it says of a form, where there is no plan: every every-th layer attends, the others are its own; and
+  // its widths, as Python's plan has them (tests/plan-keys-check.mjs holds both to Python's)
+  assert.deepEqual(linear.layers({ linear: numbers }, 5), [true, false, true, false, true]);
+  assert.deepEqual(linear.layers({ linear: { ...numbers, every: 4 } }, 8), [true, true, true, false, true, true, true, false]);
+  assert.deepEqual([linear.layers({}, 5), linear.layers({ linear: null }, 5), linear.widths({})], [null, null, {}], "none of a form without its numbers");
+  assert.deepEqual(linear.widths({ linear: numbers }), sizes.widths);
+  assert.equal(linear.cached, undefined, "no keys and values");
+  const { core, said, room, at, vector } = coreOf(plan, { sizes, has: ["wqkv", "wz", "wout", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm"] });
   const layers = linear.make(core, 2);
   const stateBytes = 4 * 8 * 8 * 4, convBytes = 3 * 64 * 4;
   assert.deepEqual(room.taken.map(([, size]) => size), [2 * 2 * stateBytes, 2 * convBytes, 32, 32], "two states a layer, the convolution's rows, the two weights of the l2 norms");
+  assert.deepEqual(linear.state(sizes, 2), room.taken.map(([, size]) => size), "what it says it keeps (footprint() counts that) is what it takes of the memory");
   const [[states], [rows], [qUnit], [kUnit]] = room.taken;
   assert.deepEqual([...room.F.subarray(qUnit / 4, qUnit / 4 + 8)], Array(8).fill(Math.fround(1 / 8)));
   assert.deepEqual([...room.F.subarray(kUnit / 4, kUnit / 4 + 8)], Array(8).fill(Math.fround(1 / Math.sqrt(8))));
@@ -211,12 +227,16 @@ const S = 100000;
 
 // ---- the convolution layers
 {
-  const plan = { dim: 16, convolution: { layers: "cac", taps: 3 } };
-  assert.deepEqual(convolution.frame(plan), { arrays: [["mixed", 3 * 16 * 4]] });
-  assert.throws(() => convolution.frame({ dim: 16, convolution: null }), /not the numbers of the layers of its kind/);
-  const { core, said, room, at, vector } = coreOf(plan, { has: ["win", "wout", "conv"] });
+  const plan = { dim: 16 }, form = { convolution: { layers: "cac", taps: 3 } }, sizes = { dim: 16, numbers: form };
+  assert.deepEqual(convolution.frame(sizes), { arrays: [["mixed", 3 * 16 * 4]] });
+  assert.throws(() => convolution.frame({ dim: 16, numbers: { convolution: null } }), /not the numbers of the layers of its kind/);
+  // (T375.5) what it says of a form: a letter a layer; no widths of its own, no keys and values
+  assert.deepEqual([convolution.layers(form, 3), convolution.layers({}, 3)], [[true, false, true], null]);
+  assert.deepEqual([convolution.widths, convolution.cached], [undefined, undefined]);
+  const { core, said, room, at, vector } = coreOf(plan, { sizes, has: ["win", "wout", "conv"] });
   const layers = convolution.make(core, 2), bytes = 3 * 16 * 4;
   assert.deepEqual(room.taken, [[4096, 2 * bytes]], "taps rows of dim values a layer");
+  assert.deepEqual(convolution.state(sizes, 2), [2 * bytes], "what it says it keeps is what it takes of the memory");
   const rows = 4096 + bytes;
   room.F.fill(9, (rows + 2 * 64) / 4, (rows + bytes) / 4);  // (the newest of the second layer's rows)
   layers.layer(1, { kind: "convolution", place: 1, rope: false })(2, 4);

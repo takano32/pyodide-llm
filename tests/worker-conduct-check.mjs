@@ -85,7 +85,7 @@ function world({ gpu = false } = {}) {
       // (no kernels of forward.js: the checkpoint's place is a Python bytearray)
       globals: { get: () => (size) => { const buffer = proxy("the checkpoint's buffer", { getBuffer: () => ({ data: new Uint8Array(size), release() {} }) }); buffers.push(buffer); return buffer; } },
     },
-    forward: { aloneHolds: () => false },
+    forward: { aloneHolds: () => false, aloneTakes: (dtype) => ["int8", "ternary"].includes(dtype) },
     // the kept models: a file opened to keep a conversion in as it comes has the one handle its file can have (OPFS)
     kept: {
       openKept: async () => kept.found ?? null, replaced: async () => [], forget: async () => {},

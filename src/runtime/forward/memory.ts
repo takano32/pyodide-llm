@@ -5,7 +5,11 @@
 
 import { CONTROL_BYTES, BATCH, packingOf } from "../jobs.ts";
 import { GPU_BLOCK } from "./choice.ts";
-import type { Arch, Convolution, Dtype, Linear, Rotated } from "../contracts/form.ts";
+import { architectureOf } from "./architectures.ts";
+import { LAYER_KINDS } from "./kinds.ts";
+import { kindsHad, sizesOfForm } from "./sizes.ts";
+import type { Kinds } from "./kinds.ts";
+import type { Arch, Dtype, Rotated, Stateful } from "../contracts/form.ts";
 
 // (T368.4, the types) a checkpoint's header: the 7 ints of the legacy format
 export type Header = number[];
@@ -27,10 +31,8 @@ export type Footprint = {
   head_dim?: number;
   gpu?: boolean;
   direct?: boolean;
-  linear?: Linear | null;
   rotated?: Rotated | null;
-  convolution?: Convolution | null;
-};
+} & Stateful;
 
 const PAGE = 65536;
 
@@ -49,46 +51,6 @@ export function memory64() {
   }
 }
 
-// T375.2: the four functions below (layerSlots, attendingLayers, linearWidths, rotatedWidths) are footprint()'s alone
-// now: it sizes a model's memory from the header and the form before there is a plan (the worker, /benchmark/, the
-// tools; T375.5 has it read a table instead). The engine reads the same facts from Python's plan (plan.layers,
-// plan.widths), and tests/plan-keys-check.mjs holds these to the plan's.
-// T229: a Qwen3.5's layers (llama2_numpy.py has the computation, above linear_form()). linear: the numbers of its
-// linear-attention layers (FORM's "linear": every, key_heads, value_heads, key_dim, value_dim, conv), null for the
-// models without them.
-// T260: an LFM2's layers (llama2_numpy.py has the computation, above convolution_form()). convolution: its convolution
-// layers (FORM's "convolution": layers, a letter a layer, "c" for a convolution layer and "a" for one that attends, and
-// taps), null for the models without them.
-/** for every layer [whether it keeps a state in place of keys and values (a linear-attention layer, a convolution
- * layer), its place among the layers of its kind]: where its tensors are in the file's stacks, and its keys and values
- * or its state here (llama2_numpy.layer_slots) */
-const layerSlots = (layers: number, linear: Linear | null, convolution: Convolution | null = null): [boolean, number][] => {
-  const counts = [0, 0];
-  return Array.from({ length: layers }, (_, l) => {
-    const kind = (convolution ? convolution.layers[l] === "c" : linear && (l + 1) % linear.every !== 0) ? 1 : 0;
-    return [kind === 1, counts[kind]++];
-  });
-};
-/** the layers that attend over all positions (and keep keys and values): all of them without linear or convolution ones */
-const attendingLayers = (layers: number, linear: Linear | null, convolution: Convolution | null = null) =>
-  layerSlots(layers, linear, convolution).filter(([stateful]) => !stateful).length;
-/** of a linear-attention layer: the values the convolution runs over (q, k and v), those of q or of k, those of v */
-const linearWidths = (linear: Linear) => {
-  const keys = linear.key_heads * linear.key_dim, read = linear.value_heads * linear.value_dim;
-  return { mixed: 2 * keys + read, keys, read };
-};
-/** the bytes of the state of the linear-attention layers: a matrix (key_dim, value_dim) a value head, twice (the
- * delta rule reads one and writes the other, so that a phase run again computes the same, T120), and the last conv
- * tokens' q, k and v before the convolution; and the two weights the l2 norm of a head of q and of k is taken with */
-const linearStateBytes = (layers: number, linear: Linear) => {
-  const lines = layers - attendingLayers(layers, linear), { mixed } = linearWidths(linear);
-  return lines * (2 * linear.value_heads * linear.key_dim * linear.value_dim + linear.conv * mixed) * 4 + 2 * align(linear.key_dim * 4);
-};
-/** T260: the bytes of the state of an LFM2's convolution layers: the last taps tokens' values before the convolution
- * (dim of them a token; the token under way is the last) */
-const convolutionStateBytes = (layers: number, dim: number, convolution: Convolution) =>
-  (layers - attendingLayers(layers, null, convolution)) * convolution.taps * dim * 4;
-
 // The arrays of one token's frame (see createForward), in their order, and the bytes of each. qDim: the width of q
 // and of the attention's output (into xb), heads times the head size: dim, except where a head has another size (T124).
 // T229, a Qwen3.5: the gate of a full-attention layer's output; of a linear-attention layer q, k and v before and
@@ -103,7 +65,8 @@ const convolutionStateBytes = (layers: number, dim: number, convolution: Convolu
 // T375.3: the frame is the arrays every model has, then what each kind of the model's layers puts in it (in the
 // order of the table of the kinds: forward/kinds.ts), then a rotated basis's. A kind says its arrays and the widest
 // input its matrices read where that is wider than the model's own (widest: xb and xq hold it); the engine hands in
-// what the kinds of the plan say, footprint() below what it works out of the form (framed())
+// what the kinds say (each asked with what sizes the model, sizes.ts): the engine of the plan, footprint() below of the
+// header and the form
 export type Framed = [string, number];
 export type KindFrame = { arrays: Framed[]; widest?: number };
 const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, kinds: KindFrame[] = [], rotated: Rotated | number | null = null, scaleBytes = 4): Framed[] => {
@@ -114,19 +77,7 @@ const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, kin
     ...kinds.flatMap(({ arrays }) => arrays),
     ...(rotated ? [["xr", XQ * 4]] satisfies Framed[] : [])];
 };
-/** T237: the widths of what a model's matrices read (llama2_numpy.rotated_widths): the residual stream, an
- * attention's output (and a linear-attention layer's), the FFN's inside. A rotated basis has signs for each. */
-const rotatedWidths = (dim: number, hidden: number, qDim: number, linear: Linear | null) =>
-  [...new Set([dim, qDim, hidden, ...(linear ? [linearWidths(linear).read] : [])])];
 const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
-// what footprint() hands frameArrays() of a form's kinds of layers (no plan is made yet where it is asked: its own
-// formula of what forward/attention.ts, linear.ts and convolution.ts say of a plan, until T375.5)
-const framed = (dim: number, qDim: number, linear: Linear | null, convolution: Convolution | null): KindFrame[] => {
-  const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
-  return [...(linear ? [{ arrays: [["gate", qDim * 4]] satisfies Framed[] },
-    { arrays: [["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4], ["work", (2 * linear.value_heads + read) * 4]] satisfies Framed[], widest: read }] : []),
-  ...(convolution ? [{ arrays: [["mixed", 3 * dim * 4]] satisfies Framed[] }] : [])];
-};
 
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T130). An upper bound, a little above what createForward allocates
@@ -139,51 +90,63 @@ const framed = (dim: number, qDim: number, linear: Linear | null, convolution: C
  * (llama2_numpy.FORM, which a model's options carry: the caller passes them in as they are, T144): head_dim is the
  * size of a head where it is not dim / heads (T124), 0 where it is. gpu (T135): the page asked for the prompt on the
  * GPU, whose keys and values of a block come back through a place of their own. direct (T156, T210): a model on the
- * GPU alone, whose matrices, tables and keys and values are all there. linear (T229): the form's, the
- * linear-attention layers of a Qwen3.5, which keep a state of a fixed size and no keys and values. rotated (T237):
- * the form's, a rotated basis (its signs for every width, and a place in the frame for a rotated input). convolution
- * (T260): the form's, the convolution layers of an LFM2, which keep the last taps tokens and no keys and values. */
-export function footprint(header: Header, size: number, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null, rotated = null,
-  convolution = null }: Footprint = {}) {
+ * GPU alone, whose matrices, tables and keys and values are all there. rotated (T237): the form's, a rotated basis
+ * (its signs for every width, and a place in the frame for a rotated input). And the form's numbers of the layers that
+ * keep a state and no keys and values, each under its kind's name (linear, T229: the linear-attention layers of a
+ * Qwen3.5; convolution, T260: the convolution layers of an LFM2), which the kinds read.
+ * T375.5: nothing here names an architecture, a dtype or a kind of layer. What the layers put in a token's frame and
+ * keep besides is their kinds' (kinds: forward/kinds.ts's table, the engine's own: frame(), state(), cached), asked
+ * with what sizes the model as the form says it (sizes.ts's sizesOfForm()); what the architecture's name says is its
+ * line of architectures.ts; how the weights are packed is the dtype's line of jobs.ts's PACKED. */
+export function footprint(header: Header, size: number, options: Footprint = {}, kinds: Kinds = LAYER_KINDS) {
+  const { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false, shared = false, outliers = 8, head_dim = 0, gpu = false,
+    direct = false, rotated = null } = options;
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
-  const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
-  const ternary = dtype === "ternary", quantized = dtype === "int8" || dtype === "int6" || ternary, six = dtype === "int6";
+  const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads;
+  // (the options as the form: the numbers of the layers that keep a state are in them under their kinds' names, which
+  // the kinds read and this does not)
+  const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
+  const { positions, rope } = architectureOf(arch), packing = packingOf(dtype);
+  // the kinds of layers this model has, and what each puts in a token's frame
+  const had = kindsHad(sizes, kinds), frames = had.map(({ kind }) => kinds[kind].frame(sizes));
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others; a ternary file's rows are whole
-  // groups of 128)
-  const onInt8 = int8 && dim % 32 === 0 && qDim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0 &&
-    (!linear || linearWidths(linear).read % 32 === 0);
+  // groups of 128): the model's own widths and the widest a kind's matrices read
+  const onInt8 = int8 && [dim, qDim, kvDim, hidden, ...frames.map(({ widest = 0 }) => widest)].every((width) => width % 32 === 0);
   let bytes = 0;
   // what the file holds in another form, for its matrices (not the tables that are no matrix multiplied: an
-  // embedding apart from the classifier, GPT-2's positions): the corrections of relaxed SIMD, one int32 a group,
-  // as many as the scales (a ninth of an int8 file, a seventh of an int6 one), and the float32 columns of the
+  // embedding apart from the classifier, a table of positions): the corrections of relaxed SIMD where the packing's
+  // relaxed kernel takes them, one int32 a group, as many as the scales (a ninth of an int8 file, a seventh of an int6
+  // one; T231: none of ternary weights, whose kernels take the activations signed), and the float32 columns of the
   // outlier channels (T92); or, off the int8 kernels, every weight widened to float32
-  const tables = (signedVocab < 0 ? vocab * dim : 0) + (arch === "gpt2" ? seqLen * dim : 0);
+  const tables = (signedVocab < 0 ? vocab * dim : 0) + (positions ? seqLen * dim : 0);
   // (T156, direct: the layers' matrices are on the GPU alone; T210: so are the embedding and the classifier, and none
   // of their corrections or outlier columns is here)
-  // (T231: ternary weights, 36 bytes a group of 128, have no corrections: their kernels take the activations signed)
-  const weights = !quantized ? 0 : size * (ternary ? 128 / 36 : six ? 32 / 28 : 32 / 36) - tables, matrices = quantized && !direct;
-  if (matrices && onInt8) bytes += (relaxed && !ternary ? weights / 8 : 0) + Math.min(outliers, dim) * (vocab + 1) * 4;
-  else if (matrices) bytes += weights * 4;
-  else if (dtype === "float16") bytes += size * 2;
-  // what a quantized file leaves out: GPT-2's positions widened, and the RoPE tables Python computes (two of seqLen ×
-  // headSize / 2 float32; GPT-2 has them too, of zeros, at any dtype: it has no RoPE; T130's review)
-  if (quantized && arch === "gpt2") bytes += seqLen * dim * 4;
-  if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
-  // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
-  // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, framed(dim, qDim, linear, convolution), rotated, packingOf(dtype)?.xs)) + align(seqLen * heads * 4)) + vocab * 4;
+  // (the weights of a packed file: its bytes, by the weights a byte holds: a group's values and its scale)
+  if (packing && !direct) {
+    const weights = size * (packing.group / (packing.rowBytes(packing.group) + 4)) - tables;
+    bytes += onInt8 ? (relaxed && packing.sums ? (weights / packing.group) * 4 : 0) + Math.min(outliers, dim) * (vocab + 1) * 4 : weights * 4;
+  } else if (dtype === "float16") bytes += size * 2;  // (no packing: the whole file widened to float32)
+  // what a packed file leaves out: the positions widened, and the RoPE tables Python computes (two of seqLen ×
+  // headSize / 2 float32; a model without RoPE has them too, of zeros, at any dtype; T130's review)
+  if (packing && positions) bytes += seqLen * dim * 4;
+  if (packing || !rope) bytes += seqLen * headSize * 4;
+  // the frames of BATCH tokens and what the kinds keep of a token apart from its frame (the scores of its
+  // attention), the logits; the keys and values of a block from the GPU (in float16) and its rows
+  const apart = frames.flatMap(({ apart = [] }) => apart).reduce((sum, [, each]) => sum + align(each), 0);
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, frames, rotated, packing?.xs)) + apart) + vocab * 4;
   // T237: the signs of a rotated basis, a float32 for every value of every width
-  if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
+  if (rotated) bytes += sizes.widths.rotated.reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
-  // T229: the state of the linear-attention layers, whatever the context; keys and values of the others alone
-  if (linear) bytes += linearStateBytes(layers, linear);
-  if (convolution) bytes += convolutionStateBytes(layers, dim, convolution);  // T260
+  // what the kinds' layers keep besides, whatever the context (T229: a linear-attention layer's state; T260: a
+  // convolution layer's rows), each as the engine takes it of the memory
+  bytes += had.flatMap(({ kind, count }) => kinds[kind].state?.(sizes, count) ?? []).reduce((sum, each) => sum + align(each), 0);
+  // the layers that keep keys and values (all of them where none keeps a state in their place)
+  const cached = had.reduce((sum, { kind, count }) => sum + (kinds[kind].cached ? count : 0), 0);
   // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
   // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
   // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
   // GPU's alone)
-  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * attendingLayers(layers, linear, convolution) * 2 * kvDim;
+  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * cached * 2 * kvDim;
   // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
@@ -198,9 +161,10 @@ export function footprint(header: Header, size: number, { dtype = "float32", arc
   // the shared one for, which pastWide() was asked with (T130's review: Pythia 12B's int8 of ?hf= is 15.2 GiB with
   // float16 keys and values and 16.6 with float32). keysInHalf tells which.
   const past = needsWide(size, others + 4 * keys);
-  // (and only where the int8 kernels run, as the engine's half_kv says: a file whose rows are not whole groups of 32 is
-  // widened to float32 and keeps float32 keys and values; T130's review)
-  const half = halfKV && onInt8 &&
+  // (and only where the int8 kernels run on packed weights, as the engine's half_kv says: a file whose rows are not
+  // whole groups of 32 is widened to float32 and keeps float32 keys and values, T130's review; T375.5: and a float
+  // model's are float32, which the caller had to know before)
+  const half = halfKV && Boolean(packing) && onInt8 &&
     (shared ? kvHeads >= heads || past : past && (!needsWide(size, others + 2 * keys) || pastWide(size, others + 4 * keys)));
   return others + keys * (half ? 2 : 4);
 }
@@ -267,5 +231,3 @@ function halfToFloat(h: number) {
 }
 
 export { PAGE, align, frameArrays, frameBytes, halfToFloat };
-// (for tests/plan-keys-check.mjs, which holds footprint()'s own reckoning to the plan's layers and widths)
-export { layerSlots, linearWidths, rotatedWidths };

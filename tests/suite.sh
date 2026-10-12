@@ -164,6 +164,10 @@ page_modules() {
   # that write down their calls: every kind's call, tile and blocks, the warm-up, and each packing against Python's
   # registry of the dtypes (under a second)
   node tests/kernel-registry-check.mjs
+  # T375.5: what sizes a model before it is loaded, by the same tables as the engine: the architectures' lines, a
+  # model's sizes of its header and form, footprint() with a table of kinds written in the test, and the GPU's side of
+  # it (stand-ins alone; under a second)
+  node tests/sizes-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 
