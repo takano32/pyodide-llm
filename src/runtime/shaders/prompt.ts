@@ -76,6 +76,14 @@ export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+// (T379.2) byte index of a word as a signed int8: llama.cpp's get_byte_i32 as its shaders have it (mul_mat_decls.tmpl,
+// mul_mat_vec.wgsl, get_rows.wgsl: the notice above), one piece of text for every shader that widens int8 weights to
+// floats: the tiles here, a token's float matrix (fused.ts, matvec.ts) and the rows of the embedding (run.ts). Until
+// T379.2 each wrote it out, and the tiles' copy had the numbers marked unsigned (8u, 0xFFu, 24u: the same u32
+// arithmetic, another text)
+const GET_BYTE_I32 = /* wgsl */ `fn get_byte_i32(value: u32, index: u32) -> i32 {
+    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
+}`;
 export const regTile = (half: boolean): string => /* wgsl */ `${half ? "enable f16;\n" : ""}
 struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
 ${STEP}
@@ -103,9 +111,7 @@ override TILE_SRC1_SHMEM: u32 = TILE_K * WORKGROUP_SIZE_N * TILE_N;
 override TILE_SHMEM: u32 = TILE_SRC0_SHMEM + TILE_SRC1_SHMEM;
 var<workgroup> shmem: array<shmem_t, TILE_SHMEM>;
 
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-  return bitcast<i32>(((value >> (index * 8u)) & 0xFFu) << 24u) >> 24u;
-}
+${GET_BYTE_I32}
 // Q8_0's loader: NQ weights a thread, widened with their scale (here a float32 of its own buffer, the product rounded
 // once into the memory's type)
 fn init_shmem_src0(thread_id: u32, offset_m: u32, k_outer: u32) {
@@ -678,4 +684,4 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
   return { worst, wrong, far, apart, values };
 }
 
-export { TERNARY_PACKED, sdp8ai };
+export { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 };

@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations under the License.
  */
 import { GROUP, STEP } from "./common.ts";
-import { TERNARY_PACKED, sdp8ai } from "./prompt.ts";
+import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { SCALE_WORD } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 
@@ -198,9 +198,7 @@ const ELEMS_PER_THREAD = BLOCK_SIZE / THREADS_PER_BLOCK;
 const SUMS = ${sums}u;${norm ? `
 const SQUARES = OUTPUTS_PER_WG * ${matrices}u;  // where the sum of x² is: after the rows' sums (up's rows' too)` : ""}
 
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
-}
+${GET_BYTE_I32}
 
 // a row's sum at the thread's part of a block: llama.cpp's inner loop, for one row of either matrix
 fn block_dot(weight_row: u32, block: u32, thread_within_block: u32, x_block: array<f32, ELEMS_PER_THREAD>) -> f32 {
