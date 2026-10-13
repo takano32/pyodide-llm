@@ -28,7 +28,8 @@
 #              (tests/page_saluki.py): its seconds, its memory, the options it yields, the checkpoint's size
 #   pyodide    the page's conversion itself, in Pyodide, into a 64-bit shared memory: the checkpoint's sha256 against
 #              the native file's, its seconds and Pyodide's heap
-#   page       tests/page-27b.mjs compare: forward.ts against the references, and the plan broken on purpose (BROKEN)
+#   page       tests/page-27b.mjs compare: forward.ts against the references, the plan broken on purpose (BROKEN), and
+#              rows of every product of the blocks' kernels against the model of the kernels (EXACT)
 #   breaks     the conversion broken on purpose (the value heads left in the file's order), through the comparison of
 #              the first text: it must fail
 #   speed      tokens a second by the count of threads, the logits the same to the bit, a prompt in blocks, prompts of
@@ -41,14 +42,20 @@
 #              for the form that thinks) positions each, PICK="0,1" only these of the questions (from 0)
 # The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of the
 # same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
-# LINES: the lines of the comparison (logits,kl,kv), as tests/page-27b.mjs takes them; the default below is what the
-# runs of T364 measured (TODO.md).
+# LINES: the lines of the comparison (logits,kl,kv,the KL on average), as tests/page-27b.mjs takes them, the logits' over
+# the tokens the reference gives a probability; QUIET: the texts whose logits, keys and values are held (the bare
+# texts: after the marks of a chat's turn this model's logits move by 13 with the last bit of an activation, in the
+# engine's own NumPy run too). What T364's runs measured (TODO.md): the page is 0.14 and 0.25 from llama.cpp with
+# float32 activations on the bare texts, a KL of 1.4e-3 at most there and 6.5e-2 at most (1.9e-3 on average) on a
+# chat's turn, the keys and values 0.046 of a layer's largest; the weakest plan broken on purpose (one layer of a
+# linear-attention matrix read as another type) 5.0, a KL of 0.48 at most and 0.08 on average, 0.48.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/.."
 stages=${STAGES:-reference convert pyodide page breaks speed}
 has() { [[ " $stages " == *" $1 "* ]]; }
-lines=${LINES:-none}
+lines=${LINES:-0.6,0.2,0.1,0.01}
+quiet=${QUIET:-0,1}
 context=4096
 
 echo "page: stages \"$stages\" on $(lscpu | sed -n 's/^Model name: *//p' | head -1) ($(uname -m)), $(nproc) logical cores, $(free -g | awk '/Mem:/{print $2}') GB of memory"
@@ -75,7 +82,7 @@ if has dry; then
   # made-up model is 0.2 of a logit off, against the float32 one 5: its random blocks make the rounding count for more
   # than the real model's. The layer of w1 is a matrix every token reads)
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$dry/page" compare "$dry" $as --threads 2 --lines 10,2,0.05 --broken untiled,codebooks,embedding-kind,layer-w1-3
+  node tests/page-27b.mjs "$dry/page" compare "$dry" $as --threads 1 --exact 4 --likely --lines 10,2,0.05,1 --broken untiled,codebooks,embedding-kind,layer-w1-3
   python tests/page_saluki.py convert "$dry/gguf" "$dry/broken" --context 128 --broken tiled
   # shellcheck disable=SC2086
   node tests/page-27b.mjs "$dry/broken" compare "$dry" $as --threads 2 --lines 10,2,0.05 --texts 0 --expect-failure
@@ -149,19 +156,21 @@ if has page; then
   # put in the file's order of the value heads, the codebooks a byte off, the embedding and a layer of a matrix taken
   # for another type's blocks: the feed-forward matrix of layer 20, the linear layers' qkv of their layer 10)
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" ${LIKELY:+--likely} ${TEXTS_OF_PAGE:+--texts "$TEXTS_OF_PAGE"} \
+  node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" --likely --quiet "$quiet" ${TEXTS_OF_PAGE:+--texts "$TEXTS_OF_PAGE"} \
     --broken "${BROKEN:-untiled,codebooks,embedding-kind,layer-w1-20,layer-wqkv-10}" || status=1
-  if [ -n "${EXACT:-}" ]; then
-    # EXACT="<rows> <texts>": so many rows of every product of the blocks' kernels held to the model of the kernels, to
-    # the bit, on one thread (every call is the first thread's then), for these texts
+  if [ "${EXACT:-4 2}" != none ]; then
+    # EXACT="<rows> <texts>" (or none): so many rows of every product of the blocks' kernels held to the model of the
+    # kernels (tests/blocks-model.mjs), to the bit, on one thread (every call is the first thread's then), for these
+    # texts: a chat's turn by default, whose marks are where the logits are touchy
+    exact=${EXACT:-4 2}
     # shellcheck disable=SC2086
-    node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" ${LIKELY:+--likely} --threads 1 --exact "${EXACT% *}" --texts "${EXACT#* }" || status=1
+    node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" --likely --quiet "$quiet" --threads 1 --exact "${exact% *}" --texts "${exact#* }" || status=1
   fi
 fi
 if has breaks; then
   python tests/page_saluki.py convert "$folder" "$work/broken" --context "$context" --broken tiled
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/broken" compare "$work" $as --lines "$lines" ${LIKELY:+--likely} --texts 0 --expect-failure || status=1
+  node tests/page-27b.mjs "$work/broken" compare "$work" $as --lines "$lines" --likely --quiet "$quiet" --texts 0 --expect-failure || status=1
   rm "$work/broken.bin"
 fi
 if has speed; then

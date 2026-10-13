@@ -142,7 +142,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact"];
+  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact", "--quiet"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
   if (!out || !["compare", "speed", "memory", "write", "long", "convert", "starts"].includes(mode)) {
@@ -226,7 +226,12 @@ if (isMainThread) {
     const references = path.resolve(third);
     job.references = references;
     const linesAsked = option("--lines", "");  // none, or logits,kl,kv (a made-up model's own)
-    job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "kv"][i], Number(value)])) : LINES;
+    job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "kv", "mean"][i], Number(value)])) : LINES;
+    // T364.2: a fourth line, the KL on average over a text's positions; and --quiet <texts>: the lines of the logits and of
+    // the keys and values hold these texts alone (Underdog Saluki 27B: after a turn's marks, <|im_end|> and "assistant",
+    // the rounding of the activations moves a logit by 13 and the last layer's values by as much as they are, whichever
+    // way the last bit before it falls: tests/reference_saluki_numpy.py's nudged runs; the two KL lines hold every text)
+    job.quiet = args.includes("--quiet") ? option("--quiet", "").split(",").filter(Boolean).map(Number) : null;
     job.broken = option("--broken", "").split(",").filter(Boolean);
     job.weak = option("--weak", "").split(",").filter(Boolean);
     job.weak.forEach(breakOf);
@@ -442,7 +447,7 @@ if (isMainThread) {
         const kv = engine.keysAndValues(0, ids.length);
         const label = `text ${text.index}${name ? `, broken (${breakOf(name).what})` : ""}`;
         if (!name) say(`${label}: ${ids.length} positions a token at a time on ${engine.threads} threads in ${seconds.toFixed(0)} s (${(ids.length / seconds).toFixed(2)} tok/s, ${cpu}), ${engine.backend}`);
-        const reasons = [];
+        const reasons = [], quiet = !job.quiet || job.quiet.includes(text.index);
         // the keys and values, against the engine's NumPy run with the same rounding of the activations
         const stem = `${references}/saved/engine-${text.index}-as-8-bits-round`;
         const parts = {};
@@ -452,7 +457,7 @@ if (isMainThread) {
           say(`${label}: the ${kind} against "as 8 bits round" in ${halfKeys ? "float16" : "float32"}: at most ${found.part.toExponential(2)} of a layer's largest ` +
             `(${found.worst.toExponential(2)}); by layer ${found.each.map((layer) => layer.part.toExponential(1)).join(" ")}; ` +
             `the root of the mean square of a layer's differences over that of its ${kind}, at most ${found.rms.toExponential(2)}: ${found.each.map((layer) => layer.rms.toExponential(1)).join(" ")}`);
-          if (lines && found.part > lines.kv) reasons.push(`the ${kind} are ${found.part.toExponential(2)} of a layer's largest off, past ${lines.kv}`);
+          if (lines && quiet && found.part > lines.kv) reasons.push(`the ${kind} are ${found.part.toExponential(2)} of a layer's largest off, past ${lines.kv}`);
         }
         const rounded = distance(rows, floats(`${stem}.logits`));
         say(`${label}: the logits against "as 8 bits round": ${told(rounded)}`);
@@ -463,7 +468,7 @@ if (isMainThread) {
         say(`${label}: the logits against ${forked ? "the float32 fork" : "the engine's NumPy run in float32 (no float32 fork's file)"}: ${told(fork)}`);
         if (fork.count < ids.length) say(`${label}: the float32 fork wrote ${fork.count} of the ${ids.length} positions`);
         const off = job.likely ? fork.likely : fork.worst;
-        if (lines && off > lines.logits) reasons.push(`the logits are ${off.toFixed(4)} from the float32 fork's${job.likely ? " over the tokens it gives a probability" : ""}, past ${lines.logits}`);
+        if (lines && quiet && off > lines.logits) reasons.push(`the logits are ${off.toFixed(4)} from the float32 fork's${job.likely ? " over the tokens it gives a probability" : ""}, past ${lines.logits}`);
         if (job.exact && !name) {
           say(`${label}: ${held.calls} products of the blocks' kernels (${[...held.kernels].join(", ")}), ${held.rows} rows of them against the model of the kernels: ` +
             (held.wrong.length ? `NOT the model's — FAILED: ${held.wrong.join("; ")}` : "the model's product of what each was handed, to the bit"));
@@ -471,8 +476,9 @@ if (isMainThread) {
           Object.assign(held, { calls: 0, rows: 0, wrong: [] });
         }
         if (lines && fork.klWorst > lines.kl) reasons.push(`a position's KL is ${fork.klWorst.toExponential(2)}, past ${lines.kl}`);
+        if (lines?.mean !== undefined && fork.klSum / fork.count > lines.mean) reasons.push(`the KL is ${(fork.klSum / fork.count).toExponential(2)} on average, past ${lines.mean}`);
         const far = fork.gaps.filter(({ gap }) => gap > 2 * off);
-        if (lines && far.length) reasons.push(`the most likely token is another at ${far.length} position(s) where the fork's first two are more than ${(2 * off).toFixed(4)} apart`);
+        if (lines && quiet && far.length) reasons.push(`the most likely token is another at ${far.length} position(s) where the fork's first two are more than ${(2 * off).toFixed(4)} apart`);
         // the 16 tokens the fork wrote (with its rounded activations): the most likely token after the prompt and after
         // each of them, which is what a greedy generation of the page would write as long as it agrees
         const first = text.prompt.length - 1;
@@ -485,7 +491,7 @@ if (isMainThread) {
         if (!lines) say(`${label}: no lines asked for`);
         else if (job.weak.includes(name)) say(`${label}: ${reasons.length ? `seen: ${reasons.join("; ")}` : "not seen: under what the rounding of the activations moves this comparison by"}`);
         else if (mustFail) say(`${label}: ${reasons.length ? `caught: ${reasons.join("; ")}` : "NOT CAUGHT — FAILED"}`);
-        else say(`${label}: ${reasons.length ? `FAILED: ${reasons.join("; ")}` : `ok: the keys and values within ${lines.kv} of a layer's largest, the logits within ${lines.logits} and KL ${lines.kl} of the float32 fork's`}`);
+        else say(`${label}: ${reasons.length ? `FAILED: ${reasons.join("; ")}` : `ok: ${quiet ? `the keys and values within ${lines.kv} of a layer's largest, the logits within ${lines.logits} and ` : "(a text whose logits, keys and values are not held) "}KL ${lines.kl}${lines.mean !== undefined ? ` (${lines.mean} on average)` : ""} of the float32 fork's`}`);
         failed ||= Boolean(lines) && !job.weak.includes(name) && (mustFail ? !reasons.length : reasons.length > 0);
       }
       engine.stopThreads();
