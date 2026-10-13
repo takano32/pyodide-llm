@@ -8,26 +8,33 @@ import { STEP } from "./common.ts";
 
 // the tokens a workgroup of the batched matrix multiplies at once: each weight is read once for all of them
 export const TILE = 8;
-// a matrix times one vector, the weights widened to float32 on the way (the benchmark's)
-export const WIDEN = /* wgsl */ `
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }
+// A matrix times one vector, a workgroup of 64 threads a row: each thread a word of four weights at a time, their sums
+// added up in the workgroup's memory. Two texts of it (the benchmark's):
+//   WIDEN   the weights widened to float32 on the way
+//   PACKED  the same with the activations quantized to int8 as the CPU's matmul_q8 takes them (a float32 scale per
+//           group of 32), and WGSL's packed dot product: where the language feature is there
+// (T391.4: one maker of the two, which differ in what they read of the vector and in a thread's sum)
+const rowAWorkgroup = (packed: boolean): string => /* wgsl */ `
+${packed ? "requires packed_4x8_integer_dot_product;\n" : ""}struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }
 @group(0) @binding(0) var<storage, read> w: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> x: array<f32>;
+@group(0) @binding(2) var<storage, read> ${packed ? "xq: array<u32>" : "x: array<f32>"};
 @group(0) @binding(3) var<storage, read_write> y: array<f32>;
-@group(0) @binding(4) var<uniform> shape: Shape;
+@group(0) @binding(4) var<uniform> shape: Shape;${packed ? `
+@group(0) @binding(5) var<storage, read> xs: array<f32>;` : ""}
 var<workgroup> partial: array<f32, 64>;
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u, @builtin(local_invocation_index) t: u32) {
   let row = id.x + id.y * count.x;
   if (row >= shape.rows) { return; }
   var sum = 0.0;
-  for (var i = t; i < shape.words; i += 64u) {
+  for (var i = t; i < shape.words; i += 64u) {${packed ? `
+    sum += f32(dot4I8Packed(w[row * shape.words + i], xq[i])) * scales[row * shape.perRow + i / 8u] * xs[i / 8u];` : `
     let word = bitcast<i32>(w[row * shape.words + i]);
     let at = i * 4u;
     let dot = f32(extractBits(word, 0u, 8u)) * x[at] + f32(extractBits(word, 8u, 8u)) * x[at + 1u]
             + f32(extractBits(word, 16u, 8u)) * x[at + 2u] + f32(extractBits(word, 24u, 8u)) * x[at + 3u];
-    sum += dot * scales[row * shape.perRow + i / 8u];
+    sum += dot * scales[row * shape.perRow + i / 8u];`}
   }
   partial[t] = sum;
   workgroupBarrier();
@@ -37,35 +44,8 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u,
   }
   if (t == 0u) { y[shape.first + row] = partial[0]; }
 }`;
-
-// the same with the activations quantized to int8 as the CPU's matmul_q8 takes them (a float32 scale per group of
-// 32), and WGSL's packed dot product: where the language feature is there (the benchmark's)
-export const PACKED = /* wgsl */ `
-requires packed_4x8_integer_dot_product;
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }
-@group(0) @binding(0) var<storage, read> w: array<u32>;
-@group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> xq: array<u32>;
-@group(0) @binding(3) var<storage, read_write> y: array<f32>;
-@group(0) @binding(4) var<uniform> shape: Shape;
-@group(0) @binding(5) var<storage, read> xs: array<f32>;
-var<workgroup> partial: array<f32, 64>;
-@compute @workgroup_size(64)
-fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u, @builtin(local_invocation_index) t: u32) {
-  let row = id.x + id.y * count.x;
-  if (row >= shape.rows) { return; }
-  var sum = 0.0;
-  for (var i = t; i < shape.words; i += 64u) {
-    sum += f32(dot4I8Packed(w[row * shape.words + i], xq[i])) * scales[row * shape.perRow + i / 8u] * xs[i / 8u];
-  }
-  partial[t] = sum;
-  workgroupBarrier();
-  for (var half = 32u; half > 0u; half >>= 1u) {
-    if (t < half) { partial[t] += partial[t + half]; }
-    workgroupBarrier();
-  }
-  if (t == 0u) { y[shape.first + row] = partial[0]; }
-}`;
+export const WIDEN = rowAWorkgroup(false);
+export const PACKED = rowAWorkgroup(true);
 
 // A matrix times the tokens of a prompt (step.tokens of them), TILE at a time: one workgroup per row and tile of
 // tokens (the third dimension of the dispatch). x holds the tokens xStride floats apart, y their outputs yStride
