@@ -293,6 +293,23 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   fresh(kernel);
   await w.convert(hf(), early, { conversion: blocks });
   assert.deepEqual(fetched().sort(), ["blockkernel_plain.wasm", "blockkernel_relaxed_plain.wasm"], "the next such load asks again");
+  // (T364.3: the list's own entries of such a model, as the page hands them over (address.ts's weighed(): whatever the
+  // device says of its memory, their conversion is the entry's): the blocks kept, the other rows int8, in the context
+  // the page cuts every conversion to)
+  {
+    globalThis.location ??= { search: "" };
+    const { weighed } = await import("../src/page/address.ts"), { MODELS } = await import("../src/models.js");
+    const listed = MODELS.filter((entry) => entry.conversion?.blocks);
+    assert.deepEqual(listed.map(({ id }) => id), ["hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"]);
+    fresh(kernel);
+    for (const entry of listed) {
+      const handed = weighed(entry);
+      await w.convert(handed.hf, early, { conversion: handed.conversion });
+      const make = w.played.made.at(-1);
+      assert.deepEqual([make.blocks, make.dtype, make.max_seq_len], [true, "int8", undefined], `${entry.id}: what the conduct is asked`);
+    }
+    assert.deepEqual(fetched(), [], "with the kernels the visit already has");
+  }
   w.run("jsKernels = undefined");
   ok("a conversion that keeps a GGUF's blocks: asked of the conduct where forward.ts's int8 kernels run, with the blocks' kernels of every build fetched once; widened without them; a fetch that fails ends the load");
 

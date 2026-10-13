@@ -143,6 +143,10 @@ export const LICENSES = {
   // Qwen3.8-27B, Copyright 2026 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where
   // it is deployed, as the smaller Ternary Bonsai's does
   "prism-ml/Ternary-Bonsai-2-27B-gguf": APACHE, "Qwen/Qwen3.8-27B": APACHE,
+  // T364.3: the card says apache-2.0 (its metadata and its "Credits and license"), and LICENSE is Apache 2.0's text.
+  // NOTICE: "Copyright 2026 Underdog (ConwayResearch) ... a modified version of" Qwen3.8-27B and of ISTA-DASLab's
+  // Qwen3.8-27B-GSQ-RCO-GGUF, "both licensed under the Apache License, Version 2.0"
+  "ConwayResearch/Underdog-Saluki-27B-1.0": APACHE,
   // T253: the four cards say apache-2.0
   "ibm-granite/granite-4.2-3b": APACHE, "ibm-granite/granite-4.2-3b-GGUF": APACHE,
   "ibm-granite/granite-4.2-8b": APACHE, "ibm-granite/granite-4.2-8b-GGUF": APACHE,

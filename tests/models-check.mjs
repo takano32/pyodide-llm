@@ -96,11 +96,43 @@ assert.match(memoryWarning(largest, 4), /needs about 8,000 MB of memory, and thi
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
 assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
-  ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"],
+  ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"],
   "rebuilt is for a GGUF no check can hold to its original");
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
+// T364.3: Underdog Saluki 27B, its GGUF's blocks kept as they are whatever is asked and whatever the device says
+// (conversion.blocks beside the dtype of the rows that are no blocks: ?bits= changes nothing of it, where a ternary
+// model is widened; as int8 it is past every browser's memory). What it takes is the entry's own word (loaded: the
+// checkpoint's bytes), not its note's, which the owner worded for a visitor. Warned as Ternary Bonsai 2 27B is (a device
+// under the cap; at the cap not, by the page's rule, though the whole is past 8 GB: the owner's to word, T503's shelf).
+// The names, the note and the sampling are the owner's choices of 2026-10-13: the card's, greedy where it answers at
+// once and never a Qwen3.5's presence penalty
+{
+  const [thinks, answers] = ["hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"].map(byId);
+  const after = "2.3-bit weights · fetches 7.9 GB (GGUF), kept as it is: 8.0 GB · about a word a second or less · desktop only · Chrome and Firefox";
+  assert.deepEqual([thinks.name, answers.name], ["Underdog Saluki 27B (thinking)", "Underdog Saluki 27B (no thinking)"]);
+  assert.deepEqual([thinks.note, answers.note], [`thinks before it answers · 日本語 / English · ${after}`, `answers at once · 日本語 / English · ${after}`]);
+  assert.deepEqual(thinks.generation, { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0, top_k: 20 });
+  assert.deepEqual(answers.generation, { steps: 0, temperature: 0.0 });
+  for (const entry of [thinks, answers]) {
+    assert.deepEqual(entry.conversion, { dtype: "int8", blocks: true }, entry.id);
+    assert.deepEqual(entry.options, qwen35, entry.id);
+    assert.deepEqual(entry.shares, [thinks.id, answers.id], "one conversion for both forms");
+    assert.ok(entry.rebuilt && entry.original === entry.hf.vocabulary.repo && entry.download === 7898369152 && entry.weights === undefined);
+    for (const asked of [undefined, "6", "8"]) for (const deviceMemory of [undefined, 1, 4, 8]) assert.equal(weightsFor(entry, asked, deviceMemory), "int8", `${entry.id}: ?bits=${asked} on ${deviceMemory} GB`);
+    assert.equal(modelBytes(entry), 7956712492);
+    assert.match(memoryWarning(entry, 4), /needs about 8,257 MB of memory, and this device has 4 GB:/);
+    assert.equal(memoryWarning(entry, 8), "");
+    assert.equal(memoryWarning(entry, undefined), "");
+  }
+  assert.ok(thinks.template.endsWith("<think>\n") && answers.template === `${thinks.template}\n</think>\n\n`, "a Qwen3.5's two formats, no system turn");
+  assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), [thinks.id, answers.id], "the entries whose blocks are kept");
+  // loaded: read before the note, of an entry that says it, and nothing of any other entry changed by it: each still
+  // says its size by its file or by its note's words
+  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id), [thinks.id, answers.id]);
+  for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);
+}
 // T364.3: loaded, an entry's own word of what it takes once loaded: read before the note, and after a site's file
 assert.equal(modelBytes({ note: "int8 1.7 GB", loaded: 5 }), 5);
 assert.equal(modelBytes({ bytes: 7, loaded: 5 }), 7, "a file of this site is its bytes");

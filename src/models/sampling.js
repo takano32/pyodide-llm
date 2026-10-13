@@ -19,5 +19,8 @@ const sampling35 = (temperature, topp, more) => ({ steps: 0, temperature, topp, 
 export const QWEN35_SAMPLING = { thinking: sampling35(1.0, 0.95, { presence_penalty: 1.5 }), atOnce: sampling35(0.7, 0.8, { presence_penalty: 1.5 }) };
 export const AGENTS_A1_SAMPLING = { thinking: sampling35(0.85, 0.95, { presence_penalty: 1.1 }), atOnce: sampling35(0.85, 0.95, { presence_penalty: 1.1 }) };
 export const BONSAI_2_SAMPLING = { thinking: sampling35(1.0, 0.95, { min_p: 0.05 }), atOnce: QWEN35_SAMPLING.atOnce };
+// T364.3: Underdog Saluki 27B's card: 0.6, 0.95 and the top-k where it thinks, greedy where it answers at once. Not a
+// Qwen3.5's set: with its presence penalty one answer of four fell to doubting itself over and over (TODO.md's T364)
+export const SALUKI_SAMPLING = { thinking: sampling35(0.6, 0.95), atOnce: greedy };
 // its card: "Use temperature=1.0 and top_p=0.95 across all tasks", thinking or not
 export const graniteSampling = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };
