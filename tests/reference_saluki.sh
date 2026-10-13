@@ -7,8 +7,10 @@
 # logits of every position, both one token at a time and as one batch, and its tokens a second (the only speed on a
 # CPU anyone has for this file). docs/notes/t361-saluki-2026-10-13.md has what the file is and how it is to be held.
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=120 extra="bash tests/reference_saluki.sh" \
-#     --grep "^(llama|saluki|runner):" --minutes 130 --ref <branch>
+#   node tests/ci.mjs run tests.yml only_extra=true minutes=40 extra="bash tests/reference_saluki.sh" \
+#     --grep "^(llama|saluki|runner):" --minutes 50 --ref <branch>
+# Five to seven minutes on a runner of 4 logical cores and 16 GB, x86-64 or arm64 (runner=ubuntu-24.04-arm): the file
+# in 40 s, the build in 70 s, llama.cpp at 0.93 to 1.35 tokens a second (T361's runs).
 #
 # STAGES (default "head fetch llama agree keep"):
 #   dry    no model and no llama.cpp (a minute, 12 MiB of the file by a Range request): the head of the file held to
@@ -21,8 +23,9 @@
 #   keep   what a later run compares with, into .tmp/keep/reference-saluki (tests.yml keeps it a week with the run)
 # REFERENCES=<a run's id>: the files that run kept, in place of everything else (then agree alone).
 # What llama.cpp computes here is not the model in float32: it rounds the activations of every matrix of a k- or
-# i-quantized type to 8 bits (Q8_K: 256 values to a scale), so a line for a float32 forward pass is tenths of a logit
-# wide (the notes' section on the reference).
+# i-quantized type to 8 bits (Q8_K: 256 values to a scale). Its logits move by 0.3 to 0.8 (now and then by 10) from one
+# of its two paths to the other and from one CPU to another, and the text it writes differs between CPUs (T361's
+# runs): no narrow line holds anything to these logits (the notes' section on the reference).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/.."
