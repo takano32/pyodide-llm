@@ -17,7 +17,8 @@
 # conversion that keeps the blocks (convert/stream.py's Kept) or the readers of the blocks change in a way that could
 # move what this model computes.
 #
-# STAGES (the default: "reference convert pyodide page breaks speed", an hour and a half on 4 logical cores):
+# STAGES (the default: "reference convert pyodide page breaks speed", 50 minutes on 4 logical cores of x86-64, of which
+# the reference is 25; with REFERENCES and no speed, 20 on arm64. memory is 35 minutes more on arm64, write an hour):
 #   dry        a made-up model of the kind (ten types by the layer, three value heads to a key head) through the
 #              reference's NumPy pass over its GGUF, both conversions and every mode of tests/page-27b.mjs
 #              (a minute, no download): the tool itself, before an hour is spent on the real model
@@ -34,7 +35,7 @@
 #              the first text: it must fail
 #   speed      tokens a second by the count of threads, the logits the same to the bit, a prompt in blocks, prompts of
 #              PROMPTS (40,256) tokens, the two tiles of a prompt against each other, the GPU refused
-#   memory     the whole context in blocks: what is placed after the checkpoint against footprint() (an hour on x86-64)
+#   memory     the whole context in blocks: what is placed after the checkpoint against footprint()
 #   starts     a bare text (STARTS_TEXT: en or ja, Wikipedia's Mount Fuji) after each first token of HEADS
 #              (248045,248044,none: <|im_start|>, <|endoftext|>, nothing), STARTS_POSITIONS (128) tokens of it
 #   write      the page's generate() for QUESTIONS (lines of a file, or the four here) in each form of WRITE
