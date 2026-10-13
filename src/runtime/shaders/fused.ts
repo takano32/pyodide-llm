@@ -18,7 +18,6 @@
 import { GROUP, STEP } from "./common.ts";
 import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 import type { Packing } from "./common.ts";
 
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
@@ -27,6 +26,11 @@ import type { Packing } from "./common.ts";
 const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write"] as const;
 export type FusedInput = (typeof FUSED_INPUTS)[number];
 export type FusedOutput = (typeof FUSED_OUTPUTS)[number];
+// the rows a workgroup has, of the two forms a token's matrix takes: the model's worker dispatches by them, and
+// /benchmark/'s matrix × vector (matvec.ts) has the same. (T391.4: here, so that this part reads nothing of matvec.ts,
+// which takes its lines of these two forms from this one)
+export const MUL_MAT_VEC_ROWS = 4;  // llama.cpp's WEBGPU_MUL_MAT_VEC_LEGACY_Q_OUTPUTS_PER_WG
+export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBitsSmallMProgram
 
 // ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):

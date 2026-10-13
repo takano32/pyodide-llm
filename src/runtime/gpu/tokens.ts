@@ -8,7 +8,7 @@ import { tablesOf } from "./weights.ts";
 import { attentionPasses } from "./tokenattention.ts";
 import { GROUP } from "../shaders/common.ts";
 import { flashVecSplits } from "../shaders/attention.ts";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/matvec.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
 import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersOf } from "../shaders/run.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Bound, Pass } from "./device.ts";

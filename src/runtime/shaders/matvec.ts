@@ -1,11 +1,13 @@
 // shaders/matvec.ts (T351): T149's matrix times one vector in the forms of public implementations (llama.cpp's
 // mul_mat_vec, ONNX Runtime's MatMulNBits and its DP4A for small M, each under its notice below). /benchmark/'s GPU
-// section alone runs these three; the fused layer of a generated token (fused.ts) is made from them and takes the rows a
-// workgroup has from here.
+// section alone runs these three; the fused layer of a generated token (fused.ts) is made from the first and the third,
+// and this part takes from it the lines the two have alike and the rows a workgroup has (T391.4: the engine's part reads
+// nothing of this one).
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./fused.ts";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED (the model's GPU worker is to take the fastest on each
@@ -32,9 +34,8 @@ import { sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 // no weight index: those loops and offsets are left out); the output goes to y from row first on (a matrix cut in
 // chunks of rows). The bindings and the Shape are WIDEN's and PACKED's (x, or xq with its scales xs at 5), so that
 // the benchmark binds them all alike.
-export const MUL_MAT_VEC_ROWS = 4;  // llama.cpp's WEBGPU_MUL_MAT_VEC_LEGACY_Q_OUTPUTS_PER_WG
+// (MUL_MAT_VEC_ROWS and ORT_DP4A_MATVEC_ROWS, the rows a workgroup of the first and the third has, are fused.ts's)
 export const ORT_MATVEC_ROWS = 8;  // ORT's tile_size for MatMulNBitsProgram
-export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBitsSmallMProgram
 const MATVEC_SHAPE = /* wgsl */ `struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }`;
 
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/mul_mat_vec.wgsl, mul_mat_vec_acc.tmpl (MUL_ACC_Q8_0),
