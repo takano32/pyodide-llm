@@ -16,7 +16,7 @@ export function blocksModel() {
   const TYPES = { Q2_K: [10, 84], Q4_K: [12, 144], IQ2_XXS: [16, 66], IQ2_XS: [17, 74], IQ3_XXS: [18, 98], IQ1_S: [19, 50],
     IQ3_S: [21, 110], IQ2_S: [22, 82], IQ4_XS: [23, 136], IQ1_M: [29, 56] };
   const BOOKS = { IQ2XXS: 0, IQ2XS: 2048, IQ2S: 6144, IQ3XXS: 14336, IQ3S: 15360, IQ1S: 17408, IQ4NL: 33792, bytes: 33808 };
-  const TABLES = 34976;  // the bytes sb_tables writes
+  const TABLES = 34992;  // the bytes sb_tables writes
   const half = (bits) => {
     const sign = bits & 0x8000 ? -1 : 1, e = (bits >> 10) & 31, m = bits & 1023;
     if (e === 31) return m ? NaN : sign * Infinity;

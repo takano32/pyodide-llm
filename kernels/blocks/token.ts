@@ -1,7 +1,7 @@
 // blocks/token.ts (T363.4): one token's rows of llama.cpp's blocks, matmul_sb and matmul_sbr (the same numbers, with
 // relaxed SIMD and without), and sums_x, what its activations need. blocks/types.ts has what a type is and the
 // arithmetic; T363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md).
-import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, bySixteen, hasSigns, hasMinimums, hsum, vectorAt, groupSums, pairSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
+import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, bySixteen, hasSigns, hasMinimums, hsum, vectorAt, groupSums, pairSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
 
 // ---- one token. S of the four units from 16 weights h on, a lane each (h a multiple of 4 where a unit is 16 weights,
 // of 8 where it is 32)
@@ -15,11 +15,12 @@ import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, K2, K4, XXS2, XS2, S2, 
 @inline function sevens32(fifteen: v128): v128 {
   return i32x4.shr_u(fifteen, 25);
 }
-// the four halves of the two bytes of word, a lane each, the low half of the first byte first
+// the four halves of the two bytes of word, a lane each, the low half of the first byte first: the word times 4096,
+// 256, 16 and 1 has them at bits 12 to 15. (One vector read from the tables, each 64 or 128 weights. A shuffle of bytes
+// in its place, which needs none, was a tenth slower for IQ2_S on a Neoverse-N1: its mask is a load too.)
 // @ts-ignore: decorator
-@inline function nibbles4(word: i32, fifteen: v128): v128 {
-  const both = i32x4.splat(word), low = v128.and(both, fifteen), high = v128.and(i16x8.shr_u(both, 4), fifteen);
-  return v128.shuffle<i8>(low, high, 0, 2, 2, 2, 16, 2, 2, 2, 1, 2, 2, 2, 17, 2, 2, 2);  // (bytes 2 and 3 of a lane are zero)
+@inline function nibbles4(word: i32, tab: usize, fifteen: v128): v128 {
+  return v128.and(i32x4.shr_u(i32x4.mul(i32x4.splat(word), vectorAt(tab, V_POWERS4)), 12), i32x4.shr_u(fifteen, 24));
 }
 // @ts-ignore: decorator
 @inline function scales4<K>(p: usize, h: i32, tab: usize, fifteen: v128): v128 {
@@ -31,7 +32,7 @@ import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, K2, K4, XXS2, XS2, S2, 
   if (idof<K>() == idof<XXS3>()) return v128.or(i32x4.shr_u(v128.load(p + 66 + (at << 1)), 27), one);
   if (idof<K>() == idof<XS2>() || idof<K>() == idof<S2>() || idof<K>() == idof<S3>()) {  // the four halves of two bytes
     const word = <i32>load<u16>(idof<K>() == idof<XS2>() ? p + 66 + (at >> 1) : idof<K>() == idof<S2>() ? p + 74 + (at >> 1) : p + 106 + (at >> 2));
-    return v128.or(i32x4.shl(nibbles4(word, fifteen), 1), one);
+    return v128.or(i32x4.shl(nibbles4(word, tab, fifteen), 1), one);
   }
   if (idof<K>() == idof<S1>()) {
     const words = i32x4.extend_low_i16x8_u(v128.load64_zero(p + 34 + (at >> 1) * 2));

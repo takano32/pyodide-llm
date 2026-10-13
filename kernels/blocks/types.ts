@@ -63,7 +63,7 @@
 // xs (one token's): n / 32 float32 scales, then n / 16 int16 sums of each 16 activations, then n / 8 int16 sums of
 // each 8 (sums_x): n / 2 bytes in all.
 //
-// ---- The tables (sb_tables; 34976 bytes, TABLES). Nothing static can be in a module of kernels (nothing relocates a
+// ---- The tables (sb_tables; 34992 bytes, TABLES). Nothing static can be in a module of kernels (nothing relocates a
 // data segment), and a vector written as a constant in a loop is made again at every use (T163):
 //   0      IQ2_XXS's grid: 256 entries of 8 magnitudes        2048   IQ2_XS's: 512 of 8        6144  IQ2_S's: 1024 of 8
 //   14336  IQ3_XXS's grid: 256 entries of 4                   15360  IQ3_S's: 512 of 4
@@ -79,10 +79,11 @@
 
 const T_IQ2XS: usize = 2048, T_IQ2S: usize = 6144, T_IQ3XXS: usize = 14336, T_IQ3S: usize = 15360, T_IQ1S: usize = 17408;
 const T_SIGNS: usize = 33792, T_IQ4: usize = 34816, T_VECTORS: usize = 34864;
-const GRIDS: usize = 33792, TABLES: i32 = 34976;
+const GRIDS: usize = 33792, TABLES: i32 = 34992;
 // the vectors: bytes 1, 2, 4, .. 128 twice; bytes 0 x 8, 1 x 8; sixteen 3s; sixteen 15s; the int32s 512, 64, 8, 1;
-// sixteen 7s; sixteen 1s
-const V_BITS: usize = 0, V_FIRST: usize = 16, V_THREE: usize = 32, V_FIFTEEN: usize = 48, V_POWERS3: usize = 64, V_SEVENS: usize = 80, V_ONES: usize = 96;
+// sixteen 7s; sixteen 1s; the int32s 4096, 256, 16, 1
+const V_BITS: usize = 0, V_FIRST: usize = 16, V_THREE: usize = 32, V_FIFTEEN: usize = 48, V_POWERS3: usize = 64, V_SEVENS: usize = 80, V_ONES: usize = 96,
+  V_POWERS4: usize = 112;
 
 // a type as a type: what a kernel is of is known as it is compiled (an argument that is a constant is not: every branch
 // would be compiled for every use), and R says the same of relaxed SIMD
@@ -353,8 +354,11 @@ export function sb_tables(area: usize, codebooks: usize): i32 {
     store<u8>(v + V_SEVENS + j, 7);
     store<u8>(v + V_ONES + j, 1);
   }
-  for (let j: usize = 0; j < 4; j++) store<i32>(v + V_POWERS3 + (j << 2), 512 >> (<i32>j * 3));
+  for (let j: usize = 0; j < 4; j++) {
+    store<i32>(v + V_POWERS3 + (j << 2), 512 >> (<i32>j * 3));
+    store<i32>(v + V_POWERS4 + (j << 2), 4096 >> (<i32>j * 4));
+  }
   return TABLES;
 }
 
-export { T_IQ2XS, T_IQ2S, T_IQ3XXS, T_IQ3S, T_IQ1S, T_SIGNS, T_IQ4, T_VECTORS, GRIDS, TABLES, V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_SEVENS, V_ONES, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, hsum, halfAt, halfOf, vectorAt, groupSums, pairSums, four, pair, quad, signedBy, dotAdd, lookup, bytesOfBits, nibblesOf, magnitudes, minuses, weights, shiftsDown, scaleOf, minimumOf, blockScale, wholeScale, blockMinimum };
+export { T_IQ2XS, T_IQ2S, T_IQ3XXS, T_IQ3S, T_IQ1S, T_SIGNS, T_IQ4, T_VECTORS, GRIDS, TABLES, V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_SEVENS, V_ONES, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, hsum, halfAt, halfOf, vectorAt, groupSums, pairSums, four, pair, quad, signedBy, dotAdd, lookup, bytesOfBits, nibblesOf, magnitudes, minuses, weights, shiftsDown, scaleOf, minimumOf, blockScale, wholeScale, blockMinimum };
