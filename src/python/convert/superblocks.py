@@ -17,8 +17,9 @@
 import numpy as np
 
 from convert.grids import IQ4NL, grid
+from engine.dtypes import BLOCK, BLOCKS
 
-VALUES = 256  # the weights of a block, whatever the type
+VALUES = BLOCK  # the weights of a block, whatever the type
 # how many blocks are read at once: what is in between (the indices, the looked-up values) stays a few megabytes
 AT_ONCE = 2048
 # the eighth sign of a group of 8 is not stored where the signs take 7 bits: the number of minus signs is even
@@ -196,8 +197,10 @@ def reader(size, read):
     return whole
 
 
-# the type's name in a GGUF -> (its id in ggml, the bytes of a block, the reader)
-SUPERBLOCKS = {name: (ggml, size, reader(size, read)) for name, ggml, size, read in (
-    ("Q2_K", 10, 84, q2_k), ("Q4_K", 12, 144, q4_k), ("IQ2_XXS", 16, 66, iq2_xxs), ("IQ2_XS", 17, 74, iq2_xs),
-    ("IQ3_XXS", 18, 98, iq3_xxs), ("IQ1_S", 19, 50, iq1_s), ("IQ3_S", 21, 110, iq3_s), ("IQ2_S", 22, 82, iq2_s),
-    ("IQ4_XS", 23, 136, iq4_xs), ("IQ1_M", 29, 56, iq1_m))}
+# the type's name in a GGUF -> (its id in ggml, the bytes of a block, the reader). The bytes of a block are the
+# engine's to say (engine/dtypes.py's BLOCKS, which lays a checkpoint's rows of these types out, T363), and the
+# engine reads such a row with the reader here, by the name.
+SUPERBLOCKS = {name: (ggml, BLOCKS[name].block, reader(BLOCKS[name].block, read)) for name, ggml, read in (
+    ("Q2_K", 10, q2_k), ("Q4_K", 12, q4_k), ("IQ2_XXS", 16, iq2_xxs), ("IQ2_XS", 17, iq2_xs),
+    ("IQ3_XXS", 18, iq3_xxs), ("IQ1_S", 19, iq1_s), ("IQ3_S", 21, iq3_s), ("IQ2_S", 22, iq2_s),
+    ("IQ4_XS", 23, iq4_xs), ("IQ1_M", 29, iq1_m))}

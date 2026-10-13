@@ -373,3 +373,15 @@ _IQ1S = (
 )
 
 DIGITS = {"IQ2XXS": _IQ2XXS, "IQ2XS": _IQ2XS, "IQ2S": _IQ2S, "IQ3XXS": _IQ3XXS, "IQ3S": _IQ3S, "IQ1S": _IQ1S}
+
+
+def codebooks():
+    """The codebooks as a checkpoint with rows of llama.cpp's blocks carries them (T363: the row "codebooks" of
+    engine/layout.py, engine/dtypes.py's CODEBOOKS bytes), where the kernels read them: the grids one after the other,
+    in DIGITS' order, an entry after the other and a value a byte (int8), then IQ4NL's 16 values. -> (the bytes, {a
+    grid's name, or "IQ4NL": where it begins})."""
+    tables = {**{name: grid(name) for name in DIGITS}, "IQ4NL": IQ4NL}
+    places, at = {}, 0
+    for name, table in tables.items():
+        places[name], at = at, at + table.size
+    return b"".join(table.tobytes() for table in tables.values()), places

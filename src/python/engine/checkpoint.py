@@ -28,7 +28,7 @@ import struct
 import numpy as np
 
 from engine.tokenizer import CHARSMAP
-from engine.dtypes import DTYPES, PACKED, dtype_of
+from engine.dtypes import DTYPES, KINDS, PACKED, dtype_of
 from engine.layout import (TABLE, check_suited, file_size, form_of, layout_of, placed, stateful_form, suited,
                            tensor_rows)
 
@@ -73,7 +73,7 @@ def outside(rows, dtype):
     the angles, and a quantized file leaves them out): the engine computes the others. ValueError where no file of
     this dtype can hold these rows."""
     check_suited(rows, dtype)
-    return {place.row.name: Tensor(DTYPES[place.kind].short, place.offset, place.row.shape, place.group, place.scales)
+    return {place.row.name: Tensor(KINDS[place.kind].short, place.offset, place.row.shape, place.group, place.scales)
             for place in placed(rows, dtype) if place.kind is not None and (place.row.role != TABLE or dtype == "float32")}
 
 
@@ -114,6 +114,8 @@ def checkpoint_dtype(header, size, form=None):
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
     form: what the file cannot say either (FORM, taken out of a model's options): the tensors differ with it.
+    T363: one of the five whatever kinds the form gives the rows: how the others are stored. Where every matrix has
+    a kind of its own, int8, int6 and ternary are one size (float32 vectors, no tables), and the answer is "int8".
     """
     form = form_of(form)
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)

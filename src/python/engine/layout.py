@@ -32,7 +32,7 @@
 import math
 from typing import Callable, NamedTuple, Optional
 
-from engine.dtypes import DTYPES, QUANTIZED, dtype_of
+from engine.dtypes import BLOCKS, BYTES, CODEBOOKS, KINDS, QUANTIZED, kind_named
 
 # ---- the form
 # The form of a checkpoint: what sets its tensors and sizes its forward pass besides the 7 ints of the header, which
@@ -106,11 +106,13 @@ def convolution_form(convolution, n_layers=None):
 
 
 def kinds_form(kinds):
-    """The rows of a file that are stored in a kind of their own, FORM's "kinds", as {the row's name: the kind's
-    (DTYPES')}, from a dict of Python or of JavaScript: a file whose tensors are of several kinds (T363) says here
-    which, since its size cannot. None where there are none."""
+    """The rows of a file that are stored in a kind of their own, FORM's "kinds", as {the row's name: the kind's (a
+    dtype's or a block's), or a tuple of them, one for each layer of its stack}, from a dict of Python or of
+    JavaScript (a list for the tuple): a file whose tensors are of several kinds (T363) says here which, since its
+    size cannot. None where there are none."""
     kinds = kinds.to_py() if hasattr(kinds, "to_py") else kinds
-    return {str(name): dtype_of(kind) for name, kind in kinds.items()} if kinds else None
+    named = lambda kind: kind_named(kind) if isinstance(kind, str) else tuple(kind_named(one) for one in kind)
+    return {str(name): named(kind) for name, kind in kinds.items()} if kinds else None
 
 
 class Stateful(NamedTuple):
@@ -151,7 +153,9 @@ def slots_of(stateful):
 #   VECTOR      the weights of a norm, a bias, and whatever else is small and never quantized (the two small matrices of
 #               a linear-attention layer's gates, the taps of a convolution): float32 in a quantized file
 #   TABLE       a RoPE table: left out of a quantized file (the engine computes it)
+#   CODES       the codebooks of llama.cpp's blocks (T363), bytes: of a file with rows of such kinds alone
 MATRIX, EMBEDDING, CLASSIFIER, POSITIONS, VECTOR, TABLE = "matrix", "embedding", "classifier", "positions", "vector", "table"
+CODES = "codes"
 # Which layers the first axis of a row's shape stacks, in their order (None: one tensor for the model):
 #   EVERY       every layer
 #   ATTENDING   the layers that keep keys and values (all of them, but in a hybrid model)
@@ -162,7 +166,7 @@ EVERY, ATTENDING, STATEFUL = "every", "attending", "stateful"
 class Row(NamedTuple):
     """A tensor of the file. name: the attribute the engine holds it as (and its key in the plan forward.js gets).
     kind: how it is stored where that is not the file's way with a row of its role (the form's "kinds"), see
-    kind_of()."""
+    kind_of(): a kind's name, or one for each layer of a stack (a tuple)."""
     name: str
     role: str
     shape: tuple
@@ -203,7 +207,14 @@ class Dims:
         unknown = sorted(set(self.kinds) - {row.name for row in rows})
         if unknown:
             raise ValueError(f"This model has no tensor called {unknown[0]!r} to store in a kind of its own.")
-        return [row._replace(kind=self.kinds.get(row.name)) for row in rows]
+        rows = [row._replace(kind=self.kinds.get(row.name)) for row in rows]
+        for row in rows:
+            if isinstance(row.kind, tuple) and (row.per is None or len(row.kind) != row.shape[0]):
+                raise ValueError(f"The tensor {row.name!r} is given {len(row.kind)} kinds, one for a layer, and it is "
+                                 f"{'no stack of layers' if row.per is None else f'a stack of {row.shape[0]}'}.")
+        # (T363) the codebooks of llama.cpp's blocks, last, where a row is of such a kind
+        blocks = any(kind in BLOCKS for row in rows for kind in kinds_of(row))
+        return rows + [Row("codebooks", CODES, (CODEBOOKS,), kind=BYTES.name)] if blocks else rows
 
     def layers(self, per):
         """The layers a stack covers, in the order of the stack."""
@@ -393,9 +404,14 @@ def tensor_rows(header, form=None):
 
 
 # ---- how a row is stored, and where
+def kinds_of(row):
+    """The kinds a form gave a row, as a tuple: none, the one, or its layers'."""
+    return row.kind if isinstance(row.kind, tuple) else () if row.kind is None else (row.kind,)
+
+
 def kind_of(row, dtype):
-    """How a row is stored in a file of this dtype, by a name of DTYPES; None: it is left out. The row's own kind
-    where the form gave it one (FORM's "kinds"). Otherwise it follows the file's dtype by its role: every matrix is
+    """How a row is stored in a file of this dtype, by a name of KINDS; None: it is left out. The row's own kind
+    where the form gave it one (FORM's "kinds"; a tuple, one for each layer of a stack). Otherwise it follows the file's dtype by its role: every matrix is
     the file's, the vectors of a quantized file are float32 and it has no RoPE tables. This is the one place that
     chooses: whatever writes, reads or sizes a row asks for its kind here and goes by that, not by the file's dtype, so
     that a file whose tensors are of several kinds (T363) is the form's to say and nobody else's to know."""
@@ -408,13 +424,20 @@ def kind_of(row, dtype):
 
 class Place(NamedTuple):
     """Where a row is in the file: its kind (kind_of(); None: nowhere, and size is 0), the offset of its values and
-    all its bytes, and of a quantized kind the values of a group and the offset of the scales (0 and 0 otherwise)."""
+    all its bytes, and of a kind in groups the values of a group and the offset of the scales (0 and 0 otherwise).
+    layers: of a stack with a kind for each layer (kind is the tuple), each layer's Place, one after the other.
+    parts: the places of one kind each, where bytes are read and written: the layers', or this one."""
     row: Row
     kind: str
     offset: int
     size: int
     group: int = 0
     scales: int = 0
+    layers: tuple = ()
+
+    @property
+    def parts(self):
+        return self.layers or (self,)
 
 
 def placed(rows, dtype, offset=28):
@@ -424,12 +447,15 @@ def placed(rows, dtype, offset=28):
         kind, count = kind_of(row, dtype), math.prod(row.shape)
         if kind is None:
             place = Place(row, None, offset, 0)
-        elif DTYPES[kind].bits:
-            group = DTYPES[kind].group(row.shape[-1])
-            values, scales = DTYPES[kind].stored_bytes(count, group)
+        elif isinstance(kind, tuple):
+            layers = tuple(placed([Row(row.name, row.role, row.shape[1:], kind=one) for one in kind], dtype, offset))
+            place = Place(row, kind, offset, sum(layer.size for layer in layers), layers=layers)
+        elif KINDS[kind].group:
+            group = KINDS[kind].group(row.shape[-1])
+            values, scales = KINDS[kind].stored_bytes(count, group)
             place = Place(row, kind, offset, values + scales, group, offset + values)
         else:
-            place = Place(row, kind, offset, count * DTYPES[kind].itemsize)
+            place = Place(row, kind, offset, count * KINDS[kind].itemsize)
         places.append(place)
         offset += place.size
     return places
@@ -442,7 +468,8 @@ def file_size(rows, dtype):
 
 def unsuited(rows, dtype):
     """The kinds of a file of this dtype that cannot hold their rows: a packed kind needs rows of whole groups."""
-    return [place.kind for place in placed(rows, dtype) if place.kind and not DTYPES[place.kind].suits(place.row.shape[-1])]
+    return [part.kind for place in placed(rows, dtype) if place.kind for part in place.parts
+            if not KINDS[part.kind].suits(part.row.shape[-1])]
 
 
 def suited(rows, dtype):
@@ -452,4 +479,4 @@ def suited(rows, dtype):
 
 def check_suited(rows, dtype):
     for kind in unsuited(rows, dtype):
-        raise ValueError(DTYPES[kind].unsuited)
+        raise ValueError(KINDS[kind].unsuited)

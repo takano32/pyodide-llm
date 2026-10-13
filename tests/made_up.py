@@ -16,8 +16,8 @@ from pathlib import Path
 import numpy as np
 
 import llama2_numpy
-from engine.dtypes import DTYPES
-from engine.layout import VECTOR, check_suited, kind_of, tensor_rows
+from engine.dtypes import BLOCK, BLOCKS, KINDS
+from engine.layout import CODES, VECTOR, check_suited, kind_of, tensor_rows
 
 
 # ------------------------------------------------------------------------------------------- a Llama
@@ -250,31 +250,73 @@ def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=
 
 
 # ------------------------------------------------------------------------------------------- the engine's file
-def checkpoint(header, form=None, dtype="float32", *, tensor):
+def checkpoint(header, form=None, dtype="float32", *, tensor, blocks=None):
     """The file of a model with this header (the 7 ints) and form (llama2_numpy.FORM's keys) in this dtype, as the
     engine reads it: the header, then every row of engine/layout.py's tensor_rows() in its order, each stored as its
-    kind (kind_of(): the vectors of a quantized file are float32, and it has no RoPE tables) by the registry of dtypes.
+    kind (kind_of(): the vectors of a quantized file are float32, and it has no RoPE tables; the form's "kinds", of a
+    row or of each layer of a stack) by the registry of dtypes.
     tensor(row) -> the values of the row (its name, role, shape and layers: layout.py's Row), an array of the row's
     shape; it is asked for the rows the file holds, in file order, and for no other.
+    T363: a tensor of one of llama.cpp's blocks is not made of values (there is no packing them: the values are what
+    its bytes read as, and any bytes are blocks). blocks(the kind's name, how many blocks) -> their bytes (drawn_blocks()
+    where none is given); tensor is not asked for a row that is blocks throughout, and what it says of a layer that is
+    blocks is left unread. The codebooks such a file carries are the converter's (convert/grids.py's codebooks()).
     One tensor after the other, by nobody's table of places: that the places of placed() are these is what the
     engine's reading of the file checks."""
     rows = tensor_rows(header, form)
     check_suited(rows, dtype)
+    blocks = blocks or drawn_blocks()
     out = [struct.pack("<7i", *header)]
     for row in rows:
         kind = kind_of(row, dtype)
         if kind is None:
             continue
-        values = np.asarray(tensor(row))
-        if values.shape != tuple(row.shape):
-            raise ValueError(f"The tensor {row.name} of this model is {tuple(row.shape)}, and the values made up for it are {values.shape}.")
-        stored = DTYPES[kind]
-        if not stored.bits:
-            out.append(np.ascontiguousarray(values, dtype=stored.name).tobytes())
+        if row.role == CODES:
+            from convert.grids import codebooks  # (the converter's: only a file with blocks reads it)
+            out.append(codebooks()[0])
             continue
-        packed, scales = stored.pack(np.asarray(values, dtype=np.float32).reshape(-1, row.shape[-1]))
-        out += [np.ascontiguousarray(packed).tobytes(), np.ascontiguousarray(scales, dtype=np.float32).tobytes()]
+        layers = kind if isinstance(kind, tuple) else None
+        values = None
+        if not all(one in BLOCKS for one in layers or (kind,)):
+            values = np.asarray(tensor(row))
+            if values.shape != tuple(row.shape):
+                raise ValueError(f"The tensor {row.name} of this model is {tuple(row.shape)}, and the values made up for it are {values.shape}.")
+        for layer, one in enumerate(layers or (kind,)):
+            shape = row.shape[1:] if layers else row.shape
+            stored = KINDS[one]
+            if one in BLOCKS:
+                out.append(bytes(blocks(one, int(np.prod(shape)) // BLOCK)))
+            elif not stored.group:
+                out.append(np.ascontiguousarray(values[layer] if layers else values, dtype=stored.name).tobytes())
+            else:
+                part = np.asarray(values[layer] if layers else values, dtype=np.float32).reshape(-1, row.shape[-1])
+                packed, scales = stored.pack(part)
+                out += [np.ascontiguousarray(packed).tobytes(), np.ascontiguousarray(scales, dtype=np.float32).tobytes()]
     return b"".join(out)
+
+
+# where the float16 scales of a block of llama.cpp's are (two bytes each; IQ1_M's is the top four bits of the last four
+# words of 16 bits of its 56 bytes)
+BLOCK_SCALES = {"Q2_K": (80, 82), "Q4_K": (0, 2), "IQ1_M": ()}
+
+
+def drawn_blocks(seed=0):
+    """blocks(name, count) -> the bytes of count blocks of llama.cpp's type called name: random bytes of one stream
+    (any bytes are a block), with float16 scales of 2 ** -12 to 2 ** -11 and either sign in place of the random ones,
+    which are an infinity or a NaN once in 32 and anything up to 65504 otherwise: a model's numbers stay finite and
+    small."""
+    rng = np.random.default_rng(seed)
+
+    def blocks(name, count):
+        raw = rng.integers(0, 256, (count, BLOCKS[name].block), dtype=np.uint8)
+        scales = (rng.integers(0, 1 << 10, count) | 0x0C00 | (rng.integers(0, 2, count) << 15)).astype(np.uint16)
+        if name == "IQ1_M":
+            for word in range(4):
+                raw[:, 49 + 2 * word] = (raw[:, 49 + 2 * word] & 15) | ((scales >> 4 * word & 15) << 4).astype(np.uint8)
+        for at in BLOCK_SCALES.get(name, (0,)):
+            raw[:, at], raw[:, at + 1] = scales & 255, scales >> 8
+        return raw.tobytes()
+    return blocks
 
 
 def tensors_of(data, form=None):
