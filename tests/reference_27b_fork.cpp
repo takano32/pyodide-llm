@@ -24,6 +24,9 @@
 //                       <dir>/fork-<i>.ids (its prompt's, then what it wrote but the last), one token at a time, into
 //                       <out>/fork-<i>.single (a row for each); the prompt arguments only count the prompts
 //   REPLAY_BATCH=1      and the same tokens as one batch, into <out>/fork-<i>.logits
+// T364.1 (stock llama.cpp, Underdog Saluki 27B: tests/reference_saluki_patch.py's BLOCKS_F32_ACTIVATIONS is the same switch
+// as PTQ1_0_F32_ACTIVATIONS for that file's types), a switch of a build with -DREFERENCE_NO_REPACK:
+//   NO_REPACK=1         the weights stay the types the file has (llama_model_params.use_extra_bufts off)
 //
 // T233's review, a fourth switch (the environment), for a prompt past the 4096 positions the list's context has: what the
 // fork computes on a long text, with the logits of some positions only (a row is 1 MB: all of 6,000 would be 6 GB):
@@ -261,6 +264,15 @@ int main(int argc, char ** argv) {
 
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = 0;
+#ifdef REFERENCE_NO_REPACK
+    // T364.1 (built with -DREFERENCE_NO_REPACK against a llama.cpp that has the field: tests/reference_saluki.sh):
+    // NO_REPACK=1 leaves the weights the types the file has them in (llama.cpp repacks Q4_K and Q8_0 matrices at load
+    // into types of their own, which tests/reference_saluki_patch.py's switch does not reach)
+    if (getenv("NO_REPACK") != NULL) {
+        model_params.use_extra_bufts = false;
+        printf("fork: the weights are not repacked\n");
+    }
+#endif
     llama_model * model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (model == NULL) {
         fprintf(stderr, "the fork could not load %s\n", model_path.c_str());
@@ -284,7 +296,7 @@ int main(int argc, char ** argv) {
     const char * replay_dir = getenv("REPLAY_FROM");
     const bool replay_batch = getenv("REPLAY_BATCH") != NULL;
     printf("fork: keys and values %s, ptq1_0 activations %s%s\n", kv_f32 ? "float32" : "float16 (the fork's default)",
-           getenv("PTQ1_0_F32_ACTIVATIONS") != NULL ? "float32" : "Q8_0 (the fork's own)",
+           getenv("PTQ1_0_F32_ACTIVATIONS") != NULL || getenv("BLOCKS_F32_ACTIVATIONS") != NULL ? "float32" : "Q8_0 (the fork's own)",
            replay_dir ? ", replaying the ids of the first run" : "");
     llama_context * ctx = llama_init_from_model(model, ctx_params);
     if (ctx == NULL) {
