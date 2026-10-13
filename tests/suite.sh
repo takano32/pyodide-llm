@@ -46,6 +46,9 @@ page_modules() {
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
   node tests/tree-check.mjs
   node tests/imports-check.mjs
+  # T391.6: the server of the site and the end of a tool, which every tool that drives a browser shares (tests/serving.mjs,
+  # tests/leave.mjs): no browser, a made-up folder, a close that never returns (a second or so)
+  node tests/serving-check.mjs
   # T357.5: the stand-ins the checks below run the product on (tests/fakes/: the Cache API, fetch, a Worker's face, the
   # clock of a token, Pyodide's proxies and a generator's face), each by itself: what each does as the thing it stands
   # for, which a check that uses it leans on without saying (under a second)

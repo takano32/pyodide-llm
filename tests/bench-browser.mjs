@@ -3,11 +3,10 @@
 //
 //   node tests/bench-browser.mjs [model id] [url of a deployed site]
 import assert from "node:assert/strict";
-import http from "node:http";
-import fs from "node:fs";
-import path from "node:path";
 import * as playwright from "playwright-core";
 import { MODELS } from "../src/models.js";
+import { closed, leave } from "./leave.mjs";
+import { serving } from "./serving.mjs";
 
 const [model = "stories260K", deployed] = process.argv.slice(2);
 // an id the list does not have would open the default model and pass on it (T144)
@@ -15,25 +14,10 @@ if (!MODELS.some((entry) => entry.id === model)) {
   console.error(`FAILED\n- no model ${model} in src/models.js`);
   process.exit(1);
 }
-const base = "/pyodide-llm/";
-const root = new URL("../dist/", import.meta.url).pathname;
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain" };
 let server, site = deployed;
 if (!site) {
-  server = http.createServer((req, res) => {
-    let file = path.join(root, decodeURIComponent(req.url.split("?")[0]).replace(base, ""));
-    if (file.endsWith("/")) file += "index.html";
-    fs.readFile(file, (error, data) => {
-      if (error) {
-        res.writeHead(404);
-        res.end();
-        return;
-      }
-      res.writeHead(200, { "content-type": types[path.extname(file)] ?? "application/octet-stream" });
-      res.end(data);
-    });
-  }).listen(0);
-  site = `http://127.0.0.1:${server.address().port}${base}`;
+  server = await serving();  // dist/, as tests/e2e.mjs serves it (T391.6)
+  site = server.url;
 }
 
 const browser = await playwright.chromium.launch();
@@ -76,6 +60,7 @@ assert.equal(report.searchParams.get("template"), "benchmark.md", `the report li
 assert.ok(report.searchParams.get("body")?.endsWith(bench.markdown), "the Markdown in the issue's body");
 clearInterval(watch);
 // T141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
-await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
+await closed(() => browser.close());
 server?.close();
-process.stdout.write("ok\n", () => process.exit(0));
+console.log("ok");
+await leave(0);

@@ -8,3 +8,21 @@ export async function leave(code = 0) {
   await flushed();
   process.exit(code);
 }
+
+// T391.6: and the browser a tool drove, closed without waiting on it for long. A browser's close() may never return
+// (T141: WebKit on Windows, three times in CI; the job then sat until its own limit, and each browser of a list waits
+// for the one before it), and by then the tool knows its verdict. So the close is given 15 seconds, the tool goes on
+// whether it came back, and ends with leave(): what the browser left behind does not keep the process.
+//   const done = await closed(() => browser.close());     // true: it closed; false: it did not in time, or it threw
+//   await leave(failed ? 1 : 0);
+// It never throws: a close that fails after the verdict is no verdict.
+export async function closed(close, seconds = 15) {
+  let timer;
+  try {
+    return await Promise.race([Promise.resolve(close()).then(() => true), new Promise((resolve) => { timer = setTimeout(() => resolve(false), seconds * 1000); })]);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}

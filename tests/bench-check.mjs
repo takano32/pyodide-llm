@@ -13,12 +13,13 @@
 //       runner makes a WRONG verdict, and nothing else tries the page's wiring of the report's warnings): the report must
 //       hold the WRONG rows under "#### Warnings", before the sections, and the link what fits of them. A change to a
 //       served file, in this test alone: the page has no flag for it
-import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
 import { REPORT_LIMIT, TOO_LONG, pathTable } from "../src/bench.js";
+import { closed, leave } from "./leave.mjs";
+import { serving } from "./serving.mjs";
 
 // T180: the browsers' profiles, in the repository's .tmp/ (never $HOME or /tmp)
 // fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" and joined it made "D:\\D:\\a\\…" (T181)
@@ -46,35 +47,22 @@ if (wrong && !dist) {
 // _astro/benchmark-gpu.<hash>.js, where the number is written .001; a build that serves the sources as they are has
 // benchmark/gpu/layercheck.js)
 const LAYER_LINE = /\bLAYER_LINE = (?:1e-3|0?\.001)\b/, NO_LINE = "LAYER_LINE = 1e-12";
-const holdsTheLine = (pathname) => /\/benchmark\/gpu\/layercheck\.js$|\/_astro\/benchmark-gpu\.[\w-]{6,}\.js$/.test(pathname);
+const holdsTheLine = (name) => /^benchmark\/gpu\/layercheck\.js$|^_astro\/benchmark-gpu\.[\w-]{6,}\.js$/.test(name);
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
 if (dist) {
-  const base = "/pyodide-llm/", root = fileURLToPath(new URL("../dist/", import.meta.url));  // (T242: on Windows too, as PROFILES)
-  const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
-    ".py": "text/plain", ".wasm": "application/wasm" };
-  server = http.createServer((req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    let file = path.join(root, pathname.slice(base.length));
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
-    if (!pathname.startsWith(base) || !fs.existsSync(file)) {
-      res.writeHead(404);
-      return res.end();
+  // dist/ as every tool serves it (T391.6: tests/serving.mjs; the folder's path read for Windows too, T242), and
+  // --wrong: the GPU section's worker with no line left for the layer check to hold (a rename of it fails here, loudly)
+  server = await serving(undefined, { instead: ({ name, file }) => {
+    if (!wrong || !file || !holdsTheLine(name)) return undefined;
+    const text = fs.readFileSync(file, "utf8");
+    if (!LAYER_LINE.test(text)) {
+      console.log(`--wrong: ${LAYER_LINE} is not in ${name} any more: change this test with it`);
+      process.exit(1);
     }
-    // --wrong: the GPU section's worker with no line left for the layer check to hold (a rename of it fails here, loudly)
-    if (wrong && holdsTheLine(pathname)) {
-      const text = fs.readFileSync(file, "utf8");
-      if (!LAYER_LINE.test(text)) {
-        console.log(`--wrong: ${LAYER_LINE} is not in ${pathname.slice(base.length)} any more: change this test with it`);
-        process.exit(1);
-      }
-      res.writeHead(200, { "Content-Type": types[".js"] });
-      return res.end(text.replace(LAYER_LINE, NO_LINE));
-    }
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
-    fs.createReadStream(file).pipe(res);
-  }).listen(0);
-  site = `http://localhost:${server.address().port}${base}`;
+    return { body: text.replace(LAYER_LINE, NO_LINE), type: ".js" };
+  } });
+  site = server.url;
 }
 // Chromium's WebGPU without a GPU: SwiftShader's Vulkan, where the build has it (as tests/gpu-check.mjs had it)
 const WEBGPU = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"];
@@ -263,8 +251,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   console.log("");
   // T141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
   // Windows job sat 55 minutes after WebKit's report, 2026-09-27): give it 15 seconds and go on
-  const closed = await Promise.race([context.close().then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 15000))]);
-  if (!closed) console.log(`${engine}: the browser did not close within 15 s; going on`);
+  if (!(await closed(() => context.close()))) console.log(`${engine}: the browser did not close within 15 s; going on`);
   try {
     fs.rmSync(profile, { recursive: true, force: true });
   } catch {
@@ -273,4 +260,4 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
 }
 server?.close();
 if (!started) console.log("no browser started: nothing was measured");
-process.exit(failed || !started ? 1 : 0);
+await leave(failed || !started ? 1 : 0);

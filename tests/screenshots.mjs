@@ -8,30 +8,17 @@
 // benchmark's bubble (T76); the sheet that opens any repository, and a repository the converter refuses (T88);
 // /benchmark/ before a run, while "Run all" runs the CPU section (T177: its progress) and after (T134, whole pages: it is
 // a page that scrolls).
-import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import * as playwright from "playwright-core";
+import { closed, leave } from "./leave.mjs";
+import { serving } from "./serving.mjs";
 
 const [directory = "screenshots", deployed] = process.argv.slice(2);
-const base = "/pyodide-llm/";
-const root = new URL("../dist/", import.meta.url).pathname;
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain",
-  ".wasm": "application/wasm" };
 let server, site = deployed;
 if (!site) {
-  server = http.createServer((req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    let file = path.join(root, pathname.slice(base.length) || "index.html");
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");  // /benchmark/
-    if (!pathname.startsWith(base) || !fs.existsSync(file)) {
-      res.writeHead(404);
-      return res.end();
-    }
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
-    fs.createReadStream(file).pipe(res);
-  }).listen(0);
-  site = `http://localhost:${server.address().port}${base}`;
+  server = await serving();  // (T391.6: tests/serving.mjs)
+  site = server.url;
 }
 fs.mkdirSync(directory, { recursive: true });
 
@@ -101,7 +88,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.keyboard.press("Escape");
 
   // 4. the benchmark's bubble (T76)
-  await context.close();
+  await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   // T214: at the phone's width the browser does not say its memory, as an iPhone's Safari does not: the round without
   // the kernels must be a row that says why (and nothing measured), where the desktop's runs both
@@ -120,7 +107,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   }
 
   // 5. a repository the converter refuses, in words (T88)
-  await context.close();
+  await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=microsoft/phi-1_5`);
   await acrossReload(() => page.waitForFunction(() => document.querySelector(".error"), null, { timeout: 600000 }));
@@ -128,7 +115,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   await shot(page, "refused", width);
 
   // T119 (2): a gated repository, in words
-  await context.close();
+  await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=meta-llama/Llama-3.2-1B`);
   await acrossReload(() => page.waitForFunction(() => document.querySelector(".error"), null, { timeout: 600000 }));
@@ -136,7 +123,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   await shot(page, "gated", width);
 
   // T134: /benchmark/, before a run and after every section ran (the smallest model, a small file for the storage)
-  await context.close();
+  await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}benchmark/`);
   await acrossReload(() => page.waitForFunction(() => document.querySelector("section .head button"), null, { timeout: 120000 }));
@@ -169,14 +156,16 @@ for (const [width, viewport] of Object.entries(widths)) {
   }
 
   // T119 (6): a conversion under way says what has arrived, how fast, and what is converted
-  await context.close();
+  await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=HuggingFaceTB/SmolLM2-360M-Instruct`);
   await acrossReload(() => page.waitForFunction(() => /MB\/s/.test(document.getElementById("status-text")?.textContent ?? ""), null, { timeout: 600000 }));
   await shot(page, "converting", width);
   console.log(`${width}: ${await page.evaluate(() => document.getElementById("status-text").textContent)}`);
-  await context.close();
+  await closed(() => context.close());
 }
-await browser.close();
+await closed(() => browser.close());
 server?.close();
 console.log(fs.readdirSync(directory).join("\n"));
+// (T141, T391.6: the tool ends here, whatever a browser that did not close left behind)
+await leave(0);
