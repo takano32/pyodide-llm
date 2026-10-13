@@ -150,6 +150,9 @@ page_modules() {
   # T378.5: the owners of the pages' state each by itself, imported by Node as the modules they are (model.ts, answer.ts,
   # running.ts: what each event changes and nothing else), and the model a visit opens with (opening.ts, a process a visit)
   node tests/page-parts-check.mjs
+  # T505.3: which file of a repository nobody listed is its model (src/page/repository.ts: safetensors, else the best
+  # GGUF by the order of the quantizations, else the owner's sentence), on made-up lists and on real ones' names
+  node tests/repository-check.mjs
   # T353: what tsc does not hold of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.ts) and its modules: no ring of
   # imports, every field of the object the steps share used, every message posted says its type, a message as the
   # window's onmessage is set answered once; and the names the tables' modules (src/bench/, JavaScript) use

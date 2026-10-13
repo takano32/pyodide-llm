@@ -42,8 +42,8 @@ export const OWNERS = { "src/page": ["model.ts", "answer.ts"], "src/benchmark": 
 const OWNERS_GLOBALS = new Set("Boolean Math undefined".split(" "));
 
 // what a page has without declaring it, as far as these files use it (__BUILD__: astro.config.mjs defines it)
-const GLOBALS = new Set(("Boolean Error Event JSON Math NaN Number Object Option Promise Set String URL URLSearchParams Uint32Array Worker __BUILD__ confirm console " +
-  "crypto document history innerHeight innerWidth localStorage location navigator self sessionStorage setTimeout undefined window " +
+const GLOBALS = new Set(("Array Boolean Error Event JSON Map Math NaN Number Object Option Promise RegExp Set String URL URLSearchParams Uint32Array Worker __BUILD__ confirm console " +
+  "crypto document fetch history innerHeight innerWidth localStorage location navigator self sessionStorage setTimeout undefined window " +
   // (/benchmark/'s)
   "SharedArrayBuffer addEventListener clearInterval getSelection performance removeEventListener setInterval").split(" "));
 

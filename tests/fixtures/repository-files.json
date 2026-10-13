@@ -1,0 +1,263 @@
+{
+ "_": "The files of real repositories of huggingface.co (the names its API listed on 2026-10-13, T504's survey of the 500 most downloaded GGUF repositories), and the file tests/repository-check.mjs expects the page to open each by: written by hand, from reading the names. null: the owner's sentence.",
+ "Qwen/Qwen2.5-7B-Instruct-GGUF": {
+  "takes": "qwen2.5-7b-instruct-q3_k_m.gguf",
+  "files": [
+   ".gitattributes",
+   "LICENSE",
+   "README.md",
+   "qwen2.5-7b-instruct-fp16-00001-of-00004.gguf",
+   "qwen2.5-7b-instruct-fp16-00002-of-00004.gguf",
+   "qwen2.5-7b-instruct-fp16-00003-of-00004.gguf",
+   "qwen2.5-7b-instruct-fp16-00004-of-00004.gguf",
+   "qwen2.5-7b-instruct-q2_k.gguf",
+   "qwen2.5-7b-instruct-q3_k_m.gguf",
+   "qwen2.5-7b-instruct-q4_0-00001-of-00002.gguf",
+   "qwen2.5-7b-instruct-q4_0-00002-of-00002.gguf",
+   "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+   "qwen2.5-7b-instruct-q4_k_m-00002-of-00002.gguf",
+   "qwen2.5-7b-instruct-q5_0-00001-of-00002.gguf",
+   "qwen2.5-7b-instruct-q5_0-00002-of-00002.gguf",
+   "qwen2.5-7b-instruct-q5_k_m-00001-of-00002.gguf",
+   "qwen2.5-7b-instruct-q5_k_m-00002-of-00002.gguf",
+   "qwen2.5-7b-instruct-q6_k-00001-of-00002.gguf",
+   "qwen2.5-7b-instruct-q6_k-00002-of-00002.gguf",
+   "qwen2.5-7b-instruct-q8_0-00001-of-00003.gguf",
+   "qwen2.5-7b-instruct-q8_0-00002-of-00003.gguf",
+   "qwen2.5-7b-instruct-q8_0-00003-of-00003.gguf"
+  ]
+ },
+ "unsloth/Qwen3.8-27B-GGUF": {
+  "takes": "Qwen3.8-27B-Q8_0.gguf",
+  "files": [
+   ".gitattributes",
+   "BF16/Qwen3.8-27B-BF16-00001-of-00002.gguf",
+   "BF16/Qwen3.8-27B-BF16-00002-of-00002.gguf",
+   "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
+   "Qwen3.8-27B-Q4_0.gguf",
+   "Qwen3.8-27B-Q4_1.gguf",
+   "Qwen3.8-27B-Q8_0.gguf",
+   "Qwen3.8-27B-UD-IQ1_M.gguf",
+   "Qwen3.8-27B-UD-IQ1_S.gguf",
+   "Qwen3.8-27B-UD-IQ2_S.gguf",
+   "Qwen3.8-27B-UD-IQ2_XXS.gguf",
+   "Qwen3.8-27B-UD-IQ3_S.gguf",
+   "Qwen3.8-27B-UD-IQ3_XXS.gguf",
+   "Qwen3.8-27B-UD-IQ4_XS.gguf",
+   "Qwen3.8-27B-UD-Q2_K_XL.gguf",
+   "Qwen3.8-27B-UD-Q3_K_XL.gguf",
+   "Qwen3.8-27B-UD-Q4_K_M.gguf",
+   "Qwen3.8-27B-UD-Q4_K_S.gguf",
+   "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+   "Qwen3.8-27B-UD-Q5_K_M.gguf",
+   "Qwen3.8-27B-UD-Q5_K_S.gguf",
+   "Qwen3.8-27B-UD-Q5_K_XL.gguf",
+   "Qwen3.8-27B-UD-Q6_K.gguf",
+   "Qwen3.8-27B-UD-Q6_K_L.gguf",
+   "Qwen3.8-27B-UD-Q6_K_M.gguf",
+   "Qwen3.8-27B-UD-Q6_K_XL.gguf",
+   "Qwen3.8-27B-UD-Q8_K_L.gguf",
+   "Qwen3.8-27B-UD-Q8_K_XL.gguf",
+   "README.md",
+   "config.json",
+   "imatrix_unsloth.gguf",
+   "mmproj-BF16.gguf",
+   "mmproj-F16.gguf"
+  ]
+ },
+ "MaziyarPanahi/Qwen3-32B-GGUF": {
+  "takes": "Qwen3-32B.Q6_K.gguf",
+  "files": [
+   ".gitattributes",
+   "Qwen3-32B.Q2_K.gguf",
+   "Qwen3-32B.Q3_K_L.gguf",
+   "Qwen3-32B.Q3_K_M.gguf",
+   "Qwen3-32B.Q4_K_M.gguf",
+   "Qwen3-32B.Q5_K_M.gguf",
+   "Qwen3-32B.Q6_K.gguf",
+   "README.md"
+  ]
+ },
+ "babybirdprd/Experiment26-7B-passthrough-10slice-GGUF": {
+  "takes": "experiment26-7b-passthrough-10slice.Q5_K_M.gguf",
+  "files": [
+   ".gitattributes",
+   "experiment26-7b-passthrough-10slice.Q4_K_M.gguf",
+   "experiment26-7b-passthrough-10slice.Q5_K_M.gguf"
+  ]
+ },
+ "rippertnt/HyperCLOVAX-SEED-Text-Instruct-1.5B-Q4_K_M-GGUF": {
+  "takes": "hyperclovax-seed-text-instruct-1.5b-q4_k_m.gguf",
+  "files": [
+   ".gitattributes",
+   "README.md",
+   "config.json",
+   "hyperclovax-seed-text-instruct-1.5b-q4_k_m.gguf",
+   "special_tokens_map.json",
+   "tokenizer.json",
+   "tokenizer_config.json"
+  ]
+ },
+ "google/gemma-4-E2B-it-qat-q4_0-gguf": {
+  "takes": "gemma-4-E2B_q4_0-it.gguf",
+  "files": [
+   ".gitattributes",
+   "README.md",
+   "gemma-4-E2B-it-mmproj.gguf",
+   "gemma-4-E2B_q4_0-it.gguf"
+  ]
+ },
+ "unsloth/gemma-4-E2B-it-qat-GGUF": {
+  "takes": "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+  "files": [
+   ".gitattributes",
+   "MTP/README.md",
+   "MTP/mtp-gemma-4-E2B-it-BF16.gguf",
+   "MTP/mtp-gemma-4-E2B-it-F16.gguf",
+   "MTP/mtp-gemma-4-E2B-it-Q4_0.gguf",
+   "MTP/mtp-gemma-4-E2B-it-Q8_0.gguf",
+   "README.md",
+   "config.json",
+   "gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf",
+   "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
+   "mmproj-BF16.gguf",
+   "mmproj-F16.gguf",
+   "mmproj-F32.gguf",
+   "mtp-gemma-4-E2B-it.gguf"
+  ]
+ },
+ "llm-jp/llm-jp-4-33b-thinking-gguf": {
+  "takes": "llm-jp-4-33b-thinking-BF16.gguf",
+  "files": [
+   ".gitattributes",
+   "README.md",
+   "imatrix.dat",
+   "llm-jp-4-33b-thinking-BF16.gguf",
+   "llm-jp-4-33b-thinking-Q4_K_M.gguf",
+   "v4_pretraining_overview.png"
+  ]
+ },
+ "prism-ml/Ternary-Bonsai-8B-gguf": {
+  "takes": "Ternary-Bonsai-8B-PQ2_0.gguf",
+  "files": [
+   ".eval_results/gsm8k.yaml",
+   ".gitattributes",
+   "LICENSE",
+   "NOTICE.txt",
+   "README.md",
+   "Ternary-Bonsai-8B-F16.gguf",
+   "Ternary-Bonsai-8B-PQ2_0.gguf",
+   "Ternary-Bonsai-8B-Q2_0.gguf",
+   "Ternary-Bonsai-8B-Q2_0_g64.gguf",
+   "assets/bonsai-logo.svg",
+   "assets/frontier.png",
+   "assets/frontier.svg"
+  ]
+ },
+ "prism-ml/Bonsai-8B-gguf": {
+  "takes": "Bonsai-8B-Q1_0.gguf",
+  "files": [
+   ".eval_results/gsm8k.yaml",
+   ".gitattributes",
+   "Bonsai-8B-Q1_0.gguf",
+   "Bonsai-8B.gguf",
+   "LICENSE",
+   "NOTICE.txt",
+   "README.md",
+   "assets/bonsai-logo.svg",
+   "assets/energy_8B.png",
+   "assets/frontier.png",
+   "assets/frontier.svg",
+   "assets/intel_density_8B.png",
+   "assets/speeds_8B.png"
+  ]
+ },
+ "mradermacher/Qwen3.8-Flash-Next-Uncensored-i1-GGUF": {
+  "takes": "Qwen3.8-Flash-Next-Uncensored.i1-IQ4_XS.gguf",
+  "files": [
+   ".gitattributes",
+   "Qwen3.8-Flash-Next-Uncensored.i1-IQ3_M.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-IQ3_S.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-IQ4_XS.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q2_K.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q3_K_L.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q3_K_M.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q3_K_S.gguf",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_0.gguf.part1of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_0.gguf.part2of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_0.gguf.part3of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_1.gguf.part1of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_1.gguf.part2of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_1.gguf.part3of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_K_M.gguf.part1of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_K_M.gguf.part2of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_K_M.gguf.part3of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_K_S.gguf.part1of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_K_S.gguf.part2of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q4_K_S.gguf.part3of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q5_K_M.gguf.part1of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q5_K_M.gguf.part2of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q5_K_M.gguf.part3of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q5_K_S.gguf.part1of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q5_K_S.gguf.part2of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q5_K_S.gguf.part3of3",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q6_K.gguf.part1of4",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q6_K.gguf.part2of4",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q6_K.gguf.part3of4",
+   "Qwen3.8-Flash-Next-Uncensored.i1-Q6_K.gguf.part4of4",
+   "Qwen3.8-Flash-Next-Uncensored.imatrix.gguf",
+   "README.md"
+  ]
+ },
+ "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": {
+  "takes": null,
+  "files": [
+   ".gitattributes",
+   "IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+   "IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf",
+   "README.md",
+   "assets/banner.png",
+   "assets/pelican-on-bike.svg",
+   "assets/plots/Qwen3.8-Flash-Next-Coder-coding_benchmarks.png",
+   "mmproj-Qwen3.8-Flash-Next-BF16.gguf",
+   "tensor-allocation/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.rco-allocation.txt"
+  ]
+ },
+ "CMSManhattan/JiRackUltra_1b": {
+  "takes": "model.safetensors",
+  "files": [
+   ".gitattributes",
+   "JiRackTernaryUltra_1b.py",
+   "JiRackTernaryUltra_1b_old.py",
+   "JiRackUltra_1b.Q6_K.gguf",
+   "JiRackUltra_1b.Q8_0.gguf",
+   "JiRackUltra_1b.gguf",
+   "JiRackUltra_1b_Q3_K_M.gguf",
+   "JiRackUltra_1b_Q4_K_M.gguf",
+   "NOTICE.md",
+   "QAT_to_Llama.cpp_GGUF_TQ2_0_JirackUltra_1b.md",
+   "README.md",
+   "chat_jirack_1b.py",
+   "chat_template.jinja",
+   "chat_template.jinja.bak",
+   "chat_template.jinja_with_thinking",
+   "config.json",
+   "generation_config.json",
+   "get_tool_call.py",
+   "gguf.txt",
+   "gguf_chat.sh",
+   "jirack_to_gguf_1p5b.py",
+   "jirackultra_1b_onnx_export_guide.md",
+   "materialize_ternary_1b.py",
+   "model.pt",
+   "model.safetensors",
+   "qat_ultra_1b_for_TQ_2.py",
+   "quant.sh",
+   "tokenizer.json",
+   "tokenizer_config.json",
+   "tokenizer_config.json_with_thinking",
+   "train_jirack_1b_lambda_warmup.py",
+   "train_toolace_toolcalling_lora_ultra.py"
+  ]
+ }
+}

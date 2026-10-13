@@ -26,6 +26,7 @@ import { openHuggingFace, TOKENIZERS } from "../src/page/folder.ts";
 // (the page's module reads its address where it is loaded: there is none here)
 globalThis.location ??= { search: "" };
 const { hfEntry } = await import("../src/page/address.ts");
+import { settled } from "../src/page/repository.ts";
 
 const FIXTURE = new URL("fixtures/conversion-fetches.json", import.meta.url);
 // T374.1: the cases themselves (the model as it is listed, what the made-up hub has, the line), written down beside
@@ -174,6 +175,11 @@ const index = (names) => JSON.stringify({ weight_map: Object.fromEntries(names.m
 // a repository nobody has looked at (?hf=, the sheet): the model as the page's own function lists it (src/page/address.ts),
 // so that what the page hands the worker of such a repository and what is then asked of it are held together
 const unlisted = () => hfEntry("owner/model", REVISION).hf;
+// T505.3: and one that has no safetensors: the page looks at the list of its files (one request of huggingface.co's API,
+// which is the page's and not the worker's: tests/repository-check.mjs) and hands the worker the best GGUF there, or
+// the file the link named (&file=). The model is the page's own (src/page/repository.ts's settled(), of these files)
+const ggufs = { "model-Q4_K_M.gguf": gguf(1000, 1 * MiB), "model-Q8_0.gguf": gguf(1000, 2 * MiB), "model-Q8_0-00001-of-00002.gguf": gguf(1000, 3 * MiB), "mmproj-model-F16.gguf": gguf(1000, MiB) };
+const lookedAt = (files, file) => settled(hfEntry("owner/model", REVISION, { file }), Object.entries(files).map(([path, { size }]) => ({ path, size }))).hf;
 const CASES = [
   // (six connections take a MiB each in turn: the first part's 8 MiB take 48 delays of the clock. 20 ms: 8.7 MB/s, past
   // the 4 MB/s that make the later parts 16 MiB; 1000 ms: 0.17 MB/s)
@@ -204,6 +210,10 @@ const CASES = [
   ["no tokenizer_config.json (an optional file) and no chat_template.jinja", hf(), repo("owner/model", left(whole(small), "tokenizer_config.json"))],
   ["a chat_template.jinja beside a tokenizer_config.json without a template", hf(), repo("owner/model", whole(small, { "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template" }))],
   ["a config.json under another name, int6 asked for", { ...hf({ config: "configs/text.json" }), dtype: "int6" }, repo("owner/model", { ...left(whole(small), "config.json"), "configs/text.json": CONFIG })],
+  ["?hf=: a repository of GGUFs alone, opened by the best of them", lookedAt(ggufs), repo("owner/model", ggufs)],
+  ["?hf=&file=: the GGUF that was named", lookedAt(ggufs, "model-Q4_K_M.gguf"), repo("owner/model", ggufs)],
+  ["?hf=&file=: a GGUF the repository does not have", lookedAt(ggufs, "model-Q5_K_M.gguf"), repo("owner/model", ggufs)],
+  ["?hf=: safetensors and GGUFs, opened by the safetensors as before", lookedAt({ ...whole(small), ...ggufs }), repo("owner/model", { ...whole(small), ...ggufs })],
   // ---- a folder of the visitor's disk (no repository: the files are the folder's, by their names)
   ["a folder: one safetensors file, as the disk gives it", { weights: "model.safetensors" }, whole(safetensors(20 * MiB + 5))],
   ["a folder: a header past the first 512 KiB", { weights: "model.safetensors" }, whole(safetensors(2 * MiB, { header: 700000 }))],
@@ -231,6 +241,9 @@ const CASES = [
   const entry = hfEntry("owner/model", REVISION, { template: "{prompt}" });
   assert.deepEqual(entry.hf, { repo: "owner/model", revision: REVISION, weights: "model.safetensors", config: "config.json" },
     "the page names more of a repository nobody has looked at than its weights and its config.json: the candidates for its tokenizer are the conduct's to name");
+  // T505.3: a repository with nothing the page opens never reaches the worker: the page says so (the owner's sentence)
+  assert.throws(() => lookedAt({ "README.md": { size: 1 }, "mmproj-model-F16.gguf": { size: 1 } }), { message: "owner/model has no model.safetensors and no GGUF file this page can read." });
+  assert.deepEqual(lookedAt(ggufs), { repo: "owner/model", revision: REVISION, weights: "model-Q8_0.gguf", config: "config.json" }, "the page hands the worker another file of a repository of GGUFs than its Q8_0");
   console.log(`ok: the candidates for a tokenizer are Python's (${candidates.join(", ")}): the page names none for ?hf=, and looks for the same in a folder`);
 }
 

@@ -429,6 +429,159 @@
   }
  },
  {
+  "name": "?hf=: a repository of GGUFs alone, opened by the best of them",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model-Q8_0.gguf",
+   "config": "config.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/model-Q4_K_M.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   },
+   "owner/model/model-Q8_0.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 2097152
+    }
+   },
+   "owner/model/model-Q8_0-00001-of-00002.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 3145728
+    }
+   },
+   "owner/model/mmproj-model-F16.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   }
+  }
+ },
+ {
+  "name": "?hf=&file=: the GGUF that was named",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model-Q4_K_M.gguf",
+   "config": "config.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/model-Q4_K_M.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   },
+   "owner/model/model-Q8_0.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 2097152
+    }
+   },
+   "owner/model/model-Q8_0-00001-of-00002.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 3145728
+    }
+   },
+   "owner/model/mmproj-model-F16.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   }
+  }
+ },
+ {
+  "name": "?hf=&file=: a GGUF the repository does not have",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model-Q5_K_M.gguf",
+   "config": "config.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/model-Q4_K_M.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   },
+   "owner/model/model-Q8_0.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 2097152
+    }
+   },
+   "owner/model/model-Q8_0-00001-of-00002.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 3145728
+    }
+   },
+   "owner/model/mmproj-model-F16.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   }
+  }
+ },
+ {
+  "name": "?hf=: safetensors and GGUFs, opened by the safetensors as before",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "config": "config.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "owner/model/model-Q4_K_M.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   },
+   "owner/model/model-Q8_0.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 2097152
+    }
+   },
+   "owner/model/model-Q8_0-00001-of-00002.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 3145728
+    }
+   },
+   "owner/model/mmproj-model-F16.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   }
+  }
+ },
+ {
   "name": "a folder: one safetensors file, as the disk gives it",
   "hf": {
    "weights": "model.safetensors"

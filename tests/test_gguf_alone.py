@@ -323,6 +323,32 @@ def test_a_name_no_real_file_was_held_to_is_refused_as_it_was(name):
         Conversion.from_gguf(file)
 
 
+def test_a_gguf_alone_that_does_not_say_how_its_text_is_split_is_refused():
+    """T505.3 (the owner, 2026-10-13): a byte-level BPE GGUF without tokenizer.ggml.pre was read as a GPT-2's, which is
+    another split than a Llama 3's or a Qwen's own (three of the 500 most downloaded were such files). llama.cpp reads
+    it as "default", and that is the name the refusal says. A sentencepiece vocabulary has no such name to say, and is
+    opened as before (spm_gguf() writes none)."""
+    config, tensors, published = small()
+    file, _ = gguf_file(tensors, published, config["vocab_size"], more=[EPS], pre=None)
+    assert "tokenizer.ggml.pre" not in gguf_read(file)[0]
+    with pytest.raises(ValueError, match="^This GGUF splits text as default, which the engine does not know.$"):
+        Conversion.from_gguf(file)
+    assert fed(spm_gguf(pieces_of(400))[1], "int8").options["tokenizer_kind"] == "bpe"
+
+
+def test_a_sentencepiece_vocabulary_that_comes_with_its_normalizer_is_refused():
+    """T505.3: tokenizer.ggml.precompiled_charsmap is a sentencepiece model's normalizer, which nothing here reads from
+    a GGUF: a vocabulary with one (not an empty one) is not read as if its normalizer were identity."""
+    metadata = gguf_read(spm_gguf(pieces_of(400))[1])[0]
+    key = "tokenizer.ggml.precompiled_charsmap"
+    assert sentencepiece_bpe(metadata) and sentencepiece_bpe({**metadata, key: []}) and sentencepiece_bpe({**metadata, key: ""})
+    for charsmap in ([0, 16, 0, 0, 1], "\x00\x10"):
+        assert not sentencepiece_bpe({**metadata, key: charsmap})
+        with pytest.raises(ValueError, match=r"^This GGUF has a llama vocabulary: only byte-level BPE ones \(gpt2\) are supported.$"):
+            gguf_tokenizer({**metadata, key: charsmap}, len(metadata["tokenizer.ggml.tokens"]))
+    assert gguf_tokenizer(metadata, len(metadata["tokenizer.ggml.tokens"]))[1]["tokenizer_kind"] == "bpe"
+
+
 def test_a_gguf_alone_of_before_gives_the_tokenizer_it_gave():
     """What gguf_tokenizer() gives of a byte-level BPE GGUF is what it gave before T505.2: the pieces by their merges'
     ranks, the padding empty, the control tokens special and the user-defined ones added."""
