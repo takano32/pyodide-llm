@@ -1006,7 +1006,7 @@ blocks_vocabulary = made_up.pack_tokenizer(made_up.tiny_vocab(320))
   const far = pyodide.runPython(`
 import numpy as np
 slow = llama2_numpy.Llama(blocks_file, blocks_vocabulary, dtype="int8", **blocks_options)
-assert blocks_quick.backend == "SIMD kernels, int8, relaxed SIMD", blocks_quick.backend
+assert blocks_quick.backend == "SIMD kernels, llama.cpp's blocks, relaxed SIMD", blocks_quick.backend
 worst, largest = 0.0, 0.0
 for pos, token in enumerate([5, 17, 3, 250, 9, 9]):
     want, got = slow.forward(token, pos), blocks_quick.forward(token, pos)

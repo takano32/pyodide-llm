@@ -187,7 +187,8 @@ try {
 
     // ---- the numbers
     const first = await run();
-    assert.match(first.backend, /^SIMD kernels, int8, relaxed SIMD$/, `${name}: what the status line says of it is what it says of the file's dtype`);
+    // (T364.3: the owner's words for such a model, whatever its other rows are)
+    assert.equal(first.backend, "SIMD kernels, llama.cpp's blocks, relaxed SIMD", `${name}: what the status line says of a model with rows of llama.cpp's blocks`);
     const line = whole ? LOOSE.whole : LOOSE.mixed, loose = far(first, wanted.floats);
     say(loose <= line, `${name}: forward.ts's logits are within ${loose.toExponential(2)} of the largest of NumPy's (the line ${line}; ` +
       `${far(first, wanted.rounded).toExponential(2)} of NumPy's with the activations of the blocks rounded as the kernels round them)`);
@@ -266,9 +267,15 @@ try {
     const differing = [];
     // (a thread takes a third of a second to start and warm up: the models with every kind of layer run on them)
     const taken = ways.filter(([what, { threads }]) => (whole || !what.includes("without relaxed")) && (!threads || (plan.linear && !again)));
+    const lines = [];
     for (const [what, options, block] of taken) {
-      if (!same(first, await run(options, block))) differing.push(what);
+      const ran = await run(options, block);
+      if (!same(first, ran)) differing.push(what);
+      // the status line of each way: the blocks, then relaxed SIMD where it runs so, then the 64-bit memory
+      const line = `SIMD kernels, llama.cpp's blocks${options.changed?.relaxed === false ? "" : ", relaxed SIMD"}${options.variant?.endsWith("64") ? ", 64-bit memory" : ""}`;
+      if (ran.backend !== line) lines.push(`${what}: ${ran.backend}`);
     }
+    assert.deepEqual(lines, [], `${name}: what the status line says, every way`);
     say(!differing.length, `${name}: the same logits to the bit ${taken.length} other ways (${taken.map(([what]) => what).join("; ")})${differing.length ? `: DIFFERS ${differing.join("; ")}` : ""}`);
     // T120: a software thread that stops in the middle of its chunk is given up, and the phase run again gives the same
     if (plan.linear && !again) {
