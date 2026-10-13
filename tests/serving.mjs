@@ -9,7 +9,7 @@
 //   await site.close();
 //
 //   serving(folder, { base, instead })
-//     folder    what is served (default: this checkout's dist/)
+//     folder    what is served: a path, or a file: URL (default: this checkout's dist/, DIST)
 //     base      the path the site is under, with its slashes (default "/pyodide-llm/")
 //     instead   a tool's own say in a request under the base: instead({ name, method, file }) with the name under the
 //               base, and the file that would be served (undefined: there is none). It returns nothing (served as it
@@ -29,8 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" (T181, T242), and anywhere a space in it is "%20"
-export const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
+export const DIST = new URL("../dist/", import.meta.url);
 export const BASE = "/pyodide-llm/";
 export const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
   ".py": "text/plain", ".wasm": "application/wasm" };
@@ -44,7 +43,8 @@ const stat = (file) => {
 };
 
 export async function serving(folder = DIST, { base = BASE, instead } = {}) {
-  const root = path.resolve(folder);
+  // fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" (T181, T242), and anywhere a space in it is "%20"
+  const root = path.resolve(folder instanceof URL ? fileURLToPath(folder) : folder);
   const none = (res, status = 404) => {
     res.writeHead(status);
     res.end();
@@ -69,7 +69,7 @@ export async function serving(folder = DIST, { base = BASE, instead } = {}) {
     if (other !== undefined) {
       const body = Buffer.from(other.body);
       res.writeHead(200, { "Content-Type": other.type ? TYPES[other.type] : typeOf(file), "Content-Length": body.length });
-      return res.end(req.method === "HEAD" ? undefined : body);
+      return res.end(body);  // (Node sends a HEAD no body)
     }
     if (!there) return none(res);
     res.writeHead(200, { "Content-Type": typeOf(there), "Content-Length": stat(there).size });

@@ -9,9 +9,11 @@
 // What is seen of the server: each kind of file with its type and length, a folder's index.html, what is not there,
 // what is not under the base, every spelling of a path that leaves the folder, a path that cannot be decoded, a HEAD,
 // a Range (not read), the headers it does not send, names with a space and Japanese, the tool's own say (a status, a
-// dropped line, another body; what it is told), another base, two servers at once, and the port free after close()
-// with a line still open. Of the end: a close that returns, one that never does (given up on at the limit), one that
-// throws, and a tool whose browser keeps the process alive ending by itself with all it wrote.
+// dropped line, another body; what it is told), another base, two servers at once, a folder given as a URL, and the
+// port free after close() with lines still open. Of the end: a close that returns, one that never does (given up on at the limit), one that
+// throws, and a tool whose browser keeps the process alive ending by itself with all it wrote. Of the tools (their
+// text): each that imports a browser's driver has no server of its own, closes through closed() and ends with leave(),
+// so that the next tool written is told of the one place.
 //
 // What this does not see: a browser (the tools themselves, on this machine's Chrome and in CI), Windows' paths (CI).
 import assert from "node:assert/strict";
@@ -20,7 +22,7 @@ import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { BASE, DIST, TYPES, serving } from "./serving.mjs";
 import { closed } from "./leave.mjs";
 
@@ -67,7 +69,7 @@ const site = await serving(folder);
 try {
   assert.equal(site.url, `http://localhost:${site.port}/pyodide-llm/`);
   assert.equal(BASE, "/pyodide-llm/");
-  assert.equal(DIST, path.join(path.resolve(here, ".."), "dist") + path.sep, "the default folder is this checkout's dist/");
+  assert.equal(DIST.href, new URL("../dist/", import.meta.url).href, "the default folder is this checkout's dist/, as a URL");
   ok("the address is localhost, the port the system's, under the site's base");
 
   // ---- the files
@@ -205,13 +207,23 @@ try {
   assert.equal((await asked(under.port, "/a/a.js")).status, 404);
   ok("another base, and two servers at once");
 
-  // a line a browser left open (keep-alive, and one in the middle of a file) does not keep the port
-  const idle = net.connect(under.port, "127.0.0.1");
-  await new Promise((resolve) => idle.once("connect", resolve));
+  // the folder as a file: URL (as the default, dist/, is): read as a path, not as the URL's pathname ("%20", "%E8…")
+  const byUrl = await serving(pathToFileURL(folder + path.sep));
+  assert.ok(pathToFileURL(folder).pathname.includes("%20") && pathToFileURL(folder).pathname.includes("%E8"), "the made-up folder's URL is not its path");
+  assert.equal((await asked(byUrl.port, "/pyodide-llm/benchmark/")).body.toString(), FILES["benchmark/index.html"]);
+  assert.equal((await asked(byUrl.port, "/pyodide-llm/..%2fsecret.txt")).status, 404);
+  await byUrl.close();
+  ok("a folder given as a file: URL whose path has a space and Japanese");
+
+  // a line a browser left open does not keep the port: one that is idle after an answer (keep-alive), and one in
+  // the middle of a request (which a server's own close() waits for)
+  const idle = net.connect(under.port, "127.0.0.1"), busy = net.connect(under.port, "127.0.0.1");
+  await Promise.all([idle, busy].map((line) => new Promise((resolve) => line.once("connect", resolve))));
   idle.write("GET /a/b/a.js HTTP/1.1\r\nHost: localhost\r\n\r\n");
   await new Promise((resolve) => idle.once("data", resolve));
-  const ended = new Promise((resolve) => idle.once("close", resolve));
-  idle.on("error", () => {});
+  busy.write("GET /a/b/data.bin HTTP/1.1\r\nHost: localhost\r\n");  // (its headers never end)
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const ended = Promise.all([idle, busy].map((line) => new Promise((resolve) => line.on("error", () => {}).once("close", resolve))));
   const began = Date.now();
   await under.close();
   await ended;
@@ -269,6 +281,31 @@ await leave(3);
   assert.ok(child.stdout.endsWith("\nthe browser did not close; going on\n"));
   assert.ok(Date.now() - began < 20000);
   ok("a tool whose browser never closes ends by itself, with its exit code and every byte it wrote");
+}
+
+// ---- the tools: every one that drives a browser has its server and its end from the one place
+{
+  // (tests/gpu-check/engines.mjs is not among them: its server serves the sources and its own cases, and its browser's
+  // close is its own line, which only CI's gpu-prompt.yml runs)
+  const OWN_SERVER = { "slow-check.mjs": "a proxy that throttles a deployed site: another thing, and the only one" };
+  const tools = fs.readdirSync(here).filter((name) => name.endsWith(".mjs") && /^import .* from "(playwright-core|selenium-webdriver)";$/m.test(fs.readFileSync(path.join(here, name), "utf8")));
+  assert.ok(tools.length >= 10, `only ${tools.length} tools that drive a browser were found: ${tools}`);
+  const wrong = [];
+  for (const name of tools) {
+    const text = fs.readFileSync(path.join(here, name), "utf8");
+    if (/\bcreateServer\(/.test(text) && !OWN_SERVER[name]) wrong.push(`${name} has a server of its own: serve the site with serving() of tests/serving.mjs`);
+    if (!/\bcreateServer\(/.test(text) && OWN_SERVER[name]) wrong.push(`${name} has no server of its own any more: take it out of OWN_SERVER`);
+    if (/\/pyodide-llm\/["`]/.test(text.replace(/https:\/\/takano32\.github\.io\/pyodide-llm\//g, ""))) wrong.push(`${name} writes the site's base itself: it is serving()'s (the address is its url)`);
+    for (const [at, line] of text.split("\n").entries()) {
+      const closes = !line.trimStart().startsWith("//") && /\b(browser|context|driver)\.(close|quit)\(\)/.exec(line);
+      if (closes && !line.includes(`closed(() => ${closes[0]})`)) wrong.push(`${name}:${at + 1} waits on ${closes[0]} itself: await closed(() => ${closes[0]}) of tests/leave.mjs (T141)`);
+    }
+    if (!/^import \{ closed, leave \} from "\.\/leave\.mjs";$/m.test(text)) wrong.push(`${name} does not take closed and leave of tests/leave.mjs: a tool ends with await leave(code)`);
+    const last = text.trimEnd().split("\n").at(-1);
+    if (!/^await leave\(.*\);$/.test(last)) wrong.push(`${name} ends with ${JSON.stringify(last)}, not with await leave(code): what a browser left behind would keep the process`);
+  }
+  assert.deepEqual(wrong, []);
+  ok(`${tools.length} tools that drive a browser: no server of their own (but ${Object.keys(OWN_SERVER)}), every close through closed(), every end leave()`);
 }
 
 fs.rmSync(room, { recursive: true, force: true });
