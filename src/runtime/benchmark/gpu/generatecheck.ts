@@ -264,7 +264,7 @@ const NOT_A_TOKEN = 200000;
 // the same) and how the keys and values were rounded: a line where it is ok, every step where it is not
 const GENERATION_CHECK_POS = 5, GENERATION_CHECK_TOKENS = 6;
 async function checkGeneration(): Promise<Verdicts> {
-  const model = GENERATE_CHECK, shape = layerShape(model), { dim, hidden, kvDim, headSize } = shape, form = tokenForm();
+  const model = GENERATE_CHECK, shape = layerShape(model), { dim, kvDim, headSize } = shape, form = tokenForm();
   const pos = GENERATION_CHECK_POS, count = GENERATION_CHECK_TOKENS, positions = pos + count + 1;
   const matrix = ([rows, n]: Shape, scale: number): Weights => ({ w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / shared.GROUP, scale) });
   const cache = () => new Uint16Array(positions * kvDim).map((_, i) => (i < pos * kvDim ? toHalf((Math.random() - 0.5) * 4) : 0));

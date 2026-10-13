@@ -89,9 +89,6 @@ export type Sink = {
   open(bytes: number, header: List<number[]>, dtype: Dtype, form: Dict<Partial<Form>>): void;
   write(offset: number, array: Bytes): void;
 };
-// T115: a conversion's dtype where none was asked for: the converter calls this once it knows the header, with the
-// size of the file as each dtype it may choose
-export type ChoosesDtype = (header: List<number[]>, form: Dict<Partial<Form>>, sizes: Dict<{ int8: number }>) => Dtype;
 
 // Pyodide, as far as the worker calls it
 export type Pyodide = {

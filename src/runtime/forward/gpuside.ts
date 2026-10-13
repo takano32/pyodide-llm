@@ -680,5 +680,3 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     get sampled() { return gpuSampled; },
   };
 }
-// (T368.4) what the rest of an engine has of its GPU's side
-export type GpuSide = ReturnType<typeof gpuSide>;

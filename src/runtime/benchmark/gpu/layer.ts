@@ -7,7 +7,7 @@ import { toHalf } from "./halves.ts";
 import { LAYER_POS, LAYER_MOST, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
   attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } from "./layerparts.ts";
 import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.ts";
-import type { Dispatch, Owned, Submission, Thrown, Timed } from "./device.ts";
+import type { Dispatch, Submission, Thrown, Timed } from "./device.ts";
 import type { AttentionPipes, Form, Grouping, LayerShape, MatrixKey, Step, Tried } from "./layerparts.ts";
 import type { Alive, AttentionLengths, AttentionRow, LayerFound, LayerRow, LayerStepsFound, StepsForm, StepTimed, Timestamps, Timing } from "../../contracts/benchmark.ts";
 // T368.7: what the steps' table times in turn: a form's whole layer, or a step alone
