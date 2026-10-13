@@ -16,12 +16,18 @@
 // Then the 64-bit builds on a memory of more than 4 GiB (what a 27B model runs on, in Chrome and Firefox): every address
 // argument low or high in every combination, the result held to the all-low one. The V8 of Node 24 on arm64 fails this
 // (it reads v128.load32_splat above 4 GiB at the low 32 bits); WebKit has no such memory and is skipped.
+// T363.4: and the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: Underdog Saluki's weights), every
+// type of the ten through every kernel, each held after every batch to tests/blocks-model.mjs, to the bit (the model's
+// text goes to the page; the codebooks are made up there, which the kernels do not mind: blocks-check.mjs is where the
+// reading is held to the converter's). matmul_sbw_tile where the engine's relaxed dot product multiplies signed bytes by
+// signed bytes, which is said. Then the 64-bit builds with every address low or above 4 GiB.
 //
 //   node tests/kernels-in-browser.mjs [--site https://takano32.github.io/pyodide-llm/] [chromium firefox webkit chrome msedge]
 // Exit 1 where a result is wrong. Needs playwright-core's browsers installed (the workflows' own step).
 import fs from "node:fs";
 import os from "node:os";
 import * as playwright from "playwright-core";
+import { blocksModel } from "./blocks-model.mjs";
 import { fetched } from "./fetching.mjs";
 import { closed, leave } from "./leave.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
@@ -55,6 +61,174 @@ async function wasm(name) {
 }
 const modules = { plain: await wasm("simdkernel_plain"), relaxed: await wasm("simdkernel_relaxed_plain") };
 const wideModules = { plain: await wasm("simdkernel_plain64"), relaxed: await wasm("simdkernel_relaxed_plain64"), addresses: ADDRESSES };
+// (T363.4. A site of before T363.5 serves no kernels of the blocks: they are then not checked there, and that is said)
+const blocks = await (async () => {
+  try {
+    return { plain: await wasm("blockkernel_plain"), relaxed: await wasm("blockkernel_relaxed_plain"), plain64: await wasm("blockkernel_plain64"),
+      relaxed64: await wasm("blockkernel_relaxed_plain64"), model: String(blocksModel), addresses: ADDRESSES };
+  } catch (error) {
+    if (!site) throw error;
+    return null;
+  }
+})();
+
+// runs in the page (T363.4): the kernels of llama.cpp's blocks. { relaxed, signed, results, high }
+async function inPageBlocks({ plain, relaxed, plain64, relaxed64, model, addresses }) {
+  const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const m = (0, eval)(`(${model})`)(), NAMES = Object.keys(m.TYPES);
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let seed = 3634;
+  const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
+  // codebooks of this page's own: magnitudes a grid may hold (the 7-bit side of a dot product), IQ1's -1, 0, 1, and 16
+  // signed values
+  const books = new Int8Array(m.BOOKS.bytes);
+  for (let i = 0; i < m.BOOKS.IQ1S; i++) books[i] = 1 + (next() % 62);
+  for (let i = m.BOOKS.IQ1S; i < m.BOOKS.IQ4NL; i++) books[i] = (next() % 3) - 1;
+  for (let j = 0; j < 16; j++) books[m.BOOKS.IQ4NL + j] = j === 0 ? -127 : j === 15 ? 127 : (next() % 255) - 127;
+  // rows of random bytes whose float16 scales are finite (blocks-check.mjs's)
+  const rowsOf = (name, count) => {
+    const size = m.TYPES[name][1], raw = Uint8Array.from({ length: count * size }, () => next() & 255);
+    const fix = (at) => { if ((raw[at + 1] & 0x7c) === 0x7c) raw[at + 1] &= ~0x04; };
+    for (let b = 0; b < count; b++) {
+      const p = b * size;
+      if (name === "IQ1_M") raw[p + 55] &= ~0x40;
+      else if (name === "Q2_K") { fix(p + 80); fix(p + 82); }
+      else if (name === "Q4_K") { fix(p); fix(p + 2); }
+      else fix(p);
+    }
+    return raw;
+  };
+  const activations = (n) => Int8Array.from({ length: n }, (_, j) => (j % 61 === 7 ? 127 : j % 67 === 11 ? -127 : (next() % 255) - 127));
+  const scales = (n) => Float32Array.from({ length: n / 32 }, () => Math.fround(1e-3 * (1 + (next() % 4000))));
+  const same = (got, want) => {
+    for (let i = 0; i < want.length; i++) if (!Object.is(got[i], want[i])) return `value ${i}: ${got[i]} not ${want[i]}`;
+    return null;
+  };
+  const results = [], batches = [1, 400, 4000, 30000];
+  async function check(name, call, verify) {
+    let calls = 0, wrong = null;
+    for (const size of batches) {
+      for (; calls < size; calls++) call();
+      await pause(100);
+      wrong = wrong ?? verify();
+    }
+    results.push({ name, wrong: wrong && `after up to ${calls} calls: ${wrong}`, calls });
+  }
+  const memory = new WebAssembly.Memory({ initial: 64 });
+  const make = (data) => new WebAssembly.Instance(new WebAssembly.Module(data), { env: { memory } }).exports;
+  const k = make(bytes(plain));
+  let r = null;
+  try { r = make(bytes(relaxed)); } catch (error) { r = null; }  // no relaxed SIMD in this engine
+  const I = new Int8Array(memory.buffer), U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer), N = new Int32Array(memory.buffer);
+  // the places: rows of two blocks, a prompt of five tokens (a tile of four and one more)
+  const ROWS = 6, n = 512, TOKENS = 5, frame = n + n / 2 + 96, os = ROWS * 4 + 24;
+  const tab = 65536, bookAt = tab + 65536, w = bookAt + 65536, xq = w + 65536, xs = xq + n, outs = xq + 65536, floatsAt = outs + 65536, scratch = floatsAt + 65536;
+  I.set(books, bookAt);
+  k.sb_tables(tab, bookAt);
+  const signed = r ? m.signedDots(r.signed_dots, I, N, scratch) : false;
+  for (const name of NAMES) {
+    const [type, size] = m.TYPES[name], raw = rowsOf(name, ROWS * 2);
+    U.set(raw, w);
+    const prompt = Array.from({ length: TOKENS }, (_, t) => {
+      const a = activations(n), sx = scales(n);
+      I.set(a, xq + t * frame);
+      F.set(sx, (xs + t * frame) / 4);
+      k.sums_x(xs + t * frame, xq + t * frame, n);
+      return m.expected(name, raw, 0, n, ROWS, books, a, sx);
+    });
+    const all = Float32Array.from({ length: TOKENS * (os / 4) }, (_, i) => (i % (os / 4) < ROWS ? prompt[Math.floor(i / (os / 4))][i % (os / 4)] : -7));
+    const token = (kernel) => [() => kernel(outs, xq, xs, w, tab, n, 0, ROWS, type), () => {
+      F.fill(-7, outs / 4, outs / 4 + ROWS);
+      kernel(outs, xq, xs, w, tab, n, 0, ROWS, type);
+      return same(F.subarray(outs / 4, outs / 4 + ROWS), prompt[0]);
+    }];
+    const tile = (kernel, ...more) => [() => kernel(outs, xq, xs, w, tab, n, 0, ROWS, TOKENS, os, frame, type, ...more), () => {
+      F.fill(-7, outs / 4, (outs + TOKENS * os) / 4);
+      kernel(outs, xq, xs, w, tab, n, 0, ROWS, TOKENS, os, frame, type, ...more);
+      return same(F.subarray(outs / 4, (outs + TOKENS * os) / 4), all);
+    }];
+    await check(`matmul_sb, ${name}`, ...token(k.matmul_sb));
+    const values = m.values(name, raw, 0, n, 1, books);
+    await check(`sb_row, ${name}`, () => k.sb_row(floatsAt, w, tab, n, type), () => {
+      F.fill(-7, floatsAt / 4, floatsAt / 4 + n);
+      k.sb_row(floatsAt, w, tab, n, type);
+      return same(F.subarray(floatsAt / 4, floatsAt / 4 + n), values);
+    });
+    if (r) {
+      await check(`matmul_sbr, ${name}`, ...token(r.matmul_sbr));
+      await check(`matmul_sbr_tile, ${name}`, ...tile(r.matmul_sbr_tile));
+      if (signed) await check(`matmul_sbw_tile, ${name}`, ...tile(r.matmul_sbw_tile, scratch));
+    }
+  }
+  {
+    const a = activations(n), want = m.sums(a), H = new Int16Array(memory.buffer);
+    I.set(a, xq);
+    await check("sums_x", () => k.sums_x(xs, xq, n), () => {
+      H.fill(-7, (xs + n / 8) / 2, (xs + n / 2) / 2);
+      k.sums_x(xs, xq, n);
+      return same(H.subarray((xs + n / 8) / 2, (xs + n / 2) / 2), want);
+    });
+  }
+  // ---- the 64-bit builds: every address argument low or above 4 GiB, in every combination, the first output the
+  // all-low one (which is the model's)
+  const high = await (async () => {
+    const HIGH = 4 * 2 ** 30 + 2 * 65536, pages = BigInt(Math.ceil((HIGH + 16 * 2 ** 20) / 65536));
+    let wide;
+    try {
+      wide = new WebAssembly.Memory({ initial: pages, address: "i64" });
+    } catch (error) {
+      try { wide = new WebAssembly.Memory({ initial: pages, index: "i64" }); } catch (second) { return { skipped: `no 64-bit memory (${error.message})` }; }
+    }
+    const wrap = (exports) => {
+      const out = { ...exports };
+      for (const [name, at] of Object.entries(addresses)) {
+        const kernel = exports[name];
+        if (kernel) out[name] = (...args) => { for (const i of at) args[i] = BigInt(args[i]); return kernel(...args); };
+      }
+      return out;
+    };
+    let k64, r64 = null;
+    try {
+      k64 = wrap(new WebAssembly.Instance(new WebAssembly.Module(bytes(plain64)), { env: { memory: wide } }).exports);
+    } catch (error) {
+      return { skipped: `the 64-bit kernels do not instantiate (${error.message})` };
+    }
+    try { r64 = wrap(new WebAssembly.Instance(new WebAssembly.Module(bytes(relaxed64)), { env: { memory: wide } }).exports); } catch (error) { r64 = null; }
+    const U = new Uint8Array(wide.buffer), I = new Int8Array(wide.buffer), F = new Float32Array(wide.buffer);
+    const LOW = 2 ** 20, UP = HIGH + 2 ** 20, n = 256, frame = 1024;
+    const found = [];
+    for (const name of NAMES) {
+      const [type] = m.TYPES[name], raw = rowsOf(name, 1), tokens = Array.from({ length: 4 }, () => [activations(n), scales(n)]);
+      const want = m.expected(name, raw, 0, n, 1, books, ...tokens[0])[0], value = m.values(name, raw, 0, n, 1, books)[0];
+      const cases = [
+        { name: "matmul_sb", args: ["out", "xq", "xs", "w", "tab"], want, call: (p) => k64.matmul_sb(p.out, p.xq, p.xs, p.w, p.tab, n, 0, 1, type) },
+        { name: "sb_row", args: ["out", "w", "tab"], want: value, call: (p) => k64.sb_row(p.out, p.w, p.tab, n, type) },
+        r64 && { name: "matmul_sbr", args: ["out", "xq", "xs", "w", "tab"], want, call: (p) => r64.matmul_sbr(p.out, p.xq, p.xs, p.w, p.tab, n, 0, 1, type) },
+        r64 && { name: "matmul_sbr_tile", args: ["out", "xq", "xs", "w", "tab"], want, call: (p) => r64.matmul_sbr_tile(p.out, p.xq, p.xs, p.w, p.tab, n, 0, 1, 4, 64, frame, type) },
+        r64 && signed && { name: "matmul_sbw_tile", args: ["out", "xq", "xs", "w", "tab", "scratch"], want,
+          call: (p) => r64.matmul_sbw_tile(p.out, p.xq, p.xs, p.w, p.tab, n, 0, 1, 4, 64, frame, type, p.scratch) },
+      ].filter(Boolean);
+      for (const c of cases) {
+        const bad = [];
+        for (let mask = 0; mask < 2 ** c.args.length; mask++) {
+          const p = Object.fromEntries(["out", "xq", "xs", "w", "tab", "scratch", "books"].map((arg, i) => [arg, ((mask >> c.args.indexOf(arg)) & 1 && c.args.includes(arg) ? UP : LOW) + i * 65536]));
+          I.set(books, p.books);
+          k64.sb_tables(p.tab, p.books);
+          U.set(raw, p.w);
+          tokens.forEach(([a, sx], t) => { I.set(a, p.xq + t * frame); F.set(sx, (p.xs + t * frame) / 4); k64.sums_x(p.xs + t * frame, p.xq + t * frame, n); });
+          F.fill(-7, p.out / 4, p.out / 4 + 40);
+          c.call(p);
+          if (!Object.is(F[p.out / 4], c.want)) bad.push(mask);
+        }
+        const alone = c.args.filter((_, i) => bad.includes(1 << i));
+        found.push({ name: `${c.name}, ${name}`, calls: 2 ** c.args.length,
+          wrong: bad.length ? `${bad.length} of ${2 ** c.args.length} placements wrong${bad.includes(0) ? " (all low too)" : ""}; above 4 GiB alone: ${alone.join(", ") || "only together"}` : null });
+      }
+    }
+    return { results: found };
+  })().catch((error) => ({ skipped: `the page could not run it (${String(error.message).split("\n")[0]})` }));
+  return { relaxed: Boolean(r), signed, results, high };
+}
 
 // runs in the page: [{ name, wrong }]: wrong is null or the first batch's mismatch
 async function inPage({ plain, relaxed }) {
@@ -487,6 +661,23 @@ for (const engine of engines.length ? engines : ["chromium"]) {
     for (const { name, wrong, calls } of high.results ?? []) {
       console.log(`kernels-in-browser:   ${wrong ? "WRONG" : "ok"}: above 4 GiB, ${name}${wrong ? ` ${wrong}` : ` (${calls} placements)`}`);
       if (wrong) failed = true;
+    }
+    // T363.4: the kernels of llama.cpp's blocks. A line a kernel: its ten types are named where one is wrong
+    if (!blocks) {
+      console.log("kernels-in-browser:   skipped: the kernels of llama.cpp's blocks: this site serves none");
+    } else {
+      const of = await page.evaluate(inPageBlocks, blocks);
+      console.log(`kernels-in-browser:   the blocks' kernels: this engine's relaxed dot product ${!of.relaxed ? "is not there" : of.signed ? "multiplies signed bytes by signed bytes (matmul_sbw_tile is checked)" : "does not multiply signed bytes by signed bytes (matmul_sbw_tile is not called)"}`);
+      for (const [where, list] of [["", of.results], ["above 4 GiB, ", of.high.results ?? []]]) {
+        const kernels = [...new Set(list.map(({ name }) => name.split(", ")[0]))];
+        for (const kernel of kernels) {
+          const mine = list.filter(({ name }) => name.split(", ")[0] === kernel), bad = mine.filter(({ wrong }) => wrong);
+          for (const { name, wrong } of bad) console.log(`kernels-in-browser:   WRONG: ${where}${name} ${wrong}`);
+          if (bad.length) failed = true;
+          else console.log(`kernels-in-browser:   ok: ${where}${kernel} (${mine.length > 1 ? `${mine.length} types, ` : ""}${mine[0].calls} ${where ? "placements" : "calls"}${mine.length > 1 ? " each" : ""})`);
+        }
+      }
+      if (of.high.skipped) console.log(`kernels-in-browser:   skipped: above 4 GiB, the blocks' kernels: ${of.high.skipped}`);
     }
   } finally {
     await closed(() => browser.close());  // (T141, T391.6: Windows' WebKit may never return from it)

@@ -66,6 +66,13 @@ if __name__ == "__main__":
         kind = "shared" if shared else "plain"
         plain_module(here / "kernel.ts", out / f"simdkernel_{kind}64.wasm", "simd,relaxed-simd", shared=shared, wasm64=True)
         plain_module(here / "kernel_relaxed.ts", out / f"simdkernel_relaxed_{kind}64.wasm", "simd,relaxed-simd", shared=shared, wasm64=True)
+    # T363.4: the kernels of llama.cpp's blocks (blocks.ts), in modules of their own: only a model with such rows
+    # fetches them
+    for shared in (False, True):
+        for wasm64 in (False, True):
+            kind = ("shared" if shared else "plain") + ("64" if wasm64 else "")
+            plain_module(here / "blocks.ts", out / f"blockkernel_{kind}.wasm", "simd", shared=shared, wasm64=wasm64)
+            plain_module(here / "blocks_relaxed.ts", out / f"blockkernel_relaxed_{kind}.wasm", "simd,relaxed-simd", shared=shared, wasm64=wasm64)
     # T163: the CPU section's ceilings of /benchmark/ (loops, not kernels), on the memory of its made-up model: plain,
     # and shared where the page is cross-origin isolated (the reading threads)
     for shared in (False, True):

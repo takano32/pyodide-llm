@@ -10,7 +10,8 @@ copied and there is no JavaScript glue. When they cannot be loaded, NumPy does t
 
 `kernel.ts` is a window (T356): the kernels are in `kernel/`, by what they are, and `kernel.ts` names every one of
 them in the order of the module's exports. `kernel_relaxed.ts` is one file. `six.ts` and `ternary.ts` are what both
-import (the widening of an int6 group and of a ternary one).
+import (the widening of an int6 group and of a ternary one). `blocks.ts` and `blocks_relaxed.ts` are the windows of
+two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 
 | file | what is in it |
 |---|---|
@@ -327,6 +328,84 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
   `tests/ternary-check.mjs` has a canary module for it and leaves its above-4 GiB config out where it fires, and
   `tests/kernels-in-browser.mjs` runs every kernel above 4 GiB in each browser that has such a memory (the 27B model
   runs there).
+
+## llama.cpp's blocks (2026-10-13, T363.4)
+
+`blocks.ts` and `blocks_relaxed.ts` are the windows of two more modules, `blockkernel_*.wasm`: the matrix products on
+rows kept as a GGUF has them, llama.cpp's blocks of 256 weights (Q2_K, Q4_K, IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S,
+IQ3_XXS, IQ3_S, IQ4_XS: the ten types Underdog Saluki 27B is made of, 2.3 bits a weight on average). The weights are
+never widened in memory: what a dot product takes is made of them in registers as they are read. `blocks/types.ts`
+has, at its head, what each type is to the kernels, the one arithmetic every kernel follows, and the tables.
+
+| kernel | module | what it does |
+|---|---|---|
+| `sb_tables(area, codebooks)` | `blockkernel` | the tables the others read (34992 bytes at `area`), of the checkpoint's row `codebooks`; returns the bytes written |
+| `sums_x(xs, xq, n)` | `blockkernel` | after `quantize_x(xq, xs, x, n, 0)`: the int16 sums of each 16 and each 8 activations, after the scales at `xs` (`n / 2` bytes in all) |
+| `matmul_sb(xout, xq, xs, w, tab, n, r0, r1, type)` | `blockkernel` | one token, rows `r0` to `r1`, without relaxed SIMD |
+| `matmul_sbr(…)` | `blockkernel_relaxed` | the same numbers to the bit, with relaxed SIMD |
+| `matmul_sbr_tile(xout, xq, xs, w, tab, n, r0, r1, count, os, frame, type)` | `blockkernel_relaxed` | a prompt's `count` tokens, four against one reading of a row: `matmul_sbr`'s numbers to the bit |
+| `matmul_sbw_tile(…, type, scratch)` | `blockkernel_relaxed` | the same with a row spread once as signed weights into `scratch` (`n + n / 4 + n / 64` bytes of one thread's own): only where `signed_dots` says the engine multiplies signed bytes by signed bytes |
+| `signed_dots(out, a, b)` | `blockkernel_relaxed` | the relaxed dot product of 16 bytes by 16, for the caller to ask that of every pair of bytes |
+| `sb_row(out, w, tab, n, type)` | `blockkernel` | a row as float32, each weight the converter's reader's value to the bit (a token's row of the embedding) |
+
+`type` is the type's number in a GGUF (ggml's: 10, 12, 16, 17, 18, 19, 21, 22, 23, 29). The form is T363.1's "rb3"
+(`docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md`): the magnitudes a grid holds are the 7-bit side of the relaxed
+dot product and the activations its signed side in all 8 bits, each given its weight's sign as it is loaded; a
+group's sum is an exact integer before it meets a float. So a row keeps no corrections, and the numbers do not depend
+on relaxed SIMD, on how many tokens a kernel takes, or on which side the signs are put.
+
+- **Modules of their own.** Built, they are 30 KB and 105 KB (5.7 and 16.1 KB gzipped) beside `kernel.ts`'s 23 KB and
+  `kernel_relaxed.ts`'s 7 KB (7.4 and 2.4): in those two, every visit would fetch them. `src/runtime/built.ts` names
+  the eight files; no page fetches them before a model with such rows does (T363.5).
+- **A type is a type parameter** (`blockOf<XXS2, R>(…)`), and so is relaxed SIMD or not. AssemblyScript compiles every
+  branch of an inlined function whatever constant it is called with (`if (kind == 16)` with `kind` the constant 16
+  keeps all ten types' code at every use: the first version took three minutes to fail to compile, and a call of
+  relaxed SIMD in a branch never taken fails a module built without it). A comparison of `idof<K>()` is settled as
+  the function is compiled. The type's number is looked at once a block.
+- **The tables are made at run time** (`sb_tables`): the grids as the checkpoint's row has them (IQ1's with one added),
+  the masks of the 7-bit signs, IQ4_XS's values with their magnitudes and signs, and four vectors. A small constant a
+  loop needs often (ones, sevens, fifteens of 32 bits) is a shift of a vector the kernel holds in a register: read
+  from the tables wherever it was used, it cost IQ1_M's kernel a tenth.
+- **The activations are int8 from -127 to 127** (`quantize_x` with no bias): -128 would keep its sign where its
+  weight's is negative.
+- **Above 4 GiB** (the 27B's weights are, on a 64-bit memory) the kernels load with `v128.load`, `load64_zero`,
+  `load32_zero` and `load64_lane`, none of which V8's Liftoff on arm64 reads at the low 32 bits of the address (it
+  does that to `load32_splat` and `load32_lane`): `tests/blocks-check.mjs` runs every kernel three times, as V8's
+  tiers come, with Liftoff alone and with TurboFan alone.
+- **`matmul_sbw_tile` is the first kernel that leans on what relaxed SIMD leaves open**: the second operand of its dot
+  product is a signed byte in all 8 bits, which arm64's SDOT multiplies exactly and x86's PMADDUBSW takes as unsigned.
+  The caller asks the engine with `signed_dots` (every pair of bytes: `tests/blocks-model.mjs`'s `signedDots()`), and
+  where the answer is the exact product the kernel's integers are `matmul_sbr`'s, so its numbers are too. CI's
+  WebKit, Firefox and Chromium on arm64 all answered yes, and all three on x86-64 no.
+
+`tests/blocks-check.mjs` holds the reading of every type to the converter's own (`convert/superblocks.py`, to the
+bit) and every kernel to `tests/blocks-model.mjs` (to the bit) on the eight builds; `tests/kernels-in-browser.mjs`
+calls them in each browser's engine up to 30000 times and above 4 GiB. Billions of weights a second, matrices of the
+27B's shapes read from memory (`tests/saluki-kernel-bench.mjs`, CI, 1 thread / 4 threads):
+
+| kernel and type | CI arm64 (Neoverse-N2), 1 / 4 threads | CI x86-64 (EPYC 9V45), 1 / 4 threads |
+|---|---:|---:|
+| `matmul_sbr`, IQ2_XXS (36% of what a token of the 27B reads) | 7.43 / 29.65 | 15.59 / 33.96 |
+| IQ2_XS | 5.76 / 23.00 | 12.78 / 27.91 |
+| IQ2_S | 5.62 / 22.49 | 12.33 / 26.76 |
+| IQ3_XXS | 5.14 / 20.57 | 10.31 / 20.82 |
+| IQ3_S | 4.53 / 18.10 | 7.39 / 17.64 |
+| IQ1_S | 8.19 / 32.72 | 14.95 / 31.90 |
+| IQ1_M | 6.20 / 24.73 | 13.81 / 28.80 |
+| IQ4_XS | 9.07 / 35.08 | 24.46 / 50.45 |
+| Q2_K | 9.77 / 38.77 | 28.59 / 57.06 |
+| Q4_K | 10.90 / 41.66 | 28.48 / 57.94 |
+| `matmul_sb` (no relaxed SIMD), IQ2_XXS | 6.31 / 25.16 | 12.16 / 25.37 |
+| `matmul_sb`, IQ3_S | 3.96 / 15.83 | 6.11 / 14.00 |
+| T363.1's forms in the same runs: rb3 (IQ2_XXS), IQ3_S, Q2_K, IQ1_M | 7.40, 4.26, 10.37, 6.39 / 29.57, 17.03, 41.15, 25.48 | 15.83, 7.41, 28.62, 13.36 / 34.14, 17.46, 57.27, 27.31 |
+| `matmul_t2r` (ternary: how Ternary Bonsai 2 27B runs) | 20.29 / 78.96 | 53.56 / 111.25 |
+| a prompt of 16 tokens, `matmul_sbr_tile`: IQ2_XXS, IQ3_S, IQ2_S, IQ1_M, Q2_K (times the token's kernel on each token) | 12.12 (1.65), 9.73 (2.17), 9.65 (1.74), 8.84 (1.44), 11.38 (1.18) / 48.15, 38.73, 38.46, 35.21, 45.35 | 31.82 (2.05), 20.93 (2.86), 23.42 (1.92), 18.15 (1.33), 31.01 (1.11) / 68.74, 45.34, 50.04, 38.10, 63.74 |
+| the same, `matmul_sbw_tile`: IQ2_XXS, IQ3_S, IQ2_S, IQ1_M | 16.17 (2.20), 15.31 (3.42), 13.30 (2.39), 13.57 (2.21) / 64.43, 60.69, 52.96, 53.89 | not called there |
+
+From those, the matrix products of one token of the 27B (25.6 billion weights, every type at its own speed, an
+estimate): 0.98 s on 4 threads of the Neoverse-N2 and 3.90 s on 1; 0.87 s and 1.91 s on the EPYC 9V45. Against
+T363.1's forms the kernels are the same within 2% but for Q2_K on arm64 (0.94) and IQ1_M on arm64 (0.97): a type's
+scales are read as a vector and the units' sums made one lane each, for every type alike.
 
 ## Rules that are easy to break
 

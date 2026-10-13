@@ -4,7 +4,9 @@
 #   python tests/saluki_blocks.py <folder>
 #
 # writes <folder>/grids.bin (the grids of convert/grids.py the forms look up: IQ2XXS's 256 entries of 8 values, IQ3S's
-# 512 of 4, IQ1S's 2048 of 8, one int8 a value) and, for every <folder>/<TYPE>.blocks (whole blocks of the type, as a
+# 512 of 4, IQ1S's 2048 of 8, one int8 a value), <folder>/codebooks.bin (T363.4: a checkpoint's row "codebooks",
+# convert/grids.py's codebooks(), which the kernels of kernels/blocks.ts make their tables of: tests/blocks-check.mjs)
+# and, for every <folder>/<TYPE>.blocks (whole blocks of the type, as a
 # GGUF holds them), <folder>/<TYPE>.f32: their weights as convert/superblocks.py reads them, float32.
 import sys
 from pathlib import Path
@@ -16,11 +18,12 @@ sys.path.insert(0, str(HERE))
 from tree import python_folder  # noqa: E402
 
 sys.path.insert(0, python_folder(HERE.parent))
-from convert.grids import grid  # noqa: E402
+from convert.grids import codebooks, grid  # noqa: E402
 from convert.superblocks import SUPERBLOCKS  # noqa: E402
 
 folder = Path(sys.argv[1])
 (folder / "grids.bin").write_bytes(b"".join(grid(name).astype(np.int8).tobytes() for name in ("IQ2XXS", "IQ3S", "IQ1S")))
+(folder / "codebooks.bin").write_bytes(codebooks()[0])
 for blocks in sorted(folder.glob("*.blocks")):
     _, size, read = SUPERBLOCKS[blocks.stem]
     raw = blocks.read_bytes()

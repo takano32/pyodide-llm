@@ -211,6 +211,10 @@ part "the delta rule's kernels" node tests/delta-check.mjs
 part "the convolution layer's kernel" node tests/conv-check.mjs
 # T230, T231: the kernels of the ternary weights against the same arithmetic in JavaScript, to the bit (under a second)
 part "the ternary weights' kernels" node tests/ternary-check.mjs
+# T363.4: the kernels of llama.cpp's blocks (Underdog Saluki's weights as its GGUF has them) against the same arithmetic
+# in JavaScript, to the bit, and the reading against the converter's own (one call of Python); every build, and each as
+# Liftoff alone and TurboFan alone compile it (about 4 seconds)
+part "the kernels of llama.cpp's blocks" node tests/blocks-check.mjs
 # T237: the kernels of the rotated basis against the same arithmetic in JavaScript, to the bit (under a second)
 part "the rotated basis's kernels" node tests/rotate-check.mjs
 # T243 (the review): the look at the GPU's float16 keys and values, finite_f16, on the four builds of the kernels forward.js
