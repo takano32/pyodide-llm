@@ -17,7 +17,7 @@ for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
 // T362: blocks that are the same on every machine, and what a 64-bit NumPy reads of them
-for (const file of ["tests/superblock_cases.py", "tests/fixtures/superblocks.json"]) {
+for (const file of ["tests/superblock_cases.py", "tests/fixtures/superblocks.json", "tests/saluki_form.py"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
 
@@ -128,6 +128,39 @@ for which, index in (("last", last_matrix), ("largest", largest)):
         f"the last row of the 27B's {which} matrix is written at {placed.writes}"
     assert placed.writes[1][0] + placed.writes[1][1] == ends[index], f"the scales of its {which} matrix do not end where the matrix ends"
     assert placed.writes[1][0] > 2 ** 32, f"the scales of its {which} matrix are written at {placed.writes[1][0]}: not past 2^32"
+# T363.2: Underdog Saluki 27B as the page will hold it, its matrices in the blocks of its GGUF, a type to a layer (the
+# form's "kinds"; tests/saluki_form.py has the real file's counts): 7.96 GB whose stacks are laid out a layer at a time.
+# The size the note counted, every place a Python integer, the layers of the stacks one after the other past 2^32, and
+# the last layer of a stack of more than 2^31 values where plain arithmetic puts it.
+import saluki_form
+saluki_rows = llama2_numpy.tensor_rows(saluki_form.HEADER, saluki_form.FORM)
+saluki_places = llama2_numpy.placed(saluki_rows, "int8")
+saluki_bytes = llama2_numpy.file_size(saluki_rows, "int8")
+assert saluki_bytes == saluki_form.BYTES + llama2_numpy.CODEBOOKS == 7956712492 == llama2_convert.checkpoint_size(saluki_form.HEADER, "int8", saluki_form.FORM), \\
+    f"Saluki 27B in its blocks is {saluki_bytes} bytes (NumPy's 32-bit integers?)"
+assert llama2_numpy.checkpoint_dtype(saluki_form.HEADER, saluki_bytes, saluki_form.FORM) == "int8"
+saluki_at = 28
+for place in saluki_places:
+    for part in place.parts:
+        assert type(part.offset) is int and type(part.size) is int and part.offset == saluki_at, f"{place.row.name} is at {part.offset}, not {saluki_at}"
+        saluki_at += part.size
+assert saluki_at == saluki_bytes and saluki_places[-1].row.name == "codebooks"
+saluki_w3 = next(place for place in saluki_places if place.row.name == "w3")
+assert math.prod(saluki_w3.row.shape) > 2 ** 31 and len(saluki_w3.layers) == 64 and saluki_w3.offset > 2 ** 32, "this checks nothing"
+saluki_sizes = {"Q2_K": 84, "Q4_K": 144, "IQ2_XXS": 66, "IQ2_XS": 74, "IQ2_S": 82, "IQ3_XXS": 98, "IQ3_S": 110, "IQ1_S": 50, "IQ1_M": 56, "IQ4_XS": 136}
+saluki_blocks = 17408 * 5120 // 256
+assert [layer.size for layer in saluki_w3.layers] == [saluki_blocks * saluki_sizes[kind] for kind in saluki_form.KINDS["w3"]]
+assert saluki_w3.layers[-1].offset == saluki_w3.offset + sum(saluki_blocks * saluki_sizes[kind] for kind in saluki_form.KINDS["w3"][:-1])
+assert saluki_w3.size == sum(saluki_blocks * saluki_sizes[kind] for kind in saluki_form.KINDS["w3"])
+# (a stack that is one type throughout is sized from all its values at once, 5.7e9 of them)
+saluki_one = llama2_numpy.placed([row._replace(kind="IQ3_S") for row in saluki_rows if row.name == "w3"], "int8")[0]
+assert saluki_one.size == 64 * saluki_blocks * 110 > 2 ** 31 and saluki_one.scales == 28 + saluki_one.size and not saluki_one.layers
+# (and the engine reads a block with the converter's reader, which it asks for when it meets one)
+import superblock_cases
+for name, kind in llama2_numpy.BLOCKS.items():
+    raw = superblock_cases.blocks(name, kind.block, 8)
+    with np.errstate(invalid="ignore"):
+        assert superblock_cases.digest(kind.floats(np.frombuffer(raw, dtype=np.uint8), None, 256)) == superblock_cases.digest(llama2_convert.SOURCES[name].read(raw))
 dim, hidden, layers, heads, vocab, positions = 32, 64, 2, 4, 320, 16
 rng = np.random.default_rng(3)
 normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
