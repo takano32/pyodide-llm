@@ -198,6 +198,14 @@ const readBack = async (found) => {
   const withVocabulary = { ...model, hf: { ...model.hf, vocabulary: { repo: "c/d", revision: "4567", tokenizer: "tokenizer.model" } } };
   assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8:4096");
   assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8:4096");
+  // T363.5: a conversion that kept a GGUF's blocks is another than the same file widened, and neither serves the other
+  const blocks = { ...model, conversion: { dtype: "int8", blocks: true } };
+  assert.equal(decodeURIComponent(kept.keptName(blocks)), "a/b@0123:int8:4096:blocks");
+  assert.equal(kept.keptName({ ...model, conversion: { dtype: "int8", blocks: false } }), kept.keptName({ ...model, conversion: { dtype: "int8" } }));
+  assert.deepEqual(kept.keptNames(blocks).map(decodeURIComponent), ["a/b@0123:int8:4096:blocks"]);
+  const one = (name) => ({ name, where: "opfs", manifest: { converter: kept.CONVERTER } });
+  assert.ok(kept.serves(one(kept.keptName(blocks)), blocks) && !kept.serves(one(kept.keptName(blocks)), { ...model, conversion: { dtype: "int8" } }) &&
+    !kept.serves(one(kept.keptName(model)), blocks), "a model's blocks kept serve the one that asks for them, and no other");
 }
 // T136's review: a model whose source changed (the 19 of stage 2) keeps its new conversion under a new name. What it
 // was kept as before is replaced: never served, and in the way of the new one where the room is short. Its other
@@ -225,8 +233,16 @@ const readBack = async (found) => {
   // is one of them. A packing that is added there is added to replaced()'s names in src/runtime/kept.ts
   const { PACKED } = await import(runtimeUrl("jobs.js"));
   assert.ok(["ternary", "int8", "int6"].every((dtype) => Object.hasOwn(PACKED, dtype)));
-  for (const dtype of Object.keys(PACKED)) await keepAs(moved, dtype);
-  for (const dtype of [...Object.keys(PACKED), undefined]) {
+  // (T363.5: the packings a file's dtype may be: llama.cpp's blocks are a row's alone, kept under conversion.blocks)
+  const dtypes = Object.keys(PACKED).filter((name) => PACKED[name].tabled === undefined);
+  for (const dtype of dtypes) await keepAs(moved, dtype);
+  // (and the same source with its blocks kept: its own too, whichever is asked for)
+  await kept.keep({ ...moved, conversion: { dtype: "int8", blocks: true } }, manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  for (const blocks of [true, false]) {
+    assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype: "int8", blocks } })), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"],
+      `asking for the blocks ${blocks ? "kept" : "widened"} replaces neither of the two`);
+  }
+  for (const dtype of [...dtypes, undefined]) {
     assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype } })), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"],
       `asking for ${dtype ?? "no bits"} replaces what its source kept before, and none of its own other bits ` +
       "(a packing of jobs.ts's PACKED that kept.ts's replaced() does not name is deleted here: add its name there)");

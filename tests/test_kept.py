@@ -21,7 +21,7 @@ import llama2_convert
 from convert import grids
 from convert.stream import kept_form, order, stays
 from llama2_convert import SOURCES, Conversion, Kept, Stream, Writer, transformed, unsplit, untiled, unturned
-from llama2_numpy import (BLOCKS, CODEBOOKS, FORM, SEVERAL_KINDS, Llama, checkpoint_dtype, external_tensors, file_size, placed,
+from llama2_numpy import (BLOCKS, CODEBOOKS, FORM, Llama, checkpoint_dtype, external_tensors, file_size, placed,
                           tensor_rows)
 
 TOKENS = (3, 9, 27, 5, 1, 30)
@@ -208,18 +208,23 @@ def test_a_float32_file_keeps_the_blocks_too(saluki):
     assert np.array_equal(logits(saluki.read(floats)).view(np.uint32), logits(saluki.read(saluki.kept)).view(np.uint32))
 
 
-def test_forward_js_is_not_given_such_a_checkpoint_yet(saluki):
-    """Nor one that says "tiled" alone: forward.js would multiply the output matrix by an input in the other order."""
+def test_forward_js_is_given_such_a_checkpoint_with_its_kinds_and_its_order(saluki):
+    """T363.5: the plan says every layer's type where it is and that the output matrix is tiled; one that says "tiled"
+    alone says that too (forward.js would multiply the output matrix by an input in the other order without)."""
     from test_external import Outside
     for conversion, more in ((saluki.kept, {}), (saluki.wide, {"tiled": True})):
         options = {**conversion.options, **more}
-        with pytest.raises(ValueError) as refused:
-            Llama(None, bytes(conversion.tokenizer), external=Outside(bytes(conversion.checkpoint)), **options)
-        assert str(refused.value) == SEVERAL_KINDS
-        with pytest.raises(ValueError) as refused:
-            external_tensors(conversion.stream.header, options["dtype"], options)
-        assert str(refused.value) == SEVERAL_KINDS
-    Llama(None, bytes(saluki.wide.tokenizer), external=Outside(bytes(saluki.wide.checkpoint)), **saluki.wide.options)
+        outside = Outside(bytes(conversion.checkpoint))
+        Llama(None, bytes(conversion.tokenizer), external=outside, **options)
+        assert outside.plan["tiled"] is True
+        assert outside.plan["tensors"] == external_tensors(conversion.stream.header, options["dtype"], options)
+    kinds = saluki.kept.options["kinds"]
+    for name, kind in kinds.items():
+        said = outside.plan["tensors"] if False else external_tensors(saluki.kept.stream.header, "int8", saluki.kept.options)
+        assert [layer["kind"] for layer in said[name]["layers"]] == list(kind) if isinstance(kind, list) else said[name]["kind"] == kind
+    plain = Outside(bytes(saluki.wide.checkpoint))
+    Llama(None, bytes(saluki.wide.tokenizer), external=plain, **saluki.wide.options)
+    assert plain.plan["tiled"] is False and all("layers" not in tensor for tensor in plain.plan["tensors"].values())
 
 
 # ---- however the file comes

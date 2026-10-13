@@ -12,7 +12,7 @@ from engine_plans import External, Handed, nowhere
 from engine.layout import LAYOUTS, stateful_kinds
 from engine.plan import ATTENTION, Settings
 from engine.tensors import rope_tables
-from llama2_numpy import (ATTENDING, EVERY, OUTLIER_CHANNELS, QUANTIZED, SEVERAL_KINDS, STATEFUL, TABLE, Dims, Llama,
+from llama2_numpy import (ATTENDING, EVERY, OUTLIER_CHANNELS, QUANTIZED, STATEFUL, TABLE, Dims, Llama,
                           external_tensors, file_size, forward_plan, layer_facts, linear_widths, outlier_channels,
                           plan_widths, rope_frequencies, rotated_form, rotated_widths, sign_bits, tensor_rows)
 
@@ -38,7 +38,7 @@ cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0
 # the keys forward.ts is handed: the 24 of before T359.5, its two, and the two facts of T375.2
 KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_size", "vocab_size", "seq_len", "rotary",
         "parallel_residual", "kv_start", "rms_norm_eps", "shared_classifier", "int8", "relaxed", "tensors", "derived",
-        "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn"}
+        "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn", "tiled", "own_kinds"}
 
 
 def no_bytes(offset, length):
@@ -221,9 +221,27 @@ def test_the_tables_python_computes_are_the_plans_bytes():
 
 def test_a_file_no_engine_outside_can_take_has_no_plan():
     header = [256, 768, 4, 8, 4, 2048, 320]
-    with pytest.raises(ValueError) as refused:
-        forward_plan(Dims(header, {"kinds": {"wq": "float16"}}), "int8", flat, int8=True, kv_start=256)
-    assert str(refused.value) == SEVERAL_KINDS
+    # (T363.5: a row with a kind of its own is said as that kind, a stack with one for each layer by its layers, and
+    # every other tensor as in the file without: only what follows a row of another size has moved)
+    plain = forward_plan(Dims(header), "int8", flat, int8=True, kv_start=256)
+    said = forward_plan(Dims(header, {"kinds": {"wq": "float16", "w1": ["int8", "int6", "IQ2_XXS", "int8"]}}), "int8", flat, int8=True, kv_start=256)
+    assert said["tensors"]["wq"] == {**plain["tensors"]["wq"], "kind": "f16", "group": 0, "scales": 0}
+    w1 = said["tensors"]["w1"]
+    assert w1["kind"] == "layers" and w1["shape"] == [4, 768, 256] and (w1["group"], w1["scales"]) == (0, 0)
+    assert [layer["kind"] for layer in w1["layers"]] == ["int8", "int6", "IQ2_XXS", "int8"]
+    assert [set(layer) for layer in w1["layers"]] == [{"kind", "offset", "group", "scales"}] * 4
+    at = w1["offset"]
+    for layer, values in zip(w1["layers"], (768 * 256, 768 * 256 * 24 // 32, 768 * 66, 768 * 256)):
+        assert layer["offset"] == at and layer["scales"] == at + values and layer["group"] == (256 if layer["kind"] == "IQ2_XXS" else 32)
+        at += values + (0 if layer["kind"] == "IQ2_XXS" else 768 * 256 // 32 * 4)
+    assert said["tensors"]["codebooks"]["kind"] == "u8", "a file with blocks says where its codebooks are"
+    assert all("layers" not in tensor for tensor in plain["tensors"].values()) and "codebooks" not in plain["tensors"]
+    assert said["tiled"] is False and forward_plan(Dims(header), "int8", flat, int8=True, kv_start=256, tiled=True)["tiled"] is True
+    # (the outlier channels are of a classifier in the dtype's own packing: no weight of a block is read alone)
+    loud = lambda offset, length: np.where(np.arange(length // 4) % 97 == 3, 50.0, 1.0).astype(np.float32).tobytes()
+    assert forward_plan(Dims(header), "int8", loud, int8=True, kv_start=256)["outliers"]
+    for kind in ("IQ3_S", "float32", "float16"):
+        assert forward_plan(Dims(header, {"kinds": {"token_embedding_table": kind}}), "int8", loud, int8=True, kv_start=256)["outliers"] == []
     # (a packed kind holds rows of whole groups alone)
     with pytest.raises(ValueError, match="128"):
         forward_plan(Dims([200, 440, 3, 4, 2, 1000, 96]), "ternary", flat, int8=True, kv_start=256)

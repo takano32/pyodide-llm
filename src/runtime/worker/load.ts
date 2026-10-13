@@ -2,14 +2,14 @@
 // threads and the GPU's report that follow it.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady } from "./runtime.ts";
+import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady, forwardModule, blockKernels } from "./runtime.ts";
 import { threadsRequest, root, switchesNow } from "./request.ts";
 import { llama, engineNow, adopted, letGo } from "./loaded.ts";
 import { since, took, secondsSoFar } from "./clock.ts";
-import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes } from "./weights.ts";
+import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes, runsPacked } from "./weights.ts";
 import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
-import { convert } from "./convert.ts";
+import { convert, converter } from "./convert.ts";
 import type { Sized } from "./sources.ts";
 import { lastLine, told } from "../failure.ts";
 import type { Thrown } from "../failure.ts";
@@ -83,6 +83,9 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
     options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head!) : model.options;
     head ??= await checkpoint.header;
     signal.throwIfAborted();
+    // T363.5: a checkpoint whose options give rows the kinds of llama.cpp's blocks (a visitor's file with its settings)
+    // runs on the kernels of those, fetched for it; where NumPy computes, the readers of the blocks are the converter's
+    if (forwardModule?.takesBlocks(options?.kinds)) await (runsPacked() ? blockKernels() : converter(signal));
     weights = weightsBuffer(model.bytes!, headerInts(head!), options);
   } catch (error) {
     // T129 (3): a load that ends before its weights have a place (the runtime never came, the file is none the engine

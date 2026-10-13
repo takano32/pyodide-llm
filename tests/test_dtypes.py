@@ -13,7 +13,7 @@ from test_external import Outside
 
 import llama2_convert
 from llama2_convert import GGUF_TENSORS, SOURCES, Conversion, Writer, checkpoint_size, read_types, source_of
-from llama2_numpy import (DTYPES, EITHER, FORM, PACKED, QUANTIZED, SEVERAL_KINDS, Llama, checkpoint_dtype, dtype_of,
+from llama2_numpy import (DTYPES, EITHER, FORM, PACKED, QUANTIZED, Llama, checkpoint_dtype, dtype_of,
                           external_tensors, file_size, kind_of, placed, tensor_rows)
 
 MATRICES = ["token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2", "w3"]
@@ -207,21 +207,22 @@ def test_a_kind_is_given_to_a_row_of_the_model_and_is_a_dtype_and_suits_the_row(
     assert FORM["kinds"] is None
 
 
-def test_forward_js_is_not_given_a_file_of_several_kinds():
-    """forward.js takes one dtype for a file (its kernels are chosen by the file's, T375): with the weights outside
-    Python such a file is refused in words, as it is placed and as the model is built."""
+def test_forward_js_is_given_a_file_of_several_kinds_row_by_row():
+    """T363.5: forward.js chooses its kernels by the tensor: with the weights outside Python a row of a kind of its own
+    is said as that kind where it is, as the file is placed and as the model is built, and the others as ever."""
     config, weights = synthetic_weights(dim=128, hidden_dim=256)
     kinds = {"wq": "int6"}
     data = written(config, weights, "int8", kinds)
     tokenizer = pack_tokenizer(tiny_vocab(config["vocab_size"]))
-    with pytest.raises(ValueError, match="several kinds") as refusal:
-        Llama(None, tokenizer, dtype="int8", kinds=kinds, external=Outside(data))
-    assert str(refusal.value) == SEVERAL_KINDS
-    with pytest.raises(ValueError, match="several kinds"):
-        external_tensors(header_of(config), "int8", {"kinds": kinds})
+    outside = Outside(data)
+    Llama(None, tokenizer, dtype="int8", kinds=kinds, external=outside)
+    placed_outside = external_tensors(header_of(config), "int8", {"kinds": kinds})
+    assert outside.plan["tensors"] == placed_outside and placed_outside["wq"]["kind"] == "int6"
     # (and without the kinds the same model goes there as ever)
     plain = Outside(written(config, weights, "int8"))
     Llama(None, tokenizer, dtype="int8", external=plain)
+    assert plain.plan["tensors"]["wq"]["kind"] == "int8" and plain.plan["tensors"]["token_embedding_table"] == placed_outside["token_embedding_table"]
+    assert plain.plan["tensors"]["wk"]["offset"] > placed_outside["wk"]["offset"], "what follows six bits is sooner in the file"
     assert plain.plan["tensors"]["wq"]["kind"] == "int8" and external_tensors(header_of(config), "int8", {"kinds": None})["wq"]["kind"] == "int8"
 
 

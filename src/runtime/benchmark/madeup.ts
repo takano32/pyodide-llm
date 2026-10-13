@@ -64,6 +64,6 @@ export function madeUpModel() {
     linear: null, convolution: null, unturned: [], rotated: 0,
     layers: Array.from({ length: layers }, (_, place) => ({ kind: "attention" as const, place, rope: true })),
     widths: { q: heads * headSize, kv: kvDim, linear: null, rotated: [...new Set([dim, heads * headSize, hidden])].sort((a, b) => a - b) },
-    layer_norm: false, gated_ffn: true };
+    layer_norm: false, gated_ffn: true, tiled: false, own_kinds: false };
   return { plan, size: offset, header: [dim, hidden, layers, heads, kvHeads, vocab, seqLen] };
 }

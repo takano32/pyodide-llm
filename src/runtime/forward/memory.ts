@@ -3,13 +3,13 @@
 // whether it fits a 32-bit or a 64-bit memory, and the WebAssembly memory itself (weightsMemory).
 // A module of src/runtime/forward.ts, which exports its names as before.
 
-import { CONTROL_BYTES, BATCH, packingOf } from "../jobs.ts";
+import { CONTROL_BYTES, BATCH, BLOCK_TABLES, SPREAD_THREADS, packingOf, spreadBytes } from "../jobs.ts";
 import { GPU_BLOCK } from "./choice.ts";
 import { architectureOf } from "./architectures.ts";
 import { LAYER_KINDS } from "./kinds.ts";
 import { kindsHad, sizesOfForm } from "./sizes.ts";
 import type { Kinds } from "./kinds.ts";
-import type { Arch, Dtype, Rotated, Stateful } from "../contracts/form.ts";
+import type { Arch, Dtype, Form, Rotated, Stateful } from "../contracts/form.ts";
 
 // (T368.4, the types) a checkpoint's header: the 7 ints of the legacy format
 export type Header = number[];
@@ -32,6 +32,8 @@ export type Footprint = {
   gpu?: boolean;
   direct?: boolean;
   rotated?: Rotated | null;
+  kinds?: Form["kinds"];
+  weights?: number;
 } & Stateful;
 
 const PAGE = 65536;
@@ -94,6 +96,12 @@ const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size
  * (its signs for every width, and a place in the frame for a rotated input). And the form's numbers of the layers that
  * keep a state and no keys and values, each under its kind's name (linear, T229: the linear-attention layers of a
  * Qwen3.5; convolution, T260: the convolution layers of an LFM2), which the kinds read.
+ * T363.5: kinds, the form's: the rows the file stores otherwise than its dtype does (a kind's name, or one for each
+ * layer of a stack). What their kernels need beside them is counted by their lines of PACKED (the tables and the
+ * scratch of llama.cpp's blocks, the room their activations take). weights: of a file with kinds, how many weights of
+ * its matrices are still the dtype's own (Python counts them of the rows: llama2_numpy's dtype_weights(); there are no
+ * rows here): what relaxed SIMD's corrections are for. Left out, every weight of the file is taken for one: an upper
+ * bound, a ninth of the file too high where all the matrices are blocks.
  * T375.5: nothing here names an architecture, a dtype or a kind of layer. What the layers put in a token's frame and
  * keep besides is their kinds' (kinds: forward/kinds.ts's table, the engine's own: frame(), state(), cached), asked
  * with what sizes the model as the form says it (sizes.ts's sizesOfForm()); what the architecture's name says is its
@@ -107,6 +115,9 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // the kinds read and this does not)
   const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
   const { positions, rope } = architectureOf(arch), packing = packingOf(dtype);
+  // (T363.5) the packings the model's rows are in: the dtype's, and those of the kinds its form gives rows
+  const own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
+  const packings = packing ? [packing, ...own] : own;
   // the kinds of layers this model has, and what each puts in a token's frame
   const had = kindsHad(sizes, kinds), frames = had.map(({ kind }) => kinds[kind].frame(sizes));
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others; a ternary file's rows are whole
@@ -123,8 +134,11 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // of their corrections or outlier columns is here)
   // (the weights of a packed file: its bytes, by the weights a byte holds: a group's values and its scale)
   if (packing && !direct) {
-    const weights = size * (packing.group / (packing.rowBytes(packing.group) + 4)) - tables;
-    bytes += onInt8 ? (relaxed && packing.sums ? (weights / packing.group) * 4 : 0) + Math.min(outliers, dim) * (vocab + 1) * 4 : weights * 4;
+    const weights = options.weights ?? size * (packing.group / (packing.rowBytes(packing.group) + packing.scale)) - tables;
+    // (T363.5: no outlier channels of a classifier in a kind of the form's that no weight is read of alone: plan.py)
+    const classifier = options.kinds?.[signedVocab < 0 ? "wcls" : "token_embedding_table"];
+    const columns = classifier === undefined || (typeof classifier === "string" && Boolean(packingOf(classifier)?.value)) ? Math.min(outliers, dim) * (vocab + 1) * 4 : 0;
+    bytes += onInt8 ? (relaxed && packing.sums ? (weights / packing.group) * 4 : 0) + columns : weights * 4;
   } else if (dtype === "float16") bytes += size * 2;  // (no packing: the whole file widened to float32)
   // what a packed file leaves out: the positions widened, and the RoPE tables Python computes (two of seqLen ×
   // headSize / 2 float32; a model without RoPE has them too, of zeros, at any dtype; T130's review)
@@ -133,7 +147,14 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // the frames of BATCH tokens and what the kinds keep of a token apart from its frame (the scores of its
   // attention), the logits; the keys and values of a block from the GPU (in float16) and its rows
   const apart = frames.flatMap(({ apart = [] }) => apart).reduce((sum, [, each]) => sum + align(each), 0);
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, frames, rotated, packing?.xs)) + apart) + vocab * 4;
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, frames, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined);
+  bytes += BATCH * (frameBytes(inFrame) + apart) + vocab * 4;
+  // T363.5: the tables of the kernels of llama.cpp's blocks, the bytes the engine asks its relaxed SIMD with, and the
+  // scratch a thread spreads a row into (as wide as the widest input: an upper bound, taken where the engine's relaxed
+  // SIMD multiplies signed bytes)
+  if (own.some(({ tabled }) => tabled !== undefined) && onInt8) {
+    bytes += align(BLOCK_TABLES) + (relaxed ? 64 + SPREAD_THREADS * spreadBytes(inFrame.find(([name]) => name === "xq")![1]) : 0);
+  }
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += sizes.widths.rotated.reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
@@ -168,6 +189,10 @@ export function footprint(header: Header, size: number, options: Footprint = {},
     (shared ? kvHeads >= heads || past : past && (!needsWide(size, others + 2 * keys) || pastWide(size, others + 4 * keys)));
   return others + keys * (half ? 2 : 4);
 }
+/** T363.5: whether a form's kinds (the options of a model) have rows of llama.cpp's blocks: such a model runs on the
+ * kernels of those, which the worker fetches for it (and for no other) */
+export const takesBlocks = (kinds: Form["kinds"] | undefined) => Object.values(kinds ?? {}).flat().some((kind) => packingOf(kind)?.tabled !== undefined);
+
 /** T160: whether the keys and values of a model that may keep them in float16 (footprint's halfKV) do, as footprint
  * counts them. The worker hands this to createForward: what it sized the memory for. */
 export const keysInHalf = (header: Header, size: number, options: Footprint = {}) =>

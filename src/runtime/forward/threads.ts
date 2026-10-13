@@ -13,7 +13,9 @@ import type { ThreadsCompared } from "../contracts/messages.ts";
 // (T368.4, the types) a software thread, started and warm, and what starts one (the worker's spawn(): share is the
 // thread's own word of the control area)
 export type Thread = { terminate?(): void };
-export type Spawn = (start: { memory: WebAssembly.Memory; wide: boolean; plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; share: number }) => Promise<Thread>;
+// (blocks, T363.5: the modules of the kernels of llama.cpp's blocks, for a model with such rows; else null)
+export type Spawn = (start: { memory: WebAssembly.Memory; wide: boolean; plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; blocks: Blocks | null; share: number }) => Promise<Thread>;
+type Blocks = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null };
 // a comparison of two counts as the page is told it, and as the log keeps it
 export type Compared = Omit<ThreadsCompared, "type" | "load" | "model">;
 type Logged = { best: number; candidate: number; times: Record<number, number[]>; faster: boolean; whileGpu: boolean };
@@ -42,7 +44,7 @@ const CHUNKS_PER_THREAD = 4;
  * it): the part knows nothing of the plan. control: the control area (control.js), which is the engine's and the GPU's
  * side's as well. */
 export function softwareThreads({ memory, wide, kernels, spawn, control, runRows, gpuGettingReady }: {
-  memory: WebAssembly.Memory; wide: boolean; kernels: { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null }; spawn: Spawn | null | undefined;
+  memory: WebAssembly.Memory; wide: boolean; kernels: { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; blocks?: Blocks | null }; spawn: Spawn | null | undefined;
   control: Control; runRows: (job: Job, r0: number, r1: number) => unknown; gpuGettingReady: () => boolean }) {
   const { ctl, waitUntil } = control;
   // ---- the matrix multiplications, in phases: the matmuls that read the same input (q, k and v; w1 and w3) go
@@ -239,7 +241,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     const since = stops;
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl!, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
-      const helper = await spawn!({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, share: helpers.length + 1 });
+      const helper = await spawn!({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, blocks: kernels.blocks ?? null, share: helpers.length + 1 });
       if (lost || stops !== since) {
         helper.terminate?.();
         return false;

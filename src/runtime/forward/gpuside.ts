@@ -37,7 +37,8 @@ export type Shape = {
 // scales and its corrections (0: none). onGpu (T156): on the GPU alone, its addresses the checkpoint's offsets.
 // T375.4: job and ready are the CPU's (the kind of the job that multiplies by it and what makes its input ready:
 // engine.ts's matmuls()); this side reads neither
-export type Held = { rows: number; n: number; kind: "f32" | Packed; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null };
+// (T363.5: layers, of a stack whose layers are each of a kind of their own: each layer's matrix, and kind is "layers")
+export type Held = { rows: number; n: number; kind: "f32" | Packed | "layers"; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null; layers?: Held[] };
 // T375.4, T375.5: whether the GPU takes a matrix as it is packed: its packing's line of jobs.ts's PACKED says how the GPU
 // holds it (gpu.ts widens int6 to int8, T155, and takes ternary as it is, T232), in the groups that line says. A
 // matrix that is not packed, or whose packing the GPU has not, stays on the CPU

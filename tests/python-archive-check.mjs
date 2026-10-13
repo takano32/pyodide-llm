@@ -270,7 +270,8 @@ const made = build(tree.python(), path.join(work, "tree"));
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, /^async function converter\(signal *\) \{$/m), /"converter\.zip"/);
-  assert.deepEqual(Object.entries(sources).flatMap(([name, source]) => [...source.matchAll(/\bconverter\(/g)].map(() => name)), ["convert", "convert"], "converter() is called in one place");
+  assert.deepEqual(Object.entries(sources).flatMap(([name, source]) => [...source.matchAll(/\bconverter\(/g)].map(() => name)).sort(), ["convert", "convert", "load"],
+    "converter() is called in two places: a conversion, and (T363.5) a checkpoint of llama.cpp's blocks where NumPy computes, whose readers are the converter's");
   assert.match(body(sources.convert, /^async function convert\(model *, signal *, id *\) \{$/m), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal\);/,
     "convert() asks for the converter only once the model is not among the kept ones");
   assert.ok(!/\.py\b[^"'`\n]*\$\{self\.location\.search\}|python\.js/.test(Object.values(sources).join("\n")), "the worker still fetches a .py or python.js");

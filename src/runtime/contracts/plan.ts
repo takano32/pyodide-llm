@@ -11,9 +11,15 @@ import type { Arch, Convolution, Linear } from "./form.ts";
 
 // Where a tensor of the checkpoint is (engine/checkpoint.py's Tensor.plan()), counted from the start of the file:
 // kind: how its values are stored (int8, int6 and ternary: values, then a float32 scale a group at scales); group: the
-// values a scale is for (0: no scales); scales: where the scales are
-export type Stored = "f32" | "f16" | "int8" | "int6" | "ternary";
-export type Tensor = { kind: Stored; offset: number; shape: number[]; group: number; scales: number };
+// values a scale is for (0: no scales); scales: where the scales are (of llama.cpp's blocks, T363: where the blocks end)
+// T363.5: a row may be of a kind of its own (the form's kinds): one of llama.cpp's blocks by its type's name, 256
+// weights a group with the scales inside; and "u8", the bytes of the codebooks a file with such rows carries. A stack
+// with a kind for each layer says "layers" and, under layers, each layer's kind and place, one after the other (a key
+// of such a stack alone)
+export type Stored = "f32" | "f16" | "int8" | "int6" | "ternary" | "u8" | "layers"
+  | "Q2_K" | "Q4_K" | "IQ2_XXS" | "IQ2_XS" | "IQ3_XXS" | "IQ1_S" | "IQ3_S" | "IQ2_S" | "IQ4_XS" | "IQ1_M";
+export type Part = { kind: Stored; offset: number; group: number; scales: number };
+export type Tensor = { kind: Stored; offset: number; shape: number[]; group: number; scales: number; layers?: Part[] };
 
 // The rows of the four layouts (engine/layout.py), by their names. A model has those of its own layout; the classifier
 // of a model that has none of its own is its embedding under both names.
@@ -27,7 +33,9 @@ export type TensorName =
   // Qwen3.5: a full-attention layer's gate, and a linear-attention layer's matrices, convolution and numbers (T229)
   | "wg" | "wqkv" | "wz" | "wb" | "wa" | "conv" | "dt_bias" | "decay" | "delta_norm"
   // LFM2: a convolution layer's two matrices (T260; its taps are under conv too)
-  | "win" | "wout";
+  | "win" | "wout"
+  // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
+  | "codebooks";
 
 // where every tensor of a model is: the plan's, and what Python's external_tensors() places before a model is built
 export type Tensors = Partial<Record<TensorName, Tensor>>;
@@ -80,6 +88,11 @@ export type Plan = {
   rotated: number;
   // T110: the keys and values may be float16
   half_kv: boolean;
+  // T363.5: a linear-attention layer's output matrix reads its value heads in llama.cpp's order (the form's tiled)
+  tiled: boolean;
+  // T363.5: some rows are stored in kinds of their own (the form's kinds): the matrices of one input may then take
+  // their activations in different forms, and a stack may be its layers, each of a kind of its own
+  own_kinds: boolean;
   // T359.5: every layer's facts, and the widths (forward.ts reads them from T375.2, and works none of them out)
   layers: Layer[];
   widths: Widths;

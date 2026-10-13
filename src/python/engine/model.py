@@ -35,7 +35,6 @@ from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layer
                            unrotate)
 from engine.kernels import load_kernels
 from engine.dtypes import QUANTIZED, dtype_of
-from engine.checkpoint import SEVERAL_KINDS
 from engine.tensors import read_rows, rope_tables
 from engine.sampler import KernelSampler, NumpySampler, greedy
 from engine.external import STEPS, ExternalForward
@@ -147,9 +146,9 @@ class Llama:
         multiplied by changes, and the row of the embedding is turned back.
         unturned (T255): the layers whose q and k RoPE does not turn (SmolLM3: every fourth), where there are any.
         kinds (T359): the rows the file holds in a kind of their own, {the row's name: "int6", ...} (FORM's, the file
-        cannot say them): every other row is stored the way dtype stores a row of its role. NumPy reads such a
-        file; with external it is refused, forward.js takes one dtype for a file. T363: a list gives each layer of
-        a stack one, and llama.cpp's blocks (engine/dtypes.py's BLOCKS) are kinds, read by the converter's readers.
+        cannot say them): every other row is stored the way dtype stores a row of its role. T363: a list gives each
+        layer of a stack one, and llama.cpp's blocks (engine/dtypes.py's BLOCKS) are kinds: NumPy reads them by the
+        converter's readers, and forward.js (external) multiplies by them as they are (T363.5).
         tiled (T363): wout's columns are in llama.cpp's order of the value heads (FORM's), as a GGUF's blocks have them.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
@@ -247,8 +246,6 @@ class Llama:
         self.rows = dims.rows()
         if tiled:
             self.tiled = True
-        if external is not None and (dims.kinds is not None or tiled):
-            raise ValueError(SEVERAL_KINDS)
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
         self.w3 = None
@@ -272,7 +269,7 @@ class Llama:
             outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, Settings(
                 int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                 parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
-                rotated=self.rotated, tables=tables)), external)
+                rotated=self.rotated, tables=tables, tiled=self.tiled)), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):

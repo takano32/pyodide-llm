@@ -103,6 +103,7 @@ const returned = (fn) => {
 // ---- 1. Python -> forward.js
 {
   const LINEAR = { every: 4, key_heads: 2, value_heads: 4, key_dim: 64, value_dim: 128, conv: 4 };
+  const BLOCKS = ["Q2_K", "Q4_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"];
   const families = [
     { name: "llama", header: [256, 768, 4, 8, 8, -2048, 320], form: {}, more: { outliers: true, unturned: [1, 3] } },
     { name: "qwen2 and qwen3", header: [256, 768, 4, 4, 2, 2048, 320], form: { bias: true, qk_norm: true, head_dim: 128 }, more: {} },
@@ -111,25 +112,36 @@ const returned = (fn) => {
     { name: "neox", header: [256, 1024, 3, 8, 8, -2048, 320], form: { arch: "neox" }, more: { rotary: 8, parallel_residual: true } },
     { name: "qwen35", header: [256, 768, 8, 4, 2, 2048, 320], form: { arch: "qwen35", head_dim: 128, linear: LINEAR, rotated: true }, more: { rotary: 32 } },
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
+    // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
+    // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
+    { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
+      form: { arch: "qwen35", head_dim: 128, linear: LINEAR, tiled: true,
+        kinds: { ...Object.fromEntries(Object.entries({ wq: 2, wg: 2, wk: 2, wv: 2, wo: 2, wqkv: 6, wz: 6, wout: 6, w1: 8, w2: 8, w3: 8 })
+          .map(([stack, layers], at) => [stack, Array.from({ length: layers }, (_, l) => BLOCKS[(at + 3 * l) % BLOCKS.length])])), token_embedding_table: "IQ1_M", wcls: "IQ3_S" } } },
   ];
   // (the facts of these families a second time, below: [RoPE turns its layers, LayerNorms, a gated FFN]; a family that
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
-    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true] };
+    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
   assert.equal(plans.length, cases.length);
 
   // what Python writes: every model has the same keys (a key that only some had would be undefined for the others)
-  const keys = new Set(Object.keys(plans[0])), tensors = new Set(), entryKeys = new Set(), derived = new Set();
+  const keys = new Set(Object.keys(plans[0])), tensors = new Set(), entryKeys = new Set(), derived = new Set(), partKeys = new Set(), stored = new Set();
   plans.forEach((plan, index) => {
     const which = `${cases[index].name}, ${cases[index].dtype}`;
     assert.deepEqual(sorted(Object.keys(plan)), sorted(keys), `the plan of ${which} has other keys than the plan of ${cases[0].name}, ${cases[0].dtype}`);
     for (const [name, entry] of Object.entries(plan.tensors)) {
       tensors.add(name);
       Object.keys(entry).forEach((key) => entryKeys.add(key));
-      assert.deepEqual(sorted(Object.keys(entry)), sorted(Object.keys(Object.values(plans[0].tensors)[0])), `the tensor ${name} of ${which} has other keys than the others`);
+      // (T363.5: "layers" is the key of a stack with a kind for each layer alone, which says "layers" for its kind)
+      assert.deepEqual(sorted(Object.keys(entry).filter((key) => key !== "layers")), sorted(Object.keys(Object.values(plans[0].tensors)[0])), `the tensor ${name} of ${which} has other keys than the others`);
+      assert.equal(entry.kind === "layers", "layers" in entry, `the tensor ${name} of ${which} says its layers where its kind is "layers", and only there`);
+      for (const part of entry.layers ?? [entry]) stored.add(part.kind);
+      stored.add(entry.kind);
+      for (const part of entry.layers ?? []) Object.keys(part).forEach((key) => partKeys.add(key));
     }
     Object.keys(plan.derived).forEach((name) => derived.add(name.replace(/^signs\.\d+$/, "signs.<width>")));
   });
@@ -145,7 +157,8 @@ const returned = (fn) => {
     typedAs("contracts/plan.ts's Plan, to Python's plan", typed.keysOf("Plan"), keys);
     typedAs("contracts/plan.ts's TensorName, to the tensors Python places", typed.literalsOf("TensorName"), tensors);
     typedAs("contracts/plan.ts's Tensor, to a tensor of Python's plan", typed.keysOf("Tensor"), entryKeys);
-    typedAs("contracts/plan.ts's Stored, to the ways Python's tensors are stored", typed.literalsOf("Stored"), each((plan) => Object.values(plan.tensors).map((entry) => entry.kind)));
+    typedAs("contracts/plan.ts's Stored, to the ways Python's tensors and their layers are stored", typed.literalsOf("Stored"), stored);
+    typedAs("contracts/plan.ts's Part, to a layer of a stack of Python's plan", typed.keysOf("Part"), partKeys);
     typedAs("contracts/plan.ts's Derived, to the tables Python computes", typed.keysOf("Derived"), new Set([...derived].map((name) => name.replace("<width>", "<number>"))));
     typedAs("contracts/plan.ts's Layer, to a layer's facts", typed.keysOf("Layer"), each((plan) => plan.layers.flatMap(Object.keys)));
     typedAs("contracts/plan.ts's LayerKind, to the kinds of Python's layers", typed.literalsOf("LayerKind"), each((plan) => plan.layers.map((layer) => layer.kind)));

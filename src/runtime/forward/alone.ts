@@ -186,7 +186,7 @@ export function aloneFactsUnfit({ stateful, gate, positions, gatedFfn, layerNorm
   if (layerNorm) return REASONS.aloneNorms;
   return null;
 }
-export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null } = {},
+export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null; kinds?: Record<string, unknown> | null } = {},
   adapter: Adapter | null | undefined, force: Force = {}) {
   const [dim, hidden] = header;
   if (!adapter) return REASONS.noAdapter;
@@ -198,6 +198,9 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), gate: sizes.gate, stateful: sizes.kinds.some((kind) => kind !== ATTENTION) });
   if (facts) return facts;
   if (form.rotated) return REASONS.rotated;  // T237
+  // T363.5: nor a model whose rows have kinds of their own (llama.cpp's blocks are the CPU's kernels' alone: gpu.ts
+  // takes one packing for a file)
+  if (form.kinds && Object.keys(form.kinds).length) return REASONS.aloneDtype("rows of kinds of their own: such");
   // (the packing's line of jobs.ts's PACKED: whether a model of it may be on the GPU alone, and what its shaders need)
   const packing = packingOf(dtype), held = packing?.gpu;
   if (!packing || !held?.alone) return REASONS.aloneDtype(dtype);

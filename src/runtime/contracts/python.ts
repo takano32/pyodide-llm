@@ -64,6 +64,8 @@ export type EngineWindow = Proxy & {
   kernel_quantizer(kernels: string): Proxy;
   // where every tensor of a checkpoint is, from its header (the 7 ints), dtype and form alone (T156)
   external_tensors(header: number[], dtype: Dtype, form: Partial<Form>): Dict<Partial<Record<TensorName, Tensor>>>;
+  // T363.5: how many weights of a checkpoint's matrices its dtype itself packs, where its form gives rows kinds of their own
+  dtype_weights(header: number[], dtype: Dtype, form: Partial<Form>): number;
   // the dtype of a legacy file of so many bytes, by its header and its form; ValueError where it is none
   checkpoint_dtype(header: Proxy, bytes: number, options: Options): Dtype;
   // ValueError where the tokenizer.bin is of another vocabulary than the header's

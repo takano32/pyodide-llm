@@ -34,7 +34,8 @@ export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }
 // A Hugging Face model, converted in the worker. hf: the names of its files, which Python's conduct reads
 // (src/python/convert/conduct.py), and where they are: huggingface.co's repository and revision (vocabulary: another
 // repository for the vocabulary, the config and the template, T136), or files: the Files of a folder of the visitor's
-// disk (T374.2.2). conversion: the dtype asked for (none: the worker chooses, T115) and the context it is cut to.
+// disk (T374.2.2). conversion: the dtype asked for (none: the worker chooses, T115) and the context it is cut to; blocks
+// (T363.5): a GGUF's K- and i-quantized tensors are kept as the file has them, llama.cpp's blocks, and not widened.
 // shares: the other ids of the list that are the same conversion (kept.ts)
 export type Hf = {
   repo?: string;
@@ -45,7 +46,7 @@ export type Hf = {
   vocabulary?: { repo: string; revision: string; config?: string; tokenizer?: string };
   files?: File[];
 };
-export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number }; shares?: string[]; file?: undefined; url?: undefined };
+export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number; blocks?: boolean }; shares?: string[]; file?: undefined; url?: undefined };
 
 // T93 stage 2: what the page asks about the number of threads: fixed (?threads=N), the count it remembers for this
 // device and model, and the logical cores to search from

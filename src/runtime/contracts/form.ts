@@ -27,7 +27,8 @@ export type Arch = "llama" | "gpt2" | "neox" | "qwen35" | "lfm2";
 
 // The numbers of the layers that keep a state, each under its kind's name (forward/kinds.ts): what a form says of
 // them, and a plan after it by the same names (contracts/plan.ts)
-export type Stateful = { linear?: Linear | null; convolution?: Convolution | null };
+// (tiled, T363: of the linear-attention layers, whose output matrix then reads its value heads in llama.cpp's order)
+export type Stateful = { linear?: Linear | null; convolution?: Convolution | null; tiled?: boolean | null };
 
 export type Form = {
   // Qwen2: q, k and v have a bias (and every matrix of a GPT-2)
@@ -40,8 +41,9 @@ export type Form = {
   linear: Linear | null;
   rotated: Rotated | null;
   convolution: Convolution | null;
-  // T359: the rows stored otherwise than the file's dtype stores a row of their role (which forward.ts does not read yet)
-  kinds: Record<string, Dtype> | null;
+  // T359: the rows stored otherwise than the file's dtype stores a row of their role, each by its kind's name (a
+  // dtype's, or T363 one of llama.cpp's blocks: engine/dtypes.py's KINDS), a stack's layers each by a list of them
+  kinds: Record<string, string | string[]> | null;
   // T363: a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads (the same)
   tiled: boolean | null;
 };

@@ -19,7 +19,7 @@ export type Kept = { name: string; where: "opfs" | "cache"; manifest: Manifest }
 // converter's version and, in the Cache API, the number of parts
 export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Options; saved: number };
 export type Manifest = Conversion & { converter?: number; parts?: number };
-export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number };
+export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean };
   hf: { repo: string; revision: string; vocabulary?: { repo: string; revision: string } } };
 // a file of the origin private file system as a worker has it, and its synchronous access (the page's types know neither)
 type Access = { write(bytes: Uint8Array, options: { at: number }): number; truncate(size: number): void; flush(): void; close(): void };
@@ -30,12 +30,15 @@ const FOLDER = "converted-v1";
 const PART_BYTES = 8 * 1024 * 1024;
 
 // the name of a model's conversion: its repository, revision, dtype and context, as the Cache API key has it, and
-// where the vocabulary and config.json come from another repository than the weights (T136), that one too
+// where the vocabulary and config.json come from another repository than the weights (T136), that one too.
+// T363.5: a conversion that kept a GGUF's blocks as they are (conversion.blocks) is another one than the same file
+// widened, though both say the dtype int8 (how the rows that are no blocks are stored): ":blocks" after its name. Every
+// other name is what it was
 export function keptName(model: Converted) {
-  const { dtype = "int8", max_seq_len = 4096 } = model.conversion ?? {};
+  const { dtype = "int8", max_seq_len = 4096, blocks = false } = model.conversion ?? {};
   const { vocabulary } = model.hf;
   const from = vocabulary ? `+${vocabulary.repo}@${vocabulary.revision}` : "";
-  return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${from}:${dtype}:${max_seq_len}`);
+  return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${from}:${dtype}:${max_seq_len}${blocks ? ":blocks" : ""}`);
 }
 /** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
  * Raise it when either changes: a conversion kept by an older converter is then converted again, and deleted (the
@@ -76,7 +79,9 @@ export async function replaced(model: Converted) {
   // its own conversions of every bits stay, whichever one is asked for: the ternary one too (the review of T230: a
   // ?bits=8 visit of a ternary model deleted its ternary conversion, and the next plain visit fetched and converted it
   // again, for each visit in turn)
-  const names = [...keptNames(model), ...["int8", "int6", "ternary"].map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype } }))];
+  // (T363.5: and both of a model whose blocks are kept: with its blocks, and widened, which a load without the int8
+  // kernels asks for: ?without=kernels, a browser without WebAssembly SIMD)
+  const names = [...keptNames(model), ...[false, true].flatMap((blocks) => ["int8", "int6", "ternary"].map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype, blocks } })))];
   const ids = model.shares ?? [model.id];
   return (await keptModels()).filter((kept) => ids.includes(kept.manifest.id) && !names.includes(kept.name));
 }

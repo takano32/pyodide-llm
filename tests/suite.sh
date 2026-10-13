@@ -215,6 +215,11 @@ part "the ternary weights' kernels" node tests/ternary-check.mjs
 # in JavaScript, to the bit, and the reading against the converter's own (one call of Python); every build, and each as
 # Liftoff alone and TurboFan alone compile it (about 4 seconds)
 part "the kernels of llama.cpp's blocks" node tests/blocks-check.mjs
+# T363.5: the page's forward pass on small models whose matrices are kept as llama.cpp's blocks (a type for each layer:
+# Underdog Saluki's shape, and blocks beside rows of other kinds), on the real kernels: every call of the blocks' kernels
+# held to the plan and to the model of the kernels, the logits to the engine in NumPy's, and the same logits to the bit
+# without relaxed SIMD, with either tile, after a block, on a 64-bit memory and on software threads (about 10 seconds)
+part "the forward pass on llama.cpp's blocks" node tests/blocks-forward-check.mjs
 # T237: the kernels of the rotated basis against the same arithmetic in JavaScript, to the bit (under a second)
 part "the rotated basis's kernels" node tests/rotate-check.mjs
 # T243 (the review): the look at the GPU's float16 keys and values, finite_f16, on the four builds of the kernels forward.js
