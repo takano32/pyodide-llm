@@ -191,16 +191,35 @@ export function matmul_sbr_tile(xout: usize, xq: usize, xs: usize, w: usize, tab
 export function signed_dots(out: usize, a: usize, b: usize): void {
   v128.store(out, i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(a), v128.load(b), i32x4.splat(0)));
 }
+// the 16 weights h of the block at p, and S of their unit. (h is written out, 0 to 15, where this is used: as a
+// loop's counter every shift by it is a shift by a register, and the row was spread a quarter slower)
+// @ts-ignore: decorator
+@inline function spread16<K>(p: usize, h: i32, to: usize, s: usize, tab: usize, bits: v128, first: v128, three: v128, fifteen: v128): void {
+  v128.store(to + (<usize>h << 4), weights<K, Relaxed>(p, h, tab, bits, first, three, fifteen));
+  store<i32>(s + (<usize>h << 2), scaleOf<K>(p, h));
+}
 // @ts-ignore: decorator
 @inline function spread<K>(row: usize, tab: usize, n: i32, scratch: usize, bits: v128, first: v128, three: v128, fifteen: v128): void {
   const size = sizeOf<K>(), scales = scratch + <usize>n, floats = scales + (<usize>n >> 2);
   for (let b = 0; b < n >> 8; b++) {
     const p = row + <usize>b * size, to = scratch + (<usize>b << 8), s = scales + (<usize>b << 6);
     store<f32>(floats + (<usize>b << 2), blockScale<K>(p));
-    for (let h = 0; h < 16; h++) {
-      v128.store(to + (<usize>h << 4), weights<K, Relaxed>(p, h, tab, bits, first, three, fifteen));
-      store<i32>(s + (<usize>h << 2), scaleOf<K>(p, h));
-    }
+    spread16<K>(p, 0, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 1, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 2, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 3, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 4, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 5, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 6, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 7, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 8, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 9, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 10, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 11, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 12, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 13, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 14, to, s, tab, bits, first, three, fifteen);
+    spread16<K>(p, 15, to, s, tab, bits, first, three, fifteen);
   }
 }
 // group k of 32 of a spread block (its W at a, its S at s) for the four tokens: G times the tokens' scales
