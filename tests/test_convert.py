@@ -261,7 +261,7 @@ def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
     stream.finish()
     assert bytes(sink.data) == expected
     assert sink.opened == (list(stream.header), dtype, {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": head_size,
-                                                           "linear": None, "rotated": None, "convolution": None, "kinds": None})
+                                                           "linear": None, "rotated": None, "convolution": None, "kinds": None, "tiled": None})
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():

@@ -47,9 +47,11 @@ from engine.dtypes import BLOCKS, BYTES, CODEBOOKS, KINDS, QUANTIZED, kind_named
 # (linear and convolution are the kinds of layers that keep a state: each such kind has its numbers under its own
 # name here, Stateful below, and stateful_form() holds them to the architecture)
 # kinds (T359): the rows that are not stored the way the file's dtype stores a row of their role, see kinds_form();
-# None where every row is, which is every file a conversion writes today.
+# None where every row is, which is every file a conversion writes unless it is asked to keep a GGUF's blocks (T363).
+# tiled (T363): a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads (every
+# key head's first one, then every key head's second, ...), which moves no tensor: its input is put in that order.
 FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
-        "convolution": None, "kinds": None}
+        "convolution": None, "kinds": None, "tiled": None}
 
 
 def form_of(options=None):

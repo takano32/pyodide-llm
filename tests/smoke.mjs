@@ -155,6 +155,25 @@ assert saluki_w3.size == sum(saluki_blocks * saluki_sizes[kind] for kind in salu
 # (a stack that is one type throughout is sized from all its values at once, 5.7e9 of them)
 saluki_one = llama2_numpy.placed([row._replace(kind="IQ3_S") for row in saluki_rows if row.name == "w3"], "int8")[0]
 assert saluki_one.size == 64 * saluki_blocks * 110 > 2 ** 31 and saluki_one.scales == 28 + saluki_one.size and not saluki_one.layers
+# T363.3: and the conversion that keeps the blocks, over the header the converter makes of the real file's head
+# (saluki_form.header(), its classifier first in the file) and no weights: the form it writes is the one sized above,
+# the checkpoint the same bytes, and the file's first bytes, which end inside a block, go where the classifier is, past
+# 2^32 (a place NumPy's 32-bit integers would wrap)
+saluki_sink = Placed()
+saluki_stream = llama2_convert.Kept(saluki_form.header(), 0, saluki_form.CONFIG, "int8", 4096, sink=saluki_sink)
+assert saluki_stream.form["kinds"] == saluki_form.KINDS and saluki_stream.form["tiled"] is True, "the conversion keeps other rows than Saluki's matrices"
+assert saluki_sink.size == saluki_bytes == saluki_stream.size("int8"), f"Saluki 27B with its blocks kept is {saluki_sink.size} bytes"
+assert saluki_sink.writes == [(0, 28), (saluki_bytes - llama2_numpy.CODEBOOKS, llama2_numpy.CODEBOOKS)], f"its header and its codebooks are written at {saluki_sink.writes}"
+saluki_classifier = saluki_bytes - llama2_numpy.CODEBOOKS - 248320 * (5120 // 256) * 110
+assert saluki_classifier > 2 ** 32, "this checks nothing"
+saluki_sink.writes.clear()
+saluki_done = saluki_stream.done
+saluki_fed = [saluki_stream.feed(bytes(300))[0] - saluki_done, saluki_stream.feed(bytes(100))[0] - saluki_done]
+assert saluki_sink.writes == [(saluki_classifier, 300), (saluki_classifier + 300, 100)] and saluki_fed == [512, 768], \
+    f"the first bytes of Saluki's classifier are written at {saluki_sink.writes} (values done: {saluki_fed})"
+assert all(type(value) is int for value in (saluki_stream.done, saluki_stream.total, *saluki_sink.writes[0])), "a place or a count is no Python integer"
+# (the rows llama.cpp or the plan move: q with its gate and k of the 16 layers that attend, q k v and z of the 48 others)
+assert sum(orders is not None for orders in saluki_stream.stay.values()) == 2 * 16 + 2 * 48 and len(saluki_stream.stay) == 402
 # (and the engine reads a block with the converter's reader, which it asks for when it meets one)
 import superblock_cases
 for name, kind in llama2_numpy.BLOCKS.items():

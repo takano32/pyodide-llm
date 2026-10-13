@@ -1,7 +1,7 @@
 # The plan of a conversion: which tensor of the source goes where in the checkpoint, and what is done to it on the way.
 import numpy as np
 
-from engine.layout import TABLE, Dims, form_of, linear_form
+from engine.layout import CODES, TABLE, Dims, form_of, linear_form
 from engine.layers import rope_frequencies, rope_magnitude, rotated_form, rotated_widths
 from convert.families import family_of, of_layout
 from convert.config import head_size, normalize, rotary_dim
@@ -17,7 +17,8 @@ def transformed(values, transform, head_size):
     first rot rows interleaved (GPT-NeoX's query_key_value: 3 parts; Qwen3.5's q_proj: q and its gate; 1 part: a k
     or a norm of which RoPE turns part). ("scale", c): every value times c (T253: a Granite's q). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
     A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
-    one after the other.
+    one after the other. ("permute" and "heads" move whole rows and change no value: what a row kept in a GGUF's blocks
+    may come by, T363.)
     """
     if transform is None:
         return values
@@ -124,7 +125,8 @@ def checkpoint_form(config, source):
 
 def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.0):
     """For every row of the checkpoint (engine/layout.py's tensor_rows()), in file order: the tensors of the Hugging
-    Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table.
+    Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table,
+    and CODES for the codebooks of llama.cpp's blocks (T363: made(), below, has the values of both).
     And the shapes of the rows. The sources are the layout's family's, by the row's name (convert/families/). scale:
     what q is multiplied by (query_scale(), T253), for a layout without biases and without norms of its heads."""
     form = form_of(form)
@@ -141,8 +143,8 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
         sources["wq"] = (name, (turn, ("scale", scale)))
     plan = []
     for row in rows:
-        if row.role == TABLE:
-            plan.append(None)
+        if row.role in (TABLE, CODES):
+            plan.append(None if row.role == TABLE else CODES)
             continue
         # {} in a name: the layer, for a row that stacks the tensors of the layers its "per" says
         if row.name not in sources:
@@ -158,6 +160,15 @@ def model_plan(config, source, header, form):
     family = family_of(config)
     return conversion_plan(header, form, name_prefix(source, form["arch"]),
                            rotary_dim(config) if family.partly else 0, family.scale(config))
+
+
+def made(config, header, plan, index):
+    """The values of row number index of a plan that no tensor of the source is: a RoPE table (cos, then sin), or the
+    codebooks a checkpoint with rows of llama.cpp's blocks carries (T363: convert/grids.py's, as bytes)."""
+    if plan[index] is None:
+        return rope_table(config, header, plan[:index].count(None))
+    from convert.grids import codebooks
+    return np.frombuffer(codebooks()[0], dtype=np.uint8)
 
 
 def rope_table(config, header, which):
