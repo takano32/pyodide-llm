@@ -91,6 +91,21 @@ class Writer:
             return
         self.store(place, first, values)
 
+    def part(self, index, first):
+        """(the place of one kind that element number first of tensor number index is in, its number there)."""
+        place = self.places[index]
+        if not place.layers:
+            return place, first
+        layer, inside = divmod(first, math.prod(place.row.shape[1:]))
+        return place.layers[layer], inside
+
+    def copy(self, index, first, raw, at=0):
+        """T363.3: raw, bytes of a tensor as its row's kind stores it (llama.cpp's blocks, whose scales are inside),
+        to where they belong: the tensor begins at element number first of tensor number index (a layer of a stack),
+        and raw at its byte number at (any number: a piece may end inside a block)."""
+        place, first = self.part(index, first)
+        self.put(place.offset + KINDS[place.kind].stored_bytes(first, place.group)[0] + at, raw)
+
     def store(self, place, first, values):
         """values: whole rows of the tensor at place, of one kind, beginning at its element number first."""
         kind = KINDS[place.kind]

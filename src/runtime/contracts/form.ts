@@ -42,4 +42,6 @@ export type Form = {
   convolution: Convolution | null;
   // T359: the rows stored otherwise than the file's dtype stores a row of their role (which forward.ts does not read yet)
   kinds: Record<string, Dtype> | null;
+  // T363: a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads (the same)
+  tiled: boolean | null;
 };

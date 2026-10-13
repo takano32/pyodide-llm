@@ -107,13 +107,14 @@ class Llama:
     # faster (or there is no GPU)
     gpu_steps = None
     token_block = staticmethod(lambda: 0)
+    tiled = False  # T363: FORM's "tiled", of a model made with it
 
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
-                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False):
+                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, tiled=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -149,6 +150,7 @@ class Llama:
         cannot say them): every other row is stored the way dtype stores a row of its role. NumPy reads such a
         file; with external it is refused, forward.js takes one dtype for a file. T363: a list gives each layer of
         a stack one, and llama.cpp's blocks (engine/dtypes.py's BLOCKS) are kinds, read by the converter's readers.
+        tiled (T363): wout's columns are in llama.cpp's order of the value heads (FORM's), as a GGUF's blocks have them.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3). lowercase (T265) and prefixed (T308): the tokenizer's, see Tokenizer.
@@ -243,7 +245,9 @@ class Llama:
         self.q_norm = self.k_norm = self.wg = None
         # what the file holds: its rows
         self.rows = dims.rows()
-        if external is not None and dims.kinds is not None:
+        if tiled:
+            self.tiled = True
+        if external is not None and (dims.kinds is not None or tiled):
             raise ValueError(SEVERAL_KINDS)
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
@@ -449,7 +453,10 @@ class Llama:
         decay = np.exp(self.decay[a] * softplus(self.wa[a] @ xb + self.dt_bias[a]))
         read = delta_rule(self.delta_state[a], q, k, v, beta.astype(np.float32), decay.astype(np.float32))
         read = self.delta_norm[a] * read / np.sqrt((read * read).mean(axis=1, keepdims=True) + eps)
-        return self.wout[a] @ self.turned((read * silu((self.wz[a] @ xr).reshape(value_heads, -1))).reshape(-1))
+        read = read * silu((self.wz[a] @ xr).reshape(value_heads, -1))
+        if self.tiled:  # T363: the matrix's columns are every key head's first value head, then every second, ...
+            read = read.reshape(key_heads, value_heads // key_heads, -1).swapaxes(0, 1)
+        return self.wout[a] @ self.turned(read.reshape(-1))
 
     def convolved(self, a, values):
         """The causal convolution of the a-th layer that has one (a linear-attention layer's, an LFM2's convolution

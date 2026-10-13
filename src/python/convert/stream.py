@@ -3,12 +3,13 @@ import math
 
 import numpy as np
 
-from engine.dtypes import EITHER, dtype_of
+from engine.dtypes import BLOCKS, EITHER, dtype_of
+from engine.layout import CLASSIFIER, EMBEDDING, MATRIX, tensor_rows
 from convert.checkpoint import Writer, checkpoint_size
 from convert.readers import SOURCES, source_of
 from convert.sources import header_rotated
 from convert.config import check_config, checkpoint_header, head_size, normalize
-from convert.plan import checkpoint_form, model_plan, rope_table, source_shape, transformed
+from convert.plan import checkpoint_form, made, model_plan, source_shape, transformed
 from convert.gguf import rope_freqs_agree
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
@@ -42,9 +43,9 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     total, done = sum(math.prod(shape) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
-        if parts is None:
+        if not isinstance(parts, list):
             # the RoPE tables (left out of an int8 checkpoint): cos, then sin
-            writer.write(index, 0, rope_table(config, header, plan[:index].count(None)))
+            writer.write(index, 0, made(config, header, plan, index))
             done += math.prod(shape)
             yield done, total
             continue
@@ -92,7 +93,7 @@ class Stream:
         self.head_size = head_size(config)
         # what lays out the checkpoint and sizes the forward pass that the header does not say (T115, T124, T144):
         # the options say it, and the worker's footprint() reads it
-        self.form = checkpoint_form(config, self)
+        self.form = self.shaped(config)
         if callable(dtype):
             # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
@@ -107,8 +108,8 @@ class Stream:
         self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
-            if parts is None:
-                self.writer.write(index, 0, rope_table(config, self.header, plan[:index].count(None)))
+            if not isinstance(parts, list):
+                self.writer.write(index, 0, made(config, self.header, plan, index))
                 self.done += math.prod(shape)
                 continue
             first = 0
@@ -130,6 +131,9 @@ class Stream:
             self.steps.append((base + begin, base + end, name, target))
         self.position, self.step, self.pending, self.first = start, 0, bytearray(), 0
         self.config = config
+
+    def shaped(self, config):
+        return checkpoint_form(config, self)
 
     def __contains__(self, name):  # what checkpoint_header() asks
         return name in self.tensors
@@ -203,6 +207,94 @@ class Stream:
         if self.step < len(self.steps) or self.done != self.total:
             raise ValueError("The file ended before all of its tensors were read.")
         return self.header
+
+
+# ---- T363.3: a GGUF's blocks kept as they are
+class Kept(Stream):
+    """The same conversion with the tensors a GGUF holds in llama.cpp's blocks left the bytes they are, where they can
+    be (kept_form()): the form says the kinds of those rows ("kinds"), and dtype how the others are stored. A row is whole
+    blocks, so the rows llama.cpp or the plan move are moved as bytes. Stream itself is as it was, with nothing to ask
+    on a piece's way."""
+
+    def __init__(self, *args, **more):
+        super().__init__(*args, **more)
+        # the tensors that stay, and for each the rows of the file that each of its rows of the checkpoint is made of
+        # (order(); None: one row, in the file's own order)
+        self.stay = {}
+        for _, _, name, targets in self.steps:
+            if not isinstance(targets, list):
+                continue
+            stay = [self.writer.part(index, first)[0].kind in BLOCKS for index, first, _ in targets]
+            assert all(stay) or not any(stay), name  # (the rows one tensor feeds are kept or widened together)
+            if stay[0]:
+                info = self.tensors[name]
+                orders = [order(info, transform, self.head_size) for _, _, transform in targets]
+                same = len(orders) == 1 and np.array_equal(orders[0], np.arange(info["shape"][0]))
+                self.stay[name] = None if same else orders
+
+    def shaped(self, config):
+        form = checkpoint_form(config, self)
+        return {**form, **kept_form(model_plan(config, self, self.header, form)[0], tensor_rows(self.header, form), self.tensors)}
+
+    def convert(self, name, targets, last):
+        """A tensor that stays: its bytes to their place. In the file's order as they come, wherever a piece ends; a
+        tensor whose rows move, once it is all there."""
+        if name not in self.stay:
+            return super().convert(name, targets, last)
+        info, orders = self.tensors[name], self.stay[name]
+        if orders is None:
+            (index, first, _), raw, source = targets[0], np.frombuffer(self.pending, dtype=np.uint8), SOURCES[info["dtype"]]
+            self.writer.copy(index, first, raw, self.first)
+            # (the values of the whole blocks that are there now)
+            self.done += source.values * ((self.first + raw.size) // source.size - self.first // source.size)
+            self.first, self.pending = self.first + raw.size, bytearray()
+        elif last:
+            rows = np.frombuffer(self.pending, dtype=np.uint8).reshape(info["shape"][0], -1)
+            for (index, first, _), moved in zip(targets, orders):
+                self.writer.copy(index, first, rows[moved])
+                self.done += moved.size * info["shape"][1]
+
+
+# the roles of the rows a quantized file quantizes: the ones that may stay in a GGUF's blocks
+KEPT = (MATRIX, EMBEDDING, CLASSIFIER)
+
+
+def stays(info, transform):
+    """Whether a tensor of the file can be its row's bytes as it is: in llama.cpp's blocks, and reaching the row by
+    moves of whole rows alone (a row is whole blocks), with no value changed and nothing transposed. Value heads tiled
+    along the columns (a Qwen3.5's ssm_out, by half a block) are no such move: they stay where they are, and the form
+    says so (kept_form()'s "tiled")."""
+    steps = () if transform is None else transform if isinstance(transform[0], tuple) else (transform,)
+    return info["dtype"] in BLOCKS and not info.get("transposed") and all(step[0] in ("permute", "heads") for step in steps)
+
+
+def kept_form(plan, rows, tensors):
+    """What the form says of a conversion that keeps a GGUF's blocks: "kinds", the rows whose tensors all stay
+    (stays()) with the type of each (a stack's by its layers, or the one they all are), and "tiled", whether such a
+    row's columns are in llama.cpp's order of the value heads. A stack of which one layer cannot stay is widened whole,
+    as every row was. plan and rows: the plan and the rows without them, tensors: the header's."""
+    kinds, tiled = {}, False
+    for row, parts in zip(rows, plan):
+        if row.role in KEPT and isinstance(parts, list) and all(
+                name in tensors and stays(tensors[name], transform) for name, transform in parts):
+            types = [tensors[name]["dtype"] for name, _ in parts]
+            kinds[row.name] = types[0] if len(set(types)) == 1 else types
+            tiled = tiled or any(tensors[name].get("tiled", [0])[-1] == 1 for name, _ in parts)
+    return {"kinds": kinds or None, "tiled": tiled or None}
+
+
+def order(info, transform, head_size):
+    """The rows of a tensor of the file, by their numbers there, that its row of the checkpoint is made of, one after
+    the other: what convert() does to the values (a GGUF's own order put back, then the plan's transform), done to the
+    numbers of the rows."""
+    rows = np.arange(info["shape"][0])
+    if info.get("turned"):
+        rows = unturned(rows, info["turned"])
+    if info.get("split"):
+        rows = unsplit(rows, info["split"])
+    if info.get("tiled") and info["tiled"][-1] == 0:
+        rows = untiled(rows, *info["tiled"])
+    return transformed(rows, transform, head_size)
 
 
 def left_to_do(transform, done):

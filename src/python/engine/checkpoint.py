@@ -82,7 +82,7 @@ def external_tensors(header, dtype, form=None):
     Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
     layers' matrices to the GPU as they come, and keeps the rest). A model whose embedding is its classifier has it
     under both names. ValueError for a file of several kinds (SEVERAL_KINDS)."""
-    if form_of(form)["kinds"]:
+    if form_of(form)["kinds"] or form_of(form)["tiled"]:  # (T363: nor one that is tiled)
         raise ValueError(SEVERAL_KINDS)
     tensors = outside(tensor_rows(header, form), dtype_of(dtype))
     tensors.setdefault("wcls", tensors["token_embedding_table"])

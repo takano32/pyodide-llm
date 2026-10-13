@@ -7,7 +7,7 @@ from engine.dtypes import dtype_of
 from convert.template import config_token, model_turn
 from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
-from convert.stream import Stream
+from convert.stream import Kept, Stream
 from convert.gguf import gguf_model, gguf_read, gguf_tokenizer
 from convert.tokenizer import (described_options, piece_ids, sentencepiece_charsmap, sentencepiece_options,
                                sentencepiece_pieces, sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
@@ -30,10 +30,12 @@ class Conversion:
     header: the JSON at the beginning of model.safetensors (text), base: where its tensors begin, config: the text of
     config.json, tokenizer: the bytes of tokenizer.json or of a sentencepiece model. Then feed() the bytes of the
     file in order, beginning at start, and finish(). checkpoint, tokenizer and options are what Llama() takes.
+    blocks (T363.3): the tensors a GGUF holds in llama.cpp's blocks stay the bytes they are (convert/stream.py's Kept),
+    and dtype is how the others are stored.
     """
 
     def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
-                 tokenizer_config=None, sink=None, quantize_rows=None, chat_template=None, readers=None):
+                 tokenizer_config=None, sink=None, quantize_rows=None, chat_template=None, readers=None, blocks=False):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -77,10 +79,10 @@ class Conversion:
         named = config_token(described(tokenizer_config), "bos_token")
         bos = next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials,
-                   chat_template, added, bos, readers)
+                   chat_template, added, bos, readers, blocks)
 
     @classmethod
-    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None):
+    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None, blocks=False):
         """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
@@ -101,11 +103,11 @@ class Conversion:
         self.tokenizer, options, tokenizer_config, specials, added = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials,
-                   added=added, readers=readers)
+                   added=added, readers=readers, blocks=blocks)
         return self
 
     def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None,
-              specials=(), chat_template=None, added=(), bos=None, readers=None):
+              specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False):
         """sink and quantize_rows: see Writer, readers: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
         tokenizer's special tokens, the ones a chat template writes between the turns. chat_template: the text of
         chat_template.jinja, where there is one (T127). added: the added tokens that are not special, one token
@@ -140,8 +142,9 @@ class Conversion:
             stop.append(ending)
         bos = bos if head is None else head
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
-        self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
-                             quantize_rows=quantize_rows, readers=readers)
+        self.stream = (Kept if blocks else Stream)(header, int(base), self.config, dtype, int(max_seq_len),
+                                                   start=int(start), sink=sink, quantize_rows=quantize_rows,
+                                                   readers=readers)
         self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
         # the form: bias and arch always (as since T64 and T65), the rest only where it is not the default, so that

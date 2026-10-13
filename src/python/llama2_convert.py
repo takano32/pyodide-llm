@@ -38,8 +38,8 @@ from convert.config import (architecture, check_config, checkpoint_header, convo
                             unturned_layers, yarn)
 from convert.plan import checkpoint_form, conversion_plan, permute_heads, rope_table, transformed  # noqa: F401
 from convert.families.llama import has_bias, has_qk_norm  # noqa: F401
-from convert.stream import (PIECE, Stream, convert_weights, left_to_do, unsplit, untiled,  # noqa: F401
-                            unturned)
+from convert.stream import (PIECE, Kept, Stream, convert_weights, left_to_do, unsplit,  # noqa: F401
+                            untiled, unturned)
 from convert.gguf import (Incomplete, gguf_agrees, gguf_model, gguf_read, gguf_rotated,  # noqa: F401
                           gguf_tokenizer, gguf_weights)
 from convert.tokenizer import (UNMATCHABLE, prefixed_texts, pretokenizer_name,  # noqa: F401
