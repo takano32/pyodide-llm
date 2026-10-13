@@ -263,10 +263,10 @@ for (const [rows, n] of shapes) {
   const groups = (rows * n) / 128, ng = n / 32, blocks = (rows * n) / 256;
   let top = PAGE;
   const take = (bytes) => { const at = top; top = align(at + bytes, 64); return at; };
-  const tab = take(TABLES), scratch = take(4 * SCRATCH_BYTES), area = take(34976), booksAt = take(33808);
+  const tab = take(TABLES), scratch = take(4 * SCRATCH_BYTES), area = take(34992), booksAt = take(33808);
   tables(tab);
   U.set(fs.readFileSync(work + "codebooks.bin"), booksAt);
-  if (kernels.blocks.sb_tables(area, booksAt) !== 34976) throw new Error("sb_tables wrote another number of bytes than 34976");
+  if (kernels.blocks.sb_tables(area, booksAt) !== 34992) throw new Error("sb_tables wrote another number of bytes than 34992");
   // ---- each kind's first copy. A block of the four types is random bytes with a finite float16 d (and dmin)
   const half = () => 0x2800 + (next() & 0x3ff);
   const d = new Float32Array(groups), tw = used.includes("ternary") || used.includes("int8") ? new Int8Array(rows * n) : null;
@@ -276,7 +276,7 @@ for (const [rows, n] of shapes) {
   }
   const random = (at, bytes) => {
     let x = (seed | 1) >>> 0;
-    for (let i = at >> 2, end = (at + bytes + 3) >> 2; i < end; i++) { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; W32[i] = x; }
+    for (let i = Math.floor(at / 4), end = Math.ceil((at + bytes) / 4); i < end; i++) { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; W32[i] = x; }
     seed = x;
   };
   const put16 = (at, value) => { U[at] = value & 255; U[at + 1] = value >> 8; };
