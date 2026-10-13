@@ -147,7 +147,7 @@ console.log("ok: safetensors first where a repository has them, else its best GG
   const json = (value, status = 200) => () => new Response(JSON.stringify(value), { status });
   const tree = [{ type: "directory", path: "Q8_0", size: 0 }, { type: "file", path: "m-Q8_0.gguf", size: 7, lfs: { size: 7 } }, { type: "file", path: "README.md", size: 3 }, { type: "file" }, null];
   assert.deepEqual(await filesOf("owner/model", REVISION, answering(json(tree))), [{ path: "m-Q8_0.gguf", size: 7 }, { path: "README.md", size: 3 }]);
-  assert.deepEqual(asked, [[`https://huggingface.co/api/models/owner/model/tree/${REVISION}`, undefined]], "the list of a repository is asked for otherwise than by one plain request of its tree at the revision");
+  assert.deepEqual(asked.map(([url, init]) => [url, init?.signal instanceof AbortSignal]), [[`https://huggingface.co/api/models/owner/model/tree/${REVISION}`, true]], "the list of a repository is asked for otherwise than by one plain request of its tree at the revision");
   const found = await looked(pinned, answering(json(tree)));
   assert.equal(found.hf.weights, "m-Q8_0.gguf");
   assert.equal(asked.length, 2, "a repository is looked at with more than one request");
@@ -165,6 +165,22 @@ console.log("ok: safetensors first where a repository has them, else its best GG
     assert.deepEqual(warned, ["repository: the files of owner/model could not be listed (TypeError: Failed to fetch): opened as named"]);
   } finally {
     console.warn = warn;
+  }
+  // a line that does not answer is let go: the signal of the request is one that ends, and the entry goes on as named
+  {
+    let signal;
+    const hanging = (url, init) => new Promise((resolve, reject) => { signal = init?.signal; signal?.addEventListener("abort", () => reject(signal.reason)); });
+    const quiet = console.warn;
+    console.warn = () => {};
+    try {
+      const waiting = looked(pinned, hanging);
+      assert.ok(signal instanceof AbortSignal, "the list of a repository is asked for with no signal to end the wait");
+      assert.equal(signal.aborted, false);
+      signal.dispatchEvent(new Event("abort"));
+      assert.equal(await waiting, pinned);
+    } finally {
+      console.warn = quiet;
+    }
   }
   // the sentence of a repository with nothing comes through looked() as it is
   await assert.rejects(looked(entry, answering(json([{ type: "file", path: "README.md", size: 1 }]))), { message: "owner/model has no model.safetensors and no GGUF file this page can read." });

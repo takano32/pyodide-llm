@@ -40,6 +40,8 @@ export function quantization(name: string) {
   return said.length ? said[said.length - 1] : QUANTIZATIONS.length;
 }
 
+/** How long the list of a repository is waited for. */
+export const LISTING_SECONDS = 10;
 export type Listed = { path: string; size?: number };
 // A GGUF this page may open: one file that is a model. Not a part of a model split over several files
 // (-00001-of-00003.gguf), not the projector of a model that reads images (mmproj), and not the importance matrix a
@@ -83,7 +85,9 @@ export function settled<Of extends Entry>(entry: Of, files: Listed[]): Of {
  * wrong with it is said by the worker, which meets the same answer. */
 export async function filesOf(repository: string, revision: string, fetching: typeof fetch = fetch): Promise<Listed[] | undefined> {
   try {
-    const res = await fetching(`https://huggingface.co/api/models/${repository}/tree/${revision}`);
+    // (it waits ten seconds at most: a line that does not answer must not hold the model back, and the same answer is
+    // then the worker's to meet)
+    const res = await fetching(`https://huggingface.co/api/models/${repository}/tree/${revision}`, { signal: AbortSignal.timeout(LISTING_SECONDS * 1000) });
     const listed: unknown = res.ok ? await res.json() : undefined;
     if (!Array.isArray(listed)) return undefined;
     return listed.filter((one) => one?.type === "file" && typeof one.path === "string").map(({ path, size }) => ({ path, size }));
