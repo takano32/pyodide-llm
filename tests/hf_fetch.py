@@ -2,7 +2,7 @@
 # CI that need the original (T100): the weights, config.json, the tokenizer and tokenizer_config.json. Prints what to
 # hand to tests/perplexity_prepare.py: the directory, or the .gguf file. For a GGUF that takes the vocabulary of its
 # original (T136's second stage, hf.vocabulary): the directory of the original's files, with the GGUF linked into it
-# (T145: int4.yml and draft.yml named the originals instead).
+# (T145: draft.yml named the originals instead).
 # T374.4: which files those are is the conduct's of a conversion (src/python/convert/conduct.py), as it is for the page: it
 # is answered until it asks for the weights' stream, and each file it asked for on the way was fetched whole
 # (tests/conducting.py's Fetched): the one file of the weights or the shards its index names (T192), config.json,
