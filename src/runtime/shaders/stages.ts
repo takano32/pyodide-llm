@@ -54,7 +54,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.ts";
+import { SAMPLER_COMMON, SAMPLER_DRAW, largestLogit, softmaxTerms } from "./sample.ts";
 
 // ---- T191: the sampling in chunks of the vocabulary, many workgroups. SAMPLE's one workgroup reads the vocabulary on
 // one of the GPU's cores (the owner's Android: 5.9 ms of 11 a token of the CPU section's model, Llama 3's 128256
@@ -183,17 +183,7 @@ ${CHUNK_MAIN} {
     storageBarrier();
     let first = min(begin + t * EACH, end);
     let last = min(first + EACH, end);
-    var value = -3.4e38;
-    var at = NONE;
-    var magnitude = 0u;
-    for (var i = first; i < last; i++) {
-        let v = logits[i];
-        magnitude = max(magnitude, bitcast<u32>(v) & FLOAT_MAGNITUDE);
-        if (v > value) {
-            value = v;
-            at = i;
-        }
-    }
+${largestLogit("first", "last")}
     let best = best_of(value, at, t);
     // (T219) and whether the chunk holds a NaN, for SAMPLE_PICK (+inf shows in the largest logit there)
     let chunk_bad = any_of(is_nan_magnitude(magnitude), t);
@@ -226,21 +216,7 @@ ${CHUNK_MAIN} {
     let end = min(begin + CHUNK, settings.vocab);
     let first = min(begin + t * EACH, end);
     let last = min(first + EACH, end);
-    var sum = 0.0;
-    var kept = 0u;
-    for (var i = first; i < last; i++) {
-        let v = logits[i];
-        if (v >= lowest) {
-            let p = exp((v - best) * inverse);
-            kept++;
-            sum += p;
-            if (!nucleus) {
-                probs[i] = p;
-            }
-        } else if (!nucleus) {
-            probs[i] = 0.0;
-        }
-    }
+${softmaxTerms("first", "last")}
     // the chunk's sum by the scan SAMPLE_PICK sums its probabilities with, in the same order
     let chunk_sum = scan(sum, t).y;
     let chunk_kept = sum_all(f32(kept), t);

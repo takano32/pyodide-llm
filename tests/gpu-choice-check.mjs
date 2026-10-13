@@ -623,8 +623,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
 }
 // T232's review, T379.1: fusedDp4aMatVec's text for ternary weights is its int8 text with the lines that read the weights
-// and their scales changed (and ternary_packed after SDP8AI). The two were two makers, one a copy (ternaryMatVec, because
-// deviceKey() hashed fusedDp4aMatVec's source until T366), and are one maker now, whose table of the packings
+// and their scales changed (and ternary_packed after SDP8AI). One maker makes both, and its table of the packings
 // (shaders/fused.ts's DP4A_WEIGHTS) holds what differs. That it holds nothing else is held here: every line but those
 // that differ by design is the same in the two texts, for every output a layer writes
 {

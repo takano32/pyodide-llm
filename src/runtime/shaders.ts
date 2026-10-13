@@ -34,9 +34,9 @@ import { QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, RMSNO
 import { FLASH_Q_TILE, flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES, flashVecShape, flashVecSplits,
   flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, TOKEN_ATTENTION_PAST, TOKEN_ATTENTION_STEEP,
   TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff } from "./shaders/attention.ts";
-import { MUL_MAT_VEC_ROWS, ORT_MATVEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVec, ortMatVec,
-  ortDp4aMatVec } from "./shaders/matvec.ts";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec } from "./shaders/fused.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE,
+  fusedDp4aMatVec } from "./shaders/fused.ts";
+import { ORT_MATVEC_ROWS, mulMatVec, ortMatVec, ortDp4aMatVec } from "./shaders/matvec.ts";
 import { REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, samplingState, SAMPLING_BYTES,
   samplingSettings, EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
   outliersOf } from "./shaders/run.ts";

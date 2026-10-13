@@ -311,6 +311,41 @@ fn draw_nucleus(count: u32, total: f32, r: f32, argmax: u32, t: u32) {
 }
 `;
 
+// (T391.4) Two loops over a thread's own run of the vocabulary, from index `from` to before `to` (the names the text
+// around has for them), which SAMPLE below and the sampling in chunks (stages.ts's SAMPLE_MAX and SAMPLE_SUM) have
+// alike: what one finds or sums, the other must, token for token.
+// The largest logit of the run and its first index (argmax.wgsl's pairs), into value and at, and (T219) the largest
+// of the logits' bits without their signs into magnitude, by which a NaN among them is seen
+const largestLogit = (from: string, to: string): string => /* wgsl */ `    var value = -3.4e38;
+    var at = NONE;
+    var magnitude = 0u;
+    for (var i = ${from}; i < ${to}; i++) {
+        let v = logits[i];
+        magnitude = max(magnitude, bitcast<u32>(v) & FLOAT_MAGNITUDE);
+        if (v > value) {
+            value = v;
+            at = i;
+        }
+    }`;
+// softmax's exp(value - max) of the run's logits, at the temperature (inverse) and, with a nucleus, only of those
+// over the floor (lowest; the others are not written then): how many are kept into kept, their sum into sum, and
+// without a nucleus each token's into probs
+const softmaxTerms = (from: string, to: string): string => /* wgsl */ `    var sum = 0.0;
+    var kept = 0u;
+    for (var i = ${from}; i < ${to}; i++) {
+        let v = logits[i];
+        if (v >= lowest) {
+            let p = exp((v - best) * inverse);
+            kept++;
+            sum += p;
+            if (!nucleus) {
+                probs[i] = p;
+            }
+        } else if (!nucleus) {
+            probs[i] = 0.0;
+        }
+    }`;
+
 // The penalty, softmax, top-p and the draw of one token, in one workgroup: see the head of run.ts. Bindings: 0 the logits (the
 // penalty is applied to them in place, as the CPU does), 1 and 2 scratch of the vocabulary's size (probabilities and
 // the indices of those gathered), 3 the state, 4 chosen, 5 the random numbers, 6 the settings.
@@ -358,17 +393,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let chunk = (vocab + WG_SIZE - 1u) / WG_SIZE;
     let begin = min(t * chunk, vocab);
     let end = min(begin + chunk, vocab);
-    var value = -3.4e38;
-    var at = NONE;
-    var magnitude = 0u;
-    for (var i = begin; i < end; i++) {
-        let v = logits[i];
-        magnitude = max(magnitude, bitcast<u32>(v) & FLOAT_MAGNITUDE);
-        if (v > value) {
-            value = v;
-            at = i;
-        }
-    }
+${largestLogit("begin", "end")}
     let largest = best_of(value, at, t);
     let best = largest.value;
     let argmax = largest.at;
@@ -395,21 +420,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let nucleus = settings.topp > 0.0 && settings.topp < 1.0;
     let inverse = 1.0 / settings.temperature;
     let lowest = select(-3.4e38, best - settings.temperature * NUCLEUS_FLOOR, nucleus);
-    var sum = 0.0;
-    var kept = 0u;
-    for (var i = begin; i < end; i++) {
-        let v = logits[i];
-        if (v >= lowest) {
-            let p = exp((v - best) * inverse);
-            kept++;
-            sum += p;
-            if (!nucleus) {
-                probs[i] = p;
-            }
-        } else if (!nucleus) {
-            probs[i] = 0.0;
-        }
-    }
+${softmaxTerms("begin", "end")}
     let sums = scan(sum, t);
     let total = sums.y;
     let r = min(randoms[state.sampled], BELOW_ONE);
@@ -452,4 +463,4 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     draw_nucleus(count, total, r, argmax, t);
 }`;
 
-export { SAMPLER_COMMON, SAMPLER_DRAW };
+export { SAMPLER_COMMON, SAMPLER_DRAW, largestLogit, softmaxTerms };
