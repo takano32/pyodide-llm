@@ -21,7 +21,9 @@
 #   - the same values moved by 8 places, which must not correlate at all (the comparison can tell);
 #   - where the value heads are put back: the rows or columns left as the file has them, which must not correlate.
 # And the head: the tensors, the types and how many of each (COUNTS), which the converter's own reader of a GGUF takes
-# with the original's config.json.
+# with the original's config.json; and (T363.3) what the conversion that keeps the blocks makes of that head, without
+# the weights: the kinds of the rows (as many layers of each type to a row as tests/saluki_form.py counted), that the
+# output matrices of the linear-attention layers stay tiled, which tensors' rows move, and the checkpoint's size.
 #
 #   python tests/saluki_rows.py [--work <directory = .tmp/saluki-rows>] [--rows 16] [--wrong <a reading>]
 #
@@ -43,6 +45,7 @@ from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
+import saluki_form  # noqa: E402
 from convert import superblocks  # noqa: E402
 from fetching import download, ranged  # noqa: E402
 
@@ -115,6 +118,16 @@ class Original:
             raise SystemExit(f"saluki-rows: the original's {name} is {info['dtype']}, not BF16")
         raw = self.fetch(ORIGINAL + shard, base + info["data_offsets"][0] + first * width * 2, count * width * 2)
         return llama2_convert.bfloat16(raw).reshape(count, width).astype(np.float64), tuple(info["shape"])
+
+
+class Sized:
+    """The sink of a conversion nobody feeds: what it was opened with."""
+
+    def open(self, size, header, dtype, form):
+        self.size, self.header, self.dtype, self.form = size, list(header), dtype, form
+
+    def write(self, offset, raw):
+        pass
 
 
 def correlation(a, b):
@@ -243,8 +256,24 @@ def main():
     # the converter's own reader of a GGUF with the original's config.json (gguf_agrees() among it): the header, by
     # Hugging Face's names, with what llama.cpp stores otherwise marked
     header, base = llama2_convert.gguf_weights(head, config)
-    header = {name: entry for name, entry in json.loads(header).items() if name != "__metadata__"}
+    whole = json.loads(header)
+    header = {name: entry for name, entry in whole.items() if name != "__metadata__"}
     check(len(header) == len(tensors) and base == 10994816, f"the converter's reader takes all {len(header)} of them; the data begin at {base:,}")
+    # T363.3: the conversion that keeps the blocks, of this head
+    sink = Sized()
+    kept = llama2_convert.Kept(whole, base, json.loads(config), "int8", 4096, sink=sink)
+    kinds = kept.form["kinds"] or {}
+    counted = {row: dict(collections.Counter([types] if isinstance(types, str) else types)) for row, types in kinds.items()}
+    check(counted == saluki_form.COUNTS, f"kept, {len(kinds)} rows are in the file's blocks, as many layers of each type as counted: "
+                                         f"{', '.join(kinds)} ({len(json.dumps(kinds))} characters of JSON)")
+    moved = collections.Counter(name.rsplit(".", 2)[-2] for name, orders in kept.stay.items() if orders is not None)
+    check(len(kept.stay) == sum(saluki_form.TENSORS.values()) and dict(moved) == {"in_proj_qkv": 48, "in_proj_z": 48, "q_proj": 16, "k_proj": 16},
+          f"all {len(kept.stay)} tensors in blocks stay bytes; the rows of {dict(moved)} are moved")
+    check(kept.form["tiled"] is True and sink.size == saluki_form.BYTES + 33808 == 7956712492 and sink.dtype == "int8"
+          and sink.header == saluki_form.HEADER and sink.form["linear"] == saluki_form.LINEAR,
+          f"the checkpoint is {sink.size:,} bytes as {sink.dtype} with the header {sink.header}; the output matrices of "
+          f"the linear-attention layers stay tiled: {kept.form['tiled']}")
+    (fetch.work / "kept.json").write_text(json.dumps({"header": sink.header, "bytes": sink.size, "form": kept.form}, indent=1) + "\n")
     if args.wrong:
         WRONG[args.wrong][0]()
         print(f"saluki-rows: --wrong {args.wrong}: {WRONG[args.wrong][2]}")

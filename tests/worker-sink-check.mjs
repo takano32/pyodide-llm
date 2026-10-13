@@ -27,8 +27,10 @@ const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
 // matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T260: "convolution",
 // the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values; T359:
 // "kinds", the rows a file holds in a kind of their own (null where there are none, which is every model the worker
-// loads: Python refuses such a file where the weights are outside it, so footprint() never reads the key)
-assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "kinds", "linear", "qk_norm", "rotated"],
+// loads: Python refuses such a file where the weights are outside it, so footprint() never reads the key); T363:
+// "tiled", the order of the columns of a linear-attention layer's output matrix (null but in such a file: it moves
+// and sizes nothing, and Python refuses it outside as it refuses "kinds")
+assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "kinds", "linear", "qk_norm", "rotated", "tiled"],
   "FORM has other keys now: say here which of them footprint() reads");
 
 // T368.2: the type whatever is TypeScript reads a form by (src/runtime/contracts/form.ts) says the same keys, and the
