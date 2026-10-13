@@ -49,7 +49,7 @@ from engine.dtypes import DTYPES, EITHER, PACKED, QUANTIZED, Dtype, dtype_of  # 
 from engine.layout import (ATTENDING, CLASSIFIER, CONVOLUTION, EMBEDDING, EVERY, FORM, LAYOUTS, LINEAR,  # noqa: F401
                            MATRIX, PARTLY, POSITIONS, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Place, Row,
                            Stateful, after, convolution_form, file_size, form_of, kind_of, kinds_form,
-                           layer_slots, layout_of, linear_form, linear_widths, placed, slots_of,
+                           layout_of, linear_form, linear_widths, placed, slots_of,
                            stateful_form, stateful_kinds, suited, tensor_rows, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, hadamard, head_norm, l2_heads, layernorm,  # noqa: F401
                            partial_rope, rmsnorm, rope, rope_frequencies, rope_magnitude, rotate,

@@ -70,12 +70,6 @@ def pytest_collection_finish(session):
     def decoded(tokenizer, result, args):
         note("decoded", as_bytes(result))
 
-    def sampled(llama, result, args):
-        note("sampled", repr(int(result)).encode())
-
-    def penalized(llama, result, args):  # in place: the logits are the first argument
-        note("penalized", np.ascontiguousarray(args[0]).tobytes())
-
     # (review) generate() draws its tokens by closures of its own (a model with the kernels: not the reference), so what it writes is recorded
     # at the generator: the pieces of text it yields, and the exception it ends in
     generate = llama2_numpy.Llama.generate
@@ -93,10 +87,9 @@ def pytest_collection_finish(session):
 
     llama2_numpy.Llama.generate = generating
     # T359.7: the reference sampler draws by its settings as one value, the penalties and the token in one call
-    # (NumpySampler.drawing()'s draw). What is written down is what was before, so that a tree of each kind compares:
-    # the token of every draw, and the logits after the penalties of a draw that has any (a tree before wrote them
-    # down after each of the two penalties: a test with both, on tokens it sampled, differs in "penalized")
-    drawing = getattr(llama2_numpy.NumpySampler, "drawing", None)
+    # (NumpySampler.drawing()'s draw). What is written down: the token of every draw, and the logits after the
+    # penalties of a draw that has any (once for each penalty the draw has)
+    drawing = llama2_numpy.NumpySampler.drawing
 
     def drawing_told(self, sampling, rng):
         draw = drawing(self, sampling, rng)
@@ -114,11 +107,7 @@ def pytest_collection_finish(session):
         return told
 
     after(llama2_numpy.Tokenizer, "decode", decoded)
-    if drawing is None:
-        after(llama2_numpy.Llama, "sample", sampled)
-        after(llama2_numpy.Llama, "penalize", penalized)
-    else:
-        llama2_numpy.NumpySampler.drawing = drawing_told
+    llama2_numpy.NumpySampler.drawing = drawing_told
     after(llama2_convert.Stream, "finish", finished)
     after(llama2_convert.Conversion, "start", started)
     after(llama2_numpy.Llama, "forward", went)

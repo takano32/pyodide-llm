@@ -61,10 +61,7 @@ def signs(widths, block):
 
 
 def written(writer):
-    """[where it begins, its shape, layout()'s "is a matrix"] of every tensor a Writer places. (Until T359's second
-    step is on main the other tree's Writer says it as tensors; from then on the first branch goes.)"""
-    if hasattr(writer, "tensors"):
-        return [list(tensor) for tensor in writer.tensors]
+    """[where it begins, its shape, layout()'s "is a matrix"] of every tensor a Writer places."""
     return [[place.offset, place.row.shape, {L.VECTOR: False, L.TABLE: None}.get(place.row.role, True)] for place in writer.places]
 
 
@@ -193,10 +190,7 @@ for name, (config, tensors) in CONFIGS.items():
 
 # ---- the repetition penalty's window: a history of 200 different tokens, and which of them the penalty reached
 logits = np.ones(256, dtype=np.float32)
-if hasattr(L.Llama, "penalize"):  # (a tree before T359.7: the sampler's functions took the settings one by one)
-    L.Llama.penalize(None, logits, list(range(200)), 2.0)
-else:
-    L.Llama.sampler.drawing(L.Sampling(repetition_penalty=2.0), None)(logits, list(range(200)), [])
+L.Llama.sampler.drawing(L.Sampling(repetition_penalty=2.0), None)(logits, list(range(200)), [])
 reached = np.flatnonzero(logits != 1.0)
 said("window: the tokens of a history of 200 the penalty reaches", lambda: f"{len(reached)}, from {int(reached[0])} to {int(reached[-1])}")
 

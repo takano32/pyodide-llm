@@ -142,13 +142,6 @@ def slots_of(stateful):
     return slots
 
 
-def layer_slots(n_layers, linear, convolution=None):
-    """slots_of() for the numbers of a Qwen3.5's linear-attention layers or of an LFM2's convolution layers (None and
-    None: every layer attends), for whoever has those two and no Dims (a Dims has its slots)."""
-    kind, numbers = (SHORT_CONVOLUTION, convolution) if convolution is not None else (GATED_DELTA, linear)
-    return slots_of(kind.layers(numbers, n_layers) if numbers is not None else [False] * n_layers)
-
-
 # ---- the rows
 # What a row is to the engine and to a quantized file (kind_of() below):
 #   MATRIX      what an activation is multiplied by; a quantized file holds it quantized

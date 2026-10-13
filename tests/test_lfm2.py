@@ -17,7 +17,8 @@ from test_gguf import fed, metadata_value, q8_0_blocks, unigram, with_original
 import llama2_convert
 from llama2_convert import (Safetensors, architecture, check_config, checkpoint_form, checkpoint_size, convolution_layers,
                             head_size, layout, normalize)
-from llama2_numpy import FORM, Llama, checkpoint_dtype, convolution_form, form_of, layer_slots
+from llama2_numpy import FORM, Llama, checkpoint_dtype, convolution_form, form_of, slots_of
+from engine.layout import SHORT_CONVOLUTION
 
 TOKENS = [1, 5, 7, 9, 11, 5, 5, 300, 2]  # more than the taps of the convolution, and a token that comes again
 # the 350M's order of layers in small, a classifier of its own, two taps and four, an FFN whose size the config says
@@ -380,8 +381,8 @@ def test_an_lfm2_the_engine_cannot_run_is_refused(change, reason):
 
 def test_the_layers_slots():
     form = convolution_form({"layers": "ccaca", "taps": 3}, 5)
-    assert layer_slots(5, None, form) == [(True, 0), (True, 1), (False, 0), (True, 2), (False, 1)]
-    assert layer_slots(3, None, None) == [(False, 0), (False, 1), (False, 2)]
+    assert slots_of(SHORT_CONVOLUTION.layers(form, 5)) == [(True, 0), (True, 1), (False, 0), (True, 2), (False, 1)]
+    assert slots_of([False] * 3) == [(False, 0), (False, 1), (False, 2)]
     assert convolution_form(None) is None
     for wrong, layers in (({"layers": "ccax"}, None), ({"layers": ""}, None), ({"taps": 1}, None), ({}, 4)):
         with pytest.raises(ValueError, match="not the convolution layers"):

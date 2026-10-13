@@ -15,7 +15,7 @@ from made_up import checkpoint, uniform
 from engine.layout import GATED_DELTA, SHORT_CONVOLUTION
 from llama2_numpy import (ATTENDING, EVERY, FORM, LAYOUTS, MATRIX, PARTLY, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
                           Settings, Stateful, after, checkpoint_dtype, external_tensors, file_size, form_of,
-                          forward_plan, layer_facts, layer_slots, layout_of, rope_frequencies, slots_of,
+                          forward_plan, layer_facts, layout_of, rope_frequencies, slots_of,
                           stateful_form, stateful_kinds, tensor_rows, unturned_layers)
 from engine.tensors import rope_tables
 
@@ -125,10 +125,6 @@ def test_the_kinds_of_layers_that_keep_a_state():
     assert SHORT_CONVOLUTION.layers(convolution, 4) == [True, True, False, True]
     assert slots_of([True, True, False, True, False]) == [(True, 0), (True, 1), (False, 0), (True, 2), (False, 1)]
     assert slots_of([]) == [] and slots_of([False] * 3) == [(False, 0), (False, 1), (False, 2)]
-    # (the function of the two forms, which tools without a Dims call, says the same)
-    assert layer_slots(5, linear) == slots_of(GATED_DELTA.layers(linear, 5))
-    assert layer_slots(4, None, convolution) == slots_of(SHORT_CONVOLUTION.layers(convolution, 4))
-    assert layer_slots(3, None) == slots_of([False] * 3)
     # nothing said is nothing
     assert GATED_DELTA.parse(None, 4) is None and SHORT_CONVOLUTION.parse(None, 4) is None
 

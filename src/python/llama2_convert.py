@@ -18,7 +18,7 @@ import numpy as np  # noqa: F401
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
 from llama2_numpy import (CHARSMAP, DTYPES, EITHER, FORM, QUANTIZED, RMS_EPS, TERNARY_GROUP,  # noqa: F401
-                          TERNARY_VALUES, convolution_form, dtype_of, form_of, layer_slots, linear_form,
+                          TERNARY_VALUES, convolution_form, dtype_of, form_of, linear_form,
                           linear_widths, pack6, quantize, quantize6, rope_frequencies, rope_magnitude,
                           rotated_form, rotated_widths, sign_bits, ternary)
 from convert.checkpoint import IS_MATRIX, Writer, checkpoint_size, layout, tensor_bytes  # noqa: F401
