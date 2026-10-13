@@ -211,12 +211,16 @@ def agree(directory, out=None):
                 same = sum(int(np.argmax(alone[row]) == np.argmax(logits[row])) for row in range(len(prompt)))
                 spread = float(np.mean([logits[row].std() for row in range(len(prompt))]))
                 line.update({"one at a time against one batch, the largest difference": max(apart),
+                             "by row": apart,
                              "its mean over the rows": float(np.mean(apart)),
                              "rows whose largest logit is the same token": f"{same} of {len(prompt)}",
                              "the standard deviation of a row": spread})
                 print(f"saluki: text {index}: {len(prompt)} tokens, one at a time against one batch: at most "
                       f"{max(apart):.3e} apart (mean {np.mean(apart):.3e}; a row's logits spread by {spread:.2f}), "
                       f"the same largest token in {same} of {len(prompt)} rows")
+                # (row by row: whether the two paths part at the first token, which has nothing before it, or later)
+                print(f"saluki: text {index}: apart by row: {' '.join(f'{value:.3f}' for value in apart[:12])}"
+                      f"{' ...' if len(apart) > 12 else ''}; the most at row {int(np.argmax(apart))}")
         print(f"saluki: text {index}: wrote {wrote} (the first by a margin of {line['margin of the first written token']:.3f})")
         summary.append(line)
     floors = [line["one at a time against one batch, the largest difference"] for line in summary

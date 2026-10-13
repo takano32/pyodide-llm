@@ -138,10 +138,10 @@ if has agree; then
 fi
 
 if has keep; then
-  # what a later comparison reads (0.2 GB: a row of logits is 1 MB), kept with the run
+  # what a later comparison reads (0.25 GB: a row of logits is 1 MB), kept with the run
   keep=.tmp/keep/reference-saluki
   mkdir -p "$keep"
-  cp "$work"/fork-*.ids "$work"/fork-*.logits "$work"/prompt-*.txt "$keep/"
+  cp "$work"/fork-*.ids "$work"/fork-*.logits "$work"/fork-*.single "$work"/prompt-*.txt "$keep/"
   cp "$work/summary.json" "$work/llama.log" "$keep/" 2>/dev/null || true
   echo "saluki: the reference is kept with this run: $(du -sh "$keep" | cut -f1) (REFERENCES=<this run's id> takes it)"
 fi
