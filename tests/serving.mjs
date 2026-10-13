@@ -69,12 +69,11 @@ export async function serving(folder = DIST, { base = BASE, instead } = {}) {
     if (other !== undefined) {
       const body = Buffer.from(other.body);
       res.writeHead(200, { "Content-Type": other.type ? TYPES[other.type] : typeOf(file), "Content-Length": body.length });
-      return res.end(body);  // (Node sends a HEAD no body)
+      return res.end(body);
     }
     if (!there) return none(res);
     res.writeHead(200, { "Content-Type": typeOf(there), "Content-Length": stat(there).size });
-    if (req.method === "HEAD") return res.end();
-    fs.createReadStream(there).pipe(res);
+    fs.createReadStream(there).pipe(res);  // (Node sends a HEAD no body)
   });
   await new Promise((resolve, reject) => server.once("error", reject).listen(0, resolve));
   const { port } = server.address();

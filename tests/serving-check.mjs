@@ -189,6 +189,8 @@ try {
     const made = await asked(mine.port, "/pyodide-llm/made.css");
     assert.deepEqual([made.status, made.body.toString(), made.headers["content-type"], made.headers["content-length"]], [200, "何か", "text/css", "6"]);
     assert.equal((await asked(mine.port, "/pyodide-llm/made.css", { method: "HEAD" })).body.length, 0);
+    rule = () => ({ body: "<p>", type: ".html" });
+    assert.equal((await asked(mine.port, "/pyodide-llm/a.js")).headers["content-type"], "text/html; charset=utf-8", "the type it names, not the file's");
     ok("another body answers 200 with its type and its length in bytes");
   } finally {
     await mine.close();
