@@ -1,11 +1,12 @@
 # The checkpoint's format as the converter asks for it: where every tensor is and how many bytes it takes in each dtype
 # (engine/layout.py's rows, engine/dtypes.py's kinds), and the Writer that puts the tensors where they belong, a piece
 # at a time.
+import math
 import struct
 
 import numpy as np
 
-from engine.dtypes import DTYPES, dtype_of
+from engine.dtypes import KINDS, dtype_of
 from engine.layout import FORM, MATRIX, TABLE, VECTOR, Row, check_suited, file_size, form_of, placed, tensor_rows
 
 # what layout() says of a row: True for what int8 quantizes, False for the norm weights, None for the RoPE tables
@@ -79,8 +80,21 @@ class Writer:
         place = self.places[index]
         if place.kind is None:
             return
-        kind = DTYPES[place.kind]
-        if not kind.bits:
+        if place.layers:
+            # a stack whose layers are each of a kind (T363): every layer's rows to the layer's own place
+            values, each, done = np.asarray(values).reshape(-1), math.prod(place.row.shape[1:]), 0
+            while done < values.size:
+                layer, inside = divmod(first + done, each)
+                take = min(each - inside, values.size - done)
+                self.store(place.layers[layer], inside, values[done:done + take])
+                done += take
+            return
+        self.store(place, first, values)
+
+    def store(self, place, first, values):
+        """values: whole rows of the tensor at place, of one kind, beginning at its element number first."""
+        kind = KINDS[place.kind]
+        if not kind.group:
             self.put(place.offset + first * kind.itemsize, np.asarray(values).astype(kind.name, copy=False))
             return
         rows = np.asarray(values, dtype=np.float32).reshape(-1, place.row.shape[-1])

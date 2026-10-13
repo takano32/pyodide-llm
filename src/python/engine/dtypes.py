@@ -1,7 +1,8 @@
 # The dtypes of a checkpoint: how a file holds a tensor, one entry for each (DTYPES). What a kind takes in the file, the
 # group of a quantized row, whether a row suits it, how its values are packed and read back, the kernel that packs
 # them: everything that depends on the kind is asked here, by its name (T359). A new one is an entry here (and its
-# packing in engine/packing.py); what the forward pass multiplies it with is forward.js's (jobs.js) and not said here.
+# packing in engine/packing.py; a row's kind that is no file's dtype is an entry of BLOCKS, T363); what the forward pass
+# multiplies it with is forward.js's (jobs.js) and not said here.
 # This file reads engine/packing.py alone: engine/layout.py and everything above read it.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
@@ -43,7 +44,9 @@ class Dtype(NamedTuple):
     in, how many values), anything but 0 or nothing back for values the kind cannot hold; kernel_quantizer() calls
     it). rounds: any model's weights are rounded into it (False: only the weights that are its values already, and
     refusal are the words for the others; nobody is given this kind without asking). unsuited: the words for a model
-    with rows that are no whole groups."""
+    with rows that are no whole groups.
+    T363, llama.cpp's blocks (BLOCKS): block, the bytes of a group in place of bits; scale, the bytes of the scale
+    behind each group (0: it is inside); read(the bytes of whole groups) -> float32 values, in place of unpack."""
     name: str
     short: str
     itemsize: int = 0
@@ -55,14 +58,40 @@ class Dtype(NamedTuple):
     rounds: bool = True
     refusal: str = None
     unsuited: str = None
+    block: int = 0
+    scale: int = 4
+    read: Callable = None
 
     def stored_bytes(self, count, group):
         """(the bytes of the values, the bytes of the scales) of count values in groups of group."""
-        return count // group * (group * self.bits // 8), 4 * (count // group)
+        return count // group * (self.block or group * self.bits // 8), self.scale * (count // group)
 
     def suits(self, length):
-        """Whether a row of this length can be held: a quantized kind needs whole groups."""
-        return not self.bits or length % self.group(length) == 0
+        """Whether a row of this length can be held: a kind in groups needs whole groups."""
+        return not self.group or length % self.group(length) == 0
+
+    def floats(self, raw, scales, group):
+        """The float32 values of a tensor in groups, from the bytes of its values and its scales."""
+        if self.read is not None:
+            return self.read(raw)
+        return (self.unpack(raw).reshape(-1, group).astype(np.float32) * scales[:, None]).reshape(-1)
+
+    def stored(self, raw, scales, shape, group):
+        """A table in groups as it is stored, for whoever widens a row at a time: (the int8 values in groups, a scale
+        for each), or the rows' blocks."""
+        if self.read is not None:
+            return Blocks(raw.reshape(shape[0], -1).copy(), self.read, shape[1:])
+        return self.unpack(raw).reshape(*shape[:-1], -1, group).copy(), scales.reshape(*shape[:-1], -1, 1).copy()
+
+
+class Blocks:
+    """A table held as its rows' blocks: table[row] is the row, float32."""
+
+    def __init__(self, raw, read, shape):
+        self.raw, self.read, self.shape = raw, read, (len(raw), *shape)
+
+    def __getitem__(self, row):
+        return self.read(self.raw[row]).reshape(self.shape[1:])
 
 
 def as_int8(raw):
@@ -82,12 +111,46 @@ DTYPES = {dtype.name: dtype for dtype in (
           packer="ternary_x", rounds=False, refusal=NOT_TERNARY,
           unsuited="Ternary weights need rows of whole groups of 128, and this model has other rows."),
 )}
+# ---- llama.cpp's blocks (T363)
+# A GGUF's K- and i-quantized types, kept as the file has them: 256 weights to a block of the row, its scales inside
+# (docs/notes/t361-saluki-2026-10-13.md). A row's kinds alone (the form's "kinds"), never a file's dtype.
+# NumPy's readers are the converter's (convert/superblocks.py and its codebooks, 15 KB zipped that the engine's
+# archive, which every visit fetches, goes without): asked for when such a row is read in NumPy, which the reference
+# does and the page does not (it multiplies these rows on the kernels).
+BLOCK = 256
+NOT_BLOCKS = "llama.cpp's blocks hold 256 weights of a row, and this model has rows that are no whole blocks."
+
+
+def block_reader(name):
+    def read(raw):
+        from convert.superblocks import SUPERBLOCKS
+        return SUPERBLOCKS[name][2](raw)
+    return read
+
+
+# the type's name in a GGUF, and the bytes of a block
+BLOCKS = {name: Dtype(name, name, group=lambda length: BLOCK, block=size, scale=0, read=block_reader(name), rounds=False,
+                      unsuited=NOT_BLOCKS)
+          for name, size in (("Q2_K", 84), ("Q4_K", 144), ("IQ2_XXS", 66), ("IQ2_XS", 74), ("IQ3_XXS", 98), ("IQ1_S", 50),
+                             ("IQ3_S", 110), ("IQ2_S", 82), ("IQ4_XS", 136), ("IQ1_M", 56))}
+# the codebooks a file with such rows carries for the kernels (layout.py's row "codebooks"): these many bytes, which
+# are convert/grids.py's codebooks()
+BYTES = Dtype("uint8", "u8", itemsize=1)
+CODEBOOKS = 33808
+# every kind a row may be stored in, by its name: a file's dtypes, the blocks, and bytes
+KINDS = {**DTYPES, **BLOCKS, BYTES.name: BYTES}
+
 # the dtypes with groups and scales
 QUANTIZED = tuple(name for name, dtype in DTYPES.items() if dtype.bits)
 # those whose values are int8 in another packing: the engine widens them where it reads them, and is int8 from there on
 PACKED = tuple(name for name in QUANTIZED if DTYPES[name].bits < 8)
 # the ones a model converted with no dtype asked for may get (Stream's callable dtype, T115)
 EITHER = tuple(name for name in QUANTIZED if DTYPES[name].rounds)
+
+
+def kind_named(kind):
+    """The kind a form gives a row, by its name: a block's or a dtype's (whose ValueError is for any other)."""
+    return str(kind) if str(kind) in BLOCKS else dtype_of(kind)
 
 
 def dtype_of(dtype):

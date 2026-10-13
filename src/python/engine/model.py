@@ -147,7 +147,8 @@ class Llama:
         unturned (T255): the layers whose q and k RoPE does not turn (SmolLM3: every fourth), where there are any.
         kinds (T359): the rows the file holds in a kind of their own, {the row's name: "int6", ...} (FORM's, the file
         cannot say them): every other row is stored the way dtype stores a row of its role. NumPy reads such a
-        file; with external it is refused, forward.js takes one dtype for a file.
+        file; with external it is refused, forward.js takes one dtype for a file. T363: a list gives each layer of
+        a stack one, and llama.cpp's blocks (engine/dtypes.py's BLOCKS) are kinds, read by the converter's readers.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3). lowercase (T265) and prefixed (T308): the tokenizer's, see Tokenizer.

@@ -28,8 +28,8 @@ import math
 import numpy as np
 
 from engine.checkpoint import outside
-from engine.dtypes import DTYPES, QUANTIZED
-from engine.layout import EMBEDDING, PARTLY, TABLE, check_suited, layout_of, placed
+from engine.dtypes import KINDS, QUANTIZED
+from engine.layout import CODES, EMBEDDING, PARTLY, TABLE, check_suited, layout_of, placed
 
 
 def read_tensor(checkpoint, place, whole=True, copy=False):
@@ -37,15 +37,19 @@ def read_tensor(checkpoint, place, whole=True, copy=False):
     stored (a quantized row as (values in groups, a scale for each), a float16 one as float16), for a table that is
     only ever read a row at a time: a quarter or half of the memory, and whoever reads a row widens it.
     A float32 row is a view into the checkpoint buffer unless copy says otherwise (the float32 vectors of a quantized
-    file: everything else of such a file is a copy already, and the buffer can then be freed)."""
-    shape, count, kind = place.row.shape, math.prod(place.row.shape), DTYPES[place.kind]
-    if kind.bits:
-        # quantize.py: int8 values (or their packing), then one float32 scale per group
-        values = kind.unpack(np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset))
-        scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // place.group, offset=place.scales)
+    file: everything else of such a file is a copy already, and the buffer can then be freed).
+    A stack with a kind for each layer is its layers, read one by one."""
+    if place.layers:
+        return np.stack([read_tensor(checkpoint, layer, whole, copy) for layer in place.layers])
+    shape, count, kind = place.row.shape, math.prod(place.row.shape), KINDS[place.kind]
+    if kind.group:
+        # quantize.py: int8 values (or their packing), then one float32 scale per group; or blocks, the scales inside
+        raw = np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset)
+        scales = np.frombuffer(checkpoint, dtype=np.float32, count=(place.offset + place.size - place.scales) // 4,
+                               offset=place.scales)
         if not whole:
-            return values.reshape(*shape[:-1], -1, place.group).copy(), scales.reshape(*shape[:-1], -1, 1).copy()
-        return (values.reshape(-1, place.group).astype(np.float32) * scales[:, None]).reshape(shape)
+            return kind.stored(raw, scales, shape, place.group)
+        return kind.floats(raw, scales, place.group).reshape(shape)
     array = np.frombuffer(checkpoint, dtype=kind.name, count=count, offset=place.offset)
     if kind.name != "float32" and not whole:
         return array.reshape(shape).copy()
@@ -62,9 +66,9 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
         check_suited(rows, dtype)
         # the RoPE tables are the file's in float32 alone (rope_tables() makes the others).
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8
-        # or float16 table stays as it is and Llama.embedding() widens the row it needs.
-        held = {place.row.name: read_tensor(checkpoint, place, shared_weights or place.row.role != EMBEDDING,
-                                            copy=dtype in QUANTIZED)
+        # or float16 table stays as it is and Llama.embedding() widens the row it needs. (Codebooks stay bytes.)
+        as_stored = (CODES,) if shared_weights else (CODES, EMBEDDING)
+        held = {place.row.name: read_tensor(checkpoint, place, place.row.role not in as_stored, copy=dtype in QUANTIZED)
                 for place in placed(rows, dtype)
                 if place.kind is not None and (place.row.role != TABLE or dtype == "float32")}
     if shared_weights:

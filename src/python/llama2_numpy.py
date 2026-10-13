@@ -42,8 +42,9 @@ from engine.tokenizer import (BOS, BYTE_CHARS, CharClasses, Charsmap, SPACES, ST
                               letter, mark, number, pretokenize)
 from engine.packing import (NOT_TERNARY, TERNARY_GROUP, group32, pack6, pack_ternary, quantize,  # noqa: F401
                             quantize6, six, ternary, unpack6, unpack_ternary)
-from engine.dtypes import DTYPES, EITHER, PACKED, QUANTIZED, Dtype, dtype_of  # noqa: F401
-from engine.layout import (ATTENDING, CONVOLUTION, EVERY, FORM, LAYOUTS, LINEAR, MATRIX, PARTLY,  # noqa: F401
+from engine.dtypes import (BLOCKS, CODEBOOKS, DTYPES, EITHER, KINDS, PACKED, QUANTIZED, Dtype,  # noqa: F401
+                           dtype_of)
+from engine.layout import (ATTENDING, CODES, CONVOLUTION, EVERY, FORM, LAYOUTS, LINEAR, MATRIX, PARTLY,  # noqa: F401
                            POSITIONS, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Place, Row, Stateful,
                            after, convolution_form, file_size, form_of, kind_of, layout_of, linear_form,
                            linear_widths, placed, slots_of, stateful_form, stateful_kinds, suited,
