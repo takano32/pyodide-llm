@@ -8,7 +8,7 @@ from convert.template import config_token, model_turn
 from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Kept, Stream
-from convert.gguf import gguf_model, gguf_read, gguf_tokenizer
+from convert.gguf import gguf_model, gguf_read, gguf_tokenizer, rope_freqs_values
 from convert.tokenizer import (described_options, piece_ids, sentencepiece_charsmap, sentencepiece_options,
                                sentencepiece_pieces, sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces)
@@ -86,32 +86,41 @@ class Conversion:
         """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
-        header, config = gguf_model(metadata, tensors, base)
+        # (T505.2: llama.cpp's table of a Llama 3's RoPE scaling, which a GGUF alone has in the place of the scaling)
+        header, config = gguf_model(metadata, tensors, base, table=rope_freqs_values(head, tensors, base))
         self = cls.__new__(cls)
         self.config = config
         check_config(normalize(config))  # a GPT-2's is in config.json's own spelling (T136's third stage)
-        for token in ("bos", "eos"):
-            # the review of T203: every text begins with the BOS, and the answer stops at it and at the EOS (start()).
-            # A GGUF that names none would have tokens 1 and 2 there, '"' and '#' of a byte-level BPE vocabulary:
-            # unsloth's Qwen3 GGUFs name no BOS, and every answer ended at its first lone '"'. The list takes those
-            # with their original's config.json (gguf_weights), whose BOS is the original's
-            if not isinstance(metadata.get(f"tokenizer.ggml.{token}_token_id"), int):
-                raise ValueError(f"This GGUF names no {token.upper()} token, which the engine needs: open it with its "
-                                 f"original's vocabulary and config.json.")
+        # the review of T203: every text begins with the BOS, and the answer stops at it and at the EOS (start()).
+        # A GGUF that names none would have tokens 1 and 2 there, '"' and '#' of a byte-level BPE vocabulary:
+        # unsloth's Qwen3 GGUFs name no BOS, and every answer ended at its first lone '"'. The list takes those
+        # with their original's config.json (gguf_weights), whose BOS is the original's
+        nameless = "This GGUF names no {} token, which the engine needs: open it with its original's vocabulary and config.json."
+        if not isinstance(metadata.get("tokenizer.ggml.eos_token_id"), int):
+            raise ValueError(nameless.format("EOS"))
+        # T505.2: a GGUF that names no BOS is one whose texts llama.cpp begins with none (unsloth's Qwen3.5: no
+        # bos_token_id, no add_bos_token), and every text of its chat template begins with the template's own token.
+        # Where the template is read and begins with a token, that token is what the engine begins with (start()'s
+        # head, T264) and the BOS nobody named is neither written nor stopped at; anywhere else it is refused as it was
+        named = isinstance(metadata.get("tokenizer.ggml.bos_token_id"), int)
+        if not named:
+            del config["bos_token_id"]
         if not callable(dtype):
             dtype_of(dtype)
         self.tokenizer, options, tokenizer_config, specials, added = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials,
-                   added=added, readers=readers, blocks=blocks)
+                   added=added, readers=readers, blocks=blocks, headless=None if named else nameless.format("BOS"))
         return self
 
     def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None,
-              specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False):
+              specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False, headless=None):
         """sink and quantize_rows: see Writer, readers: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
         tokenizer's special tokens, the ones a chat template writes between the turns. chat_template: the text of
         chat_template.jinja, where there is one (T127). added: the added tokens that are not special, one token
-        wherever they are written (T143). bos: the id of the BOS the tokenizer names, where it names one (T143)."""
+        wherever they are written (T143). bos: the id of the BOS the tokenizer names, where it names one (T143).
+        headless (T505.2): what to refuse a model with whose template begins with no token of its own (a GGUF that
+        names no BOS: nothing else says what its texts begin with)."""
         own = self.config.get("bos_token_id", 1)
         # (the BOS the tokenizer names and config.json's, where each says one: the 1 of a config.json that has no such
         # key is a guess, T264)
@@ -122,6 +131,8 @@ class Conversion:
         ids = piece_ids(self.tokenizer, self.config["vocab_size"])
         template, head, mark = self.beginning(*model_turn(described(tokenizer_config), chat_template), [*specials, *added],
                                               options, ids)
+        if headless and head is None:
+            raise ValueError(headless)
         # the answer stops at the BOS, and at config.json's where that is another (T143). Not at the token the template
         # begins with (T264's head), though it is the engine's BOS then: it says where a message begins, not where the
         # answer ends. A harmony model (llm-jp-4) writes <|end|><|start|>assistant<|channel|>final<|message|> after its

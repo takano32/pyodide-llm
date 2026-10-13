@@ -31,11 +31,20 @@ GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7:
 # case, which leaves a 's after U+017F unmatched; openbmb's own GGUFs of 2026-09 still say llama-bpe)
 # (lfm2, T260: llama.cpp splits an LFM2's text as a Llama 3's, which is the pattern of its tokenizer.json; it also
     # takes a piece that is in the vocabulary whole, which that tokenizer.json does not: ignore_merges is false there,
-    # and gguf_tokenizer() says it of llama-bpe alone)
+    # and GGUF_IGNORE_MERGES says it of llama-bpe and not of lfm2)
+# (T505.2: smaug-bpe and deepseek-r1-qwen, which llama.cpp splits by the patterns of llama-bpe and of qwen2
+# (src/llama-vocab.cpp at the commit convert/superblocks.py names), each held to a real GGUF and its original's
+# tokenizer.json: a SmolLM3's and a Llama 3.1's say smaug-bpe, DeepSeek-R1's Qwen distills deepseek-r1-qwen. A name is
+# added once a real file of it is held to its original so, and not for being on llama.cpp's list:
+# docs/notes/t505-gguf-alone-2026-10-13.md has the names seen and the ones left out)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
-                      "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5", "lfm2": "llama3"}
+                      "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5", "lfm2": "llama3",
+                      "smaug-bpe": "llama3", "deepseek-r1-qwen": "qwen"}
 # the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
-GGUF_NFC = ("qwen2", "qwen35")
+GGUF_NFC = ("qwen2", "qwen35", "deepseek-r1-qwen")
+# the ones whose tokenizer.json takes a piece that is in the vocabulary whole (ignore_merges), which a GGUF does not
+# say (a Llama 3's; llama.cpp does so for llama-bpe and for lfm2, and not for smaug-bpe, whose two originals do)
+GGUF_IGNORE_MERGES = ("llama-bpe", "smaug-bpe")
 
 
 def gguf_read(data):
@@ -91,10 +100,12 @@ def gguf_read(data):
     return metadata, tensors, (at + alignment - 1) // alignment * alignment
 
 
-def gguf_model(metadata, tensors, base, rope_freqs=False):
+def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
     """The safetensors-like header (Hugging Face's names, offsets from base) and the config.json of a GGUF.
     rope_freqs: keep llama.cpp's table of Llama 3's RoPE scaling in the header, to be checked against the original's
-    rope_scaling as it streams past (gguf_weights, T136), instead of refusing it."""
+    rope_scaling as it streams past (gguf_weights, T136). table (T505.2): that table's values, where the GGUF is
+    alone and its head held them (rope_freqs_values()): the config.json says the rope_scaling that makes it
+    (llama3_scaling()). With neither, a GGUF that has the table is refused."""
     arch = metadata.get("general.architecture")
     if arch not in GGUF:
         raise ValueError(f"This GGUF holds a {arch}: only {named(family for _, family in GGUF.values())} ones are supported.")
@@ -108,14 +119,19 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     header = {}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
-        if not rope_freqs:
-            raise ValueError("This GGUF scales its RoPE with a rope_freqs table, which the engine does not read.")
         info = tensors["rope_freqs.weight"]
-        if info["type"] != 0:
-            raise ValueError(f"rope_freqs.weight is stored as ggml type {info['type']}, not F32.")
-        size = 4 * math.prod(info["shape"])
-        header["rope_freqs.weight"] = {"dtype": "F32", "shape": info["shape"], "rope_freqs": True,
-                                       "data_offsets": [info["offset"], info["offset"] + size]}
+        if rope_freqs:
+            if info["type"] != 0:
+                raise ValueError(f"rope_freqs.weight is stored as ggml type {info['type']}, not F32.")
+            size = 4 * math.prod(info["shape"])
+            header["rope_freqs.weight"] = {"dtype": "F32", "shape": info["shape"], "rope_freqs": True,
+                                           "data_offsets": [info["offset"], info["offset"] + size]}
+        elif table is None:
+            raise ValueError(NO_TABLE)
+        else:
+            scaling = llama3_scaling(table, config)
+            if scaling:
+                config["rope_scaling"] = scaling
     names, layer, layers = family.gguf_names
     # what llama.cpp stores of this family otherwise than Hugging Face has it, marked in the tensor's entry
     stored = family.gguf_stored(config)
@@ -271,6 +287,65 @@ def gguf_agrees(own, config):
                          "its own, this GGUF has none.")
 
 
+NO_TABLE = "This GGUF scales its RoPE with a rope_freqs table, which the engine does not read."
+
+
+def rope_freqs_values(head, tensors, base):
+    """T505.2: llama.cpp's rope_freqs table of a GGUF alone, read off its head (the file from its beginning): float64,
+    or None where the file has none. llama.cpp's converter writes the table before every other tensor, a few hundred
+    bytes: Incomplete where the head ends before it does (whoever fetches the head fetches on). A table anywhere else
+    (Swallow 8B's GGUF has it after every other tensor, gigabytes in) is refused as before: the RoPE tables of a float32
+    checkpoint are made before the first tensor is read."""
+    info = tensors.get("rope_freqs.weight")
+    if info is None:
+        return None
+    if info["type"] != 0 or info["offset"] != 0:
+        raise ValueError(NO_TABLE)
+    data = memoryview(head.to_py() if hasattr(head, "to_py") else head).cast("B")
+    size = 4 * math.prod(info["shape"])
+    if len(data) < base + size:
+        raise Incomplete()
+    return np.frombuffer(bytes(data[base:base + size]), dtype="<f4").astype(np.float64)
+
+
+def llama3_scaling(table, config):
+    """T505.2: the rope_scaling (config.json's, of the llama3 kind) that makes llama.cpp's rope_freqs table, which is
+    all a GGUF says of it: a divisor of each pair's angle (rope_freqs_agree). None for a table of ones (no scaling).
+    The divisor is 1 for the pairs that turn fast, factor for the slow ones, and between them 1 / ((1 - s) / factor + s)
+    with s a line in a pair's frequency: s = (original / wavelength - low) / (high - low). So factor is the largest
+    divisor, and the pairs between give the line; only original / low and original / high matter to the table, so
+    low is taken as 1 (every Llama 3's), and where there are fewer than two pairs between, a Llama 3's 4 and 8192 are
+    tried. Whole numbers where they make the table, as config.json has them. Whatever is found must make the table
+    as rope_freqs_agree() holds one to an original's (1e-5), or the GGUF is refused as before: the engine makes its
+    tables from a rope_scaling and would turn by another table without a word."""
+    table = np.asarray(table, dtype=np.float64)
+    width, theta = head_size(config), float(config.get("rope_theta", 10000.0))
+    if table.shape != (width // 2,) or not np.all(np.isfinite(table)) or not np.all(table >= 1 - 1e-6):
+        raise ValueError(NO_TABLE)
+    factor = float(table.max())
+    if factor - 1 < 1e-6:
+        return None
+    factor = float(round(factor)) if abs(round(factor) - factor) < 1e-5 * factor else factor
+    tried = [(4.0, 8192)]
+    between = (table > 1 + 1e-4) & (table < factor * (1 - 1e-4))
+    if between.sum() >= 2:
+        s = (1 / table[between] - 1 / factor) / (1 - 1 / factor)
+        slope, at_zero = np.polyfit(rope_frequencies(width, theta)[between] / (2 * math.pi), s, 1)
+        if at_zero < 0 and slope > 0:
+            high, original = 1 - 1 / at_zero, -slope / at_zero
+            tried = [(float(round(high)), int(round(original))), (float(high), float(original)), *tried]
+    for high, original in tried:
+        scaling = {"rope_type": "llama3", "factor": factor, "low_freq_factor": 1.0, "high_freq_factor": high,
+                   "original_max_position_embeddings": original}
+        try:
+            if high > 1 and original > 0:
+                rope_freqs_agree(table, {**config, "rope_scaling": scaling})
+                return scaling
+        except ValueError:
+            pass
+    raise ValueError(NO_TABLE)
+
+
 def rope_freqs_agree(table, config):
     """ValueError unless llama.cpp's rope_freqs (a divisor of each pair's angle) is what the original's rope_scaling
     makes: the engine makes its RoPE tables from rope_scaling (rope_frequencies), and the table is not used."""
@@ -285,30 +360,89 @@ def rope_freqs_agree(table, config):
 
 
 def gguf_tokenizer(metadata, vocab_size):
-    """tokenizer.bin, the engine's options, the tokenizer_config and the special tokens of a GGUF's byte-level BPE
-    vocabulary."""
-    if metadata.get("tokenizer.ggml.model") != "gpt2":
-        raise ValueError(f"This GGUF has a {metadata.get('tokenizer.ggml.model')} vocabulary: only byte-level BPE "
-                         f"ones (gpt2) are supported.")
+    """tokenizer.bin, the engine's options, the tokenizer_config and the special tokens of a GGUF's vocabulary, of the
+    kinds of GGUF_VOCABULARIES (tokenizer.ggml.model: a byte-level BPE one, gpt2, or a sentencepiece BPE one, llama)."""
+    model = metadata.get("tokenizer.ggml.model")
+    tokens, kinds = metadata.get("tokenizer.ggml.tokens", []), metadata.get("tokenizer.ggml.token_type", [])
+    kind = lambda id: kinds[id] if id < len(kinds) else 1
+    read = GGUF_VOCABULARIES.get(model)
+    found = read and read(metadata, tokens, kind)
+    if not found:
+        raise ValueError(f"This GGUF has a {model} vocabulary: only byte-level BPE ones (gpt2) are supported.")
+    pieces, options, spaces = found
+    special = lambda key: tokens[metadata[key]] if isinstance(metadata.get(key), int) and metadata[key] < len(tokens) else ""
+    config = {"chat_template": metadata.get("tokenizer.chat_template"), "bos_token": special("tokenizer.ggml.bos_token_id"),
+              "eos_token": special("tokenizer.ggml.eos_token_id")}
+    # the added tokens tokenizer.json does not call special are llama.cpp's user-defined ones (type 4). (A
+    # sentencepiece model has none to add: its user-defined pieces are matchable, as its own file's are)
+    controls, added = ([text for id, text in enumerate(tokens) if id < len(kinds) and kinds[id] == type] for type in (3, 4))
+    return tokenizer_bin(pieces, vocab_size, spaces=spaces), options, config, controls, [] if spaces else added
+
+
+def gguf_bytebpe(metadata, tokens, kind):
+    """(the pieces, the engine's options, False: a space is no U+2581) of a GGUF's byte-level BPE vocabulary, split as
+    its tokenizer.ggml.pre says: one of GGUF_PRETOKENIZERS, or it is refused."""
     pre = metadata.get("tokenizer.ggml.pre", "gpt-2")
     if pre not in GGUF_PRETOKENIZERS:
         raise ValueError(f"This GGUF splits text as {pre}, which the engine does not know.")
-    tokens, kinds = metadata["tokenizer.ggml.tokens"], metadata.get("tokenizer.ggml.token_type", [])
     ranks = {}
     for rank, merge in enumerate(metadata.get("tokenizer.ggml.merges", [])):
         left, right = merge.split(" ")
         ranks.setdefault(left + right, -float(rank))
     # what tokenizer.json calls special: llama.cpp's control tokens (type 3). Its padding up to the vocabulary's size
     # ([PAD151665] ..., type 5, unused) is text no piece of tokenizer.json has: empty, as the safetensors path pads (T143)
-    kind = lambda id: kinds[id] if id < len(kinds) else 1
     pieces = [("" if kind(id) == 5 else text, ranks.get(text, UNMATCHABLE), text in ranks and kind(id) != 3)
               for id, text in enumerate(tokens)]
     # Qwen's tokenizer.json normalizes to NFC, which a GGUF does not say: the page's safetensors path does it
     options = {"tokenizer_kind": "bytebpe", "nfkc": False, "nfc": pre in GGUF_NFC, "pretokenizer": GGUF_PRETOKENIZERS[pre],
-               "ignore_merges": pre == "llama-bpe"}
-    special = lambda key: tokens[metadata[key]] if isinstance(metadata.get(key), int) and metadata[key] < len(tokens) else ""
-    config = {"chat_template": metadata.get("tokenizer.chat_template"), "bos_token": special("tokenizer.ggml.bos_token_id"),
-              "eos_token": special("tokenizer.ggml.eos_token_id")}
-    # the added tokens tokenizer.json does not call special are llama.cpp's user-defined ones (type 4)
-    controls, added = ([text for id, text in enumerate(tokens) if id < len(kinds) and kinds[id] == type] for type in (3, 4))
-    return tokenizer_bin(pieces, vocab_size, spaces=False), options, config, controls, added
+               "ignore_merges": pre in GGUF_IGNORE_MERGES}
+    return pieces, options, False
+
+
+# llama.cpp's types of a token (tokenizer.ggml.token_type), which are sentencepiece's of a piece
+NORMAL, UNKNOWN, CONTROL, USER_DEFINED, UNUSED, BYTE = 1, 2, 3, 4, 5, 6
+
+
+def sentencepiece_bpe(metadata):
+    """T505.2: whether a GGUF's sentencepiece vocabulary (tokenizer.ggml.model "llama") is one the engine reads as
+    llama2.c's BPE (merge the pair whose piece scores highest), which is how llama.cpp reads every such vocabulary.
+    The GGUF does not say what the model was: a sentencepiece BPE model scores a piece by minus the number of its
+    merge, so its normal pieces' scores are whole numbers and nearly all different (a Mistral 7B's 31,741: 31,727
+    different ones). A Unigram model's are logarithms, and merged as a BPE's would be another tokenizer; a vocabulary
+    converted from a tokenizer.json has no scores at all (TheBloke's TinyLlama: every score 0; llm-jp's: -1000), and
+    its merges are anyone's guess. Those are left refused, and so is one that puts no space before the text
+    (add_space_prefix false: the engine's sentencepiece reading always does)."""
+    tokens, kinds = metadata.get("tokenizer.ggml.tokens", []), metadata.get("tokenizer.ggml.token_type", [])
+    scores = metadata.get("tokenizer.ggml.scores", [])
+    if not (len(tokens) == len(kinds) == len(scores)) or metadata.get("tokenizer.ggml.add_space_prefix", True) is not True:
+        return False
+    normal = [score for score, kind in zip(scores, kinds) if kind == NORMAL]
+    return bool(normal) and all(float(score).is_integer() for score in normal) and 2 * len(set(normal)) > len(normal)
+
+
+def gguf_sentencepiece(metadata, tokens, kind):
+    """(the pieces, the engine's options, True: a space is written U+2581) of a GGUF's sentencepiece BPE vocabulary
+    (None for one that sentencepiece_bpe() does not take for one), which holds the model's pieces, scores and types as
+    they are: the same tokenizer.bin as the model's own file gives (convert/tokenizer.py's sentencepiece_pieces() and
+    sentencepiece_options()). What a GGUF does not hold is the
+    model's normalizer (its precompiled_charsmap): identity, as llama.cpp reads it and as a Llama's and a Mistral's
+    is. collapse and unknown: sentencepiece_options()'s, from llama.cpp's key and from the types of the pieces.
+    The dummy prefix stands before the first text alone, as for a model whose tokenizer_config.json says nothing else
+    (T308's "prefixed", which a GGUF cannot say). llama.cpp puts it before the text after every special token too;
+    that was held to two real files: a Mistral 7B v0.2's ids are the original's either way, and a v0.3's (whose
+    [INST] is a token) are the original tokenizer's of the same text without it and not with it (a space twice)."""
+    if not sentencepiece_bpe(metadata):
+        return None
+    scores = metadata["tokenizer.ggml.scores"]
+    pieces = [(text, float(scores[id]), kind(id) in (NORMAL, USER_DEFINED)) for id, text in enumerate(tokens)]
+    types = [kind(id) for id in range(len(tokens))]
+    unknown = types.index(UNKNOWN) if UNKNOWN in types and BYTE not in types else None
+    options = {"tokenizer_kind": "bpe", **({"collapse": True} if metadata.get("tokenizer.ggml.remove_extra_whitespaces") is True else {}),
+               **({"unknown": unknown} if unknown is not None else {})}
+    return pieces, options, True
+
+
+# tokenizer.ggml.model -> what reads a vocabulary of that kind: (metadata, the tokens, the type of a token by its id) ->
+# (the pieces as tokenizer_bin() takes them, the engine's options, whether a space is written U+2581), or None for a
+# vocabulary it cannot read (refused as one of a kind that is not read)
+GGUF_VOCABULARIES = {"gpt2": gguf_bytebpe, "llama": gguf_sentencepiece}

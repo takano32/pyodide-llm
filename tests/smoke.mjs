@@ -521,6 +521,14 @@ for name, natively in {**read_natively, **widened_natively}.items():
         read_here = source.read(superblock_cases.blocks(name, source.size))
     assert read_here.shape == (superblock_cases.BLOCKS * source.values,) and superblock_cases.digest(read_here) == natively, \
         f"{name}: Pyodide's NumPy reads other values than a 64-bit NumPy's"
+# T505.2: a Llama 3's rope_freqs table read back into its rope_scaling here too (a line fitted by NumPy's least squares,
+# and whole numbers made of what it gives): a Llama 3.1 8B's and a Llama 3.2 1B's, as their real GGUFs have them
+from convert.gguf import llama3_scaling
+for width, factor in ((128, 8.0), (64, 32.0)):
+    said = {"rope_type": "llama3", "factor": factor, "low_freq_factor": 1.0, "high_freq_factor": 4.0, "original_max_position_embeddings": 8192}
+    table = (llama2_numpy.rope_frequencies(width, 500000.0) / llama2_numpy.rope_frequencies(width, 500000.0, said)).astype(np.float32)
+    found = llama3_scaling(table, {"hidden_size": 4 * width, "num_attention_heads": 4, "rope_theta": 500000.0})
+    assert found == said and type(found["original_max_position_embeddings"]) is int, f"a rope_freqs table read back as {found}"
 widen = kernel_readers["BF16"]
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"
