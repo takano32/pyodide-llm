@@ -507,15 +507,19 @@ for name, source in llama2_convert.SOURCES.items():
 import json, superblock_cases
 from convert.superblocks import SUPERBLOCKS
 with open("superblocks.json") as f:
-    read_natively = json.load(f)["read"]
-assert set(read_natively) == set(SUPERBLOCKS) == {name for name, source in llama2_convert.SOURCES.items() if source.values == 256}, \
+    # (T505.1: "widened", the eight that are read and never kept, blocks of 256 and of 32)
+    read_natively, widened_natively = (lambda fixture: (fixture["read"], fixture["widened"]))(json.load(f))
+assert set(read_natively) == set(SUPERBLOCKS) and not set(read_natively) & set(widened_natively), \
     f"the fixture has {sorted(read_natively)}, the readers are {sorted(SUPERBLOCKS)}"
-for name in SUPERBLOCKS:
+# (every type of ggml's that has no kernel to read it: F32 and F16 are NumPy's own, BF16 and Q8_0 have kernels)
+assert set(read_natively) | set(widened_natively) == {name for name, source in llama2_convert.SOURCES.items() if not source.kernel} - {"F32", "F16"}, \
+    f"the fixture has {sorted(widened_natively)} besides, the readers are {sorted(llama2_convert.SOURCES)}"
+for name, natively in {**read_natively, **widened_natively}.items():
     source = llama2_convert.SOURCES[name]
     assert source.kernel is None and llama2_convert.GGUF_TENSORS[source.ggml] == name
     with np.errstate(invalid="ignore"):
         read_here = source.read(superblock_cases.blocks(name, source.size))
-    assert read_here.shape == (superblock_cases.BLOCKS * 256,) and superblock_cases.digest(read_here) == read_natively[name], \
+    assert read_here.shape == (superblock_cases.BLOCKS * source.values,) and superblock_cases.digest(read_here) == natively, \
         f"{name}: Pyodide's NumPy reads other values than a 64-bit NumPy's"
 widen = kernel_readers["BF16"]
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()

@@ -11,9 +11,10 @@ with a harness of a few lines of this file's own (the block structs, a float16 b
     the values, and ternary() of them must take back the scale.
 
 T362: and the readers of llama.cpp's own K- and i-quantized types (convert/superblocks.py: Q2_K, Q4_K, IQ1_S, IQ1_M,
-IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS) against llama.cpp's C at the commit their tables were taken at. Its
-ggml-quants.c and ggml-common.h are fetched (MIT, ggml authors), the ten dequantize_row_* are cut out by name and
-compiled with the fetched header, and
+IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS; T505.1: Q3_K, Q5_K, Q6_K and convert/readers.py's Q4_0, Q4_1, Q5_0, Q5_1
+and IQ4_NL, blocks of 32) against llama.cpp's C at the commit their tables were taken at. Its ggml-quants.c and
+ggml-common.h are fetched (MIT, ggml authors), the dequantize_row_* are cut out by name and compiled with the fetched
+header, and
 
   - the tables of convert/grids.py and the signs of convert/superblocks.py must be the header's, entry by entry;
   - on 40,000 blocks of each type, random bytes with every byte value in every place and float16 scales of every finite
@@ -108,7 +109,10 @@ UPSTREAM_FILES = f"https://raw.githubusercontent.com/ggml-org/llama.cpp/{UPSTREA
 # the type's name -> (llama.cpp's name of it, where its float16 scales are in a block)
 SUPERBLOCKS = {"Q2_K": ("q2_K", (80, 82)), "Q4_K": ("q4_K", (0, 2)), "IQ2_XXS": ("iq2_xxs", (0,)), "IQ2_XS": ("iq2_xs", (0,)),
                "IQ2_S": ("iq2_s", (0,)), "IQ3_XXS": ("iq3_xxs", (0,)), "IQ3_S": ("iq3_s", (0,)), "IQ1_S": ("iq1_s", (0,)),
-               "IQ1_M": ("iq1_m", ()), "IQ4_XS": ("iq4_xs", (0,))}
+               "IQ1_M": ("iq1_m", ()), "IQ4_XS": ("iq4_xs", (0,)),
+               # T505.1: the K types that are read and never kept, and the types of blocks of 32
+               "Q3_K": ("q3_K", (108,)), "Q5_K": ("q5_K", (0, 2)), "Q6_K": ("q6_K", (208,)), "Q4_0": ("q4_0", (0,)),
+               "Q4_1": ("q4_1", (0, 2)), "Q5_0": ("q5_0", (0,)), "Q5_1": ("q5_1", (0, 2)), "IQ4_NL": ("iq4_nl", (0,))}
 # convert/grids.py's name of a grid -> (the header's, the bytes of an entry, the values as)
 GRIDS = {"IQ2XXS": ("iq2xxs_grid", 8, np.uint8), "IQ2XS": ("iq2xs_grid", 8, np.uint8), "IQ2S": ("iq2s_grid", 8, np.uint8),
          "IQ3XXS": ("iq3xxs_grid", 4, np.uint8), "IQ3S": ("iq3s_grid", 4, np.uint8), "IQ1S": ("iq1s_grid", 8, np.int8)}
@@ -140,8 +144,8 @@ CASES
 }
 """
 CASE = ('  if (!strcmp(argv[1], "NAME")) { known = 1; long blocks = size / sizeof(block_NAME); '
-        "float *y = malloc(blocks * 256 * sizeof(float)); dequantize_row_NAME((const block_NAME *) data, y, blocks * 256); "
-        "fwrite(y, sizeof(float), blocks * 256, out); }")
+        "float *y = malloc(blocks * VALUES * sizeof(float)); dequantize_row_NAME((const block_NAME *) data, y, blocks * VALUES); "
+        "fwrite(y, sizeof(float), blocks * VALUES, out); }")
 
 
 def header_table(header, name, dtype):
@@ -160,7 +164,7 @@ def finite(blocks, place):
 
 
 def upstream(work, check, rng):
-    """T362: the ten readers of convert/superblocks.py and their tables against llama.cpp's own."""
+    """T362, T505.1: the readers of llama.cpp's quantized types and their tables against llama.cpp's own."""
     from fetching import download
     for name in ("ggml-quants.c", "ggml-common.h"):
         download(UPSTREAM_FILES + name, work / UPSTREAM / name)
@@ -178,12 +182,17 @@ def upstream(work, check, rng):
     functions = [cut(source, "static inline void get_scale_min_k4")] + [cut(source, f"void dequantize_row_{theirs}(")
                                                                          for theirs, _ in SUPERBLOCKS.values()]
     (work / "upstream-functions.c").write_text("\n".join(functions))
-    (work / "upstream.c").write_text(UPSTREAM_HARNESS.replace("CASES", "\n".join(CASE.replace("NAME", theirs) for theirs, _ in SUPERBLOCKS.values())))
+    (work / "upstream.c").write_text(UPSTREAM_HARNESS.replace("CASES", "\n".join(
+        CASE.replace("NAME", theirs).replace("VALUES", str(llama2_convert.SOURCES[name].values)) for name, (theirs, _) in SUPERBLOCKS.items())))
     subprocess.run(["gcc", "-O2", "-I", str(work / UPSTREAM), "-o", str(work / "upstream"), str(work / "upstream.c"), "-lm"],
                    check=True, cwd=work)
-    check(set(SUPERBLOCKS) == set(superblocks.SUPERBLOCKS), "every reader of convert/superblocks.py is held to llama.cpp's")
+    # (every type of ggml's that is read but the four older than this tool: F32, F16, BF16 and Q8_0)
+    check(set(SUPERBLOCKS) == {name for name, source in llama2_convert.SOURCES.items() if source.ggml < 100} - {"F32", "F16", "BF16", "Q8_0"}
+          and set(SUPERBLOCKS) >= set(superblocks.SUPERBLOCKS) | set(superblocks.WIDENED),
+          "every reader of llama.cpp's quantized types but Q8_0's is held to llama.cpp's")
     for name, (theirs, scales) in SUPERBLOCKS.items():
-        _, size, reader = superblocks.SUPERBLOCKS[name]
+        source = llama2_convert.SOURCES[name]
+        size, reader, values = source.size, source.read, source.values
         count = 40000
         blocks = rng.integers(0, 256, size=(count, size), dtype=np.uint8)
         for place in range(size):
@@ -200,7 +209,7 @@ def upstream(work, check, rng):
         check(bool(np.isfinite(expected).all()) and mine.dtype == np.float32
               and np.array_equal(mine.view(np.uint32), expected.view(np.uint32)),
               f"{name}: the reader and llama.cpp's dequantize_row_{theirs} give the same bits on {count:,} blocks of random bytes "
-              f"({count * 256:,} values, {np.unique(expected).size:,} different ones)")
+              f"({count * values:,} values, {np.unique(expected).size:,} different ones)")
 
 
 def main():
