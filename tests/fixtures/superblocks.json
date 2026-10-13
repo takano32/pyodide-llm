@@ -1,0 +1,15 @@
+{
+ "what": "tests/superblock_cases.py: the SHA-256 of what each reader of convert/superblocks.py reads of 2000 blocks of SHAKE-256's bytes, NaNs as zeros (T362)",
+ "read": {
+  "Q2_K": "0bb4071faa3b49c291baa4dec5e011fe4ae60136dde93250ffd249690965f2b7",
+  "Q4_K": "fde370337a8f0538e104349f7d6c76a4148aa836039c8a6af223717709731bca",
+  "IQ2_XXS": "14a5083bb06f7d100d0235e11f616345b3ffe6a9aede396d8d268de5c97f25ca",
+  "IQ2_XS": "b6df896c3388d5b082c61b5335036fd5e97f24ffae1c3daaa17a9aaa3ca44333",
+  "IQ3_XXS": "7ea1ed68d137d69d1ba62bab28e70c01de79acc4322241cf2026567a6cf48293",
+  "IQ1_S": "e093ca33bfba17cd47f774d8fb7c74770e1e78361633184ffc8982bcae921704",
+  "IQ3_S": "3b12d0c73a05d29a9f1d0600dc323514094ff66ea8b731aabb55ee84bfa0b554",
+  "IQ2_S": "f119c7d7a0087c5a5982f18ae7a52024c38b6dd0e02ee9648e38ac9d7cef0803",
+  "IQ4_XS": "d4a60c16a354272f40d0b05cfe1d19047bba288872267d72ccc37891482e5101",
+  "IQ1_M": "4107d5bd0edf305a85a841daa0a83be3a0f7de2c9ef8f788d916bca61fa2e5e7"
+ }
+}

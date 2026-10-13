@@ -201,11 +201,12 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
     with pytest.raises(ValueError, match="not a GGUF"):
         gguf_read(b"PK\x03\x04" + file[4:])
     metadata, found, base = gguf_read(file)
-    # make the first matrix a Q4_K (type 12), or a type 42 (the Q2_0 of Prism's earlier Bonsai files: 2 bits, 64 or 128
-    # to a block): the type is the u32 before its u64 offset in the tensor infos. T230's review: a type 42 file must be
-    # refused with the types that are read, not read as a type 8 or 142 of the same block size
+    # make the first matrix a Q5_K (type 13: T362 reads Q2_K and Q4_K, not the K-quants between and above them), or a
+    # type 42 (the Q2_0 of Prism's earlier Bonsai files: 2 bits, 64 or 128 to a block): the type is the u32 before its
+    # u64 offset in the tensor infos. T230's review: a type 42 file must be refused with the types that are read, not
+    # read as a type 8 or 142 of the same block size
     at = file.index(b"token_embd.weight") + len(b"token_embd.weight") + 4 + 16
-    for kind in (12, 42):
+    for kind in (13, 42):
         other = bytearray(file)
         other[at:at + 4] = struct.pack("<I", kind)
         with pytest.raises(ValueError, match=f"ggml type {kind}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"):
@@ -823,12 +824,12 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, ti
     matrices as Q8_0 rounds them, everything else as the original has it.
     more: further metadata; change(stored): alters what is written, {GGUF name: [bytes, ggml type, shape]}.
     fold(tensors): the Hugging Face tensors as the file is to hold them (T237: in a rotated basis); matrices: what
-    makes a matrix's blocks and their ggml type, where not Q8_0 (as gguf_file's)."""
+    makes a matrix's blocks and their ggml type, where not Q8_0 (as gguf_file's), or what says so for each GGUF name
+    (T362: a file whose matrices are of several types)."""
     from conftest import qwen35_model
     tensors, config = qwen35_model(**{**QWEN35, **shape})
     if fold:
         tensors = fold(tensors)
-    blocks, block_type = matrices or (q8_0_blocks, 8)
     text = config["text_config"]
     prefix = "model.language_model." if "model.language_model.embed_tokens.weight" in tensors else "model."
     stored, same = {}, {}
@@ -855,6 +856,7 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, ti
         if places:
             value = value.take(places[1], axis=places[0])
         if value.ndim == 2 and not name.endswith(".conv1d.weight"):
+            blocks, block_type = matrices(gguf) if callable(matrices) else matrices or (q8_0_blocks, 8)
             blob, held = blocks(np.ascontiguousarray(value))
             if places:  # the values Q8_0 rounds them to, back at the places Hugging Face has them at
                 back = np.empty_like(held)

@@ -262,12 +262,19 @@ def test_the_options_of_a_conversion_carry_the_kinds_only_where_there_are_any(mo
 
 # ---- the types a file stores a tensor in
 def test_the_stored_types_and_what_comes_from_their_table():
-    assert list(SOURCES) == ["F32", "F16", "BF16", "Q8_0", "PQ2_0", "PTQ1_0"]
-    assert GGUF_TENSORS == {0: "F32", 1: "F16", 30: "BF16", 8: "Q8_0", 142: "PQ2_0", 143: "PTQ1_0"}
+    # (T362: and llama.cpp's ten of blocks of 256, which have no kernel and which a refusal does not name)
+    blocks_of_256 = {"Q2_K": (10, 84), "Q4_K": (12, 144), "IQ2_XXS": (16, 66), "IQ2_XS": (17, 74), "IQ3_XXS": (18, 98),
+                     "IQ1_S": (19, 50), "IQ3_S": (21, 110), "IQ2_S": (22, 82), "IQ4_XS": (23, 136), "IQ1_M": (29, 56)}
+    assert list(SOURCES) == ["F32", "F16", "BF16", "Q8_0", "PQ2_0", "PTQ1_0", *blocks_of_256]
+    assert GGUF_TENSORS == {0: "F32", 1: "F16", 30: "BF16", 8: "Q8_0", 142: "PQ2_0", 143: "PTQ1_0",
+                            **{ggml: name for name, (ggml, _) in blocks_of_256.items()}}
     assert read_types() == "F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"
-    assert [(source.values, source.size) for source in SOURCES.values()] == [(1, 4), (1, 2), (1, 2), (32, 34), (128, 34), (128, 28)]
+    assert [(source.values, source.size) for source in SOURCES.values()] == [
+        (1, 4), (1, 2), (1, 2), (32, 34), (128, 34), (128, 28), *[(256, size) for _, size in blocks_of_256.values()]]
     assert {name: source.kernel for name, source in SOURCES.items()} == {
-        "F32": None, "F16": None, "BF16": "widen_bf16", "Q8_0": "widen_q8_0", "PQ2_0": "widen_pq2_0", "PTQ1_0": "widen_ptq1_0"}
+        "F32": None, "F16": None, "BF16": "widen_bf16", "Q8_0": "widen_q8_0", "PQ2_0": "widen_pq2_0", "PTQ1_0": "widen_ptq1_0",
+        **dict.fromkeys(blocks_of_256)}
+    assert [name for name, source in SOURCES.items() if not source.said] == list(blocks_of_256)
     assert source_of("a", "Q8_0") is SOURCES["Q8_0"]
     with pytest.raises(ValueError, match="w is stored as I64: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 are read"):
         source_of("w", "I64")

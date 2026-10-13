@@ -10,8 +10,19 @@ with a harness of a few lines of this file's own (the block structs, a float16 b
   - the fork's own quantizers' bytes of 24,000 ternary groups (a third of them with a zero or two): read back they must be
     the values, and ternary() of them must take back the scale.
 
-  python tests/fork_readers.py [work directory = .tmp/fork-readers]   (needs gcc and the network; for CI's extra=)
+T362: and the readers of llama.cpp's own K- and i-quantized types (convert/superblocks.py: Q2_K, Q4_K, IQ1_S, IQ1_M,
+IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS) against llama.cpp's C at the commit their tables were taken at. Its
+ggml-quants.c and ggml-common.h are fetched (MIT, ggml authors), the ten dequantize_row_* are cut out by name and
+compiled with the fetched header, and
+
+  - the tables of convert/grids.py and the signs of convert/superblocks.py must be the header's, entry by entry;
+  - on 40,000 blocks of each type, random bytes with every byte value in every place and float16 scales of every finite
+    kind, the reader's float32 values and llama.cpp's must be the same bits.
+
+  python tests/fork_readers.py [work directory = .tmp/fork-readers]   (needs gcc and the network; for CI's extra=, and
+                                                                       it runs on a development machine in a few seconds)
 """
+import re
 import subprocess
 import sys
 import urllib.request
@@ -23,6 +34,7 @@ HERE = Path(__file__).resolve().parent
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 import llama2_convert  # noqa: E402
+from convert import grids, superblocks  # noqa: E402
 from llama2_numpy import ternary  # noqa: E402
 
 COMMIT = "88c4bc60b9c9578f134385be9535e853f2db9b9f"
@@ -90,6 +102,107 @@ def cut(text, start):
         k += 1
 
 
+# T362: llama.cpp itself, at the commit convert/grids.py's tables are of
+UPSTREAM = "4413a192410fad1f054e9216114087a3e01527a0"
+UPSTREAM_FILES = f"https://raw.githubusercontent.com/ggml-org/llama.cpp/{UPSTREAM}/ggml/src/"
+# the type's name -> (llama.cpp's name of it, where its float16 scales are in a block)
+SUPERBLOCKS = {"Q2_K": ("q2_K", (80, 82)), "Q4_K": ("q4_K", (0, 2)), "IQ2_XXS": ("iq2_xxs", (0,)), "IQ2_XS": ("iq2_xs", (0,)),
+               "IQ2_S": ("iq2_s", (0,)), "IQ3_XXS": ("iq3_xxs", (0,)), "IQ3_S": ("iq3_s", (0,)), "IQ1_S": ("iq1_s", (0,)),
+               "IQ1_M": ("iq1_m", ()), "IQ4_XS": ("iq4_xs", (0,))}
+# convert/grids.py's name of a grid -> (the header's, the bytes of an entry, the values as)
+GRIDS = {"IQ2XXS": ("iq2xxs_grid", 8, np.uint8), "IQ2XS": ("iq2xs_grid", 8, np.uint8), "IQ2S": ("iq2s_grid", 8, np.uint8),
+         "IQ3XXS": ("iq3xxs_grid", 4, np.uint8), "IQ3S": ("iq3s_grid", 4, np.uint8), "IQ1S": ("iq1s_grid", 8, np.int8)}
+UPSTREAM_HARNESS = r"""
+#include <assert.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define GGML_COMMON_DECL_C
+#define GGML_COMMON_IMPL_C
+#include "ggml-common.h"
+#define GGML_RESTRICT __restrict__
+static float half_to_float(uint16_t h) { _Float16 f; memcpy(&f, &h, 2); return (float) f; }
+#define GGML_FP16_TO_FP32(x) half_to_float(x)
+#include "upstream-functions.c"
+int main(int argc, char **argv) {
+  if (argc != 4) return 2;
+  FILE *in = fopen(argv[2], "rb"), *out = fopen(argv[3], "wb");
+  if (!in || !out) return 3;
+  fseek(in, 0, SEEK_END); long size = ftell(in); fseek(in, 0, SEEK_SET);
+  uint8_t *data = malloc(size);
+  if (fread(data, 1, size, in) != (size_t) size) return 4;
+  int known = 0;
+CASES
+  fclose(out);
+  return known ? 0 : 5;
+}
+"""
+CASE = ('  if (!strcmp(argv[1], "NAME")) { known = 1; long blocks = size / sizeof(block_NAME); '
+        "float *y = malloc(blocks * 256 * sizeof(float)); dequantize_row_NAME((const block_NAME *) data, y, blocks * 256); "
+        "fwrite(y, sizeof(float), blocks * 256, out); }")
+
+
+def header_table(header, name, dtype):
+    """The numbers of the table called name of ggml-common.h."""
+    text = re.search(r"GGML_TABLE_BEGIN\(\w+, %s, \w+\)(.*?)GGML_TABLE_END" % name, header, re.S).group(1)
+    return np.array([int(number, 0) for number in re.findall(r"-?(?:0x[0-9a-fA-F]+|\d+)", text)], dtype=dtype)
+
+
+def finite(blocks, place):
+    """The float16 at place of every block made finite (an exponent of all ones loses a bit), and its first few of
+    every kind there is."""
+    high = blocks[:, place + 1]
+    high[(high & 0x7C) == 0x7C] &= 0xBF
+    special = np.array([0x0000, 0x8000, 0x0001, 0x03FF, 0x0400, 0x3C00, 0xBC00, 0x7BFF, 0xFBFF, 0x2800, 0x5640], dtype="<u2")
+    blocks[256:256 + len(special), place:place + 2] = special.view(np.uint8).reshape(-1, 2)
+
+
+def upstream(work, check, rng):
+    """T362: the ten readers of convert/superblocks.py and their tables against llama.cpp's own."""
+    from fetching import download
+    for name in ("ggml-quants.c", "ggml-common.h"):
+        download(UPSTREAM_FILES + name, work / UPSTREAM / name)
+    source, header = ((work / UPSTREAM / name).read_text() for name in ("ggml-quants.c", "ggml-common.h"))
+    for name, (theirs, size, dtype) in GRIDS.items():
+        table = header_table(header, theirs, f"<u{size}").view(dtype).reshape(-1, size)
+        check(np.array_equal(grids.grid(name), table) and grids.grid(name).dtype == np.int8,
+              f"{name}: the grid is ggml-common.h's {theirs}, all {len(table):,} entries of {size}")
+    check(np.array_equal(grids.IQ4NL, header_table(header, "kvalues_iq4nl", np.int8)), "IQ4_XS's 16 values are kvalues_iq4nl")
+    check(np.array_equal(superblocks.SEVEN, header_table(header, "ksigns_iq2xs", np.uint8)),
+          "the formula of the eighth sign gives ksigns_iq2xs, all 128")
+    check(float(re.search(r"#define IQ1S_DELTA ([0-9.]+)f", header).group(1)) == float(superblocks.EIGHTH)
+          and float(re.search(r"#define IQ1M_DELTA ([0-9.]+)f", header).group(1)) == float(superblocks.EIGHTH),
+          "IQ1's shift is IQ1S_DELTA and IQ1M_DELTA")
+    functions = [cut(source, "static inline void get_scale_min_k4")] + [cut(source, f"void dequantize_row_{theirs}(")
+                                                                         for theirs, _ in SUPERBLOCKS.values()]
+    (work / "upstream-functions.c").write_text("\n".join(functions))
+    (work / "upstream.c").write_text(UPSTREAM_HARNESS.replace("CASES", "\n".join(CASE.replace("NAME", theirs) for theirs, _ in SUPERBLOCKS.values())))
+    subprocess.run(["gcc", "-O2", "-I", str(work / UPSTREAM), "-o", str(work / "upstream"), str(work / "upstream.c"), "-lm"],
+                   check=True, cwd=work)
+    check(set(SUPERBLOCKS) == set(superblocks.SUPERBLOCKS), "every reader of convert/superblocks.py is held to llama.cpp's")
+    for name, (theirs, scales) in SUPERBLOCKS.items():
+        _, size, reader = superblocks.SUPERBLOCKS[name]
+        count = 40000
+        blocks = rng.integers(0, 256, size=(count, size), dtype=np.uint8)
+        for place in range(size):
+            blocks[:256, place] = (np.arange(256) + 7 * place) % 256
+        for place in scales:
+            finite(blocks, place)
+        if name == "IQ1_M":
+            # its float16 is the top four bits of its four last words of 16 bits: the exponent's top bit is bit 6 of the last byte
+            exponent = (blocks[:, 55] >> 4 & 7) << 2 | (blocks[:, 53] >> 6)
+            blocks[exponent == 31, 55] &= 0xBF
+        (work / "in.bin").write_bytes(blocks.tobytes())
+        subprocess.run([str(work / "upstream"), theirs, str(work / "in.bin"), str(work / "out.bin")], check=True)
+        expected, mine = np.fromfile(work / "out.bin", dtype=np.float32), reader(blocks.tobytes())
+        check(bool(np.isfinite(expected).all()) and mine.dtype == np.float32
+              and np.array_equal(mine.view(np.uint32), expected.view(np.uint32)),
+              f"{name}: the reader and llama.cpp's dequantize_row_{theirs} give the same bits on {count:,} blocks of random bytes "
+              f"({count * 256:,} values, {np.unique(expected).size:,} different ones)")
+
+
 def main():
     work = Path(sys.argv[1] if len(sys.argv) > 1 else HERE.parent / ".tmp" / "fork-readers").resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -144,6 +257,7 @@ def main():
         packed, scale = ternary(got)
         check(np.array_equal(scale[keep], np.abs(got[keep]).max(axis=1)) and packed.shape == (groups, 32),
               f"{name}: ternary() of what was read takes back the groups' scales")
+    upstream(work, check, rng)
     sys.exit(1 if failed else 0)
 
 
