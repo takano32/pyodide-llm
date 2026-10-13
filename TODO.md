@@ -2470,7 +2470,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **T359.6 からの候補（2026-10-10）**: 回した基底と `unturned` の断りの文が家族の名前を手で並べている（記録を足すと古くなる。試験が文を見ている）/ `checkpoint_dtype()` の前置きの後の文が大文字で始まる / `Llama.__init__` が `linear` を 2 回読む（断りの順のため）/ 窓口の `layer_slots(n_layers, linear, convolution)` が 2 つの種類を名指しで受ける（`tests/plans.mjs` と試験 2 つが呼ぶ）。
 - **T359.7 からの候補（2026-10-10）**: 網の道具の「どちらの木でも動く」枝（`unchanged_recorder.py`・`unchanged_layouts.py`: 本線に入ったので古い側は要らない）。
 - **子タスクの番号**: **T391.1** 数える（同じ文の塊・誰も呼ばない関数と export・使われない引数を道具で出し、候補を表にして持ち主に見せる。コードは変えない）: **表まで済んだ（2026-10-12、ブランチ `t391.1-count-redundancy`）。持ち主の判断待ち** / **T391.2〜** 表から決める（案は下の (b): T391.2 役目を終えた道具を消す・T391.3 網の道具の古い木の枝・T391.4 シェーダの同じ行を断片に・T391.5 使われていない物・T391.6 ブラウザの道具のサーバと閉じ方。どれも未着手で、持ち主が決めるまで始めない）。
-- **持ち主の決定（2026-10-13）: 「T391 オススメ全部減らす」。** 表の勧めの「やる」の全部（#1・#4・#5・#6・#12・#13・#15・#17）と、「持ち主が決める」だった #2（4 ビットの計測の道具とワークフロー: 取りまとめ役の勧めは「消す」）を進める。分け方は下の (b) のとおり。**状態**: T391.2（#1・#2）完了 / T391.3（#4・#15）完了（どちらも 2026-10-13、本線 a031fce8、デプロイ run 38329635425、本番 run 38330127061: Chromium で tiny-lm とフォルダの変換 `hf` が通る。レビュー: Sonnet low、直しなし）/ T391.4（#5・#6、シェーダ）未着手 / T391.5（#12・#13）完了（2026-10-13、下の「T391.5 の結果」） / T391.6（#17）未着手。T391.2 と T391.3 は 1 つのブランチ `t391.2-3-drop-dead-tools` に、番号ごとのコミットで。結果は下の「T391.2 の結果」「T391.3 の結果」。
+- **持ち主の決定（2026-10-13）: 「T391 オススメ全部減らす」。** 表の勧めの「やる」の全部（#1・#4・#5・#6・#12・#13・#15・#17）と、「持ち主が決める」だった #2（4 ビットの計測の道具とワークフロー: 取りまとめ役の勧めは「消す」）を進める。分け方は下の (b) のとおり。**状態**: T391.2（#1・#2）完了 / T391.3（#4・#15）完了（どちらも 2026-10-13、本線 a031fce8、デプロイ run 38329635425、本番 run 38330127061: Chromium で tiny-lm とフォルダの変換 `hf` が通る。レビュー: Sonnet low、直しなし）/ T391.4（#5・#6、シェーダ）未着手 / T391.5（#12・#13）完了（2026-10-13、下の「T391.5 の結果」） / T391.6（#17）進行中（2026-10-13、ブランチ `t391.6-browser-tools`。下の「T391.6 の予定」）。T391.2 と T391.3 は 1 つのブランチ `t391.2-3-drop-dead-tools` に、番号ごとのコミットで。結果は下の「T391.2 の結果」「T391.3 の結果」。
 - **測り方**: 行数だけで測らない（短くても辿りにくくなる形は入れない: AGENTS.md の「速さよりきれいなコード」）。減らした写しの数と、1 つの事実を直すときに触る場所の数で言う。推論の道（1 トークン・1 ブロック）に触るものは前後を測る。
 - **T391.1 の結果（2026-10-12。コードは 1 字も変えていない。道具は捨ての `.tmp/t391.1/`: リポジトリには入れていない）**
   - **数え方**: (1) **同じ文の塊** `clones.py`: git が持つ `.ts`・`.js`・`.mjs`・`.astro`・`.py`・`.sh`・`.yml`・`.cpp` と Makefile の 488 ファイル（`docs/`・`tests/fixtures/` を除く）を、空白を詰め、コメント（`//`・`/* */`・`#`・Python の docstring）と空行を落とした行にして（許諾文はコメントなので入らない）、**6 行以上・160 字以上（括弧だけの行は数えない）が 2 か所以上で 1 字も違わない**ものを最長まで伸ばして組にした。「余り」は組の行数 ×（か所 − 1）。シェーダの部品（`src/runtime/shaders/`）は WGSL として別に数えた。(2) 2 つ目の意見に **jscpd 4.3.0**（`.tmp/` に入れた。`package.json` と lock は変えていない）: トークンで 5 行・50 トークン以上、`--mode weak`、`tests/t200_fable/` を除く。(3) **使われない物**: TypeScript は tsc を `.tmp/` の tsconfig（`noUnusedLocals`・`noUnusedParameters`）で、export は構文木で取り出して「その名前の語が、渡すだけの文（`export { … } from`）のほかに、ほかのファイルに出るか」。Python は ast で名前と引数を取り出して同じ語の探し方（`.mjs` に埋めた Python と PyProxy 越しの呼び出しも語として当たる）。(4) **古い木のための枝**は grep（`hasattr`・`getattr(…, None)`・「until T… is」「gone once」「before T…」）で出して 1 つずつ読んだ。(5) **誰も名指さない道具**: `tests/` と `kernels/` のファイルの名前が、ほかのコード・ワークフロー・`suite.sh`・Makefile・`package.json` に出るか。
@@ -2562,6 +2562,52 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **CI を省いた。訳**: 触ったのは窓口の import の行（pytest・smoke・軽い組・27B の乾いた回・参照の道具の乾いた回が踏み、消した名前を言うコードは 0 行）と、tsc が「読まれない」と言う名前（型検査・ビルド・束の差分が 1 行ずつ）。CI だけの道具（`reference_*.py`・`page_27b.py`・`perplexity_*.py`・`fixed_outputs.py`・`format_check.py`・`gguf_check.py` など）は本物では回していないが、消した名前の語が 1 つも無い。
   - **見ていないもの**: 全部の組（`tests.yml full=true`）、WebGPU の本物（`tokensLayout()` を装置の上で: 手元の `gpu-worker-parts-check` は偽の装置）、`/benchmark/` の GPU の節（`checkGeneration()` は GPU のある所でしか走らない）、Firefox と WebKit、CI だけの道具の本物の run、何も計算しない偽の WebGPU の記録（T378.4 の道具）。追跡されていない道具（`.tmp/` の捨ての道具）が窓口の名前を読んでいるかは見ていない。
   - **気づき（採番していない）**: (a) 試験と道具だけが語を言う窓口の名前（いま `llama2_numpy` 109・`llama2_convert` 110 のうち、製品の JavaScript と根のスクリプトが読むのはその一部）は 1 つずつ分けていない: 試験が部品から直に読む形にすれば窓口はもっと小さくなる（T376 の設計の 269 行目の案）。(b) `llama2_convert.py` は `llama2_numpy` から 19 個を取り直して出している（`DTYPES`・`FORM` など）: 変換器の窓口越しに読む試験があるかは分けていない。(c) `noUnusedLocals`・`noUnusedParameters` はリポジトリの tsconfig に入れていない（位置合わせの引数 28 が残るので、入れるなら名前を `_` で始める決まりが要る）。(d) 網の `gone` の一覧は 12 個で切れる（「and 53 more」）: 全部を読むには `tests/unchanged_exports.py` を 2 つの木で回す。
+- **T391.6 の予定（2026-10-13、実装の前に書いた。#17。試験の道具だけ: 製品のコードは 1 字も変えない）**
+  - **数え直し（`origin/main` = `347d74cd`）。ブラウザを動かす道具は 10 と、`tests/gpu-check/engines.mjs`**（`grep -ln "playwright-core\|selenium" tests/*.mjs` の 11 のうち `workflows-check.mjs` は名前を文で読むだけ）。
+  - **(a) 手元から配るサーバ（7 つ。うち `dist/` を `/pyodide-llm/` の下で配るものが 6）**
+
+    | 道具 | 配るもの | 道の読み方 | 道の解き方 | フォルダ | 無いとき | content-type の表 | ヘッダ | 読み方 | URL | 道具だけの口 |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | `e2e.mjs` | `dist/` | `.pathname` | `new URL().pathname` を decode、base を切る、空なら index.html | **404**（根だけ index.html） | 404 | html・js・css・py | `Content-Type` | stream | `localhost` | 無い |
+    | `bench-browser.mjs` | `dist/` | `.pathname` | **`req.url.split("?")[0]` を decode して `.replace(base, "")`**（base の外も配る）、`/` で終われば index.html | 終わりが `/` のときだけ index.html | 404 | html・js・css・py | `content-type` | **`readFile`**（丸ごと） | **`127.0.0.1`** | 無い |
+    | `bench-check.mjs` | `dist/`（`--dist`） | **`fileURLToPath`**（T242） | decode、base を切る | index.html | 404 | html・js・mjs・css・py・wasm | `Content-Type` | stream | `localhost` | `--wrong`: 1 つのファイルの文を書き換えて配る |
+    | `page-memory-check.mjs` | `dist/`（`--dist`） | `.pathname` | 同上 | index.html | 404 | html・js・mjs・css・py・wasm | `Content-Type` | stream | `localhost` | 無い |
+    | `screenshots.mjs` | `dist/` | `.pathname` | 同上、空なら index.html | index.html | 404 | html・js・css・py・wasm | `Content-Type` | stream | `localhost` | 無い |
+    | `updated-in-browser.mjs` | `dist/` | `.pathname` | 同上 | index.html | 404 | html・js・css・wasm | `Content-Type`・**`Content-Length`**、HEAD は本文なし | stream | `localhost` | 場合の規則 `rule(名前, 方法)`: 404・500・切断。頼まれたものの記録 |
+    | `gpu-check/engines.mjs` | ソース（型を外して）・作り物のチェックポイント・ハーネス・`/` のページ | `.pathname` | 自分の道の表（`/runtime/`・`/built/` と場合ごとのファイル） | — | 404 | 自分の表 | **COOP・COEP**・`Content-Type` | 文と stream | `localhost` | 全部が自分の仕事 |
+
+    どれも: ポートは `listen(0)`（全部のインターフェース）、Range は読まない（いつも 200 で丸ごと）、キャッシュのヘッダなし、COOP・COEP なし（`gpu-check` のほか: 隔離は `coi.js` の仕事）、道の外へ出ない守りは `path.join` の畳みだけ（**`%2f..%2f` は URL の読みを抜けて decode の後に `..` になり、`dist/` の外のファイルを配る**。`bench-browser` は `/../` もそのまま）。`kernels-in-browser`・`coi-check`・`slow-check`・`stock-firefox` はサーバを持たない（`about:blank`・本番・プロキシ）。
+  - **(b) ブラウザの閉じ方と道具の終わり方（11）**
+
+    | 道具 | 閉じ方 | 終わり方 |
+    |---|---|---|
+    | `e2e.mjs` | `browser.close()` を 15 秒で見切る | `process.stdout.write("ok\n", () => process.exit(0))`、失敗は `console.error` のあと `process.exit(1)`（出し切らない） |
+    | `bench-browser.mjs` | 同上 | 同上（失敗は assert の例外） |
+    | `bench-check.mjs` | ブラウザごとに `context.close()` を 15 秒で見切り、閉じなければ 1 行言う | `process.exit()`（出し切らない） |
+    | `page-memory-check.mjs` | `context.close()` を 15 秒で | `process.exit()`（出し切らない） |
+    | `updated-in-browser.mjs` | 場合ごとの `context.close()` と最後の `browser.close()` を 15 秒で | `leave()` |
+    | `stock-firefox.mjs` | `driver.quit()` を 15 秒で、失敗は飲む | `process.stdout.write("ok\n", …exit)`、失敗は `process.exit(1)` |
+    | `gpu-check/engines.mjs` | `browser.close()` を 15 秒で | 窓口の `leave()` |
+    | `kernels-in-browser.mjs` | **`await browser.close().catch()`（待つだけ）** | `process.exit()` |
+    | `slow-check.mjs` | **`await browser.close()`（待つだけ）** | `process.exit()` |
+    | `screenshots.mjs` | **`await context.close()` × 6 と `await browser.close()`（待つだけ）** | 自然に終わる（`process.exit` なし） |
+    | `coi-check.mjs` | **`await context.close()`・`await browser.close()`（待つだけ）**。WebKit も回す（`coi.yml` の Windows） | 自然に終わる |
+
+    T391.1 は「見切る形 3・待つだけ 3」と数えた。数え直すと見切る形 7・待つだけ 4（`kernels-in-browser` も待つだけ: `browsers.yml` が Windows の WebKit で回す）。
+  - **寄せるもの**: (1) `dist/` を base の下で配るサーバ 6 つ → `tests/serving.mjs` の `serving(フォルダ, { base, instead })` の 1 つ（`{ url, close() }` を返す）。道具だけの口は 1 つの引数 `instead(頼み)`: 「この頼みには代わりにこれを」（状態・切断・別の本文）を返す。使い手は `updated-in-browser`（規則と記録）と `bench-check --wrong`（文の書き換え）の 2 つ。(2) 閉じ方 → `tests/leave.mjs` の `closed(閉じる関数, 秒 = 15)`（閉じたかを真偽で返し、投げない）。終わり方は今ある `leave()`。
+  - **寄せないもの**: `gpu-check/engines.mjs` のサーバ（配るものが別: ソースを型を外して、作り物のチェックポイント、COOP・COEP を自分で付ける。T357.3 で分けたばかり）と、その 1 行の閉じ方（Playwright の道は CI の `gpu-prompt.yml` でしか走らない: この回は触らず、CI も回さない）。`slow-check.mjs` のプロキシ（CONNECT を絞る別の仕事。実装は 1 つ）。`tests/coi-js-check.mjs`・`worker-harness.mjs` などの偽の fetch（ブラウザを動かさない）。
+  - **予定した違い（寄せることで動きが変わる所）**
+    1. **道の読み方**: `e2e`・`bench-browser`・`page-memory-check`・`screenshots`・`updated-in-browser` の `dist/` の場所が `.pathname` → `fileURLToPath`（Windows の「/D:/a/…」と、空白や日本語の入った道の `%20`: 前は `--dist` なしの Windows と、空白のある checkout で 404 だけを配った）。
+    2. **道の外**: `dist/` の外に解ける頼み（`%2f..%2f`、`bench-browser` は `/../` も）と base の外の頼みは 404（`bench-browser` は base の外も配っていた）。decode できない道（`%zz`）は 400（前は受け口の例外でプロセスが落ちた）。
+    3. **フォルダ**: どの道具でも index.html（`e2e` は根のほか 404、`bench-browser` は `/` で終わるときだけだった）。`e2e` は根のほかのフォルダを頼まない。
+    4. **content-type**: 6 つの表の和（html・js・mjs・css・py・wasm）に。`e2e` と `bench-browser` の `.wasm` が `application/octet-stream` → `application/wasm`（GitHub Pages と同じ。製品は `compileStreaming` を使わない: `grep Streaming src/runtime` が 0 行）。
+    5. **ヘッダ**: どれも `Content-Type` と `Content-Length`（前は `updated-in-browser` だけ長さを言い、ほかは chunked）。HEAD は本文なし（Node が前から落としていた）。Range は今までどおり読まない。
+    6. **読み方**: `bench-browser` が `readFile` → stream。
+    7. **URL**: `bench-browser` が `127.0.0.1` → `localhost`（ほかの 5 つと同じ。オリジンが替わるだけ）。
+    8. **`updated-in-browser` の記録**: base の外の頼み（前は名前を切り損ねた行が「-> 404」で残った）は記録に入らない（失敗のときだけ出る 25 行）。
+    9. **閉じ方**: `kernels-in-browser`・`slow-check`・`screenshots`・`coi-check` が、待つだけ → 15 秒で見切る。`screenshots` と `coi-check` は自然に終わる → `leave()` で終える（返らない `close()` の後に残るブラウザがプロセスを生かさない）。
+    10. **終わり方**: `e2e`・`bench-browser`・`bench-check`・`page-memory-check`・`slow-check`・`kernels-in-browser`・`stock-firefox` の `process.exit()` → `leave()`（パイプに出し切ってから。出る行と終了コードは同じ）。`bench-check` の「did not close within 15 s; going on」の行はそのまま。
+  - **変えないもの**: ポートの取り方（`listen(0)`）、隔離のヘッダを付けないこと、`E2E_*` の動き、道具の引数・出る行・終了コード、ブラウザの起動とプロファイルの置き場、最初の訪問の再読み込みをまたぐ待ち（道具ごとに形が違う: 寄せていない）。
 
 ### T392 [整理][変換] 変換器の家族の旗 4 つと `families.LAYOUTS` はエンジンの表と同じ事実 — 状態: 未着手（2026-10-10、T359.6 から。規模 小〜中）
 - `Family` の `rotatable`・`partly`・`rms_norm`・`fixed_context` は 11 の家族の全部でエンジンの `engine/layout.py` の `LAYOUTS` の事実と同じ値で、`families.LAYOUTS` の鍵も同じ。案: エンジンの表が持ち、家族は `layout_of(family.arch)` を読む（11 の記録と `tests/test_families.py` の `FACTS` を書き換える）。変換の出力は変わらない見込み。T369 の前後どちらでもよい。
