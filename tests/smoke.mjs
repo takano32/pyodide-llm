@@ -16,6 +16,10 @@ for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok
                     "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
+// T362: blocks that are the same on every machine, and what a 64-bit NumPy reads of them
+for (const file of ["tests/superblock_cases.py", "tests/fixtures/superblocks.json"]) {
+  pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
+}
 
 const started = Date.now();
 let report = pyodide.runPython(`
@@ -445,6 +449,22 @@ for name, source in llama2_convert.SOURCES.items():
                 raise AssertionError(f"{name}: a block cut short was read")
             except ValueError:
                 pass
+# T362: the ten readers of llama.cpp's K- and i-quantized types are NumPy's alone (no kernel), and NumPy's integers are
+# 32 bits here: of blocks that are the same bytes everywhere they read what a 64-bit NumPy reads (the fixture, which
+# pytest holds to a reference of one weight at a time), and a GGUF says each by its number
+import json, superblock_cases
+from convert.superblocks import SUPERBLOCKS
+with open("superblocks.json") as f:
+    read_natively = json.load(f)["read"]
+assert set(read_natively) == set(SUPERBLOCKS) == {name for name, source in llama2_convert.SOURCES.items() if source.values == 256}, \
+    f"the fixture has {sorted(read_natively)}, the readers are {sorted(SUPERBLOCKS)}"
+for name in SUPERBLOCKS:
+    source = llama2_convert.SOURCES[name]
+    assert source.kernel is None and llama2_convert.GGUF_TENSORS[source.ggml] == name
+    with np.errstate(invalid="ignore"):
+        read_here = source.read(superblock_cases.blocks(name, source.size))
+    assert read_here.shape == (superblock_cases.BLOCKS * 256,) and superblock_cases.digest(read_here) == read_natively[name], \
+        f"{name}: Pyodide's NumPy reads other values than a 64-bit NumPy's"
 widen = kernel_readers["BF16"]
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"

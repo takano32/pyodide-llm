@@ -1,11 +1,12 @@
-# How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0 and
-# the two ternary types), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T359):
-# the GGUF's type id, the size of its blocks, the refusal that lists what is read, and its reader on the kernels come
-# from the entry.
+# How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0, the
+# two ternary types, and llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T362), one entry for
+# each (SOURCES), to float32. A new one is a reader here and its entry (T359): the GGUF's type id, the size of its
+# blocks, the refusal that lists what is read, and its reader on the kernels come from the entry.
 from typing import Callable, NamedTuple
 
 import numpy as np
 
+from convert.superblocks import SUPERBLOCKS, VALUES
 from engine.kernels import kernel_wideners
 from engine.packing import TERNARY_VALUES
 
@@ -89,13 +90,14 @@ class Source(NamedTuple):
     type's id in a GGUF. A tensor is whole blocks of values values in size bytes (a row is whole blocks too). read(the
     bytes of whole blocks) -> the values, float32 or float16: NumPy's. kernel: the export of the SIMD kernels that
     reads it to the same float32 (kernel(float32 out, blocks in, how many blocks); kernel_readers()), where there is
-    one."""
+    one. said: whether a refusal names it among the types that are read (read_types())."""
     name: str
     ggml: int
     values: int
     size: int
     read: Callable
     kernel: str = None
+    said: bool = True
 
     def bytes(self, count):
         """The bytes count values take (whole blocks of them)."""
@@ -103,7 +105,9 @@ class Source(NamedTuple):
 
 
 # (30 is BF16: Ternary Bonsai 2's two small matrices of the gates. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork
-# of llama.cpp. ggml's other types, the K-quants among them, are refused)
+# of llama.cpp. T362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. A refusal does not name
+# them yet: its words are the owner's, and they are as they were before the ten were read. ggml's other types (Q3_K,
+# Q5_K, Q6_K, IQ4_NL, the older Q4_0 and its kind) are refused)
 SOURCES = {source.name: source for source in (
     Source("F32", 0, 1, 4, float32),
     Source("F16", 1, 1, 2, float16),
@@ -111,6 +115,7 @@ SOURCES = {source.name: source for source in (
     Source("Q8_0", 8, 32, 34, q8_0, "widen_q8_0"),
     Source("PQ2_0", 142, 128, 34, pq2_0, "widen_pq2_0"),
     Source("PTQ1_0", 143, 128, 28, ptq1_0, "widen_ptq1_0"),
+    *(Source(name, ggml, VALUES, size, read, said=False) for name, (ggml, size, read) in SUPERBLOCKS.items()),
 )}
 # a GGUF's type id -> the name
 GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items()}
@@ -118,7 +123,7 @@ GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items()}
 
 def read_types():
     """The types that are read, as a refusal lists them."""
-    names = list(SOURCES)
+    names = [name for name, source in SOURCES.items() if source.said]
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
