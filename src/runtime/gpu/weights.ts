@@ -235,7 +235,7 @@ const unwritten = (m: Model) => m.weights.partial!.size > 0;
 // (b); T232: of 8192 ternary weights, whose scales are a byte to 32 weights), and a matrix a token reads must be one piece (T155). The tables may be in pieces (T209: uploadTokens). null
 // where it cannot, and why in m.weights.unjoined: the prompts go on the GPU as before, the tokens stay on the CPU
 function tokensLayout(m: Model): Together | null {
-  const { plan } = m, align = m.device.limits.minStorageBufferOffsetAlignment, group = GROUP;
+  const align = m.device.limits.minStorageBufferOffsetAlignment, group = GROUP;
   const why = (reason: string) => {
     m.weights.unjoined = reason;
     return null;

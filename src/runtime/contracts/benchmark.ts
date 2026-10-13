@@ -28,9 +28,6 @@ export type Answer<Result> = Answered<Result> | Failed;
 // what a worker posts: an answer, or something that answers nothing
 export type Said<Result> = Answer<Result> | Aside;
 
-// a time taken as the difference of 2n and n of something: how many, the ratio of the two, and whether it was unsteady
-type Steady = { ratio?: number; unsteady?: boolean };
-
 // ---- sections.ts: this browser, the CPU, the line
 // a file fetched for the line: where it is, how many bytes of it, and (false) that a range of it cannot be asked for
 export type Fetched = { url: string; bytes: number; range?: boolean };
