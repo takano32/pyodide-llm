@@ -390,6 +390,7 @@ def test_the_order_of_the_rows_is_what_the_conversion_does_to_the_values(case):
 
 @pytest.mark.parametrize("info, transform", [
     ({"dtype": "Q8_0"}, None), ({"dtype": "F32"}, None), ({"dtype": "IQ2_XS", "transposed": True}, ("transpose",)),
+    ({"dtype": "IQ2_XS", "transposed": True}, None), ({"dtype": "IQ2_XS", "transposed": True}, ("permute", 4)),
     ({"dtype": "IQ2_XS"}, ("transpose",)), ({"dtype": "IQ2_XS"}, ("part", 0, 3)), ({"dtype": "IQ2_XS"}, ("scale", 0.5)),
     ({"dtype": "IQ2_XS"}, (("permute", 4), ("scale", 0.5))), ({"dtype": "IQ2_XS", "done": "one"}, ("one",)),
     ({"dtype": "IQ2_XS"}, ("decay",)), ({"dtype": "IQ2_XS"}, ("taps",))])
