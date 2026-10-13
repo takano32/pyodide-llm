@@ -188,7 +188,9 @@ if has f32; then
 fi
 if has numpy; then
   began=$SECONDS
-  SAVE_LOGITS="${SAVE_LOGITS:-$work/saved}" python tests/reference_saluki_numpy.py "$work/$file" "$work" || status=1
+  # (the lines against llama.cpp with float32 activations: T364's runs measured 0.0023 to 0.0036 of a logit on the bare texts
+  # and 0.085 after a mark of a chat's turn, a KL of 2.1e-7 at most; the weakest of the broken runs 1.4 and 1.9e-2)
+  TIGHT_LINES="${TIGHT_LINES:-0.3,1e-5}" SAVE_LOGITS="${SAVE_LOGITS:-$work/saved}" python tests/reference_saluki_numpy.py "$work/$file" "$work" || status=1
   echo "reference: ran in $((SECONDS - began)) s"
 fi
 if has agree; then
