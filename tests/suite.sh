@@ -363,6 +363,9 @@ if [ "$suite" = full ]; then
   # dry stage runs a made-up model of the 27B's kind through the comparison, the long prompt, the speed and the memory, the
   # engine broken on purpose where it must be caught (a minute, no download)
   part "the 27B's tool, on a made-up model" env STAGES=dry bash tests/page_27b.sh
+  # T364: the same for Underdog Saluki 27B's tool (tests/page_saluki.sh), which shares tests/page-27b.mjs with it: a made-up
+  # model of llama.cpp's blocks through the reference's NumPy pass, both conversions and every mode (a minute)
+  part "Saluki's tool, on a made-up model" env STAGES=dry bash tests/page_saluki.sh
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
 fi

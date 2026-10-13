@@ -19,6 +19,16 @@
 #   head   the head of the fetched file (or, alone, of the file where it is) held to the notes
 #   fetch  the file, to its length and its sha256
 #   llama  llama.cpp built and run: SECONDS_FOR_LLAMA (3000) is when it stops writing; TEXTS: the first so many prompts
+#   f32    (T364.1, not in the default) llama.cpp with float32 activations (tests/reference_saluki_patch.py; float32
+#          keys and values, the weights not repacked): the tokens of the llama stage again, one at a time, into
+#          f32/fork-<i>.single. It widens every row it multiplies by (20 s a token on 4 cores): SECONDS_FOR_F32 (1500)
+#          is when a text stops being written, and one that is not finished keeps the rows it has. F32_PICK: the texts
+#          ("0 1")
+#   numpy  (T364.1, not in the default) the engine's NumPy forward pass over the GGUF (tests/reference_saluki_numpy.py):
+#          float32, with the activations rounded as the page's kernels round them and as llama.cpp rounds them, and
+#          broken on purpose; against llama.cpp as it is and with float32 activations (TIGHT_LINES holds it to that).
+#          SAVE_LOGITS is $work/saved unless said: what tests/page_saluki.sh compares the page's forward pass with.
+#          NUDGED="0,2": for these texts two more runs that round as the page does numbers a millionth off
 #   agree  the driver's files: whole, finite, greedy, and how far llama.cpp's two paths are from each other
 #   keep   what a later run compares with, into .tmp/keep/reference-saluki (tests.yml keeps it a week with the run)
 # REFERENCES=<a run's id>: the files that run kept, in place of everything else (then agree alone).
@@ -95,10 +105,9 @@ prompts=("The capital of Japan is"
          $'<|im_start|>system\nReasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.<|im_end|>\n<|im_start|>user\nWhat is 17 times 24?<|im_end|>\n<|im_start|>assistant\n<think>\n')
 prompts=("${prompts[@]:0:${TEXTS:-${#prompts[@]}}}")
 
-if has llama; then
-  rm -f "$work"/prompt-*.txt "$work"/fork-*
-  for index in "${!prompts[@]}"; do printf '%s' "${prompts[$index]}" > "$work/prompt-$index.txt"; done
-  began=$SECONDS
+built() {  # llama.cpp at the pinned commit, its libraries and the driver against them (once in a work directory)
+  [ -x "$work/reference_saluki_llama" ] && return 0
+  local began=$SECONDS
   if [ ! -d "$work/llama.cpp/.git" ]; then
     git init -q "$work/llama.cpp"
     git -C "$work/llama.cpp" remote add origin https://github.com/ggml-org/llama.cpp
@@ -119,8 +128,14 @@ if has llama; then
   rpath=$(echo "$directories" | sed 's/^/-Wl,-rpath,/' | tr '\n' ' ')
   # shellcheck disable=SC2086
   g++ -std=c++17 -O2 "$here/reference_27b_fork.cpp" -I "$work/llama.cpp/include" -I "$work/llama.cpp/ggml/include" \
-    $libraries $rpath -o "$work/reference_saluki_llama" \
+    -DREFERENCE_NO_REPACK $libraries $rpath -o "$work/reference_saluki_llama" \
     || { echo "llama: the driver did not build"; exit 1; }
+}
+
+if has llama; then
+  rm -f "$work"/prompt-*.txt "$work"/fork-*
+  for index in "${!prompts[@]}"; do printf '%s' "${prompts[$index]}" > "$work/prompt-$index.txt"; done
+  built
   began=$SECONDS
   # (the lines come as the driver writes them: a run the job's limit ends has its progress in the log. The driver says
   # "fork:" of whatever llama.cpp it was built against)
@@ -136,6 +151,48 @@ if has llama; then
 fi
 
 status=0
+if has f32; then
+  # (the texts of F32_PICK, each by itself: the driver replays the ids of <a directory>/fork-<i>.ids for i from 0, so a
+  # text that is not the first is handed to it as fork-0.ids of a directory of its own)
+  built
+  began=$SECONDS
+  python tests/reference_saluki_patch.py "$work/llama.cpp" | sed 's/^reference_saluki_patch: /f32: /'
+  if cmake --build "$work/llama.cpp/build" --target llama -j "$threads" > "$work/build-f32.log" 2>&1; then
+    echo "f32: built again in $((SECONDS - began)) s"
+    mkdir -p "$work/f32"
+    for index in ${F32_PICK:-0 1}; do
+      [ -f "$work/fork-$index.ids" ] || { echo "f32: no ids of text $index (the llama stage, or REFERENCES, leaves them)"; status=1; continue; }
+      began=$SECONDS
+      rm -rf "$work/f32-one"
+      mkdir -p "$work/f32-one/ids" "$work/f32-one/out"
+      cp "$work/fork-$index.ids" "$work/f32-one/ids/fork-0.ids"
+      set +e
+      env BLOCKS_F32_ACTIVATIONS=1 NO_REPACK=1 KV_F32=1 REPLAY_FROM="$work/f32-one/ids" \
+        "$work/reference_saluki_llama" "$work/$file" "$work/f32-one/out" "$threads" "${SECONDS_FOR_F32:-1500}" 16 "${prompts[$index]}" 2>&1 \
+        | tee "$work/f32-$index.log" | grep -a --line-buffered -E '^fork:|eval time|total time' | sed -u -e 's/^fork: //' -e "s/^/f32: text $index: /"
+      code=${PIPESTATUS[0]}
+      set -e
+      if [ "$code" = 0 ] && [ -s "$work/f32-one/out/fork-0.single" ]; then
+        mv "$work/f32-one/out/fork-0.single" "$work/f32/fork-$index.single"
+      else
+        tail -40 "$work/f32-$index.log"; echo "f32: text $index: the run failed ($code)"; status=1
+      fi
+      echo "f32: text $index ran in $((SECONDS - began)) s"
+    done
+    ls -la "$work"/f32/fork-* 2>/dev/null | sed 's/^/f32: /' || true
+  else
+    tail -60 "$work/build-f32.log"
+    echo "f32: llama.cpp with the patch did not build — FAILED (the other stages go on)"
+    status=1
+  fi
+fi
+if has numpy; then
+  began=$SECONDS
+  # (the lines against llama.cpp with float32 activations: T364's runs measured 0.0023 to 0.0036 of a logit on the bare texts
+  # and 0.085 after a mark of a chat's turn, a KL of 2.1e-7 at most; the weakest of the broken runs 1.4 and 1.9e-2)
+  TIGHT_LINES="${TIGHT_LINES:-0.3,1e-5}" SAVE_LOGITS="${SAVE_LOGITS:-$work/saved}" python tests/reference_saluki_numpy.py "$work/$file" "$work" || status=1
+  echo "reference: ran in $((SECONDS - began)) s"
+fi
 if has agree; then
   python tests/reference_saluki.py agree "$work" "$work" || status=1
 fi
@@ -146,6 +203,10 @@ if has keep; then
   mkdir -p "$keep"
   cp "$work"/fork-*.ids "$work"/fork-*.logits "$work"/fork-*.single "$work"/prompt-*.txt "$keep/"
   cp "$work/summary.json" "$work/llama.log" "$keep/" 2>/dev/null || true
+  # (T364.1: and what the page's comparison reads: llama.cpp with float32 activations, the engine's NumPy runs)
+  for more in f32 saved; do
+    if [ -d "$work/$more" ]; then mkdir -p "$keep/$more"; cp "$work/$more"/* "$keep/$more/" 2>/dev/null || true; fi
+  done
   echo "saluki: the reference is kept with this run: $(du -sh "$keep" | cut -f1) (REFERENCES=<this run's id> takes it)"
 fi
 exit $status

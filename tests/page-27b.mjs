@@ -63,7 +63,8 @@ import v8 from "node:v8";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { softwareThread } from "./helper-node.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
-const { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } = await import(runtimeUrl("forward.js"));
+const { compileBlocks, compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } = await import(runtimeUrl("forward.js"));
+const { BLOCK_TYPES } = await import(runtimeUrl("jobs.ts"));
 import { converted, fromFolder, listed } from "./conducting.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -94,8 +95,21 @@ const FLOOR_BELOW = 128;
 // place, or all>) or by a kernel that does nothing (embedding: the rows of the embedding are not turned back)
 const breakOf = (name) => {
   if (name === "embedding") return { what: "the embedding's rows not turned back", kernel: "unrotate" };
+  // T364.2: a plan of llama.cpp's blocks (Underdog Saluki 27B) said wrong in ways no refusal catches
+  const another = (kind) => { const names = Object.keys(BLOCK_TYPES); return names[(names.indexOf(kind) + 1) % names.length]; };
+  if (name === "untiled") return { what: "the linear layers' output matrices read in the other order of the value heads", plan: (plan) => ({ ...plan, tiled: !plan.tiled }) };
+  if (name === "codebooks") return { what: "the codebooks read a byte off",
+    plan: (plan) => ({ ...plan, tensors: { ...plan.tensors, codebooks: { ...plan.tensors.codebooks, offset: plan.tensors.codebooks.offset - 1 } } }) };
+  if (name === "embedding-kind") return { what: "the embedding's blocks taken for another type's",
+    plan: (plan) => ({ ...plan, tensors: { ...plan.tensors, token_embedding_table: { ...plan.tensors.token_embedding_table, kind: another(plan.tensors.token_embedding_table.kind) } } }) };
+  const layer = /^layer-(\w+)-(\d+)$/.exec(name);
+  if (layer) return { what: `layer ${layer[2]} of ${layer[1]} taken for the type after its own`, plan: (plan) => {
+    const stack = plan.tensors[layer[1]], at = Number(layer[2]);
+    if (!stack?.layers?.[at]) throw new Error(`the plan has no layer ${at} of a stack ${layer[1]} with a kind to a layer`);
+    return { ...plan, tensors: { ...plan.tensors, [layer[1]]: { ...stack, layers: stack.layers.map((one, l) => (l === at ? { ...one, kind: another(one.kind) } : one)) } } };
+  } };
   const sign = /^sign-(\d+)-(\d+|all)$/.exec(name);
-  if (!sign) throw new Error(`no break called ${name}: embedding, or sign-<width>-<place | all>`);
+  if (!sign) throw new Error(`no break called ${name}: embedding, sign-<width>-<place | all>, or of a plan of blocks untiled, codebooks, embedding-kind, layer-<stack>-<layer>`);
   return { sign: [Number(sign[1]), sign[2] === "all" ? -1 : Number(sign[2])],
     what: sign[2] === "all" ? `every sign of the ${sign[1]} values the other way round` : `the sign at ${sign[2]} of the ${sign[1]} values the other way round` };
 };
@@ -128,19 +142,23 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context"];
+  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact", "--quiet"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
-  if (!out || !["compare", "speed", "memory", "write", "long", "convert"].includes(mode)) {
-    console.error("usage: node tests/page-27b.mjs <out> compare <references> | speed | memory | write <prompt> | long <references> | convert <folder>");
+  if (!out || !["compare", "speed", "memory", "write", "long", "convert", "starts"].includes(mode)) {
+    console.error("usage: node tests/page-27b.mjs <out> compare <references> | speed | memory | write <prompt> | long <references> | convert <folder> | starts <text file>");
     process.exit(2);
   }
   const { pyodideWithEngine } = await import("./engine.mjs");
   const { MODELS, filled } = await import("../src/models.js");
-  const asked = option("--entry", "hf-ternary-bonsai-2-27b");
-  const entry = MODELS.find((model) => model.id === asked);
+  // --as <a JSON file>:<a name>: what an entry would be, for a model the list does not have yet (T364: tests/page_saluki.py entries)
+  const drafted = option("--as", "");
+  const asked = drafted || option("--entry", "hf-ternary-bonsai-2-27b");
+  const entry = drafted ? JSON.parse(fs.readFileSync(drafted.slice(0, drafted.lastIndexOf(":")), "utf8"))[drafted.slice(drafted.lastIndexOf(":") + 1)]
+    : MODELS.find((model) => model.id === asked);
+  if (drafted && !entry) throw new Error(`no entry ${drafted}`);
   if (mode === "convert") {
-    await convert(out, third, Number(option("--context", entry?.conversion?.max_seq_len ?? 4096)), pyodideWithEngine);
+    await convert(out, third, Number(option("--context", entry?.conversion?.max_seq_len ?? 4096)), pyodideWithEngine, args.includes("--blocks"));
     process.exit(0);
   }
   const converted = JSON.parse(fs.readFileSync(`${out}.json`, "utf8"));
@@ -157,7 +175,13 @@ if (isMainThread) {
   const asksContext = args.includes("--context") && Number(option("--context", 0)) !== header[6];
   if (asksContext) header[6] = Number(option("--context", 0));
   // what the worker asks footprint() with (worker/weights.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
-  const forwardOptions = { ...options, int8: true, relaxed: true, halfKV: ["int8", "int6", "ternary"].includes(options.dtype), shared: true, outliers: 8, gpu: false };
+  // (Python and its tokenizer first: a form with kinds of its own has the weights of the file's dtype counted by Python,
+  // worker/weights.ts's forwardOptions(), T363.5. The memory of the weights is made after Pyodide's, as on the page)
+  const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: args.includes("--wide") || size > 3 * GiB });
+  py.globals.set("HEADER", py.toPy(header));
+  py.globals.set("OPTIONS", py.toPy(options));
+  const counted = options.kinds ? { weights: py.runPython("import llama2_numpy\nllama2_numpy.dtype_weights(HEADER, OPTIONS['dtype'], OPTIONS)") } : {};
+  const forwardOptions = { ...options, ...counted, int8: true, relaxed: true, halfKV: ["int8", "int6", "ternary"].includes(options.dtype), shared: true, outliers: 8, gpu: false };
   const after = footprint(header, size, forwardOptions), wide = needsWide(size, after) || args.includes("--wide"), halfKeys = keysInHalf(header, size, forwardOptions);
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
     `${(after / GiB).toFixed(3)} GiB after it (${((size + after) / GiB).toFixed(2)} GiB in all), a ${wide ? "64" : "32"}-bit memory, keys and values in ${halfKeys ? "float16" : "float32"}`);
@@ -187,14 +211,12 @@ if (isMainThread) {
   fs.closeSync(fd);
   if (asksContext) new Int32Array(memory.buffer, base + 24, 1)[0] = header[6];
   console.log(`page: read into the memory in ${((performance.now() - began) / 1000).toFixed(0)} s${asksContext ? `; its header now says ${header[6]} positions` : ""}`);
-  const { pyodide: py } = await pyodideWithEngine({ shared: true, wide });
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${out}.tokenizer.bin`));
   let plan;
   // Python says where every tensor is and makes the tokenizer; the forward pass itself is made in the worker
   const outside = { size, read: (o, l) => new Uint8Array(memory.buffer, base + o, l).slice(),
     start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } };
   py.globals.set("OUTSIDE", outside);
-  py.globals.set("OPTIONS", py.toPy(options));
   began = performance.now();
   py.runPython(`from llama2_numpy import Llama\nllama = Llama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
   console.log(`page: the engine's plan and its tokenizer in ${((performance.now() - began) / 1000).toFixed(1)} s; BOS ${options.bos}, ` +
@@ -204,11 +226,21 @@ if (isMainThread) {
     const references = path.resolve(third);
     job.references = references;
     const linesAsked = option("--lines", "");  // none, or logits,kl,kv (a made-up model's own)
-    job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "kv"][i], Number(value)])) : LINES;
+    job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "kv", "mean"][i], Number(value)])) : LINES;
+    // T364.2: a fourth line, the KL on average over a text's positions; and --quiet <texts>: the lines of the logits and of
+    // the keys and values hold these texts alone (Underdog Saluki 27B: after a turn's marks, <|im_end|> and "assistant",
+    // the rounding of the activations moves a logit by 13 and the last layer's values by as much as they are, whichever
+    // way the last bit before it falls: tests/reference_saluki_numpy.py's nudged runs; the two KL lines hold every text)
+    job.quiet = args.includes("--quiet") ? option("--quiet", "").split(",").filter(Boolean).map(Number) : null;
     job.broken = option("--broken", "").split(",").filter(Boolean);
     job.weak = option("--weak", "").split(",").filter(Boolean);
     job.weak.forEach(breakOf);
     job.expectFailure = args.includes("--expect-failure");
+    // T364.2: --likely holds the logits' line to the tokens the reference gives a probability of LIKELY or more (as long does: the
+    // largest over a vocabulary has a tail no sampling reaches); --exact <n>: n rows of every product of the blocks' kernels
+    // held to the model of the kernels (tests/blocks-model.mjs) to the bit, on the first of --threads (1: every call is seen)
+    job.likely = args.includes("--likely");
+    job.exact = Number(option("--exact", 0));
     job.broken.forEach(breakOf);  // (a name that is none is said before anything runs)
     job.texts = [];
     const only = option("--texts", "");
@@ -262,7 +294,15 @@ if (isMainThread) {
       job.tokenizerFailed ||= !same;
     }
   }
-  if (mode === "speed") Object.assign(job, { positions: Number(option("--positions", 12)), rounds: Number(option("--rounds", 2)) });
+  if (mode === "speed") Object.assign(job, { positions: Number(option("--positions", 12)), rounds: Number(option("--rounds", 2)),
+    prompts: option("--prompts", "").split(",").filter(Boolean).map(Number) });
+  if (mode === "starts") {
+    // T364.2: a bare text after each of some first tokens (--heads: ids, or none), a token at a time: how surprised the model is by it
+    py.globals.set("TEXT", fs.readFileSync(third, "utf8"));
+    const ids = Array.from(py.runPython("llama.tokenizer.encode(TEXT, [])").toJs()).slice(0, Number(option("--positions", 128)));
+    job.starts = option("--heads", `${options.bos},none`).split(",").map((head) => ({ head, ids: head === "none" ? ids : [Number(head), ...ids] }));
+    job.text = { file: path.basename(third), tokens: ids.length };
+  }
   if (mode === "write") {
     // generate() is Python's loop: Pyodide and the forward pass in one worker, as on the page
     if (!entry?.template) throw new Error("write needs an entry of the list with a format");
@@ -282,17 +322,20 @@ if (isMainThread) {
   const say = (line) => parentPort.postMessage({ line: `page: ${line}` });
   const suffix = wide ? "64" : "";
   const kernels = compileKernels(fs.readFileSync(built(`simdkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_shared${suffix}.wasm`)), wide);
+  // (T364.2: and the kernels of llama.cpp's blocks beside them where the plan has such rows, as the page fetches them)
+  if (plan.own_kinds) kernels.blocks = compileBlocks(fs.readFileSync(built(`blockkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`blockkernel_relaxed_shared${suffix}.wasm`)));
   const cpu = (await import("node:os")).cpus()[0].model;
   /** an engine on the memory, as the page's worker makes it; broken: what breakOf() made of a name */
-  const engineOf = (broken) => {
+  const engineOf = (broken, more = {}) => {
     let made = plan, wrap;
+    if (broken?.plan) made = broken.plan(plan);
     if (broken?.sign) {
       const [width, at] = broken.sign, signs = new Float32Array(plan.derived[`signs.${width}`].slice().buffer);
       for (let i = at < 0 ? 0 : at; i < (at < 0 ? width : at + 1); i++) signs[i] = -signs[i];
       made = { ...plan, derived: { ...plan.derived, [`signs.${width}`]: new Uint8Array(signs.buffer) } };
     }
     if (broken?.kernel) wrap = (exports) => ({ ...exports, [broken.kernel]: () => {} });
-    return createForward({ memory, base, size, kernels, plan: made, spawn, halfKeys, ...(wrap ? { wrap } : {}) });
+    return createForward({ memory, base, size, kernels, plan: made, spawn, halfKeys, ...(wrap ? { wrap } : {}), ...more });
   };
   const floats = (file) => {
     const data = fs.readFileSync(file);
@@ -342,7 +385,8 @@ if (isMainThread) {
   let failed = false;
   if (job.mode === "compare") {
     const { references, lines } = job;
-    const told = (d) => `largest difference ${d.worst.toFixed(4)} (at position ${d.where}), KL ${(d.klSum / d.count).toExponential(2)} on average and ` +
+    const told = (d) => `largest difference ${d.worst.toFixed(4)} (at position ${d.where}: token ${d.token}, to which the other gives a probability of ${d.probability.toExponential(1)}; ` +
+      `${d.likely.toFixed(4)} over the tokens it gives ${LIKELY} or more), KL ${(d.klSum / d.count).toExponential(2)} on average and ` +
       `${d.klWorst.toExponential(2)} at most, the same most likely token at ${d.same} of ${d.count} positions` +
       (d.gaps.length ? ` (${d.gaps.slice(0, 4).map(({ position, gap }) => `position ${position}: the other's first two are ${gap.toFixed(4)} apart`).join("; ")})` : "");
     /** the keys or values of forward.js against the reference's ([layers][positions][kvDim], float32), the reference
@@ -365,9 +409,32 @@ if (isMainThread) {
       return { each, part: Math.max(...each.map((layer) => layer.part)), worst: Math.max(...each.map((layer) => layer.worst)),
         rms: Math.max(...each.map((layer) => layer.rms)) };
     };
+    // --exact: what a product of the blocks' kernels was handed and what it wrote, for some of its rows, against the model
+    const { blocksModel } = job.exact ? await import("./blocks-model.mjs") : {}, model = job.exact ? blocksModel() : null;
+    const { PACKED } = await import(runtimeUrl("jobs.ts"));
+    const held = { calls: 0, rows: 0, wrong: [], kernels: new Set() };
+    const exactly = (k) => {
+      const names = Object.fromEntries(Object.entries(BLOCK_TYPES).map(([kind, [number]]) => [number, kind]));
+      const books = () => new Int8Array(memory.buffer, base + plan.tensors.codebooks.offset, model.BOOKS.bytes);
+      const product = (name) => (...args) => {
+        k[name](...args);
+        const [out, xq, xs, w, , n, r0, r1, type] = args.map(Number), kind = names[type], bytes = PACKED[kind].rowBytes(n);
+        const a = new Int8Array(memory.buffer, xq, n), scales = new Float32Array(memory.buffer.slice(xs, xs + n / 8));
+        held.calls += 1;
+        held.kernels.add(name);
+        for (let j = 0; j < Math.min(job.exact, r1 - r0); j++) {
+          const row = r0 + Math.floor(j * (r1 - r0) / Math.min(job.exact, r1 - r0));
+          const wanted = model.expected(kind, new Uint8Array(memory.buffer, w + row * bytes, bytes), 0, n, 1, books(), a, scales)[0];
+          const got = new Float32Array(memory.buffer.slice(out + row * 4, out + row * 4 + 4))[0];
+          held.rows += 1;
+          if (!Object.is(wanted, got) && held.wrong.length < 8) held.wrong.push(`${name} of ${kind}, row ${row} of a matrix at ${w - base} of the file with ${n} columns: ${got}, the model ${wanted}`);
+        }
+      };
+      return { ...k, matmul_sb: product("matmul_sb"), ...(k.matmul_sbr ? { matmul_sbr: product("matmul_sbr") } : {}) };
+    };
     const runs = [null, ...job.broken, ...job.weak];
     for (const name of runs) {
-      const engine = engineOf(name ? breakOf(name) : null);
+      const engine = engineOf(name ? breakOf(name) : null, job.exact && !name ? { wrap: exactly } : {});
       await engine.setThreads(job.threads[0]);
       for (const text of name ? job.texts.slice(0, 1) : job.texts) {
         const ids = [...text.prompt, ...text.wrote.slice(0, -1)], rows = [];
@@ -380,7 +447,7 @@ if (isMainThread) {
         const kv = engine.keysAndValues(0, ids.length);
         const label = `text ${text.index}${name ? `, broken (${breakOf(name).what})` : ""}`;
         if (!name) say(`${label}: ${ids.length} positions a token at a time on ${engine.threads} threads in ${seconds.toFixed(0)} s (${(ids.length / seconds).toFixed(2)} tok/s, ${cpu}), ${engine.backend}`);
-        const reasons = [];
+        const reasons = [], quiet = !job.quiet || job.quiet.includes(text.index);
         // the keys and values, against the engine's NumPy run with the same rounding of the activations
         const stem = `${references}/saved/engine-${text.index}-as-8-bits-round`;
         const parts = {};
@@ -390,18 +457,28 @@ if (isMainThread) {
           say(`${label}: the ${kind} against "as 8 bits round" in ${halfKeys ? "float16" : "float32"}: at most ${found.part.toExponential(2)} of a layer's largest ` +
             `(${found.worst.toExponential(2)}); by layer ${found.each.map((layer) => layer.part.toExponential(1)).join(" ")}; ` +
             `the root of the mean square of a layer's differences over that of its ${kind}, at most ${found.rms.toExponential(2)}: ${found.each.map((layer) => layer.rms.toExponential(1)).join(" ")}`);
-          if (lines && found.part > lines.kv) reasons.push(`the ${kind} are ${found.part.toExponential(2)} of a layer's largest off, past ${lines.kv}`);
+          if (lines && quiet && found.part > lines.kv) reasons.push(`the ${kind} are ${found.part.toExponential(2)} of a layer's largest off, past ${lines.kv}`);
         }
         const rounded = distance(rows, floats(`${stem}.logits`));
         say(`${label}: the logits against "as 8 bits round": ${told(rounded)}`);
-        // the logits, against the fork with float32 activations
-        const fork = distance(rows, floats(`${references}/f32/fork-${text.index}.single`));
-        say(`${label}: the logits against the float32 fork: ${told(fork)}`);
+        // the logits, against the fork with float32 activations; where no such run left its file (T364: a model whose
+        // llama.cpp has no float32 path yet), against the engine's own NumPy run with float32 activations
+        const single = `${references}/f32/fork-${text.index}.single`, forked = fs.existsSync(single) && fs.statSync(single).size > 0;
+        const fork = distance(rows, floats(forked ? single : `${references}/saved/engine-${text.index}-float32.logits`));
+        say(`${label}: the logits against ${forked ? "the float32 fork" : "the engine's NumPy run in float32 (no float32 fork's file)"}: ${told(fork)}`);
         if (fork.count < ids.length) say(`${label}: the float32 fork wrote ${fork.count} of the ${ids.length} positions`);
-        if (lines && fork.worst > lines.logits) reasons.push(`the logits are ${fork.worst.toFixed(4)} from the float32 fork's, past ${lines.logits}`);
+        const off = job.likely ? fork.likely : fork.worst;
+        if (lines && quiet && off > lines.logits) reasons.push(`the logits are ${off.toFixed(4)} from the float32 fork's${job.likely ? " over the tokens it gives a probability" : ""}, past ${lines.logits}`);
+        if (job.exact && !name) {
+          say(`${label}: ${held.calls} products of the blocks' kernels (${[...held.kernels].join(", ")}), ${held.rows} rows of them against the model of the kernels: ` +
+            (held.wrong.length ? `NOT the model's — FAILED: ${held.wrong.join("; ")}` : "the model's product of what each was handed, to the bit"));
+          if (held.wrong.length) reasons.push("a product of the blocks' kernels is not the model's");
+          Object.assign(held, { calls: 0, rows: 0, wrong: [] });
+        }
         if (lines && fork.klWorst > lines.kl) reasons.push(`a position's KL is ${fork.klWorst.toExponential(2)}, past ${lines.kl}`);
-        const far = fork.gaps.filter(({ gap }) => gap > 2 * fork.worst);
-        if (lines && far.length) reasons.push(`the most likely token is another at ${far.length} position(s) where the fork's first two are more than ${(2 * fork.worst).toFixed(4)} apart`);
+        if (lines?.mean !== undefined && fork.klSum / fork.count > lines.mean) reasons.push(`the KL is ${(fork.klSum / fork.count).toExponential(2)} on average, past ${lines.mean}`);
+        const far = fork.gaps.filter(({ gap }) => gap > 2 * off);
+        if (lines && quiet && far.length) reasons.push(`the most likely token is another at ${far.length} position(s) where the fork's first two are more than ${(2 * off).toFixed(4)} apart`);
         // the 16 tokens the fork wrote (with its rounded activations): the most likely token after the prompt and after
         // each of them, which is what a greedy generation of the page would write as long as it agrees
         const first = text.prompt.length - 1;
@@ -414,7 +491,7 @@ if (isMainThread) {
         if (!lines) say(`${label}: no lines asked for`);
         else if (job.weak.includes(name)) say(`${label}: ${reasons.length ? `seen: ${reasons.join("; ")}` : "not seen: under what the rounding of the activations moves this comparison by"}`);
         else if (mustFail) say(`${label}: ${reasons.length ? `caught: ${reasons.join("; ")}` : "NOT CAUGHT — FAILED"}`);
-        else say(`${label}: ${reasons.length ? `FAILED: ${reasons.join("; ")}` : `ok: the keys and values within ${lines.kv} of a layer's largest, the logits within ${lines.logits} and KL ${lines.kl} of the float32 fork's`}`);
+        else say(`${label}: ${reasons.length ? `FAILED: ${reasons.join("; ")}` : `ok: ${quiet ? `the keys and values within ${lines.kv} of a layer's largest, the logits within ${lines.logits} and ` : "(a text whose logits, keys and values are not held) "}KL ${lines.kl}${lines.mean !== undefined ? ` (${lines.mean} on average)` : ""} of the float32 fork's`}`);
         failed ||= Boolean(lines) && !job.weak.includes(name) && (mustFail ? !reasons.length : reasons.length > 0);
       }
       engine.stopThreads();
@@ -467,8 +544,32 @@ if (isMainThread) {
     say(`a prompt of ${positions - 1} tokens in blocks, the last logits the same to the bit as a token at a time: ${blocks.join("; ")}`);
     const placed = engine.memoryBytes() - base - size, bound = footprint(header, size, forwardOptions);
     say(`after the checkpoint at position ${positions}: ${(placed / MiB).toFixed(1)} MiB placed, footprint() counts ${(bound / MiB).toFixed(1)} MiB for the whole context of ${plan.seq_len}`);
+    // T364.2 (--prompts 40,256): a prompt of so many tokens as the page hands one over (blocks of 16, no logits) on the most threads
+    for (const length of job.prompts) {
+      await engine.setThreads(counts.at(-1));
+      const began = performance.now();
+      for (let at = 0; at < length; at += 16) engine.forwardMany(Array.from({ length: Math.min(16, length - at) }, (_, i) => 1000 + (at + i) % 1000), at);
+      const seconds = (performance.now() - began) / 1000;
+      say(`${cpu}: a prompt of ${length} tokens in blocks of 16 on ${engine.threads} threads: ${seconds.toFixed(1)} s (${(length / seconds).toFixed(2)} tok/s)`);
+    }
     engine.stopThreads();
     await engine.release();
+    if (plan.own_kinds) {
+      // T364.2: the tile of the signed dot product (arm64's relaxed SIMD) and the tile every engine has, on the model's
+      // own rows: the same text as a prompt in blocks with each, the last logits the same to the bit
+      for (const signed of [false, true]) {
+        let tried;
+        try { tried = engineOf(null, { trying: { signed } }); } catch (error) { say(`the tile of the signed dot product ${signed ? "asked for" : "left out"}: ${error.message}`); continue; }
+        await tried.setThreads(counts.at(-1));
+        for (let at = 0; at < positions - 1; at += 16) tried.forwardMany(text.slice(at, Math.min(at + 16, positions - 1)), at);
+        tried.forward(text[positions - 1], positions - 1, true);
+        const same = tried.logits().every((v, j) => Object.is(v, reference[positions - 1][j]));
+        say(`a prompt in blocks ${signed ? "with" : "without"} the tile of the signed dot product (${tried.backend}): the last logits ${same ? "the same to the bit" : `DIFFER${signed ? " (as they must where this engine's relaxed dot product takes one side for unsigned: x86-64)" : " — FAILED"}`}`);
+        if (!signed) failed ||= !same;
+        tried.stopThreads();
+        await tried.release();
+      }
+    }
     // a browser with WebGPU: the page's worker hands forward.js the GPU's worker, and this model must not start one
     let spawned = 0;
     const withGpu = createForward({ memory, base, size, kernels, plan, spawn, halfKeys,
@@ -597,6 +698,28 @@ if (isMainThread) {
       await engine.release();
     }
   }
+  if (job.mode === "starts") {
+    // the same text after each first token: the mean of -log p of every token of the text but its first (which a run with
+    // no token before it cannot predict), and of the second half of them alone
+    const told = [];
+    for (const { head, ids } of job.starts) {
+      const engine = engineOf(null), lead = ids.length - job.text.tokens;
+      await engine.setThreads(job.threads[0]);
+      const surprise = [], began = performance.now();
+      for (let position = 0; position < ids.length - 1; position++) {
+        engine.forward(ids[position], position, true);
+        if (position >= lead) surprise.push(-logSoftmax(engine.logits())[ids[position + 1]]);
+      }
+      const mean = (list) => list.reduce((sum, value) => sum + value, 0) / list.length, late = surprise.slice(surprise.length >> 1);
+      say(`${job.text.file}, ${job.text.tokens} tokens after ${head === "none" ? "no token" : `token ${head}`}: ${mean(surprise).toFixed(4)} nats a token over ${surprise.length} ` +
+        `(a perplexity of ${Math.exp(mean(surprise)).toFixed(3)}), ${mean(late).toFixed(4)} over the last ${late.length} (${Math.exp(mean(late)).toFixed(3)}); ` +
+        `${((performance.now() - began) / 1000).toFixed(0)} s on ${engine.threads} threads, ${cpu}`);
+      told.push({ head, perplexity: Math.exp(mean(surprise)) });
+      engine.stopThreads();
+      await engine.release();
+    }
+    say(`${job.text.file}: ` + told.slice(1).map(({ head, perplexity }) => `after ${head === "none" ? "no token" : `token ${head}`} the perplexity is ${((perplexity / told[0].perplexity - 1) * 100).toFixed(2)}% from that after ${told[0].head}`).join("; "));
+  }
   if (job.mode === "write") {
     const { pyodideWithEngine } = await import("./engine.mjs");
     const { external } = await import(runtimeUrl("forward.js"));
@@ -609,7 +732,9 @@ if (isMainThread) {
     await live.engine.setThreads(job.threads[0]);
     const { sampling } = job;
     py.globals.set("PROMPT", job.text);
-    py.globals.set("SETTINGS", py.toPy({ steps: job.tokens, temperature: sampling.temperature, topp: sampling.topp, repetition_penalty: sampling.repetition_penalty, seed: job.seed }));
+    // (the entry's sampling as the page hands it over: top_k, min_p and presence_penalty too where it has them, T274)
+    const { steps: _, ...settings } = sampling;
+    py.globals.set("SETTINGS", py.toPy({ ...settings, steps: job.tokens, seed: job.seed }));
     say(`${job.entry}: writing with ${JSON.stringify(sampling)} and the seed ${job.seed}, ${live.engine.threads} threads, at most ${job.tokens} positions, the format ${JSON.stringify(job.template)}`);
     const began = performance.now();
     const text = py.runPython(`"".join(llama.generate(PROMPT, echo=False, **SETTINGS))`);
@@ -626,7 +751,7 @@ if (isMainThread) {
 }
 
 /** The page's conversion in Pyodide, into a memory of forward.js through a sink (worker/weights.js's checkpointSink) */
-async function convert(out, folder, context, pyodideWithEngine) {
+async function convert(out, folder, context, pyodideWithEngine, blocks = false) {
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: true });
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");
   const quantizeRows = numpy.kernel_quantizer("simdkernel.so");
@@ -641,7 +766,10 @@ async function convert(out, folder, context, pyodideWithEngine) {
       const ints = head.toJs(), options = { dtype, ...form.toJs({ dict_converter: Object.fromEntries }) };
       head.destroy();
       form.destroy();
-      const forwardOptions = { ...options, int8: true, relaxed: true, halfKV: true, shared: true, outliers: 8, gpu: false };
+      // (a form with kinds of its own: Python counts the weights of the file's dtype, as worker/weights.ts asks it)
+      const counted = options.kinds ? { weights: numpy.dtype_weights(py.toPy(ints), dtype, py.toPy(options)) } : {};
+      const forwardOptions = { ...options, ...counted, int8: true, relaxed: true, halfKV: true, shared: true, outliers: 8, gpu: false };
+      Object.assign(into, { dtype, kinds: options.kinds ? Object.keys(options.kinds).length : 0 });
       const after = footprint(ints, bytes, forwardOptions), wide = needsWide(bytes, after);
       Object.assign(into, weightsMemory(bytes, { shared: true, wide, after }), { bytes, wide, after, ints });
     },
@@ -656,16 +784,16 @@ async function convert(out, folder, context, pyodideWithEngine) {
     part: 16 * MiB,
     // (the conversion is made by now and its sink opened; what came with the GGUF's head, at most 32 MiB of it, is converted already)
     starting() {
-      console.log(`pyodide: ${gguf} (${size} bytes) to ${into.bytes} bytes of ternary checkpoint, header ${JSON.stringify(into.ints)}, on a ${into.wide ? "64" : "32"}-bit shared memory ` +
+      console.log(`pyodide: ${gguf} (${size} bytes) to ${into.bytes} bytes of ${into.dtype} checkpoint${into.kinds ? ` (${into.kinds} rows kept in the file's blocks)` : ""}, header ${JSON.stringify(into.ints)}, on a ${into.wide ? "64" : "32"}-bit shared memory ` +
         `(footprint() counts ${(into.after / GiB).toFixed(3)} GiB after it); Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB before the weights`);
       began = performance.now();
     },
     reading(ms) { reading += ms; },
   });
-  const conversion = converted(py, hf, { dtype: "ternary", max_seq_len: context, sink, quantize_rows: quantizeRows, readers }, answerer);
+  const conversion = converted(py, hf, { ...(blocks ? { dtype: "int8", blocks: true } : { dtype: "ternary" }), max_seq_len: context, sink, quantize_rows: quantizeRows, readers }, answerer);
   const seconds = (performance.now() - began) / 1000;
   console.log(`pyodide: converted in ${seconds.toFixed(0)} s (${(size / 1e6 / seconds).toFixed(1)} MB/s of the file, ${(reading / 1000).toFixed(0)} s of them reading it), ` +
-    `Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB at the end`);
+    `Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB at the end, the process's largest resident set ${(process.resourceUsage().maxRSS / 1024).toFixed(0)} MiB`);
   const hash = crypto.createHash("sha256");
   for (let offset = 0; offset < into.bytes; offset += 64 * MiB) {
     hash.update(new Uint8Array(into.memory.buffer, into.base + offset, Math.min(64 * MiB, into.bytes - offset)).slice());
