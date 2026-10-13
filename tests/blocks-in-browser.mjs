@@ -27,6 +27,10 @@
 //   no-relaxed   ?without=relaxed: the kernels without relaxed SIMD (what Safari runs)
 //   widened      ?without=int8: the load does not run on the int8 kernels, so the blocks are widened, no kernel of
 //                theirs is fetched, and the line says float32
+//   gone         the kernels of the blocks answered 404 (T502: the page was open while the site was deployed anew, and
+//                its build's files are gone): the load ends with the sentence of a site that was updated, before
+//                anything of the model is fetched
+//   refused      the same answered 500: the load ends with the server's word, as any built file's
 // It fails where a visit does not get ready, does not answer, logs an error, or says another line than its own.
 import fs from "node:fs";
 import path from "node:path";
@@ -45,6 +49,8 @@ const VISITS = {
   plain: { query: "&coi=off", line: /^SIMD kernels, llama\.cpp's blocks, relaxed SIMD$/, kernels: true, isolated: false },
   "no-relaxed": { query: "&without=relaxed", line: /^SIMD kernels, llama\.cpp's blocks \(without relaxed\)$/, kernels: true },
   widened: { query: "&without=int8", line: /^SIMD kernels, float32 \(without int8\)$/, kernels: false },
+  gone: { query: "", answered: 404, ends: /^The site was updated while this page was open\. Reload the page to go on\.$/ },
+  refused: { query: "", answered: 500, ends: /^Could not fetch blockkernel_(relaxed_)?(plain|shared)(64)?\.wasm: 500$/ },
 };
 const [engine = "chromium", ...asked] = process.argv.slice(2);
 const names = asked.length ? asked : Object.keys(VISITS);
@@ -60,8 +66,10 @@ const files = Object.fromEntries(fs.readdirSync(path.join(work, "gguf")).map((na
 console.log(`the made-up model: ${Object.entries(files).map(([name, bytes]) => `${name} ${bytes.length.toLocaleString("en")} bytes`).join(", ")}`);
 
 // what the built site was asked for, by name under its base
+// (and what a visit has it answer for the kernels of the blocks, in place of the files)
 const served = [];
-const site = await serving(undefined, { instead: ({ name }) => { served.push(name); } });
+let answered;
+const site = await serving(undefined, { instead: ({ name }) => { served.push(name); return /^_astro\/blockkernel_/.test(name) ? answered : undefined; } });
 const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
 const kind = playwright[channel ? "chromium" : engine];
 const limit = setTimeout(() => { console.error("FAILED\n- timed out after 600 s"); process.exit(2); }, 600e3);
@@ -97,7 +105,8 @@ const asListed = ({ repo, weights }) => {
 
 const failures = [];
 const visit = async (name, context) => {
-  const { query, line, kernels, isolated = true } = VISITS[name], failed = (what) => failures.push(`${name}: ${what}`);
+  const { query, line, kernels, isolated = true, ends } = VISITS[name], failed = (what) => failures.push(`${name}: ${what}`);
+  answered = VISITS[name].answered;
   const page = await context.newPage(), errors = [], warnings = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); else if (message.type() === "warning") warnings.push(message.text()); });
   page.on("pageerror", (error) => errors.push(String(error)));
@@ -113,6 +122,17 @@ const visit = async (name, context) => {
   await across(() => page.waitForFunction(() => (window.__ready && document.getElementById("run")?.disabled === false) || document.querySelector(".error"), null, { timeout: 300e3 }));
   const ready = await page.evaluate(() => ({ told: window.__ready ?? null, error: document.querySelector(".error .bubble")?.textContent ?? "",
     status: document.getElementById("status-text")?.textContent ?? "", isolated: self.crossOriginIsolated }));
+  if (ends) {
+    // a load that must end with its own sentence, and nothing more of the browser's than the failed fetches
+    const asked = served.filter((file) => /^_astro\/blockkernel_/.test(file)).length;
+    console.log(`${name}: ${ready.error || `(no error; the status line: ${ready.status})`} (${asked} of the blocks' kernels asked for, each answered ${answered})`);
+    if (!ends.test(ready.error)) failed(`the load ended with ${JSON.stringify(ready.error)}, not ${ends}`);
+    if (!asked) failed("the kernels of the blocks were not asked for");
+    // (the browser's line of each failed fetch, and the page's own of a load that failed: "worker error (…): …")
+    const others = errors.filter((text) => !/Failed to load resource|^worker error \(/.test(text));
+    if (others.length) failed(`console errors: ${others.join(" | ")}`);
+    return { page, ready };
+  }
   if (ready.error || !ready.told) {
     failed(`not ready: ${ready.error || ready.status}`);
   } else {
@@ -146,7 +166,9 @@ for (const name of names.filter((name) => !VISITS[name].again)) {
   await context.addInitScript(asListed, { repo: REPOSITORY, weights: GGUF });
   const { page, ready } = await visit(name, context);
   console.log(`${name}: asked of huggingface.co: ${requests.join("; ")}`);
-  if (!requests.some((request) => request.startsWith(`GET ${GGUF}`))) failures.push(`${name}: the GGUF was never asked for`);
+  if (VISITS[name].ends ? requests.length : !requests.some((request) => request.startsWith(`GET ${GGUF}`))) {
+    failures.push(VISITS[name].ends ? `${name}: the model was asked for although its kernels did not come` : `${name}: the GGUF was never asked for`);
+  }
   if (ready.told?.fromCache) failures.push(`${name}: a first visit came from a kept conversion`);
   if (name === "isolated" && names.includes("again")) {
     // the second visit: the same browser, the page loaded again. What was kept is the conversion with its blocks
