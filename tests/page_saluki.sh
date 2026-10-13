@@ -22,8 +22,8 @@
 #              reference's NumPy pass over its GGUF, both conversions and every mode of tests/page-27b.mjs
 #              (a minute, no download): the tool itself, before an hour is spent on the real model
 #   reference  tests/reference_saluki.sh: llama.cpp as it is, llama.cpp with float32 activations and the engine's NumPy
-#              forward pass over the GGUF, kept with the run (REFERENCE_STAGES: its STAGES; TEXTS, F32_TEXTS,
-#              SECONDS_FOR_F32, TIGHT_LINES are its own)
+#              forward pass over the GGUF, kept with the run (REFERENCE_STAGES: its STAGES; TEXTS, F32_PICK,
+#              SECONDS_FOR_F32, TIGHT_LINES, NUDGED are its own)
 #   convert    the native conversion of the GGUF with the original's vocabulary and config.json, its blocks kept
 #              (tests/page_saluki.py): its seconds, its memory, the options it yields, the checkpoint's size
 #   pyodide    the page's conversion itself, in Pyodide, into a 64-bit shared memory: the checkpoint's sha256 against
@@ -107,14 +107,16 @@ file=$(ls "$work"/*.gguf)
 python tests/page_saluki.py entries "$work/entries.json"
 
 status=0
-if has reference; then
-  STAGES="${REFERENCE_STAGES:-llama f32 numpy agree keep}" bash tests/reference_saluki.sh || status=1
-fi
 if [ -n "${REFERENCES:-}" ]; then
   gh run download "$REFERENCES" --repo "${GITHUB_REPOSITORY:-takano32/pyodide-llm}" --name kept --dir ".tmp/kept/$REFERENCES"
   cp -r ".tmp/kept/$REFERENCES/reference-saluki/." "$work/"
   rm -rf .tmp/kept
   echo "page: the references of run $REFERENCES: $(ls "$work"/fork-*.ids 2>/dev/null | wc -l) ids files, $(ls "$work"/saved 2>/dev/null | wc -l) files of the engine's NumPy runs, $(ls "$work"/f32 2>/dev/null | wc -l) of llama.cpp with float32 activations"
+fi
+
+if has reference; then
+  # (after the references of an earlier run, where one is named: REFERENCE_STAGES="f32 numpy keep" then adds to them)
+  REFERENCES= STAGES="${REFERENCE_STAGES:-llama f32 numpy agree keep}" bash tests/reference_saluki.sh || status=1
 fi
 
 if has convert || has pyodide || has breaks; then
@@ -147,13 +149,19 @@ if has page; then
   # put in the file's order of the value heads, the codebooks a byte off, the embedding and a layer of a matrix taken
   # for another type's blocks: the feed-forward matrix of layer 20, the linear layers' qkv of their layer 10)
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" ${TEXTS_OF_PAGE:+--texts "$TEXTS_OF_PAGE"} \
+  node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" ${LIKELY:+--likely} ${TEXTS_OF_PAGE:+--texts "$TEXTS_OF_PAGE"} \
     --broken "${BROKEN:-untiled,codebooks,embedding-kind,layer-w1-20,layer-wqkv-10}" || status=1
+  if [ -n "${EXACT:-}" ]; then
+    # EXACT="<rows> <texts>": so many rows of every product of the blocks' kernels held to the model of the kernels, to
+    # the bit, on one thread (every call is the first thread's then), for these texts
+    # shellcheck disable=SC2086
+    node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" ${LIKELY:+--likely} --threads 1 --exact "${EXACT% *}" --texts "${EXACT#* }" || status=1
+  fi
 fi
 if has breaks; then
   python tests/page_saluki.py convert "$folder" "$work/broken" --context "$context" --broken tiled
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/broken" compare "$work" $as --lines "$lines" --texts 0 --expect-failure || status=1
+  node tests/page-27b.mjs "$work/broken" compare "$work" $as --lines "$lines" ${LIKELY:+--likely} --texts 0 --expect-failure || status=1
   rm "$work/broken.bin"
 fi
 if has speed; then

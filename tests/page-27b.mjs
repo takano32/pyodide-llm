@@ -142,7 +142,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads"];
+  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
   if (!out || !["compare", "speed", "memory", "write", "long", "convert", "starts"].includes(mode)) {
@@ -231,6 +231,11 @@ if (isMainThread) {
     job.weak = option("--weak", "").split(",").filter(Boolean);
     job.weak.forEach(breakOf);
     job.expectFailure = args.includes("--expect-failure");
+    // T364.2: --likely holds the logits' line to the tokens the reference gives a probability of LIKELY or more (as long does: the
+    // largest over a vocabulary has a tail no sampling reaches); --exact <n>: n rows of every product of the blocks' kernels
+    // held to the model of the kernels (tests/blocks-model.mjs) to the bit, on the first of --threads (1: every call is seen)
+    job.likely = args.includes("--likely");
+    job.exact = Number(option("--exact", 0));
     job.broken.forEach(breakOf);  // (a name that is none is said before anything runs)
     job.texts = [];
     const only = option("--texts", "");
@@ -375,7 +380,8 @@ if (isMainThread) {
   let failed = false;
   if (job.mode === "compare") {
     const { references, lines } = job;
-    const told = (d) => `largest difference ${d.worst.toFixed(4)} (at position ${d.where}), KL ${(d.klSum / d.count).toExponential(2)} on average and ` +
+    const told = (d) => `largest difference ${d.worst.toFixed(4)} (at position ${d.where}: token ${d.token}, to which the other gives a probability of ${d.probability.toExponential(1)}; ` +
+      `${d.likely.toFixed(4)} over the tokens it gives ${LIKELY} or more), KL ${(d.klSum / d.count).toExponential(2)} on average and ` +
       `${d.klWorst.toExponential(2)} at most, the same most likely token at ${d.same} of ${d.count} positions` +
       (d.gaps.length ? ` (${d.gaps.slice(0, 4).map(({ position, gap }) => `position ${position}: the other's first two are ${gap.toFixed(4)} apart`).join("; ")})` : "");
     /** the keys or values of forward.js against the reference's ([layers][positions][kvDim], float32), the reference
@@ -398,9 +404,32 @@ if (isMainThread) {
       return { each, part: Math.max(...each.map((layer) => layer.part)), worst: Math.max(...each.map((layer) => layer.worst)),
         rms: Math.max(...each.map((layer) => layer.rms)) };
     };
+    // --exact: what a product of the blocks' kernels was handed and what it wrote, for some of its rows, against the model
+    const { blocksModel } = job.exact ? await import("./blocks-model.mjs") : {}, model = job.exact ? blocksModel() : null;
+    const { PACKED } = await import(runtimeUrl("jobs.ts"));
+    const held = { calls: 0, rows: 0, wrong: [], kernels: new Set() };
+    const exactly = (k) => {
+      const names = Object.fromEntries(Object.entries(BLOCK_TYPES).map(([kind, [number]]) => [number, kind]));
+      const books = () => new Int8Array(memory.buffer, base + plan.tensors.codebooks.offset, model.BOOKS.bytes);
+      const product = (name) => (...args) => {
+        k[name](...args);
+        const [out, xq, xs, w, , n, r0, r1, type] = args.map(Number), kind = names[type], bytes = PACKED[kind].rowBytes(n);
+        const a = new Int8Array(memory.buffer, xq, n), scales = new Float32Array(memory.buffer.slice(xs, xs + n / 8));
+        held.calls += 1;
+        held.kernels.add(name);
+        for (let j = 0; j < Math.min(job.exact, r1 - r0); j++) {
+          const row = r0 + Math.floor(j * (r1 - r0) / Math.min(job.exact, r1 - r0));
+          const wanted = model.expected(kind, new Uint8Array(memory.buffer, w + row * bytes, bytes), 0, n, 1, books(), a, scales)[0];
+          const got = new Float32Array(memory.buffer.slice(out + row * 4, out + row * 4 + 4))[0];
+          held.rows += 1;
+          if (!Object.is(wanted, got) && held.wrong.length < 8) held.wrong.push(`${name} of ${kind}, row ${row} of a matrix at ${w - base} of the file with ${n} columns: ${got}, the model ${wanted}`);
+        }
+      };
+      return { ...k, matmul_sb: product("matmul_sb"), ...(k.matmul_sbr ? { matmul_sbr: product("matmul_sbr") } : {}) };
+    };
     const runs = [null, ...job.broken, ...job.weak];
     for (const name of runs) {
-      const engine = engineOf(name ? breakOf(name) : null);
+      const engine = engineOf(name ? breakOf(name) : null, job.exact && !name ? { wrap: exactly } : {});
       await engine.setThreads(job.threads[0]);
       for (const text of name ? job.texts.slice(0, 1) : job.texts) {
         const ids = [...text.prompt, ...text.wrote.slice(0, -1)], rows = [];
@@ -433,10 +462,17 @@ if (isMainThread) {
         const fork = distance(rows, floats(forked ? single : `${references}/saved/engine-${text.index}-float32.logits`));
         say(`${label}: the logits against ${forked ? "the float32 fork" : "the engine's NumPy run in float32 (no float32 fork's file)"}: ${told(fork)}`);
         if (fork.count < ids.length) say(`${label}: the float32 fork wrote ${fork.count} of the ${ids.length} positions`);
-        if (lines && fork.worst > lines.logits) reasons.push(`the logits are ${fork.worst.toFixed(4)} from the float32 fork's, past ${lines.logits}`);
+        const off = job.likely ? fork.likely : fork.worst;
+        if (lines && off > lines.logits) reasons.push(`the logits are ${off.toFixed(4)} from the float32 fork's${job.likely ? " over the tokens it gives a probability" : ""}, past ${lines.logits}`);
+        if (job.exact && !name) {
+          say(`${label}: ${held.calls} products of the blocks' kernels (${[...held.kernels].join(", ")}), ${held.rows} rows of them against the model of the kernels: ` +
+            (held.wrong.length ? `NOT the model's — FAILED: ${held.wrong.join("; ")}` : "the model's product of what each was handed, to the bit"));
+          if (held.wrong.length) reasons.push("a product of the blocks' kernels is not the model's");
+          Object.assign(held, { calls: 0, rows: 0, wrong: [] });
+        }
         if (lines && fork.klWorst > lines.kl) reasons.push(`a position's KL is ${fork.klWorst.toExponential(2)}, past ${lines.kl}`);
-        const far = fork.gaps.filter(({ gap }) => gap > 2 * fork.worst);
-        if (lines && far.length) reasons.push(`the most likely token is another at ${far.length} position(s) where the fork's first two are more than ${(2 * fork.worst).toFixed(4)} apart`);
+        const far = fork.gaps.filter(({ gap }) => gap > 2 * off);
+        if (lines && far.length) reasons.push(`the most likely token is another at ${far.length} position(s) where the fork's first two are more than ${(2 * off).toFixed(4)} apart`);
         // the 16 tokens the fork wrote (with its rounded activations): the most likely token after the prompt and after
         // each of them, which is what a greedy generation of the page would write as long as it agrees
         const first = text.prompt.length - 1;
