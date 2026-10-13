@@ -68,9 +68,24 @@ def as_q8_k(x):
     return (q * d).reshape(np.shape(x)).astype(np.float32)
 
 
+def nudged(seed):
+    """as_page(127) of the activations moved by a millionth of their group's largest first (a random amount for each,
+    of a seed): the rounding the page's kernels do, of numbers as far from the engine's as another order of float32
+    sums puts them. What two such runs differ by is what forward.ts may differ by from the run that rounds alike."""
+    rng, rounded = np.random.default_rng(seed), as_page(127)
+
+    def moved(x):
+        blocks = np.ascontiguousarray(x, dtype=np.float32).reshape(-1, 32)
+        noise = rng.uniform(-1e-6, 1e-6, blocks.shape).astype(np.float32) * np.abs(blocks).max(axis=1, keepdims=True)
+        return rounded((blocks + noise).reshape(np.shape(x)))
+    return moved
+
+
 # what every large matrix reads, and what the two small ones of a linear layer's gates read (Q8_0 in the file: llama.cpp
 # rounds their activation to Q8_0; the page keeps them float32)
 ROUNDINGS = {"float32": (None, None), "as 8 bits round": (as_page(127), None), "as llama.cpp rounds": (as_q8_k, as_q8_0)}
+# NUDGED="0,2" (the environment): for these texts two more runs, "nudged 1" and "nudged 2" (nudged())
+NUDGES = {"nudged 1": 1, "nudged 2": 2}
 BREAKS = {
     "untiled output": "the output matrices of the linear layers given the value heads in Hugging Face's order (their columns are in llama.cpp's)",
     "tiled": "the value heads of every tensor read in the file's order",
@@ -137,7 +152,7 @@ class Streamed(Llama):
         keys = key_heads * linear["key_dim"]
         full = [l for l, (lines, _) in enumerate(self.slots) if not lines]
         lines = [l for l, (kind, _) in enumerate(self.slots) if kind]
-        rounding, rounding_small = ROUNDINGS[self.rounding]
+        rounding, rounding_small = (nudged(NUDGES[self.rounding]), None) if self.rounding in NUDGES else ROUNDINGS[self.rounding]
         small = rounding_small or (lambda x: x)
         # the rows of the engine's matrices among the stored ones (as reference_27b.py's: the converter's "heads"
         # transform applied to the rows' numbers)
@@ -252,14 +267,16 @@ def main(gguf, work):
     print(f"reference: llama.cpp with float32 activations wrote {[None if text['f32'] is None else len(text['f32']) for text in texts]} "
           f"positions of {[len(text['ids']) for text in texts]}", flush=True)
 
+    again = [int(index) for index in os.environ.get("NUDGED", "").split(",") if index]
     runs, logits = passed(source, texts, lambda conductor: (
         [(index, name, Streamed(source, conductor, rounding=name)) for index in range(len(texts)) for name in ROUNDINGS]
+        + [(index, name, Streamed(source, conductor, rounding=name)) for index in again for name in NUDGES]
         + [(0, name, Streamed(source, conductor, broken=name)) for name in BREAKS]))
     if os.environ.get("SAVE_LOGITS"):
         saved = Path(os.environ["SAVE_LOGITS"])
         saved.mkdir(parents=True, exist_ok=True)
         for index, name, model in runs:
-            if name in ("float32", "as 8 bits round"):
+            if name in ("float32", "as 8 bits round", *NUDGES):
                 save_run(saved, index, name, model, logits[(index, name)])
         files = sorted(saved.glob("engine-*"))
         print(f"reference: the logits, keys and values of the runs for the page are in {saved}: {len(files)} files, "
@@ -276,6 +293,13 @@ def main(gguf, work):
             failed.append(f"text {index}: the tokenizer")
         compare(f"text {index}, as 8 bits round against float32 (the page's rounding of the activations)", logits[(index, "as 8 bits round")], ours)
         compare(f"text {index}, as llama.cpp rounds against float32 (llama.cpp's rounding of the activations)", logits[(index, "as llama.cpp rounds")], ours)
+        if index in again:
+            # (how far the same rounding is from itself where the numbers before it differ in their last bits)
+            for name in NUDGES:
+                compare(f"text {index}, {name} against as 8 bits round (the same rounding of activations a millionth off)", logits[(index, name)], logits[(index, "as 8 bits round")])
+            compare(f"text {index}, nudged 1 against nudged 2", logits[(index, "nudged 1")], logits[(index, "nudged 2")])
+            by = [float(np.max(np.abs(a - b))) for a, b in zip(logits[(index, "nudged 1")], logits[(index, "as 8 bits round")])]
+            print(f"reference: text {index}, nudged 1 against as 8 bits round, by position: {' '.join(f'{value:.2f}' for value in by)}")
         for name, theirs in (("llama.cpp a token at a time", text["single"]), ("llama.cpp's batch", text["batch"])):
             if theirs is not None:
                 compare(f"text {index}, float32 against {name}", ours, theirs)
