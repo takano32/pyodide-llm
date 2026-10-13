@@ -16,12 +16,14 @@
 // The forms of IQ2_XXS (66 bytes a block: d, then for each 32 weights four indices of 8 bits into a grid of 8
 // magnitudes and a word of four 7-bit indices of signs and a 4-bit scale):
 //
-//   rb2, rb3  rb with fewer instructions: a group's eight bytes loaded once; an entry loaded into its lane, and the
-//        scales multiplied in four groups at a time. The same numbers to the bit
 //   rb   registers, the signs on the activations ("beta"): the grid's magnitudes (8, 25, 43) are the 7-bit side of the
 //        relaxed dot product, the activations its signed side in all their 8 bits, each given its weight's sign
 //        ((a ^ m) - m) as it is loaded. Nothing is written anywhere and a row needs no correction
 //   rbp  rb without relaxed SIMD (extmul and extadd): the same numbers to the bit
+//   rb2  rb with a group's eight bytes loaded once, not five times: the same numbers to the bit
+//   rb3  rb with a table's entry loaded into its lane in one instruction, and the eight scales of a block multiplied
+//        in four at a time once the groups' sums are a lane each: the same numbers to the bit. The form taken: 1.19
+//        times rb on CI's x86-64 and 1.05 on its arm64
 //   ra   registers, the signs on the weights ("alpha"): the weights are signed int8, the activations as matmul_q8r
 //        takes them (7 bits and a bias of 64), and minus 64 times the sum of a group's weights is made in the lanes
 //   sb   rb in two passes: a row's magnitudes, masks and scales are written to a scratch area, then dotted
