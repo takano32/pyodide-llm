@@ -56,6 +56,10 @@ export const ADDRESSES = {
   gate: [0, 1, 2], convolve: [0, 1, 2], short_conv: [0, 1, 2, 3], delta_rule: [0, 1, 2, 3, 4], rotate: [0, 1, 2], unrotate: [0, 1, 2],
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
   matmul_q8r_tile: [0, 1, 2, 3, 4, 5], matmul_t2r_tile: [0, 1, 2, 3, 4],
+  // T363.4: the kernels of llama.cpp's blocks (kernels/blocks.ts and blocks_relaxed.ts: modules of their own,
+  // blockkernel_*.wasm, which addressed() takes as it takes the others). No line of WORK or PACKED calls them yet (T363.5)
+  sb_tables: [0, 1], sums_x: [0, 1], sb_row: [0, 1, 2], matmul_sb: [0, 1, 2, 3, 4], matmul_sbr: [0, 1, 2, 3, 4],
+  matmul_sbr_tile: [0, 1, 2, 3, 4], matmul_sbw_tile: [0, 1, 2, 3, 4, 12], signed_dots: [0, 1, 2],
 };
 // (T368.1, the types. A kernel takes numbers, its addresses as BigInt on a 64-bit memory, and what it returns is for
 // its caller to know: most return nothing. The kernels are the names of ADDRESSES and no other: a kernel that is
