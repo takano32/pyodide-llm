@@ -3811,6 +3811,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T362 [追加][Saluki][変換] K 量子化と i 量子化の読み手（10 種類 → float32） — 状態: 進行中（2026-10-13 に始めた。子タスク: T362.1 読み手と表、T362.2 元のモデルとの相関の道具。2026-10-09、T361 の後。規模 中）
 - `convert/readers.py` の `READERS` に 10 種類を足す（NumPy。llama.cpp の C の関数とビット単位で同じことを `tests/fork_readers.py` の形で確かめる）。これで `gguf_check.py` と NumPy の参照が回る。変換が遅ければカーネル版も（T273 の形）。今ある変換は 1 バイトも変えない。
+- **T362.1 の予定（2026-10-13、実装の前に書いた）**
+  - **置き場は変換器の側**（`src/python/convert/`）: 符号表 `convert/grids.py`（llama.cpp の `ggml-common.h` から写した表と MIT の許諾文の全文）と読み手 `convert/superblocks.py`（形と式から NumPy で。行は写さない）、登録簿 `convert/readers.py` の `SOURCES` に 10 行。T361 の文書は `engine/` の側を勧めたが、`engine.zip` は毎回の訪問で全員が取る（`converter.zip` は変換のときだけ）: Saluki を開かない訪問者に表を配らない。T363 でエンジンが塊を読む形になったら、2 つのファイルを動かして import の行を直す（そのとき、表をチェックポイントの行として運ぶ案（文書の 3 節）なら `engine.zip` は太らない）。
+  - **表の持ち方**: 格子の値は 3〜8 段しかないので、1 つの値を段の番号の 1 字で書く（`iq2xxs` は 8 字で 1 語）。符号の表 128 個は式で作る。
+  - **予定した違い**: (1) `converter.zip` が大きくなる（`engine.zip` は 1 バイトも変わらない）。(2) 網の `python` に新しい試験（「新しい」）と、`SOURCES` を回る試験の 10 個。合格の数が増える。(3) 網の `exports`: 窓口 `llama2_convert` に名前は足さない（道具と試験は `convert.superblocks` を直に読む）。`Source` に欄が 1 つ増えるので、記録が署名を持っていれば「違う」。(4) **断りの文は変えない**: 「… is stored as …: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 are read.」と GGUF の「… GGUF files are supported (not the K-quants).」は訪問者に見えうる文なので、10 種類を一覧に入れない欄（`Source.said`）を置いて前の文のままにし、伸ばすか・言い直すかは持ち主に聞く。(5) 変換の出力・options・tokenizer.bin は 1 バイトも変わらない（今ある GGUF と safetensors は 10 種類の型を持たない）。`CONVERTER` は上げない。カーネルの読み手は足さない。
 
 ### T363 [追加][Saluki][CPU] 詰め方のまま持つ dtype と、そこから掛けるカーネル — 状態: 未着手（2026-10-09、T362 の後。規模 大）
 - T361 で決めた持ち方で: チェックポイントの形（`FORM`・`checkpoint_dtype()`・`footprint()`）、forward.js の道、カーネル（x86-64 と arm64 の両方で測る）、スレッドのビット一致、`kernels-in-browser.mjs`。hybrid なので GPU には載せない。
