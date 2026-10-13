@@ -21,7 +21,8 @@
 //   E2E_RESULTS    a file to append one JSON line to: the browser and its version, the model, the seconds to ready,
 //                  tok/s, the backend line, and what failed. tests/summary.mjs turns those lines into one table.
 //   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
-//                  console go there, named after the browser and the model.
+//                  console go there, named after the browser and the model, and the status line as it changed (T506:
+//                  what a page that no longer answers last said).
 //   E2E_CONSOLE    a file every line of the page's console is appended to as it comes (T380.2), whatever the run's end.
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
@@ -88,12 +89,15 @@ const started = Date.now();
 // T70 looked like one) must end by it too, not by the job's own limit. Until the page exists there is nothing to
 // keep but the reason. (Fable's review of T82.)
 let browser, browserVersion = "", page;
+// (T506: the status line as it changed, kept below once there is a page; here, for the time limit to read)
+const statusLines = [];
+let statusNow;
 const limit = Number(process.env.E2E_TIMEOUT ?? 900) * 1000;
 const watchdog = setTimeout(async () => {
   const seconds = limit / 1000;
   record({ ok: false, timedOut: true, failures: [`timed out after ${seconds}s`] });
   if (page) await keepArtifacts(`timed out after ${seconds}s`);
-  console.error(`FAILED\n- timed out after ${seconds}s`);
+  console.error(`FAILED\n- timed out after ${seconds}s (the status line last said: ${statusLines.at(-1) ?? "nothing"})`);
   // stdout may be a pipe (| tee): let it drain before the process ends
   process.stdout.write(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`, () => process.exit(2));
 }, limit);
@@ -152,6 +156,31 @@ page.on("console", (message) => {
   remember(`[${message.type()}] ${message.text()}`);
 });
 
+// T506: what the status line said, as it changed (asked every two seconds, the last sixty kept). A page that stops
+// answering (a WebKit that went down in a large WebAssembly memory left "status: (no answer)" and no picture) still
+// leaves the line it last showed and when, and what led to it
+const statusWatch = setInterval(async () => {
+  const text = await Promise.race([page.evaluate(() => document.getElementById("status-text")?.textContent ?? ""),
+    new Promise((resolve) => setTimeout(resolve, 1500))]).catch(() => undefined);
+  if (text === undefined || text === statusNow) return;
+  statusNow = text;
+  statusLines.push(`${((Date.now() - started) / 1000).toFixed(1)}s [status] ${text}`);
+  if (statusLines.length > 60) statusLines.shift();
+}, 2000);
+statusWatch.unref();
+// T506: a page whose process ended answers nothing more, and no wait on it ever ends: the run fails here, with what it
+// last said, rather than at its time limit (Playwright says "crash" where the browser tells it; not every death is told)
+page.on("crash", async () => {
+  const seconds = ((Date.now() - started) / 1000).toFixed(1);
+  remember("[crash] the page's process ended");
+  clearTimeout(watchdog);
+  const reason = `the page crashed after ${seconds}s (its status line last said: ${statusNow ?? "nothing"})`;
+  record({ ok: false, timedOut: false, failures: [reason] });
+  await keepArtifacts(reason);
+  console.error(`FAILED\n- ${reason}`);
+  process.stdout.write(`${engine} ${browserVersion}, ${model}: ${reason}\n`, () => process.exit(1));
+});
+
 // What is left behind when a run fails: in CI nothing else of it remains (T82)
 async function keepArtifacts(reason) {
   const directory = process.env.E2E_ARTIFACTS;
@@ -165,7 +194,7 @@ async function keepArtifacts(reason) {
   const html = await within(page.content());
   if (html) fs.writeFileSync(`${name}.html`, html);
   fs.writeFileSync(`${name}.log`, [`${engine} ${browserVersion}, ${model}: ${reason}`, `status: ${status ?? "(no answer)"}`, "",
-    ...consoleLines].join("\n") + "\n");
+    ...consoleLines, "", "the status line, as it changed:", ...statusLines].join("\n") + "\n");
 }
 
 // One JSON line per run, for tests/summary.mjs
