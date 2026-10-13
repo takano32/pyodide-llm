@@ -142,6 +142,24 @@ async function init(search: string) {
   pyodideAt = performance.now();
 }
 
+// T363.5: the kernels of llama.cpp's blocks (blockkernel_*.wasm, kernels/blocks.ts), beside every build of the kernels
+// this visit has. They are fetched when a model with rows of such types is first loaded, and by no other visit: every
+// build there is, since which of them the model runs on is known only once its header is (the memory it takes), in the
+// middle of a conversion that cannot wait. Without them such a model does not run, and there is no slower path in
+// their place: a fetch that fails fails the load, as the site having been updated where that is why (built())
+let blocksAsked: Promise<void> | undefined;
+export function blockKernels() {
+  blocksAsked ??= Promise.all(([[jsKernels, "plain"], [sharedKernels, "shared"], [wideKernels?.plain, "plain64"], [wideKernels?.shared, "shared64"]] as const).map(async ([compiled, kind]) => {
+    if (!compiled || compiled.blocks) return;
+    const [plain, relaxed] = await Promise.all(([`blockkernel_${kind}.wasm`, `blockkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name, i) =>
+      (i && !compiled.relaxed ? null : built(name).then((res) => res.arrayBuffer()))));
+    compiled.blocks = forwardModule!.compileBlocks(plain!, relaxed);
+  })).then(() => {}).finally(() => {
+    blocksAsked = undefined;  // (a build that has them is not asked again; one that failed is, by the next load of such a model)
+  });
+  return blocksAsked;
+}
+
 /** A load was asked for: the runtime starts with the first one (the model downloads while Pyodide loads), from what
  * the page's URL said, and is the same promise for every later one */
 export function runtimeAsked(search: string) {

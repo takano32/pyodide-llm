@@ -5,7 +5,7 @@
 // the cache of the keys and values cache.ts's: each is chosen or made here once, and a token's path calls what it gave.
 // A module of src/runtime/forward.ts.
 
-import { BATCH, KIND, addressed, packingOf, runner } from "../jobs.ts";
+import { BATCH, BLOCK_TABLES, KIND, SPREAD_THREADS, addressed, packingOf, runner, spreadBytes } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
 import { growMemory, PAGE, align, frameArrays, frameBytes, halfToFloat } from "./memory.ts";
 import { LAYER_KINDS } from "./kinds.ts";
@@ -16,24 +16,29 @@ import { GPU_ALONE } from "./alone.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
 import { gpuFit, gpuSide } from "./gpuside.ts";
-import type { Kernels, Packed } from "../jobs.ts";
+import type { Kernels, Packed, Packing, Ready } from "../jobs.ts";
 import type { Direct } from "./alone.ts";
 import type { CpuSide, GpuWorker, Held, Placed, Shape, Taken } from "./gpuside.ts";
 import type { Spawn } from "./threads.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
 import type { Core, Kinds, Product, Room } from "./kinds.ts";
-import type { Derived, Plan, Tensor, TensorName } from "../contracts/plan.ts";
+import type { Derived, Part, Plan, Tensor, TensorName } from "../contracts/plan.ts";
 
 // ---- (T368.4, the types)
 // The kernels of one build as modules (forward.ts's compileKernels()): relaxed: null where the browser has no relaxed
-// SIMD; wide: the build for a 64-bit memory
-export type Compiled = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; wide?: boolean };
+// SIMD; wide: the build for a 64-bit memory; blocks (T363.5): the same build of the kernels of llama.cpp's blocks
+// (blockkernel_*.wasm), which an engine has only for a model with such rows (forward.ts's blockKernels())
+export type Compiled = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; wide?: boolean; blocks?: Blocks | null };
+export type Blocks = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null };
+// what createForward() is made with for the tests alone, to hold every form of a kernel to the others: signed, whether
+// the tile of the signed dot product is taken (left out: where the engine's relaxed SIMD multiplies so, signed_dots)
+export type Trying = { signed?: boolean };
 // What an engine is made of (the comments above createForward() say each)
 export type Made = {
   memory: WebAssembly.Memory; base: number; size: number; kernels: Compiled; plan: Plan;
   spawn?: Spawn | null; gpu?: () => GpuWorker; gpuRoom?: number; memoryUnsaid?: boolean; gpuRemembered?: Remembered; gpuForce?: Force;
   halfKeys?: boolean; direct?: Direct;
-  wrap?: (exports: Kernels) => Kernels; stalledMs?: number; clock?: () => number; kinds?: Kinds;
+  wrap?: (exports: Kernels) => Kernels; stalledMs?: number; clock?: () => number; kinds?: Kinds; trying?: Trying;
 };
 // The array forward() fills with the logits: a Float32Array, or Python's (a PyProxy of a NumPy array: copy() keeps
 // it past the call, getBuffer() gives its floats, destroy() lets it go)
@@ -71,11 +76,12 @@ const STALLED_MS = 10000;
  * model goes in pieces as a matrix past a buffer of the device does */
 /** kinds (tests only, T375.3): the table of the kinds of layers there is a step for (forward/kinds.ts's LAYER_KINDS):
  * a test hands in one with a kind of its own */
+/** trying (tests only, T363.5): the forms of a kernel to take whatever the engine would choose (Trying) */
 /** direct (T156, external()): the layers' matrices (T210: and the tables) are on the GPU alone: nothing runs on the CPU,
  * every block and step goes to the GPU (as gpuForce.always), and one the GPU cannot take throws (the worker loads the
  * model again on the CPU). T210: no cache of keys and values here either; the GPU embeds a prompt's tokens itself */
 export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce = {},
-  halfKeys, direct, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS }: Made) {
+  halfKeys, direct, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS, trying = {} }: Made) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen } = plan;
   // T375.2: what the layers of one architecture differ from another's by is read here once, as the facts Python's plan
@@ -110,8 +116,19 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
   // a page that is not cross-origin isolated has no SharedArrayBuffer to ask about: its memory is not shared
   const sharedMemory = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer;
-  const k = wrap(addressed(new WebAssembly.Instance(kernels.plain, imports).exports, wide));
-  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(addressed(new WebAssembly.Instance(kernels.relaxed, imports).exports, wide)) : null;
+  const T = plan.tensors, derived: Derived = plan.derived ?? {};
+  // T363.5: how every tensor of the file is packed, a stack's layers each: the packings there are (jobs.ts's PACKED)
+  const partsOf = (t: Tensor): Part[] => t.layers ?? [t as Part];
+  const packings = Object.values(T).flatMap(partsOf).map(({ kind }) => packingOf(kind)).filter((packing) => packing !== null);
+  // the kernels of llama.cpp's blocks, of modules of their own, on this memory beside the others where the model has
+  // rows of such a type; nowhere else
+  const blocked = packings.find(({ tabled }) => tabled !== undefined);
+  if (blocked && !kernels.blocks) throw new Error("This engine was made without the kernels of llama.cpp's blocks, and the model has rows of them.");
+  const blocks = blocked ? kernels.blocks! : null;
+  const instance = (module: WebAssembly.Module) => new WebAssembly.Instance(module, imports).exports;
+  const k = wrap(addressed(blocks ? { ...instance(kernels.plain), ...instance(blocks.plain) } : instance(kernels.plain), wide));
+  const runsRelaxed = plan.int8 && plan.relaxed && kernels.relaxed;
+  const relaxed = runsRelaxed ? wrap(addressed(blocks?.relaxed ? { ...instance(kernels.relaxed!), ...instance(blocks.relaxed) } : instance(kernels.relaxed!), wide)) : null;
 
   // ---- memory: the checkpoint at base, everything else after it; views are made again after the memory grows
   let top = align(base + size);
@@ -140,20 +157,59 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     get H() { return H; },
   };
 
-  const T = plan.tensors, derived: Derived = plan.derived ?? {};
   const count = (t: Tensor) => t.shape.reduce((a, b) => a * b, 1);
-  // a float32 copy of a tensor: float16 converted; a packed one (int8, int6, ternary: jobs.ts's PACKED says how each
-  // weight is read) times the scale of its group (Math.fround is the float32 product NumPy computes)
-  function widen(t: Tensor) {
-    const n = count(t), at = alloc(n * 4);
-    if (t.kind === "f16") {
-      for (let i = 0; i < n; i++) F[at / 4 + i] = halfToFloat(H[(base + t.offset) / 2 + i]);
-    } else {
-      const packing = packingOf(t.kind);
-      if (!packing) throw new Error(`This engine reads no weights stored as ${JSON.stringify(t.kind)}.`);
-      const g = t.group, values = base + t.offset;
-      for (let i = 0; i < n; i++) F[at / 4 + i] = Math.fround(packing.value(U, values, i) * F[(base + t.scales) / 4 + ((i / g) | 0)]);
+  // T363.5: what the kernels of llama.cpp's blocks read besides a matrix: their tables, made here once of the
+  // checkpoint's codebooks (0: the model has no such rows); and for the tile of the signed dot product, taken where
+  // this engine's relaxed SIMD multiplies signed bytes by signed bytes exactly (every pair of bytes is asked, once),
+  // the bytes each thread spreads a row into, for the widest row there is
+  let tables = 0, spread = 0;
+  if (blocked) {
+    tables = alloc(BLOCK_TABLES);
+    if (!T.codebooks || k.sb_tables(tables, base + T.codebooks.offset) !== BLOCK_TABLES) throw new Error("The kernels of llama.cpp's blocks did not make their tables of this checkpoint.");
+    if (relaxed?.matmul_sbw_tile && (trying.signed ?? signedDots(relaxed, alloc(64)))) {
+      const widest = Math.max(...Object.values(T).filter((t) => partsOf(t).some(({ kind }) => packingOf(kind)?.tabled !== undefined)).map((t) => t.shape[t.shape.length - 1]));
+      spread = alloc(SPREAD_THREADS * spreadBytes(widest));
     }
+  }
+  // Whether the relaxed dot product of this engine multiplies signed bytes by signed bytes exactly, for every pair of
+  // bytes: what matmul_sbw_tile needs (kernels/README.md; arm64's does, x86's takes the second for unsigned). at: 48 bytes
+  function signedDots(r: Kernels, at: number) {
+    const I8 = new Int8Array(memory.buffer), I32 = new Int32Array(memory.buffer);
+    for (let x = -128; x < 128; x++) {
+      for (let y0 = -128; y0 < 128; y0 += 16) {
+        let want = 0;
+        for (let j = 0; j < 16; j++) {
+          I8[at + j] = x;
+          I8[at + 16 + j] = y0 + j;
+          want += x * (y0 + j);
+        }
+        r.signed_dots(at + 32, at, at + 16);
+        if (I32[at / 4 + 8] + I32[at / 4 + 9] + I32[at / 4 + 10] + I32[at / 4 + 11] !== want) return false;
+      }
+    }
+    return true;
+  }
+  // a float32 copy of a tensor: float16 converted; a packed one (int8, int6, ternary: jobs.ts's PACKED says how each
+  // weight is read) times the scale of its group (Math.fround is the float32 product NumPy computes); T363.5: a stack
+  // whose layers are each of a kind of their own layer by layer, and rows of llama.cpp's blocks by their kernel
+  function widen(t: Tensor) {
+    const n = count(t), at = alloc(n * 4), parts = partsOf(t), each = n / parts.length, width = t.shape[t.shape.length - 1];
+    parts.forEach((part, l) => {
+      const to = at + l * each * 4, packing = packingOf(part.kind);
+      if (part.kind === "f32") {
+        F.copyWithin(to / 4, (base + part.offset) / 4, (base + part.offset) / 4 + each);
+      } else if (part.kind === "f16") {
+        for (let i = 0; i < each; i++) F[to / 4 + i] = halfToFloat(H[(base + part.offset) / 2 + i]);
+      } else if (packing?.row) {
+        const row = packing.row(k, tables), bytes = packing.rowBytes(width);
+        for (let r = 0; r < each / width; r++) row(to + r * width * 4, base + part.offset + r * bytes, width);
+      } else if (packing?.value) {
+        const g = part.group, values = base + part.offset;
+        for (let i = 0; i < each; i++) F[to / 4 + i] = Math.fround(packing.value(U, values, i) * F[(base + part.scales) / 4 + ((i / g) | 0)]);
+      } else {
+        throw new Error(`This engine reads no weights stored as ${JSON.stringify(part.kind)}.`);
+      }
+    });
     return at;
   }
   const widened = new Map<string, number>();
@@ -183,11 +239,27 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (!matrices.has(name)) matrices.set(name, made(name));
     return matrices.get(name)!;
   }
+  // (the activations as a packing's kernels take them: one function for a name, so that matrices packed alike in that
+  // are told by it)
+  const readies = new Map<string, Ready>();
+  const readyOf = (packing: Packing) => {
+    if (!readies.has(packing.takes)) readies.set(packing.takes, packing.ready(k, Boolean(relaxed)));
+    return readies.get(packing.takes)!;
+  };
   function made(name: TensorName): Held | null {
     const source: TensorName = plan.shared_classifier && name === "wcls" ? "token_embedding_table" : name;
     const t = T[source];
     if (!t) return null;
-    const [rows, n] = t.shape.slice(-2), packing = packingOf(t.kind), scaled = rows * (n / t.group) * 4;
+    const [rows, n] = t.shape.slice(-2);
+    // T363.5: a stack with a kind for each layer is its layers, each a matrix of its own (matmuls() takes the layer's)
+    if (t.layers) {
+      const layers = t.layers.map((part) => held({ ...part, shape: [rows, n] }, source, rows, n));
+      return { rows, n, kind: "layers", layers, layer: () => { throw new Error(`The matrix ${source} is its layers, each of a kind of its own.`); } };
+    }
+    return held(t, source, rows, n);
+  }
+  function held(t: Tensor, source: TensorName, rows: number, n: number): Held {
+    const packing = packingOf(t.kind), scaled = rows * (n / t.group) * 4;
     // T156: on the GPU alone: where each layer's values and scales start in the checkpoint (what gpu.ts was opened
     // with), for the plan the GPU's worker is started with; the CPU never multiplies by it (T210: nor by the classifier)
     if (direct && GPU_ALONE.includes(source)) {
@@ -196,6 +268,13 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     }
     if (packing && plan.int8) {
       const rowBytes = packing.rowBytes(n), values = base + t.offset, scales = base + t.scales, groups = count(t) / t.group;
+      // (T363.5: llama.cpp's blocks: the tables and the type where the others have scales and corrections, and last
+      // the scratch of the signed tile, taken where there is one)
+      if (packing.tabled !== undefined) {
+        const type = packing.tabled, { jobs } = packing;
+        const job = !relaxed?.matmul_sbr ? jobs.plain : spread && jobs.signed !== undefined ? jobs.signed : jobs.relaxed;
+        return { rows, n, kind: t.kind as Packed, group: t.group, layer: (l) => [values + l * rows * rowBytes, tables, type, spread], job, ready: readyOf(packing) };
+      }
       let corrections = 0;
       if (relaxed && packing.sums) {
         // relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, which this takes out again:
@@ -208,8 +287,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       }
       // (a layer's values, scales and corrections: 0 where the packing has none)
       const layer = (l: number) => [values + l * rows * rowBytes, scales + l * scaled, corrections && corrections + l * scaled];
-      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: packing.ready(k, Boolean(relaxed)) };
+      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: readyOf(packing) };
     }
+    // (a layer of a stack that is float32 by itself: widened or taken as it is, where it is)
+    if (t !== T[source]) return { rows, n, kind: "f32", job: KIND.matmul_f32, ready: null, layer: ((w) => () => [w])(t.kind === "f32" ? base + t.offset : widen(t)) };
     const w = floats(source);  // float32 as it is, or widened once (shared with the embedding when it is the same table)
     return { rows, n, kind: "f32", job: KIND.matmul_f32, ready: null, layer: (l) => [w + l * rows * n * 4] };
   }
@@ -230,7 +311,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T375.3: a frame is the arrays every model has, what each kind of its layers puts there, and a rotated basis's
   // (memory.ts's frameArrays()); what a kind keeps of a token apart from its frame follows the frames, BATCH of each
   const framed = had.map(({ kind }) => kinds[kind].frame(sizes));
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, framed, rotated, packingOf(T.wo?.kind)?.xs), S = frameBytes(inFrame);
+  // (xs: the most a group of 32 activations takes there by any packing of the model's)
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, framed, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined), S = frameBytes(inFrame);
   const named = [...inFrame, ...framed.flatMap(({ apart = [] }) => apart)].map(([name]) => name);
   const twice = named.find((name, i) => named.indexOf(name) !== i);
   if (twice) throw new Error(`Two kinds of this model's layers keep an array called ${JSON.stringify(twice)} for a token.`);
@@ -252,8 +334,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const positions = floats("positions");  // GPT-2's learned table of positions (0: the model has none)
   const embedding = T.token_embedding_table!;
   const embeddingRows = embedding.kind === "f16" ? floats("token_embedding_table") : 0;
-  // (a packed table's rows are read a weight at a time: jobs.ts's PACKED says how)
-  const embeddingPacked = packingOf(embedding.kind);
+  // (a packed table's rows are read a weight at a time: jobs.ts's PACKED says how; T363.5: a row of llama.cpp's blocks
+  // by its kernel)
+  const embeddingPacked = packingOf(embedding.kind), embeddingRow = embeddingPacked?.row?.(k, tables), embeddingBytes = embeddingPacked?.rowBytes(dim) ?? 0;
+  const embeddingValue = embeddingPacked?.value;
   // T375.3: the norm of a layer's input, of the FFN's and the last one, chosen once: LayerNorms (GPT-2, GPT-NeoX; b:
   // their biases) or RMSNorms
   const norm: (out: number, input: number, w: number, b: number) => void = layerNorm
@@ -269,7 +353,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // theirs alone: what happens here is told through those functions, and threads.count, .lost and .searching are read.
   // No software thread where the model is on the GPU alone (T156: nothing runs on the CPU). T378.2: the two kernels a
   // thread is started with are chosen here, as this thread's are (relaxed above)
-  const threads = softwareThreads({ memory, wide, kernels: { plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null },
+  const threads = softwareThreads({ memory, wide, kernels: { plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null, blocks },
     spawn: direct ? null : spawn, control, runRows,
     // (a function: the GPU's side is made after the threads, which it reads)
     gpuGettingReady: () => onGpu.gettingReady() });
@@ -283,6 +367,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T375.3: the layers, made by their kinds (the table's order), and the FFN: what each is handed is core (kinds.ts
   // says what is in it). Every layer's step is then in steps, which run() calls; the kinds that keep a state from
   // token to token are in keeping (follow())
+  // (T363.5: how the matmuls of one input go out is chosen here once: a model whose rows are all of the file's dtype,
+  // every model before T363, takes the one it always did)
+  const matmuls = plan.own_kinds ? matmulsByKind : matmulsAlike;
   const core: Core = { plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase, cache };
   const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count)]));
   const steps = facts.map((fact) => parts[fact.kind].layer(fact.place, fact));
@@ -306,7 +393,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     const t = (plan.shared_classifier ? T.token_embedding_table : T.wcls)!;
     columns = alloc(channels.length * vocab * 4);
     picked = alloc(channels.length * 4);
-    const groups = dim / t.group, values = base + t.offset, { value } = packingOf(t.kind)!;
+    const groups = dim / t.group, values = base + t.offset, value = packingOf(t.kind)!.value!;
     channels.forEach((c, i) => {
       for (let v = 0; v < vocab; v++) {
         F[columns / 4 + i * vocab + v] = Math.fround(value(U, values, v * dim + c) * F[(base + t.scales) / 4 + v * groups + ((c / t.group) | 0)]);
@@ -345,10 +432,30 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     const [w, s, c] = m.layer(l);
     return m.ready ? [m.job!, out, xq, xs, w, s, c, m.n, 0, m.rows, count, outStride, S, S] : [m.job!, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
   };
+  // T363.5: the same of a model whose rows have kinds of their own (the plan's own_kinds): a stack may be its layers,
+  // each a matrix of a kind of its own, and the matrices of one input may take their activations in different forms.
+  // Those that take them alike go out as one phase, after the activations are made ready for them; then the next
+  function matmulsByKind(input: number, count: number, list: Product[]) {
+    const helds = list.map(([m, out, outStride, l]): [Held, number, number, number] => (m!.layers ? [m!.layers[l], out, outStride, 0] : [m!, out, outStride, l]));
+    const { n } = helds[0][0];
+    if (rotated) {
+      for (let t = 0; t < count; t++) k.rotate(xr + t * S, input + t * S, signs![n], n, rotated);
+      input = xr;
+    }
+    const readied = helds.map(([m]) => m.ready ?? null);
+    readied.forEach((ready, first) => {
+      if (readied.indexOf(ready) !== first) return;
+      if (ready) for (let t = 0; t < count; t++) ready(xq + t * S, xs + t * S, input + t * S, n);
+      phase(helds.filter((_, i) => readied[i] === ready).map(([m, out, outStride, l]) => {
+        const [w, s, c, last = 0] = m.layer(l);
+        return m.ready ? [m.job!, out, xq, xs, w, s, c, m.n, last, m.rows, count, outStride, S, S] : [m.job!, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
+      }));
+    });
+  }
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
   // T237: in a rotated basis the matrices read R of the input, turned here once for all of them (a kernel on this
   // thread: 5 blocks of 1024 take a few microseconds, a thousandth of the rows they are multiplied by)
-  function matmuls(input: number, count: number, list: Product[]) {
+  function matmulsAlike(input: number, count: number, list: Product[]) {
     const { n, ready } = list[0][0]!;
     if (rotated) {
       for (let t = 0; t < count; t++) k.rotate(xr + t * S, input + t * S, signs![n], n, rotated);
@@ -363,11 +470,13 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   function embed(tokens: number[], pos0: number, rows = x, stride = S) {
     for (let t = 0; t < tokens.length; t++) {
       const row = tokens[t] * dim, to = (rows + t * stride) / 4;
-      if (embeddingPacked) {
+      if (embeddingValue) {
         const g = embedding.group, values = base + embedding.offset;
         for (let i = 0; i < dim; i++) {
-          F[to + i] = Math.fround(embeddingPacked.value(U, values, row + i) * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
+          F[to + i] = Math.fround(embeddingValue(U, values, row + i) * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
         }
+      } else if (embeddingRow) {
+        embeddingRow(rows + t * stride, base + embedding.offset + tokens[t] * embeddingBytes, dim);
       } else {
         const from = embedding.kind === "f32" ? base + embedding.offset : embeddingRows;
         F.copyWithin(to, from / 4 + row, from / 4 + row + dim);
@@ -473,7 +582,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const { cpuWrote, cpuStepBegan, cpuStepEnded, generateMany, promptBlock, tokenBlock } = onGpu;
 
   let bound: Bound | null = null;
-  const backend = (plan.int8 ? `SIMD kernels, ${wo && wo.kind !== "f32" ? wo.kind : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
+  // (T363.5: of a model whose output matrix is in a kind of the form's, the line says the file's dtype as before:
+  // what it says of llama.cpp's blocks is the owner's to word)
+  const said = wo && !wo.layers && wo.kind !== "f32" && packingOf(wo.kind)?.tabled === undefined ? wo.kind : "int8";
+  const backend = (plan.int8 ? `SIMD kernels, ${said}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
     (wide ? ", 64-bit memory" : "");  // T101: the status line says so, as it says every other way the model runs
   return {
     backend,

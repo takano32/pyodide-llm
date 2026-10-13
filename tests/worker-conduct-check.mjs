@@ -243,6 +243,59 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   w.run("pythonKernels = undefined");
   ok("the bits asked for, the context and the kernels' quantizer and readers go to the conduct; a conversion that ends early lets go of them");
 
+  // ---- T363.5: a model whose conversion keeps its GGUF's blocks (conversion.blocks). The word goes to the conduct
+  // where the load runs on forward.ts's int8 kernels, with the kernels of the blocks fetched first, every build this
+  // visit has kernels of; any other load converts it widened, as a model without the word, and fetches none of them
+  const early = function* () {
+    yield ["text", "weights", "config.json"];
+    yield ["missing", "weights", "config.json"];
+  };
+  const blocks = { dtype: "int8", blocks: true };
+  const fetched = () => requests.map(({ url: address }) => address.split("/").pop()).filter((name) => name.startsWith("blockkernel"));
+  // (no kernels of forward.ts here: NumPy computes)
+  fresh(() => notFound());
+  await w.convert(hf(), early, { conversion: blocks });
+  assert.equal(w.played.made.at(-1).blocks, false, "without forward.ts's kernels the blocks are widened");
+  assert.deepEqual(fetched(), [], "and their kernels are not fetched");
+  // (the kernels are there: two builds of them, one with relaxed SIMD, one without)
+  const compiled = [];
+  w.context.stand.forward.compileBlocks = (plain, relaxed) => { compiled.push([plain.byteLength, relaxed?.byteLength ?? null]); return { plain: "the blocks' kernels", relaxed: relaxed ? "and the relaxed ones" : null }; };
+  w.run("jsKernels = { plain: {}, relaxed: {} }; sharedKernels = { plain: {}, relaxed: null }; wideKernels = undefined");
+  const kernel = (address) => (/blockkernel_relaxed_/.test(address) ? new Response(new Uint8Array(7)) : /blockkernel_/.test(address) ? new Response(new Uint8Array(5)) : notFound());
+  fresh(kernel);
+  await w.convert(hf(), early, { conversion: blocks });
+  assert.equal(w.played.made.at(-1).blocks, true, "on forward.ts's kernels the conduct is asked to keep the blocks");
+  assert.deepEqual(fetched().sort(), ["blockkernel_plain.wasm", "blockkernel_relaxed_plain.wasm", "blockkernel_shared.wasm"], "the kernels of the blocks, of every build there is (the relaxed ones where the build has relaxed SIMD)");
+  assert.deepEqual(compiled.sort(), [[5, null], [5, 7]]);
+  assert.equal(w.run("jsKernels.blocks.plain + ', ' + sharedKernels.blocks.relaxed"), "the blocks' kernels, null", "each build has its own");
+  // (they are fetched once a visit)
+  fresh(kernel);
+  await w.convert(hf(), early, { conversion: blocks });
+  assert.deepEqual(fetched(), [], "a second such model fetches none again");
+  // (the switches that leave the int8 kernels out: the blocks are widened)
+  for (const without of ["kernels", "int8"]) {
+    w.run(`roundBegan(["${without}"])`);
+    await w.convert(hf(), early, { conversion: blocks });
+    assert.equal(w.played.made.at(-1).blocks, false, `?without=${without}: the blocks are widened`);
+  }
+  w.run("roundBegan([])");
+  // (a model without the word never has it, and never fetches)
+  w.run("jsKernels = { plain: {}, relaxed: {} }; sharedKernels = undefined");
+  fresh(kernel);
+  await w.convert(hf(), early, { conversion: { dtype: "int8" } });
+  assert.ok(!("blocks" in w.played.made.at(-1)) && fetched().length === 0, "a model that does not ask for its blocks");
+  // (kernels that do not come end the load: gone for good in the server's words, as any built file; asked for again by the next)
+  fresh(() => new Response("", { status: 500 }));
+  const conducts = w.played.made.length;
+  const ended = await w.convert(hf(), early, { conversion: blocks });
+  assert.match(ended.error.message, /^Could not fetch blockkernel_(relaxed_)?plain\.wasm: 500$/, "the kernels' own failure is the load's");
+  assert.equal(w.played.made.length, conducts, "and nothing of the model is asked for");
+  fresh(kernel);
+  await w.convert(hf(), early, { conversion: blocks });
+  assert.deepEqual(fetched().sort(), ["blockkernel_plain.wasm", "blockkernel_relaxed_plain.wasm"], "the next such load asks again");
+  w.run("jsKernels = undefined");
+  ok("a conversion that keeps a GGUF's blocks: asked of the conduct where forward.ts's int8 kernels run, with the blocks' kernels of every build fetched once; widened without them; a fetch that fails ends the load");
+
   // ---- "missing": the 404 of that very file, in refused()'s words; the place decides the repository
   const vocabulary = { repo: "vocabulary/owner", revision: OTHER, tokenizer: "tokenizer.model" };
   for (const [where, repository, revision] of [["weights", "owner/model", REVISION], ["vocabulary", "vocabulary/owner", OTHER]]) {

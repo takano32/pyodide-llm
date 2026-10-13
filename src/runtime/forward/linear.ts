@@ -12,6 +12,7 @@
 // eps = 1e-6 / n; q is divided by sqrt(n) more.
 import { KIND } from "../jobs.ts";
 import type { Kind, Layers } from "./kinds.ts";
+import type { Framed } from "./memory.ts";
 import type { Sizes } from "./sizes.ts";
 
 // the numbers of the linear-attention layers and their widths (mixed, what the convolution runs over; read, what the
@@ -40,12 +41,18 @@ export const linear: Kind = {
   // then its delta); xb holds what the delta rule reads (as wide as v)
   frame(sizes) {
     const { mixed, read, value_heads: valueHeads } = linearNumbers(sizes);
-    return { arrays: [["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4], ["work", (2 * valueHeads + read) * 4]], widest: read };
+    // (T363.5, tiled: and what the output matrix reads, the value heads in llama.cpp's order)
+    return { arrays: [["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4], ["work", (2 * valueHeads + read) * 4],
+      ...(sizes.numbers.tiled ? [["tiled", read * 4]] satisfies Framed[] : [])], widest: read };
   },
   state: (sizes, count) => kept(sizes, count).blocks,
   make({ plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase }, count): Layers {
     const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: tapsCount, mixed: mixedWidth, read: readWidth } = linearNumbers(sizes);
     const { dim } = plan, { xb, xb2, mixed, conv, z, work } = at, D = dim * 4;
+    // T363.5: the output matrix of a model whose blocks were kept as a GGUF has them has its columns in llama.cpp's
+    // order of the value heads: every key head's first one, then every key head's second, ... (llama2_numpy's
+    // linear_attention()). What it reads is put in that order, in an array of its own (0: Hugging Face's order, as it is)
+    const tiled = plan.tiled ? at.tiled : 0, per = valueHeads / keyHeads;
     const wqkv = matrix("wqkv"), wz = matrix("wz"), wout = matrix("wout");
     const wb = floats("wb"), wa = floats("wa"), taps = floats("conv"), dtBias = floats("dt_bias"), decays = floats("decay");
     const deltaNorm = floats("delta_norm");
@@ -95,8 +102,14 @@ export const linear: Kind = {
           // the norm of every value head, and z's gate
           for (let h = 0; h < valueHeads; h++) k.rmsnorm(xt + h * VD, xt + h * VD, deltaNorm + a * VD, valueDim, eps);
           k.swiglu(xt, z + t * S, xt, readWidth);
+          if (tiled) {
+            for (let h = 0; h < valueHeads; h++) {
+              const from = (xt + ((h % keyHeads) * per + ((h / keyHeads) | 0)) * VD) / 4;
+              F.copyWithin((tiled + t * S + h * VD) / 4, from, from + valueDim);
+            }
+          }
         }
-        matmuls(xb, count, [[wout, xb2, S, a]]);
+        matmuls(tiled || xb, count, [[wout, xb2, S, a]]);
       },
     };
   },

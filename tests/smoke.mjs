@@ -984,5 +984,38 @@ seconds
   await pyodide.loadPackage("jinja2", { messageCallback: () => {} });
   report += `, jinja2's environment in ${(check(true) * 1000).toFixed(0)} ms`;
 }
+// T363.5: a model kept as llama.cpp's blocks, built as the worker builds one: its options a JavaScript object (the
+// form's kinds with a list for a stack, tiled), the plan Python's dict made an object of on the way to forward.ts, the
+// blocks' kernels beside the others. Its logits are the engine in NumPy's (which reads the blocks by the converter's
+// readers) but for the 8 bits the kernels round the activations to (tests/blocks-forward-check.mjs has the lines)
+{
+  pyodide.FS.writeFile("made_up.py", fs.readFileSync(new URL("./made_up.py", import.meta.url)));
+  const types = ["Q2_K", "Q4_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"];
+  const stacks = { wq: 2, wg: 2, wk: 2, wv: 2, wo: 2, wqkv: 6, wz: 6, wout: 6, w1: 8, w2: 8, w3: 8 };
+  const options = { arch: "qwen35", head_dim: 64, rotary: 16, tiled: true, linear: { every: 4, key_heads: 2, value_heads: 6, key_dim: 64, value_dim: 128, conv: 4 },
+    kinds: { ...Object.fromEntries(Object.entries(stacks).map(([name, layers], at) => [name, Array.from({ length: layers }, (_, l) => types[(at + 3 * l) % 10])])), token_embedding_table: "IQ1_M", wcls: "IQ3_S" } };
+  pyodide.globals.set("blocks_options", pyodide.toPy(options));
+  pyodide.runPython(`
+import made_up
+blocks_form = {key: value for key, value in blocks_options.items() if key != "rotary"}
+blocks_file = made_up.checkpoint([256, 512, 8, 4, 2, -320, 24], blocks_form, "int8", tensor=made_up.uniform(11), blocks=made_up.drawn_blocks(3))
+blocks_vocabulary = made_up.pack_tokenizer(made_up.tiny_vocab(320))
+`);
+  const quick = pyodide.globals.get("kernel_llama").callKwargs(pyodide.globals.get("blocks_file"), pyodide.globals.get("blocks_vocabulary"), { dtype: "int8", ...options });
+  pyodide.globals.set("blocks_quick", quick);
+  const far = pyodide.runPython(`
+import numpy as np
+slow = llama2_numpy.Llama(blocks_file, blocks_vocabulary, dtype="int8", **blocks_options)
+assert blocks_quick.backend == "SIMD kernels, int8, relaxed SIMD", blocks_quick.backend
+worst, largest = 0.0, 0.0
+for pos, token in enumerate([5, 17, 3, 250, 9, 9]):
+    want, got = slow.forward(token, pos), blocks_quick.forward(token, pos)
+    worst, largest = max(worst, float(np.abs(want - got).max())), max(largest, float(np.abs(want).max()))
+assert np.isfinite(worst) and worst <= 0.05 * largest, f"the page's engine on llama.cpp's blocks is {worst} from NumPy's, whose largest logit is {largest}"
+blocks_quick.external_forward.release()
+worst / largest
+`);
+  report += `, a model of llama.cpp's blocks within ${far.toExponential(1)} of NumPy's`;
+}
 console.log(`Pyodide ${version}, ${report} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
 console.log("ok");

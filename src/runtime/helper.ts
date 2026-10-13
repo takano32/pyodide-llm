@@ -15,15 +15,19 @@ const started = new Promise<Started>((resolve) => (self.onmessage = (event) => r
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, SIZE, FIRST, CONTROL_BYTES, addressed, runner, warmUp } from "./jobs.ts";
 
 // the one message: the shared memory, the kernels' modules (relaxed: none where the browser has no relaxed SIMD), this
-// thread's number among the helpers, and whether the memory is a 64-bit one (T101)
-type Started = { memory: WebAssembly.Memory; plain: WebAssembly.Module; relaxed?: WebAssembly.Module | null; share: number; wide?: boolean };
-const { memory, plain, relaxed, share, wide = false } = await started;
+// thread's number among the helpers, and whether the memory is a 64-bit one (T101); blocks (T363.5): the modules of the
+// kernels of llama.cpp's blocks, where the model has such rows: this thread's kernels are then the two's together, as
+// the coordinator's are
+type Started = { memory: WebAssembly.Memory; plain: WebAssembly.Module; relaxed?: WebAssembly.Module | null; share: number; wide?: boolean;
+  blocks?: { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null } | null };
+const { memory, plain, relaxed, share, wide = false, blocks } = await started;
 const imports = { env: { memory } };
-const k = addressed(new WebAssembly.Instance(plain, imports).exports, wide);
-const r = relaxed ? addressed(new WebAssembly.Instance(relaxed, imports).exports, wide) : null;
+const instance = (module: WebAssembly.Module) => new WebAssembly.Instance(module, imports).exports;
+const k = addressed(blocks ? { ...instance(plain), ...instance(blocks.plain) } : instance(plain), wide);
+const r = relaxed ? addressed(blocks?.relaxed ? { ...instance(relaxed), ...instance(blocks.relaxed) } : instance(relaxed), wide) : null;
 const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
 const table = new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB);  // the jobs, in float64 (jobs.ts)
-const runRows = runner(k, r);
+const runRows = runner(k, r, share);
 const steal = () => {
   const total = ctl[TOTAL], count = ctl[JOBS];
   for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {

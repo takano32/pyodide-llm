@@ -258,6 +258,8 @@ const LATER = {
     ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
+    // (T363.5: the kernels of llama.cpp's blocks, for a model with such rows: it does not run without them)
+    ["built(name).then((res) => res.arrayBuffer()))));", "said"],
   ],
   "src/runtime/worker/convert.ts": [
     ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],

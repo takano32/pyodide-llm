@@ -181,17 +181,24 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
 // model's keys and values may be float16; forward.ts's keysInHalf says whether they are, T160, T130).
 // What footprint() takes (the worker asks keysInHalf the same).
 // without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
-function forwardOptions(options: Options, shared: boolean, without = switchesNow()): Footprint {
+// T363.5, header: of a model whose form gives rows kinds of their own, Python counts the weights that are still the
+// dtype's (dtype_weights(): footprint() has no rows to ask, and takes every weight of the file for one otherwise)
+function forwardOptions(header: Header, options: Options, shared: boolean, without = switchesNow()): Footprint {
   const { dtype = "float32" } = options;
   const int8 = !without.includes("int8");
   return {
     ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !without.includes("relaxed"),
+    ...(options.kinds ? { weights: llama2_numpy.dtype_weights(header, dtype, options) } : {}),
     // (T375.5: of packed weights only, which footprint() knows by the dtype)
     halfKV: int8 && !without.includes("kv16"), shared,
     outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
   };
 }
-const afterCheckpoint = (header: Header, size: number, options: Options, shared: boolean, without?: string[]) => forwardModule!.footprint(header, size, forwardOptions(options, shared, without));
+const afterCheckpoint = (header: Header, size: number, options: Options, shared: boolean, without?: string[]) => forwardModule!.footprint(header, size, forwardOptions(header, options, shared, without));
+/** T363.5: whether a load now runs on the int8 kernels of forward.ts, which is where llama.cpp's blocks are multiplied
+ * as they are: not where NumPy computes (?without=kernels, no WebAssembly SIMD) nor where the weights are widened to
+ * float32 (?without=int8). A conversion keeps a GGUF's blocks only for such a load; any other gets them widened */
+export const runsPacked = () => Boolean(jsKernels) && !switchesNow().some((left) => left === "kernels" || left === "int8");
 // the page cross-origin isolated (stage 3), shared memories to be had, and not ?threads=1: the memory is shared
 const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
 
@@ -253,7 +260,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
       .map((without) => afterCheckpoint(header, size, options, wanted, without)));
     const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels!.shared)), wide, ahead);
     // T160: the type of the keys and values that after counts, T130: on the memory the browser gave
-    const halfKeys = forwardModule!.keysInHalf(header, size, forwardOptions(options, shared));
+    const halfKeys = forwardModule!.keysInHalf(header, size, forwardOptions(header, options, shared));
     const kernels = (wide ? (shared ? wideKernels!.shared : wideKernels!.plain) : (shared ? sharedKernels : jsKernels))!;
     const spawn = shared ? spawnThread : undefined;
     weightsNow = memory;

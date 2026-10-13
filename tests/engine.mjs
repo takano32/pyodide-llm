@@ -19,7 +19,7 @@ import { built, placeKernels, placePython, treeOf } from "./tree.mjs";
 // sampling kernels and the kernels forward.js compiles are the tree's either way.)
 export const forwardFrom = forwardUrl();
 if (process.env.ENGINE_FROM === "dist") console.log(`engine: forward.js as built, ${forwardFrom.pathname.slice(treeOf().root.length)}`);
-const { compileKernels, external, weightsMemory } = await import(forwardFrom);
+const { compileKernels, compileBlocks, external, weightsMemory } = await import(forwardFrom);
 
 // shared: false gives the memory the page has where it is not cross-origin isolated (one thread, float32 keys)
 // wide (T101): a 64-bit memory and the kernels built for it, whatever the size of the model
@@ -37,6 +37,8 @@ export async function pyodideWithEngine({ shared = true, wide = false } = {}) {
   if (!shared) delete globalThis.SharedArrayBuffer;
   const variant = (shared ? "shared" : "plain") + (wide ? "64" : "");
   const kernels = compileKernels(fs.readFileSync(built(`simdkernel_${variant}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_${variant}.wasm`)), wide);
+  // (T363.5: and the kernels of llama.cpp's blocks beside them, which the page fetches for a model with such rows)
+  kernels.blocks = compileBlocks(fs.readFileSync(built(`blockkernel_${variant}.wasm`)), fs.readFileSync(built(`blockkernel_relaxed_${variant}.wasm`)));
   // a checkpoint (Python bytes) copied into a memory of forward.js, as what Llama(external=) takes. halfKeys: the type of
   // the keys and values the worker would hand the engine (external's, T160, T130); left out (None), the engine's own
   pyodide.globals.set("outside", (data, halfKeys) => {

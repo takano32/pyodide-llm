@@ -18,7 +18,7 @@ from test_external import Outside
 from convert import grids
 from convert.superblocks import SUPERBLOCKS
 from llama2_convert import SOURCES, Writer, checkpoint_size
-from llama2_numpy import (BLOCKS, CODEBOOKS, CODES, DTYPES, EITHER, FORM, KINDS, PACKED, QUANTIZED, SEVERAL_KINDS, Llama,
+from llama2_numpy import (BLOCKS, CODEBOOKS, CODES, DTYPES, EITHER, FORM, KINDS, PACKED, QUANTIZED, Llama,
                           checkpoint_dtype, dtype_of, external_tensors, file_size, form_of, kind_of, placed, tensor_rows)
 
 # the bytes of a block of 256 weights, written out a second time (docs/notes/t361-saluki-2026-10-13.md's table)
@@ -371,13 +371,25 @@ def test_the_gates_small_matrices_are_read_in_the_kinds_the_form_gives_their_lay
     raise AssertionError("no wa")
 
 
-def test_forward_js_is_not_given_a_file_of_blocks(made):
+def test_forward_js_is_given_a_file_of_blocks_layer_by_layer(made):
+    """T363.5: where every tensor is, with the weights outside Python: a stack with a type for each layer says its
+    layers, each where the file has it, and the file says where its codebooks are."""
     data, _, _ = made
-    with pytest.raises(ValueError, match="several kinds") as refusal:
-        Llama(None, numbered(40), dtype="int8", kinds=KINDS_OF_IT, external=Outside(data), **OPTIONS)
-    assert str(refusal.value) == SEVERAL_KINDS
-    with pytest.raises(ValueError, match="several kinds"):
-        external_tensors(HEADER, "int8", MADE)
+    outside = Outside(data)
+    Llama(None, numbered(40), dtype="int8", kinds=KINDS_OF_IT, external=outside, **OPTIONS)
+    tensors = external_tensors(HEADER, "int8", MADE)
+    assert outside.plan["tensors"] == tensors
+    places = {place.row.name: place for place in placed(tensor_rows(HEADER, MADE), "int8")}
+    for name, layers in STACKS.items():
+        said = tensors[name]
+        assert said["kind"] == "layers" and said["offset"] == places[name].offset and len(said["layers"]) == layers
+        for layer, place, kind in zip(said["layers"], places[name].layers, KINDS_OF_IT[name]):
+            assert layer == {"kind": kind, "offset": place.offset, "group": 256, "scales": place.offset + place.size}
+    assert tensors["token_embedding_table"]["kind"] == "IQ1_M" and tensors["wcls"]["kind"] == "IQ3_S"
+    assert [layer["kind"] for layer in tensors["wa"]["layers"]] == ["int8", "f32", "f16", "int6", "int8", "f32"]
+    assert tensors["wb"]["kind"] == "int8" and "layers" not in tensors["wb"]
+    assert tensors["codebooks"] == {"kind": "u8", "offset": places["codebooks"].offset, "shape": [CODEBOOKS], "group": 0, "scales": 0}
+    assert outside.plan["outliers"] == [] and outside.plan["tiled"] is False
 
 
 # ---- the Writer

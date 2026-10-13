@@ -620,6 +620,10 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{}, { w1: matrixOf(24, 8, 0, { kind: "toString" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 128, 0, { kind: "ternary" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { kind: "int6", group: 16 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    // (T363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer)
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "Q4_K", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "IQ2_XXS", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [{ kind: "IQ2_XXS" }, { kind: "int8" }] }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);

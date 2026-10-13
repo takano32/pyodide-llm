@@ -14,7 +14,7 @@ import pytest
 import engine.model
 from conftest import pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
 from engine import generation
-from llama2_numpy import (NOT_FINITE, REPETITION_WINDOW, SEVERAL_KINDS, ExternalForward, KernelSampler, Llama,
+from llama2_numpy import (NOT_FINITE, REPETITION_WINDOW, ExternalForward, KernelSampler, Llama,
                           NumpySampler, Sampling, greedy)
 
 VOCAB = 300
@@ -257,9 +257,9 @@ def test_what_cannot_run_outside_is_refused():
         Llama(None, tokenizer, external=Outside(checkpoint), disable=("kernels",))
     with pytest.raises(ValueError, match="asks for"):
         Llama(None, tokenizer, external=Outside(checkpoint + b"\0\0\0\0"))
-    with pytest.raises(ValueError) as refused:
+    # (T363.5: a row in a kind of its own is another file, of another size)
+    with pytest.raises(ValueError, match="asks for"):
         Llama(None, tokenizer, external=Outside(checkpoint), kinds={"wq": "float16"})
-    assert str(refused.value) == SEVERAL_KINDS
     # (and the plan was asked of none of them)
     outside = Outside(checkpoint + b"\0")
     with pytest.raises(ValueError):

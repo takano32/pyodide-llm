@@ -26,10 +26,10 @@ const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
 // T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T237: "rotated", the basis the
 // matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T260: "convolution",
 // the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values; T359:
-// "kinds", the rows a file holds in a kind of their own (null where there are none, which is every model the worker
-// loads: Python refuses such a file where the weights are outside it, so footprint() never reads the key); T363:
-// "tiled", the order of the columns of a linear-attention layer's output matrix (null but in such a file: it moves
-// and sizes nothing, and Python refuses it outside as it refuses "kinds")
+// "kinds", the rows a file holds in a kind of their own (null where there are none; T363.5: of llama.cpp's blocks where
+// a conversion kept a GGUF's, whose kernels' tables and activations footprint() counts, with Python's count of the
+// weights that are still the dtype's: dtype_weights()); T363: "tiled", the order of the columns of a linear-attention
+// layer's output matrix (null but in such a file: an array of a token's frame more, T363.5)
 assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "kinds", "linear", "qk_norm", "rotated", "tiled"],
   "FORM has other keys now: say here which of them footprint() reads");
 
@@ -112,6 +112,27 @@ const opened = (header, form, dtype = "int8") => {
 };
 const qwen3 = { ...FORM, qk_norm: true, head_dim: 128 };
 opened(QWEN3, qwen3);
+// T363.5: a form with kinds: Python is asked how many weights the dtype itself still packs (with the header, the dtype
+// and the whole form), and footprint() is handed its answer; a form without is not asked
+{
+  const asked = [];
+  context.stand.weights = (header, dtype, options) => { asked.push([[...header], dtype, options.kinds]); return 4242; };
+  vm.runInContext(strictly("llama2_numpy.dtype_weights = stand.weights"), context);
+  const kinds = { w1: Array(QWEN3[2]).fill("IQ2_XXS"), wcls: "IQ3_S" };
+  opened(QWEN3, { ...qwen3, kinds });
+  // (once for footprint() and once for the type of the keys and values, which is asked the same way)
+  assert.ok(asked.length > 0, "sink.open() did not ask Python for the weights of the dtype's own");
+  for (const one of asked) assert.deepEqual(one, [QWEN3, "int8", kinds]);
+  assert.equal(counted[0][2].weights, 4242, "Python's count did not reach footprint()");
+  const times = asked.length;
+  opened(QWEN3, qwen3);
+  assert.ok(asked.length === times && !("weights" in counted[0][2]), "a form without kinds asks nothing");
+  // what the test stands on: footprint() counts by them (the corrections of relaxed SIMD are of the dtype's own weights,
+  // the blocks' kernels have tables, and a group of activations takes 16 bytes where it took 4)
+  const plain = forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" }), said = forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8", kinds, weights: 0 });
+  assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8", kinds }) > plain + 34992 && said < plain - 600e6 / 9.5, "footprint() does not count a form's kinds");
+  assert.ok(forward.takesBlocks(kinds) && !forward.takesBlocks(null) && !forward.takesBlocks({ wq: "int6", w1: ["int8", "float16"] }), "takesBlocks()");
+}
 // what the test stands on: the head's size changes what footprint() counts (a Qwen3 0.6B, T124)
 assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" }) > 1.5 * forward.footprint(QWEN3, 600e6, { ...FORM, dtype: "int8" }));
 // T237: a rotated basis reaches footprint() as the options carry it (its block and the signs' texts by the width), and

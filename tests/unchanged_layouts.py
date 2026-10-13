@@ -107,6 +107,8 @@ DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 AHEAD = {"layers", "widths"}
 # and those T375.2 added, a record of their own for the same reason: the kind of the norms and of the FFN
 FACTS = {"layer_norm", "gated_ffn"}
+# and T363.5's: the order of a linear-attention layer's value heads, and whether rows have kinds of their own
+KINDS_SAID = {"tiled", "own_kinds"}
 
 
 for name, headers, form, engine, source in FAMILIES:
@@ -131,9 +133,11 @@ for name, headers, form, engine, source in FAMILIES:
             if engine is not None:
                 # (T359.5's keys are a record of their own, so that the plan as it was before them is still compared
                 # with a tree that has none)
-                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS)
+                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS | KINDS_SAID)
                 if plan is not None and AHEAD & set(plan):
                     said(f"{case}, {dtype}: engine's layers and widths", lambda: {key: plan[key] for key in sorted(AHEAD)})
+                if plan is not None and KINDS_SAID & set(plan):
+                    said(f"{case}, {dtype}: engine's order and kinds", lambda: {key: plan[key] for key in sorted(KINDS_SAID)})
                 if plan is not None and FACTS & set(plan):
                     said(f"{case}, {dtype}: engine's norms and FFN", lambda: {key: plan[key] for key in sorted(FACTS)})
                 if not engine:

@@ -183,6 +183,11 @@ const KINDS = { attention: plain, echo };
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), STATE);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "a".repeat(16), taps: 3 } }, adapter), null, "(an LFM2 without a convolution layer has a Llama's facts)");
   assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), "a rotated basis is not on the GPU yet");
+  // (T363.5's review: a model of llama.cpp's blocks says the dtype int8, so this line of gpuOnlyUnfit() alone keeps it
+  // off the GPU alone; a form that names no kinds is as before)
+  assert.notEqual(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["IQ2_XXS", "int8"] } }, adapter), null, "rows as blocks are not for the GPU alone");
+  assert.notEqual(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { wcls: "Q4_K" } }, adapter), null, "nor one row of a kind of its own");
+  for (const kinds of [{}, null, undefined]) assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds }, adapter), null, "a form that names no kinds is a Llama's");
   // by the packing's line: whether a model of it may be there alone, and what its shaders need of the browser
   const lacking = { ...adapter, packed: false };
   // (a packing the GPU does not hold at all, gpu: null, stays on the CPU as well)

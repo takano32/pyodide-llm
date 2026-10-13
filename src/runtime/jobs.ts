@@ -57,7 +57,8 @@ export const ADDRESSES = {
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
   matmul_q8r_tile: [0, 1, 2, 3, 4, 5], matmul_t2r_tile: [0, 1, 2, 3, 4],
   // T363.4: the kernels of llama.cpp's blocks (kernels/blocks.ts and blocks_relaxed.ts: modules of their own,
-  // blockkernel_*.wasm, which addressed() takes as it takes the others). No line of WORK or PACKED calls them yet (T363.5)
+  // blockkernel_*.wasm, which addressed() takes as it takes the others, and an engine has beside the two modules
+  // above only for a model with such rows: T363.5)
   sb_tables: [0, 1], sums_x: [0, 1], sb_row: [0, 1, 2], matmul_sb: [0, 1, 2, 3, 4], matmul_sbr: [0, 1, 2, 3, 4],
   matmul_sbr_tile: [0, 1, 2, 3, 4], matmul_sbw_tile: [0, 1, 2, 3, 4, 12], signed_dots: [0, 1, 2],
 };
@@ -91,20 +92,42 @@ export function addressed(exports: WebAssembly.Exports, wide: boolean): Kernels 
 //   from      whose kernels it calls: the plain module's, or the relaxed one's (a thread has none where the browser
 //             lacks relaxed SIMD or the model does not run on int8)
 //   one       the call for one token's rows r0 to r1, of a job's eight arguments and its rows
-//   tile      (some) count tokens in one call: os and as, the bytes from a token's out and a to the next token's
+//   tile      (some) count tokens in one call: os and as, the bytes from a token's out and a to the next token's; a8,
+//             the job's last argument (thread: which of a memory's threads calls, the coordinator 0, T363.5)
 //   rowBytes  (the kinds whose rows are a matrix's) the bytes of a row n wide, for the blocks count tokens go in
+//             (a6: the job's sixth argument, where the kind's rows differ by it)
 //   warm      a tiny call of each of its kernels on the scratch (warmUp())
 // runner() and warmUp() read every line once as a thread is made; a job then costs a look into an array by its
 // number. A new kind is a line here, at the end (the numbers before it stay), its kernels' names in ADDRESSES, and
 // whoever builds its jobs writing KIND.<its name> (AGENTS.md, "カーネルを登録簿から引くとき").
 type Call = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number) => unknown;
-type Tile = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, r0: number, r1: number, count: number, os: number, as: number) => unknown;
+type Tile = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, r0: number, r1: number, count: number, os: number, as: number, a8: number) => unknown;
 type Scratch = { xq: number; xs: number; w: number; s: number; c: number; out: number };
 export type Work = {
-  from: "plain" | "relaxed"; one(k: Kernels): Call; tile?(k: Kernels): Tile; rowBytes?(n: number): number;
+  from: "plain" | "relaxed"; one(k: Kernels): Call; tile?(k: Kernels, thread: number): Tile; rowBytes?(n: number, a6: number): number;
   warm(k: Kernels, at: Scratch): void;
 };
 const kinds = <Name extends string>(table: Record<Name, Work>) => table;
+// ---- T363.5: llama.cpp's blocks (kernels/blocks.ts; kernels/README.md, "llama.cpp's blocks"): 256 weights of a row in
+// a block of its type's bytes, the scales inside. A type is its number in a GGUF, which the kernels take as an argument:
+// BLOCK_TYPES has each by its name, with a block's bytes.
+export const BLOCK_TYPES = { Q2_K: [10, 84], Q4_K: [12, 144], IQ2_XXS: [16, 66], IQ2_XS: [17, 74], IQ3_XXS: [18, 98], IQ1_S: [19, 50],
+  IQ3_S: [21, 110], IQ2_S: [22, 82], IQ4_XS: [23, 136], IQ1_M: [29, 56] } as const;
+/** the weights of a block */
+export const BLOCK = 256;
+/** the bytes of the tables the blocks' kernels read (sb_tables() writes them, of the checkpoint's codebooks) */
+export const BLOCK_TABLES = 34992;
+// a block's bytes by its type's number
+const blockBytes: number[] = [];
+for (const [type, bytes] of Object.values(BLOCK_TYPES)) blockBytes[type] = bytes;
+const blockRow = (n: number, type: number) => (n / BLOCK) * blockBytes[type];
+/** matmul_sbw_tile spreads a row once, as signed weights, into bytes of the calling thread's own: so many for a row n
+ * wide, and room for this many threads (a thread past them takes matmul_sbr_tile, whose numbers are the same) */
+export const spreadBytes = (n: number) => Math.ceil((n + n / 4 + n / 64) / 64) * 64;
+export const SPREAD_THREADS = 64;
+// (the blocks' kernels are not warmed: the tables they read are an engine's, made of its model's codebooks)
+const unwarmed = () => {};
+const blocksTile = (k: Kernels): Tile => (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as) => k.matmul_sbr_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, a6);
 export const WORK = kinds({
   // out, xq, xs, w, scales, corrections, n: int8 weights by 7-bit activations. T159, its tile: four rows by four
   // tokens, each number matmul_q8r's to the bit
@@ -178,6 +201,30 @@ export const WORK = kinds({
     // one group of 128 (the scratch's first 160 bytes are its activations and weights)
     warm: (k, { xq, xs, w, s, out }) => { k.matmul_t2(out, xq, xs, w, s, 128, 0, 1, THREE); },
   },
+  // out, xq, xs, w, tables, type, n: llama.cpp's blocks (T363.5) by signed 8-bit activations and their sums (sums_x).
+  // Its tile: a row read once against four tokens, each number matmul_sbr's to the bit
+  matmul_sbr: {
+    from: "relaxed", rowBytes: blockRow,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_sbr(out, a, b, a4, a5, a7, r0, r1, a6),
+    tile: blocksTile, warm: unwarmed,
+  },
+  // the same numbers without relaxed SIMD (no tile: a token at a time)
+  matmul_sb: {
+    from: "plain", rowBytes: blockRow,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_sb(out, a, b, a4, a5, a7, r0, r1, a6),
+    warm: unwarmed,
+  },
+  // as matmul_sbr, for an engine whose relaxed dot product multiplies signed bytes by signed bytes exactly (arm64's:
+  // the engine asks signed_dots as it is made): its tile spreads a row once into the thread's own bytes of the scratch
+  // at the job's last argument, the same numbers again
+  matmul_sbw: {
+    from: "relaxed", rowBytes: blockRow,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_sbr(out, a, b, a4, a5, a7, r0, r1, a6),
+    tile: (k, thread) => (thread < SPREAD_THREADS
+      ? (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as, a8) => k.matmul_sbw_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, a6, a8 + thread * spreadBytes(a7))
+      : blocksTile(k)),
+    warm: unwarmed,
+  },
 });
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
@@ -187,9 +234,16 @@ export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [
 // way a quantized tensor is stored (contracts/plan.ts's Stored; float32 is no packing: the engine multiplies by it as
 // it is, a job of the kind matmul_f32). A line says:
 //   rowBytes  the bytes of a row n wide in the checkpoint
+//   scale     the bytes of the scale that follows a group's values there (a float32; llama.cpp's blocks 0: inside)
 //   value     weight i of the tensor whose values start at byte at of U, as the int8 it is (what JavaScript reads one
-//             at a time: an embedding's row, a tensor widened to float32)
-//   jobs      the kind of the job that multiplies by it, with relaxed SIMD and without
+//             at a time: an embedding's row, a tensor widened to float32); or
+//   row       (llama.cpp's blocks, of which no weight is read alone) what writes a row n wide at w as float32 to out
+//   jobs      the kind of the job that multiplies by it, with relaxed SIMD and without (signed: with a relaxed dot
+//             product that multiplies signed bytes by signed bytes, where the packing has a kernel for that)
+//   tabled    (llama.cpp's blocks) its kernels take the engine's tables and this number, the type's, where the others
+//             take a matrix's scales and corrections; the engine has their modules for such a model alone
+//   takes     the form its kernels take the activations in, by a name: matrices whose packings say the same name
+//             read what one ready() made (the engine makes one for a name)
 //   sums      the kernel that makes the corrections relaxed SIMD needs (-64 times the sum of every group: its 7-bit
 //             activations have a bias of 64); null: its relaxed kernel takes none
 //   ready     the activations as its kernels take them, chosen once for an engine: from n float32 at x to xq and xs
@@ -204,7 +258,9 @@ export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [
 // forward/alone.ts). A new packing is a line here, the kinds of its jobs above and its kernels' names in ADDRESSES.
 export type Ready = (xq: number, xs: number, x: number, n: number) => void;
 export type Packing<Name extends string = string> = {
-  rowBytes(n: number): number; value(U: Uint8Array, at: number, i: number): number; jobs: { relaxed: number; plain: number };
+  rowBytes(n: number): number; scale: number; value?(U: Uint8Array, at: number, i: number): number;
+  row?(k: Kernels, tables: number): (out: number, w: number, n: number) => void;
+  jobs: { relaxed: number; plain: number; signed?: number }; tabled?: number; takes: string;
   sums: keyof typeof ADDRESSES | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
   group: number; gpu: { as: Name; alone: boolean; dot: boolean } | null;
 };
@@ -215,15 +271,29 @@ const biased = (k: Kernels, relaxed: boolean): Ready => {
   return (xq, xs, x, n) => { k.quantize_x(xq, xs, x, n, bias); };
 };
 const packings = <Name extends string>(table: Record<Name, Packing<NoInfer<Name>>>) => table;
+// T363.5: llama.cpp's blocks, a line each, alike but for the type: the activations signed in all 8 bits (-127 to 127),
+// and after the scales of their groups the int16 sums of each 16 and each 8 of them (sums_x: 16 bytes a group of 32 in
+// all). No corrections (a group's sum is an exact integer before it meets a float), and none of it on the GPU
+const blocks = ([type, bytes]: readonly [number, number]): Packing<never> => ({
+  rowBytes: (n) => (n / BLOCK) * bytes, scale: 0,
+  row: (k, tables) => (out, w, n) => { k.sb_row(out, w, tables, n, type); },
+  jobs: { relaxed: KIND.matmul_sbr, plain: KIND.matmul_sb, signed: KIND.matmul_sbw }, tabled: type, takes: "summed",
+  sums: null, xs: 16,
+  ready: (k) => (xq, xs, x, n) => {
+    k.quantize_x(xq, xs, x, n, 0);
+    k.sums_x(xs, xq, n);
+  },
+  group: BLOCK, gpu: null,
+});
 export const PACKED = packings({
   int8: {
-    rowBytes: (n) => n, value: (U, at, i) => signed(U[at + i]),
+    rowBytes: (n) => n, scale: 4, value: (U, at, i) => signed(U[at + i]), takes: "biased",
     jobs: { relaxed: KIND.matmul_q8r, plain: KIND.matmul_q8 }, sums: "int8_sums", ready: biased, xs: 4,
     group: 32, gpu: { as: "int8", alone: true, dot: false },
   },
   // T98: six bits a weight, 32 of them in 24 bytes, the layout of llama2_numpy.pack6 (six bits, then two zero bits)
   int6: {
-    rowBytes: (n) => n / 32 * 24,
+    rowBytes: (n) => n / 32 * 24, scale: 4, takes: "biased",
     value: (U, at, i) => {
       const group = at + ((i / 32) | 0) * 24, j = i % 32;
       const low = j < 16 ? U[group + j] & 15 : U[group + j - 16] >> 4;
@@ -237,7 +307,7 @@ export const PACKED = packings({
   // signed, in all 8 bits, and laid out as the weights' planes are; after the scales of the activations' groups come
   // as many int32, minus each group's sum (interleave), so they take no corrections
   ternary: {
-    rowBytes: (n) => n / 4, value: (U, at, i) => ((U[at + (i >> 2)] >> (2 * (i & 3))) & 3) - 1,
+    rowBytes: (n) => n / 4, scale: 4, value: (U, at, i) => ((U[at + (i >> 2)] >> (2 * (i & 3))) & 3) - 1, takes: "interleaved",
     jobs: { relaxed: KIND.matmul_t2r, plain: KIND.matmul_t2 }, sums: null, xs: 8,
     ready: (k) => (xq, xs, x, n) => {
       k.quantize_x(xq, xs, x, n, 0);
@@ -245,23 +315,28 @@ export const PACKED = packings({
     },
     group: 128, gpu: { as: "ternary", alone: true, dot: true },
   },
+  Q2_K: blocks(BLOCK_TYPES.Q2_K), Q4_K: blocks(BLOCK_TYPES.Q4_K), IQ2_XXS: blocks(BLOCK_TYPES.IQ2_XXS), IQ2_XS: blocks(BLOCK_TYPES.IQ2_XS),
+  IQ3_XXS: blocks(BLOCK_TYPES.IQ3_XXS), IQ1_S: blocks(BLOCK_TYPES.IQ1_S), IQ3_S: blocks(BLOCK_TYPES.IQ3_S), IQ2_S: blocks(BLOCK_TYPES.IQ2_S),
+  IQ4_XS: blocks(BLOCK_TYPES.IQ4_XS), IQ1_M: blocks(BLOCK_TYPES.IQ1_M),
 });
 export type Packed = keyof typeof PACKED;
 /** the packing of a tensor stored as stored, or null: float32 and float16 are not packed */
 export const packingOf = (stored: string | undefined): Packing<Packed> | null => (stored !== undefined && Object.hasOwn(PACKED, stored) ? PACKED[stored as Packed] : null);
-/** (T375.5) the bytes a weight takes in a checkpoint so packed: a group's values and its float32 scale, over the
- * group's weights (int8 1.125, int6 0.875, ternary 0.28125) */
-export const weightBytes = ({ rowBytes, group }: Packing) => (rowBytes(group) + 4) / group;
+/** (T375.5) the bytes a weight takes in a checkpoint so packed: a group's values and its scale, over the
+ * group's weights (int8 1.125, int6 0.875, ternary 0.28125; T363.5: a block's bytes over its 256) */
+export const weightBytes = ({ rowBytes, scale, group }: Packing) => (rowBytes(group) + scale) / group;
 
 /** runRows(job, r0, r1) on these kernels: k, the plain module's exports; r, the relaxed module's or null. job is
- * an array or a view of the control area. Every kind of WORK is read here once: a job is run by its number. */
-export function runner(k: Kernels, r: Kernels | null) {
+ * an array or a view of the control area. Every kind of WORK is read here once: a job is run by its number.
+ * thread (T363.5): which of the threads of a memory this one is (the coordinator 0, a helper its share), for a kind
+ * whose tile keeps bytes of the calling thread's own. */
+export function runner(k: Kernels, r: Kernels | null, thread = 0) {
   const works = Object.entries(WORK) as [Kind, Work][];
   const none = (name: Kind): Call => () => { throw new Error(`A job of the kind ${name} takes the relaxed kernels, and this thread has none.`); };
   const ones = works.map(([name, { from, one }]) => (from === "plain" ? one(k) : r ? one(r) : none(name)));
   const tiles = works.map(([, { from, tile }]) => {
     const kernels = from === "plain" ? k : r;
-    return tile && kernels ? tile(kernels) : null;
+    return tile && kernels ? tile(kernels, thread) : null;
   });
   const bytes = works.map(([, { rowBytes }]) => rowBytes ?? null);
   return (job: Job, r0: number, r1: number) => {
@@ -269,8 +344,8 @@ export function runner(k: Kernels, r: Kernels | null) {
     const one = ones[kind];
     if (count === 1) return one(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
     const tile = tiles[kind];
-    if (tile) return tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as);
-    const step = Math.max(1, Math.floor(BLOCK_BYTES / bytes[kind]!(a7)));
+    if (tile) return tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as, a8);
+    const step = Math.max(1, Math.floor(BLOCK_BYTES / bytes[kind]!(a7, a6)));
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
       for (let t = 0; t < count; t++) one(out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);

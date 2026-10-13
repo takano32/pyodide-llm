@@ -23,14 +23,15 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import math
 import struct
 
 import numpy as np
 
 from engine.tokenizer import CHARSMAP
 from engine.dtypes import DTYPES, KINDS, PACKED, dtype_of
-from engine.layout import (TABLE, check_suited, file_size, form_of, layout_of, placed, stateful_form, suited,
-                           tensor_rows)
+from engine.layout import (CLASSIFIER, EMBEDDING, MATRIX, TABLE, Dims, check_suited, file_size, form_of, layout_of, placed,
+                           stateful_form, suited, tensor_rows)
 
 # The classifier's input has a few channels that the final norm's weight blows up (openai-community/gpt2: 12 to 17
 # times, 316 against a median of 0.3). With the int8 kernels the activations are quantized in groups of 32, so one
@@ -48,23 +49,36 @@ class Tensor:
     """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
     public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
     the last dimension at scales), "int6" (the same with the values packed, see pack6), "ternary" (T230: two bits a
-    value and a scale per group of 128, see pack_ternary), "f32" or "f16". Offsets count
-    from the start of the checkpoint file."""
+    value and a scale per group of 128, see pack_ternary), "f32" or "f16", one of llama.cpp's blocks by its name (T363:
+    256 values a group, the scales inside) or "u8" (the codebooks). Offsets count from the start of the checkpoint file.
+    layers (T363.5): of a stack whose layers are each of a kind of their own (kind is then LAYERS), every layer's
+    Tensor, one after the other: forward.js chooses its kernels by the layer."""
 
-    __slots__ = ("kind", "offset", "shape", "group", "scales")
+    __slots__ = ("kind", "offset", "shape", "group", "scales", "layers")
 
-    def __init__(self, kind, offset, shape, group=0, scales=0):
+    def __init__(self, kind, offset, shape, group=0, scales=0, layers=()):
         self.kind, self.offset, self.shape, self.group, self.scales = kind, offset, tuple(shape), group, scales
+        self.layers = tuple(layers)
 
     def plan(self):
-        return {"kind": self.kind, "offset": self.offset, "shape": list(self.shape), "group": self.group,
+        said = {"kind": self.kind, "offset": self.offset, "shape": list(self.shape), "group": self.group,
                 "scales": self.scales}
+        # (a key of such a stack alone: the plan of every other tensor is what it was)
+        if self.layers:
+            said["layers"] = [{"kind": layer.kind, "offset": layer.offset, "group": layer.group, "scales": layer.scales}
+                              for layer in self.layers]
+        return said
 
 
-# forward.js takes one dtype for a file (T375 has its kernels chosen by the tensor): a file whose rows are of several
-# kinds (the form's "kinds") is the NumPy engine's alone until then
-SEVERAL_KINDS = ("This checkpoint holds its tensors in several kinds, which only the engine in NumPy reads yet: forward.js "
-                 "takes one dtype for a file.")
+# what a stack with a kind for each layer says in place of one kind
+LAYERS = "layers"
+
+
+def held(place):
+    """The Tensor of a row's Place: of a stack with a kind for each layer, with its layers'."""
+    if place.layers:
+        return Tensor(LAYERS, place.offset, place.row.shape, layers=[held(layer) for layer in place.layers])
+    return Tensor(KINDS[place.kind].short, place.offset, place.row.shape, place.group, place.scales)
 
 
 def outside(rows, dtype):
@@ -73,7 +87,7 @@ def outside(rows, dtype):
     the angles, and a quantized file leaves them out): the engine computes the others. ValueError where no file of
     this dtype can hold these rows."""
     check_suited(rows, dtype)
-    return {place.row.name: Tensor(KINDS[place.kind].short, place.offset, place.row.shape, place.group, place.scales)
+    return {place.row.name: held(place)
             for place in placed(rows, dtype) if place.kind is not None and (place.row.role != TABLE or dtype == "float32")}
 
 
@@ -81,12 +95,22 @@ def external_tensors(header, dtype, form=None):
     """Where every tensor of a checkpoint with this header, dtype and form (FORM) is, {name: Tensor.plan()}, as
     Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
     layers' matrices to the GPU as they come, and keeps the rest). A model whose embedding is its classifier has it
-    under both names. ValueError for a file of several kinds (SEVERAL_KINDS)."""
-    if form_of(form)["kinds"] or form_of(form)["tiled"]:  # (T363: nor one that is tiled)
-        raise ValueError(SEVERAL_KINDS)
+    under both names. T363.5: of a file whose rows have kinds of their own too (a stack with a kind for each layer
+    says its layers)."""
     tensors = outside(tensor_rows(header, form), dtype_of(dtype))
     tensors.setdefault("wcls", tensors["token_embedding_table"])
     return {name: tensor.plan() for name, tensor in tensors.items()}
+
+
+def dtype_weights(header, dtype, form=None):
+    """How many weights of the matrices an engine multiplies by (every matrix, and the classifier or the embedding that
+    is it) a checkpoint of this header, dtype and form stores in the dtype itself: all of them, but for the rows and
+    layers its form gives kinds of their own (T363.5). forward.js's footprint() counts what the dtype's kernels put
+    beside them (relaxed SIMD's corrections) by this, where there is a form with kinds: it has no rows to ask."""
+    dims, dtype = Dims(header, form), dtype_of(dtype)
+    multiplied = (MATRIX, CLASSIFIER, *((EMBEDDING,) if dims.shared else ()))
+    return sum(math.prod(part.row.shape) for place in placed(dims.rows(), dtype) if place.row.role in multiplied
+               for part in place.parts if part.kind == dtype)
 
 
 def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):

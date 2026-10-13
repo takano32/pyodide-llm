@@ -24,7 +24,7 @@ import { contract } from "./contracts.mjs";
 import { leave } from "./leave.mjs";
 
 const J = await import(runtimeUrl("jobs.ts"));
-const { WORK, KIND, PACKED, ADDRESSES, SCRATCH, CONTROL_BYTES, packingOf, weightBytes, runner, warmUp, addressed } = J;
+const { WORK, KIND, PACKED, ADDRESSES, SCRATCH, CONTROL_BYTES, BLOCK_TYPES, BLOCK_TABLES, SPREAD_THREADS, spreadBytes, packingOf, weightBytes, runner, warmUp, addressed } = J;
 const { gpuWeightBytes, aloneTakes, cpuReadBytes } = await import(runtimeUrl("forward/alone.js"));
 
 // kernels that write down their calls: [module, name, arguments]
@@ -45,7 +45,7 @@ const both = () => {
 // [kind, 1, 2, 3, 4, 5, 6, 7, 8, rows 9] and rows 20 to 30 what its kernel is handed. tile: of count 4 tokens, strides
 // 100 and 200. rowBytes: the bytes of a row n wide as the blocks count it (blockRows() before the table: float32 4 n,
 // ternary n / 4, any other n). T: the ternary kernels' mask.
-const T = 3;
+const T = 3, B = 16;
 const KINDS = [
   ["matmul_q8r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { tile: ["matmul_q8r_tile", [1, 2, 3, 4, 5, 6, 7, 20, 30, 4, 100, 200]], rowBytes: (n) => n }],
   ["matmul_q8", "plain", [1, 2, 3, 4, 5, 7, 20, 30], { rowBytes: (n) => n }],
@@ -57,8 +57,16 @@ const KINDS = [
   ["delta_rule", "plain", [1, 2, 3, 4, 5, 6, 7, 8, 9, 20, 30], {}],
   ["matmul_t2r", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, T], { tile: ["matmul_t2r_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, T]], rowBytes: (n) => n / 4 }],
   ["matmul_t2", "plain", [1, 2, 3, 4, 5, 7, 20, 30, T], { rowBytes: (n) => n / 4 }],
+  // T363.5: llama.cpp's blocks. The job's sixth argument is the type's number (B: IQ2_XXS's, 66 bytes a block of 256),
+  // which the kernels take last; kernel: the kernel of a token's rows where it has another name than the kind; cold:
+  // not warmed (the tables its kernels read are an engine's). The signed tile takes, last, the calling thread's own
+  // bytes of the scratch at the job's last argument (the coordinator's: the scratch itself)
+  ["matmul_sbr", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, B], { tile: ["matmul_sbr_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, B]], rowBytes: (n) => (n / 256) * 66, a6: B, cold: true }],
+  ["matmul_sb", "plain", [1, 2, 3, 4, 5, 7, 20, 30, B], { rowBytes: (n) => (n / 256) * 66, a6: B, cold: true }],
+  ["matmul_sbw", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, B], { tile: ["matmul_sbw_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, B, 8]], rowBytes: (n) => (n / 256) * 66, a6: B, cold: true, kernel: "matmul_sbr" }],
 ];
-const jobOf = (kind, more = {}) => [KIND[kind], 1, 2, 3, 4, 5, 6, more.n ?? 7, 8, 9, more.count ?? 1, 100, 200, 300];
+const more = (name) => KINDS.find(([kind]) => kind === name)[3];
+const jobOf = (kind, said = {}) => [KIND[kind], 1, 2, 3, 4, 5, more(kind).a6 ?? 6, said.n ?? 7, 8, 9, said.count ?? 1, 100, 200, 300];
 
 assert.deepEqual(Object.keys(WORK), KINDS.map(([name]) => name), "the kinds of jobs, in the order of their numbers");
 assert.deepEqual(Object.entries(KIND), Object.keys(WORK).map((name, number) => [name, number]), "a kind's number is its place in WORK");
@@ -70,14 +78,14 @@ for (const [name, from, , { tile, rowBytes }] of KINDS) {
 }
 {
   // one token: one call, of the kind's own kernel in its own module
-  for (const [name, from, args] of KINDS) {
+  for (const [name, from, args, { kernel = name }] of KINDS) {
     const { said, k, r } = both();
     runner(k, r)(jobOf(name), 20, 30);
-    assert.deepEqual(said, [[from, name, args]], `${name}: a token's rows`);
+    assert.deepEqual(said, [[from, kernel, args]], `${name}: a token's rows`);
     // (and from the control area's table: a job is read there as float64)
     const view = both();
     runner(view.k, view.r)(Float64Array.from(jobOf(name)), 20, 30);
-    assert.deepEqual(view.said, [[from, name, args]], `${name}: a token's rows, the job read off a table of float64`);
+    assert.deepEqual(view.said, [[from, kernel, args]], `${name}: a token's rows, the job read off a table of float64`);
   }
   console.log(`ok: the ${KINDS.length} kinds of jobs: one token's rows are one call, of the kind's kernel in the kind's module, with the job's arguments in their places`);
 }
@@ -100,7 +108,7 @@ for (const [name, from, , { tile, rowBytes }] of KINDS) {
         for (let t = 0; t < 4; t++) {
           // out, a and b are a stride on for every token (b is no argument of matmul_f32's)
           const moved = args.map((a, i) => (a === 7 ? n : a === 20 ? row : a === 30 ? Math.min(row + step, 130) : i === 0 ? 1 + t * 100 : i === 1 ? 2 + t * 200 : i === 2 && a === 3 ? 3 + t * 300 : a));
-          expected.push([from, name, moved]);
+          expected.push([from, more(name).kernel ?? name, moved]);
         }
       }
       assert.deepEqual(said, expected, `${name}, ${n} wide: four tokens go in blocks of ${step} rows, a token after another`);
@@ -108,6 +116,26 @@ for (const [name, from, , { tile, rowBytes }] of KINDS) {
     }
   }
   console.log(`ok: count tokens: a tile's one call (${tiles} cases), or blocks of 16 KB of rows with every token in turn (${blocks} cases, the blocks as they were before the table)`);
+}
+{
+  // T363.5: the signed tile spreads a row into bytes of the calling thread's own: each thread's are after the one's
+  // before it, as many as a row n wide takes, and a thread past the room there is takes the other tile
+  for (const [thread, n] of [[0, 256], [1, 256], [3, 5120], [SPREAD_THREADS - 1, 17408]]) {
+    const { said, k, r } = both();
+    runner(k, r, thread)(jobOf("matmul_sbw", { n, count: 4 }), 20, 30);
+    assert.deepEqual(said, [["relaxed", "matmul_sbw_tile", [1, 2, 3, 4, 5, n, 20, 30, 4, 100, 200, B, 8 + thread * spreadBytes(n)]]], `thread ${thread}, a row ${n} wide`);
+  }
+  const { said, k, r } = both();
+  runner(k, r, SPREAD_THREADS)(jobOf("matmul_sbw", { n: 512, count: 4 }), 20, 30);
+  assert.deepEqual(said, [["relaxed", "matmul_sbr_tile", [1, 2, 3, 4, 5, 512, 20, 30, 4, 100, 200, B]]], "a thread past the scratch");
+  assert.deepEqual([256, 5120, 17408].map(spreadBytes), [384, 6528, 22080], "the bytes a row is spread into: n + n / 4 + n / 64, to a line of the cache");
+  assert.ok(spreadBytes(17408) >= 17408 + 17408 / 4 + 17408 / 64);
+  // and the bytes of a block by the type's number, for the rows that go in blocks
+  for (const [name, [type, bytes]] of Object.entries(BLOCK_TYPES)) {
+    assert.equal(WORK.matmul_sb.rowBytes(768, type), 3 * bytes, `${name}: a row of three blocks`);
+    assert.equal(WORK.matmul_sbr.rowBytes(768, type), 3 * bytes);
+  }
+  console.log(`ok: the signed tile's scratch is the calling thread's own (${SPREAD_THREADS} threads have room), and a block's bytes are its type's`);
 }
 {
   // a thread without the relaxed module: the plain kinds run, a relaxed one says which kind it is
@@ -142,7 +170,7 @@ for (const [name, from, , { tile, rowBytes }] of KINDS) {
 }
 {
   // the warm-up: every kernel of every line, 4000 times each, on the scratch's addresses and nowhere else
-  const kernelsOf = (from) => KINDS.filter(([, module]) => module === from).flatMap(([name, , , { tile }]) => [name, ...(tile ? [tile[0]] : [])]).sort();
+  const kernelsOf = (from) => KINDS.filter(([, module, , { cold }]) => module === from && !cold).flatMap(([name, , , { tile }]) => [name, ...(tile ? [tile[0]] : [])]).sort();
   for (const relaxed of [true, false]) {
     const { said, k, r } = both();
     warmUp(k, relaxed ? r : null);
@@ -154,18 +182,19 @@ for (const [name, from, , { tile, rowBytes }] of KINDS) {
     const expected = Object.fromEntries([...kernelsOf("plain").map((name) => `plain ${name}`), ...(relaxed ? kernelsOf("relaxed").map((name) => `relaxed ${name}`) : [])].map((name) => [name, 4000]));
     assert.deepEqual(Object.fromEntries(Object.entries(counted).sort()), Object.fromEntries(Object.entries(expected).sort()), `the warm-up${relaxed ? "" : " without the relaxed module"}`);
   }
-  console.log("ok: the warm-up calls every kernel of every kind 4000 times (the relaxed ones where the thread has them), with its addresses in the scratch");
+  console.log("ok: the warm-up calls every kernel of every kind 4000 times (the relaxed ones where the thread has them), with its addresses in the scratch; not those of llama.cpp's blocks");
 }
 
 // ---- PACKED
 {
   // Python's registry: the quantized dtypes by the name a plan's tensor has, the bytes of a row of each, and a matrix
   // packed by each with its weights as int8
-  const said = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", `
+  const { packed: said, blocks, codebooks } = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", `
 import json, sys
 sys.path.insert(0, sys.argv[1])
 import numpy as np
-from engine.dtypes import DTYPES, QUANTIZED
+from engine.dtypes import BLOCK, BLOCKS, CODEBOOKS, DTYPES, QUANTIZED
+from convert.readers import SOURCES
 rng = np.random.default_rng(4)
 out = {}
 for name in QUANTIZED:
@@ -180,10 +209,28 @@ for name in QUANTIZED:
     values = dtype.unpack(packed)
     assert len(values) == 3 * n and len(set(values.tolist())) > 2
     out[dtype.short] = {"group": dtype.group(n), "row": [dtype.stored_bytes(width, dtype.group(width))[0] for width in (128, 256, 1024)], "packed": packed.tolist(), "values": values.tolist()}
-print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.meta.url)) }).toString());
-  assert.deepEqual(Object.keys(PACKED).sort(), Object.keys(said).sort(), "the packings are the quantized dtypes of Python's registry (engine/dtypes.py), by the names a plan's tensors have");
+blocks = {name: {"short": kind.short, "group": kind.group(256), "row": [kind.stored_bytes(width, BLOCK)[0] for width in (256, 1024)], "scale": kind.scale, "type": SOURCES[name].ggml} for name, kind in BLOCKS.items()}
+print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, python()], { cwd: fileURLToPath(new URL("..", import.meta.url)) }).toString());
+  const tabled = Object.keys(PACKED).filter((name) => PACKED[name].tabled !== undefined);
+  assert.deepEqual(Object.keys(PACKED).filter((name) => !tabled.includes(name)).sort(), Object.keys(said).sort(), "the packings with scales of their own are the quantized dtypes of Python's registry (engine/dtypes.py), by the names a plan's tensors have");
+  // T363.5: and the others llama.cpp's blocks, the kinds a row alone may have (engine/dtypes.py's BLOCKS): the name a
+  // plan's tensor has, the type's number in a GGUF (the converter's SOURCES), a row's bytes, 256 weights to a block
+  // with no scale after it, and one weight of it is never read alone
+  assert.deepEqual(tabled.sort(), Object.keys(blocks).sort(), "the packings the kernels take with the engine's tables are llama.cpp's blocks of Python's registry");
+  assert.deepEqual(Object.keys(BLOCK_TYPES).sort(), tabled);
+  for (const [name, { short, group, row, scale, type }] of Object.entries(blocks)) {
+    const packing = PACKED[name];
+    assert.equal(short, name, `${name}: the name a plan's tensor has is the type's`);
+    assert.deepEqual([packing.tabled, packing.group, packing.scale, [256, 1024].map((n) => packing.rowBytes(n))], [type, group, scale, row], `${name}: its type's number, a block's weights, no scale after it, a row's bytes`);
+    assert.deepEqual(BLOCK_TYPES[name], [type, row[0]], `${name}: BLOCK_TYPES`);
+    assert.ok(packing.value === undefined && typeof packing.row === "function", `${name}: a row is read by a kernel, and no weight alone`);
+    const called = [];
+    packing.row(standIn("plain", called), 700)(1, 2, 256);
+    assert.deepEqual(called, [["plain", "sb_row", [1, 2, 700, 256, type]]], `${name}: a row's kernel`);
+  }
+  assert.ok(BLOCK_TABLES > codebooks, "the kernels' tables hold the checkpoint's codebooks and more");
   const stored = contract("plan.ts").literalsOf("Stored");
-  assert.deepEqual([...stored].filter((name) => !Object.hasOwn(PACKED, name)).sort(), ["f16", "f32"], "contracts/plan.ts's Stored: the packings, and float32 and float16 which are none");
+  assert.deepEqual([...stored].filter((name) => !Object.hasOwn(PACKED, name)).sort(), ["f16", "f32", "layers", "u8"], "contracts/plan.ts's Stored: the packings, float32 and float16 which are none, the codebooks' bytes, and a stack that is its layers");
   for (const [name, { group, row, packed, values }] of Object.entries(said)) {
     const packing = PACKED[name];
     assert.deepEqual([128, 256, 1024].map((n) => packing.rowBytes(n)), row, `${name}: the bytes of a row`);
@@ -207,10 +254,13 @@ print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.me
     ternary: { relaxed: "matmul_t2r", plain: "matmul_t2", sums: null, xs: 8,
       ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
   };
+  // T363.5: llama.cpp's blocks, all alike: signed 8-bit activations and their sums either way, 16 bytes a group of 32
+  const summed = [["quantize_x", [1, 2, 3, 96, 0]], ["sums_x", [2, 1, 96]]];
+  for (const name of Object.keys(BLOCK_TYPES)) FACTS[name] = { relaxed: "matmul_sbr", plain: "matmul_sb", signed: "matmul_sbw", sums: null, xs: 16, ready: [summed, summed] };
   assert.deepEqual(Object.keys(PACKED), Object.keys(FACTS));
   for (const [name, fact] of Object.entries(FACTS)) {
     const packing = PACKED[name];
-    assert.deepEqual([packing.jobs.relaxed, packing.jobs.plain], [KIND[fact.relaxed], KIND[fact.plain]], `${name}: the kinds of its jobs`);
+    assert.deepEqual([packing.jobs.relaxed, packing.jobs.plain, packing.jobs.signed], [KIND[fact.relaxed], KIND[fact.plain], KIND[fact.signed]], `${name}: the kinds of its jobs`);
     assert.deepEqual([WORK[fact.relaxed].from, WORK[fact.plain].from], ["relaxed", "plain"], `${name}: its relaxed job is the relaxed module's, the other the plain one's`);
     assert.ok(WORK[fact.relaxed].rowBytes && WORK[fact.plain].rowBytes, `${name}: its jobs are a matrix's`);
     assert.equal(packing.sums, fact.sums, `${name}: the kernel of its corrections`);
@@ -226,12 +276,17 @@ print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.me
   // (the blocks of a packing's job count a row's bytes as the packing does, but for int6's, counted as int8's as they always were)
   for (const [name, packing] of Object.entries(PACKED)) {
     const kind = Object.keys(KIND)[packing.jobs.plain];
-    assert.equal(WORK[kind].rowBytes(256), name === "int6" ? 256 : packing.rowBytes(256), `${name}: a row in a block`);
+    assert.equal(WORK[kind].rowBytes(256, packing.tabled), name === "int6" ? 256 : packing.rowBytes(256), `${name}: a row in a block`);
   }
   // T375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
+  for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T363.5: none of llama.cpp's blocks on the GPU)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
-  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.28125], "the bytes of a weight: a group's values and its scale, over the group");
+  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.28125, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
+  // (the names the packings take the activations by: those of one name read what one ready() made)
+  assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { takes }]) => [name, takes])),
+    { int8: "biased", int6: "biased", ternary: "interleaved", ...Object.fromEntries(Object.keys(BLOCK_TYPES).map((name) => [name, "summed"])) }, "how each packing's kernels take the activations");
+  assert.deepEqual(["IQ2_XXS", "Q4_K"].map(aloneTakes), [false, false], "no model of llama.cpp's blocks on the GPU alone");
   assert.deepEqual(["int8", "int6", "ternary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 1.125, 1.125, 1.125, 1.125],
     "on the GPU: int6 widened to int8, ternary as it is; what the GPU does not take is counted as int8");
   assert.deepEqual(["int8", "int6", "ternary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false], "the dtypes a model on the GPU alone may be of");
@@ -332,7 +387,8 @@ print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.me
   // columns of the classifier in an engine that multiplies packed weights, and a matrix widened to float32 in one
   // that does not (?without=int8). Each is the weight as its packing reads it, times the scale of its group.
   let read = 0;
-  for (const p of plansOf(Object.keys(PACKED).map((dtype) => ({ header, form, dtype })))) {
+  // (the packings a file's dtype may be: llama.cpp's blocks are a row's alone, tests/blocks-forward-check.mjs)
+  for (const p of plansOf(Object.keys(PACKED).filter((name) => PACKED[name].tabled === undefined).map((dtype) => ({ header, form, dtype })))) {
     const packing = PACKED[p.dtype];
     for (const packed of [true, false]) {
       const what = `${p.dtype}, ${packed ? "multiplied packed" : "widened"}`, said = [], base = 64;

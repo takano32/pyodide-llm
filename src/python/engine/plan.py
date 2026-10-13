@@ -31,7 +31,8 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-from engine.checkpoint import OUTLIER_CHANNELS, SEVERAL_KINDS, outlier_channels, outside
+from engine.checkpoint import OUTLIER_CHANNELS, outlier_channels, outside
+from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
 from engine.layout import TABLE, linear_widths, unturned_layers
 
@@ -48,7 +49,8 @@ class Settings(NamedTuple):
     What the file cannot say, the model's options: rotary (how many values of a head RoPE turns; 0: all),
     parallel_residual, rms_norm_eps, unturned (T255: the layers RoPE leaves alone), rotated (T237: rotated_form()'s
     {"block", "signs"}, None for a model in its own basis) and tables (the RoPE tables (cos, sin) of a file that has
-    none of its own: rope_tables()'s; None where the file has them)."""
+    none of its own: rope_tables()'s; None where the file has them) and tiled (T363: FORM's, a linear-attention layer's
+    output matrix reads its value heads in llama.cpp's order)."""
     int8: bool
     kv_start: int
     disable: tuple = ()
@@ -58,6 +60,7 @@ class Settings(NamedTuple):
     unturned: tuple = ()
     rotated: Any = None
     tables: Any = None
+    tiled: bool = False
 
 
 def layer_facts(dims, settings):
@@ -96,15 +99,13 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     The keys: the header's numbers; "tensors", where every row of the file is ({name: Tensor.plan()}, the classifier of
     a model without one of its own under both names); "derived", the bytes of the few arrays Python computes (the RoPE
     tables, the signs of a rotated basis); "outliers"; the form's "linear" and "convolution"; and, from T359.5,
-    "layers" (layer_facts()) and "widths" (plan_widths()), so that an engine need not work out again which layer is of
+    "tiled" and "own_kinds" (T363.5: the form's "tiled", and whether it has "kinds"); "layers" (layer_facts()) and "widths" (plan_widths()), so that an engine need not work out again which layer is of
     which kind; and, from T375.2, the facts of the architecture an engine's layers differ by, under the names its
     record has them by (engine/layout.py's Layout): "layer_norm" and "gated_ffn". forward.ts reads these and no name
     of an architecture ("arch" is there for a person who looks at a plan). What the rows say is no key here, as it is
     no field there: a bias, the norms of a head, the table of positions are read where the plan has their tensors."""
     settings = Settings(**said) if settings is None else settings
     int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
-    if dims.kinds is not None:
-        raise ValueError(SEVERAL_KINDS)
     layers = layer_facts(dims, settings)
     held = outside(dims.rows(), dtype)
     # (the classifier of a model that has no other is its embedding, under both names)
@@ -121,7 +122,10 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     channels = []
     # (T237: not in a rotated basis, where the classifier reads R of its input: the rotation spreads a channel
     # over its block, and a column of the stored matrix is no channel's)
-    if int8 and rotated is None:
+    # (T363.5: nor of a classifier the form gave a kind that is no dtype's packing: llama.cpp's blocks are multiplied
+    # as they are, their activations in all 8 bits, and no weight of them is read alone)
+    classifier = held["wcls"]
+    if int8 and rotated is None and classifier.kind in {DTYPES[name].short for name in QUANTIZED}:
         raw = read(held["rms_final_weight"].offset, dims.dim * 4)
         weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
         channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, dims.dim))]
@@ -142,6 +146,10 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             "rotated": rotated["block"] if rotated else 0,
             # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
             "half_kv": bool(int8) and "kv16" not in disable,
+            # T363.5: a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads
+            "tiled": bool(settings.tiled),
+            # T363.5: some rows are stored in kinds of their own (the form's "kinds")
+            "own_kinds": dims.kinds is not None,
             # T359.5: every layer's kind, its place among its kind and whether RoPE turns it; and the widths
             "layers": layers, "widths": plan_widths(dims),
             # T375.2: the kind of the norms (LayerNorms, of a weight and a bias; else RMSNorms) and of the FFN (gated:

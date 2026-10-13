@@ -53,8 +53,8 @@ from engine.layers import (delta_rule, gelu, hadamard, head_norm, layernorm, rms
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths,
                            sign_bits, silu, softplus, unrotate)
 from engine.kernels import kernel_quantizer, load_kernels  # noqa: F401
-from engine.checkpoint import (OUTLIER_CHANNELS, OUTLIER_RATIO, SEVERAL_KINDS, Tensor,  # noqa: F401
-                               check_tokenizer, checkpoint_dtype, external_tensors, outlier_channels,
+from engine.checkpoint import (LAYERS, OUTLIER_CHANNELS, OUTLIER_RATIO, Tensor,  # noqa: F401
+                               check_tokenizer, checkpoint_dtype, dtype_weights, external_tensors, outlier_channels,
                                outlier_columns)
 from engine.sampler import NOT_FINITE, REPETITION_WINDOW, KernelSampler, NumpySampler, Sampling, greedy  # noqa: F401
 from engine.external import ExternalForward  # noqa: F401

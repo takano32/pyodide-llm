@@ -51,7 +51,7 @@ function memoryOf(bytes = 1 << 20) {
 // (sizes: what sizes the model, as the kind's frame() and state() are asked with)
 function coreOf(plan, { has = [], cache, sizes } = {}) {
   const said = [], room = memoryOf();
-  const vectors = new Map(), names = ["x", "xb", "xb2", "q", "kNow", "vNow", "before", "hb", "hb2", "gate", "mixed", "conv", "z", "work", "att"];
+  const vectors = new Map(), names = ["x", "xb", "xb2", "q", "kNow", "vNow", "before", "hb", "hb2", "gate", "mixed", "conv", "z", "work", "att", "tiled"];
   const at = Object.fromEntries(names.map((name, i) => [name, 1000 * (i + 1)]));
   const core = {
     plan, sizes, eps: 1e-5, room, at, S: 100000, cache, said,
@@ -223,6 +223,24 @@ const S = 100000;
   assert.ok(F.subarray(rows / 4, (rows + 2 * convBytes) / 4).every((value) => value === 0), "the rows");
   assert.deepEqual([F[states / 4 - 1], F[qUnit / 4], F[kUnit / 4 + 8]], [5, 5, 5], "and nothing else");
   console.log("ok: linear attention: its frame and its numbers; two states a layer, read and written turn about; the convolution's rows; what position 0 clears");
+
+  // T363.5: a model whose output matrix has its columns in llama.cpp's order of the value heads (the plan's tiled, the
+  // form's): what the matrix reads is the value heads put in that order, every key head's first one, then every key
+  // head's second (Hugging Face's head h * per + j at place j * key heads + h: here 0, 2, 1, 3), in an array of its
+  // own in the token's frame; a model without it reads xb as it is, and has no such array
+  const tiledSizes = { ...sizes, numbers: { linear: numbers, tiled: true } };
+  assert.deepEqual(linear.frame(tiledSizes).arrays.at(-1), ["tiled", 128], "the array of what the output matrix reads");
+  assert.equal(linear.frame({ ...sizes, numbers: { linear: numbers, tiled: null } }).arrays.length, 4);
+  const tiled = coreOf({ ...plan, tiled: true }, { sizes: tiledSizes, has: ["wqkv", "wz", "wout", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm"] });
+  const step = linear.make(tiled.core, 1).layer(0, { kind: "linear", place: 0, rope: false });
+  for (let t = 0; t < 2; t++) for (let i = 0; i < 32; i++) tiled.room.F[(tiled.at.xb + t * S) / 4 + i] = 100 * t + i;  // (value i of token t: head i >> 3)
+  step(2, 0);
+  assert.deepEqual(tiled.said.at(-1), ["matmuls", tiled.at.tiled, 2, ["wout", tiled.at.xb2, S, 0]], "the output matrix reads the array");
+  for (let t = 0; t < 2; t++) {
+    const read = [...tiled.room.F.subarray((tiled.at.tiled + t * S) / 4, (tiled.at.tiled + t * S) / 4 + 32)];
+    assert.deepEqual(read, [0, 2, 1, 3].flatMap((head) => Array.from({ length: 8 }, (_, i) => 100 * t + 8 * head + i)), `token ${t}: the value heads in llama.cpp's order`);
+  }
+  console.log("ok: linear attention, tiled: the output matrix reads the value heads in llama.cpp's order, from an array of their own");
 }
 
 // ---- the convolution layers
