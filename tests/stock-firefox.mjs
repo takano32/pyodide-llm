@@ -6,6 +6,7 @@
 //   node tests/stock-firefox.mjs [model id = stories260K] [url of the site]
 import { Builder, Key } from "selenium-webdriver";
 import firefox from "selenium-webdriver/firefox.js";
+import { closed, leave } from "./leave.mjs";
 
 const [model = "stories260K", site = "https://takano32.github.io/pyodide-llm/"] = process.argv.slice(2);
 const expected = { stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park." };
@@ -44,11 +45,12 @@ try {
   console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 } finally {
   // T145: given up on after 15 s, as tests/e2e.mjs gives up on browser.close() (T141): the verdict is known by then
-  await Promise.race([driver.quit(), new Promise((resolve) => setTimeout(resolve, 15000))]).catch(() => {});
+  await closed(() => driver.quit());
 }
 if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
-  process.exit(1);
+  await leave(1);
 }
 // T141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
-process.stdout.write("ok\n", () => process.exit(0));
+console.log("ok");
+await leave(0);

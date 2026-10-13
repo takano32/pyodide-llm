@@ -3,6 +3,7 @@
 //
 //   node tests/coi-check.mjs <site URL> [engine ...]      engines: chromium firefox webkit chrome msedge
 import * as playwright from "playwright-core";
+import { closed, leave } from "./leave.mjs";
 
 const [site = "https://takano32.github.io/pyodide-llm/", ...engines] = process.argv.slice(2);
 const rows = [];
@@ -28,10 +29,11 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     }
     const cell = (v) => String(v ?? "").replace(/\|/g, "\\|").slice(0, 80);
     rows.push(`| ${engine} ${browser.version()} | ${coep} | ${cell(result.error ?? result.crossOriginIsolated)} | ${cell(result.atomics === true && result.sharedValue === 42 ? "yes" : result.atomics)} | ${cell(result.pyodide)} | ${cell(result.huggingface)} | ${result.reloads ?? ""} |`);
-    await context.close();
+    await closed(() => context.close());  // (T141, T391.6: WebKit on Windows may never return from it)
   }
-  await browser.close();
+  await closed(() => browser.close());
 }
 console.log("| browser | COEP | crossOriginIsolated | shared memory with a worker | Pyodide + NumPy from the CDN | Hugging Face range | reloads |");
 console.log("|---|---|---|---|---|---|---|");
 for (const row of rows) console.log(row);
+await leave(0);

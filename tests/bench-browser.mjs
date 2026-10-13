@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import * as playwright from "playwright-core";
 import { MODELS } from "../src/models.js";
+import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [model = "stories260K", deployed] = process.argv.slice(2);
@@ -59,6 +60,7 @@ assert.equal(report.searchParams.get("template"), "benchmark.md", `the report li
 assert.ok(report.searchParams.get("body")?.endsWith(bench.markdown), "the Markdown in the issue's body");
 clearInterval(watch);
 // T141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
-await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
+await closed(() => browser.close());
 server?.close();
-process.stdout.write("ok\n", () => process.exit(0));
+console.log("ok");
+await leave(0);

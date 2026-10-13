@@ -55,6 +55,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 import { MODELS } from "../src/models.js";
+import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
@@ -439,11 +440,13 @@ if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
 // T141: browser.close() of WebKit on Windows did not return (three times in CI: the answer printed, then nothing),
 // the watchdog was already stopped, the next run never started and the job ran into its limit. The close is given
-// fifteen seconds, and the process ends here rather than when nothing is left to wait for.
-await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
+// fifteen seconds, and the process ends here rather than when nothing is left to wait for. (T391.6: the one way of
+// tests/leave.mjs, as every tool that drives a browser ends.)
+await closed(() => browser.close());
 server?.close();
 if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
-  process.exit(1);
+  await leave(1);
 }
-process.stdout.write("ok\n", () => process.exit(0));
+console.log("ok");
+await leave(0);

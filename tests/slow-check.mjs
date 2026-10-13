@@ -25,6 +25,7 @@
 import http from "node:http";
 import net from "node:net";
 import * as playwright from "playwright-core";
+import { closed, leave } from "./leave.mjs";
 
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
@@ -172,8 +173,8 @@ for (const lane of everyLane.filter((one) => one.host === "data.jsdelivr.com")) 
 }
 const pyodideLines = console_.filter((line) => /pyodide|quiet|nothing/i.test(line)).slice(-5);
 if (pyodideLines.length) console.log(`console: ${pyodideLines.join(" / ")}`);
-await browser.close();
+await closed(() => browser.close());  // (T141, T391.6: never waited on for long)
 proxy.close();
 const ok = scenario === "slow" ? outcome.ready && !state.fellBack : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);
 console.log(ok ? "ok" : "FAILED");
-process.exit(ok ? 0 : 1);
+await leave(ok ? 0 : 1);

@@ -23,6 +23,7 @@ import fs from "node:fs";
 import os from "node:os";
 import * as playwright from "playwright-core";
 import { fetched } from "./fetching.mjs";
+import { closed, leave } from "./leave.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
 const { ADDRESSES } = await import(runtimeUrl("jobs.ts"));
 
@@ -488,7 +489,7 @@ for (const engine of engines.length ? engines : ["chromium"]) {
       if (wrong) failed = true;
     }
   } finally {
-    await browser.close().catch(() => undefined);
+    await closed(() => browser.close());  // (T141, T391.6: Windows' WebKit may never return from it)
   }
 }
-process.exit(failed ? 1 : 0);
+await leave(failed ? 1 : 0);

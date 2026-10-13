@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
 import { REPORT_LIMIT, TOO_LONG, pathTable } from "../src/bench.js";
+import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 // T180: the browsers' profiles, in the repository's .tmp/ (never $HOME or /tmp)
@@ -250,8 +251,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   console.log("");
   // T141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
   // Windows job sat 55 minutes after WebKit's report, 2026-09-27): give it 15 seconds and go on
-  const closed = await Promise.race([context.close().then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 15000))]);
-  if (!closed) console.log(`${engine}: the browser did not close within 15 s; going on`);
+  if (!(await closed(() => context.close()))) console.log(`${engine}: the browser did not close within 15 s; going on`);
   try {
     fs.rmSync(profile, { recursive: true, force: true });
   } catch {
@@ -260,4 +260,4 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
 }
 server?.close();
 if (!started) console.log("no browser started: nothing was measured");
-process.exit(failed || !started ? 1 : 0);
+await leave(failed || !started ? 1 : 0);

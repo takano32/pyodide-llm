@@ -28,7 +28,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 import { UPDATED, SLOWER } from "../src/runtime/updated.ts";
-import { leave } from "./leave.mjs";
+import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);
@@ -344,11 +344,11 @@ for (const [name, run] of Object.entries(CASES)) {
     console.log("  ok");
   }
   rule = () => undefined;
-  await Promise.race([context.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
+  await closed(() => context.close());
 }
 fs.rmSync(fixture, { recursive: true, force: true });
 console.log(failures.length ? `FAILED\n${failures.map((line) => `- ${line}`).join("\n")}` : "updated-in-browser: ok");
 // (a browser's close() may never return, T141: the process ends by itself)
-await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
+await closed(() => browser.close());
 server.close();
 await leave(failures.length ? 1 : 0);

@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
+import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const PROFILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".tmp", `page-memory-check-${process.pid}`);
@@ -178,7 +179,7 @@ if (errors.length) {
   failed = true;
 }
 // T141: never wait on a browser's close for long
-await Promise.race([context.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
+await closed(() => context.close());
 fs.rmSync(PROFILE, { recursive: true, force: true });
 server?.close();
-process.exit(failed ? 1 : 0);
+await leave(failed ? 1 : 0);
