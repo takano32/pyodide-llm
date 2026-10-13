@@ -507,16 +507,28 @@ for name, source in llama2_convert.SOURCES.items():
 import json, superblock_cases
 from convert.superblocks import SUPERBLOCKS
 with open("superblocks.json") as f:
-    read_natively = json.load(f)["read"]
-assert set(read_natively) == set(SUPERBLOCKS) == {name for name, source in llama2_convert.SOURCES.items() if source.values == 256}, \
+    # (T505.1: "widened", the eight that are read and never kept, blocks of 256 and of 32)
+    read_natively, widened_natively = (lambda fixture: (fixture["read"], fixture["widened"]))(json.load(f))
+assert set(read_natively) == set(SUPERBLOCKS) and not set(read_natively) & set(widened_natively), \
     f"the fixture has {sorted(read_natively)}, the readers are {sorted(SUPERBLOCKS)}"
-for name in SUPERBLOCKS:
+# (every type of ggml's that has no kernel to read it: F32 and F16 are NumPy's own, BF16 and Q8_0 have kernels)
+assert set(read_natively) | set(widened_natively) == {name for name, source in llama2_convert.SOURCES.items() if not source.kernel} - {"F32", "F16"}, \
+    f"the fixture has {sorted(widened_natively)} besides, the readers are {sorted(llama2_convert.SOURCES)}"
+for name, natively in {**read_natively, **widened_natively}.items():
     source = llama2_convert.SOURCES[name]
     assert source.kernel is None and llama2_convert.GGUF_TENSORS[source.ggml] == name
     with np.errstate(invalid="ignore"):
         read_here = source.read(superblock_cases.blocks(name, source.size))
-    assert read_here.shape == (superblock_cases.BLOCKS * 256,) and superblock_cases.digest(read_here) == read_natively[name], \
+    assert read_here.shape == (superblock_cases.BLOCKS * source.values,) and superblock_cases.digest(read_here) == natively, \
         f"{name}: Pyodide's NumPy reads other values than a 64-bit NumPy's"
+# T505.2: a Llama 3's rope_freqs table read back into its rope_scaling here too (a line fitted by NumPy's least squares,
+# and whole numbers made of what it gives): a Llama 3.1 8B's and a Llama 3.2 1B's, as their real GGUFs have them
+from convert.gguf import llama3_scaling
+for width, factor in ((128, 8.0), (64, 32.0)):
+    said = {"rope_type": "llama3", "factor": factor, "low_freq_factor": 1.0, "high_freq_factor": 4.0, "original_max_position_embeddings": 8192}
+    table = (llama2_numpy.rope_frequencies(width, 500000.0) / llama2_numpy.rope_frequencies(width, 500000.0, said)).astype(np.float32)
+    found = llama3_scaling(table, {"hidden_size": 4 * width, "num_attention_heads": 4, "rope_theta": 500000.0})
+    assert found == said and type(found["original_max_position_embeddings"]) is int, f"a rope_freqs table read back as {found}"
 widen = kernel_readers["BF16"]
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"

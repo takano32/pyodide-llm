@@ -16,7 +16,7 @@ from made_up import BLOCK_SCALES, checkpoint, drawn_blocks, numbered, uniform
 from test_external import Outside
 
 from convert import grids
-from convert.superblocks import SUPERBLOCKS
+from convert.superblocks import SUPERBLOCKS, WIDENED
 from llama2_convert import SOURCES, Writer, checkpoint_size
 from llama2_numpy import (BLOCKS, CODEBOOKS, CODES, DTYPES, EITHER, FORM, KINDS, PACKED, QUANTIZED, Llama,
                           checkpoint_dtype, dtype_of, external_tensors, file_size, form_of, kind_of, placed, tensor_rows)
@@ -71,7 +71,8 @@ def made():
 
 # ---- the registry
 def test_the_blocks_are_kinds_of_a_row_and_no_dtype_of_a_file():
-    assert set(BLOCKS) == set(SIZES) == set(SUPERBLOCKS) == {name for name, source in SOURCES.items() if source.values == 256}
+    # (T505.1: the converter reads three more types of blocks of 256, which no row is stored in: WIDENED)
+    assert set(BLOCKS) == set(SIZES) == set(SUPERBLOCKS) == {name for name, source in SOURCES.items() if source.values == 256} - set(WIDENED)
     assert list(DTYPES) == ["float32", "float16", "int8", "int6", "ternary"], "a file's dtypes are the five they were"
     assert not set(BLOCKS) & (set(DTYPES) | set(QUANTIZED) | set(PACKED) | set(EITHER))
     assert set(KINDS) == set(DTYPES) | set(BLOCKS) | {"uint8"} and all(KINDS[name] is DTYPES[name] for name in DTYPES)

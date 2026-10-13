@@ -1,12 +1,13 @@
 # How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0, the
-# two ternary types, and llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T362), one entry for
-# each (SOURCES), to float32. A new one is a reader here and its entry (T359): the GGUF's type id, the size of its
+# two ternary types, llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T362, and its older types of
+# blocks of 32, T505.1), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T359): the GGUF's type id, the size of its
 # blocks, the refusal that lists what is read, and its reader on the kernels come from the entry.
 from typing import Callable, NamedTuple
 
 import numpy as np
 
-from convert.superblocks import SUPERBLOCKS, VALUES
+from convert.grids import IQ4NL
+from convert.superblocks import SUPERBLOCKS, VALUES, WIDENED
 from engine.kernels import kernel_wideners
 from engine.packing import TERNARY_VALUES
 
@@ -77,6 +78,64 @@ def ptq1_0(raw):
     return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
 
 
+# ---- T505.1: llama.cpp's types of blocks of 32 other than Q8_0, the older ones (a file of Q4_0 ...) and the ones it
+# stores a matrix in whose rows are no whole blocks of 256 (src/llama-quant.cpp's tensor_type_fallback(): Q5_0 for
+# Q4_K, Q5_1 for Q5_K, Q4_0 for Q2_K and Q3_K, IQ4_NL for the i-quantized types). The forms are those of the block_q*
+# structs of ggml/src/ggml-common.h and of the dequantize_row_* functions of ggml/src/ggml-quants.c of llama.cpp (MIT,
+# Copyright (c) 2023-2026 The ggml authors; no line of them is copied: the readers are NumPy's, written from the
+# forms) at the commit convert/superblocks.py names. tests/fork_readers.py holds each to that C, to the bit. Every
+# product is exact in float32 (a float16 times an integer of five bits at most), so the one rounding is the sum.
+def of_32(size, read):
+    """read((blocks, size) of uint8) -> (blocks, 32) float32, as a reader of the bytes of whole blocks."""
+    def whole(raw):
+        return read(np.frombuffer(raw, dtype=np.uint8).reshape(-1, size)).astype(np.float32, copy=False).reshape(-1)
+    whole.__name__, whole.__doc__ = read.__name__, read.__doc__
+    return whole
+
+
+def half_at(blocks, at):
+    """The little-endian float16 at byte at of every block, float32: (blocks, 1)."""
+    return np.ascontiguousarray(blocks[:, at:at + 2]).view("<f2").astype(np.float32)
+
+
+def fours(held):
+    """(blocks, 16) bytes -> (blocks, 32): their low four bits, then their high four."""
+    return np.concatenate([held & 15, held >> 4], axis=1)
+
+
+def fifth(held):
+    """Q5's fifth bits: four bytes, a little-endian word whose bit j is weight j's -> (blocks, 32) of 0 and 16."""
+    return np.unpackbits(held, axis=1, bitorder="little") << 4
+
+
+def q4_0(b):
+    """18 bytes: d, qs[16]. A weight is d (q - 8) for its four bits q: the low halves of the bytes are the first 16
+    weights, the high halves the last."""
+    return half_at(b, 0) * (fours(b[:, 2:]).astype(np.int8) - np.int8(8))
+
+
+def q4_1(b):
+    """20 bytes: d, m, qs[16]. A weight is d q + m for its four bits q, laid out as Q4_0's."""
+    return half_at(b, 0) * fours(b[:, 4:]).astype(np.float32) + half_at(b, 2)
+
+
+def q5_0(b):
+    """22 bytes: d, qh[4], qs[16]. A weight is d (q - 16) for its five bits q: four as Q4_0's, the fifth bit j of the
+    word qh for weight j."""
+    return half_at(b, 0) * ((fours(b[:, 6:]) | fifth(b[:, 2:6])).astype(np.int8) - np.int8(16))
+
+
+def q5_1(b):
+    """24 bytes: d, m, qh[4], qs[16]. A weight is d q + m for its five bits q, laid out as Q5_0's."""
+    return half_at(b, 0) * (fours(b[:, 8:]) | fifth(b[:, 4:8])).astype(np.float32) + half_at(b, 2)
+
+
+def iq4_nl(b):
+    """18 bytes: d, qs[16]. A weight is d times IQ4NL's value (convert/grids.py's 16, IQ4_XS's) for its four bits,
+    laid out as Q4_0's."""
+    return half_at(b, 0) * IQ4NL[fours(b[:, 2:])]
+
+
 def float32(raw):
     return np.frombuffer(raw, dtype=np.float32)
 
@@ -105,9 +164,10 @@ class Source(NamedTuple):
 
 
 # (30 is BF16: Ternary Bonsai 2's two small matrices of the gates. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork
-# of llama.cpp. T362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. A refusal does not name
-# them yet: its words are the owner's, and they are as they were before the ten were read. ggml's other types (Q3_K,
-# Q5_K, Q6_K, IQ4_NL, the older Q4_0 and its kind) are refused)
+# of llama.cpp. T362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. T505.1: its other three K
+# types, which are read and never kept (WIDENED), and the five of blocks of 32 above. A refusal names none of the
+# eighteen yet (said): its words are the owner's, and they are as they were before any of them was read (T501). ggml's
+# other types are refused: docs/notes/t505-gguf-alone-2026-10-13.md says which and why)
 SOURCES = {source.name: source for source in (
     Source("F32", 0, 1, 4, float32),
     Source("F16", 1, 1, 2, float16),
@@ -116,6 +176,12 @@ SOURCES = {source.name: source for source in (
     Source("PQ2_0", 142, 128, 34, pq2_0, "widen_pq2_0"),
     Source("PTQ1_0", 143, 128, 28, ptq1_0, "widen_ptq1_0"),
     *(Source(name, ggml, VALUES, size, read, said=False) for name, (ggml, size, read) in SUPERBLOCKS.items()),
+    *(Source(name, ggml, VALUES, size, read, said=False) for name, (ggml, size, read) in WIDENED.items()),
+    Source("Q4_0", 2, 32, 18, of_32(18, q4_0), said=False),
+    Source("Q4_1", 3, 32, 20, of_32(20, q4_1), said=False),
+    Source("Q5_0", 6, 32, 22, of_32(22, q5_0), said=False),
+    Source("Q5_1", 7, 32, 24, of_32(24, q5_1), said=False),
+    Source("IQ4_NL", 20, 32, 18, of_32(18, iq4_nl), said=False),
 )}
 # a GGUF's type id -> the name
 GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items()}

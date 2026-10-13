@@ -1,5 +1,6 @@
 # llama.cpp's K- and i-quantized types read to float32 (T362): Q2_K, Q4_K, IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS,
-# IQ3_S and IQ4_XS, the ten a GGUF of Underdog Saluki 27B is made of. Every one of them holds 256 weights to a block (a
+# IQ3_S and IQ4_XS, the ten a GGUF of Underdog Saluki 27B is made of, and (T505.1) Q3_K, Q5_K and Q6_K, the rest of the K
+# types, which a Q4_K_M file has too. Every one of them holds 256 weights to a block (a
 # "super-block"), with a float16 scale d of the block and small integer scales of its groups of 16 or 32: a weight is
 # d times its group's integer times a small integer of its own, which the i-quantized types look up 8 or 4 at a time in
 # a codebook (convert/grids.py) and give a sign.
@@ -67,15 +68,21 @@ def q2_k(b):
     return scale[:, :, None] * q.reshape(n, 16, 16).astype(np.float32) - minimum[:, :, None]
 
 
+def six_bit_scales(s):
+    """Q4_K's and Q5_K's 12 bytes of scales -> (the scales sc, the minima m) of the eight groups, six bits each: for the
+    first four groups the low six bits of bytes j and j + 4; for the last four the low and the high four bits of byte
+    j + 4, with the top two bits of bytes j - 4 and j above them."""
+    return (np.concatenate([s[:, :4] & 63, (s[:, 8:] & 15) | ((s[:, :4] >> 6) << 4)], axis=1),
+            np.concatenate([s[:, 4:8] & 63, (s[:, 8:] >> 4) | ((s[:, 4:8] >> 6) << 4)], axis=1))
+
+
 def q4_k(b):
     """144 bytes: d, dmin, scales[12], qs[128]. Eight groups of 32, each a scale sc and a minimum m of six bits in the
-    12 bytes: for the first four groups the low six bits of bytes j and j + 4; for the last four the low and the
-    high four bits of byte j + 4, with the top two bits of bytes j - 4 and j above them. A weight is d sc q - dmin m
-    for its four bits q; of every 32 bytes the low halves are 32 weights and the high halves the next 32."""
+    12 bytes (six_bit_scales). A weight is d sc q - dmin m for its four bits q; of every 32 bytes the low halves are
+    32 weights and the high halves the next 32."""
     n = len(b)
-    d, least, s = halves(b[:, :2]), halves(b[:, 2:4]), b[:, 4:16]
-    sc = np.concatenate([s[:, :4] & 63, (s[:, 8:] & 15) | ((s[:, :4] >> 6) << 4)], axis=1)
-    m = np.concatenate([s[:, 4:8] & 63, (s[:, 8:] >> 4) | ((s[:, 4:8] >> 6) << 4)], axis=1)
+    d, least = halves(b[:, :2]), halves(b[:, 2:4])
+    sc, m = six_bit_scales(b[:, 4:16])
     q = b[:, 16:].reshape(n, 4, 32)
     q = np.stack([q & 15, q >> 4], axis=2).reshape(n, 8, 32)
     scale, minimum = d * sc.astype(np.float32), least * m.astype(np.float32)
@@ -184,6 +191,54 @@ def iq4_xs(b):
     return scale[:, :, None] * IQ4NL[np.concatenate([q & 15, q >> 4], axis=2)].astype(np.float32)
 
 
+# ---- T505.1: the K types that are read and not kept (no kernel multiplies their blocks: WIDENED, below)
+def q3_k(b):
+    """110 bytes: hmask[32], qs[64], scales[12], d. Sixteen groups of 16, each a scale s of six bits: its low four bits
+    are a half of one of the first 8 bytes (the low halves are groups 0 to 7, the high halves groups 8 to 15), its high
+    two are two bits of one of the last 4 bytes (bits 2 k and 2 k + 1 of byte j for group 4 k + j). A weight is
+    d (s - 32) times its three bits less 4: two bits q in qs, laid out as Q2_K's (bits 2 j and 2 j + 1 of byte l of a
+    half's 32 are weight 32 j + l of the half), and the third in hmask: bit 4 n + j of byte l, for half n. The value
+    is q - 4, or q where the bit is set."""
+    n = len(b)
+    s = b[:, 96:108]
+    high = (s[:, 8:, None] >> SHIFTS[2].astype(np.uint8)) & 3  # (blocks, byte j, k)
+    low = np.concatenate([s[:, :8] & 15, s[:, :8] >> 4], axis=1)
+    scale = halves(b[:, 108:]) * ((low | (high.transpose(0, 2, 1).reshape(n, 16) << 4)).astype(np.int32) - 32).astype(np.float32)
+    q = (b[:, 32:96].reshape(n, 2, 1, 32) >> SHIFTS[2].astype(np.uint8).reshape(1, 1, 4, 1)) & 3
+    set_ = (b[:, None, :32] >> np.arange(8, dtype=np.uint8).reshape(1, 8, 1)) & 1  # (blocks, bit 4 n + j, byte l)
+    value = q.reshape(n, 8, 32).astype(np.int32) - 4 * (1 - set_.astype(np.int32))
+    return scale[:, :, None] * value.reshape(n, 16, 16).astype(np.float32)
+
+
+def q5_k(b):
+    """176 bytes: d, dmin, scales[12], qh[32], qs[128]. Q4_K with a fifth bit: the scales and the minima are Q4_K's
+    (six_bit_scales), the low four bits of a weight are where Q4_K has them, and its fifth is bit g of byte l of qh for
+    weight l of group g. A weight is d sc q - dmin m."""
+    n = len(b)
+    d, least = halves(b[:, :2]), halves(b[:, 2:4])
+    sc, m = six_bit_scales(b[:, 4:16])
+    q = b[:, 48:].reshape(n, 4, 32)
+    q = np.stack([q & 15, q >> 4], axis=2).reshape(n, 8, 32)
+    q = q | (((b[:, None, 16:48] >> np.arange(8, dtype=np.uint8).reshape(1, 8, 1)) & 1) << 4)
+    scale, minimum = d * sc.astype(np.float32), least * m.astype(np.float32)
+    return scale[:, :, None] * q.astype(np.float32) - minimum[:, :, None]
+
+
+def q6_k(b):
+    """210 bytes: ql[128], qh[64], scales[16], d. Sixteen groups of 16, each a signed byte of scale s. A block is two
+    halves of 128 weights, a half four runs of 32: of a half's 64 bytes of ql, the low halves of the first 32 are the
+    first run, those of the last 32 the second, and the high halves the third and the fourth; the top two of a weight's
+    six bits are bits 2 r and 2 r + 1 of byte l of the half's 32 of qh, for weight l of run r. A weight is
+    d s (q - 32)."""
+    n = len(b)
+    ql, qh = b[:, :128].reshape(n, 2, 2, 32), b[:, 128:192].reshape(n, 2, 1, 32)
+    low = np.concatenate([ql & 15, ql >> 4], axis=2)  # (blocks, half, run, 32)
+    high = (qh >> SHIFTS[2].astype(np.uint8).reshape(1, 1, 4, 1)) & 3
+    q = (low | (high << 4)).astype(np.int32) - 32
+    scale = halves(b[:, 208:]) * b[:, 192:208].view(np.int8).astype(np.float32)
+    return scale[:, :, None] * q.reshape(n, 16, 16).astype(np.float32)
+
+
 def reader(size, read):
     """read (blocks of size bytes as (blocks, size) of uint8 -> their weights in any shape, float32) as a reader of
     the bytes of whole blocks: -> float32, 256 for each block. AT_ONCE blocks at a time."""
@@ -204,3 +259,8 @@ SUPERBLOCKS = {name: (ggml, BLOCKS[name].block, reader(BLOCKS[name].block, read)
     ("Q2_K", 10, q2_k), ("Q4_K", 12, q4_k), ("IQ2_XXS", 16, iq2_xxs), ("IQ2_XS", 17, iq2_xs),
     ("IQ3_XXS", 18, iq3_xxs), ("IQ1_S", 19, iq1_s), ("IQ3_S", 21, iq3_s), ("IQ2_S", 22, iq2_s),
     ("IQ4_XS", 23, iq4_xs), ("IQ1_M", 29, iq1_m))}
+# T505.1: the same of the three K types that are read and never kept: the engine's BLOCKS does not have them (no
+# kernel multiplies their blocks), so a conversion widens them to float32 and stores them as its dtype says, whether
+# or not it keeps the others' blocks (convert/stream.py's kept()).
+WIDENED = {name: (ggml, size, reader(size, read)) for name, ggml, size, read in (
+    ("Q3_K", 11, 110, q3_k), ("Q5_K", 13, 176, q5_k), ("Q6_K", 14, 210, q6_k))}

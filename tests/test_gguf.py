@@ -80,14 +80,19 @@ def gguf_name(name):
 
 
 def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=10000.0, more=(), extra=None, bos=1, eos=2,
-              matrices=(q8_0_blocks, 8), turned=None):
+              matrices=(q8_0_blocks, 8), turned=None, vocabulary=None, first=None):
     """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds).
     more: further metadata (key, GGUF type, value); extra: {GGUF name: float32 values} written as they are
     (rope_freqs.weight). bos, eos: None leaves the token out (unsloth's Qwen3 GGUFs name no BOS). matrices: what makes
     the blocks of a matrix and their ggml type (T235: pq2_0_blocks and 142). turned: whether q and k are turned, as
     llama.cpp turns a Llama's (and a Granite's) and leaves a Qwen2's (the default: arch in TURNED; T250's review: the
-    other way round is a GGUF the reader does not read)."""
+    other way round is a GGUF the reader does not read). vocabulary (T505.2): {"model", "tokens", "kinds", "scores"} in
+    the place of the byte-level BPE one of pieces w0, w1 ... that are all normal (scores: None for none). pre: None
+    leaves the name out. first: {GGUF name: float32 values} written before every other tensor, as llama.cpp's
+    converter writes a rope_freqs."""
     turned = arch in TURNED if turned is None else turned
+    vocabulary = {"model": "gpt2", "tokens": [f"w{i}" for i in range(vocab_size)], "kinds": [1] * vocab_size, "scores": None,
+                  **(vocabulary or {})}
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
     metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, published["num_hidden_layers"]),
@@ -96,19 +101,26 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
                 (f"{arch}.feed_forward_length", 4, published["intermediate_size"]),
                 (f"{arch}.attention.head_count", 4, published["num_attention_heads"]),
                 (f"{arch}.attention.head_count_kv", 4, published["num_key_value_heads"]),
-                (f"{arch}.rope.freq_base", 6, theta), ("tokenizer.ggml.model", 8, "gpt2"),
-                ("tokenizer.ggml.pre", 8, pre),
+                (f"{arch}.rope.freq_base", 6, theta), ("tokenizer.ggml.model", 8, vocabulary["model"]),
+                *([("tokenizer.ggml.pre", 8, pre)] if pre is not None else []),
                 *[(f"tokenizer.ggml.{key}_token_id", 4, id) for key, id in (("bos", bos), ("eos", eos)) if id is not None],
                 *more]
-    tokens = [f"w{i}" for i in range(vocab_size)]
-    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + len(extra or {}), len(metadata) + 3)]
+    tokens, scores = vocabulary["tokens"], vocabulary["scores"]
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + len(extra or {}) + len(first or {}), len(metadata) + 3 + (scores is not None))]
     for key, kind, value in metadata:
         out.append(string(key) + struct.pack("<I", kind))
         out.append(metadata_value(kind, value))
     out.append(string("tokenizer.ggml.tokens") + struct.pack("<IIQ", 9, 8, len(tokens)) + b"".join(map(string, tokens)))
-    out.append(string("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *[1] * len(tokens)))
+    out.append(string("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *vocabulary["kinds"]))
     out.append(string("tokenizer.ggml.merges") + struct.pack("<IIQ", 9, 8, 0))
+    if scores is not None:
+        out.append(string("tokenizer.ggml.scores") + struct.pack("<IIQ", 9, 6, len(scores)) + struct.pack(f"<{len(scores)}f", *scores))
     held, blobs, offset = {}, [], 0
+    for name, values in (first or {}).items():
+        blob = np.asarray(values, np.float32).tobytes()
+        out.append(string(name) + struct.pack("<I", 1) + struct.pack("<Q", len(values)) + struct.pack("<IQ", 0, offset))
+        blobs.append(blob + b"\0" * (-len(blob) % 32))
+        offset += len(blobs[-1])
     for name, tensor in tensors.items():
         stored = tensor
         kind = next((k for k in heads if f".{k}." in name), None)
@@ -201,12 +213,13 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
     with pytest.raises(ValueError, match="not a GGUF"):
         gguf_read(b"PK\x03\x04" + file[4:])
     metadata, found, base = gguf_read(file)
-    # make the first matrix a Q5_K (type 13: T362 reads Q2_K and Q4_K, not the K-quants between and above them), or a
+    # make the first matrix a TQ1_0 (type 34, llama.cpp's own ternary type, which is not read: T505.1 reads the K types
+    # and the older ones of blocks of 32), or a
     # type 42 (the Q2_0 of Prism's earlier Bonsai files: 2 bits, 64 or 128 to a block): the type is the u32 before its
     # u64 offset in the tensor infos. T230's review: a type 42 file must be refused with the types that are read, not
     # read as a type 8 or 142 of the same block size
     at = file.index(b"token_embd.weight") + len(b"token_embd.weight") + 4 + 16
-    for kind in (13, 42):
+    for kind in (34, 42):
         other = bytearray(file)
         other[at:at + 4] = struct.pack("<I", kind)
         with pytest.raises(ValueError, match=f"ggml type {kind}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"):
