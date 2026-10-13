@@ -9,8 +9,8 @@
 #   ... extra="REFERENCES=<a run's id> STAGES='convert page breaks' bash tests/page_saluki.sh" ...
 # On x86-64 or arm64 (runner=ubuntu-24.04-arm: the page's forward pass is faster there, and its prompts take the tile of
 # the signed dot product). The tool is tests/page_27b.sh's, Ternary Bonsai 2 27B's, made for another file: the stages
-# have its names, tests/page-27b.mjs runs both models (the list has no entry of this one yet, T364.3: what one would
-# say is tests/page_saluki.py's, handed over with --as), and what that file's head says of Liftoff above 4 GiB on the
+# have its names, tests/page-27b.mjs runs both models (this one by the list's two entries, which tests/page_saluki.py
+# reads and hands over with --as, a third form beside them), and what that file's head says of Liftoff above 4 GiB on the
 # V8 of Node 24 on arm64 holds here.
 #
 # Run it when src/runtime/forward (the layers, jobs.ts's tables), the kernels of the blocks (kernels/blocks*), the
@@ -39,7 +39,7 @@
 #   starts     a bare text (STARTS_TEXT: en or ja, Wikipedia's Mount Fuji) after each first token of HEADS
 #              (248045,248044,none: <|im_start|>, <|endoftext|>, nothing), STARTS_POSITIONS (128) tokens of it
 #   write      the page's generate() for QUESTIONS (lines of a file, or the four here) in each form of WRITE
-#              ("at-once sampled thinking": tests/page_saluki.py's ENTRIES), at most TOKENS (300; THINKING_TOKENS 600
+#              ("at-once sampled thinking": the list's two entries and tests/page_saluki.py's third), at most TOKENS (300; THINKING_TOKENS 600
 #              for the form that thinks) positions each, PICK="0,1" only these of the questions (from 0)
 # The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of the
 # same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
