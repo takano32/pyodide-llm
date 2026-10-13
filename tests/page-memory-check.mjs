@@ -12,12 +12,12 @@
 //
 //   node tests/page-memory-check.mjs [url of a site | --dist] [--ended <MiB>]
 //     --dist serves dist/ (npm run build) itself, as tests/bench-check.mjs does
-import http from "node:http";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
+import { serving } from "./serving.mjs";
 
 const PROFILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".tmp", `page-memory-check-${process.pid}`);
 const MiB = 2 ** 20;
@@ -27,21 +27,8 @@ const endedAt = args.includes("--ended") ? Number(args[args.indexOf("--ended") +
 let site = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--ended") ?? "https://takano32.github.io/pyodide-llm/";
 let server;
 if (dist) {
-  const base = "/pyodide-llm/", root = new URL("../dist/", import.meta.url).pathname;
-  const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
-    ".py": "text/plain", ".wasm": "application/wasm" };
-  server = http.createServer((req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    let file = path.join(root, pathname.slice(base.length));
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
-    if (!pathname.startsWith(base) || !fs.existsSync(file)) {
-      res.writeHead(404);
-      return res.end();
-    }
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
-    fs.createReadStream(file).pipe(res);
-  }).listen(0);
-  site = `http://localhost:${server.address().port}${base}`;
+  server = await serving();  // (T391.6: tests/serving.mjs)
+  site = server.url;
 }
 
 let failed = false;

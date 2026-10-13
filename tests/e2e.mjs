@@ -49,13 +49,13 @@
 //                  the keys and values grow to the end of a long context (a prompt past 2048 tokens takes the cache
 //                  of 4096 positions through its last doubling, where it needs the most memory), whatever token
 //                  would end the answer early. The answer may then take the whole context.
-import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 import { MODELS } from "../src/models.js";
+import { serving } from "./serving.mjs";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
 // an id the list does not have opens the page's default model, and the run passed on it (T144: models.yml with a
@@ -64,9 +64,6 @@ if (!/^(local|hf|url|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id ==
   console.error(`FAILED\n- no model ${model} in src/models.js (the page would open its default model instead)`);
   process.exit(1);
 }
-const base = "/pyodide-llm/";
-const root = new URL("../dist/", import.meta.url).pathname;
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain" };
 // expected beginning of the greedy text, where the model is deterministic
 const expected = {
   stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
@@ -79,18 +76,9 @@ const expected = {
 let server;
 let url = deployed;
 if (!url) {
-  // plain static files and no special headers, like GitHub Pages
-  server = http.createServer((req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    const file = path.join(root, pathname.slice(base.length) || "index.html");
-    if (!pathname.startsWith(base) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-      res.writeHead(404);
-      return res.end();
-    }
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
-    fs.createReadStream(file).pipe(res);
-  }).listen(0);
-  url = `http://localhost:${server.address().port}${base}`;
+  // plain static files and no special headers, like GitHub Pages (T391.6: tests/serving.mjs)
+  server = await serving();
+  url = server.url;
 }
 
 const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;

@@ -22,7 +22,6 @@
 //
 // The model is stories260K (1 MB), and a conversion is the folder of tests/make_hf_fixture.py, as tests/e2e.mjs's hf.
 // Every case has a browser context of its own (its own service worker and copies). Pyodide comes from its CDN each time.
-import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -30,34 +29,22 @@ import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 import { UPDATED, SLOWER } from "../src/runtime/updated.ts";
 import { leave } from "./leave.mjs";
+import { serving } from "./serving.mjs";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);
-const base = "/pyodide-llm/";
-const root = new URL("../dist/", import.meta.url).pathname;
 const repository = new URL("../", import.meta.url).pathname;
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm" };
 
 // ---- the server: what becomes of a request is the case's rule(name under the site, method): undefined (served),
 // a status, or "drop" (the connection ends without an answer)
 let rule = () => undefined;
 const requests = [];
-const server = http.createServer((req, res) => {
-  const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-  const name = pathname.slice(base.length), file = path.join(root, name || "index.html");
-  const directory = fs.existsSync(file) && fs.statSync(file).isDirectory();
-  const served = directory ? path.join(file, "index.html") : file;
-  const verdict = pathname.startsWith(base) ? rule(name, req.method) : 404;
-  requests.push(`${req.method} ${name}${verdict === undefined ? "" : ` -> ${verdict}`}`);
-  if (verdict === "drop") return req.socket.destroy();
-  if (verdict !== undefined || !pathname.startsWith(base) || !fs.existsSync(served)) {
-    res.writeHead(verdict ?? 404);
-    return res.end();
-  }
-  res.writeHead(200, { "Content-Type": types[path.extname(served)] ?? "application/octet-stream", "Content-Length": fs.statSync(served).size });
-  if (req.method === "HEAD") return res.end();
-  fs.createReadStream(served).pipe(res);
-}).listen(0);
-const site = `http://localhost:${server.address().port}${base}`;
+// (T391.6: the serving is tests/serving.mjs's, and the rule is this tool's say in it)
+const server = await serving(undefined, { instead: ({ name, method }) => {
+  const verdict = rule(name, method);
+  requests.push(`${method} ${name}${verdict === undefined ? "" : ` -> ${verdict}`}`);
+  return verdict;
+} });
+const site = server.url;
 const built = (name) => name.startsWith("_astro/");
 const family = (...names) => (name) => built(name) && names.some((one) => name.startsWith(`_astro/${one}.`));
 

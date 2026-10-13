@@ -8,30 +8,16 @@
 // benchmark's bubble (T76); the sheet that opens any repository, and a repository the converter refuses (T88);
 // /benchmark/ before a run, while "Run all" runs the CPU section (T177: its progress) and after (T134, whole pages: it is
 // a page that scrolls).
-import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import * as playwright from "playwright-core";
+import { serving } from "./serving.mjs";
 
 const [directory = "screenshots", deployed] = process.argv.slice(2);
-const base = "/pyodide-llm/";
-const root = new URL("../dist/", import.meta.url).pathname;
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain",
-  ".wasm": "application/wasm" };
 let server, site = deployed;
 if (!site) {
-  server = http.createServer((req, res) => {
-    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
-    let file = path.join(root, pathname.slice(base.length) || "index.html");
-    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");  // /benchmark/
-    if (!pathname.startsWith(base) || !fs.existsSync(file)) {
-      res.writeHead(404);
-      return res.end();
-    }
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
-    fs.createReadStream(file).pipe(res);
-  }).listen(0);
-  site = `http://localhost:${server.address().port}${base}`;
+  server = await serving();  // (T391.6: tests/serving.mjs)
+  site = server.url;
 }
 fs.mkdirSync(directory, { recursive: true });
 
