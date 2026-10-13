@@ -6,13 +6,15 @@
  * llm-jp-3 150M measures 112 MB above its 171 MB of weights, and the tab needs its own). */
 export const PAGE_MEMORY = 300e6;
 const megabytes = (bytes) => `${Math.round(bytes / 1e6).toLocaleString("en")} MB`;
-/** The bytes of a model once loaded: `bytes` of a file of this site, or the "int8 N MB" its note gives for a
- * conversion ("ternary N MB" for a ternary model, T230: four times that as int8, where ?bits= asks for it). undefined
- * when neither says (a file of the visitor's). */
+/** The bytes of a model once loaded: `bytes` of a file of this site, or `loaded` of a conversion that says its size
+ * itself (T364.3: one kept as its file has it, llama.cpp's blocks, whose note is worded for a visitor and whose size no
+ * ?bits= changes), or the "int8 N MB" its note gives for a conversion ("ternary N MB" for a ternary model, T230: four
+ * times that as int8, where ?bits= asks for it). undefined when none says (a file of the visitor's). */
 export function modelBytes(entry) {
   // a float16 original is widened to float32 when loaded, next to the file it came from: llm-jp-3 150M's 305 MB
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
+  if (entry.loaded) return entry.loaded;
   const found = /(int8|ternary) ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
   if (!found) return undefined;
   const said = Number(found[2]) * (found[3] === "GB" ? 1e9 : 1e6), asked = entry.conversion?.dtype;

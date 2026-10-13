@@ -6,7 +6,7 @@ import {
   QWEN3_THINKING_AFTER_START, granite, lfm2Old, qwen35,
 } from "./formats.js";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, atOnce, graniteSampling, thinking,
+  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
 import { ggufOf, lfm2, miniCpm5, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
@@ -139,6 +139,22 @@ export const HF_FAMILIES = [
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB · desktop only · Chrome and Firefox",
     { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
+  // T364.3: Conway Research's Underdog Saluki 27B, the same Qwen3.8 27B at 2.3 bits a weight: a GGUF of llama.cpp's
+  // K- and i-quantized blocks, ten types of them, a type to a matrix or to a layer of one (T361). Kept as the file
+  // has them (conversion.blocks, T363: 7.96 GB, where int8 would be 30 GB) and multiplied by kernels of their own, on
+  // a 64-bit memory (7.97 GiB with its forward pass at 4096 positions), on the CPU. What it takes once loaded is said
+  // here (loaded: the checkpoint's bytes), for the note is worded for a visitor (the owner's, as the names). The
+  // vocabulary, config.json and the two formats are Ternary Bonsai 2 27B's above, those of the base model (rebuilt:
+  // tests/page_saluki.sh holds this GGUF, to llama.cpp with its activations left unrounded and to the engine's NumPy
+  // pass). Its GGUF's chat template is that model's too, to the character: so the form that thinks is what it writes
+  // with reasoning_effort "medium" (no system turn), as Bonsai's; it wrote with it in CI, where four thoughts of four
+  // ended within 338 tokens. The sampling is its card's (SALUKI_SAMPLING)
+  ...thinkingAndNot("hf-underdog-saluki-27b", "Underdog Saluki 27B",
+    ggufOf("ConwayResearch/Underdog-Saluki-27B-1.0", "1336c0b5d74dfe6ad7f793577092f5effd9f97c6", "Underdog-Saluki-27B-1.0-IQ2-mix.gguf",
+      "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 7898369152,
+    "2.3-bit weights · fetches 7.9 GB (GGUF), kept as it is: 8.0 GB · about a word a second or less · desktop only · Chrome and Firefox",
+    { options: qwen35, conversion: { dtype: "int8", blocks: true }, loaded: 7956712492, rebuilt: true },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, SALUKI_SAMPLING),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
   // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a

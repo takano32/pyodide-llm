@@ -101,11 +101,14 @@ KNOWN = {
 # T335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
 # T337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
 # T255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's
+# T364.3: and Underdog Saluki 27B, the same base model as Ternary Bonsai 2 27B's with the same template and options
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
-          "hf-agents-a1-", "hf-smollm3-")
+          "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-")
 # T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
-TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"}}
+# (T364.3: and Underdog Saluki 27B's, whose template is the same one)
+TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"},
+                 "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"}}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",

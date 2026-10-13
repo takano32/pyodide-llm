@@ -582,9 +582,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const { cpuWrote, cpuStepBegan, cpuStepEnded, generateMany, promptBlock, tokenBlock } = onGpu;
 
   let bound: Bound | null = null;
-  // (T363.5: of a model whose output matrix is in a kind of the form's, the line says the file's dtype as before:
-  // what it says of llama.cpp's blocks is the owner's to word)
-  const said = wo && !wo.layers && wo.kind !== "f32" && packingOf(wo.kind)?.tabled === undefined ? wo.kind : "int8";
+  // (T364.3: a model with rows of llama.cpp's blocks is said by those, the owner's words, whatever its other rows are)
+  const said = blocked ? "llama.cpp's blocks" : wo && !wo.layers && wo.kind !== "f32" ? wo.kind : "int8";
   const backend = (plan.int8 ? `SIMD kernels, ${said}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
     (wide ? ", 64-bit memory" : "");  // T101: the status line says so, as it says every other way the model runs
   return {

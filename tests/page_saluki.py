@@ -1,26 +1,28 @@
 # page_saluki.py (T364.2): Underdog Saluki 27B converted as the page will convert it, its blocks kept as they are
 # (Conversion(..., blocks=True) by the conduct of a conversion, T363.3), by the native Python of a CI runner, into a
 # file: the checkpoint (7.96 GB) that tests/page-27b.mjs runs on the page's forward pass. tests/page_saluki.sh runs it;
-# the development machine does not (the GGUF is 7.9 GB). The list has no entry for the model yet (T364.3), so what an
-# entry would say is here: MODEL (the files) and ENTRIES (the options, the two formats and their sampling), which
-# tests/page-27b.mjs takes with --as.
+# the development machine does not (the GGUF is 7.9 GB). What is converted and how it is asked are the list's two
+# entries' (T364.3: listed_entries()), which tests/page-27b.mjs takes with --as (a form more beside them, and the dry
+# stage's without their options).
 #
 #   python tests/page_saluki.py folder <the directory with the GGUF> <a directory for the original's files>
 #   python tests/page_saluki.py convert <folder> <out> [--context 4096] [--broken tiled]
 #   python tests/page_saluki.py entries <out.json> [--made-up]
 #
-# folder: fetches the original's config.json, tokenizer and template (Qwen/Qwen3.8-27B's, as Ternary Bonsai 2 27B's
-#   entry names them: what the conduct of the conversion asks for, tests/conducting.py's Fetched) and links the GGUF
+# folder: fetches the original's config.json, tokenizer and template (Qwen/Qwen3.8-27B's, as the entry names them:
+#   what the conduct of the conversion asks for, tests/conducting.py's Fetched) and links the GGUF
 #   beside them; prints the folder.
 # convert: <out>.bin (a memory map), <out>.tokenizer.bin and <out>.json (the options the page would hand the engine:
 #   the form's "kinds", a type to every matrix and to every layer of a stack, and "tiled"), with the seconds and the
 #   peak of the process's own memory (a tensor whose rows move waits whole for its last byte: T363.3).
 #   --broken tiled: the value heads of every tensor left in the file's order (llama.cpp tiles them, T245), for the
 #   comparison to fail on: an error only a model with more value heads than key heads shows.
-# entries: the entries the comparison and the writing take the page's options from, as JSON (--made-up: with no options
-#   of their own, for the dry stage's small model, whose vocabulary has none of the special tokens).
+# entries: the entries the comparison and the writing take the page's options from, as JSON: the list's two ("at-once",
+#   "thinking") and "sampled" (--made-up: with no options of their own, for the dry stage's small model, whose
+#   vocabulary has none of the special tokens).
 import json
 import resource
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -32,30 +34,32 @@ import convert.stream  # noqa: E402
 from conducting import Fetched, Mapped, Nothing, converted, listed  # noqa: E402
 from reference_saluki import FILE, REPOSITORY, REVISION  # noqa: E402
 
-# the original the vocabulary, the config.json and the template come from: Ternary Bonsai 2 27B's (the same base model)
-MODEL = {"repo": REPOSITORY, "revision": REVISION, "weights": FILE,
-         "vocabulary": {"repo": "Qwen/Qwen3.8-27B", "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0", "tokenizer": "tokenizer.json"}}
-# What an entry of the list would hand the engine and the page (docs/notes/t364-saluki-2026-10-13.md has the draft and
-# what the owner is to choose). The options and the two formats are the list's for a Qwen3.5 (src/models/formats.js):
-# the BOS is the format's first token, <|im_start|>. The sampling: the card's for the form that thinks; for the form
-# that answers at once the card says temperature 0 (greedy), and "sampled" is the list's set for a Qwen3.5 that answers
-# at once, to write with beside it.
-OPTIONS = {"bos": 248045, "stop_tokens": [248044, 248045, 248046],
-           "specials": ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
-                        "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"]}
-AT_ONCE = "user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-THINKING = "user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n"
-ENTRIES = {
-    "at-once": {"id": "underdog-saluki-27b (answers at once, greedy: the card's)", "options": OPTIONS, "template": AT_ONCE,
-                "generation": {"temperature": 0, "topp": 1, "repetition_penalty": 1}},
-    "sampled": {"id": "underdog-saluki-27b (answers at once, a Qwen3.5's sampling)", "options": OPTIONS, "template": AT_ONCE,
-                "generation": {"temperature": 0.7, "topp": 0.8, "repetition_penalty": 1, "top_k": 20, "presence_penalty": 1.5}},
-    "thinking": {"id": "underdog-saluki-27b (thinking, the card's sampling)", "options": OPTIONS, "template": THINKING,
-                 "generation": {"temperature": 0.6, "topp": 0.95, "repetition_penalty": 1, "top_k": 20}},
-}
+# T364.3: the list's two entries of the model (src/models/hf-families.js): what they fetch and convert (hf, conversion)
+# and what they hand the engine and the page (the options, the two formats, each form's sampling). The file the
+# references are made of (tests/reference_saluki.py's) must be the one the list names
+IDS = {"at-once": "hf-underdog-saluki-27b", "thinking": "hf-underdog-saluki-27b-thinking"}
+
+
+def listed_entries():
+    script = "import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.conversion?.blocks))))"
+    found = {entry["id"]: entry for entry in json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))}
+    entries = {name: found[id] for name, id in IDS.items()}
+    for entry in entries.values():
+        hf = entry["hf"]
+        assert (hf["repo"], hf["revision"], hf["weights"]) == (REPOSITORY, REVISION, FILE), f"{entry['id']} names another file than the references' ({hf})"
+        assert entry["conversion"] == {"dtype": "int8", "blocks": True}, entry["conversion"]
+    # "sampled": the form that answers at once with the list's set for a Qwen3.5 that does (no entry: the owner chose the
+    # card's greedy, T364: with this set one answer of four fell apart), to write with beside it
+    sampled = {"steps": 0, "temperature": 0.7, "topp": 0.8, "repetition_penalty": 1, "top_k": 20, "presence_penalty": 1.5}
+    return {**entries, "sampled": {**entries["at-once"], "id": f"{IDS['at-once']} (a Qwen3.5's sampling)", "generation": sampled}}
+
+
+def model():
+    return listed_entries()["at-once"]["hf"]
 
 
 def folder(work, directory):
+    MODEL = model()
     answerer = Fetched.of(MODEL, directory)
     link = answerer.folder("weights") / FILE
     link.parent.mkdir(parents=True, exist_ok=True)
@@ -112,6 +116,6 @@ if __name__ == "__main__":
         convert_(arguments[1], arguments[2], int(named("--context", 4096)), named("--broken", ""))
     elif arguments[:1] == ["entries"]:
         made_up = "--made-up" in arguments
-        Path(arguments[1]).write_text(json.dumps({name: {**entry, **({"options": {}} if made_up else {})} for name, entry in ENTRIES.items()}, ensure_ascii=False))
+        Path(arguments[1]).write_text(json.dumps({name: {**entry, **({"options": {}} if made_up else {})} for name, entry in listed_entries().items()}, ensure_ascii=False))
     else:
         sys.exit("usage: python tests/page_saluki.py folder <work> <directory> | convert <folder> <out> [--context N] [--broken tiled] | entries <out.json>")

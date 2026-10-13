@@ -248,6 +248,13 @@ jobs:
             timeout: 3000
             models: >-
               hf-ternary-bonsai-2-27b
+          # Underdog Saluki 27B (T364.3): a GGUF of K- and i-quantized blocks, kept as the file has them. 7.9 GB of
+          # download, 7.96 GB on a 64-bit memory of 8.0 GiB: ready in about 100 s and 0.4 tokens a second on a runner of
+          # this size, so a 256-token answer takes about 10 minutes (a branch's site on a runner, run 38424466399)
+          - size: saluki-27b
+            timeout: 3000
+            models: >-
+              hf-underdog-saluki-27b
     steps:
       - name: Checkout
         uses: actions/checkout@v7
