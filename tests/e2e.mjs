@@ -23,6 +23,8 @@
 //   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
 //                  console go there, named after the browser and the model, and the status line as it changed (T506:
 //                  what a page that no longer answers last said).
+//   E2E_SILENCE    seconds (T506, default 120): a page that has answered the tool and then answers nothing for so long
+//                  is taken for gone (its process ended), and the run fails there with what its status line last said.
 //   E2E_CONSOLE    a file every line of the page's console is appended to as it comes (T380.2), whatever the run's end.
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
@@ -157,29 +159,40 @@ page.on("console", (message) => {
 });
 
 // T506: what the status line said, as it changed (asked every two seconds, the last sixty kept). A page that stops
-// answering (a WebKit that went down in a large WebAssembly memory left "status: (no answer)" and no picture) still
-// leaves the line it last showed and when, and what led to it
+// answering still leaves the line it last showed and when, and what led to it. And a page that has answered and then
+// answers nothing for E2E_SILENCE seconds is gone: the run fails there, not at its time limit. (A WebKit whose process
+// the runner ended, out of memory in the middle of a 27B's download, left "status: (no answer)", no picture and no
+// "crash" from Playwright, and each such run waited ten to seventy minutes for nothing.)
+const silence = Number(process.env.E2E_SILENCE ?? 120) * 1000;
+let answeredAt, gone = false;
+// the page is gone: what it last said is kept, and the process ends
+const lost = async (how) => {
+  if (gone) return;
+  gone = true;
+  clearTimeout(watchdog);
+  const reason = `${how} after ${((Date.now() - started) / 1000).toFixed(1)}s (its status line last said: ${statusNow ?? "nothing"})`;
+  remember(`[gone] ${reason}`);
+  record({ ok: false, timedOut: false, failures: [reason] });
+  await keepArtifacts(reason);
+  console.error(`FAILED\n- ${reason}`);
+  process.stdout.write(`${engine} ${browserVersion}, ${model}: ${reason}\n`, () => process.exit(1));
+};
 const statusWatch = setInterval(async () => {
   const text = await Promise.race([page.evaluate(() => document.getElementById("status-text")?.textContent ?? ""),
     new Promise((resolve) => setTimeout(resolve, 1500))]).catch(() => undefined);
-  if (text === undefined || text === statusNow) return;
+  if (text === undefined) {
+    if (answeredAt && Date.now() - answeredAt > silence) await lost(`the page stopped answering (nothing for ${silence / 1000}s)`);
+    return;
+  }
+  answeredAt = Date.now();
+  if (text === statusNow) return;
   statusNow = text;
   statusLines.push(`${((Date.now() - started) / 1000).toFixed(1)}s [status] ${text}`);
   if (statusLines.length > 60) statusLines.shift();
 }, 2000);
 statusWatch.unref();
-// T506: a page whose process ended answers nothing more, and no wait on it ever ends: the run fails here, with what it
-// last said, rather than at its time limit (Playwright says "crash" where the browser tells it; not every death is told)
-page.on("crash", async () => {
-  const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  remember("[crash] the page's process ended");
-  clearTimeout(watchdog);
-  const reason = `the page crashed after ${seconds}s (its status line last said: ${statusNow ?? "nothing"})`;
-  record({ ok: false, timedOut: false, failures: [reason] });
-  await keepArtifacts(reason);
-  console.error(`FAILED\n- ${reason}`);
-  process.stdout.write(`${engine} ${browserVersion}, ${model}: ${reason}\n`, () => process.exit(1));
-});
+// (where the browser does tell Playwright that the page's process ended, at once)
+page.on("crash", () => lost("the page crashed"));
 
 // What is left behind when a run fails: in CI nothing else of it remains (T82)
 async function keepArtifacts(reason) {
@@ -467,6 +480,7 @@ record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Numb
          ...(then.length ? { then } : {}) });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
+clearInterval(statusWatch);
 // T141: browser.close() of WebKit on Windows did not return (three times in CI: the answer printed, then nothing),
 // the watchdog was already stopped, the next run never started and the job ran into its limit. The close is given
 // fifteen seconds, and the process ends here rather than when nothing is left to wait for. (T391.6: the one way of
