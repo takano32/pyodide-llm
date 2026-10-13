@@ -71,7 +71,8 @@ export function settled<Of extends Entry>(entry: Of, files: Listed[]): Of {
   const file = unnamed(entry) ? bestGguf(top) : top.find(({ path }) => path === entry.hf.weights);
   if (!file) {
     if (!unnamed(entry)) return entry;
-    throw new Error(`${entry.hf.repo} has no ${SAFETENSORS} and no GGUF file this page can read.`);
+    // (the owner's sentence, 2026-10-13: written whole)
+    throw new Error(`${entry.hf.repo} has no model.safetensors and no GGUF file this page can read.`);
   }
   const fetched = /\.gguf$/.test(file.path) && Number.isFinite(file.size) ? { download: file.size } : {};
   return { ...entry, ...fetched, note: noteOf(entry.hf.revision!, file.path), hf: { ...entry.hf, weights: file.path } };
