@@ -109,7 +109,7 @@ try {
     // T363.5: every call of the blocks' kernels of an engine made with wrap: watching(the plan that is right), held to it
     const watching = () => {
       const at = {}, memoryOf = () => at;
-      const seen = { wrong: [], multiplied: new Map(), rows: 0, tables: 0 };
+      const seen = { wrong: [], multiplied: new Map(), rows: 0, tables: 0, kernels: new Set() };
       const layersOf = Object.entries(plan.tensors).flatMap(([stack, t]) => (t.layers ?? [t]).map((layer, l) => ({ stack, l, ...layer, shape: t.shape.slice(t.layers ? 1 : 0) })))
         .filter(({ kind, stack }) => PACKED[kind]?.tabled !== undefined && !(stack === "wcls" && plan.shared_classifier));
       const wrong = (what) => { if (seen.wrong.length < 5) seen.wrong.push(what); };
@@ -123,6 +123,7 @@ try {
           return wrong(`${name} of ${layer.stack}[${layer.l}] (${layer.kind}): type ${type} for ${number}, n ${n} for ${width}, tables at ${tab} for ${seen.tables}, rows ${r0} to ${r1} of ${rows}`);
         }
         call();
+        seen.kernels.add(name);
         const books = new Int8Array(memory.buffer, base + plan.tensors.codebooks.offset, model.BOOKS.bytes), bytes = PACKED[layer.kind].rowBytes(n);
         for (let t = 0; t < count; t++) {
           const a = new Int8Array(memory.buffer, xq + t * frame, n), scales = new Float32Array(memory.buffer.slice(xs + t * frame, xs + t * frame + n / 8));
@@ -196,12 +197,20 @@ try {
       const watch = watching();
       const ran = await run({ watch, changed, upTo }, block);
       const tokensRun = upTo, missing = watch.layers.filter(({ stack, l }) => Math.abs((watch.seen.multiplied.get(`${stack}[${l}]`) ?? 0) - tokensRun * (stack === "wcls" || stack === "token_embedding_table" ? (tokensRun - block) / tokensRun : 1)) > 1e-9);
-      return { ran, wrong: [...watch.seen.wrong, ...missing.slice(0, 3).map(({ stack, l }) => `${stack}[${l}] was multiplied ${watch.seen.multiplied.get(`${stack}[${l}]`) ?? 0} times for ${tokensRun} tokens`)],
+      return { ran, kernels: [...watch.seen.kernels].sort(), wrong: [...watch.seen.wrong, ...missing.slice(0, 3).map(({ stack, l }) => `${stack}[${l}] was multiplied ${watch.seen.multiplied.get(`${stack}[${l}]`) ?? 0} times for ${tokensRun} tokens`)],
         calls: [...watch.seen.multiplied.values()].length, rows: watch.seen.rows, layers: watch.layers.length };
     };
     const blocksEmbedding = PACKED[plan.tensors.token_embedding_table.kind]?.tabled !== undefined;
     for (const [how, changed, block, upTo] of again ? [] : [["a token", {}, 0, 1], ["a block of 5 and a token", {}, 5, 6], ["without relaxed SIMD, a block of 2 and a token", { relaxed: false }, 2, 3]]) {
-      const { ran, wrong, rows, layers } = await watched(changed, block, upTo);
+      const { ran, wrong, rows, layers, kernels } = await watched(changed, block, upTo);
+      // which kernels took the rows: a token's the one of a token, a block's a tile's: the signed one where this
+      // engine's relaxed dot product multiplies signed bytes (it is asked: askedSigned() below), else the other; without
+      // relaxed SIMD the kernel of a token, token by token
+      signed ??= askedSigned();
+      const taking = changed.relaxed === false ? ["matmul_sb"] : block ? ["matmul_sbr", signed ? "matmul_sbw_tile" : "matmul_sbr_tile"] : ["matmul_sbr"];
+      // (the K types' signed tile is the other tile inside the kernel; a model of them alone would name it too)
+      say(taking.every((kernel) => kernels.includes(kernel)) && kernels.every((kernel) => taking.includes(kernel)),
+        `${name}, ${how}: the rows went to ${kernels.join(" and ")}${signed ? "" : " (this engine's relaxed dot product does not multiply signed bytes)"}`);
       say(!wrong.length && (same(first, ran) || (!whole && changed.relaxed === false)),
         `${name}, ${how}: every call of the blocks' kernels is of a layer the plan has, of its type, and gives the model's product to the bit: ${layers} layers of blocks, each for every token` +
         `${blocksEmbedding ? `, and ${rows} rows of the embedding` : ""}${wrong.length ? `: ${wrong.join("; ")}` : ""}`);
@@ -233,6 +242,11 @@ try {
 
     // ---- the same numbers to the bit, however the engine runs
     signed ??= askedSigned();
+    if (!again) {
+      // (and the tile is the one asked for, where a test asks)
+      const { kernels } = await watched({}, 5, 6), { kernels: unsigned } = await (async () => { const watch = watching(); await run({ watch, trying: { signed: false }, upTo: 6 }, 5); return { kernels: [...watch.seen.kernels] }; })();
+      say(!unsigned.includes("matmul_sbw_tile") && unsigned.includes("matmul_sbr_tile") && kernels.includes("matmul_sbw_tile") === signed, `${name}: the signed tile is taken where the engine's relaxed SIMD multiplies so, and not where a test says not`);
+    }
     // (int8 and six bits take the activations in 7 bits with relaxed SIMD and in 8 without: other numbers, as ever)
     const ways = [
       ["without relaxed SIMD", { changed: { relaxed: false } }, 0],
@@ -269,6 +283,16 @@ try {
     const options = { dtype: "int8", ...form, int8: true, relaxed: true, halfKV: false, shared: false, weights };
     const bound = footprint(header, file.length, options), unsaid = footprint(header, file.length, { ...options, weights: undefined });
     const cache = said.seq_len * said.layers.filter(({ kind }) => kind === "attention").length * 2 * said.widths.kv * 4;
+    // what a form's kinds add to it, by the header, a second time: the tables, the 64 bytes the engine asks its relaxed
+    // SIMD with and a scratch for every thread there is room for, as wide as the widest input; 16 bytes a group of 32
+    // activations where there were 4; the array a tiled output matrix reads; and no outlier columns of a classifier of blocks
+    if (whole) {
+      const line = (bytes) => Math.ceil(bytes / 64) * 64, { dim, hidden_dim: hidden, vocab_size: vocab, widths } = said;
+      const widest = Math.max(dim, hidden, widths.q, widths.linear?.read ?? 0), plain = footprint(header, file.length, { ...options, kinds: undefined, tiled: undefined });
+      const added = line(34992) + 64 + 64 * line(widest + widest / 4 + widest / 64) + 16 * (line(Math.ceil(widest / 32) * 16) - line(Math.ceil(widest / 32) * 4)) +
+        (form.tiled ? 16 * line(widths.linear.read * 4) : 0) - Math.min(8, dim) * (vocab + 1) * 4;
+      say(bound - plain === added, `${name}: a form's kinds add ${bound - plain} bytes to footprint() (the tables, the scratch, the activations' sums, ${form.tiled ? "the tiled array, " : ""}less the outlier columns: ${added})`);
+    }
     // (a form that gives rows kinds that are no blocks is no conversion's: what the engine widens of those is not counted)
     say(!whole || (first.placed <= bound && bound - first.placed < 2 ** 20 + 2 ** 17 && unsaid >= bound),
       `${name}: the engine placed ${first.placed} bytes after the checkpoint (${cache} of them keys and values), footprint() counted ${bound}` +
