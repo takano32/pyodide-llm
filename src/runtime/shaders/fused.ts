@@ -439,10 +439,8 @@ ${ROW_RMS}
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
 // way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
-// other line is the int8 text's. (Until T379.1 this was a maker of its own, ternaryMatVec, a copy of fusedDp4aMatVec:
-// deviceKey() hashed that one's source until T366, and a parameter more changed every device's key. The key holds the
-// text a maker makes now, and the two are one maker whose texts are, byte for byte, what the two made:
-// tests/gpu-choice-check.mjs holds which lines differ.)
+// other line is the int8 text's: one maker, fusedDp4aMatVec, makes both from DP4A_WEIGHTS' rows below (the device's
+// key holds the texts it makes, never its source), and tests/gpu-choice-check.mjs holds which lines differ.
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
 // 8: the loop fusedDp4aMatVec is. For 2-bit weights ORT has the same template's n_bits == 2 path, whose reads are this
