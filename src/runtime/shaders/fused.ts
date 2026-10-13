@@ -183,6 +183,29 @@ fn main(@builtin(local_invocation_index) t: u32) {
         write_pair(row, src1[row], src1[row + 1u]);
     }
 }`;
+// (T391.4) mul_mat_vec's main() as far as the rows its workgroup has: the builtins (those of subgroups where the
+// text sums by them), the thread's number (thread_id), and the workgroup's first row (row_base), after leaving where
+// the dispatch's workgroups go past the rows. The text of this part's fusedMatVec and of matvec.ts's mulMatVec, which
+// go on from row_base each its own way; "@compute @workgroup_size(WG_SIZE)" stands before it in both (a maker of WGSL
+// is known by that line in its own source: tests/shader-makers.mjs). params is either one's uniform (rows)
+const mulMatVecMain = (subgroups: boolean): string => /* wgsl */ `fn main(
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+    @builtin(workgroup_id) wg_id: vec3<u32>,
+    @builtin(num_workgroups) num_wg: vec3<u32>${subgroups ? `,
+    @builtin(subgroup_id) subgroup_id: u32,
+    @builtin(subgroup_invocation_id) subgroup_invocation_id: u32,
+    @builtin(num_subgroups) num_subgroups: u32,
+    @builtin(subgroup_size) subgroup_size: u32` : ""}
+) {
+    let thread_id = local_id.x;
+
+    let wg_linear = wg_id.y * num_wg.x + wg_id.x;
+    let output_groups = (params.rows + OUTPUTS_PER_WG - 1u) / OUTPUTS_PER_WG;
+    if (wg_linear >= output_groups) {
+        return;
+    }
+
+    let row_base = wg_linear * OUTPUTS_PER_WG;`;
 export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; output: FusedOutput; subgroups: boolean }): string => {
   const norm = input === "norm", glu = output === "swiglu";
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
@@ -269,24 +292,7 @@ fn partial_index(sum: u32, thread: u32) -> u32 {
 }
 
 @compute @workgroup_size(WG_SIZE)
-fn main(
-    @builtin(local_invocation_id) local_id: vec3<u32>,
-    @builtin(workgroup_id) wg_id: vec3<u32>,
-    @builtin(num_workgroups) num_wg: vec3<u32>${subgroups ? `,
-    @builtin(subgroup_id) subgroup_id: u32,
-    @builtin(subgroup_invocation_id) subgroup_invocation_id: u32,
-    @builtin(num_subgroups) num_subgroups: u32,
-    @builtin(subgroup_size) subgroup_size: u32` : ""}
-) {
-    let thread_id = local_id.x;
-
-    let wg_linear = wg_id.y * num_wg.x + wg_id.x;
-    let output_groups = (params.rows + OUTPUTS_PER_WG - 1u) / OUTPUTS_PER_WG;
-    if (wg_linear >= output_groups) {
-        return;
-    }
-
-    let row_base = wg_linear * OUTPUTS_PER_WG;
+${mulMatVecMain(subgroups)}
 
     let acc = accumulate_vec_dot(thread_id, row_base);
 ${subgroups ? `
@@ -495,6 +501,25 @@ const DP4A_WEIGHTS = {
 } satisfies Record<Packing, object>;
 // (a row for every packing, and no other: common.ts's Packing)
 export type FusedWeights = keyof typeof DP4A_WEIGHTS;
+// (T391.4) ORT's loadSHMA of the DP4A form for small M, as this project has it (matvec.ts, above ortDp4aMatVec: a
+// scale of the vector a group of 32, loaded with a bound of its own): a thread's vec4<u32> of the quantized vector
+// into the workgroup's tile_A, and the scale of its group into scale_A. The text of this part's fusedDp4aMatVec and
+// of matvec.ts's ortDp4aMatVec; shape is the name each gives its uniform (words and perRow are read of it)
+const dp4aLoadVector = (shape: "params" | "uniforms"): string => /* wgsl */ `fn loadSHMA(kidx_v: u32, col: u32)
+{
+    let K16 = ${shape}.words / 4u;
+    let k_offset = kidx_v + col;
+    if (k_offset >= K16) {
+    return;
+    }
+
+    tile_A[col] = a[k_offset];
+    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < ${shape}.perRow)
+    {
+    // kidx_v - covers 16 values of k in input_a
+    scale_A[col] = scales_a[kidx_v / 2u + col];
+    }
+}`;
 //
 // output: as fusedMatVec's ("rope", "add", "swiglu" or "write"); weights: their packing, a row of DP4A_WEIGHTS.
 // Bindings: 0 the weights, 1 their scales, 2 the quantized vector (xq), 3 params, 4 its scales (xs); 5 on as
@@ -527,21 +552,7 @@ var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
 // what the reduction leaves: each row's sum (up's rows' after gate's), for the write
 var<workgroup> totals: array<f32, tile_size * MATRICES>;
 
-fn loadSHMA(kidx_v: u32, col: u32)
-{
-    let K16 = params.words / 4u;
-    let k_offset = kidx_v + col;
-    if (k_offset >= K16) {
-    return;
-    }
-
-    tile_A[col] = a[k_offset];
-    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
-    {
-    // kidx_v - covers 16 values of k in input_a
-    scale_A[col] = scales_a[kidx_v / 2u + col];
-    }
-}
+${dp4aLoadVector("params")}
 
 @compute @workgroup_size(workgroup_size_x)
 fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
@@ -608,4 +619,4 @@ ${fusedWrite(output)}
 }`;
 };
 
-export { FUSED_INPUTS, FUSED_OUTPUTS };
+export { FUSED_INPUTS, FUSED_OUTPUTS, mulMatVecMain, dp4aLoadVector };

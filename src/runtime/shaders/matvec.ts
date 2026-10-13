@@ -7,7 +7,7 @@
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./fused.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVecMain, dp4aLoadVector } from "./fused.ts";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED (the model's GPU worker is to take the fastest on each
@@ -149,24 +149,7 @@ fn partial_index(row: u32, thread: u32) -> u32 {
 }
 
 @compute @workgroup_size(WG_SIZE)
-fn main(
-    @builtin(local_invocation_id) local_id: vec3<u32>,
-    @builtin(workgroup_id) wg_id: vec3<u32>,
-    @builtin(num_workgroups) num_wg: vec3<u32>${subgroups ? `,
-    @builtin(subgroup_id) subgroup_id: u32,
-    @builtin(subgroup_invocation_id) subgroup_invocation_id: u32,
-    @builtin(num_subgroups) num_subgroups: u32,
-    @builtin(subgroup_size) subgroup_size: u32` : ""}
-) {
-    let thread_id = local_id.x;
-
-    let wg_linear = wg_id.y * num_wg.x + wg_id.x;
-    let output_groups = (params.rows + OUTPUTS_PER_WG - 1u) / OUTPUTS_PER_WG;
-    if (wg_linear >= output_groups) {
-        return;
-    }
-
-    let row_base = wg_linear * OUTPUTS_PER_WG;
+${mulMatVecMain(subgroups)}
     let dst_idx_base = params.first + row_base;
 
     let acc = ${packed ? "accumulate_vec_q_dot" : "accumulate_vec_dot"}(thread_id, row_base);
@@ -360,21 +343,7 @@ var<workgroup> tile_A : array<vec4<u32>, double_tile_size_k_vec>;
 const scale_a_size_in_tile_a = double_tile_size_k_vec / 2;
 var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
 
-fn loadSHMA(kidx_v: u32, col: u32)
-{
-    let K16 = uniforms.words / 4u;
-    let k_offset = kidx_v + col;
-    if (k_offset >= K16) {
-    return;
-    }
-
-    tile_A[col] = a[k_offset];
-    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < uniforms.perRow)
-    {
-    // kidx_v - covers 16 values of k in input_a
-    scale_A[col] = scales_a[kidx_v / 2u + col];
-    }
-}
+${dp4aLoadVector("uniforms")}
 
 @compute @workgroup_size(workgroup_size_x)
 fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
