@@ -95,11 +95,15 @@ assert.equal(modelBytes(largest), 7.7e9);
 assert.match(memoryWarning(largest, 4), /needs about 8,000 MB of memory, and this device has 4 GB:/);
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
-assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id), ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"],
+assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
+  ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"],
   "rebuilt is for a GGUF no check can hold to its original");
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
+// T364.3: loaded, an entry's own word of what it takes once loaded: read before the note, and after a site's file
+assert.equal(modelBytes({ note: "int8 1.7 GB", loaded: 5 }), 5);
+assert.equal(modelBytes({ bytes: 7, loaded: 5 }), 7, "a file of this site is its bytes");
 // T235 (the owner, 2026-10-11): the three Ternary Bonsai of the list turn by a plain RoPE: rope_scaling: {} beside the
 // tokens each had (the 8B's own BOS kept), which an empty object says to the engine and null would not (a jsnull in
 // Pyodide). No other entry names a RoPE, and Ternary Bonsai 2 27B, which the choice did not cover, has the options of
