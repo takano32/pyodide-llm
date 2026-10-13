@@ -35,10 +35,7 @@ def dump(tree, directory, out, only):
         if only and entry["id"] not in only:
             continue
         try:
-            if hasattr(check, "converted"):
-                _, made = check.converted(entry, Path(directory))
-            else:  # (a tree of before T374.4: gone once no such tree is compared with)
-                made = check.conversion(entry, *check.fetch(entry, Path(directory)))
+            _, made = check.converted(entry, Path(directory))
         except Exception as error:  # said, and compared as it is: a refusal that comes or goes is a difference too
             results[entry["id"]] = {"refused": f"{type(error).__name__}: {error}"}
             print(f"refused {entry['id']}: {error}", file=sys.stderr, flush=True)

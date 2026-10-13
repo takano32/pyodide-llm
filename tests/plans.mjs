@@ -28,43 +28,9 @@ def keeps_int8(header, form, dtype):
     return dtype in ("int8", *L.PACKED) and all(n % 32 == 0 for n in (dim, heads * head, kv_heads * head, hidden)) \
         and (linear is None or L.linear_widths(linear)[2] % 32 == 0)
 
-def tensors_before(header, form, dtype):
-    # a tree from before T359, whose order of the tensors is Llama's own *_tensors() over Places (tests/unchanged.mjs
-    # asks this script of the commit it compares with; once that commit has engine/layout.py this function goes)
-    packing = dtype if dtype in L.PACKED else None
-    npdtype = np.dtype(np.int8 if dtype == "int8" or packing else dtype)
-    probe = L.Llama.__new__(L.Llama)
-    (probe.dim, probe.hidden_dim, probe.n_layers, probe.n_heads, probe.n_kv_heads, vocab, probe.seq_len) = header
-    probe.vocab_size = abs(vocab)
-    probe.head_size = form["head_dim"] or probe.dim // probe.n_heads
-    probe.q_dim = probe.n_heads * probe.head_size
-    kv_dim = probe.n_kv_heads * probe.head_size
-    probe.arch, probe.rotary = form["arch"], probe.head_size
-    probe.rope_magnitude = 1.0  # the places, not the values (as external_tensors() sets it)
-    # T229: a Qwen3.5's linear-attention layers, and RoPE over a quarter of a head
-    probe.linear = L.linear_form(form["linear"])
-    if probe.linear is not None:
-        probe.slots = L.layer_slots(probe.n_layers, probe.linear)
-        probe.rotary = probe.head_size // 4
-    # T260: an LFM2's convolution layers
-    probe.convolution = L.convolution_form(form["convolution"], probe.n_layers)
-    keep = keeps_int8(header, form, dtype)
-    places = L.Places(npdtype, packing)
-    freq = lambda width: np.zeros(width // 2)
-    if form["arch"] in ("gpt2", "neox"):
-        probe.gpt2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
-    elif form["arch"] == "qwen35":
-        probe.qwen35_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
-    elif form["arch"] == "lfm2":
-        probe.lfm2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
-    else:
-        probe.llama_tensors(places.take, vocab > 0, keep, kv_dim, form["bias"], places.dtype, freq, form["qk_norm"])
-    assert places.offset == llama2_convert.checkpoint_size(header, dtype, form), "the places do not end where the file does"
-    return {name: getattr(probe, name).plan() for name in L.TENSOR_NAMES if isinstance(getattr(probe, name, None), L.Tensor)}
-
 def plan_of(header, form, dtype):
     # where every tensor is: external_tensors(), the rows of engine/layout.py placed (T359)
-    tensors = L.external_tensors(header, dtype, form) if hasattr(L, "tensor_rows") else tensors_before(header, form, dtype)
+    tensors = L.external_tensors(header, dtype, form)
     head_size = form["head_dim"] or header[0] // header[3]
     table = header[6] * (head_size // 2) * 4
     derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or dtype != "float32" else {}
@@ -77,8 +43,6 @@ def engines_plan(header, form, dtype):
     # header, the form and the dtype alone): a made-up model's options are a Qwen3.5's RoPE over a quarter of a head and a
     # GPT-NeoX's parallel residual. Its rotated basis and its RoPE tables are planOf()'s (the bytes of neither matter
     # to a kernel that does nothing), and its final norm has no outlier channels (planOf() says how many there are)
-    if not hasattr(L, "forward_plan"):
-        return None
     dims = L.Dims(header, form)
     flat = lambda offset, length: np.ones(length // 4, dtype=np.float32).tobytes()
     return L.forward_plan(dims, dtype, flat, int8=bool(keeps_int8(header, form, dtype)), kv_start=header[6],
@@ -103,7 +67,6 @@ export const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, l
 // rotated basis a float32 for every value of every width a matrix reads (the plan's widths say which)
 export const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
 export function planOf(p, { relaxed = true, kvStart = p.header[6], outliers = 0 } = {}) {
-  if (!p.plan) throw new Error("This tree's Python makes no plan of a model (engine/plan.py's forward_plan()): tests/plans.mjs reads one.");
   const rotated = p.form.rotated ? p.form.rotated.block : 0;
   return {
     ...p.plan, relaxed, kv_start: kvStart, rotated,

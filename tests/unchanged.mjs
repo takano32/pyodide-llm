@@ -103,16 +103,11 @@ function makersOf(module) {
   if (unwalked.length) throw new Error(`${unwalked.join(", ")}: a maker of WGSL of shaders.ts that neither the catalogue (shaders/engine.ts) nor tests/shader-makers.mjs gives arguments: the net cannot compare the texts it makes`);
   return found;
 }
-// (until T379.1 is the tree compared with: there the texts for ternary weights are a maker's of their own,
-// ternaryMatVec, which took no packing; the texts are compared as fusedDp4aMatVec's all the same)
 // A maker that does not take a choice this tree's catalogue gives it (a packing the other tree has no row of) says so
 // where its text would be: a difference, and the net goes on
-// (until T379.2 is the tree compared with: there the tiles' dp4a took (subgroups, ternary), a boolean for the packing)
-const givenBefore = (module, name, given) => (name === "dp4a" && !/^\(\s*\{/.test(String(module.dp4a)) ? [given[0].subgroups, given[0].weights === "ternary"] : given);
 function madeBy(module, name, given) {
   try {
-    given = givenBefore(module, name, given);
-    return (name === "fusedDp4aMatVec" && given[0].weights === "ternary" && module.ternaryMatVec ? module.ternaryMatVec : module[name])(...given);
+    return module[name](...given);
   } catch (error) {
     return `throws ${error.message}`;
   }

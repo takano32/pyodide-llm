@@ -17,7 +17,8 @@ from test_convert import converted, reader, safetensors_file, streamed
 import llama2_convert
 from llama2_convert import (Safetensors, architecture, check_config, checkpoint_form, checkpoint_size, head_size, linear_layers,
                             normalize, rotary_dim, transformed)
-from llama2_numpy import FORM, Llama, checkpoint_dtype, form_of, layer_slots, linear_form
+from llama2_numpy import FORM, Llama, checkpoint_dtype, form_of, linear_form, slots_of
+from engine.layout import GATED_DELTA
 
 TOKENS = [1, 5, 7, 9, 11, 5, 5, 300, 2]  # more than the taps of the convolution, and a token that comes again
 # value heads on their own key heads and three to a key head, heads that fill dim and heads that do not, a classifier
@@ -328,9 +329,9 @@ def test_the_layers_follow_transformers_where_the_config_leaves_them_out():
 
 
 def test_the_layers_slots():
-    assert layer_slots(3, None) == [(False, 0), (False, 1), (False, 2)]
+    assert slots_of([False] * 3) == [(False, 0), (False, 1), (False, 2)]
     linear = linear_form({"every": 3, "key_heads": 1, "value_heads": 2, "key_dim": 4, "value_dim": 4, "conv": 4})
-    assert layer_slots(7, linear) == [(True, 0), (True, 1), (False, 0), (True, 2), (True, 3), (False, 1), (True, 4)]
+    assert slots_of(GATED_DELTA.layers(linear, 7)) == [(True, 0), (True, 1), (False, 0), (True, 2), (True, 3), (False, 1), (True, 4)]
     assert linear_form(None) is None
     for wrong in ({"every": 1}, {"value_heads": 3, "key_heads": 2}, {"conv": 0}):
         with pytest.raises(ValueError, match="numbers of linear-attention layers"):
