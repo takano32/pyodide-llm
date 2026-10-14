@@ -6086,9 +6086,18 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - `CharClasses` を Lu・Lt・Lm・Lo・Ll・M まで細かくする。Ministral 8B（研究用のライセンス）、Mistral Nemo の日本語版（12B、メモリは実測）、kanana-2 が開き、Phi-4 mini の前提になる。
 
 ```
-### T257 [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+### T257 [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 状態: 進行中（2026-10-14、Opus medium、ブランチ `t257-spm-bpe-json`。2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - merges の順位を点数にして llama2.c 形の BPE の語片に直す。normalizer は「先頭に ▁」「空白を ▁」だけを受け付ける。本物と ID を突き合わせる。
+- **実物の形（2026-10-14 に取って読んだ。リビジョンは固定）**: `unsloth/gemma-3-270m-it` @`23cf460f6bb16954176b3ddcc8d4f250501458a9`・`unsloth/gemma-3-1b-it` @`5b11413a10db4e486ef16a20101fd028f8f2499c`・`google/gemma-4-E2B-it` @`3e22461f65e89153144f8adb70e3b8c2cc9845a7`・`cyberagent/CAT-Translate-7b` @`e36edfc6858a9a6ba41f8d9fa34427f3d8461eca`。4 つとも `model.type` BPE・`byte_fallback: true`・`fuse_unk: true`・`unk_token`・バイトの語片 256・merges は対の配列。Gemma は normalizer が「空白を ▁」だけ（先頭に ▁ を足さない）、pre_tokenizer が `Split(" ", MergedWithPrevious)`（空白はもう無いので何も切らない）。CAT-Translate 7B は「先頭に ▁」「空白を ▁」で pre_tokenizer なし。
+- **取りかかる前に試作で確かめたこと**: merges の順位を点数（−順位）にした語片を今ある `kind="bpe"`（点数最大の対を合併）に渡すと、リポジトリの文書とソースの 9,344 行で、3 つの語彙とも本物の `tokenizers` と同じ ID（違い 0）。**tokenizer.bin の形式は変えない**。訳: 実物では「merges が作る語片を 2 つの語片に割る割り方は全部 merge」「merge が作らない語片は 2 つの語片でつづれない」が成り立つ（数えて 0 件）ので、対で合併するのと、つないだ文で合併するのが同じになる。変換器がこの 2 つを確かめ、成り立たない tokenizer.json は断る。
+- **予定した違い**（取りかかる前に書く。ここに無い違いは誤り）:
+  1. **変換器**（`convert/tokenizer.py`）: BPE の tokenizer.json のうち、ByteLevel の前分割を持たず、normalizer が「空白を ▁」（と「先頭に ▁」）だけ、前分割が無いか Gemma の `Split(" ")`、`byte_fallback` とバイトの語片 256 のものを、options `{"tokenizer_kind": "bpe", "prefixed": …}` と −順位の点数の語片で読む。今は「splits text in a way the engine does not know: []」で断られている形だけが当たる。ほかの形（知らない normalizer・前分割、`byte_fallback` なし、`ignore_merges`、上の 2 つが成り立たない merges）は今ある文の形で断る。
+  2. **エンジン**（`engine/tokenizer.py`）: `prefixed` に 3 つ目の値 `"never"`（どの文の前にもダミーの空白を置かない: Gemma。復号も頭の空白を落とさない）。special の切り分けを specials の組ごとに 1 回だけ作って覚える（Gemma 3 は special でない追加のトークンが 6,406 個: 毎回の `encode()` で文を組み直すと 2 ms）。▁ を含む special（Gemma 3 の「▁▁」〜）を、sentencepiece 系の語彙では空白でつづった語片として引く（今は KeyError: 一覧にそういう special を持つ項目があるかは `conversions_compare` で見る）。今ある 3 つの道（BPE・unigram・byte-level）の ID は変えない。
+  3. **段取り**（`convert/conduct.py`）: sentencepiece の model（`tokenizer.model`・`spiece.model`）が在るリポジトリは今までどおりそれを読む。tokenizer.json の sentencepiece 流の BPE を使うのは、候補のほかのどれも読めなかったとき（無い・断られた）だけ。訳: 両方を持つ Llama・Mistral の系統は、特殊トークンの後のダミーの空白を tokenizer_config.json の `legacy` から読む今の道（T308、`format_check.py` で本物と合わせてある）のままにする。頼むファイルの列は変わらない（fixture `conversion-fetches.json` は同じ）。
+  4. **守りの網**: `python` は新しい試験（`tests/test_spelled_bpe.py`）のほか「同じ」、`layouts`・`calls`・`models`・`choices`・`shaders`・`page`・`bench`・`gpuworker` は「同じ」、`exports` は `Conversion.__init__` に足す引数 1 つ（段取りが「ほかの候補を先に」と言う口）だけ。`conversions_compare`: 一覧の全項目が同じ（tokenizer.bin も options も送る ID も）。`CONVERTER` は上げない（今ある変換の出力は 1 バイトも変わらない）。
+  5. **訪問者に見える文**: 足さない・変えない。断りは今ある「This tokenizer.json splits text in a way the engine does not know: …」の形（新しい断りの文が要れば案を報告に）。
+
 
 ```
 ### T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
