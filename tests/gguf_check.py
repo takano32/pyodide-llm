@@ -277,6 +277,17 @@ NAMES["lfm2"] = ({"token_embd.weight": "model.embed_tokens.weight", "token_embd_
                   "ffn_gate": "feed_forward.w1", "ffn_up": "feed_forward.w3", "ffn_down": "feed_forward.w2",
                   "shortconv.in_proj": "conv.in_proj", "shortconv.conv": "conv.conv", "shortconv.out_proj": "conv.out_proj"})
 
+# T261.3: a Gemma 3's (llama.cpp's conversion/gemma.py and src/models/gemma3.cpp at 4413a192): the norm behind the
+# attention is post_attention_norm and the one behind the FFN post_ffw_norm, and ffn_norm is the one in front of the
+# FFN (transformers' pre_feedforward_layernorm, where a Llama's ffn_norm is its post_attention_layernorm). The
+# classifier is the embedding (no output.weight). Written out here rather than taken from the converter's family
+NAMES["gemma3"] = ({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
+                    "output.weight": "lm_head.weight"}, "model.layers.{}.",
+                   {"attn_norm": "input_layernorm", "post_attention_norm": "post_attention_layernorm",
+                    "ffn_norm": "pre_feedforward_layernorm", "post_ffw_norm": "post_feedforward_layernorm",
+                    "attn_q": "self_attn.q_proj", "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj",
+                    "attn_output": "self_attn.o_proj", "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
+                    "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"})
 
 def hugging_face_name(name, arch="llama"):
     """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T74 starts with it). None for a
@@ -303,9 +314,14 @@ def as_llama_cpp_writes(target, original, arch):
     (all but a linear-attention layer's own), A_log as -exp(A_log), the convolution without its axis of one. Written
     out here rather than taken from llama2_convert.transformed, which is what is being checked. T260: an LFM2's
     convolution comes without its axis of one too (conversion/lfm2.py's modify_tensors), and nothing else of it is
-    changed."""
+    changed. T261.3: a Gemma 3's norms are written with their 1, as a Qwen3.5's."""
     if arch == "lfm2" and target.endswith(".conv.conv.weight"):
         return original.reshape(original.shape[0], original.shape[-1]), "(channels, taps)"
+    if arch == "gemma3" and target.endswith("norm.weight"):
+        # T261.3: a Gemma 3's norms, every one of them (the heads' too), with the 1 the model adds to them (conversion/
+        # gemma.py's Gemma3Model.norm_shift: a tensor whose name ends in norm.weight). The embedding is stored as it is
+        # (llama.cpp multiplies the row by sqrt(dim) at run time)
+        return original.astype(np.float32) + np.float32(1), "1 + weight"
     if arch != "qwen35":
         return original, ""
     if target.endswith(".A_log"):
@@ -752,8 +768,23 @@ def config_pairs(config, arch="llama"):
         pairs[4] = ("attention.head_count_kv", "num_key_value_heads of the attention layers, 0 of the others",
                     [groups if kind == "full_attention" else 0 for kind in kinds], True)
         pairs.append(("shortconv.l_cache", "conv_L_cache", config.get("conv_L_cache", 3), True))
+    if arch == "gemma3":
+        # T261.3: which layers attend a window, the window and their base of RoPE, which are no tensor. llama.cpp
+        # writes the layers as attention.sliding_window_pattern, a yes or no a layer (conversion/gemma.py at 4413a192:
+        # set_swa_pattern); config.json says layer_types, or a pattern of every sixth layer attending them all
+        # (transformers' Gemma3TextConfig, 28034545: the 1B's config.json has the pattern and no list)
+        layers = config.get("num_hidden_layers") or 0
+        kinds = config.get("layer_types") or [
+            "full_attention" if (layer + 1) % config.get("sliding_window_pattern", config.get("_sliding_window_pattern", 6)) == 0
+            else "sliding_attention" for layer in range(layers)]
+        pairs += [("attention.sliding_window_pattern", "layer_types (sliding_attention)",
+                   [kind == "sliding_attention" for kind in kinds], True),
+                  ("attention.sliding_window", "sliding_window", config.get("sliding_window"), True),
+                  ("rope.freq_base_swa", "rope_local_base_freq", config.get("rope_local_base_freq", 10000.0), True)]
     return pairs, config
 
+GEMMA3_DEFAULTS = {"attention.sliding_window_pattern": lambda layers: [layer % 6 < 5 for layer in range(layers)],
+                   "rope.freq_base_swa": lambda layers: 10000.0}
 
 def rope_factors(config, width):
     """What llama.cpp writes as rope_freqs.weight: how many times slower each pair of a head turns under
@@ -793,6 +824,12 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         ours = metadata.get(f"{arch}.{key}")
         if ours is None and key == "attention.key_length":
             ours = metadata.get(f"{arch}.embedding_length", 0) // metadata.get(f"{arch}.attention.head_count", 1)
+        defaulted = ""
+        if ours is None and arch == "gemma3" and key in GEMMA3_DEFAULTS:
+            # T261.3: what llama.cpp (and the page's reader) takes where a Gemma 3's GGUF says nothing (unsloth's 270M,
+            # of August 2025, writes neither): every sixth layer a full-attention one (src/llama-model.cpp's
+            # set_swa_pattern(6) at 4413a192), and a base of 1e4 for the others
+            ours, defaulted = GEMMA3_DEFAULTS[key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
         # the GGUF writes floats as float32: 1e-6 of relative difference is its rounding
         if isinstance(ours, list) or isinstance(theirs, list):
             same = ours == theirs  # an LFM2's key-value heads, a number a layer (T260)
@@ -800,7 +837,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             same = ours is not None and theirs is not None and math.isclose(float(ours), float(theirs), rel_tol=1e-6)
         mismatched += counted and not same
         note = "" if same else " **differs**" if counted else " (differs, not counted)"
-        print(f"| {arch}.{key} | {ours} | {name} = {theirs}{note} |")
+        print(f"| {arch}.{key} | {ours}{defaulted} | {name} = {theirs}{note} |")
     # T235: yarn, where either says it: its factor and original context change every angle, and no tensor shows them
     said = metadata.get(f"{arch}.rope.scaling.type") == "yarn"
     theirs = yarn(config)

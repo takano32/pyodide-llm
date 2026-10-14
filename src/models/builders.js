@@ -47,6 +47,23 @@ export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes
   conversion: {}, options: {}, ...format, generation: { steps: 0, temperature, topp: 1.0, repetition_penalty: 1.05 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
 });
+/** T261.3: a Gemma 3 of the list (the text model; Google's original is gated): unsloth's Q8_0 GGUF's weights with the
+ * vocabulary, config.json and chat template of unsloth's copy of the original, as Llama 3.2's entries name all three.
+ * The BOS (<bos>) and the format (<start_of_turn>user … <start_of_turn>model) are the converter's, read from the
+ * template; the stops are the converter's <bos> and <end_of_turn> with <eos> besides, as generation_config.json's
+ * eos_token_id (1 and 106) has the real generate() stop. The sampling is generation_config.json's: do_sample with a
+ * top-k of 64 and a top-p of 0.95, and transformers' temperature of 1.0 where it names none.
+ * The notice the Gemma Terms of Use ask for is not in the note: at a phone's width the select never shows it (the
+ * owner chooses where it goes, TODO.md's T261.3) */
+export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
+  group: "hf", id: `hf-gemma-3-${size.toLowerCase()}`, name: `Gemma 3 ${size}`,
+  note: `answers instructions · 日本語 / English · ${sizes}`,
+  ...ggufOf(`unsloth/gemma-3-${size.toLowerCase()}-it-GGUF`, revision, `gemma-3-${size.toLowerCase()}-it-Q8_0.gguf`,
+    `unsloth/gemma-3-${size.toLowerCase()}-it`, originalRevision), original: `google/gemma-3-${size.toLowerCase()}-it`, download,
+  conversion: {}, options: { stop_tokens: [1, 2, 106] },
+  generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
+  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
+});
 /** T235, T246: a Ternary Bonsai of Prism ML (a ternary Qwen3) in one of its sizes: its PQ2_0 GGUF's weights with the
  * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
  * change covers them all (the owner's open choices of T235's review: a word more in the note; Prism ML's

@@ -1,5 +1,5 @@
 // From Hugging Face, converted in the browser: the families that come as one that thinks and one that answers at
-// once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3), MiniCPM5, LFM2 and Ternary Bonsai.
+// once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3), MiniCPM5, LFM2, Gemma 3 and Ternary Bonsai.
 import {
   AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASK_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
@@ -8,7 +8,7 @@ import {
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
-import { ggufOf, lfm2, miniCpm5, ternaryBonsai, thinkingAndNot } from "./builders.js";
+import { gemma3, ggufOf, lfm2, miniCpm5, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
 export const HF_FAMILIES = [
   ...thinkingAndNot("hf-qwen3-4b", "Qwen3 4B",
@@ -199,4 +199,11 @@ export const HF_FAMILIES = [
     "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only"),
   lfm2("hf-lfm2.5-1.2b-jp", "LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
     "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only", {}),
+  // T261.3: Gemma 3's two smallest (the text models), on the CPU alone (no shader has their norms behind the layers, a
+  // GELU in the gate or the window yet: T261.4). unsloth's Q8_0 GGUFs, which tests/gguf_check.py tensors held to
+  // unsloth's copies of the originals
+  gemma3("270M", "c90975dbd40c0c7b275fefaae758c3415c906238", "23cf460f6bb16954176b3ddcc8d4f250501458a9", 291546144,
+    "fetches 292 MB (GGUF) → int8 302 MB"),
+  gemma3("1B", "f0b45be0aac41bd6a100a4b5734cad5f67255bfb", "5b11413a10db4e486ef16a20101fd028f8f2499c", 1069306400,
+    "fetches 1.1 GB (GGUF) → int8 1.1 GB · desktop only"),
 ];

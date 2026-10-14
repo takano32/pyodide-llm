@@ -60,6 +60,10 @@ NEW_TOKENS = 16
 # (llama.cpp's names, the convolution without its axis of one, the layers said by their key-value heads) and from the
 # safetensors of the original (the revision tests/reference_lfm2.py holds the engine to transformers on, which writes
 # the same text for the same ids there). Each float32 checkpoint is 1.4 GB.
+# T261.3: a Gemma 3 (norms behind the layers, a GELU in the gate, layers that attend a window of 512 with a RoPE of
+# their own, an embedding scaled by sqrt(dim) folded into the table and the last norm), the 270M, from the list's GGUF
+# (llama.cpp's names, its norms with their 1, the layers said by llama.cpp's defaults) with the vocabulary of unsloth's
+# copy (a BPE written out as tokenizer.json). Its float32 checkpoint is 1.1 GB. 16 tokens stay inside one window
 # {the id here: (the list's entry, the file of the original's weights)}
 SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors"),
                "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors"),
@@ -68,7 +72,7 @@ SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
           "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b",
           "hf-qwen3.5-0.8b-safetensors", "hf-qwen3.5-2b", "hf-qwen3.5-2b-safetensors", "hf-granite-4.2-3b",
-          "hf-minicpm5-1b", "hf-lfm2.5-350m", "hf-lfm2.5-350m-safetensors"]
+          "hf-minicpm5-1b", "hf-lfm2.5-350m", "hf-lfm2.5-350m-safetensors", "hf-gemma-3-270m"]
 
 
 def entries():
