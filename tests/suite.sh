@@ -346,7 +346,9 @@ if [ "$suite" = full ]; then
   # small enough for the build): float32 and float16 to NumPy's numbers, int8 and six bits within the line of a made-up
   # model, the prompt in blocks to the bit, the memory after the checkpoint against footprint(); a window of 48
   # positions and one of 5 within the 128 compared, and one of 300 past where the cache first grows (400 positions); on a
-  # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path)
+  # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path). T510.1: the local layers keep
+  # their window alone, in a ring of the window and a block, 316 positions for the window of 300 (21 for the one of 5,
+  # six times round in 128): on the shared memory to 960 positions, three times round, with blocks across its seam
   made_up_gemma3() {
     mkdir -p .tmp
     for dtype in float32 float16 int8 int6; do python tests/make_gemma3.py .tmp/made-up-gemma3-$dtype $dtype; done
@@ -356,7 +358,7 @@ if [ "$suite" = full ]; then
     done
     for memory in "" --plain --wide; do
       node tests/forward-check.mjs .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-float16 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-float32 .tmp/made-up-gemma3-own-int8 --rounds 1 --positions 128 $memory
-      node tests/forward-check.mjs .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma3-long-int8 --rounds 1 --positions 400 $memory
+      node tests/forward-check.mjs .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma3-long-int8 --rounds 1 --positions "$([ -z "$memory" ] && echo 960 || echo 400)" $memory
     done
     node tests/forward-check.mjs .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-int8 --without relaxed --rounds 1 --positions 128
   }

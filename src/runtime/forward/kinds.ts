@@ -62,13 +62,14 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void }
 //   layers()  which of a model's count layers are of this kind (null: the form has none; a layer that no kind says
 //             is its own attends)
 //   widths()  its own widths, as the plan's widths has them
-// And make(), its layers in a model that has count of them.
+// And make(), its layers in a model that has count of them (T510.1: facts, what the plan says of each of them, by its
+// place among them: what a kind takes of the memory as it is made may depend on it, as a window does the cache's).
 // (A kind whose layers keep a state from token to token says so by clear() of what make() returns: a model with such
 // layers is not on the GPU, whatever the kind. One that keeps none there and is not attention's would be taken there.)
 export type Kind = {
   frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean;
   layers?(form: Stateful, count: number): boolean[] | null; widths?(form: Stateful): Partial<Widths>;
-  make(core: Core, count: number): Layers;
+  make(core: Core, count: number, facts?: Layer[]): Layers;
 };
 export type Kinds = Record<string, Kind>;
 

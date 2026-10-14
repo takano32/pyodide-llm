@@ -15,6 +15,9 @@
 //   node tests/compare-engines.mjs [model ids of src/models.js = tiny-lm llm-jp-3-150m] [--ref origin/main]
 //                                  [--rounds 5] [--tokens 128] [--greedy] [--bundle [<dist>]] [--bundle-old <dist>]
 // --greedy: temperature 0 (the forward pass and the least of a sampler), not the entry's own sampling.
+// T510.1: a model may also be a converted one's <out> of tests/perplexity_prepare.py (<out>.bin, <out>.tokenizer.bin,
+//   <out>.json: a model of ?hf= after tests/page_gemma3.sh's conversion, a made-up one of tests/make_*.py), written
+//   with its options' sampling and no stop token (a run writes the whole length asked for, past a window's positions).
 // --bundle (T367.3.1): no other commit: both sides are the working tree's Python, old with the sources' forward.js and
 //   new with the one a build wrote (dist/_astro/forward.<hash>.js, tests/bundle.mjs; <dist>: another build's folder).
 //   What a bundler did to the forward pass, and nothing else. --bundle-old <dist>: old's forward.js is that build's
@@ -141,16 +144,24 @@ console.log(`compare-engines: ${tokens} sampled tokens a run, ${rounds} rounds a
   `${greedy ? "greedy" : "each entry's own sampling"}; tok/s of the sampled tokens, as the page says them`);
 const median = (values) => { const s = [...values].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 const range = (values, digits = 1) => `${Math.min(...values).toFixed(digits)}–${Math.max(...values).toFixed(digits)}`;
+// T510.1: a converted model's files as an entry of the list (its paths whole; no stop tokens)
+const file = (path) => (path.startsWith("/") ? path : root + path);
+function fileModel(out) {
+  const at = out.startsWith("/") ? out : `${process.cwd()}/${out}`;
+  if (![".bin", ".tokenizer.bin", ".json"].every((end) => fs.existsSync(at + end))) return undefined;
+  return { name: out.split("/").at(-1), checkpoint: `${at}.bin`, tokenizer: `${at}.tokenizer.bin`,
+    options: { ...JSON.parse(fs.readFileSync(`${at}.json`, "utf8")), stop_tokens: [] }, prompt: "Once upon a time", generation: {} };
+}
 const rows = [];
 let failed = false;
 for (const id of models) {
-  const entry = MODELS.find((m) => m.id === id);
-  if (!entry) throw new Error(`${id} is no model of src/models.js`);
-  if (entry.hf) throw new Error(`${id} is converted in the browser: this tool takes the site's own files (make models)`);
+  const entry = MODELS.find((m) => m.id === id) ?? fileModel(id);
+  if (!entry) throw new Error(`${id} is no model of src/models.js, nor a converted model's <out> (<out>.bin, .tokenizer.bin, .json)`);
+  if (entry.hf) throw new Error(`${id} is converted in the browser: this tool takes the site's own files (make models), or a converted model's <out>`);
   const settings = { ...entry.generation, ...(greedy ? { temperature: 0.0 } : {}) };
   delete settings.steps;
-  py.FS.writeFile("tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
-  const result = py.globals.get("compare").callKwargs(root + entry.checkpoint, "tokenizer.bin", py.toPy(entry.options ?? {}), entry.prompt,
+  py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
+  const result = py.globals.get("compare").callKwargs(file(entry.checkpoint), "tokenizer.bin", py.toPy(entry.options ?? {}), entry.prompt,
     py.toPy(settings), tokens, rounds, {}).toJs({ dict_converter: Object.fromEntries });
   if (result.differ) {
     failed = true;

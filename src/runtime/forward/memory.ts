@@ -34,7 +34,16 @@ export type Footprint = {
   rotated?: Rotated | null;
   kinds?: Form["kinds"];
   weights?: number;
+  local?: Local | null;
 } & Stateful;
+// T510.1: what a model's options say of its local layers (Python's engine/layout.py's local_layers(): which they are,
+// and how many of the last positions they attend)
+export type Local = { layers: number[]; window: number };
+
+/** T510.1: the positions of the ring a layer that attends the last window positions keeps its keys and values in
+ * (forward/cache.ts): twice its period, the window and a prompt's block (BATCH); 0 where it would not be shorter than
+ * the context (the layer then keeps every position, as one without a window) */
+export const ringPositions = (window: number, seqLen: number) => (window > 0 && 2 * (window + BATCH) < seqLen ? 2 * (window + BATCH) : 0);
 
 const PAGE = 65536;
 
@@ -164,13 +173,16 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // what the kinds' layers keep besides, whatever the context (T229: a linear-attention layer's state; T260: a
   // convolution layer's rows), each as the engine takes it of the memory
   bytes += had.flatMap(({ kind, count }) => kinds[kind].state?.(sizes, count) ?? []).reduce((sum, each) => sum + align(each), 0);
-  // the layers that keep keys and values (all of them where none keeps a state in their place)
+  // the layers that keep keys and values (all of them where none keeps a state in their place). T510.1: those of them
+  // that attend a window keep a ring of its positions, taken whole at once (the local layers of the options, which are
+  // layers that attend: the plan gives no other a window)
   const cached = had.reduce((sum, { kind, count }) => sum + (kinds[kind].cached ? count : 0), 0);
+  const ring = direct ? 0 : ringPositions(options.local?.window ?? 0, seqLen), ringed = ring ? Math.min(options.local!.layers.length, cached) : 0;
   // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
   // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
   // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
   // GPU's alone)
-  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * cached * 2 * kvDim;
+  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : (seqLen * (cached - ringed) + ring * ringed) * 2 * kvDim;
   // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
