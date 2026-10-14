@@ -74,8 +74,8 @@ def directly(hub, hf, making):
 
 # ---- the worker's requests, line by line
 def test_the_cases_are_the_ones_the_worker_was_asked_for():
-    assert [case["name"] for case in EVERY_CASE] == list(FETCHES) and len(NAMES) == 20
-    assert sum(len(FETCHES[name]["requests"]) for name in NAMES) == 162
+    assert [case["name"] for case in EVERY_CASE] == list(FETCHES) and len(NAMES) == 24
+    assert sum(len(FETCHES[name]["requests"]) for name in NAMES) == 171
 
 
 def expected_of(name):
@@ -186,7 +186,8 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
     name, files = case["name"], real_files(case)
     hf, making = listed(case)
     making["dtype"] = making["dtype"] if isinstance(making["dtype"], str) else "int8"
-    weights = next((file for path, file in files.items() if path.endswith(".gguf")), None)
+    # (the GGUF the model is opened by: T505.3's repository with safetensors has GGUFs beside them, which nobody asks for)
+    weights = next((file for path, file in files.items() if path.endswith(".gguf") and path.endswith(f"/{hf['weights']}")), None)
     head = 128 if "past the first 512 KiB" in name else 512 * 1024 if not weights or "small head" in name \
         else gguf_base(weights) // 8 if "3 MiB" in name else gguf_base(weights) // 40
     monkeypatch.setattr(conducting, "HEAD", head)

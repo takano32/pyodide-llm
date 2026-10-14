@@ -140,7 +140,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
             <input id="repository-name" type="text" autocomplete="off" spellcheck="false" placeholder="owner/name" /></label>
           <label>Revision
             <input id="repository-revision" type="text" autocomplete="off" spellcheck="false" placeholder="main" /></label>
-          <p class="hint">A Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX model published as safetensors with a tokenizer.json or a sentencepiece model. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.</p>
+          <label>GGUF file (optional)
+            <input id="repository-file" type="text" autocomplete="off" spellcheck="false" placeholder="the best one there" /></label>
+          <p class="hint">A model published as safetensors or as GGUF. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.</p>
           <button type="submit">Open</button>
         </form>
       </div>
@@ -316,7 +318,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   import "../page/draw.ts";
   import "../page/isolation.ts";
   import { root, worker } from "../page/receiver.ts";
-  import "../page/choose.ts";
+  import { urlLooked } from "../page/choose.ts";
   import "../page/composer.ts";
 
   // (A model chosen while this looks has started the worker itself, and wins: the review of T116)
@@ -325,7 +327,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       remember(undefined);
       show(model);
     }
-    if (loads === 1) {
+    // (T505.3: a repository of ?hf= is looked at for the file that is its model, where the URL names none)
+    if (await urlLooked() && loads === 1) {
       worker.postMessage({ type: "init", root, search: location.search, model: weighed(model), load: loads, threads: threadsFor(model), gpu: gpuFor(model) });
     }
   })();

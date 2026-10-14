@@ -361,6 +361,51 @@
   ],
   "ended": "converted; progress was told"
  },
+ "?hf=: a repository of GGUFs alone, opened by the best of them": {
+  "requests": [
+   "GET owner/model@0123456 model-Q8_0.gguf bytes=0-2097151",
+   "GET owner/model@0123456 model-Q8_0.gguf bytes=2097152-2098151"
+  ],
+  "converter": [
+   "Conversion.from_gguf(the first 2097152 bytes), dtype the worker's choice",
+   "fed 2097152 bytes in 2 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "?hf=&file=: the GGUF that was named": {
+  "requests": [
+   "GET owner/model@0123456 model-Q4_K_M.gguf bytes=0-2097151"
+  ],
+  "converter": [
+   "Conversion.from_gguf(the first 1049576 bytes), dtype the worker's choice",
+   "fed 1048576 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; NO progress was told"
+ },
+ "?hf=&file=: a GGUF the repository does not have": {
+  "requests": [
+   "GET owner/model@0123456 model-Q5_K_M.gguf bytes=0-2097151"
+  ],
+  "converter": [],
+  "ended": "failed: owner/model has no model-Q5_K_M.gguf at 0123456789abcdef0123456789abcdef01234567 on huggingface.co, or has no commit 0123456789abcdef0123456789abcdef01234567."
+ },
+ "?hf=: safetensors and GGUFs, opened by the safetensors as before": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
  "a folder: one safetensors file, as the disk gives it": {
   "requests": [
    "text config.json",

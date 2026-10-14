@@ -393,6 +393,11 @@ if (/^hf([-:]|$)/.test(model)) {
 }
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);
+if (repository) {
+  // T505.3: which file a repository nobody listed was opened by, as the page's list and its address say (a repository of
+  // GGUFs alone: the best of them, chosen by the page)
+  console.log(`opened: ${await page.evaluate(() => `${document.getElementById("model").selectedOptions[0]?.textContent} (${location.search})`)}`);
+}
 if (result.prompt) console.log(result.prompt);
 if (result.generated) console.log(result.generated);
 const threadReportsSeen = await answerWatched("");

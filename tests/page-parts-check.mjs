@@ -227,7 +227,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
       await import(${JSON.stringify(new URL("../src/page/opening.ts", import.meta.url).href)});
       const { model, loads } = await import(${JSON.stringify(new URL("../src/page/model.ts", import.meta.url).href)});
       const { recalled } = await import(${JSON.stringify(new URL("../src/page/remembered.ts", import.meta.url).href)});
-      console.log(JSON.stringify({ id: model.id, name: model.name, repo: model.hf?.repo, loads, recalled: recalled?.id ?? null }));`;
+      console.log(JSON.stringify({ id: model.id, name: model.name, repo: model.hf?.repo, weights: model.hf?.repo ? model.hf.weights : undefined, note: model.hf?.repo ? model.note : undefined, loads, recalled: recalled?.id ?? null }));`;
     cases += 1;
     return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
   };
@@ -239,6 +239,14 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(opens("?model=no-such-model", null).id, first.id, "a name of no model and nothing remembered: the first");
   const fromLink = opens(`?hf=owner/name&model=${second.id}`, kept(third.id));
   assert.deepEqual([fromLink.id, fromLink.name, fromLink.repo, fromLink.recalled], ["local", "owner/name", "owner/name", null], "?hf= before everything");
+  assert.deepEqual([fromLink.weights, fromLink.note], ["model.safetensors", "Hugging Face"], "?hf= with no file named is not opened by model.safetensors (until the page has looked at the repository)");
+  // T505.3: &file= names the file that is the model, and &revision= the revision, both as names an address may hold
+  const named = opens("?hf=owner/name-GGUF&file=name-Q4_K_M.gguf&revision=v1.0", null);
+  assert.deepEqual([named.id, named.repo, named.weights, named.note], ["local", "owner/name-GGUF", "name-Q4_K_M.gguf", "Hugging Face · v1.0 · name-Q4_K_M.gguf"], "?hf=&file= does not open the file it names");
+  assert.equal(opens("?hf=owner/name&file=", null).weights, "model.safetensors", "an empty &file= names a file");
+  for (const file of ["../other/resolve/main/model.gguf", "a/../b.gguf", "name.gguf?download=true", "https://example.com/m.gguf"]) {
+    assert.equal(opens(`?hf=owner/name&file=${encodeURIComponent(file)}`, null).id, first.id, `a link opened ${file} as a file of a repository: it goes into the address the worker fetches`);
+  }
   assert.equal(opens("", kept(large.id, false)).id, first.id, "a large model that was not kept is not started unasked");
   assert.equal(opens("", kept(large.id, true)).id, large.id, "one that was kept is (index.astro then looks whether it still is)");
   assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the first");

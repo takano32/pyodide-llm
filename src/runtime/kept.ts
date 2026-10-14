@@ -20,7 +20,7 @@ export type Kept = { name: string; where: "opfs" | "cache"; manifest: Manifest }
 export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Options; saved: number };
 export type Manifest = Conversion & { converter?: number; parts?: number };
 export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean };
-  hf: { repo: string; revision: string; vocabulary?: { repo: string; revision: string } } };
+  hf: { repo: string; revision: string; weights?: string; vocabulary?: { repo: string; revision: string } } };
 // a file of the origin private file system as a worker has it, and its synchronous access (the page's types know neither)
 type Access = { write(bytes: Uint8Array, options: { at: number }): number; truncate(size: number): void; flush(): void; close(): void };
 type WorkerFile = FileSystemFileHandle & { createSyncAccessHandle(): Promise<Access> };
@@ -33,12 +33,17 @@ const PART_BYTES = 8 * 1024 * 1024;
 // where the vocabulary and config.json come from another repository than the weights (T136), that one too.
 // T363.5: a conversion that kept a GGUF's blocks as they are (conversion.blocks) is another one than the same file
 // widened, though both say the dtype int8 (how the rows that are no blocks are stored): ":blocks" after its name. Every
-// other name is what it was
+// other name is what it was.
+// T505.3: a repository nobody listed (?hf=, the sheet: the id "local") may be opened by one file of it or by another
+// (&file=: its Q8_0.gguf, its Q4_K_M.gguf), and each is another conversion: the file's name after the revision, unless
+// it is the model.safetensors every such repository was opened by before. A model of the list is one file, and its
+// name is what it was
 export function keptName(model: Converted) {
   const { dtype = "int8", max_seq_len = 4096, blocks = false } = model.conversion ?? {};
-  const { vocabulary } = model.hf;
+  const { vocabulary, weights } = model.hf;
   const from = vocabulary ? `+${vocabulary.repo}@${vocabulary.revision}` : "";
-  return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${from}:${dtype}:${max_seq_len}${blocks ? ":blocks" : ""}`);
+  const file = model.id === "local" && weights && weights !== "model.safetensors" ? `/${weights}` : "";
+  return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${file}${from}:${dtype}:${max_seq_len}${blocks ? ":blocks" : ""}`);
 }
 /** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
  * Raise it when either changes: a conversion kept by an older converter is then converted again, and deleted (the

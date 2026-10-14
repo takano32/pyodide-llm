@@ -381,8 +381,11 @@ def gguf_tokenizer(metadata, vocab_size):
 
 def gguf_bytebpe(metadata, tokens, kind):
     """(the pieces, the engine's options, False: a space is no U+2581) of a GGUF's byte-level BPE vocabulary, split as
-    its tokenizer.ggml.pre says: one of GGUF_PRETOKENIZERS, or it is refused."""
-    pre = metadata.get("tokenizer.ggml.pre", "gpt-2")
+    its tokenizer.ggml.pre says: one of GGUF_PRETOKENIZERS, or it is refused. T505.3: and so is one that does not say
+    (the owner, 2026-10-13): llama.cpp reads such a file as "default", which splits as no model of these does (the
+    GGUF of a Llama 3 or a Qwen made before the key was there would be split as a GPT-2's, and answer badly without a
+    word)."""
+    pre = metadata.get("tokenizer.ggml.pre", "default")
     if pre not in GGUF_PRETOKENIZERS:
         raise ValueError(f"This GGUF splits text as {pre}, which the engine does not know.")
     ranks = {}
@@ -415,6 +418,10 @@ def sentencepiece_bpe(metadata):
     tokens, kinds = metadata.get("tokenizer.ggml.tokens", []), metadata.get("tokenizer.ggml.token_type", [])
     scores = metadata.get("tokenizer.ggml.scores", [])
     if not (len(tokens) == len(kinds) == len(scores)) or metadata.get("tokenizer.ggml.add_space_prefix", True) is not True:
+        return False
+    # T505.3: a vocabulary that comes with its normalizer (sentencepiece's precompiled_charsmap) normalizes otherwise
+    # than by identity, and nothing here reads that map from a GGUF
+    if metadata.get("tokenizer.ggml.precompiled_charsmap"):
         return False
     normal = [score for score, kind in zip(scores, kinds) if kind == NORMAL]
     return bool(normal) and all(float(score).is_integer() for score in normal) and 2 * len(set(normal)) > len(normal)

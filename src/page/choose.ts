@@ -1,10 +1,12 @@
 // src/page/choose.ts (T355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
 import { MODELS, memoryWarning } from "../models.js";
-import { $, files, progress, run, select } from "./dom.ts";
-import { REPOSITORY, REVISION, fromUrl, hfEntry, weighed } from "./address.ts";
+import { $, files, progress, run, select, statusText } from "./dom.ts";
+import { FILE, REPOSITORY, REVISION, type Unlisted, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
+import { looked, unnamed } from "./repository.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
-import { type Model, chose, model } from "./model.ts";
+import { type Model, chose, loads, model, opensWith } from "./model.ts";
+import { stillKept } from "./list.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { root, worker } from "./receiver.ts";
@@ -86,7 +88,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(".intro .choos
 // has no address: its URL names nothing, and a reload opens the model remembered before it.
 function nameInUrl(current: Model) {
   const url = new URL(location.href);
-  for (const name of ["model", "hf", "revision", "checkpoint", "tokenizer", "template", "prompt"]) {
+  for (const name of ["model", "hf", "revision", "file", "checkpoint", "tokenizer", "template", "prompt"]) {
     url.searchParams.delete(name);
   }
   const { hf, url: address, template } = current as any;
@@ -97,6 +99,11 @@ function nameInUrl(current: Model) {
       url.searchParams.set("hf", hf.repo);
       if (hf.revision !== "main") {
         url.searchParams.set("revision", hf.revision);
+      }
+      // T505.3: and the file, where it is not the model.safetensors a repository is opened by: the one the visitor
+      // named, or the GGUF that was the best there when the repository was looked at
+      if (!unnamed(unlisted(current)!)) {
+        url.searchParams.set("file", hf.weights);
       }
     } else {
       url.searchParams.set("checkpoint", address.checkpoint);
@@ -127,9 +134,14 @@ repositorySheet.addEventListener("toggle", (event) => {
     ($("repository-name") as HTMLInputElement).focus();
   }
 });
-($("repository-form") as HTMLFormElement).onsubmit = (event) => {
+// T505.3: the third field names the file that is the model, a GGUF; empty, the repository is looked at for one. What
+// the field takes is what an address takes (the browser says so of anything else, in its own words)
+const fileField = $("repository-file") as HTMLInputElement;
+fileField.pattern = FILE.source;
+($("repository-form") as HTMLFormElement).onsubmit = async (event) => {
   event.preventDefault();
   const field = $("repository-name") as HTMLInputElement, revisionField = $("repository-revision") as HTMLInputElement;
+  const file = fileField.value.trim() || undefined;
   // the address of the model's page is what people copy: owner/name is what is needed of it
   const repository = field.value.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/(tree|blob)\/.*$/, "").replace(/\/+$/, "");
   const revision = revisionField.value.trim() || "main";
@@ -145,9 +157,45 @@ repositorySheet.addEventListener("toggle", (event) => {
     return;
   }
   repositorySheet.hidePopover();
-  local = hfEntry(repository, revision);
+  let entry: Unlisted;
+  try {
+    entry = await looked(hfEntry(repository, revision, { file }));
+  } catch (error) {
+    message("model error", String((error as Error).message ?? error));  // (a repository with nothing this page opens)
+    return;
+  }
+  // a large GGUF is asked for before it is fetched, as a large model of the list is: not one this browser kept
+  if ((entry.download ?? 0) > 500e6 && await stillKept(entry)) {
+    entry = { ...entry, download: 0 };
+  }
+  local = entry;
   showLocal();  // the change of model writes the URL (nameInUrl), so that the link can be shared
 };
+
+/** T505.3: the repository the URL names (?hf=) with no file of it is looked at before its load: one without
+ * safetensors is opened by the best GGUF it has, and the URL says which from then on. Whether the page may go on to
+ * load its model: not where the repository has nothing this page opens, which is said. (A model chosen while this
+ * looked has started its own load, and wins.) */
+export async function urlLooked() {
+  const named = unlisted(fromUrl);
+  if (!named || model !== named || !unnamed(named)) return true;
+  let entry: Unlisted;
+  try {
+    entry = await looked(named);
+  } catch (error) {
+    if (loads === 1) {
+      message("model error", String((error as Error).message ?? error));
+      statusText.textContent = `Could not load ${named.name}`;
+    }
+    return false;
+  }
+  if (entry === named || !opensWith(entry)) return true;
+  local = entry;
+  select.querySelector('option[value="local"]')!.textContent = `${entry.name} — ${entry.note}`;
+  nameInUrl(entry);
+  show(entry);
+  return true;
+}
 
 select.onchange = () => {
   if (select.value === "hf-other") {
