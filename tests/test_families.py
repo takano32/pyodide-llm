@@ -32,6 +32,7 @@ FACTS = {
     "qwen3_5_text": ("Qwen3.5", "qwen35", "qwen35", "lm_head.weight", {"free_heads", "rotatable", "rms_norm", "partly"}),
     "qwen3_5": ("Qwen3.5", "qwen35", None, "lm_head.weight", {"renamed", "free_heads", "rotatable", "rms_norm", "partly"}),
     "lfm2": ("LFM2", "lfm2", "lfm2", "lm_head.weight", {"rms_norm"}),
+    "gemma3_text": ("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}),
     "gpt2": ("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}),
     "gpt_neox": ("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}),
 }
@@ -45,6 +46,7 @@ LAYOUTS = {
     "neox": ([256, 1024, 3, 8, 8, -2048, 320], {"arch": "neox"}, 8),
     "qwen35": ([256, 768, 8, 4, 2, -2048, 320], {"arch": "qwen35", "head_dim": 128, "linear": LINEAR}, 32),
     "lfm2": ([256, 768, 8, 8, 4, -2048, 320], {"arch": "lfm2", "convolution": {"layers": "ccaccaca", "taps": 3}}, 0),
+    "gemma3": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma3", "head_dim": 128}, 0),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
@@ -74,7 +76,7 @@ def test_an_unknown_model_type_is_refused_in_the_words_it_was():
             check_config(normalize(config))
         assert str(refusal.value) == (
             f"This model cannot be converted: it is {said}, and only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, "
-            f"Qwen3.5, LFM2, GPT-2 and GPT-NeoX models are supported.")
+            f"Qwen3.5, LFM2, Gemma 3, GPT-2 and GPT-NeoX models are supported.")
         # (its layout and its plan are a Llama's until then: nothing else is asked of an unknown name)
         assert family_of(config) is LLAMA and architecture(config) == "llama"
 
@@ -184,8 +186,8 @@ def test_the_refusal_of_a_gguf_names_the_families_that_have_one():
     with pytest.raises(ValueError) as refusal:
         gguf_model({"general.architecture": "mamba"}, {}, 0)
     assert str(refusal.value) == ("This GGUF holds a mamba: only Llama, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, "
-                                  "GPT-2 and GPT-NeoX ones are supported.")
-    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gpt2", "gptneox"]
+                                  "Gemma 3, GPT-2 and GPT-NeoX ones are supported.")
+    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gemma3", "gpt2", "gptneox"]
 
 
 def test_a_llama_with_a_little_more_is_the_llamas_record_but_for_that():
@@ -245,7 +247,7 @@ def test_a_family_put_into_the_table_converts(made_up):
     assert streamed(file, published, "float32", 4096)[0] == expected
     assert expected != converted(Safetensors(reader(file)), {**published, "model_type": "llama"}, "float32")
     # and the refusal of another model names it
-    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX and Twice models"):
+    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, GPT-2, GPT-NeoX and Twice models"):
         check_config({**BASE, "model_type": "bert"})
 
 

@@ -25,6 +25,9 @@ MODELS = [
     ("neox", [256, 1024, 3, 8, 8, 2048, 320], {"arch": "neox"}, {"rotary": 8}),
     ("qwen35", [256, 768, 8, 4, 2, -2048, 320], {"arch": "qwen35", "head_dim": 128, "linear": LINEAR}, {"rotary": 32}),
     ("lfm2", [256, 768, 8, 8, 4, 2048, 320], {"arch": "lfm2", "convolution": {"layers": "ccaccaca", "taps": 3}}, {}),
+    ("gemma3", [256, 768, 6, 4, 1, 2048, 320], {"arch": "gemma3", "head_dim": 128},
+     {"local": {"layers": [0, 1, 2, 3, 4], "window": 96, "rope_theta": 10000.0}}),
+    ("gemma3, its own classifier", [384, 1024, 3, 6, 2, -2304, 288], {"arch": "gemma3"}, {}),
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0] for model in MODELS])
@@ -150,6 +153,10 @@ ORDER = {
               "wout rms_ffn_weight w1 w2 w3 rms_final_weight freq_cis_real freq_cis_imag wcls",
     "lfm2": "token_embedding_table rms_att_weight wq wk wv wo q_norm k_norm win conv wout rms_ffn_weight w1 w2 w3 "
             "rms_final_weight freq_cis_real freq_cis_imag",
+    "gemma3": "token_embedding_table rms_att_weight wq wk wv wo q_norm k_norm rms_att_post_weight rms_ffn_weight w1 w2 w3 "
+              "rms_ffn_post_weight rms_final_weight freq_cis_real freq_cis_imag",
+    "gemma3, its own classifier": "token_embedding_table rms_att_weight wq wk wv wo q_norm k_norm rms_att_post_weight "
+                                  "rms_ffn_weight w1 w2 w3 rms_ffn_post_weight rms_final_weight freq_cis_real freq_cis_imag wcls",
 }
 
 

@@ -25,6 +25,7 @@ export const ARCHITECTURES: Record<Arch, Architecture> = {
   neox: { ...LLAMA, gatedFfn: false, layerNorm: true },
   qwen35: { ...LLAMA, gate: true },
   lfm2: LLAMA,
+  gemma3: LLAMA,
 };
 /** An architecture's line. A name that is none of the table's is sized as a Llama, as it always was: Python refuses it
  * by its own words once the model is built (layout_of()), and those are the words a visitor is to read. */

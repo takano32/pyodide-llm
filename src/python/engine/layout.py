@@ -304,6 +304,16 @@ def lfm2(d):
             *gated_ffn(d), Row("rms_final_weight", VECTOR, (d.dim,)), *rope_tables(d), *classifier(d)]
 
 
+def gemma3(d):
+    """A Gemma 3 (T261): a Llama's tensors with the norms of the heads of q and k (a Qwen3's), and a second norm in each
+    half of a layer, of what the attention and the FFN give before it joins the stream. One pair of RoPE tables, of the
+    layers that attend over all the positions: those of its local layers the engine makes (local_layers())."""
+    return [*embedding(d), d.stack("rms_att_weight", VECTOR, EVERY, d.dim), *attention(d), *head_norms(d),
+            d.stack("rms_att_post_weight", VECTOR, EVERY, d.dim), *gated_ffn(d),
+            d.stack("rms_ffn_post_weight", VECTOR, EVERY, d.dim),
+            Row("rms_final_weight", VECTOR, (d.dim,)), *rope_tables(d), *classifier(d)]
+
+
 def gpt2(d):
     """A GPT-2: LayerNorm (a weight and a bias), a bias after every projection, a learned table of positions instead
     of RoPE, and an FFN of two matrices instead of three (no gate). Same attention, of heads that fill dim.
@@ -323,6 +333,8 @@ def gpt2(d):
 # ---- the architectures
 # How much of a head RoPE turns (Layout's rope; None: none of it, the model has a learned table of positions)
 WHOLE, PARTLY = "whole", "partly"
+# What a gated FFN's gate goes through (Layout's gate): w2(silu(w1 x) * w3 x), or the same with a GELU (its tanh form)
+SILU, GELU = "silu", "gelu"
 
 
 class Layout(NamedTuple):
@@ -332,7 +344,8 @@ class Layout(NamedTuple):
     layers are of a new kind, that kind (a Stateful, and its steps in the forward passes). One that is another but
     for a fact is that one's record with the fact replaced (LAYOUTS["llama"]._replace(...)).
     What the rows already say is no fact here: a bias is added where the file has one (bq, bo), the heads of q and k
-    are normalized where it has those norms, a position's row is added where it has the table."""
+    are normalized where it has those norms, a position's row is added where it has the table, and what the attention
+    and the FFN give is normalized where it has the norms for that (rms_att_post_weight, rms_ffn_post_weight)."""
     # (the Dims) -> the tensors of the file as rows, in file order
     rows: Callable
     # the kind of its layers that keep a state in place of keys and values, where it has such layers
@@ -349,6 +362,11 @@ class Layout(NamedTuple):
     rotatable: bool = False
     # some of its layers may be ones RoPE leaves alone (T255)
     unturned: bool = False
+    # what the gate of a gated FFN goes through: SILU or GELU (T261: a Gemma's)
+    gate: str = SILU
+    # some of its layers may be local ones (T261): they attend a window of the last positions, and RoPE turns their q
+    # and k by a base of their own (local_layers())
+    local: bool = False
 
 
 # by the architecture's name (FORM's "arch")
@@ -358,6 +376,7 @@ LAYOUTS = {
     "neox": Layout(gpt2, rope=PARTLY, layer_norm=True, gated_ffn=False),
     "qwen35": Layout(qwen35, stateful=GATED_DELTA, rope=PARTLY, rotatable=True),
     "lfm2": Layout(lfm2, stateful=SHORT_CONVOLUTION),
+    "gemma3": Layout(gemma3, gate=GELU, local=True),
 }
 
 
@@ -379,6 +398,30 @@ def unturned_layers(arch, n_layers, layers):
     if layers and (not layout_of(arch).unturned or not 0 <= layers[0] <= layers[-1] < n_layers):
         raise ValueError("The layers RoPE leaves alone are layers of a Llama, and none of another architecture.")
     return layers
+
+
+# (the keys of a model's local layers, as its options say them)
+LOCAL = ("layers", "window", "rope_theta")
+
+
+def local_layers(arch, n_layers, local):
+    """The local layers (T261) of a model of this architecture with n_layers layers, from what its options say of them
+    (a dict of Python's or of JavaScript's, or nothing): {"layers": which they are, in order, "window": how many of the
+    last positions each attends, its own among them, "rope_theta": the base RoPE turns their q and k by}; None for a
+    model without any. A Gemma 3's "sliding_attention" layers: five of every six, a window of 512 and a base of 1e4
+    where the others' is 1e6. The file is the same whichever layers they are, so the options say it, as they say the
+    layers RoPE leaves alone. A ValueError for an architecture that has no such layers, for a layer the model has not,
+    and for what is no window or no base."""
+    local = local.to_py() if hasattr(local, "to_py") else local
+    if not local:
+        return None
+    layers = tuple(sorted({int(layer) for layer in local["layers"]}))
+    window, theta = int(local["window"]), float(local["rope_theta"])
+    if not layout_of(arch).local or (layers and not 0 <= layers[0] <= layers[-1] < n_layers) or window < 1 \
+            or not (math.isfinite(theta) and theta > 0):
+        raise ValueError("The local layers are layers of a Gemma 3 with a window and a base of RoPE, and none of "
+                         "another architecture.")
+    return {"layers": layers, "window": window, "rope_theta": theta} if layers else None
 
 
 def stateful_kinds():

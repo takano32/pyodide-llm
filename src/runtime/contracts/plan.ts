@@ -21,7 +21,7 @@ export type Stored = "f32" | "f16" | "int8" | "int6" | "ternary" | "u8" | "layer
 export type Part = { kind: Stored; offset: number; group: number; scales: number };
 export type Tensor = { kind: Stored; offset: number; shape: number[]; group: number; scales: number; layers?: Part[] };
 
-// The rows of the four layouts (engine/layout.py), by their names. A model has those of its own layout; the classifier
+// The rows of the layouts (engine/layout.py), by their names. A model has those of its own layout; the classifier
 // of a model that has none of its own is its embedding under both names.
 export type TensorName =
   | "token_embedding_table" | "wcls" | "rms_final_weight" | "freq_cis_real" | "freq_cis_imag"
@@ -34,6 +34,8 @@ export type TensorName =
   | "wg" | "wqkv" | "wz" | "wb" | "wa" | "conv" | "dt_bias" | "decay" | "delta_norm"
   // LFM2: a convolution layer's two matrices (T260; its taps are under conv too)
   | "win" | "wout"
+  // Gemma 3: the norms behind the attention and behind the FFN (T261)
+  | "rms_att_post_weight" | "rms_ffn_post_weight"
   // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
   | "codebooks";
 

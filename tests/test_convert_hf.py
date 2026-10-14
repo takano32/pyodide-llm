@@ -43,8 +43,14 @@ def lfm2_model():
     return mixed()
 
 
-@pytest.mark.parametrize("model", [llama_model, qwen2_model, qwen3_model, gpt2_model, neox_model, qwen35_model, lfm2_model],
-                         ids=["llama", "qwen2", "qwen3", "gpt2", "neox", "qwen35", "lfm2"])
+def gemma3_model():
+    from conftest import gemma3_model as windowed
+    return windowed()
+
+
+@pytest.mark.parametrize("model", [llama_model, qwen2_model, qwen3_model, gpt2_model, neox_model, qwen35_model, lfm2_model,
+                                   gemma3_model],
+                         ids=["llama", "qwen2", "qwen3", "gpt2", "neox", "qwen35", "lfm2", "gemma3"])
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
 def test_convert_hf_writes_what_the_page_writes(tmp_path, model, dtype):
     tensors, config = model()

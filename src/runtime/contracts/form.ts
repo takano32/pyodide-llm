@@ -23,7 +23,7 @@ export type Convolution = { layers: string; taps: number };
 export type Rotated = { block: number; signs: Record<string, unknown> };
 
 // the architecture's name, a key of layout.py's LAYOUTS
-export type Arch = "llama" | "gpt2" | "neox" | "qwen35" | "lfm2";
+export type Arch = "llama" | "gpt2" | "neox" | "qwen35" | "lfm2" | "gemma3";
 
 // The numbers of the layers that keep a state, each under its kind's name (forward/kinds.ts): what a form says of
 // them, and a plan after it by the same names (contracts/plan.ts)

@@ -44,10 +44,10 @@ from engine.packing import (NOT_TERNARY, TERNARY_GROUP, group32, pack6, pack_ter
                             quantize6, six, ternary, unpack6, unpack_ternary)
 from engine.dtypes import (BLOCKS, CODEBOOKS, DTYPES, EITHER, KINDS, PACKED, QUANTIZED, Dtype,  # noqa: F401
                            dtype_of)
-from engine.layout import (ATTENDING, CODES, CONVOLUTION, EVERY, FORM, LAYOUTS, LINEAR, MATRIX, PARTLY,  # noqa: F401
-                           POSITIONS, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Place, Row, Stateful,
+from engine.layout import (ATTENDING, CODES, CONVOLUTION, EVERY, FORM, GELU, LAYOUTS, LINEAR, MATRIX, PARTLY,  # noqa: F401
+                           POSITIONS, SILU, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Place, Row, Stateful,
                            after, convolution_form, file_size, form_of, kind_of, layout_of, linear_form,
-                           linear_widths, placed, slots_of, stateful_form, stateful_kinds, suited,
+                           linear_widths, local_layers, placed, slots_of, stateful_form, stateful_kinds, suited,
                            tensor_rows, unturned_layers)
 from engine.layers import (delta_rule, gelu, hadamard, head_norm, layernorm, rmsnorm, rope,  # noqa: F401
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths,

@@ -112,6 +112,8 @@ const returned = (fn) => {
     { name: "neox", header: [256, 1024, 3, 8, 8, -2048, 320], form: { arch: "neox" }, more: { rotary: 8, parallel_residual: true } },
     { name: "qwen35", header: [256, 768, 8, 4, 2, 2048, 320], form: { arch: "qwen35", head_dim: 128, linear: LINEAR, rotated: true }, more: { rotary: 32 } },
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
+    { name: "gemma3", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma3", head_dim: 128 },
+      more: { local: { layers: [0, 1, 2, 3, 4], window: 96, rope_theta: 10000 } } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
@@ -122,7 +124,8 @@ const returned = (fn) => {
   // (the facts of these families a second time, below: [RoPE turns its layers, LayerNorms, a gated FFN]; a family that
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
-    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
+    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true],
+    "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
@@ -201,7 +204,10 @@ const returned = (fn) => {
   const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
   held("the plan's keys, Python to forward.js", keys, readKeys, unread);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
-  held("the tensors' names, Python to forward.js", tensors, readTensors);
+  // (T261.1: a Gemma 3's two norms behind are placed and read by no engine yet: Python lets go of the engine it made
+  // of such a model's plan and refuses the model (engine/model.py), until T261.2 gives forward.ts its layers)
+  const later = "the page's engine has not a Gemma 3's layers until T261.2, and Python refuses the model until then";
+  held("the tensors' names, Python to forward.js", tensors, readTensors, { rms_att_post_weight: later, rms_ffn_post_weight: later });
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
   const entryRead = new Set([...readEntry].filter((key) => entryKeys.has(key) || !["rows", "n", "six", "ternary", "at", "slice", "length"].includes(key)));
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);

@@ -13,10 +13,10 @@ import llama2_convert
 from conftest import pack_tokenizer, tiny_vocab
 from made_up import checkpoint, uniform
 from engine.layout import GATED_DELTA, SHORT_CONVOLUTION
-from llama2_numpy import (ATTENDING, EVERY, FORM, LAYOUTS, MATRIX, PARTLY, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
+from llama2_numpy import (ATTENDING, EVERY, FORM, GELU, LAYOUTS, MATRIX, PARTLY, SILU, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
                           Settings, Stateful, after, checkpoint_dtype, external_tensors, file_size, form_of,
                           forward_plan, layer_facts, layout_of, rope_frequencies, slots_of,
-                          stateful_form, stateful_kinds, tensor_rows, unturned_layers)
+                          local_layers, stateful_form, stateful_kinds, tensor_rows, unturned_layers)
 from engine.tensors import rope_tables
 
 LINEAR = {"every": 2, "key_heads": 2, "value_heads": 4, "key_dim": 16, "value_dim": 32, "conv": 4}
@@ -24,23 +24,27 @@ CONVOLUTION = {"layers": "ccac", "taps": 3}
 # the facts of every architecture, a second time: a record that is changed has to be changed here too
 FACTS = {
     "llama": dict(rows="llama", stateful=None, rope=WHOLE, yarn_magnitude=True, layer_norm=False, gated_ffn=True,
-                  rotatable=True, unturned=True),
+                  rotatable=True, unturned=True, gate=SILU, local=False),
     "gpt2": dict(rows="gpt2", stateful=None, rope=None, yarn_magnitude=False, layer_norm=True, gated_ffn=False,
-                 rotatable=False, unturned=False),
+                 rotatable=False, unturned=False, gate=SILU, local=False),
     "neox": dict(rows="gpt2", stateful=None, rope=PARTLY, yarn_magnitude=False, layer_norm=True, gated_ffn=False,
-                 rotatable=False, unturned=False),
+                 rotatable=False, unturned=False, gate=SILU, local=False),
     "qwen35": dict(rows="qwen35", stateful="linear", rope=PARTLY, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                   rotatable=True, unturned=False),
+                   rotatable=True, unturned=False, gate=SILU, local=False),
     "lfm2": dict(rows="lfm2", stateful="convolution", rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                 rotatable=False, unturned=False),
+                 rotatable=False, unturned=False, gate=SILU, local=False),
+    "gemma3": dict(rows="gemma3", stateful=None, rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
+                   rotatable=False, unturned=False, gate=GELU, local=True),
 }
 # (a header and the form each architecture needs to be laid out)
 HEADER = [64, 128, 4, 4, 2, 320, 48]
 FORMS = {"llama": {}, "gpt2": {"arch": "gpt2"}, "neox": {"arch": "neox"},
          "qwen35": {"arch": "qwen35", "head_dim": 16, "linear": LINEAR},
-         "lfm2": {"arch": "lfm2", "qk_norm": True, "convolution": CONVOLUTION}}
+         "lfm2": {"arch": "lfm2", "qk_norm": True, "convolution": CONVOLUTION},
+         "gemma3": {"arch": "gemma3", "head_dim": 32}}
 # what an engine is told of a model of each, besides the form (Llama's arguments)
-OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4}}
+OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4},
+           "gemma3": {"local": {"layers": [0, 1, 3], "window": 2, "rope_theta": 100.0}}}
 every = pytest.mark.parametrize("arch", list(FACTS))
 
 
@@ -163,7 +167,7 @@ ENTRANCES = {
 def test_a_name_that_is_no_architectures_is_refused_wherever_it_comes_in(entrance):
     """It was read as a Llama until T359.6: a mistyped name ran another model's forward pass without a word."""
     for arch in ("llama3", "LLAMA", "qwen3", "", "gpt-2"):
-        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2."
+        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3."
     for arch in FACTS:  # (and a name it has is not what is refused there)
         try:
             ENTRANCES[entrance](arch)
@@ -285,6 +289,16 @@ def test_a_model_has_its_architectures_facts_from_the_time_it_is_made(arch):
     else:
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             model(arch, unturned=[2])
+    # T261: the gate of a gated FFN, and the local layers of the architectures that take them
+    assert llama.gate is (engine.model.gelu if facts["gate"] == GELU else engine.model.silu)
+    local = {"layers": [1], "window": 3, "rope_theta": 50.0}
+    if facts["local"]:
+        assert model(arch, local=local).local == {"layers": (1,), "window": 3, "rope_theta": 50.0}
+        assert model(arch, local=None).local is None
+    else:
+        assert llama.local is None and llama.local_cis is None
+        with pytest.raises(ValueError, match="The local layers are layers of a Gemma 3"):
+            model(arch, local=local)
 
 
 def test_a_step_a_tool_puts_on_a_model_is_the_one_the_forward_pass_takes():
@@ -337,6 +351,35 @@ def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts(monkeypatch):
     assert ours.rows == gpt2.rows and ours.w3 is None and ours.b1 is not None
     theirs, mine = gpt2.forward(5, 0), ours.forward(5, 0)
     assert np.isfinite(mine).all() and not np.allclose(theirs, mine, atol=1e-5)
+
+
+def test_the_gate_and_the_local_layers_are_facts_of_their_own(monkeypatch):
+    """T261: only a Gemma 3 has a GELU in its gate, local layers and the norms behind, so nothing of the table tells
+    the three apart: a made-up Llama with a GELU in its gate and another with local layers do. The same file as a
+    Llama's each (no row says either), other numbers, and each only where its fact reaches: the gate from the first
+    token, the window once a text is longer than it."""
+    monkeypatch.setitem(LAYOUTS, "gelu llama", LAYOUTS["llama"]._replace(gate=GELU))
+    monkeypatch.setitem(LAYOUTS, "local llama", LAYOUTS["llama"]._replace(local=True))
+    for arch in ("gelu llama", "local llama"):
+        assert tensor_rows(HEADER, {"arch": arch}) == tensor_rows(HEADER)
+    # (float16: the engine makes the tables of such a file, by the base it is told)
+    checkpoint, tokenizer = made_up(HEADER, dtype="float16"), pack_tokenizer(tiny_vocab(320))
+    text = (1, 7, 9, 11, 13)
+    run = lambda llama: [llama.forward(token, pos).copy() for pos, token in enumerate(text)]
+    Model = lambda **said: Llama(checkpoint, tokenizer, dtype="float16", **said)
+    plain = run(Model())
+    gelu = run(Model(arch="gelu llama"))
+    assert np.isfinite(gelu[0]).all() and not np.allclose(gelu[0], plain[0], atol=1e-5)
+    # a window of 3 in every layer and the base the file's tables have: the first three positions are a Llama's
+    windowed = Model(arch="local llama", local={"layers": [0, 1, 2, 3], "window": 3, "rope_theta": 10000.0})
+    assert windowed.gate is engine.model.silu and windowed.rms_att_post_weight is None
+    got = run(windowed)
+    assert all(np.allclose(got[pos], plain[pos], atol=1e-6) for pos in range(3))
+    assert not np.allclose(got[3], plain[3], atol=1e-5)
+    # the base alone (a window past the text): the first position is a Llama's (no turn shows), the second is not
+    turned = run(Model(arch="local llama", local={"layers": [0, 2], "window": 48, "rope_theta": 20.0}))
+    assert np.allclose(turned[0], plain[0], atol=1e-6) and not np.allclose(turned[1], plain[1], atol=1e-5)
+    assert local_layers("local llama", 4, {"layers": [3], "window": 1, "rope_theta": 2}) == {"layers": (3,), "window": 1, "rope_theta": 2.0}
 
 
 def test_a_new_kind_of_layer_that_keeps_a_state_is_a_record_and_its_rows(monkeypatch):
