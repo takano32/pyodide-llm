@@ -48,6 +48,7 @@ from typing import Any, Callable, NamedTuple
 from convert.conversion import Conversion
 from convert.gguf import Incomplete, gguf_weights
 from convert.sources import joined_shards
+from convert.tokenizer import Later
 
 # how much of a file's beginning is asked for first: the JSON header of a safetensors file is a few dozen kilobytes
 HEAD = 512 * 1024
@@ -271,7 +272,8 @@ def candidates_of(hf):
 
 def tokenized(hf, weights, config, make):
     """Conversion() with the template of the model, where it publishes one, and the first tokenizer of the candidates
-    that is there and that the converter can read."""
+    that is there and that the converter can read (a tokenizer.json that writes out a sentencepiece model after the
+    others: T257)."""
     place = place_of(hf)
     # The format of one turn (T73). An optional file: a model without one keeps the format its item has
     tokenizer_config = (yield ("text", place, "tokenizer_config.json")) or ""
@@ -280,17 +282,28 @@ def tokenized(hf, weights, config, make):
     chat_template = None if says_a_template(tokenizer_config) else (yield ("text", place, "chat_template.jinja")) or None
     # Where no candidate will do, the converter's refusal of one that is there says why; a file that is not there is
     # said only where no other was there either (T144)
-    refusal = missing = None
+    refusal = missing = later = None
+
+    def converted(tokenizer, candidate, last):
+        return Conversion(weights.header, weights.base, config, tokenizer, candidate, start=weights.base,
+                          tokenizer_config=tokenizer_config, chat_template=chat_template, last=last, **make)
+
     for candidate in candidates_of(hf):
         tokenizer = yield ("bytes", place, candidate)
         if tokenizer is None:
             missing = missing or Lost(place, candidate)
             continue
         try:
-            return Conversion(weights.header, weights.base, config, tokenizer, candidate, start=weights.base,
-                              tokenizer_config=tokenizer_config, chat_template=chat_template, **make)
+            return converted(tokenizer, candidate, False)
+        except Later:
+            # T257: a tokenizer.json that writes out a sentencepiece BPE model, which the model's own file comes
+            # before (a Llama's, a Mistral's: read as it was). Read where no candidate after it will do (a Gemma 4,
+            # CAT-Translate 7B: no such file)
+            later = later or (tokenizer, candidate)
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error
+    if later:
+        return converted(*later, True)
     raise refusal or missing
 
 

@@ -208,7 +208,8 @@ class Charsmap:
 class Tokenizer:
     """llama2.c's tokenizer.bin: sentencepiece pieces with their scores.
 
-    kind="bpe" merges the best-scoring adjacent pair, like llama2.c (Llama 2 vocabulary);
+    kind="bpe" merges the best-scoring adjacent pair, like llama2.c (Llama 2 vocabulary; and a sentencepiece BPE model
+    written out as a tokenizer.json, whose converter writes minus the rank of a piece's merge as its score: T257);
     kind="unigram" picks the segmentation with the best total score (sentencepiece unigram models);
     kind="bytebpe" is Hugging Face's byte-level BPE (GPT-2, SmolLM2, Qwen). It merges by the rank of the merge
     that makes the piece, which is the same loop as "bpe" because the converter writes minus the rank as the
@@ -227,9 +228,12 @@ class Tokenizer:
         # first text. "every": before every such stretch (a tokenizer.json whose normalizer begins each with "▁":
         # llm-jp-4's). "wanting": before every one that does not begin with a space already (a Metaspace that always
         # prepends, which is what transformers makes of a legacy Llama tokenizer: zephyr's, EuroLLM's). False: none
-        if prefixed not in (False, "every", "wanting"):
-            raise ValueError(f"Unsupported prefixed: {prefixed!r} (the stretches of text the dummy prefix stands before: every or wanting)")
+        # besides the first. T257: "never": not before the first either (a Gemma's sentencepiece model has no dummy
+        # prefix), and decode() takes no space off the beginning of what was written
+        if prefixed not in (False, "every", "wanting", "never"):
+            raise ValueError(f"Unsupported prefixed: {prefixed!r} (the stretches of text the dummy prefix stands before: every, wanting or never)")
         self.prefixed = prefixed
+        self.cuts = {}  # cut()'s, of the specials it was last asked for
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
         # of them as one; the others spell it in bytes
@@ -280,20 +284,35 @@ class Tokenizer:
         """specials: pieces such as "</s>" that stand for their token wherever they are written (a chat template
         puts them between the turns). As plain text they would be spelled out letter by letter."""
         tokens, first = [], True
-        for part in re.split("(" + "|".join(re.escape(special) for special in specials) + ")", text) if specials else [text]:
-            if part in specials:
-                tokens.append(self.index[part.encode("utf-8")])
+        pattern, pieces = self.cut(tuple(specials)) if specials else (None, ())
+        for part in pattern.split(text) if specials else [text]:
+            if part in pieces:
+                tokens.append(self.index[pieces[part]])
             elif part and (part := self.normalized(part)):
                 if self.kind == "bytebpe":
                     # no dummy prefix: a byte-level vocabulary spells the space out as a character of its own
                     tokens += self.encode_bytebpe(part)
                 else:
                     # sentencepiece's dummy prefix: the model saw every text start with a space (but not the
-                    # text after a special token, unless its tokenizer puts one there as well: prefixed, T308)
-                    part = " " + part if first or self.prefixed == "every" or (self.prefixed and not part.startswith(" ")) else part
+                    # text after a special token, unless its tokenizer puts one there as well: prefixed, T308;
+                    # and a model without the prefix saw none, T257)
+                    if self.prefixed != "never" and (first or self.prefixed == "every" or (self.prefixed and not part.startswith(" "))):
+                        part = " " + part
                     tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
             first = False
         return tokens
+
+    def cut(self, specials):
+        """(the pattern that cuts a text at these specials, {a special: its piece as the vocabulary spells it}), made
+        once for a tuple of them (T257: a Gemma 3 has 6,406 added tokens, and writing the pattern out for each text
+        took 2 ms). The first of the alternatives that matches is taken, so the converter names the longest first. A
+        sentencepiece vocabulary's pieces spell U+2581 as a space (the converter's tokenizer_bin()), a special's
+        among them (a Gemma 3's runs of U+2581)."""
+        if specials not in self.cuts:
+            spelled = (lambda special: special) if self.kind == "bytebpe" else (lambda special: special.replace("\u2581", " "))
+            self.cuts = {specials: (re.compile("(" + "|".join(re.escape(special) for special in specials) + ")"),
+                                    {special: spelled(special).encode("utf-8") for special in specials})}
+        return self.cuts[specials]
 
     def normalized(self, text):
         """The text as the model's normalizer makes it: a sentencepiece model's own map (charsmap, T216: nmt_nfkc makes
@@ -429,7 +448,7 @@ class Tokenizer:
             text = piece.decode("utf-8", "replace")
             return bytes(CHAR_BYTES[char] for char in text) if all(char in CHAR_BYTES for char in text) else piece
         # Following the first token, sentencepiece decoder strips the leading whitespace (the dummy prefix)
-        if prev_token == bos and piece.startswith(b" "):
+        if prev_token == bos and piece.startswith(b" ") and self.prefixed != "never":
             piece = piece[1:]
         # Some tokens designate raw bytes, and look like b"<0x0A>"
         if len(piece) == 6 and piece.startswith(b"<0x") and piece.endswith(b">"):

@@ -17,7 +17,8 @@ for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
 // T362: blocks that are the same on every machine, and what a 64-bit NumPy reads of them
-for (const file of ["tests/superblock_cases.py", "tests/fixtures/superblocks.json", "tests/saluki_form.py"]) {
+// (and T257: a sentencepiece BPE model written out as a tokenizer.json, with the ids a 64-bit Python reads with it)
+for (const file of ["tests/superblock_cases.py", "tests/fixtures/superblocks.json", "tests/saluki_form.py", "tests/spelled_bpe_cases.py"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
 
@@ -953,6 +954,30 @@ llmjp.release(); del llmjp; gc.collect()
 f"T178: llm-jp-3 150M wrote {len(written)} texts at a low temperature and top-p, the first: {written[0]!r}"
 `));
 }
+// T257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, without the dummy prefix, and a Llama
+// tokenizer's, with it), through the converter and the engine inside Pyodide: the ids are the definition's, and the
+// ones pytest holds a 64-bit Python and the tokenizers library to (tests/spelled_bpe_cases.py's number)
+console.log(pyodide.runPython(`
+import json, llama2_convert, llama2_numpy, spelled_bpe_cases as spelled
+import convert.tokenizer
+read_ids = []
+for dummy in (False, True):
+    file = json.loads(json.dumps(spelled.spec(dummy)))
+    options, pieces = llama2_convert.tokenizer_json_options(file), list(llama2_convert.tokenizer_json_pieces(file))
+    assert options == {"tokenizer_kind": "bpe", "prefixed": "every" if dummy else "never"}, options
+    written = llama2_numpy.Tokenizer(llama2_convert.tokenizer_bin(pieces, len(pieces)), len(pieces), kind="bpe", prefixed=options["prefixed"])
+    ids = [written.encode(text, spelled.SPECIALS) for text in spelled.TEXTS]
+    assert ids == [spelled.by_the_definition(file, text, spelled.SPECIALS) for text in spelled.TEXTS], "T257: the engine's ids are not the definition's"
+    assert spelled.digest(ids) == spelled.IDS[dummy], "T257: Pyodide's ids are not a 64-bit Python's"
+    read_ids += ids
+    lacking = {**file, "model": {**file["model"], "merges": file["model"]["merges"][1:]}}
+    try:
+        list(llama2_convert.tokenizer_json_pieces(lacking))
+        raise AssertionError("T257: merges the engine would not follow were taken")
+    except ValueError as error:
+        assert "merges its pieces" in str(error)
+f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} texts read as natively, {sum(map(len, read_ids))} tokens"
+`));
 // T235: an entry's rope_scaling: {} (src/models/formats.js's PLAIN_ROPE) as the worker hands it to the engine: a
 // JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
 // plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them
