@@ -6200,6 +6200,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ```
 ### T261 [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 状態: 進行中（2026-10-14、Opus medium、ブランチ `t261-gemma3`。子タスクは下。2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
 - **子タスク（2026-10-14 に分けた）**: **T261.1** NumPy の参照と変換器（Python だけ。GGUF の名前と、transformers と比べる CI の道具まで）— 状態: 進行中。**T261.2** ページの forward（計画の事実・`forward/` の部品・カーネル。GPU には置かない）— 状態: 未着手。**T261.3** 一覧と本番（名前・note・標本抽出・止まりは持ち主の文面の後）— 状態: 未着手。**T261.4** GPU（窓つきの attention・後ろの norm・GELU の gate・2 つ目の RoPE の表）— 状態: 未着手。
 - **読んだ元**（形と式だけ。行は写していない）: transformers `28034545c35acac05793695bd5c878f66e6b544e` の `models/gemma3/modeling_gemma3.py`（`Gemma3TextScaledWordEmbedding`・`Gemma3MLP`・`Gemma3RMSNorm`・`Gemma3RotaryEmbedding`・`Gemma3Attention`・`Gemma3DecoderLayer`・`Gemma3TextModel`・`Gemma3ForCausalLM`）と `configuration_gemma3.py`、`masking_utils.py` の `sliding_window_overlay`。llama.cpp `4413a192410fad1f054e9216114087a3e01527a0` の `src/models/gemma3.cpp`・`conversion/gemma.py`（`Gemma3Model`）・`src/llama-hparams.cpp`（`set_swa_pattern`）。実物: `unsloth/gemma-3-270m-it` @`23cf460f6bb16954176b3ddcc8d4f250501458a9`・`unsloth/gemma-3-1b-it` @`5b11413a10db4e486ef16a20101fd028f8f2499c` の config.json、`unsloth/gemma-3-270m-it-GGUF` @`c90975dbd40c0c7b275fefaae758c3415c906238` の Q8_0 の頭。
 - **T261.1 の決め（実装の前に書いた、2026-10-14）**:
@@ -6213,7 +6214,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **変換の共通の流れに入れる枝は 1 つ**: `("scale", c)` だけの変換は断片ごとに通す（今は「変換のあるテンソルは丸ごと読む」: 262,144 × 1152 の埋め込みを float32 で 1.2 GB 持つことになる）。今あるモデルで `("scale", c)` だけの変換を持つテンソルは無い（Granite の q は並べ替えとの組）ので、今ある変換は 1 バイトも変わらない見込み。
   - **予定した違い**（守りの網）: `exports`（Python の窓口に `local_layers` など新しい名前・`Llama.__init__` の引数 `local`・`Layout` の欄）、`layouts`（アーキテクチャの名前の一覧を言う断りは例外の種類だけで比べるので出ない見込み。config の読みの格子に Gemma を足せばその行）、`python`（足した pytest のぶん: 今ある試験のハッシュは同じ）。**出てはいけないもの**: 今ある 5 つのレイアウトの置き場・大きさ・計画・`conversion_plan()`、`conversions_compare` の 118 項目、`calls`・`choices`・`shaders`・`models`。`CONVERTER` は上げない。
   - **訪問者に見える文が変わる所**（家族を足すと付いてくる。報告で持ち主に見せる）: 「…only Llama, …, LFM2, **Gemma 3**, GPT-2 and GPT-NeoX models are supported」と GGUF の同じ形の文に名前が 1 つ入る。家族の断りが増える（上の「畳まないもの」）。**ページの forward が Gemma の層を持つ（T261.2）までは、`gemma3` のモデルを外のエンジンで始めることを Python が断る**（黙って Llama として計算しないため: 仮の文 1 つ。T261.2 で消す）。
-```
 - 規模 中〜大。窓つきの attention は CPU と GPU の両方。原本はゲート付きで、unsloth の写しから。Gemma 2 と Gemma 4 はこの部品の上に。
 
 ### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項。**そのうち RoPE は決まった（2026-10-11、持ち主「オススメで」）: ページの文脈 4096 では素の RoPE にする（項目の options に `rope_scaling: {}`。効くのは 3 値・int8・float16 で、float32 は表をファイルに持つ）。実装した（2026-10-11、ブランチ `t235-plain-rope-2`、レビュー前。3 つの大きさの perplexity と書く文の前後は下の「素の RoPE にした結果」）。古いブランチ `t235-plain-rope` は分割の前の木で、使っていない**）
