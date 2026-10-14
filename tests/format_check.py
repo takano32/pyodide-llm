@@ -102,8 +102,9 @@ KNOWN = {
 # T337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
 # T255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's
 # T364.3: and Underdog Saluki 27B, the same base model as Ternary Bonsai 2 27B's with the same template and options
+# T261.3: and Gemma 3, whose template writes its <bos> first, the BOS the converter takes off and the page sends
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
-          "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-")
+          "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-")
 # T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 # (T364.3: and Underdog Saluki 27B's, whose template is the same one)
