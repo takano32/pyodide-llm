@@ -24,6 +24,9 @@ const LLAMA_31 = "Llama 3.1 Community License";
 const MIT_OF_LLAMA_31 = "MIT License (derived from Llama 3.1 8B, originally under the Llama 3.1 Community License)";
 // T260: Liquid AI's own license, as the LICENSE file of every repository names itself (the cards say "other", lfm1.0)
 const LFM_OPEN = "LFM Open License v1.0";
+// T261.3: Google's terms for Gemma, as the cards of Gemma 3 name them ("**Terms of Use**: [Terms]", a link to
+// ai.google.dev/gemma/terms; their metadata: gemma). unsloth's copies and GGUFs have the same words
+const GEMMA = "Gemma Terms of Use";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -159,4 +162,7 @@ export const LICENSES = {
   "LiquidAI/LFM2-700M": LFM_OPEN, "LiquidAI/LFM2-700M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-Instruct": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-Instruct-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-JP-202606": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF": LFM_OPEN,
+  // T261.3: Google's originals (gated: the list takes unsloth's copies and GGUFs of them)
+  "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
+  "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,
 };
