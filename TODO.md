@@ -6086,7 +6086,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - `CharClasses` を Lu・Lt・Lm・Lo・Ll・M まで細かくする。Ministral 8B（研究用のライセンス）、Mistral Nemo の日本語版（12B、メモリは実測）、kanana-2 が開き、Phi-4 mini の前提になる。
 
 ```
-### T257 [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 状態: レビュー前（2026-10-14、Opus medium、ブランチ `t257-spm-bpe-json`。本線には入れていない。数字と表は docs/notes/t257-spelled-bpe-2026-10-14.md。2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+### T257 [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 状態: 完了（2026-10-14、本線に入れた。**レビュー（Sonnet low、2026-10-14）: OK、直しなし。** 今ある 118 項目の options・tokenizer.bin・送る ID は不変（`conversions_compare` 118/118、網の `python` は違い 0・消えた 0）、fixture の差分なし、Gemma 3 の実物 240,672 文とレビューの 22 文で `tokenizers` と ID の違い 0、壊し方 4 つが全部落ちる。レビューが回していない smoke・軽い組・build・dist-check は取りまとめ役が先頭で回した。**持ち主の決定（2026-10-14、選択肢で）: 断りの文 2 つ（「…spells a character it lacks in a way the engine does not know.」「…merges its pieces in a way the engine does not know.」）は足す、語彙ファイルが 2 種類あるリポジトリは形で分ける（今の実装）。** 残る穴は T509）。前の状態:  レビュー前（2026-10-14、Opus medium、ブランチ `t257-spm-bpe-json`。本線には入れていない。数字と表は docs/notes/t257-spelled-bpe-2026-10-14.md。2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - merges の順位を点数にして llama2.c 形の BPE の語片に直す。normalizer は「先頭に ▁」「空白を ▁」だけを受け付ける。本物と ID を突き合わせる。
 - **実物の形（2026-10-14 に取って読んだ。リビジョンは固定）**: `unsloth/gemma-3-270m-it` @`23cf460f6bb16954176b3ddcc8d4f250501458a9`・`unsloth/gemma-3-1b-it` @`5b11413a10db4e486ef16a20101fd028f8f2499c`・`google/gemma-4-E2B-it` @`3e22461f65e89153144f8adb70e3b8c2cc9845a7`・`cyberagent/CAT-Translate-7b` @`e36edfc6858a9a6ba41f8d9fa34427f3d8461eca`。4 つとも `model.type` BPE・`byte_fallback: true`・`fuse_unk: true`・`unk_token`・バイトの語片 256・merges は対の配列。Gemma は normalizer が「空白を ▁」だけ（先頭に ▁ を足さない）、pre_tokenizer が `Split(" ", MergedWithPrevious)`（空白はもう無いので何も切らない）。CAT-Translate 7B は「先頭に ▁」「空白を ▁」で pre_tokenizer なし。
@@ -8144,3 +8144,10 @@ T164 の CI の計測（1 本、128 位置）で、tiny-lm は生成の 14〜18%
 - **文面（区切りで持ち主に）**: README の 100〜102 行「It does not open a repository that has only GGUF files…」が古い（docs/architecture.md の GGUF の説明も）。選択欄の「Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX」。手元のフォルダから `.gguf` を開く門（T410 と一緒: 案 (a) 門の文は変えず `.gguf` 1 つを選んだら開く・ボタンの `title` に「…, or one .gguf file」、(b) 門の文も直す、(c) やらない）。「kept in this browser」の一覧が同じリポジトリの 2 つのファイルを同じ名前で並べる（名前にファイルを付けるか）。
 - **小さな直し**: 一覧の API を worker の init と並べて聞く（いまは直列: `?hf=` の訪問がその往復ぶん遅れる、未計測）。シートの Open の後、一覧を待つ最大 10 秒のあいだ画面に何も出ない。トップが 1,000 ファイルを越えるリポジトリは一覧が切れる。`&file=` に長さの上限が無い。`threadsKey`・`gpuKey` がファイルで分かれない。
 - **確かめていないもの**: 空でない恒等の `precompiled_charsmap` を持つ sentencepiece の GGUF を断りすぎていないか（実物の Mistral の GGUF の頭で）。`pre` の無い実物の GGUF の断り。GB 級の GGUF を `?hf=` で。オフラインの 2 回目の訪問。本物の Safari。
+
+### T509 [整理][解析分割] T257 の残り — 状態: 未着手（2026-10-14、レビューと実装の気づき。どれも今ある実物では起きていない）
+- **行の無い追加のトークンを落とす（`with_a_row()`）とき、その語が書式・BOS・止まりに使われていても断らない**: 落とした special を chat_template が書くと、文字として刻まれる。直し: 落とす id が `bos`・止まり・書式に出るなら断る。byte-level の道にも当たる（前は「The tokenizer has N pieces…」で断っていたモデルが開く）。
+- **語片の点数 = 最初の merge の順位、の読みが本物と違いうる語彙を、変換器は黙って通す**（同じ語片を作る対の順位が離れているとき。作り物で 30,027 文中 63 文。Gemma・CAT-Translate の実物は 0）。直し: `merged_by_text()` の中で、その形を見つけたら断る。
+- 今あるエンジンの `encode_bpe` は点数 −1e9 の語片（合併させないはずのもの）も最後に合併しうる（`pair()` の線が −1e10: llama2.c の形。書式のトークンは specials で先に切るので普段は当たらない）。`sentencepiece_options()` は `add_dummy_prefix` を読まない（Gemma 3 の tokenizer.model を読むと頭に空白が付く: いまは tokenizer.json を読むので当たらない）。
+- special が数千あるとき（Gemma 3 は 6,408）: 切り分けが `<` 1 つに約 88 µs（HTML の多い 4,000 字で 32 ms）、変換のあいだのヒープが 36 → 291 MiB、options の JSON が約 100 KB。T261 で、スマホで気になる大きさかを見る。
+- Gemma の GGUF の語彙（`tokenizer.ggml.model: llama`、user-defined の語片が空白でつづってある）は今も断る（一覧は語彙を原本から取るので要らない）。Metaspace の前分割の tokenizer.json は今までどおり断る。CAT-Translate 7B を一覧に足すのは別の子タスク（Q8_0 の GGUF を `gguf_check.py` に通す所から）。
