@@ -1,5 +1,5 @@
 // kernel/activations.ts (T356): what is done to one vector of activations between the matrix products: the norms
-// (rmsnorm, layernorm), the feed-forward's activations (gelu, swiglu), the residual's add, and the rotated basis of
+// (rmsnorm, layernorm), the feed-forward's activations (gelu, swiglu, geglu), the residual's add, and the rotated basis of
 // the matrices that are stored rotated (rotate, unrotate).
 
 import { hsum, fexp, vexp } from "./math";
@@ -75,6 +75,25 @@ export function swiglu(out: usize, h1: usize, h3: usize, n: i32): void {
     const o = <usize>j << 2;
     const v = load<f32>(h1 + o);
     store<f32>(out + o, v / (<f32>1.0 + fexp(-v)) * load<f32>(h3 + o));
+  }
+}
+
+// T261: a Gemma's gated FFN, gelu(h1) * h3: gelu's own numbers (the same steps in the same order, no bias) times h3,
+// as swiglu is silu(h1) * h3. Four at a time and one at a time are the same to the bit, as gelu's are.
+export function geglu(out: usize, h1: usize, h3: usize, n: i32): void {
+  const one = f32x4.splat(1.0), c = f32x4.splat(0.7978845608028654), cube = f32x4.splat(0.044715), two = f32x4.splat(-2.0);
+  let j = 0;
+  for (; j + 4 <= n; j += 4) {
+    const o = <usize>j << 2;
+    const v = v128.load(h1 + o);
+    const inner = f32x4.mul(c, f32x4.add(v, f32x4.mul(f32x4.mul(f32x4.mul(cube, v), v), v)));
+    v128.store(out + o, f32x4.mul(f32x4.div(v, f32x4.add(one, vexp(f32x4.mul(two, inner)))), v128.load(h3 + o)));
+  }
+  for (; j < n; j++) {
+    const o = <usize>j << 2;
+    const v = load<f32>(h1 + o);
+    const inner = <f32>0.7978845608028654 * (v + <f32>0.044715 * v * v * v);
+    store<f32>(out + o, v / (<f32>1.0 + fexp(<f32>-2.0 * inner)) * load<f32>(h3 + o));
   }
 }
 

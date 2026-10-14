@@ -24,7 +24,7 @@ const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").st
 const kernels = compileKernels(fs.readFileSync(built("simdkernel_plain.wasm")), fs.readFileSync(built("simdkernel_relaxed_plain.wasm")));
 // the kinds of kernel calls, and the kernel names that go into each
 const KINDS = { "matmuls": ["matmul_q8r", "matmul_q8", "matmul_q6r", "matmul_q6", "matmul_f32"], "quantizing the input": ["quantize_x"],
-  "attention": ["attention"], "norms": ["rmsnorm", "layernorm"], "rope, activation, adds": ["rope", "swiglu", "gelu", "add_inplace", "add_columns"] };
+  "attention": ["attention"], "norms": ["rmsnorm", "layernorm"], "rope, activation, adds": ["rope", "swiglu", "gelu", "geglu", "add_inplace", "add_columns"] };
 const kindOf = Object.fromEntries(Object.entries(KINDS).flatMap(([kind, names]) => names.map((name) => [name, kind])));
 function timing(sums) {
   return (exports) => Object.fromEntries(Object.entries(exports).map(([name, f]) => [name, typeof f !== "function" || !kindOf[name] ? f : (...a) => {

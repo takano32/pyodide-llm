@@ -47,7 +47,7 @@ def load_kernels(path, without_relaxed=False):
                           swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
                           rotate=[p, p, p, i32, i32], unrotate=[p, p, p, i32, i32],
                           add_columns=[p, p, p, i32, i32],
-                          layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
+                          layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32], geglu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float, ctypes.c_float],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float])
         kernels = {}

@@ -19,7 +19,7 @@ two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 | `kernel/quantize.ts` | numbers from one form to another: `widen_bf16`, `widen_q8_0`, `widen_pq2_0`, `widen_ptq1_0` (a checkpoint's stored forms to float32), `quantize_x` (the converter's int8, and the activations of every int8 product), `quantize6_x`, `ternary_x` |
 | `kernel/attention.ts` | `rope`, `attention`, `attention_f16` |
 | `kernel/halves.ts` | float16: `to_f16`, `from_f16`, `finite_f16`, and the widening `attention_f16` reads the cache with |
-| `kernel/activations.ts` | one vector between the matrix products: `rmsnorm`, `layernorm`, `gelu`, `swiglu`, `add_inplace`, `rotate` and `unrotate` (the rotated basis) |
+| `kernel/activations.ts` | one vector between the matrix products: `rmsnorm`, `layernorm`, `gelu`, `swiglu`, `geglu` (a Gemma's gate), `add_inplace`, `rotate` and `unrotate` (the rotated basis) |
 | `kernel/stateful.ts` | the layers with a state: `gate`, `convolve`, `delta_rule` (Qwen3.5), `short_conv` (LFM2) |
 | `kernel/sample.ts` | `argmax`, `penalize`, `sample` |
 | `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
