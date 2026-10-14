@@ -397,7 +397,7 @@ def last_norm_not_divided(llama, make):
 
 def gate(function):
     def fault(llama, make):
-        llama.gate = function
+        llama.activation = function
         return llama
     return fault
 

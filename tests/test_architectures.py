@@ -24,17 +24,17 @@ CONVOLUTION = {"layers": "ccac", "taps": 3}
 # the facts of every architecture, a second time: a record that is changed has to be changed here too
 FACTS = {
     "llama": dict(rows="llama", stateful=None, rope=WHOLE, yarn_magnitude=True, layer_norm=False, gated_ffn=True,
-                  rotatable=True, unturned=True, gate=SILU, local=False),
+                  rotatable=True, unturned=True, activation=SILU, local=False),
     "gpt2": dict(rows="gpt2", stateful=None, rope=None, yarn_magnitude=False, layer_norm=True, gated_ffn=False,
-                 rotatable=False, unturned=False, gate=SILU, local=False),
+                 rotatable=False, unturned=False, activation=GELU, local=False),
     "neox": dict(rows="gpt2", stateful=None, rope=PARTLY, yarn_magnitude=False, layer_norm=True, gated_ffn=False,
-                 rotatable=False, unturned=False, gate=SILU, local=False),
+                 rotatable=False, unturned=False, activation=GELU, local=False),
     "qwen35": dict(rows="qwen35", stateful="linear", rope=PARTLY, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                   rotatable=True, unturned=False, gate=SILU, local=False),
+                   rotatable=True, unturned=False, activation=SILU, local=False),
     "lfm2": dict(rows="lfm2", stateful="convolution", rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                 rotatable=False, unturned=False, gate=SILU, local=False),
+                 rotatable=False, unturned=False, activation=SILU, local=False),
     "gemma3": dict(rows="gemma3", stateful=None, rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                   rotatable=False, unturned=False, gate=GELU, local=True),
+                   rotatable=False, unturned=False, activation=GELU, local=True),
 }
 # (a header and the form each architecture needs to be laid out)
 HEADER = [64, 128, 4, 4, 2, 320, 48]
@@ -289,8 +289,8 @@ def test_a_model_has_its_architectures_facts_from_the_time_it_is_made(arch):
     else:
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             model(arch, unturned=[2])
-    # T261: the gate of a gated FFN, and the local layers of the architectures that take them
-    assert llama.gate is (engine.model.gelu if facts["gate"] == GELU else engine.model.silu)
+    # T261: the activation of the FFN, and the local layers of the architectures that take them
+    assert llama.activation is (engine.model.gelu if facts["activation"] == GELU else engine.model.silu)
     local = {"layers": [1], "window": 3, "rope_theta": 50.0}
     if facts["local"]:
         assert model(arch, local=local).local == {"layers": (1,), "window": 3, "rope_theta": 50.0}
@@ -353,12 +353,20 @@ def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts(monkeypatch):
     assert np.isfinite(mine).all() and not np.allclose(theirs, mine, atol=1e-5)
 
 
-def test_the_gate_and_the_local_layers_are_facts_of_their_own(monkeypatch):
-    """T261: only a Gemma 3 has a GELU in its gate, local layers and the norms behind, so nothing of the table tells
-    the three apart: a made-up Llama with a GELU in its gate and another with local layers do. The same file as a
-    Llama's each (no row says either), other numbers, and each only where its fact reaches: the gate from the first
-    token, the window once a text is longer than it."""
-    monkeypatch.setitem(LAYOUTS, "gelu llama", LAYOUTS["llama"]._replace(gate=GELU))
+def test_the_activation_and_the_local_layers_are_facts_of_their_own(monkeypatch):
+    """T261: only a Gemma 3 has a gated FFN with a GELU, local layers and the norms behind, so nothing of the table
+    tells the three apart (and a GELU went with GPT-2's FFN alone before it): a made-up Llama with a GELU in its gate,
+    a GPT-2 with a SiLU and a Llama with local layers do. The same file as the other's each (no row says any of it),
+    other numbers, and each only where its fact reaches: the activation from the first token, the window once a text
+    is longer than it."""
+    monkeypatch.setitem(LAYOUTS, "gelu llama", LAYOUTS["llama"]._replace(activation=GELU))
+    monkeypatch.setitem(LAYOUTS, "silu gpt2", LAYOUTS["gpt2"]._replace(activation=SILU))
+    monkeypatch.setitem(FACTS, "silu gpt2", {**FACTS["gpt2"], "activation": SILU})
+    monkeypatch.setitem(FORMS, "silu gpt2", {"arch": "silu gpt2"})
+    ours, gpt2 = model("silu gpt2"), model("gpt2")
+    assert (ours.gated_ffn, gpt2.gated_ffn) == (False, False) and ours.rows == gpt2.rows
+    assert ours.activation is engine.model.silu and gpt2.activation is engine.model.gelu
+    assert np.isfinite(ours.forward(5, 0)).all() and not np.allclose(gpt2.forward(5, 0), ours.forward(5, 0), atol=1e-5)
     monkeypatch.setitem(LAYOUTS, "local llama", LAYOUTS["llama"]._replace(local=True))
     for arch in ("gelu llama", "local llama"):
         assert tensor_rows(HEADER, {"arch": arch}) == tensor_rows(HEADER)
@@ -372,7 +380,7 @@ def test_the_gate_and_the_local_layers_are_facts_of_their_own(monkeypatch):
     assert np.isfinite(gelu[0]).all() and not np.allclose(gelu[0], plain[0], atol=1e-5)
     # a window of 3 in every layer and the base the file's tables have: the first three positions are a Llama's
     windowed = Model(arch="local llama", local={"layers": [0, 1, 2, 3], "window": 3, "rope_theta": 10000.0})
-    assert windowed.gate is engine.model.silu and windowed.rms_att_post_weight is None
+    assert windowed.activation is engine.model.silu and windowed.rms_att_post_weight is None
     got = run(windowed)
     assert all(np.allclose(got[pos], plain[pos], atol=1e-6) for pos in range(3))
     assert not np.allclose(got[3], plain[3], atol=1e-5)

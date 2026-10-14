@@ -133,7 +133,7 @@ class Llama:
         convolution: which layers those are and their taps (FORM's, the file cannot say them). The state follows the
         positions as a Qwen3.5's does.
         arch="gemma3" (T261): Google's Gemma 3, see the comment on it in engine/layers.py: a Qwen3 that normalizes
-        what its attention and its FFN give as well, whose FFN's gate goes through a GELU, and most of whose layers
+        what its attention and its FFN give as well, whose FFN's activation is a GELU, and most of whose layers
         are local ones. local: which those are, the window they attend and the base RoPE turns them by
         (engine/layout.py's local_layers(); the file is the same whichever they are).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
@@ -243,8 +243,8 @@ class Llama:
         # what of the forward pass differs by the architecture, as the reference reads it at every token: the kind of
         # its norms and of its FFN, and whether RoPE turns the heads of q and k whole, in part or not at all
         self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
-        # (the gate of a gated FFN: a SiLU's, or a GELU's)
-        self.gate = gelu if layout.gate == GELU else silu
+        # (the activation of the FFN: a SiLU, or a GELU)
+        self.activation = gelu if layout.activation == GELU else silu
         self.turning, self.partly = layout.rope is not None, layout.rope == PARTLY
         # (and of its layers that keep a state: the name of the reference's step that is theirs, and of their states;
         # none, unless NumPy computes such layers, below)
@@ -283,7 +283,7 @@ class Llama:
                 int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                 parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
                 rotated=self.rotated, tables=tables, tiled=self.tiled)), external)
-            if layout.gate != SILU or layout.local:
+            if (layout.gated_ffn and layout.activation != SILU) or layout.local:
                 # T261.1: forward.js has not these layers yet (T261.2), and runs the plan of such a model as a Llama's
                 # without a word. Until it has, the engine it made is let go and no token goes through it
                 outside.release()
@@ -359,7 +359,7 @@ class Llama:
         local = self.local and set(self.local["layers"])
         tables = (cos, sin)
         # (what the architecture is, as its Layout said when the model was made)
-        layer_norm, gated_ffn, gate = self.layer_norm, self.gated_ffn, self.gate
+        layer_norm, gated_ffn, activation = self.layer_norm, self.gated_ffn, self.activation
         # the step of the layers that keep a state, where there are such (read off the model at every token, as a
         # method is: a tool puts its own there)
         stateful = None
@@ -434,18 +434,18 @@ class Llama:
             before = x
             x = x + attended
 
-            # FFN: w2(silu(w1(x)) * w3(x)), or GPT-2's w2(gelu(w1(x))), and residual connection
+            # FFN: w2(act(w1(x)) * w3(x)), or GPT-2's w2(act(w1(x) + b1) + b2, and residual connection
             xb = norm(before if self.parallel_residual else x, self.rms_ffn_weight[l],
                       self.ln_ffn_bias[l] if layer_norm else None)
             xr = turned(xb)
             hb = self.w1[l] @ xr
             if gated_ffn:
-                hb = self.w2[l] @ turned(gate(hb) * (self.w3[l] @ xr))
+                hb = self.w2[l] @ turned(activation(hb) * (self.w3[l] @ xr))
                 if self.rms_ffn_post_weight is not None:
                     hb = rmsnorm(hb, self.rms_ffn_post_weight[l], eps)
                 x = x + hb
             else:
-                x = x + self.w2[l] @ gelu(hb + self.b1[l]) + self.b2[l]
+                x = x + self.w2[l] @ activation(hb + self.b1[l]) + self.b2[l]
 
         if not need_logits:
             return None

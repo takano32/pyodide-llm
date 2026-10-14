@@ -290,10 +290,13 @@ def test_the_other_models_keep_the_options_they_always_had():
 
 
 def test_the_facts_of_the_architecture():
-    """Two facts no other architecture has: the gate of its FFN goes through a GELU, and its layers may be local ones.
-    And two norms no other has, as rows of its file."""
-    assert LAYOUTS["gemma3"].gate == GELU and LAYOUTS["gemma3"].local
-    assert all(layout.gate == SILU and not layout.local for arch, layout in LAYOUTS.items() if arch != "gemma3")
+    """What no other architecture has: a gated FFN whose activation is a GELU (a Llama's is a SiLU, and GPT-2's GELU is
+    of an FFN without a gate), and layers that may be local ones. And two norms no other has, as rows of its file."""
+    assert LAYOUTS["gemma3"].activation == GELU and LAYOUTS["gemma3"].gated_ffn and LAYOUTS["gemma3"].local
+    assert all(not (layout.gated_ffn and layout.activation == GELU) and not layout.local
+               for arch, layout in LAYOUTS.items() if arch != "gemma3")
+    assert {arch: layout.activation for arch, layout in LAYOUTS.items()} == {
+        "llama": SILU, "gpt2": GELU, "neox": GELU, "qwen35": SILU, "lfm2": SILU, "gemma3": GELU}
     names = [row.name for row in tensor_rows((32, 64, 6, 4, 1, 320, 24), {"arch": "gemma3", "head_dim": 16})]
     assert {"rms_att_post_weight", "rms_ffn_post_weight", "q_norm", "k_norm"} <= set(names)
     for arch in ("llama", "qwen35", "lfm2", "gpt2", "neox"):

@@ -333,7 +333,7 @@ def gpt2(d):
 # ---- the architectures
 # How much of a head RoPE turns (Layout's rope; None: none of it, the model has a learned table of positions)
 WHOLE, PARTLY = "whole", "partly"
-# What a gated FFN's gate goes through (Layout's gate): w2(silu(w1 x) * w3 x), or the same with a GELU (its tanh form)
+# The activation of an FFN (Layout's activation): a SiLU, or a GELU (its tanh form, which GPT-2 calls gelu_new)
 SILU, GELU = "silu", "gelu"
 
 
@@ -356,14 +356,15 @@ class Layout(NamedTuple):
     yarn_magnitude: bool = False
     # its norms are LayerNorms, of a weight and a bias (RMSNorms, of a weight, otherwise)
     layer_norm: bool = False
-    # its FFN is gated: three matrices, w2(silu(w1 x) * w3 x) (otherwise GPT-2's: two and their biases, with a GELU)
+    # its FFN is gated: three matrices, w2(act(w1 x) * w3 x) (otherwise GPT-2's: two and their biases, w2 act(w1 x + b1) + b2)
     gated_ffn: bool = True
     # its matrices may be in a rotated basis (T237)
     rotatable: bool = False
     # some of its layers may be ones RoPE leaves alone (T255)
     unturned: bool = False
-    # what the gate of a gated FFN goes through: SILU or GELU (T261: a Gemma's)
-    gate: str = SILU
+    # the activation of its FFN, SILU or GELU: of the gate of a gated one (a Llama's is a SiLU, T261: a Gemma's a GELU),
+    # of the one matrix's output of GPT-2's. Another fact than gated_ffn: a Gemma's FFN is gated as a Llama's is
+    activation: str = SILU
     # some of its layers may be local ones (T261): they attend a window of the last positions, and RoPE turns their q
     # and k by a base of their own (local_layers())
     local: bool = False
@@ -372,11 +373,11 @@ class Layout(NamedTuple):
 # by the architecture's name (FORM's "arch")
 LAYOUTS = {
     "llama": Layout(llama, yarn_magnitude=True, rotatable=True, unturned=True),
-    "gpt2": Layout(gpt2, rope=None, layer_norm=True, gated_ffn=False),
-    "neox": Layout(gpt2, rope=PARTLY, layer_norm=True, gated_ffn=False),
+    "gpt2": Layout(gpt2, rope=None, layer_norm=True, gated_ffn=False, activation=GELU),
+    "neox": Layout(gpt2, rope=PARTLY, layer_norm=True, gated_ffn=False, activation=GELU),
     "qwen35": Layout(qwen35, stateful=GATED_DELTA, rope=PARTLY, rotatable=True),
     "lfm2": Layout(lfm2, stateful=SHORT_CONVOLUTION),
-    "gemma3": Layout(gemma3, gate=GELU, local=True),
+    "gemma3": Layout(gemma3, activation=GELU, local=True),
 }
 
 

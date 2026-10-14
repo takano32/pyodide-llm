@@ -189,7 +189,7 @@ def delta_rule(state, q, k, v, beta, decay):
 #     x += post_feedforward_norm(w2(gelu(w1 xn) * w3 xn))      gelu_pytorch_tanh, which is gelu() above
 #   logits = embedding (the same table) times norm(x)
 # The engine has the two norms behind as rows of the file (rms_att_post_weight, rms_ffn_post_weight), the GELU as a
-# fact of the architecture (engine/layout.py's Layout: gate) and the sliding-attention layers as its local layers
+# fact of the architecture (engine/layout.py's Layout: activation) and the sliding-attention layers as its local layers
 # (local_layers(): the options say which they are, their window and their base). The keys and values of every
 # position are kept, and a local layer reads the last of them. The sqrt(dim) is in no forward pass: the converter
 # multiplies the table by it and, the table being the classifier too, divides the last norm's weight by it, which
