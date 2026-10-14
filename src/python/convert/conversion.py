@@ -9,9 +9,10 @@ from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Kept, Stream
 from convert.gguf import gguf_model, gguf_read, gguf_tokenizer, rope_freqs_values
-from convert.tokenizer import (described_options, piece_ids, sentencepiece_charsmap, sentencepiece_options,
-                               sentencepiece_pieces, sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
-                               tokenizer_json_options, tokenizer_json_pieces)
+from convert.tokenizer import (Later, described_options, piece_ids, prefixed_texts, sentencepiece_charsmap,
+                               sentencepiece_options, sentencepiece_pieces, sentencepiece_specials, tokenizer_bin,
+                               tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces, with_a_row,
+                               written_out)
 
 
 def described(tokenizer_config):
@@ -32,10 +33,14 @@ class Conversion:
     file in order, beginning at start, and finish(). checkpoint, tokenizer and options are what Llama() takes.
     blocks (T363.3): the tensors a GGUF holds in llama.cpp's blocks stay the bytes they are (convert/stream.py's Kept),
     and dtype is how the others are stored.
+    last (T257): no other tokenizer of the model is left to try. Without it a tokenizer.json that writes out a
+    sentencepiece model with its dummy prefix is put off (convert.tokenizer's Later), for the model's own file to be
+    read where there is one.
     """
 
     def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
-                 tokenizer_config=None, sink=None, quantize_rows=None, chat_template=None, readers=None, blocks=False):
+                 tokenizer_config=None, sink=None, quantize_rows=None, chat_template=None, readers=None, blocks=False,
+                 last=True):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -58,11 +63,13 @@ class Conversion:
                 parsed = json.loads(tokenizer)
             except ValueError:
                 raise ValueError("tokenizer.json is not JSON.") from None
+            if not last and written_out(parsed) and prefixed_texts(parsed):
+                raise Later("This tokenizer.json writes out a sentencepiece model, whose own file is read first.")
             options = tokenizer_json_options(parsed)
-            pieces = list(tokenizer_json_pieces(parsed))
+            pieces = with_a_row(list(tokenizer_json_pieces(parsed)), parsed, vocab_size)
             self.tokenizer = tokenizer_bin(pieces, vocab_size, spaces=options["tokenizer_kind"] != "bytebpe",
                                            charsmap=tokenizer_json_charsmap(parsed))
-            added = parsed.get("added_tokens", [])
+            added = [token for token in parsed.get("added_tokens", []) if token.get("id", 0) < vocab_size]
             specials = [token["content"] for token in added if token.get("special")]
             # T143: the added tokens it does not call special are read as one token wherever they are too, by the real
             # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T215's finding)

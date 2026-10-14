@@ -1,11 +1,22 @@
-# The tokenizer's conversion: tokenizer.json (Unigram, byte-level BPE) and sentencepiece models to tokenizer.bin and
-# the options the engine needs.
+# The tokenizer's conversion: tokenizer.json (Unigram, byte-level BPE, a sentencepiece BPE model written out) and
+# sentencepiece models to tokenizer.bin and the options the engine needs.
 import json
 import struct
 
 from engine.tokenizer import CHARSMAP
 
 UNMATCHABLE = -1e9  # control, unknown and byte pieces must never match user text: llama2_numpy.py skips such scores
+
+
+class Later(ValueError):
+    """T257: what a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix (a Llama
+    tokenizer's: a Mistral's, CAT-Translate 7B's) is put off with while the model's other tokenizers are still to be
+    tried (Conversion(last=False), which is how convert.conduct asks for each candidate). Before which stretches of
+    text the prefix stands is not the file's alone to say: transformers reads it off tokenizer_config.json's legacy
+    (T308), a tokenizer.json written by an older transformers prepends to all of them whatever that says, and the
+    model's own file, with its scores, is what the list's models of this kind were held to the real tokenizers with.
+    Read where no other tokenizer is there, or none that can be read. One without the prefix (a Gemma's) has no such
+    question, and is read at once: the model's own file read here would get a prefix it has not."""
 
 
 def tokenizer_bin(pieces, vocab_size, spaces=True, charsmap=b""):
@@ -54,19 +65,32 @@ def tokenizer_json_pieces(tokenizer):
         yield text, score, not (is_byte or text in special or id == tokenizer["model"].get("unk_id"))
 
 
+def with_a_row(pieces, tokenizer, vocab_size):
+    """T257: the pieces of a tokenizer.json (tokenizer_json_pieces()'s) that the model has a row for. An added token
+    past the model's last row is no token of this model: a text-only Gemma 3 names <image_soft_token> one past its
+    vocabulary of 262,144, the token of the models that see. Only where the tokenizer's own vocabulary fits: a model
+    with fewer rows than that is another's (tokenizer_bin() refuses it)."""
+    own = tokenizer["model"]["vocab"]
+    fits = isinstance(own, dict) and max(own.values(), default=0) < vocab_size
+    return pieces[:vocab_size] if fits else pieces
+
+
 def tokenizer_json_bpe_pieces(tokenizer):
     """Hugging Face's byte-level BPE (GPT-2, SmolLM2, Qwen). The pieces are written in the byte <-> character
     table, and the score is minus the rank of the merge that makes the piece: the engine merges the best-scoring
     pair, which is then the same as applying the merge with the lowest rank. A piece no merge makes (a single
-    character, an added token) never starts a merge, so it is not matchable."""
+    character, an added token) never starts a merge, so it is not matchable.
+    T257: and a sentencepiece BPE model written out (written_out()), whose pieces are sentencepiece's own text and
+    get the same scores, once its merges are known to be ones the engine follows (merged_by_text())."""
     model = tokenizer["model"]
-    ranks = {}
-    for rank, merge in enumerate(model["merges"]):
-        left, right = merge if isinstance(merge, list) else merge.split(" ")
+    ranks, merges = {}, [merge if isinstance(merge, list) else merge.split(" ") for merge in model["merges"]]
+    for rank, (left, right) in enumerate(merges):
         ranks.setdefault(left + right, -float(rank))
     texts = {id: text for text, id in model["vocab"].items()}
     for token in tokenizer["added_tokens"]:
         texts.setdefault(token["id"], token["content"])
+    if written_out(tokenizer):
+        merged_by_text(set(texts.values()), merges)
     special = {token["content"] for token in tokenizer["added_tokens"] if token["special"]}
     for id in range(max(texts) + 1):
         text = texts.get(id)
@@ -83,9 +107,61 @@ def tokenizer_json_options(tokenizer):
     if tokenizer_kind_of(tokenizer) != "BPE":
         prefixed = prefixed_texts(tokenizer)
         return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {})}
+    if written_out(tokenizer):
+        return written_out_options(tokenizer)
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
             "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer")),
             "ignore_merges": bool(tokenizer["model"].get("ignore_merges"))}
+
+
+# T257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, CAT-Translate 7B's, a Llama 2's): a "BPE"
+# whose pieces are sentencepiece's, with U+2581 for the space, and whose merges are every way to join two pieces into a
+# third, in the order of the model's scores. Nothing splits the text: the normalizer makes each space a U+2581 and the
+# merges run over the whole of it, as sentencepiece's do.
+SPACE_WRITTEN = {"type": "Replace", "pattern": {"String": " "}, "content": "\u2581"}  # the normalizer's step
+PREPENDED = {"type": "Prepend", "prepend": "\u2581"}  # and the dummy prefix, where the model has one
+# a Gemma's pre_tokenizer: it would cut the text after each space, of which the normalizer has left none
+SPLIT_AT_SPACES = {"type": "Split", "pattern": {"String": " "}, "behavior": "MergedWithPrevious", "invert": False}
+
+
+def written_out(tokenizer):
+    """Whether a BPE tokenizer.json is a sentencepiece model written out, by how it reads a text: a normalizer of the
+    two steps above and nothing else (the space one of them), and no pre_tokenizer or a Gemma's. Any other is a
+    byte-level BPE or one the engine does not know (pretokenizer_name() says which)."""
+    normalizer = tokenizer.get("normalizer") or {}
+    steps = normalizer.get("normalizers", [normalizer]) if normalizer.get("type") == "Sequence" else [normalizer]
+    return SPACE_WRITTEN in steps and all(step in (SPACE_WRITTEN, PREPENDED) for step in steps) \
+        and (tokenizer.get("pre_tokenizer") or SPLIT_AT_SPACES) == SPLIT_AT_SPACES
+
+
+def written_out_options(tokenizer):
+    """The engine's options for a sentencepiece BPE model written out: llama2.c's BPE ("bpe": the pieces' scores are
+    minus the ranks of their merges, tokenizer_json_bpe_pieces()), with the dummy prefix before every stretch of text
+    where the normalizer prepends it (a Llama tokenizer's file: CAT-Translate 7B's) and before none where it does not
+    (a Gemma's). A character the vocabulary lacks is spelled with the byte pieces, as the engine's BPE spells it: the
+    model must say so (byte_fallback) and have all 256. Its other ways (a piece taken whole before the merges, marks
+    at the edges of a word, merges dropped at random) are none of sentencepiece's."""
+    model = tokenizer["model"]
+    if not model.get("byte_fallback") or not all("<0x%02X>" % byte in model["vocab"] for byte in range(256)):
+        raise ValueError("This tokenizer.json spells a character it lacks in a way the engine does not know.")
+    if model.get("ignore_merges") or model.get("dropout") or model.get("continuing_subword_prefix") or model.get("end_of_word_suffix"):
+        raise ValueError("This tokenizer.json merges its pieces in a way the engine does not know.")
+    return {"tokenizer_kind": "bpe", "prefixed": prefixed_texts(tokenizer) or "never"}
+
+
+def merged_by_text(pieces, merges):
+    """T257: refuses the merges that the engine's BPE would not follow. The engine joins two pieces wherever what they
+    spell together is a piece, the one with the best score first (llama2.c's, which is sentencepiece's); a
+    tokenizer.json joins the pairs its merges name, the first-named first. The two are one where every way to spell
+    a piece with two pieces is a merge, which is how a sentencepiece model is written out (transformers'
+    SentencePieceExtractor lists them all, by the score of what they make): held to here, since a pair the merges
+    lack would be joined by the engine all the same. And no piece is written with a space: the engine's pieces spell
+    U+2581 so, and the two would be one piece. pieces: the texts of all of them (a set), merges: the pairs in order."""
+    named = {(left, right) for left, right in merges}
+    if any(" " in piece for piece in pieces) or not all(left in pieces and right in pieces and left + right in pieces for left, right in named) \
+            or any(piece[:cut] in pieces and piece[cut:] in pieces and (piece[:cut], piece[cut:]) not in named
+                   for piece in pieces for cut in range(1, len(piece))):
+        raise ValueError("This tokenizer.json merges its pieces in a way the engine does not know.")
 
 
 def prefixed_texts(tokenizer):

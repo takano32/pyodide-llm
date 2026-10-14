@@ -19,6 +19,7 @@ import json
 import struct
 
 from convert.gguf import Incomplete
+from convert.tokenizer import Later
 
 MiB = 1 << 20
 
@@ -354,7 +355,9 @@ def sound(told, conversion, ended, hf, hub):
 
 class StandIn:
     """llama2_convert as the conduct calls it, for the made-up files: handed is what it was given, in the words of
-    worker-fetches-check.mjs's stand-in (the fixture's "converter", but for the lines of what the worker keeps)."""
+    worker-fetches-check.mjs's stand-in (the fixture's "converter", but for the lines of what the worker keeps).
+    T257: a tokenizer that begins "written out" is put off as the converter puts off a tokenizer.json that writes out
+    a sentencepiece model with its dummy prefix, while others are left to try (last false)."""
 
     def __init__(self):
         self.handed = handed = []
@@ -370,9 +373,12 @@ class StandIn:
 
         class Conversion:
             def __init__(self, header, base, config, tokenizer, name, start=0, tokenizer_config=None, chat_template=None,
-                         dtype="int8", what=None, **more):
+                         dtype="int8", what=None, last=True, **more):
                 what = what or (f"Conversion(a header of {len(header)} characters, base {base}, start {start}, the config {said(config)}, "
                                 f"{name} of {len(tokenizer)} bytes, tokenizer_config {said(tokenizer_config)}, chat_template {said(chat_template)})")
+                if bytes(tokenizer or b"").startswith(b"written out") and not last:
+                    handed.append(f"{what}: put off")
+                    raise Later(f"{name} writes out a sentencepiece model")
                 if bytes(tokenizer or b"").startswith(b"unreadable"):
                     handed.append(f"{what}: refused")
                     raise ValueError(f"This model cannot be converted: {name} is of a kind the engine does not read.")
