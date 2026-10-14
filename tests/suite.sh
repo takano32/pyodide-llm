@@ -243,6 +243,13 @@ lfm2_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.mjs .tmp/made-up-lfm2-int8
 }
 part "an LFM2 where a GPU adapter is" lfm2_stays_on_the_cpu
+# T261: nor is a Gemma 3, whose tensors the GPU's worker would take for a Qwen3's: gpuUnfit's line for what it has
+# besides (a few seconds)
+gemma3_stays_on_the_cpu() {
+  python tests/make_gemma3.py .tmp/made-up-gemma3-int8 int8
+  node tests/gpu-hybrid-check.mjs .tmp/made-up-gemma3-int8
+}
+part "a Gemma 3 where a GPU adapter is" gemma3_stays_on_the_cpu
 # T357.3: the tool that checks the GPU in CI (tests/gpu-check.mjs), run from its arguments to its exit with a stand-in
 # for Dawn that gives no device: NumPy's answers, the plans, the server, the worker threads, the harness's runs on the
 # CPU, the verdicts and the tables, on three made-up models. No shader runs (about ten seconds, Pyodide's start)
@@ -335,6 +342,25 @@ if [ "$suite" = full ]; then
     node tests/forward-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-int6 .tmp/made-up-lfm2-own-int8 .tmp/made-up-lfm2-four-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up LFM2" made_up_lfm2
+  # T261: a made-up Gemma 3 (a norm behind the attention and the FFN, a GELU in the gate, local layers; no real one is
+  # small enough for the build): float32 and float16 to NumPy's numbers, int8 and six bits within the line of a made-up
+  # model, the prompt in blocks to the bit, the memory after the checkpoint against footprint(); a window of 48
+  # positions and one of 5 within the 128 compared, and one of 300 past where the cache first grows (400 positions); on a
+  # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path)
+  made_up_gemma3() {
+    mkdir -p .tmp
+    for dtype in float32 float16 int8 int6; do python tests/make_gemma3.py .tmp/made-up-gemma3-$dtype $dtype; done
+    for shape in own long; do
+      python tests/make_gemma3.py .tmp/made-up-gemma3-$shape-float32 float32 $shape
+      python tests/make_gemma3.py .tmp/made-up-gemma3-$shape-int8 int8 $shape
+    done
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-float16 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-float32 .tmp/made-up-gemma3-own-int8 --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-gemma3-long-float32 .tmp/made-up-gemma3-long-int8 --rounds 1 --positions 400 $memory
+    done
+    node tests/forward-check.mjs .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-int8 --without relaxed --rounds 1 --positions 128
+  }
+  part "forward.js against NumPy, a made-up Gemma 3" made_up_gemma3
   # T255: a made-up SmolLM3 (every fourth layer's q and k not turned by RoPE; the real one is too large for the build):
   # float32 and float16 to NumPy's numbers, int8 and six bits within the line of a made-up model, the prompt in blocks
   # to the bit; on a shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path)
@@ -361,6 +387,8 @@ if [ "$suite" = full ]; then
   # convolution's rows are this thread's alone, outside every phase), and with every address above 4 GiB
   part "the software threads, a made-up LFM2" node tests/threads-check.mjs .tmp/made-up-lfm2-float32 .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --rounds 1
   part "the software threads, a made-up LFM2 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --wide --high --rounds 1 --positions 24
+  # T261: and a made-up Gemma 3, whose local layers hand each token's heads the cache from its window's first position on
+  part "the software threads, a made-up Gemma 3" node tests/threads-check.mjs .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-own-int8 --rounds 1
   # T233's review: the tool that holds Ternary Bonsai 2 27B to its references (tests/page_27b.sh) is run when the model's
   # computation may have changed, which is seldom, and a tool that is seldom run goes out of step with forward.js unseen. Its
   # dry stage runs a made-up model of the 27B's kind through the comparison, the long prompt, the speed and the memory, the

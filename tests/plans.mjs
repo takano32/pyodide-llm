@@ -34,9 +34,19 @@ def plan_of(header, form, dtype):
     head_size = form["head_dim"] or header[0] // header[3]
     table = header[6] * (head_size // 2) * 4
     derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or dtype != "float32" else {}
+    if local_of(header, form):
+        # (T261: the tables of the local layers, which no file has)
+        derived.update({"local_cis_real": table, "local_cis_imag": table})
     # (the tensors by name: the order of a dict is not what the plan says, and tests/unchanged-calls.mjs hashes this whole)
     return {"header": header, "form": form, "dtype": dtype, "size": llama2_convert.checkpoint_size(header, dtype, form),
             "tensors": dict(sorted(tensors.items())), "derived": derived, "keep_int8": bool(keeps_int8(header, form, dtype)), "head_size": head_size}
+
+def local_of(header, form):
+    # T261: a made-up model's local layers, where its architecture may have such (a tree before T261 has none that may):
+    # all but every third layer, a window of 8 positions
+    if not getattr(L.layout_of(form["arch"]), "local", False):
+        return None
+    return {"layers": [layer for layer in range(header[2]) if (layer + 1) % 3], "window": 8, "rope_theta": 100.0}
 
 def engines_plan(header, form, dtype):
     # T375.2: the plan the engine is handed, as Python makes it for a model (engine/plan.py's forward_plan(), from the
@@ -45,8 +55,10 @@ def engines_plan(header, form, dtype):
     # to a kernel that does nothing), and its final norm has no outlier channels (planOf() says how many there are)
     dims = L.Dims(header, form)
     flat = lambda offset, length: np.ones(length // 4, dtype=np.float32).tobytes()
+    local = local_of(header, form)
     return L.forward_plan(dims, dtype, flat, int8=bool(keeps_int8(header, form, dtype)), kv_start=header[6],
-                          rotary=dims.head_size // 4 if form["linear"] else 0, parallel_residual=form["arch"] == "neox")
+                          rotary=dims.head_size // 4 if form["linear"] else 0, parallel_residual=form["arch"] == "neox",
+                          **({"local": local} if local else {}))
 
 def both(header, form, dtype):
     return {**plan_of(header, form, dtype), "plan": engines_plan(header, form, dtype)}

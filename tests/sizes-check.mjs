@@ -31,7 +31,7 @@ const HEADER = [64, 192, 6, 4, 2, 1000, 128];
 {
   assert.ok(["llama", "gpt2", "neox", "qwen35", "lfm2"].every((name) => Object.hasOwn(ARCHITECTURES, name)));
   for (const [name, line] of Object.entries(ARCHITECTURES)) {
-    assert.deepEqual(Object.keys(line).sort(), ["gate", "gatedFfn", "layerNorm", "positions", "rope"], name);
+    assert.deepEqual(Object.keys(line).sort(), ["activation", "gate", "gatedFfn", "layerNorm", "local", "positions", "rope"], name);
     assert.equal(architectureOf(name), line);
   }
   for (const name of ["no such architecture", "toString", "constructor", ""]) assert.equal(architectureOf(name), ARCHITECTURES.llama, "a name the table has not is sized as a Llama (Python refuses it by its own words)");
@@ -127,17 +127,20 @@ const KINDS = { attention: plain, echo };
     assert.equal(keysInHalf(wide, size, { dtype, halfKV: true, shared: true }), false);
   }
   // a table of positions: no matrix (not among the weights that have corrections), widened of a packed file; and the
-  // RoPE tables Python makes of any file of a model without RoPE, and of a packed file of one with it
+  // RoPE tables Python makes of any file of a model without RoPE, and of a packed file of one with it; and (T261) the
+  // two tables of the local layers, which no file has, of an architecture that may have such layers
   const lines = Object.entries(ARCHITECTURES).filter(([, { gate }]) => !gate);
-  for (const [arch, { positions, rope }] of lines) {
+  for (const [arch, { positions, rope, local }] of lines) {
+    const more = local ? seqLen * headSize * 4 : 0;
     const float = footprint(wide, size, { dtype: "float32", arch }) - footprint(wide, size, { dtype: "float32" });
-    assert.equal(float, rope ? 0 : seqLen * headSize * 4, `${arch}: a float32 file`);
+    assert.equal(float, (rope ? 0 : seqLen * headSize * 4) + more, `${arch}: a float32 file`);
     const packed = footprint(wide, size, { dtype: "int8", arch, relaxed: false, outliers: 0 }) - footprint(wide, size, { dtype: "int8", relaxed: false, outliers: 0 });
-    assert.equal(packed, positions ? seqLen * dim * 4 : 0, `${arch}: an int8 file`);
+    assert.equal(packed, (positions ? seqLen * dim * 4 : 0) + more, `${arch}: an int8 file`);
     const corrected = footprint(wide, size, { dtype: "int8", arch, outliers: 0 }) - footprint(wide, size, { dtype: "int8", outliers: 0 }) - packed;
     assert.ok(Math.abs(corrected + (positions ? (seqLen * dim) / 8 : 0)) <= 1, `${arch}: no corrections for a table of positions`);
   }
-  assert.ok(lines.some(([, { positions }]) => positions) && lines.some(([, { rope }]) => !rope), "(the table has a line with a table of positions and one without RoPE)");
+  assert.ok(lines.some(([, { positions }]) => positions) && lines.some(([, { rope }]) => !rope) && lines.some(([, { local }]) => local),
+    "(the table has a line with a table of positions, one without RoPE and one with local layers)");
   // an embedding apart from the classifier (a negative vocabulary) is no matrix either
   assert.ok(Math.abs(footprint(wide, size, { dtype: "int8", outliers: 0 }) - footprint([...wide.slice(0, 5), -vocab, seqLen], size, { dtype: "int8", outliers: 0 }) - (vocab * dim) / 8) <= 1);
   console.log(`ok: footprint() by the lines of the two tables: the weights, the corrections and the activations' scales of ${Object.keys(PACKED).join(", ")}; float16 keys and values of packed weights only; a table of positions and RoPE's tables by the architecture`);
@@ -159,17 +162,22 @@ const KINDS = { attention: plain, echo };
   // each fact by a reason of its own, the first of them in aloneFactsUnfit()'s order (said to nobody but the tests:
   // the worker reads yes or no)
   const GATE = "a gate of the attention's output is not on the GPU alone yet", POSITIONS = "a table of positions is not on the GPU alone yet",
-    FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet";
-  for (const [arch, { gatedFfn, layerNorm, positions, gate }] of Object.entries(ARCHITECTURES)) {
+    FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet",
+    ACTIVATION = "a gate of the FFN that is no SiLU's is not on the GPU alone yet", LOCAL = "layers that attend a window are not on the GPU alone yet";
+  for (const [arch, { gatedFfn, layerNorm, positions, gate, activation, local }] of Object.entries(ARCHITECTURES)) {
     const said = gpuOnlyUnfit(header, "int8", { arch }, adapter);
-    assert.equal(said, gate ? GATE : positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : null, `${arch}: ${said}`);
+    assert.equal(said, gate ? GATE : positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : activation !== "silu" ? ACTIVATION : local ? LOCAL : null, `${arch}: ${said}`);
   }
-  assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)), [null, POSITIONS, FFN, GATE, null]);
+  assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", "gemma3"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)),
+    [null, POSITIONS, FFN, GATE, null, ACTIVATION]);
   // (T487: the table's five lines never have one of these facts without another, so each is asked by itself here, of
   // facts no architecture has: RMSNorms with GPT-2's FFN, LayerNorms with a gated one, a table of positions alone)
-  const LLAMAS = { stateful: false, gate: false, positions: false, gatedFfn: true, layerNorm: false };
+  const LLAMAS = { stateful: false, gate: false, positions: false, gatedFfn: true, layerNorm: false, activation: "silu", local: false };
   assert.equal(aloneFactsUnfit(LLAMAS), null);
-  for (const [fact, value, reason] of [["stateful", true, STATE], ["gate", true, GATE], ["positions", true, POSITIONS], ["gatedFfn", false, FFN], ["layerNorm", true, NORMS]]) {
+  // (T261: a GELU in the gate and local layers, which only a Gemma 3 has and has together; an activation nobody
+  // named, or none, is no SiLU's either)
+  for (const [fact, value, reason] of [["stateful", true, STATE], ["gate", true, GATE], ["positions", true, POSITIONS], ["gatedFfn", false, FFN], ["layerNorm", true, NORMS],
+    ["activation", "gelu", ACTIVATION], ["activation", "relu", ACTIVATION], ["activation", undefined, ACTIVATION], ["local", true, LOCAL]]) {
     assert.equal(aloneFactsUnfit({ ...LLAMAS, [fact]: value }), reason, `a model that is a Llama but for ${fact} = ${value}`);
   }
   // (the order: the first of them that holds)

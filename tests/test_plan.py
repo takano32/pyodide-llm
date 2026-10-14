@@ -11,7 +11,7 @@ import engine.model
 from engine_plans import External, Handed, nowhere
 from engine.layout import LAYOUTS, stateful_kinds
 from engine.plan import ATTENTION, Settings
-from engine.tensors import rope_tables
+from engine.tensors import local_tables, rope_tables
 from llama2_numpy import (ATTENDING, EVERY, OUTLIER_CHANNELS, QUANTIZED, STATEFUL, TABLE, Dims, Llama,
                           external_tensors, file_size, forward_plan, layer_facts, linear_widths, outlier_channels,
                           plan_widths, rope_frequencies, rotated_form, rotated_widths, sign_bits, tensor_rows)
@@ -32,13 +32,17 @@ MODELS = [
     ("qwen35, every second", [256, 768, 5, 4, 2, 2048, 320],
      {"arch": "qwen35", "head_dim": 128, "linear": {**LINEAR, "every": 2}}, {"rotary": 32}),
     ("lfm2", [256, 768, 8, 8, 4, 2048, 320], {"arch": "lfm2", "qk_norm": True, "convolution": {"layers": "ccaccaca", "taps": 3}}, {}),
+    ("gemma3", [256, 768, 6, 4, 1, 2048, 320], {"arch": "gemma3", "head_dim": 128},
+     {"local": {"layers": (0, 1, 2, 3, 4), "window": 96, "rope_theta": 10000.0}}),
+    ("gemma3, no local layers", [256, 768, 3, 4, 2, -2048, 320], {"arch": "gemma3", "head_dim": 128}, {}),
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0] for model in MODELS])
-# the keys forward.ts is handed: the 24 of before T359.5, its two, and the two facts of T375.2
+# the keys forward.ts is handed: the 24 of before T359.5, its two, the two facts of T375.2 and T261's third
 KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_size", "vocab_size", "seq_len", "rotary",
         "parallel_residual", "kv_start", "rms_norm_eps", "shared_classifier", "int8", "relaxed", "tensors", "derived",
-        "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn", "tiled", "own_kinds"}
+        "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn",
+        "activation", "tiled", "own_kinds"}
 
 
 def no_bytes(offset, length):
@@ -83,8 +87,8 @@ def test_a_plan_is_made_of_a_header_a_form_and_a_dtype(name, header, form, more,
 def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     dims, rows = Dims(header, form), tensor_rows(header, form)
     layers = forward_plan(dims, "int8", no_bytes, int8=False, kv_start=64, **more)["layers"]
-    assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()))) and len(layers) == header[2]
-    assert all(set(layer) == {"kind", "place", "rope"} for layer in layers)
+    assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()), local=more.get("local"))) and len(layers) == header[2]
+    assert all(set(layer) == {"kind", "place", "rope", "window", "local"} for layer in layers)
     # a layer's kind is the stack its tensors are in, and its place is its place in that stack
     attending, stateful = dims.layers(ATTENDING), dims.layers(STATEFUL)
     assert [l for l, layer in enumerate(layers) if layer["kind"] == ATTENTION] == attending
@@ -106,6 +110,10 @@ def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     turning = any(row.role == TABLE for row in rows)
     assert [layer["rope"] for layer in layers] == \
         [turning and layer["kind"] == ATTENTION and l not in more.get("unturned", ()) for l, layer in enumerate(layers)]
+    # T261: the local layers, as the options say them: their window, and that the local layers' tables turn them
+    local = more.get("local") or {"layers": (), "window": 0}
+    assert [(layer["window"], layer["local"]) for layer in layers] == \
+        [(local["window"], True) if l in local["layers"] else (0, False) for l in range(len(layers))]
 
 
 def test_which_layers_are_of_which_kind_and_which_rope_turns():
@@ -138,6 +146,42 @@ def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts_of_a_plan(monkeypatc
     monkeypatch.setitem(LAYOUTS, "gated gpt2", LAYOUTS["gpt2"]._replace(gated_ffn=True))
     assert facts({"arch": "rms gpt2"}) == (False, False) and facts({"arch": "gated gpt2"}) == (True, True)
     assert all(type(fact) is bool for form in ({}, {"arch": "gpt2"}) for fact in facts(form))
+    # T261: and the FFN's activation is a third, which went with the second until a Gemma 3: its gated FFN has GPT-2's
+    activation = lambda form: forward_plan(Dims(header, form), "float32", no_bytes, int8=False, kv_start=64)["activation"]
+    assert [activation(form) for form in ({}, {"arch": "gpt2"}, {"arch": "neox"}, {"arch": "gemma3"}, {"arch": "rms gpt2"}, {"arch": "gated gpt2"})] == \
+        ["silu", "gelu", "gelu", "gelu", "gelu", "gelu"]
+    assert facts({"arch": "gemma3"}) == (False, True)
+
+
+def test_the_local_layers_of_a_plan_and_their_tables():
+    """T261: a layer's window and whether the local layers' tables turn it are two keys of its facts, and the tables
+    are among the derived arrays at every dtype (no file has them), beside the model's own where the file has none."""
+    header, form = [64, 128, 6, 4, 1, 320, 48], {"arch": "gemma3", "head_dim": 32}
+    dims = Dims(header, form)
+    local = {"layers": [4, 0, 1], "window": 7, "rope_theta": 100.0}
+    tables = (np.full((48, 16), 2.0, dtype=np.float32), np.full((48, 16), 3.0, dtype=np.float64))
+    for dtype in ("float32", "int8"):
+        plan = forward_plan(dims, dtype, flat, int8=False, kv_start=8, local=local, local_tables=tables)
+        assert [(layer["window"], layer["local"]) for layer in plan["layers"]] == \
+            [(7, True), (7, True), (0, False), (0, False), (7, True), (0, False)]
+        assert plan["derived"]["local_cis_real"] == tables[0].tobytes()
+        assert plan["derived"]["local_cis_imag"] == tables[1].astype(np.float32).tobytes()
+        assert set(plan["derived"]) == {"local_cis_real", "local_cis_imag"}  # (the model's own are Llama's to hand in: tables=)
+    plain = forward_plan(dims, "int8", flat, int8=False, kv_start=8)
+    assert not plain["derived"] and all((layer["window"], layer["local"]) == (0, False) for layer in plain["layers"])
+    # layers that are none of the model's, or of an architecture that has no local layers, are refused as a model's are
+    for arch, said in (("gemma3", {**local, "layers": [6]}), ("llama", local)):
+        with pytest.raises(ValueError, match="The local layers are layers of a Gemma 3"):
+            forward_plan(Dims(header, {"arch": arch, "head_dim": 32}), "int8", flat, int8=False, kv_start=8, local=said)
+    # and a model made with them hands its engine both: Llama(external=) says what forward.js is to run
+    from engine_plans import engine_plan
+    import llama2_numpy
+    from llama2_convert import checkpoint_size
+    whole = engine_plan(llama2_numpy, header, "int8", form, {"local": local}, checkpoint_size(header, "int8", {**llama2_numpy.FORM, **form}))
+    assert whole["activation"] == "gelu" and [layer["window"] for layer in whole["layers"]] == [7, 7, 0, 0, 7, 0]
+    assert set(whole["derived"]) == {"freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"}
+    assert whole["derived"]["local_cis_real"] != whole["derived"]["freq_cis_real"]
+    assert {"rms_att_post_weight", "rms_ffn_post_weight", "q_norm", "k_norm"} <= set(whole["tensors"])
 
 
 @cases
@@ -270,10 +314,13 @@ def test_a_llama_hands_on_the_plan_of_its_file(name, header, form, more, dtype, 
                          lambda width: rope_frequencies(width, 10000.0, None))
     # (every width of these models is whole groups of 32: the int8 kernels take the matrices of a quantized file)
     int8 = dtype in QUANTIZED and "int8" not in disable
-    alone = forward_plan(dims, dtype, outside.read, int8=int8, disable=disable, kv_start=48, tables=tables, **more)
+    # (T261: and the tables of its local layers, which Llama makes at every dtype, where it has such layers)
+    local = more.get("local") and local_tables(dims.seq_len, dims.head_size, more["local"]["rope_theta"], rope_frequencies)
+    alone = forward_plan(dims, dtype, outside.read, int8=int8, disable=disable, kv_start=48, tables=tables, local_tables=local, **more)
     assert outside.plan == alone and list(outside.plan) == list(alone)
     assert bool(alone["outliers"]) is int8 and alone["half_kv"] is (int8 and not disable)
-    assert set(alone["derived"]) == (set() if tables is None else {"freq_cis_real", "freq_cis_imag"})
+    assert set(alone["derived"]) == (set() if tables is None else {"freq_cis_real", "freq_cis_imag"}) | \
+        ({"local_cis_real", "local_cis_imag"} if local else set())
 
 
 @pytest.mark.parametrize("dtype", ["ternary", "int8", "int6"])

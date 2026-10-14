@@ -34,7 +34,7 @@ import numpy as np
 from engine.checkpoint import OUTLIER_CHANNELS, outlier_channels, outside
 from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
-from engine.layout import TABLE, linear_widths, unturned_layers
+from engine.layout import TABLE, linear_widths, local_layers, unturned_layers
 
 # the kind of a layer that attends over all the positions (and keeps keys and values); a layer that keeps a state in
 # their place is of the kind its architecture has (engine/layout.py's Stateful, by its name: "linear", "convolution")
@@ -50,7 +50,8 @@ class Settings(NamedTuple):
     parallel_residual, rms_norm_eps, unturned (T255: the layers RoPE leaves alone), rotated (T237: rotated_form()'s
     {"block", "signs"}, None for a model in its own basis) and tables (the RoPE tables (cos, sin) of a file that has
     none of its own: rope_tables()'s; None where the file has them) and tiled (T363: FORM's, a linear-attention layer's
-    output matrix reads its value heads in llama.cpp's order)."""
+    output matrix reads its value heads in llama.cpp's order); local (T261: the model's local layers, local_layers()'s,
+    None for a model without) and local_tables (their RoPE tables (cos, sin), which no file has)."""
     int8: bool
     kv_start: int
     disable: tuple = ()
@@ -61,22 +62,29 @@ class Settings(NamedTuple):
     rotated: Any = None
     tables: Any = None
     tiled: bool = False
+    local: Any = None
+    local_tables: Any = None
 
 
 def layer_facts(dims, settings):
     """For every layer, what an engine has to know of it: {"kind": ATTENTION, or the layout's kind of a layer that
     keeps a state, "place": its place among the layers of its kind, which is where its tensors are in the file's stacks
-    and its keys and values or its state in the engine, "rope": whether RoPE turns its q and k}. All of it is the
+    and its keys and values or its state in the engine, "rope": whether RoPE turns its q and k, "window": how many of
+    the last positions it attends, its own among them (0: all of them), "local": whether RoPE turns it by the tables of
+    the local layers (T261: two facts, which a model's local layers have together)}. All of it is the
     layout's: the slots and the kind are the Dims', a model has RoPE where its file has (or leaves out) the tables,
     and only a layer that attends is turned, but the layers the settings say RoPE leaves alone (T255: the Dims refuses
     those that are none of this model's).
     A fact of a layer that an engine needs goes here, as another key of every layer's dict (and where it is a model's
     option, as another field of Settings)."""
     unturned = unturned_layers(dims.arch, dims.n_layers, settings.unturned)
+    local = local_layers(dims.arch, dims.n_layers, settings.local) or {"layers": (), "window": 0}
     turning = any(row.role == TABLE for row in dims.rows())
     return [{"kind": dims.stateful_kind if state else ATTENTION, "place": place,
-             "rope": turning and not state and layer not in unturned}
-            for layer, (state, place) in enumerate(dims.slots)]
+             "rope": turning and not state and layer not in unturned,
+             "window": local["window"] if here else 0, "local": here}
+            for layer, (state, place) in enumerate(dims.slots)
+            for here in [not state and layer in local["layers"]]]
 
 
 def plan_widths(dims):
@@ -98,10 +106,10 @@ def forward_plan(dims, dtype, read, settings=None, **said):
 
     The keys: the header's numbers; "tensors", where every row of the file is ({name: Tensor.plan()}, the classifier of
     a model without one of its own under both names); "derived", the bytes of the few arrays Python computes (the RoPE
-    tables, the signs of a rotated basis); "outliers"; the form's "linear" and "convolution"; and, from T359.5,
+    tables, those of the local layers, the signs of a rotated basis); "outliers"; the form's "linear" and "convolution"; and, from T359.5,
     "tiled" and "own_kinds" (T363.5: the form's "tiled", and whether it has "kinds"); "layers" (layer_facts()) and "widths" (plan_widths()), so that an engine need not work out again which layer is of
     which kind; and, from T375.2, the facts of the architecture an engine's layers differ by, under the names its
-    record has them by (engine/layout.py's Layout): "layer_norm" and "gated_ffn". forward.ts reads these and no name
+    record has them by (engine/layout.py's Layout): "layer_norm", "gated_ffn" and (T261) "activation". forward.ts reads these and no name
     of an architecture ("arch" is there for a person who looks at a plan). What the rows say is no key here, as it is
     no field there: a bias, the norms of a head, the table of positions are read where the plan has their tensors."""
     settings = Settings(**said) if settings is None else settings
@@ -115,6 +123,10 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     if tables is not None:
         derived = {name: np.ascontiguousarray(table, dtype=np.float32).tobytes()
                    for name, table in zip(("freq_cis_real", "freq_cis_imag"), tables)}
+    if settings.local_tables is not None:
+        # T261: the tables of the local layers, at every dtype (no file has them)
+        derived.update({name: np.ascontiguousarray(table, dtype=np.float32).tobytes()
+                        for name, table in zip(("local_cis_real", "local_cis_imag"), settings.local_tables)})
     if rotated is not None:
         # T237: the signs of every width, with the transform's 1 / sqrt(block) in them (what the kernel multiplies by)
         scale = np.float32(1.0 / math.sqrt(rotated["block"]))
@@ -154,4 +166,6 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             "layers": layers, "widths": plan_widths(dims),
             # T375.2: the kind of the norms (LayerNorms, of a weight and a bias; else RMSNorms) and of the FFN (gated:
             # three matrices and a SiLU; else GPT-2's two, their biases and a GELU), which are two facts
-            "layer_norm": bool(dims.layout.layer_norm), "gated_ffn": bool(dims.layout.gated_ffn)}
+            "layer_norm": bool(dims.layout.layer_norm), "gated_ffn": bool(dims.layout.gated_ffn),
+            # T261: the FFN's activation, "silu" or "gelu" (a third fact: a Gemma's gated FFN has GPT-2's GELU)
+            "activation": dims.layout.activation}

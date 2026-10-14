@@ -325,19 +325,18 @@ def test_the_local_layers_are_a_gemmas_and_layers_of_the_model():
         Llama(checkpoint, pack_tokenizer(tiny_vocab(320)), **{**options_of(config), "local": {**said, "layers": [6]}})
 
 
-def test_the_pages_engine_runs_no_token_of_a_gemma_until_it_has_its_layers():
-    """T261.1: forward.js has not the norms behind, the GELU in the gate or the local layers (T261.2), and would run
-    the plan of such a model as a Llama's without a word. The engine it made of the plan is let go, and the model is
-    refused before a token goes through it."""
+def test_the_pages_engine_is_handed_what_a_gemma_is():
+    """T261.2: the plan of a model whose weights are outside Python says the three things forward.js runs a Gemma 3 by:
+    the tensors of the two norms behind, the FFN's activation, and of every layer its window and whether the local
+    layers' tables turn it, with those tables. (T261.1 let go of the engine and refused the model here.)"""
     tensors, config = gemma3_model()
-    checkpoint = engine(tensors, config)[1]
-    did = []
+    checkpoint = engine(tensors, config, "int8")[1]
+    handed = {}
 
     class Engine:
         backend = "test"
-        bind = staticmethod(lambda logits: did.append("bind"))
-        forward = staticmethod(lambda *args: did.append("forward"))
-        release = staticmethod(lambda: did.append("release"))
+        bind = staticmethod(lambda logits: None)
+        forward = staticmethod(lambda *args: None)
 
     class External:
         size = len(checkpoint)
@@ -345,12 +344,19 @@ def test_the_pages_engine_runs_no_token_of_a_gemma_until_it_has_its_layers():
 
         @staticmethod
         def start(plan):
-            did.append("start")
+            handed.update(plan)
             return Engine
 
-    with pytest.raises(ValueError, match="^This model cannot be run here yet: the page's engine has not its layers.$"):
-        Llama(None, pack_tokenizer(tiny_vocab(320)), external=External, **options_of(config))
-    assert "forward" not in did and did[0] == "start" and did[-1] == "release"
+    llama = Llama(None, pack_tokenizer(tiny_vocab(320)), dtype="int8", external=External, **options_of(config))
+    assert llama.backend == "test" and handed["arch"] == "gemma3" and handed["activation"] == "gelu"
+    assert [(layer["window"], layer["local"]) for layer in handed["layers"]] == \
+        [(4, True), (4, True), (0, False), (4, True), (4, True), (0, False)]
+    assert {"rms_att_post_weight", "rms_ffn_post_weight"} <= set(handed["tensors"])
+    positions = np.arange(24)[:, None]
+    assert np.allclose(np.frombuffer(handed["derived"]["local_cis_real"], dtype=np.float32).reshape(24, 8),
+                       np.cos(positions / 100.0 ** (np.arange(0, 16, 2) / 16)), atol=1e-6)
+    assert np.allclose(np.frombuffer(handed["derived"]["freq_cis_imag"], dtype=np.float32).reshape(24, 8),
+                       np.sin(positions / 1e6 ** (np.arange(0, 16, 2) / 16)), atol=1e-6)
 
 
 def test_the_keys_and_values_of_every_position_are_kept_past_the_window():

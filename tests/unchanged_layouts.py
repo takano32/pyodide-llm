@@ -75,6 +75,7 @@ HEADERS = {
     "qwen35": [[256, 768, 8, 4, 2, 2048, 320], [384, 1024, 12, 6, 3, -2304, 288]],
     "qwen35, every second": [[256, 768, 6, 4, 2, 2048, 320], [384, 1024, 5, 6, 3, -2304, 288]],
     "lfm2": [[256, 768, 8, 8, 4, 2048, 320], [384, 1024, 8, 12, 4, -2304, 288]],
+    "gemma3": [[256, 768, 6, 4, 1, 2048, 320], [384, 1024, 5, 6, 3, -2304, 288]],
 }
 LINEAR = {"every": 4, "key_heads": 2, "value_heads": 4, "key_dim": 64, "value_dim": 128, "conv": 4}
 LINEAR_SECOND = {"every": 2, "key_heads": 4, "value_heads": 4, "key_dim": 32, "value_dim": 64, "conv": 3}
@@ -101,6 +102,9 @@ FAMILIES = [
      {"prefix": "model.", "rotary": 64}),
     ("lfm2", "lfm2", {"arch": "lfm2", "convolution": {"layers": "ccaccaca", "taps": 3}}, {}, {}),
     ("lfm2, four taps", "lfm2", {"arch": "lfm2", "convolution": {"layers": "acaccacc", "taps": 4}}, {}, {}),
+    # (T261: with local layers, as the options say them, and without)
+    ("gemma3", "gemma3", {"arch": "gemma3", "head_dim": 128}, {"local": {"layers": [0, 1, 3, 4], "window": 96, "rope_theta": 100.0}}, {}),
+    ("gemma3, no local layers", "gemma3", {"arch": "gemma3", "head_dim": 128}, {}, None),
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 # the keys of the plan that T359.5 added: every layer's facts, and the widths
@@ -109,6 +113,10 @@ AHEAD = {"layers", "widths"}
 FACTS = {"layer_norm", "gated_ffn"}
 # and T363.5's: the order of a linear-attention layer's value heads, and whether rows have kinds of their own
 KINDS_SAID = {"tiled", "own_kinds"}
+# and T261's: the FFN's activation, and of every layer its window and whether it is turned by the local layers' tables
+# (two keys of a layer's facts, which are taken out of the layers' record above and said here)
+LOCAL_SAID = {"activation"}
+LOCAL_FACTS = ("window", "local")
 
 
 for name, headers, form, engine, source in FAMILIES:
@@ -133,9 +141,13 @@ for name, headers, form, engine, source in FAMILIES:
             if engine is not None:
                 # (T359.5's keys are a record of their own, so that the plan as it was before them is still compared
                 # with a tree that has none)
-                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS | KINDS_SAID)
+                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS | KINDS_SAID | LOCAL_SAID)
                 if plan is not None and AHEAD & set(plan):
-                    said(f"{case}, {dtype}: engine's layers and widths", lambda: {key: plan[key] for key in sorted(AHEAD)})
+                    before = {**plan, "layers": [{key: value for key, value in layer.items() if key not in LOCAL_FACTS} for layer in plan["layers"]]}
+                    said(f"{case}, {dtype}: engine's layers and widths", lambda: {key: before[key] for key in sorted(AHEAD)})
+                if plan is not None and LOCAL_SAID & set(plan):
+                    said(f"{case}, {dtype}: engine's activation and local layers",
+                         lambda: {"activation": plan["activation"], "layers": [[layer[key] for key in LOCAL_FACTS] for layer in plan["layers"]]})
                 if plan is not None and KINDS_SAID & set(plan):
                     said(f"{case}, {dtype}: engine's order and kinds", lambda: {key: plan[key] for key in sorted(KINDS_SAID)})
                 if plan is not None and FACTS & set(plan):
@@ -178,6 +190,16 @@ CONFIGS = {
     "lfm2, a multiplier": ({**LFM2, "block_ff_dim": 1000, "block_ffn_dim_multiplier": 1.5, "block_multiple_of": 48}, []),
     "lfm2, no multiplier": ({**LFM2, "block_ff_dim": 1000, "block_ffn_dim_multiplier": None, "block_multiple_of": 64}, []),
     "lfm2, as it is": ({**LFM2, "intermediate_size": 1000, "block_auto_adjust_ff_dim": False, "block_multiple_of": 64}, ["lm_head.weight"]),
+    # (T261)
+    "gemma3, the kinds listed": ({**BASE, "model_type": "gemma3_text", "num_hidden_layers": 6, "num_attention_heads": 4, "num_key_value_heads": 1,
+                                  "head_dim": 128, "sliding_window": 512, "rope_theta": 1000000.0, "rope_local_base_freq": 10000.0,
+                                  "layer_types": ["sliding_attention"] * 5 + ["full_attention"]}, []),
+    "gemma3, a pattern": ({**BASE, "model_type": "gemma3_text", "num_hidden_layers": 7, "num_attention_heads": 4, "num_key_value_heads": 1,
+                           "sliding_window": 256, "sliding_window_pattern": 3}, ["lm_head.weight"]),
+    "gemma3, rope_parameters": ({**BASE, "model_type": "gemma3_text", "num_hidden_layers": 6, "num_attention_heads": 4, "sliding_window": 512,
+                                 "tie_word_embeddings": False, "rope_parameters": {"full_attention": {"rope_type": "default", "rope_theta": 500000.0},
+                                                                                    "sliding_attention": {"rope_type": "default", "rope_theta": 2000.0}}},
+                                ["lm_head.weight"]),
     "lfm2, full_attn_idxs": ({**{key: value for key, value in LFM2.items() if key != "layer_types"}, "intermediate_size": 960,
                               "full_attn_idxs": [1, 4, 5], "conv_L_cache": 4, "norm_eps": 1e-6, "tie_embedding": False,
                               "rope_parameters": {"rope_theta": 250000.0}}, ["lm_head.weight"]),

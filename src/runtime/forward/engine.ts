@@ -326,6 +326,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
   const w1 = matrix("w1"), w2 = matrix("w2"), w3 = matrix("w3"), wcls = matrix("wcls");
   const attW = floats("rms_att_weight"), ffnW = floats("rms_ffn_weight"), finalW = floats("rms_final_weight");
+  // T261: the norms behind the attention and behind the FFN (0: the model has none; the FFN's is ffn.ts's to read)
+  const attPost = floats("rms_att_post_weight"), ffnPost = floats("rms_ffn_post_weight");
   const attB = floats("ln_att_bias"), ffnB = floats("ln_ffn_bias"), finalB = floats("ln_final_bias");
   const bo = floats("bo"), b1 = floats("b1"), b2 = floats("b2"), bq = floats("bq"), bk = floats("bk"), bv = floats("bv");
   const qNorm = floats("q_norm"), kNorm = floats("k_norm");  // T124: Qwen3 normalizes every head of q and k
@@ -403,10 +405,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
-    turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null, stateful: keeping.length > 0,
+    turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, activation: plan.activation,
+    local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null, stateful: keeping.length > 0,
     rotated, sharedClassifier: plan.shared_classifier };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
-    cosTable, sinTable, positions, channels };
+    cosTable, sinTable, positions, channels, attPost, ffnPost };
   // T349: what the GPU would hold of this model, and why it would not take it
   const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory }, direct });
 
@@ -528,7 +531,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       }
       // the layer itself, whatever its kind: from xb into xb2
       steps[l](count, pos0);
-      for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
+      for (let t = 0; t < count; t++) {
+        if (attPost) k.rmsnorm(xb2 + t * S, xb2 + t * S, attPost + l * D, dim, eps);  // T261: a Gemma normalizes what joins the stream
+        k.add_inplace(x + t * S, xb2 + t * S, dim);
+      }
       // the FFN reads the norm of x (GPT-NeoX's parallel residual: of this layer's input), after the bias of the
       // output projection where the model has one (GPT-2 and GPT-NeoX)
       for (let t = 0; t < count; t++) {

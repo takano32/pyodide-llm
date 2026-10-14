@@ -187,6 +187,12 @@ function halfToFloat(h) {
     ...big("lfm2 230M", [1024, 2560, 14, 16, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_230M }, ["int8", "int6"]),
     ...big("lfm2 700M", [1536, 6912, 16, 24, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
     ...big("lfm2 1.2B", [2048, 8192, 16, 32, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
+    // T261: a Gemma 3, whose keys and values are every layer's and of every position (a local layer reads the last of
+    // them): a small one in every dtype, and the real 270M and 1B whole (a vocabulary of 262144, heads of 256 that do
+    // not fill the width, one head of keys and values)
+    ...big("gemma3, six layers", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma3", head_dim: 128 }, ["int8", "int6", "float32", "float16"]),
+    ...big("gemma3 270M", [640, 2048, 18, 4, 1, 262144, 4096], { arch: "gemma3", head_dim: 256 }, ["int8", "int6"]),
+    ...big("gemma3 1B", [1152, 6912, 26, 4, 1, 262144, 4096], { arch: "gemma3", head_dim: 256 }, ["int8", "int6"]),
     // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
@@ -249,16 +255,18 @@ function halfToFloat(h) {
       refused++;
       return;
     }
-    if (p.form.convolution) {
+    if (p.form.convolution || p.form.arch === "gemma3") {
       // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
+      // (T261: and so does a Gemma 3, for what its layers have that the GPU's have not)
+      const [model, why] = p.form.convolution ? ["an LFM2", "convolution layers are not on the GPU yet"] : ["a Gemma 3", "this pair of norms and FFN is not on the GPU yet"];
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: false, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       let asked = 0;
       const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys,
         gpu: () => { asked++; return silentGpu(); } });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
-      assert.equal(engine.gpuWhyNot, "convolution layers are not on the GPU yet", `${shapes[n].name}: the GPU was not refused for its convolution layers`);
-      assert.equal(asked, 0, `${shapes[n].name}: a GPU's worker was started for an LFM2`);
+      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}: the GPU was not refused for what ${model}'s layers are`);
+      assert.equal(asked, 0, `${shapes[n].name}: a GPU's worker was started for ${model}`);
       assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
       engine.release();
       convolutional++;
@@ -282,7 +290,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 refused it; ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 or a Gemma 3 refused it; ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's

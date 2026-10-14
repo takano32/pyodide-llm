@@ -54,6 +54,8 @@ export const REASONS = {
   alonePositions: "a table of positions is not on the GPU alone yet",
   aloneFfn: "an FFN without a gate is not on the GPU alone yet",
   aloneNorms: "LayerNorms are not on the GPU alone yet",
+  aloneActivation: "a gate of the FFN that is no SiLU's is not on the GPU alone yet",  // T261
+  aloneLocal: "layers that attend a window are not on the GPU alone yet",  // T261
   aloneDtype: (dtype: string) => `${dtype} weights stay on the CPU`,
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",

@@ -204,10 +204,9 @@ const returned = (fn) => {
   const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
   held("the plan's keys, Python to forward.js", keys, readKeys, unread);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
-  // (T261.1: a Gemma 3's two norms behind are placed and read by no engine yet: Python lets go of the engine it made
-  // of such a model's plan and refuses the model (engine/model.py), until T261.2 gives forward.ts its layers)
-  const later = "the page's engine has not a Gemma 3's layers until T261.2, and Python refuses the model until then";
-  held("the tensors' names, Python to forward.js", tensors, readTensors, { rms_att_post_weight: later, rms_ffn_post_weight: later });
+  // (T261: and one it asks floats() for that is a derived table alone, as the local layers' RoPE tables are, is held
+  // with the derived tables below)
+  held("the tensors' names, Python to forward.js", tensors, new Set([...readTensors].filter((name) => tensors.has(name) || !derived.has(name))));
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
   const entryRead = new Set([...readEntry].filter((key) => entryKeys.has(key) || !["rows", "n", "six", "ternary", "at", "slice", "length"].includes(key)));
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
@@ -241,17 +240,23 @@ const returned = (fn) => {
     // a layer's place is its place among the layers of its kind
     const places = {};
     // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
+    // (T261: the FFN's activation, and local layers, which the architecture's line says a model may have: every family
+    // of this check whose architecture may have them has some)
     const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
-      gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm };
+      gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm, activation: plan.activation, local: plan.layers.some(({ local }) => local) };
     plan.layers.forEach((layer, l) => {
       assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);
       assert.equal(layer.rope, layer.kind === "attention" && said.rope && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
+      // T261: a window and the local tables are a local layer's, both or neither in every model Python makes a plan
+      // of, and only a layer that attends is one; the tables are there where a layer is turned by them
+      assert.equal(layer.window > 0, layer.local, `${which}: layer ${l} has a window and the local layers' tables, or neither`);
+      assert.ok(!layer.local || (layer.kind === "attention" && "local_cis_real" in plan.derived && "local_cis_imag" in plan.derived), `${which}: layer ${l} is a local one`);
     });
     // (T375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
     // GPT-2's and a GPT-NeoX's)
     if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN`);
     assert.deepEqual(ARCHITECTURES[plan.arch], said, `${which}: src/runtime/forward/architectures.ts's line of ${JSON.stringify(plan.arch)} is not what Python's plan of that architecture says ` +
-      "(a table of positions and a gate of the attention's output by the tensors, RoPE by the layers, gated_ffn, layer_norm). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
+      "(a table of positions and a gate of the attention's output by the tensors, RoPE and local layers by the layers, gated_ffn, layer_norm, activation). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
     // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise)
     assert.equal("freq_cis_real" in plan.tensors, said.rope && dtype === "float32", `${which}: the RoPE tables are the file's`);
     assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);

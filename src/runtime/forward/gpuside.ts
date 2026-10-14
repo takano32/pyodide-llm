@@ -25,6 +25,8 @@ export type Shape = {
   // the bytes of a token's row, and of a position's keys in the cache; whether the cache is float16
   D: number; KV: number; halfKV: boolean;
   eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean; unturned: number[];
+  // T261: the FFN's activation, and whether some layer attends a window or is turned by tables of its own
+  activation: "silu" | "gelu"; local: boolean;
   linear: Linear | null; convolution: Convolution | null;
   // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
   stateful: boolean;
@@ -53,6 +55,8 @@ export type Placed = {
   wq: Held | null; wk: Held | null; wv: Held | null; wo: Held | null; w1: Held | null; w2: Held | null; w3: Held | null; wcls: Held | null;
   attW: number; ffnW: number; attB: number; ffnB: number; finalW: number; finalB: number; bo: number; b1: number; b2: number; bq: number; bk: number; bv: number;
   qNorm: number; kNorm: number; cosTable: number; sinTable: number; positions: number; channels: number[];
+  // T261: the norms behind the attention and behind the FFN (0: the model has none)
+  attPost: number; ffnPost: number;
 };
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
@@ -92,8 +96,8 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, linear, convolution, stateful, rotated, sharedClassifier } = shape;
-  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions } = weights;
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, linear, convolution, stateful, rotated, sharedClassifier } = shape;
+  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost } = weights;
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
   // (T153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T154:
@@ -115,6 +119,9 @@ export function gpuFit({ shape, weights, device, direct }:
     // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
     // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there
     if (layerNorm === gatedFfn) return REASONS.pair;
+    // T261: nor what a Gemma 3 has besides: a GELU in the gate of its FFN, a norm behind the attention and behind the
+    // FFN, layers that attend a window or are turned by tables of their own. The GPU's layers have none of the four
+    if ((gatedFfn && activation !== "silu") || attPost || ffnPost || local) return REASONS.pair;
     if (!sharedMemory) return REASONS.notIsolated;
     if (headSize % 4) return REASONS.heads;
     if (!Object.values(gpuMatrices()).every(onGpuAs)) return REASONS.floats;

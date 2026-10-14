@@ -114,7 +114,7 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // (the options as the form: the numbers of the layers that keep a state are in them under their kinds' names, which
   // the kinds read and this does not)
   const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
-  const { positions, rope } = architectureOf(arch), packing = packingOf(dtype);
+  const { positions, rope, local } = architectureOf(arch), packing = packingOf(dtype);
   // (T363.5) the packings the model's rows are in: the dtype's, and those of the kinds its form gives rows
   const own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
   const packings = packing ? [packing, ...own] : own;
@@ -144,6 +144,9 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // headSize / 2 float32; a model without RoPE has them too, of zeros, at any dtype; T130's review)
   if (packing && positions) bytes += seqLen * dim * 4;
   if (packing || !rope) bytes += seqLen * headSize * 4;
+  // T261: and the two tables of a model's local layers, which no file has (of an architecture that may have such
+  // layers: the form does not say whether this model has, and one without is counted that much too high)
+  if (local) bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens and what the kinds keep of a token apart from its frame (the scores of its
   // attention), the logits; the keys and values of a block from the GPU (in float16) and its rows
   const apart = frames.flatMap(({ apart = [] }) => apart).reduce((sum, [, each]) => sum + align(each), 0);

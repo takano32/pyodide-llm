@@ -28,7 +28,7 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layout import (GELU, PARTLY, SILU, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
+from engine.layout import (GELU, PARTLY, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
                            stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
@@ -282,12 +282,8 @@ class Llama:
             outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, Settings(
                 int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                 parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
-                rotated=self.rotated, tables=tables, tiled=self.tiled)), external)
-            if (layout.gated_ffn and layout.activation != SILU) or layout.local:
-                # T261.1: forward.js has not these layers yet (T261.2), and runs the plan of such a model as a Llama's
-                # without a word. Until it has, the engine it made is let go and no token goes through it
-                outside.release()
-                raise ValueError("This model cannot be run here yet: the page's engine has not its layers.")
+                rotated=self.rotated, tables=tables, tiled=self.tiled, local=self.local,
+                local_tables=self.local_cis)), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):
