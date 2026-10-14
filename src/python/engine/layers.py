@@ -57,9 +57,12 @@ def layernorm(x, weight, bias):
 
 
 def gelu(x):
-    """GPT-2's gelu_new: the tanh approximation, written with exp so that the kernel can do the same."""
+    """GPT-2's gelu_new: the tanh approximation, written with exp so that the kernel can do the same.
+    (T261: a Gemma's activations go past where float32's exp overflows, to an infinity that makes the 0 it should be:
+    the same numbers as ever, without NumPy's warning of it.)"""
     inner = 0.7978845608028654 * (x + 0.044715 * x * x * x)
-    return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
+    with np.errstate(over="ignore"):
+        return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
 
 
 # Qwen3.5 and Qwen3.8 (config.json's model_type qwen3_5; arch="qwen35" here) mix two kinds of layers: every "every"-th
