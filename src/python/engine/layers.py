@@ -57,9 +57,12 @@ def layernorm(x, weight, bias):
 
 
 def gelu(x):
-    """GPT-2's gelu_new: the tanh approximation, written with exp so that the kernel can do the same."""
+    """GPT-2's gelu_new: the tanh approximation, written with exp so that the kernel can do the same.
+    (T261: a Gemma's activations go past where float32's exp overflows, to an infinity that makes the 0 it should be:
+    the same numbers as ever, without NumPy's warning of it.)"""
     inner = 0.7978845608028654 * (x + 0.044715 * x * x * x)
-    return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
+    with np.errstate(over="ignore"):
+        return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
 
 
 # Qwen3.5 and Qwen3.8 (config.json's model_type qwen3_5; arch="qwen35" here) mix two kinds of layers: every "every"-th
@@ -159,6 +162,41 @@ def delta_rule(state, q, k, v, beta, decay):
 # transformers pads a whole sequence with taps - 1 zeros in front (causal_conv1d_fn), and token by token keeps those
 # values in its cache (causal_conv1d_update): the same numbers.
 # (which layers those are and their taps, FORM's "convolution", are read by convolution_form() in engine/layout.py)
+
+
+# Google's Gemma 3, the text model (config.json's model_type gemma3_text; arch="gemma3" here): a Qwen3's attention and
+# a gated FFN, with a norm behind each of the two as well as in front, and layers of two kinds that config.json lists
+# (layer_types; where it does not, every sliding_window_pattern-th is a "full_attention" layer and the others are
+# "sliding_attention" ones: five of every six).
+# The computation is taken from transformers' modeling code (Apache-2.0; the formulas, no line of it):
+# https://github.com/huggingface/transformers/blob/28034545c35acac05793695bd5c878f66e6b544e/src/transformers/models/gemma3/modeling_gemma3.py
+# (Gemma3TextScaledWordEmbedding, lines 105 to 116; Gemma3MLP, 119 to 132; Gemma3RMSNorm, 135 to 152;
+# Gemma3RotaryEmbedding, 155 to 214; Gemma3Attention, 297 to 372; Gemma3DecoderLayer, 375 to 419; Gemma3TextModel and
+# Gemma3ForCausalLM, 474 to 648; masking_utils.py's sliding_window_overlay for the window), with the numbers of
+# https://huggingface.co/unsloth/gemma-3-270m-it/blob/23cf460f6bb16954176b3ddcc8d4f250501458a9/config.json
+# and llama.cpp's graph of the same model, which computes the same (src/models/gemma3.cpp at
+# 4413a192410fad1f054e9216114087a3e01527a0).
+#
+# One token (RMSNorm multiplies by 1 + weight, eps 1e-6; the converter adds the 1, as it does a Qwen3.5's):
+#   x = the token's row of the embedding times sqrt(dim)
+#   for every layer:
+#     xb = norm(x)
+#     q, k, v = wq xb, wk xb, wv xb        heads of head_dim (256: 4 of them in a dim of 640, one of k and v for all)
+#     every head of q and of k normalized (weights of one head's size), then RoPE over the whole head
+#     scores = q k / sqrt(query_pre_attn_scalar)      which is head_dim in the 270M and the 1B: a Llama's scores
+#     a full-attention layer attends every position so far, and RoPE turns its q and k by the base rope_theta (1e6)
+#     a sliding-attention layer attends the last sliding_window positions (512), this one among them
+#       (position t where t > pos - sliding_window), and RoPE turns its q and k by rope_local_base_freq (1e4)
+#     x += post_attention_norm(wo attention)
+#     xn = pre_feedforward_norm(x)
+#     x += post_feedforward_norm(w2(gelu(w1 xn) * w3 xn))      gelu_pytorch_tanh, which is gelu() above
+#   logits = embedding (the same table) times norm(x)
+# The engine has the two norms behind as rows of the file (rms_att_post_weight, rms_ffn_post_weight), the GELU as a
+# fact of the architecture (engine/layout.py's Layout: activation) and the sliding-attention layers as its local layers
+# (local_layers(): the options say which they are, their window and their base). The keys and values of every
+# position are kept, and a local layer reads the last of them. The sqrt(dim) is in no forward pass: the converter
+# multiplies the table by it and, the table being the classifier too, divides the last norm's weight by it, which
+# gives the same logits (convert/families/gemma3.py).
 
 
 # Ternary Bonsai 2 27B (prism-ml/Ternary-Bonsai-2-27B-gguf) stores its matrices in a rotated basis. With R = H S,

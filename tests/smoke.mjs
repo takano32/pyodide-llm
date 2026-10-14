@@ -542,12 +542,21 @@ inputs = np.concatenate([edges, np.linspace(-120, 120, 4001, dtype=np.float32),
                          (rng.standard_normal(4000) * 4).astype(np.float32)])
 inputs = inputs[:inputs.size & ~3]
 others = rng.standard_normal(inputs.size).astype(np.float32)
-for name, first, other in (("swiglu", inputs, others), ("gelu", others, inputs)):
+# (T261: and geglu, a Gemma 3's gate, which is gelu's numbers times the other input: gelu with a bias of -0, which
+# changes no value, then the product in float32, to the bit; and NumPy's gelu() times it, within float32's last digits)
+for name, first, other in (("swiglu", inputs, others), ("gelu", others, inputs), ("geglu", inputs, others)):
     four, single = np.empty_like(inputs), np.empty_like(inputs)
     simd[name](four.ctypes.data, first.ctypes.data, other.ctypes.data, inputs.size)
     for j in range(inputs.size):
         simd[name](single[j:].ctypes.data, first[j:].ctypes.data, other[j:].ctypes.data, 1)
     assert np.array_equal(four.view(np.uint32), single.view(np.uint32)), f"{name} four at a time is not {name} one at a time"
+gated, plain, zeros = np.empty_like(inputs), np.empty_like(inputs), np.full_like(inputs, -0.0)
+simd["geglu"](gated.ctypes.data, inputs.ctypes.data, others.ctypes.data, inputs.size)
+simd["gelu"](plain.ctypes.data, inputs.ctypes.data, zeros.ctypes.data, inputs.size)
+with np.errstate(over="ignore", invalid="ignore"):
+    assert np.array_equal(gated.view(np.uint32), (plain * others).view(np.uint32)), "geglu is not gelu times the other input"
+    finite = np.isfinite(inputs) & (np.abs(inputs) < 1e6)
+    assert np.allclose(gated[finite], (llama2_numpy.gelu(inputs[finite].astype(np.float64)) * others[finite]), rtol=1e-5, atol=1e-6), "geglu is not NumPy's gelu() times the other input"
 # T237: the rotated basis's kernels are NumPy's rotate() and unrotate() to the bit: every block from 1 to 4096, one to
 # five blocks of it (lengths that are no multiple of four too, for blocks of 1 and 2), large and small numbers and
 # both zeros, into another place and in place, and nothing written past n

@@ -249,6 +249,53 @@ def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=
     return tensors, config
 
 
+# ------------------------------------------------------------------------------------- Gemma 3 (T261)
+def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, window=4, vocab_size=320,
+                 seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0, listed=True, pattern=None,
+                 parameters=False):
+    """Random Hugging Face tensors of a tiny Gemma 3 (the text model), with the names and shapes of
+    unsloth/gemma-3-270m-it's model.safetensors, and its config.json. kinds: a letter a layer, s for a
+    sliding-attention layer and l for one that attends every position ("full_attention"). listed: the config.json
+    lists the kinds (the 270M's); otherwise it says sliding_window_pattern (the 1B's: pattern, which then has to make
+    kinds). parameters: the two bases of RoPE as transformers 5 writes them, one rope_parameters."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.norm.weight": normal(dim)}
+    for layer in range(len(kinds)):
+        p = f"model.layers.{layer}."
+        for norm in ("input_layernorm", "post_attention_layernorm", "pre_feedforward_layernorm", "post_feedforward_layernorm"):
+            tensors[f"{p}{norm}.weight"] = normal(dim)  # around zero: the model multiplies by 1 + weight
+        tensors[p + "self_attn.q_proj.weight"] = normal(n_heads * head_dim, dim)
+        tensors[p + "self_attn.k_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+        tensors[p + "self_attn.v_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+        tensors[p + "self_attn.o_proj.weight"] = normal(dim, n_heads * head_dim)
+        tensors[p + "self_attn.q_norm.weight"] = normal(head_dim)
+        tensors[p + "self_attn.k_norm.weight"] = normal(head_dim)
+        tensors[p + "mlp.gate_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.up_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="gemma3_text", architectures=["Gemma3ForCausalLM"], hidden_size=dim, intermediate_size=hidden_dim,
+                  num_hidden_layers=len(kinds), num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim,
+                  hidden_activation="gelu_pytorch_tanh", query_pre_attn_scalar=head_dim, sliding_window=window,
+                  max_position_embeddings=seq_len, rms_norm_eps=eps, vocab_size=vocab_size, attention_bias=False,
+                  attn_logit_softcapping=None, final_logit_softcapping=None, use_bidirectional_attention=False,
+                  bos_token_id=2, eos_token_id=7, pad_token_id=0, rope_scaling=None)
+    if not shared:
+        config["tie_word_embeddings"] = False
+    if listed:
+        config["layer_types"] = ["sliding_attention" if kind == "s" else "full_attention" for kind in kinds]
+    else:
+        config["sliding_window_pattern"] = pattern
+    if parameters:
+        config["rope_parameters"] = {"full_attention": {"rope_type": "default", "rope_theta": theta},
+                                     "sliding_attention": {"rope_type": "default", "rope_theta": local_theta}}
+    else:
+        config.update(rope_theta=theta, rope_local_base_freq=local_theta)
+    return tensors, config
+
+
 # ------------------------------------------------------------------------------------------- the engine's file
 def checkpoint(header, form=None, dtype="float32", *, tensor, blocks=None):
     """The file of a model with this header (the 7 ints) and form (llama2_numpy.FORM's keys) in this dtype, as the

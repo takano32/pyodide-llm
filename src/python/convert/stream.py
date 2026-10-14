@@ -28,6 +28,14 @@ def convert_weights(source, config, dtype, max_seq_len, out, progress=None, quan
     return checkpoint_header(config, source, max_seq_len)
 
 
+def piecewise(transform):
+    """Whether a tensor with this transform goes piece by piece, as it comes: one with none, and (T261) one that is
+    multiplied by a number and nothing else, whose every row is the same whatever piece it comes in (a Gemma's
+    embedding, a table of 262,144 rows, which would otherwise be held whole in float32). Every other transform is
+    given its whole tensor, as before."""
+    return transform is None or transform[0] == "scale"
+
+
 def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     """convert_weights() as a generator that yields (values done, values in all) after every piece: whoever drives
     it can show the progress, let other work in between, and stop half way (the worker of the page does all three)."""
@@ -58,7 +66,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
             rows = found[0] if len(found) > 1 else 1
             row = math.prod(found) // rows
             # a transform needs the whole tensor (a small one); everything else goes piece by piece
-            step = rows if transform or len(found) == 1 else max(1, PIECE // row)
+            step = rows if not piecewise(transform) or len(found) == 1 else max(1, PIECE // row)
             for start in range(0, rows, step):
                 stop = min(start + step, rows)
                 values = source.rows(name, 0, found[0]) if len(found) == 1 else source.rows(name, start, stop)
@@ -177,7 +185,7 @@ class Stream:
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes.
         # A GGUF's tensor held in another order than Hugging Face's is put back whole too
         again = info.get("turned") or info.get("split") or info.get("transposed") or info.get("tiled")
-        whole = any(transform for _, _, transform in targets) or len(targets) > 1 or bool(again)
+        whole = any(not piecewise(transform) for _, _, transform in targets) or len(targets) > 1 or bool(again)
         rows = len(self.pending) // row if not whole or last else 0
         if whole and last:
             rows = stored[0] if len(stored) > 1 else 1  # a vector is one row of its own length

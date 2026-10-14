@@ -22,7 +22,7 @@ os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", str(ROOT / ".tmp"))
 
 import llama2_numpy  # noqa: E402
 # the made-up models are tests/made_up.py's (T357.2): the tests take them from here as they always did
-from made_up import (FOLDED, basis, folded, lfm2_model, pack_checkpoint, pack_tokenizer, qwen35_model, rope_tables,  # noqa: E402, F401
+from made_up import (FOLDED, basis, folded, gemma3_model, lfm2_model, pack_checkpoint, pack_tokenizer, qwen35_model, rope_tables,  # noqa: E402, F401
                      synthetic_weights, tiny_vocab)
 
 
@@ -365,3 +365,63 @@ def naive_lfm2_logits(tensors, config, tokens, states=None):
                                                                    * (wide[p + "feed_forward.w3.weight"] @ v))
     classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide["model.embed_tokens.weight"]
     return [classifier @ norm(v, wide["model.embedding_norm.weight"]) for v in x]
+
+
+# ------------------------------------------------------------------------------------- Gemma 3 (T261)
+
+def naive_gemma3_logits(tensors, config, tokens, states=None):
+    """transformers' Gemma3 text model (modeling_gemma3.py at 28034545: Gemma3TextScaledWordEmbedding, Gemma3DecoderLayer,
+    Gemma3Attention with the masks of Gemma3TextModel.forward, Gemma3MLP, Gemma3RMSNorm, Gemma3RotaryEmbedding), written
+    out from the Hugging Face tensors in float64, the whole sequence at once as its forward of a prompt computes: the
+    reference the converter and the engine are held to together (tests/reference_gemma3.py holds it to transformers
+    itself, in CI). config: config.json as transformers' Gemma3TextConfig would have read it (the kinds of the layers
+    listed, the two bases of RoPE by their old names). states: a list that gets, for every layer, what its attention
+    gave at every position (before the norm behind it)."""
+    wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}
+    eps = config["rms_norm_eps"]
+    dim, heads, kv_heads = config["hidden_size"], config["num_attention_heads"], config["num_key_value_heads"]
+    head_dim, window = config["head_dim"], config["sliding_window"]
+    inverse = {kind: 1.0 / config[key] ** (np.arange(0, head_dim, 2, dtype=np.float64) / head_dim)
+               for kind, key in (("full_attention", "rope_theta"), ("sliding_attention", "rope_local_base_freq"))}
+    norm = lambda v, weight: v / math.sqrt(float(v @ v) / len(v) + eps) * (1.0 + weight)  # Gemma3RMSNorm
+    # gelu_pytorch_tanh: torch's gelu(approximate="tanh")
+    gelu = lambda v: 0.5 * v * (1.0 + np.tanh(math.sqrt(2.0 / math.pi) * (v + 0.044715 * v ** 3)))
+
+    def rotate(head, pos, kind):
+        """apply_rotary_pos_emb on one head, as rotate_half pairs its values, by the base of the layer's kind"""
+        cos, sin = np.cos(pos * inverse[kind]), np.sin(pos * inverse[kind])
+        cos, sin = np.concatenate([cos, cos]), np.concatenate([sin, sin])
+        return head * cos + np.concatenate([-head[head_dim // 2:], head[:head_dim // 2]]) * sin
+
+    x = [wide["model.embed_tokens.weight"][token] * float(np.float32(dim ** 0.5)) for token in tokens]
+    for layer, kind in enumerate(config["layer_types"]):
+        p, a = f"model.layers.{layer}.", f"model.layers.{layer}.self_attn."
+        normed = [norm(v, wide[p + "input_layernorm.weight"]) for v in x]
+        queries, ks, vs = [], [], []
+        for pos, v in enumerate(normed):
+            q = (wide[a + "q_proj.weight"] @ v).reshape(heads, head_dim)
+            k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, head_dim)
+            queries.append([rotate(norm(q[h], wide[a + "q_norm.weight"]), pos, kind) for h in range(heads)])
+            ks.append([rotate(norm(k[h], wide[a + "k_norm.weight"]), pos, kind) for h in range(kv_heads)])
+            vs.append((wide[a + "v_proj.weight"] @ v).reshape(kv_heads, head_dim))
+        mixed = []
+        for pos in range(len(tokens)):
+            # the causal mask, and over it the window of a sliding-attention layer: position t where t > pos - window
+            seen = [t for t in range(pos + 1) if kind == "full_attention" or t > pos - window]
+            attended = np.zeros((heads, head_dim))
+            for h in range(heads):
+                kv = h // (heads // kv_heads)
+                scores = np.array([queries[pos][h] @ ks[t][kv] * config["query_pre_attn_scalar"] ** -0.5 for t in seen])
+                scores = np.exp(scores - scores.max())
+                scores /= scores.sum()
+                attended[h] = sum(score * vs[t][kv] for score, t in zip(scores, seen))
+            mixed.append(wide[a + "o_proj.weight"] @ attended.reshape(-1))
+        if states is not None:
+            states.append(mixed)
+        for pos in range(len(tokens)):
+            x[pos] = x[pos] + norm(mixed[pos], wide[p + "post_attention_layernorm.weight"])
+            v = norm(x[pos], wide[p + "pre_feedforward_layernorm.weight"])
+            out = wide[p + "mlp.down_proj.weight"] @ (gelu(wide[p + "mlp.gate_proj.weight"] @ v) * (wide[p + "mlp.up_proj.weight"] @ v))
+            x[pos] = x[pos] + norm(out, wide[p + "post_feedforward_layernorm.weight"])
+    classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide["model.embed_tokens.weight"]
+    return [classifier @ norm(v, wide["model.norm.weight"]) for v in x]

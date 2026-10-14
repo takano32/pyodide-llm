@@ -62,8 +62,8 @@ export function madeUpModel() {
     // a Llama's facts: every layer attends, the i-th of them, and RoPE turns its q and k; RMSNorms and a gated FFN; no
     // layer that keeps a state, none RoPE leaves alone, the model's own basis (rotated: the widths its matrices read)
     linear: null, convolution: null, unturned: [], rotated: 0,
-    layers: Array.from({ length: layers }, (_, place) => ({ kind: "attention" as const, place, rope: true })),
+    layers: Array.from({ length: layers }, (_, place) => ({ kind: "attention" as const, place, rope: true, window: 0, local: false })),
     widths: { q: heads * headSize, kv: kvDim, linear: null, rotated: [...new Set([dim, heads * headSize, hidden])].sort((a, b) => a - b) },
-    layer_norm: false, gated_ffn: true, tiled: false, own_kinds: false };
+    layer_norm: false, gated_ffn: true, activation: "silu" as const, tiled: false, own_kinds: false };
   return { plan, size: offset, header: [dim, hidden, layers, heads, kvHeads, vocab, seqLen] };
 }

@@ -168,6 +168,41 @@ const S = 100000;
   assert.deepEqual(all.said[1], ["add_inplace", all.at.q, all.vector("bq") + 2 * 64 * 4, 64]);
   assert.deepEqual(all.said[2], ["add_inplace", all.at.kNow, all.vector("bk") + 2 * 32 * 4, 32]);
   assert.deepEqual(all.said[5], ["rmsnorm", all.at.q + 16 * 4, all.at.q + 16 * 4, all.vector("q_norm") + 2 * 16 * 4, 16, 1e-5], "the second head of q");
+  // T261: a local layer (a Gemma 3's): RoPE by the local layers' tables, and the cache handed over from the first
+  // position of each token's window on, with the token's position counted from there. Four tokens at positions 5 to 8
+  // and a window of 7: the first two attend from position 0, the third from 1, the fourth from 2
+  {
+    const local = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"]);
+    local.layers.layer(1, { kind: "attention", place: 1, rope: true, window: 7, local: true })(4, 5);
+    const KV = local.cache.KV, keys = local.cache.keys + (5 + 1) * 16 * KV, values = local.cache.values + (5 + 1) * 16 * KV;
+    const cos = local.vector("local_cis_real"), sin = local.vector("local_cis_imag");
+    assert.ok(cos && sin && cos !== local.vector("freq_cis_real"));
+    assert.deepEqual(local.said[3], ["rope", local.at.q + S, cos + 6 * 8 * 4, sin + 6 * 8 * 4, 4, 16, 16], "the second token's q, by the local tables");
+    assert.deepEqual(local.said.at(-2), ["phase", ...[0, 1, 2, 3].map((t) => {
+      const from = [0, 0, 1, 2][t];
+      return [3, local.at.xb + t * S, local.at.q + t * S, keys + from * KV, values + from * KV, local.at.att + t * 48 * 4 * 4, 5 + t - from, 2, 16, 4, 1, 0, 0, 0];
+    })], "each token's heads over the last 7 positions, its own among them");
+    // the two facts apart: a window with the model's own tables, and the local tables with no window
+    const windowed = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"]);
+    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 2, local: false })(1, 9);
+    assert.deepEqual(windowed.said[1].slice(2, 4), [windowed.vector("freq_cis_real") + 9 * 8 * 4, windowed.vector("freq_cis_imag") + 9 * 8 * 4]);
+    assert.deepEqual(windowed.said.at(-2)[1].slice(3, 7), [windowed.cache.keys + 5 * 16 * KV + 8 * KV, windowed.cache.values + 5 * 16 * KV + 8 * KV, windowed.at.att, 1],
+      "a window of 2 at position 9: from position 8, where the token is the second");
+    windowed.said.length = 0;
+    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 0, local: true })(1, 9);
+    assert.deepEqual(windowed.said[1].slice(2, 4), [windowed.vector("local_cis_real") + 9 * 8 * 4, windowed.vector("local_cis_imag") + 9 * 8 * 4]);
+    assert.equal(windowed.said.at(-2)[1][6], 9, "no window: every position");
+    // a window of one position: the token itself; and one longer than the text: every position
+    windowed.said.length = 0;
+    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 1, local: false })(2, 3);
+    assert.deepEqual(windowed.said.at(-2).slice(1).map((job) => job[6]), [0, 0]);
+    windowed.said.length = 0;
+    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 40, local: false })(2, 3);
+    assert.deepEqual(windowed.said.at(-2).slice(1).map((job) => job[6]), [3, 4]);
+    // a plan with a local layer and no tables for it is refused as the layer is made
+    assert.throws(() => stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag"]).layers.layer(0, { kind: "attention", place: 0, rope: true, window: 4, local: true }),
+      /^Error: The plan has a local layer and no RoPE tables of the local layers\.$/);
+  }
   assert.deepEqual(all.said[13], ["gate", all.at.xb, all.at.xb, all.at.gate, 64]);
   console.log("ok: attention: its frame; a step's matmuls, biases, norms of the heads, RoPE, cache and phase in their order and at their addresses; no state to clear");
 }
@@ -271,18 +306,39 @@ const S = 100000;
 
 // ---- the two FFNs
 {
-  const plan = { dim: 16, hidden_dim: 48 };
+  const plan = { dim: 16, hidden_dim: 48, activation: "silu" };
   const gated = coreOf(plan, { has: ["w1", "w2", "w3"] });
   gatedFfn(gated.core)(3, 2);
   const at = gated.at;
   assert.deepEqual(gated.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 3], ["w3", at.hb2, S, 3]],
     ["swiglu", at.hb, at.hb, at.hb2, 48], ["swiglu", at.hb + S, at.hb + S, at.hb2 + S, 48],
     ["matmuls", at.hb, 2, ["w2", at.xb2, S, 3]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
-  const plain = coreOf(plan, { has: ["w1", "w2", "b1", "b2"] });
+  // T261: a Gemma's: the gate's activation is a GELU's, by its own kernel, and what the FFN gives is normalized (the
+  // layer's weights of the norm behind it) before it joins the stream
+  const gemma = coreOf({ ...plan, activation: "gelu" }, { has: ["w1", "w2", "w3", "rms_ffn_post_weight"] });
+  gatedFfn(gemma.core)(3, 2);
+  assert.deepEqual(gemma.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 3], ["w3", at.hb2, S, 3]],
+    ["geglu", at.hb, at.hb, at.hb2, 48], ["geglu", at.hb + S, at.hb + S, at.hb2 + S, 48],
+    ["matmuls", at.hb, 2, ["w2", at.xb2, S, 3]],
+    ["rmsnorm", at.xb2, at.xb2, gemma.vector("rms_ffn_post_weight") + 3 * 16 * 4, 16, 1e-5], ["add_inplace", at.x, at.xb2, 16],
+    ["rmsnorm", at.xb2 + S, at.xb2 + S, gemma.vector("rms_ffn_post_weight") + 3 * 16 * 4, 16, 1e-5], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
+  // (the two apart: a GELU with no norm behind, a SiLU with one; and an activation the engine has no kernel for, or
+  // none at all, is refused as the FFN is made)
+  const gelu = coreOf({ ...plan, activation: "gelu" }, { has: ["w1", "w2", "w3"] });
+  gatedFfn(gelu.core)(0, 1);
+  assert.deepEqual(names(gelu.said), ["matmuls", "geglu", "matmuls", "add_inplace"]);
+  const normed = coreOf(plan, { has: ["w1", "w2", "w3", "rms_ffn_post_weight"] });
+  gatedFfn(normed.core)(0, 1);
+  assert.deepEqual(names(normed.said), ["matmuls", "swiglu", "matmuls", "rmsnorm", "add_inplace"]);
+  for (const activation of ["relu", undefined, "toString"]) {
+    assert.throws(() => gatedFfn(coreOf({ ...plan, activation }, { has: ["w1", "w2", "w3"] }).core), /^Error: This engine has no gated FFN whose activation is /);
+  }
+  assert.throws(() => plainFfn(coreOf(plan, { has: ["w1", "w2", "b1", "b2"] }).core), /^Error: This engine has no FFN without a gate whose activation is "silu"\.$/);
+  const plain = coreOf({ ...plan, activation: "gelu" }, { has: ["w1", "w2", "b1", "b2"] });
   plainFfn(plain.core)(3, 1);
   assert.deepEqual(plain.said, [["matmuls", at.xb, 1, ["w1", at.hb, S, 3]], ["gelu", at.hb, at.hb, plain.vector("b1") + 3 * 48 * 4, 48],
     ["matmuls", at.hb, 1, ["w2", at.xb2, S, 3]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x, plain.vector("b2") + 3 * 16 * 4, 16]]);
-  console.log("ok: the FFNs: a gated one (two matrices, swiglu, one more, into the stream) and GPT-2's (a matrix, gelu with its bias, one more, into the stream with its bias)");
+  console.log("ok: the FFNs: a gated one (two matrices, swiglu or a Gemma's geglu, one more, the norm behind where the model has one, into the stream) and GPT-2's (a matrix, gelu with its bias, one more, into the stream with its bias)");
 }
 
 // ---- the table

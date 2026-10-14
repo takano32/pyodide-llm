@@ -6,6 +6,8 @@
 # Beside the five architectures there are, three whose facts are no architecture's pair: every one of the table has
 # LayerNorms with GPT-2's FFN or RMSNorms with a gated one, so that an engine that read one fact for the other, or
 # the name, would answer right for all five. Their names are none an engine outside Python has heard of.
+# T261: and a Gemma 3 (a GELU in the gate of its FFN, norms behind the attention and the FFN, local layers), with three
+# that have one of its three each and are Llamas otherwise: only a Gemma has any of them, and it has them all.
 import json
 import os
 import sys
@@ -38,6 +40,14 @@ def cases(L):
         widths = L.rotated_widths(header[0], q_dim, header[1], L.linear_form(form.get("linear")))
         return {**form, "rotated": {"block": 8, "signs": {str(width): L.sign_bits(np.where(np.arange(width) % 7 == 3, -1.0, 1.0)) for width in widths}}}
     qwen35 = {"arch": "qwen35", "head_dim": 16, "linear": LINEAR}
+    # T261: a Llama with a GELU in its gate, one with local layers (a window of 3 of the 10 tokens, another base), and
+    # one with the two norms behind, each of the three by itself
+    layouts["a gelu in the gate"] = layouts["llama"]._replace(activation=L.GELU)
+    layouts["local layers"] = layouts["llama"]._replace(local=True)
+    behind = lambda d: [*layouts["llama"].rows(d), d.stack("rms_att_post_weight", L.VECTOR, L.EVERY, d.dim),
+                        d.stack("rms_ffn_post_weight", L.VECTOR, L.EVERY, d.dim)]
+    layouts["norms behind"] = layouts["llama"]._replace(rows=behind)
+    local = {"layers": [0, 1, 3], "window": 3, "rope_theta": 100.0}
     return [
         ("llama", GROUPED, {}, {}),
         ("llama, RoPE leaving two layers alone", GROUPED, {}, {"unturned": (1, 3)}),
@@ -51,6 +61,12 @@ def cases(L):
         ("rms and gelu", FILLED, {"arch": "rms and gelu"}, {"parallel_residual": True}),
         ("layer norms and a gate", FILLED, {"arch": "layer norms and a gate"}, {"rotary": 4, "parallel_residual": True}),
         ("llama, RoPE leaving every layer alone", GROUPED, {}, {"unturned": (0, 1, 2, 3)}),
+        ("gemma3", [64, 128, 6, 4, 1, 320, 48], {"arch": "gemma3", "head_dim": 32},
+         {"local": {"layers": [0, 1, 2, 4, 5], "window": 4, "rope_theta": 100.0}, "rms_norm_eps": 1e-6}),
+        ("gemma3, a classifier of its own and no local layer", [64, 128, 3, 4, 2, -320, 48], {"arch": "gemma3"}, {}),
+        ("a gelu in the gate", GROUPED, {"arch": "a gelu in the gate"}, {}),
+        ("local layers", GROUPED, {"arch": "local layers"}, {"local": local}),
+        ("norms behind", GROUPED, {"arch": "norms behind"}, {}),
     ]
 
 
@@ -81,5 +97,7 @@ if __name__ == "__main__":
         open(os.path.join(folder, f"{index}.bin"), "wb").write(checkpoint)
         open(os.path.join(folder, f"{index}.logits"), "wb").write(logits.tobytes())
         said.append({"name": name, "plan": plan, "tokens": TOKENS, "checkpoint": f"{index}.bin", "logits": f"{index}.logits",
-                     "facts": {"layer_norm": model.layer_norm, "gated_ffn": model.gated_ffn}})
+                     "facts": {"layer_norm": model.layer_norm, "gated_ffn": model.gated_ffn,
+                               "activation": L.layout_of(form.get("arch", "llama")).activation,
+                               "local": list(model.local["layers"]) if model.local else [], "window": model.local["window"] if model.local else 0}})
     print(json.dumps(said))

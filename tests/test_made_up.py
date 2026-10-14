@@ -28,6 +28,8 @@ MODELS = {
     "neox": (FILLED, {"arch": "neox"}, {"rotary": 8}),
     "qwen35": (GROUPED, {"arch": "qwen35", "head_dim": 64, "linear": LINEAR}, {"rotary": 16}),
     "lfm2": (GROUPED, {"arch": "lfm2", "qk_norm": True, "convolution": {"layers": "ccac", "taps": 3}}, {}),
+    "gemma3": ((128, 256, 4, 4, 1, 320, 48), {"arch": "gemma3", "head_dim": 128},
+               {"local": {"layers": [0, 1, 3], "window": 5, "rope_theta": 100.0}}),
 }
 models = pytest.mark.parametrize("name", list(MODELS))
 dtypes = pytest.mark.parametrize("dtype", list(DTYPES))

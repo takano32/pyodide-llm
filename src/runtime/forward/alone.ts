@@ -177,13 +177,17 @@ export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are
 /** T382: why a model of these facts cannot go on the GPU alone, or null: the first fact that keeps it off, each by its
  * own reason (stateful: it has a layer that keeps a state; the rest are its architecture's line and its sizes' gate).
  * Apart from gpuOnlyUnfit() so that a set of facts no architecture of the table has can be asked too (the tests) */
-export function aloneFactsUnfit({ stateful, gate, positions, gatedFfn, layerNorm }:
-  Pick<Architecture, "gate" | "positions" | "gatedFfn" | "layerNorm"> & { stateful: boolean }) {
+export function aloneFactsUnfit({ stateful, gate, positions, gatedFfn, layerNorm, activation, local }:
+  Pick<Architecture, "gate" | "positions" | "gatedFfn" | "layerNorm" | "activation" | "local"> & { stateful: boolean }) {
   if (stateful) return REASONS.stateful;
   if (gate) return REASONS.aloneGate;
   if (positions) return REASONS.alonePositions;
   if (!gatedFfn) return REASONS.aloneFfn;
   if (layerNorm) return REASONS.aloneNorms;
+  // T261: a Gemma 3's facts (its norms behind the attention and the FFN are rows of its file, which no line says: the
+  // other two keep it off). An activation that is not a SiLU's is none the GPU's gate has, whatever it is
+  if (activation !== "silu") return REASONS.aloneActivation;
+  if (local) return REASONS.aloneLocal;
   return null;
 }
 export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null; kinds?: Record<string, unknown> | null } = {},

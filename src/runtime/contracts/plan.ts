@@ -21,7 +21,7 @@ export type Stored = "f32" | "f16" | "int8" | "int6" | "ternary" | "u8" | "layer
 export type Part = { kind: Stored; offset: number; group: number; scales: number };
 export type Tensor = { kind: Stored; offset: number; shape: number[]; group: number; scales: number; layers?: Part[] };
 
-// The rows of the four layouts (engine/layout.py), by their names. A model has those of its own layout; the classifier
+// The rows of the layouts (engine/layout.py), by their names. A model has those of its own layout; the classifier
 // of a model that has none of its own is its embedding under both names.
 export type TensorName =
   | "token_embedding_table" | "wcls" | "rms_final_weight" | "freq_cis_real" | "freq_cis_imag"
@@ -34,20 +34,26 @@ export type TensorName =
   | "wg" | "wqkv" | "wz" | "wb" | "wa" | "conv" | "dt_bias" | "decay" | "delta_norm"
   // LFM2: a convolution layer's two matrices (T260; its taps are under conv too)
   | "win" | "wout"
+  // Gemma 3: the norms behind the attention and behind the FFN (T261)
+  | "rms_att_post_weight" | "rms_ffn_post_weight"
   // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
   | "codebooks";
 
 // where every tensor of a model is: the plan's, and what Python's external_tensors() places before a model is built
 export type Tensors = Partial<Record<TensorName, Tensor>>;
 
-// The few arrays Python computes, as bytes: the RoPE tables of a file that has none of its own (float32), and the
-// signs of a rotated basis for every width a matrix reads (T237)
-export type Derived = { freq_cis_real?: Uint8Array; freq_cis_imag?: Uint8Array; [signs: `signs.${number}`]: Uint8Array };
+// The few arrays Python computes, as bytes: the RoPE tables of a file that has none of its own (float32), those of a
+// model's local layers (T261, which no file has), and the signs of a rotated basis for every width a matrix reads (T237)
+export type Derived = { freq_cis_real?: Uint8Array; freq_cis_imag?: Uint8Array; local_cis_real?: Uint8Array; local_cis_imag?: Uint8Array;
+  [signs: `signs.${number}`]: Uint8Array };
 
 // T359.5: what an engine has to know of a layer: its kind ("attention", or the layout's kind of a layer that keeps a
-// state), its place among the layers of its kind, whether RoPE turns its q and k
+// state), its place among the layers of its kind, whether RoPE turns its q and k. T261: how many of the last
+// positions it attends, its own among them (0: all of them), and whether RoPE turns it by the model's local tables
+// (local_cis_real and local_cis_imag of the derived arrays) in place of the others: two facts, which a Gemma 3's
+// sliding-attention layers have together
 export type LayerKind = "attention" | "linear" | "convolution";
-export type Layer = { kind: LayerKind; place: number; rope: boolean };
+export type Layer = { kind: LayerKind; place: number; rope: boolean; window: number; local: boolean };
 
 // the widths of a linear-attention layer: what the convolution runs over, q or k, and v (which the output matrix reads)
 export type LinearWidths = { mixed: number; keys: number; read: number };
@@ -97,7 +103,9 @@ export type Plan = {
   layers: Layer[];
   widths: Widths;
   // T375.2: the facts of the architecture the layers differ by, as engine/layout.py's Layout names them: the norms are
-  // LayerNorms (else RMSNorms), the FFN is gated (three matrices; else GPT-2's two, with their biases and a GELU)
+  // LayerNorms (else RMSNorms), the FFN is gated (three matrices; else GPT-2's two, with their biases); T261: and the
+  // FFN's activation (a Llama's gate is a SiLU's, a Gemma's a GELU's, as GPT-2's one matrix's output)
+  activation: "silu" | "gelu";
   layer_norm: boolean;
   gated_ffn: boolean;
 };

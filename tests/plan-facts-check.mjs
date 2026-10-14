@@ -80,7 +80,10 @@ try {
     const file = bytes(checkpoint), vocab = plan.vocab_size;
     const wanted = new Float32Array(bytes(logits).buffer);
     assert.equal(wanted.length, tokens.length * vocab, `${name}: the reference's logits`);
-    assert.deepEqual([plan.layer_norm, plan.gated_ffn], [facts.layer_norm, facts.gated_ffn], `${name}: the plan says the facts the reference computed by`);
+    assert.deepEqual([plan.layer_norm, plan.gated_ffn, plan.activation], [facts.layer_norm, facts.gated_ffn, facts.activation], `${name}: the plan says the facts the reference computed by`);
+    // (T261: and which layers are local ones, each by its two facts)
+    assert.deepEqual(plan.layers.map(({ window, local }, l) => [l, window, local]).filter(([, window, local]) => window || local),
+      facts.local.map((l) => [l, facts.window, true]), `${name}: the plan says the local layers the reference computed by`);
     const engine = () => {
       const memory = new WebAssembly.Memory({ initial: Math.ceil((BASE + file.length) / PAGE) + 1 });
       new Uint8Array(memory.buffer).set(file, BASE);

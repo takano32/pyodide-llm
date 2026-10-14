@@ -96,6 +96,13 @@ def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies)
     return tuple((turn(angles) * magnitude).astype(np.float32) for turn in (np.cos, np.sin))
 
 
+def local_tables(seq_len, head_size, theta, frequencies):
+    """The RoPE tables (cos, sin) of a model's local layers (T261: engine/layout.py's local_layers()), which no file
+    has: whole heads turned by the base theta. frequencies(width, theta): the angle per position of each pair."""
+    angles = np.arange(seq_len)[:, None] * frequencies(head_size, theta)
+    return tuple(turn(angles).astype(np.float32) for turn in (np.cos, np.sin))
+
+
 def partial_tables(seq_len, head_size, rotary, frequencies):
     """The RoPE tables of a model that turns the first rotary values of a head only: the angles of that part, in
     tables of the shape the file has (the rest is never read)."""

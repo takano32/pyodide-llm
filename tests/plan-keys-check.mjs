@@ -112,6 +112,8 @@ const returned = (fn) => {
     { name: "neox", header: [256, 1024, 3, 8, 8, -2048, 320], form: { arch: "neox" }, more: { rotary: 8, parallel_residual: true } },
     { name: "qwen35", header: [256, 768, 8, 4, 2, 2048, 320], form: { arch: "qwen35", head_dim: 128, linear: LINEAR, rotated: true }, more: { rotary: 32 } },
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
+    { name: "gemma3", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma3", head_dim: 128 },
+      more: { local: { layers: [0, 1, 2, 3, 4], window: 96, rope_theta: 10000 } } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
@@ -122,7 +124,8 @@ const returned = (fn) => {
   // (the facts of these families a second time, below: [RoPE turns its layers, LayerNorms, a gated FFN]; a family that
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
-    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
+    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true],
+    "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
@@ -201,7 +204,9 @@ const returned = (fn) => {
   const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
   held("the plan's keys, Python to forward.js", keys, readKeys, unread);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
-  held("the tensors' names, Python to forward.js", tensors, readTensors);
+  // (T261: and one it asks floats() for that is a derived table alone, as the local layers' RoPE tables are, is held
+  // with the derived tables below)
+  held("the tensors' names, Python to forward.js", tensors, new Set([...readTensors].filter((name) => tensors.has(name) || !derived.has(name))));
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
   const entryRead = new Set([...readEntry].filter((key) => entryKeys.has(key) || !["rows", "n", "six", "ternary", "at", "slice", "length"].includes(key)));
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
@@ -235,17 +240,23 @@ const returned = (fn) => {
     // a layer's place is its place among the layers of its kind
     const places = {};
     // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
+    // (T261: the FFN's activation, and local layers, which the architecture's line says a model may have: every family
+    // of this check whose architecture may have them has some)
     const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
-      gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm };
+      gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm, activation: plan.activation, local: plan.layers.some(({ local }) => local) };
     plan.layers.forEach((layer, l) => {
       assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);
       assert.equal(layer.rope, layer.kind === "attention" && said.rope && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
+      // T261: a window and the local tables are a local layer's, both or neither in every model Python makes a plan
+      // of, and only a layer that attends is one; the tables are there where a layer is turned by them
+      assert.equal(layer.window > 0, layer.local, `${which}: layer ${l} has a window and the local layers' tables, or neither`);
+      assert.ok(!layer.local || (layer.kind === "attention" && "local_cis_real" in plan.derived && "local_cis_imag" in plan.derived), `${which}: layer ${l} is a local one`);
     });
     // (T375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
     // GPT-2's and a GPT-NeoX's)
     if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN`);
     assert.deepEqual(ARCHITECTURES[plan.arch], said, `${which}: src/runtime/forward/architectures.ts's line of ${JSON.stringify(plan.arch)} is not what Python's plan of that architecture says ` +
-      "(a table of positions and a gate of the attention's output by the tensors, RoPE by the layers, gated_ffn, layer_norm). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
+      "(a table of positions and a gate of the attention's output by the tensors, RoPE and local layers by the layers, gated_ffn, layer_norm, activation). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
     // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise)
     assert.equal("freq_cis_real" in plan.tensors, said.rope && dtype === "float32", `${which}: the RoPE tables are the file's`);
     assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);

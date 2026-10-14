@@ -28,14 +28,14 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layout import (PARTLY, Dims, file_size, layout_of, linear_form, linear_widths, stateful_kinds,
-                           unturned_layers)
+from engine.layout import (GELU, PARTLY, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
+                           stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
 from engine.kernels import load_kernels
 from engine.dtypes import QUANTIZED, dtype_of
-from engine.tensors import read_rows, rope_tables
+from engine.tensors import local_tables, read_rows, rope_tables
 from engine.sampler import KernelSampler, NumpySampler, greedy
 from engine.external import STEPS, ExternalForward
 from engine.plan import Settings, forward_plan
@@ -113,7 +113,8 @@ class Llama:
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
-                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, tiled=None):
+                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, tiled=None,
+                 local=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -131,6 +132,10 @@ class Llama:
         are convolution layers, which keep the last taps - 1 tokens' values in place of keys and values.
         convolution: which layers those are and their taps (FORM's, the file cannot say them). The state follows the
         positions as a Qwen3.5's does.
+        arch="gemma3" (T261): Google's Gemma 3, see the comment on it in engine/layers.py: a Qwen3 that normalizes
+        what its attention and its FFN give as well, whose FFN's activation is a GELU, and most of whose layers
+        are local ones. local: which those are, the window they attend and the base RoPE turns them by
+        (engine/layout.py's local_layers(); the file is the same whichever they are).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is engine/layout.py that says what is there.
@@ -221,6 +226,8 @@ class Llama:
         self.rotary = int(rotary) if rotary else self.head_size
         # T255: the layers whose q and k go into the scores as their matrices (and norms) leave them
         self.unturned = unturned_layers(arch, n_layers, unturned)
+        # T261: the layers that attend a window of the last positions and have RoPE tables of their own (None: none)
+        self.local = local_layers(arch, n_layers, local)
         # what the file cannot say of itself (engine/layout.py's FORM; the rotated basis moves no tensor), and with it
         # for every layer (does it keep a state: a linear-attention layer or a convolution one, its place in the stacks
         # of its kind's tensors). The form is held to its architecture there: one without the layers its architecture
@@ -236,12 +243,15 @@ class Llama:
         # what of the forward pass differs by the architecture, as the reference reads it at every token: the kind of
         # its norms and of its FFN, and whether RoPE turns the heads of q and k whole, in part or not at all
         self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
+        # (the activation of the FFN: a SiLU, or a GELU)
+        self.activation = gelu if layout.activation == GELU else silu
         self.turning, self.partly = layout.rope is not None, layout.rope == PARTLY
         # (and of its layers that keep a state: the name of the reference's step that is theirs, and of their states;
         # none, unless NumPy computes such layers, below)
         self.stateful, self.states = None, ()
         self.positions = None
         self.q_norm = self.k_norm = self.wg = None
+        self.rms_att_post_weight = self.rms_ffn_post_weight = None
         # what the file holds: its rows
         self.rows = dims.rows()
         if tiled:
@@ -259,6 +269,9 @@ class Llama:
         tables = rope_tables(arch, self.seq_len, self.head_size, self.rotary, self.rope_magnitude, stored, frequencies)
         if tables is not None:
             self.freq_cis_real, self.freq_cis_imag = tables
+        # T261: and those of the local layers, which no file has
+        self.local_cis = local_tables(self.seq_len, self.head_size, self.local["rope_theta"], rope_frequencies) \
+            if self.local else None
         self.backend = "NumPy"
         if external is not None:
             if file_size(self.rows, stored) != int(external.size):
@@ -269,7 +282,8 @@ class Llama:
             outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, Settings(
                 int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                 parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
-                rotated=self.rotated, tables=tables, tiled=self.tiled)), external)
+                rotated=self.rotated, tables=tables, tiled=self.tiled, local=self.local,
+                local_tables=self.local_cis)), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):
@@ -337,8 +351,11 @@ class Llama:
                 setattr(self, name, larger)
         scale = np.float32(1.0 / math.sqrt(head_size))
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
+        # T261: the local layers, where the model has such: their window and their own angles of this position
+        local = self.local and set(self.local["layers"])
+        tables = (cos, sin)
         # (what the architecture is, as its Layout said when the model was made)
-        layer_norm, gated_ffn = self.layer_norm, self.gated_ffn
+        layer_norm, gated_ffn, activation = self.layer_norm, self.gated_ffn, self.activation
         # the step of the layers that keep a state, where there are such (read off the model at every token, as a
         # method is: a tool puts its own there)
         stateful = None
@@ -384,13 +401,19 @@ class Llama:
                     qv, kv = head_norm(qv, self.q_norm[a], eps), head_norm(kv, self.k_norm[a], eps)
                 if turns:
                     turn = turns[l]
+                first = 0
+                if local:
+                    # a local layer attends the last window positions, this one among them, and turns by its own base
+                    here = l in local
+                    cos, sin = (self.local_cis[0][pos], self.local_cis[1][pos]) if here else tables
+                    first = max(0, pos + 1 - self.local["window"]) if here else 0
                 q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
                 self.key_cache[a, :, pos] = turn(kv, cos, sin)
                 self.value_cache[a, :, pos] = vv.reshape(n_kv_heads, head_size)
 
-                # Multihead attention over all timesteps so far, all heads at once
-                keys = self.key_cache[a, :, :pos + 1]      # (n_kv_heads, pos + 1, head_size)
-                values = self.value_cache[a, :, :pos + 1]
+                # Multihead attention over all timesteps so far (or the last of them), all heads at once
+                keys = self.key_cache[a, :, first:pos + 1]      # (n_kv_heads, pos + 1 - first, head_size)
+                values = self.value_cache[a, :, first:pos + 1]
                 att = (q @ keys.transpose(0, 2, 1)) * scale  # (n_kv_heads, kv_mul, pos + 1)
                 att = np.exp(att - att.max(axis=-1, keepdims=True))
                 att /= att.sum(axis=-1, keepdims=True)
@@ -401,20 +424,24 @@ class Llama:
                 attended = self.wo[a] @ turned(attended)
                 if self.bo is not None:  # GPT-2 and GPT-NeoX, after every projection
                     attended = attended + self.bo[a]
+            if self.rms_att_post_weight is not None:  # T261: a Gemma normalizes what joins the stream too
+                attended = rmsnorm(attended, self.rms_att_post_weight[l], eps)
             # GPT-NeoX with use_parallel_residual: both branches read the x this layer began with
             before = x
             x = x + attended
 
-            # FFN: w2(silu(w1(x)) * w3(x)), or GPT-2's w2(gelu(w1(x))), and residual connection
+            # FFN: w2(act(w1(x)) * w3(x)), or GPT-2's w2(act(w1(x) + b1) + b2, and residual connection
             xb = norm(before if self.parallel_residual else x, self.rms_ffn_weight[l],
                       self.ln_ffn_bias[l] if layer_norm else None)
             xr = turned(xb)
             hb = self.w1[l] @ xr
             if gated_ffn:
-                hb = hb / (1.0 + np.exp(-hb)) * (self.w3[l] @ xr)
-                x = x + self.w2[l] @ turned(hb)
+                hb = self.w2[l] @ turned(activation(hb) * (self.w3[l] @ xr))
+                if self.rms_ffn_post_weight is not None:
+                    hb = rmsnorm(hb, self.rms_ffn_post_weight[l], eps)
+                x = x + hb
             else:
-                x = x + self.w2[l] @ gelu(hb + self.b1[l]) + self.b2[l]
+                x = x + self.w2[l] @ activation(hb + self.b1[l]) + self.b2[l]
 
         if not need_logits:
             return None
