@@ -64,6 +64,10 @@ def held(llama, count, stepped, wrong=0.0):
                 layers.append(types.SimpleNamespace(conv_states=[pad(np.array(arrays[0]))]))
             else:
                 layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale)))
+    elif arch == "gemma3":
+        for _, (kind, arrays) in sorted(sys.modules["reference_gemma3"].engine_states(llama, count).items()):
+            layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale),
+                                                is_sliding=kind == "sliding"))
     else:
         for keys, values in sys.modules["reference_llama"].engine_cache(llama, count):
             layers.append(types.SimpleNamespace(keys=view(np.array(keys)[None] * scale), values=view(np.array(values)[None] * scale)))
@@ -195,6 +199,17 @@ class Lfm2Config(Config):
         self.block_ff_dim, self.tie_embedding = self.intermediate_size, self.tie_word_embeddings
 
 
+class Gemma3TextConfig(Config):
+    model_type = "gemma3_text"
+    defaults = dict(tie_word_embeddings=True, hidden_activation="gelu_pytorch_tanh")
+
+    def __init__(self, **said):
+        super().__init__(**said)
+        pattern = self.__dict__.pop("sliding_window_pattern", 6)
+        if "layer_types" not in said:
+            self.layer_types = ["sliding_attention" if (at + 1) % pattern else "full_attention" for at in range(said["num_hidden_layers"])]
+
+
 def writable(tensors):
     return {key: view(np.array(value, dtype=np.float32)) for key, value in tensors.items()}
 
@@ -231,7 +246,17 @@ def Lfm2ForCausalLM(config):
     return Model(writable(tensors), json.loads(config.to_json_string()), config)
 
 
-Lfm2ForCausalLM.from_pretrained = Model.from_pretrained
+def Gemma3ForCausalLM(config):
+    import made_up
+    kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in config.layer_types)
+    tensors, _ = made_up.gemma3_model(dim=config.hidden_size, hidden_dim=config.intermediate_size, kinds=kinds,
+                                      n_heads=config.num_attention_heads, n_kv_heads=config.num_key_value_heads,
+                                      head_dim=config.head_dim, vocab_size=config.vocab_size, seq_len=8,
+                                      shared=config.tie_word_embeddings)
+    return Model(writable(tensors), json.loads(config.to_json_string()), config)
+
+
+Lfm2ForCausalLM.from_pretrained = Gemma3ForCausalLM.from_pretrained = Model.from_pretrained
 Qwen3_5ForConditionalGeneration = Model
 
 

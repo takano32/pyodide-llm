@@ -48,6 +48,7 @@ def no_network(url, target, tries=3, timeout=60, optional=False):
 fetching.download = no_network  # (before the tools take the name)
 import made_up  # noqa: E402
 import reference  # noqa: E402
+import reference_gemma3  # noqa: E402
 import reference_lfm2  # noqa: E402
 import reference_llama  # noqa: E402
 import reference_qwen35  # noqa: E402
@@ -98,6 +99,12 @@ def directories(work):
                                 "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
                                 "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
                                 "model.safetensors": made_up.safetensors_file(tensors)})
+    # (T261) a Gemma 3 whose window the long text here is past four times
+    tensors, config = made_up.gemma3_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="ssssslssl")
+    put(work / "gemma3" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
+                                  "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
+                                  "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
+                                  "model.safetensors": made_up.safetensors_file(tensors)})
     for name, more in (("granite", dict(model_type="granite", attention_multiplier=0.3, embedding_multiplier=1.0, residual_multiplier=1.0,
                                         logits_scaling=1.0)),
                        ("smollm3", dict(model_type="smollm3", no_rope_layer_interval=4, use_sliding_window=False))):
@@ -205,6 +212,13 @@ def parts(work):
     out.append(("lfm2 real, with the faults", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", True), right,
                 fine + [("the same ids", 1), ("the two wrote the same", 1), (f"long: the engine ran {LONG} positions", 1),
                         (r"fault \(", faults), (f"faults: {faults} of {faults} are past the line", 1)], {}))
+    gemma = len(reference_gemma3.FAULTS) + len(reference_gemma3.LONG_FAULTS)
+    out += [(f"gemma3 made-up, {name}", lambda name=name: reference_gemma3.made_up(name, reference_gemma3.MADE_UP[name]), right,
+             fine + [("the states after 80 positions", 1), ("the local layers", 1)], {}) for name in reference_gemma3.MADE_UP]
+    out.append(("gemma3 real, with the faults", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", True), right,
+                fine + [("the same ids", 1), ("the two wrote the same", 2), (f"long: the engine ran {LONG} positions", 1),
+                        (r"fault \(", gemma), (r"noted \(", len(reference_gemma3.NOTED)),
+                        (f"faults: {gemma} of {gemma} are past the line", 1)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
                 fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
@@ -214,6 +228,10 @@ def parts(work):
     out.append(("reference_llama.py --only=made-up", main(reference_llama, str(work / "llama"), "--only=made-up"), ("exit", 0), ok, {}))
     out.append(("reference_qwen35.py --only=made-up", main(reference_qwen35, str(work / "qwen35"), "--only=made-up"), ("exit", 0), ok, {}))
     out.append(("reference_lfm2.py --only=made-up", main(reference_lfm2, str(work / "lfm2"), "--only=made-up"), ("exit", 0), ok, {}))
+    out.append(("reference_gemma3.py --only=made-up", main(reference_gemma3, str(work / "gemma3"), "--only=made-up"), ("exit", 0), ok, {}))
+    out.append(("reference_gemma3.py --only=real --model=dry --positions=40 --no-faults",
+                main(reference_gemma3, str(work / "gemma3"), "--only=real", "--model=dry", "--positions=40", "--no-faults"), ("exit", 0),
+                ok + [("the states after 40 positions", 1), (r"fault \(", 0)], {}))
     out.append(("reference_qwen35.py --only=fetch", main(reference_qwen35, str(work / "qwen35"), "--only=fetch"), ("returned", None), [], {}))
     out.append(("reference_lfm2.py --only=fetch --model=dry", main(reference_lfm2, str(work / "lfm2"), "--only=fetch", "--model=dry"),
                 ("returned", None), [], {}))
@@ -231,17 +249,19 @@ def parts(work):
     for what, wrong in (("logits 1e-2 off", {"logits": 1e-2}), ("states 1% off", {"states": 1e-2})):
         first = next(iter(reference_llama.MADE_UP))
         out.append((f"WRONG ({what}): llama made-up", llama_made_up(first, False), ("returned", True), said, wrong))
-        for tool, name in ((reference_qwen35, "qwen35"), (reference_lfm2, "lfm2")):
+        for tool, name in ((reference_qwen35, "qwen35"), (reference_lfm2, "lfm2"), (reference_gemma3, "gemma3")):
             first = next(iter(tool.MADE_UP))
             out.append((f"WRONG ({what}): {name} made-up", lambda tool=tool, first=first: tool.made_up(first, tool.MADE_UP[first]),
                         ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): llama real", llama_real("smollm3", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     # the long pass alone: one line says FAILED, the long text's
     said, wrong = [("FAILED", 1), ("^[a-z0-9]+: long: .* FAILED", 1)], {"kept": 1e-2}
     out.append(("WRONG (the long pass 1e-2 off): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+    out.append(("WRONG (the long pass 1e-2 off): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (logits 1e-2 off): reference_lfm2.py --only=made-up", main(reference_lfm2, str(work / "lfm2"), "--only=made-up"),
                 ("exit", 1), [("^lfm2: FAILED$", 1)], {"logits": 1e-2}))
     return out
@@ -259,6 +279,10 @@ def main():
     reference_qwen35.BOS = 2  # (the real one, 248044, is past the made-up vocabulary)
     reference.LONG = LONG
     reference_lfm2.MODELS["dry"] = ("made/lfm2", REVISION)
+    # (T261: the made-up directory's tokenizer and template are the LFM2's here, a text beginning with token 1)
+    reference_gemma3.MODELS["dry"] = ("made/gemma3", REVISION)
+    reference_gemma3.BOS, reference_gemma3.BEGINS, reference_gemma3.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
+    reference_gemma3.SPECIALS, reference_gemma3.STOPS = reference_lfm2.SPECIALS, (1, 7)
     failed = []
     for name, call, must_end, must_hold, wrong in parts(work):
         if only and not any(part in name for part in only):
