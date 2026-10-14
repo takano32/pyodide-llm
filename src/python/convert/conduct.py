@@ -272,8 +272,8 @@ def candidates_of(hf):
 
 def tokenized(hf, weights, config, make):
     """Conversion() with the template of the model, where it publishes one, and the first tokenizer of the candidates
-    that is there and that the converter can read (a tokenizer.json that writes out a sentencepiece model after the
-    others: T257)."""
+    that is there and that the converter can read (a tokenizer.json that writes out a sentencepiece model with its
+    dummy prefix after the others: T257)."""
     place = place_of(hf)
     # The format of one turn (T73). An optional file: a model without one keeps the format its item has
     tokenizer_config = (yield ("text", place, "tokenizer_config.json")) or ""
@@ -296,9 +296,9 @@ def tokenized(hf, weights, config, make):
         try:
             return converted(tokenizer, candidate, False)
         except Later:
-            # T257: a tokenizer.json that writes out a sentencepiece BPE model, which the model's own file comes
-            # before (a Llama's, a Mistral's: read as it was). Read where no candidate after it will do (a Gemma 4,
-            # CAT-Translate 7B: no such file)
+            # T257: a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix, which the
+            # model's own file comes before (a Llama's, a Mistral's: read as it was). Read where no candidate after
+            # it will do (CAT-Translate 7B: no such file)
             later = later or (tokenizer, candidate)
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error

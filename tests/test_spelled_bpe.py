@@ -259,7 +259,8 @@ def test_a_byte_level_bpe_is_read_as_it_was():
 
 def test_the_models_own_file_comes_first_where_others_are_left_to_try():
     """Conversion(last=False), as the conduct asks for each candidate: a tokenizer.json that writes out a sentencepiece
-    model is put off, before anything is made of the weights; any other tokenizer is read either way."""
+    model with its dummy prefix is put off, before anything is made of the weights; one without the prefix (a Gemma's:
+    nothing of it is tokenizer_config.json's to say) and any other tokenizer are read either way."""
     import struct
     import llama2_convert
     from conftest import synthetic_weights
@@ -290,6 +291,10 @@ def test_the_models_own_file_comes_first_where_others_are_left_to_try():
     with pytest.raises(Later):
         conversion(json.dumps(spec).encode(), "tokenizer.json", size, last=False)
     assert NoWeights.opened == 1 and isinstance(Later("x"), ValueError)  # (refused in words where nothing catches it)
+    for gemma in (True, False):
+        bare, _ = written_out(False, gemma)
+        assert conversion(json.dumps(bare).encode(), "tokenizer.json", size, last=False).options["prefixed"] == "never"
+    assert NoWeights.opened == 3
     other, _ = byte_level(("<|im_end|>",))
     assert conversion(json.dumps(other).encode(), "tokenizer.json", 320, last=False).options["tokenizer_kind"] == "bytebpe"
     assert conversion(model(True), "tokenizer.model", size, last=False).options["tokenizer_kind"] == "bpe"

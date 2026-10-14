@@ -357,7 +357,7 @@ class StandIn:
     """llama2_convert as the conduct calls it, for the made-up files: handed is what it was given, in the words of
     worker-fetches-check.mjs's stand-in (the fixture's "converter", but for the lines of what the worker keeps).
     T257: a tokenizer that begins "written out" is put off as the converter puts off a tokenizer.json that writes out
-    a sentencepiece model, while others are left to try (last false)."""
+    a sentencepiece model with its dummy prefix, while others are left to try (last false)."""
 
     def __init__(self):
         self.handed = handed = []

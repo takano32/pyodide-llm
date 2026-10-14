@@ -9,11 +9,14 @@ UNMATCHABLE = -1e9  # control, unknown and byte pieces must never match user tex
 
 
 class Later(ValueError):
-    """T257: what a tokenizer.json that writes out a sentencepiece BPE model is put off with while the model's other
-    tokenizers are still to be tried (Conversion(last=False), which is how convert.conduct asks for each candidate):
-    the model's own file says the same pieces with their scores, and what transformers makes of the text after a
-    special token is read off that file's tokenizer_config.json (T308), which a tokenizer.json written by an older
-    transformers does not say. Read where no other tokenizer is there, or none that can be read."""
+    """T257: what a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix (a Llama
+    tokenizer's: a Mistral's, CAT-Translate 7B's) is put off with while the model's other tokenizers are still to be
+    tried (Conversion(last=False), which is how convert.conduct asks for each candidate). Before which stretches of
+    text the prefix stands is not the file's alone to say: transformers reads it off tokenizer_config.json's legacy
+    (T308), a tokenizer.json written by an older transformers prepends to all of them whatever that says, and the
+    model's own file, with its scores, is what the list's models of this kind were held to the real tokenizers with.
+    Read where no other tokenizer is there, or none that can be read. One without the prefix (a Gemma's) has no such
+    question, and is read at once: the model's own file read here would get a prefix it has not."""
 
 
 def tokenizer_bin(pieces, vocab_size, spaces=True, charsmap=b""):
