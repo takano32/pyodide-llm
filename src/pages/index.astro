@@ -71,10 +71,11 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           </ul>
           <p>The models and their licenses. The models of the last group are fetched from Hugging Face when you choose one, and converted to int8 in this browser.</p>
           <ul class="sources">
-            {sources().map(({ repo, license, names }) => (
+            {sources().map(({ repo, license, notice, names }) => (
               <li>
                 <a href={`https://huggingface.co/${repo}`}>{repo}</a>{" "}
                 (<a href={LOCAL_LICENSE[repo] ?? `https://huggingface.co/${repo}`}>{license}</a>): {names.join(", ")}
+                {notice && <>. {notice}</>}
               </li>
             ))}
           </ul>

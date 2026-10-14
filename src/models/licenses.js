@@ -166,3 +166,9 @@ export const LICENSES = {
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,
 };
+
+// T261.3: the notices a license asks whoever hosts the model to give, shown after the license on the line of the
+// original in About (the owner's choice, 2026-10-14: not in the note, which a phone cuts short). Gemma's Terms of Use
+// (section 3.1) ask for this one, word for word.
+const GEMMA_NOTICE = "Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms";
+export const NOTICES = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE };
