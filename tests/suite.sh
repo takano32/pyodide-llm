@@ -34,6 +34,8 @@ part() {
 }
 
 part "unit tests of the engine" python -m pytest tests -q
+# the ledger: TODO.md keeps the tasks still moving and a table of contents made from their headings, docs/tasks/ the done ones
+part "the ledger's tables of contents" python tests/ledger.py --check
 
 # Node alone: the benchmark's tables (T45), the table CI writes (T82), the list, the kept models, the service worker...
 page_modules() {
