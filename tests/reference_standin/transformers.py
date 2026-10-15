@@ -64,8 +64,8 @@ def held(llama, count, stepped, wrong=0.0):
                 layers.append(types.SimpleNamespace(conv_states=[pad(np.array(arrays[0]))]))
             else:
                 layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale)))
-    elif arch == "gemma3":
-        for _, (kind, arrays) in sorted(sys.modules["reference_gemma3"].engine_states(llama, count).items()):
+    elif arch in ("gemma3", "gemma4"):
+        for _, (kind, arrays) in sorted(sys.modules[f"reference_{arch}"].engine_states(llama, count).items()):
             layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale),
                                                 is_sliding=kind == "sliding"))
     else:
@@ -210,6 +210,28 @@ class Gemma3TextConfig(Config):
             self.layer_types = ["sliding_attention" if (at + 1) % pattern else "full_attention" for at in range(said["num_hidden_layers"])]
 
 
+class Gemma4TextConfig(Config):
+    model_type = "gemma4_text"
+    defaults = dict(tie_word_embeddings=True, hidden_activation="gelu_pytorch_tanh", final_logit_softcapping=None,
+                    num_kv_shared_layers=0, use_double_wide_mlp=False, hidden_size_per_layer_input=0, global_head_dim=512)
+
+
+class Gemma4Model(Model):
+    """(T329.3) what reference_gemma4.py reads of transformers' modules: which layers share keys and values, how wide
+    each FFN is (transformers' own rules: the last num_kv_shared_layers layers, twice as wide there where
+    use_double_wide_mlp)"""
+
+    @property
+    def model(self):
+        c = self.config
+        first = c.num_hidden_layers - c.num_kv_shared_layers
+        layer = lambda at: types.SimpleNamespace(
+            self_attn=types.SimpleNamespace(is_kv_shared_layer=at >= first > 0 if c.num_kv_shared_layers else False),
+            mlp=types.SimpleNamespace(intermediate_size=c.intermediate_size * (2 if c.use_double_wide_mlp and c.num_kv_shared_layers and at >= first else 1)))
+        return types.SimpleNamespace(embed_tokens=types.SimpleNamespace(weight=self.embedding()),
+                                     layers=[layer(at) for at in range(c.num_hidden_layers)])
+
+
 def writable(tensors):
     return {key: view(np.array(value, dtype=np.float32)) for key, value in tensors.items()}
 
@@ -254,6 +276,25 @@ def Gemma3ForCausalLM(config):
                                       head_dim=config.head_dim, vocab_size=config.vocab_size, seq_len=8,
                                       shared=config.tie_word_embeddings)
     return Model(writable(tensors), json.loads(config.to_json_string()), config)
+
+
+def Gemma4ForCausalLM(config):
+    """(T329.3) as transformers' own: no k, v or their norms in a layer that reads another's"""
+    import made_up
+    kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in config.layer_types)
+    rope = config.rope_parameters
+    tensors, _ = made_up.gemma4_model(dim=config.hidden_size, hidden_dim=config.intermediate_size, kinds=kinds,
+                                      n_heads=config.num_attention_heads, n_kv_heads=config.num_key_value_heads,
+                                      head_dim=config.head_dim, wide_head=config.global_head_dim, window=config.sliding_window,
+                                      vocab_size=config.vocab_size, seq_len=8, shared=config.tie_word_embeddings,
+                                      sharing=config.num_kv_shared_layers, double=config.use_double_wide_mlp,
+                                      per_layer=config.hidden_size_per_layer_input, softcap=config.final_logit_softcapping,
+                                      theta=rope["full_attention"]["rope_theta"], local_theta=rope["sliding_attention"]["rope_theta"],
+                                      proportion=rope["full_attention"]["partial_rotary_factor"], eps=config.rms_norm_eps)
+    first = len(kinds) - config.num_kv_shared_layers
+    tensors = {key: value for key, value in tensors.items()
+               if not any(f"layers.{at}.self_attn.{name}." in key for at in range(first, len(kinds)) for name in ("k_proj", "v_proj", "k_norm"))}
+    return Gemma4Model(writable(tensors), json.loads(config.to_json_string()), config)
 
 
 Lfm2ForCausalLM.from_pretrained = Gemma3ForCausalLM.from_pretrained = Model.from_pretrained
