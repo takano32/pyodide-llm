@@ -3,7 +3,7 @@
 # for tests/perplexity.mjs and tests/perplexity_native.py (T85): <out>.bin, <out>.tokenizer.bin and <out>.json,
 # the options the page would give Llama(). convert_hf.py does not say those options; the page's path does.
 #
-#   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|float32] [--entry <id>]
+#   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|int6|float32] [--entry <id>] [--blocks]
 #
 # --entry <id> (the review of T247): the options of that entry of src/models.js under the converter's, as the worker merges them
 # ({...engineOptions, ...model.options}), as tests/write_options.py makes them. Without it the options are the converter's alone,
@@ -30,6 +30,11 @@ if "--entry" in arguments:
     at = arguments.index("--entry")
     entry_id = arguments[at + 1]
     del arguments[at:at + 2]
+# --blocks (T513): the GGUF's tensors in llama.cpp's blocks kept as they are where the page has kernels for them
+# (Conversion(blocks=True), T363.3), as an entry with conversion.blocks has them converted; the rest as dtype says
+blocks = "--blocks" in arguments
+if blocks:
+    arguments.remove("--blocks")
 directory, out = Path(arguments[0]), arguments[1]
 dtype = arguments[2] if len(arguments) > 2 else "int8"
 
@@ -50,7 +55,7 @@ def entry_options(entry_id):
 # of them the folder has. The checkpoint goes straight into <out>.bin
 hf, answerer = listed(directory)
 sink = Mapped(f"{out}.bin")
-conversion = converted(answerer, hf, dtype=dtype, sink=sink)
+conversion = converted(answerer, hf, dtype=dtype, sink=sink, **({"blocks": True} if blocks else {}))
 sink.data.flush()
 Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
 options = {key: value for key, value in conversion.options.items() if key != "template"}
