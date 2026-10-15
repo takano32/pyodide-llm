@@ -30,6 +30,13 @@ else:
     entry = json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))
 hf = entry["hf"]
 answerer = Fetched.of(hf, directory)
+if model_id.startswith("hf:") and not any(answerer.path("weights", name) for name in ("model.safetensors", "model.safetensors.index.json")):
+    # T517: an original with PyTorch's pickle alone (LINE's japanese-large-lm 1.7B instruction-sft, whose list entry
+    # takes a GGUF): the pickle written as the model.safetensors the conduct then finds kept (tests/gguf_fetch.py)
+    pickle = answerer.path("weights", "pytorch_model.bin")
+    if pickle:
+        from gguf_fetch import pickled
+        pickled(pickle, answerer.folder("weights") / "model.safetensors")
 converted(answerer, hf, weights=False, sink=Nothing())
 weights = answerer.folder("weights") / hf["weights"]
 if hf["weights"].endswith(".gguf") and not hf.get("vocabulary"):

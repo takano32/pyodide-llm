@@ -52,10 +52,17 @@ target = arguments[0]
 bos, end = (int(arguments[1]), int(arguments[2])) if len(arguments) > 2 else (248044, 248046)
 stored = "--stored" in flags
 fidelity = int(next((flag.split("=", 1)[1] for flag in flags if flag.startswith("--fidelity=")), 1 << 30))
+# --format=<the turn, with {prompt} and \n> (T517): a model with no chat template, whose card writes its format as a text
+# (LINE's japanese-large-lm instruction-sft: "ユーザー: {prompt}\nシステム: "), encoded with nothing added by the real
+# sentencepiece of its spiece.model, as the card's slow T5Tokenizer does; the answers written by hand too
+written_format = next((flag.split("=", 1)[1].replace("\\n", "\n") for flag in flags if flag.startswith("--format=")), None)
 if "@" in target:
-    from huggingface_hub import snapshot_download
+    from huggingface_hub import HfApi, snapshot_download
     repo, revision = target.split("@")
-    directory = Path(snapshot_download(repo, revision=revision))
+    # (T517: the weights once, the safetensors where there are both: LINE's 3.6B has 7.2 GB of each)
+    files = HfApi().list_repo_files(repo, revision=revision)
+    unwanted = ["*.bin"] if any(name.endswith(".safetensors") for name in files) else []
+    directory = Path(snapshot_download(repo, revision=revision, ignore_patterns=unwanted))
 else:
     directory = Path(target)
 started = time.time()
@@ -77,8 +84,16 @@ say(f"{target}: {type(model).__name__}, the BOS {bos}, the end of a turn {end}, 
 pairs = [json.loads(line) for line in PAIRS.read_text().splitlines()]
 
 
+if written_format:
+    import sentencepiece
+    pieces = sentencepiece.SentencePieceProcessor(model_file=str(next(directory.glob("*.model"))))
+    tokenizer = lambda text, add_special_tokens=False: {"input_ids": pieces.encode(text)}
+
+
 def head_of(prompt, thinking):
-    real = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True, tokenize=True,
+    if written_format:
+        return pieces.encode(written_format.replace("{prompt}", prompt))
+    real =tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True, tokenize=True,
                                          **({"enable_thinking": thinking} if thinks else {}))
     return [int(token) for token in (real["input_ids"] if hasattr(real, "keys") else real)]
 
