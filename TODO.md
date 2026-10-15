@@ -224,7 +224,7 @@
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
 - T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
 - T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — レビュー前
-- T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 未着手
+- T536 [描画][その他] イントロに 4-bit の Shisa も案内する — レビュー前
 - T537 [描画][モデル] note の言語をモデルのカードに合わせる — 未着手
 - T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
 <!-- 目次ここまで -->
@@ -1582,8 +1582,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - 確かめ（手元）: `models-check` ok、網 `models page` は `models` だけが違う（`MODELS` と、名前を文に持つ `memoryFailure` などの 18 項目の分: 予定どおり）・2 つのページのスクリプトは同じ、`said-texts` は名前の 26 の文だけ（前 13・後 13）、軽い組は T537 までを重ねた木で「suite: light passed」（終わりの数 0）、`npm run build && node tests/dist-check.mjs` ok。**CI を省いた。訳: 触ったのは一覧の名前の文字だけで、手元の models-check・網・軽い組が踏む。**
   - 記録の前の名前（docs/notes/t523 の表、docs/tasks/T343.md の「XHToken Spark-X2.5」）は直していない（勧めのとおり）。
 
-### T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 状態: 未着手（2026-10-15、持ち主が選択肢で「4-bit も案内する」）
+### T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 状態: レビュー前（2026-10-15、持ち主が選択肢で「4-bit も案内する」）
 - 今の文「…いちばん軽いモデルは [tiny-lm（33 MB）]です。…」に、取得を減らすなら [4-bit の形（229 MB）] もある、の 1 文とボタン 1 つを足す（日英）。文面は今ある文の形で勧めを決めて進め、区切りで見せる。
+- **結果（2026-10-15、ブランチ `t536-intro-light`。状態: レビュー前）**: `src/pages/index.astro` のイントロの既定のモデルの文の次に 1 文とボタン 1 つ（日英、ボタンは tiny-lm と同じ `.choose`、`data-model="hf-shisa-v2.1c-lfm2-350m-q4"`: `src/page/choose.ts` の今の受け口がそのまま拾う）。
+  - 日本語（前）: 「…既定のモデルは問いに答えられる Shisa V2.1c LFM2 350M で、初回は Hugging Face から 379 MB を取得してこのブラウザの中で変換します。いちばん軽いモデルは [tiny-lm（33 MB）]です。一覧の最後のグループも同じように Hugging Face から取得して変換します。…」
+  - 日本語（後）: 「…このブラウザの中で変換します。**取得を減らすなら [4-bit の形（229 MB）]もあります。**いちばん軽いモデルは [tiny-lm（33 MB）]です。…」
+  - 英語（前）: 「…The default model, Shisa V2.1c LFM2 350M, answers questions: the first visit fetches its 379 MB from Hugging Face and converts it right here. [tiny-lm (33 MB)] is the lightest model. The last group of the list is fetched and converted the same way. …」
+  - 英語（後）: 「…converts it right here. **[Its 4-bit form (229 MB)] fetches less.** [tiny-lm (33 MB)] is the lightest model. …」
+  - 確かめ（手元の Chrome、360 × 780、前後のビルド）: イントロは日英とも 1 行増える、ページの横の幅 360（横のスクロールなし）。tiny-lm で開いたページで新しいボタンを押すと、選択欄が `hf-shisa-v2.1c-lfm2-350m-q4`、URL が `?model=hf-shisa-v2.1c-lfm2-350m-q4` になり、56.2 秒で準備完了「Shisa V2.1c LFM2 350M (4-bit) · SIMD kernels, llama.cpp's blocks, relaxed SIMD, 2 threads, prompts on the CPU (convolution layers are not on the GPU yet) · Pyodide 314.0.7」、コンソールのエラー 0（捨ての道具、`.tmp/`）。網 `page` はページのスクリプトが同じ（イントロは HTML で、網と `said-texts` は見ない）、軽い組・`dist-check` ok。**CI を省いた。訳: 触ったのはページの HTML の 2 行で、手元の Chrome で開いて押した。**
+  - **取りまとめ役の決め（訳）**: (1) 置き場は既定のモデルの文のすぐ後（「取得を減らすなら」は 379 MB の話の続き）。(2) ボタンの語は「4-bit の形（229 MB）」「Its 4-bit form (229 MB)」（台帳の持ち主の文と項目の名前「(4-bit)」から。大きさは note の「fetches 229 MB」）。(3) 英語は tiny-lm の文と同じくボタンで始める形。
 
 ### T537 [描画][モデル] note の言語をモデルのカードに合わせる — 状態: 未着手（2026-10-15、持ち主「English / 中文に、他にも同じような例があればカードに従う」: Spark-X2.5 の note を問われて）
 - Spark-X2.5 の 4 項目は「English / 中文」に（一覧では英語だけのモデルの側に並ぶ）。ほかの項目も、note の言語の語がカードの言語（メタデータの `language` と本文）と食い違うものを洗い出して、カードに従って直す。並べ替え（日本語の項目が先: T128）が動く項目は表に。
