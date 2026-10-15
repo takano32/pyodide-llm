@@ -1,6 +1,6 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_OWN_BOS, RAKUTEN, SARASHINA, SWALLOW_MS, TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp,
   sarashina,
 } from "./formats.js";
@@ -101,6 +101,12 @@ export const HF_JAPANESE = [
     ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-gguf", "d49108e627b7b6b7b6977184a6b81045b60a8582", "line-corp-japanese-large-lm-1.7b-q8_0.gguf",
       "line-corporation/japanese-large-lm-1.7b", "4288da0a536789f0615c730af0c6cbd9e475a7db", "spiece.model"), download: 1888727168,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  // T517: LINE's instruction-sft of the same 1.7B (mmnga's Q8_0 GGUF, as the base model's), in the card's format and
+  // with the card's sampling (0.7, 0.9, a repetition penalty of 1.1)
+  { group: "hf", id: "hf-japanese-large-lm-1.7b-instruction-sft", name: "japanese-large-lm 1.7B instruction-sft", note: "answers instructions · 日本語 · fetches 1.9 GB (GGUF) → int8 1.9 GB",
+    ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-instruction-sft-gguf", "40b58a8229aee24065e22ba290994ee8066dcbe6", "line-corp-japanese-large-lm-1.7b-instruction-sft-q8_0.gguf",
+      "line-corporation/japanese-large-lm-1.7b-instruction-sft", "6817da05bfe027aa82149fb32e1fc5bc2aa97398", "spiece.model"), download: 1888727232,
+    conversion: {}, options: { bos: 2 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T249: EuroLLM, of 35 languages with Japanese among them. Its tokenizer.json is a BPE of sentencepiece's kind, so
   // the tokenizer.model; the special tokens of its format are the converter's (it reads the template too)
   { group: "hf", id: "hf-eurollm-1.7b-instruct", name: "EuroLLM 1.7B Instruct", note: "answers instructions · 日本語 / English and 33 more languages · fetches 1.8 GB (GGUF) → int8 1.9 GB",
@@ -157,6 +163,16 @@ export const HF_JAPANESE = [
     ...ggufOf("mmnga/llm-jp-3-3.7b-instruct3-gguf", "7edef5a4f094ec8c1aed1e196c6a544675efbc2f", "llm-jp-3-3.7b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-3.7b-instruct3", "f5d5466a3316e0c898b4347ece6557a756921220"), download: 4022249856,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
+  // embedding), and its instruction-sft
+  { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "japanese-large-lm 3.6B", note: "日本語 · fetches 4.0 GB (GGUF) → int8 4.0 GB",
+    ...ggufOf("mmnga/line-corp-japanese-large-lm-3.6b-gguf", "f7392e550d05beb303b40c907d7ef833376c07c7", "line-corp-japanese-large-lm-3.6b-q8_0.gguf",
+      "line-corporation/japanese-large-lm-3.6b", "3ffb24daf746a96f715ff6b5e161c694b510ff03", "spiece.model"), download: 3950123264,
+    conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "hf", id: "hf-japanese-large-lm-3.6b-instruction-sft", name: "japanese-large-lm 3.6B instruction-sft", note: "answers instructions · 日本語 · fetches 4.0 GB (GGUF) → int8 4.0 GB",
+    ...ggufOf("mmnga/line-corp-japanese-large-lm-3.6b-instruction-sft-gguf", "5f562eb5c9669b0123c9f71b14976fcbe085994e", "line-corp-japanese-large-lm-3.6b-instruction-sft-q8_0.gguf",
+      "line-corporation/japanese-large-lm-3.6b-instruction-sft", "3d357b288f78beab8a3af7d962cf98d7d93bf72d", "spiece.model"), download: 3950123264,
+    conversion: {}, options: { bos: 2 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB",
     original: "Qwen/Qwen2.5-7B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,

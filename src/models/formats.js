@@ -8,6 +8,9 @@ export const unigram = { tokenizer_kind: "unigram" };
 // wraps what the visitor typed ({prompt}), for one turn and no more. The forms are the chat_template of each model.
 export const LLM_JP_INSTRUCT = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。\n\n### 指示:\n{prompt}\n\n### 応答:\n";
 export const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
+// T517: LINE's japanese-large-lm instruction-sft (1.7B and 3.6B) have no chat template; their cards write this, and
+// the space at its end too, which the model answers after
+export const LINE_SFT = "ユーザー: {prompt}\nシステム: ";
 // ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
 export const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 // the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, a Qwen3's
