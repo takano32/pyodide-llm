@@ -16,6 +16,8 @@
 # is left of them), a window of 5 (shorter than a prompt's block).
 # long: a window of 300 positions, past the 256 the keys and values begin with room for, in a context of 4096: the
 # cache has grown before a layer first leaves a position out.
+# shared (T330.2): small's widths in 14 layers (two full ones before the shared), its last five layers read the keys and values of the last of their kind before them, and
+# have an FFN twice as wide (E2B's).
 import sys
 from pathlib import Path
 
@@ -30,6 +32,8 @@ SHAPES = {"small": dict(dim=64, hidden_dim=128, kinds="sssslsssslsl", n_heads=4,
                         window=48, seq_len=1024, whole=True),
           "own": dict(dim=96, hidden_dim=160, kinds="sslssl", n_heads=4, n_kv_heads=4, head_dim=24, wide_head=48, window=5,
                       seq_len=1024, shared=False),
+          "shared": dict(dim=64, hidden_dim=128, kinds="sslsslssssslsl", n_heads=4, n_kv_heads=1, head_dim=32, wide_head=64,
+                         window=48, seq_len=1024, sharing=5, double=True),
           "long": dict(dim=128, hidden_dim=256, kinds="sslsslsl", n_heads=4, n_kv_heads=2, head_dim=32, wide_head=64,
                        window=300, seq_len=4096)}
 

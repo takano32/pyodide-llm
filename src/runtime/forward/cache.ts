@@ -48,21 +48,21 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
     KV, half,
     /** count more layers keep their keys and values here: the first of their places (before place()). T510.1: windows,
      * how many of the last positions each attends (0 or none: all of them): one that a ring holds keeps no more. T331:
-     * wide, the values of a position of each (none: kvDim) */
+     * wide, the values of a position of each (none: kvDim; T330, 0: the place keeps none, its layer reads another's) */
     hold(count: number, windows: number[] = [], wide: number[] = []) {
       if (placed) throw new Error("The cache of the keys and values has its room already: a kind of layer takes its places as it is made.");
       const first = held;
       for (let a = 0; a < count; a++) {
-        const size = start ? ringPositions(windows[a] ?? 0, seqLen) / 2 : 0, width = wide[a] ?? kvDim, row = width * (half ? 2 : 4);
+        const width = wide[a] ?? kvDim, row = width * (half ? 2 : 4), size = start && width ? ringPositions(windows[a] ?? 0, seqLen) / 2 : 0;
         if (width > kvDim) throw new Error(`A layer keeps keys and values ${width} wide, and the cache's widest are ${kvDim}.`);
         widths.push(width);
         rows.push(row);
         rings.push(size ? { size, keys: 0, values: 0, row } : null);
-        if (!size) {
+        if (!size && width) {
           before.push(total);
           total += row;
         }
-        indices.push(size ? -1 : layers++);
+        indices.push(size || !width ? -1 : layers++);
       }
       held += count;
       return first;

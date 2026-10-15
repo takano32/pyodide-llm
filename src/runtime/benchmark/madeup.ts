@@ -64,7 +64,7 @@ export function madeUpModel() {
     linear: null, convolution: null, unturned: [], rotated: 0,
     // (T331: every layer's heads and FFN the model's, at its place in the stacks)
     layers: Array.from({ length: layers }, (_, place) => ({ kind: "attention" as const, place, rope: true, window: 0, local: false,
-      head: headSize, rotary: headSize, wide: false, stack: place, double: false, ffn: place })),
+      head: headSize, rotary: headSize, wide: false, stack: place, double: false, ffn: place, kept: place, reads: place })),
     widths: { q: heads * headSize, kv: kvDim, linear: null, rotated: [...new Set([dim, heads * headSize, hidden])].sort((a, b) => a - b) },
     layer_norm: false, gated_ffn: true, activation: "silu" as const, tiled: false, own_kinds: false, value_norm: false, softcap: 0 };
   return { plan, size: offset, header: [dim, hidden, layers, heads, kvHeads, vocab, seqLen] };

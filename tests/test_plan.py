@@ -89,7 +89,7 @@ def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     layers = forward_plan(dims, "int8", no_bytes, int8=False, kv_start=64, **more)["layers"]
     assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()), local=more.get("local"),
                                                 rotary=more.get("rotary", 0))) and len(layers) == header[2]
-    assert all(set(layer) == {"kind", "place", "rope", "window", "local", "head", "rotary", "wide", "stack", "double", "ffn"}
+    assert all(set(layer) == {"kind", "place", "rope", "window", "local", "head", "rotary", "wide", "stack", "double", "ffn", "kept", "reads"}
                for layer in layers)
     # a layer's kind is the stack its tensors are in, and its place is its place in that stack
     attending, stateful = dims.layers(ATTENDING), dims.layers(STATEFUL)

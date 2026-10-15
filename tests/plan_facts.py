@@ -86,6 +86,12 @@ def cases(L):
         ("gemma4, the cache's blocks of two widths", [64, 128, 4, 4, 1, 320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}},
          {"local": {"layers": [0, 2], "window": 30, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
+        # T330.2: its last two layers read the keys and values of the last of their width before them (and the first of
+        # them has an FFN twice as wide)
+        ("gemma4, keys and values shared", [64, 128, 6, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "double": [4, 5],
+          "kv_shared": {"layers": [4, 5], "from": [3, 2]}},
+         {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
         ("a norm of v", GROUPED, {"arch": "a norm of v"}, {}),
         ("a number of every layer", GROUPED, {"arch": "a number of every layer"}, {}),
         ("llama, its logits capped", GROUPED, {}, {"softcap": 2.0}),

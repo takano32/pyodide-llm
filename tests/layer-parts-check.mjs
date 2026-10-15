@@ -167,7 +167,7 @@ const S = 100000;
 {
   const plan = { dim: 64, n_heads: 4, n_kv_heads: 2, head_size: 16, seq_len: 48, rotary: 16, widths: { q: 64, kv: 32 }, tensors: {} };
   // (T331.2: a layer's facts of its heads and stacks: the model's heads, its place)
-  const att = (fact) => ({ window: 0, local: false, head: 16, rotary: 16, wide: false, stack: fact.place, double: false, ffn: fact.place, ...fact });
+  const att = (fact) => ({ window: 0, local: false, head: 16, rotary: 16, wide: false, stack: fact.place, double: false, ffn: fact.place, kept: fact.place, reads: fact.place, ...fact });
   const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 64, kv: 32 }, gate: false, numbers: {} };
   assert.deepEqual(attention.frame(sizes), { arrays: [], apart: [["att", 48 * 4 * 4]] }, "the scores of a token, apart from its frame");
   assert.deepEqual(attention.frame({ ...sizes, gate: true }).arrays, [["gate", 64 * 4]], "and a gate where the layers gate their output");
@@ -388,7 +388,7 @@ const S = 100000;
   const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 128, kv: 32 }, gate: false, numbers: {} };
   const room = memoryOf(), cache = keyValueCache({ room, k: { to_f16() {} }, kvDim: 32, half: false, start: 16, seqLen: 48 });
   const made = coreOf(plan, { has: ["wq", "wk", "wv", "wo", "wq_wide", "wk_wide", "wv_wide", "wo_wide", "q_norm", "k_norm", "q_norm_wide", "k_norm_wide", "freq_cis_real", "freq_cis_imag"], cache, sizes });
-  const fact = (place, wide, stack) => ({ kind: "attention", place, rope: true, window: 0, local: false, head: wide ? 32 : 16, rotary: wide ? 8 : 16, wide, stack, double: false, ffn: place });
+  const fact = (place, wide, stack) => ({ kind: "attention", place, rope: true, window: 0, local: false, head: wide ? 32 : 16, rotary: wide ? 8 : 16, wide, stack, double: false, ffn: place, kept: stack, reads: place });
   const facts = [fact(0, false, 0), fact(1, true, 0), fact(2, false, 1), fact(3, true, 1)];
   const layers = attention.make(made.core, 4, facts);
   assert.deepEqual([0, 1, 2, 3].map((place) => cache.width(place)), [16, 32, 16, 32], "each place as wide as its heads' keys and values");

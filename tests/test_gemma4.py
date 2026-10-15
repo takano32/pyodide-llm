@@ -334,7 +334,9 @@ def test_the_pages_engine_is_handed_no_gemma4_until_it_reads_one():
     from engine.plan import Settings, forward_plan
     no_bytes = lambda offset, length: bytes(length)
     forward_plan(Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16}), "int8", no_bytes, Settings(int8=True, kv_start=256))
-    for form in ({"kv_shared": {"layers": [3], "from": [1]}}, {"per_layer": 8}):
+    forward_plan(Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16, "kv_shared": {"layers": [3], "from": [1]}}),
+                 "int8", no_bytes, Settings(int8=True, kv_start=256))
+    for form in ({"per_layer": 8},):
         dims = Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16, **form})
         with pytest.raises(ValueError, match="does not run a Gemma 4 yet"):
             forward_plan(dims, "int8", no_bytes, Settings(int8=True, kv_start=256))

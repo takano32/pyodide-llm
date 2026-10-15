@@ -34,7 +34,7 @@ import numpy as np
 from engine.checkpoint import OUTLIER_CHANNELS, outlier_channels, outside
 from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
-from engine.layout import DOUBLE, NARROW, SINGLE, TABLE, WIDE, linear_widths, local_layers, unturned_layers
+from engine.layout import ATTENDING, DOUBLE, NARROW, NARROW_KEPT, SINGLE, TABLE, WIDE, WIDE_KEPT, linear_widths, local_layers, unturned_layers
 
 # the kind of a layer that attends over all the positions (and keeps keys and values); a layer that keeps a state in
 # their place is of the kind its architecture has (engine/layout.py's Stateful, by its name: "linear", "convolution")
@@ -82,6 +82,9 @@ def layer_facts(dims, settings):
     "wide" (q, k, v, o and the norms of the heads, each name with "_wide"); "stack": its place in its attention's
     stacks; "double": its FFN's are the form's "double" (each name with "_double"); "ffn": its place in its FFN's
     stacks. Every layer of a model without wide heads or a wide FFN has its own head_size, its place and its number.
+    T330: and "kept": its place in the stacks of k, v and the norm of k's heads (-1: it computes no keys and values of
+    its own, and reads those of another), "reads": the place, among the layers of its kind, of the layer whose keys and
+    values it attends over (its own place where it keeps its own).
     A fact of a layer that an engine needs goes here, as another key of every layer's dict (and where it is a model's
     option, as another field of Settings)."""
     unturned = unturned_layers(dims.arch, dims.n_layers, settings.unturned)
@@ -89,6 +92,8 @@ def layer_facts(dims, settings):
     turning = any(row.role == TABLE for row in dims.rows())
     wide, double = dims.layers(WIDE), dims.layers(DOUBLE)
     narrow, single = dims.layers(NARROW), dims.layers(SINGLE)
+    kept = {per: dims.layers(per) for per in (NARROW_KEPT, WIDE_KEPT)}
+    attending, sources = dims.layers(ATTENDING), dict(zip(*dims.sharing.values())) if dims.sharing else {}
     facts = []
     for layer, (state, place) in enumerate(dims.slots):
         here, head = not state and layer in local["layers"], dims.head_of(layer)
@@ -97,8 +102,16 @@ def layer_facts(dims, settings):
                       "window": local["window"] if here else 0, "local": here,
                       "head": head, "rotary": head if here else (int(settings.rotary) or head),
                       "wide": layer in wide, "stack": wide.index(layer) if layer in wide else (narrow.index(layer) if layer in narrow else place),
-                      "double": layer in double, "ffn": double.index(layer) if layer in double else single.index(layer)})
+                      "double": layer in double, "ffn": double.index(layer) if layer in double else single.index(layer),
+                      **sharing(layer, place, state, kept[WIDE_KEPT if layer in wide else NARROW_KEPT], attending, sources)})
     return facts
+
+
+def sharing(layer, place, state, kept, attending, sources):
+    """T330: a layer's "kept" and "reads" (layer_facts())"""
+    if state:
+        return {"kept": place, "reads": place}
+    return {"kept": kept.index(layer) if layer in kept else -1, "reads": attending.index(sources.get(layer, layer))}
 
 
 def plan_widths(dims):
@@ -130,9 +143,8 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     of an architecture ("arch" is there for a person who looks at a plan). What the rows say is no key here, as it is
     no field there: a bias, the norms of a head, the table of positions are read where the plan has their tensors."""
     settings = Settings(**said) if settings is None else settings
-    if dims.sharing or dims.per_layer:
-        # T330, T329: the page's engine reads neither a Gemma 4's layers that share keys and values nor its embedding
-        # of every layer yet (T330.2, T329.2), and would run another model
+    if dims.per_layer:
+        # T329: the page's engine reads no Gemma 4's embedding of every layer yet (T329.2), and would run another model
         raise ValueError("The page's engine does not run a Gemma 4 yet.")
     int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
     layers = layer_facts(dims, settings)

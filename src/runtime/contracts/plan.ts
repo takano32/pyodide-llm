@@ -62,7 +62,10 @@ export type LayerKind = "attention" | "linear" | "convolution";
 // its FFN's are the ones twice as wide (double: "_double") and its place in its FFN's stacks (ffn). A layer of a model
 // whose layers are all alike has the model's head and rotary, its place and its number
 export type Layer = { kind: LayerKind; place: number; rope: boolean; window: number; local: boolean;
-  head: number; rotary: number; wide: boolean; stack: number; double: boolean; ffn: number };
+  head: number; rotary: number; wide: boolean; stack: number; double: boolean; ffn: number;
+  // T330: its place in the stacks of k, v and the norm of k's heads (-1: it reads another layer's keys and values), and
+  // the place among the layers of its kind of the layer whose keys and values it attends over (its own, or that one's)
+  kept: number; reads: number };
 
 // the widths of a linear-attention layer: what the convolution runs over, q or k, and v (which the output matrix reads)
 export type LinearWidths = { mixed: number; keys: number; read: number };

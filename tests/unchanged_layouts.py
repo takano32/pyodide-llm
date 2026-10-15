@@ -120,7 +120,7 @@ LOCAL_FACTS = ("window", "local")
 # and T331.2's: the heads of v normalized and the cap of the logits, and of every layer the size of its heads, how much
 # RoPE turns, its stacks and its FFN's
 WIDE_SAID = {"value_norm", "softcap"}
-WIDE_FACTS = ("head", "rotary", "wide", "stack", "double", "ffn")
+WIDE_FACTS = ("head", "rotary", "wide", "stack", "double", "ffn", "kept", "reads")
 
 
 for name, headers, form, engine, source in FAMILIES:

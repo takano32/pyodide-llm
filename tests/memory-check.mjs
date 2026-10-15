@@ -197,6 +197,9 @@ function halfToFloat(h) {
     // twice as wide: a small one in every dtype
     ...big("gemma4, six layers", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5] },
       ["int8", "int6", "float32", "float16"]),
+    // T330.2: and one whose last layers read the keys and values of others, and keep none
+    ...big("gemma4, sharing keys and values", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 },
+      double: [4, 5], kv_shared: { layers: [4, 5], from: [3, 2] } }, ["int8", "float32"]),
     // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],

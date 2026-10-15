@@ -35,9 +35,11 @@ export type Footprint = {
   kinds?: Form["kinds"];
   weights?: number;
   local?: Local | null;
-  // T331: the form's layers of wide heads, and of an FFN twice as wide (sizes.ts reads them)
+  // T331: the form's layers of wide heads, and of an FFN twice as wide (sizes.ts reads them); T330: those that read
+  // another's keys and values, and keep none
   wide?: Form["wide"];
   double?: Form["double"];
+  kv_shared?: Form["kv_shared"];
 } & Stateful;
 // T510.1: what a model's options say of its local layers (Python's engine/layout.py's local_layers(): which they are,
 // and how many of the last positions they attend)
@@ -184,9 +186,9 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // T331: each with the width of its own heads' keys and values (the form's wide ones, or the others')
   const ring = direct ? 0 : ringPositions(options.local?.window ?? 0, seqLen), ringed = new Set(ring ? options.local!.layers : []);
   // (the positions of every width there is: one, kvDim, but where some layers' heads are wider)
-  const wideLayers = new Set(options.wide?.layers ?? []), widths = new Map<number, number>();
+  const wideLayers = new Set(options.wide?.layers ?? []), widths = new Map<number, number>(), reading = new Set(options.kv_shared?.layers ?? []);
   sizes.kinds.forEach((kind, l) => {
-    if (!kinds[kind].cached) return;
+    if (!kinds[kind].cached || reading.has(l)) return;
     const width = wideLayers.has(l) ? kvHeads * options.wide!.head_dim : kvHeads * (head_dim || dim / heads);
     widths.set(width, (widths.get(width) ?? 0) + (ringed.has(l) ? ring : seqLen));
   });
