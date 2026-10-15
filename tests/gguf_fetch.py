@@ -64,11 +64,12 @@ def pickled(path, target):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     import convert_hf
 
+    kept = {}
+
     class Once(zipfile.ZipFile):
         """Each member read once. LINE's 1.7B instruction-sft (saved by DeepSpeed) has every tensor in one storage of
         3.3 GB, which load_torch_pickle() reads again for each tensor (a runner of 16 GB was shut down twice, runs 38731171773 and 38732582106)"""
         def read(self, name, *more):
-            kept = self.__dict__.setdefault("kept", {})
             if name not in kept:
                 kept[name] = super().read(name, *more)
             return kept[name]
