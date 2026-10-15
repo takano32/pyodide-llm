@@ -223,7 +223,7 @@
 - T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — 未着手
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
 - T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
-- T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 未着手
+- T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — レビュー前
 - T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 未着手
 - T537 [描画][モデル] note の言語をモデルのカードに合わせる — 未着手
 - T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
@@ -1576,8 +1576,11 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - いまの軽い組の Qwen3.5 の相手は `conftest.naive_qwen35_logits`（transformers の式を書き直した参照）で、transformers そのものとは CI で頼んだときだけ（`tests/reference_qwen35.py`）。相手は、小さな Qwen3.5 を transformers で 1 回走らせた logits を fixture に置き、PyTorch なしの pytest で比べる。参照と実装が同じ読み違いをしても、fixture は落とす（AGENTS.md の「比べの相手が同じ表を読むと…」）。
 - 重みは相手の `qwen35_model.py` でなく、こちらの `tests/made_up.py` から作る（値の決め方を写さない）。fixture を作るのは torch と transformers のある所で 1 回（CI の `extra=` か手で）。網の `python` が「違う」と言う回になるので、製品のコードに触らない回で。同じ形を LFM2・Gemma 3・Gemma 4 に広げるかは、1 つ作ってから決める。
 
-### T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 状態: 未着手（2026-10-15、持ち主「適切な表示を Fable max で検討して採用」: T523 の Qwen を「Alibaba」、Swallow を「TokyoTech-LLM」にした所を問われて） **Fable（max）の勧めが出た（2026-10-15、`docs/notes/t535-maker-names-advice-2026-10-15.md`）: 変えるのは 18 項目**（Swallow 4 つ「TokyoTech-LLM」→「Science Tokyo」、EuroLLM は作り手を外す、Agents-A1「Intern Science」→「Shanghai AI Lab」、Spark-X2.5 は「XHToken」を外す、「Takenoko12345678」→「Atemoya」、「Karpathy」→「Andrej Karpathy」）、Qwen の「Alibaba」はそのまま。持ち主の言葉どおりそのまま採用（実装は Opus medium）。
+### T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 状態: レビュー前（2026-10-15、持ち主「適切な表示を Fable max で検討して採用」: T523 の Qwen を「Alibaba」、Swallow を「TokyoTech-LLM」にした所を問われて） **Fable（max）の勧めが出た（2026-10-15、`docs/notes/t535-maker-names-advice-2026-10-15.md`）: 変えるのは 18 項目**（Swallow 4 つ「TokyoTech-LLM」→「Science Tokyo」、EuroLLM は作り手を外す、Agents-A1「Intern Science」→「Shanghai AI Lab」、Spark-X2.5 は「XHToken」を外す、「Takenoko12345678」→「Atemoya」、「Karpathy」→「Andrej Karpathy」）、Qwen の「Alibaba」はそのまま。持ち主の言葉どおりそのまま採用（実装は Opus medium）。
 - Fable（max）が T523 の表（`docs/notes/t523-maker-names-2026-10-15.md`）の作り手の書き方を 1 つずつ見て（とくに Qwen・Swallow・EuroLLM の UTTER・個人の Takenoko12345678・Karpathy・Ellis Hoag）、勧めを出す。採用は持ち主の言葉どおりそのまま（実装は Opus medium）。
+- **結果（2026-10-15、ブランチ `t535-maker-names-fable`。状態: レビュー前）**: 勧めの表の 18 項目をそのまま（`src/models/built.js` の 5・`hf-japanese.js` の 3・`hf-families.js` の 10。家族の関数の名前の引数で書くもの（Swallow の Qwen3・Atemoya・Agents-A1・Spark）は 1 か所で 2 項目）。前 → 後: Karpathy TinyStories 260K・15M・42M・15M (original)・42M (original) → **Andrej Karpathy** …、TokyoTech-LLM Swallow-MS 7B instruct・Llama 3.1 Swallow 8B Instruct・Qwen3 Swallow 8B RL (thinking)・(no thinking) → **Science Tokyo** …、UTTER EuroLLM 1.7B Instruct → EuroLLM 1.7B Instruct、Intern Science Agents-A1 4B (thinking)・(no thinking) → **Shanghai AI Lab** …、XHToken Spark-X2.5 1.7B・4B (thinking)・(no thinking) → Spark-X2.5 …、Takenoko12345678 Qwen3.5 0.8B Japanese SFT v2.5 (thinking)・(no thinking) → **Atemoya** …。名前の終わり（「(thinking)」）は変えていない。並びは変わらない（名前で並べない）。
+  - 確かめ（手元）: `models-check` ok、網 `models page` は `models` だけが違う（`MODELS` と、名前を文に持つ `memoryFailure` などの 18 項目の分: 予定どおり）・2 つのページのスクリプトは同じ、`said-texts` は名前の 26 の文だけ（前 13・後 13）、軽い組は T537 までを重ねた木で「suite: light passed」（終わりの数 0）、`npm run build && node tests/dist-check.mjs` ok。**CI を省いた。訳: 触ったのは一覧の名前の文字だけで、手元の models-check・網・軽い組が踏む。**
+  - 記録の前の名前（docs/notes/t523 の表、docs/tasks/T343.md の「XHToken Spark-X2.5」）は直していない（勧めのとおり）。
 
 ### T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 状態: 未着手（2026-10-15、持ち主が選択肢で「4-bit も案内する」）
 - 今の文「…いちばん軽いモデルは [tiny-lm（33 MB）]です。…」に、取得を減らすなら [4-bit の形（229 MB）] もある、の 1 文とボタン 1 つを足す（日英）。文面は今ある文の形で勧めを決めて進め、区切りで見せる。
