@@ -38,6 +38,8 @@
 //                  and refuses a fallback adapter) a Chromium gets WebGPU without a GPU (SwiftShader, as
 //                  tests/bench-check.mjs has it), the page takes it and every block of a prompt it can, and the run
 //                  fails unless the prompt went through it.
+//   E2E_TEXT       when set (T333): the whole answer as well, on a line `text: <JSON>` (what an answer ends with: a mark
+//                  of the format written as text where a stop was missing)
 //   E2E_GPU        swiftshader (T148): a Chromium gets SwiftShader's WebGPU without gpuTest=on, and the page must refuse
 //                  it (a fallback adapter: the CPU in the GPU's place) before it compiles anything, and answer on the CPU
 //                  (the status line says why: the fallback adapter, or a reason before it such as ?coi=off).
@@ -410,6 +412,7 @@ if (result.prompt) console.log(result.prompt);
 if (result.generated) console.log(result.generated);
 const threadReportsSeen = await answerWatched("");
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
+if (process.env.E2E_TEXT) console.log(`text: ${JSON.stringify(result.text)}`);
 const then = [];
 for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {
   if (failures.length) break;

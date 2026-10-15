@@ -8,7 +8,7 @@ import {
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
-import { gemma3, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
+import { gemma3, gemma4, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
 export const HF_FAMILIES = [
   ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",
@@ -225,4 +225,12 @@ export const HF_FAMILIES = [
     "fetches 292 MB (GGUF) → int8 302 MB"),
   gemma3("1B", "f0b45be0aac41bd6a100a4b5734cad5f67255bfb", "5b11413a10db4e486ef16a20101fd028f8f2499c", 1069306400,
     "fetches 1.1 GB (GGUF) → int8 1.1 GB"),
+  // T333: Gemma 4's two smallest (E2B, E4B), on the CPU alone (no shader has their layers yet: T334). T329.3 held the
+  // E2B to transformers (logits 1.10e-4, the most likely token 96 of 96) and ran it in three browsers from ?hf=. loaded:
+  // the int8 checkpoint without the table of every layer's inputs, which stays in the kept file (the converter's sizes
+  // of the real headers and forward.ts's tableHole()): E2B 5,207,962,792 bytes less 2,642,411,520, E4B 8,397,500,612 less 3,170,893,824
+  gemma4("E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", 10246621918, 2565551272,
+    "fetches 10.2 GB → int8 5.2 GB (2.6 GB in memory)"),
+  gemma4("E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", 15992595884, 5226606788,
+    "fetches 16.0 GB → int8 8.4 GB (5.2 GB in memory)"),
 ];

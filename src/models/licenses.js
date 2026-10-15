@@ -177,6 +177,9 @@ export const LICENSES = {
   // T261.3: Google's originals (gated: the list takes unsloth's copies and GGUFs of them)
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,
+  // T333: Gemma 4 is Apache 2.0, not the Gemma Terms of Use: the cards' metadata says apache-2.0 and their text "License:
+  // Apache 2.0" (a link to ai.google.dev/gemma/docs/gemma_4_license); no notice is asked for
+  "google/gemma-4-E2B-it": APACHE, "google/gemma-4-E4B-it": APACHE,
 };
 
 // T261.3: the notices a license asks whoever hosts the model to give, shown after the license on the line of the
