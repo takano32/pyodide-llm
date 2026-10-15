@@ -87,14 +87,27 @@ def check_config(config):
         refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
     said = yarn(config)
     if said is not None:
-        # T235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context. What else transformers
-        # reads of a yarn (attention_factor, mscale, mscale_all_dim, beta_fast, beta_slow, truncate) changes the angles
-        # or how much the turned values are scaled, and the tables know none of it
-        for key in sorted(set(said) - {"factor", "original_max_position_embeddings"}):
+        # T235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context; T532: and what else
+        # transformers 5.16.1 reads of a yarn (rope_frequencies(), rope_magnitude()). Any other key is refused rather
+        # than dropped without a word: transformers drops attn_factor (DeepSeek-R1-0528-Qwen3-8B's), which vLLM and
+        # llama.cpp multiply by, and a GGUF's own (llama.cpp's names, families/llama.py) mean what llama.cpp makes of them
+        for key in sorted(set(said) - set(YARN_KEYS)):
             refuse(f"its yarn RoPE scaling sets {key}, which the engine does not read")
         if not all(isinstance(said.get(key), (int, float)) and said[key] > 0 for key in ("factor", "original_max_position_embeddings")):
             refuse("its yarn RoPE scaling names no factor or no original context")
+        for key in sorted(set(said) & set(YARN_KEYS) - {"factor", "original_max_position_embeddings"}):
+            flag = YARN_KEYS[key] is bool
+            if not isinstance(said[key], YARN_KEYS[key]) or isinstance(said[key], bool) is not flag \
+                    or (not flag and said[key] < 0):
+                refuse(f"its yarn RoPE scaling sets {key} to {said[key]!r}, which the engine does not read")
     family.check(config)
+
+
+# T532: the keys of a yarn RoPE scaling the tables read (llama2_numpy.rope_frequencies(), rope_magnitude()), and the
+# type of each (transformers 5.16.1's _compute_yarn_parameters reads the same ones)
+YARN_KEYS = {"factor": (int, float), "original_max_position_embeddings": (int, float), "attention_factor": (int, float),
+             "mscale": (int, float), "mscale_all_dim": (int, float), "beta_fast": (int, float), "beta_slow": (int, float),
+             "truncate": bool}
 
 
 def checkpoint_header(config, source, max_seq_len):

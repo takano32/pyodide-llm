@@ -102,7 +102,15 @@ def gguf_config(key, tensors):
             # T235 found "yarn_log_mul" here, a name no GGUF has)
             config["rope_scaling"]["original_max_position_embeddings"] = \
                 key("rope.scaling.original_context_length", key("context_length"))
-            for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")):
+            # T532: the two bounds mean in llama.cpp (ggml_rope_yarn_corr_dims(), which always rounds them outward)
+            # what beta_fast and beta_slow mean in transformers, and are read as those. The rest keep llama.cpp's
+            # names, which check_config() refuses: llama.cpp multiplies the magnitude by attn_factor (config.json's
+            # attn_factor of DeepSeek-R1-0528-Qwen3-8B, which transformers drops), makes it of yarn_log_multiplier
+            # with an mscale of 1 it assumes (llama-context.cpp), and puts yarn_attn_factor aside for its own: none is
+            # transformers' attention_factor or mscale_all_dim
+            for name, ours in (("yarn_beta_fast", "beta_fast"), ("yarn_beta_slow", "beta_slow"),
+                               ("attn_factor", "attn_factor"), ("yarn_attn_factor", "yarn_attn_factor"),
+                               ("yarn_log_multiplier", "yarn_log_multiplier"), ("yarn_ext_factor", "yarn_ext_factor")):
                 if key(f"rope.scaling.{name}") is not None:
                     config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
     return config

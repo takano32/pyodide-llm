@@ -6,8 +6,10 @@ The reference (conftest.naive_qwen35_logits) is written from the Hugging Face te
 them, so it checks the converter (q and its gate in one matrix, RoPE over the first part of a head, norms stored
 around zero, the taps of the convolution, A_log) and the engine together. tests/reference_qwen35.py holds that
 reference, and the engine, to transformers itself (CI: PyTorch is not on the development machine)."""
+import hashlib
 import json
 import struct
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -77,6 +79,44 @@ def test_a_qwen35_converts_and_runs_like_transformers(model):
     want = naive_qwen35_logits(tensors, config, TOKENS)
     for pos, token in enumerate(TOKENS):
         assert np.allclose(llama.forward(token, pos), want[pos], rtol=2e-4, atol=2e-4), pos
+
+
+# T534 (the form of ssig33/pyodide-llm's 3a038d25): transformers' own logits of two of these made-up models, written
+# once in CI (tests/reference_qwen35.py --only=fixture). naive_qwen35_logits is transformers' formulas written again
+# by the hand that wrote the engine's, and the two could share a misreading; the fixture cannot. It holds the settings
+# and the tokens, and a hash of the tensors it was made of: a change of tests/made_up.py's values says so here, and
+# the fixture is to be written again (and tests/fixtures/qwen35-logits.json read) rather than the line moved.
+FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "qwen35-logits.json").read_text())
+# float32 against float32, over FIXTURE's tokens, of the largest logit: the engine was within 7.9e-6 and 1.2e-6 of it on
+# CI's x86-64 (run 38816554062) and 3.1e-6 and 2.0e-6 on the development machine's arm64, where transformers' own two
+# computations (at once and token by token) are 2.0e-6 and 2.4e-6 apart; the l2norm of the delta rule with an epsilon
+# of 1e-5 for 1e-6 (one weak misreading) is 6.8e-5 and 2.7e-5 away
+FIXTURE_LINE = 1.5e-5
+
+
+def fixture_hash(tensors):
+    """reference_qwen35.fixture_hash(), written again here (it imports what needs PyTorch)"""
+    digest = hashlib.sha256()
+    for key in sorted(tensors):
+        digest.update(key.encode() + np.ascontiguousarray(np.asarray(tensors[key], dtype=np.float32)).tobytes())
+    return digest.hexdigest()
+
+
+@pytest.mark.parametrize("model", FIXTURE["models"])
+def test_a_qwen35_computes_what_transformers_computed(model):
+    said = FIXTURE["models"][model]
+    tensors, config = qwen35_model(**said["settings"], prefix="model.")
+    read = {key: value for key, value in tensors.items() if key.startswith(("model.layers.", "model.embed_tokens.",
+                                                                            "model.norm.", "lm_head."))}
+    assert fixture_hash(read) == said["tensors"], "tests/made_up.py makes other tensors than the fixture's: write it again"
+    made = conversion(tensors, config)
+    llama = Llama(bytes(made.checkpoint), made.tokenizer, **{key: value for key, value in made.options.items() if key != "template"})
+    ours = np.stack([llama.forward(token, pos).copy() for pos, token in enumerate(FIXTURE["tokens"])])
+    theirs = np.array(said["logits"], dtype=np.float32)
+    assert ours.shape == theirs.shape
+    worst = float(np.abs(ours - theirs).max() / np.abs(theirs).max())
+    assert worst < FIXTURE_LINE, worst
+    assert (ours.argmax(axis=1) == theirs.argmax(axis=1)).all()
 
 
 # every tensor of the file that is not a Llama's too, and the norms (stored around zero): changed in one layer, the
