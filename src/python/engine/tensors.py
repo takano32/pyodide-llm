@@ -29,7 +29,7 @@ import numpy as np
 
 from engine.checkpoint import outside
 from engine.dtypes import KINDS, QUANTIZED
-from engine.layout import CODES, EMBEDDING, PARTLY, PROPORTIONAL, TABLE, check_suited, layout_of, placed
+from engine.layout import CODES, EMBEDDING, PARTLY, PROPORTIONAL, ROWS, TABLE, check_suited, layout_of, placed
 
 
 def read_tensor(checkpoint, place, whole=True, copy=False):
@@ -67,7 +67,8 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
         # the RoPE tables are the file's in float32 alone (rope_tables() makes the others).
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8
         # or float16 table stays as it is and Llama.embedding() widens the row it needs. (Codebooks stay bytes.)
-        as_stored = (CODES,) if shared_weights else (CODES, EMBEDDING)
+        # (T329: and a table every layer reads a row of, which multiplies nothing)
+        as_stored = (CODES, ROWS) if shared_weights else (CODES, ROWS, EMBEDDING)
         held = {place.row.name: read_tensor(checkpoint, place, place.row.role not in as_stored, copy=dtype in QUANTIZED)
                 for place in placed(rows, dtype)
                 if place.kind is not None and (place.row.role != TABLE or dtype == "float32")}

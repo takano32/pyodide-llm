@@ -114,7 +114,7 @@ class Llama:
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
                  convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, tiled=None,
-                 local=None, wide=None, double=None, softcap=0.0, kv_shared=None):
+                 local=None, wide=None, double=None, softcap=0.0, kv_shared=None, per_layer=0):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -142,7 +142,8 @@ class Llama:
         of its whole width (proportional RoPE). wide: the layers whose heads are of a size of their own (FORM's: the
         full-attention layers' 512), double: those whose FFN is twice as wide (FORM's), softcap: the logits are
         softcap * tanh(logits / softcap) (0: as they are). kv_shared (T330): the layers that read the keys and values of
-        a layer before them in place of their own, and which each reads (FORM's).
+        a layer before them in place of their own, and which each reads (FORM's). per_layer (T329): the width of the
+        input every layer takes of a table of its own, and of a projection of the token's row (FORM's; 0: none).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is engine/layout.py that says what is there.
@@ -240,7 +241,8 @@ class Llama:
         # of its kind's tensors). The form is held to its architecture there: one without the layers its architecture
         # has, or with another's, is refused
         form = {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": linear,
-                "convolution": convolution, "kinds": kinds, "wide": wide, "double": double, "kv_shared": kv_shared}
+                "convolution": convolution, "kinds": kinds, "wide": wide, "double": double, "kv_shared": kv_shared,
+                "per_layer": per_layer}
         dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
         self.slots = dims.slots
         # T331: for every layer that attends, by its place among them: the names of its attention's tensors are those
@@ -280,6 +282,8 @@ class Llama:
         self.q_norm_wide = self.k_norm_wide = None  # (T331: of the wide layers)
         self.rms_att_post_weight = self.rms_ffn_post_weight = None
         self.layer_scale = None  # T331
+        self.per_layer_table = self.ple_gate = None  # T329
+        self.per_layer = dims.per_layer
         # what the file holds: its rows
         self.rows = dims.rows()
         if tiled:
@@ -354,11 +358,13 @@ class Llama:
         self.stats = {}
         self._run = 0
 
-    def embedding(self, token):
-        if isinstance(self.token_embedding_table, tuple):
-            values, scales = self.token_embedding_table
-            return (values[token] * scales[token]).reshape(self.dim)
-        return self.token_embedding_table[token].astype(np.float32)
+    def embedding(self, token, table=None):
+        """A token's row of the embedding (or of another table read a row at a time: T329's), in float32."""
+        table = self.token_embedding_table if table is None else table
+        if isinstance(table, tuple):
+            values, scales = table
+            return (values[token] * scales[token]).reshape(-1)
+        return table[token].astype(np.float32)
 
     def file_tensors(self, checkpoint, rows, dtype, shared_weights, external):
         """Takes every row of a file of this dtype as an attribute of its name (engine/tensors.py's read_rows()). A
@@ -418,6 +424,12 @@ class Llama:
 
         # Copy the token embedding into x, and (GPT-2) the row of this position
         x = self.embedding(token)
+        inputs = None
+        if self.per_layer_table is not None:
+            # T329: every layer's input of its own: the projection of the row, normalized P values a layer, and the
+            # token's row of the table of every layer (the converter folded the model's scales into the three)
+            projected = head_norm(self.per_layer_projection @ x, self.per_layer_norm, eps)
+            inputs = (projected + self.embedding(token, self.per_layer_table)).reshape(self.n_layers, -1)
         if self.positions is not None:
             x = x + self.positions[pos]
         turned = self.turned
@@ -500,6 +512,8 @@ class Llama:
                 x = x + hb
             else:
                 x = x + w2[at] @ activation(hb + self.b1[l]) + self.b2[l]
+            if inputs is not None:  # T329: what the layer makes of its input joins the stream, normalized
+                x = x + rmsnorm(self.ple_proj[l] @ (activation(self.ple_gate[l] @ x) * inputs[l]), self.ple_post[l], eps)
             if self.layer_scale is not None:  # T331: a Gemma 4's layer ends by scaling the stream
                 x = x * self.layer_scale[l]
 

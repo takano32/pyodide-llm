@@ -52,4 +52,6 @@ export type Form = {
   double: number[] | null;
   // T330: the layers that read the keys and values of another, and which each reads: layout.py's shared_form()
   kv_shared: { layers: number[]; from: number[] } | null;
+  // T329: the width of every layer's input of a table of its own (a Gemma 4's per-layer embedding); 0 where none
+  per_layer: number;
 };

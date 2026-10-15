@@ -50,7 +50,8 @@ LAYOUTS = {
     "lfm2": ([256, 768, 8, 8, 4, -2048, 320], {"arch": "lfm2", "convolution": {"layers": "ccaccaca", "taps": 3}}, 0),
     "gemma3": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma3", "head_dim": 128}, 0),
     "gemma4": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma4", "head_dim": 128,
-                                                 "wide": {"layers": [2, 5], "head_dim": 256}, "double": [4, 5]}, 0),
+                                                 "wide": {"layers": [2, 5], "head_dim": 256}, "double": [4, 5],
+                                                 "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 16}, 0),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
@@ -221,7 +222,7 @@ def test_what_only_a_family_says_is_asked_of_no_other(model_type):
     assert (llama2_convert.linear_layers(config) is not None) == (family.arch == "qwen35")
     assert (llama2_convert.convolution_layers(config) is not None) == (family.arch == "lfm2")
     assert set(family.form) == {"qwen35": {"linear"}, "lfm2": {"convolution"},
-                                "gemma4": {"wide", "double", "kv_shared"}}.get(family.arch, set()) <= set(FORM)
+                                "gemma4": {"wide", "double", "kv_shared", "per_layer"}}.get(family.arch, set()) <= set(FORM)
     assert set(family.options(config)) == {"smollm3": {"unturned"}, "gpt_neox": {"parallel_residual"},
                                            "gemma4_text": {"rotary"}, "gemma4": {"rotary"}}.get(model_type, set())
 

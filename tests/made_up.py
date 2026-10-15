@@ -299,20 +299,24 @@ def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
 # ------------------------------------------------------------------------------------- Gemma 4 (T331)
 def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, wide_head=32, window=4,
                  vocab_size=320, seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0,
-                 proportion=0.25, softcap=30.0, whole=False, sharing=0, double=False):
+                 proportion=0.25, softcap=30.0, whole=False, sharing=0, double=False, per_layer=0):
     """Random Hugging Face tensors of a tiny Gemma 4 (its language model), with the names and shapes of
     google/gemma-4-E2B-it's model.safetensors at 3e22461f (whole: "model.language_model." in front, as there; else
     "model.", the language model saved alone), and its config.json (whole: the whole model's, whose text_config it
     is). kinds: a letter a layer, s for a sliding-attention layer and l for a full-attention one, whose heads are
     wide_head (head_dim the others'). T330: the last sharing layers read another's keys and values (their own k, v and
     norms are in the file all the same, as the published ones' are), and where double their FFN is twice as wide. There
-    is no embedding of a layer (T329: hidden_size_per_layer_input 0). The norms are around 1 (the model multiplies by
-    the weight itself), and every layer's layer_scalar a number of its own."""
+    is an embedding of every layer of per_layer values (T329: hidden_size_per_layer_input; 0, none). The norms are around
+    1 (the model multiplies by the weight itself), and every layer's layer_scalar a number of its own."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
     around = lambda *shape: (1.0 + rng.standard_normal(shape) * 0.3).astype(np.float32)
     m = "model.language_model." if whole else "model."
     tensors = {m + "embed_tokens.weight": normal(vocab_size, dim), m + "norm.weight": around(dim)}
+    if per_layer:
+        tensors.update({m + "embed_tokens_per_layer.weight": normal(vocab_size, len(kinds) * per_layer),
+                        m + "per_layer_model_projection.weight": normal(len(kinds) * per_layer, dim),
+                        m + "per_layer_projection_norm.weight": around(per_layer)})
     for layer, kind in enumerate(kinds):
         p, size = f"{m}layers.{layer}.", wide_head if kind == "l" else head_dim
         for norm in ("input_layernorm", "post_attention_layernorm", "pre_feedforward_layernorm", "post_feedforward_layernorm"):
@@ -327,6 +331,10 @@ def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
         tensors[p + "mlp.gate_proj.weight"] = normal(hidden, dim)
         tensors[p + "mlp.up_proj.weight"] = normal(hidden, dim)
         tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden)
+        if per_layer:
+            tensors[p + "per_layer_input_gate.weight"] = normal(per_layer, dim)
+            tensors[p + "per_layer_projection.weight"] = normal(dim, per_layer)
+            tensors[p + "post_per_layer_input_norm.weight"] = around(dim)
         tensors[p + "layer_scalar"] = (0.5 + rng.random(1)).astype(np.float32)
     if not shared:
         tensors["lm_head.weight"] = normal(vocab_size, dim)
@@ -336,7 +344,7 @@ def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
                 rms_norm_eps=eps, vocab_size=vocab_size, vocab_size_per_layer_input=vocab_size, attention_bias=False,
                 final_logit_softcapping=softcap, use_bidirectional_attention=None, attention_k_eq_v=False,
                 enable_moe_block=False, num_global_key_value_heads=None, num_kv_shared_layers=sharing,
-                hidden_size_per_layer_input=0, use_double_wide_mlp=double, tie_word_embeddings=shared,
+                hidden_size_per_layer_input=per_layer, use_double_wide_mlp=double, tie_word_embeddings=shared,
                 bos_token_id=2, eos_token_id=1, pad_token_id=0,
                 layer_types=["sliding_attention" if kind == "s" else "full_attention" for kind in kinds],
                 rope_parameters={"full_attention": {"rope_type": "proportional", "partial_rotary_factor": proportion,

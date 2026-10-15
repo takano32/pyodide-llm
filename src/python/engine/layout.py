@@ -56,8 +56,11 @@ from engine.dtypes import BLOCKS, BYTES, CODEBOOKS, KINDS, QUANTIZED, kind_named
 # matrices are stacks of their own. None: none.
 # kv_shared (T330): the layers that read the keys and values of a layer before them in place of their own, see
 # shared_form(): they have no k, v and norm of k's heads. None: none.
+# per_layer (T329): the width of the input every layer takes of its own table (a Gemma 4's per-layer embedding:
+# hidden_size_per_layer_input, 256); 0: none.
 FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
-        "convolution": None, "kinds": None, "tiled": None, "wide": None, "double": None, "kv_shared": None}
+        "convolution": None, "kinds": None, "tiled": None, "wide": None, "double": None, "kv_shared": None,
+        "per_layer": 0}
 
 
 def form_of(options=None):
@@ -209,8 +212,10 @@ def slots_of(stateful):
 #               a linear-attention layer's gates, the taps of a convolution): float32 in a quantized file
 #   TABLE       a RoPE table: left out of a quantized file (the engine computes it)
 #   CODES       the codebooks of llama.cpp's blocks (T363), bytes: of a file with rows of such kinds alone
+#   ROWS        a table that is only ever read a row at a time and multiplies nothing (T329: a Gemma 4's embedding of
+#               every layer), a matrix to the file, which the NumPy forward keeps as it is stored
 MATRIX, EMBEDDING, CLASSIFIER, POSITIONS, VECTOR, TABLE = "matrix", "embedding", "classifier", "positions", "vector", "table"
-CODES = "codes"
+CODES, ROWS = "codes", "rows"
 # Which layers the first axis of a row's shape stacks, in their order (None: one tensor for the model):
 #   EVERY       every layer
 #   ATTENDING   the layers that keep keys and values (all of them, but in a hybrid model)
@@ -264,6 +269,10 @@ class Dims:
         if (self.wide or self.double) and not self.layout.wide:
             raise ValueError(f"The architecture {self.arch!r} has no layers of heads or of an FFN of another width.")
         self.wide_head = self.wide["head_dim"] if self.wide else 0
+        # T329: the width of every layer's input of its own table (0: none)
+        self.per_layer = int(form["per_layer"] or 0)
+        if self.per_layer < 0 or (self.per_layer and not self.layout.wide):
+            raise ValueError(f"The architecture {self.arch!r} has no embedding of every layer of {self.per_layer}.")
         # T330: the layers that read another's keys and values (None: none), of that one's size of heads and an attending
         # one
         # (sharing: shared is the classifier's, above)
@@ -408,7 +417,14 @@ def gemma4(d):
     others', and the FFN of the layers of the form's "double" (twice hidden_dim: each name with "_double") after the
     others'; and a number every layer multiplies the stream by at its end (layer_scale). Its RoPE tables are of the
     layers that attend over all the positions, which are the wide ones where there are such."""
-    rows, head = [*embedding(d), d.stack("rms_att_weight", VECTOR, EVERY, d.dim)], d.wide_head or d.head_size
+    rows, head = [*embedding(d)], d.wide_head or d.head_size
+    if d.per_layer:
+        # T329: the embedding of every layer (a row of it is P values for each layer, P its width), the projection of
+        # the embedding's row into the same, and the norm of that projection (of P values, each layer's alike)
+        width = d.n_layers * d.per_layer
+        rows += [Row("per_layer_table", ROWS, (d.vocab_size, width)), Row("per_layer_projection", MATRIX, (width, d.dim)),
+                 Row("per_layer_norm", VECTOR, (d.per_layer,))]
+    rows.append(d.stack("rms_att_weight", VECTOR, EVERY, d.dim))
     # (T330: k, v and the norm of k's heads of the layers that compute their own keys and values)
     for per, kept, suffix, size in ((NARROW, NARROW_KEPT, "", d.head_size), (WIDE, WIDE_KEPT, "_wide", d.wide_head)):
         if d.layers(per):
@@ -421,7 +437,12 @@ def gemma4(d):
         if d.layers(per):
             rows += [d.stack("w1" + suffix, MATRIX, per, hidden, d.dim), d.stack("w2" + suffix, MATRIX, per, d.dim, hidden),
                      d.stack("w3" + suffix, MATRIX, per, hidden, d.dim)]
-    return rows + [d.stack("rms_ffn_post_weight", VECTOR, EVERY, d.dim), d.stack("layer_scale", VECTOR, EVERY, 1),
+    rows.append(d.stack("rms_ffn_post_weight", VECTOR, EVERY, d.dim))
+    if d.per_layer:
+        # (T329: what every layer makes of its input: a gate of its own, the projection back, and its norm)
+        rows += [d.stack("ple_gate", MATRIX, EVERY, d.per_layer, d.dim), d.stack("ple_proj", MATRIX, EVERY, d.dim, d.per_layer),
+                 d.stack("ple_post", VECTOR, EVERY, d.dim)]
+    return rows + [d.stack("layer_scale", VECTOR, EVERY, 1),
                    Row("rms_final_weight", VECTOR, (d.dim,)), Row("freq_cis_real", TABLE, (d.seq_len, head // 2)),
                    Row("freq_cis_imag", TABLE, (d.seq_len, head // 2)), *classifier(d)]
 

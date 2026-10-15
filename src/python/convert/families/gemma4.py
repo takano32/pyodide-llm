@@ -12,8 +12,11 @@
 #
 # T330: its last num_kv_shared_layers layers read the keys and values of the last layer before them of their kind in
 # place of their own (Gemma4TextAttention's store_full_length_kv and shared_kv_states), and where use_double_wide_mlp
-# their FFN is twice as wide. What the engine has not yet (T329) it refuses here: an embedding of every layer's own,
-# which every published Gemma 4 of the sizes a page can hold has.
+# their FFN is twice as wide. T329: every layer takes an input of its own (Gemma4TextModel.get_per_layer_inputs() and
+# project_per_layer_inputs(), Gemma4TextDecoderLayer): a row of a table of every layer, and a projection of the
+# embedding's row. Until the page's forward pass reads that (T329.2), a model with it is refused here unless
+# PAGE_READS_EMBEDDINGS says otherwise (the tests and the tools of CI): every published Gemma 4 of the sizes a page can
+# hold has one, and a visitor of ?hf= would fetch and convert gigabytes of it for nothing.
 import math
 
 import numpy as np
@@ -24,6 +27,8 @@ from engine.layers import rope_frequencies
 
 # transformers' Gemma4TextConfig, where config.json says nothing (configuration_gemma4.py)
 HEAD, WIDE_HEAD, PROPORTION = 256, 512, 0.25
+# (T329: True once the page's forward pass reads the embedding of every layer, T329.2)
+PAGE_READS_EMBEDDINGS = False
 
 
 def language_model(config):
@@ -100,6 +105,11 @@ def shared(config):
     return {"layers": layers, "from": [last(config["layer_types"][layer]) for layer in layers]}
 
 
+def per_layer(config):
+    """T329: FORM's "per_layer", the width of every layer's input of its own (0: none)."""
+    return int(gemma4_config(config)["hidden_size_per_layer_input"] or 0)
+
+
 def double(config):
     """FORM's "double": the layers whose FFN is twice as wide, the ones that read another's keys and values where the
     config says use_double_wide_mlp (Gemma4TextMLP)."""
@@ -158,7 +168,8 @@ def gemma4_check(config):
         refuse("it has fewer than two layers of each size of its heads")
     if double(config) and 1 in (len(double(config)), layers - len(double(config))):
         refuse("it has fewer than two layers of each width of its FFN")
-    if config["hidden_size_per_layer_input"]:
+    if config["hidden_size_per_layer_input"] and (not PAGE_READS_EMBEDDINGS or config.get(
+            "vocab_size_per_layer_input", config["vocab_size"]) != config["vocab_size"]):
         refuse("it has an embedding for every layer")
 
 
@@ -177,7 +188,16 @@ def gemma4_sources(d, prefix, rotary):
                "rms_ffn_post_weight": of("post_feedforward_layernorm"),
                "layer_scale": (prefix + "layers.{}.layer_scalar", None),
                "rms_final_weight": (prefix + "norm.weight", ("scale", 1.0 / scale) if d.shared else None),
-               "wcls": ("lm_head.weight", None)}
+               "wcls": ("lm_head.weight", None),
+               # T329: the table's row is multiplied by sqrt(P) and the sum of it and the normalized projection by
+               # 1 / sqrt(2): into the table and the norm's weight. The projection of the embedding's row (sqrt(dim)
+               # times it, as the table has it) is multiplied by 1 / sqrt(dim) before its norm, whose epsilon would
+               # not let a scale through: into the matrix
+               "per_layer_table": (prefix + "embed_tokens_per_layer.weight", ("scale", math.sqrt(d.per_layer / 2))),
+               "per_layer_projection": (prefix + "per_layer_model_projection.weight", ("scale", 1.0 / scale)),
+               "per_layer_norm": (prefix + "per_layer_projection_norm.weight", ("scale", math.sqrt(0.5))),
+               "ple_gate": of("per_layer_input_gate"), "ple_proj": of("per_layer_projection"),
+               "ple_post": of("post_per_layer_input_norm")}
     for suffix, size in (("", d.head_size), ("_wide", d.wide_head or d.head_size)):
         head = ("permute", 1, size)
         sources.update({"wq" + suffix: of("self_attn.q_proj", ("permute", d.n_heads, size)),
@@ -208,7 +228,7 @@ def gemma4_prefix(source):
 
 
 GEMMA4 = Family("Gemma 4", "gemma4", gemma4_sources, gemma4_check, before=gemma4_config, options=gemma4_options,
-                form={"wide": wide, "double": double, "kv_shared": shared}, prefix=gemma4_prefix, table=gemma4_table,
+                form={"wide": wide, "double": double, "kv_shared": shared, "per_layer": per_layer}, prefix=gemma4_prefix, table=gemma4_table,
                 free_heads=True, rms_norm=True)
 # config.json of the whole model as it is published (gemma4: the language model and its towers of sight and sound): its
 # text_config is the Gemma 4 above

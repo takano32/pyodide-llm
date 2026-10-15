@@ -38,9 +38,20 @@ MODELS = {
     "the last four share, their FFN twice as wide": dict(kinds="ssllsssl", sharing=4, double=True),
     "all but the first two of a kind share": dict(kinds="slslssssl", sharing=5, double=True),
     "sharing, heads of one size": dict(kinds="ssllsl", sharing=2, wide_head=16, double=True),
+    # T329: every layer's input of its own
+    "an embedding of every layer": dict(per_layer=8),
+    "all of it, as E2B has it": dict(kinds="sslsslsslssl", sharing=5, double=True, per_layer=8, whole=True),
+    "all of it, as E4B has it, a classifier of its own": dict(kinds="sslsslsslssl", sharing=5, per_layer=16, shared=False),
 }
 PASSED = ("dtype", "arch", "bias", "head_dim", "local", "rope_theta", "rms_norm_eps", "rotary", "softcap", "wide",
-          "double", "kv_shared")
+          "double", "kv_shared", "per_layer")
+
+
+@pytest.fixture(autouse=True)
+def page_reads_embeddings(monkeypatch):
+    """(T329.2 is when the page's forward pass reads them: the converter refuses them until then, but here)"""
+    import convert.families.gemma4
+    monkeypatch.setattr(convert.families.gemma4, "PAGE_READS_EMBEDDINGS", True)
 
 
 def text(config):
@@ -166,12 +177,18 @@ def refusal(config):
     return str(caught.value)
 
 
-def test_what_the_engine_has_not_yet_is_refused_in_words():
-    """Every published Gemma 4 has an embedding of every layer (T329): refused; and what a Gemma 4 of other sizes has
-    (the 12B's keys that are its values, the 26B's experts)."""
+def test_what_the_engine_has_not_yet_is_refused_in_words(monkeypatch):
+    """Every published Gemma 4 has an embedding of every layer, which the page's forward pass reads from T329.2:
+    refused until then; and what a Gemma 4 of other sizes has (the 12B's keys that are its values, the 26B's
+    experts), and a table of another vocabulary."""
+    import convert.families.gemma4
+    check_config(normalize(E2B))
+    assert refusal({**E2B, "vocab_size_per_layer_input": 1000}) == "This model cannot be converted: it has an embedding for every layer."
+    monkeypatch.setattr(convert.families.gemma4, "PAGE_READS_EMBEDDINGS", False)
     assert refusal(E2B) == "This model cannot be converted: it has an embedding for every layer."
-    whole = {"model_type": "gemma4", "text_config": E2B}
-    assert refusal(whole) == refusal(E2B)
+    monkeypatch.setattr(convert.families.gemma4, "PAGE_READS_EMBEDDINGS", True)
+    whole = {"model_type": "gemma4", "text_config": {**E2B, "vocab_size_per_layer_input": 1000}}
+    assert refusal(whole) == refusal({**E2B, "vocab_size_per_layer_input": 1000})
     for more in ({"attention_k_eq_v": True}, {"enable_moe_block": True}, {"num_global_key_value_heads": 4}):
         assert refusal({**E2B, **more}) == "This model cannot be converted: its layers are not the ones of a Gemma 4 E2B or E4B."
     assert "the yarn kind" in refusal({**E2B, "rope_parameters": {**E2B["rope_parameters"],
@@ -317,3 +334,45 @@ def test_the_pages_engine_is_handed_no_gemma4_until_it_reads_one():
     dims = Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16})
     with pytest.raises(ValueError, match="does not run a Gemma 4 yet"):
         forward_plan(dims, "int8", lambda offset, length: bytes(length), Settings(int8=True, kv_start=256))
+
+
+ALL = dict(kinds="sslsslsslssl", sharing=5, double=True, per_layer=8)
+# T329: the tensors of every layer's input, of the model and of a layer (one that keeps its keys and values, one that
+# reads another's, the last)
+OWN = ["model.embed_tokens_per_layer.weight", "model.per_layer_model_projection.weight",
+       "model.per_layer_projection_norm.weight"] + [f"model.layers.{layer}.{name}.weight" for layer in (0, 8, 11)
+                                                    for name in ("per_layer_input_gate", "per_layer_projection",
+                                                                 "post_per_layer_input_norm")]
+
+
+@pytest.mark.parametrize("name", OWN)
+def test_every_tensor_of_the_inputs_of_the_layers_is_read_where_transformers_reads_it(name):
+    tensors, config = gemma4_model(**ALL)
+    changed = dict(tensors)
+    changed[name] = (tensors[name] + np.random.default_rng(7).standard_normal(tensors[name].shape) * 0.3).astype(np.float32)
+    before, after = engine(tensors, config)[0], engine(changed, config)[0]
+    want = naive_gemma4_logits(changed, config, TOKENS)
+    moved = False
+    for pos, token in enumerate(TOKENS):
+        was, got = before.forward(token, pos).copy(), after.forward(token, pos)
+        assert close(got, want[pos]), pos
+        moved |= not np.allclose(got, was, rtol=1e-3, atol=1e-3)
+    assert moved, name
+
+
+@pytest.mark.parametrize("dtype, width", [("float16", 8), ("int8", 8), ("int6", 32)])
+def test_the_table_of_every_layer_is_held_as_it_is_stored(dtype, width):
+    """The table is read a row at a time and multiplies nothing: NumPy keeps it as the file stores it (a quantized file's
+    values and scales, a float16 file's halves), and the model is close to the reference all the same. (Six bits need
+    rows of whole groups of 32: a layer's projection back reads width values.)"""
+    tensors, config = gemma4_model(**{**ALL, "per_layer": width})
+    llama = engine(tensors, config, dtype)[0]
+    if dtype == "float16":
+        assert llama.per_layer_table.dtype == np.float16
+    else:
+        assert isinstance(llama.per_layer_table, tuple)
+    want = naive_gemma4_logits(tensors, config, TOKENS)
+    # (a quantized made-up model drifts from the reference past the first token by its noise alone, 3.6 at int8 with a
+    # table of 32 a layer, of logits up to 6.6: the first token's row is what this asks of them)
+    for pos, token in enumerate(TOKENS if dtype == "float16" else TOKENS[:1]):
+        assert np.abs(llama.forward(token, pos) - want[pos]).max() < (0.05 if dtype == "float16" else 1.0), pos

@@ -32,8 +32,8 @@ const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
 // layer's output matrix (null but in such a file: an array of a token's frame more, T363.5); T331: "wide" and "double", a
 // Gemma 4's layers of wider heads and of an FFN twice as wide (null where there are none; footprint() reads them from
 // T331.2, and until then no plan of a Gemma 4 is made: engine/plan.py); T330: "kv_shared", the layers that read another's
-// keys and values (the same)
-assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "double", "head_dim", "kinds", "kv_shared", "linear", "qk_norm", "rotated", "tiled", "wide"],
+// keys and values (the same); T329: "per_layer", the width of every layer's input of its own table (0 where there is none)
+assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "double", "head_dim", "kinds", "kv_shared", "linear", "per_layer", "qk_norm", "rotated", "tiled", "wide"],
   "FORM has other keys now: say here which of them footprint() reads");
 
 // T368.2: the type whatever is TypeScript reads a form by (src/runtime/contracts/form.ts) says the same keys, and the
