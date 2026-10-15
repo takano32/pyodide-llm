@@ -25,7 +25,8 @@
 #   against     (T529, not of the default parts) the model against the original's safetensors (AGAINST, hf:<repository>@
 #               <revision>; E2B's where none is said), both converted to int8: the page's engine's logits at the same
 #               ids (tests/logits.mjs, AGAINST_TOKENS of each language, 96), the largest difference, the most likely token,
-#               the KL and the perplexity of each
+#               the KL and the perplexity of each; the two checkpoints row by row; and the control, the safetensors' with its
+#               scales rounded to float16 as a Q8_0 holds them (what that rounding alone moves)
 # The first word is the model (hf:<repository>@<revision>, or an entry of the list: hf-gemma-4-e2b takes a GGUF's
 # weights from T529), the third the languages ("en ja").
 #
@@ -98,7 +99,47 @@ if has against; then
   original=$(python tests/hf_fetch.py "$against" "$dir/original" | tail -1)
   echo "gemma4: the original fetched in $((SECONDS - began)) s: $(du -shL "$original" | cut -f1)"
   python tests/perplexity_prepare.py "$original" "$dir/original-int8" int8 2>&1 | tail -1 | cut -c1-200
-  for out in int8 original-int8; do
+  # the two checkpoints row by row (the engine's layout): how many int8 values differ, and the scales, as they are and
+  # with the safetensors' rounded to float16 as a Q8_0 holds them (a GGUF that is the original's Q8_0 differs by that
+  # alone). And the control: the safetensors' checkpoint with its scales so rounded (rounded-int8), whose logits are
+  # what the rounding alone moves
+  python - "$dir" <<'EOF'
+import json, struct, sys
+from pathlib import Path
+import numpy as np
+sys.path.insert(0, "src/python")
+from engine.layout import placed, tensor_rows
+from llama2_numpy import form_of
+out = Path(sys.argv[1])
+options = json.loads((out / "int8.json").read_text())
+header = list(struct.unpack("<7i", (out / "int8.bin").open("rb").read(28)))
+a, b = (np.memmap(out / f"{name}.bin", dtype=np.uint8, mode="r") for name in ("int8", "original-int8"))
+assert a.size == b.size, (a.size, b.size)
+control = np.memmap(out / "rounded-int8.bin", dtype=np.uint8, mode="w+", shape=b.shape)
+control[:] = b
+for place in placed(tensor_rows(header, form_of(options)), options.get("dtype", "int8")):
+    for part in place.layers or (place,):
+        if not part.size:
+            continue
+        if part.kind == "float32":
+            x, y = (np.frombuffer(m[part.offset:part.offset + part.size], dtype="<f4") for m in (a, b))
+            if not np.array_equal(x, y):
+                print(f"gemma4: rows: {place.row.name}: float32, {np.abs(x - y).max() / max(np.abs(y).max(), 1e-30):.2e} of its largest apart")
+            continue
+        values = part.scales - part.offset
+        q = np.frombuffer(a[part.offset:part.scales], dtype=np.int8), np.frombuffer(b[part.offset:part.scales], dtype=np.int8)
+        s = (np.frombuffer(a[part.scales:part.offset + part.size], dtype="<f4"),
+             np.frombuffer(b[part.scales:part.offset + part.size], dtype="<f4"))
+        rounded = s[1].astype(np.float16).astype(np.float32)
+        control[part.scales:part.offset + part.size] = np.frombuffer(rounded.tobytes(), dtype=np.uint8)
+        print(f"gemma4: rows: {place.row.name}{' (a layer)' if place.layers else ''}: {part.kind}, {(q[0] != q[1]).mean() * 100:.4f}% of "
+              f"{values} values differ (by {int(np.abs(q[0].astype(int) - q[1]).max())} at most), scales {np.abs(s[0] / np.where(s[1] == 0, 1, s[1]) - 1).max():.2e} "
+              f"apart, {(s[0] != rounded).mean() * 100:.4f}% of them not the safetensors' rounded to float16")
+control.flush()
+EOF
+  cp "$dir/original-int8.json" "$dir/rounded-int8.json"
+  cp "$dir/original-int8.tokenizer.bin" "$dir/rounded-int8.tokenizer.bin"
+  for out in int8 original-int8 rounded-int8; do
     python - "$dir" "$out" <<'EOF'
 import json, struct, sys
 from pathlib import Path
@@ -117,21 +158,25 @@ import json, sys
 from pathlib import Path
 import numpy as np
 out, language = Path(sys.argv[1]), sys.argv[2]
-ids = [json.loads((out / f"{name}.{language}.ids.json").read_text()) for name in ("int8", "original-int8")]
-assert ids[0] == ids[1], "the two tokenize differently"
-a, b = (np.fromfile(out / f"{name}.{language}.logits.f32", dtype=np.float32).reshape(len(ids[0]), -1).astype(np.float64)
-        for name in ("int8", "original-int8"))
+names = ("int8", "original-int8", "rounded-int8")
+ids = [json.loads((out / f"{name}.{language}.ids.json").read_text()) for name in names]
+assert ids[0] == ids[1] == ids[2], "they tokenize differently"
+logits = {name: np.fromfile(out / f"{name}.{language}.logits.f32", dtype=np.float32).reshape(len(ids[0]), -1).astype(np.float64)
+          for name in names}
 log = lambda x: x - x.max(axis=1, keepdims=True) - np.log(np.exp(x - x.max(axis=1, keepdims=True)).sum(axis=1, keepdims=True))
-p, q = log(b), log(a)
-kl = (np.exp(p) * (p - q)).sum(axis=1)
 nll = lambda x: -float(np.mean([x[i, ids[0][i + 1]] for i in range(len(ids[0]) - 1)]))
-print(f"gemma4: against the original, {language}: {len(ids[0])} positions, largest logit difference "
-      f"{np.abs(a - b).max():.4f} (logits up to {np.abs(b).max():.2f}), the most likely token the same at "
-      f"{int((a.argmax(axis=1) == b.argmax(axis=1)).sum())}/{len(ids[0])}, KL mean {kl.mean():.2e} largest {kl.max():.2e}, "
-      f"perplexity {np.exp(nll(q)):.3f} (GGUF) and {np.exp(nll(p)):.3f} (safetensors)")
+said = {"int8": "the GGUF's", "original-int8": "the safetensors'", "rounded-int8": "the safetensors' with float16 scales"}
+for one, other in (("int8", "original-int8"), ("rounded-int8", "original-int8"), ("int8", "rounded-int8")):
+    a, b = logits[one], logits[other]
+    p, q = log(b), log(a)
+    kl = (np.exp(p) * (p - q)).sum(axis=1)
+    print(f"gemma4: against, {language}: {said[one]} and {said[other]}: {len(ids[0])} positions, largest logit difference "
+          f"{np.abs(a - b).max():.4f} (logits up to {np.abs(b).max():.2f}), the most likely token the same at "
+          f"{int((a.argmax(axis=1) == b.argmax(axis=1)).sum())}/{len(ids[0])}, KL mean {kl.mean():.2e} largest {kl.max():.2e}, "
+          f"perplexity {np.exp(nll(q)):.3f} and {np.exp(nll(p)):.3f}")
 EOF
   done
-  rm -f "$dir/original-int8.bin"
+  rm -f "$dir/original-int8.bin" "$dir/rounded-int8.bin"
 fi
 rm -f "$dir/int8.bin"
 if has float32; then
