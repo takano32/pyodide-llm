@@ -116,8 +116,9 @@ assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8),
   const [thinks, answers] = ["hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"].map(byId);
   const after = "2.3-bit weights · fetches 7.9 GB (GGUF), kept as it is: 8.0 GB · about a word a second or less · desktop only · Chrome and Firefox";
   assert.deepEqual([thinks.name, answers.name], ["Underdog Saluki 27B (thinking)", "Underdog Saluki 27B (no thinking)"]);
-  // T537: the languages its card says (its metadata's en alone), and so among the English ones
-  assert.deepEqual([thinks.note, answers.note], [`thinks before it answers · English · ${after}`, `answers at once · English · ${after}`]);
+  // T537: the languages its card says (its metadata's en alone); T539: with 日本語, for it answered Japanese questions in
+  // Japanese here (T364), and so among the Japanese ones
+  assert.deepEqual([thinks.note, answers.note], [`thinks before it answers · 日本語 / English · ${after}`, `answers at once · 日本語 / English · ${after}`]);
   assert.deepEqual(thinks.generation, { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0, top_k: 20 });
   assert.deepEqual(answers.generation, { steps: 0, temperature: 0.0 });
   for (const entry of [thinks, answers]) {
@@ -260,10 +261,16 @@ MODELS.slice(1).forEach((entry, i) => {
 });
 assert.ok(writesJapanese({ note: "translates 日本語 ⇄ English" }) && !writesJapanese({ note: "English" }));
 // T537 (the owner's choice of 2026-10-15): a note's languages are its card's (docs/notes/t537-note-languages-2026-10-15.md).
-// Spark-X2.5's GGUF cards say English and Chinese: among the English ones, with the thinkingAndNot() note's form
+// Spark-X2.5's GGUF cards say English and Chinese, with the thinkingAndNot() note's form. T539 (the owner's "日本語いけるやつは
+// 日本語も書こう", 2026-10-15): a model that answered Japanese questions in Japanese here says 日本語 too, whatever its card
+// says (docs/notes/t539-japanese-notes-2026-10-15.md): Spark-X2.5 (T343), SmolLM3 (T255), and so among the Japanese ones
 for (const id of ["hf-spark-x2.5-1.7b-thinking", "hf-spark-x2.5-1.7b", "hf-spark-x2.5-4b-thinking", "hf-spark-x2.5-4b"]) {
-  assert.match(byId(id).note, /^(thinks before it answers|answers at once) · English \/ 中文 · fetches /, id);
-  assert.ok(!writesJapanese(byId(id)), id);
+  assert.match(byId(id).note, /^(thinks before it answers|answers at once) · 日本語 \/ English \/ 中文 · fetches /, id);
+  assert.ok(writesJapanese(byId(id)), id);
+}
+for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
+  assert.match(byId(id).note, /^(thinks before it answers|answers at once) · 日本語 \/ English · fetches /, id);
+  assert.ok(writesJapanese(byId(id)), id);
 }
 // T511.4 (the owner's choice of 2026-10-15): "desktop only" and "Chrome and Firefox" are the page's rules, not a hand's.
 // Every note ends with them where the rule says, and with nothing of them where it does not: "desktop only" where a
