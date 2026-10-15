@@ -373,7 +373,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // every model before T363, takes the one it always did)
   const matmuls = plan.own_kinds ? matmulsByKind : matmulsAlike;
   const core: Core = { plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase, cache };
-  const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count)]));
+  const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count, facts.filter((fact) => fact.kind === kind))]));
   const steps = facts.map((fact) => parts[fact.kind].layer(fact.place, fact));
   const keeping = Object.values(parts).filter((part) => part.clear);
   const ffn = (plan.gated_ffn ? gatedFfn : plainFfn)(core);

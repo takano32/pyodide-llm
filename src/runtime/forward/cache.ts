@@ -10,29 +10,60 @@
 // could not hold (Qwen2.5 3B's float32 keys and values on a memory that is not shared: 4.03 GiB, 3.89 now).
 // So the engine makes it first and places it last: hold() is how a kind of layer says, as it is made, how many of its
 // layers keep keys and values here, and place() takes the room once everything else has its own.
-import { halfToFloat } from "./memory.ts";
+//
+// T510.1: a layer that attends only the last window positions (a Gemma 3's local layers) keeps no more than those, in a
+// ring of its own (ring()), where the context is long enough for that to save anything (memory.ts's ringPositions()).
+// Position p is at p mod C of the ring and once more at p mod C + C (C, the ring's period: the window and a prompt's
+// block, BATCH: the first token of a block still finds its window after the last has been written), so that every
+// token's window is one run of positions, oldest first, as it is in a whole layer's block: the kernels that attend
+// read it as they read any other, and the numbers are the same. The rings are taken first and never grow; the blocks
+// of the layers that keep every position follow and grow as before (a layer's index among those is index()).
+import { halfToFloat, ringPositions } from "./memory.ts";
 import type { Kernels } from "../jobs.ts";
 import type { Room } from "./kinds.ts";
+
+// T510.1: a layer's ring: its period, and where its keys and its values are (place() says, 2 * size positions each)
+export type Ring = { size: number; keys: number; values: number };
 
 /** room, k: the engine's memory and kernels. kvDim: the values of one position's keys; half: kept in float16 (T110);
  * start: the positions there is room for at first (0: no cache, T210: a model on the GPU alone); seqLen: the most. */
 export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: Room; k: Kernels; kvDim: number; half: boolean; start: number; seqLen: number }) {
   // KV: the bytes of one position's keys in the cache; KF: in float32
   const KV = kvDim * (half ? 2 : 4), KF = kvDim * 4;
-  let layers = 0, capacity = 0, keys = 0, values = 0, placed = false;
+  // held: the places taken; layers: of those, the ones that keep every position (the blocks that grow); for every
+  // place, its index among those (-1: a ring's), and the rings by place
+  let held = 0, layers = 0, capacity = 0, keys = 0, values = 0, placed = false;
+  const indices: number[] = [], rings: (Ring | null)[] = [];
   return {
     KV, half,
-    /** count more layers keep their keys and values here: the first of their places (before place()) */
-    hold(count: number) {
+    /** count more layers keep their keys and values here: the first of their places (before place()). T510.1: windows,
+     * how many of the last positions each attends (0 or none: all of them): one that a ring holds keeps no more */
+    hold(count: number, windows: number[] = []) {
       if (placed) throw new Error("The cache of the keys and values has its room already: a kind of layer takes its places as it is made.");
-      const first = layers;
-      layers += count;
+      const first = held;
+      for (let a = 0; a < count; a++) {
+        const size = start ? ringPositions(windows[a] ?? 0, seqLen) / 2 : 0;
+        rings.push(size ? { size, keys: 0, values: 0 } : null);
+        indices.push(size ? -1 : layers++);
+      }
+      held += count;
       return first;
     },
-    /** the cache takes its room: after everything else of the engine, for it grows where it is */
+    /** T510.1: the ring of a place (null: the place keeps every position), and a place's index among the blocks */
+    ring: (place: number) => rings[place],
+    index: (place: number) => indices[place],
+    /** the cache takes its room: after everything else of the engine, for it grows where it is (the rings first, which
+     * do not) */
     place() {
       if (placed) throw new Error("The cache of the keys and values has its room already.");
       placed = true;
+      const ringed = rings.filter((ring) => ring !== null);
+      let at = ringed.length ? room.alloc(ringed.reduce((bytes, { size }) => bytes + 4 * size * KV, 0)) : 0;
+      for (const ring of ringed) {
+        ring.keys = at;
+        ring.values = at + 2 * ring.size * KV;
+        at += 4 * ring.size * KV;
+      }
       capacity = start;
       keys = room.alloc(2 * layers * capacity * KV);
       values = keys + layers * capacity * KV;
@@ -77,20 +108,23 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
         k.from_f16(valueAt, value, kvDim);
       }
     },
-    /** the keys and values at positions from .. from + count - 1, in float32, [layers][count][kvDim] each (tests) */
+    /** the keys and values at positions from .. from + count - 1, in float32, [layers][count][kvDim] each (tests; T510.1:
+     * every place in turn, and a ring's where its position is now, which is a later one's past its window) */
     read(from: number, count: number) {
       const { F, H } = room;
-      const read = (block: number) => {
-        const out = new Float32Array(layers * count * kvDim);
-        for (let l = 0; l < layers; l++) {
+      const read = (block: number, side: "keys" | "values") => {
+        const out = new Float32Array(held * count * kvDim);
+        for (let l = 0; l < held; l++) {
+          const ring = rings[l];
           for (let t = 0; t < count; t++) {
-            const at = block + l * capacity * KV + (from + t) * KV;
+            const at = ring ? ring[side] + ((from + t) % ring.size) * KV
+              : block + indices[l] * capacity * KV + (from + t) * KV;
             for (let i = 0; i < kvDim; i++) out[(l * count + t) * kvDim + i] = half ? halfToFloat(H[at / 2 + i]) : F[at / 4 + i];
           }
         }
         return out;
       };
-      return { keys: read(keys), values: read(values) };
+      return { keys: read(keys, "keys"), values: read(values, "values") };
     },
   };
 }

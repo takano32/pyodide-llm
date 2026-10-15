@@ -61,7 +61,10 @@ def engines_plan(header, form, dtype):
                           **({"local": local} if local else {}))
 
 def both(header, form, dtype):
-    return {**plan_of(header, form, dtype), "plan": engines_plan(header, form, dtype)}
+    # (T510.1: and the local layers among the options footprint() is asked with, as a model's options carry them)
+    local = local_of(header, form)
+    return {**plan_of(header, form, dtype), "plan": engines_plan(header, form, dtype),
+            **({"form": {**form, "local": {"layers": local["layers"], "window": local["window"]}}} if local else {})}
 
 print(json.dumps([both(**s) for s in json.loads(sys.stdin.read())]))
 `;

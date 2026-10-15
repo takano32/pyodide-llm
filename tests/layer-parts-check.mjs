@@ -119,7 +119,31 @@ const S = 100000;
   none.hold(4);
   none.place();
   assert.deepEqual([none.capacity, room.taken[0][1]], [0, 0]);
-  console.log("ok: the cache: the kinds' layers take their places, it takes its room when it is placed, every byte is kept as it grows (twice, to a position, to the context), in float32 and in float16");
+  // T510.1: a layer that attends the last 5 positions of a context of 60 keeps a ring of 2 × (5 + 16) = 42 positions
+  // (its period 21: the window and a prompt's block), taken first and never grown; the others keep every position, in
+  // blocks after the rings that grow as before. A window whose ring would not be shorter than the context (22: 76 of
+  // 60) keeps every position, and so does every layer of a model on the GPU alone (start 0)
+  {
+    const room = memoryOf(), cache = keyValueCache({ room, k: {}, kvDim: 8, half: false, start: 4, seqLen: 60 });
+    assert.deepEqual([cache.hold(3, [0, 5, 22]), cache.hold(2, [5])], [0, 3], "the places in turn, whatever their windows");
+    assert.deepEqual([0, 1, 2, 3, 4].map((place) => [cache.index(place), cache.ring(place)?.size ?? 0]), [[0, 0], [-1, 21], [1, 0], [-1, 21], [2, 0]],
+      "a window of 5 in a ring of period 21 (a window and a block), the others in the blocks, by their index among those");
+    cache.place();
+    const KV = 32, first = cache.ring(1), second = cache.ring(3);
+    assert.deepEqual(room.taken, [[4096, 2 * 4 * 21 * KV], [4096 + 2 * 4 * 21 * KV, 2 * 3 * 4 * KV]], "the rings first, all at once, then the blocks that grow");
+    assert.deepEqual([first.keys, first.values, second.keys, second.values], [4096, 4096 + 42 * KV, 4096 + 84 * KV, 4096 + 126 * KV], "each ring's keys, then its values, 42 positions each");
+    assert.deepEqual([cache.keys, cache.values], [4096 + 168 * KV, 4096 + 168 * KV + 3 * 4 * KV]);
+    // a ring keeps its place as the blocks grow, and is read back where its positions are now: position p at p mod 21
+    for (const [ring, tag] of [[first, 1], [second, 2]]) for (let p = 0; p < 21; p++) room.F.fill(tag * 100 + p, ring.keys / 4 + p * 8, ring.keys / 4 + p * 8 + 8);
+    cache.grow(40);
+    assert.deepEqual([cache.capacity, first.keys, cache.keys], [41, 4096, 4096 + 168 * KV]);
+    const read = cache.read(19, 4);
+    assert.deepEqual([1, 3].map((place) => [0, 1, 2, 3].map((t) => read.keys[(place * 4 + t) * 8])), [[119, 120, 100, 101], [219, 220, 200, 201]]);
+    const all = keyValueCache({ room: memoryOf(), k: {}, kvDim: 8, half: false, start: 0, seqLen: 60 });
+    all.hold(2, [5, 0]);
+    assert.deepEqual([all.ring(0), all.index(0), all.index(1)], [null, 0, 1], "no ring on the GPU alone");
+  }
+  console.log("ok: the cache: the kinds' layers take their places, it takes its room when it is placed, every byte is kept as it grows (twice, to a position, to the context), in float32 and in float16; a window's ring, taken first and never grown");
 }
 
 // ---- the layers that attend
@@ -204,7 +228,41 @@ const S = 100000;
       /^Error: The plan has a local layer and no RoPE tables of the local layers\.$/);
   }
   assert.deepEqual(all.said[13], ["gate", all.at.xb, all.at.xb, all.at.gate, 64]);
-  console.log("ok: attention: its frame; a step's matmuls, biases, norms of the heads, RoPE, cache and phase in their order and at their addresses; no state to clear");
+  // T510.1: the layers of a kind whose facts give windows: those whose ring is shorter than the context (5 of 48: 42
+  // positions) write each token's key and value twice into it, at p mod 21 and 21 after, and hand the kernels the run
+  // of the ring from where each token's window begins. Four tokens at 19 to 22: slots 19, 20, 0 and 1; their windows
+  // from 15 to 18
+  {
+    const room = memoryOf(), cacheSaid = [];
+    const cache = keyValueCache({ room, k: new Proxy({}, { get: (_, name) => (...args) => cacheSaid.push([name, ...args]) }), kvDim: 32, half: true, start: 16, seqLen: 48 });
+    const made = coreOf(plan, { has: ["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"], cache, sizes });
+    const facts = [0, 1, 2].map((place) => ({ kind: "attention", place, rope: true, window: place === 1 ? 5 : 0, local: place === 1 }));
+    const layers = attention.make(made.core, 3, facts);
+    assert.deepEqual([cache.ring(0), cache.ring(1)?.size, cache.index(2)], [null, 21, 1]);
+    const steps = facts.map((fact) => layers.layer(fact.place, fact));
+    cache.place();
+    const ring = cache.ring(1), KV = cache.KV;
+    steps[1](4, 19);
+    assert.deepEqual(cacheSaid, [19, 20, 0, 1].flatMap((slot, t) => [slot, slot + 21].flatMap((at) => [["to_f16", ring.keys + at * KV, made.at.kNow + t * S, 32],
+      ["to_f16", ring.values + at * KV, made.at.vNow + t * S, 32]])), "every key and value twice: at p mod 21, and 21 after");
+    assert.deepEqual(made.said.at(-2), ["phase", ...[15, 16, 17, 18].map((from, t) => [4, made.at.xb + t * S, made.at.q + t * S, ring.keys + from * KV, ring.values + from * KV, made.at.att + t * 48 * 4 * 4, 4, 2, 16, 4, 1, 0, 0, 0])],
+      "each token's heads over the run of the ring that holds its window, oldest first");
+    // across the ring's seam: position 40's window from 36, slot 15 (36 mod 21) and on, past 20 into the second copy
+    made.said.length = 0;
+    steps[1](1, 23);
+    steps[1](1, 40);
+    assert.deepEqual(made.said.at(-2)[1].slice(3, 7), [ring.keys + 15 * KV, ring.values + 15 * KV, made.at.att, 4]);
+    // a run may go back no further than a block before the last position written (24 back from 40), and begins again at 0
+    assert.throws(() => steps[1](1, 23), /^Error: A layer of this model keeps the keys and values of its last 5 positions alone: position 23 is too far back after 40\.$/);
+    steps[1](1, 24);
+    steps[1](1, 0);
+    steps[1](1, 1);
+    // and the layers without a window keep every position, in the blocks, by their index among those
+    cacheSaid.length = 0;
+    steps[2](1, 3);
+    assert.deepEqual([cacheSaid[0][1], cacheSaid[1][1]], [cache.keys + (1 * 16 + 3) * KV, cache.values + (1 * 16 + 3) * KV]);
+  }
+  console.log("ok: attention: its frame; a step's matmuls, biases, norms of the heads, RoPE, cache and phase in their order and at their addresses; no state to clear; a window's ring, written twice and handed over as one run");
 }
 
 // ---- the linear-attention layers
