@@ -225,7 +225,7 @@
 - T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
 - T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 未着手
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
-- T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — 未着手
+- T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — レビュー前
 - T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 未着手
 <!-- 目次ここまで -->
 
@@ -1584,8 +1584,17 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T333 のレビューの気づき）
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
-### T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — 状態: 未着手（2026-10-15、T513 の後、持ち主「どっちも配ればいいんじゃないの？」）
+### T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — 状態: レビュー前（2026-10-15、T513 の後、持ち主「どっちも配ればいいんじゃないの？」）
 - 既定は int8 のまま（`DEFAULT_MODEL` は変えない）。Q4_K_M の GGUF を塊のまま持つ項目を 1 つ足す（`conversion: { dtype: "int8", blocks: true }` の形: Saluki と同じ。Q6_K・Q5_K の層は int8 に広がる）。T513 の数字: 取得 379 → 229 MB、メモリ 554 → 411 MB、CI の速さ 0.79〜0.88 倍、日本語 nats +1.2%。
+- **項目**（ブランチ `t528-shisa-light`）: `hf-shisa-v2.1c-lfm2-350m-q4`「Shisa V2.1c LFM2 350M (4-bit)」、note「answers instructions · 日本語 / English · 4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB」。重みは int8 の項目と同じリポジトリ・同じリビジョン（mradermacher @`38445ae7`）の `shisa-v2.1c-lfm2-350m.Q4_K_M.gguf`（229,311,104 バイト）、語彙・config・書式は原本（@`a902123e`）。`shisaLfm2()` に GGUF の名前の語と足す欄を渡す形にした（今ある 2 つの項目は変わらない: 網の `models` の違いは MODELS と新しい項目の記録だけ）。`conversion: { dtype: "int8", blocks: true }`、`loaded: 281641004`（`tests/quant_sizes.py` の頭だけの数と、`perplexity_prepare.py --blocks` が作ったチェックポイントの大きさが同じ）、`rebuilt: true`。書式・BOS・止まり・標本抽出・ライセンスは int8 の項目と同じ: `conversions_compare.py --dump` で 2 つの項目の options・tokenizer.bin・送る ID がどれも同じ。並びは窓口の並べ替えのまま（282 MB で LFM2.5 230M と Gemma 3 270M の間、int8 の項目より前）。
+- **元の重みとの突き合わせ（`gguf_check.py tensors` の代わり）**: 同じ道具を原本の safetensors に当てて、数を読んだ（合否は見ない: Q4_K は 1e-3 の線に入らない）。F32 のテンソル（norm・畳み込み）は 0 の差、Q4_K の行列は相対の誤差 0.0717〜0.0792、Q6_K（埋め込み・w2 の 8 層・v の 2 層）は 0.0179〜0.0209、q と k は Hugging Face の並び、埋め込みの行の悪い行 0、語彙の違い 0。「past 1e-3」の 93 個は量子化したテンソルのちょうど全部。誤った読み（並び・尺度の取り違え）なら誤差は 1 の桁になる。
+- **確かめ**: `models-check`（項目の欄を int8 の項目と突き合わせる節を足した。塊・`loaded`・`rebuilt` の 3 つの一覧に id）・`worker-conduct-check`（塊の項目の一覧）・軽い組（「suite: light passed in 893 s」、終わりの数 0）・`npm run build` と `dist-check`・網 `models`（予定どおり MODELS と新しい項目の記録だけが違う）・`conversions_compare.py`（130 のうち 129 が同じ、残りは新しい項目）・`said-texts`（増えた文は名前と note の 2 つ）。
+- **手元の Chrome**（155、a1-free の 2 論理コア、load 5〜7 でほかの仕事と並んで: 速さは読まない）: 準備完了 67.0 秒（取得 46.1・変換 7.3）、10.1 tok/s（2 本）、ヒープ 476 MB、2 回目の訪問は OPFS から 14.0 秒。ステータス行「SIMD kernels, llama.cpp's blocks, relaxed SIMD, 2 threads, prompts on the CPU (convolution layers are not on the GPU yet)」。同じ時に int8 の項目: 91.3 秒（取得 70.5）、13.1 tok/s、ヒープ 592 MB、2 回目 11.6 秒。
+- **CI の Firefox・WebKit**（run 38788299293、AMD EPYC 9V45、ブランチのサイトをランナーで作って `tests/e2e.mjs`、`E2E_TWICE`）: Firefox 157 は準備完了 12.9 秒・76.6 tok/s（4 本）・2 回目 2.5 秒（OPFS）、WebKit 27.2 は 14.6 秒・55.5 tok/s・2 回目 2.5 秒（OPFS）。どちらもステータス行に「llama.cpp's blocks, relaxed SIMD」。
+- **書かせて読んだ**（`answers.mjs`、12 の問い × greedy と種 2 つ、400 トークン、項目の標本抽出）: 崩れ（`LOOPS`）は種の 24 のうち 0、greedy の 12 のうち 1（Fibonacci の答えが関数を 2 回書いた）、`<unk>` 0。日本語の問いは英訳を頼んだ 1 つを除いて全部日本語で答えた。富士山・3,776 m は 3/3、Tokyo は 3/3、漱石の作品名は 3/3 正しい（年は誤り）、17 × 24 は種 1 が 2040 と誤り・greedy と種 2 は 408 を書いてから余計な計算を続けた、フランス語の訳は 3 つとも「sympète」（無い語）。
+- **取りまとめ役の決め（訳）**: (1) 名前「Shisa V2.1c LFM2 350M (4-bit)」: 今の名前に、訪問者に分かる語で軽い形を足した（「Q4_K_M」は技術の札）。(2) note は Saluki の形（「N-bit weights · fetches … (GGUF), kept as it is: …」）に、Q6_K の層が int8 に広がるので「mostly」を足した。速さの語は入れていない（CI の比 0.79〜0.88 は端末で入れ替わりうる: T513）。(3) `rebuilt: true`: `gguf.yml` の `listed=true only=all` が `gguf_check.py tensors` を当てると、4 ビットは 1e-3 の線に入らず必ず落ちる。`rebuilt` を読むのは `gguf.yml` だけで、意味は「どの確かめも元の重みに 1e-3 で突き合わせられない GGUF」（`models-check` の言葉）なので当てはまる。代わりの確かめは上の突き合わせの読み。覆す条件: `gguf_check.py` に K 量子化の線を足す（T513 の C を選んだときなど）。(4) id は `-q4`（頼みの例のまま）。(5) `shisaLfm2()` を引数 2 つで広げた（項目を手で書かず、int8 の項目と同じ欄を 1 か所から）。
+- CI を回した（1 本）。訳: Firefox・WebKit は手元で見られない。Chrome は手元で、残り（一覧・変換の出すもの・ページの試験）は手元の軽い組と道具が踏む。
+- 見ていないもの: 持ち主の端末（Android・iPhone）での速さとヒープ（T513 の見込みは式の両端だけ: 端末の一覧へ）、本物の Safari、本番（デプロイの後に `models.yml models=hf-shisa-v2.1c-lfm2-350m-q4 twice=true`）、CI の Chromium、Windows・macOS のランナー。
 
 ### T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 状態: 未着手（2026-10-15、T513 の後、持ち主が選択肢で「GGUF を読めるようにする」）
 - 取得 10.2 GB（原本の safetensors）→ 約 5.0 GB。質と速さは同じ見込み（Q8_0 は損なく int8 に戻る）。層ごとの埋め込みの表・共有の層・広い層の GGUF の名前と並びを llama.cpp から読み、`gguf_check.py tensors` で原本と突き合わせる。一覧の E2B・E4B の取り込み元を GGUF に替えるのは突き合わせが通ってから。
