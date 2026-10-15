@@ -97,6 +97,11 @@ def cases(L):
         ("gemma4, a layer in the middle reading another's keys and values", [64, 128, 6, 4, 1, 320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "kv_shared": {"layers": [1], "from": [0]}},
          {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
+        # T329.2: and an embedding of every layer (of 32 values: the int8 kernels' groups)
+        ("gemma4, an embedding of every layer", [64, 128, 6, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "double": [4, 5],
+          "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 32},
+         {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
         ("a norm of v", GROUPED, {"arch": "a norm of v"}, {}),
         ("a number of every layer", GROUPED, {"arch": "a number of every layer"}, {}),
         ("llama, its logits capped", GROUPED, {}, {"softcap": 2.0}),

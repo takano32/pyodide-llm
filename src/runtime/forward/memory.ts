@@ -40,6 +40,8 @@ export type Footprint = {
   wide?: Form["wide"];
   double?: Form["double"];
   kv_shared?: Form["kv_shared"];
+  // T329.2: the width of every layer's input of a table of its own (0: none)
+  per_layer?: Form["per_layer"];
 } & Stateful;
 // T510.1: what a model's options say of its local layers (Python's engine/layout.py's local_layers(): which they are,
 // and how many of the last positions they attend)
@@ -137,14 +139,17 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   const had = kindsHad(sizes, kinds), frames = had.map(({ kind }) => kinds[kind].frame(sizes));
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others; a ternary file's rows are whole
   // groups of 128): the model's own widths and the widest a kind's matrices read
-  const onInt8 = int8 && [dim, qDim, kvDim, hidden, ...frames.map(({ widest = 0 }) => widest)].every((width) => width % 32 === 0);
+  // (T329.2: and the width of every layer's input, which a layer's projection of it reads)
+  const perLayer = options.per_layer || 0;
+  const onInt8 = int8 && [dim, qDim, kvDim, hidden, ...frames.map(({ widest = 0 }) => widest), ...(perLayer ? [perLayer] : [])].every((width) => width % 32 === 0);
   let bytes = 0;
   // what the file holds in another form, for its matrices (not the tables that are no matrix multiplied: an
   // embedding apart from the classifier, a table of positions): the corrections of relaxed SIMD where the packing's
   // relaxed kernel takes them, one int32 a group, as many as the scales (a ninth of an int8 file, a seventh of an int6
   // one; T231: none of ternary weights, whose kernels take the activations signed), and the float32 columns of the
   // outlier channels (T92); or, off the int8 kernels, every weight widened to float32
-  const tables = (signedVocab < 0 ? vocab * dim : 0) + (positions ? seqLen * dim : 0);
+  // (T329.2: and the table of every layer's input, read a row at a time and never widened)
+  const tables = (signedVocab < 0 ? vocab * dim : 0) + (positions ? seqLen * dim : 0) + vocab * layers * perLayer;
   // (T156, direct: the layers' matrices are on the GPU alone; T210: so are the embedding and the classifier, and none
   // of their corrections or outlier columns is here)
   // (the weights of a packed file: its bytes, by the weights a byte holds: a group's values and its scale)
@@ -154,7 +159,7 @@ export function footprint(header: Header, size: number, options: Footprint = {},
     const classifier = options.kinds?.[signedVocab < 0 ? "wcls" : "token_embedding_table"];
     const columns = classifier === undefined || (typeof classifier === "string" && Boolean(packingOf(classifier)?.value)) ? Math.min(outliers, dim) * (vocab + 1) * 4 : 0;
     bytes += onInt8 ? (relaxed && packing.sums ? (weights / packing.group) * 4 : 0) + columns : weights * 4;
-  } else if (dtype === "float16") bytes += size * 2;  // (no packing: the whole file widened to float32)
+  } else if (dtype === "float16") bytes += (size - 2 * vocab * layers * perLayer) * 2;  // (no packing: the whole file widened to float32, T329.2: but a table read a row at a time)
   // what a packed file leaves out: the positions widened, and the RoPE tables Python computes (two of seqLen ×
   // headSize / 2 float32; a model without RoPE has them too, of zeros, at any dtype; T130's review)
   if (packing && positions) bytes += seqLen * dim * 4;
@@ -168,6 +173,8 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   const apart = frames.flatMap(({ apart = [] }) => apart).reduce((sum, [, each]) => sum + align(each), 0);
   const inFrame = frameArrays(dim, hidden, kvDim, qDim, frames, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined);
   bytes += BATCH * (frameBytes(inFrame) + apart) + vocab * 4;
+  // T329.2: the inputs of every layer of BATCH tokens and what a token's row of their table is read into
+  if (perLayer) bytes += perLayerBytes(layers, perLayer, packing ? dtype : dtype === "float16" ? "f16" : "f32", packing?.group ?? 0).slice(0, 2).reduce((sum, each) => sum + align(each), 0);
   // T363.5: the tables of the kernels of llama.cpp's blocks, the bytes the engine asks its relaxed SIMD with, and the
   // scratch a thread spreads a row into (as wide as the widest input: an upper bound, taken where the engine's relaxed
   // SIMD multiplies signed bytes)
@@ -275,6 +282,15 @@ export function weightsMemory(size: number, { shared = false, maximum, wide = fa
   throw new Error("This browser gives no shared WebAssembly memory for this model.");
 }
 
+/** The arrays this takes besides the frames, in the order it takes them (T329.2: of perlayer.ts, as it takes them; footprint() counts them by the same): the
+ * inputs of BATCH tokens (every layer's width wide), and what a token's row is read into: its values, then its scales
+ * (kind: how the table is stored, as a plan says it: "f32", "f16", or a packing's name; group: the values of a scale) */
+function perLayerBytes(layers: number, width: number, kind: string, group: number) {
+  const values = layers * width, packing = packingOf(kind);
+  const row = packing ? [packing.rowBytes(values), (values / group) * packing.scale] : [values * (kind === "f16" ? 2 : 4), 0];
+  return [BATCH * values * 4, align(row[0]) + row[1], row[0]];
+}
+
 // (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 // half to float, exactly (the same as NumPy's astype(float32))
 function halfToFloat(h: number) {
@@ -284,4 +300,4 @@ function halfToFloat(h: number) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
-export { PAGE, align, frameArrays, frameBytes, halfToFloat };
+export { PAGE, align, frameArrays, frameBytes, halfToFloat, perLayerBytes };

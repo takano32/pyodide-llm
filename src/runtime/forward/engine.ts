@@ -12,6 +12,7 @@ import { LAYER_KINDS } from "./kinds.ts";
 import { kindsHad, sizesOfPlan } from "./sizes.ts";
 import { keyValueCache } from "./cache.ts";
 import { gatedFfn, plainFfn } from "./ffn.ts";
+import { perLayer } from "./perlayer.ts";
 import { GPU_ALONE } from "./alone.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
@@ -20,6 +21,7 @@ import type { Kernels, Packed, Packing, Ready } from "../jobs.ts";
 import type { Direct } from "./alone.ts";
 import type { CpuSide, GpuWorker, Held, Placed, Shape, Taken } from "./gpuside.ts";
 import type { Spawn } from "./threads.ts";
+import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
 import type { Core, Kinds, Product, Room } from "./kinds.ts";
 import type { Derived, Part, Plan, Tensor, TensorName } from "../contracts/plan.ts";
@@ -37,7 +39,7 @@ export type Trying = { signed?: boolean };
 export type Made = {
   memory: WebAssembly.Memory; base: number; size: number; kernels: Compiled; plan: Plan;
   spawn?: Spawn | null; gpu?: () => GpuWorker; gpuRoom?: number; memoryUnsaid?: boolean; gpuRemembered?: Remembered; gpuForce?: Force;
-  halfKeys?: boolean; direct?: Direct;
+  halfKeys?: boolean; direct?: Direct; rows?: Rows;
   wrap?: (exports: Kernels) => Kernels; stalledMs?: number; clock?: () => number; kinds?: Kinds; trying?: Trying;
 };
 // The array forward() fills with the logits: a Float32Array, or Python's (a PyProxy of a NumPy array: copy() keeps
@@ -77,11 +79,14 @@ const STALLED_MS = 10000;
 /** kinds (tests only, T375.3): the table of the kinds of layers there is a step for (forward/kinds.ts's LAYER_KINDS):
  * a test hands in one with a kind of its own */
 /** trying (tests only, T363.5): the forms of a kernel to take whatever the engine would choose (Trying) */
+/** rows (T329.2): what reads a token's row of a table every layer has an input of (a Gemma 4's embedding of every
+ * layer: perlayer.ts's Rows), at once. Left out, the row is copied from the checkpoint in this memory; the worker hands
+ * in one that reads it from the kept checkpoint where the memory holds no table (T329.2.2) */
 /** direct (T156, external()): the layers' matrices (T210: and the tables) are on the GPU alone: nothing runs on the CPU,
  * every block and step goes to the GPU (as gpuForce.always), and one the GPU cannot take throws (the worker loads the
  * model again on the CPU). T210: no cache of keys and values here either; the GPU embeds a prompt's tokens itself */
 export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce = {},
-  halfKeys, direct, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS, trying = {} }: Made) {
+  halfKeys, direct, rows, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS, trying = {} }: Made) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen } = plan;
   // T375.2: what the layers of one architecture differ from another's by is read here once, as the facts Python's plan
@@ -381,6 +386,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const steps = facts.map((fact) => parts[fact.kind].layer(fact.place, fact));
   const keeping = Object.values(parts).filter((part) => part.clear);
   const ffn = (plan.gated_ffn ? gatedFfn : plainFfn)(core);
+  // T329.2: every layer's input of a table of its own (null: the model has none), its rows read by rows, or copied from
+  // the checkpoint here
+  const perLayered = perLayer(core, rows ?? ((offset, bytes, to) => { U.copyWithin(to, base + offset, base + offset + bytes); }));
   // the position that comes next for the layers that keep a state, -1 once a run stopped half way
   let stateAt = 0;
 
@@ -528,6 +536,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     cpuWrote(pos0);  // T135: from here on the cache holds what the GPU does not
     if (keeping.length) follow(pos0);
     embed(tokens, pos0);
+    if (perLayered) perLayered.inputs(tokens, count);
     for (let l = 0; l < layers; l++) {
       for (let t = 0; t < count; t++) {
         norm(xb + t * S, x + t * S, attW + l * D, attB + l * D);
@@ -546,6 +555,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         norm(xb + t * S, (parallel ? before : x) + t * S, ffnW + l * D, ffnB + l * D);
       }
       ffn(l, count);
+      if (perLayered) perLayered.layer(l, count);
       if (layerScale) {
         const scale = F[layerScale / 4 + l];
         for (let t = 0; t < count; t++) for (let i = (x + t * S) / 4, end = i + dim; i < end; i++) F[i] *= scale;
