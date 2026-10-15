@@ -35,11 +35,9 @@ export function sources(models = MODELS) {
 // group: "site" (built with the site, the default), "original" or "hf"
 export const GROUPS = { site: "Models of this site", original: "Unquantized originals", hf: "From Hugging Face, converted in this browser" };
 
-// The first model is the default: tiny-lm, the lightest one that writes Japanese. A public page should not make a
-// phone fetch 171 MB unasked, and it is ready soonest; llm-jp-3 writes far better Japanese and is one choice away.
+// The default is DEFAULT_MODEL below (T511.6), not the first of the list; ?model=<id> picks another one.
 // Within each group the order is the ones that write Japanese from light to heavy, then the English-only ones from
 // light to heavy (T128): MODELS is sorted so below, so a model added to any part takes its place.
-// ?model=<id> picks another one.
 // in the order they were added, more or less; MODELS below is the order of the list
 // T511.4: "desktop only" and "Chrome and Firefox" are not written in the parts: devicesOf() adds them to every note
 const LISTED = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
@@ -49,7 +47,13 @@ const LISTED = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
 export const writesJapanese = (entry) => (entry.note ?? "").includes("日本語");
 /** The models as the list shows them (T128, the owner's order): the groups in the order of GROUPS, and within each
  * the ones that write Japanese from light to heavy, then the English-only ones from light to heavy, by modelBytes()
- * (int8 for a conversion, three times the file for a float16 original). The default, the first, is tiny-lm. */
+ * (int8 for a conversion, three times the file for a float16 original). The first is tiny-lm, the lightest. */
 export const MODELS = LISTED.map((entry) => ({ entry, key: [Object.keys(GROUPS).indexOf(entry.group ?? "site"), writesJapanese(entry) ? 0 : 1, modelBytes(entry)] }))
   .sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2])
   .map(({ entry }) => entry);
+
+/** T511.6 (the owner, 2026-10-15): the model a first visit opens, and the one the page falls back on. Shisa V2.1c LFM2
+ * 350M answers questions (18 of T511.5's 21 facts, tiny-lm none), for a first visit's 379 MB fetched from Hugging Face
+ * and converted in the browser (kept for the next visit). It stays where the list's order puts it. Under 500 MB, so it
+ * is started unasked (tests/models-check.mjs holds both). */
+export const DEFAULT_MODEL = MODELS[MODELS.findIndex(({ id }) => id === "hf-shisa-v2.1c-lfm2-350m")];

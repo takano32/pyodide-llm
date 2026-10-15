@@ -46,17 +46,19 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         <p class="ja">
           ブラウザ上の WebAssembly 版 Python（Pyodide）で言語モデルを動かす実験です。読み込み・トークナイザ・サンプリング・生成のループは素の
           Python で、1 トークンぶんの計算は WASM SIMD カーネルが、使える端末では複数のコアで行います。実験なのでモデルは小さく、出力はそれなりです。
-          既定のモデルはいちばん軽いモデルです。もっと自然な日本語は <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
-          で生成できます。一覧の最後のグループは Hugging Face から取得してこのブラウザの中で変換します。
+          既定のモデルは問いに答えられる Shisa V2.1c LFM2 350M で、初回は Hugging Face から 379 MB を取得してこのブラウザの中で変換します。
+          いちばん軽いモデルは <button type="button" class="choose" data-model="tiny-lm">tiny-lm（33 MB）</button>です。
+          一覧の最後のグループも同じように Hugging Face から取得して変換します。
           この端末の CPU・GPU・保存・回線は <a href="benchmark/">ベンチマーク</a> でまとめて測れます。
           くわしくは <a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a> へ。
         </p>
         <p class="en">
           An experiment in running language models on Python on WebAssembly (Pyodide) in the browser: loading, the
           tokenizer, the sampling and the generation loop are plain Python, and the computation of each token runs in
-          WASM SIMD kernels, on several cores where the device allows. The default is the lightest model;
-          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button> generates far
-          more natural Japanese. The last group of the list is fetched from Hugging Face and converted right here.
+          WASM SIMD kernels, on several cores where the device allows. The default model, Shisa V2.1c LFM2 350M, answers
+          questions: the first visit fetches its 379 MB from Hugging Face and converts it right here.
+          <button type="button" class="choose" data-model="tiny-lm">tiny-lm (33 MB)</button> is the lightest model. The
+          last group of the list is fetched and converted the same way.
           The <a href="benchmark/">benchmark</a> measures this device's CPU, GPU, storage and line in one run.
         </p>
         <details>
@@ -308,7 +310,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // The page's script is the modules of src/page/, in the order they are named here. Each runs as it is imported:
   // the ones down to isolation.ts at once; receiver.ts waits for the service worker (and for the one reload of a
   // first visit) and then starts the worker, and what follows it starts after that. Last, the first load:
-  import { MODELS } from "../models.js";
+  import { DEFAULT_MODEL } from "../models.js";
   import "../page/dom.ts";
   import { weighed } from "../page/address.ts";
   import { gpuFor, recalled, remember, threadsFor } from "../page/remembered.ts";
@@ -324,7 +326,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 
   // (A model chosen while this looks has started the worker itself, and wins: the review of T116)
   (async () => {
-    if (model === recalled && !(await stillKept(model)) && opensWith(MODELS[0])) {
+    if (model === recalled && !(await stillKept(model)) && opensWith(DEFAULT_MODEL)) {
       remember(undefined);
       show(model);
     }

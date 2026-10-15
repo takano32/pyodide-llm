@@ -28,12 +28,13 @@ WebGPU where the device has it and it is faster there. See [How it works](docs/a
 
 Open **https://takano32.github.io/pyodide-llm/** and write a prompt.
 
-- The default model is [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) (29M parameters, a 33 MB download,
-  Japanese and English). It is the lightest model that writes Japanese, so that a phone does not fetch hundreds of
-  megabytes before you ask for it. Its text is not good; it is fast (about 280 tokens/s in Chromium on the
-  development machine).
-- [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) (171 MB) writes much better Japanese and English
-  and is one click away. The page remembers the model you chose.
+- The default model is [Shisa V2.1c LFM2 350M](https://huggingface.co/shisa-ai/shisa-v2.1c-lfm2-350m) (Japanese and
+  English), the smallest model of the list that answers questions well. The first visit fetches its 379 MB from Hugging
+  Face and converts it in the browser (about 12 seconds to ready on a fast line); the browser keeps the conversion, and
+  the next visit opens it in about 4 seconds.
+- [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) (29M parameters, a 33 MB download) is the lightest model
+  that writes Japanese and is one click away. Its text is not good; it is fast (about 280 tokens/s in Chromium on the
+  development machine). The page remembers the model you chose.
 - The first visit reloads the page once. A Service Worker adds the headers that let the page use threads, and it
   keeps Pyodide and NumPy so that the page opens offline next time (`?offline=off` turns that off).
 - Every answer shows the temperature, the seed and the speed. The button left of the prompt changes them; the seed
@@ -184,8 +185,10 @@ and pitfalls, and [TODO.md](TODO.md) the tasks.
 - [Pyodide](https://pyodide.org/) for the Python WebAssembly runtime.
 - [llama2.py](https://github.com/tairov/llama2.py) by tairov for the pure Python Llama 2 implementation.
 - [llama2.c](https://github.com/karpathy/llama2.c) for the inspiration and the model format.
-- [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) by SB Intuitions (MIT License) for the default model; its
+- [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) by SB Intuitions (MIT License) for the lightest model; its
   license is deployed next to the converted file.
+- [Shisa V2.1c LFM2 350M](https://huggingface.co/shisa-ai/shisa-v2.1c-lfm2-350m) by Shisa.AI (LFM Open License v1.0,
+  after Liquid AI's LFM2) for the default model, fetched from Hugging Face.
 - [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) by LLM-jp (Apache License 2.0).
 - [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) by Andrej Karpathy and
   [ellishg/tinyllamas](https://huggingface.co/ellishg/tinyllamas) for the TinyStories checkpoints.

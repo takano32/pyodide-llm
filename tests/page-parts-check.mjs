@@ -14,16 +14,16 @@
 //   src/benchmark/running.ts  the run of /benchmark/ that is going on: one at a time, its sections and the times it is told
 //   src/page/opening.ts       the model a visit opens with, in a process of its own for each address and storage (it
 //                             reads both as it loads, through address.ts and remembered.ts): the URL's first, then the
-//                             one remembered, then the first of the list
+//                             one remembered, then the default (T511.6)
 //
-// What these are still bound to: model.ts to src/models.js (the first of the list is what a visit starts with);
+// What these are still bound to: model.ts to src/models.js (its DEFAULT_MODEL is what a visit starts with);
 // opening.ts to `location` and `localStorage` (stand-ins here). What the page draws of all this is the browsers' to
 // see (tests/e2e.mjs, tests/bench-check.mjs).
 //
 //   node tests/page-parts-check.mjs        (Node only, about a second)
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { MODELS } from "../src/models.js";
+import { DEFAULT_MODEL, MODELS } from "../src/models.js";
 
 let made = 0, cases = 0;
 const fresh = (file) => import(`${new URL(`../src/${file}`, import.meta.url).href}?case=${made++}`);
@@ -42,13 +42,14 @@ const unassignable = (module, what) => {
   for (const name of Object.keys(module)) assert.throws(() => { module[name] = 1; }, { name: "TypeError" }, `${what}: ${name} can be assigned from outside its module`);
   cases += 1;
 };
-const [first, second, third] = MODELS;
+// (T511.6: the default is not the first of the list; second and third are two others)
+const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !== first);
 
 // ---- src/page/model.ts
 {
   const m = await fresh("page/model.ts");
   assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false, outdated: false },
-    "a visit starts with the first of the list, its first load, nothing ready");
+    "a visit starts with the default, its first load, nothing ready");
   assert.equal(m.takesPrompts(), false, "a model that is not ready takes no prompt");
   unassignable(m, "model.ts");
 
@@ -232,11 +233,12 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
     return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
   };
   const kept = (id, was = false) => JSON.stringify({ id, kept: was });
-  assert.deepEqual(opens("", null), { id: first.id, name: first.name, loads: 1, recalled: null }, "a first visit (and a browser without storage) opens the first of the list");
+  assert.deepEqual((({ id, name, loads, recalled }) => ({ id, name, loads, recalled }))(opens("", null)), { id: first.id, name: first.name, loads: 1, recalled: null }, "a first visit (and a browser without storage) opens the default");
+  assert.equal(opens("", kept("tiny-lm")).id, "tiny-lm", "a visitor who chose tiny-lm before the default changed keeps it (T511.6)");
   assert.deepEqual(opens("", kept(third.id)), { id: third.id, name: third.name, loads: 1, recalled: third.id }, "the model chosen on an earlier visit");
   assert.deepEqual(opens(`?model=${second.id}`, kept(third.id)), { id: second.id, name: second.name, loads: 1, recalled: null }, "the URL's model of the list before the one remembered");
   assert.deepEqual(opens("?model=no-such-model", kept(third.id)), { id: third.id, name: third.name, loads: 1, recalled: third.id }, "a name of no model: the one remembered");
-  assert.deepEqual(opens("?model=no-such-model", null).id, first.id, "a name of no model and nothing remembered: the first");
+  assert.deepEqual(opens("?model=no-such-model", null).id, first.id, "a name of no model and nothing remembered: the default");
   const fromLink = opens(`?hf=owner/name&model=${second.id}`, kept(third.id));
   assert.deepEqual([fromLink.id, fromLink.name, fromLink.repo, fromLink.recalled], ["local", "owner/name", "owner/name", null], "?hf= before everything");
   assert.deepEqual([fromLink.weights, fromLink.note], ["model.safetensors", "Hugging Face"], "?hf= with no file named is not opened by model.safetensors (until the page has looked at the repository)");
@@ -249,6 +251,6 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   }
   assert.equal(opens("", kept(large.id, false)).id, first.id, "a large model that was not kept is not started unasked");
   assert.equal(opens("", kept(large.id, true)).id, large.id, "one that was kept is (index.astro then looks whether it still is)");
-  assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the first");
+  assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the default");
 }
-console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the first of the list\npage-parts-check: ok (${cases} cases)`);
+console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);

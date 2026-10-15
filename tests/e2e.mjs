@@ -10,7 +10,8 @@
 // for that model (tests/make_hf_fixture.py writes them), which the page converts in the browser. "url" reads the same
 // model from huggingface.co by ?checkpoint=&tokenizer=, and an id that begins with hf- is fetched from there and
 // converted (hundreds of megabytes, or gigabytes). hf:<owner>/<repository>[@<revision>] opens a repository that is in
-// no list, by ?hf= (T105: to try a model before it is added).
+// no list, by ?hf= (T105: to try a model before it is added). "default" opens the page with no model named, as a first
+// visit does, and must open the list's DEFAULT_MODEL (T511.6: a model fetched from Hugging Face and converted).
 //
 // Needs a browser for playwright-core (a devDependency): `npx playwright-core install chromium` once.
 // Mind the memory: a browser with Pyodide and a model takes 400 MB and more; keep `free -m` above 1 GB available.
@@ -57,14 +58,14 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
-import { MODELS } from "../src/models.js";
+import { DEFAULT_MODEL, MODELS } from "../src/models.js";
 import { closed, leave, scratch } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
 // an id the list does not have opens the page's default model, and the run passed on it (T144: models.yml with a
 // misspelt id answered with tiny-lm): such an id fails before a browser starts
-if (!/^(local|hf|url|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id === model)) {
+if (!/^(local|hf|url|default|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id === model)) {
   console.error(`FAILED\n- no model ${model} in src/models.js (the page would open its default model instead)`);
   process.exit(1);
 }
@@ -234,13 +235,15 @@ process.on("uncaughtException", async (error) => {
 });
 
 const opens = model === "local" || model === "hf";
+// (T511.6: "default" names nothing; what it opens is the list's default, and the checks of that model hold for it)
+const id = model === "default" ? DEFAULT_MODEL.id : model;
 // the page asks before it fetches more than 500 MB
 page.on("dialog", (dialog) => dialog.accept());
 const tinyllamas = "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K";
 const [repository, revision] = model.startsWith("hf:") ? model.slice(3).split("@") : [];
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : repository ? `hf=${encodeURIComponent(repository)}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`
-  : `model=${opens ? "stories3_5M" : model}`;
+  : model === "default" ? "" : `model=${opens ? "stories3_5M" : model}`;
 if (process.env.E2E_QUOTA) {
   // (the quota is per origin and stays through the reload the first visit makes; the override is taken off when the page closes)
   const protocol = await page.context().newCDPSession(page);
@@ -302,7 +305,7 @@ const reported = await page.evaluate(() => window.__ready ?? null).catch(() => n
 // count the prompt too, and the long prompt is there to fill the context.) T337: Agents-A1's format alone is 241
 // tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it. T255: and for SmolLM3,
 // whose template's system turn is as long where it thinks.
-const tokens = /^hf-(agents-a1|smollm3)-/.test(model) ? "512" : "256";
+const tokens = /^hf-(agents-a1|smollm3)-/.test(id) ? "512" : "256";
 if (!process.env.E2E_LONG) await page.evaluate((tokens) => {
   const steps = document.getElementById("steps");
   steps.value = tokens;
@@ -387,12 +390,17 @@ if (swiftShader && !gpuTest && (!/prompts on the CPU \(/.test(gpuVerdict?.status
 }
 // T397: a model converted in this visit (nothing is kept in a new profile) had jinja2 asked for; where it did not
 // come the conversion went on with the converter's own reader, which is said and is no failure
-if (/^hf([-:]|$)/.test(model)) {
+if (/^hf([-:]|$)/.test(id)) {
   if (!jinjaAsked) failures.push("the conversion did not ask Pyodide for jinja2");
   console.log(jinjaMissed ?? `jinja2: ${jinjaAsked ?? "not asked for"}`);
 }
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);
+if (model === "default") {
+  const opened = await page.evaluate(() => document.getElementById("model").value);
+  console.log(`opened: ${opened} (the default)`);
+  if (opened !== DEFAULT_MODEL.id) failures.push(`a visit naming no model opened ${opened}, not the default ${DEFAULT_MODEL.id}`);
+}
 if (repository) {
   // T505.3: which file a repository nobody listed was opened by, as the page's list and its address say (a repository of
   // GGUFs alone: the best of them, chosen by the page)
@@ -453,7 +461,7 @@ if (process.env.E2E_TWICE && !failures.length) {
     load: ready?.seconds ?? null };
   const parts = Object.entries(again.load ?? {}).map(([name, value]) => `${name} ${Number(value).toFixed(2)}s`).join(", ");
   console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
-  if (/^hf[-:]/.test(model) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
+  if (/^hf[-:]/.test(id) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
 }
 let offline = null;
 if (process.env.E2E_OFFLINE && !failures.length) {

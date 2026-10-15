@@ -1,6 +1,6 @@
 // src/page/choose.ts (T355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
-import { MODELS, memoryWarning } from "../models.js";
+import { DEFAULT_MODEL, MODELS, memoryWarning } from "../models.js";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
 import { FILE, REPOSITORY, REVISION, type Unlisted, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
 import { looked, unnamed } from "./repository.ts";
@@ -199,7 +199,7 @@ export async function urlLooked() {
 
 select.onchange = () => {
   if (select.value === "hf-other") {
-    select.value = model.id === "local" && !select.querySelector('option[value="local"]') ? MODELS[0].id : model.id;
+    select.value = model.id === "local" && !select.querySelector('option[value="local"]') ? DEFAULT_MODEL.id : model.id;
     repositorySheet.showPopover();
     return;
   }
