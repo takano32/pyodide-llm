@@ -293,6 +293,22 @@ export function matmul_h2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
     store<f32>(xout + (<usize>i << 2), hsum(facc));
   }
 }
+// t2p: matmul_t2 as it was with float32 scales (T231), the plain kernels' control
+export function matmul_t2p(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), v128.load32_splat(srow + (<usize>g << 2))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
 // the tiles: kernel_relaxed.ts's matmul_t2r_tile, the scale read as h2r and p2r read it (its pieces copied here)
 // @ts-ignore: decorator
 @inline function planes(x: usize, c0: v128, c1: v128, c2: v128, c3: v128): v128 {

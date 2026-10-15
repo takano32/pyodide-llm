@@ -61,6 +61,8 @@ const FORMS = {
     run: (k, c, w, r0, r1) => k.matmul_h2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   p2r: { module: "forms", bytes: [34, 0, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_p2r(c[OUT], c[XQ], c[XS], w, 0, c[N], r0, r1, 3) },
+  t2p: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_t2p(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   h4r: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_h4r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   h2: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
@@ -239,7 +241,7 @@ for (const [rows, n] of shapes) {
       }
     },
   };
-  writers.bc = writers.bs = writers.bx = writers.t2c;
+  writers.bc = writers.bs = writers.bx = writers.t2p = writers.t2c;
   writers.t2r = writers.t2 = writers.h2 = writers.h4r = writers.h2r;
   writers.q8 = writers.q8r;
   const copies = {};
@@ -316,11 +318,11 @@ for (const [rows, n] of shapes) {
   const whole = (scale) => scale, over127 = (scale) => Math.fround(scale / 127);
   const references = { t2r: reference(eight, whole, 1), c: reference(seven, whole, 1), q8r: reference(seven, over127, 127), q8: reference(eight, over127, 127) };
   references.t2 = references.bc = references.bs = references.bx = references.a = references.t2r;
-  references.t2c = references.h2r = references.h4r = references.p2r = references.h2 = references.t2r;
+  references.t2c = references.t2p = references.h2r = references.h4r = references.p2r = references.h2 = references.t2r;
   Object.assign(c, { [N]: n, [ROWS]: rows });
   const set = (form) => Object.assign(c, { [FORM]: NAMES.indexOf(form), [FIRST]: firsts[form], [STRIDE]: bytesOf(form, rows, n),
     [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs, [COUNT]: 1 });
-  const errors = {}, ownOf = {}, SAME_AS_T2R = ["t2", "t2c", "h2r", "h4r", "p2r", "h2"];
+  const errors = {}, ownOf = {}, SAME_AS_T2R = ["t2", "t2c", "t2p", "h2r", "h4r", "p2r", "h2"];
   for (const form of timed) {
     set(form);
     for (const [slot, threads] of [[0, 1], [1, 4]]) {
