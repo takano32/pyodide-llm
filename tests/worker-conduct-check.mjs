@@ -300,7 +300,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     globalThis.location ??= { search: "" };
     const { weighed } = await import("../src/page/address.ts"), { MODELS } = await import("../src/models.js");
     const listed = MODELS.filter((entry) => entry.conversion?.blocks);
-    assert.deepEqual(listed.map(({ id }) => id), ["hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"]);
+    assert.deepEqual(listed.map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"]);
     fresh(kernel);
     for (const entry of listed) {
       const handed = weighed(entry);
