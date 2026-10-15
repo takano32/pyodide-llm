@@ -86,6 +86,10 @@ def put(folder, files):
         (folder / name).write_bytes(data.encode() if isinstance(data, str) else data)
 
 
+# the directories directories() makes, in the mark: a name more here and every checkout makes them again
+MADE = ("qwen35", "lfm2", "gemma3", "llama")
+
+
 def directories(work):
     """What Hugging Face would publish, where each tool looks for it: a Qwen3.5 (one shard under the 0.8B's name), an
     LFM2, and two Llamas for reference_llama.py: a Granite (q multiplied) and a SmolLM3 (layers RoPE leaves alone)."""
@@ -273,9 +277,12 @@ def main():
     work = Path(arguments[arguments.index("--work") + 1]) if "--work" in arguments else HERE.parent / ".tmp" / "reference-dry"
     only = [arg for at, arg in enumerate(arguments) if not arg.startswith("--") and (at == 0 or arguments[at - 1] != "--work")]
     work = work.resolve()
-    if not (work / "made").exists():
+    # T515: the mark says which directories were made, so that one this file has since grown (gemma3, T261) is made
+    # in a checkout whose .tmp/ was made before it: the mark alone left it out, and the dry run asked the network
+    made = "the made-up directories of tests/reference_dry.py: " + " ".join(MADE) + "\n"
+    if not (work / "made").exists() or (work / "made").read_text() != made:
         directories(work)
-        (work / "made").write_text("the made-up directories of tests/reference_dry.py\n")
+        (work / "made").write_text(made)
     reference_qwen35.BOS = 2  # (the real one, 248044, is past the made-up vocabulary)
     reference.LONG = LONG
     reference_lfm2.MODELS["dry"] = ("made/lfm2", REVISION)
