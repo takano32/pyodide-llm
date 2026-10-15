@@ -221,7 +221,7 @@ def test_what_only_a_family_says_is_asked_of_no_other(model_type):
     assert (llama2_convert.linear_layers(config) is not None) == (family.arch == "qwen35")
     assert (llama2_convert.convolution_layers(config) is not None) == (family.arch == "lfm2")
     assert set(family.form) == {"qwen35": {"linear"}, "lfm2": {"convolution"},
-                                "gemma4": {"wide", "double"}}.get(family.arch, set()) <= set(FORM)
+                                "gemma4": {"wide", "double", "kv_shared"}}.get(family.arch, set()) <= set(FORM)
     assert set(family.options(config)) == {"smollm3": {"unturned"}, "gpt_neox": {"parallel_residual"},
                                            "gemma4_text": {"rotary"}, "gemma4": {"rotary"}}.get(model_type, set())
 

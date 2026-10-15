@@ -435,9 +435,10 @@ def naive_gemma4_logits(tensors, config, tokens, states=None):
     Gemma4TextRotaryEmbedding with modeling_rope_utils.py's proportional RoPE, Gemma4ForCausalLM's cap of the logits),
     written out from the Hugging Face tensors in float64, the whole sequence at once as its forward of a prompt
     computes, independently of the converter and the engine. config: the text config.json as it is published (its
-    rope_parameters a dict for each kind of layer). Layers that read another's keys and values and the embedding of
-    every layer are not here (T330, T329). states: a list that gets, for every layer, what its attention gave at every
-    position (before the norm behind it)."""
+    rope_parameters a dict for each kind of layer). T330: the last num_kv_shared_layers layers take the keys and values
+    the last layer of their kind before them made (shared_kv_states), and make none. The embedding of every layer is
+    not here (T329). states: a list that gets, for every layer, what its attention gave at every position (before the
+    norm behind it)."""
     wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}
     m = "model.language_model." if "model.language_model.embed_tokens.weight" in wide else "model."
     eps, dim = config["rms_norm_eps"], config["hidden_size"]
@@ -465,17 +466,23 @@ def naive_gemma4_logits(tensors, config, tokens, states=None):
         return head * cos + np.concatenate([-head[size // 2:], head[:size // 2]]) * sin
 
     x = [wide[m + "embed_tokens.weight"][token] * dim ** 0.5 for token in tokens]
+    first_shared, kept = len(config["layer_types"]) - config.get("num_kv_shared_layers", 0), {}
     for layer, kind in enumerate(config["layer_types"]):
         p, a, size = f"{m}layers.{layer}.", f"{m}layers.{layer}.self_attn.", sizes[kind]
         normed = [norm(v, wide[p + "input_layernorm.weight"]) for v in x]
         queries, ks, vs = [], [], []
         for pos, v in enumerate(normed):
             q = (wide[a + "q_proj.weight"] @ v).reshape(heads, size)
-            k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, size)
-            values = (wide[a + "v_proj.weight"] @ v).reshape(kv_heads, size)
             queries.append([rotate(norm(q[h], wide[a + "q_norm.weight"]), pos, kind) for h in range(heads)])
-            ks.append([rotate(norm(k[h], wide[a + "k_norm.weight"]), pos, kind) for h in range(kv_heads)])
-            vs.append([norm(values[h]) for h in range(kv_heads)])
+            if layer < first_shared:
+                k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, size)
+                values = (wide[a + "v_proj.weight"] @ v).reshape(kv_heads, size)
+                ks.append([rotate(norm(k[h], wide[a + "k_norm.weight"]), pos, kind) for h in range(kv_heads)])
+                vs.append([norm(values[h]) for h in range(kv_heads)])
+        if layer < first_shared:
+            kept[kind] = (ks, vs)  # (the last layer of its kind before the shared ones leaves its own)
+        else:
+            ks, vs = kept[kind]
         mixed = []
         for pos in range(len(tokens)):
             seen = [t for t in range(pos + 1) if kind == "full_attention" or t > pos - window]

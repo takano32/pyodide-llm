@@ -10,8 +10,10 @@
 # of its own (layer_scalar); the full-attention layers have heads of their own size (global_head_dim) and turn the first
 # quarter of each by the angles of the whole head (proportional RoPE); the logits are capped by a tanh.
 #
-# What the engine has not yet (T330, T329) it refuses here: layers that read another layer's keys and values, and an
-# embedding of every layer's own. Every published Gemma 4 of the sizes a page can hold has both.
+# T330: its last num_kv_shared_layers layers read the keys and values of the last layer before them of their kind in
+# place of their own (Gemma4TextAttention's store_full_length_kv and shared_kv_states), and where use_double_wide_mlp
+# their FFN is twice as wide. What the engine has not yet (T329) it refuses here: an embedding of every layer's own,
+# which every published Gemma 4 of the sizes a page can hold has.
 import math
 
 import numpy as np
@@ -86,6 +88,18 @@ def shared_layers(config):
     return list(range(layers - config["num_kv_shared_layers"], layers)) if config["num_kv_shared_layers"] else []
 
 
+def shared(config):
+    """T330: FORM's "kv_shared": the layers that read another's keys and values, and the one each reads, the last layer of
+    its kind (layer_types) before the first of them. None for a model without any."""
+    config = gemma4_config(config)
+    layers = shared_layers(config)
+    if not layers:
+        return None
+    before = config["layer_types"][:layers[0]]
+    last = lambda kind: max((layer for layer, other in enumerate(before) if other == kind), default=None)
+    return {"layers": layers, "from": [last(config["layer_types"][layer]) for layer in layers]}
+
+
 def double(config):
     """FORM's "double": the layers whose FFN is twice as wide, the ones that read another's keys and values where the
     config says use_double_wide_mlp (Gemma4TextMLP)."""
@@ -134,12 +148,16 @@ def gemma4_check(config):
     size, wide_size = config["head_dim"], config["global_head_dim"]
     if not isinstance(wide_size, int) or isinstance(wide_size, bool) or wide_size <= 0 or wide_size % 2:
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
-    full = full_layers(config)
-    if wide(config) and 1 in (len(full), len(kinds) - len(full)):
-        # (a stack of one layer is read as no stack: the converter has no file of it, as no LFM2 of one such layer)
+    layers, full, said = config["num_hidden_layers"], full_layers(config), shared(config)
+    if not 0 <= config["num_kv_shared_layers"] < layers or (said and None in said["from"]):
+        refuse("its layers read the keys and values of layers it has not")
+    # (a stack of one layer is read as no stack: the converter has no file of it, as no LFM2 of one such layer; T330:
+    # the layers that compute their keys and values are stacks of each size too)
+    kept = [layer for layer in range(layers) if not said or layer not in said["layers"]]
+    if wide(config) and 1 in (len(full), layers - len(full), len(set(full) & set(kept)), len(set(kept) - set(full))):
         refuse("it has fewer than two layers of each size of its heads")
-    if config["num_kv_shared_layers"]:
-        refuse("its layers read the keys and values of other layers")
+    if double(config) and 1 in (len(double(config)), layers - len(double(config))):
+        refuse("it has fewer than two layers of each width of its FFN")
     if config["hidden_size_per_layer_input"]:
         refuse("it has an embedding for every layer")
 
@@ -190,7 +208,7 @@ def gemma4_prefix(source):
 
 
 GEMMA4 = Family("Gemma 4", "gemma4", gemma4_sources, gemma4_check, before=gemma4_config, options=gemma4_options,
-                form={"wide": wide, "double": double}, prefix=gemma4_prefix, table=gemma4_table,
+                form={"wide": wide, "double": double, "kv_shared": shared}, prefix=gemma4_prefix, table=gemma4_table,
                 free_heads=True, rms_norm=True)
 # config.json of the whole model as it is published (gemma4: the language model and its towers of sight and sound): its
 # text_config is the Gemma 4 above

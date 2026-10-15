@@ -54,8 +54,10 @@ from engine.dtypes import BLOCKS, BYTES, CODEBOOKS, KINDS, QUANTIZED, kind_named
 # others' are 256), see wide_form(): their q, k, v, o and the norms of their heads are stacks of their own. None: none.
 # double (T331): the layers whose FFN is twice as wide (a Gemma 4 E2B's last 20), see double_form(): its three
 # matrices are stacks of their own. None: none.
+# kv_shared (T330): the layers that read the keys and values of a layer before them in place of their own, see
+# shared_form(): they have no k, v and norm of k's heads. None: none.
 FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
-        "convolution": None, "kinds": None, "tiled": None, "wide": None, "double": None}
+        "convolution": None, "kinds": None, "tiled": None, "wide": None, "double": None, "kv_shared": None}
 
 
 def form_of(options=None):
@@ -151,6 +153,23 @@ def double_form(double, n_layers=None):
     return layer_list(double, n_layers) or None
 
 
+def shared_form(shared, n_layers=None):
+    """T330: the layers that read another's keys and values, FORM's "kv_shared", as {"layers": which they are, in order,
+    "from": the layer each reads, in the same order}, from a dict of Python or of JavaScript. None for a model without
+    any (a Gemma 4's last num_kv_shared_layers). A layer is read from that comes before it and reads its own: what the
+    shapes of the two have to agree on is the Dims' to see."""
+    shared = shared.to_py() if hasattr(shared, "to_py") else shared
+    if not shared:
+        return None
+    pairs = sorted({int(layer): int(source) for layer, source in zip(shared["layers"], shared["from"])}.items())
+    if len(pairs) != len(shared["layers"]) or len(shared["layers"]) != len(shared["from"]):
+        raise ValueError("The layers that read another's keys and values are each said once, with the layer each reads.")
+    layers = layer_list([layer for layer, _ in pairs], n_layers)
+    if any(not 0 <= source < layer or source in layers for layer, source in pairs):
+        raise ValueError("A layer reads the keys and values of a layer before it that has its own.")
+    return {"layers": layers, "from": tuple(source for _, source in pairs)} if layers else None
+
+
 class Stateful(NamedTuple):
     """A kind of layer that keeps a state in place of keys and values, as a layout has it (Layout's stateful): the
     rows of STATEFUL are its tensors. What such a layer computes is the forward pass's own (engine/model.py has
@@ -201,6 +220,9 @@ EVERY, ATTENDING, STATEFUL = "every", "attending", "stateful"
 # (NARROW, every one that attends where the form says none); of every layer, those whose FFN is of the form's
 # "double" (DOUBLE) and the others (SINGLE)
 NARROW, WIDE, SINGLE, DOUBLE = "narrow", "wide", "single", "double"
+# T330: of NARROW and WIDE, the layers that compute their own keys and values (every one where the form's "kv_shared"
+# says none): the stacks of k, v and the norm of k's heads
+NARROW_KEPT, WIDE_KEPT = "narrow kept", "wide kept"
 
 
 class Row(NamedTuple):
@@ -242,6 +264,17 @@ class Dims:
         if (self.wide or self.double) and not self.layout.wide:
             raise ValueError(f"The architecture {self.arch!r} has no layers of heads or of an FFN of another width.")
         self.wide_head = self.wide["head_dim"] if self.wide else 0
+        # T330: the layers that read another's keys and values (None: none), of that one's size of heads and an attending
+        # one
+        # (sharing: shared is the classifier's, above)
+        self.sharing = shared_form(form["kv_shared"], self.n_layers)
+        if self.sharing:
+            if not self.layout.wide:
+                raise ValueError(f"The architecture {self.arch!r} has no layers that read another's keys and values.")
+            attending = self.layers(ATTENDING)
+            for layer, source in zip(self.sharing["layers"], self.sharing["from"]):
+                if layer not in attending or source not in attending or self.head_of(layer) != self.head_of(source):
+                    raise ValueError(f"Layer {layer} cannot read the keys and values of layer {source}.")
 
     def rows(self):
         """The tensors of the checkpoint, as rows in file order: its architecture's layout, each with the kind the
@@ -266,6 +299,9 @@ class Dims:
         if per in (NARROW, WIDE):
             wide = self.wide["layers"] if self.wide else ()
             return [layer for layer in self.layers(ATTENDING) if (layer in wide) == (per == WIDE)]
+        if per in (NARROW_KEPT, WIDE_KEPT):
+            shared = self.sharing["layers"] if self.sharing else ()
+            return [layer for layer in self.layers(NARROW if per == NARROW_KEPT else WIDE) if layer not in shared]
         if per in (SINGLE, DOUBLE):
             return [layer for layer in range(self.n_layers) if (layer in (self.double or ())) == (per == DOUBLE)]
         return [layer for layer, (stateful, _) in enumerate(self.slots)
@@ -373,12 +409,13 @@ def gemma4(d):
     others'; and a number every layer multiplies the stream by at its end (layer_scale). Its RoPE tables are of the
     layers that attend over all the positions, which are the wide ones where there are such."""
     rows, head = [*embedding(d), d.stack("rms_att_weight", VECTOR, EVERY, d.dim)], d.wide_head or d.head_size
-    for per, suffix, size in ((NARROW, "", d.head_size), (WIDE, "_wide", d.wide_head)):
+    # (T330: k, v and the norm of k's heads of the layers that compute their own keys and values)
+    for per, kept, suffix, size in ((NARROW, NARROW_KEPT, "", d.head_size), (WIDE, WIDE_KEPT, "_wide", d.wide_head)):
         if d.layers(per):
             q, kv = d.n_heads * size, d.n_kv_heads * size
-            rows += [d.stack("wq" + suffix, MATRIX, per, q, d.dim), d.stack("wk" + suffix, MATRIX, per, kv, d.dim),
-                     d.stack("wv" + suffix, MATRIX, per, kv, d.dim), d.stack("wo" + suffix, MATRIX, per, d.dim, q),
-                     d.stack("q_norm" + suffix, VECTOR, per, size), d.stack("k_norm" + suffix, VECTOR, per, size)]
+            rows += [d.stack("wq" + suffix, MATRIX, per, q, d.dim), d.stack("wk" + suffix, MATRIX, kept, kv, d.dim),
+                     d.stack("wv" + suffix, MATRIX, kept, kv, d.dim), d.stack("wo" + suffix, MATRIX, per, d.dim, q),
+                     d.stack("q_norm" + suffix, VECTOR, per, size), d.stack("k_norm" + suffix, VECTOR, kept, size)]
     rows += [d.stack("rms_att_post_weight", VECTOR, EVERY, d.dim), d.stack("rms_ffn_weight", VECTOR, EVERY, d.dim)]
     for per, suffix, hidden in ((SINGLE, "", d.hidden_dim), (DOUBLE, "_double", 2 * d.hidden_dim)):
         if d.layers(per):

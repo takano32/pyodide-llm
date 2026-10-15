@@ -33,9 +33,14 @@ MODELS = {
     "no cap of the logits": dict(softcap=None),
     "a cap that bites": dict(softcap=0.5),
     "another epsilon, the bases the other way round": dict(eps=1e-5, theta=50.0, local_theta=1000000.0),
+    # T330: the last layers read the keys and values of the last of their kind before them
+    "the last four share": dict(kinds="ssllsssl", sharing=4),
+    "the last four share, their FFN twice as wide": dict(kinds="ssllsssl", sharing=4, double=True),
+    "all but the first two of a kind share": dict(kinds="slslssssl", sharing=5, double=True),
+    "sharing, heads of one size": dict(kinds="ssllsl", sharing=2, wide_head=16, double=True),
 }
 PASSED = ("dtype", "arch", "bias", "head_dim", "local", "rope_theta", "rms_norm_eps", "rotary", "softcap", "wide",
-          "double")
+          "double", "kv_shared")
 
 
 def text(config):
@@ -162,11 +167,9 @@ def refusal(config):
 
 
 def test_what_the_engine_has_not_yet_is_refused_in_words():
-    """Every published Gemma 4 reads another layer's keys and values and has an embedding of every layer (T330, T329):
-    refused, the first of those first; and what a Gemma 4 of other sizes has (the 12B's keys that are its values, the
-    26B's experts)."""
-    assert refusal(E2B) == "This model cannot be converted: its layers read the keys and values of other layers."
-    assert refusal({**E2B, "num_kv_shared_layers": 0}) == "This model cannot be converted: it has an embedding for every layer."
+    """Every published Gemma 4 has an embedding of every layer (T329): refused; and what a Gemma 4 of other sizes has
+    (the 12B's keys that are its values, the 26B's experts)."""
+    assert refusal(E2B) == "This model cannot be converted: it has an embedding for every layer."
     whole = {"model_type": "gemma4", "text_config": E2B}
     assert refusal(whole) == refusal(E2B)
     for more in ({"attention_k_eq_v": True}, {"enable_moe_block": True}, {"num_global_key_value_heads": 4}):
@@ -174,11 +177,23 @@ def test_what_the_engine_has_not_yet_is_refused_in_words():
     assert "the yarn kind" in refusal({**E2B, "rope_parameters": {**E2B["rope_parameters"],
                                                                   "full_attention": {"rope_type": "yarn", "factor": 2.0}}})
     # what it reads of the real one: the form, and the options, past what is refused
-    said = normalize({**E2B, "num_kv_shared_layers": 0, "hidden_size_per_layer_input": 0})
+    said = normalize({**E2B, "hidden_size_per_layer_input": 0})
     check_config(said)
     form = checkpoint_form(said, {})
-    assert form["wide"] == {"layers": list(range(4, 35, 5)), "head_dim": 512} and form["double"] is None
+    assert form["wide"] == {"layers": list(range(4, 35, 5)), "head_dim": 512} and form["double"] == list(range(15, 35))
     assert form["head_dim"] == 256
+    # T330: the last 20 read layer 13 (the local ones) and 14 (those that attend all), as transformers' layers do
+    assert form["kv_shared"] == {"layers": list(range(15, 35)), "from": [14 if layer % 5 == 4 else 13 for layer in range(15, 35)]}
+    # and E4B's: 18 of 42, from 22 and 23, an FFN of one width
+    e4b = normalize({**E2B, "hidden_size": 2560, "intermediate_size": 10240, "num_hidden_layers": 42, "num_key_value_heads": 2,
+                     "num_kv_shared_layers": 18, "use_double_wide_mlp": False, "hidden_size_per_layer_input": 0,
+                     "layer_types": ["full_attention" if layer % 6 == 5 else "sliding_attention" for layer in range(42)]})
+    check_config(e4b)
+    form = checkpoint_form(e4b, {})
+    assert form["double"] is None and form["kv_shared"]["from"] == [23 if layer % 6 == 5 else 22 for layer in range(24, 42)]
+    for wrong, said in ((dict(num_kv_shared_layers=35), "of layers it has not"), (dict(num_kv_shared_layers=33), "of layers it has not"), (dict(num_kv_shared_layers=30), "of each size of its heads"),
+                        (dict(num_kv_shared_layers=34), "of layers it has not")):
+        assert said in refusal({**E2B, "hidden_size_per_layer_input": 0, **wrong}), wrong
 
 
 def test_the_last_layer_attends_all_and_a_size_of_heads_has_two_layers_or_none():
@@ -191,6 +206,41 @@ def test_the_last_layer_attends_all_and_a_size_of_heads_has_two_layers_or_none()
         "This model cannot be converted: it has fewer than two layers of each size of its heads."
     check_config(normalize({**one, "layer_types": ["sliding_attention"] * 35, "global_head_dim": 256}))
     check_config(normalize({**one, "layer_types": ["full_attention"] * 35}))
+
+
+def test_the_shared_layers_are_the_forms_and_read_what_they_can():
+    from engine.layout import NARROW_KEPT, WIDE_KEPT, shared_form
+    assert shared_form(None) is None and shared_form({"layers": [], "from": []}) is None
+    assert shared_form({"layers": [5, 4], "from": [2, 1]}, 6) == {"layers": (4, 5), "from": (1, 2)}
+    for wrong in ({"layers": [4], "from": [4]}, {"layers": [4], "from": [5]}, {"layers": [4, 5], "from": [1, 4]},
+                  {"layers": [4, 4], "from": [1, 2]}, {"layers": [4, 5], "from": [1]}):
+        with pytest.raises(ValueError):
+            shared_form(wrong, 6)
+    form = {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3, 5], "head_dim": 32},
+            "kv_shared": {"layers": [4, 5], "from": [2, 3]}}
+    dims = Dims([32, 64, 6, 4, 1, 320, 24], form)
+    assert (dims.layers(NARROW_KEPT), dims.layers(WIDE_KEPT)) == ([0, 2], [1, 3])
+    shapes = {row.name: row.shape for row in dims.rows()}
+    assert shapes["wq"] == (3, 64, 32) and shapes["wk"] == (2, 16, 32) and shapes["k_norm_wide"] == (2, 32)
+    # a layer reads one of its own size of heads
+    with pytest.raises(ValueError, match="cannot read"):
+        Dims([32, 64, 6, 4, 1, 320, 24], {**form, "kv_shared": {"layers": [4, 5], "from": [3, 2]}})
+
+
+def test_a_shared_layer_keeps_no_keys_and_values_and_reads_its_sources():
+    tensors, config = gemma4_model(kinds="ssllsssl", sharing=4, double=True)
+    llama = engine(tensors, config)[0]
+    for pos, token in enumerate(TOKENS):
+        llama.forward(token, pos)
+    assert [keys is None for keys in llama.key_cache] == [False] * 4 + [True] * 4
+    assert [held for *_, held in llama.heads] == [0, 1, 2, 3, 1, 1, 1, 3]
+    # what a shared layer's own k and v would make is read nowhere: changed, nothing moves
+    changed = {**tensors, "model.layers.6.self_attn.k_proj.weight": tensors["model.layers.6.self_attn.k_proj.weight"] + 1.0,
+               "model.layers.7.self_attn.v_proj.weight": tensors["model.layers.7.self_attn.v_proj.weight"] * 3.0}
+    other = engine(changed, config)[0]
+    fresh = engine(tensors, config)[0]
+    for pos, token in enumerate(TOKENS):
+        assert np.array_equal(other.forward(token, pos), fresh.forward(token, pos)), pos
 
 
 def test_the_wide_layers_and_the_double_ffn_are_the_forms_and_a_gemma4s():

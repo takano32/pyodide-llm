@@ -50,4 +50,6 @@ export type Form = {
   // twice as wide: layout.py's wide_form() and double_form()
   wide: { layers: number[]; head_dim: number } | null;
   double: number[] | null;
+  // T330: the layers that read the keys and values of another, and which each reads: layout.py's shared_form()
+  kv_shared: { layers: number[]; from: number[] } | null;
 };
