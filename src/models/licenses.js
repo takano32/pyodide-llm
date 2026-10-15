@@ -168,6 +168,8 @@ export const LICENSES = {
   // of their base_model, Liquid AI's LFM2-350M-ENJP-MT (itself from LFM2-350M), whose card says lfm1.0 (the owner's
   // decision, 2026-10-15)
   "shisa-ai/shisa-v2.1c-lfm2-350m": LFM_OPEN, "mradermacher/shisa-v2.1c-lfm2-350m-GGUF": LFM_OPEN,
+  // T511.3: both cards say license other, lfm1.0 (the original's links its LICENSE file, Liquid AI's)
+  "shisa-ai/shisa-v2.1-lfm2-1.2b": LFM_OPEN, "mradermacher/shisa-v2.1-lfm2-1.2b-GGUF": LFM_OPEN,
   // T261.3: Google's originals (gated: the list takes unsloth's copies and GGUFs of them)
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,

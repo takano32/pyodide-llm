@@ -214,6 +214,10 @@ export const HF_FAMILIES = [
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",
     "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 379216512,
     "fetches 379 MB (GGUF) → int8 399 MB"),
+  // T511.3: and its 1.2B (from LFM2-1.2B), the 1B class's best at Japanese chat as Shisa's card measures (Shaberi 5.35)
+  shisaLfm2("hf-shisa-v2.1-lfm2-1.2b", "Shisa V2.1 LFM2 1.2B", "shisa-v2.1-lfm2-1.2b",
+    "292863c4c1d3b63357027b384f336a52498252b2", "4a433b919681b37f43088cf2c57cbe92a8d859d5", 1246254048,
+    "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
   // T261.3: Gemma 3's two smallest (the text models), on the CPU alone (no shader has their norms behind the layers, a
   // GELU in the gate or the window yet: T261.4). unsloth's Q8_0 GGUFs, which tests/gguf_check.py tensors held to
   // unsloth's copies of the originals
