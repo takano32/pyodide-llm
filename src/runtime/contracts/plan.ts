@@ -36,6 +36,10 @@ export type TensorName =
   | "win" | "wout"
   // Gemma 3: the norms behind the attention and behind the FFN (T261)
   | "rms_att_post_weight" | "rms_ffn_post_weight"
+  // Gemma 4 (T331): the attention of the layers whose heads are wide, the FFN of those whose FFN is twice as wide, and
+  // the number every layer ends by multiplying the stream by
+  | "wq_wide" | "wk_wide" | "wv_wide" | "wo_wide" | "q_norm_wide" | "k_norm_wide" | "w1_double" | "w2_double" | "w3_double"
+  | "layer_scale"
   // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
   | "codebooks";
 
@@ -53,11 +57,19 @@ export type Derived = { freq_cis_real?: Uint8Array; freq_cis_imag?: Uint8Array; 
 // (local_cis_real and local_cis_imag of the derived arrays) in place of the others: two facts, which a Gemma 3's
 // sliding-attention layers have together
 export type LayerKind = "attention" | "linear" | "convolution";
-export type Layer = { kind: LayerKind; place: number; rope: boolean; window: number; local: boolean };
+// T331: and the size of its heads (head), how many values of a head RoPE turns (rotary), whether its attention's tensors
+// are the wide ones (wide: the stacks of the names with "_wide") and its place in its attention's stacks (stack); whether
+// its FFN's are the ones twice as wide (double: "_double") and its place in its FFN's stacks (ffn). A layer of a model
+// whose layers are all alike has the model's head and rotary, its place and its number
+export type Layer = { kind: LayerKind; place: number; rope: boolean; window: number; local: boolean;
+  head: number; rotary: number; wide: boolean; stack: number; double: boolean; ffn: number;
+  // T330: its place in the stacks of k, v and the norm of k's heads (-1: it reads another layer's keys and values), and
+  // the place among the layers of its kind of the layer whose keys and values it attends over (its own, or that one's)
+  kept: number; reads: number };
 
 // the widths of a linear-attention layer: what the convolution runs over, q or k, and v (which the output matrix reads)
 export type LinearWidths = { mixed: number; keys: number; read: number };
-// T359.5: the widths an engine sizes its buffers by, which are not in the header
+// T359.5: the widths an engine sizes its buffers by, which are not in the header (T331: q and kv of the widest heads)
 export type Widths = { q: number; kv: number; linear: LinearWidths | null; rotated: number[] };
 
 export type Plan = {
@@ -108,4 +120,8 @@ export type Plan = {
   activation: "silu" | "gelu";
   layer_norm: boolean;
   gated_ffn: boolean;
+  // T331: and the heads of v are normalized (a Gemma 4's, an RMSNorm without a weight); the logits are capped, softcap
+  // * tanh(logits / softcap) (0: as they are)
+  value_norm: boolean;
+  softcap: number;
 };

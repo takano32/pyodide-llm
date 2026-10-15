@@ -35,6 +35,11 @@ export type Footprint = {
   kinds?: Form["kinds"];
   weights?: number;
   local?: Local | null;
+  // T331: the form's layers of wide heads, and of an FFN twice as wide (sizes.ts reads them); T330: those that read
+  // another's keys and values, and keep none
+  wide?: Form["wide"];
+  double?: Form["double"];
+  kv_shared?: Form["kv_shared"];
 } & Stateful;
 // T510.1: what a model's options say of its local layers (Python's engine/layout.py's local_layers(): which they are,
 // and how many of the last positions they attend)
@@ -118,11 +123,12 @@ const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size
 export function footprint(header: Header, size: number, options: Footprint = {}, kinds: Kinds = LAYER_KINDS) {
   const { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false, shared = false, outliers = 8, head_dim = 0, gpu = false,
     direct = false, rotated = null } = options;
-  const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
+  const [dim, , layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads;
   // (the options as the form: the numbers of the layers that keep a state are in them under their kinds' names, which
   // the kinds read and this does not)
-  const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
+  // (T331: hidden, the widest FFN's inside: a Gemma 4's twice as wide in some layers)
+  const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths, { hidden } = sizes;
   const { positions, rope, local } = architectureOf(arch), packing = packingOf(dtype);
   // (T363.5) the packings the model's rows are in: the dtype's, and those of the kinds its form gives rows
   const own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
@@ -152,7 +158,8 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // what a packed file leaves out: the positions widened, and the RoPE tables Python computes (two of seqLen ×
   // headSize / 2 float32; a model without RoPE has them too, of zeros, at any dtype; T130's review)
   if (packing && positions) bytes += seqLen * dim * 4;
-  if (packing || !rope) bytes += seqLen * headSize * 4;
+  // (T331: of the widest heads: a Gemma 4's tables are its full-attention layers', whose heads are the wide ones)
+  if (packing || !rope) bytes += seqLen * Math.max(headSize, options.wide?.head_dim ?? 0) * 4;
   // T261: and the two tables of a model's local layers, which no file has (of an architecture that may have such
   // layers: the form does not say whether this model has, and one without is counted that much too high)
   if (local) bytes += seqLen * headSize * 4;
@@ -176,13 +183,20 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // the layers that keep keys and values (all of them where none keeps a state in their place). T510.1: those of them
   // that attend a window keep a ring of its positions, taken whole at once (the local layers of the options, which are
   // layers that attend: the plan gives no other a window)
-  const cached = had.reduce((sum, { kind, count }) => sum + (kinds[kind].cached ? count : 0), 0);
-  const ring = direct ? 0 : ringPositions(options.local?.window ?? 0, seqLen), ringed = ring ? Math.min(options.local!.layers.length, cached) : 0;
+  // T331: each with the width of its own heads' keys and values (the form's wide ones, or the others')
+  const ring = direct ? 0 : ringPositions(options.local?.window ?? 0, seqLen), ringed = new Set(ring ? options.local!.layers : []);
+  // (the positions of every width there is: one, kvDim, but where some layers' heads are wider)
+  const wideLayers = new Set(options.wide?.layers ?? []), widths = new Map<number, number>(), reading = new Set(options.kv_shared?.layers ?? []);
+  sizes.kinds.forEach((kind, l) => {
+    if (!kinds[kind].cached || reading.has(l)) return;
+    const width = wideLayers.has(l) ? kvHeads * options.wide!.head_dim : kvHeads * (head_dim || dim / heads);
+    widths.set(width, (widths.get(width) ?? 0) + (ringed.has(l) ? ring : seqLen));
+  });
   // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
   // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
   // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
   // GPU's alone)
-  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : (seqLen * (cached - ringed) + ring * ringed) * 2 * kvDim;
+  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : [...widths].reduce((sum, [width, count]) => sum + count * 2 * width, 0);
   // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44

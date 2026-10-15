@@ -32,11 +32,14 @@ def plan_of(header, form, dtype):
     # where every tensor is: external_tensors(), the rows of engine/layout.py placed (T359)
     tensors = L.external_tensors(header, dtype, form)
     head_size = form["head_dim"] or header[0] // header[3]
-    table = header[6] * (head_size // 2) * 4
+    # (T331.2: the model's tables are of its widest heads: a Gemma 4's full-attention layers')
+    wide = form.get("wide") or {}
+    table = header[6] * (max(head_size, wide.get("head_dim", 0)) // 2) * 4
     derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or dtype != "float32" else {}
     if local_of(header, form):
         # (T261: the tables of the local layers, which no file has)
-        derived.update({"local_cis_real": table, "local_cis_imag": table})
+        local = header[6] * (head_size // 2) * 4
+        derived.update({"local_cis_real": local, "local_cis_imag": local})
     # (the tensors by name: the order of a dict is not what the plan says, and tests/unchanged-calls.mjs hashes this whole)
     return {"header": header, "form": form, "dtype": dtype, "size": llama2_convert.checkpoint_size(header, dtype, form),
             "tensors": dict(sorted(tensors.items())), "derived": derived, "keep_int8": bool(keeps_int8(header, form, dtype)), "head_size": head_size}

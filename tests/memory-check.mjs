@@ -193,6 +193,13 @@ function halfToFloat(h) {
     ...big("gemma3, six layers", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma3", head_dim: 128 }, ["int8", "int6", "float32", "float16"]),
     ...big("gemma3 270M", [640, 2048, 18, 4, 1, 262144, 4096], { arch: "gemma3", head_dim: 256 }, ["int8", "int6"]),
     ...big("gemma3 1B", [1152, 6912, 26, 4, 1, 262144, 4096], { arch: "gemma3", head_dim: 256 }, ["int8", "int6"]),
+    // T331.2: a Gemma 4, whose full-attention layers have heads twice as wide (and so keys and values), and some an FFN
+    // twice as wide: a small one in every dtype
+    ...big("gemma4, six layers", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5] },
+      ["int8", "int6", "float32", "float16"]),
+    // T330.2: and one whose last layers read the keys and values of others, and keep none
+    ...big("gemma4, sharing keys and values", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 },
+      double: [4, 5], kv_shared: { layers: [4, 5], from: [3, 2] } }, ["int8", "float32"]),
     // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
@@ -255,10 +262,10 @@ function halfToFloat(h) {
       refused++;
       return;
     }
-    if (p.form.convolution || p.form.arch === "gemma3") {
+    if (p.form.convolution || p.form.arch === "gemma3" || p.form.arch === "gemma4") {
       // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
-      // (T261: and so does a Gemma 3, for what its layers have that the GPU's have not)
-      const [model, why] = p.form.convolution ? ["an LFM2", "convolution layers are not on the GPU yet"] : ["a Gemma 3", "this pair of norms and FFN is not on the GPU yet"];
+      // (T261: and so does a Gemma 3, for what its layers have that the GPU's have not; T331.2: and a Gemma 4)
+      const [model, why] = p.form.convolution ? ["an LFM2", "convolution layers are not on the GPU yet"] : [p.form.arch === "gemma3" ? "a Gemma 3" : "a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: false, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       let asked = 0;

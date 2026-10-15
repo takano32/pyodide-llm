@@ -8,6 +8,9 @@
 # the name, would answer right for all five. Their names are none an engine outside Python has heard of.
 # T261: and a Gemma 3 (a GELU in the gate of its FFN, norms behind the attention and the FFN, local layers), with three
 # that have one of its three each and are Llamas otherwise: only a Gemma has any of them, and it has them all.
+# T331.2: and a Gemma 4 (heads of another size in its full-attention layers, turned in part by the whole head's angles,
+# an FFN twice as wide in some layers, the heads of v normalized, a number every layer ends with, the logits capped),
+# with three Llamas that have one of its facts each: the norm of v, the number of every layer, the cap of the logits.
 import json
 import os
 import sys
@@ -47,6 +50,10 @@ def cases(L):
     behind = lambda d: [*layouts["llama"].rows(d), d.stack("rms_att_post_weight", L.VECTOR, L.EVERY, d.dim),
                         d.stack("rms_ffn_post_weight", L.VECTOR, L.EVERY, d.dim)]
     layouts["norms behind"] = layouts["llama"]._replace(rows=behind)
+    # T331.2: a Llama whose heads of v are normalized, and one whose layers end by a number of their own
+    layouts["a norm of v"] = layouts["llama"]._replace(value_norm=True)
+    scaled = lambda d: [*layouts["llama"].rows(d), d.stack("layer_scale", L.VECTOR, L.EVERY, 1)]
+    layouts["a number of every layer"] = layouts["llama"]._replace(rows=scaled)
     local = {"layers": [0, 1, 3], "window": 3, "rope_theta": 100.0}
     return [
         ("llama", GROUPED, {}, {}),
@@ -67,6 +74,32 @@ def cases(L):
         ("a gelu in the gate", GROUPED, {"arch": "a gelu in the gate"}, {}),
         ("local layers", GROUPED, {"arch": "local layers"}, {"local": local}),
         ("norms behind", GROUPED, {"arch": "norms behind"}, {}),
+        # T331.2: two layers of heads of 32 (the full-attention ones, of which RoPE turns 8 values by the angles of 32),
+        # and an FFN twice as wide in the last three
+        ("gemma4", [64, 128, 6, 4, 1, 320, 48], {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32},
+                                                "double": [3, 4, 5]},
+         {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0, "rms_norm_eps": 1e-6}),
+        ("gemma4, a classifier of its own, a key for every head", [64, 128, 4, 4, 4, -320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}},
+         {"local": {"layers": [0, 2], "window": 3, "rope_theta": 100.0}, "rotary": 8, "softcap": 5.0}),
+        # (a window as long as the context: no ring, so that the blocks of the cache are of two widths, one after the other)
+        ("gemma4, the cache's blocks of two widths", [64, 128, 4, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}},
+         {"local": {"layers": [0, 2], "window": 30, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
+        # T330.2: its last two layers read the keys and values of the last of their width before them (and the first of
+        # them has an FFN twice as wide)
+        ("gemma4, keys and values shared", [64, 128, 6, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "double": [4, 5],
+          "kv_shared": {"layers": [4, 5], "from": [3, 2]}},
+         {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
+        # (and one in the middle, which no published model has: then a layer's place in the stacks of k and v is not its
+        # place in those of q)
+        ("gemma4, a layer in the middle reading another's keys and values", [64, 128, 6, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "kv_shared": {"layers": [1], "from": [0]}},
+         {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
+        ("a norm of v", GROUPED, {"arch": "a norm of v"}, {}),
+        ("a number of every layer", GROUPED, {"arch": "a number of every layer"}, {}),
+        ("llama, its logits capped", GROUPED, {}, {"softcap": 2.0}),
     ]
 
 

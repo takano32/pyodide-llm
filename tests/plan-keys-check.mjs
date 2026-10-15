@@ -114,6 +114,10 @@ const returned = (fn) => {
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
     { name: "gemma3", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma3", head_dim: 128 },
       more: { local: { layers: [0, 1, 2, 3, 4], window: 96, rope_theta: 10000 } } },
+    // T331: a Gemma 4: heads of 128 in two of its layers (the full-attention ones), an FFN twice as wide in its last three
+    { name: "gemma4", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5],
+      kv_shared: { layers: [4, 5], from: [3, 2] } },
+      more: { local: { layers: [0, 1, 3, 4], window: 96, rope_theta: 10000 }, rotary: 32, softcap: 30 } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
@@ -124,7 +128,7 @@ const returned = (fn) => {
   // (the facts of these families a second time, below: [RoPE turns its layers, LayerNorms, a gated FFN]; a family that
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
-    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true],
+    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true], gemma4: [true, false, true],
     "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
@@ -262,8 +266,6 @@ const returned = (fn) => {
     assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);
     lines.add(plan.arch);
   });
-  // (T331.1: Python makes no plan of a Gemma 4 until the page's engine reads its layers, T331.2, which holds its line here)
-  for (const arch of ["gemma4"]) lines.add(arch);
   assert.deepEqual(sorted(lines), sorted(Object.keys(ARCHITECTURES)), "every line of forward/architectures.ts is held to a plan of Python's (a new architecture is a family of this check's too)");
   ok(`what sizes ${plans.length} models is the same of the form (sizes.ts, the kinds' layers() and widths()) as of Python's plan, and the ${lines.size} lines of forward/architectures.ts are what Python's plans say of each architecture`);
 

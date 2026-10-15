@@ -143,12 +143,31 @@ const S = 100000;
     all.hold(2, [5, 0]);
     assert.deepEqual([all.ring(0), all.index(0), all.index(1)], [null, 0, 1], "no ring on the GPU alone");
   }
+  // T331.2: places of their own widths (a Gemma 4's: its full-attention layers' keys and values twice as wide): a block
+  // is its own width, the next after it, and they move as wide as they are when the cache grows
+  {
+    const room = memoryOf(), cache = keyValueCache({ room, k: {}, kvDim: 16, half: false, start: 4, seqLen: 60 });
+    cache.hold(3, [], [8, 16, 8]);
+    cache.place();
+    assert.deepEqual([0, 1, 2].map((place) => [cache.width(place), cache.row(place), cache.offset(cache.index(place))]), [[8, 32, 0], [16, 64, 32], [8, 32, 96]]);
+    assert.deepEqual(room.taken, [[4096, 2 * 4 * 128]], "the positions of every place, of its own width");
+    for (const [place, tag] of [[0, 1], [1, 2], [2, 3]]) {
+      for (let p = 0; p < 4; p++) room.F.fill(tag * 100 + p, (cache.keys + cache.capacity * cache.offset(place) + p * cache.row(place)) / 4, (cache.keys + cache.capacity * cache.offset(place) + (p + 1) * cache.row(place)) / 4);
+    }
+    cache.grow(10);
+    const read = cache.read(0, 4);
+    assert.equal(read.keys.length, 4 * (8 + 16 + 8), "read back each place at its width");
+    assert.deepEqual([read.keys[0], read.keys[3 * 8], read.keys[4 * 8], read.keys[4 * 8 + 4 * 16], read.keys[4 * 8 + 4 * 16 + 3 * 8]], [100, 103, 200, 300, 303], "every block moved whole as it grew");
+    assert.throws(() => keyValueCache({ room: memoryOf(), k: {}, kvDim: 8, half: false, start: 4, seqLen: 60 }).hold(1, [], [16]), /wider than|keeps keys and values 16 wide/);
+  }
   console.log("ok: the cache: the kinds' layers take their places, it takes its room when it is placed, every byte is kept as it grows (twice, to a position, to the context), in float32 and in float16; a window's ring, taken first and never grown");
 }
 
 // ---- the layers that attend
 {
   const plan = { dim: 64, n_heads: 4, n_kv_heads: 2, head_size: 16, seq_len: 48, rotary: 16, widths: { q: 64, kv: 32 }, tensors: {} };
+  // (T331.2: a layer's facts of its heads and stacks: the model's heads, its place)
+  const att = (fact) => ({ window: 0, local: false, head: 16, rotary: 16, wide: false, stack: fact.place, double: false, ffn: fact.place, kept: fact.place, reads: fact.place, ...fact });
   const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 64, kv: 32 }, gate: false, numbers: {} };
   assert.deepEqual(attention.frame(sizes), { arrays: [], apart: [["att", 48 * 4 * 4]] }, "the scores of a token, apart from its frame");
   assert.deepEqual(attention.frame({ ...sizes, gate: true }).arrays, [["gate", 64 * 4]], "and a gate where the layers gate their output");
@@ -168,7 +187,7 @@ const S = 100000;
   // a Llama's layer: three matrices, RoPE, the cache, one phase of every token's heads, the output
   const { said, layers, cache, at, vector, cacheSaid } = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag"], true);
   assert.equal(layers.clear, undefined, "keys and values can be written again at any position: nothing to clear");
-  layers.layer(1, { kind: "attention", place: 1, rope: true })(3, 5);
+  layers.layer(1, att({ kind: "attention", place: 1, rope: true }))(3, 5);
   const KV = cache.KV, layerKeys = cache.keys + (5 + 1) * 16 * KV, layerValues = cache.values + (5 + 1) * 16 * KV;
   assert.deepEqual(names(said), ["matmuls", "rope", "rope", "rope", "rope", "rope", "rope", "phase", "matmuls"]);
   assert.deepEqual(said[0], ["matmuls", at.xb, 3, ["wq", at.q, S, 1], ["wk", at.kNow, S, 1], ["wv", at.vNow, S, 1]]);
@@ -181,12 +200,12 @@ const S = 100000;
   assert.deepEqual(said[8], ["matmuls", at.xb, 3, ["wo", at.xb2, S, 1]]);
   // a layer RoPE leaves alone, on float32 keys and values
   const plain = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag"]);
-  plain.layers.layer(0, { kind: "attention", place: 0, rope: false })(2, 0);
+  plain.layers.layer(0, att({ kind: "attention", place: 0, rope: false }))(2, 0);
   assert.deepEqual(names(plain.said), ["matmuls", "phase", "matmuls"]);
   assert.equal(plain.said[1][1][0], 3, "the attention over float32 keys and values");
   // Qwen2's biases, Qwen3's norms of the heads and a Qwen3.5's gate, each where the model has the tensor
   const all = stand(["wq", "wk", "wv", "wo", "wg", "bq", "bk", "bv", "q_norm", "k_norm", "freq_cis_real", "freq_cis_imag"]);
-  all.layers.layer(2, { kind: "attention", place: 2, rope: true })(1, 9);
+  all.layers.layer(2, att({ kind: "attention", place: 2, rope: true }))(1, 9);
   assert.deepEqual(names(all.said), ["matmuls", "add_inplace", "add_inplace", "add_inplace", ...Array(6).fill("rmsnorm"), "rope", "rope", "phase", "gate", "matmuls"]);
   assert.equal(all.said[0].length, 3 + 4, "the gate is one more matrix of the same input");
   assert.deepEqual(all.said[1], ["add_inplace", all.at.q, all.vector("bq") + 2 * 64 * 4, 64]);
@@ -197,7 +216,7 @@ const S = 100000;
   // and a window of 7: the first two attend from position 0, the third from 1, the fourth from 2
   {
     const local = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"]);
-    local.layers.layer(1, { kind: "attention", place: 1, rope: true, window: 7, local: true })(4, 5);
+    local.layers.layer(1, att({ kind: "attention", place: 1, rope: true, window: 7, local: true }))(4, 5);
     const KV = local.cache.KV, keys = local.cache.keys + (5 + 1) * 16 * KV, values = local.cache.values + (5 + 1) * 16 * KV;
     const cos = local.vector("local_cis_real"), sin = local.vector("local_cis_imag");
     assert.ok(cos && sin && cos !== local.vector("freq_cis_real"));
@@ -208,23 +227,23 @@ const S = 100000;
     })], "each token's heads over the last 7 positions, its own among them");
     // the two facts apart: a window with the model's own tables, and the local tables with no window
     const windowed = stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"]);
-    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 2, local: false })(1, 9);
+    windowed.layers.layer(0, att({ kind: "attention", place: 0, rope: true, window: 2, local: false }))(1, 9);
     assert.deepEqual(windowed.said[1].slice(2, 4), [windowed.vector("freq_cis_real") + 9 * 8 * 4, windowed.vector("freq_cis_imag") + 9 * 8 * 4]);
     assert.deepEqual(windowed.said.at(-2)[1].slice(3, 7), [windowed.cache.keys + 5 * 16 * KV + 8 * KV, windowed.cache.values + 5 * 16 * KV + 8 * KV, windowed.at.att, 1],
       "a window of 2 at position 9: from position 8, where the token is the second");
     windowed.said.length = 0;
-    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 0, local: true })(1, 9);
+    windowed.layers.layer(0, att({ kind: "attention", place: 0, rope: true, window: 0, local: true }))(1, 9);
     assert.deepEqual(windowed.said[1].slice(2, 4), [windowed.vector("local_cis_real") + 9 * 8 * 4, windowed.vector("local_cis_imag") + 9 * 8 * 4]);
     assert.equal(windowed.said.at(-2)[1][6], 9, "no window: every position");
     // a window of one position: the token itself; and one longer than the text: every position
     windowed.said.length = 0;
-    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 1, local: false })(2, 3);
+    windowed.layers.layer(0, att({ kind: "attention", place: 0, rope: true, window: 1, local: false }))(2, 3);
     assert.deepEqual(windowed.said.at(-2).slice(1).map((job) => job[6]), [0, 0]);
     windowed.said.length = 0;
-    windowed.layers.layer(0, { kind: "attention", place: 0, rope: true, window: 40, local: false })(2, 3);
+    windowed.layers.layer(0, att({ kind: "attention", place: 0, rope: true, window: 40, local: false }))(2, 3);
     assert.deepEqual(windowed.said.at(-2).slice(1).map((job) => job[6]), [3, 4]);
     // a plan with a local layer and no tables for it is refused as the layer is made
-    assert.throws(() => stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag"]).layers.layer(0, { kind: "attention", place: 0, rope: true, window: 4, local: true }),
+    assert.throws(() => stand(["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag"]).layers.layer(0, att({ kind: "attention", place: 0, rope: true, window: 4, local: true })),
       /^Error: The plan has a local layer and no RoPE tables of the local layers\.$/);
   }
   assert.deepEqual(all.said[13], ["gate", all.at.xb, all.at.xb, all.at.gate, 64]);
@@ -236,7 +255,7 @@ const S = 100000;
     const room = memoryOf(), cacheSaid = [];
     const cache = keyValueCache({ room, k: new Proxy({}, { get: (_, name) => (...args) => cacheSaid.push([name, ...args]) }), kvDim: 32, half: true, start: 16, seqLen: 48 });
     const made = coreOf(plan, { has: ["wq", "wk", "wv", "wo", "freq_cis_real", "freq_cis_imag", "local_cis_real", "local_cis_imag"], cache, sizes });
-    const facts = [0, 1, 2].map((place) => ({ kind: "attention", place, rope: true, window: place === 1 ? 5 : 0, local: place === 1 }));
+    const facts = [0, 1, 2].map((place) => (att({ kind: "attention", place, rope: true, window: place === 1 ? 5 : 0, local: place === 1 })));
     const layers = attention.make(made.core, 3, facts);
     assert.deepEqual([cache.ring(0), cache.ring(1)?.size, cache.index(2)], [null, 21, 1]);
     const steps = facts.map((fact) => layers.layer(fact.place, fact));
@@ -362,9 +381,40 @@ const S = 100000;
   console.log("ok: a short convolution: its frame and its numbers; a step's two matmuls and the kernel between them, a token at a time; the rows; what position 0 clears");
 }
 
+// ---- T331.2: a layer of wide heads (a Gemma 4's full-attention layer) takes its own stacks at its place among them,
+// its heads' size and how much RoPE turns; the heads of v are normalized by a weight of ones where the plan says so
+{
+  const plan = { dim: 64, n_heads: 4, n_kv_heads: 1, head_size: 16, seq_len: 48, rotary: 8, widths: { q: 128, kv: 32 }, tensors: {}, value_norm: true };
+  const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 128, kv: 32 }, gate: false, numbers: {} };
+  const room = memoryOf(), cache = keyValueCache({ room, k: { to_f16() {} }, kvDim: 32, half: false, start: 16, seqLen: 48 });
+  const made = coreOf(plan, { has: ["wq", "wk", "wv", "wo", "wq_wide", "wk_wide", "wv_wide", "wo_wide", "q_norm", "k_norm", "q_norm_wide", "k_norm_wide", "freq_cis_real", "freq_cis_imag"], cache, sizes });
+  const fact = (place, wide, stack) => ({ kind: "attention", place, rope: true, window: 0, local: false, head: wide ? 32 : 16, rotary: wide ? 8 : 16, wide, stack, double: false, ffn: place, kept: stack, reads: place });
+  const facts = [fact(0, false, 0), fact(1, true, 0), fact(2, false, 1), fact(3, true, 1)];
+  const layers = attention.make(made.core, 4, facts);
+  assert.deepEqual([0, 1, 2, 3].map((place) => cache.width(place)), [16, 32, 16, 32], "each place as wide as its heads' keys and values");
+  const steps = facts.map((f) => layers.layer(f.place, f));
+  cache.place();
+  const ones = made.room.taken.find(([, bytes]) => bytes === 32 * 4)[0];
+  assert.ok(made.room.F.subarray(ones / 4, ones / 4 + 32).every((one) => one === 1), "the weight of v's norm: ones, as wide as the widest head");
+  made.said.length = 0;
+  steps[3](1, 5);
+  const { at } = made, said = made.said;
+  assert.deepEqual(said[0], ["matmuls", at.xb, 1, ["wq_wide", at.q, S, 1], ["wk_wide", at.kNow, S, 1], ["wv_wide", at.vNow, S, 1]], "the wide stacks, at its place among them");
+  assert.deepEqual(said.filter(([name]) => name === "rmsnorm").map(([, , , w, n]) => [w, n]),
+    [...Array(4).fill([made.vector("q_norm_wide") + 32 * 4, 32]), [made.vector("k_norm_wide") + 32 * 4, 32], [ones, 32]], "q's and k's heads by the wide norms, v's by ones");
+  assert.deepEqual(said.filter(([name]) => name === "rope").map((call) => call.slice(4)), [[4, 32, 8], [1, 32, 8]], "RoPE: heads of 32, 8 of their values");
+  assert.equal(said.find(([name]) => name === "rope")[2], made.vector("freq_cis_real") + 5 * 16 * 4, "the table's row of the wide heads, 16 angles a position");
+  assert.deepEqual(said.at(-1), ["matmuls", at.xb, 1, ["wo_wide", at.xb2, S, 1]]);
+  made.said.length = 0;
+  steps[2](1, 5);
+  assert.deepEqual(said[0].slice(3).map(([name, , , l]) => [name, l]), [["wq", 1], ["wk", 1], ["wv", 1]], "a narrow layer, at its place among the narrow ones");
+  console.log("ok: a layer of wide heads: its own stacks at its place among them, its heads' size and RoPE; the heads of v normalized by ones; every place of the cache as wide as its layer's keys and values");
+}
+
 // ---- the two FFNs
 {
-  const plan = { dim: 16, hidden_dim: 48, activation: "silu" };
+  // (T331.2: every layer's FFN of the model's width, at its place in the stacks)
+  const plan = { dim: 16, hidden_dim: 48, activation: "silu", layers: Array.from({ length: 4 }, (_, l) => ({ double: false, ffn: l })) };
   const gated = coreOf(plan, { has: ["w1", "w2", "w3"] });
   gatedFfn(gated.core)(3, 2);
   const at = gated.at;
@@ -396,6 +446,16 @@ const S = 100000;
   plainFfn(plain.core)(3, 1);
   assert.deepEqual(plain.said, [["matmuls", at.xb, 1, ["w1", at.hb, S, 3]], ["gelu", at.hb, at.hb, plain.vector("b1") + 3 * 48 * 4, 48],
     ["matmuls", at.hb, 1, ["w2", at.xb2, S, 3]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x, plain.vector("b2") + 3 * 16 * 4, 16]]);
+  // T331.2: an FFN twice as wide (a Gemma 4's): its own stacks, at its place among them, its width
+  const doubled = coreOf({ ...plan, activation: "gelu", layers: [{ double: false, ffn: 0 }, { double: true, ffn: 0 }, { double: false, ffn: 1 }, { double: true, ffn: 1 }] },
+    { has: ["w1", "w2", "w3", "w1_double", "w2_double", "w3_double"] });
+  const ffn = gatedFfn(doubled.core);
+  ffn(3, 1);
+  ffn(2, 1);
+  assert.deepEqual(doubled.said, [["matmuls", at.xb, 1, ["w1_double", at.hb, S, 1], ["w3_double", at.hb2, S, 1]], ["geglu", at.hb, at.hb, at.hb2, 96],
+    ["matmuls", at.hb, 1, ["w2_double", at.xb2, S, 1]], ["add_inplace", at.x, at.xb2, 16],
+    ["matmuls", at.xb, 1, ["w1", at.hb, S, 1], ["w3", at.hb2, S, 1]], ["geglu", at.hb, at.hb, at.hb2, 48],
+    ["matmuls", at.hb, 1, ["w2", at.xb2, S, 1]], ["add_inplace", at.x, at.xb2, 16]]);
   console.log("ok: the FFNs: a gated one (two matrices, swiglu or a Gemma's geglu, one more, the norm behind where the model has one, into the stream) and GPT-2's (a matrix, gelu with its bias, one more, into the stream with its bias)");
 }
 

@@ -117,6 +117,10 @@ KINDS_SAID = {"tiled", "own_kinds"}
 # (two keys of a layer's facts, which are taken out of the layers' record above and said here)
 LOCAL_SAID = {"activation"}
 LOCAL_FACTS = ("window", "local")
+# and T331.2's: the heads of v normalized and the cap of the logits, and of every layer the size of its heads, how much
+# RoPE turns, its stacks and its FFN's
+WIDE_SAID = {"value_norm", "softcap"}
+WIDE_FACTS = ("head", "rotary", "wide", "stack", "double", "ffn", "kept", "reads")
 
 
 for name, headers, form, engine, source in FAMILIES:
@@ -141,13 +145,16 @@ for name, headers, form, engine, source in FAMILIES:
             if engine is not None:
                 # (T359.5's keys are a record of their own, so that the plan as it was before them is still compared
                 # with a tree that has none)
-                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS | KINDS_SAID | LOCAL_SAID)
+                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS | KINDS_SAID | LOCAL_SAID | WIDE_SAID)
                 if plan is not None and AHEAD & set(plan):
-                    before = {**plan, "layers": [{key: value for key, value in layer.items() if key not in LOCAL_FACTS} for layer in plan["layers"]]}
+                    before = {**plan, "layers": [{key: value for key, value in layer.items() if key not in LOCAL_FACTS + WIDE_FACTS} for layer in plan["layers"]]}
                     said(f"{case}, {dtype}: engine's layers and widths", lambda: {key: before[key] for key in sorted(AHEAD)})
                 if plan is not None and LOCAL_SAID & set(plan):
                     said(f"{case}, {dtype}: engine's activation and local layers",
                          lambda: {"activation": plan["activation"], "layers": [[layer[key] for key in LOCAL_FACTS] for layer in plan["layers"]]})
+                if plan is not None and WIDE_SAID & set(plan):
+                    said(f"{case}, {dtype}: engine's heads and FFN of every layer",
+                         lambda: {**{key: plan[key] for key in sorted(WIDE_SAID)}, "layers": [[layer[key] for key in WIDE_FACTS] for layer in plan["layers"]]})
                 if plan is not None and KINDS_SAID & set(plan):
                     said(f"{case}, {dtype}: engine's order and kinds", lambda: {key: plan[key] for key in sorted(KINDS_SAID)})
                 if plan is not None and FACTS & set(plan):

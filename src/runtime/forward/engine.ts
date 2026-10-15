@@ -312,7 +312,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // (memory.ts's frameArrays()); what a kind keeps of a token apart from its frame follows the frames, BATCH of each
   const framed = had.map(({ kind }) => kinds[kind].frame(sizes));
   // (xs: the most a group of 32 activations takes there by any packing of the model's)
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, framed, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined), S = frameBytes(inFrame);
+  // (T331: as wide as the widest FFN, sizes.hidden)
+  const inFrame = frameArrays(dim, sizes.hidden, kvDim, qDim, framed, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined), S = frameBytes(inFrame);
   const named = [...inFrame, ...framed.flatMap(({ apart = [] }) => apart)].map(([name]) => name);
   const twice = named.find((name, i) => named.indexOf(name) !== i);
   if (twice) throw new Error(`Two kinds of this model's layers keep an array called ${JSON.stringify(twice)} for a token.`);
@@ -332,6 +333,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const bo = floats("bo"), b1 = floats("b1"), b2 = floats("b2"), bq = floats("bq"), bk = floats("bk"), bv = floats("bv");
   const qNorm = floats("q_norm"), kNorm = floats("k_norm");  // T124: Qwen3 normalizes every head of q and k
   const eps = plan.rms_norm_eps ?? 1e-5;  // the epsilon of every RMSNorm (T124: Qwen3's is 1e-6)
+  // T331: the number every layer ends by multiplying the stream by (0: the model has none), and the cap of the logits
+  // (softcap * tanh(logits / softcap); 0: none)
+  const layerScale = floats("layer_scale"), softcap = plan.softcap;
   const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
   const positions = floats("positions");  // GPT-2's learned table of positions (0: the model has none)
   const embedding = T.token_embedding_table!;
@@ -542,6 +546,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         norm(xb + t * S, (parallel ? before : x) + t * S, ffnW + l * D, ffnB + l * D);
       }
       ffn(l, count);
+      if (layerScale) {
+        const scale = F[layerScale / 4 + l];
+        for (let t = 0; t < count; t++) for (let i = (x + t * S) / 4, end = i + dim; i < end; i++) F[i] *= scale;
+      }
     }
     if (keeping.length) stateAt = pos0 + count;
     if (!needLogits) return;
@@ -553,6 +561,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     });
     matmuls(xb, 1, [[wcls, logits, 0, 0]]);
     if (channels.length) k.add_columns(logits, columns, picked, channels.length, vocab);
+    if (softcap) {
+      // (in float32, as NumPy: the quotient, its tanh and the product each rounded)
+      for (let i = logits / 4, end = i + vocab; i < end; i++) F[i] = Math.fround(softcap * Math.fround(Math.tanh(Math.fround(F[i] / softcap))));
+    }
   }
   const forward = (token: number, pos: number, needLogits: boolean) => run([token], pos, needLogits);
 

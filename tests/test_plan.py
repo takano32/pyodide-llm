@@ -42,7 +42,7 @@ cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0
 KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_size", "vocab_size", "seq_len", "rotary",
         "parallel_residual", "kv_start", "rms_norm_eps", "shared_classifier", "int8", "relaxed", "tensors", "derived",
         "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn",
-        "activation", "tiled", "own_kinds"}
+        "activation", "tiled", "own_kinds", "value_norm", "softcap"}
 
 
 def no_bytes(offset, length):
@@ -87,8 +87,10 @@ def test_a_plan_is_made_of_a_header_a_form_and_a_dtype(name, header, form, more,
 def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     dims, rows = Dims(header, form), tensor_rows(header, form)
     layers = forward_plan(dims, "int8", no_bytes, int8=False, kv_start=64, **more)["layers"]
-    assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()), local=more.get("local"))) and len(layers) == header[2]
-    assert all(set(layer) == {"kind", "place", "rope", "window", "local"} for layer in layers)
+    assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()), local=more.get("local"),
+                                                rotary=more.get("rotary", 0))) and len(layers) == header[2]
+    assert all(set(layer) == {"kind", "place", "rope", "window", "local", "head", "rotary", "wide", "stack", "double", "ffn", "kept", "reads"}
+               for layer in layers)
     # a layer's kind is the stack its tensors are in, and its place is its place in that stack
     attending, stateful = dims.layers(ATTENDING), dims.layers(STATEFUL)
     assert [l for l, layer in enumerate(layers) if layer["kind"] == ATTENTION] == attending

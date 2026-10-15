@@ -328,12 +328,18 @@ def test_no_other_architecture_is_changed_by_the_layers_of_another_width():
 
 
 def test_the_pages_engine_is_handed_no_gemma4_until_it_reads_one():
-    """T331.2 has forward.js read what a Gemma 4's layers are: until then no plan of one is made, where it would run as
-    another model without a word."""
+    """T331.2 has forward.js read what a Gemma 4's layers are; T330.2 and T329.2 its layers that share keys and values
+    and its embedding of every layer: until then no plan of a model with those is made, where it would run as another
+    model without a word."""
     from engine.plan import Settings, forward_plan
-    dims = Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16})
-    with pytest.raises(ValueError, match="does not run a Gemma 4 yet"):
-        forward_plan(dims, "int8", lambda offset, length: bytes(length), Settings(int8=True, kv_start=256))
+    no_bytes = lambda offset, length: bytes(length)
+    forward_plan(Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16}), "int8", no_bytes, Settings(int8=True, kv_start=256))
+    forward_plan(Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16, "kv_shared": {"layers": [3], "from": [1]}}),
+                 "int8", no_bytes, Settings(int8=True, kv_start=256))
+    for form in ({"per_layer": 8},):
+        dims = Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16, **form})
+        with pytest.raises(ValueError, match="does not run a Gemma 4 yet"):
+            forward_plan(dims, "int8", no_bytes, Settings(int8=True, kv_start=256))
 
 
 ALL = dict(kinds="sslsslsslssl", sharing=5, double=True, per_layer=8)
