@@ -145,13 +145,17 @@ assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8),
 // The stops are generation_config.json's (<eos>, <turn|>, <|tool_response>: the converter says <bos> and <eos>, T524);
 // the BOS and the format are the converter's (no `bos` nor `template`); the sampling is generation_config.json's
 {
-  for (const [size, revision, download, loaded, devices] of [
-    ["E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", 10246621918, 5207962792 - 2642411520, "desktop only"],
-    ["E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", 15992595884, 8397500612 - 3170893824, "desktop only · Chrome and Firefox"]]) {
+  // (T529: the weights from ggml-org's Q8_0 GGUF, half the download; the vocabulary, config.json and template the original's)
+  for (const [size, revision, gguf, download, loaded, devices] of [
+    ["E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", "b4243c156154b6dca9324415f8c7ccc098b4aed1", 4967497152, 5207962792 - 2642411520, "desktop only"],
+    ["E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", "b8093469224f83f5c38f691eb906c380e9e63114", 8031242688, 8397500612 - 3170893824, "desktop only · Chrome and Firefox"]]) {
     const entry = byId(`hf-gemma-4-${size.toLowerCase()}`);
     assert.equal(entry.name, `Google Gemma 4 ${size}`);
-    assert.deepEqual(entry.hf, { repo: `google/gemma-4-${size}-it`, revision, weights: "model.safetensors", config: "config.json", tokenizer: "tokenizer.json" });
+    assert.deepEqual(entry.hf, { repo: `ggml-org/gemma-4-${size}-it-GGUF`, revision: gguf, weights: `gemma-4-${size}-it-Q8_0.gguf`,
+      vocabulary: { repo: `google/gemma-4-${size}-it`, revision, tokenizer: "tokenizer.json" } });
+    assert.equal(entry.original, `google/gemma-4-${size}-it`, entry.id);
     assert.equal(LICENSES[entry.hf.repo], "Apache License 2.0", entry.id);
+    assert.equal(LICENSES[entry.original], "Apache License 2.0", entry.id);
     assert.ok(entry.download === download && entry.loaded === loaded && modelBytes(entry) === loaded, entry.id);
     assert.ok(entry.note.endsWith(` · ${devices}`), `${entry.id}: ${entry.note}`);
     assert.deepEqual(entry.options, { stop_tokens: [1, 106, 50] }, entry.id);
