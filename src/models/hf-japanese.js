@@ -164,14 +164,14 @@ export const HF_JAPANESE = [
       "llm-jp/llm-jp-3-3.7b-instruct3", "f5d5466a3316e0c898b4347ece6557a756921220"), download: 4022249856,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
-  // embedding), and its instruction-sft
-  { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "japanese-large-lm 3.6B", note: "日本語 · fetches 4.0 GB (GGUF) → int8 4.0 GB",
-    ...ggufOf("mmnga/line-corp-japanese-large-lm-3.6b-gguf", "f7392e550d05beb303b40c907d7ef833376c07c7", "line-corp-japanese-large-lm-3.6b-q8_0.gguf",
-      "line-corporation/japanese-large-lm-3.6b", "3ffb24daf746a96f715ff6b5e161c694b510ff03", "spiece.model"), download: 3950123264,
+  // embedding), and its instruction-sft. The safetensors: mmnga's Q8_0 GGUFs of both (2023-09) hold the very values,
+  // but q, k and v of a head in turns as Hugging Face has them (gguf_check.py tensors, run 38731171773), stockmark's
+  // case of T249
+  { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "japanese-large-lm 3.6B", note: "日本語 · fetches 7.2 GB → int8 4.0 GB",
+    hf: hf("line-corporation/japanese-large-lm-3.6b", "3ffb24daf746a96f715ff6b5e161c694b510ff03", "spiece.model"), download: 7237638964,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  { group: "hf", id: "hf-japanese-large-lm-3.6b-instruction-sft", name: "japanese-large-lm 3.6B instruction-sft", note: "answers instructions · 日本語 · fetches 4.0 GB (GGUF) → int8 4.0 GB",
-    ...ggufOf("mmnga/line-corp-japanese-large-lm-3.6b-instruction-sft-gguf", "5f562eb5c9669b0123c9f71b14976fcbe085994e", "line-corp-japanese-large-lm-3.6b-instruction-sft-q8_0.gguf",
-      "line-corporation/japanese-large-lm-3.6b-instruction-sft", "3d357b288f78beab8a3af7d962cf98d7d93bf72d", "spiece.model"), download: 3950123264,
+  { group: "hf", id: "hf-japanese-large-lm-3.6b-instruction-sft", name: "japanese-large-lm 3.6B instruction-sft", note: "answers instructions · 日本語 · fetches 7.2 GB → int8 4.0 GB",
+    hf: hf("line-corporation/japanese-large-lm-3.6b-instruction-sft", "3d357b288f78beab8a3af7d962cf98d7d93bf72d", "spiece.model"), download: 7237638964,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB",
     original: "Qwen/Qwen2.5-7B-Instruct",
