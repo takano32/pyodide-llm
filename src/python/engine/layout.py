@@ -50,8 +50,12 @@ from engine.dtypes import BLOCKS, BYTES, CODEBOOKS, KINDS, QUANTIZED, kind_named
 # None where every row is, which is every file a conversion writes unless it is asked to keep a GGUF's blocks (T363).
 # tiled (T363): a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads (every
 # key head's first one, then every key head's second, ...), which moves no tensor: its input is put in that order.
+# wide (T331): the layers whose heads are of a size of their own (a Gemma 4's full-attention layers: 512 where the
+# others' are 256), see wide_form(): their q, k, v, o and the norms of their heads are stacks of their own. None: none.
+# double (T331): the layers whose FFN is twice as wide (a Gemma 4 E2B's last 20), see double_form(): its three
+# matrices are stacks of their own. None: none.
 FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
-        "convolution": None, "kinds": None, "tiled": None}
+        "convolution": None, "kinds": None, "tiled": None, "wide": None, "double": None}
 
 
 def form_of(options=None):
@@ -117,6 +121,36 @@ def kinds_form(kinds):
     return {str(name): named(kind) for name, kind in kinds.items()} if kinds else None
 
 
+def layer_list(layers, n_layers):
+    """Layers by their numbers, sorted and each once, from a list of Python's or of JavaScript's; a ValueError for one
+    that a model of n_layers layers has not (n_layers None: any)."""
+    layers = layers.to_py() if hasattr(layers, "to_py") else layers
+    layers = tuple(sorted({int(layer) for layer in layers or ()}))
+    if layers and (layers[0] < 0 or (n_layers is not None and layers[-1] >= n_layers)):
+        raise ValueError(f"A model of {n_layers} layers has no layer {layers[0] if layers[0] < 0 else layers[-1]}.")
+    return layers
+
+
+def wide_form(wide, n_layers=None):
+    """T331: the layers whose heads are of a size of their own, FORM's "wide", as {"layers": which they are, in order,
+    "head_dim": the size of their heads}, from a dict of Python or of JavaScript. None for a model without any (a
+    Gemma 4's full-attention layers: transformers' global_head_dim)."""
+    wide = wide.to_py() if hasattr(wide, "to_py") else wide
+    if not wide:
+        return None
+    layers, head = layer_list(wide["layers"], n_layers), int(wide["head_dim"])
+    if head < 2 or head % 2:
+        raise ValueError(f"A head of {head} values is no head that RoPE can turn.")
+    return {"layers": layers, "head_dim": head} if layers else None
+
+
+def double_form(double, n_layers=None):
+    """T331: the layers whose FFN is twice as wide as hidden_dim, FORM's "double", in order, from a list of Python or
+    of JavaScript. None for a model without any (transformers' use_double_wide_mlp: a Gemma 4 E2B's layers that read
+    the keys and values of another)."""
+    return layer_list(double, n_layers) or None
+
+
 class Stateful(NamedTuple):
     """A kind of layer that keeps a state in place of keys and values, as a layout has it (Layout's stateful): the
     rows of STATEFUL are its tensors. What such a layer computes is the forward pass's own (engine/model.py has
@@ -163,6 +197,10 @@ CODES = "codes"
 #   ATTENDING   the layers that keep keys and values (all of them, but in a hybrid model)
 #   STATEFUL    the layers that keep a state in their place: a Qwen3.5's linear-attention layers, an LFM2's convolutions
 EVERY, ATTENDING, STATEFUL = "every", "attending", "stateful"
+# T331: of the layers that attend, those whose heads are of the size of the form's "wide" (WIDE) and the others
+# (NARROW, every one that attends where the form says none); of every layer, those whose FFN is of the form's
+# "double" (DOUBLE) and the others (SINGLE)
+NARROW, WIDE, SINGLE, DOUBLE = "narrow", "wide", "single", "double"
 
 
 class Row(NamedTuple):
@@ -199,6 +237,11 @@ class Dims:
         self.stateful_kind = kind and kind.name
         self.slots = slots_of(kind.layers(numbers, self.n_layers) if kind is not None else [False] * self.n_layers)
         self.kinds = kinds_form(form["kinds"])
+        # T331: the layers whose heads are of a size of their own, and those whose FFN is twice as wide (None: none)
+        self.wide, self.double = wide_form(form["wide"], self.n_layers), double_form(form["double"], self.n_layers)
+        if (self.wide or self.double) and not self.layout.wide:
+            raise ValueError(f"The architecture {self.arch!r} has no layers of heads or of an FFN of another width.")
+        self.wide_head = self.wide["head_dim"] if self.wide else 0
 
     def rows(self):
         """The tensors of the checkpoint, as rows in file order: its architecture's layout, each with the kind the
@@ -220,8 +263,17 @@ class Dims:
 
     def layers(self, per):
         """The layers a stack covers, in the order of the stack."""
+        if per in (NARROW, WIDE):
+            wide = self.wide["layers"] if self.wide else ()
+            return [layer for layer in self.layers(ATTENDING) if (layer in wide) == (per == WIDE)]
+        if per in (SINGLE, DOUBLE):
+            return [layer for layer in range(self.n_layers) if (layer in (self.double or ())) == (per == DOUBLE)]
         return [layer for layer, (stateful, _) in enumerate(self.slots)
                 if per == EVERY or stateful == (per == STATEFUL)]
+
+    def head_of(self, layer):
+        """T331: the size of a layer's heads: the form's "wide" one where the layer is of those."""
+        return self.wide_head if self.wide and layer in self.wide["layers"] else self.head_size
 
     def stack(self, name, role, per, *shape):
         """A row with one tensor of this shape for each of the layers of per."""
@@ -314,6 +366,29 @@ def gemma3(d):
             Row("rms_final_weight", VECTOR, (d.dim,)), *rope_tables(d), *classifier(d)]
 
 
+def gemma4(d):
+    """A Gemma 4 (T331): a Gemma 3's tensors, but stacked by the width of the layer: the attention of the layers whose
+    heads are of the form's "wide" size (q, k, v, o and the norms of their heads, each name with "_wide") after the
+    others', and the FFN of the layers of the form's "double" (twice hidden_dim: each name with "_double") after the
+    others'; and a number every layer multiplies the stream by at its end (layer_scale). Its RoPE tables are of the
+    layers that attend over all the positions, which are the wide ones where there are such."""
+    rows, head = [*embedding(d), d.stack("rms_att_weight", VECTOR, EVERY, d.dim)], d.wide_head or d.head_size
+    for per, suffix, size in ((NARROW, "", d.head_size), (WIDE, "_wide", d.wide_head)):
+        if d.layers(per):
+            q, kv = d.n_heads * size, d.n_kv_heads * size
+            rows += [d.stack("wq" + suffix, MATRIX, per, q, d.dim), d.stack("wk" + suffix, MATRIX, per, kv, d.dim),
+                     d.stack("wv" + suffix, MATRIX, per, kv, d.dim), d.stack("wo" + suffix, MATRIX, per, d.dim, q),
+                     d.stack("q_norm" + suffix, VECTOR, per, size), d.stack("k_norm" + suffix, VECTOR, per, size)]
+    rows += [d.stack("rms_att_post_weight", VECTOR, EVERY, d.dim), d.stack("rms_ffn_weight", VECTOR, EVERY, d.dim)]
+    for per, suffix, hidden in ((SINGLE, "", d.hidden_dim), (DOUBLE, "_double", 2 * d.hidden_dim)):
+        if d.layers(per):
+            rows += [d.stack("w1" + suffix, MATRIX, per, hidden, d.dim), d.stack("w2" + suffix, MATRIX, per, d.dim, hidden),
+                     d.stack("w3" + suffix, MATRIX, per, hidden, d.dim)]
+    return rows + [d.stack("rms_ffn_post_weight", VECTOR, EVERY, d.dim), d.stack("layer_scale", VECTOR, EVERY, 1),
+                   Row("rms_final_weight", VECTOR, (d.dim,)), Row("freq_cis_real", TABLE, (d.seq_len, head // 2)),
+                   Row("freq_cis_imag", TABLE, (d.seq_len, head // 2)), *classifier(d)]
+
+
 def gpt2(d):
     """A GPT-2: LayerNorm (a weight and a bias), a bias after every projection, a learned table of positions instead
     of RoPE, and an FFN of two matrices instead of three (no gate). Same attention, of heads that fill dim.
@@ -332,7 +407,9 @@ def gpt2(d):
 
 # ---- the architectures
 # How much of a head RoPE turns (Layout's rope; None: none of it, the model has a learned table of positions)
-WHOLE, PARTLY = "whole", "partly"
+# (T331: PROPORTIONAL, a Gemma 4's: the first rotary values of a head, by the angles of the whole head's width where
+# PARTLY's are of the width it turns)
+WHOLE, PARTLY, PROPORTIONAL = "whole", "partly", "proportional"
 # The activation of an FFN (Layout's activation): a SiLU, or a GELU (its tanh form, which GPT-2 calls gelu_new)
 SILU, GELU = "silu", "gelu"
 
@@ -350,7 +427,8 @@ class Layout(NamedTuple):
     rows: Callable
     # the kind of its layers that keep a state in place of keys and values, where it has such layers
     stateful: Optional[Stateful] = None
-    # how much of each head of q and k RoPE turns: WHOLE, PARTLY (the options say how many values: "rotary"), or None
+    # how much of each head of q and k RoPE turns: WHOLE, PARTLY or PROPORTIONAL (the options say how many values:
+    # "rotary"; T331: a local layer turns its whole head all the same), or None
     rope: Optional[str] = WHOLE
     # yarn's magnitude is in the RoPE tables the engine makes for a file that has none (rope_magnitude())
     yarn_magnitude: bool = False
@@ -368,6 +446,10 @@ class Layout(NamedTuple):
     # some of its layers may be local ones (T261): they attend a window of the last positions, and RoPE turns their q
     # and k by a base of their own (local_layers())
     local: bool = False
+    # T331: what its attention reads of v is normalized head by head (an RMSNorm without a weight)
+    value_norm: bool = False
+    # T331: some of its layers may have heads of another size, or an FFN twice as wide (the form's "wide", "double")
+    wide: bool = False
 
 
 # by the architecture's name (FORM's "arch")
@@ -378,6 +460,7 @@ LAYOUTS = {
     "qwen35": Layout(qwen35, stateful=GATED_DELTA, rope=PARTLY, rotatable=True),
     "lfm2": Layout(lfm2, stateful=SHORT_CONVOLUTION),
     "gemma3": Layout(gemma3, activation=GELU, local=True),
+    "gemma4": Layout(gemma4, rope=PROPORTIONAL, activation=GELU, local=True, value_norm=True, wide=True),
 }
 
 

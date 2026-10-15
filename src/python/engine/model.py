@@ -28,7 +28,7 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layout import (GELU, PARTLY, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
+from engine.layout import (DOUBLE, GELU, NARROW, PARTLY, PROPORTIONAL, WIDE, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
                            stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
@@ -114,7 +114,7 @@ class Llama:
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
                  convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, tiled=None,
-                 local=None):
+                 local=None, wide=None, double=None, softcap=0.0):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -136,6 +136,12 @@ class Llama:
         what its attention and its FFN give as well, whose FFN's activation is a GELU, and most of whose layers
         are local ones. local: which those are, the window they attend and the base RoPE turns them by
         (engine/layout.py's local_layers(); the file is the same whichever they are).
+        arch="gemma4" (T331): Google's Gemma 4, a Gemma 3 whose norms are of the weight itself (not 1 + it), that
+        normalizes each head of v too (without a weight), whose layers end by multiplying the stream by a number of
+        their own (layer_scale), and whose full-attention layers turn the first rotary values of a head by the angles
+        of its whole width (proportional RoPE). wide: the layers whose heads are of a size of their own (FORM's: the
+        full-attention layers' 512), double: those whose FFN is twice as wide (FORM's), softcap: the logits are
+        softcap * tanh(logits / softcap) (0: as they are).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is engine/layout.py that says what is there.
@@ -233,9 +239,21 @@ class Llama:
         # of its kind's tensors). The form is held to its architecture there: one without the layers its architecture
         # has, or with another's, is refused
         form = {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": linear,
-                "convolution": convolution, "kinds": kinds}
+                "convolution": convolution, "kinds": kinds, "wide": wide, "double": double}
         dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
         self.slots = dims.slots
+        # T331: for every layer that attends, by its place among them: the names of its attention's tensors are those
+        # of its width (WIDE's "_wide"), its place in their stacks, and the size of its heads; and for every layer,
+        # the name of its FFN's (DOUBLE's "_double") and its place in theirs. Every layer of a model without such is
+        # ("", its place, head_size) and ("", l)
+        self.wide, self.double = dims.wide, dims.double
+        narrow, wide_layers = dims.layers(NARROW), dims.layers(WIDE)
+        self.heads = [("_wide", wide_layers.index(l), dims.wide_head) if l in wide_layers else ("", narrow.index(l), self.head_size)
+                      for l in sorted(narrow + wide_layers)]
+        doubled = dims.layers(DOUBLE)
+        self.ffns = [("_double", doubled.index(l)) if l in doubled else ("", l - sum(d < l for d in doubled))
+                     for l in range(n_layers)]
+        self.softcap = float(softcap or 0.0)
         # the numbers of its layers that keep a state, under their kind's name: linear (T229, a Qwen3.5's
         # linear-attention layers), convolution (T260, an LFM2's convolution layers); None, of a model without
         for kind in stateful_kinds():
@@ -245,13 +263,17 @@ class Llama:
         self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
         # (the activation of the FFN: a SiLU, or a GELU)
         self.activation = gelu if layout.activation == GELU else silu
-        self.turning, self.partly = layout.rope is not None, layout.rope == PARTLY
+        self.turning, self.partly = layout.rope is not None, layout.rope in (PARTLY, PROPORTIONAL)
+        # T331: what the attention reads of v is normalized head by head, without a weight
+        self.value_norm = layout.value_norm
         # (and of its layers that keep a state: the name of the reference's step that is theirs, and of their states;
         # none, unless NumPy computes such layers, below)
         self.stateful, self.states = None, ()
         self.positions = None
         self.q_norm = self.k_norm = self.wg = None
+        self.q_norm_wide = self.k_norm_wide = None  # (T331: of the wide layers)
         self.rms_att_post_weight = self.rms_ffn_post_weight = None
+        self.layer_scale = None  # T331
         # what the file holds: its rows
         self.rows = dims.rows()
         if tiled:
@@ -266,7 +288,10 @@ class Llama:
         # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads
         # them, and widens what has to be widened, itself), or an array
         self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
-        tables = rope_tables(arch, self.seq_len, self.head_size, self.rotary, self.rope_magnitude, stored, frequencies)
+        # (T331: the tables of the layers that attend over all the positions, whose heads are the wide ones where the
+        # model has such)
+        tables = rope_tables(arch, self.seq_len, dims.wide_head or self.head_size, self.rotary, self.rope_magnitude,
+                             stored, frequencies)
         if tables is not None:
             self.freq_cis_real, self.freq_cis_imag = tables
         # T261: and those of the local layers, which no file has
@@ -292,8 +317,14 @@ class Llama:
             # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
             # (the linear-attention layers and the convolution layers have no keys and values)
             attending = sum(not lines for lines, _ in self.slots)
-            self.key_cache = np.zeros((attending, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
-            self.value_cache = np.zeros_like(self.key_cache)
+            if self.wide is None:
+                self.key_cache = np.zeros((attending, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
+                self.value_cache = np.zeros_like(self.key_cache)
+            else:
+                # T331: a layer's keys and values are of the size of its heads: one array for each
+                self.key_cache = [np.zeros((self.n_kv_heads, min(KV_START, self.seq_len), size), dtype=np.float32)
+                                  for _, _, size in self.heads]
+                self.value_cache = [np.zeros_like(keys) for keys in self.key_cache]
             if dims.stateful_kind is not None:
                 # their states (STATEFUL_LAYERS), each an attribute of its name. state_at: the next position
                 self.stateful, states = STATEFUL_LAYERS[dims.stateful_kind]
@@ -341,15 +372,14 @@ class Llama:
         are not needed), with its keys and values, or its layers' states, kept for the tokens after it."""
         n_kv_heads, head_size = self.n_kv_heads, self.head_size
         kv_mul = self.n_heads // n_kv_heads  # >1 with grouped-query attention
-        if pos >= self.key_cache.shape[2]:
-            # room for twice as many positions (see KV_START)
-            positions = min(max(2 * self.key_cache.shape[2], pos + 1), self.seq_len)
+        if pos >= self.key_cache[0].shape[-2]:
+            # room for twice as many positions (see KV_START); T331: of each layer's array, where each has one
+            positions = min(max(2 * self.key_cache[0].shape[-2], pos + 1), self.seq_len)
+            grown = lambda cache: np.concatenate([cache, np.zeros((*cache.shape[:-2], positions - cache.shape[-2],
+                                                                   cache.shape[-1]), dtype=np.float32)], axis=-2)
             for name in ("key_cache", "value_cache"):
                 cache = getattr(self, name)
-                larger = np.zeros((*cache.shape[:2], positions, head_size), dtype=np.float32)
-                larger[:, :, :cache.shape[2]] = cache
-                setattr(self, name, larger)
-        scale = np.float32(1.0 / math.sqrt(head_size))
+                setattr(self, name, [grown(layer) for layer in cache] if isinstance(cache, list) else grown(cache))
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
         # T261: the local layers, where the model has such: their window and their own angles of this position
         local = self.local and set(self.local["layers"])
@@ -365,14 +395,16 @@ class Llama:
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
         eps = self.rms_norm_eps
         norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w, eps))
-        heads_of = lambda v, c, s: v.reshape(-1, head_size)  # (q or k as they are)
+        # (size: the layer's heads', T331)
+        heads_of = lambda v, c, s, size: v.reshape(-1, size)  # (q or k as they are)
+        whole = lambda v, c, s, size: rope(v, c, s)
         if not self.turning:
             turn = heads_of
         elif self.partly:
             # only the first self.rotary of every head are rotated, the rest go through untouched
-            turn = lambda v, c, s: partial_rope(v.reshape(-1, head_size), c, s, self.rotary)
+            turn = lambda v, c, s, size: partial_rope(v.reshape(-1, size), c, s, self.rotary)
         else:
-            turn = rope
+            turn = whole
         # T255: a layer RoPE leaves alone, where the model has such
         turns = [heads_of if l in self.unturned else turn for l in range(self.n_layers)] if self.unturned else None
 
@@ -394,34 +426,44 @@ class Llama:
                 # among the attending layers, which is l where all of them attend)
                 # (xr: what the matrices read of xb, itself but in a rotated basis, T237; turned once for all of them)
                 xr = turned(xb)
-                qv, kv, vv = self.wq[a] @ xr, self.wk[a] @ xr, self.wv[a] @ xr
+                # (T331: the tensors of the layer's width, its place in their stacks and the size of its heads)
+                named, at, size = self.heads[a]
+                wq, wk, wv, wo = (getattr(self, name + named) for name in ("wq", "wk", "wv", "wo"))
+                qv, kv, vv = wq[at] @ xr, wk[at] @ xr, wv[at] @ xr
                 if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
                     qv, kv, vv = qv + self.bq[a], kv + self.bk[a], vv + self.bv[a]
-                if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
-                    qv, kv = head_norm(qv, self.q_norm[a], eps), head_norm(kv, self.k_norm[a], eps)
+                q_norm = getattr(self, "q_norm" + named)
+                if q_norm is not None:  # Qwen3 normalizes every head of q and k
+                    qv = head_norm(qv, q_norm[at], eps)
+                    kv = head_norm(kv, getattr(self, "k_norm" + named)[at], eps)
+                if self.value_norm:  # T331: a Gemma 4 normalizes every head of v, without a weight
+                    vv = head_norm(vv, np.ones(size, dtype=np.float32), eps)
                 if turns:
                     turn = turns[l]
-                first = 0
+                first, turning = 0, turn
                 if local:
                     # a local layer attends the last window positions, this one among them, and turns by its own base
                     here = l in local
                     cos, sin = (self.local_cis[0][pos], self.local_cis[1][pos]) if here else tables
                     first = max(0, pos + 1 - self.local["window"]) if here else 0
-                q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
-                self.key_cache[a, :, pos] = turn(kv, cos, sin)
-                self.value_cache[a, :, pos] = vv.reshape(n_kv_heads, head_size)
+                    # (T331: and turns its whole head, where the others turn the model's part of theirs)
+                    if here:
+                        turning = whole
+                q = turning(qv, cos, sin, size).reshape(n_kv_heads, kv_mul, size)
+                self.key_cache[a][:, pos] = turning(kv, cos, sin, size)
+                self.value_cache[a][:, pos] = vv.reshape(n_kv_heads, size)
 
                 # Multihead attention over all timesteps so far (or the last of them), all heads at once
-                keys = self.key_cache[a, :, first:pos + 1]      # (n_kv_heads, pos + 1 - first, head_size)
-                values = self.value_cache[a, :, first:pos + 1]
-                att = (q @ keys.transpose(0, 2, 1)) * scale  # (n_kv_heads, kv_mul, pos + 1)
+                keys = self.key_cache[a][:, first:pos + 1]      # (n_kv_heads, pos + 1 - first, size)
+                values = self.value_cache[a][:, first:pos + 1]
+                att = (q @ keys.transpose(0, 2, 1)) * np.float32(1.0 / math.sqrt(size))  # (n_kv_heads, kv_mul, pos + 1)
                 att = np.exp(att - att.max(axis=-1, keepdims=True))
                 att /= att.sum(axis=-1, keepdims=True)
-                attended = (att @ values).reshape(self.q_dim)
+                attended = (att @ values).reshape(-1)
                 if self.wg is not None:  # Qwen3.5 gates what the attention read
                     attended = attended / (1.0 + np.exp(-(self.wg[a] @ xr)))
                 # Output projection and residual connection
-                attended = self.wo[a] @ turned(attended)
+                attended = wo[at] @ turned(attended)
                 if self.bo is not None:  # GPT-2 and GPT-NeoX, after every projection
                     attended = attended + self.bo[a]
             if self.rms_att_post_weight is not None:  # T261: a Gemma normalizes what joins the stream too
@@ -434,19 +476,27 @@ class Llama:
             xb = norm(before if self.parallel_residual else x, self.rms_ffn_weight[l],
                       self.ln_ffn_bias[l] if layer_norm else None)
             xr = turned(xb)
-            hb = self.w1[l] @ xr
+            # (T331: the FFN of the layer's width, and its place in their stacks)
+            named, at = self.ffns[l]
+            w1, w2, w3 = (getattr(self, name + named) for name in ("w1", "w2", "w3")) if named else (self.w1, self.w2, self.w3)
+            hb = w1[at] @ xr
             if gated_ffn:
-                hb = self.w2[l] @ turned(activation(hb) * (self.w3[l] @ xr))
+                hb = w2[at] @ turned(activation(hb) * (w3[at] @ xr))
                 if self.rms_ffn_post_weight is not None:
                     hb = rmsnorm(hb, self.rms_ffn_post_weight[l], eps)
                 x = x + hb
             else:
-                x = x + self.w2[l] @ activation(hb + self.b1[l]) + self.b2[l]
+                x = x + w2[at] @ activation(hb + self.b1[l]) + self.b2[l]
+            if self.layer_scale is not None:  # T331: a Gemma 4's layer ends by scaling the stream
+                x = x * self.layer_scale[l]
 
         if not need_logits:
             return None
         # Final norm, then the classifier into logits (60% of all the multiply-adds of stories15M)
-        return self.wcls @ turned(norm(x, self.rms_final_weight, self.ln_final_bias))
+        logits = self.wcls @ turned(norm(x, self.rms_final_weight, self.ln_final_bias))
+        if self.softcap:  # T331: a Gemma 4 caps its logits
+            logits = (np.float32(self.softcap) * np.tanh(logits / np.float32(self.softcap))).astype(np.float32)
+        return logits
 
     def follow(self, pos):
         """T229: the linear-attention layers' state is what the tokens before this position left, so position 0 clears

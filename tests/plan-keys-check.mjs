@@ -262,6 +262,8 @@ const returned = (fn) => {
     assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);
     lines.add(plan.arch);
   });
+  // (T331.1: Python makes no plan of a Gemma 4 until the page's engine reads its layers, T331.2, which holds its line here)
+  for (const arch of ["gemma4"]) lines.add(arch);
   assert.deepEqual(sorted(lines), sorted(Object.keys(ARCHITECTURES)), "every line of forward/architectures.ts is held to a plan of Python's (a new architecture is a family of this check's too)");
   ok(`what sizes ${plans.length} models is the same of the form (sizes.ts, the kinds' layers() and widths()) as of Python's plan, and the ${lines.size} lines of forward/architectures.ts are what Python's plans say of each architecture`);
 

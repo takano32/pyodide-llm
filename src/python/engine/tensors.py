@@ -29,7 +29,7 @@ import numpy as np
 
 from engine.checkpoint import outside
 from engine.dtypes import KINDS, QUANTIZED
-from engine.layout import CODES, EMBEDDING, PARTLY, TABLE, check_suited, layout_of, placed
+from engine.layout import CODES, EMBEDDING, PARTLY, PROPORTIONAL, TABLE, check_suited, layout_of, placed
 
 
 def read_tensor(checkpoint, place, whole=True, copy=False):
@@ -90,6 +90,10 @@ def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies)
         return None
     if layout.rope == PARTLY:
         return partial_tables(seq_len, head_size, rotary, frequencies)
+    if layout.rope == PROPORTIONAL:
+        # T331: the first rotary values, by the first angles of the whole head (transformers' proportional RoPE: the
+        # pairs past them turn by an angle of 0, which is none)
+        return partial_tables(seq_len, head_size, rotary, lambda width: frequencies(head_size)[:width // 2])
     # (yarn's magnitude is in a Llama's tables alone, as it always was)
     magnitude = magnitude if layout.yarn_magnitude else 1.0
     angles = np.arange(seq_len)[:, None] * frequencies(head_size)

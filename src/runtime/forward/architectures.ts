@@ -28,6 +28,8 @@ export const ARCHITECTURES: Record<Arch, Architecture> = {
   qwen35: { ...LLAMA, gate: true },
   lfm2: LLAMA,
   gemma3: { ...LLAMA, activation: "gelu", local: true },
+  // (T331: what sizes a Gemma 4 beyond a Gemma 3, its wide heads and its FFN twice as wide, is T331.2's)
+  gemma4: { ...LLAMA, activation: "gelu", local: true },
 };
 /** An architecture's line. A name that is none of the table's is sized as a Llama, as it always was: Python refuses it
  * by its own words once the model is built (layout_of()), and those are the words a visitor is to read. */
