@@ -259,6 +259,19 @@ def test_the_facts_of_the_architecture():
                      "w1", "w2", "w3", "rms_final_weight", "freq_cis_real", "freq_cis_imag"]
 
 
+def test_the_pages_engine_is_told_how_much_of_each_layers_heads_turns():
+    """The plan's facts of each layer (engine/plan.py's layer_facts()): a local layer turns its whole head by the local
+    tables and attends its window, the others turn the options' part of theirs. (A local layer turned by the others'
+    part moves a made-up model's logits by a few 1e-4 alone, within plan-facts-check's line: held here by the facts.)"""
+    from llama2_numpy import Dims, Settings, layer_facts
+    local = {"layers": [0, 1, 2, 4], "window": 4, "rope_theta": 100.0}
+    facts = layer_facts(Dims((32, 64, 6, 4, 2, 320, 24), {"arch": "spark", "head_dim": 16}),
+                        Settings(int8=False, kv_start=16, rotary=4, local=local))
+    assert [(fact["rotary"], fact["local"], fact["window"], fact["head"]) for fact in facts] == \
+        [(16, True, 4, 16)] * 3 + [(4, False, 0, 16), (16, True, 4, 16), (4, False, 0, 16)]
+    assert all(fact["rope"] and fact["kind"] == "attention" for fact in facts)
+
+
 # the two published config.json, as they are (but the kinds of the layers, which the 1.7B lists 28 and the 4B 36 of)
 PUBLISHED = {
     "1.7B": dict(hidden_size=2048, intermediate_size=6656, num_attention_heads=8, num_hidden_layers=28, num_key_value_heads=2),
