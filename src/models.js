@@ -3,7 +3,7 @@
 // This file is the window (T354): the list is put together here, in the order it had as one file, from its parts
 // in src/models/, and everything the page, the worker and the tests take from the list is exported from here.
 import { LICENSES, NOTICES } from "./models/licenses.js";
-import { modelBytes } from "./models/memory.js";
+import { modelBytes, devicesOf } from "./models/memory.js";
 import { BUILT } from "./models/built.js";
 import { HF_JAPANESE } from "./models/hf-japanese.js";
 import { HF_CLASSICS } from "./models/hf-classics.js";
@@ -41,7 +41,9 @@ export const GROUPS = { site: "Models of this site", original: "Unquantized orig
 // light to heavy (T128): MODELS is sorted so below, so a model added to any part takes its place.
 // ?model=<id> picks another one.
 // in the order they were added, more or less; MODELS below is the order of the list
-const LISTED = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES];
+// T511.4: "desktop only" and "Chrome and Firefox" are not written in the parts: devicesOf() adds them to every note
+const LISTED = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
+  .map((entry) => ({ ...entry, note: [entry.note, ...devicesOf(entry)].join(" · ") }));
 
 /** T128: whether a model writes Japanese (its note says 日本語: Japanese alone, with English, or translating). */
 export const writesJapanese = (entry) => (entry.note ?? "").includes("日本語");

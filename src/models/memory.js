@@ -62,6 +62,17 @@ export function memoryWarning(entry, deviceMemory) {
   return `${entry.name} needs about ${megabytes(bytes + PAGE_MEMORY)} of memory, and this device has ` +
     `${capped ? `${DEVICE_MEMORY_CAP} GB or more` : `${deviceMemory} GB`}: it may run out of memory.`;
 }
+/** T511.4: what the note of an entry of the list says of the devices it is for, by the page's own rules and not by
+ * hand (the owner's choice of 2026-10-15): "desktop only" where a device that says 4 GB (a phone's) would be warned
+ * by memoryWarning() (loaded, the model and PAGE_MEMORY pass 2 GiB: about 1.85 GB), and "Chrome and Firefox" where
+ * what it loads passes 4 GiB, which only a 64-bit memory holds (Safari has none and refuses it). Safari would take
+ * six bits there (weightsFor()), and six bits with what the forward pass keeps after them (the keys and values, the
+ * corrections of relaxed SIMD) pass 4 GiB about where eight bits alone do; the list has no header to count it
+ * exactly (footprint()). The words in the order the notes have them, after everything else. */
+export function devicesOf(entry) {
+  const bytes = modelBytes(entry);
+  return [memoryWarning(entry, 4) && "desktop only", bytes > 2 ** 32 && "Chrome and Firefox"].filter(Boolean);
+}
 /** What the page says when the worker ran out of memory (heap: the size of its WebAssembly memory then). */
 export function memoryFailure(entry, heap, detail) {
   const bytes = modelBytes(entry);
