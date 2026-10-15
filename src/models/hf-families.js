@@ -6,7 +6,7 @@ import {
   QWEN3_THINKING_AFTER_START, granite, lfm2Old, qwen35,
 } from "./formats.js";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
+  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
 import { gemma3, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
@@ -63,6 +63,16 @@ export const HF_FAMILIES = [
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
+  // T511.2: a person's unofficial Japanese fine-tune of the Qwen3.5 0.8B (Takenoko12345678's v2.5: fewer Chinese
+  // words and refusals, a short Japanese thought). The maker's own Q8_0 GGUF, the vocabulary and config.json of the
+  // original; its chat_template.jinja, tokenizer.json and tokenizer_config.json are Qwen3.5-0.8B's byte for byte (the
+  // same blobs), so the 0.8B's formats, BOS, stops and specials (qwen35). The sampling is its card's
+  ...thinkingAndNot("hf-qwen3.5-0.8b-japanese-sft-v2.5", "Qwen3.5 0.8B Japanese SFT v2.5",
+    ggufOf("Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF", "101c43b482a00d8d7cb5f1fb0de9e7c1bf30e447",
+      "Qwen3.5-0.8B-Japanese-SFT-v2.5-Q8_0.gguf",
+      "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5", "b069f75cda9f72cb979be84a78411ee48f75ff50"), 811842912,
+    "fetches 812 MB (GGUF) → int8 850 MB", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_JA_SFT_SAMPLING),
   // T247: the other sizes of Qwen3.5 whose int8 a 64-bit memory of 16 GiB holds (the 27B's Q8_0 is 28.6 GB, and the
   // larger ones are mixtures of experts, which the engine has not). The same vocabulary, format and form as the 0.8B.
   // The 4B and the 9B have two value heads to a key head in their linear-attention layers, which llama.cpp writes in

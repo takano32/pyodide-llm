@@ -140,6 +140,8 @@ export const LICENSES = {
   // were trained from (config.json's modification_notice says what TokenRhythm changed)
   "TokenRhythm/NeoHorse-1-4B": APACHE, "TokenRhythm/NeoHorse-1-4B-GGUF": APACHE,
   "TokenRhythm/NeoHorse-1-9B": APACHE, "TokenRhythm/NeoHorse-1-9B-GGUF": APACHE,
+  // T511.2: both cards say apache-2.0 (and the original's: "Apache License 2.0", a derivative of Qwen/Qwen3.5-0.8B)
+  "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5": APACHE, "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF": APACHE,
   // T337: both cards say apache-2.0
   "InternScience/Agents-A1-4B": APACHE, "InternScience/Agents-A1-4B-Q8_0-GGUF": APACHE,
   // T233: both cards say apache-2.0. The GGUF's NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from
