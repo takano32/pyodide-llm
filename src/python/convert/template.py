@@ -674,14 +674,53 @@ def model_turn(config, chat_template=None):
     tokenizer_config.json, read (a dict; anything else is one that says nothing)."""
     config = config if isinstance(config, dict) else {}
     bos = config_token(config, "bos_token")
+    template = template_of(config, chat_template)
+    return (one_turn(template, named_tokens(config)) if template else None), bos
+
+
+def model_answer_end(config, chat_template=None):
+    """T524: what a model's own template writes right after an answer (answer_end()), or None where there is no
+    template this can read. config, chat_template: as model_turn() takes them."""
+    config = config if isinstance(config, dict) else {}
+    template = template_of(config, chat_template)
+    return answer_end(template, named_tokens(config)) if template else None
+
+
+def template_of(config, chat_template=None):
+    """The text of a model's chat template: chat_template.jinja's, else tokenizer_config.json's; None for none."""
     template = chat_template or config.get("chat_template")
     if isinstance(template, list):  # some models publish several; the first is the chat one
         template = template[0].get("template") if template and isinstance(template[0], dict) else None
-    if not isinstance(template, str) or not template.strip():
-        return None, bos
-    # the tokens transformers gives a template by their names (special_tokens_map): a template may write the pad token
+    return template if isinstance(template, str) and template.strip() else None
+
+
+def named_tokens(config):
+    """The tokens transformers gives a template by their names (special_tokens_map): a template may write the pad
+    token."""
     names = ("bos_token", "eos_token", "unk_token", "pad_token", "sep_token", "cls_token", "mask_token")
-    return one_turn(template, {name: config_token(config, name) for name in names}), bos
+    return {name: config_token(config, name) for name in names}
+
+
+def scope_of(specials, messages, generation):
+    """The names a template is rendered with, as transformers' apply_chat_template passes them."""
+    return {"messages": messages, "add_generation_prompt": generation,
+            "bos_token": specials.get("bos_token", ""), "eos_token": specials.get("eos_token", ""),
+            **{name: token for name, token in specials.items() if token and name not in ("bos_token", "eos_token")},
+            "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
+
+
+def answer_end(template, specials, mark="\x00prompt\x00", answer="\x00answer\x00"):
+    """T524: the text a template writes right after an assistant's message that ends a conversation, rendered as
+    transformers renders one to train on (no generation prompt): where a turn of the model's ends, the token the
+    model writes when its answer is done (a Gemma 4's <turn|>, a ChatML's <|im_end|>, a harmony template's <|return|>,
+    which is not the <|end|> after its analysis). "" where the answer ends the text; None where the template uses
+    something this reader does not know, or does not write the answer once as it was given."""
+    try:
+        text = rendered(template, scope_of(specials, [{"role": "user", "content": mark},
+                                                      {"role": "assistant", "content": answer}], False))
+    except Exception:  # (Unsupported, and whatever a template raises of a conversation it does not take)
+        return None
+    return text.split(answer, 1)[1] if text.count(answer) == 1 else None
 
 
 def one_turn(template, specials, mark="\x00prompt\x00"):
@@ -690,10 +729,7 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
     specials: the tokenizer's special tokens, for bos_token and eos_token. Returns None when the template uses
     something this reader does not know, and then the caller keeps the format it has.
     """
-    scope = {"messages": [{"role": "user", "content": mark}], "add_generation_prompt": True,
-             "bos_token": specials.get("bos_token", ""), "eos_token": specials.get("eos_token", ""),
-             **{name: token for name, token in specials.items() if token and name not in ("bos_token", "eos_token")},
-             "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
+    scope = scope_of(specials, [{"role": "user", "content": mark}], True)
     try:
         text = rendered(template, dict(scope))
         # strftime_now() is written {date:format}, which the page fills with the day it sends the prompt. That holds

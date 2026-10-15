@@ -4,7 +4,7 @@ import json
 from engine.layout import FORM
 from engine.layers import RMS_EPS
 from engine.dtypes import dtype_of
-from convert.template import config_token, model_turn
+from convert.template import config_token, model_answer_end, model_turn
 from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Kept, Stream
@@ -158,6 +158,15 @@ class Conversion:
         ending = ids.get(ending.encode("utf-8")) if ending else None  # (no name is no piece: the padding's are empty)
         if ending is not None and ending not in stop:
             stop.append(ending)
+        # T524: and at the token the model's own template writes right after an answer, where that is one of the
+        # tokens the engine reads as one: what ends a turn of the model's (a Gemma 4's <turn|>, which neither its
+        # config.json nor its tokenizer names: ?hf= wrote two to five of them after each answer). Not where it is the
+        # token every text begins with (T264's head: it says where a message begins)
+        end = model_answer_end(described(tokenizer_config), chat_template)
+        marks = [token for token in [*specials, *added] if token and end and end.startswith(token) and token.encode("utf-8") in ids]
+        closing = ids[max(marks, key=len).encode("utf-8")] if marks else None
+        if closing is not None and closing != head and closing not in stop:
+            stop.append(closing)
         bos = bos if head is None else head
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = (Kept if blocks else Stream)(header, int(base), self.config, dtype, int(max_seq_len),
