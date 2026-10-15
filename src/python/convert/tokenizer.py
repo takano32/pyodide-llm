@@ -232,9 +232,16 @@ PRETOKENIZERS = {
 
 # T254: MiniCPM5's two Splits (openbmb/MiniCPM5-1B's tokenizer.json): the numbers cut off three at a time, then Llama
 # 3's pattern with \p{N}+ on each piece, and a ByteLevel that splits no more. llama2_numpy.pretokenize's "minicpm5"
+# T340: Spark-X2.5's three (XHToken/Spark-X2.5-1.7B's tokenizer.json): the numbers three at a time, the ideographs and
+# the kana, and a pattern of letters, punctuation and symbols; then Digits(individual_digits) and the ByteLevel.
+# llama2_numpy.pretokenize's "spark2_5". Each with the steps that follow its Splits, by their types
 STAGED_PRETOKENIZERS = {
     (r"\p{N}{1,3}",
-     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}+| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"): "minicpm5",
+     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}+| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"):
+        ("minicpm5", ("ByteLevel",)),
+    (r"\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+",
+     r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^""" + "\r\n" + r"""\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+|["""
+     + "\r\n" + r"""]|\s+(?!\S)|\s+"""): ("spark2_5", ("Digits", "ByteLevel")),
 }
 
 
@@ -244,12 +251,15 @@ def pretokenizer_name(spec):
     patterns = [step["pattern"].get("Regex") for step in steps if step["type"] == "Split"]
     if tuple(patterns) in STAGED_PRETOKENIZERS:
         # every Split keeps what it matches as a piece of its own (Isolated) and matches what its pattern says (no
-        # invert), and the ByteLevel after them does not split again or put a space in front
+        # invert), the steps after them are those of the name (T340: a Digits splits every digit off), and the ByteLevel
+        # last does not split again or put a space in front
+        name, after = STAGED_PRETOKENIZERS[tuple(patterns)]
         plain = all(step.get("behavior") == "Isolated" and not step.get("invert") for step in steps if step["type"] == "Split")
-        rest = [step for step in steps if step["type"] != "Split"]
-        if plain and kinds[:len(patterns)] == ["Split"] * len(patterns) and len(rest) == 1 and rest[0]["type"] == "ByteLevel" \
-                and rest[0].get("use_regex") is False and not rest[0].get("add_prefix_space"):
-            return STAGED_PRETOKENIZERS[tuple(patterns)]
+        rest = steps[len(patterns):]
+        if plain and kinds == ["Split"] * len(patterns) + list(after) \
+                and all(step.get("individual_digits") is True for step in rest if step["type"] == "Digits") \
+                and rest[-1].get("use_regex") is False and not rest[-1].get("add_prefix_space"):
+            return name
         raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {steps}")
     if patterns:
         if len(patterns) > 1 or patterns[0] not in PRETOKENIZERS:

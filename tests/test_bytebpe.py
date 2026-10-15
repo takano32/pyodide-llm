@@ -23,6 +23,14 @@ QWEN35_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+
 # T254: MiniCPM5's (openbmb/MiniCPM5-1B's tokenizer.json), two Splits: the numbers cut off three at a time, then Llama
 # 3's pattern with \p{N}+ on each piece
 MINICPM5_PATTERNS = (r"\p{N}{1,3}", QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}+|"))
+# T340: Spark-X2.5's (XHToken/Spark-X2.5-1.7B's tokenizer.json), three Splits and then Digits(individual_digits)
+SPARK_PATTERNS = (r"\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+",
+                  r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^""" + "\r\n" + r"""\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+"""
+                  + r"""| ?[\p{P}\p{S}]+|[""" + "\r\n" + r"""]|\s+(?!\S)|\s+""")
+# where Spark-X2.5's is none of the others: punctuation before a word, the ideographs and the kana (and what of their
+# blocks is no letter: ゠, ・, ー, ゛, the voicing marks), the symbols, a line break after a space
+SPARKED = [".hello", "-abc def", "'s it's", "(Hello) [x]", "漢字とカタカナ、ひらがな。", "ア゠イ・ウー", "がき゛く",
+           "日本語text混ざる", "a\r\n b", " \n\n x", "$100 + €20 = ¥3", "→→ ←", "#tag @user", "龥龦", "x‍y", "2026年10月15日"]
 # where the two stages are not Llama 3's one: runs of spaces before a number, numbers of more than three digits,
 # numbers next to words, contractions, line breaks and punctuation
 NUMBERED = ["a  1", "Hello 123  45 world", "12345 a1b", "1  \n 2", "in 2013,  2014 and   20156", "x\t\t7", " 1", "  1",
@@ -34,12 +42,14 @@ MARKED = ["e\u0301te\u0301", "\u304b\u3099\u304d", "\u0915\u093e\u092e", "\u0e01
 
 
 def trained(pattern, digits):
-    """A small byte-level BPE, and the tokenizer.json it saves. pattern: a Split's, or those of several (T254)."""
+    """A small byte-level BPE, and the tokenizer.json it saves. pattern: a Split's, or those of several (T254).
+    digits: a Digits(individual_digits) in front, or "after" the Splits (T340)."""
     from tokenizers import Tokenizer as Real, decoders, models, pre_tokenizers, trainers
     real = Real(models.BPE())
-    steps = ([pre_tokenizers.Digits(individual_digits=True)] if digits else [])
+    steps = ([pre_tokenizers.Digits(individual_digits=True)] if digits is True else [])
     steps += [pre_tokenizers.Split(tokenizers.Regex(one), behavior="isolated")
               for one in ((pattern,) if isinstance(pattern, str) else pattern or ())]
+    steps += [pre_tokenizers.Digits(individual_digits=True)] if digits == "after" else []
     steps += [pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=not pattern)]
     real.pre_tokenizer = pre_tokenizers.Sequence(steps)
     real.decoder = decoders.ByteLevel()
@@ -50,8 +60,8 @@ def trained(pattern, digits):
 
 @pytest.mark.parametrize("name, pattern, digits", [
     ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
-    ("minicpm5", MINICPM5_PATTERNS, False)])
-@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED)
+    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after")])
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED)
 def test_matches_the_real_tokenizer(name, pattern, digits, text):
     real, spec = trained(pattern, digits)
     options = tokenizer_json_options(spec)
@@ -64,7 +74,7 @@ def test_matches_the_real_tokenizer(name, pattern, digits, text):
 
 @pytest.mark.parametrize("name, pattern, digits", [
     ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
-    ("minicpm5", MINICPM5_PATTERNS, False)])
+    ("minicpm5", MINICPM5_PATTERNS, False), ("spark2_5", SPARK_PATTERNS, "after")])
 def test_decodes_every_piece(name, pattern, digits):
     real, spec = trained(pattern, digits)
     vocab_size = real.get_vocab_size()
@@ -84,6 +94,29 @@ def test_pretokenizers_follow_the_patterns(text):
     assert pretokenize(text, "qwen35") == regex.findall(QWEN35_PATTERN, text)
     assert pretokenize(text, "gpt2-digits") == digits_then_gpt2(regex, text)
     assert pretokenize(text, "minicpm5") == threes_then_the_rest(regex, text)
+
+
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED + SPARKED)
+def test_spark_follows_its_patterns(text):
+    regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
+    assert pretokenize(text, "spark2_5") == sparked(regex, text)
+
+
+def sparked(regex, text):
+    """Spark-X2.5's pre_tokenizer (T340) by the regex module's patterns themselves: each Split (Isolated) keeps every
+    match and every stretch between two matches of each piece of the one before, and then Digits(individual_digits)
+    cuts every number off a piece (\\p{N}, as Rust's char::is_numeric)."""
+    def isolated(pattern, piece):
+        pieces, at = [], 0
+        for match in regex.finditer(pattern, piece):
+            pieces += [piece[at:match.start()]] if match.start() > at else []
+            pieces.append(match.group())
+            at = match.end()
+        return pieces + ([piece[at:]] if at < len(piece) else [])
+    pieces = [text] if text else []
+    for pattern in SPARK_PATTERNS:
+        pieces = [part for piece in pieces for part in isolated(pattern, piece)]
+    return [part for piece in pieces for part in regex.findall(r"\p{N}|\P{N}+", piece)]
 
 
 def threes_then_the_rest(regex, text):
@@ -125,6 +158,20 @@ def test_pretokenizers_follow_the_patterns_on_random_texts():
         assert pretokenize(text, "minicpm5") == threes_then_the_rest(regex, text), text
 
 
+# T340: and the characters Spark-X2.5's pattern tells apart besides: punctuation and symbols of every kind, the edges of
+# its block of ideographs and kana (and what of it is no letter), a format character
+SPARK_PIECES = PIECES + ["゠", "・", "ー", "゛", "゙", "〇", "龥", "龦", "぀", "ヿ", "ゟ", "$", "+", "€", "→", "©",
+                         "«", "¡", "​", "\x00", "\x7f", "", ".a", "-A", "\r\n "]
+
+
+def test_spark_follows_its_patterns_on_random_texts():
+    regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
+    rng = random.Random(340)
+    for _ in range(3000):
+        text = "".join(rng.choices(SPARK_PIECES, k=rng.randrange(0, 16)))
+        assert pretokenize(text, "spark2_5") == sparked(regex, text), text
+
+
 def test_minicpm5_is_not_llama3_before_a_number():
     """T254: what one pattern cannot say. Llama 3's \\s+(?!\\S) leaves the last space of a run before a number to
     stand alone; cut off from the number first, the run is one piece. Elsewhere the two are the same pieces."""
@@ -155,6 +202,11 @@ def around(c):
     return f"a{c}a!{c}!1{c}1 {c}'{c}'{c}e'r{c}'{c}l\n{c}{c}1 {c}1{c}{c}\n"
 
 
+# T340: and for Spark-X2.5's, next to its block of ideographs and kana, before an ASCII letter after ASCII punctuation
+# and after other punctuation, a symbol, a mark, and a character of none of its classes
+def sparked_around(c):
+    return around(c) + f"漢{c}カ.{c}b{c}x€{c}é́{c}\x00{c}​{c}y"
+
 def real_pretokenizer(name):
     from tokenizers import Regex, pre_tokenizers
     byte_level = pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=True)
@@ -164,15 +216,18 @@ def real_pretokenizer(name):
         return pre_tokenizers.Sequence([pre_tokenizers.Digits(individual_digits=True), byte_level])
     if name == "minicpm5":
         return pre_tokenizers.Sequence([pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in MINICPM5_PATTERNS])
+    if name == "spark2_5":
+        return pre_tokenizers.Sequence([*(pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in SPARK_PATTERNS),
+                                        pre_tokenizers.Digits(individual_digits=True)])
     pattern = {"qwen": QWEN_PATTERN, "qwen35": QWEN35_PATTERN}.get(name) or QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}{1,3}|")
     return pre_tokenizers.Split(Regex(pattern), behavior="isolated")
 
 
 # 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T193)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
-@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5"])
+@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5", "spark2_5"])
 def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
-    real = real_pretokenizer(name)
+    real, placed = real_pretokenizer(name), sparked_around if name == "spark2_5" else around
 
     def ends(text):
         """Where the real pieces end, and where the engine's do (the real offsets are the text's characters)."""
@@ -184,14 +239,14 @@ def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
         return theirs, mine
 
     def differs(code):
-        theirs, mine = ends(around(chr(code)))
+        theirs, mine = ends(placed(chr(code)))
         return theirs != mine
 
     codes = [code for code in range(0x110000) if not 0xD800 <= code < 0xE000]
     wrong, alone = [], []
     for start in range(0, len(codes), 4096):
         chunk = codes[start:start + 4096]
-        theirs, mine = ends("".join(around(chr(code)) for code in chunk))
+        theirs, mine = ends("".join(placed(chr(code)) for code in chunk))
         if theirs != mine:  # which of them
             culprits = [code for code in chunk if differs(code)]
             wrong += culprits
@@ -276,6 +331,18 @@ def test_refuses_what_the_engine_cannot_split():
                   [split(first), split(first), split(second), byte_level],
                   [split(first), {"type": "Split", "pattern": {"String": " "}, "behavior": "Isolated", "invert": False}, byte_level],
                   [split(first), split(QWEN_PATTERN), byte_level]):
+        with pytest.raises(ValueError, match="does not know"):
+            named(*steps)
+    # T340: Spark-X2.5's three Splits with the Digits behind them, and nothing that is those otherwise
+    digits = {"type": "Digits", "individual_digits": True}
+    one, two, three = (split(pattern) for pattern in SPARK_PATTERNS)
+    assert named(one, two, three, digits, byte_level)["pretokenizer"] == "spark2_5"
+    for steps in ([one, two, three, byte_level], [digits, one, two, three, byte_level], [one, two, three, byte_level, digits],
+                  [one, two, three, {**digits, "individual_digits": False}, byte_level],
+                  [one, two, three, digits, digits, byte_level], [one, two, three, digits, {**byte_level, "use_regex": True}],
+                  [one, two, three, digits, {**byte_level, "add_prefix_space": True}], [one, two, three, digits],
+                  [one, three, two, digits, byte_level], [one, two, split(SPARK_PATTERNS[2], behavior="Removed"), digits, byte_level],
+                  [split(first), split(second), digits, byte_level]):
         with pytest.raises(ValueError, match="does not know"):
             named(*steps)
     with pytest.raises(ValueError, match="adds a space"):

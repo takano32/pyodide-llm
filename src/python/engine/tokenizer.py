@@ -109,6 +109,60 @@ THREES = re.compile("0{1,3}|[^0]+")  # Split(\p{N}{1,3}) on the classes: numbers
 STAGED = {"gpt2-digits": (DIGITS, PATTERNS["gpt2"]), "minicpm5": (THREES, PATTERNS["llama3"])}
 
 
+class SparkClasses(dict):
+    r"""T340: the classes Spark-X2.5's pre-tokenizer tells apart, which are others than CharClasses' (its patterns name
+    punctuation and symbols, \p{P} and \p{S}, apart from what is neither; the ASCII letters apart from the others; and a
+    block of the CJK ideographs and the kana, whatever their categories): the ASCII letters "A", any other letter "a",
+    the ASCII punctuation and symbols "!" (all 32 of them, which its first pattern names one by one), any other
+    punctuation or symbol "p", a combining mark "~", a number "0", the space, \r and \n as they are, any other
+    whitespace "\t" (Oniguruma's \s, as CharClasses has it), anything else "x". A character of KANJI_KANA is "k" (a
+    letter), "q" (punctuation or a symbol), "m" (a mark) or "z" (unassigned) instead: it is what it was and of that
+    block too. (None of the block is a number or whitespace.)"""
+
+    def __missing__(self, code):
+        char = chr(code)
+        kind = unicodedata.category(char)[0]
+        if char in " \r\n":
+            found = char
+        elif char.isspace() and not "\x1c" <= char <= "\x1f":
+            found = "\t"
+        elif kind == "N":
+            found = "0"
+        elif any(low <= code <= high for low, high in KANJI_KANA):
+            found = {"L": "k", "P": "q", "S": "q", "M": "m"}.get(kind, "z")
+        elif kind == "L":
+            found = "A" if char.isascii() else "a"
+        elif kind in "PS":
+            found = "!" if char.isascii() else "p"
+        else:
+            found = "~" if kind == "M" else "x"
+        self[code] = found
+        return found
+
+
+# T340: the block Spark-X2.5's second Split takes whole ([一-龥぀-ゟ゠-ヿ]+: the ideographs to U+9FA5, the hiragana
+# and the katakana blocks)
+KANJI_KANA = ((0x4E00, 0x9FA5), (0x3040, 0x309F), (0x30A0, 0x30FF))
+SPARK_CLASSES = SparkClasses()
+# Spark-X2.5's pre-tokenizer on those classes, a pattern for each of its stages, each of which cuts every piece of the
+# one before (Split, Isolated: what a pattern matches is a piece, and so is what lies between two matches)
+STAGES = {"spark2_5": (re.compile("0|[^0]+"), re.compile("[kqmz]+|[^kqmz]+"),
+                       re.compile("!A+|[^\r\nAak!pq]?[Aak~m]+| ?[!pq]+|[\r\n]|[ \t\r\n]+(?![^ \t\r\n])|[ \t\r\n]+"))}
+
+
+def isolated(pattern, classes, start, end):
+    """The pieces a Split (Isolated) cuts classes[start:end] into, as (start, end): every match of the pattern and every
+    stretch between two (none of the patterns matches nothing)."""
+    at = start
+    for match in pattern.finditer(classes, start, end):
+        if match.start() > at:
+            yield at, match.start()
+        yield match.span()
+        at = match.end()
+    if at < end:
+        yield at, end
+
+
 def pretokenize(text, pattern):
     r"""Split text the way the tokenizer.json's pre_tokenizer does. Those patterns need \p{L} and \p{N}, which the
     standard re module has not, so they run on the text's character classes (CharClasses) and the pieces are cut
@@ -130,8 +184,18 @@ def pretokenize(text, pattern):
     the whole text. A number piece is one piece either way, so the second stage here is Llama 3's pattern itself. It is
     not Llama 3's on the whole text: before a number, \s+(?!\S) ends at the piece's end and takes all of a run of
     spaces, where Llama 3's leaves the last one of them to stand alone ("a  1": "a", "  ", "1", not "a", " ", " ", "1").
-    All six are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
+    "spark2_5" is Spark-X2.5's (T340), three Splits and then Digits(individual_digits), each on every piece of the one
+    before: \p{N}{1,3}, which with the Digits after it is every number a piece of its own (and nothing else has a number
+    then); [一-龥぀-ゟ゠-ヿ]+, the ideographs and the kana; and
+        [!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+|[\r\n]|\s+(?!\S)|\s+
+    which leaves what it does not match (a character of none of those classes, alone) a piece too (SparkClasses).
+    All seven are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
     """
+    if pattern in STAGES:
+        classes, spans = text.translate(SPARK_CLASSES), [(0, len(text))]
+        for stage in STAGES[pattern]:
+            spans = [piece for start, end in spans for piece in isolated(stage, classes, start, end)]
+        return [text[start:end] for start, end in spans]
     classes = text.translate(CHAR_CLASSES)
     if pattern in STAGED:
         first, then = STAGED[pattern]
