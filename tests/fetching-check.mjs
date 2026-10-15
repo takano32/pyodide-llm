@@ -327,6 +327,46 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   assert.notEqual(ran.code, 0);
   assert.match(ran.err, /^usage: gguf_fetch\.py /);
   ok("gguf_fetch.py fails where a file that must be there is not, and where one never comes whole");
+
+  // T517: an original with PyTorch's pickle alone (LINE's 1.7B instruction-sft): read without PyTorch and written as
+  // model.safetensors. The pickle is made here by its opcodes: an OrderedDict of two float16 tensors on one storage,
+  // with the attribute _metadata that torch.save gives it, as LINE's has them
+  const made = placed("pickle.bin");
+  const maker = spawn(python, ["-c", `
+import io, struct, sys, zipfile
+import numpy as np
+text = lambda s: b"X" + struct.pack("<I", len(s.encode())) + s.encode()
+number = lambda n: b"J" + struct.pack("<i", n)
+def tensor(offset, size, stride):
+    return (b"ctorch._utils\\n_rebuild_tensor_v2\\n(" + b"(" + text("storage") + b"ctorch\\nHalfStorage\\n" + text("0") + text("cpu")
+            + number(6) + b"tQ" + number(offset) + b"(" + b"".join(map(number, size)) + b"t(" + b"".join(map(number, stride))
+            + b"t\\x89ccollections\\nOrderedDict\\n)RtR")
+pickle = (b"\\x80\\x02ccollections\\nOrderedDict\\n)R(" + text("a.weight") + tensor(0, (2, 2), (2, 1)) + text("b.bias")
+          + tensor(4, (2,), (1,)) + b"u}" + text("_metadata") + b"}sb.")
+out = io.BytesIO()
+with zipfile.ZipFile(out, "w") as archive:
+    archive.writestr("archive/data.pkl", pickle)
+    archive.writestr("archive/data/0", np.arange(6, dtype=np.float16).tobytes())
+open(sys.argv[1], "wb").write(out.getvalue())
+`, made]);
+  assert.equal(await new Promise((resolve) => maker.on("close", resolve)), 0, "the made-up pickle");
+  serving({
+    [at("owner/model", "abc", "config.json")]: [{ body: "{}" }],
+    [at("owner/model", "abc", "tokenizer.json")]: [{ body: "{}" }],
+    [at("owner/model", "abc", "pytorch_model.bin")]: [{ body: fs.readFileSync(made) }],
+    [at("other/model-GGUF", "def", "model.gguf")]: [{ body: GGUF }],
+  });
+  ran = await run("owner/model@abc", "other/model-GGUF@def/model.gguf", placed("gguf-pickle"));
+  assert.equal(ran.code, 0, ran.err);
+  assert.deepEqual(folder("gguf-pickle"), ["config.json", "model.gguf", "model.safetensors", "tokenizer.json"], "the pickle gone, its safetensors there");
+  const written = fs.readFileSync(placed("gguf-pickle/model.safetensors"));
+  const length = Number(written.readBigUInt64LE(0));
+  const header = JSON.parse(written.subarray(8, 8 + length).toString());
+  assert.deepEqual(header["a.weight"], { dtype: "F16", shape: [2, 2], data_offsets: [0, 8] });
+  assert.deepEqual(header["b.bias"], { dtype: "F16", shape: [2], data_offsets: [8, 12] });
+  const values = Array.from(new Uint16Array(written.buffer.slice(written.byteOffset + 8 + length, written.byteOffset + written.length)));
+  assert.deepEqual(values, [0, 0x3c00, 0x4000, 0x4200, 0x4400, 0x4500], "0 to 3, then 4 and 5 of the storage's offset 4, as float16");
+  ok("gguf_fetch.py writes an original of PyTorch's pickle alone as model.safetensors");
 }
 
 for (const socket of sockets) socket.destroy();

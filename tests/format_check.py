@@ -110,6 +110,11 @@ STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2
 # (T364.3: and Underdog Saluki 27B's, whose template is the same one)
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"},
                  "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"}}
+# T517: the format a model card writes where the repository has no chat template (LINE's japanese-large-lm
+# instruction-sft: the card's pipeline is given f"ユーザー: {input_text}\nシステム: " and adds nothing to it, through the
+# slow T5Tokenizer, which is the real sentencepiece of spiece.model). A second copy of the list's LINE_SFT, on purpose
+LINE_CARD = "ユーザー: {prompt}\nシステム: "
+CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -220,9 +225,12 @@ def main():
             page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())))
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
                 + [{"role": "user", "content": prompt}]
-            text = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
-            if entry["id"] in SENTENCEPIECE:
-                encoded = lambda text: sentencepiece_ids(folder / "tokenizer.model", text)
+            # (T517: no template to render where the card writes the format: the card's text, through the real sentencepiece)
+            text = filled(CARDS[entry["id"]], prompt) if entry["id"] in CARDS else \
+                reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
+            if entry["id"] in SENTENCEPIECE or entry["id"] in CARDS:
+                model = "spiece.model" if entry["id"] in CARDS else "tokenizer.model"
+                encoded = lambda text: sentencepiece_ids(folder / model, text)
                 real = encoded(text)
             elif entry["id"] in TOKENIZERS:
                 encoded = lambda text: tokenizers_ids(folder / "tokenizer.json", text)

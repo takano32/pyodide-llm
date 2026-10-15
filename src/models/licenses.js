@@ -61,6 +61,10 @@ export const LICENSES = {
   "llm-jp/llm-jp-3-3.7b-instruct3": APACHE, "mmnga/llm-jp-3-3.7b-instruct3-gguf": APACHE,
   "shisa-ai/shisa-v2.1-llama3.2-3b": LLAMA_32, "mradermacher/shisa-v2.1-llama3.2-3b-GGUF": LLAMA_32,
   "cyberagent/CAT-Translate-3.3b": MIT,
+  // T517 (2026-10-15): the rest of LINE's japanese-large-lm (metadata and card body: Apache-2.0), and mmnga's Q8_0
+  // GGUF of the 1.7B instruction-sft
+  "line-corporation/japanese-large-lm-1.7b-instruction-sft": APACHE, "mmnga/line-corp-japanese-large-lm-1.7b-instruction-sft-gguf": APACHE,
+  "line-corporation/japanese-large-lm-3.6b": APACHE, "line-corporation/japanese-large-lm-3.6b-instruction-sft": APACHE,
   // T250 (2026-10-01): the 8B ones
   "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
   "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
