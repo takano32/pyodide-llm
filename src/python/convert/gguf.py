@@ -119,7 +119,15 @@ def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
               "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2)}
     header = {}
-    if "rope_freqs.weight" in tensors:
+    if "rope_freqs.weight" in tensors and family.gguf_rope_freqs:
+        # T529: a table of the family's own RoPE (a Gemma 4's proportional one), which no rope_scaling says: held to
+        # what the config.json makes as it streams past (rope_freqs_agree()), whichever config.json that is
+        info = tensors["rope_freqs.weight"]
+        if info["type"] != 0:
+            raise ValueError(f"rope_freqs.weight is stored as ggml type {info['type']}, not F32.")
+        header["rope_freqs.weight"] = {"dtype": "F32", "shape": info["shape"], "rope_freqs": True,
+                                       "data_offsets": [info["offset"], info["offset"] + 4 * math.prod(info["shape"])]}
+    elif "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
         info = tensors["rope_freqs.weight"]
         if rope_freqs:
@@ -292,14 +300,16 @@ def gguf_agrees(own, config):
 NO_TABLE = "This GGUF scales its RoPE with a rope_freqs table, which the engine does not read."
 
 
-def rope_freqs_values(head, tensors, base):
+def rope_freqs_values(head, tensors, base, metadata=None):
     """T505.2: llama.cpp's rope_freqs table of a GGUF alone, read off its head (the file from its beginning): float64,
     or None where the file has none. llama.cpp's converter writes the table before every other tensor, a few hundred
     bytes: Incomplete where the head ends before it does (whoever fetches the head fetches on). A table anywhere else
     (Swallow 8B's GGUF has it after every other tensor, gigabytes in) is refused as before: the RoPE tables of a float32
     checkpoint are made before the first tensor is read."""
     info = tensors.get("rope_freqs.weight")
-    if info is None:
+    arch = (metadata or {}).get("general.architecture")
+    if info is None or (arch in GGUF and GGUF[arch][1].gguf_rope_freqs):
+        # (T529: a family's own table, a Gemma 4's, is checked as it streams past and says no rope_scaling)
         return None
     if info["type"] != 0 or info["offset"] != 0:
         raise ValueError(NO_TABLE)
@@ -350,10 +360,15 @@ def llama3_scaling(table, config):
 
 def rope_freqs_agree(table, config):
     """ValueError unless llama.cpp's rope_freqs (a divisor of each pair's angle) is what the original's rope_scaling
-    makes: the engine makes its RoPE tables from rope_scaling (rope_frequencies), and the table is not used."""
-    width = head_size(config)
-    theta = config.get("rope_theta", 10000.0)
-    expected = rope_frequencies(width, theta) / rope_frequencies(width, theta, config.get("rope_scaling"))
+    makes: the engine makes its RoPE tables from rope_scaling (rope_frequencies), and the table is not used. T529: or
+    the family's own table, where it has one (a Gemma 4's: which pairs turn)."""
+    own = family_of(normalize(config)).gguf_rope_freqs
+    if own:
+        expected = own(normalize(config))
+    else:
+        width = head_size(config)
+        theta = config.get("rope_theta", 10000.0)
+        expected = rope_frequencies(width, theta) / rope_frequencies(width, theta, config.get("rope_scaling"))
     table = np.asarray(table, dtype=np.float64)
     worst = float(np.max(np.abs(table - expected) / expected)) if table.shape == expected.shape else float("inf")
     if not worst <= 1e-5:

@@ -11,9 +11,9 @@ import numpy as np
 import pytest
 from conftest import naive_gemma4_logits, pack_tokenizer, tiny_vocab
 from made_up import checkpoint, gemma4_model, uniform
-from test_gemma3 import TOKENS, close
+from test_gemma3 import TOKENS, close, safetensors_conversion
 from test_convert import safetensors_file
-from test_gguf import unigram
+from test_gguf import metadata_value, q8_0_blocks, unigram, with_original
 
 import llama2_convert
 from llama2_convert import check_config, checkpoint_form, checkpoint_size, normalize
@@ -395,3 +395,169 @@ def test_the_projection_is_scaled_before_its_norm_where_the_epsilon_shows_it():
     want = naive_gemma4_logits(small, config, TOKENS)
     for pos, token in enumerate(TOKENS):
         assert close(llama.forward(token, pos), want[pos]), pos
+
+
+# ---- a GGUF (T529)
+# llama.cpp's names by transformers' of the language model saved alone (conversion/gemma.py's Gemma4Model, gguf-py's
+# constants.py and tensor_mapping.py at b76b1337), written out here rather than taken from the converter's family
+GGUF_NAMES = {"embed_tokens.weight": "token_embd.weight", "norm.weight": "output_norm.weight",
+              "embed_tokens_per_layer.weight": "per_layer_token_embd.weight",
+              "per_layer_model_projection.weight": "per_layer_model_proj.weight",
+              "per_layer_projection_norm.weight": "per_layer_proj_norm.weight"}
+GGUF_LAYER = {"input_layernorm.weight": "attn_norm.weight", "post_attention_layernorm.weight": "post_attention_norm.weight",
+              "pre_feedforward_layernorm.weight": "ffn_norm.weight", "post_feedforward_layernorm.weight": "post_ffw_norm.weight",
+              "self_attn.q_proj.weight": "attn_q.weight", "self_attn.k_proj.weight": "attn_k.weight",
+              "self_attn.v_proj.weight": "attn_v.weight", "self_attn.o_proj.weight": "attn_output.weight",
+              "self_attn.q_norm.weight": "attn_q_norm.weight", "self_attn.k_norm.weight": "attn_k_norm.weight",
+              "mlp.gate_proj.weight": "ffn_gate.weight", "mlp.up_proj.weight": "ffn_up.weight",
+              "mlp.down_proj.weight": "ffn_down.weight", "per_layer_input_gate.weight": "inp_gate.weight",
+              "per_layer_projection.weight": "proj.weight", "post_per_layer_input_norm.weight": "post_norm.weight",
+              "layer_scalar": "layer_output_scale.weight"}
+# rows of whole groups of 32 (Q8_0); E2B's names of the whole model, its layers and its embedding of every layer
+GGUF_E2B = dict(ALL, per_layer=32, whole=True)
+
+
+def bfloat16(values):
+    """llama.cpp's BF16 (round to nearest even, as torch's): the bytes, and the values they hold."""
+    bits = values.astype(np.float32).view(np.uint32).astype(np.uint64)
+    kept = ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)
+    return kept.tobytes(), (kept.astype(np.uint32) << 16).view(np.float32).reshape(values.shape)
+
+
+def gemma4_gguf(table_proportion=None, more=(), leave=(), **shape):
+    """A GGUF v3 of a small Gemma 4 the way llama.cpp writes one (as ggml-org's gemma-4-E2B-it Q8_0 is): Q8_0 matrices
+    (F32 where a row is not of whole groups of 32), the projection of every layer's embedding as BF16, the norms and
+    every layer's number F32 and as they are (llama.cpp adds nothing to a Gemma 4's), q and k as Hugging Face holds
+    them, rope_freqs after the table of every layer (1 for the pairs that turn, 1e30 for the others; table_proportion:
+    of another part than the model's), the FFN a width a layer where use_double_wide_mlp. Returns the config.json, the
+    file, and under the Hugging Face names the values it stands for."""
+    tensors, config = gemma4_model(**shape)
+    model = text(config)
+    prefix = "model.language_model." if "text_config" in config else "model."
+    stored, same = {}, {}
+    for name, tensor in tensors.items():
+        short = name[len(prefix):]
+        if short in GGUF_NAMES:
+            gguf = GGUF_NAMES[short]
+        elif name == "lm_head.weight":
+            gguf = "output.weight"
+        else:
+            _, layer, rest = short.split(".", 2)
+            gguf = f"blk.{layer}.{GGUF_LAYER[rest]}"
+        if short == "per_layer_model_projection.weight":
+            blob, held = bfloat16(tensor)
+            stored[gguf], same[name] = [blob, 30, tensor.shape], held
+        elif tensor.ndim == 2 and tensor.shape[-1] % 32 == 0:
+            blob, held = q8_0_blocks(tensor)
+            stored[gguf], same[name] = [blob, 8, tensor.shape], held
+        else:
+            stored[gguf], same[name] = [tensor.astype(np.float32).tobytes(), 0, tensor.shape], tensor
+        if short == "embed_tokens_per_layer.weight":
+            wide = model["global_head_dim"]
+            turned = int(wide * (table_proportion or model["rope_parameters"]["full_attention"]["partial_rotary_factor"]) / 2)
+            table = np.array([1.0] * turned + [1e30] * (wide // 2 - turned), dtype=np.float32)
+            stored["rope_freqs.weight"] = [table.tobytes(), 0, table.shape]
+    layers, sharing = model["num_hidden_layers"], model["num_kv_shared_layers"]
+    widths = [model["intermediate_size"] * (2 if model["use_double_wide_mlp"] and layer >= layers - sharing else 1)
+              for layer in range(layers)]
+    arch = "gemma4"
+    metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, layers),
+                (f"{arch}.context_length", 4, model["max_position_embeddings"]),
+                (f"{arch}.embedding_length", 4, model["hidden_size"]),
+                (f"{arch}.feed_forward_length", *((9, (4, widths)) if model["use_double_wide_mlp"] else (4, widths[0]))),
+                (f"{arch}.attention.head_count", 4, model["num_attention_heads"]),
+                (f"{arch}.attention.head_count_kv", 4, model["num_key_value_heads"]),
+                (f"{arch}.rope.freq_base", 6, model["rope_parameters"]["full_attention"]["rope_theta"]),
+                (f"{arch}.rope.freq_base_swa", 6, model["rope_parameters"]["sliding_attention"]["rope_theta"]),
+                (f"{arch}.attention.layer_norm_rms_epsilon", 6, model["rms_norm_eps"]),
+                (f"{arch}.attention.key_length", 4, model["global_head_dim"]),
+                (f"{arch}.attention.value_length", 4, model["global_head_dim"]),
+                (f"{arch}.attention.sliding_window", 4, model["sliding_window"]),
+                (f"{arch}.attention.shared_kv_layers", 4, sharing),
+                (f"{arch}.embedding_length_per_layer_input", 4, model["hidden_size_per_layer_input"]),
+                (f"{arch}.attention.sliding_window_pattern", 9, (7, [kind == "sliding_attention" for kind in model["layer_types"]])),
+                (f"{arch}.attention.key_length_swa", 4, model["head_dim"]),
+                (f"{arch}.attention.value_length_swa", 4, model["head_dim"]),
+                (f"{arch}.rope.dimension_count", 4, model["global_head_dim"]),
+                (f"{arch}.rope.dimension_count_swa", 4, model["head_dim"]),
+                ("tokenizer.ggml.model", 8, "gemma4"), ("tokenizer.ggml.bos_token_id", 4, 2),
+                ("tokenizer.ggml.eos_token_id", 4, 1)]
+    if model["final_logit_softcapping"]:
+        metadata.append((f"{arch}.final_logit_softcapping", 6, model["final_logit_softcapping"]))
+    metadata = [entry for entry in metadata if entry[0] not in leave] + list(more)
+    string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(stored), len(metadata))]
+    for key, kind, value in metadata:
+        out.append(string(key) + struct.pack("<I", kind) + metadata_value(kind, value))
+    blobs, offset = [], 0
+    for gguf, (blob, type_, tensor_shape) in stored.items():
+        out.append(string(gguf) + struct.pack("<I", len(tensor_shape)) + struct.pack(f"<{len(tensor_shape)}Q", *reversed(tensor_shape))
+                   + struct.pack("<IQ", type_, offset))
+        blobs.append(blob + b"\0" * (-len(blob) % 32))
+        offset += len(blobs[-1])
+    head = b"".join(out)
+    head += b"\0" * (-len(head) % 32)
+    return config, head + b"".join(blobs), same
+
+
+GGUF_SHAPES = {"as E2B is": GGUF_E2B,
+               "as E4B is: a classifier of its own, one width of FFN": dict(kinds="sslsslsslssl", sharing=5, per_layer=32,
+                                                                           n_kv_heads=2, shared=False),
+               "the language model saved alone, no cap, half of a head turns": dict(GGUF_E2B, whole=False, softcap=None,
+                                                                                   proportion=0.5)}
+
+
+@pytest.mark.parametrize("dtype", ["int8", "float32", "int6"])
+@pytest.mark.parametrize("shape", GGUF_SHAPES)
+def test_a_gemma4_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
+    """The list's way in (T529): the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the
+    byte, the table of every layer among them (the row the page reads from the keeper, T329.2.2's tableHole()). The
+    rope_freqs table passes as it streams by, held to the original's quarter."""
+    monkeypatch.setattr("convert.stream.PIECE", 700)
+    config, file, same = gemma4_gguf(**GGUF_SHAPES[shape])
+    vocabulary = unigram(text(config)["vocab_size"])
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
+    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint)
+    assert bytes(got.tokenizer) == bytes(expected.tokenizer)
+    assert got.options == expected.options and got.options["arch"] == "gemma4" and got.options["per_layer"] == 32
+    if dtype == "float32":
+        passed = {key: value for key, value in got.options.items() if key in PASSED}
+        llama = Llama(bytes(got.checkpoint), pack_tokenizer(tiny_vocab(text(config)["vocab_size"])), **passed)
+        want = naive_gemma4_logits(same, text(config), TOKENS)
+        for pos, token in enumerate(TOKENS):
+            assert close(llama.forward(token, pos), want[pos]), pos
+
+
+@pytest.mark.parametrize("change, what", [
+    ({"num_kv_shared_layers": 4}, "layers that read another's keys and values"),
+    ({"sliding_window": 6}, "sliding-attention layers"),
+    ({"layer_types": ["sliding_attention"] * 2 + ["full_attention"] * 10}, "sliding-attention layers"),
+    ({"final_logit_softcapping": None}, "cap of the logits"),
+    ({"rms_norm_eps": 1e-5}, "RMSNorm epsilon"),
+    ({"head_dim": 32}, "size of a head"),
+    ({"num_key_value_heads": 2}, "number of key-value heads"),
+])
+def test_a_gemma4_gguf_that_is_not_the_originals_is_refused(change, what):
+    """What no tensor shows: which layers read another's keys and values, which are local, their window, the cap."""
+    config, file, _ = gemma4_gguf(**GGUF_E2B)
+    llama2_convert.gguf_weights(file, json.dumps(config))  # its own config goes through
+    changed = {**config, "text_config": {**config["text_config"], **change}}
+    with pytest.raises(ValueError, match=f"its {what} is "):
+        llama2_convert.gguf_weights(file, json.dumps(changed))
+
+
+def test_a_gemma4_gguf_that_turns_another_part_of_a_head_is_refused_as_it_streams_past():
+    """How much of a head turns is the rope_freqs table's alone (rope.dimension_count is the whole head): held to the
+    original's as it passes, the header being no different."""
+    config, file, _ = gemma4_gguf(table_proportion=0.5, **GGUF_E2B)
+    with pytest.raises(ValueError, match="scales its RoPE otherwise than the original"):
+        with_original(file, config, unigram(text(config)["vocab_size"]), "tokenizer.json", "int8")
+
+
+def test_a_gemma4_gguf_alone_is_refused_by_its_vocabulary():
+    """Its vocabulary is llama.cpp's gemma4 one, which the engine does not read: refused by that, and not by the table
+    (which is not the first tensor, and is no scaling)."""
+    _, file, _ = gemma4_gguf(**GGUF_E2B)
+    with pytest.raises(ValueError, match="This GGUF has a gemma4 vocabulary"):
+        llama2_convert.Conversion.from_gguf(file, dtype="int8")

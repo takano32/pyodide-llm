@@ -33,7 +33,7 @@ FACTS = {
     "qwen3_5": ("Qwen3.5", "qwen35", None, "lm_head.weight", {"renamed", "free_heads", "rotatable", "rms_norm", "partly"}),
     "lfm2": ("LFM2", "lfm2", "lfm2", "lm_head.weight", {"rms_norm"}),
     "gemma3_text": ("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}),
-    "gemma4_text": ("Gemma 4", "gemma4", None, "lm_head.weight", {"free_heads", "rms_norm"}),
+    "gemma4_text": ("Gemma 4", "gemma4", "gemma4", "lm_head.weight", {"free_heads", "rms_norm"}),
     "gemma4": ("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
     "spark2_5": ("Spark-X2.5", "spark", "spark2_5", "lm_head.weight", {"free_heads", "rms_norm", "partly"}),
     "gpt2": ("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}),
@@ -186,17 +186,17 @@ def gguf_targets(family):
 def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(model_type):
     """The table of llama.cpp's names and the sources are written side by side in a family and say the same tensors:
     by Hugging Face's names without what stands in front of them in a file ("transformer." of a GPT-2; a Qwen3.5's GGUF
-    is the language model saved alone, "model.")."""
+    and a Gemma 4's are the language model saved alone, "model.")."""
     family = FAMILIES[model_type]
     if family.gguf is None:
-        # (T331: a Gemma 4 is read from its safetensors alone, until a GGUF of it is: T333)
-        assert (model_type in ("mistral", "qwen3_5") and family.renamed) or family.arch == "gemma4"
+        # (a Gemma 4's whole model, T529: its GGUF is its language model's, gemma4_text)
+        assert model_type in ("mistral", "qwen3_5", "gemma4") and family.renamed
         return
     assert families.GGUF[family.gguf] == (model_type, family)
     header, form, rotary = LAYOUTS[family.arch]
     form = {**form, "bias": False} if model_type == "qwen3" else {**form, "qk_norm": False} if model_type in ("llama", "qwen2", "granite", "smollm3") else form
     rows = tensor_rows(header, form)
-    sources = family.sources(Dims(header, form), "model." if family.arch == "qwen35" else "", rotary)
+    sources = family.sources(Dims(header, form), "model." if family.arch in ("qwen35", "gemma4") else "", rotary)
     used = {sources[row.name][0] for row in rows if row.role != TABLE}
     whole, begun = gguf_targets(family)
     reached = lambda name: name in whole or any(name == begin or name.startswith(begin + ".") for begin in begun)
@@ -210,8 +210,8 @@ def test_the_refusal_of_a_gguf_names_the_families_that_have_one():
     with pytest.raises(ValueError) as refusal:
         gguf_model({"general.architecture": "mamba"}, {}, 0)
     assert str(refusal.value) == ("This GGUF holds a mamba: only Llama, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, "
-                                  "Gemma 3, Spark-X2.5, GPT-2 and GPT-NeoX ones are supported.")
-    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gemma3", "spark2_5", "gpt2", "gptneox"]
+                                  "Gemma 3, Gemma 4, Spark-X2.5, GPT-2 and GPT-NeoX ones are supported.")
+    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gemma3", "gemma4", "spark2_5", "gpt2", "gptneox"]
 
 
 def test_a_llama_with_a_little_more_is_the_llamas_record_but_for_that():

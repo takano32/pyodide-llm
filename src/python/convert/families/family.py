@@ -114,6 +114,10 @@ class Family(NamedTuple):
     # the header what llama.cpp stores otherwise than Hugging Face (convert/gguf.py's gguf_model()). info: the GGUF's
     # own entry, target: Hugging Face's name, parts: the GGUF's name cut at its dots
     gguf_stored: Callable = as_stored
+    # (config) -> the rope_freqs table llama.cpp writes of this family's RoPE, where it writes one that is not a Llama
+    # 3's scaling (T529: a Gemma 4's proportional RoPE, the pairs that do not turn divided by 1e30). The table is then
+    # held to this as it streams past, whether or not the GGUF has the original's config.json beside it
+    gguf_rope_freqs: Optional[Callable] = None
     # (config, header, which) -> the cos (which 0) or sin (1) RoPE table of a float32 or float16 file, where the
     # family's is not the one convert/plan.py's rope_table() makes (T331: a Gemma 4's, of its wide heads)
     table: Optional[Callable] = None

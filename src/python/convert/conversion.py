@@ -94,7 +94,7 @@ class Conversion:
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
         # (T505.2: llama.cpp's table of a Llama 3's RoPE scaling, which a GGUF alone has in the place of the scaling)
-        header, config = gguf_model(metadata, tensors, base, table=rope_freqs_values(head, tensors, base))
+        header, config = gguf_model(metadata, tensors, base, table=rope_freqs_values(head, tensors, base, metadata))
         self = cls.__new__(cls)
         self.config = config
         check_config(normalize(config))  # a GPT-2's is in config.json's own spelling (T136's third stage)

@@ -21,7 +21,7 @@ import math
 
 import numpy as np
 
-from convert.families.family import Family, refuse
+from convert.families.family import Family, f32, refuse
 from convert.families.gemma3 import FULL, LOCAL_THETA, SLIDING, THETA, local
 from engine.layers import rope_frequencies
 
@@ -227,9 +227,84 @@ def gemma4_prefix(source):
     return "model.language_model." if "model.language_model.embed_tokens.weight" in source else "model."
 
 
+# ---- a GGUF of a Gemma 4 (T529)
+# What llama.cpp writes of one (conversion/gemma.py's Gemma4Model, gguf-py's constants.py and tensor_mapping.py, and
+# src/models/gemma4.cpp, at b76b1337; MIT, no line of them): every tensor as Hugging Face has it (its norm_shift is 0:
+# a Gemma 4's norms are of their weight, and nothing is folded: the scales of the embeddings and of the projection are
+# multiplied at run time), the last norm and the embeddings' outside the layers, and one table of its own besides,
+# rope_freqs: a divisor of each pair's angle, 1 for the pairs the full-attention layers turn and 1e30 for the others
+# (ggml turns the first pairs of a head only, so the proportional RoPE is written as pairs that never turn).
+def gemma4_gguf_config(key, tensors):
+    """config.json of a Gemma 4's language model (by the names gemma4_config() reads) as llama.cpp's metadata says it:
+    a Gemma 3's (the layers' kinds as attention.sliding_window_pattern, the window, the two bases, the cap), and the
+    size of the full-attention layers' heads as attention.key_length (the others' as key_length_swa), the FFN as a
+    width a layer (twice the first in the layers that read another's keys and values, where use_double_wide_mlp), how
+    many layers read another's (attention.shared_kv_layers) and the width of every layer's own input
+    (embedding_length_per_layer_input). How much of a full-attention layer's head turns it says by the rope_freqs table
+    alone (rope.dimension_count is the whole head), which streams past after gigabytes of the file: transformers'
+    quarter is taken here, and gemma4_rope_freqs() holds the table to the config.json's as it passes (the original's,
+    where there is one)."""
+    from convert.families.gemma3 import gemma3_gguf_config
+
+    config = gemma3_gguf_config(key, tensors)
+    widths = key("feed_forward_length")
+    widths = widths if isinstance(widths, list) else [widths]
+    config.update(intermediate_size=widths[0], use_double_wide_mlp=any(width != widths[0] for width in widths),
+                  head_dim=key("attention.key_length_swa", key("attention.key_length")),
+                  global_head_dim=key("attention.key_length"), num_kv_shared_layers=key("attention.shared_kv_layers", 0),
+                  hidden_size_per_layer_input=key("embedding_length_per_layer_input", 0),
+                  vocab_size_per_layer_input=tensors["per_layer_token_embd.weight"]["shape"][0]
+                  if "per_layer_token_embd.weight" in tensors else None,
+                  # (transformers' quarter; the table says the GGUF's, and is held to the config.json's as it passes)
+                  rope_proportion=PROPORTION)
+    if config["vocab_size_per_layer_input"] is None:
+        del config["vocab_size_per_layer_input"]
+    return config
+
+
+def gemma4_rope_freqs(config):
+    """What llama.cpp writes as a Gemma 4's rope_freqs table: of the full-attention layers' heads, 1 for each pair
+    their RoPE turns and 1e30 for each it does not (Gemma4Model.generate_extra_tensors())."""
+    config = gemma4_config(config)
+    size = config["global_head_dim"] if full_layers(config) else config["head_dim"]
+    turned = rotary(config) // 2
+    return np.array([1.0] * turned + [1e30] * (size // 2 - turned))
+
+
+def gemma4_agrees(own, config):
+    """What a GGUF and the original's config.json must agree on that no tensor shows: the local layers (a Gemma 3's),
+    the cap of the logits and which layers read another's keys and values (theirs are in the file all the same).
+    (The sizes of the wide heads, of the FFNs and of every layer's own input are the tensors' shapes; how much of a
+    head turns is the rope_freqs table's.)"""
+    own, config = gemma4_config(own), gemma4_config(config)
+    said = lambda c: local(c) and {**local(c), "rope_theta": f32(local(c)["rope_theta"])}
+    return [("sliding-attention layers", said(own), said(config)),
+            ("cap of the logits", own.get("final_logit_softcapping") or None, config.get("final_logit_softcapping") or None),
+            ("layers that read another's keys and values", shared(own), shared(config))]
+
+
 GEMMA4 = Family("Gemma 4", "gemma4", gemma4_sources, gemma4_check, before=gemma4_config, options=gemma4_options,
                 form={"wide": wide, "double": double, "kv_shared": shared, "per_layer": per_layer}, prefix=gemma4_prefix, table=gemma4_table,
-                free_heads=True, rms_norm=True)
+                free_heads=True, rms_norm=True,
+                gguf="gemma4", gguf_config=gemma4_gguf_config, agrees=gemma4_agrees, gguf_rope_freqs=gemma4_rope_freqs,
+                # llama.cpp's names by transformers' of the language model saved alone ("model."; the whole model's
+                # "model.language_model." is the safetensors', not the GGUF's): a Gemma 3's, the embeddings of every
+                # layer, and the number a layer ends with, whose name llama.cpp changes whole
+                gguf_names=({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
+                             "output.weight": "lm_head.weight",
+                             "per_layer_token_embd.weight": "model.embed_tokens_per_layer.weight",
+                             "per_layer_model_proj.weight": "model.per_layer_model_projection.weight",
+                             "per_layer_proj_norm.weight": "model.per_layer_projection_norm.weight"},
+                            "model.layers.{}.",
+                            {"attn_norm": "input_layernorm", "post_attention_norm": "post_attention_layernorm",
+                             "ffn_norm": "pre_feedforward_layernorm", "post_ffw_norm": "post_feedforward_layernorm",
+                             "attn_q": "self_attn.q_proj", "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj",
+                             "attn_output": "self_attn.o_proj", "attn_q_norm": "self_attn.q_norm",
+                             "attn_k_norm": "self_attn.k_norm", "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj",
+                             "ffn_down": "mlp.down_proj", "inp_gate": "per_layer_input_gate",
+                             "proj": "per_layer_projection", "post_norm": "post_per_layer_input_norm",
+                             "layer_output_scale.weight": "layer_scalar"}))
 # config.json of the whole model as it is published (gemma4: the language model and its towers of sight and sound): its
-# text_config is the Gemma 4 above
-GEMMA4_WHOLE = GEMMA4._replace(renamed=True, before=lambda config: gemma4_config(language_model(config)))
+# text_config is the Gemma 4 above. (Its GGUF says gemma4 too, and is the one above's: the converter's model_type of it
+# is gemma4_text)
+GEMMA4_WHOLE = GEMMA4._replace(renamed=True, before=lambda config: gemma4_config(language_model(config)), gguf=None)
