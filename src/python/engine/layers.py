@@ -345,7 +345,9 @@ def rope_frequencies(width, theta, scaling=None):
     original_max_position_embeddings positions turn as before, the ones that turn once or less factor times slower,
     and the pairs between (counted by their number, each bound rounded outward) go from the one to the other in even
     steps: transformers' _compute_yarn_parameters and llama.cpp's rope_yarn(), which are the same table at every
-    position, whatever the context. yarn also scales the turned values: rope_magnitude().
+    position, whatever the context. yarn also scales the turned values: rope_magnitude(). T532 (the form of
+    ssig33/pyodide-llm's bddde105, as transformers 5.16.1 reads it): beta_fast and beta_slow, where config.json says
+    them, are the numbers of turns in place of 32 and 1, and truncate false leaves the two bounds unrounded.
     """
     frequencies = 1.0 / theta ** (np.arange(0, width, 2, dtype=np.float64) / width)
     if not scaling:
@@ -357,8 +359,12 @@ def rope_frequencies(width, theta, scaling=None):
         original = float(scaling["original_max_position_embeddings"])
         # the pair whose angle makes this many turns in the original context (a real number: the pairs slow down evenly)
         pair = lambda turns: width * math.log(original / (turns * 2 * math.pi)) / (2 * math.log(theta))
-        low, high = max(math.floor(pair(32)), 0), min(math.ceil(pair(1)), width - 1)
-        slowed = np.clip((np.arange(width // 2) - low) / max(high - low, 0.001), 0, 1)
+        low, high = pair(scaling.get("beta_fast") or 32), pair(scaling.get("beta_slow") or 1)
+        if scaling.get("truncate", True):
+            low, high = math.floor(low), math.ceil(high)
+        low, high = max(low, 0), min(high, width - 1)
+        # the same two bounds would divide by zero: transformers moves the far one by 0.001
+        slowed = np.clip((np.arange(width // 2) - low) / ((high - low) or 0.001), 0, 1)
         return frequencies * (1 - slowed) + frequencies / float(scaling["factor"]) * slowed
     if kind != "llama3":
         raise ValueError(f"RoPE scaling of the {kind} kind is not supported.")
@@ -375,7 +381,16 @@ def rope_magnitude(scaling=None):
     """What the cos and sin of the RoPE tables are multiplied by: 1, but 0.1 ln(factor) + 1 under yarn (T235), which so
     makes q and k that much longer and the attention's scores sharper by its square (yarn's temperature: transformers'
     attention_factor, which scales cos and sin, and llama.cpp's mscale in rope_yarn(), where it comes to the same).
-    Left out, a yarn model's attention is 1.30 times too flat at factor 4 and nothing says so."""
+    Left out, a yarn model's attention is 1.30 times too flat at factor 4 and nothing says so. T532 (as transformers
+    5.16.1's _compute_yarn_parameters, the form of ssig33/pyodide-llm's bddde105): config.json's attention_factor is
+    the magnitude itself, and mscale with mscale_all_dim (both, and neither 0) make it the ratio
+    (0.1 mscale ln(factor) + 1) / (0.1 mscale_all_dim ln(factor) + 1)."""
     if not scaling or scaling.get("rope_type", scaling.get("type")) != "yarn":
         return 1.0
-    return 0.1 * math.log(max(float(scaling["factor"]), 1.0)) + 1.0
+    if scaling.get("attention_factor") is not None:
+        return float(scaling["attention_factor"])
+    factor = float(scaling["factor"])
+    grown = lambda mscale: 0.1 * mscale * math.log(factor) + 1.0 if factor > 1 else 1.0
+    if scaling.get("mscale") and scaling.get("mscale_all_dim"):
+        return grown(float(scaling["mscale"])) / grown(float(scaling["mscale_all_dim"]))
+    return grown(1.0)

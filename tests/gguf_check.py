@@ -904,7 +904,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     theirs = yarn(config)
     if said or theirs is not None:
         names = {"factor": "factor", "original_context_length": "original_max_position_embeddings",
-                 "attn_factor": "attention_factor", "yarn_log_multiplier": "mscale_all_dim"}
+                 # T532: as families/llama.py reads them (the bounds by transformers' names, the rest by llama.cpp's)
+                 "yarn_beta_fast": "beta_fast", "yarn_beta_slow": "beta_slow", "attn_factor": "attn_factor",
+                 "yarn_attn_factor": "yarn_attn_factor", "yarn_log_multiplier": "yarn_log_multiplier",
+                 "yarn_ext_factor": "yarn_ext_factor"}
         ours = {name: metadata[f"{arch}.rope.scaling.{key}"] for key, name in names.items()
                 if metadata.get(f"{arch}.rope.scaling.{key}") is not None} if said else None
         same = ours is not None and theirs is not None and set(ours) == set(theirs) \

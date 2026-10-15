@@ -1,5 +1,7 @@
 # Llama 3 (T106): the llama3 kind of RoPE scaling, its pre-tokenizer (digits up to three at a time), ignore_merges,
 # the BOS its chat template writes, and the special tokens of a chat template read from tokenizer.json.
+# T532: the yarn frequencies TRANSFORMERS_YARN and TRANSFORMERS_YARN_KEYS are from ssig33/pyodide-llm's bddde105
+# (MPL-2.0, ssig33 <mail@ssig33.com>), which took them from transformers 5.16.1.
 import json
 import math
 import struct
@@ -64,10 +66,12 @@ def test_the_yarn_frequencies_are_transformers_and_llama_cpps():
     assert np.allclose(small, [1.0, 1 / (0.25 * 0.5 + 0.5), 4.0, 4.0], rtol=1e-12)
 
 
-def transformers_yarn(head_dim, base, factor, original):
+def transformers_yarn(head_dim, base, factor, original, attention_factor=None, mscale=None, mscale_all_dim=None,
+                      beta_fast=None, beta_slow=None, truncate=True):
     """_compute_yarn_parameters of transformers 4.57.6 (modeling_rope_utils.py), transcribed line by line in float64:
-    the inverse frequencies and the attention factor, for a config.json that names a factor and an original context
-    only (beta_fast 32, beta_slow 1, truncate on). Written for the review of T235, from the file, not from rope_frequencies()."""
+    the inverse frequencies and the attention factor. Written for the review of T235, from the file, not from
+    rope_frequencies(). T532: and the keys a config.json may add, as transformers 5.16.1 reads them (the same lines,
+    which 5.16.1 keeps; its one change, a factor of None made of max_position_embeddings, check_config() refuses)."""
     dim = head_dim
 
     def get_mscale(scale, mscale=1):
@@ -88,10 +92,16 @@ def transformers_yarn(head_dim, base, factor, original):
             high += 0.001
         return np.clip((np.arange(dim, dtype=np.float64) - low) / (high - low), 0, 1)
 
+    if attention_factor is None:
+        if mscale and mscale_all_dim:
+            attention_factor = float(get_mscale(factor, mscale) / get_mscale(factor, mscale_all_dim))
+        else:
+            attention_factor = get_mscale(factor)
+    beta_fast, beta_slow = beta_fast or 32, beta_slow or 1
     pos_freqs = base ** (np.arange(0, dim, 2, dtype=np.float64) / dim)
-    low, high = find_correction_range(32, 1, dim, base, original, True)
+    low, high = find_correction_range(beta_fast, beta_slow, dim, base, original, truncate)
     extrapolation = 1 - linear_ramp_factor(low, high, dim // 2)
-    return (1.0 / (factor * pos_freqs)) * (1 - extrapolation) + (1.0 / pos_freqs) * extrapolation, get_mscale(factor), (low, high)
+    return (1.0 / (factor * pos_freqs)) * (1 - extrapolation) + (1.0 / pos_freqs) * extrapolation, attention_factor, (low, high)
 
 
 def llama_cpp_yarn(n_dims, base, factor, n_ctx_orig):
@@ -127,6 +137,60 @@ def test_the_yarn_frequencies_and_magnitude_are_those_of_transformers_and_llama_
         assert rope_magnitude(scaling) == pytest.approx(scale, rel=1e-14)
 
 
+# T532: what else a yarn may say, each on a grid against the transcription of transformers (float64 against float64)
+YARN_SETTINGS = {"attention_factor": dict(attention_factor=1.2), "mscale": dict(mscale=0.707, mscale_all_dim=1.0),
+                 "mscale_all_dim": dict(mscale=1.0, mscale_all_dim=0.707), "both mscales of 1": dict(mscale=1.0, mscale_all_dim=1.0),
+                 "mscale alone": dict(mscale=0.707), "beta_fast": dict(beta_fast=16), "beta_slow": dict(beta_slow=2),
+                 "both betas": dict(beta_fast=64, beta_slow=0.5), "truncate off": dict(truncate=False),
+                 "truncate off, betas": dict(truncate=False, beta_fast=16, beta_slow=2),
+                 # gpt-oss's (beta 32 and 1 said, truncate off) and Olmo 3's (its attention_factor): families this
+                 # converter does not read, but the numbers a config.json writes
+                 "gpt-oss": dict(beta_fast=32.0, beta_slow=1.0, truncate=False),
+                 "olmo 3": dict(attention_factor=1.2079441541679836, beta_fast=32.0, beta_slow=1.0)}
+
+
+@pytest.mark.parametrize("settings", YARN_SETTINGS)
+def test_the_yarn_settings_are_those_of_transformers_on_a_grid(settings):
+    """T532: the bounds by beta_fast and beta_slow (where they are not 32 and 1), unrounded where truncate is false,
+    and the magnitude by attention_factor, or by the ratio of the two mscales where both are said."""
+    said = YARN_SETTINGS[settings]
+    for head, base, factor, original in ((h, b, f, o) for h in (8, 64, 128, 256) for b in (1e4, 1e6, 5e6)
+                                         for f in (1.0, 1.5, 4.0, 32.0) for o in (64, 4096, 8192, 32768)):
+        scaling = {"rope_type": "yarn", "factor": factor, "original_max_position_embeddings": original, **said}
+        expected, magnitude, _ = transformers_yarn(head, base, factor, original, **said)
+        assert np.allclose(rope_frequencies(head, base, scaling), expected, rtol=1e-12, atol=0), (head, base, factor, original)
+        assert rope_magnitude(scaling) == pytest.approx(magnitude, rel=1e-14)
+
+
+# T532: the values ssig33/pyodide-llm's bddde105 took from transformers 5.16.1's _compute_yarn_parameters (PyTorch 2.14,
+# float32) for Ternary-Bonsai 1.7B's heads (128, theta 1e6): its own config.json, and the same with the other keys.
+# Another implementation's numbers than the transcription above, which a misreading of the file could share
+YARN_KEYS = {**YARN, "original_max_position_embeddings": 16384, "beta_fast": 16, "beta_slow": 2, "truncate": False}
+FAST = [1.0, 0.805842221, 0.649381638, 0.523299158, 0.421696514, 0.339820832, 0.273841977, 0.220673397, 0.177827939,
+        0.143301263, 0.115478203, 0.0930572003, 0.0749894157, 0.0604296438, 0.0486967526, 0.0392418988, 0.0316227786,
+        0.0254829675]
+SLOW = [0.000162345415, 0.000130824774, 0.000105424122, 8.49552089e-05, 6.84604893e-05, 5.51683552e-05, 4.44569851e-05,
+        3.58253164e-05, 2.88695483e-05, 2.32643015e-05, 1.87473561e-05, 1.51074091e-05, 1.21741887e-05, 9.81047469e-06,
+        7.90569356e-06, 6.37074163e-06, 5.13381246e-06, 4.13704265e-06, 3.33380353e-06, 2.68651957e-06, 2.16491094e-06,
+        1.74457659e-06, 1.40585337e-06, 1.13289593e-06, 9.1293532e-07, 7.35681795e-07, 5.92843435e-07, 4.7773824e-07,
+        3.84981632e-07, 3.10234441e-07]
+TRANSFORMERS_YARN = FAST + [0.0196292847, 0.0150880395, 0.0115702599, 0.00884971209, 0.00674942741, 0.00513110729,
+                            0.00388677069, 0.00293220137, 0.0022017851, 0.00164446514, 0.00122056005, 0.000899271923,
+                            0.000656733348, 0.000474476255, 0.000338235288, 0.000237012428] + SLOW
+TRANSFORMERS_YARN_KEYS = FAST + [0.0205352511, 0.0165481716, 0.0133352149, 0.0107460786, 0.00865964312, 0.00697830599,
+                                 0.00544650853, 0.00403620768, 0.00296823028, 0.00216281135, 0.00155825494, 0.00110692508,
+                                 0.000772111875, 0.000525583862, 0.000345679902, 0.000215822452] + SLOW
+
+
+@pytest.mark.parametrize("scaling, expected", [(YARN, TRANSFORMERS_YARN), (YARN_KEYS, TRANSFORMERS_YARN_KEYS)],
+                         ids=["bonsai", "keys"])
+def test_the_yarn_frequencies_are_what_transformers_printed(scaling, expected):
+    """T532: float32 against float64, so to 3e-7; and the magnitude 0.1 ln 4 + 1 for both, attention_factor where said."""
+    assert np.allclose(rope_frequencies(128, 1e6, scaling), expected, rtol=3e-7, atol=0)
+    assert rope_magnitude(scaling) == pytest.approx(1.138629436111989, rel=1e-15)
+    assert rope_magnitude({**scaling, "attention_factor": 1.5}) == 1.5
+
+
 def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     config, weights = synthetic_weights()
     _, published = hugging_face(config, weights, True)
@@ -136,10 +200,17 @@ def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     for kind in ("dynamic", "longrope"):
         with pytest.raises(ValueError, match="RoPE scaling"):
             check_config({**published, "rope_scaling": {"rope_type": kind, "factor": 2.0}})
-    # T235: what else a yarn may say changes the tables, and is refused rather than dropped without a word
+    # T532: what else transformers reads of a yarn goes through; T235: the rest is refused rather than dropped without
+    # a word (attn_factor: DeepSeek-R1-0528-Qwen3-8B's, which transformers drops and vLLM and llama.cpp multiply by;
+    # finetuned: NousResearch's Yarn-Llama-2's), and so is a setting of the wrong type
     for key, value in (("attention_factor", 1.2), ("mscale", 1.0), ("mscale_all_dim", 0.707), ("beta_fast", 16),
                        ("beta_slow", 2), ("truncate", False)):
-        with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}"):
+        check_config({**published, "rope_scaling": {**YARN, key: value}})
+    for key, value in (("attn_factor", 0.8782488562869419), ("finetuned", True), ("extrapolation_factor", 1.0)):
+        with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}, which"):
+            check_config({**published, "rope_scaling": {**YARN, key: value}})
+    for key, value in (("truncate", 0), ("beta_fast", "16"), ("attention_factor", -1.0), ("mscale", True)):
+        with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key} to"):
             check_config({**published, "rope_scaling": {**YARN, key: value}})
     for missing in ("factor", "original_max_position_embeddings"):
         with pytest.raises(ValueError, match="names no factor or no original context"):
@@ -155,8 +226,10 @@ def llama3(max_seq_len=64, scaling=None):
     return config, tensors, published
 
 
-@pytest.mark.parametrize("scaling", [None, LINEAR, {**YARN, "original_max_position_embeddings": 32}],
-                         ids=["llama3", "linear", "yarn"])
+@pytest.mark.parametrize("scaling", [None, LINEAR, {**YARN, "original_max_position_embeddings": 32},
+                                     {**YARN, "original_max_position_embeddings": 32, "attention_factor": 1.2,
+                                      "beta_fast": 16, "beta_slow": 2, "truncate": False}],
+                         ids=["llama3", "linear", "yarn", "yarn-settings"])
 def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     """float32 files hold the tables (the converter makes them), int8 files do not (the engine does): the two must
     agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path).

@@ -616,17 +616,33 @@ def test_a_gguf_whose_yarn_is_not_the_originals_is_refused(theirs):
             llama2_convert.gguf_weights(plain, json.dumps(published))
 
 
-@pytest.mark.parametrize("key, name", [("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")])
-def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key, name):
-    """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_multiplier's: read under
-    config.json's names, so that neither is dropped without a word, alone or with an original that does not say it.
-    The keys are spelled as the fork's src/llama-arch.cpp spells them (the review of T235: the first version of this
-    test and of the converter said yarn_log_mul, which no GGUF has, and so tested nothing real)."""
+@pytest.mark.parametrize("key", ["attn_factor", "yarn_attn_factor", "yarn_log_multiplier", "yarn_ext_factor"])
+def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key):
+    """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_multiplier's: neither is
+    transformers' attention_factor or mscale_all_dim (T532: llama.cpp multiplies by the one, and makes a ratio of the
+    other with an mscale of 1 it assumes), so each is kept by its own name and refused, not dropped without a word,
+    alone or with an original that does not say it. The keys are spelled as the fork's src/llama-arch.cpp spells them
+    (the review of T235: the first version of this test and of the converter said yarn_log_mul, which no GGUF has, and
+    so tested nothing real)."""
     config, published, file, _ = bonsai_gguf(also=[(f"qwen3.rope.scaling.{key}", 6, 0.5)])
-    with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {name}"):
+    with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}"):
         fed(file, "int8")
     with pytest.raises(ValueError, match="yarn RoPE scaling"):
         llama2_convert.gguf_weights(file, json.dumps(published))
+
+
+def test_a_gguf_reads_yarns_bounds_by_transformers_names():
+    """T532: llama.cpp's yarn_beta_fast and yarn_beta_slow are transformers' beta_fast and beta_slow (llama.cpp rounds
+    the bounds outward, as transformers does by default): a GGUF alone that says them makes the table of a config.json
+    that says them, and against an original whose config.json does not, it is another model."""
+    theirs = {**YARN, "beta_fast": 16.0, "beta_slow": 2.0}
+    config, published, file, _ = bonsai_gguf(yarn=theirs, also=[("qwen3.rope.scaling.yarn_beta_fast", 6, 16.0),
+                                                                ("qwen3.rope.scaling.yarn_beta_slow", 6, 2.0)])
+    llama2_convert.gguf_weights(file, json.dumps(published))  # its own config goes through
+    assert fed(file, "int8").options["rope_scaling"] == {"type": "yarn", **{k: v for k, v in theirs.items() if k != "rope_type"}}
+    plain = {**published, "rope_scaling": YARN}
+    with pytest.raises(ValueError, match="yarn RoPE scaling"):
+        llama2_convert.gguf_weights(file, json.dumps(plain))
 
 
 def test_a_pq2_0_tensor_whose_rows_are_not_blocks_of_128_is_refused():
