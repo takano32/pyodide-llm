@@ -5219,8 +5219,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **順**: T257 → T261 → T331 → T330 → T329 → T333（E2B・E4B）→ T332 → T334。
 - **見込み**（int8、未計測）: E2B は層ごとの埋め込みの表（262,144 × 256 × 35 = 23.5 億）が全体の半分近くで約 5.5 GB、E4B は約 8.6 GB で、どちらも 64 ビットのメモリ（Chrome と Firefox）。表を引くのは 1 トークンに 1 行なので、表は速さに効かず大きさだけに効く。
 
-### T329 [追加][Gemma4] 層ごとの埋め込み（per-layer input） — 状態: 未着手（2026-10-05。規模 中）
+### T329 [追加][Gemma4] 層ごとの埋め込み（per-layer input） — 状態: 進行中（2026-10-15、Opus medium、ブランチ `t331-gemma4`。2026-10-05。規模 中）
 - `hidden_size_per_layer_input`（E2B は 256）: 語彙 × 層 × 256 の表から、トークンごとに各層の 256 の入力を引き、層の中で射影して足す。transformers の `modeling_gemma4.py` の式を項ごとに写す（行は写さない）。表は 23.5 億の値で、int8 で約 2.6 GB。行を引くだけなので、6 ビットや 3 値と同じく「詰めた行を広げて引く」形にして小さくできるか（未検討）。`footprint()`・`FORM`・`checkpoint_dtype()` の 3 か所。
+- **transformers の式**（`2126f65b`、`Gemma4TextModel.get_per_layer_inputs()`・`project_per_layer_inputs()`・`Gemma4TextDecoderLayer`）: トークンごとに、表の行（層 × P、P = 256）× √P と、埋め込み（√dim を掛けた後）の射影 `per_layer_model_projection`（層 × P × dim）× dim^−½ を層ごとに RMSNorm（重み `per_layer_projection_norm`、P）したものを足して 2^−½ を掛ける。層 l は FFN の足しの後（`layer_scalar` の前）に `x += norm_post(W_proj · (gelu(W_gate x) * 入力[l]))`（`per_layer_input_gate`: P × dim、`per_layer_projection`: dim × P、`post_per_layer_input_norm`）。
+- **決めた形**: FORM の `per_layer`（P。0 か無し: なし）。行は、表 `per_layer_table`（語彙 × 層 × P。新しい役 `ROWS`: 行を 1 つずつ引くだけの表、量子化のファイルでは行列と同じく詰め、NumPy は詰めたまま持つ）、射影 `per_layer_projection`（層 × P × dim、行列）、その norm `per_layer_norm`（P）、層ごとの `ple_gate`（P × dim）・`ple_proj`（dim × P）・`ple_post`（dim）。**変換器が畳むもの**: 表に √P × 2^−½（= √(P/2)）、射影に dim^−½（norm の前の倍率は eps があるので norm の重みに畳めない: 行列に）、norm の重みに 2^−½。エンジンは「射影 → head の norm（P ごと）→ 表の行を足す」だけ。
+- **子タスク**: **T329.1**（Python: 形・NumPy・変換器・作り物と手書きの参照。これで変換器は実物の E2B・E4B を断らなくなる）、**T329.2**（ページの forward）、**T329.3**（実物を transformers と: CI）。表の持ち方（メモリ）は持ち主の判断（下の「選択肢」）。
+- **予定した違い（T329.1）**: 今あるモデルは何も変わらない。**変換器は実物をまだ断る**（「it has an embedding for every layer」のまま）: 断りを外すと `?hf=` の訪問者が E2B の 10 GB を取って変換した後で、ページの forward が計画を断る（T331.2 まで）。断りは `convert/families/gemma4.py` の旗 `PAGE_READS_EMBEDDINGS`（ページの forward が層ごとの埋め込みを読む T329.2 で真にする）で、試験と CI の道具は旗を立てて実物も変換する（取りまとめ役の決め: 取り消しやすく、訪問者の費用を避ける側）。
 
 ### T330 [追加][Gemma4] KV の共有（後ろの層が前の層の K と V を使う） — 状態: 進行中（2026-10-15、Opus medium、ブランチ `t331-gemma4`。2026-10-05。規模 小〜中）
 - `num_kv_shared_layers`（E2B は 20）: 後ろの 20 層は自分の K と V を持たず、前の層のものを読む（どの層を読むかは窓の種類ごと: transformers のコードで確かめる）。KV の置き場が減る（`footprint()`）。CPU は読む層の番号を替えるだけ、GPU も同じ。
