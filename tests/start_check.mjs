@@ -8,7 +8,7 @@
 //   node tests/start_check.mjs <the <out> of tests/perplexity_prepare.py, or the id of a model of this site>
 //        [<the JSON of tests/write_options.py>] [--starts none,1,151643] [--tokens 1500] [--window 512] [--text <file>]
 //
-// --starts: the token ids to begin a window with, "none" for no token (the default: none alone, so name the BOS too).
+// --starts: the token ids to begin a window with, "none" for no token, "bos" for the page's BOS (the default: none alone, so name the BOS too).
 // The JSON of write_options.py gives the options the page gives the model (the entry's over the converter's), where
 // an <out>'s own .json has the converter's alone. A prepared <out> is read from its file straight into forward.js's
 // memory (a model of gigabytes), on a 64-bit memory where it with its forward pass does not fit 4 GiB, as
@@ -44,7 +44,8 @@ const page = pageFile?.endsWith(".json") ? JSON.parse(fs.readFileSync(pageFile, 
 const options = page?.options ?? model.options;
 const fromFile = !site;
 const local = (file) => (path.isAbsolute(file) ? file : root + file);
-const starts = value("starts", "none").split(",").map((token) => (token === "none" ? null : Number(token)));
+// "bos": the page's BOS of this model, whatever its id (T511.5: one flag for models of many vocabularies)
+const starts = value("starts", "none").split(",").map((token) => (token === "none" ? null : token === "bos" ? "bos" : Number(token)));
 const text = value("text") ? fs.readFileSync(value("text"), "utf8") : await wikipediaText("ja", ARTICLES.ja);
 
 // the checkpoint's own header (7 int32: the legacy format) says what the forward pass puts after it
@@ -78,6 +79,7 @@ if FROM_FILE:
     llama = kernel_llama_file(CHECKPOINT, vocabulary, **options)
 else:
     llama = kernel_llama(open(CHECKPOINT, "rb").read(), vocabulary, **options)
+STARTS = [llama.bos if s == "bos" else s for s in STARTS]
 every = llama.tokenizer.encode(TEXT, llama.specials)
 ids = every[:TOKENS]
 characters = len(TEXT) * len(ids) / len(every)
