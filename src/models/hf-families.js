@@ -214,6 +214,18 @@ export const HF_FAMILIES = [
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",
     "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 379216512,
     "fetches 379 MB (GGUF) → int8 399 MB"),
+  // T528: and the same model lighter, beside it (the owner: "どっちも配ればいいんじゃないの？"): the same repository's
+  // Q4_K_M, llama.cpp's blocks kept as they are (conversion.blocks, as Underdog Saluki 27B's) where the page has kernels
+  // for them (Q4_K: q, k, the attention's and the convolutions' matrices, w1 and w3), the rest widened to int8 (the
+  // embedding and the layers' w2 and v that are Q6_K). T513 measured it: 229 MB fetched where the int8 takes 379,
+  // 282 + 129 MB of memory where it takes 399 + 155, 0.79 to 0.88 times its speed on CI's CPUs, 1.2% more nats a
+  // character of Japanese. What it takes once loaded is said (loaded: the checkpoint's bytes, tests/quant_sizes.py).
+  // rebuilt: tests/gguf_check.py tensors holds a Q8_0 to its original within 1e-3, which 4 bits are not (gguf.yml skips
+  // it); what holds it is TODO.md's T528: that check read for its orders and errors, and T513's measures
+  shisaLfm2("hf-shisa-v2.1c-lfm2-350m-q4", "Shisa V2.1c LFM2 350M (4-bit)", "shisa-v2.1c-lfm2-350m",
+    "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 229311104,
+    "4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB", "Q4_K_M",
+    { conversion: { dtype: "int8", blocks: true }, loaded: 281641004, rebuilt: true }),
   // T511.3: and its 1.2B (from LFM2-1.2B), the 1B class's best at Japanese chat as Shisa's card measures (Shaberi 5.35)
   shisaLfm2("hf-shisa-v2.1-lfm2-1.2b", "Shisa V2.1 LFM2 1.2B", "shisa-v2.1-lfm2-1.2b",
     "292863c4c1d3b63357027b384f336a52498252b2", "4a433b919681b37f43088cf2c57cbe92a8d859d5", 1246254048,
