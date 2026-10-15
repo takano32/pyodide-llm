@@ -38,6 +38,7 @@
 //                  and refuses a fallback adapter) a Chromium gets WebGPU without a GPU (SwiftShader, as
 //                  tests/bench-check.mjs has it), the page takes it and every block of a prompt it can, and the run
 //                  fails unless the prompt went through it.
+//   E2E_PROMPT     a prompt to type instead of the page's own (T333)
 //   E2E_TEXT       when set (T333): the whole answer as well, on a line `text: <JSON>` (what an answer ends with: a mark
 //                  of the format written as text where a stop was missing)
 //   E2E_GPU        swiftshader (T148): a Chromium gets SwiftShader's WebGPU without gpuTest=on, and the page must refuse
@@ -313,6 +314,9 @@ if (!process.env.E2E_LONG) await page.evaluate((tokens) => {
   steps.value = tokens;
   steps.dispatchEvent(new Event("input"));
 }, tokens);
+// T333: E2E_PROMPT, a prompt of the test's instead of the entry's (a short question, whose answer ends before the
+// 256 tokens: whether it stops at a stop token)
+if (process.env.E2E_PROMPT) await page.fill("#prompt", process.env.E2E_PROMPT);
 if (process.env.E2E_LONG) {
   await page.fill("#prompt", Array.from({ length: Number(process.env.E2E_LONG) }, (_, i) => i + 1).join(" "));
 }
