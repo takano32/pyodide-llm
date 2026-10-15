@@ -223,9 +223,9 @@
 - T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — 未着手
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
 - T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
-- T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — レビュー前
-- T536 [描画][その他] イントロに 4-bit の Shisa も案内する — レビュー前
-- T537 [描画][モデル] note の言語をモデルのカードに合わせる — レビュー前
+- T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 反映済み
+- T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 反映済み
+- T537 [描画][モデル] note の言語をモデルのカードに合わせる — 反映済み
 - T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
 <!-- 目次ここまで -->
 
@@ -1576,13 +1576,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - いまの軽い組の Qwen3.5 の相手は `conftest.naive_qwen35_logits`（transformers の式を書き直した参照）で、transformers そのものとは CI で頼んだときだけ（`tests/reference_qwen35.py`）。相手は、小さな Qwen3.5 を transformers で 1 回走らせた logits を fixture に置き、PyTorch なしの pytest で比べる。参照と実装が同じ読み違いをしても、fixture は落とす（AGENTS.md の「比べの相手が同じ表を読むと…」）。
 - 重みは相手の `qwen35_model.py` でなく、こちらの `tests/made_up.py` から作る（値の決め方を写さない）。fixture を作るのは torch と transformers のある所で 1 回（CI の `extra=` か手で）。網の `python` が「違う」と言う回になるので、製品のコードに触らない回で。同じ形を LFM2・Gemma 3・Gemma 4 に広げるかは、1 つ作ってから決める。
 
-### T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 状態: レビュー前（2026-10-15、持ち主「適切な表示を Fable max で検討して採用」: T523 の Qwen を「Alibaba」、Swallow を「TokyoTech-LLM」にした所を問われて） **Fable（max）の勧めが出た（2026-10-15、`docs/notes/t535-maker-names-advice-2026-10-15.md`）: 変えるのは 18 項目**（Swallow 4 つ「TokyoTech-LLM」→「Science Tokyo」、EuroLLM は作り手を外す、Agents-A1「Intern Science」→「Shanghai AI Lab」、Spark-X2.5 は「XHToken」を外す、「Takenoko12345678」→「Atemoya」、「Karpathy」→「Andrej Karpathy」）、Qwen の「Alibaba」はそのまま。持ち主の言葉どおりそのまま採用（実装は Opus medium）。
+### T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** T535 は 18 項目が Fable の勧めの表と一致し、ほかの名前は変わらない。T536 はボタンの id が一覧にあり tiny-lm と同じ `.choose` で、実装が手元の Chrome の 360 px で押して 4-bit が開くのを見た。T537 は HF のカードの言語（Spark・Saluki・llm-jp-3・sarashina2.2）と合い、網は `models` だけが違い、順の試験も通る）。前の見出し: レビュー前（2026-10-15、持ち主「適切な表示を Fable max で検討して採用」: T523 の Qwen を「Alibaba」、Swallow を「TokyoTech-LLM」にした所を問われて） **Fable（max）の勧めが出た（2026-10-15、`docs/notes/t535-maker-names-advice-2026-10-15.md`）: 変えるのは 18 項目**（Swallow 4 つ「TokyoTech-LLM」→「Science Tokyo」、EuroLLM は作り手を外す、Agents-A1「Intern Science」→「Shanghai AI Lab」、Spark-X2.5 は「XHToken」を外す、「Takenoko12345678」→「Atemoya」、「Karpathy」→「Andrej Karpathy」）、Qwen の「Alibaba」はそのまま。持ち主の言葉どおりそのまま採用（実装は Opus medium）。
 - Fable（max）が T523 の表（`docs/notes/t523-maker-names-2026-10-15.md`）の作り手の書き方を 1 つずつ見て（とくに Qwen・Swallow・EuroLLM の UTTER・個人の Takenoko12345678・Karpathy・Ellis Hoag）、勧めを出す。採用は持ち主の言葉どおりそのまま（実装は Opus medium）。
 - **結果（2026-10-15、ブランチ `t535-maker-names-fable`。状態: レビュー前）**: 勧めの表の 18 項目をそのまま（`src/models/built.js` の 5・`hf-japanese.js` の 3・`hf-families.js` の 10。家族の関数の名前の引数で書くもの（Swallow の Qwen3・Atemoya・Agents-A1・Spark）は 1 か所で 2 項目）。前 → 後: Karpathy TinyStories 260K・15M・42M・15M (original)・42M (original) → **Andrej Karpathy** …、TokyoTech-LLM Swallow-MS 7B instruct・Llama 3.1 Swallow 8B Instruct・Qwen3 Swallow 8B RL (thinking)・(no thinking) → **Science Tokyo** …、UTTER EuroLLM 1.7B Instruct → EuroLLM 1.7B Instruct、Intern Science Agents-A1 4B (thinking)・(no thinking) → **Shanghai AI Lab** …、XHToken Spark-X2.5 1.7B・4B (thinking)・(no thinking) → Spark-X2.5 …、Takenoko12345678 Qwen3.5 0.8B Japanese SFT v2.5 (thinking)・(no thinking) → **Atemoya** …。名前の終わり（「(thinking)」）は変えていない。並びは変わらない（名前で並べない）。
   - 確かめ（手元）: `models-check` ok、網 `models page` は `models` だけが違う（`MODELS` と、名前を文に持つ `memoryFailure` などの 18 項目の分: 予定どおり）・2 つのページのスクリプトは同じ、`said-texts` は名前の 26 の文だけ（前 13・後 13）、軽い組は T537 までを重ねた木で「suite: light passed」（終わりの数 0）、`npm run build && node tests/dist-check.mjs` ok。**CI を省いた。訳: 触ったのは一覧の名前の文字だけで、手元の models-check・網・軽い組が踏む。**
   - 記録の前の名前（docs/notes/t523 の表、docs/tasks/T343.md の「XHToken Spark-X2.5」）は直していない（勧めのとおり）。
 
-### T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 状態: レビュー前（2026-10-15、持ち主が選択肢で「4-bit も案内する」）
+### T536 [描画][その他] イントロに 4-bit の Shisa も案内する — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** T535 は 18 項目が Fable の勧めの表と一致し、ほかの名前は変わらない。T536 はボタンの id が一覧にあり tiny-lm と同じ `.choose` で、実装が手元の Chrome の 360 px で押して 4-bit が開くのを見た。T537 は HF のカードの言語（Spark・Saluki・llm-jp-3・sarashina2.2）と合い、網は `models` だけが違い、順の試験も通る）。前の見出し: レビュー前（2026-10-15、持ち主が選択肢で「4-bit も案内する」）
 - 今の文「…いちばん軽いモデルは [tiny-lm（33 MB）]です。…」に、取得を減らすなら [4-bit の形（229 MB）] もある、の 1 文とボタン 1 つを足す（日英）。文面は今ある文の形で勧めを決めて進め、区切りで見せる。
 - **結果（2026-10-15、ブランチ `t536-intro-light`。状態: レビュー前）**: `src/pages/index.astro` のイントロの既定のモデルの文の次に 1 文とボタン 1 つ（日英、ボタンは tiny-lm と同じ `.choose`、`data-model="hf-shisa-v2.1c-lfm2-350m-q4"`: `src/page/choose.ts` の今の受け口がそのまま拾う）。
   - 日本語（前）: 「…既定のモデルは問いに答えられる Shisa V2.1c LFM2 350M で、初回は Hugging Face から 379 MB を取得してこのブラウザの中で変換します。いちばん軽いモデルは [tiny-lm（33 MB）]です。一覧の最後のグループも同じように Hugging Face から取得して変換します。…」
@@ -1592,7 +1592,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - 確かめ（手元の Chrome、360 × 780、前後のビルド）: イントロは日英とも 1 行増える、ページの横の幅 360（横のスクロールなし）。tiny-lm で開いたページで新しいボタンを押すと、選択欄が `hf-shisa-v2.1c-lfm2-350m-q4`、URL が `?model=hf-shisa-v2.1c-lfm2-350m-q4` になり、56.2 秒で準備完了「Shisa V2.1c LFM2 350M (4-bit) · SIMD kernels, llama.cpp's blocks, relaxed SIMD, 2 threads, prompts on the CPU (convolution layers are not on the GPU yet) · Pyodide 314.0.7」、コンソールのエラー 0（捨ての道具、`.tmp/`）。網 `page` はページのスクリプトが同じ（イントロは HTML で、網と `said-texts` は見ない）、軽い組・`dist-check` ok。**CI を省いた。訳: 触ったのはページの HTML の 2 行で、手元の Chrome で開いて押した。**
   - **取りまとめ役の決め（訳）**: (1) 置き場は既定のモデルの文のすぐ後（「取得を減らすなら」は 379 MB の話の続き）。(2) ボタンの語は「4-bit の形（229 MB）」「Its 4-bit form (229 MB)」（台帳の持ち主の文と項目の名前「(4-bit)」から。大きさは note の「fetches 229 MB」）。(3) 英語は tiny-lm の文と同じくボタンで始める形。
 
-### T537 [描画][モデル] note の言語をモデルのカードに合わせる — 状態: レビュー前（2026-10-15、持ち主「English / 中文に、他にも同じような例があればカードに従う」: Spark-X2.5 の note を問われて）
+### T537 [描画][モデル] note の言語をモデルのカードに合わせる — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** T535 は 18 項目が Fable の勧めの表と一致し、ほかの名前は変わらない。T536 はボタンの id が一覧にあり tiny-lm と同じ `.choose` で、実装が手元の Chrome の 360 px で押して 4-bit が開くのを見た。T537 は HF のカードの言語（Spark・Saluki・llm-jp-3・sarashina2.2）と合い、網は `models` だけが違い、順の試験も通る）。前の見出し: レビュー前（2026-10-15、持ち主「English / 中文に、他にも同じような例があればカードに従う」: Spark-X2.5 の note を問われて）
 - Spark-X2.5 の 4 項目は「English / 中文」に（一覧では英語だけのモデルの側に並ぶ）。ほかの項目も、note の言語の語がカードの言語（メタデータの `language` と本文）と食い違うものを洗い出して、カードに従って直す。並べ替え（日本語の項目が先: T128）が動く項目は表に。
 - **結果（2026-10-15、ブランチ `t537-note-languages`。状態: レビュー前。洗い出しの表は `docs/notes/t537-note-languages-2026-10-15.md`）**: 144 項目の note の言語の語を、カード（HF の `cardData.language` と README の本文、言語を言わないカードは元のモデルのカード）と並べて、食い違う 14 項目を直した: Spark-X2.5 の 4 つ「日本語 / English」→「**English / 中文**」（GGUF のカードの language が en・zh）、Underdog Saluki 27B の 2 つ「日本語 / English」→「**English**」（カードの language が en だけ、本文は言語を言わない）、llm-jp-3 の instruct3 の 5 つと llm-jp-3.1 1.8B instruct4「日本語」→「日本語 / English」（カードが en・ja）、sarashina2.2 の base の 0.5B・1B「日本語」→「日本語 / English」（カードが ja・en、本文「Japanese, English, and code」）。`thinkingAndNot()` が note の言語を `chat.languages` で受ける（既定は今までの「日本語 / English」）。`tests/models-check.mjs` の Saluki の note の 2 つ目の写しを直し、Spark の 4 つの note と並びの側を足した。
   - **並びが動いた（T128: 「日本語」のある項目が先）**: Spark-X2.5 1.7B の 2 つ 54・55 → 122・123、4B の 2 つ 75・76 → 133・134、Saluki の 2 つ 86・87 → 136・137（英語の側に）。その間の 80 項目ほどが 2〜6 つ前に詰まる（表は docs/notes）。llm-jp・sarashina の 8 つは動かない。
