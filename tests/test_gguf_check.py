@@ -854,3 +854,41 @@ def test_what_shows_a_gguf_was_made_from_wider_weights(tmp_path, capsys):
                 tensors[name] = values * np.float32(1.004)
     assert not gguf_check.check_tensors(*wider_model(tmp_path / "off", change=change))
     assert summary(capsys)["wider_source"] is False
+
+
+# T343: the wrongs a Spark-X2.5's GGUF must not pass with, and the GGUF tensors each shows at
+SPARK_WRONG = {"the gates of two layers swapped": ["blk.0.attn_gate.weight", "blk.1.attn_gate.weight"],
+               "k before q": ["blk.2.attn_qkv.weight"],
+               "q turned as a Llama's GGUF has it": ["blk.3.attn_qkv.weight"]}
+
+
+@pytest.mark.parametrize("wrong", [None, *SPARK_WRONG])
+def test_a_spark_gguf_is_held_to_its_original(tmp_path, capsys, wrong):
+    """T343: a Spark-X2.5's GGUF as XHToken's are (test_spark.spark_gguf: q, k and v one matrix in Hugging Face's
+    order, the gate of the heads, the embedding under the model's own name) passes against its original, 0 off; an
+    original that is not what the GGUF was made of is past the line at that tensor. Before T343 every attn_qkv,
+    attn_gate and attn_output and the embedding were mismatches here (no names of the family)."""
+    from test_spark import spark_gguf
+    config, file, same = spark_gguf()
+    original = {name: tensor.copy() for name, tensor in same.items()}
+    layer = "model.layers.{}.self_attn."
+    q, keys = config["num_attention_heads"] * config["head_dim"], config["num_key_value_heads"] * config["head_dim"]
+    if wrong == "the gates of two layers swapped":
+        a, b = layer.format(0) + "g_proj.weight", layer.format(1) + "g_proj.weight"
+        original[a], original[b] = original[b], original[a]
+    if wrong == "k before q":
+        qkv = original[layer.format(2) + "q_k_v_proj.weight"]
+        original[layer.format(2) + "q_k_v_proj.weight"] = np.concatenate([qkv[q:q + keys], qkv[:q], qkv[q + keys:]])
+    if wrong == "q turned as a Llama's GGUF has it":
+        qkv = original[layer.format(3) + "q_k_v_proj.weight"]
+        turned = qkv[:q].reshape(config["num_attention_heads"], config["head_dim"] // 2, 2, -1).swapaxes(1, 2)
+        original[layer.format(3) + "q_k_v_proj.weight"] = np.concatenate([turned.reshape(q, -1), qkv[q:]])
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original))
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path) is (wrong is None)
+    result = summary(capsys)
+    if wrong is None:
+        assert result["mismatches"] == 0 and result["nearest"] == 0
+    else:
+        assert sorted(result["past_tight"]) == SPARK_WRONG[wrong] and result["mismatches"] == len(SPARK_WRONG[wrong])
