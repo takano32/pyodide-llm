@@ -376,3 +376,16 @@ def test_the_table_of_every_layer_is_held_as_it_is_stored(dtype, width):
     # table of 32 a layer, of logits up to 6.6: the first token's row is what this asks of them)
     for pos, token in enumerate(TOKENS if dtype == "float16" else TOKENS[:1]):
         assert np.abs(llama.forward(token, pos) - want[pos]).max() < (0.05 if dtype == "float16" else 1.0), pos
+
+
+def test_the_projection_is_scaled_before_its_norm_where_the_epsilon_shows_it():
+    """The projection of the embedding's row is multiplied by 1 / sqrt(dim) before an RMSNorm, which only its epsilon
+    lets see a scale: a projection small enough for the epsilon to matter shows whether the scale is where the
+    model has it (the made-up projections of the other tests are too large for that: the review of T329.1's breaks)."""
+    tensors, config = gemma4_model(**ALL)
+    name = "model.per_layer_model_projection.weight"
+    small = {**tensors, name: tensors[name] * np.float32(2e-3)}
+    llama = engine(small, config)[0]
+    want = naive_gemma4_logits(small, config, TOKENS)
+    for pos, token in enumerate(TOKENS):
+        assert close(llama.forward(token, pos), want[pos]), pos
