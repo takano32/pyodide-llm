@@ -220,7 +220,7 @@
 - T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
 - T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 未着手
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
-- T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 未着手
+- T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — レビュー前
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
 - T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — 未着手
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
@@ -1564,8 +1564,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T333 のレビューの気づき）
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
-### T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 状態: 未着手（2026-10-15、T513 の後、持ち主が選択肢で「GGUF を読めるようにする」）
+### T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 状態: レビュー前（2026-10-15、Opus medium、ブランチ `t529-gemma4-gguf`。2026-10-15、T513 の後、持ち主が選択肢で「GGUF を読めるようにする」）
 - 取得 10.2 GB（原本の safetensors）→ 約 5.0 GB。質と速さは同じ見込み（Q8_0 は損なく int8 に戻る）。層ごとの埋め込みの表・共有の層・広い層の GGUF の名前と並びを llama.cpp から読み、`gguf_check.py tensors` で原本と突き合わせる。一覧の E2B・E4B の取り込み元を GGUF に替えるのは突き合わせが通ってから。
+- **T529 の結果（2026-10-15、レビュー前。細かい表は docs/notes/t331-gemma4-2026-10-15.md の「T529」）**:
+  - **GGUF の形**（llama.cpp `b76b1337` の `conversion/gemma.py` の `Gemma4Model`・`gguf-py`・`src/models/gemma4.cpp`）: 値は Hugging Face のまま（norm に 1 を足さない、倍率は実行時）、q・k も HF の並び。名前は Gemma 3 のものに `per_layer_token_embd`・`per_layer_model_proj`（BF16）・`per_layer_proj_norm`、層の `inp_gate`・`proj`・`post_norm`・`layer_output_scale.weight`（= `layer_scalar`）。共有の層も k・v を持つ。`rope_freqs`（回す対 1・回さない対 1e30）が proportional の RoPE の回す割合を言う唯一の場所（`rope.dimension_count` は head 全体）。メタデータは 2 つの head の大きさ（`key_length` 512・`key_length_swa` 256）、層ごとの FFN の幅（E2B）、`shared_kv_layers`、`embedding_length_per_layer_input`、窓と 2 つの base、cap。
+  - **変換器**: 家族 `gemma4` に `gguf`・`gguf_names`・`gguf_config`・`agrees`（窓の層・cap・KV を共有する層）。家族の欄 `gguf_rope_freqs` を足した（その表を流れの中で原本の config と比べる。GGUF だけの道は語彙 `gemma4` で断られる）。`CONVERTER` は上げていない（出すものは変わらない: 下の `conversions_compare`）。
+  - **`gguf_check.py tensors`**（run 38786366632）: ggml-org E2B @`b4243c15`・bartowski E2B @`81012ba3`・unsloth E2B @`0314792d`・ggml-org E4B @`b8093469` の 4 つとも通った（全部のテンソルが原本の Q8_0 そのもの: 最も近い参照から 0.0、食い違い 0、`rope_freqs` 1.5e-8、語彙の違い 0）。道具に Gemma 4 の名前・メタデータの組・`rope_freqs` の読み（値ごとの相対）を足した。
+  - **作り物の試験**: `tests/test_gemma4.py` に 18 個（GGUF と原本の語彙で変換して、同じ値の safetensors の変換とチェックポイント・tokenizer.bin・options がバイト単位で同じ: 層ごとの埋め込みの表の行も含む。食い違う GGUF の断り 7 つ、回す割合の違う表、GGUF だけの道）。壊し方 2 つ（名前の表の norm の入れ替え・共有の比べを外す）は落ちた。
+  - **実物**（E2B、CI）: ページの forward（run 38790587176）の perplexity は 1500 トークンで英語 77.069（7 ビット）/ 76.395（8 ビット）・日本語 96.933 / 95.158（safetensors の変換は 77.994 / 79.379・97.051 / 95.159）。書かせた文は崩れ 0/24・日本語で 12/12・`<turn|>` なし、greedy で富士山 3,776 m・東京・408・『こころ』『坊っちゃん』。原本と並べた 96 トークンの logits（run 38805255399）は最大 7.43・最尤 94/97・KL 平均 0.020（英語）、3.53・92/97・0.024（日本語）で、**safetensors の尺度だけを float16 に丸めた対照も同じ大きさに動く**（KL 0.023・0.014）: GGUF は原本の Q8_0 そのもので（行列の尺度はどれも safetensors の尺度の float16 の丸めそのもの、int8 の値は 0.06% が 1 だけ違う）、動きはこのモデルのページの道の丸めへの敏感さ（T329.3）。取得はランナーで GGUF 4.7 GB が 19〜101 秒。
+  - **実ブラウザ**（ブランチのサイト、Chromium 156、run 38790590558）: 一覧の項目として準備完了 65.0 秒（取得 51.8・変換 22.8。T333 の safetensors は 105.3 秒・取得 99.1）、9.8 tok/s、ヒープ 3,316 MB（32 ビット）、2 回目は OPFS から 5.6 秒。
+  - **一覧を替えた**: `hf-gemma-4-e2b`・`hf-gemma-4-e4b` の重みを ggml-org の Q8_0 GGUF に（`ggufOf()`、`hf.vocabulary` は Google の原本の今までのリビジョン、`original` も原本）。`download` は 4,967,497,152・8,031,242,688、note は「fetches 5.0 GB (GGUF) → …」「fetches 8.0 GB (GGUF) → …」、ライセンスの表に ggml-org の 2 つ（Apache 2.0）。`loaded`・止まり・標本抽出・書式は変えていない。**保存の名前が変わる**ので、保存している訪問者は 1 回取り直す（`replaced()` が古い保存を消す）。
+  - **今あるモデルが変わらない証拠**: `conversions_compare.py`（相手 origin/main）で一覧の 129 項目の全部が同じ（options・tokenizer.bin・送る ID。Gemma 4 の 2 つも GGUF からの変換で前と同じ。Mistral 7B v0.3 は両方の木で 403: T514）。網: 違いは予定どおり（`models` の Gemma 4 の 2 項目とライセンスの表、Python の窓口の `Family` の欄の並びと `gguf_rope_freqs`、pytest の足した試験）、`shaders`・`calls`・`choices`・`layouts`・`page` は同じ。軽い組は 407 秒で通る（`suite: light passed`、終わりの数 0。pytest 3270 passed）。build と `dist-check` も通る。
+  - **CI の判断**: CI を回した（gguf.yml 1 本、tests.yml の `extra=` 3 本: ページの forward・ブラウザ・対照の `against`。1 本は道具のメモリの使いすぎでランナーが落ちたので直して回し直した: run 38804422585）。訳: GB 級の実物は手元で動かさない。ほかは手元（pytest・軽い組・網・build・作り物の `against` の道具）。
+  - **取りまとめ役の決め（訳）**: (1) 作り手は ggml-org（llama.cpp 自身の変換。bartowski・unsloth も通ったが、unsloth は少し大きい 5.05 GB）。(2) 一覧を GGUF に替えた（取得が約半分、ブラウザで準備完了 105 → 65 秒。保存し直しは 1 回）。(3) 回す割合は GGUF のメタデータに無いので、表を流れの中で原本と比べる形にした（表は 2.5 GB 先にあり、頭からは読めない）。(4) 断りの文の家族の一覧に「Gemma 4」が入る（「only Llama, …, Gemma 3, Gemma 4, Spark-X2.5, GPT-2 and GPT-NeoX ones」: 表から作る文）。(5) 1500 トークンの perplexity の差（−3.8% まで）は、対照が示す丸めの揺れとして読み、線にしていない。
+  - **覆す条件**: 本番の項目で、safetensors の頃より答えが崩れる・止まらない、が持ち主の端末か `models.yml` で出たら、`hf-families.js` の 2 行を前のリビジョンの safetensors に戻す（保存の名前が戻る）。
+  - **見ていないもの**: E4B をページの forward と実ブラウザで（gguf_check だけ）、Firefox・WebKit、本番の `models.yml`（デプロイの後）、ヒープが 94 MB 多い訳（ランナーの CPU も違う）、持ち主の端末。
 
 ### T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 状態: 未着手（2026-10-15、T340〜T342 のレビューの気づき）
 - いまの壊し方（ベクトルの道だけ係数をずらす）は「4 つずつと 1 つずつが同じ」の検査が落とす。両方の道で同じ誤りを入れたとき、smoke の NumPy との比べ（rtol 2e-6）と erf との比べ（5e-7）が係数の 1e-5 規模のずれを落とすかは未確認。通すなら線を締める。
