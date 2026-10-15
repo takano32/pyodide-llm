@@ -67,7 +67,7 @@ export const shisaLfm2 = (id, name, repo, revision, ggufRevision, download, size
  * The notice the Gemma Terms of Use ask for is not in the note: at a phone's width the select never shows it (the
  * owner chooses where it goes, TODO.md's T261.3) */
 export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
-  group: "hf", id: `hf-gemma-3-${size.toLowerCase()}`, name: `Gemma 3 ${size}`,
+  group: "hf", id: `hf-gemma-3-${size.toLowerCase()}`, name: `Google Gemma 3 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`,
   ...ggufOf(`unsloth/gemma-3-${size.toLowerCase()}-it-GGUF`, revision, `gemma-3-${size.toLowerCase()}-it-Q8_0.gguf`,
     `unsloth/gemma-3-${size.toLowerCase()}-it`, originalRevision), original: `google/gemma-3-${size.toLowerCase()}-it`, download,
@@ -89,7 +89,7 @@ export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */
 export const ternaryBonsai = (size, revision, originalRevision, download, sizes, { options = QWEN3_OWN_BOS, ...start } = {}) => ({
-  group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Ternary Bonsai ${size}`,
+  group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Prism ML Ternary Bonsai ${size}`,
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
     `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,

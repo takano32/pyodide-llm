@@ -11,26 +11,26 @@ import {
 import { gemma3, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
 export const HF_FAMILIES = [
-  ...thinkingAndNot("hf-qwen3-4b", "Qwen3 4B",
+  ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",
     ggufOf("Qwen/Qwen3-4B-GGUF", "bc640142c66e1fdd12af0bd68f40445458f3869b", "Qwen3-4B-Q8_0.gguf",
       "Qwen/Qwen3-4B", "1cfa9a7208912126459214e8b04321603b3df60c"), 4280404704,
     "fetches 4.3 GB (GGUF) → int8 4.5 GB"),
-  ...thinkingAndNot("hf-qwen3-8b", "Qwen3 8B",
+  ...thinkingAndNot("hf-qwen3-8b", "Alibaba Qwen3 8B",
     ggufOf("Qwen/Qwen3-8B-GGUF", "7c41481f57cb95916b40956ab2f0b139b296d974", "Qwen3-8B-Q8_0.gguf",
       "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218"), 8709518112,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB",
     { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   // Qwen3 Swallow's card gives one sampling, the thinking one, for both
-  ...thinkingAndNot("hf-qwen3-swallow-8b", "Qwen3 Swallow 8B RL",
+  ...thinkingAndNot("hf-qwen3-swallow-8b", "TokyoTech-LLM Qwen3 Swallow 8B RL",
     ggufOf("mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf", "3fc755c6ab3780ebad6671130fc1b630bbd1575b", "Qwen3-Swallow-8B-RL-v0.2-Q8_0.gguf",
       "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2", "9218f4843b6f93369a0b0999d8f58d61487ea71c"), 8709519968,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
-  { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
+  { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Alibaba Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
     ...ggufOf("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 4280405600,
     conversion: {}, options: QWEN3_OWN_BOS, template: CHATML, generation: atOnce, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // its chat_template begins the answer with <think> itself
-  { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
+  { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Alibaba Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
     ...ggufOf("unsloth/Qwen3-4B-Thinking-2507-GGUF", "f40adb104d4d44aee52f398b60597c5866a973a3", "Qwen3-4B-Thinking-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 4280405632,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_THINKING_2507, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
@@ -58,7 +58,7 @@ export const HF_FAMILIES = [
   // 0.95, 20 and 1.5, or 0.6, 0.95, 20 and no penalty "for precise coding". Since T274 the page samples with
   // QWEN35_SAMPLING (the card's set with thinking, and its 0.7 and 0.8 without; until then Qwen3's two, without a top-k
   // or a presence penalty)
-  ...thinkingAndNot("hf-qwen3.5-0.8b", "Qwen3.5 0.8B",
+  ...thinkingAndNot("hf-qwen3.5-0.8b", "Alibaba Qwen3.5 0.8B",
     ggufOf("unsloth/Qwen3.5-0.8B-GGUF", "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0", "Qwen3.5-0.8B-Q8_0.gguf",
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB", { options: qwen35 },
@@ -67,7 +67,7 @@ export const HF_FAMILIES = [
   // words and refusals, a short Japanese thought). The maker's own Q8_0 GGUF, the vocabulary and config.json of the
   // original; its chat_template.jinja, tokenizer.json and tokenizer_config.json are Qwen3.5-0.8B's byte for byte (the
   // same blobs), so the 0.8B's formats, BOS, stops and specials (qwen35). The sampling is its card's
-  ...thinkingAndNot("hf-qwen3.5-0.8b-japanese-sft-v2.5", "Qwen3.5 0.8B Japanese SFT v2.5",
+  ...thinkingAndNot("hf-qwen3.5-0.8b-japanese-sft-v2.5", "Takenoko12345678 Qwen3.5 0.8B Japanese SFT v2.5",
     ggufOf("Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF", "101c43b482a00d8d7cb5f1fb0de9e7c1bf30e447",
       "Qwen3.5-0.8B-Japanese-SFT-v2.5-Q8_0.gguf",
       "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5", "b069f75cda9f72cb979be84a78411ee48f75ff50"), 811842912,
@@ -80,17 +80,17 @@ export const HF_FAMILIES = [
   // and the 2B only when told to): either form is written out here, so the two entries are the same two. The sampling
   // is their cards' for general tasks (T274: QWEN35_SAMPLING, and the 2B's as the 0.8B's). The 4B and the 9B are past a
   // 32-bit memory as int8
-  ...thinkingAndNot("hf-qwen3.5-2b", "Qwen3.5 2B",
+  ...thinkingAndNot("hf-qwen3.5-2b", "Alibaba Qwen3.5 2B",
     ggufOf("unsloth/Qwen3.5-2B-GGUF", "f6d5376be1edb4d416d56da11e5397a961aca8ae", "Qwen3.5-2B-Q8_0.gguf",
       "Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc"), 2012012800,
     "fetches 2.0 GB (GGUF) → int8 2.1 GB", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
-  ...thinkingAndNot("hf-qwen3.5-4b", "Qwen3.5 4B",
+  ...thinkingAndNot("hf-qwen3.5-4b", "Alibaba Qwen3.5 4B",
     ggufOf("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf",
       "Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"), 4482403488,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
-  ...thinkingAndNot("hf-qwen3.5-9b", "Qwen3.5 9B",
+  ...thinkingAndNot("hf-qwen3.5-9b", "Alibaba Qwen3.5 9B",
     ggufOf("unsloth/Qwen3.5-9B-GGUF", "3885219b6810b007914f3a7950a8d1b469d598a5", "Qwen3.5-9B-Q8_0.gguf",
       "Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"), 9527502048,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB", { options: qwen35 },
@@ -103,12 +103,12 @@ export const HF_FAMILIES = [
   // thinking on, temperature 1.0, top-p 0.95, a top-k of 20 and a presence penalty of 1.5: Qwen3.5's sets (T274). The
   // page has no tools, so what this model was trained for
   // most (calling them) it cannot do here: it answers in chat form only
-  ...thinkingAndNot("hf-neohorse-1-4b", "NeoHorse-1 4B",
+  ...thinkingAndNot("hf-neohorse-1-4b", "TokenRhythm NeoHorse-1 4B",
     ggufOf("TokenRhythm/NeoHorse-1-4B-GGUF", "3c5d58ca82e580b5b0b3ce6eeffd34ac7d0fd95a", "NeoHorse-1-4B-Q8_0.gguf",
       "TokenRhythm/NeoHorse-1-4B", "56f0584bb40578a2c33b1b40a08ccd17243ad710"), 4482403072,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
-  ...thinkingAndNot("hf-neohorse-1-9b", "NeoHorse-1 9B",
+  ...thinkingAndNot("hf-neohorse-1-9b", "TokenRhythm NeoHorse-1 9B",
     ggufOf("TokenRhythm/NeoHorse-1-9B-GGUF", "ddcb4c939b5392c86a9d2733c7c0ed30db2554fd", "NeoHorse-1-9B-Q8_0.gguf",
       "TokenRhythm/NeoHorse-1-9B", "ba5b6e40d88a6ddf4591e176738254a3bc715765"), 9527501632,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB", { options: qwen35 },
@@ -121,7 +121,7 @@ export const HF_FAMILIES = [
   // (temperature 0.85, top-p 0.95, top-k 20, presence penalty 1.1) is the page's for both forms since T274
   // (AGENTS_A1_SAMPLING). After a change to the system
   // text, run tests/format_check.py: nothing that runs by itself compares it with the real template
-  ...thinkingAndNot("hf-agents-a1-4b", "Agents-A1 4B",
+  ...thinkingAndNot("hf-agents-a1-4b", "Intern Science Agents-A1 4B",
     ggufOf("InternScience/Agents-A1-4B-Q8_0-GGUF", "a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54", "Agents-A1-4B-Q8_0.gguf",
       "InternScience/Agents-A1-4B", "945c40a4aa6f534d434a353207b8d42ecf7a5293"), 4482404032,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
@@ -144,7 +144,7 @@ export const HF_FAMILIES = [
   // this context); with medium the thought ended after 59 to 267 tokens on three questions in CI. The sampling is the
   // card's (T274, BONSAI_2_SAMPLING): 0.7, 0.8, a top-k of 20 and a presence penalty of 1.5 without thinking; 1.0,
   // 0.95, the top-k and a min-p of 0.05 with
-  ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Ternary Bonsai 2 27B",
+  ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Prism ML Ternary Bonsai 2 27B",
     ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB",
@@ -169,12 +169,12 @@ export const HF_FAMILIES = [
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
   // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a
   // 32-bit memory in six bits (Safari); the 8B does not
-  ...thinkingAndNot("hf-granite-4.2-3b", "Granite 4.2 3B",
+  ...thinkingAndNot("hf-granite-4.2-3b", "IBM Granite 4.2 3B",
     ggufOf("ibm-granite/granite-4.2-3b-GGUF", "c40945d71cd90f249a56985e8155551a9188dc30", "granite-4.2-3b-Q8_0.gguf",
       "ibm-granite/granite-4.2-3b", "e459acceac81e5fe67c07d9cfc72329a332e7eb1"), 3892651552,
     "fetches 3.9 GB (GGUF) → int8 4.1 GB", { options: granite },
     { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
-  ...thinkingAndNot("hf-granite-4.2-8b", "Granite 4.2 8B",
+  ...thinkingAndNot("hf-granite-4.2-8b", "IBM Granite 4.2 8B",
     ggufOf("ibm-granite/granite-4.2-8b-GGUF", "93f3f6a8938ee922b784cf4e5b4203cd3428df8f", "granite-4.2-8b-Q8_0.gguf",
       "ibm-granite/granite-4.2-8b", "f8de16cdcdbc6c779ca517604e050d82cc119e44"), 9345613952,
     "fetches 9.3 GB (GGUF) → int8 9.9 GB", { options: granite },
@@ -183,11 +183,11 @@ export const HF_FAMILIES = [
   // OpenBMB's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals; the vocabulary is the
   // original's (the 1B's GGUF calls its pre-tokenizer llama-bpe, which is not what its tokenizer.json does). The
   // cards: temperature 0.9 thinking and 0.7 without for the 1B, 1.0 for the 2B, top-p 0.95
-  ...miniCpm5("hf-minicpm5-1b", "MiniCPM5 1B",
+  ...miniCpm5("hf-minicpm5-1b", "OpenBMB MiniCPM5 1B",
     ggufOf("openbmb/MiniCPM5-1B-GGUF", "3d55fac80935ae6456986ad2384b5cbcc4d6c948", "MiniCPM5-1B-Q8_0.gguf",
       "openbmb/MiniCPM5-1B", "87179e5c1f455ef22e6223592d2d61351b525bfc"), 1153529216,
     "fetches 1.2 GB (GGUF) → int8 1.2 GB", { thinking: 0.9, atOnce: 0.7 }),
-  ...miniCpm5("hf-minicpm5-2b", "MiniCPM5 2B",
+  ...miniCpm5("hf-minicpm5-2b", "OpenBMB MiniCPM5 2B",
     ggufOf("openbmb/MiniCPM5-2B-GGUF", "2079a22f3beaa4e306449978533478fe0522f4b3", "MiniCPM5-2B-Q8_0.gguf",
       "openbmb/MiniCPM5-2B", "f97400052a43d642bbc6e9975e2397e3ae6a6b52"), 2679710688,
     "fetches 2.7 GB (GGUF) → int8 2.8 GB", { thinking: 1.0, atOnce: 1.0 }),
@@ -198,16 +198,16 @@ export const HF_FAMILIES = [
   // to the bit, and its Q8_0 matrices were rounded from the float32 too: 1.5e-3 from the Q8_0 of the original, where
   // the check allows 1e-3): since T307 the check holds every value of it to what such weights can give, and it is
   // taken (until then the 230M came from the original's safetensors, 459 MB)
-  lfm2("hf-lfm2.5-230m", "LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
+  lfm2("hf-lfm2.5-230m", "Liquid AI LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
     "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB"),
-  lfm2("hf-lfm2.5-350m", "LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
+  lfm2("hf-lfm2.5-350m", "Liquid AI LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
     "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB"),
-  lfm2("hf-lfm2-700m", "LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
+  lfm2("hf-lfm2-700m", "Liquid AI LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
     "86f49fc9a3800c3a325b7320bde179c318062583", 791565248, "fetches 792 MB (GGUF) → int8 836 MB",
     { options: lfm2Old, template: CHATML }, 0.3),
-  lfm2("hf-lfm2.5-1.2b-instruct", "LFM2.5 1.2B Instruct", "LFM2.5-1.2B-Instruct", "8ed288026e23958ad9dfa92d53ed773a8eee7125",
+  lfm2("hf-lfm2.5-1.2b-instruct", "Liquid AI LFM2.5 1.2B Instruct", "LFM2.5-1.2B-Instruct", "8ed288026e23958ad9dfa92d53ed773a8eee7125",
     "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
-  lfm2("hf-lfm2.5-1.2b-jp", "LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
+  lfm2("hf-lfm2.5-1.2b-jp", "Liquid AI LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
     "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", {}),
   // T511.1: Shisa.AI's LFM2 350M for Japanese chat (trained from Liquid AI's LFM2-350M-ENJP-MT, the translating one);
   // its card says it is the best at Japanese chat under 1B (Shaberi 4.51, the LFM2-350M's 3.76)
