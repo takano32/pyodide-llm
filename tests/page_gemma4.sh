@@ -74,7 +74,10 @@ generation = {"temperature": 1.0, "topp": 0.95, "top_k": 64, "repetition_penalty
                                            "prompt": "", "generation": generation, "header": header}, ensure_ascii=False))
 print(f"gemma4: the format {json.dumps(template)}, bos {options['bos']}, stops {options['stop_tokens']}")
 EOF
-  GREEDY=1 SEEDS="1 2" said node tests/answers.mjs "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
+  # (Node 24's V8 reads a 64-bit memory above 4 GiB wrongly in Liftoff's code on arm64: AGENTS.md, the pitfalls of the
+  # kernels. page-27b.mjs sets --no-liftoff itself where it must; answers.mjs does not, and its logits were NaN there)
+  liftoff=; [ "$(uname -m)" = aarch64 ] && liftoff=--no-liftoff
+  GREEDY=1 SEEDS="1 2" said node $liftoff tests/answers.mjs "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
 fi
 rm -f "$dir/int8.bin"
 if has float32; then
