@@ -5,7 +5,7 @@
 #
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=120 extra="bash tests/gemma4_in_browser.sh chromium firefox" \
 #     --grep "^(gemma4|ready|opened|again|ok|FAILED|-|chromium|firefox|webkit)" --minutes 130 --ref <branch>
-#   node tests/ci.mjs run tests.yml only_extra=true runner=macos-latest minutes=120 extra="bash tests/gemma4_in_browser.sh webkit" ...
+#   node tests/ci.mjs run tests.yml only_extra=true runner=macos-latest minutes=120 extra="SITE=https://takano32.github.io/pyodide-llm/ bash tests/gemma4_in_browser.sh webkit" ...
 #
 # First the small made-up Gemma 4 (tests/gemma4-in-browser.mjs: the table of every layer's input read from the kept
 # file, a second visit, a second tab), so that a broken path fails before the large download. Then tests/e2e.mjs with
@@ -13,7 +13,10 @@
 # visit loading it and reading the table from it), and what the page said and measured.
 #   $@          the browsers (chromium)
 #   MODEL       the model, as tests/e2e.mjs takes it (Google's E2B at a fixed revision)
-#   SMALL       none: not the made-up model first
+#   SMALL       none: not the made-up model first (it runs in Chromium alone: the tool answers huggingface.co by
+#               Playwright's route, which a service worker's requests go past in the other browsers)
+#   SITE        a site to open instead of building this checkout's (the deployed one, where the product is the same:
+#               a macOS runner's make is too old for the Makefile)
 #   E2E_TIMEOUT as tests/e2e.mjs takes it (3600 s)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -23,21 +26,27 @@ echo "gemma4: $model in $* on $( (lscpu 2>/dev/null | sed -n 's/^Model name: *//
 began=$SECONDS
 python -c "import numpy" 2>/dev/null || python -m pip install -q numpy
 [ -d node_modules/pyodide ] || npm ci > /dev/null
-make kernels > /dev/null
-npm run build > /dev/null
-if [ "$(uname)" = Linux ]; then bash tests/apt-timeouts.sh; fi
-timeout 1200 npx playwright-core install --with-deps "$@" > /dev/null
+if [ -z "${SITE-}" ]; then
+  make kernels > /dev/null
+  npm run build > /dev/null
+fi
+if [ "$(uname)" = Linux ]; then
+  bash tests/apt-timeouts.sh
+  timeout 1200 npx playwright-core install --with-deps "$@" > /dev/null
+else
+  npx playwright-core install "$@" > /dev/null
+fi
 echo "gemma4: the site built and $* installed in $((SECONDS - began)) s"
 out=.tmp/keep/gemma4-browser
 mkdir -p "$out"
 status=0
 for browser in "$@"; do
-  if [ "${SMALL-}" != none ]; then
+  if [ "${SMALL-}" != none ] && [ -z "${SITE-}" ] && [ "$browser" = chromium ]; then
     PYTHON=python node tests/gemma4-in-browser.mjs "$browser" 2>&1 | sed 's/^/gemma4: small: /' || status=1
   fi
   log="$out/$browser.txt"
   E2E_TWICE=1 E2E_TIMEOUT=${E2E_TIMEOUT:-3600} E2E_RESULTS="$out/results-$browser.jsonl" E2E_ARTIFACTS="$out/artifacts-$browser" \
-    E2E_CONSOLE="$out/console-$browser.txt" node tests/e2e.mjs "$model" "$browser" 2>&1 | tee "$log" || status=1
+    E2E_CONSOLE="$out/console-$browser.txt" node tests/e2e.mjs "$model" "$browser" ${SITE:+"$SITE"} 2>&1 | tee "$log" || status=1
   node -e '
     const fs = require("fs");
     const file = process.argv[1], browser = process.argv[2];

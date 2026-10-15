@@ -29,6 +29,9 @@ id="${1:-hf:google/gemma-4-E2B-it@3e22461f65e89153144f8adb70e3b8c2cc9845a7}"
 parts=" ${2:-perplexity speed answers float32} "
 languages="${3:-en ja}"
 tokens=1500
+status=0
+# a tool that fails says why on its last lines (Node prints Pyodide's whole source line first, longer than a log keeps)
+said() { "$@" 2> "$dir/stderr.txt" || { status=1; awk 'length($0) < 2000' "$dir/stderr.txt" | tail -30 | sed 's/^/gemma4: stderr: /'; echo "gemma4: FAILED: $*"; }; }
 has() { case "$parts" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 dir="${RUNNER_TEMP:-.tmp}/gemma4-page"
 if [ -n "${RUNNER_TEMP:-}" ] && [ -d /mnt ] && sudo -n true 2>/dev/null; then
@@ -50,12 +53,12 @@ echo "gemma4: converted to int8 in $((SECONDS - began)) s (native Python); the c
 if has perplexity; then
   for language in $languages; do
     echo "gemma4: the kernels, $language"
-    node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/$language.txt" --file
+    said node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/$language.txt" --file --wide
   done
 fi
 if has speed; then
   echo "gemma4: the speed of $id"
-  node tests/page-27b.mjs "$dir/int8" speed --threads 1,2,4 --positions 24 --rounds 2 --entry none
+  said node tests/page-27b.mjs "$dir/int8" speed --threads 1,2,4 --positions 24 --rounds 2 --entry none
 fi
 if has answers; then
   # the page's options and the model's format (the converter's template, else the one the template writes without thinking)
@@ -71,7 +74,7 @@ generation = {"temperature": 1.0, "topp": 0.95, "top_k": 64, "repetition_penalty
                                            "prompt": "", "generation": generation, "header": header}, ensure_ascii=False))
 print(f"gemma4: the format {json.dumps(template)}, bos {options['bos']}, stops {options['stop_tokens']}")
 EOF
-  GREEDY=1 SEEDS="1 2" node tests/answers.mjs "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
+  GREEDY=1 SEEDS="1 2" said node tests/answers.mjs "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
 fi
 rm -f "$dir/int8.bin"
 if has float32; then
@@ -83,3 +86,4 @@ if has float32; then
   done
   rm -f "$dir/float32.bin"
 fi
+exit $status
