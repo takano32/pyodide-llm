@@ -5225,8 +5225,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T330 [追加][Gemma4] KV の共有（後ろの層が前の層の K と V を使う） — 状態: 未着手（2026-10-05。規模 小〜中）
 - `num_kv_shared_layers`（E2B は 20）: 後ろの 20 層は自分の K と V を持たず、前の層のものを読む（どの層を読むかは窓の種類ごと: transformers のコードで確かめる）。KV の置き場が減る（`footprint()`）。CPU は読む層の番号を替えるだけ、GPU も同じ。
 
-### T331 [追加][Gemma4] 層の残り — 状態: 未着手（2026-10-05。規模 中。T261 の後）
+### T331 [追加][Gemma4] 層の残り — 状態: 進行中（2026-10-15、Opus medium、ブランチ `t331-gemma4`。子タスクは下。2026-10-05。規模 中。T261 の後）
 - v の norm、層ごとの倍率（`layer_scalar`）、`use_double_wide_mlp`（一部の層の FFN が倍の幅）、全体の層の head の大きさ 512（窓の層は 256: 層ごとに head の大きさが違う）、全体の層の RoPE の `proportional`（回す割合 0.25、theta 1e6）、`final_logit_softcapping: 30`（logits に tanh）。どれもファイルから分からない設定は `FORM` か options に（T144）。
+- **読んだもの（2026-10-15）**: transformers `2126f65b` の `models/gemma4/modeling_gemma4.py`（`Gemma4TextAttention`・`Gemma4TextDecoderLayer`・`Gemma4TextModel`・`Gemma4ForCausalLM`・`Gemma4RMSNorm`）・`configuration_gemma4.py`・`modeling_rope_utils.py` の `_compute_proportional_rope_parameters`（形と式だけ、行は写していない）。実物は `google/gemma-4-E2B-it` @`3e22461f`・`gemma-4-E4B-it` の config.json と safetensors の見出し（Range で頭だけ、重みは取っていない）。
+- **実物の形**（見出しから）: E2B は dim 1536・35 層・head 8・KV head 1、窓の層の head 256・全体の層（4 層ごとの 5 つ目: 4, 9, …, 34）の head 512（q は 2048 と 4096、k と v は 256 と 512）、FFN 6144 で KV を共有する後ろの 20 層（15〜34）は倍の 12288。E4B は dim 2560・42 層・KV head 2・全体の層は 6 つ目ごと・共有は後ろの 18 層・FFN は全部 10240（倍にしない）。**共有の層もファイルには k・v・k の norm を持つ**（transformers は読み捨てる）。どの層にも `layer_scalar`（1 つの数）。norm は `x * w`（Gemma 3 の 1 + w ではない）。v の norm は重みなし。attention の倍率は 1（`scaling = 1.0`: head の大きさの平方根で割らない）。言語の部分の値の数は E2B 4,647,449,891（うち層ごとの埋め込みの表 2,348,810,240）、E4B 7,518,069,034（同 2,818,572,288）。
+- **決めた形**（どれも今のモデルの記録が変わらない既定。名前を共通の流れで比べない）:
+  - アーキテクチャ `gemma4`（`LAYOUTS` の 1 行: `gemma3` の行に、事実 `value_norm`（v の head を重みなしの RMSNorm で）と `rope = PROPORTIONAL`（下））。
+  - **層ごとに違う head の大きさは、FORM の `wide`: `{"layers": [...], "head_dim": 512}`**（ファイルの形が層で変わるので options でなく FORM）。その層の q・k・v・o・head の norm は自分の束（`wq_wide` など、`per` の `WIDE`）。ほかの層の束（`NARROW`）は今の名前（`wq` など）のまま。**窓の層（options の `local`）とは別の事実**（Gemma 4 では同じ集合だが 1 つの欄にしない）。計画の層の事実に `head`（その層の head の大きさ）・`rotary`（回す値の数）・`stack`（自分の束の中の番号）を足す。
+  - **倍の幅の FFN は FORM の `double`: 層の番号の並び**（その層の w1・w2・w3 は `w1_double` などの束、幅は `hidden_dim` の 2 倍）。
+  - **`layer_scalar` は行 `layer_scale`**（層ごとに 1 つの数の束、VECTOR: 量子化のファイルでも float32）。層の終わりに x に掛ける（畳めない: 次の層の norm の eps と残差の足しが比を壊す）。
+  - **attention の倍率 1 は、変換器が q の head の norm の重みに √head を掛けて畳む**（エンジンは今までどおり √head で割る。head 256 の √ は 16 でちょうど、512 は丸め 1 回）。
+  - **proportional の RoPE**: 全体の層は head の先頭の `rotary`（0.25 × 512 = 128）の値だけを回し、角は **head 全体の幅で割った** base^(−2i/512)（NeoX の部分の RoPE は回す幅で割る: 別の事実なので `Layout.rope` に 3 つ目の値 `PROPORTIONAL`）。HF の並びの対 (i, i + 256) は変換器の並べ替えで先頭の 64 対になる。ファイルの RoPE の表は全体の層の head（512）の幅、窓の層の表は Gemma 3 と同じくエンジンが作る（256 の幅、base 1e4）。
+  - **logits の頭打ちは options の `softcap`**（30。logits = 30 tanh(logits / 30)。0 か無し: しない）。
+  - norm に 1 を足さない（Gemma 3 との違い）。埋め込みの √dim は Gemma 3 と同じく表に畳んで、同じ表の分類器のために最後の norm を割る。
+- **子タスク**: **T331.1**（Python: 形・NumPy の参照・変換器の家族 `gemma4_text`・作り物と手書きの参照の試験）、**T331.2**（ページの forward（CPU）: 計画の事実・層ごとの head・`wide` と `double` の束・v の norm・`layer_scale`・`softcap`・KV の置き場の幅が層ごと）。T330・T329 も同じ分け方（.1 が Python、.2 がページ）。実物と transformers の比べは 3 つがそろってから（T329 の後の子タスク）。
+- **予定した違い（T331.1）**: 今あるモデルの変換の出力・options・計画・`CONVERTER`・カーネルの呼び出し・WGSL と鍵は変わらない（網の `layouts`・`exports`・`python` と `conversions_compare` で見る。足した行・欄・関数は「足した」と出る）。変換器の断りの家族の一覧に「Gemma 4」が入る（訪問者に見える文: 報告に）。**実物の Gemma 4 は T329 まで変換器が断る**（KV の共有と層ごとの埋め込みがまだ無い: 断りの文は今の形で、報告に全部）。ページの forward は `gemma4` の計画を受けない（T331.2 まで: Python の `forward_plan()` が断る）。
 
 ### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 候補（2026-10-05。規模 中〜大）
 - 別のクラスで `attention_k_eq_v: true`（K と V が同じ）ほか。int8 と補正で約 15.0 GB で、64 ビットのメモリの 16 GiB に入るかは境界（T129 の `pastWide()`）。入らなければ 6 ビット（Chrome と Firefox）か外す。
