@@ -27,7 +27,7 @@ const ATTENTION = "attention";
 
 export const sizesOfPlan = (plan: Plan): Sizes => ({ dim: plan.dim, hidden: plan.layers.some(({ double }) => double) ? 2 * plan.hidden_dim : plan.hidden_dim,
   heads: plan.n_heads, seqLen: plan.seq_len,
-  kinds: plan.layers.map(({ kind }) => kind), widths: plan.widths, gate: Boolean(plan.tensors.wg), numbers: plan });
+  kinds: plan.layers.map(({ kind }) => kind), widths: plan.widths, gate: Boolean(plan.tensors.wg ?? plan.tensors.head_gate), numbers: plan });
 
 /** the kinds of the table a model has layers of, in the table's order (the order they are made in, and so of what they
  * take of the memory), each with the number of its layers */

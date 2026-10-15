@@ -35,6 +35,7 @@ FACTS = {
     "gemma3_text": ("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}),
     "gemma4_text": ("Gemma 4", "gemma4", None, "lm_head.weight", {"free_heads", "rms_norm"}),
     "gemma4": ("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
+    "spark2_5": ("Spark-X2.5", "spark", "spark2_5", "lm_head.weight", {"free_heads", "rms_norm", "partly"}),
     "gpt2": ("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}),
     "gpt_neox": ("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}),
 }
@@ -52,6 +53,8 @@ LAYOUTS = {
     "gemma4": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma4", "head_dim": 128,
                                                  "wide": {"layers": [2, 5], "head_dim": 256}, "double": [4, 5],
                                                  "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 16}, 0),
+    # (T341: a number for each layer, RoPE turning a part of some layers' heads and all of the others')
+    "spark": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "spark", "head_dim": 128}, (128, 128, 128, 32)),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
@@ -81,7 +84,7 @@ def test_an_unknown_model_type_is_refused_in_the_words_it_was():
             check_config(normalize(config))
         assert str(refusal.value) == (
             f"This model cannot be converted: it is {said}, and only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, "
-            f"Qwen3.5, LFM2, Gemma 3, Gemma 4, GPT-2 and GPT-NeoX models are supported.")
+            f"Qwen3.5, LFM2, Gemma 3, Gemma 4, Spark-X2.5, GPT-2 and GPT-NeoX models are supported.")
         # (its layout and its plan are a Llama's until then: nothing else is asked of an unknown name)
         assert family_of(config) is LLAMA and architecture(config) == "llama"
 
@@ -137,7 +140,7 @@ def test_a_family_has_a_source_for_every_row_of_its_layout_and_no_other(model_ty
     sources = family.sources(Dims(header, form), "", rotary)
     wanted = {row.name for row in rows if row.role != TABLE}
     assert set(sources) == wanted
-    assert all(isinstance(name, str) and (transform is None or isinstance(transform, tuple))
+    assert all(isinstance(name, str) and (transform is None or isinstance(transform, tuple) or callable(transform))
                for name, transform in sources.values())
     # and the plan of the layout is made of them: a form says its layout, and the layout's family is this one's
     assert families.of_layout(family.arch).sources is family.sources
@@ -146,7 +149,8 @@ def test_a_family_has_a_source_for_every_row_of_its_layout_and_no_other(model_ty
     for row, parts in zip(rows, plan):
         if row.role != TABLE:
             name, transform = sources[row.name]
-            assert parts == ([(name.format(layer), transform) for layer in d.layers(row.per)] if row.per else [(name, transform)])
+            of = transform if callable(transform) else lambda layer: transform
+            assert parts == ([(name.format(layer), of(layer)) for layer in d.layers(row.per)] if row.per else [(name, transform)])
     # the classifier's name is the one checkpoint_header() looks for
     assert sources["wcls"][0] == family.classifier
 
@@ -206,8 +210,8 @@ def test_the_refusal_of_a_gguf_names_the_families_that_have_one():
     with pytest.raises(ValueError) as refusal:
         gguf_model({"general.architecture": "mamba"}, {}, 0)
     assert str(refusal.value) == ("This GGUF holds a mamba: only Llama, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, "
-                                  "Gemma 3, GPT-2 and GPT-NeoX ones are supported.")
-    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gemma3", "gpt2", "gptneox"]
+                                  "Gemma 3, Spark-X2.5, GPT-2 and GPT-NeoX ones are supported.")
+    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gemma3", "spark2_5", "gpt2", "gptneox"]
 
 
 def test_a_llama_with_a_little_more_is_the_llamas_record_but_for_that():
@@ -269,7 +273,7 @@ def test_a_family_put_into_the_table_converts(made_up):
     assert streamed(file, published, "float32", 4096)[0] == expected
     assert expected != converted(Safetensors(reader(file)), {**published, "model_type": "llama"}, "float32")
     # and the refusal of another model names it
-    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, GPT-2, GPT-NeoX and Twice models"):
+    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, Spark-X2.5, GPT-2, GPT-NeoX and Twice models"):
         check_config({**BASE, "model_type": "bert"})
 
 

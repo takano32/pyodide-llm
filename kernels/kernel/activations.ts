@@ -97,6 +97,36 @@ export function geglu(out: usize, h1: usize, h3: usize, n: i32): void {
   }
 }
 
+// T342: a Spark-X2.5's gated FFN, gelu(h1) * h3 by the exact GELU: llama2_numpy's gelu_erf() has the steps (erf by
+// Abramowitz and Stegun's 7.1.26, z no more than 9 so that exp's argument stays above -87, where vexp is fexp to the
+// bit), taken in the same order four at a time and one at a time, so that the two are the same to the bit.
+export function geglu_erf(out: usize, h1: usize, h3: usize, n: i32): void {
+  const one = f32x4.splat(1.0), half = f32x4.splat(0.5), zero = f32x4.splat(0.0), root = f32x4.splat(0.7071067811865476);
+  const nine = f32x4.splat(9.0), p = f32x4.splat(0.3275911);
+  const a1 = f32x4.splat(0.254829592), a2 = f32x4.splat(-0.284496736), a3 = f32x4.splat(1.421413741);
+  const a4 = f32x4.splat(-1.453152027), a5 = f32x4.splat(1.061405429);
+  let j = 0;
+  for (; j + 4 <= n; j += 4) {
+    const o = <usize>j << 2;
+    const v = v128.load(h1 + o);
+    const z = f32x4.min(f32x4.mul(f32x4.abs(v), root), nine);
+    const t = f32x4.div(one, f32x4.add(one, f32x4.mul(p, z)));
+    const poly = f32x4.mul(t, f32x4.add(a1, f32x4.mul(t, f32x4.add(a2, f32x4.mul(t, f32x4.add(a3, f32x4.mul(t, f32x4.add(a4, f32x4.mul(t, a5)))))))));
+    const h = f32x4.mul(f32x4.mul(half, poly), vexp(f32x4.neg(f32x4.mul(z, z))));
+    const g = v128.bitselect(f32x4.sub(one, h), h, f32x4.ge(v, zero));
+    v128.store(out + o, f32x4.mul(f32x4.mul(v, g), v128.load(h3 + o)));
+  }
+  for (; j < n; j++) {
+    const o = <usize>j << 2;
+    const v = load<f32>(h1 + o);
+    const z = min<f32>(abs<f32>(v) * <f32>0.7071067811865476, <f32>9.0);
+    const t = <f32>1.0 / (<f32>1.0 + <f32>0.3275911 * z);
+    const poly = t * (<f32>0.254829592 + t * (<f32>-0.284496736 + t * (<f32>1.421413741 + t * (<f32>-1.453152027 + t * <f32>1.061405429))));
+    const h = <f32>0.5 * poly * fexp(-(z * z));
+    store<f32>(out + o, v * (v >= <f32>0.0 ? <f32>1.0 - h : h) * load<f32>(h3 + o));
+  }
+}
+
 export function add_inplace(x: usize, y: usize, n: i32): void {
   for (let j = 0; j < n; j++) { const o = <usize>j << 2; store<f32>(x + o, load<f32>(x + o) + load<f32>(y + o)); }
 }

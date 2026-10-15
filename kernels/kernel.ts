@@ -13,7 +13,8 @@
 //                          quantized to int8, six bits and ternary (the converter's, and quantize_x every token)
 //   kernel/attention.ts    rope and attention over a cache of float32 or float16
 //   kernel/halves.ts       float16: the cache's keys and values to it and back, and whether they are finite
-//   kernel/activations.ts  a vector between the matrix products: the norms, gelu, swiglu, geglu, the add, the rotated basis
+//   kernel/activations.ts  a vector between the matrix products: the norms, gelu, swiglu, geglu (and its exact form,
+//                          geglu_erf), the add, the rotated basis
 //   kernel/stateful.ts     the layers with a state: gate, convolve and delta_rule (Qwen3.5), short_conv (LFM2)
 //   kernel/sample.ts       argmax, the penalties and the sampling
 //   kernel/math.ts         what several of them use: the group's size, a vector's sum, exp, the largest of floats
@@ -34,3 +35,4 @@ export { gate, convolve, short_conv, delta_rule } from "./kernel/stateful";
 export { penalize, sample } from "./kernel/sample";
 export { rotate, unrotate } from "./kernel/activations";
 export { geglu } from "./kernel/activations";
+export { geglu_erf } from "./kernel/activations";

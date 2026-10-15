@@ -252,6 +252,13 @@ gemma3_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.mjs .tmp/made-up-gemma3-int8
 }
 part "a Gemma 3 where a GPU adapter is" gemma3_stays_on_the_cpu
+# T342: nor is a Spark-X2.5, whose gate of the heads and exact GELU no shader has: gpuUnfit's line of the pair of norms
+# and FFN (a few seconds)
+spark_stays_on_the_cpu() {
+  python tests/make_spark.py .tmp/made-up-spark-int8 int8
+  node tests/gpu-hybrid-check.mjs .tmp/made-up-spark-int8
+}
+part "a Spark-X2.5 where a GPU adapter is" spark_stays_on_the_cpu
 # T357.3: the tool that checks the GPU in CI (tests/gpu-check.mjs), run from its arguments to its exit with a stand-in
 # for Dawn that gives no device: NumPy's answers, the plans, the server, the worker threads, the harness's runs on the
 # CPU, the verdicts and the tables, on three made-up models. No shader runs (about ten seconds, Pyodide's start)
@@ -385,6 +392,22 @@ if [ "$suite" = full ]; then
     node tests/forward-check.mjs .tmp/made-up-gemma4-int8 .tmp/made-up-gemma4-int6 .tmp/made-up-gemma4-own-int8 .tmp/made-up-gemma4-shared-int8 .tmp/made-up-gemma4-embedded-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Gemma 4" made_up_gemma4
+  # T342: a made-up Spark-X2.5 (local layers that turn their whole heads, the others a quarter of each; a gate of each
+  # head's output; the exact GELU): as the Gemma 3 above, each shape of tests/make_spark.py
+  made_up_spark() {
+    mkdir -p .tmp
+    for dtype in float32 float16 int8 int6; do python tests/make_spark.py .tmp/made-up-spark-$dtype $dtype; done
+    for shape in own long; do
+      python tests/make_spark.py .tmp/made-up-spark-$shape-float32 float32 $shape
+      python tests/make_spark.py .tmp/made-up-spark-$shape-int8 int8 $shape
+    done
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-spark-float32 .tmp/made-up-spark-float16 .tmp/made-up-spark-int8 .tmp/made-up-spark-int6 .tmp/made-up-spark-own-float32 .tmp/made-up-spark-own-int8 --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-spark-long-float32 .tmp/made-up-spark-long-int8 --rounds 1 --positions "$([ -z "$memory" ] && echo 960 || echo 400)" $memory
+    done
+    node tests/forward-check.mjs .tmp/made-up-spark-int8 .tmp/made-up-spark-int6 .tmp/made-up-spark-own-int8 --without relaxed --rounds 1 --positions 128
+  }
+  part "forward.js against NumPy, a made-up Spark-X2.5" made_up_spark
   # T255: a made-up SmolLM3 (every fourth layer's q and k not turned by RoPE; the real one is too large for the build):
   # float32 and float16 to NumPy's numbers, int8 and six bits within the line of a made-up model, the prompt in blocks
   # to the bit; on a shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path)
@@ -415,6 +438,7 @@ if [ "$suite" = full ]; then
   part "the software threads, a made-up Gemma 3" node tests/threads-check.mjs .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-own-int8 --rounds 1
   # T331.2: and a made-up Gemma 4, whose layers' heads and FFN are of two widths
   part "the software threads, a made-up Gemma 4" node tests/threads-check.mjs .tmp/made-up-gemma4-float32 .tmp/made-up-gemma4-int8 .tmp/made-up-gemma4-own-int8 .tmp/made-up-gemma4-shared-int8 .tmp/made-up-gemma4-embedded-int8 --rounds 1
+  part "the software threads, a made-up Spark-X2.5" node tests/threads-check.mjs .tmp/made-up-spark-float32 .tmp/made-up-spark-int8 .tmp/made-up-spark-own-int8 --rounds 1
   # T233's review: the tool that holds Ternary Bonsai 2 27B to its references (tests/page_27b.sh) is run when the model's
   # computation may have changed, which is seldom, and a tool that is seldom run goes out of step with forward.js unseen. Its
   # dry stage runs a made-up model of the 27B's kind through the comparison, the long prompt, the speed and the memory, the

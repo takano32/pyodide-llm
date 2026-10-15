@@ -119,6 +119,10 @@ const returned = (fn) => {
     { name: "gemma4", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5],
       kv_shared: { layers: [4, 5], from: [3, 2] }, per_layer: 128 },
       more: { local: { layers: [0, 1, 3, 4], window: 96, rope_theta: 10000 }, rotary: 32, softcap: 30 } },
+    // T342: a Spark-X2.5: three local layers that turn their whole heads, one that turns a quarter of its own, a gate of
+    // every head's output and the exact GELU
+    { name: "spark", header: [256, 768, 4, 4, 2, 2048, 320], form: { arch: "spark", head_dim: 128 },
+      more: { local: { layers: [0, 1, 2], window: 96, rope_theta: 10000 }, rotary: 32 } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
@@ -130,7 +134,7 @@ const returned = (fn) => {
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
     neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true], gemma4: [true, false, true],
-    "qwen35, of llama.cpp's blocks": [true, false, true] };
+    spark: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
@@ -247,7 +251,7 @@ const returned = (fn) => {
     // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
     // (T261: the FFN's activation, and local layers, which the architecture's line says a model may have: every family
     // of this check whose architecture may have them has some)
-    const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
+    const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors || "head_gate" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
       gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm, activation: plan.activation, local: plan.layers.some(({ local }) => local) };
     plan.layers.forEach((layer, l) => {
       assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);

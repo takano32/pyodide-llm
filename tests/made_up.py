@@ -296,6 +296,42 @@ def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
     return tensors, config
 
 
+# ------------------------------------------------------------------------------------- Spark-X2.5 (T342)
+def spark_model(dim=32, hidden_dim=64, kinds="sssl", n_heads=4, n_kv_heads=2, head_dim=16, window=4, vocab_size=320,
+                seq_len=24, shared=True, seed=0, eps=1e-6, theta=5000000.0, local_theta=100.0, part=0.25, local_part=1.0,
+                spread=0.3):
+    """Random Hugging Face tensors of a tiny Spark-X2.5, with the names and shapes of XHToken/Spark-X2.5-1.7B's
+    safetensors (q, k and v in one matrix, q_k_v_proj; a value a head of the gate, g_proj), and its config.json (its
+    rope_parameters a dict for each kind of layer, as published). kinds: a letter a layer, s for a sliding-attention
+    layer and l for one that attends every position. part, local_part: how much of a head RoPE turns in each kind.
+    spread: of every value drawn (the norms' weights are 1 and that around it), which a model of many layers, whose stream
+    no norm behind its layers holds, wants small."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * spread).astype(np.float32)
+    tensors = {"model.embedding.weight": normal(vocab_size, dim), "model.norm.weight": 1.0 + normal(dim)}
+    for layer in range(len(kinds)):
+        p = f"model.layers.{layer}."
+        for norm in ("input_layernorm", "post_attention_layernorm"):
+            tensors[f"{p}{norm}.weight"] = 1.0 + normal(dim)  # the weight itself: no 1 is added
+        tensors[p + "self_attn.q_k_v_proj.weight"] = normal((n_heads + 2 * n_kv_heads) * head_dim, dim)
+        tensors[p + "self_attn.g_proj.weight"] = normal(n_heads, dim)
+        tensors[p + "self_attn.out_proj.weight"] = normal(dim, n_heads * head_dim)
+        tensors[p + "mlp.gate_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.up_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="spark2_5", architectures=["Spark2_5ForCausalLM"], hidden_size=dim, intermediate_size=hidden_dim,
+                  num_hidden_layers=len(kinds), num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim,
+                  hidden_act="gelu", headwise_attn_output_gate=True, gate_attn_act_mode="sigmoid", sliding_window=window,
+                  layer_types=["sliding_attention" if kind == "s" else "full_attention" for kind in kinds],
+                  max_position_embeddings=seq_len, rms_norm_eps=eps, vocab_size=vocab_size, attention_bias=False,
+                  mlp_bias=False, tie_word_embeddings=shared, bos_token_id=0, eos_token_id=1, pad_token_id=2,
+                  rope_parameters={"full_attention": {"partial_rotary_factor": part, "rope_theta": theta},
+                                   "sliding_attention": {"partial_rotary_factor": local_part, "rope_theta": local_theta}})
+    return tensors, config
+
+
 # ------------------------------------------------------------------------------------- Gemma 4 (T331)
 def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, wide_head=32, window=4,
                  vocab_size=320, seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0,

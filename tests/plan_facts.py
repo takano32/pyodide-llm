@@ -58,6 +58,10 @@ def cases(L):
     # T341: a Spark-X2.5's two kinds of layers, as a Llama's: local ones that turn their whole heads by a base of their
     # own, the others a part of each head by the angles of that part (GPT-NeoX's, a Qwen3.5's)
     layouts["local layers, turned in part"] = layouts["llama"]._replace(local=True, rope=L.PARTLY)
+    # T342: and a Llama with the exact GELU in its gate, which no other has, and one with a gate of each head's output
+    layouts["the exact gelu"] = layouts["llama"]._replace(activation=L.GELU_ERF)
+    gated = lambda d: L.after(layouts["llama"].rows(d), "wo", d.stack("head_gate", L.MATRIX, L.ATTENDING, d.n_heads, d.dim))
+    layouts["a gate of every head"] = layouts["llama"]._replace(rows=gated)
     return [
         ("llama", GROUPED, {}, {}),
         ("llama, RoPE leaving two layers alone", GROUPED, {}, {"unturned": (1, 3)}),
@@ -78,6 +82,15 @@ def cases(L):
         ("local layers", GROUPED, {"arch": "local layers"}, {"local": local}),
         ("local layers, turned in part", GROUPED, {"arch": "local layers, turned in part", "head_dim": 32},
          {"local": local, "rotary": 8, "rope_theta": 5000.0}),
+        # T342: a Spark-X2.5 (three local layers of four, heads of 32 of which RoPE turns 8 in the other, a gate of
+        # every head's output, the exact GELU), one whose heads do not fill the width and whose classifier is its own,
+        # and the Llamas of one of its facts each
+        ("spark", [64, 128, 4, 4, 2, 320, 48], {"arch": "spark", "head_dim": 16},
+         {"local": {"layers": [0, 1, 2], "window": 3, "rope_theta": 100.0}, "rotary": 4, "rope_theta": 5000.0, "rms_norm_eps": 1e-6}),
+        ("spark, heads wider than the stream and a classifier of its own", [64, 128, 4, 4, 1, -320, 48], {"arch": "spark", "head_dim": 32},
+         {"local": {"layers": [1, 2], "window": 4, "rope_theta": 100.0}, "rotary": 8, "rope_theta": 5000.0}),
+        ("the exact gelu", GROUPED, {"arch": "the exact gelu"}, {}),
+        ("a gate of every head", GROUPED, {"arch": "a gate of every head", "head_dim": 32}, {}),
         ("norms behind", GROUPED, {"arch": "norms behind"}, {}),
         # T331.2: two layers of heads of 32 (the full-attention ones, of which RoPE turns 8 values by the angles of 32),
         # and an FFN twice as wide in the last three

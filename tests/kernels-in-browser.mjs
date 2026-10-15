@@ -447,6 +447,36 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
+  // ---- geglu_erf (T342: the gate of a Spark-X2.5's FFN, the exact GELU of h1 times h3). Four at a time is held to the
+  // kernel one value at a time (its scalar tail) to the bit, and to the same formula (erf by Abramowitz and Stegun's
+  // 7.1.26, llama2_numpy's gelu_erf()) in float64 within a millionth. The same 259 values as geglu's
+  {
+    const at = extra + 3145728 + 16384, count = 259, h1 = at, h3 = at + 2048, out = at + 4096, one = at + 6144;
+    const edges = [0, -0, 1e-30, -1e-30, 0.5, -0.5, 3, -3, 6, -6, 9.5, -9.5, 12, -12, 13, -13, 44, -44, 88, -88, 200, -200, 3e38, -3e38];
+    const first = Float32Array.from({ length: count }, (_, j) => (j < edges.length ? edges[j] : f(((next() % 24001) - 12000) / 1000)));
+    const other = Float32Array.from({ length: count }, () => f(((next() % 8001) - 4000) / 1000));
+    const call = () => { F.set(first, h1 / 4); F.set(other, h3 / 4); k.geglu_erf(out, h1, h3, count); };
+    const formula = (x) => {
+      const z = Math.min(Math.abs(x) * 0.7071067811865476, 9), t = 1 / (1 + 0.3275911 * z);
+      const half = 0.5 * t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-z * z);
+      return x * (x >= 0 ? 1 - half : half);
+    };
+    await check("geglu_erf", call, () => {
+      F.fill(-7, out / 4, out / 4 + count + 4);
+      call();
+      const got = new Uint32Array(memory.buffer, out, count), alone = new Uint32Array(memory.buffer, one, 1);
+      let bad = 0;
+      for (let j = 0; j < count; j++) {
+        k.geglu_erf(one, h1 + 4 * j, h3 + 4 * j, 1);
+        if (got[j] !== alone[0]) bad++;
+        const x = first[j], exact = formula(x) * other[j];
+        if (Math.abs(x) < 1e6 && !(Math.abs(F[out / 4 + j] - exact) <= 1e-6 * Math.max(1, Math.abs(exact)))) bad++;
+      }
+      for (let j = count; j < count + 4; j++) if (F[out / 4 + j] !== -7) bad++;
+      return bad ? `${bad} of ${count} values wrong` : null;
+    });
+  }
+
   // ---- what every model runs, as a control: quantize_x (8 bits and 7 with a bias), matmul_q8 and matmul_q8r against float64 sums
   {
     const x = extra + 262144, q = x + n * 4 + 64, s = q + n + 64;

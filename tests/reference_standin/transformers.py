@@ -64,7 +64,7 @@ def held(llama, count, stepped, wrong=0.0):
                 layers.append(types.SimpleNamespace(conv_states=[pad(np.array(arrays[0]))]))
             else:
                 layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale)))
-    elif arch in ("gemma3", "gemma4"):
+    elif arch in ("gemma3", "gemma4", "spark"):
         for _, (kind, arrays) in sorted(sys.modules[f"reference_{arch}"].engine_states(llama, count).items()):
             layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale),
                                                 is_sliding=kind == "sliding"))
@@ -101,7 +101,8 @@ class Model:
         return out
 
     def embedding(self):
-        return next(value for key, value in self.tensors.items() if key.endswith("embed_tokens.weight"))
+        # (T342: a Spark-X2.5's is model.embedding)
+        return next(value for key, value in self.tensors.items() if key.endswith(("embed_tokens.weight", "model.embedding.weight")))
 
     @property
     def lm_head(self):
@@ -216,6 +217,12 @@ class Gemma4TextConfig(Config):
                     num_kv_shared_layers=0, use_double_wide_mlp=False, hidden_size_per_layer_input=0, global_head_dim=512)
 
 
+class Spark2_5Config(Config):
+    """(T342) what reference_spark.py has of the model's own code, configuration_spark.py"""
+    model_type = "spark2_5"
+    defaults = dict(tie_word_embeddings=True, hidden_act="gelu", headwise_attn_output_gate=True, gate_attn_act_mode="sigmoid")
+
+
 class Gemma4Model(Model):
     """(T329.3) what reference_gemma4.py reads of transformers' modules: which layers share keys and values, how wide
     each FFN is (transformers' own rules: the last num_kv_shared_layers layers, twice as wide there where
@@ -297,7 +304,21 @@ def Gemma4ForCausalLM(config):
     return Gemma4Model(writable(tensors), json.loads(config.to_json_string()), config)
 
 
-Lfm2ForCausalLM.from_pretrained = Gemma3ForCausalLM.from_pretrained = Model.from_pretrained
+def Spark2_5ForCausalLM(config):
+    """(T342) what reference_spark.py has of the model's own code, modeling_spark.py"""
+    import made_up
+    kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in config.layer_types)
+    rope = config.rope_parameters
+    tensors, _ = made_up.spark_model(dim=config.hidden_size, hidden_dim=config.intermediate_size, kinds=kinds,
+                                     n_heads=config.num_attention_heads, n_kv_heads=config.num_key_value_heads,
+                                     head_dim=config.head_dim, window=config.sliding_window, vocab_size=config.vocab_size, seq_len=8,
+                                     shared=config.tie_word_embeddings, theta=rope["full_attention"]["rope_theta"],
+                                     local_theta=rope["sliding_attention"]["rope_theta"],
+                                     part=rope["full_attention"]["partial_rotary_factor"], eps=config.rms_norm_eps)
+    return Model(writable(tensors), json.loads(config.to_json_string()), config)
+
+
+Lfm2ForCausalLM.from_pretrained = Gemma3ForCausalLM.from_pretrained = Spark2_5ForCausalLM.from_pretrained = Model.from_pretrained
 Qwen3_5ForConditionalGeneration = Model
 
 

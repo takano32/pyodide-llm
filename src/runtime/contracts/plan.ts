@@ -44,7 +44,12 @@ export type TensorName =
   // token and its norm, and every layer's gate, projection and norm of what it makes of its input
   | "per_layer_table" | "per_layer_projection" | "per_layer_norm" | "ple_gate" | "ple_proj" | "ple_post"
   // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
-  | "codebooks";
+  | "codebooks"
+  // T342: a Spark-X2.5's gate of each head of the attention's output (a value a head)
+  | "head_gate";
+
+// the activation of an FFN (engine/layout.py's SILU, GELU and, T342, GELU_ERF: the exact GELU, by erf)
+export type Activation = "silu" | "gelu" | "gelu_erf";
 
 // where every tensor of a model is: the plan's, and what Python's external_tensors() places before a model is built
 export type Tensors = Partial<Record<TensorName, Tensor>>;
@@ -119,8 +124,9 @@ export type Plan = {
   widths: Widths;
   // T375.2: the facts of the architecture the layers differ by, as engine/layout.py's Layout names them: the norms are
   // LayerNorms (else RMSNorms), the FFN is gated (three matrices; else GPT-2's two, with their biases); T261: and the
-  // FFN's activation (a Llama's gate is a SiLU's, a Gemma's a GELU's, as GPT-2's one matrix's output)
-  activation: "silu" | "gelu";
+  // FFN's activation (a Llama's gate is a SiLU's, a Gemma's a GELU's, as GPT-2's one matrix's output; T342: a
+  // Spark-X2.5's the exact GELU's)
+  activation: Activation;
   layer_norm: boolean;
   gated_ffn: boolean;
   // T331: and the heads of v are normalized (a Gemma 4's, an RMSNorm without a weight); the logits are capped, softcap

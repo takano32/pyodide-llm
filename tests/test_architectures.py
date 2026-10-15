@@ -13,7 +13,7 @@ import llama2_convert
 from conftest import pack_tokenizer, tiny_vocab
 from made_up import checkpoint, uniform
 from engine.layout import GATED_DELTA, PROPORTIONAL, SHORT_CONVOLUTION
-from llama2_numpy import (ATTENDING, EVERY, FORM, GELU, LAYOUTS, MATRIX, PARTLY, SILU, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
+from llama2_numpy import (ATTENDING, EVERY, FORM, GELU, GELU_ERF, LAYOUTS, MATRIX, PARTLY, SILU, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
                           Settings, Stateful, after, checkpoint_dtype, external_tensors, file_size, form_of,
                           forward_plan, layer_facts, layout_of, rope_frequencies, slots_of,
                           local_layers, stateful_form, stateful_kinds, tensor_rows, unturned_layers)
@@ -38,6 +38,8 @@ FACTS = {
     "gemma4": dict(rows="gemma4", stateful=None, rope=PROPORTIONAL, yarn_magnitude=False, layer_norm=False,
                    gated_ffn=True, rotatable=False, unturned=False, activation=GELU, local=True, value_norm=True,
                    wide=True),
+    "spark": dict(rows="spark", stateful=None, rope=PARTLY, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
+                  rotatable=False, unturned=False, activation=GELU_ERF, local=True, value_norm=False, wide=False),
 }
 # (a header and the form each architecture needs to be laid out)
 HEADER = [64, 128, 4, 4, 2, 320, 48]
@@ -45,11 +47,13 @@ FORMS = {"llama": {}, "gpt2": {"arch": "gpt2"}, "neox": {"arch": "neox"},
          "qwen35": {"arch": "qwen35", "head_dim": 16, "linear": LINEAR},
          "lfm2": {"arch": "lfm2", "qk_norm": True, "convolution": CONVOLUTION},
          "gemma3": {"arch": "gemma3", "head_dim": 32},
-         "gemma4": {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}, "double": [2, 3]}}
+         "gemma4": {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}, "double": [2, 3]},
+         "spark": {"arch": "spark", "head_dim": 32}}
 # what an engine is told of a model of each, besides the form (Llama's arguments)
 OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4},
            "gemma3": {"local": {"layers": [0, 1, 3], "window": 2, "rope_theta": 100.0}},
-           "gemma4": {"local": {"layers": [0, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}}
+           "gemma4": {"local": {"layers": [0, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0},
+           "spark": {"local": {"layers": [0, 1, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8}}
 every = pytest.mark.parametrize("arch", list(FACTS))
 
 
@@ -172,7 +176,7 @@ ENTRANCES = {
 def test_a_name_that_is_no_architectures_is_refused_wherever_it_comes_in(entrance):
     """It was read as a Llama until T359.6: a mistyped name ran another model's forward pass without a word."""
     for arch in ("llama3", "LLAMA", "qwen3", "", "gpt-2"):
-        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4."
+        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4, spark."
     for arch in FACTS:  # (and a name it has is not what is refused there)
         try:
             ENTRANCES[entrance](arch)
@@ -295,7 +299,7 @@ def test_a_model_has_its_architectures_facts_from_the_time_it_is_made(arch):
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             model(arch, unturned=[2])
     # T261: the activation of the FFN, and the local layers of the architectures that take them
-    assert llama.activation is (engine.model.gelu if facts["activation"] == GELU else engine.model.silu)
+    assert llama.activation is {GELU: engine.model.gelu, GELU_ERF: engine.model.gelu_erf}.get(facts["activation"], engine.model.silu)
     local = {"layers": [1], "window": 3, "rope_theta": 50.0}
     if facts["local"]:
         assert model(arch, local=local).local == {"layers": (1,), "window": 3, "rope_theta": 50.0}

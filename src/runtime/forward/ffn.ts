@@ -7,7 +7,7 @@ import type { Core } from "./kinds.ts";
 export type Ffn = (l: number, count: number) => void;
 
 /** w2(act(w1 x) * w3 x): every architecture but GPT-2's two. The activation of the gate is the plan's (a SiLU, or
- * T261 a Gemma's GELU), and what the FFN gives is normalized before it joins the stream where the model has the norm
+ * T261 a Gemma's GELU, or T342 a Spark-X2.5's exact GELU), and what the FFN gives is normalized before it joins the stream where the model has the norm
  * for that (rms_ffn_post_weight: a Gemma's). T331: a layer's FFN may be twice as wide, its matrices in stacks of their
  * own (the plan's facts of the layer: double, and its place among those, ffn) */
 export function gatedFfn({ plan, eps, k, floats, matrix, at, S, matmuls }: Core): Ffn {
@@ -29,8 +29,8 @@ export function gatedFfn({ plan, eps, k, floats, matrix, at, S, matmuls }: Core)
     }
   };
 }
-// the kernel of a gated FFN's gate, by the activation's name (engine/layout.py's SILU and GELU)
-const GATES = { silu: "swiglu", gelu: "geglu" } as const;
+// the kernel of a gated FFN's gate, by the activation's name (engine/layout.py's SILU, GELU and GELU_ERF)
+const GATES = { silu: "swiglu", gelu: "geglu", gelu_erf: "geglu_erf" } as const;
 /** GPT-2's and GPT-NeoX's: w2(gelu(w1 x + b1)) + b2 */
 export function plainFfn({ plan, k, floats, matrix, at, S, matmuls }: Core): Ffn {
   const { dim, hidden_dim: hidden } = plan, { x, xb, xb2, hb } = at, D = dim * 4, HD = hidden * 4;

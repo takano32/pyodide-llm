@@ -18,7 +18,8 @@ def transformed(values, transform, head_size):
     or a norm of which RoPE turns part). ("scale", c): every value times c (T253: a Granite's q). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
     A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
     one after the other. ("permute" and "heads" move whole rows and change no value: what a row kept in a GGUF's blocks
-    may come by, T363.)
+    may come by, T363.) ("rows", start, stop, total): rows start to stop of a tensor of total rows (T342: a Spark-X2.5's
+    q_k_v_proj, q, k and v one after the other, which are not of one size).
     """
     if transform is None:
         return values
@@ -50,6 +51,11 @@ def transformed(values, transform, head_size):
         index, parts = transform[1], transform[2]
         length = values.shape[0] // parts
         return values[index * length:(index + 1) * length]
+    if transform[0] == "rows":
+        start, stop, total = transform[1:]
+        if values.shape[0] != total:
+            raise ValueError(f"{values.shape[0]} rows are not the {total} that rows {start} to {stop} are taken of.")
+        return values[start:stop]
     if transform[0] == "scale":
         # T253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
         return np.asarray(values, dtype=np.float32) * np.float32(transform[1])
@@ -78,6 +84,8 @@ def source_shape(shape, transform):
         return (shape[0] * transform[1], *shape[1:])
     if transform[0] == "taps":
         return (shape[1], 1, shape[0])
+    if transform[0] == "rows":
+        return (transform[3], *shape[1:])
     if transform[0] == "transpose":
         return tuple(reversed(shape))
     if transform[0] == "part":

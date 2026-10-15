@@ -28,9 +28,9 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layout import (ATTENDING, DOUBLE, GELU, NARROW, NARROW_KEPT, PARTLY, PROPORTIONAL, WIDE, WIDE_KEPT, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
+from engine.layout import (ATTENDING, DOUBLE, GELU, GELU_ERF, NARROW, NARROW_KEPT, PARTLY, PROPORTIONAL, WIDE, WIDE_KEPT, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
                            stateful_kinds, unturned_layers)
-from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
+from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
 from engine.kernels import load_kernels
@@ -144,6 +144,10 @@ class Llama:
         softcap * tanh(logits / softcap) (0: as they are). kv_shared (T330): the layers that read the keys and values of
         a layer before them in place of their own, and which each reads (FORM's). per_layer (T329): the width of the
         input every layer takes of a table of its own, and of a projection of the token's row (FORM's; 0: none).
+        arch="spark" (T342): XHToken's Spark-X2.5, see the comment on it in engine/layers.py: a Llama most of whose
+        layers are local ones (local, as a Gemma 3's: whole heads turned by a base of their own), the others turning
+        the first rotary values of a head (as a GPT-NeoX's), that gates each head of its attention's output by a value
+        of its own (head_gate), and whose FFN's activation is the exact GELU.
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is engine/layout.py that says what is there.
@@ -269,8 +273,8 @@ class Llama:
         # what of the forward pass differs by the architecture, as the reference reads it at every token: the kind of
         # its norms and of its FFN, and whether RoPE turns the heads of q and k whole, in part or not at all
         self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
-        # (the activation of the FFN: a SiLU, or a GELU)
-        self.activation = gelu if layout.activation == GELU else silu
+        # (the activation of the FFN: a SiLU, a GELU, or T342 the exact GELU)
+        self.activation = {GELU: gelu, GELU_ERF: gelu_erf}.get(layout.activation, silu)
         self.turning, self.partly = layout.rope is not None, layout.rope in (PARTLY, PROPORTIONAL)
         # T331: what the attention reads of v is normalized head by head, without a weight
         self.value_norm = layout.value_norm
@@ -279,6 +283,7 @@ class Llama:
         self.stateful, self.states = None, ()
         self.positions = None
         self.q_norm = self.k_norm = self.wg = None
+        self.head_gate = None  # T342
         self.q_norm_wide = self.k_norm_wide = None  # (T331: of the wide layers)
         self.rms_att_post_weight = self.rms_ffn_post_weight = None
         self.layer_scale = None  # T331
@@ -487,6 +492,8 @@ class Llama:
                 attended = (att @ values).reshape(-1)
                 if self.wg is not None:  # Qwen3.5 gates what the attention read
                     attended = attended / (1.0 + np.exp(-(self.wg[a] @ xr)))
+                if self.head_gate is not None:  # T342: a Spark-X2.5 gates each head of it by a value of its own
+                    attended = (attended.reshape(-1, size) / (1.0 + np.exp(-(self.head_gate[a] @ xr)))[:, None]).reshape(-1)
                 # Output projection and residual connection
                 attended = wo[at] @ turned(attended)
                 if self.bo is not None:  # GPT-2 and GPT-NeoX, after every projection

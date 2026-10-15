@@ -96,7 +96,7 @@ def test_the_context_can_be_cut_and_the_engine_runs_the_result():
 
 
 @pytest.mark.parametrize("change, reason", [
-    (dict(model_type="rwkv"), "only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, GPT-2 and GPT-NeoX"), (dict(rope_scaling={"type": "dynamic", "factor": 2.0}), "RoPE scaling"),
+    (dict(model_type="rwkv"), "only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, Spark-X2.5, GPT-2 and GPT-NeoX"), (dict(rope_scaling={"type": "dynamic", "factor": 2.0}), "RoPE scaling"),
     (dict(hidden_act="gelu"), "gelu"), (dict(attention_bias=True), "biases"), (dict(num_attention_heads=5), "heads"),
     (dict(vocab_size=None), "vocab_size"), (dict(head_dim=3), "heads")])
 def test_a_model_the_engine_cannot_run_is_refused(change, reason):
@@ -176,8 +176,12 @@ def test_a_transform_nobody_wrote_is_refused():
     from llama2_convert import transformed
     values = np.arange(12, dtype=np.float32).reshape(6, 2)
     assert transformed(values, ("row", 1, 3), 2).tolist() == values[2:4].tolist()
-    with pytest.raises(ValueError, match="no transform called 'rows'"):
-        transformed(values, ("rows", 1, 3), 2)
+    with pytest.raises(ValueError, match="no transform called 'rowz'"):
+        transformed(values, ("rowz", 1, 3), 2)
+    # (T342: rows of a tensor of a size said, which another size is not)
+    assert transformed(values, ("rows", 1, 4, 6), 2).tolist() == values[1:4].tolist()
+    with pytest.raises(ValueError, match="6 rows are not the 7"):
+        transformed(values, ("rows", 1, 4, 7), 2)
 
 
 def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):

@@ -557,6 +557,22 @@ with np.errstate(over="ignore", invalid="ignore"):
     assert np.array_equal(gated.view(np.uint32), (plain * others).view(np.uint32)), "geglu is not gelu times the other input"
     finite = np.isfinite(inputs) & (np.abs(inputs) < 1e6)
     assert np.allclose(gated[finite], (llama2_numpy.gelu(inputs[finite].astype(np.float64)) * others[finite]), rtol=1e-5, atol=1e-6), "geglu is not NumPy's gelu() times the other input"
+# T342: and geglu_erf, a Spark-X2.5's gate, the exact GELU: four at a time is one at a time to the bit (the loop above's
+# check, over the same values), NumPy's gelu_erf() of the same steps times the other input within float32's last digits
+# (their exps are not the same: the kernels' and NumPy's), and erf itself within 5e-7 times the other input
+exact_gated, exact_single = np.empty_like(inputs), np.empty_like(inputs)
+simd["geglu_erf"](exact_gated.ctypes.data, inputs.ctypes.data, others.ctypes.data, inputs.size)
+for j in range(inputs.size):
+    simd["geglu_erf"](exact_single[j:].ctypes.data, inputs[j:].ctypes.data, others[j:].ctypes.data, 1)
+assert np.array_equal(exact_gated.view(np.uint32), exact_single.view(np.uint32)), "geglu_erf four at a time is not geglu_erf one at a time"
+with np.errstate(over="ignore", invalid="ignore"):
+    exact_finite = np.isfinite(inputs) & (np.abs(inputs) < 1e6)
+    assert np.allclose(exact_gated[exact_finite], llama2_numpy.gelu_erf(inputs[exact_finite]) * others[exact_finite], rtol=2e-6, atol=1e-7), \
+        "geglu_erf is not NumPy's gelu_erf() times the other input"
+    erf_said = np.array([0.5 * float(v) * (1.0 + math.erf(float(v) / math.sqrt(2.0))) for v in inputs[exact_finite]])
+    assert np.all(np.abs(exact_gated[exact_finite] - erf_said * others[exact_finite]) <= 5e-7 * np.maximum(np.abs(others[exact_finite]), 1) * np.maximum(1, np.abs(inputs[exact_finite]) / 4)), \
+        "geglu_erf is not the exact GELU times the other input"
+    assert np.array_equal(np.signbit(exact_gated[inputs == 0]), np.signbit(inputs[inputs == 0] * others[inputs == 0])), "geglu_erf's zeros"
 # T237: the rotated basis's kernels are NumPy's rotate() and unrotate() to the bit: every block from 1 to 4096, one to
 # five blocks of it (lengths that are no multiple of four too, for blocks of 1 and 2), large and small numbers and
 # both zeros, into another place and in place, and nothing written past n

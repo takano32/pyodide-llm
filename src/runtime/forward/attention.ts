@@ -17,6 +17,10 @@
 // plan's kept, -1, and reads, that layer's place): it multiplies by wq alone, and is handed that layer's ring or block
 // of the cache, where it holds a place of no width. That layer comes before it, and has written this token's keys and
 // values (and a block's: the layers take a block in turn).
+// T342: a layer may gate each head of its output by a value of its own (a Spark-X2.5's head_gate: a matrix of a row a
+// head, multiplied with q, k and v). The values go to the first of the frame's gate, are spread there over their heads
+// (the last head's first, so that none is written over before it is read), and the kernel that gates a Qwen3.5's
+// output value by value then gates every value of a head by the same one.
 import { BATCH, KIND } from "../jobs.ts";
 import type { Core, Kind, Layers, Product } from "./kinds.ts";
 import type { Layer } from "../contracts/plan.ts";
@@ -46,6 +50,7 @@ export const attention: Kind = {
     }
     const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
     const wg = matrix("wg");  // T229
+    const headGate = matrix("head_gate");  // T342
     // T261: the tables of the local layers (0: the model has none, and no layer of its plan says it is one)
     const localCos = floats("local_cis_real"), localSin = floats("local_cis_imag");
     // where these layers' keys and values are in the cache: the place-th layer's are the (first + place)-th (T510.1:
@@ -70,7 +75,16 @@ export const attention: Kind = {
         // (T330: a layer that reads another's keys and values multiplies by wq alone)
         const own = kept >= 0;
         const into: Product[] = !own ? [[wq, q, S, stack]]
-          : wg ? [[wq, q, S, stack], [wk, kNow, S, kept], [wv, vNow, S, kept], [wg, gate, S, a]] : [[wq, q, S, stack], [wk, kNow, S, kept], [wv, vNow, S, kept]];
+          : wg ? [[wq, q, S, stack], [wk, kNow, S, kept], [wv, vNow, S, kept], [wg, gate, S, a]]
+          : headGate ? [[wq, q, S, stack], [wk, kNow, S, kept], [wv, vNow, S, kept], [headGate, gate, S, a]] : [[wq, q, S, stack], [wk, kNow, S, kept], [wv, vNow, S, kept]];
+        // (T342: the gates of count tokens' heads spread over the heads, and the attention's output gated by them)
+        const gateHeads = (count: number) => {
+          for (let t = 0; t < count; t++) {
+            const F = room.F, g = (gate + t * S) / 4;
+            for (let h = heads - 1; h >= 0; h--) F.fill(F[g + h], g + h * headSize, g + (h + 1) * headSize);
+            k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
+          }
+        };
         const out: Product[] = [[wo, xb2, S, stack]];
         // this layer's ring (T510.1), or its index among the blocks of the cache that keep every position; and (T331)
         // the bytes of a position of its keys and values there
@@ -123,6 +137,7 @@ export const attention: Kind = {
             }
             phase(jobs);
             if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
+            if (headGate) gateHeads(count);
             matmuls(xb, count, out);
           };
         }
@@ -145,6 +160,7 @@ export const attention: Kind = {
           }
           phase(jobs);
           if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
+          if (headGate) gateHeads(count);
           matmuls(xb, count, out);
         };
       },

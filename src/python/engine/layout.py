@@ -447,6 +447,14 @@ def gemma4(d):
                    Row("freq_cis_imag", TABLE, (d.seq_len, head // 2)), *classifier(d)]
 
 
+def spark(d):
+    """A Spark-X2.5 (T342): a Llama's tensors and a gate of each head of the attention's output (g_proj: a value a head,
+    whose sigmoid multiplies that head's output before wo), behind wo. q, k and v are one matrix in the original, which
+    the converter cuts. Its RoPE tables are of the layers that attend over all the positions, which turn a part of
+    each head; those of its local layers, which turn the whole of it, the engine makes (local_layers())."""
+    return after(llama(d), "wo", d.stack("head_gate", MATRIX, ATTENDING, d.n_heads, d.dim))
+
+
 def gpt2(d):
     """A GPT-2: LayerNorm (a weight and a bias), a bias after every projection, a learned table of positions instead
     of RoPE, and an FFN of two matrices instead of three (no gate). Same attention, of heads that fill dim.
@@ -468,8 +476,9 @@ def gpt2(d):
 # (T331: PROPORTIONAL, a Gemma 4's: the first rotary values of a head, by the angles of the whole head's width where
 # PARTLY's are of the width it turns)
 WHOLE, PARTLY, PROPORTIONAL = "whole", "partly", "proportional"
-# The activation of an FFN (Layout's activation): a SiLU, or a GELU (its tanh form, which GPT-2 calls gelu_new)
-SILU, GELU = "silu", "gelu"
+# The activation of an FFN (Layout's activation): a SiLU, or a GELU (its tanh form, which GPT-2 calls gelu_new), or
+# (T342) a GELU of its exact form, by erf (transformers' "gelu": a Spark-X2.5's)
+SILU, GELU, GELU_ERF = "silu", "gelu", "gelu_erf"
 
 
 class Layout(NamedTuple):
@@ -498,8 +507,9 @@ class Layout(NamedTuple):
     rotatable: bool = False
     # some of its layers may be ones RoPE leaves alone (T255)
     unturned: bool = False
-    # the activation of its FFN, SILU or GELU: of the gate of a gated one (a Llama's is a SiLU, T261: a Gemma's a GELU),
-    # of the one matrix's output of GPT-2's. Another fact than gated_ffn: a Gemma's FFN is gated as a Llama's is
+    # the activation of its FFN, SILU, GELU or GELU_ERF: of the gate of a gated one (a Llama's is a SiLU, T261: a
+    # Gemma's a GELU, T342: a Spark-X2.5's the exact GELU), of the one matrix's output of GPT-2's. Another fact than
+    # gated_ffn: a Gemma's FFN is gated as a Llama's is
     activation: str = SILU
     # some of its layers may be local ones (T261): they attend a window of the last positions, and RoPE turns their q
     # and k by a base of their own (local_layers())
@@ -519,6 +529,9 @@ LAYOUTS = {
     "lfm2": Layout(lfm2, stateful=SHORT_CONVOLUTION),
     "gemma3": Layout(gemma3, activation=GELU, local=True),
     "gemma4": Layout(gemma4, rope=PROPORTIONAL, activation=GELU, local=True, value_norm=True, wide=True),
+    # T342: local layers that turn their whole heads, and the others a quarter of theirs (a Gemma 3's local layers and a
+    # GPT-NeoX's RoPE), a gate of each head's output and the exact GELU
+    "spark": Layout(spark, rope=PARTLY, activation=GELU_ERF, local=True),
 }
 
 

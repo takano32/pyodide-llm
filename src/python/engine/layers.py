@@ -65,6 +65,23 @@ def gelu(x):
         return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
 
 
+def gelu_erf(x):
+    """T342: the exact GELU, x * (1 + erf(x / sqrt(2))) / 2 (transformers' "gelu", a Spark-X2.5's), written as the
+    kernel computes it: erf by Abramowitz and Stegun's 7.1.26 (Handbook of Mathematical Functions, 1964: within 1.5e-7
+    of erf everywhere), a polynomial in t = 1 / (1 + p z) times exp(-z * z), z = |x| / sqrt(2). For x of either sign
+    the polynomial is 1 - erf(z) (none of erf's 1 is subtracted where x is negative and the GELU small), so
+    gelu(x) = x * (1 - h) for x >= 0 and x * h below, h = poly(t) exp(-z * z) / 2. z is taken as 9 past 9 (|x| past
+    12.7, where h is below 1e-36 either way), so that exp's argument stays above -87, where the kernel's two exps are
+    the same to the bit. In float32, step by step as the kernel takes them (tests/smoke.mjs holds the two together)."""
+    x = np.asarray(x, dtype=np.float32)
+    z = np.minimum(np.abs(x) * np.float32(0.7071067811865476), np.float32(9.0))
+    t = np.float32(1.0) / (np.float32(1.0) + np.float32(0.3275911) * z)
+    poly = t * (np.float32(0.254829592) + t * (np.float32(-0.284496736) + t * (np.float32(1.421413741)
+                + t * (np.float32(-1.453152027) + t * np.float32(1.061405429)))))
+    half = np.float32(0.5) * poly * np.exp(-(z * z))
+    return x * np.where(x >= 0, np.float32(1.0) - half, half)
+
+
 # Qwen3.5 and Qwen3.8 (config.json's model_type qwen3_5; arch="qwen35" here) mix two kinds of layers: every "every"-th
 # layer (layer l where (l + 1) % every == 0; every is 4) attends over all positions as a Qwen3 does, and the others
 # are Gated DeltaNet layers ("linear attention"), which keep a state of a fixed size instead of keys and values.
@@ -197,6 +214,36 @@ def delta_rule(state, q, k, v, beta, decay):
 # position are kept, and a local layer reads the last of them. The sqrt(dim) is in no forward pass: the converter
 # multiplies the table by it and, the table being the classifier too, divides the last norm's weight by it, which
 # gives the same logits (convert/families/gemma3.py).
+
+
+# XHToken's Spark-X2.5 (config.json's model_type spark2_5; arch="spark" here, T339 to T342): a Llama's attention and
+# FFN with layers of two kinds that config.json lists (layer_types: three "sliding_attention" layers of every four).
+# The computation is taken from the model's own modeling code (Apache-2.0; the formulas, no line of it):
+# https://huggingface.co/XHToken/Spark-X2.5-1.7B/blob/14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8/modeling_spark.py
+# (compute_rope_cos_sin and apply_rotary_pos_emb, lines 31 to 57; Spark2_5RMSNorm, 96 to 110; Spark2_5MLP, 116 to 132;
+# Spark2_5Attention, 135 to 211; Spark2_5DecoderLayer, 214 to 264; Spark2_5Model.forward, 307 to 405), with the
+# numbers of its config.json there; docs/notes/t339-spark-x-2026-10-15.md has the rest.
+#
+# One token (RMSNorm multiplies by its weight as stored, eps 1e-6; no bias anywhere, no norm of the heads):
+#   x = the token's row of the embedding as it is
+#   for every layer:
+#     xb = norm(x)
+#     q, k, v = wq xb, wk xb, wv xb        heads of 256 (q_k_v_proj in the original: the converter cuts it)
+#     g = head_gate xb                     a value for each head of q (g_proj)
+#     a sliding-attention layer attends the last sliding_window positions (512), this one among them, and RoPE turns
+#       the whole of each head of its q and k by the base 1e4
+#     a full-attention layer attends every position so far, and RoPE turns the first quarter of each head (64 values,
+#       partial_rotary_factor) by the base 5e6, the angles those of that width (a GPT-NeoX's)
+#     scores = q k / sqrt(head)
+#     the output of head h times sigmoid(g[h])
+#     x += wo of that
+#     xn = norm(x)
+#     x += w2(gelu(w1 xn) * w3 xn)         the exact GELU, by erf: gelu_erf() above
+#   logits = embedding (the same table) times norm(x)
+# The engine has the gate of the heads as a row of the file (head_gate), the exact GELU as a fact of the architecture
+# (engine/layout.py's Layout: activation) and the sliding-attention layers as its local layers, as a Gemma 3's
+# (local_layers(): the options say which they are, their window and their base); the others turn part of each head as
+# a GPT-NeoX's do (rope PARTLY, the options' rotary).
 
 
 # Ternary Bonsai 2 27B (prism-ml/Ternary-Bonsai-2-27B-gguf) stores its matrices in a rotated basis. With R = H S,

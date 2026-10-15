@@ -16,7 +16,7 @@ import type { Direct } from "./alone.ts";
 import type { Convolution, Linear } from "../contracts/form.ts";
 import type { Force, FromGpu, Matrix, Remembered, ToGpu, Tokens, Vectors } from "../contracts/gpu/protocol.ts";
 import type { GpuChose } from "../contracts/messages.ts";
-import type { Tensor } from "../contracts/plan.ts";
+import type { Activation, Tensor } from "../contracts/plan.ts";
 
 // ---- (T368.4, the types) what createForward() (engine.ts) makes once and hands the two functions of this file
 // the model's facts
@@ -26,7 +26,7 @@ export type Shape = {
   D: number; KV: number; halfKV: boolean;
   eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean; unturned: number[];
   // T261: the FFN's activation, and whether some layer attends a window or is turned by tables of its own
-  activation: "silu" | "gelu"; local: boolean;
+  activation: Activation; local: boolean;
   linear: Linear | null; convolution: Convolution | null;
   // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
   stateful: boolean;

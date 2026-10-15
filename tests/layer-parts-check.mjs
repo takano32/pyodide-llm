@@ -248,6 +248,24 @@ const S = 100000;
       /^Error: The plan has a local layer and no RoPE tables of the local layers\.$/);
   }
   assert.deepEqual(all.said[13], ["gate", all.at.xb, all.at.xb, all.at.gate, 64]);
+  // T342: a Spark-X2.5's gate of every head (head_gate): one more matrix of the same input, into the frame's gate, a value
+  // a head; each token's values spread over their heads (the last head's first, so that none is written over before it
+  // is read), and the output gated by them by the kernel that gates a Qwen3.5's value by value
+  {
+    const gated = stand(["wq", "wk", "wv", "wo", "head_gate", "freq_cis_real", "freq_cis_imag"]);
+    for (let t = 0; t < 2; t++) gated.room.F.set([1.5, -2, 3, -4.5 - t], (gated.at.gate + t * S) / 4);
+    gated.layers.layer(1, att({ kind: "attention", place: 1, rope: true }))(2, 3);
+    assert.deepEqual(names(gated.said), ["matmuls", "rope", "rope", "rope", "rope", "phase", "gate", "gate", "matmuls"]);
+    assert.deepEqual(gated.said[0], ["matmuls", gated.at.xb, 2, ["wq", gated.at.q, S, 1], ["wk", gated.at.kNow, S, 1], ["wv", gated.at.vNow, S, 1], ["head_gate", gated.at.gate, S, 1]],
+      "the gate of the heads is one more matrix of the same input, the layer's");
+    assert.deepEqual(gated.said.slice(6, 8), [0, 1].map((t) => ["gate", gated.at.xb + t * S, gated.at.xb + t * S, gated.at.gate + t * S, 64]));
+    for (let t = 0; t < 2; t++) {
+      const spread = Array.from(gated.room.F.subarray((gated.at.gate + t * S) / 4, (gated.at.gate + t * S) / 4 + 64));
+      assert.deepEqual(spread, [1.5, -2, 3, -4.5 - t].flatMap((value) => Array(16).fill(value)), `token ${t}'s values, each over its head`);
+    }
+    // (and no gate of the heads where the model has none: a Llama's layer above)
+    assert.ok(!said.some(([name]) => name === "gate"));
+  }
   // T510.1: the layers of a kind whose facts give windows: those whose ring is shorter than the context (5 of 48: 42
   // positions) write each token's key and value twice into it, at p mod 21 and 21 after, and hand the kernels the run
   // of the ring from where each token's window begins. Four tokens at 19 to 22: slots 19, 20, 0 and 1; their windows
@@ -436,6 +454,12 @@ const S = 100000;
   const gelu = coreOf({ ...plan, activation: "gelu" }, { has: ["w1", "w2", "w3"] });
   gatedFfn(gelu.core)(0, 1);
   assert.deepEqual(names(gelu.said), ["matmuls", "geglu", "matmuls", "add_inplace"]);
+  // T342: a Spark-X2.5's: the exact GELU, by its own kernel
+  const exact = coreOf({ ...plan, activation: "gelu_erf" }, { has: ["w1", "w2", "w3"] });
+  gatedFfn(exact.core)(1, 2);
+  assert.deepEqual(exact.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 1], ["w3", at.hb2, S, 1]],
+    ["geglu_erf", at.hb, at.hb, at.hb2, 48], ["geglu_erf", at.hb + S, at.hb + S, at.hb2 + S, 48],
+    ["matmuls", at.hb, 2, ["w2", at.xb2, S, 1]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
   const normed = coreOf(plan, { has: ["w1", "w2", "w3", "rms_ffn_post_weight"] });
   gatedFfn(normed.core)(0, 1);
   assert.deepEqual(names(normed.said), ["matmuls", "swiglu", "matmuls", "rmsnorm", "add_inplace"]);
