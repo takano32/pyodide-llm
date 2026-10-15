@@ -222,7 +222,7 @@
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
 - T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — レビュー前
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
-- T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
+- T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — レビュー前
 - T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
 <!-- 目次ここまで -->
 
@@ -1576,9 +1576,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 測り方: 今の `matmul_t2r` に、スケールを float16 で持つ版（並びは今の形と PQ2_0 の形の 2 つ）を並べ、`tests/ternary-bench.mjs` の形で、行列をメモリから読む形で、x86-64 と arm64 の 1 本と 4 本で交互に。的の arm で決める。
 - 入れるなら: `CONVERTER` を上げる（保存した 3 値の変換を全部作り直す: 27B は 6 GB の取り直し）、`engine/dtypes.py`・変換器・`PACKED`・`footprint()` の大きさ・GPU の 3 値のシェーダ（文が変われば端末の鍵が動く）。取り込むコミットに `Co-Authored-By: ssig33 <mail@ssig33.com>`。
 
-### T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 状態: 未着手（2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `3a038d25` の `tests/qwen35_reference.py`・`tests/fixtures/qwen35-logits.json`）
+### T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 状態: レビュー前（2026-10-15、T531 の調べから。Opus medium、ブランチ `t534-qwen35-fixture`（`t532-yarn-settings` の上）。元は ssig33/pyodide-llm の `3a038d25` の `tests/qwen35_reference.py`・`tests/fixtures/qwen35-logits.json`）
 - いまの軽い組の Qwen3.5 の相手は `conftest.naive_qwen35_logits`（transformers の式を書き直した参照）で、transformers そのものとは CI で頼んだときだけ（`tests/reference_qwen35.py`）。相手は、小さな Qwen3.5 を transformers で 1 回走らせた logits を fixture に置き、PyTorch なしの pytest で比べる。参照と実装が同じ読み違いをしても、fixture は落とす（AGENTS.md の「比べの相手が同じ表を読むと…」）。
 - 重みは相手の `qwen35_model.py` でなく、こちらの `tests/made_up.py` から作る（値の決め方を写さない）。fixture を作るのは torch と transformers のある所で 1 回（CI の `extra=` か手で）。網の `python` が「違う」と言う回になるので、製品のコードに触らない回で。同じ形を LFM2・Gemma 3・Gemma 4 に広げるかは、1 つ作ってから決める。
+- **やったこと（2026-10-15）**: `tests/reference_qwen35.py --only=fixture [--out=…]`（`tests/reference_qwen35.sh` 越し、CI だけ）が、`tests/made_up.py` の `qwen35_model()` で作った 2 つの作り物（`small`: 既定の形、`three value heads a key head`: 鍵の head 1 つに値の head 3 つ・値の head 10・分類器が別）を transformers の `Qwen3_5ForCausalLM` に読ませ、`test_qwen35.py` の `TOKENS`（9 トークン）を 1 トークンずつ通した logits を `tests/fixtures/qwen35-logits.json` に書く（作り物の設定・トークン・渡したテンソルの sha256 も。68 KB）。`test_qwen35.py` の `test_a_qwen35_computes_what_transformers_computed` が、同じテンソルをページの道（`Conversion`）で変換して NumPy のエンジンで回し、fixture と比べる（PyTorch なし、最大の logit に対して 1.5e-5、最尤トークンが全位置で同じ）。テンソルのハッシュが合わなければ「made_up.py が別のテンソルを作る: fixture を書き直せ」と落ちる（線を動かす前に）。
+- **相手のコミットとの対応**: 形は `3a038d25` の `tests/qwen35_reference.py`（transformers で 1 回走らせて fixture に書く）と `tests/test_qwen35.py` の fixture の試験（相手の線も 1e-5）。重みは相手の `qwen35_model.py` を使わず（値の決め方を写していない）、こちらの `made_up.qwen35_model()`。道具は相手の別ファイルでなく、こちらの `reference_qwen35.py` の段に。相手に無いもの: テンソルのハッシュ、transformers の 2 つの道の差とエンジンの差を CI のログに出すこと。
+- **fixture を作った run**: 38816554062（CI、x86-64。transformers は `reference_qwen35.sh` の固定のコミット `7fb5bcd1` = 5.19.0.dev0、torch 2.14.1）。数（最大の logit に対して）: エンジンと transformers の 1 トークンずつの道が 7.9e-6（small）・1.2e-6（three）、手元の arm64 では 3.1e-6・2.0e-6。transformers 自身の 2 つの道（一度に・1 トークンずつ）の差は 2.0e-6・2.4e-6。**壊し方 1 つ**: デルタ則の l2norm の eps を 1e-6 から 1e-5 にすると 6.8e-5・2.7e-5 で落ちる（今ある `naive_qwen35_logits` の試験も落ちる）。だから線は 1.5e-5（見た最大の約 2 倍、弱い壊し方の約半分）。
+- **網の決まり (4)**: 製品のコードを動かす回ではないので pytest に足した。網の `python` は足した 2 つが new と言うだけで、今ある試験の記録は同じ（T532 と重ねて回した: 3264 → 3284 passed のうち T534 は 2）。
+- **取りまとめ役の決め（訳）**: (1) 作り物は 2 つ（相手は 1 つ）: 値の head が鍵の head の 3 倍の形（27B の形）は 0.8B の実物に無く、間違えやすいので。(2) fixture は 1 トークンずつの道（transformers の recurrent の式）の logits: エンジンと同じ道。(3) 線 1.5e-5（上の数）。(4) LFM2・Gemma 3・Gemma 4 に広げるかは決めていない（台帳の言うとおり 1 つ作った後に: 広げるなら同じ段を `reference_lfm2.py` などに足すだけ）。
+- 確かめ: pytest（手元、fixture の 2 つ）、軽い組（`suite: light passed`）、網（T532 と一緒に）、build と `dist-check`。CI を回した。訳: fixture は transformers が要る（手元に torch が無い）。
 
 ### T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 状態: 未着手（2026-10-15、持ち主が選択肢で「数えるようにする」。T129 の持ち主の判断待ちだった件: 案のブランチ `t129-review-model-bytes`）
 - 0.15 Mbps の回線ではモデルの部品が回線を埋めて jsDelivr の最初のバイトが 30 秒来ず、フォールバック（隔離のない 1 コア）に入る（AGENTS.md の「Pyodide の読み込みの期限」の (3)）。案のブランチを今の木に合わせて読み直し、`slow.yml` で確かめる。本当に止まったときに諦めるまでが少し遅くなる。
