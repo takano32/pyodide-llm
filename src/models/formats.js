@@ -218,5 +218,23 @@ export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 // not None. The conversion is the same bytes and the same options either way (CONVERTER stays), and ?hf= of the same
 // repository, which has no entry, keeps config.json's scaling
 export const PLAIN_ROPE = { rope_scaling: {} };
+// T343: XHToken's Spark-X2.5. Its chat_template calls a macro (render_content), which the converter's own reader
+// refuses, and jinja2 reads (where a browser could not fetch jinja2, there would be no format): so one turn by hand, as
+// the real Jinja writes it with enable_thinking true (the default: "<think>" after the answer's mark) and with false
+// ("</think>"), and no system turn of the visitor's. Every turn begins with <｜start▁of▁sentence｜> (0, the BOS of
+// config.json and the tokenizer) and ends with <｜end▁of▁sentence｜> (1, the EOS); the template writes its own system
+// turn first ("you are a helpful assistant."). The BOS is that first token and the formats begin after it: the page
+// sends the very IDs the real template makes (tests/format_check.py, strict). The specials are the converter's (the
+// template's special tokens and the added tokens tokenizer.json does not call special, T143), in its order: written
+// here, for without a template the converter read the two of the turns (tokenizer.json's only special ones) would not
+// be there. The answer stops at the EOS and at the BOS (the converter's)
+export const SPARK_THINKING = "<|System|>\nyou are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜>" +
+  "<|User|>{prompt}<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|><think>";
+export const SPARK_AT_ONCE = SPARK_THINKING.replace(/<think>$/, "</think>");
+export const spark = { bos: 0, stop_tokens: [0, 1],
+  specials: ["<｜start▁of▁sentence｜>", "<｜end▁of▁sentence｜>", "</tool_response>", "<tool_response>", "<|Developer|>",
+    "<｜fim▁begin｜>", "</arg_value>", "</tool_call>", "<｜fim▁hole｜>", "<arg_value>", "<tool_call>", "<｜fim▁end｜>",
+    "</arg_key>", "<|System|>", "<arg_key>", "</think>", "<System>", "<|Tool|>", "<|User|>", "<think>", "<|Bot|>", "<User>",
+    "<Bot>", "<unk>"] };
 export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 export const llmJp = { stop_tokens: [1, 2, 7] };

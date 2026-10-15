@@ -180,6 +180,10 @@ export const LICENSES = {
   // T333: Gemma 4 is Apache 2.0, not the Gemma Terms of Use: the cards' metadata says apache-2.0 and their text "License:
   // Apache 2.0" (a link to ai.google.dev/gemma/docs/gemma_4_license); no notice is asked for
   "google/gemma-4-E2B-it": APACHE, "google/gemma-4-E4B-it": APACHE,
+  // T343: the four cards say apache-2.0, the originals' text "The Spark-X2.5 model series is licensed under the Apache 2.0
+  // License", and their LICENSE is Apache 2.0's text
+  "XHToken/Spark-X2.5-1.7B": APACHE, "XHToken/Spark-X2.5-1.7B-GGUF": APACHE,
+  "XHToken/Spark-X2.5-4B": APACHE, "XHToken/Spark-X2.5-4B-GGUF": APACHE,
 };
 
 // T261.3: the notices a license asks whoever hosts the model to give, shown after the license on the line of the
