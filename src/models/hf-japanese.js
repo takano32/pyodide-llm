@@ -166,13 +166,15 @@ export const HF_JAPANESE = [
   // T517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
   // embedding), and its instruction-sft. The safetensors: mmnga's Q8_0 GGUFs of both (2023-09) hold the very values,
   // but q, k and v of a head in turns as Hugging Face has them (gguf_check.py tensors, run 38731171773), stockmark's
-  // case of T249
+  // case of T249. Their BOS is <s> (1), not the 1.7B's </s>: on the page's engine the first 1500 tokens of three Japanese
+  // articles cost 3.0 to 3.2% more after <s> than after nothing, and 8.2 to 8.6% more after </s> (start_check.mjs,
+  // run 38736521555; nothing in front is no choice of the page's)
   { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "japanese-large-lm 3.6B", note: "日本語 · fetches 7.2 GB → int8 4.0 GB",
     hf: hf("line-corporation/japanese-large-lm-3.6b", "3ffb24daf746a96f715ff6b5e161c694b510ff03", "spiece.model"), download: 7237638964,
-    conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+    conversion: {}, options: { bos: 1 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-japanese-large-lm-3.6b-instruction-sft", name: "japanese-large-lm 3.6B instruction-sft", note: "answers instructions · 日本語 · fetches 7.2 GB → int8 4.0 GB",
     hf: hf("line-corporation/japanese-large-lm-3.6b-instruction-sft", "3d357b288f78beab8a3af7d962cf98d7d93bf72d", "spiece.model"), download: 7237638964,
-    conversion: {}, options: { bos: 2 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: { bos: 1 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB",
     original: "Qwen/Qwen2.5-7B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,
