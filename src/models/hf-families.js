@@ -163,7 +163,7 @@ export const HF_FAMILIES = [
     ggufOf("ConwayResearch/Underdog-Saluki-27B-1.0", "1336c0b5d74dfe6ad7f793577092f5effd9f97c6", "Underdog-Saluki-27B-1.0-IQ2-mix.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 7898369152,
     "2.3-bit weights · fetches 7.9 GB (GGUF), kept as it is: 8.0 GB · about a word a second or less",
-    { options: qwen35, conversion: { dtype: "int8", blocks: true }, loaded: 7956712492, rebuilt: true },
+    { options: qwen35, conversion: { dtype: "int8", blocks: true }, loaded: 7956712492, rebuilt: true, languages: "English" },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, SALUKI_SAMPLING),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
@@ -255,11 +255,11 @@ export const HF_FAMILIES = [
   ...thinkingAndNot("hf-spark-x2.5-1.7b", "Spark-X2.5 1.7B",
     ggufOf("XHToken/Spark-X2.5-1.7B-GGUF", "1f7fa33b1245c14730da39e125714ad3a327901b", "Spark-X2.5-1.7B-Q8_0.gguf",
       "XHToken/Spark-X2.5-1.7B", "14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8"), 1820112704,
-    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark },
+    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark, languages: "English / 中文" },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
   ...thinkingAndNot("hf-spark-x2.5-4b", "Spark-X2.5 4B",
     ggufOf("XHToken/Spark-X2.5-4B-GGUF", "9826e0be84e6e6e8b9668abc91421109a1df1e2d", "Spark-X2.5-4B-Q8_0.gguf",
       "XHToken/Spark-X2.5-4B", "0bcb35678590218655dff3765b9e61c83b35e9c4"), 4375021152,
-    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark },
+    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark, languages: "English / 中文" },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
 ];
