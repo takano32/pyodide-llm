@@ -134,8 +134,31 @@ assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8),
   assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), [thinks.id, answers.id], "the entries whose blocks are kept");
   // loaded: read before the note, of an entry that says it, and nothing of any other entry changed by it: each still
   // says its size by its file or by its note's words
-  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id), [thinks.id, answers.id]);
+  // (T333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
+  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", thinks.id, answers.id].sort());
   for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);
+}
+// T333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the
+// int8 checkpoint without the table of every layer's inputs, which stays in the kept file (loaded, a second time here:
+// the converter's sizes of the real headers less forward.ts's tableHole()), not the 5.2 and 8.4 GB of their notes. So
+// a 4 GB phone is warned of both, and only the E4B needs a 64-bit memory (the E2B ran in a 32-bit one in WebKit, T329.3).
+// The stops are generation_config.json's (<eos>, <turn|>, <|tool_response>: the converter says <bos> and <eos>, T524);
+// the BOS and the format are the converter's (no `bos` nor `template`); the sampling is generation_config.json's
+{
+  for (const [size, revision, download, loaded, devices] of [
+    ["E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", 10246621918, 5207962792 - 2642411520, "desktop only"],
+    ["E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", 15992595884, 8397500612 - 3170893824, "desktop only · Chrome and Firefox"]]) {
+    const entry = byId(`hf-gemma-4-${size.toLowerCase()}`);
+    assert.equal(entry.name, `Google Gemma 4 ${size}`);
+    assert.deepEqual(entry.hf, { repo: `google/gemma-4-${size}-it`, revision, weights: "model.safetensors", config: "config.json", tokenizer: "tokenizer.json" });
+    assert.equal(LICENSES[entry.hf.repo], "Apache License 2.0", entry.id);
+    assert.ok(entry.download === download && entry.loaded === loaded && modelBytes(entry) === loaded, entry.id);
+    assert.ok(entry.note.endsWith(` · ${devices}`), `${entry.id}: ${entry.note}`);
+    assert.deepEqual(entry.options, { stop_tokens: [1, 106, 50] }, entry.id);
+    assert.ok(!("template" in entry) && !("bos" in entry.options), `${entry.id}: the converter's BOS and format`);
+    assert.deepEqual(entry.generation, { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 });
+    assert.deepEqual(entry.conversion, {}, `${entry.id}: the worker chooses the bits`);
+  }
 }
 // T364.3: loaded, an entry's own word of what it takes once loaded: read before the note, and after a site's file
 assert.equal(modelBytes({ note: "int8 1.7 GB", loaded: 5 }), 5);

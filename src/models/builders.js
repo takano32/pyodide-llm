@@ -75,6 +75,22 @@ export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
   generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
 });
+/** T333: a Gemma 4 of the list (E2B, E4B: the language model of Google's original, whose vision and audio towers the
+ * converter leaves; the original is not gated and under Apache 2.0, so no copy and no notice). Its safetensors are
+ * converted in the page; the table of every layer's inputs stays in the file the conversion is kept in (OPFS) and is
+ * read a row a token (T329.2), so what the memory holds is the checkpoint without it: `loaded` says that, as the note
+ * cannot (it gives the file's size). The BOS (<bos>) and the format (<|turn>user … <|turn>model, the real
+ * apply_chat_template's without a thought) are the converter's. The stops are generation_config.json's eos_token_id,
+ * <eos>, <turn|> and <|tool_response> (1, 106, 50): the converter names <bos> and <eos> alone (T524), and an answer
+ * then went on past <turn|>. The sampling is generation_config.json's: a temperature of 1.0, top-k 64, top-p 0.95 */
+export const gemma4 = (size, revision, download, loaded, sizes) => ({
+  group: "hf", id: `hf-gemma-4-${size.toLowerCase()}`, name: `Google Gemma 4 ${size}`,
+  note: `answers instructions · 日本語 / English · ${sizes}`,
+  hf: hf(`google/gemma-4-${size}-it`, revision), download, loaded,
+  conversion: {}, options: { stop_tokens: [1, 106, 50] },
+  generation: { steps: 0, temperature: 1.0, topp: 0.95, top_k: 64, repetition_penalty: 1.0 },
+  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
+});
 /** T235, T246: a Ternary Bonsai of Prism ML (a ternary Qwen3) in one of its sizes: its PQ2_0 GGUF's weights with the
  * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
  * change covers them all (the owner's open choices of T235's review: a word more in the note; Prism ML's
