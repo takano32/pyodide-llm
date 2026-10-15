@@ -5311,7 +5311,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 候補（2026-10-05。規模 中〜大）
 - 別のクラスで `attention_k_eq_v: true`（K と V が同じ）ほか。int8 と補正で約 15.0 GB で、64 ビットのメモリの 16 GiB に入るかは境界（T129 の `pastWide()`）。入らなければ 6 ビット（Chrome と Firefox）か外す。
 
-### T333 [追加][Gemma4][モデル] Gemma 4 の E2B と E4B を一覧に — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** HF の API でリビジョン・ライセンス・大きさ・generation_config が項目と一致、`loaded` の読み手は `modelBytes()` 1 つで誤りなし（欄は分けない）、int6 の作り物は forward-check で通った（最尤 100%・perplexity +0.42%）、網と build は予定どおり。見ていない: 保存できない訪問での警告の不足（表がメモリに乗る: T525）と実物の int6（端末の一覧に）。）（2026-10-15、Opus medium、ブランチ `t333-gemma4-entries`。2026-10-05。T329〜T331 の後。規模 小〜中）
+### T333 [追加][Gemma4][モデル] Gemma 4 の E2B と E4B を一覧に — 状態: 完了（2026-10-15、本線に入れた。**本番（models.yml run 38771383176、Chromium 156、4 本）**: E2B 準備完了 106.5 秒・9.6 tok/s・2 回目 5.7 秒、E4B 131.7 秒・5.1 tok/s・10.2 秒。どちらも OPFS に保存された。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** HF の API でリビジョン・ライセンス・大きさ・generation_config が項目と一致、`loaded` の読み手は `modelBytes()` 1 つで誤りなし（欄は分けない）、int6 の作り物は forward-check で通った（最尤 100%・perplexity +0.42%）、網と build は予定どおり。見ていない: 保存できない訪問での警告の不足（表がメモリに乗る: T525）と実物の int6（端末の一覧に）。）（2026-10-15、Opus medium、ブランチ `t333-gemma4-entries`。2026-10-05。T329〜T331 の後。規模 小〜中）
 - 取り込み元（原本の safetensors か Q8_0 の GGUF: `gguf.yml candidates` で）、書式（`<start_of_turn>` の形。読み手が読めなければ手書きで、`format_check.py` で本物と 9/9）、先頭のトークンを測る（`tests/start_check.*`・`chat_fluency.mjs`）、transformers との比べ（`tests/reference_*` の形で全層の K と V も）、固定値、本番の `models.yml`。ライセンスは apache-2.0。
 
 - **T333 の結果（2026-10-15、レビュー前）**: 一覧に 2 つ（`src/models/builders.js` の `gemma4()`、`hf-families.js` の最後）。
