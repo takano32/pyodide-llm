@@ -296,7 +296,9 @@ NAMES = {"gpt-2": ("gpt2", False, False), "gpt2": ("gpt2", False, False), "smoll
          "qwen2": ("qwen", True, False), "llama-bpe": ("llama3", False, True), "qwen35": ("qwen35", True, False),
          "granite-docling": ("gpt2", False, False), "minicpm5": ("minicpm5", False, False), "lfm2": ("llama3", False, False),
          # T505.2: each held to a real GGUF and its original's tokenizer.json
-         "smaug-bpe": ("llama3", False, True), "deepseek-r1-qwen": ("qwen", True, False)}
+         "smaug-bpe": ("llama3", False, True), "deepseek-r1-qwen": ("qwen", True, False),
+         # T340: held to XHToken's Q8_0 GGUF of Spark-X2.5 1.7B and its original's tokenizer.json
+         "spark2_5": ("spark2_5", False, False)}
 
 
 def test_the_names_are_the_table():
