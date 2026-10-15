@@ -96,7 +96,7 @@ def test_the_context_can_be_cut_and_the_engine_runs_the_result():
 
 
 @pytest.mark.parametrize("change, reason", [
-    (dict(model_type="rwkv"), "only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, GPT-2 and GPT-NeoX"), (dict(rope_scaling={"type": "dynamic", "factor": 2.0}), "RoPE scaling"),
+    (dict(model_type="rwkv"), "only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, GPT-2 and GPT-NeoX"), (dict(rope_scaling={"type": "dynamic", "factor": 2.0}), "RoPE scaling"),
     (dict(hidden_act="gelu"), "gelu"), (dict(attention_bias=True), "biases"), (dict(num_attention_heads=5), "heads"),
     (dict(vocab_size=None), "vocab_size"), (dict(head_dim=3), "heads")])
 def test_a_model_the_engine_cannot_run_is_refused(change, reason):
@@ -261,7 +261,8 @@ def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
     stream.finish()
     assert bytes(sink.data) == expected
     assert sink.opened == (list(stream.header), dtype, {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": head_size,
-                                                           "linear": None, "rotated": None, "convolution": None, "kinds": None, "tiled": None})
+                                                           "linear": None, "rotated": None, "convolution": None, "kinds": None, "tiled": None,
+                                                           "wide": None, "double": None, "kv_shared": None, "per_layer": 0})
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():

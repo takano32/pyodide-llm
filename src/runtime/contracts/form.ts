@@ -23,7 +23,7 @@ export type Convolution = { layers: string; taps: number };
 export type Rotated = { block: number; signs: Record<string, unknown> };
 
 // the architecture's name, a key of layout.py's LAYOUTS
-export type Arch = "llama" | "gpt2" | "neox" | "qwen35" | "lfm2" | "gemma3";
+export type Arch = "llama" | "gpt2" | "neox" | "qwen35" | "lfm2" | "gemma3" | "gemma4";
 
 // The numbers of the layers that keep a state, each under its kind's name (forward/kinds.ts): what a form says of
 // them, and a plan after it by the same names (contracts/plan.ts)
@@ -46,4 +46,12 @@ export type Form = {
   kinds: Record<string, string | string[]> | null;
   // T363: a linear-attention layer's output matrix has its columns in llama.cpp's order of the value heads (the same)
   tiled: boolean | null;
+  // T331: the layers whose heads are of a size of their own (a Gemma 4's full-attention layers), and those whose FFN is
+  // twice as wide: layout.py's wide_form() and double_form()
+  wide: { layers: number[]; head_dim: number } | null;
+  double: number[] | null;
+  // T330: the layers that read the keys and values of another, and which each reads: layout.py's shared_form()
+  kv_shared: { layers: number[]; from: number[] } | null;
+  // T329: the width of every layer's input of a table of its own (a Gemma 4's per-layer embedding); 0 where none
+  per_layer: number;
 };

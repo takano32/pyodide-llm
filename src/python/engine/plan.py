@@ -113,6 +113,9 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     of an architecture ("arch" is there for a person who looks at a plan). What the rows say is no key here, as it is
     no field there: a bias, the norms of a head, the table of positions are read where the plan has their tensors."""
     settings = Settings(**said) if settings is None else settings
+    if dims.layout.value_norm or dims.layout.wide:
+        # T331: the page's engine reads no fact of a Gemma 4's layers yet (T331.2), and would run another model
+        raise ValueError("The page's engine does not run a Gemma 4 yet.")
     int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
     layers = layer_facts(dims, settings)
     held = outside(dims.rows(), dtype)

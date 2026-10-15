@@ -33,6 +33,8 @@ FACTS = {
     "qwen3_5": ("Qwen3.5", "qwen35", None, "lm_head.weight", {"renamed", "free_heads", "rotatable", "rms_norm", "partly"}),
     "lfm2": ("LFM2", "lfm2", "lfm2", "lm_head.weight", {"rms_norm"}),
     "gemma3_text": ("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}),
+    "gemma4_text": ("Gemma 4", "gemma4", None, "lm_head.weight", {"free_heads", "rms_norm"}),
+    "gemma4": ("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
     "gpt2": ("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}),
     "gpt_neox": ("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}),
 }
@@ -47,6 +49,9 @@ LAYOUTS = {
     "qwen35": ([256, 768, 8, 4, 2, -2048, 320], {"arch": "qwen35", "head_dim": 128, "linear": LINEAR}, 32),
     "lfm2": ([256, 768, 8, 8, 4, -2048, 320], {"arch": "lfm2", "convolution": {"layers": "ccaccaca", "taps": 3}}, 0),
     "gemma3": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma3", "head_dim": 128}, 0),
+    "gemma4": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma4", "head_dim": 128,
+                                                 "wide": {"layers": [2, 5], "head_dim": 256}, "double": [4, 5],
+                                                 "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 16}, 0),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
@@ -76,7 +81,7 @@ def test_an_unknown_model_type_is_refused_in_the_words_it_was():
             check_config(normalize(config))
         assert str(refusal.value) == (
             f"This model cannot be converted: it is {said}, and only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, "
-            f"Qwen3.5, LFM2, Gemma 3, GPT-2 and GPT-NeoX models are supported.")
+            f"Qwen3.5, LFM2, Gemma 3, Gemma 4, GPT-2 and GPT-NeoX models are supported.")
         # (its layout and its plan are a Llama's until then: nothing else is asked of an unknown name)
         assert family_of(config) is LLAMA and architecture(config) == "llama"
 
@@ -166,7 +171,8 @@ def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(m
     is the language model saved alone, "model.")."""
     family = FAMILIES[model_type]
     if family.gguf is None:
-        assert model_type in ("mistral", "qwen3_5") and family.renamed
+        # (T331: a Gemma 4 is read from its safetensors alone, until a GGUF of it is: T333)
+        assert (model_type in ("mistral", "qwen3_5") and family.renamed) or family.arch == "gemma4"
         return
     assert families.GGUF[family.gguf] == (model_type, family)
     header, form, rotary = LAYOUTS[family.arch]
@@ -215,8 +221,10 @@ def test_what_only_a_family_says_is_asked_of_no_other(model_type):
     assert llama2_convert.unturned_layers(config) == ([1, 3] if model_type == "smollm3" else [])
     assert (llama2_convert.linear_layers(config) is not None) == (family.arch == "qwen35")
     assert (llama2_convert.convolution_layers(config) is not None) == (family.arch == "lfm2")
-    assert set(family.form) == {"qwen35": {"linear"}, "lfm2": {"convolution"}}.get(family.arch, set()) <= set(FORM)
-    assert set(family.options(config)) == {"smollm3": {"unturned"}, "gpt_neox": {"parallel_residual"}}.get(model_type, set())
+    assert set(family.form) == {"qwen35": {"linear"}, "lfm2": {"convolution"},
+                                "gemma4": {"wide", "double", "kv_shared", "per_layer"}}.get(family.arch, set()) <= set(FORM)
+    assert set(family.options(config)) == {"smollm3": {"unturned"}, "gpt_neox": {"parallel_residual"},
+                                           "gemma4_text": {"rotary"}, "gemma4": {"rotary"}}.get(model_type, set())
 
 
 # ---- a family added to the table is a family everywhere: a made-up one that is a Llama but for one number of its
@@ -247,7 +255,7 @@ def test_a_family_put_into_the_table_converts(made_up):
     assert streamed(file, published, "float32", 4096)[0] == expected
     assert expected != converted(Safetensors(reader(file)), {**published, "model_type": "llama"}, "float32")
     # and the refusal of another model names it
-    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, GPT-2, GPT-NeoX and Twice models"):
+    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, GPT-2, GPT-NeoX and Twice models"):
         check_config({**BASE, "model_type": "bert"})
 
 

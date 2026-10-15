@@ -425,3 +425,94 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
             x[pos] = x[pos] + norm(out, wide[p + "post_feedforward_layernorm.weight"])
     classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide["model.embed_tokens.weight"]
     return [classifier @ norm(v, wide["model.norm.weight"]) for v in x]
+
+
+# ------------------------------------------------------------------------------------- Gemma 4 (T331)
+
+def naive_gemma4_logits(tensors, config, tokens, states=None):
+    """transformers' Gemma 4 language model (modeling_gemma4.py at 2126f65b: Gemma4TextScaledWordEmbedding,
+    Gemma4TextDecoderLayer, Gemma4TextAttention with the masks of Gemma4TextModel.forward, Gemma4TextMLP, Gemma4RMSNorm,
+    Gemma4TextRotaryEmbedding with modeling_rope_utils.py's proportional RoPE, Gemma4ForCausalLM's cap of the logits),
+    written out from the Hugging Face tensors in float64, the whole sequence at once as its forward of a prompt
+    computes, independently of the converter and the engine. config: the text config.json as it is published (its
+    rope_parameters a dict for each kind of layer). T330: the last num_kv_shared_layers layers take the keys and values
+    the last layer of their kind before them made (shared_kv_states), and make none. T329: every layer's input of its own
+    (get_per_layer_inputs(), project_per_layer_inputs()), and what the layer makes of it. states: a list that gets, for
+    every layer, what its attention gave at every position (before the norm behind it)."""
+    wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}
+    m = "model.language_model." if "model.language_model.embed_tokens.weight" in wide else "model."
+    eps, dim = config["rms_norm_eps"], config["hidden_size"]
+    heads, kv_heads, window = config["num_attention_heads"], config["num_key_value_heads"], config["sliding_window"]
+    sizes = {"sliding_attention": config["head_dim"], "full_attention": config["global_head_dim"]}
+    rope = config["rope_parameters"]
+
+    def inverse(kind):
+        """the angle per position of each pair (i, i + size / 2) of a head of the layer's kind"""
+        size, said = sizes[kind], rope[kind]
+        angles = 1.0 / said["rope_theta"] ** (np.arange(0, size, 2, dtype=np.float64) / size)
+        if said["rope_type"] == "proportional":  # the first quarter's angles, of the whole head's width; 0 past them
+            turned = int(said["partial_rotary_factor"] * size // 2)
+            angles[turned:] = 0.0
+        return angles
+
+    inverses = {kind: inverse(kind) for kind in sizes}
+    norm = lambda v, weight=None: v / math.sqrt(float(v @ v) / len(v) + eps) * (1.0 if weight is None else weight)
+    gelu = lambda v: 0.5 * v * (1.0 + np.tanh(math.sqrt(2.0 / math.pi) * (v + 0.044715 * v ** 3)))
+
+    def rotate(head, pos, kind):
+        size = sizes[kind]
+        cos, sin = np.cos(pos * inverses[kind]), np.sin(pos * inverses[kind])
+        cos, sin = np.concatenate([cos, cos]), np.concatenate([sin, sin])
+        return head * cos + np.concatenate([-head[size // 2:], head[:size // 2]]) * sin
+
+    x = [wide[m + "embed_tokens.weight"][token] * dim ** 0.5 for token in tokens]
+    first_shared, kept = len(config["layer_types"]) - config.get("num_kv_shared_layers", 0), {}
+    width, layers = config.get("hidden_size_per_layer_input") or 0, len(config["layer_types"])
+    inputs = None
+    if width:
+        projected = [(wide[m + "per_layer_model_projection.weight"] @ v * dim ** -0.5).reshape(layers, width) for v in x]
+        normed = [np.array([norm(row, wide[m + "per_layer_projection_norm.weight"]) for row in rows]) for rows in projected]
+        own = [wide[m + "embed_tokens_per_layer.weight"][token].reshape(layers, width) * width ** 0.5 for token in tokens]
+        inputs = [(a + b) * 2 ** -0.5 for a, b in zip(normed, own)]
+    for layer, kind in enumerate(config["layer_types"]):
+        p, a, size = f"{m}layers.{layer}.", f"{m}layers.{layer}.self_attn.", sizes[kind]
+        normed = [norm(v, wide[p + "input_layernorm.weight"]) for v in x]
+        queries, ks, vs = [], [], []
+        for pos, v in enumerate(normed):
+            q = (wide[a + "q_proj.weight"] @ v).reshape(heads, size)
+            queries.append([rotate(norm(q[h], wide[a + "q_norm.weight"]), pos, kind) for h in range(heads)])
+            if layer < first_shared:
+                k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, size)
+                values = (wide[a + "v_proj.weight"] @ v).reshape(kv_heads, size)
+                ks.append([rotate(norm(k[h], wide[a + "k_norm.weight"]), pos, kind) for h in range(kv_heads)])
+                vs.append([norm(values[h]) for h in range(kv_heads)])
+        if layer < first_shared:
+            kept[kind] = (ks, vs)  # (the last layer of its kind before the shared ones leaves its own)
+        else:
+            ks, vs = kept[kind]
+        mixed = []
+        for pos in range(len(tokens)):
+            seen = [t for t in range(pos + 1) if kind == "full_attention" or t > pos - window]
+            attended = np.zeros((heads, size))
+            for h in range(heads):
+                kv = h // (heads // kv_heads)
+                scores = np.array([queries[pos][h] @ ks[t][kv] for t in seen])  # (scaling 1.0)
+                scores = np.exp(scores - scores.max())
+                scores /= scores.sum()
+                attended[h] = sum(score * vs[t][kv] for score, t in zip(scores, seen))
+            mixed.append(wide[a + "o_proj.weight"] @ attended.reshape(-1))
+        if states is not None:
+            states.append(mixed)
+        for pos in range(len(tokens)):
+            x[pos] = x[pos] + norm(mixed[pos], wide[p + "post_attention_layernorm.weight"])
+            v = norm(x[pos], wide[p + "pre_feedforward_layernorm.weight"])
+            out = wide[p + "mlp.down_proj.weight"] @ (gelu(wide[p + "mlp.gate_proj.weight"] @ v) * (wide[p + "mlp.up_proj.weight"] @ v))
+            x[pos] = x[pos] + norm(out, wide[p + "post_feedforward_layernorm.weight"])
+            if inputs is not None:
+                gated = gelu(wide[p + "per_layer_input_gate.weight"] @ x[pos]) * inputs[pos][layer]
+                x[pos] = x[pos] + norm(wide[p + "per_layer_projection.weight"] @ gated, wide[p + "post_per_layer_input_norm.weight"])
+            x[pos] = x[pos] * wide[p + "layer_scalar"][0]
+    classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide[m + "embed_tokens.weight"]
+    cap = config.get("final_logit_softcapping")
+    logits = [classifier @ norm(v, wide[m + "norm.weight"]) for v in x]
+    return [cap * np.tanh(row / cap) for row in logits] if cap else logits

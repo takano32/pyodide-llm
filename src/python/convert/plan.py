@@ -11,7 +11,7 @@ def transformed(values, transform, head_size):
     """What a tensor of the Hugging Face checkpoint becomes in the checkpoint this engine reads.
 
     None: nothing (the rows go straight through, as they arrive). ("permute", heads): the head interleaving of
-    wq and wk. ("transpose",): GPT-2 stores its matrices the other way round (Conv1D). ("part", i, n): one of
+    wq and wk (("permute", heads, size): of heads of that size, T331). ("transpose",): GPT-2 stores its matrices the other way round (Conv1D). ("part", i, n): one of
     the n stacked matrices of GPT-2's c_attn, transposed with it; ("row", i, n) the same for its bias.
     ("heads", parts, i, heads, rot): the i-th of the parts each head's rows are stacked in, with the halves of its
     first rot rows interleaved (GPT-NeoX's query_key_value: 3 parts; Qwen3.5's q_proj: q and its gate; 1 part: a k
@@ -27,7 +27,8 @@ def transformed(values, transform, head_size):
             values = transformed(values, step, head_size)
         return values
     if transform[0] == "permute":
-        return permute_heads(values, transform[1], head_size)
+        # (T331: ("permute", heads, size) of heads of their own size, a Gemma 4's wide layers')
+        return permute_heads(values, transform[1], transform[2] if len(transform) > 2 else head_size)
     if transform[0] == "transpose":
         return values.T
     if transform[0] == "heads":
@@ -177,6 +178,8 @@ def rope_table(config, header, which):
     GPT-NeoX rotates only rotary_pct of each head (and Qwen3.5), and the angles follow that width. The table keeps the shape
     the layout gives it (head_size // 2 columns); the columns past the rotated part are never read.
     """
+    if family_of(config).table is not None:
+        return family_of(config).table(config, header, which)  # (T331: a Gemma 4's)
     size, seq_len = head_size(config), header[6]
     width = rotary_dim(config) if family_of(config).partly else size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]

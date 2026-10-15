@@ -12,7 +12,7 @@ import engine.model
 import llama2_convert
 from conftest import pack_tokenizer, tiny_vocab
 from made_up import checkpoint, uniform
-from engine.layout import GATED_DELTA, SHORT_CONVOLUTION
+from engine.layout import GATED_DELTA, PROPORTIONAL, SHORT_CONVOLUTION
 from llama2_numpy import (ATTENDING, EVERY, FORM, GELU, LAYOUTS, MATRIX, PARTLY, SILU, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
                           Settings, Stateful, after, checkpoint_dtype, external_tensors, file_size, form_of,
                           forward_plan, layer_facts, layout_of, rope_frequencies, slots_of,
@@ -24,27 +24,32 @@ CONVOLUTION = {"layers": "ccac", "taps": 3}
 # the facts of every architecture, a second time: a record that is changed has to be changed here too
 FACTS = {
     "llama": dict(rows="llama", stateful=None, rope=WHOLE, yarn_magnitude=True, layer_norm=False, gated_ffn=True,
-                  rotatable=True, unturned=True, activation=SILU, local=False),
+                  rotatable=True, unturned=True, activation=SILU, local=False, value_norm=False, wide=False),
     "gpt2": dict(rows="gpt2", stateful=None, rope=None, yarn_magnitude=False, layer_norm=True, gated_ffn=False,
-                 rotatable=False, unturned=False, activation=GELU, local=False),
+                 rotatable=False, unturned=False, activation=GELU, local=False, value_norm=False, wide=False),
     "neox": dict(rows="gpt2", stateful=None, rope=PARTLY, yarn_magnitude=False, layer_norm=True, gated_ffn=False,
-                 rotatable=False, unturned=False, activation=GELU, local=False),
+                 rotatable=False, unturned=False, activation=GELU, local=False, value_norm=False, wide=False),
     "qwen35": dict(rows="qwen35", stateful="linear", rope=PARTLY, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                   rotatable=True, unturned=False, activation=SILU, local=False),
+                   rotatable=True, unturned=False, activation=SILU, local=False, value_norm=False, wide=False),
     "lfm2": dict(rows="lfm2", stateful="convolution", rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                 rotatable=False, unturned=False, activation=SILU, local=False),
+                 rotatable=False, unturned=False, activation=SILU, local=False, value_norm=False, wide=False),
     "gemma3": dict(rows="gemma3", stateful=None, rope=WHOLE, yarn_magnitude=False, layer_norm=False, gated_ffn=True,
-                   rotatable=False, unturned=False, activation=GELU, local=True),
+                   rotatable=False, unturned=False, activation=GELU, local=True, value_norm=False, wide=False),
+    "gemma4": dict(rows="gemma4", stateful=None, rope=PROPORTIONAL, yarn_magnitude=False, layer_norm=False,
+                   gated_ffn=True, rotatable=False, unturned=False, activation=GELU, local=True, value_norm=True,
+                   wide=True),
 }
 # (a header and the form each architecture needs to be laid out)
 HEADER = [64, 128, 4, 4, 2, 320, 48]
 FORMS = {"llama": {}, "gpt2": {"arch": "gpt2"}, "neox": {"arch": "neox"},
          "qwen35": {"arch": "qwen35", "head_dim": 16, "linear": LINEAR},
          "lfm2": {"arch": "lfm2", "qk_norm": True, "convolution": CONVOLUTION},
-         "gemma3": {"arch": "gemma3", "head_dim": 32}}
+         "gemma3": {"arch": "gemma3", "head_dim": 32},
+         "gemma4": {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}, "double": [2, 3]}}
 # what an engine is told of a model of each, besides the form (Llama's arguments)
 OPTIONS = {"qwen35": {"rotary": 4}, "neox": {"rotary": 4},
-           "gemma3": {"local": {"layers": [0, 1, 3], "window": 2, "rope_theta": 100.0}}}
+           "gemma3": {"local": {"layers": [0, 1, 3], "window": 2, "rope_theta": 100.0}},
+           "gemma4": {"local": {"layers": [0, 2], "window": 2, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}}
 every = pytest.mark.parametrize("arch", list(FACTS))
 
 
@@ -167,7 +172,7 @@ ENTRANCES = {
 def test_a_name_that_is_no_architectures_is_refused_wherever_it_comes_in(entrance):
     """It was read as a Llama until T359.6: a mistyped name ran another model's forward pass without a word."""
     for arch in ("llama3", "LLAMA", "qwen3", "", "gpt-2"):
-        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3."
+        assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4."
     for arch in FACTS:  # (and a name it has is not what is refused there)
         try:
             ENTRANCES[entrance](arch)
@@ -261,7 +266,7 @@ def test_a_model_has_its_architectures_facts_from_the_time_it_is_made(arch):
     """What the reference reads at every token is the record's, resolved once: attributes, and no lookup in a step."""
     llama, facts = model(arch), FACTS[arch]
     assert (llama.layer_norm, llama.gated_ffn) == (facts["layer_norm"], facts["gated_ffn"])
-    assert (llama.turning, llama.partly) == (facts["rope"] is not None, facts["rope"] == PARTLY)
+    assert (llama.turning, llama.partly) == (facts["rope"] is not None, facts["rope"] in (PARTLY, PROPORTIONAL))
     # the step and the states of its layers that keep a state, by their names
     assert (llama.stateful, llama.states) == {"linear": ("linear_attention", ("delta_state", "conv_state")),
                                               "convolution": ("short_convolution", ("conv_state",))}.get(facts["stateful"], (None, ()))
