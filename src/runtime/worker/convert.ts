@@ -8,7 +8,7 @@ import { pyodide, llama2_numpy, pythonKernels, blockKernels } from "./runtime.ts
 import { switchesNow } from "./request.ts";
 import { adopted } from "./loaded.ts";
 import { since, took } from "./clock.ts";
-import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink, runsPacked } from "./weights.ts";
+import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink, runsPacked, tableInMemoryFromNow } from "./weights.ts";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
 import { templatePackage, placePython } from "./pyodide.ts";
@@ -48,7 +48,10 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
   const { manifest } = kept;
   const started = performance.now();
   // the first part holds the header, which the memory is chosen by (T115)
-  const parts = kept.parts()[Symbol.asyncIterator]();
+  // (T329.2.2: the stretch of a table of every layer's inputs that stays in the file is not read: skipping, once the
+  // header says it)
+  const skipping: { range?: [number, number] } = {};
+  const parts = kept.parts(skipping)[Symbol.asyncIterator]();
   const unreadable = (error: unknown) => {
     if (signal.aborted) {
       throw error;
@@ -64,7 +67,8 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
   if (part.done || part.value.length < HEADER_BYTES) {
     return { miss: "what is kept is empty" };
   }
-  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), manifest.options);
+  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), manifest.options, undefined, kept.where === "opfs");
+  if (weights.hole) skipping.range = weights.hole;
   let tokenizer;
   try {
     let offset = 0;
@@ -80,6 +84,19 @@ async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
       return unreadable(error);
     }
     const vocabulary = await kept.tokenizer();
+    // T329.2.2: the table of every layer's inputs is read from the kept file from now on, at once: a handle of it (the
+    // only one it can have: another tab of this site may hold it). Where there is none, the table is read into the
+    // memory with the rest
+    if (weights.hole) {
+      const reader = await keptModule!.openRows(kept.name);
+      if (!reader) {
+        console.warn("kept: the kept model's file cannot be read from at once here (another tab of this site may have it open): its table of every layer's inputs is read into the memory");
+        weights.destroy();
+        tableInMemoryFromNow(model);
+        return loadConverted(model, signal, id);
+      }
+      weights.attach(reader);
+    }
     took("download", since(started));
     const constructStarted = performance.now();
     tokenizer = pythonBuffer(vocabulary.length);
@@ -111,6 +128,8 @@ async function keepConverted(model: Remote, checkpoint: Weights, bytes: number, 
   for (const old of await keptModule!.replaced(model).catch(() => [])) await keptModule!.forget(old).catch(() => {});
   // slice() copies: the memory it comes from may grow (and so move) while an await waits
   if (checkpoint.direct) return kept ? kept.finish(manifest, vocabulary) : "the weights went to the GPU alone, and there is no file system here to keep them in as they came";
+  // (T329.2.2: and a model whose table of every layer's inputs is read from the file it is kept in as it came)
+  if (checkpoint.hole && kept) return kept.finish(manifest, vocabulary);
   return keptModule!.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
@@ -152,7 +171,9 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
   // opened for its int8 conversion (T232: or its ternary one, where the page asked for that) where it may (the choice
   // is the sink's, once the header is known), let go otherwise
   const keptDtype = model.conversion?.dtype ?? "int8";
-  const mayKeep = remote && gpuOnlyPossible(keptDtype);
+  // (T329.2.2: and on the kernels of forward.ts, where a table of every layer's inputs stays in that file, which the
+  // engine reads its rows from: whether the model has one is known once its header is)
+  const mayKeep = remote && (gpuOnlyPossible(keptDtype) || runsPacked());
   // (T380.2: a file that could not be opened is said: the conversion goes on, and a model on the GPU alone is then not kept)
   let keep = mayKeep ? await keptModule!.keeper({ ...(model as Remote), conversion: { ...model.conversion, dtype: keptDtype } }).catch((error) => {
     console.warn(`kept: no file to keep this model in as it comes (${told(error)}): a model on the GPU alone is not kept`);
@@ -169,7 +190,9 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     // T115: no bits asked for (weightsFor() in src/models.js asks for six only where the device says it has too little
     // memory): int8 where its forward pass fits a 32-bit memory or the browser has a 64-bit one, six bits where neither
     // (T133), once the header is known
-    const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? automaticBits };
+    // (T329.2.2: a table of every layer's inputs not counted where it will stay in the file kept as it comes)
+    const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? ((header: Parameters<typeof automaticBits>[0], form: Parameters<typeof automaticBits>[1],
+      sizes: Parameters<typeof automaticBits>[2]) => automaticBits(header, form, sizes, Boolean(keep))) };
     // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); and the
     // readers of the types a file stores its tensors in, the same float32 several times faster: whichever of them has
     // a kernel, by the type's name (the converter's table of them says which. T123: bfloat16; T136: GGUF's Q8_0;
@@ -234,14 +257,14 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
       // (the review of T156: a model not on the GPU alone is kept from its memory, as before (keep()): the file opened
       // for it as it came goes first. Its open handle refused keep()'s, and its drop() in the finally below removed what
       // keep() wrote: every conversion of a browser with a GPU adapter was kept no more, run 36344754761)
-      if (keep && !into.weights!.direct) {
+      if (keep && !into.weights!.direct && !into.weights!.hole) {
         await keep.drop();
         keep = undefined;
       }
       if (remote) {
         postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` } satisfies Status);
-        keptAsItCame = Boolean(into.weights!.direct && keep);
-        kept = await keepConverted(model as Remote, into.weights!, into.bytes, proxies[1], options, signal, into.weights!.direct ? keep : undefined);
+        keptAsItCame = Boolean((into.weights!.direct || into.weights!.hole) && keep);
+        kept = await keepConverted(model as Remote, into.weights!, into.bytes, proxies[1], options, signal, into.weights!.direct || into.weights!.hole ? keep : undefined);
       }
     } finally {
       proxies.forEach((proxy) => proxy.destroy());

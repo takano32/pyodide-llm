@@ -259,6 +259,94 @@ into.release();
 assert.equal(destroyed, 2, "release() let go of the buffer not once");
 console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
 
+// T329.2.2: a Gemma 4's table of every layer's inputs stays in the file the checkpoint is kept in. On the first visit
+// sink.open() makes the memory without it (the bytes after it as much lower), every byte goes to the file as it comes,
+// and the engine reads the table's rows from that file (the keeper); on the next, a kept one's file read from once it is
+// opened (attach()). The model is let go of with its file; where the table was not all written, it is loaded again
+// with the table in the memory, as it is where the file is kept as another dtype, or where its file cannot be opened
+{
+  const ask = (code) => vm.runInContext(strictly(code), context);
+  ask("roundBegan([])");
+  const GEMMA = [64, 128, 10, 4, 1, 100, 64], size = 40000, hole = [10000, 28000];
+  const form = { ...FORM, arch: "gemma4", per_layer: 16 };
+  // (the table as external_tensors() places it: 100 rows of 160 int8 values, then their scales, 20 bytes a row)
+  const tensors = { per_layer_table: { kind: "int8", offset: 10000, shape: [100, 160], group: 32, scales: 26000 } };
+  const bytes = Uint8Array.from({ length: size }, (_, i) => (i * 13 + 7) & 255);
+  let handed;
+  context.stand.forward = { ...context.stand.forward, external: (args) => { handed = args; return {}; } };
+  context.stand.python = { external_tensors: () => ({ toJs: () => tensors, destroy() {} }), Llama: { callKwargs: () => ({}) } };
+  ask("forwardModule = stand.forward; llama2_numpy.external_tensors = stand.python.external_tensors; llama2_numpy.Llama = stand.python.Llama");
+  const keeperOf = (dtype = "int8", whole = true) => {
+    const file = new Uint8Array(size), keep = { dtype, held: null, closed: 0, file,
+      holding(stretch) { keep.held = stretch; }, write(offset, chunk) { file.set(chunk, offset); },
+      read(into, at) { into.set(file.subarray(at, at + into.length)); return into.length; }, whole: () => whole, close() { keep.closed++; } };
+    return keep;
+  };
+  const sunk = (keep, dtype = "int8", given = form) => {
+    const into = ask("checkpointSink")(keep);
+    into.sink.open(size, proxy(GEMMA), dtype, proxy(given));
+    for (let at = 0; at < size; at += 7000) {
+      const data = bytes.subarray(at, Math.min(at + 7000, size));
+      into.sink.write(at, { getBuffer: () => ({ data, release() {} }) });
+    }
+    return into;
+  };
+  const inMemory = (length) => new Uint8Array(ask("weightsNow").buffer, 0, length);
+  const without = Uint8Array.from([...bytes.subarray(0, hole[0]), ...bytes.subarray(hole[1])]);
+  await ask("loadBegan({ id: 'gemma' })");
+  // the first visit
+  const keep = keeperOf(), into = sunk(keep);
+  assert.deepEqual(into.weights.hole, hole);
+  assert.deepEqual(keep.held, hole, "the keeper was told the stretch it holds");
+  assert.deepEqual(keep.file, bytes, "every byte to the file as it came");
+  assert.deepEqual(inMemory(without.length), without, "the memory holds the checkpoint without the table, the rest moved down");
+  into.weights.llama({}, {});
+  const { apart } = handed;
+  assert.deepEqual([apart.stored, apart.place(5), apart.place(hole[1]), apart.place(size - 1)], [size - (hole[1] - hole[0]), 5, hole[0], size - 1 - (hole[1] - hole[0])]);
+  apart.rows(10000 + 3 * 160, 160, 30000);
+  assert.deepEqual(new Uint8Array(ask("weightsNow").buffer, 30000, 160), bytes.subarray(10480, 10640), "a row read from the file into the memory");
+  assert.equal(ask("rowsReady")({ id: "gemma" }), true);
+  await ask("rowsLetGo")();
+  await ask("rowsLetGo")();
+  assert.equal(keep.closed, 1, "the file let go of with the model, once");
+  // a table not all written: loaded again, with the table in the memory from then on (and its file let go of)
+  const short = keeperOf("int8", false), again = sunk(short);
+  again.weights.llama({}, {});
+  assert.equal(ask("rowsReady")({ id: "gemma" }), false);
+  await ask("rowsLetGo")();
+  assert.equal(short.closed, 1);
+  const third = sunk(keeperOf());
+  assert.equal(third.weights.hole, null, "a model whose table was not all kept keeps it in the memory, this visit");
+  assert.deepEqual(inMemory(size), bytes);
+  // the next visit: a kept one, read whole but the table, and its file attached before the engine is made
+  await ask("loadBegan({ id: 'gemma, kept' })");
+  const kept = ask("weightsBuffer")(size, GEMMA, { ...form, dtype: "int8" }, undefined, true);
+  assert.deepEqual(kept.hole, hole);
+  for (let at = 0; at < size; at += 7000) kept.write(at, bytes.slice(at, Math.min(at + 7000, size)));
+  assert.deepEqual(inMemory(without.length), without);
+  const reader = keeperOf();
+  reader.file.set(bytes);
+  kept.attach(reader);
+  kept.llama({}, {});
+  handed.apart.rows(10000, 160, 30000);
+  assert.deepEqual(new Uint8Array(ask("weightsNow").buffer, 30000, 160), bytes.subarray(10000, 10160));
+  assert.equal(ask("rowsReady")({ id: "gemma, kept" }), true, "a kept file is whole");
+  await ask("rowsLetGo")();
+  assert.equal(reader.closed, 1);
+  // the table in the memory: a file kept as another dtype than the model is converted to, a model without the table, ?without=kernels
+  for (const [keeping, dtype, given] of [[keeperOf("int8"), "int6", form], [keeperOf(), "int8", { ...form, per_layer: 0 }]]) {
+    const plain = sunk(keeping, dtype, given);
+    assert.equal(plain.weights.hole, null);
+    assert.equal(keeping.held, null);
+    assert.ok(keeping.file.every((byte) => byte === 0), "nothing to a file the table does not stay in");
+  }
+  ask('roundBegan(["kernels"])');
+  assert.equal(ask("weightsBuffer")(size, GEMMA, { ...form, dtype: "int8" }, keeperOf(), true).hole, null);
+  ask("roundBegan([])");
+  console.log("ok: a Gemma 4's table of every layer's inputs stays in the file it is kept in as it comes (or was kept in), the rest in the memory; " +
+    "its rows are read from there, the file let go of with the model; where the table was not all written it is loaded again with the table in the memory");
+}
+
 // The review of T156: a model on the GPU alone. Its GPU's worker opens before a byte comes, and makes the device and a
 // buffer for every layer's matrices then (4.1 GB of Llama 3.2 3B). A load let go before its engine was built (cancelled,
 // failed, another try of the converter) must stop that worker, and the next load wait for its "ended": on the branch

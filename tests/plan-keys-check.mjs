@@ -115,8 +115,9 @@ const returned = (fn) => {
     { name: "gemma3", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma3", head_dim: 128 },
       more: { local: { layers: [0, 1, 2, 3, 4], window: 96, rope_theta: 10000 } } },
     // T331: a Gemma 4: heads of 128 in two of its layers (the full-attention ones), an FFN twice as wide in its last three
+    // (T330.2: which read others' keys and values; T329.2: and an embedding of every layer of 128 values: ternary rows are whole groups of 128)
     { name: "gemma4", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5],
-      kv_shared: { layers: [4, 5], from: [3, 2] } },
+      kv_shared: { layers: [4, 5], from: [3, 2] }, per_layer: 128 },
       more: { local: { layers: [0, 1, 3, 4], window: 96, rope_theta: 10000 }, rotary: 32, softcap: 30 } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order

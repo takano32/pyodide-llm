@@ -327,19 +327,19 @@ def test_no_other_architecture_is_changed_by_the_layers_of_another_width():
     assert isinstance(engine(*gemma4_model(wide_head=16))[0].key_cache, list) is False
 
 
-def test_the_pages_engine_is_handed_no_gemma4_until_it_reads_one():
+def test_the_pages_engine_is_handed_a_gemma4_with_all_of_its_layers():
     """T331.2 has forward.js read what a Gemma 4's layers are; T330.2 and T329.2 its layers that share keys and values
-    and its embedding of every layer: until then no plan of a model with those is made, where it would run as another
-    model without a word."""
+    and its embedding of every layer: a plan of each is made, and one with the embedding of every layer has its table,
+    the projection, its norm and every layer's three among its tensors (forward.js reads them by their names)."""
     from engine.plan import Settings, forward_plan
     no_bytes = lambda offset, length: bytes(length)
-    forward_plan(Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16}), "int8", no_bytes, Settings(int8=True, kv_start=256))
-    forward_plan(Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16, "kv_shared": {"layers": [3], "from": [1]}}),
-                 "int8", no_bytes, Settings(int8=True, kv_start=256))
-    for form in ({"per_layer": 8},):
+    for form in ({}, {"kv_shared": {"layers": [3], "from": [1]}}, {"per_layer": 8}):
         dims = Dims([32, 64, 4, 4, 1, 320, 24], {"arch": "gemma4", "head_dim": 16, **form})
-        with pytest.raises(ValueError, match="does not run a Gemma 4 yet"):
-            forward_plan(dims, "int8", no_bytes, Settings(int8=True, kv_start=256))
+        tensors = forward_plan(dims, "int8", no_bytes, Settings(int8=True, kv_start=256))["tensors"]
+        own = {"per_layer_table", "per_layer_projection", "per_layer_norm", "ple_gate", "ple_proj", "ple_post"}
+        assert own <= set(tensors) if form.get("per_layer") else not own & set(tensors), form
+        if form.get("per_layer"):
+            assert tensors["per_layer_table"]["shape"] == [320, 4 * 8] and tensors["per_layer_norm"]["shape"] == [8]
 
 
 ALL = dict(kinds="sslsslsslssl", sharing=5, double=True, per_layer=8)

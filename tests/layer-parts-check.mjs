@@ -21,6 +21,7 @@ const { convolution } = await import(runtimeUrl("forward/convolution.js"));
 const { gatedFfn, plainFfn } = await import(runtimeUrl("forward/ffn.js"));
 const { keyValueCache } = await import(runtimeUrl("forward/cache.js"));
 const { LAYER_KINDS } = await import(runtimeUrl("forward/kinds.js"));
+const { perLayer } = await import(runtimeUrl("forward/perlayer.js"));
 
 // ---- the stand-ins
 // a memory of a few pages: alloc() takes 64-byte lines of it from 4096 on, and the views are read each time (the test
@@ -457,6 +458,46 @@ const S = 100000;
     ["matmuls", at.xb, 1, ["w1", at.hb, S, 1], ["w3", at.hb2, S, 1]], ["geglu", at.hb, at.hb, at.hb2, 48],
     ["matmuls", at.hb, 1, ["w2", at.xb2, S, 1]], ["add_inplace", at.x, at.xb2, 16]]);
   console.log("ok: the FFNs: a gated one (two matrices, swiglu or a Gemma's geglu, one more, the norm behind where the model has one, into the stream) and GPT-2's (a matrix, gelu with its bias, one more, into the stream with its bias)");
+}
+
+// ---- T329.2: a Gemma 4's embedding of every layer (perlayer.ts), its rows read by a stand-in of what reads the file
+{
+  // three layers of inputs of 8 values; a table of 10 rows stored as int8 in groups of 8 (three scales a row)
+  const plan = { dim: 16, n_layers: 3, activation: "gelu",
+    tensors: { per_layer_table: { kind: "int8", offset: 5000, scales: 90000, group: 8, shape: [10, 24] }, per_layer_norm: { kind: "f32", offset: 0, scales: 0, group: 0, shape: [8] } } };
+  const has = ["per_layer_projection", "per_layer_norm", "ple_gate", "ple_proj", "ple_post"];
+  const read = [], made = coreOf(plan, { has }), { at, room } = made;
+  // (what reads the file: the values of a row are i - 5, the scales 0.5, 2 and -1)
+  const rows = (offset, bytes, to) => {
+    read.push([offset, bytes, to]);
+    if (offset < 90000) for (let i = 0; i < bytes; i++) room.U[to + i] = (i - 5) & 255;
+    else new Float32Array(room.U.buffer, to, 3).set([0.5, 2, -1]);
+  };
+  const part = perLayer(made.core, rows);
+  // (what it took: the inputs of BATCH tokens, then what a row is read into: its 24 values, a line, and its 12 bytes of scales)
+  const [[inputs, inputsBytes], [into, intoBytes]] = room.taken;
+  assert.deepEqual([inputsBytes, intoBytes], [16 * 24 * 4, 64 + 12]);
+  part.inputs([7, 2], 2);
+  const norm = made.vector("per_layer_norm");
+  assert.deepEqual(made.said, [["matmuls", at.x, 2, ["per_layer_projection", inputs, 96, 0]],
+    ...[0, 1].flatMap((t) => [0, 1, 2].map((l) => ["rmsnorm", inputs + t * 96 + l * 32, inputs + t * 96 + l * 32, norm, 8, 1e-5]))]);
+  assert.deepEqual(read, [[5000 + 7 * 24, 24, into], [90000 + 7 * 12, 12, into + 64], [5000 + 2 * 24, 24, into], [90000 + 2 * 12, 12, into + 64]]);
+  const want = Array.from({ length: 24 }, (_, i) => Math.fround((i - 5) * [0.5, 2, -1][i >> 3]));
+  for (const t of [0, 1]) assert.deepEqual([...room.F.subarray((inputs + t * 96) / 4, (inputs + t * 96) / 4 + 24)], want, "a row of the table, added to the projection");
+  made.said.length = 0;
+  part.layer(1, 2);
+  assert.deepEqual(made.said, [["matmuls", at.x, 2, ["ple_gate", at.hb, S, 1]],
+    ["geglu", at.hb, at.hb, inputs + 32, 8], ["geglu", at.hb + S, at.hb + S, inputs + 96 + 32, 8],
+    ["matmuls", at.hb, 2, ["ple_proj", at.xb2, S, 1]],
+    ["rmsnorm", at.xb2, at.xb2, made.vector("ple_post") + 16 * 4, 16, 1e-5], ["add_inplace", at.x, at.xb2, 16],
+    ["rmsnorm", at.xb2 + S, at.xb2 + S, made.vector("ple_post") + 16 * 4, 16, 1e-5], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
+  // a float32 table is one read a row (and a SiLU's gate where the model's activation is that); a model without the table has none
+  const plain = coreOf({ ...plan, activation: "silu", tensors: { ...plan.tensors, per_layer_table: { kind: "f32", offset: 5000, scales: 0, group: 0, shape: [10, 24] } } }, { has });
+  const plainRead = [];
+  perLayer(plain.core, (offset, bytes, to) => plainRead.push([offset, bytes, to])).inputs([3], 1);
+  assert.deepEqual(plainRead, [[5000 + 3 * 24 * 4, 96, plain.room.taken[1][0]]]);
+  assert.equal(perLayer(coreOf({ ...plan, tensors: {} }).core, rows), null);
+  console.log("ok: the embedding of every layer: the projection of the embedded token, a norm of every layer's, its row of the table read by what is handed in (values, then scales) and added; every layer's gate, its input, the projection back, the norm and the stream");
 }
 
 // ---- the table

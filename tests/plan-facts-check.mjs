@@ -31,7 +31,7 @@ import { built, runtime } from "./tree.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
-const { createForward, LAYER_KINDS, footprint } = await import(pathToFileURL(forwardFile).href);
+const { createForward, LAYER_KINDS, footprint, external, tableHole, placer } = await import(pathToFileURL(forwardFile).href);
 const kernels = { plain: new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), relaxed: null };
 
 fs.mkdirSync(path.join(root, ".tmp"), { recursive: true });
@@ -111,9 +111,31 @@ try {
       same &&= top;
     };
     // every token on its own
-    const single = engine();
-    tokens.forEach((token, pos) => { single.made.forward(token, pos, true); look(single.out, pos); });
+    const single = engine(), alone = [];
+    tokens.forEach((token, pos) => { single.made.forward(token, pos, true); look(single.out, pos); alone.push(single.out.slice()); });
     single.made.release();
+    // T329.2.2: a table of every layer's inputs not in the memory (the rest of the checkpoint after it as much lower),
+    // its rows read from the file: the same logits to the bit, and every row read is the token's
+    const hole = tableHole(plan.tensors);
+    if (hole) {
+      const kept = new Uint8Array([...file.subarray(0, hole[0]), ...file.subarray(hole[1])]), read = [];
+      const memory = new WebAssembly.Memory({ initial: Math.ceil((BASE + kept.length) / PAGE) + 1 });
+      new Uint8Array(memory.buffer).set(kept, BASE);
+      const rows = (offset, length, to) => {
+        read.push(offset);
+        new Uint8Array(memory.buffer).set(file.subarray(offset, offset + length), to);
+      };
+      const made = external({ memory, base: BASE, size: file.length, kernels, apart: { place: placer([hole]), stored: kept.length, rows } })
+        .start({ ...plan, derived: Object.fromEntries(Object.entries(plan.derived).map(([table, at]) => [table, bytes(at)])) });
+      const out = new Float32Array(vocab), table = plan.tensors.per_layer_table, row = table.shape[1] * 4;
+      made.bind(out);
+      tokens.forEach((token, pos) => {
+        made.forward(token, pos, true);
+        assert.deepEqual(out, alone[pos], `${name}: the logits with the table read from the file, at position ${pos}`);
+      });
+      made.release();
+      assert.deepEqual(read, tokens.map((token) => table.offset + token * row), `${name}: the rows read from the file are the tokens'`);
+    }
     // and the first of them as a prompt's block, the rest after it
     const block = engine(), first = tokens.length - 3;
     block.made.forwardMany(tokens.slice(0, first), 0);

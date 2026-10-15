@@ -40,6 +40,9 @@ export type TensorName =
   // the number every layer ends by multiplying the stream by
   | "wq_wide" | "wk_wide" | "wv_wide" | "wo_wide" | "q_norm_wide" | "k_norm_wide" | "w1_double" | "w2_double" | "w3_double"
   | "layer_scale"
+  // T329: a Gemma 4's embedding of every layer: the table (a row of it every token), the projection of the embedded
+  // token and its norm, and every layer's gate, projection and norm of what it makes of its input
+  | "per_layer_table" | "per_layer_projection" | "per_layer_norm" | "ple_gate" | "ple_proj" | "ple_post"
   // T363: the codebooks of llama.cpp's blocks, of a file with rows of such types
   | "codebooks";
 

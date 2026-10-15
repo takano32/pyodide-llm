@@ -22,7 +22,10 @@ export type Manifest = Conversion & { converter?: number; parts?: number };
 export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number; blocks?: boolean };
   hf: { repo: string; revision: string; weights?: string; vocabulary?: { repo: string; revision: string } } };
 // a file of the origin private file system as a worker has it, and its synchronous access (the page's types know neither)
-type Access = { write(bytes: Uint8Array, options: { at: number }): number; truncate(size: number): void; flush(): void; close(): void };
+type Access = { write(bytes: Uint8Array, options: { at: number }): number; truncate(size: number): void; flush(): void; close(): void;
+  read(bytes: Uint8Array, options: { at: number }): number; getSize(): number };
+// T329.2.2: what reads bytes of a kept checkpoint at once (a sync access handle's read()), and lets go of it
+export type Reader = { read(bytes: Uint8Array, at: number): number; close(): void };
 type WorkerFile = FileSystemFileHandle & { createSyncAccessHandle(): Promise<Access> };
 
 export const CACHE_NAME = "converted-v1";
@@ -149,9 +152,12 @@ async function openNamed(name: string) {
         return {
           manifest,
           where: "opfs" as const,
-          async *parts() {
+          name,
+          // (T329.2.2, skip: a stretch nothing reads from the memory, whose parts are not read: zeros in their place)
+          async *parts(skip: { range?: [number, number] } = {}) {
             for (let offset = 0; offset < file.size; offset += PART_BYTES) {
-              yield new Uint8Array(await file.slice(offset, offset + PART_BYTES).arrayBuffer());
+              const end = Math.min(offset + PART_BYTES, file.size), range = skip.range;
+              yield range && range[0] <= offset && end <= range[1] ? new Uint8Array(end - offset) : new Uint8Array(await file.slice(offset, end).arrayBuffer());
             }
           },
           tokenizer: async () => new Uint8Array(await (await (await folder.getFileHandle("tokenizer.bin")).getFile()).arrayBuffer()),
@@ -167,7 +173,8 @@ async function openNamed(name: string) {
   return {
     manifest,
     where: "cache" as const,
-    async *parts() {
+    name,
+    async *parts(_skip?: { range?: [number, number] }) {
       for (let part = 0; part < manifest.parts; part++) {
         const stored = await cache!.match(cacheKey(name, `part-${String(part).padStart(3, "0")}`));
         if (!stored) throw new Error("the browser has evicted a part of the kept model");
@@ -246,6 +253,11 @@ export async function keep(model: Converted, kept: Conversion, slice: (begin: nu
  * the tokenizer and the manifest last (a folder without one is rubbish, as keep()'s) and returns why nothing was kept,
  * or undefined; drop() lets go of it. On OPFS alone (a sync access handle): undefined where there is none. Whatever
  * was kept under the name before is removed first (openKept did not find it serving, or there would be no conversion) */
+/** T329.2.2: holding(stretch), before the first write: a stretch of the checkpoint the engine reads from the file
+ * ([start, end): a table of every layer's inputs, not in the memory). model.bin then stays open past finish(), for
+ * read(); close() lets go of it. A conversion that could not be kept may still be read where the stretch was all
+ * written before a write failed (whole()): the file is removed once it is let go of. dtype: what it is kept as (its
+ * name says it) */
 export async function keeper(model: Converted) {
   if (!opfsWritable()) return undefined;
   const directory = await folders(true);
@@ -254,7 +266,7 @@ export async function keeper(model: Converted) {
   await directory.removeEntry(name, { recursive: true }).catch(() => {});
   const folder = await directory.getDirectoryHandle(name, { create: true });
   let handle: Access | null = await (await folder.getFileHandle("model.bin", { create: true }) as WorkerFile).createSyncAccessHandle();
-  let failed: string | null = null;
+  let failed: string | null = null, held = 0, rubbish = false, hold: [number, number] | undefined;
   const put = (target: Access, bytes: Uint8Array, at: number) => {
     if (target.write(bytes, { at }) !== bytes.length) throw new Error("the origin private file system took only part of a write");
   };
@@ -262,15 +274,23 @@ export async function keeper(model: Converted) {
     handle?.close();
     handle = null;
   };
+  // (T329.2.2: the bytes of the stretch held that were written)
+  const within = (offset: number, length: number) => (hold ? Math.max(0, Math.min(offset + length, hold[1]) - Math.max(offset, hold[0])) : 0);
+  const whole = () => Boolean(hold) && held === hold![1] - hold![0];
   const drop = async () => {
     close();
     await directory.removeEntry(name, { recursive: true }).catch(() => {});
   };
   return {
+    dtype: model.conversion?.dtype ?? "int8",
+    holding(stretch: [number, number]) {
+      hold = stretch;
+    },
     write(offset: number, bytes: Uint8Array) {
       if (failed || !handle) return;
       try {
         put(handle, bytes, offset);
+        held += within(offset, bytes.length);
       } catch (error) {
         failed = String((error as Error).message ?? error);  // (the model goes on; it is not kept)
       }
@@ -280,7 +300,8 @@ export async function keeper(model: Converted) {
       try {
         if (failed) throw new Error(failed);
         handle!.flush();
-        close();
+        // (T329.2.2: open still where the engine reads the stretch held from it)
+        if (!hold) close();
         for (const [file, bytes] of [["tokenizer.bin", tokenizer], ["manifest.json", new TextEncoder().encode(JSON.stringify(manifest))]] as [string, Uint8Array][]) {
           const target = await (await folder.getFileHandle(file, { create: true }) as WorkerFile).createSyncAccessHandle();
           try {
@@ -291,16 +312,48 @@ export async function keeper(model: Converted) {
             target.close();
           }
         }
-        const held = await (await folder.getFileHandle("model.bin")).getFile();
-        if (held.size !== manifest.bytes) throw new Error(`the origin private file system holds ${held.size} of ${manifest.bytes} bytes after writing`);
+        const size = handle ? handle.getSize() : (await (await folder.getFileHandle("model.bin")).getFile()).size;
+        if (size !== manifest.bytes) throw new Error(`the origin private file system holds ${size} of ${manifest.bytes} bytes after writing`);
         return undefined;
       } catch (error) {
-        await drop();
+        // (T329.2.2: a stretch held that was all written is read on: its file goes once it is let go of)
+        if (hold && handle && whole()) {
+          rubbish = true;
+          await directory.removeEntry(name, { recursive: true }).catch(() => {});
+        } else {
+          await drop();
+        }
         return String((error as Error).message ?? error);
       }
     },
     drop,
+    /** T329.2.2: bytes of the file at at, at once (the handle it is written by, open past finish() where a stretch is
+     * held); how many were read */
+    read(bytes: Uint8Array, at: number) {
+      if (!handle) throw new Error("the kept checkpoint is closed");
+      return handle.read(bytes, { at });
+    },
+    /** T329.2.2: whether every byte of the stretch held was written */
+    whole,
+    /** T329.2.2: lets go of the file, and of what is left of it where it was not kept */
+    async close() {
+      close();
+      if (rubbish) await directory.removeEntry(name, { recursive: true }).catch(() => {});
+    },
   };
+}
+/** T329.2.2: what reads a kept checkpoint (openKept()'s, of the origin private file system) at once: a sync access
+ * handle of its model.bin, the only one its file can have while it is open (close() lets go of it); undefined where
+ * it cannot be had (another tab of this site holds it, or the browser has no such handles) */
+export async function openRows(name: string): Promise<Reader | undefined> {
+  if (!opfsWritable()) return undefined;
+  try {
+    const file = await (await (await folders())!.getDirectoryHandle(name)).getFileHandle("model.bin") as WorkerFile;
+    const handle = await file.createSyncAccessHandle();
+    return { read: (bytes, at) => handle.read(bytes, { at }), close: () => handle.close() };
+  } catch {
+    return undefined;
+  }
 }
 /** Delete a kept model (one of keptModels()). */
 export async function forget({ name, where }: Pick<Kept, "name" | "where">) {
