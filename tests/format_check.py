@@ -104,6 +104,7 @@ KNOWN = {
 # T364.3: and Underdog Saluki 27B, the same base model as Ternary Bonsai 2 27B's with the same template and options
 # T261.3: and Gemma 3, whose template writes its <bos> first, the BOS the converter takes off and the page sends
 # T333: and Gemma 4, the same: <bos>, then the turn
+# T343: and Spark-X2.5: its template writes <｜start▁of▁sentence｜> first, the BOS the converter takes off
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
           "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
           "hf-gemma-4-", "hf-spark-x2.5-")
