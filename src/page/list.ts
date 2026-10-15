@@ -46,7 +46,7 @@ export async function showKept() {
   }
 }
 // T116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
-// must still be kept as it would be loaded now (its bits, this converter), or the first of the list starts instead
+// must still be kept as it would be loaded now (its bits, this converter), or the default starts instead
 export async function stillKept(entry: any) {
   if ((entry.download ?? 0) <= 500e6) return true;
   const models = await listed();

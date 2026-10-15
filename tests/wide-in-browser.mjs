@@ -110,7 +110,8 @@ for (const engine of args.length ? args : ["chromium"]) {
       const began = Date.now();
       let found;
       try {
-        await page.goto(site);
+        // (T511.6: the bare page opens the default, 379 MB from Hugging Face: the probes take the smallest model of the site)
+        await page.goto(`${site}?model=stories260K`);
         // the first visit reloads once, under the service worker that isolates the page: asked again until it has
         for (let attempt = 0; attempt < 30 && !crashed; attempt++) {
           if (await page.evaluate(() => self.crossOriginIsolated).catch(() => false)) break;

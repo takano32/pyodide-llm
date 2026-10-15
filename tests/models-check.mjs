@@ -2,7 +2,7 @@
 //
 //   node tests/models-check.mjs
 import assert from "node:assert/strict";
-import { GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
+import { DEFAULT_MODEL, GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.js";
 import { BUILT } from "../src/models/built.js";
 import { HF_JAPANESE } from "../src/models/hf-japanese.js";
@@ -195,8 +195,12 @@ for (const entry of MODELS.filter((entry) => entry.hf?.weights?.endsWith(".gguf"
   assert.ok(lineOf(entry.hf.repo).includes(`${entry.name} (GGUF)`), `${entry.id}: the GGUF's line does not say (GGUF)`);
 }
 // T128: the list's order (the owner's): the groups as GROUPS has them, and within each the ones that write Japanese
-// from light to heavy, then the English-only ones from light to heavy. The default is the first
-assert.equal(MODELS[0].id, "tiny-lm", "the default comes first");
+// from light to heavy, then the English-only ones from light to heavy. The first is tiny-lm, the lightest
+assert.equal(MODELS[0].id, "tiny-lm", "the lightest comes first");
+// T511.6: the default is one of the list, named in one place, and small enough to start unasked (remembered.ts and
+// list.ts start nothing past 500 MB that is not kept; index.astro falls back on the default)
+assert.equal(DEFAULT_MODEL?.id, "hf-shisa-v2.1c-lfm2-350m", "the default is Shisa V2.1c LFM2 350M (the owner, 2026-10-15)");
+assert.ok((DEFAULT_MODEL.download ?? DEFAULT_MODEL.bytes) <= 500e6, "the default is started unasked: no more than 500 MB");
 assert.equal(new Set(MODELS.map(({ id }) => id)).size, MODELS.length, "no model twice");
 const groupOf = (entry) => Object.keys(GROUPS).indexOf(entry.group ?? "site");
 MODELS.slice(1).forEach((entry, i) => {

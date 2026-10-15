@@ -2,11 +2,11 @@
 // parts of the page's script read these by the names they import (a static import of src/ is a live binding), and say
 // what happened to the functions below; none of them sets one. Nothing of a page is read here (no element, no address,
 // no storage): Node imports this file as it is (tests/page-parts-check.mjs).
-import { MODELS } from "../models.js";
+import { DEFAULT_MODEL, MODELS } from "../models.js";
 
 export type Model = typeof MODELS[number];
-// A first visit starts with the first of the list; opening.ts says what this visit opens with instead.
-export let model: Model = MODELS[0];
+// A first visit starts with the default (T511.6); opening.ts says what this visit opens with instead.
+export let model: Model = DEFAULT_MODEL;
 // The model can be changed while one is loading: the worker cancels that download and starts the new one.
 // loads numbers them, and the worker's reports carry the number.
 export let loads = 1;

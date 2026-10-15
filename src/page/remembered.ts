@@ -34,7 +34,7 @@ export const gpuFor = (entry: { id: string }) => {
     return {};  // no storage here, or something else under the name: choose again
   }
 };
-// Whoever has chosen a model before starts with it again; a first visit starts with the first of the list. What
+// Whoever has chosen a model before starts with it again; a first visit starts with the default (T511.6). What
 // the URL names comes first. A model that would be fetched from Hugging Face anew (more than 500 MB, and not kept
 // in this browser when it was last used) is not started unasked.
 function remembered(): typeof MODELS[number] | undefined {
