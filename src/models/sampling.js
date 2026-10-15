@@ -27,3 +27,7 @@ export const QWEN35_JA_SFT_SAMPLING = { thinking: sampling35(1.0, 0.95), atOnce:
 export const SALUKI_SAMPLING = { thinking: sampling35(0.6, 0.95), atOnce: greedy };
 // its card: "Use temperature=1.0 and top_p=0.95 across all tasks", thinking or not
 export const graniteSampling = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };
+// T343: Spark-X2.5's card ("temperature=1.0, top_p=0.95, and top_k=-1", no top-k) and its generation_config.json (the
+// same, with presence and frequency penalties of 0), thinking or not
+const spark = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };
+export const SPARK_SAMPLING = { thinking: spark, atOnce: spark };

@@ -288,6 +288,14 @@ NAMES["gemma3"] = ({"token_embd.weight": "model.embed_tokens.weight", "output_no
                     "attn_q": "self_attn.q_proj", "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj",
                     "attn_output": "self_attn.o_proj", "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
                     "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"})
+# T343: a Spark-X2.5's (XHToken's own GGUFs, docs/notes/t339-spark-x-2026-10-15.md): q, k and v one matrix as the
+# original's (attn_qkv, in Hugging Face's order: nothing turned), the gate of each head attn_gate, the embedding
+# model.embedding. The norms are the weights as they are. Written out here rather than taken from the converter's family
+NAMES["spark2_5"] = ({"token_embd.weight": "model.embedding.weight", "output_norm.weight": "model.norm.weight",
+                      "output.weight": "lm_head.weight"}, "model.layers.{}.",
+                     {"attn_norm": "input_layernorm", "attn_qkv": "self_attn.q_k_v_proj", "attn_gate": "self_attn.g_proj",
+                      "attn_output": "self_attn.out_proj", "ffn_norm": "post_attention_layernorm",
+                      "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"})
 
 def hugging_face_name(name, arch="llama"):
     """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T74 starts with it). None for a

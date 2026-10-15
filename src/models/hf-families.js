@@ -1,12 +1,12 @@
 // From Hugging Face, converted in the browser: the families that come as one that thinks and one that answers at
-// once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3), MiniCPM5, LFM2, Gemma 3 and Ternary Bonsai.
+// once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3, Spark-X2.5), MiniCPM5, LFM2, Gemma 3 and Ternary Bonsai.
 import {
   AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASK_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
-  QWEN3_THINKING_AFTER_START, granite, lfm2Old, qwen35,
+  QWEN3_THINKING_AFTER_START, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
 } from "./formats.js";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
+  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
 import { gemma3, gemma4, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
@@ -245,4 +245,20 @@ export const HF_FAMILIES = [
     "fetches 10.2 GB → int8 5.2 GB (2.6 GB in memory)"),
   gemma4("E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", 15992595884, 5226606788,
     "fetches 16.0 GB → int8 8.4 GB (5.2 GB in memory)"),
+  // T343: XHToken's Spark-X2.5 (T339 to T342: a Llama with a gate a head after the attention, an erf GELU in the FFN, and
+  // three layers of four that see the last 512 positions alone, with a RoPE of their own; on the CPU alone, T344).
+  // XHToken's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals (their q and k in the HF order,
+  // which the family reads), with the vocabulary, config.json and chat template of the originals. Its template thinks
+  // by default and answers at once with enable_thinking false: the two formats by hand (SPARK_THINKING,
+  // SPARK_AT_ONCE: it calls a macro), with their BOS, stops and specials (spark). The card's sampling for every task
+  ...thinkingAndNot("hf-spark-x2.5-1.7b", "XHToken Spark-X2.5 1.7B",
+    ggufOf("XHToken/Spark-X2.5-1.7B-GGUF", "1f7fa33b1245c14730da39e125714ad3a327901b", "Spark-X2.5-1.7B-Q8_0.gguf",
+      "XHToken/Spark-X2.5-1.7B", "14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8"), 1820112704,
+    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark },
+    { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
+  ...thinkingAndNot("hf-spark-x2.5-4b", "XHToken Spark-X2.5 4B",
+    ggufOf("XHToken/Spark-X2.5-4B-GGUF", "9826e0be84e6e6e8b9668abc91421109a1df1e2d", "Spark-X2.5-4B-Q8_0.gguf",
+      "XHToken/Spark-X2.5-4B", "0bcb35678590218655dff3765b9e61c83b35e9c4"), 4375021152,
+    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark },
+    { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
 ];
