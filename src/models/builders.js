@@ -6,7 +6,7 @@ import { atOnce, sampled, thinking } from "./sampling.js";
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
  * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
  * the two forms' generation settings where they are not Qwen3's. chat.languages: the note's languages where the card's
- * are not Japanese and English (T537) */
+ * are not Japanese and English (T537), with 日本語 where it answered Japanese questions in Japanese here (T539) */
 export function thinkingAndNot(id, name, source, download, sizes, { languages = "日本語 / English", ...chat } = {}, formats = {}, sampling = {}) {
   // T369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
   // the whole format, formats.js's note on QWEN25). The converter alone would begin with the template's <|im_start|> now

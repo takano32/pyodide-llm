@@ -213,11 +213,12 @@ export const HF_CLASSICS = [
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
   // name the layers: unturned). ggml-org's Q8_0 GGUF, which tests/gguf_check.py tensors held to the original
-  // (gguf.yml's candidates), with the original's vocabulary and config.json. Six languages, Japanese not among them.
+  // (gguf.yml's candidates), with the original's vocabulary and config.json. Six languages, Japanese not among them;
+  // it answered five Japanese questions of six in Japanese, in either form, so the note says 日本語 too (T539).
   // Twice, as a Qwen3 is: the two share their weights and a kept conversion. Its card's sampling for either form
   ...[["hf-smollm3-3b-thinking", "Hugging Face SmolLM3 3B (thinking)", "thinks before it answers", SMOLLM3_THINKING],
     ["hf-smollm3-3b", "Hugging Face SmolLM3 3B (no thinking)", "answers at once", SMOLLM3_AT_ONCE]].map(([id, name, what, template]) => ({
-    group: "hf", id, name, note: `${what} · English · fetches 3.3 GB (GGUF) → int8 3.5 GB`,
+    group: "hf", id, name, note: `${what} · 日本語 / English · fetches 3.3 GB (GGUF) → int8 3.5 GB`,
     ...ggufOf("ggml-org/SmolLM3-3B-GGUF", "4965cb60b150737b68a0408c36aeefb65078f894", "SmolLM3-Q8_0.gguf",
       "HuggingFaceTB/SmolLM3-3B", "a07cc9a04f16550a088caea529712d1d335b0ac1"), download: 3275574624,
     conversion: {}, options: smollm3, shares: ["hf-smollm3-3b-thinking", "hf-smollm3-3b"], template,
