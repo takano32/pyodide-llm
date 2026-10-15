@@ -225,6 +225,7 @@
 - T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — 未着手
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
 - T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
+- T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 未着手
 <!-- 目次ここまで -->
 
 ## Opus の回とレビューの回（2026-09-25 に持ち主が決めた進め方。レビューは 2026-09-25 の夕方から Opus xhigh）
@@ -679,7 +680,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 調べること: (1) 次のデプロイで、直後と数分後の WebKit を 1 本ずつ回して再現するか。**→ 1 回目（T353 のデプロイ、2026-10-09）: 完了の 4 秒後に始めた WebKit の tiny-lm は 1.1 分で成功（run 37969664637）。再現しなかった。** 止まった回との違いは、モデルが 3 つで 2 回の訪問だったこと。**2 回目（T366 のデプロイ）: 完了の 5 秒後に、止まった回と同じ条件（WebKit、tiny-lm・llm-jp-3 150M・SmolLM2 135M Instruct、2 回の訪問）で始めて 1.5 分で成功（run 37981542879）。再現しない。** 止まったのは 1 回だけで、原因は分からないまま。残りは (2) の、止まった所が分かる記録を道具に足すこと。(2) `tests/e2e.mjs` が 1 モデル 1800 秒の期限の前に何も書かない訳（ページの読み込みで止まると、最初の行が出ない）と、ジョブの期限でログが失われること: 止まった所が分かるよう、始まりの行と読み込みの段を先に書く。(3) デプロイの境目で、古い `index.html`（GitHub Pages の 10 分のキャッシュ）が消えたハッシュ付きのスクリプトを指す場合があるか（ページのスクリプトは前からハッシュ付きなので、T355 で新しく生まれた形ではない見立て。未確認）。
 - **決まり（いまから）**: 本番の確かめの結果は、`ci.mjs` が全部の run の終わりを言ってから台帳に書く（T355 で、終わっていない run を「成功」と書いた）。
 
-### T371 [バグ][その他] `?threads=1` のとき、隔離されているのに「the page is not cross-origin isolated」と表示される — 状態: 持ち主の文面待ち（2026-10-12、T380.3: 原因を確かめ、文面の案を書いた。**レビューで場合は 4 つでなく 5 つ**: 5 つ目は、隔離されたページで共有のカーネル `simdkernel_shared.wasm` が取れなかった・コンパイルできなかったとき（`runtime.ts` で `sharedKernels` が null、`sharedWanted()` が偽）。T439 の「site was updated」と 1 行に並びうる。取りまとめ役のおすすめは案 C（`?threads=1` は「one thread was asked for」、ほかは「the model's memory is not shared」）。2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小）
+### T371 [バグ][その他] `?threads=1` のとき、隔離されているのに「the page is not cross-origin isolated」と表示される — 状態: 持ち主の文面待ち（2026-10-12、T380.3: 原因を確かめ、文面の案を書いた。**レビューで場合は 4 つでなく 5 つ**: 5 つ目は、隔離されたページで共有のカーネル `simdkernel_shared.wasm` が取れなかった・コンパイルできなかったとき（`runtime.ts` で `sharedKernels` が null、`sharedWanted()` が偽）。T439 の「site was updated」と 1 行に並びうる。取りまとめ役のおすすめは案 C（`?threads=1` は「one thread was asked for」、ほかは「the model's memory is not shared」）。2026-10-09、T355 の手元の確かめから。本線も同じ。規模 小） **持ち主（2026-10-15、選択肢）: 案 C**（`?threads=1` は「one thread was asked for」、ほかの共有できない場合は「the model's memory is not shared」）。実装待ち。
 - stories260K を `?threads=1` で開くと、`crossOriginIsolated` が真なのにステータス行が「prompts on the CPU (the page is not cross-origin isolated)」と言う。理由の文が、スレッドを 1 本にしたことと隔離が無いことを取り違えている見込み（未確認）。訪問者に見える文なので、直すときは文面を持ち主に見せる。
 - **T380.3 での読み（2026-10-12、Opus medium、ブランチ `t380.3-small-fixes`。実装の前に書いた）。**
   - **原因（コードの読み。実ブラウザの再現は結果に）**: `worker/weights.ts` の `sharedWanted()` は「共有のカーネルがあり、ページが隔離されていて、`?threads=1` でない」のときだけ共有メモリを頼む。`?threads=1` は共有でないメモリになる。エンジン（`forward/engine.ts`）は GPU の側に「メモリが共有か」（`sharedMemory`）だけを渡し、`gpuside.ts` の `gpuFit()` は `if (!sharedMemory) return REASONS.notIsolated;` と、共有でない訳を 1 つの文で言う。共有でないメモリになる訳は 4 つあり、文が合うのは 1 つ目だけ: (1) ページが隔離されていない、(2) `?threads=1`、(3) ブラウザが共有メモリを断った・小さい上限でしか渡さなかった（`pooledWeights()`: コンソールに 1 行）、(4) 64 ビットのメモリが要るのに共有の 64 ビットのカーネルが無い。
@@ -1362,7 +1363,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **段取り（2026-10-13、取りかかる時に決めた）**: 「前」は整理を始める直前のコミット `b48c8561`（2026-10-09、T346 の最初のコミットの親）、「後」は T391 が済んだ本線 `d51aca19`。その間は 707 コミット。**AGENTS.md は 292,935 バイト → 813,186 バイト（2.8 倍）**。足させる作り物は 4 つで、前後の木に同じ頼みの文（どこを触るかは書かない。合格の線だけ書く）: (A) 新しいアーキテクチャ `rmsgpt`（GPT-2 の LayerNorm を RMSNorm に替えたもの: 変換・NumPy・ページの forward）、(B) 新しい重みの型 `int8g16`（スケールが 16 個ごとの int8: 変換・NumPy・大きさの見分け・ページの forward か断り・メモリの見積もり）、(C) 新しい標本抽出の設定 `top_a`（NumPy・カーネルの道・URL・GPU の歩から外す）、(D) worker の新しい知らせ `heap`（準備完了の後に重みのメモリのバイト数を言い、ページがコンソールに書く）。(E) わざと入れたバグを探して直す（入れるのは別の担当で、探す担当には症状だけ言う）。担当はどれも Opus medium の新しい会話で、その木の AGENTS.md と TODO.md だけが手がかり。木は本線の作業ツリーの `.tmp/t497/<名前>`（捨てのワークツリー、push しない）。結果（差分・答えの紙）は `.tmp/t497/results/`。**前後の組を 2 組ずつ並べて回す**（本線に何も入れない調べなので、ふだんの「直列」から外した: 取りまとめ役の判断）。数字は担当 1 人ずつの 1 回きりなので、差が小さいものは読まない。
 - **取りやめ（2026-10-13、持ち主の決定）**: 前の木には戻らないので、前後を比べた数字はどの判断も変えない。反映のタスクも無くなった。やりにくい所は、これからの本物のタスク（モデルを足す回）で当たった時に、その回の気づきとして採番する。測ったのは 1 つだけ: 引き継ぎ書 AGENTS.md は整理の間に 292,935 → 813,186 バイト（2.8 倍）になった。
 
-### T501 [整理][変換] GGUF の読めない型を断る文が、読める型の一覧を言う — 状態: 持ち主の文面待ち（2026-10-13、T362 から。規模 小。最後にまとめて聞く）
+### T501 [整理][変換] GGUF の読めない型を断る文が、読める型の一覧を言う — 状態: 持ち主の文面待ち（2026-10-13、T362 から。規模 小。最後にまとめて聞く） **持ち主（2026-10-15、選択肢）: 一覧を言わない文に**（例「… is stored as I64, which is not read.」）。決まったので `said` の欄ごと消す。実装待ち。
 - いまの文: 「… is stored as I64: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 are read.」（`?hf=` で出うる）と「… is stored as ggml type 13: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 GGUF files are supported (not the K-quants).」（一覧の項目の GGUF でだけ）。T362 で 10 種類（Q2_K・Q4_K と IQ の 8 つ）を読むようになったが、文を変えないために登録簿の仮の欄 `Source.said=False` で一覧から外してある。2 つ目の「(not the K-quants)」は、Q2_K と Q4_K を読むいま正確でない。
 - 案: (1) **一覧を言わない文に言い直す**（例「… is stored as I64, which is not read.」: 型を足すたびに文が伸びない。取りまとめ役の勧め）、(2) 一覧を伸ばす（16 個の型の名前が並ぶ）、(3) このまま。決まったら `said` の欄ごと消す。
 - ほかに: Pyodide の中で `convert.superblocks` を読む時間は未計測（素の Python で 62 ms）。
@@ -1374,7 +1375,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 試験: Granite・GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で通す試験が無い（広げる道に落ちることは読んだだけ）。`signed_dots` を聞かずに符号つきのタイルを取る壊し方は x86-64 の CI でだけ落ちる。`blocks-forward-check` が軽い組に 14 秒足す。束ねた worker が `_astro/` から塊のカーネルを取る所と、`updated-in-browser.mjs` の塊のカーネルが 404 の場合は、ブラウザで通していない（T364）。
 - `tests/kernels-in-browser.mjs` の頭の「WebKit has no such memory」は古い（Playwright の WebKit 27.2 は Linux で 64 ビットのメモリを作る）。`tests/ci.mjs run A + B` の `--ref` は最後に 1 回だけ書く（組ごとに書くと 2 つ目が始まらない: 道具の頭に書く）。
 
-### T503 [整理][Saluki] 塊のモデルの文面の残り — 状態: 持ち主の文面待ち（2026-10-13、T363.5・T364 から。規模 小。最後にまとめて聞く）
+### T503 [整理][Saluki] 塊のモデルの文面の残り — 状態: 持ち主の文面待ち（2026-10-13、T363.5・T364 から。規模 小。最後にまとめて聞く） **持ち主（2026-10-15、選択肢）: 訳を言う文に**（SIMD の無いブラウザ・`?without=kernels` の塊のモデルは「This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.」、GPU に置かない訳は「llama.cpp's blocks are not on the GPU yet」）。実装待ち。
 - **塊のモデルを GPU に置かない訳**: hybrid でない塊のモデルができると、ステータス行の「prompts on the CPU (…)」に「float32 weights are not on the GPU yet」が出る（誤り）。案「llama.cpp's blocks are not on the GPU yet」。Saluki は linear の層の訳が先に出るので当たらない。GPU だけの道の断り（「rows of kinds of their own: such weights stay on the CPU」）は訪問者にもコンソールにも出ない。
 - **SIMD のカーネルの無いブラウザ・`?without=kernels` で塊のモデル**: いまは広げた大きさで「…it needs about 32 GB of memory…」と断る。案「This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.」
 - **NOTICE の表示**: Saluki は Apache-2.0 で、NOTICE が元の 2 つ（Qwen3.8-27B、ISTA の GSQ-RCO）を名指す。ページは重みを配らないので今のまま（一覧のライセンス名だけ）が勧め。名指すなら About に。
@@ -1584,3 +1585,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 状態: 未着手（2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `3a038d25` の `tests/qwen35_reference.py`・`tests/fixtures/qwen35-logits.json`）
 - いまの軽い組の Qwen3.5 の相手は `conftest.naive_qwen35_logits`（transformers の式を書き直した参照）で、transformers そのものとは CI で頼んだときだけ（`tests/reference_qwen35.py`）。相手は、小さな Qwen3.5 を transformers で 1 回走らせた logits を fixture に置き、PyTorch なしの pytest で比べる。参照と実装が同じ読み違いをしても、fixture は落とす（AGENTS.md の「比べの相手が同じ表を読むと…」）。
 - 重みは相手の `qwen35_model.py` でなく、こちらの `tests/made_up.py` から作る（値の決め方を写さない）。fixture を作るのは torch と transformers のある所で 1 回（CI の `extra=` か手で）。網の `python` が「違う」と言う回になるので、製品のコードに触らない回で。同じ形を LFM2・Gemma 3・Gemma 4 に広げるかは、1 つ作ってから決める。
+
+### T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — 状態: 未着手（2026-10-15、持ち主「適切な表示を Fable max で検討して採用」: T523 の Qwen を「Alibaba」、Swallow を「TokyoTech-LLM」にした所を問われて）
+- Fable（max）が T523 の表（`docs/notes/t523-maker-names-2026-10-15.md`）の作り手の書き方を 1 つずつ見て（とくに Qwen・Swallow・EuroLLM の UTTER・個人の Takenoko12345678・Karpathy・Ellis Hoag）、勧めを出す。採用は持ち主の言葉どおりそのまま（実装は Opus medium）。
