@@ -4,6 +4,10 @@
 import assert from "node:assert/strict";
 import { GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.js";
+import { BUILT } from "../src/models/built.js";
+import { HF_JAPANESE } from "../src/models/hf-japanese.js";
+import { HF_CLASSICS } from "../src/models/hf-classics.js";
+import { HF_FAMILIES } from "../src/models/hf-families.js";
 
 for (const entry of MODELS) {
   const repo = sourceOf(entry);
@@ -203,4 +207,28 @@ MODELS.slice(1).forEach((entry, i) => {
     `${before.id} comes before ${entry.id}, out of the order of T128`);
 });
 assert.ok(writesJapanese({ note: "translates 日本語 ⇄ English" }) && !writesJapanese({ note: "English" }));
+// T511.4 (the owner's choice of 2026-10-15): "desktop only" and "Chrome and Firefox" are the page's rules, not a hand's.
+// Every note ends with them where the rule says, and with nothing of them where it does not: "desktop only" where a
+// device that says 4 GB is warned (memoryWarning()), "Chrome and Firefox" where what is loaded passes 4 GiB
+{
+  const DEVICES = /( · desktop only)?( · Chrome and Firefox)?$/;
+  for (const entry of MODELS) {
+    const [, desktop, browsers] = DEVICES.exec(entry.note);
+    assert.equal(Boolean(desktop), memoryWarning(entry, 4) !== "", `${entry.id}: "desktop only" where a 4 GB device is warned, and only there`);
+    assert.equal(Boolean(browsers), modelBytes(entry) > 2 ** 32, `${entry.id}: "Chrome and Firefox" where it loads more than 4 GiB, and only there`);
+    assert.equal(entry.note.split(/ · desktop only| · Chrome and Firefox/).length, 1 + Boolean(desktop) + Boolean(browsers), `${entry.id}: the words once each, at the note's end`);
+  }
+  // no part of the list writes them itself (the rule adds them; written by hand, a note would say them twice)
+  for (const entry of [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]) {
+    assert.ok(!/desktop only|Chrome and Firefox/.test(entry.note), `${entry.id}'s note says "desktop only" or "Chrome and Firefox" by hand: devicesOf() adds them`);
+  }
+  // the lines a second time, by the entries on either side of each (TODO.md's T511.4): the largest without and the
+  // smallest with, at the sizes the notes say
+  const said = (id) => DEVICES.exec(byId(id).note).slice(1).map(Boolean);
+  assert.deepEqual(said("hf-gpt2-xl"), [false, false], "1.8 GB: a 4 GB phone is not warned");
+  assert.deepEqual(said("hf-japanese-large-lm-1.7b"), [true, false], "1.9 GB: a 4 GB phone is warned");
+  assert.deepEqual(said("stories42M"), [false, false], "47 MB (it said desktop only from the days of float32 on NumPy)");
+  assert.deepEqual(said("hf-granite-4.2-3b"), [true, false], "4.1 GB: Safari takes it in six bits");
+  assert.deepEqual(said("hf-llm-jp-3-3.7b-instruct3"), [true, true], "4.3 GB: past 4 GiB");
+}
 console.log("ok");
