@@ -9,8 +9,8 @@
 # try that failed is a line. --either-tokenizer: tokenizer.json and tokenizer.model, whichever the original has (a
 # candidate of stage 2: each is compared); without it tokenizer.json, which must be there.
 # T517: an original with no safetensors at all (LINE's japanese-large-lm 1.7B instruction-sft has only PyTorch's
-# pytorch_model.bin) has its pickle read as convert_hf.py reads it (no PyTorch; only the globals that rebuild tensors)
-# and written beside it as model.safetensors, the tensors as they are stored, so that gguf_check.py reads one kind.
+# pytorch_model.bin) has its pickle read without PyTorch (only the globals that rebuild tensors, as convert_hf.py) and
+# written beside it as model.safetensors, the tensors as they are stored, so that gguf_check.py reads one kind.
 # HF_ENDPOINT: another hub than huggingface.co (tests/fetching-check.mjs's, on this machine).
 import json
 import os
@@ -56,30 +56,52 @@ def fetch(original, gguf, out, either=False):
     print(sorted(os.listdir(out)))
 
 
-def pickled(path, target):
-    """PyTorch's pickle at path as a safetensors file at target, each tensor in the type it is read as (F16 or F32)."""
-    import types
+def torch_tensors(path):
+    """{name: array} of PyTorch's zip checkpoint, without PyTorch: only the globals that rebuild float32 and float16
+    tensors unpickle. convert_hf.py's load_torch_pickle() in the form of LINE's 1.7B instruction-sft, which it does not
+    read: saved by DeepSpeed, every tensor is a view of one storage of 3.3 GB, which that reads again for each tensor
+    (a runner of 16 GB was shut down, runs 38731171773 and 38732582106), and its state dict carries attributes (the
+    _metadata of torch.save), which a plain dict cannot take (run 38735291103)."""
+    import pickle
     import zipfile
     import numpy as np
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    import convert_hf
+    archive = zipfile.ZipFile(path)
+    prefix = next(name for name in archive.namelist() if name.endswith("/data.pkl"))[:-len("data.pkl")]
+    readers = {"FloatStorage": np.float32, "HalfStorage": np.float16}
+    storages = {}
 
-    kept = {}
+    class Held(dict):
+        """an OrderedDict with the attributes pickle sets on it"""
 
-    class Once(zipfile.ZipFile):
-        """Each member read once. LINE's 1.7B instruction-sft (saved by DeepSpeed) has every tensor in one storage of
-        3.3 GB, which load_torch_pickle() reads again for each tensor (a runner of 16 GB was shut down twice, runs 38731171773 and 38732582106)"""
-        def read(self, name, *more):
-            if name not in kept:
-                kept[name] = super().read(name, *more)
-            return kept[name]
+    def rebuild_tensor(storage, storage_offset, size, stride, *unused):
+        array = storage[storage_offset:storage_offset + int(np.prod(size))].reshape(size)
+        assert tuple(stride) == tuple(s // array.itemsize for s in array.strides), "non-contiguous tensor"
+        return array
 
-    convert_hf.zipfile = types.SimpleNamespace(ZipFile=Once)
-    try:
-        tensors = {name: np.ascontiguousarray(tensor) for name, tensor in convert_hf.load_torch_pickle(path).items()}
-    finally:
-        convert_hf.zipfile = zipfile
-    kinds = {np.dtype(np.float32): "F32", np.dtype(np.float16): "F16"}  # (a bfloat16 is read as float32)
+    class Unpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if (module, name) == ("collections", "OrderedDict"):
+                return Held
+            if (module, name) == ("torch._utils", "_rebuild_tensor_v2"):
+                return rebuild_tensor
+            if module == "torch" and name in readers:
+                return readers[name]
+            raise pickle.UnpicklingError(f"refusing to load {module}.{name}")
+
+        def persistent_load(self, pid):
+            _, kind, key, _, _ = pid
+            if key not in storages:
+                storages[key] = np.frombuffer(archive.read(f"{prefix}data/{key}"), dtype=kind)
+            return storages[key]
+
+    return Unpickler(archive.open(f"{prefix}data.pkl")).load()
+
+
+def pickled(path, target):
+    """PyTorch's pickle at path as a safetensors file at target, each tensor in the type it is stored in (F16 or F32)."""
+    import numpy as np
+    tensors = {name: np.ascontiguousarray(tensor) for name, tensor in torch_tensors(path).items()}
+    kinds = {np.dtype(np.float32): "F32", np.dtype(np.float16): "F16"}
     header, at = {"__metadata__": {"format": "pt"}}, 0
     for name, tensor in tensors.items():
         header[name] = {"dtype": kinds[tensor.dtype], "shape": list(tensor.shape), "data_offsets": [at, at + tensor.nbytes]}

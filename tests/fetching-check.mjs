@@ -328,9 +328,9 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   assert.match(ran.err, /^usage: gguf_fetch\.py /);
   ok("gguf_fetch.py fails where a file that must be there is not, and where one never comes whole");
 
-  // T517: an original with PyTorch's pickle alone (LINE's 1.7B instruction-sft): read as convert_hf.py reads it and
-  // written as model.safetensors. The pickle is made here by its opcodes (no PyTorch): an OrderedDict of two float16
-  // tensors on one storage, as torch.save writes them
+  // T517: an original with PyTorch's pickle alone (LINE's 1.7B instruction-sft): read without PyTorch and written as
+  // model.safetensors. The pickle is made here by its opcodes: an OrderedDict of two float16 tensors on one storage,
+  // with the attribute _metadata that torch.save gives it, as LINE's has them
   const made = placed("pickle.bin");
   const maker = spawn(python, ["-c", `
 import io, struct, sys, zipfile
@@ -342,7 +342,7 @@ def tensor(offset, size, stride):
             + number(6) + b"tQ" + number(offset) + b"(" + b"".join(map(number, size)) + b"t(" + b"".join(map(number, stride))
             + b"t\\x89ccollections\\nOrderedDict\\n)RtR")
 pickle = (b"\\x80\\x02ccollections\\nOrderedDict\\n)R(" + text("a.weight") + tensor(0, (2, 2), (2, 1)) + text("b.bias")
-          + tensor(4, (2,), (1,)) + b"u.")
+          + tensor(4, (2,), (1,)) + b"u}" + text("_metadata") + b"}sb.")
 out = io.BytesIO()
 with zipfile.ZipFile(out, "w") as archive:
     archive.writestr("archive/data.pkl", pickle)
