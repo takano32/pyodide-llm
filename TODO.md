@@ -170,10 +170,10 @@
 - T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 未着手
 - T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 候補
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
-- T339 [調査][Spark X] Spark-X2.5 を動かす: 全体と順 — 未着手
-- T340 [追加][Spark X][解析分割] Spark-X2.5 の前分割 — 未着手
-- T341 [追加][Spark X] 窓つきの attention と層の種類ごとの RoPE — 未着手
-- T342 [追加][Spark X] head ごとの出力の gate、GELU の FFN、テンソルの名前 — 未着手
+- T339 [調査][Spark X] Spark-X2.5 を動かす: 全体と順 — レビュー前
+- T340 [追加][Spark X][解析分割] Spark-X2.5 の前分割 — レビュー前
+- T341 [追加][Spark X] 窓つきの attention と層の種類ごとの RoPE — レビュー前
+- T342 [追加][Spark X] head ごとの出力の gate、GELU の FFN、テンソルの名前 — レビュー前
 - T343 [追加][Spark X][モデル] Spark-X2.5 の 1.7B と 4B を一覧に — 未着手
 - T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
