@@ -28,7 +28,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 import { UPDATED, SLOWER } from "../src/runtime/updated.ts";
-import { closed, leave } from "./leave.mjs";
+import { closed, leave, scratch } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);
@@ -48,7 +48,7 @@ const site = server.url;
 const built = (name) => name.startsWith("_astro/");
 const family = (...names) => (name) => built(name) && names.some((one) => name.startsWith(`_astro/${one}.`));
 
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "hf-fixture-"));
+const fixture = scratch("hf-fixture-");
 execFileSync("python3", [`${repository}tests/make_hf_fixture.py`, fixture]);
 const folder = fs.readdirSync(fixture).map((name) => path.join(fixture, name));
 

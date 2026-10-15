@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 // tests/leave.mjs (T357)
 // The end of a tool: everything it wrote is out before the process ends. A pipe takes what is written to it when it has
 // room, and process.exit() does not wait: gpu-check's log of a failed run ended in the middle of a line with no FAILED in
@@ -25,4 +27,19 @@ export async function closed(close, seconds = 15) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// T512: a folder a tool needs for its run (a browser's profile on disk, a made-up model), under the repository's .tmp/
+// and gone when the process ends, however it ends. Never the system's temp folder: on the development machine /tmp is
+// memory, and the browser profiles of E2E_TWICE (hundreds of MB each, a model kept in OPFS) were left there, 3 GB of
+// them in two days (the owner's rule: work files in .tmp/, nothing in $HOME or /tmp).
+//   const profile = scratch("e2e-profile-");
+const made = [];
+export function scratch(prefix) {
+  const root = path.join(new URL("../", import.meta.url).pathname, ".tmp");
+  fs.mkdirSync(root, { recursive: true });
+  const folder = fs.mkdtempSync(path.join(root, prefix));
+  if (!made.length) process.on("exit", () => { for (const one of made) fs.rmSync(one, { recursive: true, force: true }); });
+  made.push(folder);
+  return folder;
 }

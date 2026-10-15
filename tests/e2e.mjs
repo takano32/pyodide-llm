@@ -58,7 +58,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 import { MODELS } from "../src/models.js";
-import { closed, leave } from "./leave.mjs";
+import { closed, leave, scratch } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
@@ -113,7 +113,7 @@ const args = swiftShader && kind === playwright.chromium ? ["--enable-unsafe-web
 if (process.env.E2E_TWICE) {
   // A profile on disk, as a visitor's browser has: Playwright's usual context is like private browsing, and WebKit
   // kept nothing across a reload there (T99)
-  browser = await kind.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-profile-")), { headless: true, channel, viewport, args });
+  browser = await kind.launchPersistentContext(scratch("e2e-profile-"), { headless: true, channel, viewport, args });
   browserVersion = browser.browser()?.version() ?? "";  // Playwright says a persistent context may not know its browser
   page = browser.pages()[0] ?? await browser.newPage();
 } else {
@@ -278,7 +278,7 @@ if (opens) {
   const repository = new URL("../", import.meta.url).pathname;
   let chosen = [`${repository}stories260K.bin`, `${repository}tok512.bin`];
   if (model === "hf") {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hf-fixture-"));
+    const directory = scratch("hf-fixture-");
     execFileSync("python3", [`${repository}tests/make_hf_fixture.py`, directory]);
     chosen = fs.readdirSync(directory).map((name) => path.join(directory, name));
   }
