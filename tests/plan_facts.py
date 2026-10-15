@@ -82,6 +82,10 @@ def cases(L):
         ("gemma4, a classifier of its own, a key for every head", [64, 128, 4, 4, 4, -320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}},
          {"local": {"layers": [0, 2], "window": 3, "rope_theta": 100.0}, "rotary": 8, "softcap": 5.0}),
+        # (a window as long as the context: no ring, so that the blocks of the cache are of two widths, one after the other)
+        ("gemma4, the cache's blocks of two widths", [64, 128, 4, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}},
+         {"local": {"layers": [0, 2], "window": 30, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
         ("a norm of v", GROUPED, {"arch": "a norm of v"}, {}),
         ("a number of every layer", GROUPED, {"arch": "a number of every layer"}, {}),
         ("llama, its logits capped", GROUPED, {}, {"softcap": 2.0}),
