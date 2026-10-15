@@ -162,6 +162,10 @@ export const LICENSES = {
   "LiquidAI/LFM2-700M": LFM_OPEN, "LiquidAI/LFM2-700M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-Instruct": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-Instruct-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-JP-202606": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF": LFM_OPEN,
+  // T511.1: the cards of Shisa's 350M and of its GGUF have no license (no field, no LICENSE file): written is the license
+  // of their base_model, Liquid AI's LFM2-350M-ENJP-MT (itself from LFM2-350M), whose card says lfm1.0 (the owner's
+  // decision, 2026-10-15)
+  "shisa-ai/shisa-v2.1c-lfm2-350m": LFM_OPEN, "mradermacher/shisa-v2.1c-lfm2-350m-GGUF": LFM_OPEN,
   // T261.3: Google's originals (gated: the list takes unsloth's copies and GGUFs of them)
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,

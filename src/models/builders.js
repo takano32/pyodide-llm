@@ -47,6 +47,17 @@ export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes
   conversion: {}, options: {}, ...format, generation: { steps: 0, temperature, topp: 1.0, repetition_penalty: 1.05 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
 });
+/** T511.1, T511.3: a Shisa V2.1 of Shisa.AI (an LFM2 trained further for Japanese chat): mradermacher's Q8_0 GGUF's
+ * weights with the vocabulary, config.json and chat template of Shisa's original. Its template calls no macro (the
+ * LFM2's of Liquid AI do), so the BOS (<|startoftext|>), the format and the specials are the converter's, as the
+ * LFM2.5 1.2B JP's are. The cards name no sampling and generation_config.json says do_sample and nothing more: the
+ * LFM2 700M's (temperature 0.3, Liquid AI's LFM2 cards; a choice of the coordinator, TODO.md's T511) */
+export const shisaLfm2 = (id, name, repo, revision, ggufRevision, download, sizes) => ({
+  group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`,
+  ...ggufOf(`mradermacher/${repo}-GGUF`, ggufRevision, `${repo}.Q8_0.gguf`, `shisa-ai/${repo}`, revision), download,
+  conversion: {}, options: {}, generation: { steps: 0, temperature: 0.3, topp: 1.0, repetition_penalty: 1.05 },
+  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
+});
 /** T261.3: a Gemma 3 of the list (the text model; Google's original is gated): unsloth's Q8_0 GGUF's weights with the
  * vocabulary, config.json and chat template of unsloth's copy of the original, as Llama 3.2's entries name all three.
  * The BOS (<bos>) and the format (<start_of_turn>user … <start_of_turn>model) are the converter's, read from the

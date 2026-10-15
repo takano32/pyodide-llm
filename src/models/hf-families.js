@@ -8,7 +8,7 @@ import {
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
-import { gemma3, ggufOf, lfm2, miniCpm5, ternaryBonsai, thinkingAndNot } from "./builders.js";
+import { gemma3, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
 export const HF_FAMILIES = [
   ...thinkingAndNot("hf-qwen3-4b", "Qwen3 4B",
@@ -199,6 +199,11 @@ export const HF_FAMILIES = [
     "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only"),
   lfm2("hf-lfm2.5-1.2b-jp", "LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
     "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only", {}),
+  // T511.1: Shisa.AI's LFM2 350M for Japanese chat (trained from Liquid AI's LFM2-350M-ENJP-MT, the translating one);
+  // its card says it is the best at Japanese chat under 1B (Shaberi 4.51, the LFM2-350M's 3.76)
+  shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",
+    "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 379216512,
+    "fetches 379 MB (GGUF) → int8 399 MB"),
   // T261.3: Gemma 3's two smallest (the text models), on the CPU alone (no shader has their norms behind the layers, a
   // GELU in the gate or the window yet: T261.4). unsloth's Q8_0 GGUFs, which tests/gguf_check.py tensors held to
   // unsloth's copies of the originals
