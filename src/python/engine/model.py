@@ -318,7 +318,7 @@ class Llama:
                 int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                 parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
                 rotated=self.rotated, tables=tables, tiled=self.tiled, local=self.local,
-                local_tables=self.local_cis)), external)
+                local_tables=self.local_cis, softcap=self.softcap)), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):

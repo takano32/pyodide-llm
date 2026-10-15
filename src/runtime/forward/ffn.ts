@@ -8,16 +8,21 @@ export type Ffn = (l: number, count: number) => void;
 
 /** w2(act(w1 x) * w3 x): every architecture but GPT-2's two. The activation of the gate is the plan's (a SiLU, or
  * T261 a Gemma's GELU), and what the FFN gives is normalized before it joins the stream where the model has the norm
- * for that (rms_ffn_post_weight: a Gemma's) */
+ * for that (rms_ffn_post_weight: a Gemma's). T331: a layer's FFN may be twice as wide, its matrices in stacks of their
+ * own (the plan's facts of the layer: double, and its place among those, ffn) */
 export function gatedFfn({ plan, eps, k, floats, matrix, at, S, matmuls }: Core): Ffn {
-  const { dim, hidden_dim: hidden } = plan, { x, xb, xb2, hb, hb2 } = at, D = dim * 4;
-  const w1 = matrix("w1"), w2 = matrix("w2"), w3 = matrix("w3");
+  const { dim, hidden_dim: inside } = plan, { x, xb, xb2, hb, hb2 } = at, D = dim * 4;
   if (!Object.hasOwn(GATES, plan.activation)) throw new Error(`This engine has no gated FFN whose activation is ${JSON.stringify(plan.activation)}.`);
   const gate = k[GATES[plan.activation]], post = floats("rms_ffn_post_weight");
+  // every layer's matrices, its place in their stacks and its width, chosen here once
+  const single = [matrix("w1"), matrix("w2"), matrix("w3")] as const;
+  const double = plan.layers.some(({ double }) => double) ? [matrix("w1_double"), matrix("w2_double"), matrix("w3_double")] as const : null;
+  const layers = plan.layers.map(({ double: twice, ffn }) => ({ m: twice ? double! : single, at: ffn, hidden: twice ? 2 * inside : inside }));
   return (l, count) => {
-    matmuls(xb, count, [[w1, hb, S, l], [w3, hb2, S, l]]);
+    const { m: [w1, w2, w3], at: a, hidden } = layers[l];
+    matmuls(xb, count, [[w1, hb, S, a], [w3, hb2, S, a]]);
     for (let t = 0; t < count; t++) gate(hb + t * S, hb + t * S, hb2 + t * S, hidden);
-    matmuls(hb, count, [[w2, xb2, S, l]]);
+    matmuls(hb, count, [[w2, xb2, S, a]]);
     for (let t = 0; t < count; t++) {
       if (post) k.rmsnorm(xb2 + t * S, xb2 + t * S, post + l * D, dim, eps);
       k.add_inplace(x + t * S, xb2 + t * S, dim);

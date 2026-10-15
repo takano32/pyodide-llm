@@ -18,32 +18,50 @@
 // token's window is one run of positions, oldest first, as it is in a whole layer's block: the kernels that attend
 // read it as they read any other, and the numbers are the same. The rings are taken first and never grow; the blocks
 // of the layers that keep every position follow and grow as before (a layer's index among those is index()).
+//
+// T331: the keys and values of a place may be narrower than the widest (a Gemma 4's sliding layers have heads of 256
+// where its full ones have 512): hold() says each place's width, and a block or a ring is of its own place's. A layer's
+// block is offset(index) bytes a position after the start of the keys (and of the values): index times KV where every
+// place is as wide as the widest, which is every model before a Gemma 4's.
 import { halfToFloat, ringPositions } from "./memory.ts";
 import type { Kernels } from "../jobs.ts";
 import type { Room } from "./kinds.ts";
 
-// T510.1: a layer's ring: its period, and where its keys and its values are (place() says, 2 * size positions each)
-export type Ring = { size: number; keys: number; values: number };
+// T510.1: a layer's ring: its period, and where its keys and its values are (place() says, 2 * size positions each);
+// T331: and the bytes of a position of it (its place's own)
+export type Ring = { size: number; keys: number; values: number; row: number };
 
-/** room, k: the engine's memory and kernels. kvDim: the values of one position's keys; half: kept in float16 (T110);
+/** room, k: the engine's memory and kernels. kvDim: the values of one position's keys (T331: of the widest place's);
+ * half: kept in float16 (T110);
  * start: the positions there is room for at first (0: no cache, T210: a model on the GPU alone); seqLen: the most. */
 export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: Room; k: Kernels; kvDim: number; half: boolean; start: number; seqLen: number }) {
-  // KV: the bytes of one position's keys in the cache; KF: in float32
-  const KV = kvDim * (half ? 2 : 4), KF = kvDim * 4;
+  // KV: the bytes of one position's keys in the cache (of the widest place's)
+  const KV = kvDim * (half ? 2 : 4);
   // held: the places taken; layers: of those, the ones that keep every position (the blocks that grow); for every
-  // place, its index among those (-1: a ring's), and the rings by place
-  let held = 0, layers = 0, capacity = 0, keys = 0, values = 0, placed = false;
-  const indices: number[] = [], rings: (Ring | null)[] = [];
+  // place, its index among those (-1: a ring's), and the rings by place. T331: every place's width, and of the
+  // blocks, the bytes a position of each and of those before it (before; total, of them all)
+  let held = 0, layers = 0, capacity = 0, keys = 0, values = 0, placed = false, total = 0;
+  const indices: number[] = [], rings: (Ring | null)[] = [], widths: number[] = [], rows: number[] = [], before: number[] = [];
+  // (the bytes a position of the block of index l)
+  const rowOf = (l: number) => (l + 1 < layers ? before[l + 1] : total) - before[l];
   return {
     KV, half,
     /** count more layers keep their keys and values here: the first of their places (before place()). T510.1: windows,
-     * how many of the last positions each attends (0 or none: all of them): one that a ring holds keeps no more */
-    hold(count: number, windows: number[] = []) {
+     * how many of the last positions each attends (0 or none: all of them): one that a ring holds keeps no more. T331:
+     * wide, the values of a position of each (none: kvDim) */
+    hold(count: number, windows: number[] = [], wide: number[] = []) {
       if (placed) throw new Error("The cache of the keys and values has its room already: a kind of layer takes its places as it is made.");
       const first = held;
       for (let a = 0; a < count; a++) {
-        const size = start ? ringPositions(windows[a] ?? 0, seqLen) / 2 : 0;
-        rings.push(size ? { size, keys: 0, values: 0 } : null);
+        const size = start ? ringPositions(windows[a] ?? 0, seqLen) / 2 : 0, width = wide[a] ?? kvDim, row = width * (half ? 2 : 4);
+        if (width > kvDim) throw new Error(`A layer keeps keys and values ${width} wide, and the cache's widest are ${kvDim}.`);
+        widths.push(width);
+        rows.push(row);
+        rings.push(size ? { size, keys: 0, values: 0, row } : null);
+        if (!size) {
+          before.push(total);
+          total += row;
+        }
         indices.push(size ? -1 : layers++);
       }
       held += count;
@@ -52,47 +70,54 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
     /** T510.1: the ring of a place (null: the place keeps every position), and a place's index among the blocks */
     ring: (place: number) => rings[place],
     index: (place: number) => indices[place],
+    /** T331: the values and the bytes of a position of a place, and of a block (by its index) the bytes a position of
+     * those before it: the block's keys are capacity times that after keys, and its values after values */
+    width: (place: number) => widths[place],
+    row: (place: number) => rows[place],
+    offset: (index: number) => before[index],
     /** the cache takes its room: after everything else of the engine, for it grows where it is (the rings first, which
      * do not) */
     place() {
       if (placed) throw new Error("The cache of the keys and values has its room already.");
       placed = true;
       const ringed = rings.filter((ring) => ring !== null);
-      let at = ringed.length ? room.alloc(ringed.reduce((bytes, { size }) => bytes + 4 * size * KV, 0)) : 0;
+      let at = ringed.length ? room.alloc(ringed.reduce((bytes, { size, row }) => bytes + 4 * size * row, 0)) : 0;
       for (const ring of ringed) {
         ring.keys = at;
-        ring.values = at + 2 * ring.size * KV;
-        at += 4 * ring.size * KV;
+        ring.values = at + 2 * ring.size * ring.row;
+        at += 4 * ring.size * ring.row;
       }
       capacity = start;
-      keys = room.alloc(2 * layers * capacity * KV);
-      values = keys + layers * capacity * KV;
+      keys = room.alloc(2 * capacity * total);
+      values = keys + capacity * total;
     },
     /** the positions there is room for, and where the keys and the values are now (they move as the cache grows):
-     * layer a's are a * capacity * KV after */
+     * the block of index i's are capacity * offset(i) after (i * capacity * KV, where the places are as wide) */
     get capacity() { return capacity; },
     get keys() { return keys; },
     get values() { return values; },
     /** room for position pos: twice the positions, or up to pos, and no more than the context */
     grow(pos: number) {
       const larger = Math.min(Math.max(2 * capacity, pos + 1), seqLen);
-      const oldLayer = capacity * KV, newLayer = larger * KV;
-      room.alloc(2 * layers * (newLayer - oldLayer));
-      const U = room.U, newValues = keys + layers * newLayer;
-      for (let l = layers - 1; l >= 0; l--) U.copyWithin(newValues + l * newLayer, values + l * oldLayer, values + (l + 1) * oldLayer);
-      for (let l = layers - 1; l > 0; l--) U.copyWithin(keys + l * newLayer, keys + l * oldLayer, keys + (l + 1) * oldLayer);
+      room.alloc(2 * total * (larger - capacity));
+      const U = room.U, newValues = keys + larger * total;
+      // (T331: a block of each one's own bytes; where they are alike, before[l] is l * KV and these are the moves they
+      // always were)
+      for (let l = layers - 1; l >= 0; l--) U.copyWithin(newValues + larger * before[l], values + capacity * before[l], values + capacity * (before[l] + rowOf(l)));
+      for (let l = layers - 1; l > 0; l--) U.copyWithin(keys + larger * before[l], keys + capacity * before[l], keys + capacity * (before[l] + rowOf(l)));
       values = newValues;
       capacity = larger;
     },
-    /** a token's key and value (float32, at key and value) into the cache at keyAt and valueAt */
-    put(keyAt: number, valueAt: number, key: number, value: number) {
+    /** a token's key and value (float32, at key and value) into the cache at keyAt and valueAt (T331: width values
+     * of each, a place's own; kvDim where it is not said) */
+    put(keyAt: number, valueAt: number, key: number, value: number, width = kvDim) {
       if (half) {
-        k.to_f16(keyAt, key, kvDim);
-        k.to_f16(valueAt, value, kvDim);
+        k.to_f16(keyAt, key, width);
+        k.to_f16(valueAt, value, width);
       } else {
         const U = room.U;
-        U.copyWithin(keyAt, key, key + KF);
-        U.copyWithin(valueAt, value, value + KF);
+        U.copyWithin(keyAt, key, key + width * 4);
+        U.copyWithin(valueAt, value, value + width * 4);
       }
     },
     /** T147: a token's key and value in float16 (the GPU's) into the cache at keyAt and valueAt. T160: a float32 cache
@@ -109,17 +134,19 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
       }
     },
     /** the keys and values at positions from .. from + count - 1, in float32, [layers][count][kvDim] each (tests; T510.1:
-     * every place in turn, and a ring's where its position is now, which is a later one's past its window) */
+     * every place in turn, and a ring's where its position is now, which is a later one's past its window). T331: a
+     * place's are its own width, one place's after another's */
     read(from: number, count: number) {
       const { F, H } = room;
       const read = (block: number, side: "keys" | "values") => {
-        const out = new Float32Array(held * count * kvDim);
+        const out = new Float32Array(widths.reduce((sum, width) => sum + width, 0) * count);
+        let to = 0;
         for (let l = 0; l < held; l++) {
-          const ring = rings[l];
-          for (let t = 0; t < count; t++) {
-            const at = ring ? ring[side] + ((from + t) % ring.size) * KV
-              : block + indices[l] * capacity * KV + (from + t) * KV;
-            for (let i = 0; i < kvDim; i++) out[(l * count + t) * kvDim + i] = half ? halfToFloat(H[at / 2 + i]) : F[at / 4 + i];
+          const ring = rings[l], width = widths[l], row = rows[l];
+          for (let t = 0; t < count; t++, to += width) {
+            const at = ring ? ring[side] + ((from + t) % ring.size) * row
+              : block + capacity * before[indices[l]] + (from + t) * row;
+            for (let i = 0; i < width; i++) out[to + i] = half ? halfToFloat(H[at / 2 + i]) : F[at / 4 + i];
           }
         }
         return out;

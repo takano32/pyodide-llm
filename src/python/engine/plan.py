@@ -34,7 +34,7 @@ import numpy as np
 from engine.checkpoint import OUTLIER_CHANNELS, outlier_channels, outside
 from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
-from engine.layout import TABLE, linear_widths, local_layers, unturned_layers
+from engine.layout import DOUBLE, NARROW, SINGLE, TABLE, WIDE, linear_widths, local_layers, unturned_layers
 
 # the kind of a layer that attends over all the positions (and keeps keys and values); a layer that keeps a state in
 # their place is of the kind its architecture has (engine/layout.py's Stateful, by its name: "linear", "convolution")
@@ -51,7 +51,8 @@ class Settings(NamedTuple):
     {"block", "signs"}, None for a model in its own basis) and tables (the RoPE tables (cos, sin) of a file that has
     none of its own: rope_tables()'s; None where the file has them) and tiled (T363: FORM's, a linear-attention layer's
     output matrix reads its value heads in llama.cpp's order); local (T261: the model's local layers, local_layers()'s,
-    None for a model without) and local_tables (their RoPE tables (cos, sin), which no file has)."""
+    None for a model without) and local_tables (their RoPE tables (cos, sin), which no file has); softcap (T331: the
+    logits are softcap * tanh(logits / softcap); 0, as they are)."""
     int8: bool
     kv_start: int
     disable: tuple = ()
@@ -64,6 +65,7 @@ class Settings(NamedTuple):
     tiled: bool = False
     local: Any = None
     local_tables: Any = None
+    softcap: float = 0.0
 
 
 def layer_facts(dims, settings):
@@ -75,16 +77,28 @@ def layer_facts(dims, settings):
     layout's: the slots and the kind are the Dims', a model has RoPE where its file has (or leaves out) the tables,
     and only a layer that attends is turned, but the layers the settings say RoPE leaves alone (T255: the Dims refuses
     those that are none of this model's).
+    T331: and, of every layer, "head": the size of its heads; "rotary": how many values of a head RoPE turns (a local
+    layer the whole head, the others the plan's "rotary"); "wide": its attention's tensors are the stacks of the form's
+    "wide" (q, k, v, o and the norms of the heads, each name with "_wide"); "stack": its place in its attention's
+    stacks; "double": its FFN's are the form's "double" (each name with "_double"); "ffn": its place in its FFN's
+    stacks. Every layer of a model without wide heads or a wide FFN has its own head_size, its place and its number.
     A fact of a layer that an engine needs goes here, as another key of every layer's dict (and where it is a model's
     option, as another field of Settings)."""
     unturned = unturned_layers(dims.arch, dims.n_layers, settings.unturned)
     local = local_layers(dims.arch, dims.n_layers, settings.local) or {"layers": (), "window": 0}
     turning = any(row.role == TABLE for row in dims.rows())
-    return [{"kind": dims.stateful_kind if state else ATTENTION, "place": place,
-             "rope": turning and not state and layer not in unturned,
-             "window": local["window"] if here else 0, "local": here}
-            for layer, (state, place) in enumerate(dims.slots)
-            for here in [not state and layer in local["layers"]]]
+    wide, double = dims.layers(WIDE), dims.layers(DOUBLE)
+    narrow, single = dims.layers(NARROW), dims.layers(SINGLE)
+    facts = []
+    for layer, (state, place) in enumerate(dims.slots):
+        here, head = not state and layer in local["layers"], dims.head_of(layer)
+        facts.append({"kind": dims.stateful_kind if state else ATTENTION, "place": place,
+                      "rope": turning and not state and layer not in unturned,
+                      "window": local["window"] if here else 0, "local": here,
+                      "head": head, "rotary": head if here else (int(settings.rotary) or head),
+                      "wide": layer in wide, "stack": wide.index(layer) if layer in wide else (narrow.index(layer) if layer in narrow else place),
+                      "double": layer in double, "ffn": double.index(layer) if layer in double else single.index(layer)})
+    return facts
 
 
 def plan_widths(dims):
@@ -93,8 +107,11 @@ def plan_widths(dims):
     "keys", q or k; "read", v, which the output matrix reads; None where there are no such layers) and "rotated" (the
     widths of what the model's matrices read, each of which a rotated basis has its signs for, T237)."""
     linear = dims.linear and dict(zip(("mixed", "keys", "read"), linear_widths(dims.linear)))
-    return {"q": dims.q_dim, "kv": dims.kv_dim, "linear": linear,
-            "rotated": rotated_widths(dims.dim, dims.q_dim, dims.hidden_dim, dims.linear)}
+    # (T331: of the widest heads, where a model's layers differ in theirs)
+    # (T331: of the widest heads and the widest FFN, where a model's layers differ in theirs)
+    head, hidden = max(dims.head_size, dims.wide_head), 2 * dims.hidden_dim if dims.double else dims.hidden_dim
+    return {"q": dims.n_heads * head, "kv": dims.n_kv_heads * head, "linear": linear,
+            "rotated": rotated_widths(dims.dim, dims.n_heads * head, hidden, dims.linear)}
 
 
 def forward_plan(dims, dtype, read, settings=None, **said):
@@ -113,8 +130,9 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     of an architecture ("arch" is there for a person who looks at a plan). What the rows say is no key here, as it is
     no field there: a bias, the norms of a head, the table of positions are read where the plan has their tensors."""
     settings = Settings(**said) if settings is None else settings
-    if dims.layout.value_norm or dims.layout.wide:
-        # T331: the page's engine reads no fact of a Gemma 4's layers yet (T331.2), and would run another model
+    if dims.sharing or dims.per_layer:
+        # T330, T329: the page's engine reads neither a Gemma 4's layers that share keys and values nor its embedding
+        # of every layer yet (T330.2, T329.2), and would run another model
         raise ValueError("The page's engine does not run a Gemma 4 yet.")
     int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
     layers = layer_facts(dims, settings)
@@ -171,4 +189,7 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             # three matrices and a SiLU; else GPT-2's two, their biases and a GELU), which are two facts
             "layer_norm": bool(dims.layout.layer_norm), "gated_ffn": bool(dims.layout.gated_ffn),
             # T261: the FFN's activation, "silu" or "gelu" (a third fact: a Gemma's gated FFN has GPT-2's GELU)
-            "activation": dims.layout.activation}
+            "activation": dims.layout.activation,
+            # T331: a fourth, the heads of v are normalized (a Gemma 4's, without a weight); and the logits are capped
+            # (softcap * tanh(logits / softcap); 0: as they are)
+            "value_norm": bool(dims.layout.value_norm), "softcap": float(settings.softcap or 0.0)}

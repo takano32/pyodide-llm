@@ -363,6 +363,23 @@ if [ "$suite" = full ]; then
     node tests/forward-check.mjs .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-int6 .tmp/made-up-gemma3-own-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Gemma 3" made_up_gemma3
+  # T331.2: a made-up Gemma 4 (a Gemma 3's layers, the full-attention ones with heads twice as wide, turned in part by the
+  # whole head's angles; the heads of v normalized, a number every layer ends with, the logits capped): as the Gemma 3
+  # above, each shape of tests/make_gemma4.py
+  made_up_gemma4() {
+    mkdir -p .tmp
+    for dtype in float32 float16 int8 int6; do python tests/make_gemma4.py .tmp/made-up-gemma4-$dtype $dtype; done
+    for shape in own long; do
+      python tests/make_gemma4.py .tmp/made-up-gemma4-$shape-float32 float32 $shape
+      python tests/make_gemma4.py .tmp/made-up-gemma4-$shape-int8 int8 $shape
+    done
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-gemma4-float32 .tmp/made-up-gemma4-float16 .tmp/made-up-gemma4-int8 .tmp/made-up-gemma4-int6 .tmp/made-up-gemma4-own-float32 .tmp/made-up-gemma4-own-int8 --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-gemma4-long-float32 .tmp/made-up-gemma4-long-int8 --rounds 1 --positions "$([ -z "$memory" ] && echo 960 || echo 400)" $memory
+    done
+    node tests/forward-check.mjs .tmp/made-up-gemma4-int8 .tmp/made-up-gemma4-int6 .tmp/made-up-gemma4-own-int8 --without relaxed --rounds 1 --positions 128
+  }
+  part "forward.js against NumPy, a made-up Gemma 4" made_up_gemma4
   # T255: a made-up SmolLM3 (every fourth layer's q and k not turned by RoPE; the real one is too large for the build):
   # float32 and float16 to NumPy's numbers, int8 and six bits within the line of a made-up model, the prompt in blocks
   # to the bit; on a shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path)
@@ -391,6 +408,8 @@ if [ "$suite" = full ]; then
   part "the software threads, a made-up LFM2 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --wide --high --rounds 1 --positions 24
   # T261: and a made-up Gemma 3, whose local layers hand each token's heads the cache from its window's first position on
   part "the software threads, a made-up Gemma 3" node tests/threads-check.mjs .tmp/made-up-gemma3-float32 .tmp/made-up-gemma3-int8 .tmp/made-up-gemma3-own-int8 --rounds 1
+  # T331.2: and a made-up Gemma 4, whose layers' heads and FFN are of two widths
+  part "the software threads, a made-up Gemma 4" node tests/threads-check.mjs .tmp/made-up-gemma4-float32 .tmp/made-up-gemma4-int8 .tmp/made-up-gemma4-own-int8 --rounds 1
   # T233's review: the tool that holds Ternary Bonsai 2 27B to its references (tests/page_27b.sh) is run when the model's
   # computation may have changed, which is seldom, and a tool that is seldom run goes out of step with forward.js unseen. Its
   # dry stage runs a made-up model of the 27B's kind through the comparison, the long prompt, the speed and the memory, the
