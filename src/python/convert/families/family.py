@@ -99,6 +99,10 @@ class Family(NamedTuple):
     rms_norm: bool = False
     # RoPE turns part of each head only: the options say how much ("rotary")
     partly: bool = False
+    # (config) -> how many values of each layer's heads RoPE turns, a number for every layer (a tuple), where the layers
+    # differ in it: what sources() is handed as its rotary in place of the one number (T341: a Spark-X2.5's local
+    # layers turn the whole head, the others a quarter of it). None: every layer the same
+    turns: Optional[Callable] = None
     # ---- a GGUF of it (None: llama.cpp has no architecture of this name; a Mistral's says "llama")
     gguf: Optional[str] = None
     # llama.cpp's names by Hugging Face's: (the tensors outside the layers, where a layer's go, the layer's names)

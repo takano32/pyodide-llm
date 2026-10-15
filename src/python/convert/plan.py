@@ -160,11 +160,11 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
 
 
 def model_plan(config, source, header, form):
-    """conversion_plan() of a model: what stands in front of its source's names, how much of a head RoPE turns and
-    what q is multiplied by are its family's to say."""
+    """conversion_plan() of a model: what stands in front of its source's names, how much of a head RoPE turns (T341:
+    of each layer's, where the family's layers differ in it) and what q is multiplied by are its family's to say."""
     family = family_of(config)
-    return conversion_plan(header, form, name_prefix(source, form["arch"]),
-                           rotary_dim(config) if family.partly else 0, family.scale(config))
+    rotary = family.turns(config) if family.turns else rotary_dim(config) if family.partly else 0
+    return conversion_plan(header, form, name_prefix(source, form["arch"]), rotary, family.scale(config))
 
 
 def made(config, header, plan, index):
