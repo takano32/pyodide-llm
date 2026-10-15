@@ -252,7 +252,8 @@ def test_a_sentencepiece_bpe_vocabulary_alone_is_the_models_own_files(bytes_too,
     pieces = pieces_of(1000, bytes_too)
     published, file = spm_gguf(pieces, more=[("tokenizer.ggml.remove_extra_whitespaces", 7, collapse)])
     got = fed(file, "int8")
-    staged = with_original(file, published, model_of(pieces, collapse), "tokenizer.model", "int8")
+    # (a Mistral's config.json names the BOS the GGUF names: one that names none has none to stop at, T400)
+    staged = with_original(file, {**published, "bos_token_id": 1}, model_of(pieces, collapse), "tokenizer.model", "int8")
     assert bytes(got.tokenizer) == bytes(staged.tokenizer) and bytes(got.checkpoint) == bytes(staged.checkpoint)
     assert got.options == staged.options
     assert got.options["tokenizer_kind"] == "bpe" and ("unknown" in got.options) is (not bytes_too)

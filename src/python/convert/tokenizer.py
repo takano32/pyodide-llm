@@ -104,14 +104,17 @@ def tokenizer_json_options(tokenizer):
     "Precompiled" normalizer is sentencepiece's own map, which goes into tokenizer.bin (tokenizer_json_charsmap)."""
     normalizers = json.dumps(tokenizer.get("normalizer") or {})
     nfkc = '"NFKC"' in normalizers
+    # T400: a Lowercase normalizer lowers the text before the model reads it (the engine lowers it before anything
+    # else, as T265's do_lower_case of a sentencepiece model)
+    lowered = {"lowercase": True} if '"Lowercase"' in normalizers else {}
     if tokenizer_kind_of(tokenizer) != "BPE":
         prefixed = prefixed_texts(tokenizer)
-        return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {})}
+        return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {}), **lowered}
     if written_out(tokenizer):
         return written_out_options(tokenizer)
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
             "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer")),
-            "ignore_merges": bool(tokenizer["model"].get("ignore_merges"))}
+            "ignore_merges": bool(tokenizer["model"].get("ignore_merges")), **lowered}
 
 
 # T257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, CAT-Translate 7B's, a Llama 2's): a "BPE"
@@ -349,6 +352,8 @@ def sentencepiece_options(model):
     """Llama(tokenizer_kind=, collapse=, unknown=) from the pieces and the trainer and normalizer specs of a
     sentencepiece model. Its normalizer is its own map, in tokenizer.bin (sentencepiece_charsmap, T216).
 
+    prefixed (T400): "never" where the normalizer adds no dummy prefix (add_dummy_prefix false: sarashina2.2's and
+    CAT-Translate's), as T257 says it of a Gemma's: no "▁" before the first text either.
     collapse: remove_extra_whitespaces, runs of spaces made one and the ends trimmed. Said only where on: rinna's
     models are nmt_nfkc with it (and no byte pieces to spell a newline with), Llama's and Mistral's identity without
     it, tiny-lm's nfkc without it (the review of T126). unknown: the id of the unknown piece, for a model without byte
@@ -356,7 +361,7 @@ def sentencepiece_options(model):
     whatever pieces happen to be at byte + 3."""
     UNIGRAM, BPE = 1, 2
     UNKNOWN, BYTE = 2, 6
-    kind, collapse = UNIGRAM, True  # sentencepiece's own defaults
+    kind, collapse, dummy = UNIGRAM, True, True  # sentencepiece's own defaults
     unknown, spelled, index = None, False, 0
     for field, value in protobuf_fields(model):
         if field == 1:  # a piece: its type
@@ -366,9 +371,10 @@ def sentencepiece_options(model):
             index += 1
         elif field == 2:  # trainer_spec.model_type
             kind = dict(protobuf_fields(value)).get(3, UNIGRAM)
-        elif field == 3:  # normalizer_spec: its remove_extra_whitespaces
-            collapse = bool(dict(protobuf_fields(value)).get(4, 1))
+        elif field == 3:  # normalizer_spec: its add_dummy_prefix and remove_extra_whitespaces
+            spec = dict(protobuf_fields(value))
+            dummy, collapse = bool(spec.get(3, 1)), bool(spec.get(4, 1))
     if kind not in (UNIGRAM, BPE):
         raise ValueError("This sentencepiece model is neither unigram nor BPE.")
     return {"tokenizer_kind": "unigram" if kind == UNIGRAM else "bpe", **({"collapse": True} if collapse else {}),
-            **({"unknown": unknown} if unknown is not None and not spelled else {})}
+            **({"unknown": unknown} if unknown is not None and not spelled else {}), **({} if dummy else {"prefixed": "never"})}

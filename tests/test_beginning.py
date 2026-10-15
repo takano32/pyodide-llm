@@ -101,8 +101,8 @@ def test_a_bos_that_nothing_names_is_no_stop_token_once_the_template_says_where_
     options = made(chat_template=CHATML)
     assert options["bos"] == ids["<|im_start|>"] and options["stop_tokens"] == [ids["<|im_end|>"]]
     assert made(chat_template=CHATML, bos_token="<|endoftext|>")["stop_tokens"] == [ids["<|endoftext|>"], ids["<|im_end|>"]]
-    # without a template the guess is the BOS, as it was
-    assert made()["bos"] == 1 and made()["stop_tokens"] == [1, ids["<|im_end|>"]]
+    # without a template the guess is the BOS, as it was, and no stop token either (T400)
+    assert made()["bos"] == 1 and made()["stop_tokens"] == [ids["<|im_end|>"]]
 
 
 def test_a_sentencepiece_template_keeps_its_bos_where_the_rest_would_be_read_otherwise():
