@@ -7,10 +7,12 @@
 // T260: an LFM2 the same (its convolution layers have no wq, wk, wv either, and no shader), by the next line of gpuUnfit().
 // T261: and a Gemma 3, whose tensors are a Qwen3's to the GPU's worker (it would run them as one: no norm behind the
 // attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it.
+// T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
 //
 //   node tests/gpu-hybrid-check.mjs <a made-up Qwen3.5 of tests/make_qwen35.py, its int8 file without the extension>
 //   node tests/gpu-hybrid-check.mjs <a made-up LFM2 of tests/make_lfm2.py, the same>
 //   node tests/gpu-hybrid-check.mjs <a made-up Gemma 3 of tests/make_gemma3.py, the same>
+//   node tests/gpu-hybrid-check.mjs <a made-up Spark-X2.5 of tests/make_spark.py, the same>
 //     [--forward <another forward.js, to see a broken one fail>]
 // What it sees: the factory of the GPU's worker is never called, and the engine says why. A made-up GPU that never answers
 // stands in for the real one: with the line gone, the factory is called and the check fails there.
@@ -37,8 +39,9 @@ const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
 // behind as well, which are no option of a model's)
 const REASONS = { qwen35: ["a Qwen3.5", "linear", /linear-attention layers are not on the GPU/],
   lfm2: ["an LFM2", "convolution", /convolution layers are not on the GPU/],
-  gemma3: ["a Gemma 3", "local", /this pair of norms and FFN is not on the GPU/] };
-assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2 and no Gemma 3`);
+  gemma3: ["a Gemma 3", "local", /this pair of norms and FFN is not on the GPU/],
+  spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/] };
+assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3 and no Spark-X2.5`);
 const [model, layers, reason] = REASONS[options.arch];
 assert.ok(options[layers], `${prefix} has no ${layers} layers`);
 const checkpoint = fs.readFileSync(`${prefix}.bin`);
