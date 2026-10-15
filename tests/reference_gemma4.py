@@ -338,7 +338,8 @@ def real(directory, positions, name, with_faults):
     options = {key: value for key, value in conversion.options.items() if key != "template"}
     template = conversion.options.get("template")
     say(f"real: converted in {seconds:.1f} s, {path.stat().st_size} bytes, options {options_shown(options)}")
-    failed = template is not None and template != CHAT.format(prompt="{prompt}")
+    # (the converter writes {prompt:trim} where the template trims what was typed, as Gemma 4's does)
+    failed = template is not None and template.replace("{prompt:trim}", "{prompt}") != CHAT.format(prompt="{prompt}")
     say(f"real: the converter read {'no template' if template is None else 'the template ' + json.dumps(template)}"
         f"{' — FAILED (the format here: ' + json.dumps(CHAT) + ')' if failed else ''}")
     specials = sorted(set(options.get("specials", [])) | set(SPECIALS), key=lambda token: (-len(token), token))
@@ -411,16 +412,20 @@ def real(directory, positions, name, with_faults):
     failed |= HELD.failed(say, "real", llama, len(ids), at_once, stepped_states)
     state_floor = HELD.distances(at_once, stepped_states)
 
-    # 16 greedy tokens for two chat prompts, by transformers and by the engine's generate()
+    # 16 greedy tokens for two chat prompts, by transformers and by the engine's generate(), both stopping where
+    # generation_config.json says (as an entry of the list would give the engine: the converter reads no
+    # generation_config.json, and its stops leave out <turn|>, which the answer ends with)
+    writer = make(stop_tokens=list(STOPS))
     for what, prompt, prompt_ids in (("the chat prompt", chat, chat_ids), ("the list's prompt", listed, listed_ids)):
-        text = "".join(llama.generate(prompt, steps=len(prompt_ids) + NEW_TOKENS, temperature=0.0, echo=False))
+        text = "".join(writer.generate(prompt, steps=len(prompt_ids) + NEW_TOKENS, temperature=0.0, echo=False))
         wrote = theirs[what]
-        stop = next((at for at, token in enumerate(wrote) if token in llama.stop_tokens), len(wrote))
+        stop = next((at for at, token in enumerate(wrote) if token in writer.stop_tokens), len(wrote))
         same = tokenizer.decode(wrote[:stop], skip_special_tokens=False) == text
         failed |= not same
         say(f"real: for {what} transformers wrote {json.dumps(tokenizer.decode(wrote, skip_special_tokens=False), ensure_ascii=False)} {wrote}")
         say(f"real: for {what} the engine wrote {json.dumps(text, ensure_ascii=False)}: {'the two wrote the same' if same else 'OTHER TEXTS — FAILED'}")
 
+    del writer
     # the long text: past the window
     failed |= long_failed(llama, long, at, long_theirs, long_states, line)
     if with_faults:
