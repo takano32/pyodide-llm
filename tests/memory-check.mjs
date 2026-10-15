@@ -356,10 +356,10 @@ function halfToFloat(h) {
     ["Pythia 12B (?hf=)", [5120, 20480, 36, 40, 40, -50688, 2048], 13333749788, { arch: "neox" }, "int8"],
     ["Llama 2 13B (?hf=)", [5120, 13824, 40, 40, 40, -32000, 4096], 11390177308, {}, "int6"],
     // T230: the ternary models there are, as ternary (Ternary Bonsai 1.7B, 4B, 8B: Qwen3s; Ternary Bonsai 2 27B: a Qwen3.5)
-    ["Ternary Bonsai 1.7B", [2048, 6144, 28, 16, 8, 151936, 4096], 484372508, { qk_norm: true, head_dim: 128 }, "ternary"],
-    ["Ternary Bonsai 4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1132048412, { qk_norm: true, head_dim: 128 }, "ternary"],
-    ["Ternary Bonsai 8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2304790556, { qk_norm: true }, "ternary"],
-    ["Ternary Bonsai 2 27B", [5120, 17408, 64, 24, 4, -248320, 4096], 7662073884,
+    ["Ternary Bonsai 1.7B", [2048, 6144, 28, 16, 8, 151936, 4096], 457490460, { qk_norm: true, head_dim: 128 }, "ternary"],
+    ["Ternary Bonsai 4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1069200412, { qk_norm: true, head_dim: 128 }, "ternary"],
+    ["Ternary Bonsai 8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2176815132, { qk_norm: true }, "ternary"],
+    ["Ternary Bonsai 2 27B", [5120, 17408, 64, 24, 4, -248320, 4096], 7242233884,
       { arch: "qwen35", head_dim: 256, linear: { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 },
         rotated: ROTATED }, "ternary"],
   ];

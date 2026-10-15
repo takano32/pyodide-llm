@@ -229,6 +229,26 @@ function narrowIn(m: Model, target: GPUBuffer, address: number, values: number, 
     m.device.queue.writeBuffer(target, offset + done * 2, narrowed, 0, n);
   }
 }
+// T533: float16 scales of the shared memory at address (halves of them) widened to float32 onto the GPU (at offset of
+// target, in bytes), a CHUNK at a time: ternary's scales, which the checkpoint holds as float16s and the shaders read
+// as float32s (exactly: every finite half is a float32's). widenedHalves (the same of bytes as they come, routed())
+let widened: Float32Array<ArrayBuffer> | undefined;
+function widenIn(m: Model, target: GPUBuffer, address: number, halves: number, offset = 0) {
+  widened ??= new Float32Array(CHUNK / 4);
+  for (let done = 0; done < halves; done += widened.length) {
+    const n = Math.min(widened.length, halves - done);
+    widenedHalves(new Uint16Array(m.memory.buffer, address + done * 2, n), widened);
+    m.device.queue.writeBuffer(target, offset + done * 4, widened, 0, n);
+  }
+}
+/** float16s (their bits) as float32s into out */
+function widenedHalves(halves: Uint16Array, out: Float32Array) {
+  for (let i = 0; i < halves.length; i++) {
+    const h = halves[i], sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
+    out[i] = exponent === 0 ? sign * fraction * 2 ** -24 : exponent === 31 ? (fraction ? NaN : sign * Infinity) : sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
+  }
+  return out;
+}
 async function readBack(m: Model, source: GPUBuffer, bytes: number, from = 0) {
   const target = m.device.createBuffer({ size: Math.ceil(bytes / 4) * 4, usage: MAP_READ | COPY_DST });
   try {
@@ -267,5 +287,5 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
 }
 
 export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
-  describe, unusable, end, buffer, uniform, copyIn, narrowIn, readBack, validated, pipelineOf, bind, dispatch };
+  describe, unusable, end, buffer, uniform, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Bound, Whole, Pass, Thrown, Opening };

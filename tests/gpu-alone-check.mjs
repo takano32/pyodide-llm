@@ -163,7 +163,7 @@ console.log("ok: T375.2, the GPU's worker is told how much of a head RoPE turns 
 console.log("ok: T375.3, the cache of the keys and values grows in place after the GPU's places, and the GPU is told where it is as it is now");
 
 // ---- T375.4: a model on the GPU alone is told where each layer's values and scales are in the checkpoint: a layer is
-// its rows of the packing's bytes (jobs.ts's PACKED: int8 a byte a weight, ternary a quarter) after the one before
+// its rows of the packing's bytes (jobs.ts's PACKED: int8 a byte a weight, ternary a quarter; T533: its scales float16s) after the one before
 for (const dtype of ["int8", "ternary"]) {
   const [q] = plansOf([{ header: [128, 256, 2, 4, 4, 100, 128], form: FORM, dtype }]);
   const plan = planOf(q), { engine, beside } = made(true, plan, q.size), ternary = dtype === "ternary";
@@ -173,7 +173,7 @@ for (const dtype of ["int8", "ternary"]) {
   for (const [name, m] of Object.entries(said)) {
     const t = plan.tensors[name], [rows, n] = t.shape.slice(-2);
     assert.equal(t.kind, dtype);
-    assert.deepEqual(m, { rows, n, six: false, ternary, layers: [0, 1].map((l) => [t.offset + l * rows * (ternary ? n / 4 : n), t.scales + l * rows * (n / t.group) * 4]) }, `${dtype}: ${name}`);
+    assert.deepEqual(m, { rows, n, six: false, ternary, layers: [0, 1].map((l) => [t.offset + l * rows * (ternary ? n / 4 : n), t.scales + l * rows * (n / t.group) * (ternary ? 2 : 4)]) }, `${dtype}: ${name}`);
   }
   assert.equal(await engine.release(), true);
 }

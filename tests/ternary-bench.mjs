@@ -35,9 +35,10 @@ const GO = 0, DONE = 1, NEXT = 2;
 // reads, and the call on rows r0..r1 of the copy at w (its values, then its scales, then its corrections)
 const g128 = (c) => (c[ROWS] * c[N]) / 128;
 const FORMS = {
-  t2r: { module: "tree", bytes: [32, 4, 0], activations: "interleaved",
+  // (T533: kernels/'s scales are float16s, 2 bytes a group; t2c below is the float32 form they were)
+  t2r: { module: "tree", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
-  t2: { module: "plain", bytes: [32, 4, 0], activations: "interleaved",
+  t2: { module: "plain", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   bc: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_bc(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
@@ -186,7 +187,7 @@ for (const [rows, n] of shapes) {
   for (let g = 0; g < groups; g++) d[g] = Math.f16round(0.005 + (next() % 4096) / 163840);
   // ---- each form's copy of the weights
   const writers = {
-    t2r(at) {
+    t2c(at) {
       const scales = at + groups * 32;
       U.fill(0, at, scales);
       for (let j = 0; j < tw.length; j++) U[at + (j >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
@@ -238,8 +239,8 @@ for (const [rows, n] of shapes) {
       }
     },
   };
-  writers.t2 = writers.bc = writers.bs = writers.bx = writers.t2c = writers.t2r;
-  writers.h2 = writers.h4r = writers.h2r;
+  writers.bc = writers.bs = writers.bx = writers.t2c;
+  writers.t2r = writers.t2 = writers.h2 = writers.h4r = writers.h2r;
   writers.q8 = writers.q8r;
   const copies = {};
   for (const form of needed) {

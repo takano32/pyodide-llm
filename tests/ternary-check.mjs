@@ -75,6 +75,8 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
   const load = (name) => addressed(new WebAssembly.Instance(new WebAssembly.Module(bytesOf(name)), { env: { memory } }).exports, wide);
   const k = load("simdkernel_plain"), r = load("simdkernel_relaxed_plain");
   const I = new Int8Array(memory.buffer), U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer), N = new Int32Array(memory.buffer);
+  // (T533: the weights' scales are float16s)
+  const HF = new Float16Array(memory.buffer);
   let seed = 231;
   const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
   const where = wide ? (base ? " (64-bit memory, above 4 GiB)" : " (64-bit memory)") : "";
@@ -115,7 +117,8 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     if (groups > 1) codes.fill(0, n + 128, n + 256);  // row 1's second: all -1
     U.fill(0, w, w + rows * groups * 32);
     codes.forEach((code, j) => { U[w + (j >> 2)] |= code << (2 * (j & 3)); });
-    for (let g = 0; g < rows * groups; g++) F[ws / 4 + g] = f(1e-3 * (1 + (next() % 1000)));
+    // (T533: float16 scales, a subnormal one and a zero among them: the kernels widen every finite half exactly)
+    for (let g = 0; g < rows * groups; g++) HF[ws / 2 + g] = g % 11 === 7 ? 2 ** -20 * (1 + (next() % 1000)) : g % 13 === 5 ? 0 : 1e-3 * (1 + (next() % 1000));
     const a = Int8Array.from({ length: n }, () => (next() & 255) - 128);
     a.fill(127, 0, 64);
     a.fill(-128, 64, 128);
@@ -129,7 +132,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
         for (let lane = 0; lane < 4; lane++) {
           let sum = 0;
           for (let j = g * 128 + lane * 32; j < g * 128 + lane * 32 + 32; j++) sum += (codes[i * n + j] - 1) * a[j];
-          lanes[lane] = f(lanes[lane] + f(f(sum * F[xs / 4 + g * 4 + lane]) * F[ws / 4 + i * groups + g]));
+          lanes[lane] = f(lanes[lane] + f(f(sum * F[xs / 4 + g * 4 + lane]) * HF[ws / 2 + i * groups + g]));
         }
       }
       return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
@@ -190,7 +193,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < n; j++) U[w + (i * n + j >> 2)] |= (i & 3) << (2 * (j & 3));  // row i: every weight the code i & 3
     }
-    for (let g = 0; g < rows * groups; g++) F[ws / 4 + g] = f(0.5 + 0.01 * g);
+    for (let g = 0; g < rows * groups; g++) HF[ws / 2 + g] = 0.5 + 0.01 * g;
     const frames = end + 4096, outs = frames + count * frame, alone = outs + count * outFrame;
     if (alone + rows * 4 > memory.buffer.byteLength) throw new Error("ternary-check's memory is too small for the largest sums");
     for (const [index, pattern] of patterns.entries()) {
@@ -210,7 +213,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
             for (let lane = 0; lane < 4; lane++) {
               let sum = 0;
               for (let j = g * 128 + lane * 32; j < g * 128 + lane * 32 + 32; j++) sum += ((i & 3) - 1) * a[j];
-              lanes[lane] = f(lanes[lane] + f(f(sum * F[(at + most * 128) / 4 + g * 4 + lane]) * F[ws / 4 + i * groups + g]));
+              lanes[lane] = f(lanes[lane] + f(f(sum * F[(at + most * 128) / 4 + g * 4 + lane]) * HF[ws / 2 + i * groups + g]));
             }
           }
           return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);

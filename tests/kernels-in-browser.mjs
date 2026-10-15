@@ -263,8 +263,10 @@ async function inPage({ plain, relaxed }) {
   const codes = Uint8Array.from({ length: rows * n }, () => next() % 3);  // -1, 0, 1
   U.fill(0, w, w + rows * n / 4);
   codes.forEach((code, j) => { U[w + (j >> 2)] |= code << (2 * (j & 3)); });
-  const sw = Float32Array.from({ length: rows * groups }, () => f(1e-3 * (1 + (next() % 1000))));
-  F.set(sw, ws / 4);
+  // (T533: the weights' scales are float16s: k / 1024, which a float16 holds, written as its bits)
+  const sw = Float32Array.from({ length: rows * groups }, () => (1 + (next() % 1000)) / 1024);
+  const halfOf = (x) => { const e = Math.floor(Math.log2(x)); return ((e + 15) << 10) | Math.round((x / 2 ** e - 1) * 1024); };
+  new Uint16Array(memory.buffer).set(Array.from(sw, halfOf), ws / 2);
   const activations = (t) => Int8Array.from({ length: n }, (_, j) => ((next() ^ (j * 31 + t * 17)) & 255) - 128);
   const a = activations(0), sx = Float32Array.from({ length: ng }, () => f(1e-2 * (1 + (next() % 1000))));
   const want = (a, sx) => Array.from({ length: rows }, (_, i) => {
@@ -640,7 +642,7 @@ async function inPageHigh({ plain, relaxed, addresses }) {
   const ternary = (p, tokens) => {
     U.fill(0, p.w, p.w + 32);
     for (let j = 0; j < 128; j++) U[p.w + (j >> 2)] |= 2 << (2 * (j & 3));  // 128 weights of +1
-    F[p.ws / 4] = 1;
+    new Uint16Array(memory.buffer)[p.ws / 2] = 0x3c00;  // (T533: a float16 scale of 1)
     for (let t = 0; t < tokens; t++) {
       for (let j = 0; j < 128; j++) I[p.xq + t * 1024 + j] = 3;
       for (let g = 0; g < 4; g++) F[(p.xs + t * 1024) / 4 + g] = 1;

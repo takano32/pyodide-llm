@@ -1,7 +1,7 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, isLate, buffer, readBack, validated, pipelineOf } from "./device.ts";
+import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, isLate, buffer, readBack, validated, pipelineOf, widenedHalves } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { halfToFloat } from "./forms.ts";
 import { roomFor, BLOCK_ROUNDS } from "./block.ts";
@@ -221,7 +221,9 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     : new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length));
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
-    new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
+    // (T533: ternary's scales are float16s there, which went up widened)
+    spec.ternary ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
+      : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
   const readBackRows = (spec: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
     scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec))];
   const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? plan.tokens!.embedding ?? plan.tokens!.classifier : plan.tokens!.classifier);

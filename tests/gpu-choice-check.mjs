@@ -303,13 +303,13 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // (0.91 and 1.64 GiB of 2) and the 8B on the CPU (2.74); a browser that does not say (4, and never on the GPU alone,
   // T205): the CPU, and not even the prompts on the GPU (the layers with their keys and values past the room left)
   const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 128 * 2 ** 20, maxBufferSize: 256 * 2 ** 20 } };
-  const listed = [["1.7B", bonsai, 484372508, form, "both", "gpu"], ["4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1132048412, form, "both", "gpu"],
-    ["8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2304790556, { qk_norm: true }, "both", "cpu"]];
+  const listed = [["1.7B", bonsai, 457490460, form, "both", "gpu"], ["4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1069200412, form, "both", "gpu"],
+    ["8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2176815132, { qk_norm: true }, "both", "cpu"]];
   for (const [name, header, size, shape, on8, on4] of listed) {
     const options = { ...shape, dtype: "ternary", int8: true, relaxed: true, halfKV: true, shared: true, outliers: 8, gpu: true };
     const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header, headSize = shape.head_dim || dim / heads;
     const layerWeights = layers * (2 * heads * headSize * dim + 2 * kvHeads * headSize * dim + 3 * hidden * dim);
-    const stored = size - (layerWeights + Math.abs(signedVocab) * dim * (signedVocab > 0 ? 1 : 2)) * 0.28125;
+    const stored = size - (layerWeights + Math.abs(signedVocab) * dim * (signedVocab > 0 ? 1 : 2)) * 0.265625;  // (T533: the float16 scales)
     const cpu = size + footprint(header, size, options), gpu = gpuBytes(header, { ...shape, dtype: "ternary" });
     const gpuOnly = stored + footprint(header, stored, { ...options, direct: true });
     assert.equal(gpuOnlyUnfit(header, "ternary", shape, adapter), null, `Ternary Bonsai ${name} may go on the GPU alone`);
@@ -423,7 +423,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const apart = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], { ...tensors, wcls: tensor(end, [100, 64], true) });
   assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [end, end + 6400] }, embedding: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] } });
   assert.equal(gpuHoles({ ...tensors, wcls: tensor(end, [100, 64], true) }).length, 9, "a classifier of its own is a stretch of its own");
-  // T232: a ternary model's: a layer of a matrix is a quarter of a byte a weight on, and its scales one a group of 128
+  // T232: a ternary model's: a layer of a matrix is a quarter of a byte a weight on, and its scales one a group of 128 (T533: float16s)
   let at = 28;
   const codes = {};
   for (const [name, shape, matrix] of [["token_embedding_table", [100, 128], true], ["rms_att_weight", [2, 128], false], ["wq", [2, 128, 128], true],
@@ -431,11 +431,11 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     ["w2", [2, 128, 256], true], ["w3", [2, 256, 128], true], ["rms_final_weight", [128], false]]) {
     codes[name] = tensor(at, shape, matrix, true);
     const count = shape.reduce((a, b) => a * b, 1);
-    at += matrix ? count / 4 + count / 32 : count * 4;
+    at += matrix ? count / 4 + count / 64 : count * 4;
   }
   const ternary = gpuOnlyPlan([128, 256, 2, 4, 2, 100, 32], codes);
   assert.deepEqual(ternary.matrices.w2, { rows: 128, n: 256, ternary: true, layers: [[codes.w2.offset, codes.w2.scales],
-    [codes.w2.offset + 128 * 256 / 4, codes.w2.scales + (128 * 256 / 128) * 4]] });
+    [codes.w2.offset + 128 * 256 / 4, codes.w2.scales + (128 * 256 / 128) * 2]] });
   assert.deepEqual(ternary.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] }, embedding: null });
   // (its stretches: every matrix's codes and then its scales, to where the next tensor begins)
   assert.deepEqual(gpuHoles(codes).find(([start]) => start === codes.w1.offset), [codes.w1.offset, codes.w2.offset]);
@@ -446,7 +446,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.deepEqual(untied.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [wcls.offset, wcls.scales] },
     embedding: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] } });
   assert.equal(gpuHoles({ ...codes, wcls }).length, gpuHoles(codes).length + 1, "a ternary classifier of its own is a stretch of its own");
-  assert.deepEqual(gpuHoles({ ...codes, wcls }).at(-1), [wcls.offset, wcls.scales + ((100 * 128) / 128) * 4], "its codes, then its scales");
+  assert.deepEqual(gpuHoles({ ...codes, wcls }).at(-1), [wcls.offset, wcls.scales + ((100 * 128) / 128) * 2], "its codes, then its scales");
 
   // T377: a worker that counts nothing. The loops that write wait for it, a second at a time, and give up after 60 s
   // of nothing; a worker said to be gone (it did not start, or threw: whoever made it heard its "error") is waited for
@@ -529,9 +529,9 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(aloneVerdict({ size, layerWeights: weights, cpu, gpu: slowStep, usage: { prompt: 1, written: 10 } }).cpuFaster, true, "writing: the CPU");
   // nothing known of the CPU: the GPU stays
   assert.equal(aloneVerdict({ size, layerWeights: weights, cpu: {}, gpu: slowStep }).cpuFaster, false, "no /benchmark/: the GPU");
-  // T232: the CPU's token of a ternary model is read as the same weights of int8 (four times the checkpoint's bytes:
+  // T232: the CPU's token of a ternary model is read as the same weights of int8 (144 / 34 times the checkpoint's bytes, T533:
   // its kernel is bound by its arithmetic, at about the int8 kernel's weights a second, T231)
-  assert.equal(cpuReadBytes(1e9, "ternary"), 4e9);
+  assert.equal(cpuReadBytes(1e9, "ternary"), 1e9 * 1.125 / 0.265625);
   assert.equal(cpuReadBytes(1e9, "int8"), 1e9);
   // the use kept: each generation's added to four fifths of what was there
   assert.deepEqual(usedAfter(usedAfter(undefined, 100, 50), 20, 200), { prompt: 100 * 0.8 + 20, written: 50 * 0.8 + 200 });

@@ -432,7 +432,7 @@ def checkpoint(header, form=None, dtype="float32", *, tensor, blocks=None):
             else:
                 part = np.asarray(values[layer] if layers else values, dtype=np.float32).reshape(-1, row.shape[-1])
                 packed, scales = stored.pack(part)
-                out += [np.ascontiguousarray(packed).tobytes(), np.ascontiguousarray(scales, dtype=np.float32).tobytes()]
+                out += [np.ascontiguousarray(packed).tobytes(), np.ascontiguousarray(scales, dtype=stored.scale_type).tobytes()]
     return b"".join(out)
 
 
@@ -510,7 +510,8 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
         if ternary:
             groups = values.reshape(-1, 128)
             cut = np.quantile(np.abs(groups), 1 / 3, axis=1, keepdims=True)
-            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float32)
+            # (T533: a float16, as PQ2_0 holds it: the ternary dtype keeps its scales so)
+            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float16).astype(np.float32)
             values = (np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32).reshape(row.shape)
         return values
     return tensor

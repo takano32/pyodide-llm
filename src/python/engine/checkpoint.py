@@ -160,10 +160,11 @@ def checkpoint_dtype(header, size, form=None):
     sizes = {file_size(rows, name): name for name in DTYPES if name not in PACKED}
     for name in PACKED:
         # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6).
-        # T230: 32 bytes and a float32 scale per group of 128 (only rows of whole groups can be ternary). No other
-        # dtype of the same header has this size: with M values in the matrices and V in the vectors it is 0.28125 M
-        # + 4 V, int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and float16 (2 M + 2 V and the
-        # RoPE tables) would need 2 V > 1.7 M, vectors as large as the matrices (tests/test_ternary.py tries shapes)
+        # T230: 32 bytes and a scale per group of 128 (only rows of whole groups can be ternary; T533: the scale a
+        # float16, PQ2_0's). No other dtype of the same header has this size: with M values in the matrices and V in
+        # the vectors it is 0.265625 M + 4 V, int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and
+        # float16 (2 M + 2 V and the RoPE tables) would need 2 V > 1.7 M, vectors as large as the matrices
+        # (tests/test_ternary.py tries shapes)
         if suited(rows, name):
             sizes.setdefault(file_size(rows, name), name)
     if size not in sizes:

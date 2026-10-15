@@ -36,7 +36,7 @@ from engine.packing import NOT_TERNARY, TERNARY_GROUP, group32, quantize, six, t
 
 class Dtype(NamedTuple):
     """How a file holds a tensor. One that is not quantized is its values, itemsize bytes each. A quantized one is its
-    values in groups along the row, bits each, then one float32 scale for every group.
+    values in groups along the row, bits each, then one scale for every group: a float32, or scale_type's.
     short: what forward.js calls the kind (Tensor's kind). group(length): the values of a group of a row of that
     length. pack(float32 rows, whole ones) -> (the bytes of their values, in rows of a group's bytes; their float32
     scales): NumPy's. unpack(the bytes of the values) -> the int8 values, one after the other; a value is that times
@@ -46,7 +46,9 @@ class Dtype(NamedTuple):
     refusal are the words for the others; nobody is given this kind without asking). unsuited: the words for a model
     with rows that are no whole groups.
     T363, llama.cpp's blocks (BLOCKS): block, the bytes of a group in place of bits; scale, the bytes of the scale
-    behind each group (0: it is inside); read(the bytes of whole groups) -> float32 values, in place of unpack."""
+    behind each group (0: it is inside); read(the bytes of whole groups) -> float32 values, in place of unpack.
+    T533: scale, the bytes of a group's scale, says its type (scale_type): 4 a float32, 2 a float16 (ternary's, as
+    PQ2_0 has it)."""
     name: str
     short: str
     itemsize: int = 0
@@ -62,6 +64,11 @@ class Dtype(NamedTuple):
     scale: int = 4
     read: Callable = None
 
+    @property
+    def scale_type(self):
+        """The NumPy type of a group's scale in a checkpoint (T533: ternary's is a float16, PQ2_0's own)."""
+        return np.float16 if self.scale == 2 else np.float32
+
     def stored_bytes(self, count, group):
         """(the bytes of the values, the bytes of the scales) of count values in groups of group."""
         return count // group * (self.block or group * self.bits // 8), self.scale * (count // group)
@@ -74,14 +81,14 @@ class Dtype(NamedTuple):
         """The float32 values of a tensor in groups, from the bytes of its values and its scales."""
         if self.read is not None:
             return self.read(raw)
-        return (self.unpack(raw).reshape(-1, group).astype(np.float32) * scales[:, None]).reshape(-1)
+        return (self.unpack(raw).reshape(-1, group).astype(np.float32) * scales.astype(np.float32)[:, None]).reshape(-1)
 
     def stored(self, raw, scales, shape, group):
         """A table in groups as it is stored, for whoever widens a row at a time: (the int8 values in groups, a scale
         for each), or the rows' blocks."""
         if self.read is not None:
             return Blocks(raw.reshape(shape[0], -1).copy(), self.read, shape[1:])
-        return self.unpack(raw).reshape(*shape[:-1], -1, group).copy(), scales.reshape(*shape[:-1], -1, 1).copy()
+        return self.unpack(raw).reshape(*shape[:-1], -1, group).copy(), scales.astype(np.float32).reshape(*shape[:-1], -1, 1)
 
 
 class Blocks:
@@ -101,13 +108,14 @@ def as_int8(raw):
 # int8: quantize.py's, groups of 32 or of the largest power of two below it that divides the row.
 # int6 (T98): six bits a value, 24 bytes a group of 32 (engine/packing.py's pack6).
 # ternary (T230): two bits a value, 32 bytes a group of 128 (pack_ternary); the weights of a ternary model as they are.
+# T533: its scale a float16, as PQ2_0 and PTQ1_0 have it (34 bytes a group of 128, not 36).
 DTYPES = {dtype.name: dtype for dtype in (
     Dtype("float32", "f32", itemsize=4),
     Dtype("float16", "f16", itemsize=2),
     Dtype("int8", "int8", bits=8, group=group32, pack=quantize, unpack=as_int8, packer="quantize_x"),
     Dtype("int6", "int6", bits=6, group=lambda length: 32, pack=six, unpack=unpacked6, packer="quantize6_x",
           unsuited="Six bits a weight needs rows of whole groups of 32, and this model has other rows."),
-    Dtype("ternary", "ternary", bits=2, group=lambda length: TERNARY_GROUP, pack=ternary, unpack=unpack_ternary,
+    Dtype("ternary", "ternary", bits=2, scale=2, group=lambda length: TERNARY_GROUP, pack=ternary, unpack=unpack_ternary,
           packer="ternary_x", rounds=False, refusal=NOT_TERNARY,
           unsuited="Ternary weights need rows of whole groups of 128, and this model has other rows."),
 )}

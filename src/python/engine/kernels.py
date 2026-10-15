@@ -25,6 +25,7 @@
 import numpy as np
 
 from engine.dtypes import DTYPES
+from engine.packing import halves_of
 
 
 def load_kernels(path, without_relaxed=False):
@@ -85,19 +86,20 @@ def kernel_quantizer(path):
         packer = kernels[kind.packer]
         # (int8 values are the bytes of an int8 file as they are: the array says so, as NumPy's quantize() does)
         return (kind.group, kind.bits, np.int8 if kind.bits == 8 else np.uint8, packer,
-                (0,) * (len(packer.argtypes) - 4), kind.refusal)
+                (0,) * (len(packer.argtypes) - 4), kind.refusal, kind.scale == 2)
 
     packings = {name: packing(kind) for name, kind in DTYPES.items() if kind.packer in kernels}
 
     def quantize_rows(values, dtype="int8"):
-        group_of, bits, stored_as, packer, more, refusal = packings[dtype]
+        group_of, bits, stored_as, packer, more, refusal, halved = packings[dtype]
         values = np.ascontiguousarray(values, dtype=np.float32)
         group = group_of(values.shape[-1])
         groups = values.size // group
         packed, scales = np.empty(groups * (group * bits // 8), dtype=stored_as), np.empty(groups, dtype=np.float32)
         if packer(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, *more):
             raise ValueError(refusal)
-        return packed.reshape(groups, -1), scales
+        # (T533: ternary's scales are float16s: the kernel's float32 ones, each the same number or a refusal)
+        return packed.reshape(groups, -1), halves_of(scales) if halved else scales
 
     return quantize_rows
 

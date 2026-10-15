@@ -5,6 +5,7 @@
 
 import { sixFirst, sixSecond, sixTops } from "../six";
 import { codes, fourSums } from "../ternary";
+import { half, halves4 } from "./halves";
 import { GS, hsum } from "./math";
 
 // W (d,n) @ x (n,) -> xout, rows [r0, r1)
@@ -160,17 +161,29 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
   const first = i32x4.extadd_pairwise_i16x8_s(low), second = i32x4.extadd_pairwise_i16x8_s(high);
   return i32x4.add(v128.shuffle<i32>(first, second, 0, 1, 4, 5), v128.shuffle<i32>(first, second, 2, 3, 6, 7));
 }
+// @ts-ignore: decorator
+@inline function plain128(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, mask: v128): v128 {
+  const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
+  return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
+}
+// (T533: the float16 scales as matmul_t2r reads them)
 export function matmul_t2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
-  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>three);
   const sums = xs + (<usize>(n >> 5) << 2);
   for (let i = r0; i < r1; i++) {
     const row = wq + <usize>i * <usize>(n >> 2);
-    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
     let facc = f32x4.splat(0);
-    for (let g = 0; g < groups; g++) {
-      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
-      const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
-      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), v128.load32_splat(srow + (<usize>g << 2))));
+    let g = 0;
+    for (; g < groups4; g += 4) {
+      const d = halves4(srow + (<usize>g << 1)), w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      facc = plain128(facc, w, x, sums, xs, at, v128.shuffle<i32>(d, d, 0, 0, 0, 0), mask);
+      facc = plain128(facc, w + 32, x + 128, sums, xs, at + 16, v128.shuffle<i32>(d, d, 1, 1, 1, 1), mask);
+      facc = plain128(facc, w + 64, x + 256, sums, xs, at + 32, v128.shuffle<i32>(d, d, 2, 2, 2, 2), mask);
+      facc = plain128(facc, w + 96, x + 384, sums, xs, at + 48, v128.shuffle<i32>(d, d, 3, 3, 3, 3), mask);
+    }
+    for (; g < groups; g++) {
+      facc = plain128(facc, row + (<usize>g << 5), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
     }
     store<f32>(xout + (<usize>i << 2), hsum(facc));
   }

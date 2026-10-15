@@ -60,10 +60,11 @@ def test_packing_is_lossless_and_32_bytes_a_group():
 def test_ternary_takes_the_values_as_they_are_and_refuses_any_other():
     rng = np.random.default_rng(2)
     signs = rng.integers(-1, 2, size=(6, 256)).astype(np.float32)
-    scales = np.array([0.0078125, 3.0, 1e-30, 0.0, 65504.0, 1.5e-5] * 2, dtype=np.float32)
+    # (T533: the scales are float16s, PQ2_0's: the smallest subnormal one and a subnormal one among them)
+    scales = np.array([0.0078125, 3.0, 2.0 ** -24, 0.0, 65504.0, np.float16(1.5e-5)] * 2, dtype=np.float32)
     values = (signs.reshape(-1, 128) * scales[:, None]).reshape(6, 256)
     packed, got = ternary(values)
-    assert packed.shape == (12, 32) and packed.dtype == np.uint8 and got.dtype == np.float32
+    assert packed.shape == (12, 32) and packed.dtype == np.uint8 and got.dtype == np.float16
     some = np.abs(values.reshape(-1, 128)).max(axis=1) > 0
     assert np.array_equal(got[some], scales[some]) and not got[~some].any()
     assert np.array_equal(unpack_ternary(packed).reshape(-1, 128) * got[:, None], values.reshape(-1, 128))
@@ -72,6 +73,10 @@ def test_ternary_takes_the_values_as_they_are_and_refuses_any_other():
         bad[0, 200] = spoil  # the second group, whose scale is 3
         with pytest.raises(ValueError, match="not ternary"):
             ternary(bad)
+    # T533: ternary values of a scale a float16 does not hold (more digits, too small, too large)
+    for scale in (3.0000002, 1e-30, 65536.0):
+        with pytest.raises(ValueError, match="not ternary"):
+            ternary((signs[:1, :128] * np.float32(scale)).astype(np.float32))
     # PQ2_0's fourth code, 2 d: the largest of its group, so every d of the group is half of it
     with pytest.raises(ValueError, match="not ternary"):
         ternary(np.array([2.0, 1.0] + [0.0] * 126, dtype=np.float32))

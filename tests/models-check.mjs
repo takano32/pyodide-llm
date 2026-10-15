@@ -84,19 +84,20 @@ const bonsai = byId("hf-ternary-bonsai-1.7b");
 for (const deviceMemory of [undefined, 1, 2, 8]) assert.equal(weightsFor(bonsai, undefined, deviceMemory), "ternary");
 assert.equal(weightsFor(bonsai, "8", 8), "int8", "?bits=8 of a ternary model");
 assert.equal(weightsFor(bonsai, "6", 8), "int6", "?bits=6 of a ternary model");
-assert.equal(modelBytes(bonsai), 484e6);
-assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "ternary" } }), 484e6);
-assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int8" } }), 484e6 * 4);
-assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int6" } }), 484e6 * 4 * SIX_OF_EIGHT);
+// (T533: ternary is 34 bytes a group of 128, int8 144)
+assert.equal(modelBytes(bonsai), 457e6);
+assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "ternary" } }), 457e6);
+assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int8" } }), 457e6 * 144 / 34);
+assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int6" } }), 457e6 * 144 / 34 * SIX_OF_EIGHT);
 // T233: Ternary Bonsai 2 27B, ternary on any device (as int8 it is past every browser's memory). A device that says
-// less than 8 GB is warned; one at the cap (8 GB or more) is not, by the page's rule (T133: the note's 7.7 GB and the
+// less than 8 GB is warned; one at the cap (8 GB or more) is not, by the page's rule (T133: the note's 7.2 GB and the
 // page's 0.3 are under 8 GiB), although the checkpoint with its forward pass and the page is about 8.6 GB, which a
 // device of exactly 8 GB does not hold: what to tell such a device is the owner's to word (TODO.md's T233).
 // Its original is the model it is built from, whose weights are other ones (rebuilt: gguf.yml skips it)
 const largest = byId("hf-ternary-bonsai-2-27b");
 for (const deviceMemory of [undefined, 4, 8]) assert.equal(weightsFor(largest, undefined, deviceMemory), "ternary");
-assert.equal(modelBytes(largest), 7.7e9);
-assert.match(memoryWarning(largest, 4), /needs about 8,000 MB of memory, and this device has 4 GB:/);
+assert.equal(modelBytes(largest), 7.2e9);
+assert.match(memoryWarning(largest, 4), /needs about 7,500 MB of memory, and this device has 4 GB:/);
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
 assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
