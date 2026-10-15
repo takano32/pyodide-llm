@@ -8,9 +8,13 @@
 # GGUFs in one run, six came short), where the connection broke and where the server failed, four times in all; each
 # try that failed is a line. --either-tokenizer: tokenizer.json and tokenizer.model, whichever the original has (a
 # candidate of stage 2: each is compared); without it tokenizer.json, which must be there.
+# T517: an original with no safetensors at all (LINE's japanese-large-lm 1.7B instruction-sft has only PyTorch's
+# pytorch_model.bin) has its pickle read as convert_hf.py reads it (no PyTorch; only the globals that rebuild tensors)
+# and written beside it as model.safetensors, the tensors as they are stored, so that gguf_check.py reads one kind.
 # HF_ENDPOINT: another hub than huggingface.co (tests/fetching-check.mjs's, on this machine).
 import json
 import os
+import struct
 import sys
 import urllib.error
 from pathlib import Path
@@ -41,11 +45,34 @@ def fetch(original, gguf, out, either=False):
     try:
         get(at("model.safetensors"), "model.safetensors")
     except urllib.error.HTTPError:
-        index = json.loads(get(at("model.safetensors.index.json"), "model.safetensors.index.json").read_text())
-        for shard in sorted(set(index["weight_map"].values())):
-            get(at(shard), shard)
+        try:
+            index = json.loads(get(at("model.safetensors.index.json"), "model.safetensors.index.json").read_text())
+        except urllib.error.HTTPError:
+            pickled(get(at("pytorch_model.bin"), "pytorch_model.bin"), out / "model.safetensors")
+        else:
+            for shard in sorted(set(index["weight_map"].values())):
+                get(at(shard), shard)
     get(f"{HUB}/{gguf_repo}/resolve/{gguf_revision}/{gguf_file}", "model.gguf")
     print(sorted(os.listdir(out)))
+
+
+def pickled(path, target):
+    """PyTorch's pickle at path as a safetensors file at target, each tensor in the type it is read as (F16 or F32)."""
+    import numpy as np
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from convert_hf import load_torch_pickle
+    tensors = {name: np.ascontiguousarray(tensor) for name, tensor in load_torch_pickle(path).items()}
+    kinds = {np.dtype(np.float32): "F32", np.dtype(np.float16): "F16"}  # (a bfloat16 is read as float32)
+    header, at = {"__metadata__": {"format": "pt"}}, 0
+    for name, tensor in tensors.items():
+        header[name] = {"dtype": kinds[tensor.dtype], "shape": list(tensor.shape), "data_offsets": [at, at + tensor.nbytes]}
+        at += tensor.nbytes
+    encoded = json.dumps(header).encode()
+    with open(target, "wb") as file:
+        file.write(struct.pack("<Q", len(encoded)) + encoded)
+        for tensor in tensors.values():
+            file.write(tensor.tobytes())
+    path.unlink()
 
 
 if __name__ == "__main__":
