@@ -116,7 +116,8 @@ header = list(struct.unpack("<7i", (out / "int8.bin").open("rb").read(28)))
 a, b = (np.memmap(out / f"{name}.bin", dtype=np.uint8, mode="r") for name in ("int8", "original-int8"))
 assert a.size == b.size, (a.size, b.size)
 control = np.memmap(out / "rounded-int8.bin", dtype=np.uint8, mode="w+", shape=b.shape)
-control[:] = b
+for at in range(0, b.size, 1 << 26):
+    control[at:at + (1 << 26)] = b[at:at + (1 << 26)]
 for place in placed(tensor_rows(header, form_of(options)), options.get("dtype", "int8")):
     for part in place.layers or (place,):
         if not part.size:
@@ -127,13 +128,17 @@ for place in placed(tensor_rows(header, form_of(options)), options.get("dtype", 
                 print(f"gemma4: rows: {place.row.name}: float32, {np.abs(x - y).max() / max(np.abs(y).max(), 1e-30):.2e} of its largest apart")
             continue
         values = part.scales - part.offset
-        q = np.frombuffer(a[part.offset:part.scales], dtype=np.int8), np.frombuffer(b[part.offset:part.scales], dtype=np.int8)
+        differ, most = 0, 0
+        for at in range(part.offset, part.scales, 1 << 26):  # (a block at a time: the table of every layer is 2.35 G values)
+            end = min(at + (1 << 26), part.scales)
+            x, y = (np.frombuffer(m[at:end], dtype=np.int8).astype(np.int16) for m in (a, b))
+            differ, most = differ + int((x != y).sum()), max(most, int(np.abs(x - y).max()))
         s = (np.frombuffer(a[part.scales:part.offset + part.size], dtype="<f4"),
              np.frombuffer(b[part.scales:part.offset + part.size], dtype="<f4"))
         rounded = s[1].astype(np.float16).astype(np.float32)
         control[part.scales:part.offset + part.size] = np.frombuffer(rounded.tobytes(), dtype=np.uint8)
-        print(f"gemma4: rows: {place.row.name}{' (a layer)' if place.layers else ''}: {part.kind}, {(q[0] != q[1]).mean() * 100:.4f}% of "
-              f"{values} values differ (by {int(np.abs(q[0].astype(int) - q[1]).max())} at most), scales {np.abs(s[0] / np.where(s[1] == 0, 1, s[1]) - 1).max():.2e} "
+        print(f"gemma4: rows: {place.row.name}{' (a layer)' if place.layers else ''}: {part.kind}, {differ / values * 100:.4f}% of "
+              f"{values} values differ (by {most} at most), scales {np.abs(s[0] / np.where(s[1] == 0, 1, s[1]) - 1).max():.2e} "
               f"apart, {(s[0] != rounded).mean() * 100:.4f}% of them not the safetensors' rounded to float16")
 control.flush()
 EOF
