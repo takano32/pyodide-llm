@@ -55,6 +55,9 @@ def cases(L):
     scaled = lambda d: [*layouts["llama"].rows(d), d.stack("layer_scale", L.VECTOR, L.EVERY, 1)]
     layouts["a number of every layer"] = layouts["llama"]._replace(rows=scaled)
     local = {"layers": [0, 1, 3], "window": 3, "rope_theta": 100.0}
+    # T341: a Spark-X2.5's two kinds of layers, as a Llama's: local ones that turn their whole heads by a base of their
+    # own, the others a part of each head by the angles of that part (GPT-NeoX's, a Qwen3.5's)
+    layouts["local layers, turned in part"] = layouts["llama"]._replace(local=True, rope=L.PARTLY)
     return [
         ("llama", GROUPED, {}, {}),
         ("llama, RoPE leaving two layers alone", GROUPED, {}, {"unturned": (1, 3)}),
@@ -73,6 +76,8 @@ def cases(L):
         ("gemma3, a classifier of its own and no local layer", [64, 128, 3, 4, 2, -320, 48], {"arch": "gemma3"}, {}),
         ("a gelu in the gate", GROUPED, {"arch": "a gelu in the gate"}, {}),
         ("local layers", GROUPED, {"arch": "local layers"}, {"local": local}),
+        ("local layers, turned in part", GROUPED, {"arch": "local layers, turned in part", "head_dim": 32},
+         {"local": local, "rotary": 8, "rope_theta": 5000.0}),
         ("norms behind", GROUPED, {"arch": "norms behind"}, {}),
         # T331.2: two layers of heads of 32 (the full-attention ones, of which RoPE turns 8 values by the angles of 32),
         # and an FFN twice as wide in the last three

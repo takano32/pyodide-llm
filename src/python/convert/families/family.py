@@ -59,8 +59,9 @@ class Family(NamedTuple):
     # the layout of its file and its forward pass (engine/layout.py's FORM: "arch")
     arch: str
     # (d, prefix, rotary) -> what each row of the layout is made of, by the row's name: (the Hugging Face tensor's
-    # name, with {} for the layer where the row is a stack; the transform, convert/plan.py's transformed()). d: the
-    # layout's Dims, prefix: what prefix() said, rotary: how many values of a head RoPE turns (0 unless partly)
+    # name, with {} for the layer where the row is a stack; the transform, convert/plan.py's transformed(), or (T341)
+    # of a stack a function of the layer's number that gives that layer's). d: the layout's Dims, prefix: what prefix()
+    # said, rotary: how many values of a head RoPE turns (0 unless partly)
     sources: Callable
     # (config): refuses what the engine has not for this family, after the checks every family has (check_config())
     check: Callable

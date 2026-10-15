@@ -151,6 +151,20 @@ def test_a_family_has_a_source_for_every_row_of_its_layout_and_no_other(model_ty
     assert sources["wcls"][0] == family.classifier
 
 
+def test_a_source_of_a_stack_may_be_made_otherwise_in_each_layer(monkeypatch):
+    """T341: a transform that is a function of the layer's number gives each layer of the stack its own (a
+    Spark-X2.5's q and k are interleaved over the width RoPE turns of that layer); a tuple is every layer's."""
+    header, form, rotary = LAYOUTS["llama"]
+    name, transform = LLAMA.sources(Dims(header, form), "", rotary)["wq"]
+    assert transform == ("permute", 4)
+    every = lambda d, prefix, rotary: {**LLAMA.sources(d, prefix, rotary), "wq": (name, lambda layer: transform if layer % 2 else None)}
+    monkeypatch.setitem(families.LAYOUTS, "llama", LLAMA._replace(sources=every))
+    plan, _ = conversion_plan(header, form, "", rotary)
+    wq, wk = ([row.name for row in tensor_rows(header, form)].index(name) for name in ("wq", "wk"))
+    assert plan[wq] == [(name.format(layer), transform if layer % 2 else None) for layer in range(header[2])]
+    assert plan[wk] == [(f"model.layers.{layer}.self_attn.k_proj.weight", ("permute", 2)) for layer in range(header[2])]
+
+
 def test_every_layout_of_the_engine_has_a_family_and_the_first_of_the_table_stands_for_it():
     assert set(families.LAYOUTS) == set(LAYOUTS) == {family.arch for family in FAMILIES.values()}
     assert set(families.LAYOUTS) == set(llama2_numpy.LAYOUTS)

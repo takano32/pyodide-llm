@@ -147,11 +147,15 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
         if row.role in (TABLE, CODES):
             plan.append(None if row.role == TABLE else CODES)
             continue
-        # {} in a name: the layer, for a row that stacks the tensors of the layers its "per" says
+        # {} in a name: the layer, for a row that stacks the tensors of the layers its "per" says. T341: a transform
+        # may be a function of the layer, for a stack whose layers are made otherwise (a Spark-X2.5's q and k: RoPE
+        # turns the whole head of a sliding-attention layer and a quarter of a full-attention one's, and each is
+        # interleaved over that width)
         if row.name not in sources:
             raise ValueError(f"The converter has no source for the row {row.name} of a {arch}'s checkpoint.")
         name, transform = sources[row.name]
-        plan.append([(name.format(layer), transform) for layer in d.layers(row.per)] if row.per else [(name, transform)])
+        of = transform if callable(transform) else lambda layer: transform
+        plan.append([(name.format(layer), of(layer)) for layer in d.layers(row.per)] if row.per else [(name, transform)])
     return plan, [row.shape for row in rows]
 
 
