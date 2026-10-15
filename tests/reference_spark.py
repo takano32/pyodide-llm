@@ -238,9 +238,10 @@ def greedy(llama, ids, count, stops):
 
 def files_of(name):
     repo, revision, shards = MODELS[name]
+    # (the weights are "model.safetensors" to the conversion, which asks for its index where it is sharded)
     weights = ["model.safetensors"] if not shards else \
         ["model.safetensors.index.json", *(f"model-{at:05d}-of-{shards:05d}.safetensors" for at in range(1, shards + 1))]
-    return repo, revision, FILES + weights, weights
+    return repo, revision, FILES + weights, "model.safetensors"
 
 
 def real(directory, positions, name, with_faults):
@@ -258,7 +259,7 @@ def real(directory, positions, name, with_faults):
     # the conversion, the way the page does it (by the conduct of a conversion, answered from the files fetched above
     # and no others), float32
     path = directory / "float32.bin"
-    conversion, seconds = float32_file(Directory(directory), {"weights": weights[0], "tokenizer": "tokenizer.json"}, path)
+    conversion, seconds = float32_file(Directory(directory), {"weights": weights, "tokenizer": "tokenizer.json"}, path)
     options = {key: value for key, value in conversion.options.items() if key != "template"}
     say(f"real: converted in {seconds:.1f} s, {path.stat().st_size} bytes, options {options_shown(options)}")
     say(f"real: the converter read {'no template' if 'template' not in conversion.options else 'a template: ' + json.dumps(conversion.options['template'], ensure_ascii=False)}")
