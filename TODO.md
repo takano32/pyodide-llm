@@ -5222,8 +5222,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T329 [追加][Gemma4] 層ごとの埋め込み（per-layer input） — 状態: 未着手（2026-10-05。規模 中）
 - `hidden_size_per_layer_input`（E2B は 256）: 語彙 × 層 × 256 の表から、トークンごとに各層の 256 の入力を引き、層の中で射影して足す。transformers の `modeling_gemma4.py` の式を項ごとに写す（行は写さない）。表は 23.5 億の値で、int8 で約 2.6 GB。行を引くだけなので、6 ビットや 3 値と同じく「詰めた行を広げて引く」形にして小さくできるか（未検討）。`footprint()`・`FORM`・`checkpoint_dtype()` の 3 か所。
 
-### T330 [追加][Gemma4] KV の共有（後ろの層が前の層の K と V を使う） — 状態: 未着手（2026-10-05。規模 小〜中）
+### T330 [追加][Gemma4] KV の共有（後ろの層が前の層の K と V を使う） — 状態: 進行中（2026-10-15、Opus medium、ブランチ `t331-gemma4`。2026-10-05。規模 小〜中）
 - `num_kv_shared_layers`（E2B は 20）: 後ろの 20 層は自分の K と V を持たず、前の層のものを読む（どの層を読むかは窓の種類ごと: transformers のコードで確かめる）。KV の置き場が減る（`footprint()`）。CPU は読む層の番号を替えるだけ、GPU も同じ。
+- **transformers で確かめた**（`2126f65b`、`Gemma4TextAttention`）: 共有の層は、共有の始まり（層の数 − `num_kv_shared_layers`）より前の層のうち**同じ種類（`layer_types`）のいちばん後ろの層**の K と V を読む（`store_full_length_kv`・`shared_kv_states[layer_type]`）。共有の層は k・v・k の norm・v の norm を計算しない（q と o、q の norm は自分のもの）。E2B は窓の層が 13 を、全体の層が 14 を読む。E4B は 22 と 23。**ファイルは共有の層の k・v・k の norm も持つ**（transformers は読み捨てる）。
+- **決めた形**: FORM の `shared`: `{"layers": [共有の層], "from": [それぞれが読む層]}`（ファイルの形が変わる: 共有の層の k・v・k の norm は書かない。束は `per` の `NARROW_KEPT`・`WIDE_KEPT`）。読む層は自分と同じ head の大きさで、自分より前の、共有でない層（`shared_form()` が断る）。窓の層の事実（options の `local`）とは別の事実。変換器は `layer_types` から作る。**倍の幅の FFN（FORM の `double`）は、`use_double_wide_mlp` のとき共有の層**（T331.1 で作った置き場をここで使う）。
+- **子タスク**: **T330.1**（Python: 形・NumPy・変換器・作り物と手書きの参照）、**T330.2**（ページの forward）。
+- **予定した違い（T330.1）**: 今あるモデルは何も変わらない（網）。変換器の断りから「its layers read the keys and values of other layers」が消える（実物は次に「it has an embedding for every layer」で断られる: T329 まで）。
 
 ### T331 [追加][Gemma4] 層の残り — 状態: 進行中（2026-10-15、Opus medium、ブランチ `t331-gemma4`。子タスクは下。2026-10-05。規模 中。T261 の後）
 - v の norm、層ごとの倍率（`layer_scalar`）、`use_double_wide_mlp`（一部の層の FFN が倍の幅）、全体の層の head の大きさ 512（窓の層は 256: 層ごとに head の大きさが違う）、全体の層の RoPE の `proportional`（回す割合 0.25、theta 1e6）、`final_logit_softcapping: 30`（logits に tanh）。どれもファイルから分からない設定は `FORM` か options に（T144）。
