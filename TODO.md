@@ -225,7 +225,7 @@
 - T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
 - T535 [描画][モデル] 名前の作り手の書き方を Fable max で見直す — レビュー前
 - T536 [描画][その他] イントロに 4-bit の Shisa も案内する — レビュー前
-- T537 [描画][モデル] note の言語をモデルのカードに合わせる — 未着手
+- T537 [描画][モデル] note の言語をモデルのカードに合わせる — レビュー前
 - T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
 <!-- 目次ここまで -->
 
@@ -1592,8 +1592,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - 確かめ（手元の Chrome、360 × 780、前後のビルド）: イントロは日英とも 1 行増える、ページの横の幅 360（横のスクロールなし）。tiny-lm で開いたページで新しいボタンを押すと、選択欄が `hf-shisa-v2.1c-lfm2-350m-q4`、URL が `?model=hf-shisa-v2.1c-lfm2-350m-q4` になり、56.2 秒で準備完了「Shisa V2.1c LFM2 350M (4-bit) · SIMD kernels, llama.cpp's blocks, relaxed SIMD, 2 threads, prompts on the CPU (convolution layers are not on the GPU yet) · Pyodide 314.0.7」、コンソールのエラー 0（捨ての道具、`.tmp/`）。網 `page` はページのスクリプトが同じ（イントロは HTML で、網と `said-texts` は見ない）、軽い組・`dist-check` ok。**CI を省いた。訳: 触ったのはページの HTML の 2 行で、手元の Chrome で開いて押した。**
   - **取りまとめ役の決め（訳）**: (1) 置き場は既定のモデルの文のすぐ後（「取得を減らすなら」は 379 MB の話の続き）。(2) ボタンの語は「4-bit の形（229 MB）」「Its 4-bit form (229 MB)」（台帳の持ち主の文と項目の名前「(4-bit)」から。大きさは note の「fetches 229 MB」）。(3) 英語は tiny-lm の文と同じくボタンで始める形。
 
-### T537 [描画][モデル] note の言語をモデルのカードに合わせる — 状態: 未着手（2026-10-15、持ち主「English / 中文に、他にも同じような例があればカードに従う」: Spark-X2.5 の note を問われて）
+### T537 [描画][モデル] note の言語をモデルのカードに合わせる — 状態: レビュー前（2026-10-15、持ち主「English / 中文に、他にも同じような例があればカードに従う」: Spark-X2.5 の note を問われて）
 - Spark-X2.5 の 4 項目は「English / 中文」に（一覧では英語だけのモデルの側に並ぶ）。ほかの項目も、note の言語の語がカードの言語（メタデータの `language` と本文）と食い違うものを洗い出して、カードに従って直す。並べ替え（日本語の項目が先: T128）が動く項目は表に。
+- **結果（2026-10-15、ブランチ `t537-note-languages`。状態: レビュー前。洗い出しの表は `docs/notes/t537-note-languages-2026-10-15.md`）**: 144 項目の note の言語の語を、カード（HF の `cardData.language` と README の本文、言語を言わないカードは元のモデルのカード）と並べて、食い違う 14 項目を直した: Spark-X2.5 の 4 つ「日本語 / English」→「**English / 中文**」（GGUF のカードの language が en・zh）、Underdog Saluki 27B の 2 つ「日本語 / English」→「**English**」（カードの language が en だけ、本文は言語を言わない）、llm-jp-3 の instruct3 の 5 つと llm-jp-3.1 1.8B instruct4「日本語」→「日本語 / English」（カードが en・ja）、sarashina2.2 の base の 0.5B・1B「日本語」→「日本語 / English」（カードが ja・en、本文「Japanese, English, and code」）。`thinkingAndNot()` が note の言語を `chat.languages` で受ける（既定は今までの「日本語 / English」）。`tests/models-check.mjs` の Saluki の note の 2 つ目の写しを直し、Spark の 4 つの note と並びの側を足した。
+  - **並びが動いた（T128: 「日本語」のある項目が先）**: Spark-X2.5 1.7B の 2 つ 54・55 → 122・123、4B の 2 つ 75・76 → 133・134、Saluki の 2 つ 86・87 → 136・137（英語の側に）。その間の 80 項目ほどが 2〜6 つ前に詰まる（表は docs/notes）。llm-jp・sarashina の 8 つは動かない。
+  - 確かめ（手元）: `models-check` ok、網 `models page` は `models` だけが違う・ページのスクリプトは同じ、`said-texts`（T535 と重ねて 46 の文）の T537 の分は note の文と `thinkingAndNot()` の型の文（「English / 中文」・「日本語 / English」・`… · ${} · ${}`）、軽い組「suite: light passed」（終わりの数 0）、`dist-check` ok。**CI を省いた。訳: 触ったのは一覧の note の文字と家族の関数の引数 1 つで、手元の models-check・網・軽い組が踏む。**
+  - **取りまとめ役の決め（訳）**: (1) **線**: note がカードの言わない言語を言う・カードの言う日本語か英語を落とす、を直す。カードが 3 つ以上を言い note がその内の 1〜2 つを言うもの（Llama 3.x・SmolLM3 の English、LFM2・Granite・Gemma・Qwen の日本語 / English）は残した。(2) **Saluki を English にした**（持ち主の「カードに従う」を当てた。note は 2026-10-13 の持ち主の文で、替えたのは言語の語だけ。戻すのは `languages: "English"` の 1 か所と試験の 1 行）。(3) 同じ Qwen3.8-27B の Ternary Bonsai 2 27B は、カードが言語を何も言わないので残した。(4) Spark の問いの例は日本語のまま（T343 で日本語の問いに日本語で答えた）。(5) 言語を言わないカードは元のモデル（`base_model`）のカードで見た（NeoHorse-1・Agents-A1・Ternary Bonsai）。
 
 ### T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 状態: 未着手（2026-10-15、持ち主が選択肢で「数えるようにする」。T129 の持ち主の判断待ちだった件: 案のブランチ `t129-review-model-bytes`）
 - 0.15 Mbps の回線ではモデルの部品が回線を埋めて jsDelivr の最初のバイトが 30 秒来ず、フォールバック（隔離のない 1 コア）に入る（AGENTS.md の「Pyodide の読み込みの期限」の (3)）。案のブランチを今の木に合わせて読み直し、`slow.yml` で確かめる。本当に止まったときに諦めるまでが少し遅くなる。
