@@ -5,17 +5,18 @@ import { atOnce, sampled, thinking } from "./sampling.js";
 /** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
  * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
- * the two forms' generation settings where they are not Qwen3's */
-export function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = {}, sampling = {}) {
+ * the two forms' generation settings where they are not Qwen3's. chat.languages: the note's languages where the card's
+ * are not Japanese and English (T537) */
+export function thinkingAndNot(id, name, source, download, sizes, { languages = "日本語 / English", ...chat } = {}, formats = {}, sampling = {}) {
   // T369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
   // the whole format, formats.js's note on QWEN25). The converter alone would begin with the template's <|im_start|> now
   const common = { group: "hf", ...source, download, conversion: {}, options: QWEN3_OWN_BOS, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...chat };
   return [
     // formats.thinking: where the model's format is not Qwen3's (T236)
-    { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · 日本語 / English · ${sizes}`,
+    { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · ${languages} · ${sizes}`,
       generation: sampling.thinking ?? thinking, template: formats.thinking ?? CHATML },
-    { ...common, id, name: `${name} (no thinking)`, note: `answers at once · 日本語 / English · ${sizes}`,
+    { ...common, id, name: `${name} (no thinking)`, note: `answers at once · ${languages} · ${sizes}`,
       generation: sampling.atOnce ?? chat.generation ?? atOnce, template: formats.atOnce ?? QWEN3_AT_ONCE },
   ];
 }

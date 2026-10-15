@@ -116,7 +116,8 @@ assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8),
   const [thinks, answers] = ["hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"].map(byId);
   const after = "2.3-bit weights · fetches 7.9 GB (GGUF), kept as it is: 8.0 GB · about a word a second or less · desktop only · Chrome and Firefox";
   assert.deepEqual([thinks.name, answers.name], ["Underdog Saluki 27B (thinking)", "Underdog Saluki 27B (no thinking)"]);
-  assert.deepEqual([thinks.note, answers.note], [`thinks before it answers · 日本語 / English · ${after}`, `answers at once · 日本語 / English · ${after}`]);
+  // T537: the languages its card says (its metadata's en alone), and so among the English ones
+  assert.deepEqual([thinks.note, answers.note], [`thinks before it answers · English · ${after}`, `answers at once · English · ${after}`]);
   assert.deepEqual(thinks.generation, { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0, top_k: 20 });
   assert.deepEqual(answers.generation, { steps: 0, temperature: 0.0 });
   for (const entry of [thinks, answers]) {
@@ -258,6 +259,12 @@ MODELS.slice(1).forEach((entry, i) => {
     `${before.id} comes before ${entry.id}, out of the order of T128`);
 });
 assert.ok(writesJapanese({ note: "translates 日本語 ⇄ English" }) && !writesJapanese({ note: "English" }));
+// T537 (the owner's choice of 2026-10-15): a note's languages are its card's (docs/notes/t537-note-languages-2026-10-15.md).
+// Spark-X2.5's GGUF cards say English and Chinese: among the English ones, with the thinkingAndNot() note's form
+for (const id of ["hf-spark-x2.5-1.7b-thinking", "hf-spark-x2.5-1.7b", "hf-spark-x2.5-4b-thinking", "hf-spark-x2.5-4b"]) {
+  assert.match(byId(id).note, /^(thinks before it answers|answers at once) · English \/ 中文 · fetches /, id);
+  assert.ok(!writesJapanese(byId(id)), id);
+}
 // T511.4 (the owner's choice of 2026-10-15): "desktop only" and "Chrome and Firefox" are the page's rules, not a hand's.
 // Every note ends with them where the rule says, and with nothing of them where it does not: "desktop only" where a
 // device that says 4 GB is warned (memoryWarning()), "Chrome and Firefox" where what is loaded passes 4 GiB
