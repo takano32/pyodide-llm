@@ -297,6 +297,19 @@ NAMES["spark2_5"] = ({"token_embd.weight": "model.embedding.weight", "output_nor
                       "attn_output": "self_attn.out_proj", "ffn_norm": "post_attention_layernorm",
                       "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"})
 
+# T529: a Gemma 4's (llama.cpp's conversion/gemma.py's Gemma4Model, gguf-py's constants.py and tensor_mapping.py at
+# b76b1337): a Gemma 3's, and the embeddings of every layer outside the layers (per_layer_*) and in them (inp_gate, proj,
+# post_norm), and the number a layer ends with, whose name llama.cpp changes whole (layer_scalar, written with a
+# ".weight"). The names are those of the language model saved alone; the published checkpoint is the whole model's,
+# "model.language_model." (original_name() tries both). Written out here rather than taken from the converter's family
+NAMES["gemma4"] = ({**NAMES["gemma3"][0], "per_layer_token_embd.weight": "model.embed_tokens_per_layer.weight",
+                    "per_layer_model_proj.weight": "model.per_layer_model_projection.weight",
+                    "per_layer_proj_norm.weight": "model.per_layer_projection_norm.weight"}, "model.layers.{}.",
+                   {**NAMES["gemma3"][2], "inp_gate": "per_layer_input_gate", "proj": "per_layer_projection",
+                    "post_norm": "post_per_layer_input_norm"})
+WHOLE["gemma4"] = {"layer_output_scale.weight": "layer_scalar"}
+
+
 def hugging_face_name(name, arch="llama"):
     """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T74 starts with it). None for a
     tensor Hugging Face has no counterpart of (rope_freqs.weight: llama.cpp's table of Llama 3's RoPE scaling,
@@ -789,7 +802,47 @@ def config_pairs(config, arch="llama"):
                    [kind == "sliding_attention" for kind in kinds], True),
                   ("attention.sliding_window", "sliding_window", config.get("sliding_window"), True),
                   ("rope.freq_base_swa", "rope_local_base_freq", config.get("rope_local_base_freq", 10000.0), True)]
+    if arch == "gemma4":
+        # T529: a Gemma 4's (conversion/gemma.py's Gemma4Model.set_gguf_parameters at b76b1337). The heads: key_length is
+        # the full-attention layers' (global_head_dim) and key_length_swa the others' (head_dim); the FFN a width a layer
+        # where use_double_wide_mlp (twice in the last num_kv_shared_layers), else one; the layers that read another's
+        # keys and values, the width of every layer's own input and the cap, which are no tensor; rope.dimension_count
+        # the whole of both heads (which pairs turn is the rope_freqs table's, checked with the tensors). The layers'
+        # kinds as a list, the window and the two bases as a Gemma 3's. Defaults: transformers' Gemma4TextConfig
+        layers, shared = config.get("num_hidden_layers") or 0, config.get("num_kv_shared_layers") or 0
+        width, wide = config.get("intermediate_size"), config.get("global_head_dim") or 512
+        size = config.get("head_dim") or 256
+        widths = ([width if layer < layers - shared else 2 * width for layer in range(layers)]
+                  if config.get("use_double_wide_mlp") else width)
+        kinds = config.get("layer_types") or []
+        pairs = [pair for pair in pairs if pair[0] not in ("feed_forward_length", "attention.key_length")]
+        pairs += [("feed_forward_length", "intermediate_size (twice in the layers that share, where use_double_wide_mlp)",
+                   widths, True),
+                  ("attention.key_length", "global_head_dim", wide, True),
+                  ("attention.value_length", "global_head_dim", wide, True),
+                  ("attention.key_length_swa", "head_dim", size, True),
+                  ("attention.value_length_swa", "head_dim", size, True),
+                  ("rope.dimension_count", "global_head_dim", wide, True),
+                  ("rope.dimension_count_swa", "head_dim", size, True),
+                  ("attention.sliding_window_pattern", "layer_types (sliding_attention)",
+                   [kind == "sliding_attention" for kind in kinds], True),
+                  ("attention.sliding_window", "sliding_window", config.get("sliding_window"), True),
+                  ("rope.freq_base_swa", "rope_local_base_freq", config.get("rope_local_base_freq", 10000.0), True),
+                  ("attention.shared_kv_layers", "num_kv_shared_layers", shared, True),
+                  ("embedding_length_per_layer_input", "hidden_size_per_layer_input",
+                   config.get("hidden_size_per_layer_input") or 0, True),
+                  ("final_logit_softcapping", "final_logit_softcapping", config.get("final_logit_softcapping"), True)]
     return pairs, config
+
+
+def gemma4_rope_factors(config):
+    """T529: what llama.cpp writes as a Gemma 4's rope_freqs.weight (conversion/gemma.py's
+    Gemma4Model.generate_extra_tensors at b76b1337): a divisor of each pair of the full-attention layers' heads, 1 for
+    the int(global_head_dim * partial_rotary_factor / 2) pairs that turn and 1e30 for the others. From the original's
+    config.json (normalized: its rope_proportion is the full-attention layers' partial_rotary_factor)."""
+    wide = config.get("global_head_dim") or 512
+    turned = int(wide * float(config.get("rope_proportion", 0.25)) / 2)
+    return np.array([1.0] * turned + [1e30] * (wide // 2 - turned))
 
 GEMMA3_DEFAULTS = {"attention.sliding_window_pattern": lambda layers: [layer % 6 < 5 for layer in range(layers)],
                    "rope.freq_base_swa": lambda layers: 10000.0}
@@ -892,12 +945,21 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     for name, info in infos.items():
         if name == "rope_freqs.weight":
             values, _ = tensor(info, data, base)
-            factors = rope_factors(config, 2 * len(values))
-            rope_difference = relative(values.astype(np.float64), factors) if values.shape == factors.shape else math.inf
+            # (T529: a Gemma 4's table is which pairs turn, not a scaling: each value against its own, for the norm of
+            # a table of 1e30s would not see a pair of 1 made 2)
+            factors = gemma4_rope_factors(config) if arch == "gemma4" else rope_factors(config, 2 * len(values))
+            if values.shape != factors.shape:
+                rope_difference = math.inf
+            elif arch == "gemma4":
+                rope_difference = float(np.max(np.abs(values.astype(np.float64) - factors) / factors))
+            else:
+                rope_difference = relative(values.astype(np.float64), factors)
             counted = rope_difference > 1e-5
             mismatched += counted
+            against = (f"1 for the turned pairs of a proportion {config.get('rope_proportion')} of {config.get('global_head_dim')}, "
+                       f"1e30 for the others" if arch == "gemma4" else f"rope_frequencies() of rope_scaling = {config.get('rope_scaling')}")
             print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {rope_difference:.2e} against "
-                  f"rope_frequencies() of rope_scaling = {config.get('rope_scaling')}{' **differs**' if counted else ''} | | | | |")
+                  f"{against}{' **differs**' if counted else ''} | | | | |")
             continue
         target = original_name(name, arch, hf)
         if target is None:

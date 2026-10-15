@@ -241,10 +241,11 @@ export const HF_FAMILIES = [
   // E2B to transformers (logits 1.10e-4, the most likely token 96 of 96) and ran it in three browsers from ?hf=. loaded:
   // the int8 checkpoint without the table of every layer's inputs, which stays in the kept file (the converter's sizes
   // of the real headers and forward.ts's tableHole()): E2B 5,207,962,792 bytes less 2,642,411,520, E4B 8,397,500,612 less 3,170,893,824
-  gemma4("E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", 10246621918, 2565551272,
-    "fetches 10.2 GB → int8 5.2 GB (2.6 GB in memory)"),
-  gemma4("E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", 15992595884, 5226606788,
-    "fetches 16.0 GB → int8 8.4 GB (5.2 GB in memory)"),
+  // T529: the weights from ggml-org's Q8_0 GGUFs (llama.cpp's own), which tests/gguf_check.py tensors held to the originals
+  gemma4("E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", "b4243c156154b6dca9324415f8c7ccc098b4aed1", 4967497152, 2565551272,
+    "fetches 5.0 GB (GGUF) → int8 5.2 GB (2.6 GB in memory)"),
+  gemma4("E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", "b8093469224f83f5c38f691eb906c380e9e63114", 8031242688, 5226606788,
+    "fetches 8.0 GB (GGUF) → int8 8.4 GB (5.2 GB in memory)"),
   // T343: XHToken's Spark-X2.5 (T339 to T342: a Llama with a gate a head after the attention, an erf GELU in the FFN, and
   // three layers of four that see the last 512 positions alone, with a RoPE of their own; on the CPU alone, T344).
   // XHToken's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals (their q and k in the HF order,
