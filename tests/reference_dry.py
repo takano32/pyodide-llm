@@ -1,6 +1,6 @@
 # reference_dry.py
-# T357.4: the three tools that hold the engine to transformers in CI (tests/reference_llama.py, tests/reference_qwen35.py,
-# tests/reference_lfm2.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
+# T357.4: the tools that hold the engine to transformers in CI (tests/reference_llama.py, tests/reference_qwen35.py,
+# tests/reference_lfm2.py, tests/reference_gemma3.py, T329.3's tests/reference_gemma4.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
 # transformers (tests/reference_standin/) answer with the engine itself, on made-up models and made-up directories of
 # what Hugging Face publishes. Nothing is held to transformers here (CI does that, 10 to 50 minutes a tool); what this
 # shows in a quarter of a minute is that the tools still run: the made-up models, the conversions, the tokenizers'
@@ -49,6 +49,7 @@ fetching.download = no_network  # (before the tools take the name)
 import made_up  # noqa: E402
 import reference  # noqa: E402
 import reference_gemma3  # noqa: E402
+import reference_gemma4  # noqa: E402
 import reference_lfm2  # noqa: E402
 import reference_llama  # noqa: E402
 import reference_qwen35  # noqa: E402
@@ -87,7 +88,7 @@ def put(folder, files):
 
 
 # the directories directories() makes, in the mark: a name more here and every checkout makes them again
-MADE = ("qwen35", "lfm2", "gemma3", "llama")
+MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "llama")
 
 
 def directories(work):
@@ -106,6 +107,13 @@ def directories(work):
     # (T261) a Gemma 3 whose window the long text here is past four times
     tensors, config = made_up.gemma3_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="ssssslssl")
     put(work / "gemma3" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
+                                  "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
+                                  "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
+                                  "model.safetensors": made_up.safetensors_file(tensors)})
+    # (T329.3) a Gemma 4 of the E2B's kinds in small, its names the whole model's (model.language_model.)
+    tensors, config = made_up.gemma4_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="sslsslssl", sharing=3,
+                                           double=True, per_layer=8, whole=True)
+    put(work / "gemma4" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
                                   "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
                                   "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
                                   "model.safetensors": made_up.safetensors_file(tensors)})
@@ -223,6 +231,13 @@ def parts(work):
                 fine + [("the same ids", 1), ("the two wrote the same", 2), (f"long: the engine ran {LONG} positions", 1),
                         (r"fault \(", gemma), (r"noted \(", len(reference_gemma3.NOTED)),
                         (f"faults: {gemma} of {gemma} are past the line", 1)], {}))
+    gemma4 = len(reference_gemma4.FAULTS) + len(reference_gemma4.LONG_FAULTS)
+    out += [(f"gemma4 made-up, {name}", lambda name=name: reference_gemma4.made_up(name, reference_gemma4.MADE_UP[name]), right,
+             fine + [("the states after 80 positions", 1), ("the converter read", 1)], {}) for name in reference_gemma4.MADE_UP]
+    out.append(("gemma4 real, with the faults", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", True), right,
+                fine + [("the same ids", 1), ("the two wrote the same", 2), (f"long: the engine ran {LONG} positions", 1),
+                        (r"fault \(", gemma4), (r"noted \(", len(reference_gemma4.NOTED)),
+                        (f"faults: {gemma4} of {gemma4} are past the line", 1)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
                 fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
@@ -235,6 +250,10 @@ def parts(work):
     out.append(("reference_gemma3.py --only=made-up", main(reference_gemma3, str(work / "gemma3"), "--only=made-up"), ("exit", 0), ok, {}))
     out.append(("reference_gemma3.py --only=real --model=dry --positions=40 --no-faults",
                 main(reference_gemma3, str(work / "gemma3"), "--only=real", "--model=dry", "--positions=40", "--no-faults"), ("exit", 0),
+                ok + [("the states after 40 positions", 1), (r"fault \(", 0)], {}))
+    out.append(("reference_gemma4.py --only=made-up", main(reference_gemma4, str(work / "gemma4"), "--only=made-up"), ("exit", 0), ok, {}))
+    out.append(("reference_gemma4.py --only=real --model=dry --positions=40 --no-faults",
+                main(reference_gemma4, str(work / "gemma4"), "--only=real", "--model=dry", "--positions=40", "--no-faults"), ("exit", 0),
                 ok + [("the states after 40 positions", 1), (r"fault \(", 0)], {}))
     out.append(("reference_qwen35.py --only=fetch", main(reference_qwen35, str(work / "qwen35"), "--only=fetch"), ("returned", None), [], {}))
     out.append(("reference_lfm2.py --only=fetch --model=dry", main(reference_lfm2, str(work / "lfm2"), "--only=fetch", "--model=dry"),
@@ -253,7 +272,7 @@ def parts(work):
     for what, wrong in (("logits 1e-2 off", {"logits": 1e-2}), ("states 1% off", {"states": 1e-2})):
         first = next(iter(reference_llama.MADE_UP))
         out.append((f"WRONG ({what}): llama made-up", llama_made_up(first, False), ("returned", True), said, wrong))
-        for tool, name in ((reference_qwen35, "qwen35"), (reference_lfm2, "lfm2"), (reference_gemma3, "gemma3")):
+        for tool, name in ((reference_qwen35, "qwen35"), (reference_lfm2, "lfm2"), (reference_gemma3, "gemma3"), (reference_gemma4, "gemma4")):
             first = next(iter(tool.MADE_UP))
             out.append((f"WRONG ({what}): {name} made-up", lambda tool=tool, first=first: tool.made_up(first, tool.MADE_UP[first]),
                         ("returned", True), said, wrong))
@@ -261,10 +280,12 @@ def parts(work):
         out.append((f"WRONG ({what}): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     # the long pass alone: one line says FAILED, the long text's
     said, wrong = [("FAILED", 1), ("^[a-z0-9]+: long: .* FAILED", 1)], {"kept": 1e-2}
     out.append(("WRONG (the long pass 1e-2 off): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+    out.append(("WRONG (the long pass 1e-2 off): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (logits 1e-2 off): reference_lfm2.py --only=made-up", main(reference_lfm2, str(work / "lfm2"), "--only=made-up"),
                 ("exit", 1), [("^lfm2: FAILED$", 1)], {"logits": 1e-2}))
@@ -290,6 +311,12 @@ def main():
     reference_gemma3.MODELS["dry"] = ("made/gemma3", REVISION)
     reference_gemma3.BOS, reference_gemma3.BEGINS, reference_gemma3.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
     reference_gemma3.SPECIALS, reference_gemma3.STOPS = reference_lfm2.SPECIALS, (1, 7)
+    # (T329.3: the same for the Gemma 4, whose transformers is loaded and fed by the stand-in's own ways)
+    reference_gemma4.MODELS["dry"] = ("made/gemma4", REVISION)
+    reference_gemma4.BOS, reference_gemma4.BEGINS, reference_gemma4.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
+    reference_gemma4.SPECIALS, reference_gemma4.STOPS = reference_lfm2.SPECIALS, (1, 7)
+    reference_gemma4.text_model = lambda directory: transformers.Model.from_pretrained(directory)
+    reference_gemma4.embedded = lambda model, ids: (model.get_input_embeddings()([ids]), None)
     failed = []
     for name, call, must_end, must_hold, wrong in parts(work):
         if only and not any(part in name for part in only):

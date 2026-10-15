@@ -45,6 +45,10 @@ def randn_like(other):
     return _rng.standard_normal(other.shape).astype(np.float32).view(Tensor)
 
 
+def rand_like(other):
+    return _rng.random(other.shape).astype(np.float32).view(Tensor)
+
+
 @contextlib.contextmanager
 def no_grad():
     yield
