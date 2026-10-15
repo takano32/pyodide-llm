@@ -64,7 +64,7 @@ assert.equal(PAGE_MEMORY, 300e6);
 assert.equal(modelBytes(byId("llm-jp-3-150m-f16")), 305161244 * 3);
 assert.match(memoryWarning(byId("llm-jp-3-150m-f16"), 2), /needs about 1,215 MB/);
 assert.equal(modelBytes(byId("stories15M-f32")), 60816028, "float32 is used as it is");
-assert.match(memoryFailure(big, 1234567890, "MemoryError"), /ran out of memory for Qwen2.5 1.5B Instruct \(it needs about 2,000 MB\); the page was using 1,235 MB when it happened\. .* \(MemoryError\)$/);
+assert.match(memoryFailure(big, 1234567890, "MemoryError"), /ran out of memory for Alibaba Qwen2.5 1.5B Instruct \(it needs about 2,000 MB\); the page was using 1,235 MB when it happened\. .* \(MemoryError\)$/);
 assert.ok(!memoryFailure({ name: "mine.bin" }, undefined, "").includes("undefined"));
 
 // T98: six bits where int8 does not fit, and where asked
@@ -184,9 +184,9 @@ for (const typed of ["cost $$5", "a $& b", "x $` y", "y $' z"]) {
 }
 // the line of a redistribution says what it is: a GGUF, or a copy of the same files (the review of T132)
 const lineOf = (repo) => listed.find((line) => line.repo === repo).names;
-assert.deepEqual(lineOf("bartowski/SmolLM2-135M-Instruct-GGUF"), ["SmolLM2 135M Instruct (GGUF)"]);
-assert.deepEqual(lineOf("unsloth/Llama-3.2-1B-Instruct"), ["Llama 3.2 1B Instruct (copy)"]);
-assert.ok(lineOf("meta-llama/Llama-3.2-1B-Instruct").includes("Llama 3.2 1B Instruct"), "the original's line has the plain name");
+assert.deepEqual(lineOf("bartowski/SmolLM2-135M-Instruct-GGUF"), ["Hugging Face SmolLM2 135M Instruct (GGUF)"]);
+assert.deepEqual(lineOf("unsloth/Llama-3.2-1B-Instruct"), ["Meta Llama 3.2 1B Instruct (copy)"]);
+assert.ok(lineOf("meta-llama/Llama-3.2-1B-Instruct").includes("Meta Llama 3.2 1B Instruct"), "the original's line has the plain name");
 // every GGUF of the list names its original, is under the original's license (its card's, the same: T136) and is
 // "(GGUF)" on its line (the review of T136: a copy's word, another license or no original went through before)
 for (const entry of MODELS.filter((entry) => entry.hf?.weights?.endsWith(".gguf"))) {
