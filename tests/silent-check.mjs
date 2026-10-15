@@ -149,6 +149,9 @@ const SILENT = {
     ["keep", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "the cleaning after a write that failed: that failure is what keep() returns, and the page shows it"],
     ["keeper", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "nothing kept under the name before is the ordinary case: NotFoundError"],
     ["drop", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "letting go of a file that is not kept: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
+    ["finish", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T329.2.2: a conversion not kept whose table is read on from its file: the folder, open still, may refuse to go now; close() removes it once the file is let go of, and what is left has no manifest meanwhile"],
+    ["close", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T329.2.2: the file of a conversion that was not kept, let go of: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
+    ["openRows", "catch { return undefined; }", "T329.2.2: no handle of the kept file here (another tab of this site holds it, or it is gone): the worker says so and reads the table into the memory"],
     ["forget", "(await folders())?.removeEntry(name, { recursive: true }).catch(() => {})", "a kept model that is already gone, or held open by a load: the list is read again after it and shows what is there"],
   ],
   "src/runtime/updated.ts": [

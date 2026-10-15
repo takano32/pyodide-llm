@@ -3,6 +3,7 @@
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide } from "./runtime.ts";
+import { rowsLetGo } from "./weights.ts";
 import type { Outside } from "../forward.ts";
 import type { Llama } from "../contracts/python.ts";
 
@@ -32,6 +33,8 @@ export async function letGo(signal: AbortSignal) {
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
     await released;
+    // T329.2.2: and the file its table of every layer's inputs was read from (the only handle the file can have)
+    await rowsLetGo();
     signal.throwIfAborted();
   }
 }

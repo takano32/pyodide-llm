@@ -14,9 +14,9 @@
 # place of their own (Gemma4TextAttention's store_full_length_kv and shared_kv_states), and where use_double_wide_mlp
 # their FFN is twice as wide. T329: every layer takes an input of its own (Gemma4TextModel.get_per_layer_inputs() and
 # project_per_layer_inputs(), Gemma4TextDecoderLayer): a row of a table of every layer, and a projection of the
-# embedding's row. Until the page's forward pass reads that (T329.2), a model with it is refused here unless
-# PAGE_READS_EMBEDDINGS says otherwise (the tests and the tools of CI): every published Gemma 4 of the sizes a page can
-# hold has one, and a visitor of ?hf= would fetch and convert gigabytes of it for nothing.
+# embedding's row. The page's forward pass reads that from T329.2 (PAGE_READS_EMBEDDINGS: until then a model with it was
+# refused here, where a visitor of ?hf= would have fetched and converted gigabytes of it for nothing; a test may say so
+# again).
 import math
 
 import numpy as np
@@ -27,8 +27,8 @@ from engine.layers import rope_frequencies
 
 # transformers' Gemma4TextConfig, where config.json says nothing (configuration_gemma4.py)
 HEAD, WIDE_HEAD, PROPORTION = 256, 512, 0.25
-# (T329: True once the page's forward pass reads the embedding of every layer, T329.2)
-PAGE_READS_EMBEDDINGS = False
+# (T329: True since the page's forward pass reads the embedding of every layer, T329.2.2)
+PAGE_READS_EMBEDDINGS = True
 
 
 def language_model(config):

@@ -9,8 +9,10 @@ import { cacheStorage } from "./fakes/cache.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
 // ---- stand-ins: a directory tree of files (the Cache API is tests/fakes/cache.mjs's)
+// (T329.2.2: a file has one sync access handle at most, as in a browser: a second is refused while it is open, and a
+// folder that holds an open one is not removed)
 class File {
-  constructor() { this.bytes = new Uint8Array(0); }
+  constructor() { this.bytes = new Uint8Array(0); this.open = false; }
 }
 class FileHandle {
   constructor(file, limit) { this.file = file; this.limit = limit; }
@@ -22,7 +24,16 @@ class FileHandle {
   }
   async createSyncAccessHandle() {
     const file = this.file, limit = this.limit;
+    if (file.open) throw new Error("NoModificationAllowedError: the file has a sync access handle open");
+    file.open = true;
     return {
+      read(data, { at }) {
+        if (!file.open) throw new Error("InvalidStateError: closed");
+        const got = file.bytes.subarray(at, at + data.length);
+        data.set(got);
+        return got.length;
+      },
+      getSize() { return file.bytes.length; },
       truncate(n) { file.bytes = file.bytes.slice(0, n); },
       write(data, { at }) {
         const end = at + data.length;
@@ -31,7 +42,7 @@ class FileHandle {
         file.bytes.set(data, at);
         return data.length;
       },
-      flush() {}, close() {},
+      flush() {}, close() { file.open = false; },
     };
   }
 }
@@ -45,7 +56,12 @@ class DirectoryHandle {
     if (!this.children.has(name)) { if (!create) throw new Error("NotFoundError"); this.children.set(name, new File()); }
     return new FileHandle(this.children.get(name), this.limit);
   }
-  async removeEntry(name) { if (!this.children.delete(name)) throw new Error("NotFoundError"); }
+  async removeEntry(name) {
+    const child = this.children.get(name);
+    const busy = (entry) => (entry instanceof DirectoryHandle ? [...entry.children.values()].some(busy) : entry?.open);
+    if (busy(child)) throw new Error("NoModificationAllowedError: a file in it is open");
+    if (!this.children.delete(name)) throw new Error("NotFoundError");
+  }
   async *entries() { for (const [name, child] of this.children) if (child instanceof DirectoryHandle) yield [name, child]; }
 }
 function browser({ opfs = true, room = Infinity } = {}) {
@@ -261,5 +277,61 @@ const readBack = async (found) => {
   assert.deepEqual(names(await kept.replaced(after)), ["a/q@1:int8:4096"], "the other form's conversion is replaced");
   assert.deepEqual(names(await kept.replaced({ ...after, id: "q-thinking" })), ["a/q@1:int8:4096"]);
   assert.deepEqual(await kept.replaced({ ...after, shares: undefined }), [], "without shares only its own id's");
+}
+// T329.2.2: a conversion kept as it comes whose table of every layer's inputs the engine reads from the file: the file
+// stays open past finish() and is read from at once; let go of, a kept one opened again (one handle at a time); one that
+// ran out of room after the table was whole is read on and removed once let go of, one that ran out before is not whole
+{
+  const { root } = browser();
+  const hold = [3 * 1024 * 1024, 9 * 1024 * 1024 + 11];
+  const keeping = await kept.keeper(model);
+  keeping.holding(hold);
+  for (let at = 0; at < bytes.length; at += 1 << 20) keeping.write(at, bytes.subarray(at, Math.min(at + (1 << 20), bytes.length)));
+  assert.equal(keeping.whole(), true);
+  assert.equal(await keeping.finish(manifest, vocabulary), undefined);
+  const row = new Uint8Array(100);
+  assert.equal(keeping.read(row, hold[0] + 5), 100);
+  assert.deepEqual(row, bytes.subarray(hold[0] + 5, hold[0] + 105), "read from the file at once, past finish()");
+  // (kept: listed, and its file not to be opened again while the engine holds it)
+  assert.deepEqual((await kept.keptModels()).map(({ where }) => where), ["opfs"]);
+  const name = (await kept.keptModels())[0].name;
+  assert.equal(await kept.openRows(name), undefined, "a second handle of the file while the first is open");
+  await keeping.close();
+  assert.throws(() => keeping.read(row, 0), /closed/);
+  // the next visit: its parts, the stretch skipped (zeros where it is), and then the file opened to read from
+  const found = await kept.openKept(model);
+  assert.equal(found.name, name);
+  const skipping = { range: [8 * 1024 * 1024, 16 * 1024 * 1024] };
+  const parts = [];
+  for await (const part of found.parts(skipping)) parts.push(part);
+  assert.deepEqual(parts.map((part) => part.length), [8 << 20, 8 << 20, (4 << 20) + 5]);
+  assert.ok(parts[1].every((byte) => byte === 0) && parts[0][1] === bytes[1] && parts[2][3] === bytes[(16 << 20) + 3], "the parts inside the stretch alone are zeros");
+  const reader = await kept.openRows(name);
+  assert.equal(reader.read(row, 77), 100);
+  assert.deepEqual(row, bytes.subarray(77, 177));
+  assert.equal(await kept.openRows(name), undefined, "one handle at a time");
+  reader.close();
+  const again = await kept.openRows(name);
+  assert.ok(again, "the file opens again once let go of");
+  again.close();
+  assert.equal(await kept.openRows("nothing-of-that-name"), undefined);
+  // room for the table and not the rest: not kept, but read on; the file goes once let go of
+  for (const [room, whole] of [[12 * 1024 * 1024, true], [5 * 1024 * 1024, false]]) {
+    const small = browser({ room });
+    const short = await kept.keeper(model);
+    short.holding(hold);
+    for (let at = 0; at < bytes.length; at += 1 << 20) short.write(at, bytes.subarray(at, Math.min(at + (1 << 20), bytes.length)));
+    assert.equal(short.whole(), whole);
+    assert.match(await short.finish(manifest, vocabulary), /Quota/);
+    assert.deepEqual(await kept.keptModels(), [], "nothing kept");
+    if (whole) {
+      assert.equal(short.read(row, hold[0]), 100);
+      assert.deepEqual(row, bytes.subarray(hold[0], hold[0] + 100));
+      assert.equal(small.root.children.get("converted-v1").children.size, 1, "its file is there while it is read");
+      await short.close();
+    }
+    assert.equal(small.root.children.get("converted-v1").children.size, 0, "and gone once let go of");
+  }
+  void root;
 }
 console.log("ok");

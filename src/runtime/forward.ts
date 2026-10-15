@@ -26,8 +26,10 @@ import { gpuWeightBytes, aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weig
   GPU_ALONE } from "./forward/alone.ts";
 import { createForward } from "./forward/engine.ts";
 import { LAYER_KINDS } from "./forward/kinds.ts";
+import { tableHole } from "./forward/perlayer.ts";
 import type { Blocks, Compiled, Engine, Made } from "./forward/engine.ts";
 import type { Plan, TensorName } from "./contracts/plan.ts";
+import type { Rows } from "./forward/perlayer.ts";
 // (T368.4) the types of what this window hands out, for the worker, which reads the module's own through
 // `import type * as Forward from "../forward.ts"`
 export type { Blocks, Compiled, Engine, Made, Trying } from "./forward/engine.ts";
@@ -37,6 +39,7 @@ export type { Footprint, Header, Memory } from "./forward/memory.ts";
 export type { Adapter, Direct, GpuForm, GpuOnlyWeights, Hole, Place } from "./forward/alone.ts";
 export type { Chosen, GpuWorker } from "./forward/gpuside.ts";
 export type { Spawn, Thread } from "./forward/threads.ts";
+export type { Rows } from "./forward/perlayer.ts";
 // What Python's Llama(external=) takes (external()): engine is there once Python called start(plan). The plan comes as
 // Python's dict (a PyProxy, which toJs() makes an object of) or, from the tests, as the object
 export type Outside = { size: number; read(offset: number, length: number): Uint8Array; start(plan: Handed): Engine; engine?: Engine };
@@ -45,7 +48,11 @@ export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNT
   PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, gpuWeightBytes,
   aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
   aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, needsWide, pastWide,
-  automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS, takesBlocks };
+  automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS, takesBlocks, tableHole };
+// T329.2.2: a model whose table of every layer's inputs is not in the memory (tableHole(): one stretch of the
+// checkpoint), which holds the rest packed without it (stored bytes), a tensor at place(its offset in the checkpoint);
+// rows reads the table's from where the checkpoint is kept (perlayer.ts's Rows)
+export type Apart = { place(offset: number): number; stored: number; rows: Rows };
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
  * then int8 runs on matmul_q8. wide (T101): the build for a 64-bit memory (simdkernel_*64.wasm). */
@@ -72,8 +79,9 @@ export function compileBlocks(plain: BufferSource, relaxed?: BufferSource | null
 /** T156 direct ({ place, stored, onLost }, gpuOnlyWeights()): the layers' matrices are on the GPU alone, memory holds
  * the rest of the checkpoint (stored bytes) packed without them, a tensor at place(its offset in the checkpoint);
  * onLost(why) is told where the GPU stops (the model has to be loaded again on the CPU). */
-export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying }: Omit<Made, "plan" | "wrap" | "stalledMs" | "clock" | "kinds">) {
-  const place = direct?.place ?? ((offset: number) => offset);
+export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying, apart }:
+  Omit<Made, "plan" | "wrap" | "stalledMs" | "clock" | "kinds" | "rows"> & { apart?: Apart }) {
+  const place = direct?.place ?? apart?.place ?? ((offset: number) => offset);
   const outside: Outside = {
     size,
     read: (offset, length) => new Uint8Array(memory.buffer, base + place(offset), length).slice(),
@@ -85,8 +93,14 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, mem
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
           : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }])) as Plan["tensors"];
       }
-      outside.engine = createForward({ memory, base, size: direct ? direct.stored : size, kernels, spawn, gpu, gpuRoom,
-        memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying, plan });
+      // (T329.2.2: every tensor but the table of every layer's inputs where it is in memory; the table keeps its offsets
+      // in the checkpoint, which only apart.rows reads)
+      if (apart) {
+        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, name === "per_layer_table" ? t
+          : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}), ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }])) as Plan["tensors"];
+      }
+      outside.engine = createForward({ memory, base, size: direct ? direct.stored : apart ? apart.stored : size, kernels, spawn, gpu, gpuRoom,
+        memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows });
       return outside.engine;
     },
   };

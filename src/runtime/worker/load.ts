@@ -6,7 +6,7 @@ import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeRead
 import { threadsRequest, root, switchesNow } from "./request.ts";
 import { llama, engineNow, adopted, letGo } from "./loaded.ts";
 import { since, took, secondsSoFar } from "./clock.ts";
-import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes, runsPacked } from "./weights.ts";
+import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes, runsPacked, rowsReady } from "./weights.ts";
 import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
 import { convert, converter } from "./convert.ts";
@@ -45,6 +45,7 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
     signal.throwIfAborted();
     const converted = await convert(model, signal, id);
     if (!(await gpuOnlyReady(model, id, engineNow()))) return load(model, signal, id);  // T156: the GPU failed on it alone
+    if (!rowsReady(model)) return load(model, signal, id);  // T329.2.2: its table was not all kept as it came
     await startThreads(model);
     postMessage({
       type: "ready", load: id, pyodide: pyodide.version, backend: llama!.backend, seq_len: llama!.seq_len,

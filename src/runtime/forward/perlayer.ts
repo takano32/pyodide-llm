@@ -6,6 +6,7 @@
 import { packingOf } from "../jobs.ts";
 import { align, halfToFloat, perLayerBytes } from "./memory.ts";
 import type { Core } from "./kinds.ts";
+import type { Tensors } from "../contracts/plan.ts";
 
 /** What reads bytes of the file: the bytes at offset (counted from the start of the checkpoint) into the memory at to,
  * at once (synchronously: a token's path waits on it) */
@@ -72,4 +73,14 @@ export function perLayer({ plan, eps, k, room, floats, matrix, at, S, matmuls }:
       }
     },
   };
+}
+
+/** T329.2.2: the stretch of the checkpoint the table of every layer's inputs takes ([start, end): its values, then its
+ * scales where it has them, as llama2_numpy's Tensor places them), of the tensors llama2_numpy.external_tensors()
+ * places; null where the model has no such table */
+export function tableHole(tensors: Tensors): [number, number] | null {
+  const t = tensors.per_layer_table;
+  if (!t) return null;
+  const [vocab, values] = t.shape, [, readBytes, valuesBytes] = perLayerBytes(1, values, t.kind, t.group);
+  return [t.offset, packingOf(t.kind) ? t.scales + vocab * (readBytes - align(valuesBytes)) : t.offset + vocab * valuesBytes];
 }
