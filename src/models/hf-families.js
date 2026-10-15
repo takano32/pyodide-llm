@@ -21,7 +21,7 @@ export const HF_FAMILIES = [
     "fetches 8.7 GB (GGUF) → int8 9.2 GB",
     { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   // Qwen3 Swallow's card gives one sampling, the thinking one, for both
-  ...thinkingAndNot("hf-qwen3-swallow-8b", "TokyoTech-LLM Qwen3 Swallow 8B RL",
+  ...thinkingAndNot("hf-qwen3-swallow-8b", "Science Tokyo Qwen3 Swallow 8B RL",
     ggufOf("mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf", "3fc755c6ab3780ebad6671130fc1b630bbd1575b", "Qwen3-Swallow-8B-RL-v0.2-Q8_0.gguf",
       "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2", "9218f4843b6f93369a0b0999d8f58d61487ea71c"), 8709519968,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
@@ -67,7 +67,7 @@ export const HF_FAMILIES = [
   // words and refusals, a short Japanese thought). The maker's own Q8_0 GGUF, the vocabulary and config.json of the
   // original; its chat_template.jinja, tokenizer.json and tokenizer_config.json are Qwen3.5-0.8B's byte for byte (the
   // same blobs), so the 0.8B's formats, BOS, stops and specials (qwen35). The sampling is its card's
-  ...thinkingAndNot("hf-qwen3.5-0.8b-japanese-sft-v2.5", "Takenoko12345678 Qwen3.5 0.8B Japanese SFT v2.5",
+  ...thinkingAndNot("hf-qwen3.5-0.8b-japanese-sft-v2.5", "Atemoya Qwen3.5 0.8B Japanese SFT v2.5",
     ggufOf("Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF", "101c43b482a00d8d7cb5f1fb0de9e7c1bf30e447",
       "Qwen3.5-0.8B-Japanese-SFT-v2.5-Q8_0.gguf",
       "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5", "b069f75cda9f72cb979be84a78411ee48f75ff50"), 811842912,
@@ -121,7 +121,7 @@ export const HF_FAMILIES = [
   // (temperature 0.85, top-p 0.95, top-k 20, presence penalty 1.1) is the page's for both forms since T274
   // (AGENTS_A1_SAMPLING). After a change to the system
   // text, run tests/format_check.py: nothing that runs by itself compares it with the real template
-  ...thinkingAndNot("hf-agents-a1-4b", "Intern Science Agents-A1 4B",
+  ...thinkingAndNot("hf-agents-a1-4b", "Shanghai AI Lab Agents-A1 4B",
     ggufOf("InternScience/Agents-A1-4B-Q8_0-GGUF", "a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54", "Agents-A1-4B-Q8_0.gguf",
       "InternScience/Agents-A1-4B", "945c40a4aa6f534d434a353207b8d42ecf7a5293"), 4482404032,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
@@ -252,12 +252,12 @@ export const HF_FAMILIES = [
   // which the family reads), with the vocabulary, config.json and chat template of the originals. Its template thinks
   // by default and answers at once with enable_thinking false: the two formats by hand (SPARK_THINKING,
   // SPARK_AT_ONCE: it calls a macro), with their BOS, stops and specials (spark). The card's sampling for every task
-  ...thinkingAndNot("hf-spark-x2.5-1.7b", "XHToken Spark-X2.5 1.7B",
+  ...thinkingAndNot("hf-spark-x2.5-1.7b", "Spark-X2.5 1.7B",
     ggufOf("XHToken/Spark-X2.5-1.7B-GGUF", "1f7fa33b1245c14730da39e125714ad3a327901b", "Spark-X2.5-1.7B-Q8_0.gguf",
       "XHToken/Spark-X2.5-1.7B", "14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8"), 1820112704,
     "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
-  ...thinkingAndNot("hf-spark-x2.5-4b", "XHToken Spark-X2.5 4B",
+  ...thinkingAndNot("hf-spark-x2.5-4b", "Spark-X2.5 4B",
     ggufOf("XHToken/Spark-X2.5-4B-GGUF", "9826e0be84e6e6e8b9668abc91421109a1df1e2d", "Spark-X2.5-4B-Q8_0.gguf",
       "XHToken/Spark-X2.5-4B", "0bcb35678590218655dff3765b9e61c83b35e9c4"), 4375021152,
     "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark },
