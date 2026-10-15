@@ -171,7 +171,7 @@
 - T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 候補
 - T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 保留
 - T339 [調査][Spark X] Spark-X2.5 を動かす: 全体と順 — レビュー前
-- T343 [追加][Spark X][モデル] Spark-X2.5 の 1.7B と 4B を一覧に — レビュー前
+- T343 [追加][Spark X][モデル] Spark-X2.5 の 1.7B と 4B を一覧に — 反映済み
 - T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 未着手
 - T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 候補
 - T244 [バグ][CPU] float16 のキャッシュは、CPU が自分で書いた NaN を ±65536 と読み戻す — 未着手
@@ -1016,7 +1016,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **順**: T340 → T341 → T342 → T343 → T344。T341 の窓は Gemma 3（T261）・Gemma 4 と同じ部品なので、どちらか先に作るほうで作る。
 - **見込み**（int8、未計測）: 1.7B 約 1.9 GB（32 ビットに入る）、4B 約 4.6 GB（64 ビット、Chrome と Firefox。Safari は 6 ビット）。
 
-### T343 [追加][Spark X][モデル] Spark-X2.5 の 1.7B と 4B を一覧に — 状態: レビュー前（2026-10-15、Opus medium、ブランチ `t343-spark-entries`。前の状態: 未着手（2026-10-05。T340〜T342 の後。規模 小〜中））
+### T343 [追加][Spark X][モデル] Spark-X2.5 の 1.7B と 4B を一覧に — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** `gguf_check` の `NAMES["spark2_5"]` は変換器の GGUF の名前と同じで、試験は誤った原本 3 通りを名前つきで落とす。run 38792600954 は mismatches 0・最寄り 0。リビジョン・大きさ・ライセンス・標本抽出を HF の API と合わせた。models-check・網 `models`（新しい 4 項目だけ）・pytest・build・dist-check・ledger が通る。specials の順はレビューでは見ていない（実装の `format_check --hf` が本物と完全に同じ ID で 9/9）。本番の確かめはデプロイの後に）。前の見出し: レビュー前（2026-10-15、Opus medium、ブランチ `t343-spark-entries`。前の状態: 未着手（2026-10-05。T340〜T342 の後。規模 小〜中））
 - **結果（2026-10-15）**: 項目 4 つ（`src/models/hf-families.js` の `thinkingAndNot()`）: `hf-spark-x2.5-1.7b-thinking`「XHToken Spark-X2.5 1.7B (thinking)」・`hf-spark-x2.5-1.7b`「… (no thinking)」・`hf-spark-x2.5-4b-thinking`・`hf-spark-x2.5-4b`。note は「thinks before it answers · 日本語 / English · fetches 1.8 GB (GGUF) → int8 1.9 GB · desktop only」（4B は「… fetches 4.4 GB (GGUF) → int8 4.6 GB · desktop only · Chrome and Firefox」。後ろの 2 語は規則が付ける）。取り込み元は XHToken の Q8_0 の GGUF（1.7B @`1f7fa33b…` 1,820,112,704 バイト、4B @`9826e0be…` 4,375,021,152 バイト）と原本の語彙・config・書式（1.7B @`14d6e83c…`、4B @`0bcb3567…`）。書式は手書き（`formats.js` の `SPARK_THINKING`・`SPARK_AT_ONCE`: 本物の Jinja が `enable_thinking` 真と偽で書く 1 ターン。テンプレートはマクロを呼ぶので jinja2 の取れないブラウザでは変換器が書式を読めない）、options `spark`（`bos: 0`・`stop_tokens: [0, 1]`・変換器の `specials` 24 個を変換器の順で: tokenizer.json が special と呼ぶのはターンの 2 つだけなので、書式を読めない変換では欠ける）。標本抽出はカードと generation_config.json の温度 1.0・top-p 0.95（top-k なし、presence 0、どちらの形も: `sampling.js` の `SPARK_SAMPLING`）。ライセンスは 4 つのリポジトリとも Apache 2.0（カードの metadata、原本の本文「The Spark-X2.5 model series is licensed under the Apache 2.0 License」、LICENSE は Apache 2.0 の本文）。大きさ（変換器の見出しから）: int8 1,921,450,012・4,626,626,588 バイト、6 ビット 1,494,564,892・3,598,653,468 バイト。
 - **書式**（`tests/format_check.py`、`STRICT` に `hf-spark-x2.5-` を足した）: 4 項目とも 9/9（一覧の書式）、`--hf` でも 9/9 で 9 つとも本物と完全に同じ ID（変換器の書式）。
 - **GGUF**（`gguf.yml candidates`、run 38792600954）: 2 つとも通る。最寄りの参照から 0（原本の Q8_0 とビット単位で同じ）、0 mismatches、語彙 131,072 が原本の tokenizer.json と同じ ID。いちばん大きい相対誤差 0.00852（1.7B）・0.00823（4B）。**最初の run 38790557853 は 85・109 mismatches で落ちた**: `tests/gguf_check.py` に Spark の名前の表が無く、どの `attn_qkv`・`attn_gate`・`attn_output` と埋め込みも「safetensors に無い」になっていた。`NAMES["spark2_5"]` を手で書き、`tests/test_gguf_check.py` に作り物の Spark の GGUF が通ること・誤った原本 3 つ（2 層の gate の入れ替え・k を q の前に・q を Llama の GGUF の並びに）がその行で落ちることを足した（名前の表を外すと作り物が 13 mismatches で落ちるのを見た）。
