@@ -331,6 +331,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
       hole,
       attach(given) {
         reader = given;
+        rowsNow = given;  // (T329.2.2, review: let go of by the next load's letGo() even if llama() below never ran or threw)
       },
       write,
       slice: (begin, end) => new Uint8Array(memory.buffer, base + begin, end - begin).slice(),

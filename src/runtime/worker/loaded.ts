@@ -33,8 +33,11 @@ export async function letGo(signal: AbortSignal) {
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
     await released;
-    // T329.2.2: and the file its table of every layer's inputs was read from (the only handle the file can have)
     await rowsLetGo();
     signal.throwIfAborted();
+    return;
   }
+  // T329.2.2: and the file its table of every layer's inputs was read from (the only handle the file can have), whether
+  // or not a model was built on it (a load cancelled between the handle and the engine)
+  await rowsLetGo();
 }

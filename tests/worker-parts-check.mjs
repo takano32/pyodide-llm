@@ -112,6 +112,14 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   // nothing loaded: nothing to let go of, and the collector is not run
   await run("letGo")(new AbortController().signal);
   assert.deepEqual(told, []);
+  // T329.2.2 (review): a load that took the file of a table and was cancelled before the model was built (nothing adopted)
+  // leaves the file open, which only one handle can have: the next load lets go of it all the same
+  context.stand.reader = { close: () => told.push("the file of a table never built on let go of") };
+  run("rowsNow = stand.reader");
+  await run("letGo")(new AbortController().signal);
+  assert.deepEqual(told, ["the file of a table never built on let go of"]);
+  assert.equal(run("rowsNow"), undefined);
+  told.length = 0;
 
   // forward.js runs it: the Llama and the engine come together
   context.stand.made = { llama: model("first"), outside: { engine: { threads: 4 } } };
