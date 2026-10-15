@@ -92,6 +92,11 @@ def cases(L):
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "double": [4, 5],
           "kv_shared": {"layers": [4, 5], "from": [3, 2]}},
          {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
+        # (and one in the middle, which no published model has: then a layer's place in the stacks of k and v is not its
+        # place in those of q)
+        ("gemma4, a layer in the middle reading another's keys and values", [64, 128, 6, 4, 1, 320, 48],
+         {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "kv_shared": {"layers": [1], "from": [0]}},
+         {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
         ("a norm of v", GROUPED, {"arch": "a norm of v"}, {}),
         ("a number of every layer", GROUPED, {"arch": "a number of every layer"}, {}),
         ("llama, its logits capped", GROUPED, {}, {"softcap": 2.0}),
