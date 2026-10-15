@@ -350,6 +350,38 @@ export function matmul_h2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 export function matmul_h2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
   tile<u16>(xout, xq, xs, wq, ws, n, r0, r1, count, os, frame, three);
 }
+// h4r: h2r with four groups' scales widened at once (halves.ts's halves4, four instructions for four), each group's
+// then a lane of that vector broadcast (one shuffle); the groups past the last four as h2r does them
+// @ts-ignore: decorator
+@inline function halves4(p: usize): v128 {
+  return f32x4.mul(v128.and(i32x4.shl(v128.load16x4_s(p), 13), i32x4.splat(<i32>0x8fffffff)), f32x4.splat(<f32>5.192296858534828e33));
+}
+// @ts-ignore: decorator
+@inline function group128(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, mask: v128): v128 {
+  const whole = i32x4.add(fourSums(tdot64(w, x, mask), tdot64(w + 16, x + 64, mask)), v128.load(sums + at));
+  return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
+}
+export function matmul_h4r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
+    let facc = f32x4.splat(0);
+    let g = 0;
+    for (; g < groups4; g += 4) {
+      const d = halves4(srow + (<usize>g << 1));
+      facc = group128(facc, row + (<usize>g << 5), xq + (<usize>g << 7), sums, xs, <usize>g << 4, v128.shuffle<i32>(d, d, 0, 0, 0, 0), mask);
+      facc = group128(facc, row + (<usize>(g + 1) << 5), xq + (<usize>(g + 1) << 7), sums, xs, <usize>(g + 1) << 4, v128.shuffle<i32>(d, d, 1, 1, 1, 1), mask);
+      facc = group128(facc, row + (<usize>(g + 2) << 5), xq + (<usize>(g + 2) << 7), sums, xs, <usize>(g + 2) << 4, v128.shuffle<i32>(d, d, 2, 2, 2, 2), mask);
+      facc = group128(facc, row + (<usize>(g + 3) << 5), xq + (<usize>(g + 3) << 7), sums, xs, <usize>(g + 3) << 4, v128.shuffle<i32>(d, d, 3, 3, 3, 3), mask);
+    }
+    for (; g < groups; g++) {
+      facc = group128(facc, row + (<usize>g << 5), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
 export function matmul_p2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
   tile<u8>(xout, xq, xs, wq, ws, n, r0, r1, count, os, frame, three);
 }
