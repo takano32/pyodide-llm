@@ -222,7 +222,7 @@
 - T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
 - T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 未着手
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
-- T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — レビュー前
+- T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — 反映済み
 - T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 未着手
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
 <!-- 目次ここまで -->
@@ -1577,7 +1577,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T333 のレビューの気づき）
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
-### T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — 状態: レビュー前（2026-10-15、T513 の後、持ち主「どっちも配ればいいんじゃないの？」）
+### T528 [追加][モデル] 既定の Shisa 350M の軽い形（Q4_K_M の塊のまま）も一覧に — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** `shisaLfm2()` の差分は引数 2 つで、今ある 2 つの Shisa は変わらない（網 `models` の違いは新しい項目だけ）。GGUF の大きさ 229,311,104 が HF と一致。models-check・worker-conduct-check・ledger・build・dist-check が通る。手元の Chrome で 2 回目は保存から、ステータス行に llama.cpp's blocks、答えは日本語で通る。本番の確かめはデプロイの後に）。前の見出し: レビュー前（2026-10-15、T513 の後、持ち主「どっちも配ればいいんじゃないの？」）
 - 既定は int8 のまま（`DEFAULT_MODEL` は変えない）。Q4_K_M の GGUF を塊のまま持つ項目を 1 つ足す（`conversion: { dtype: "int8", blocks: true }` の形: Saluki と同じ。Q6_K・Q5_K の層は int8 に広がる）。T513 の数字: 取得 379 → 229 MB、メモリ 554 → 411 MB、CI の速さ 0.79〜0.88 倍、日本語 nats +1.2%。
 - **項目**（ブランチ `t528-shisa-light`）: `hf-shisa-v2.1c-lfm2-350m-q4`「Shisa V2.1c LFM2 350M (4-bit)」、note「answers instructions · 日本語 / English · 4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB」。重みは int8 の項目と同じリポジトリ・同じリビジョン（mradermacher @`38445ae7`）の `shisa-v2.1c-lfm2-350m.Q4_K_M.gguf`（229,311,104 バイト）、語彙・config・書式は原本（@`a902123e`）。`shisaLfm2()` に GGUF の名前の語と足す欄を渡す形にした（今ある 2 つの項目は変わらない: 網の `models` の違いは MODELS と新しい項目の記録だけ）。`conversion: { dtype: "int8", blocks: true }`、`loaded: 281641004`（`tests/quant_sizes.py` の頭だけの数と、`perplexity_prepare.py --blocks` が作ったチェックポイントの大きさが同じ）、`rebuilt: true`。書式・BOS・止まり・標本抽出・ライセンスは int8 の項目と同じ: `conversions_compare.py --dump` で 2 つの項目の options・tokenizer.bin・送る ID がどれも同じ。並びは窓口の並べ替えのまま（282 MB で LFM2.5 230M と Gemma 3 270M の間、int8 の項目より前）。
 - **元の重みとの突き合わせ（`gguf_check.py tensors` の代わり）**: 同じ道具を原本の safetensors に当てて、数を読んだ（合否は見ない: Q4_K は 1e-3 の線に入らない）。F32 のテンソル（norm・畳み込み）は 0 の差、Q4_K の行列は相対の誤差 0.0717〜0.0792、Q6_K（埋め込み・w2 の 8 層・v の 2 層）は 0.0179〜0.0209、q と k は Hugging Face の並び、埋め込みの行の悪い行 0、語彙の違い 0。「past 1e-3」の 93 個は量子化したテンソルのちょうど全部。誤った読み（並び・尺度の取り違え）なら誤差は 1 の桁になる。
