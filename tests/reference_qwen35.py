@@ -6,6 +6,8 @@
 #   pip install safetensors "transformers @ git+https://github.com/huggingface/transformers@7fb5bcd1d4b8a5c225a2c33429b2e9e023dd61ae"
 #   python tests/reference_qwen35.py <directory for the download> [--only=made-up|real|fetch] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more, for tests/page_qwen35.sh)
+#   python tests/reference_qwen35.py <directory> --only=fixture [--out=tests/fixtures/qwen35-logits.json]
+#   (T534: transformers' logits of test_qwen35.py's made-up models, for the unit tests: fixture() below)
 #   python tests/reference_qwen35.py <directory> --model=4B [--from=gguf] [--text=<file>] [--minutes=40]
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
@@ -214,6 +216,65 @@ def made_up(name, settings, positions=80):
         failed |= logits_failed(say, f"made-up ({name}), {what}", a, b, line)
     failed |= HELD.failed(say, f"made-up ({name})", llama, positions, at_once, stepped_states)
     say(f"made-up ({name}): options {json.dumps({key: options[key] for key in ('arch', 'linear', 'head_dim', 'rotary', 'rope_theta', 'rms_norm_eps') if key in options})}")
+    return failed
+
+
+# ----------------------------------------------------------------------------------------------------- the fixture
+# T534 (the form of ssig33/pyodide-llm's 3a038d25): transformers' logits of tests/made_up.py's own Qwen3.5s, written to
+# tests/fixtures/qwen35-logits.json, which tests/test_qwen35.py holds the engine to without PyTorch. The models are
+# test_qwen35.py's (made_up.qwen35_model() with these settings, under the names transformers' Qwen3_5ForCausalLM
+# reads), and the tokens are its TOKENS: the test makes the same tensors of the same seed and reads the settings and
+# the tokens from the fixture.
+FIXTURE = {"small": dict(), "three value heads a key head": dict(key_heads=1, value_heads=3, key_dim=4, value_dim=10,
+                                                                  shared=False)}
+FIXTURE_TOKENS = [1, 5, 7, 9, 11, 5, 5, 300, 2]
+
+
+def fixture_hash(tensors):
+    """sha256 of the tensors transformers was given, name and bytes in the order of the names (test_qwen35.py makes the
+    same of its own and says the made-up model changed, before the logits would say it less clearly)"""
+    import hashlib
+    digest = hashlib.sha256()
+    for key in sorted(tensors):
+        digest.update(key.encode() + np.ascontiguousarray(np.asarray(tensors[key], dtype=np.float32)).tobytes())
+    return digest.hexdigest()
+
+
+def fixture(out):
+    import torch
+    import transformers
+    from made_up import qwen35_model
+    from transformers import Qwen3_5ForCausalLM, Qwen3_5TextConfig
+
+    models, failed = {}, False
+    for name, settings in FIXTURE.items():
+        tensors, published = qwen35_model(**settings, prefix="model.")
+        text = {key: value for key, value in published["text_config"].items() if key != "model_type"}
+        model = Qwen3_5ForCausalLM(Qwen3_5TextConfig(**text)).to(torch.float32).eval()
+        state = {key: torch.from_numpy(value) for key, value in tensors.items() if key.startswith(("model.layers.",
+                 "model.embed_tokens.", "model.norm.", "lm_head."))}
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        missing = [key for key in missing if not (key == "lm_head.weight" and text["tie_word_embeddings"])]
+        assert not missing and not unexpected, (missing, unexpected)
+        if text["tie_word_embeddings"]:
+            assert model.lm_head.weight is model.model.embed_tokens.weight, "the classifier is not tied"
+        whole, _, stepped, _ = both_ways(model, FIXTURE_TOKENS, model_states)
+        floor = differences(stepped, whole)[0]
+        say(f"fixture ({name}), transformers token by token against transformers at once: largest difference {floor:.2e}")
+        # the engine on the same tensors, converted the way the page converts, as test_qwen35.py will run it
+        llama, _, _ = made_up_engine(tensors, published)
+        ours = engine_logits(llama, FIXTURE_TOKENS)
+        for what, theirs in (("token by token", stepped), ("at once", whole)):
+            largest = differences(ours, theirs)[0]
+            say(f"fixture ({name}), the engine against transformers {what}: largest difference {largest:.2e}, "
+                f"of the largest logit {largest / float(np.abs(np.array(theirs)).max()):.2e}")
+        models[name] = {"settings": settings, "whole": float(floor), "tensors": fixture_hash({key: tensors[key] for key in state}),
+                        "logits": [[float(f"{value:.8g}") for value in row] for row in np.array(stepped, dtype=np.float32)]}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"transformers": transformers.__version__, "torch": torch.__version__,
+                               "made_up": "tests/made_up.py's qwen35_model(**settings, prefix='model.')",
+                               "tokens": FIXTURE_TOKENS, "models": models}) + "\n")
+    say(f"fixture: written to {out}")
     return failed
 
 
@@ -540,6 +601,8 @@ def main():
     if only == "theirs":
         theirs(directory, directory / "ids.json")
         return
+    if only == "fixture":
+        ended(say, fixture(Path(option("out", str(HERE / "fixtures" / "qwen35-logits.json")))))
     if option("model") in OTHERS:
         ended(say, real(directory / option("model"), positions, *OTHERS[option("model")]))
     if option("model") in LARGE:
