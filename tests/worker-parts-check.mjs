@@ -120,6 +120,9 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   assert.equal(run("engineNow()"), context.stand.made.outside.engine, "the engine is the one forward.js made, not a copy");
   // let go: Python's release first (it says what forward.js holds), the proxy, the two forgotten, the collector, and
   // only then the wait for what release() returned (T205: the GPU's worker)
+  // (T329.2.2: and the file its table of every layer's inputs is read from, weights.js's, once the rest is let go of)
+  context.stand.reader = { close: () => told.push("first: the file of its table let go of") };
+  run("rowsNow = stand.reader");
   let done = false;
   const going = run("letGo")(new AbortController().signal).then(() => { done = true; });
   await new Promise((resolve) => setImmediate(resolve));
@@ -128,6 +131,8 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   released();
   await going;
   assert.equal(done, true);
+  assert.deepEqual(told.slice(3), ["first: the GPU's worker ended", "first: the file of its table let go of"]);
+  assert.equal(run("rowsNow"), undefined);
 
   // NumPy runs it: no engine; and it replaces what was there
   context.stand.made = { llama: model("numpy", { release: false }) };
@@ -143,11 +148,13 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   run("adopted(stand.made)");
   told.length = 0;
   const cancelled = new AbortController();
+  context.stand.reader = { close: () => told.push("cancelled: the file of its table let go of") };
+  run("rowsNow = stand.reader");
   const ending = run("letGo")(cancelled.signal);
   cancelled.abort();
   released();
   await assert.rejects(ending, { name: "AbortError" });
-  assert.deepEqual(told, ["cancelled: release", "cancelled: destroy", "python: import gc; gc.collect()", "cancelled: the GPU's worker ended"]);
+  assert.deepEqual(told, ["cancelled: release", "cancelled: destroy", "python: import gc; gc.collect()", "cancelled: the GPU's worker ended", "cancelled: the file of its table let go of"]);
   assert.deepEqual(loaded(), [undefined, undefined], "a cancelled load left the model before it");
   // and a model that could not be built leaves what was there as it was: nothing half adopted
   context.stand.made = { llama: model("whole"), outside: { engine: { threads: 2 } } };

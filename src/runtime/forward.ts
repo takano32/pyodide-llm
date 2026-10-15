@@ -93,11 +93,11 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, mem
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
           : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }])) as Plan["tensors"];
       }
-      // (T329.2.2: every tensor but the table of every layer's inputs where it is in memory; the table keeps its offsets
-      // in the checkpoint, which only apart.rows reads)
+      // (T329.2.2: every tensor where it is in memory; the table of every layer's inputs is the hole, whose offsets
+      // place() leaves as they are in the checkpoint, which only apart.rows reads)
       if (apart) {
-        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, name === "per_layer_table" ? t
-          : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}), ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }])) as Plan["tensors"];
+        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}),
+          ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }])) as Plan["tensors"];
       }
       outside.engine = createForward({ memory, base, size: direct ? direct.stored : apart ? apart.stored : size, kernels, spawn, gpu, gpuRoom,
         memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows });
