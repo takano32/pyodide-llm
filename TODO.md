@@ -5311,7 +5311,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 候補（2026-10-05。規模 中〜大）
 - 別のクラスで `attention_k_eq_v: true`（K と V が同じ）ほか。int8 と補正で約 15.0 GB で、64 ビットのメモリの 16 GiB に入るかは境界（T129 の `pastWide()`）。入らなければ 6 ビット（Chrome と Firefox）か外す。
 
-### T333 [追加][Gemma4][モデル] Gemma 4 の E2B と E4B を一覧に — 状態: **レビュー前**（2026-10-15、Opus medium、ブランチ `t333-gemma4-entries`。2026-10-05。T329〜T331 の後。規模 小〜中）
+### T333 [追加][Gemma4][モデル] Gemma 4 の E2B と E4B を一覧に — 状態: 反映済み（2026-10-15、本線に入れた。**レビュー（Sonnet low、2026-10-15）: OK、直しなし。** HF の API でリビジョン・ライセンス・大きさ・generation_config が項目と一致、`loaded` の読み手は `modelBytes()` 1 つで誤りなし（欄は分けない）、int6 の作り物は forward-check で通った（最尤 100%・perplexity +0.42%）、網と build は予定どおり。見ていない: 保存できない訪問での警告の不足（表がメモリに乗る: T525）と実物の int6（端末の一覧に）。）（2026-10-15、Opus medium、ブランチ `t333-gemma4-entries`。2026-10-05。T329〜T331 の後。規模 小〜中）
 - 取り込み元（原本の safetensors か Q8_0 の GGUF: `gguf.yml candidates` で）、書式（`<start_of_turn>` の形。読み手が読めなければ手書きで、`format_check.py` で本物と 9/9）、先頭のトークンを測る（`tests/start_check.*`・`chat_fluency.mjs`）、transformers との比べ（`tests/reference_*` の形で全層の K と V も）、固定値、本番の `models.yml`。ライセンスは apache-2.0。
 
 - **T333 の結果（2026-10-15、レビュー前）**: 一覧に 2 つ（`src/models/builders.js` の `gemma4()`、`hf-families.js` の最後）。
@@ -8445,3 +8445,6 @@ T164 の CI の計測（1 本、128 位置）で、tiny-lm は生成の 14〜18%
 
 ### T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 状態: 未着手（2026-10-15、T329.3 が見つけた）
 - 変換器の止まりは [2, 1] で、Gemma 4 の答えの終わり `<turn|>`(106) を含まない（generation_config.json の EOS は [1, 106, 50]: 変換器は generation_config.json を取らない決まり）。一覧の項目は options の止まりで止まる（T333）。`?hf=` の訪問者の分の直し方（書式の終わりの印を止まりに入れる、generation_config を読む、など）は取りまとめ役が案を出す。変換器の出す options が変わるなら `CONVERTER` の回に。
+
+### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T333 のレビューの気づき）
+- 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
