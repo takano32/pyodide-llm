@@ -25,6 +25,16 @@
 //       first 80 in order, then for n = 0..4 sixteen bytes of [80 + 8 n .. 88 + 8 n), 120 + 2 n, 121 + 2 n (zeros for
 //       n = 4) and six zeros.
 
+//
+// T533 (2026-10-15): the group's scale as a float16, as PQ2_0 has it (ssig33/pyodide-llm's 7d7b776c, MPL-2.0, keeps
+// the blocks of PQ2_0 as they are and widens the scale once a block; its lines are not here). Each against t2c, a copy
+// of kernels/'s matmul_t2r in this module (the noise of two copies of one form):
+//   h2r  matmul_t2r with the scales after all the codes as float16 (2 bytes a group): one scalar widening a group
+//   p2r  PQ2_0's own blocks, 34 bytes a group: the float16 scale, then the 32 bytes of codes (unaligned loads)
+//   h2   matmul_t2 (no relaxed SIMD) with h2r's scales
+//   and h2r_tile and p2r_tile: matmul_t2r_tile with h2r's and p2r's weights
+import { codes, fourSums } from "../kernels/ternary";
+
 // @ts-ignore: decorator
 @inline function hsum(a: v128): f32 {
   return f32x4.extract_lane(a, 0) + f32x4.extract_lane(a, 1) + f32x4.extract_lane(a, 2) + f32x4.extract_lane(a, 3);
@@ -197,4 +207,149 @@ export function matmul_a(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize
     }
     store<f32>(xout + (<usize>i << 2), hsum(facc));
   }
+}
+
+// ---- T533: float16 scales. The widening is halves.ts's half(): exact for every finite half
+// @ts-ignore: decorator
+@inline function half(p: usize): f32 {
+  return reinterpret<f32>((<i32>load<i16>(p) << 13) & <i32>0x8fffffff) * <f32>5.192296858534828e33;
+}
+// @ts-ignore: decorator
+@inline function tdot64(w: usize, x: usize, three: v128): v128 {
+  const v = v128.load(w);
+  let acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x), codes(v, 0, three), i32x4.splat(0));
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 16), codes(v, 1, three), acc);
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 32), codes(v, 2, three), acc);
+  return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), codes(v, 3, three), acc);
+}
+export function matmul_t2c(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(tdot64(w, x, mask), tdot64(w + 16, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), v128.load32_splat(srow + (<usize>g << 2))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+export function matmul_h2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(tdot64(w, x, mask), tdot64(w + 16, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), f32x4.splat(half(srow + (<usize>g << 1)))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+export function matmul_p2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>groups * 34;
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const b = row + <usize>g * 34, x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(tdot64(b + 2, x, mask), tdot64(b + 18, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), f32x4.splat(half(b))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+// @ts-ignore: decorator
+@inline function plain64(w: usize, x: usize, three: v128): v128 {
+  const v = v128.load(w);
+  const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
+  const c0 = codes(v, 0, three), c1 = codes(v, 1, three), c2 = codes(v, 2, three), c3 = codes(v, 3, three);
+  const low = i16x8.add(i16x8.add(i16x8.extmul_low_i8x16_s(x0, c0), i16x8.extmul_low_i8x16_s(x1, c1)),
+                        i16x8.add(i16x8.extmul_low_i8x16_s(x2, c2), i16x8.extmul_low_i8x16_s(x3, c3)));
+  const high = i16x8.add(i16x8.add(i16x8.extmul_high_i8x16_s(x0, c0), i16x8.extmul_high_i8x16_s(x1, c1)),
+                         i16x8.add(i16x8.extmul_high_i8x16_s(x2, c2), i16x8.extmul_high_i8x16_s(x3, c3)));
+  const first = i32x4.extadd_pairwise_i16x8_s(low), second = i32x4.extadd_pairwise_i16x8_s(high);
+  return i32x4.add(v128.shuffle<i32>(first, second, 0, 1, 4, 5), v128.shuffle<i32>(first, second, 2, 3, 6, 7));
+}
+export function matmul_h2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), f32x4.splat(half(srow + (<usize>g << 1)))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+// the tiles: kernel_relaxed.ts's matmul_t2r_tile, the scale read as h2r and p2r read it (its pieces copied here)
+// @ts-ignore: decorator
+@inline function planes(x: usize, c0: v128, c1: v128, c2: v128, c3: v128): v128 {
+  let acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x), c0, i32x4.splat(0));
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 16), c1, acc);
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 32), c2, acc);
+  return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), c3, acc);
+}
+// @ts-ignore: decorator
+@inline function scaled(lo: v128, hi: v128, xs: usize, sums: usize, at: usize, d: v128): v128 {
+  const whole = i32x4.add(fourSums(lo, hi), v128.load(xs + sums + at));
+  return f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d);
+}
+// @ts-ignore: decorator
+@inline function tile<P>(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three), count4 = count & ~3;
+  const sums = <usize>(n >> 5) << 2, outStride = <usize>os, f = <usize>frame;
+  const blocked = sizeof<P>() == 1;  // u8: PQ2_0's blocks; u16: the scales after the codes
+  for (let i = r0; i < r1; i++) {
+    const row = blocked ? wq + <usize>i * <usize>groups * 34 : wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
+    let t = 0;
+    for (; t < count4; t += 4) {
+      const x0 = xq + <usize>t * f, x1 = x0 + f, x2 = x1 + f, x3 = x2 + f;
+      const s0 = xs + <usize>t * f, s1 = s0 + f, s2 = s1 + f, s3 = s2 + f;
+      let f0 = f32x4.splat(0), f1 = f0, f2 = f0, f3 = f0;
+      for (let g = 0; g < groups; g++) {
+        const b = row + <usize>g * 34;
+        const w = blocked ? b + 2 : row + (<usize>g << 5), o = <usize>g << 7, at = <usize>g << 4;
+        const v = v128.load(w);
+        let c0 = codes(v, 0, mask), c1 = codes(v, 1, mask), c2 = codes(v, 2, mask), c3 = codes(v, 3, mask);
+        const a0 = planes(x0 + o, c0, c1, c2, c3), a1 = planes(x1 + o, c0, c1, c2, c3);
+        const a2 = planes(x2 + o, c0, c1, c2, c3), a3 = planes(x3 + o, c0, c1, c2, c3);
+        const u = v128.load(w, 16);
+        c0 = codes(u, 0, mask); c1 = codes(u, 1, mask); c2 = codes(u, 2, mask); c3 = codes(u, 3, mask);
+        const d = f32x4.splat(half(blocked ? b : srow + (<usize>g << 1)));
+        f0 = f32x4.add(f0, scaled(a0, planes(x0 + o + 64, c0, c1, c2, c3), s0, sums, at, d));
+        f1 = f32x4.add(f1, scaled(a1, planes(x1 + o + 64, c0, c1, c2, c3), s1, sums, at, d));
+        f2 = f32x4.add(f2, scaled(a2, planes(x2 + o + 64, c0, c1, c2, c3), s2, sums, at, d));
+        f3 = f32x4.add(f3, scaled(a3, planes(x3 + o + 64, c0, c1, c2, c3), s3, sums, at, d));
+      }
+      const out = xout + <usize>t * outStride + (<usize>i << 2);
+      store<f32>(out, hsum(f0));
+      store<f32>(out + outStride, hsum(f1));
+      store<f32>(out + 2 * outStride, hsum(f2));
+      store<f32>(out + 3 * outStride, hsum(f3));
+    }
+    for (; t < count; t++) {
+      const x = xout + <usize>t * outStride, q = xq + <usize>t * f, s = xs + <usize>t * f;
+      if (blocked) matmul_p2r(x, q, s, wq, ws, n, i, i + 1, three);
+      else matmul_h2r(x, q, s, wq, ws, n, i, i + 1, three);
+    }
+  }
+}
+export function matmul_h2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
+  tile<u16>(xout, xq, xs, wq, ws, n, r0, r1, count, os, frame, three);
+}
+export function matmul_p2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
+  tile<u8>(xout, xq, xs, wq, ws, n, r0, r1, count, os, frame, three);
 }
