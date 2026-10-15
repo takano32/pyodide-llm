@@ -222,6 +222,9 @@
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
 - T529 [追加][変換][Gemma4] 変換器が Gemma 4 の GGUF（Q8_0）を読む — 未着手
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
+- T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — 未着手
+- T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
+- T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 未着手
 <!-- 目次ここまで -->
 
 ## Opus の回とレビューの回（2026-09-25 に持ち主が決めた進め方。レビューは 2026-09-25 の夕方から Opus xhigh）
@@ -1565,3 +1568,19 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 状態: 未着手（2026-10-15、T340〜T342 のレビューの気づき）
 - いまの壊し方（ベクトルの道だけ係数をずらす）は「4 つずつと 1 つずつが同じ」の検査が落とす。両方の道で同じ誤りを入れたとき、smoke の NumPy との比べ（rtol 2e-6）と erf との比べ（5e-7）が係数の 1e-5 規模のずれを落とすかは未確認。通すなら線を締める。
+
+### T532 [追加][変換] yarn の RoPE の残りの設定（`attention_factor`・`mscale`・`beta_fast`・`beta_slow`・`truncate`）を読む — 状態: 未着手（2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `bddde105`）
+- いまは `convert/config.py` が、yarn の `factor` と `original_max_position_embeddings` のほかの鍵を「…which the engine does not read」で断る。相手の `rope_frequencies()`・`rope_amplitude()` はこれらを transformers の `_compute_yarn_parameters` と同じに読む: `attention_factor` があればそれが倍率、`mscale` と `mscale_all_dim` が両方あれば `(0.1·mscale·ln f + 1)/(0.1·mscale_all_dim·ln f + 1)`、帯の端は `beta_fast`・`beta_slow`（無ければ 32・1）、`truncate` が偽なら端を丸めない。試験の値（transformers 5.16.1 の出した周波数 2 組、相対 3e-7）は相手の `tests/test_llama3.py` にある。
+- 当たる所: `engine/layers.py` の `rope_frequencies()`・`rope_magnitude()`、`convert/config.py` の断り、GGUF の名前（`families/llama.py`: llama.cpp の `rope.scaling.yarn_beta_fast` など）と `gguf_agrees()`。表は Python が作って計画で渡すので、ページと GPU は触らない。
+- 先にすること: Hub の config.json でこれらの鍵を書く yarn のモデルを数える（どれが当たるかは未確認）。`mscale` の比は transformers で 1 組確かめる（相手は既定の比と `attention_factor` だけを試験した）。一覧のモデルは変わらない（Ternary Bonsai は素の RoPE、27B と `?hf=` の Bonsai は鍵を書かない）ことを `conversions_compare.py` で見る。
+- 取り込むコミットに `Co-Authored-By: ssig33 <mail@ssig33.com>`、取った形の上に相手のコミット `bddde105` を書く。
+
+### T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 状態: 未着手（2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `7d7b776c` の `matmul_t2`。**進めるかは持ち主に聞く**: T531 の「持ち主に聞くもの」の (2)）
+- こちらの 3 値は 32 バイトの符号と float32 のスケール（36 バイト / 128 個、値の全部の後にスケールの全部: T230）。T231 は float16 のまま持つ形を「グループごとに float16 を広げる命令が約 10 個増える（43 → 53）」と見積もりだけで外した（27B で 0.44 GiB の節約）。相手の `matmul_t2` は PQ2_0 の塊（スケール、32 バイト）をそのまま読み、`halfToFloat` を塊ごとに 1 回だけ呼ぶ（符号は 4 バイトから 16 個の int8 に広げて relaxed の `dot32`）。見積もりの前提が違うので、測って決める。
+- 良くなること: 3 値のモデルが 5.6% 小さい（27B 7.66 → 約 7.24 GB）。読む量も 5.6% 減る（帯域で律速される端末では速くなりうる: 未計測）。
+- 測り方: 今の `matmul_t2r` に、スケールを float16 で持つ版（並びは今の形と PQ2_0 の形の 2 つ）を並べ、`tests/ternary-bench.mjs` の形で、行列をメモリから読む形で、x86-64 と arm64 の 1 本と 4 本で交互に。的の arm で決める。
+- 入れるなら: `CONVERTER` を上げる（保存した 3 値の変換を全部作り直す: 27B は 6 GB の取り直し）、`engine/dtypes.py`・変換器・`PACKED`・`footprint()` の大きさ・GPU の 3 値のシェーダ（文が変われば端末の鍵が動く）。取り込むコミットに `Co-Authored-By: ssig33 <mail@ssig33.com>`。
+
+### T534 [試験][Bonsai] transformers の Qwen3.5 の logits を fixture に置いて pytest で比べる — 状態: 未着手（2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `3a038d25` の `tests/qwen35_reference.py`・`tests/fixtures/qwen35-logits.json`）
+- いまの軽い組の Qwen3.5 の相手は `conftest.naive_qwen35_logits`（transformers の式を書き直した参照）で、transformers そのものとは CI で頼んだときだけ（`tests/reference_qwen35.py`）。相手は、小さな Qwen3.5 を transformers で 1 回走らせた logits を fixture に置き、PyTorch なしの pytest で比べる。参照と実装が同じ読み違いをしても、fixture は落とす（AGENTS.md の「比べの相手が同じ表を読むと…」）。
+- 重みは相手の `qwen35_model.py` でなく、こちらの `tests/made_up.py` から作る（値の決め方を写さない）。fixture を作るのは torch と transformers のある所で 1 回（CI の `extra=` か手で）。網の `python` が「違う」と言う回になるので、製品のコードに触らない回で。同じ形を LFM2・Gemma 3・Gemma 4 に広げるかは、1 つ作ってから決める。
