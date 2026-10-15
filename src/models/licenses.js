@@ -140,6 +140,8 @@ export const LICENSES = {
   // were trained from (config.json's modification_notice says what TokenRhythm changed)
   "TokenRhythm/NeoHorse-1-4B": APACHE, "TokenRhythm/NeoHorse-1-4B-GGUF": APACHE,
   "TokenRhythm/NeoHorse-1-9B": APACHE, "TokenRhythm/NeoHorse-1-9B-GGUF": APACHE,
+  // T511.2: both cards say apache-2.0 (and the original's: "Apache License 2.0", a derivative of Qwen/Qwen3.5-0.8B)
+  "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5": APACHE, "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF": APACHE,
   // T337: both cards say apache-2.0
   "InternScience/Agents-A1-4B": APACHE, "InternScience/Agents-A1-4B-Q8_0-GGUF": APACHE,
   // T233: both cards say apache-2.0. The GGUF's NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from
@@ -162,6 +164,12 @@ export const LICENSES = {
   "LiquidAI/LFM2-700M": LFM_OPEN, "LiquidAI/LFM2-700M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-Instruct": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-Instruct-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-JP-202606": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF": LFM_OPEN,
+  // T511.1: the cards of Shisa's 350M and of its GGUF have no license (no field, no LICENSE file): written is the license
+  // of their base_model, Liquid AI's LFM2-350M-ENJP-MT (itself from LFM2-350M), whose card says lfm1.0 (the owner's
+  // decision, 2026-10-15)
+  "shisa-ai/shisa-v2.1c-lfm2-350m": LFM_OPEN, "mradermacher/shisa-v2.1c-lfm2-350m-GGUF": LFM_OPEN,
+  // T511.3: both cards say license other, lfm1.0 (the original's links its LICENSE file, Liquid AI's)
+  "shisa-ai/shisa-v2.1-lfm2-1.2b": LFM_OPEN, "mradermacher/shisa-v2.1-lfm2-1.2b-GGUF": LFM_OPEN,
   // T261.3: Google's originals (gated: the list takes unsloth's copies and GGUFs of them)
   "google/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it": GEMMA, "unsloth/gemma-3-270m-it-GGUF": GEMMA,
   "google/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it": GEMMA, "unsloth/gemma-3-1b-it-GGUF": GEMMA,

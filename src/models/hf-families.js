@@ -6,9 +6,9 @@ import {
   QWEN3_THINKING_AFTER_START, granite, lfm2Old, qwen35,
 } from "./formats.js";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
+  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.js";
-import { gemma3, ggufOf, lfm2, miniCpm5, ternaryBonsai, thinkingAndNot } from "./builders.js";
+import { gemma3, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
 
 export const HF_FAMILIES = [
   ...thinkingAndNot("hf-qwen3-4b", "Qwen3 4B",
@@ -63,6 +63,16 @@ export const HF_FAMILIES = [
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
+  // T511.2: a person's unofficial Japanese fine-tune of the Qwen3.5 0.8B (Takenoko12345678's v2.5: fewer Chinese
+  // words and refusals, a short Japanese thought). The maker's own Q8_0 GGUF, the vocabulary and config.json of the
+  // original; its chat_template.jinja, tokenizer.json and tokenizer_config.json are Qwen3.5-0.8B's byte for byte (the
+  // same blobs), so the 0.8B's formats, BOS, stops and specials (qwen35). The sampling is its card's
+  ...thinkingAndNot("hf-qwen3.5-0.8b-japanese-sft-v2.5", "Qwen3.5 0.8B Japanese SFT v2.5",
+    ggufOf("Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF", "101c43b482a00d8d7cb5f1fb0de9e7c1bf30e447",
+      "Qwen3.5-0.8B-Japanese-SFT-v2.5-Q8_0.gguf",
+      "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5", "b069f75cda9f72cb979be84a78411ee48f75ff50"), 811842912,
+    "fetches 812 MB (GGUF) → int8 850 MB", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_JA_SFT_SAMPLING),
   // T247: the other sizes of Qwen3.5 whose int8 a 64-bit memory of 16 GiB holds (the 27B's Q8_0 is 28.6 GB, and the
   // larger ones are mixtures of experts, which the engine has not). The same vocabulary, format and form as the 0.8B.
   // The 4B and the 9B have two value heads to a key head in their linear-attention layers, which llama.cpp writes in
@@ -199,6 +209,15 @@ export const HF_FAMILIES = [
     "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only"),
   lfm2("hf-lfm2.5-1.2b-jp", "LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
     "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only", {}),
+  // T511.1: Shisa.AI's LFM2 350M for Japanese chat (trained from Liquid AI's LFM2-350M-ENJP-MT, the translating one);
+  // its card says it is the best at Japanese chat under 1B (Shaberi 4.51, the LFM2-350M's 3.76)
+  shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",
+    "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 379216512,
+    "fetches 379 MB (GGUF) → int8 399 MB"),
+  // T511.3: and its 1.2B (from LFM2-1.2B), the 1B class's best at Japanese chat as Shisa's card measures (Shaberi 5.35)
+  shisaLfm2("hf-shisa-v2.1-lfm2-1.2b", "Shisa V2.1 LFM2 1.2B", "shisa-v2.1-lfm2-1.2b",
+    "292863c4c1d3b63357027b384f336a52498252b2", "4a433b919681b37f43088cf2c57cbe92a8d859d5", 1246254048,
+    "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
   // T261.3: Gemma 3's two smallest (the text models), on the CPU alone (no shader has their norms behind the layers, a
   // GELU in the gate or the window yet: T261.4). unsloth's Q8_0 GGUFs, which tests/gguf_check.py tensors held to
   // unsloth's copies of the originals

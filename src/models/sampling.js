@@ -19,6 +19,9 @@ const sampling35 = (temperature, topp, more) => ({ steps: 0, temperature, topp, 
 export const QWEN35_SAMPLING = { thinking: sampling35(1.0, 0.95, { presence_penalty: 1.5 }), atOnce: sampling35(0.7, 0.8, { presence_penalty: 1.5 }) };
 export const AGENTS_A1_SAMPLING = { thinking: sampling35(0.85, 0.95, { presence_penalty: 1.1 }), atOnce: sampling35(0.85, 0.95, { presence_penalty: 1.1 }) };
 export const BONSAI_2_SAMPLING = { thinking: sampling35(1.0, 0.95, { min_p: 0.05 }), atOnce: QWEN35_SAMPLING.atOnce };
+// T511.2: the card of the Japanese SFT v2.5 of Qwen3.5 0.8B: 1.0, 0.95 and the top-k with thinking (no presence
+// penalty), and for chat without thinking 1.0, top-p 1.0, the top-k and a presence penalty of 2.0
+export const QWEN35_JA_SFT_SAMPLING = { thinking: sampling35(1.0, 0.95), atOnce: sampling35(1.0, 1.0, { presence_penalty: 2.0 }) };
 // T364.3: Underdog Saluki 27B's card: 0.6, 0.95 and the top-k where it thinks, greedy where it answers at once. Not a
 // Qwen3.5's set: with its presence penalty one answer of four fell to doubting itself over and over (TODO.md's T364)
 export const SALUKI_SAMPLING = { thinking: sampling35(0.6, 0.95), atOnce: greedy };
