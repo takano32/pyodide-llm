@@ -224,7 +224,7 @@
 - T543 [整理][Gemma4] `perlayer.ts` が層ごとの埋め込みの表のスケールを float32 と読む前提 — 未着手
 - T544 [試験][CPU] `kernels-in-browser` の 3 値に、4 で割り切れないグループの通りを足す — 未着手
 - T545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
-- T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — レビュー前
+- T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
 - T547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 未着手
 - T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えのステップを GPU に置くか — 未着手
 - T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
@@ -235,6 +235,8 @@
 - T558 [試験][WebGPU] `fromStaging` の窓の輪の枝を直に踏む試験 — 未着手
 - T559 [整理][その他] Markdown の消毒の表を文字どおりに（`data-*`・`aria-*` を閉じる） — 未着手
 - T560 [試験][WebGPU] gpu-check に、最後のブロックが taps より短い LFM2 の作り物 — 未着手
+- T561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
+- T562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 <!-- 目次ここまで -->
 
 ## Opus の回とレビューの回（2026-09-25 に持ち主が決めた進め方。レビューは 2026-09-25 の夕方から Opus xhigh）
@@ -1615,7 +1617,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **手元で見られない所**: シェーダの正しさと速さは CI（`gpu-prompt.yml` に `real=hf-lfm2.5-350m` など、gpu-check の作り物に畳み込みの層の形を足す）。端末での選ばれ方は持ち主の端末でまとめて見る一覧に。LFM2 は eps と BOS の 1 本のベクトルに敏感（AGENTS.md の LFM2 の落とし穴 (1)(2)）なので、gpu-check の線は今の E16・Q8 の目盛りで、層ごとの K・V と状態を NumPy と比べる。
 - **完了の目安**: gpu-check で LFM2 の作り物と実物（350M）のプロンプトとステップが線の内、状態の壊し方（タップの向き・1 トークンずれ・位置 0 で消し忘れ）が落ちる、`gpu-hybrid-check` を「LFM2 は GPU を始める・Qwen3.5 は始めない」に直す、本番で既定のモデルが GPU を選ぶ端末で答えが同じ形。
 
-### T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 状態: レビュー前（2026-10-16、Opus medium、ブランチ `t546-gpu-sampling`。前の状態: 未着手（2026-10-16、WebGPU の洗い出しから。勧めの順の 2 番目。規模 中））
+### T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 状態: 反映済み（2026-10-16、本線に入れた。**レビュー（Sonnet high、2026-10-16）: OK。** シェーダを kernel・NumPy・`likecpu.ts` と行ごとに突き合わせ、top-k の同点（添字順）・段の順・presence の窓と `written` の数え方（CPU の書いた語の直近 64 語と同じ集合）に誤りなし。手元の軽い組は 499 秒で通った（実装の手元の 143 は外から止められたもので、このブランチの誤りではない）。網の `python` は pytest の名前の替わり 1 つと足した 1 つのほか同じ、`shaders` は予定どおり鍵が動く。レビューが足した presence を単独で使う場合（59a9d7b6）は bench.yml run 38886365365 で「sampling ok」が 7 回（3 つの OS）。前からの DP4A の落ちは T562）。前の見出し: レビュー前（2026-10-16、Opus medium、ブランチ `t546-gpu-sampling`。前の状態: 未着手（2026-10-16、WebGPU の洗い出しから。勧めの順の 2 番目。規模 中））
 - **当たるモデル**: 今 GPU に置けるモデルには無い。**T261.4 で Gemma 3 の層が GPU に置けても、項目の top-k 64 で答えのステップは自動で CPU に戻る**（AGENTS.md の「標本抽出の規則を足す」の 3）。続いて Gemma 4（top-k 64、T334）、Qwen3.5 系（top-k 20・presence 1.5、Agents-A1 は presence 1.1、T271）、Bonsai 2 27B の考える形（min-p 0.05）、Saluki（top-k 20）、URL で渡した訪問。取りまとめ役の決め: T261.4 の中でなく別のタスクで、T261.4 の直後に（T261.4 の鍵の回と 1 回のデプロイにまとめられるなら一緒に）。
 - **作るもの**: SAMPLE のシェーダ（`shaders/sample.ts`）に 3 つ。決まった順は CPU と同じ「top-k → top-p → min-p、どの段も前の段が残した確率を 1 に直してから」。top-k は今の pivot の探し（ソートしない）で k 番目の大きさの線を探す。min-p は最大の確率 × p の線。presence penalty は繰り返しの罰の後に、書いた語のうち直近 64 語から 1 回ずつ引く（プロンプトの語は数えない: `engine/sampler.py` の決まり）。top-k があると CPU は確率の大きい順に歩くので、GPU も同じトークンを引くこと（`shaders/likecpu.ts` の模型と smoke の突き合わせ）。`ON_GPU`・`gpu_steps()`・`generateMany` の渡す欄。
 - **元ネタ**: 今の SAMPLE の形の延長（T191）。llama.cpp の CPU の `llama_sampler` の順と同じ。
@@ -1680,3 +1682,9 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T560 [試験][WebGPU] gpu-check に、最後のブロックが taps より短い LFM2 の作り物 — 状態: 未着手（2026-10-16、T545.1 のレビューの気づき。T545.2 の前に）
 - いまの作り物 `synthetic-lfm2` は 64・64・21 のブロックだけで、最後のブロックが taps（3）より短い道（`CONV_STATE` が前の行を詰める）を GPU で通していない。プロンプトが 64+64+1 か +2 で終わる版（COUNT 129・130）を足す。
+
+### T561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 状態: 未着手（2026-10-16、T546 のレビューの気づき）
+- kernel の `selectTop`（`kernels/kernel/sample.ts`）は k 番目の境の同点を「どちらでも」にしている。GPU・NumPy・`likecpu.ts` は添字の順。厳密に同点の語が境にあると、kernel と GPU が別の語を引きうる（実の logits では稀。試験は許している: T274）。直すなら kernel の選びを同点の添字で決める。優先度は低い。
+
+### T562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 状態: 未着手（2026-10-16、T546 の CI が見つけた。本線 `b3a9e41d` の run 38881685551 でも同じ数）
+- `gpu-prompt.yml real=hf-qwen3-0.6b` の Dawn で「ORT DP4A …: the keys and values of the GPU's layer 19 are 3.76e-1 and 3.76e-1 from NumPy's (its line 2.70e-1)」。前からの物で、いつからかは未確認（T533 の 3 値のスケールの回の前後を見る）。線が厳しすぎるのか、DP4A の形の誤りかを切り分ける。Chromium のジョブのログは未確認。
