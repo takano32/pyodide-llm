@@ -183,11 +183,12 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   }
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += sizes.widths.rotated.reduce((sum, width) => sum + align(width * 4), 0);
-  // (T545: the attending layers' keys and values of a block, and the state that comes back with them where the GPU's
-  // worker has a kind's layers that keep one: an LFM2's convolution layers' rows)
+  // (T545: the attending layers' keys and values of a block, and the state that goes up and comes back with them where
+  // the GPU's worker has a kind's layers that keep one: an LFM2's convolution layers' rows, T271.2 a Qwen3.5's linear-
+  // attention layers' states and rows)
   if (gpu) {
     bytes += 2 * had.filter(({ kind }) => kinds[kind].cached).reduce((sum, { count }) => sum + count, 0) * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4 +
-      had.filter(({ kind }) => kinds[kind].staged).flatMap(({ kind, count }) => kinds[kind].state?.(sizes, count) ?? []).reduce((sum, each) => sum + each, 0);
+      had.reduce((sum, { kind, count }) => sum + (kinds[kind].staged?.(sizes, count) ?? 0), 0);
   }
   // what the kinds' layers keep besides, whatever the context (T229: a linear-attention layer's state; T260: a
   // convolution layer's rows), each as the engine takes it of the memory

@@ -72,6 +72,7 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 // which a second layer alone would not tell from 0 + size
 const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
+const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
   // the review of T235: Qwen3 with yarn's RoPE (Ternary Bonsai's): the cos and sin of every pair are 1 + 0.1 ln 4 = 1.1386
@@ -113,6 +114,20 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // steps go on from those (count: the tokens of the run, the prompt and the first step's; COUNT where none is said)
   "synthetic-lfm2-short": [{ layers: 6, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 } }, { arch: "lfm2", convolution: { layers: "ccacac", taps: 3 } }, { count: 130 }],
   "synthetic-lfm2-short2": [{ layers: 6, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 } }, { arch: "lfm2", convolution: { layers: "ccacac", taps: 3 } }, { count: 131 }],
+  // T271.2: a Qwen3.5 (linear-attention layers among full-attention ones), of four layers: linear, full, linear, full (the
+  // first the loading's check reads, the last attends: the CPU's step after the prompt reads its keys and values), three
+  // value heads to a key head (a key head read by the wrong value heads is off), a key dim of 32 and a value dim of 64
+  // (the delta rule's threads past the key dim load nothing, and every column of a 64-wide value is one), taps of 4, a
+  // gate of the attention's output, RoPE on 8 of a head of 32. The prompt's 149 tokens are blocks of 64, 64 and 21, each
+  // going on from the states and rows the one before left (they come back to the CPU and go up again, or the GPU's own:
+  // fresh); a GPU that reads the state's rows the wrong way, moves the rows by a token too many or too few, leaves out
+  // the decay or a norm, or does not clear the state at position 0 is off in the keys of the full layers after it, and
+  // the CPU's last token and steps, which go on from what came back, in the logits
+  "synthetic-qwen35": [{ layers: 4, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR }],
+  // the same with a prompt whose last block is shorter than the taps less one (130 tokens: blocks of 64, 64 and 2): the
+  // rows keep the block before's for the tokens the block has none of
+  "synthetic-qwen35-short": [{ layers: 4, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR },
+    { count: 131 }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],

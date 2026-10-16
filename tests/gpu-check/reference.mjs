@@ -47,7 +47,9 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False):
     quantized to 8 bits (Q8)"""
     numpy = Llama(data, vocabulary, **options)
     if q8:
-        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout"):  # (T545: an LFM2's matrices in and out too)
+        # (T545: an LFM2's matrices in and out too; T271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
+        # attention's output)
+        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name)).view(Q8))
     if half:

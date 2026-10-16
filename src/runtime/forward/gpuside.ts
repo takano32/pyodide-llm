@@ -36,9 +36,10 @@ export type Shape = {
   rotated: number;
   sharedClassifier: boolean;
   // T545: every layer's kind and its place among the layers of its kind; how many layers keep keys and values in the
-  // cache (every one, but an LFM2's convolution layers); and the state the GPU's worker goes on from (where the CPU keeps
-  // it, and its bytes: an LFM2's convolution layers' rows; null: none)
-  kinds: LayerKind[]; places: number[]; attending: number; state: { at: number; bytes: number } | null;
+  // cache (every one, but an LFM2's convolution layers and a Qwen3.5's linear-attention layers); and the bytes of the
+  // state the GPU's worker goes on from, as it goes up and comes back (an LFM2's convolution layers' rows, T271.2 a
+  // Qwen3.5's linear-attention layers' states and rows; 0: none)
+  kinds: LayerKind[]; places: number[]; attending: number; stateBytes: number;
 };
 // A matrix as createForward()'s matrix() made it: kind, how it is multiplied: packed (the name of its line of jobs.ts's
 // PACKED, in groups of group) or float32; and for a layer the addresses of its values and, where it is packed, of its
@@ -55,9 +56,20 @@ const onGpuAs = (m: Held) => {
   return Boolean(packing?.gpu) && m.group === packing!.group;
 };
 // T545: the kind of the layers a matrix or a vector of the GPU's is of, where it is not every layer's (its places index
-// those layers alone: an LFM2's attending layers are some of its layers)
-const KIND_OF: Partial<Record<string, LayerKind>> = { wq: "attention", wk: "attention", wv: "attention", wo: "attention", bq: "attention", bk: "attention",
-  bv: "attention", qNorm: "attention", kNorm: "attention", win: "convolution", wout: "convolution", conv: "convolution" };
+// those layers alone: an LFM2's attending layers are some of its layers). T271.2: a Qwen3.5's linear-attention layers'
+// and the gate of its full-attention layers' output; wout and conv are the kind's that keeps a state, whichever the
+// model has (an LFM2's convolution layers, a Qwen3.5's linear-attention layers: no model has both)
+const KIND_OF: Partial<Record<string, LayerKind>> = { wq: "attention", wk: "attention", wv: "attention", wo: "attention", wg: "attention", bq: "attention",
+  bk: "attention", bv: "attention", qNorm: "attention", kNorm: "attention", win: "convolution", wqkv: "linear", wz: "linear", wb: "linear", wa: "linear",
+  dtBias: "linear", decay: "linear", deltaNorm: "linear" };
+const kindOf = (name: string, { convolution, linear }: { convolution: Convolution | null; linear: Linear | null }): LayerKind | undefined =>
+  KIND_OF[name] ?? (name === "wout" || name === "conv" ? (convolution ? "convolution" : linear ? "linear" : undefined) : undefined);
+// T271.2: the widest key dim and value dim of a Qwen3.5's linear-attention layers the GPU's delta rule takes (a thread a
+// value of a head, its state's column in the thread's own memory): shaders/steps.ts's DELTA_THREADS, a second copy
+// here (no shader's text comes into this module's chunk), which tests/gpu-part-check.mjs holds to it
+export const DELTA_MOST = 128;
+// (T271.2: what a linear-attention layer's convolution runs over, q and k of the key heads and v of the value heads)
+const mixedOf = (linear: Linear) => 2 * linear.key_heads * linear.key_dim + linear.value_heads * linear.value_dim;
 // where the model's tensors are in the memory: the matrices (null: the model has none of that name), and the addresses
 // of the vectors and the tables (0: none)
 export type Placed = {
@@ -68,8 +80,11 @@ export type Placed = {
   // T261: the norms behind the attention and behind the FFN (0: the model has none); T261.4: RoPE's tables of the
   // local layers (0: none)
   attPost: number; ffnPost: number; localCos: number; localSin: number;
-  // T545: an LFM2's matrices in and out of its convolution layers, and their taps (null, 0: none)
-  win: Held | null; wout: Held | null; conv: number;
+  // T545: an LFM2's matrices in and out of its convolution layers, and their taps (null, 0: none). T271.2: a Qwen3.5's
+  // linear-attention layers' matrices of q, k and v and of z, its matrix out and taps (wout, conv), their gates' small
+  // matrices and vectors (float32), and the gate of its full-attention layers' output
+  win: Held | null; wout: Held | null; conv: number; wqkv: Held | null; wz: Held | null; wg: Held | null;
+  wb: number; wa: number; dtBias: number; decay: number; deltaNorm: number;
 };
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
@@ -87,7 +102,8 @@ export type CpuSide = {
   // T545: whether a block at pos goes on from the state of the layers that keep one, and that state taken from what the
   // GPU's worker left of a block (next: the position that comes after it)
   follows(pos: number): boolean;
-  stateFromStaging(next: number): void;
+  stateToStaging(): void;
+  stateFromStaging(next: number | null, taken?: boolean): void;
   // T261.4.2: where each attending layer's keys and values are now (a block, or a ring: a step's go up from there)
   places(): CachePlace[];
   readonly H: Uint16Array; readonly capacity: number;
@@ -116,24 +132,27 @@ let gpuRequests = 0;
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, linear, convolution, stateful, rotated,
-    sharedClassifier, kinds, attending, state } = shape;
+    sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, win, wout,
-    conv } = weights;
+    conv, wqkv, wz, wg, wb, wa, dtBias, decay, deltaNorm } = weights;
   // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: KIND_OF)
-  const countOf = (name: string) => (KIND_OF[name] ? kinds.filter((kind) => kind === KIND_OF[name]).length : layers);
+  const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
   // (T153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T154:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T155: int6 weights and 64-bit memories too)
   // (a function, not a const: gpuUnfit runs before this line, AGENTS.md)
   function gpuMatrices() {
-    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, win, wout }).filter(([, m]) => m)) as Record<string, Held>;
+    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, win, wout, wqkv, wz, wg }).filter(([, m]) => m)) as Record<string, Held>;
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers:
   // either of the first two lines keeps it on the CPU)
   function gpuUnfit() {
-    if (linear) return REASONS.linear;  // T229
+    // (T229: a Qwen3.5's linear-attention layers were kept off here until T271.2, which gave the GPU's worker a block's
+    // step for them; a key dim or a value dim wider than its delta rule takes, or value heads that are no whole multiple
+    // of the key heads, stays on the CPU)
+    if (linear && (linear.key_dim > DELTA_MOST || linear.value_dim > DELTA_MOST || linear.value_heads % linear.key_heads)) return REASONS.linear;
     // (T260: an LFM2's convolution layers were kept off here until T545, which gave the GPU's worker a step for them and
     // the state they go on from. T375.2: and a kind of layer that keeps a state which the engine comes to have, and the
     // GPU's worker has no step for: on the CPU until the GPU has it too)
@@ -164,10 +183,10 @@ export function gpuFit({ shape, weights, device, direct }:
   // the bytes of the layers on the GPU, and its own keys and values
   function layersOnGpu() {
     // (T545: each of the layers it is of, and the keys and values of the attending ones; and the state the convolution
-    // layers go on from, with its copy where a block's comes back)
+    // layers go on from, with its copy where a block's comes back; T271.2: the linear-attention layers' too)
     return Object.entries(gpuMatrices()).reduce((bytes, [name, m]) => bytes + countOf(name) * m.rows * m.n * gpuWeightBytes(m.kind), 0) +
       Object.entries(gpuVectors()).reduce((bytes, [name, { size }]) => bytes + countOf(name) * size * 4, 0) + 2 * attending * seqLen * kvDim * 2 +
-      2 * (state?.bytes ?? 0);
+      2 * stateBytes;
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.ts):
   // Llama's (RMSNorm, RoPE on whole heads, SwiGLU), and T226: with what the prompt's blocks take besides (T153: Qwen2's
@@ -181,6 +200,8 @@ export function gpuFit({ shape, weights, device, direct }:
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
     // (T545: an LFM2's steps stayed on the CPU here until T545.2, which gave a token's fused layer its convolution layers)
+    // (T271.2: a Qwen3.5's prompts go to the GPU, its steps stay here until a token's layer has its linear-attention layers)
+    if (linear) return REASONS.linear;
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
@@ -193,9 +214,9 @@ export function gpuFit({ shape, weights, device, direct }:
     const table = vocab * dim * gpuWeightBytes(wcls.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
     // (T261.4.2: a Gemma 3's local layers' table of RoPE as well)
-    // (T545.2: and the convolution layers' rows as each step of a request leaves them)
+    // (T545.2: and the state as the last step of a request leaves it, read back with its ids)
     const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
-      GPU_TOKENS * (state?.bytes ?? 0);
+      stateBytes;
     if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;
   }
@@ -209,12 +230,16 @@ export function gpuFit({ shape, weights, device, direct }:
       ...(qNorm ? { qNorm: { at: qNorm, size: headSize }, kNorm: { at: kNorm, size: headSize } } : {}),
       ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}),
       ...(attPost ? { attentionPost: { at: attPost, size: dim } } : {}), ...(ffnPost ? { ffnPost: { at: ffnPost, size: dim } } : {}),
-      // T545: an LFM2's taps, taps rows of dim a convolution layer
-      ...(conv ? { conv: { at: conv, size: convolution!.taps * dim } } : {}) };
+      // T545: an LFM2's taps, taps rows of dim a convolution layer (T271.2: a Qwen3.5's, taps rows of the mixed q, k and v
+      // a linear-attention layer), and T271.2 a Qwen3.5's gates' two small matrices (a row of dim a value head), their
+      // biases, decays and the norm of a value head
+      ...(conv ? { conv: { at: conv, size: convolution ? convolution.taps * dim : linear!.conv * mixedOf(linear!) } } : {}),
+      ...(wb ? { wb: { at: wb, size: linear!.value_heads * dim }, wa: { at: wa, size: linear!.value_heads * dim }, dtBias: { at: dtBias, size: linear!.value_heads },
+        decay: { at: decay, size: linear!.value_heads }, deltaNorm: { at: deltaNorm, size: linear!.value_dim } } : {}) };
   }
   // T545: the same, each with the kind of the layers it is of where it is not every layer's (KIND_OF), for the plan
   function gpuVectorsOf(): Vectors {
-    return Object.fromEntries(Object.entries(gpuVectors()).map(([name, vector]) => [name, KIND_OF[name] ? { ...vector, of: KIND_OF[name] } : vector])) as Vectors;
+    return Object.fromEntries(Object.entries(gpuVectors()).map(([name, vector]) => [name, kindOf(name, shape) ? { ...vector, of: kindOf(name, shape) } : vector])) as Vectors;
   }
   return { matrices: gpuMatrices, vectors: gpuVectorsOf, unfit: gpuUnfit, tokensUnfit };
 
@@ -239,10 +264,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier, activation, windows, locals, convolution, kinds, places, attending, state } = shape;
+    unturned, sharedClassifier, activation, windows, locals, convolution, linear, kinds, places, attending, stateBytes } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
-  const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateFromStaging } = cpuSide;
+  const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateToStaging, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
   const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now = () => performance.now() } = options;
   // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
@@ -279,6 +304,18 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   let gpuReason: string | null = null, gpuSide: "cpu" | "gpu" | null = null;
   // T156: why the GPU stopped under a model on the GPU alone, once it has
   let directLost: string | null = null;
+  // T271.2: the position the GPU's own state of the layers that keep one is at, where it is the one the CPU's goes on
+  // from (-1: it is not: the GPU's worker takes the CPU's up first, staged). A request that goes on from it puts nothing
+  // up (fresh); the CPU writing anything, a request refused or given up, or a GPU's state that is no position's (steps
+  // that stopped before their last) makes it -1. The GPU's worker clears its own at position 0 whatever this says
+  let gpuStateAt = -1;
+  // whether a request at pos goes on from the GPU's own state (else the CPU's is put where the GPU's worker takes it up)
+  function stateUp(pos: number) {
+    const fresh = direct ? true : !stateBytes || pos === 0 || gpuStateAt === pos;
+    gpuStateAt = -1;
+    if (!fresh) stateToStaging();
+    return fresh;
+  }
   const times = promptTimes();
   // T152: a generation's steps. tokensOn: the GPU takes them where it is faster (steps: their times); tokenStatus: what
   // the status line says of them (gpuLine's answers); tokenRecheck, cpuRecheck, sinceTokens: the side not chosen timed again now and then
@@ -317,7 +354,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     // (T545: a matrix of some of the layers, an LFM2's attending or convolution layers', is theirs alone: of says whose)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
-      const of = KIND_OF[name], count = of ? kinds.filter((kind) => kind === of).length : layers;
+      const of = kindOf(name, shape), count = of ? kinds.filter((kind) => kind === of).length : layers;
       return [name, { rows: m.rows, n: m.n, six: m.kind === "int6", ternary: m.kind === "ternary",
         layers: Array.from({ length: count }, (_, l) => m.layer(l).slice(0, 2) as [number, number]), ...(of ? { of } : {}) }];
     }));
@@ -395,7 +432,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
-      kinds, places, convolution: convolution && state ? { taps: convolution.taps, rows: state.at } : null, batch: GPU_BLOCK,
+      kinds, places, convolution: convolution ? { taps: convolution.taps } : null,
+      linear: linear ? { keyHeads: linear.key_heads, valueHeads: linear.value_heads, keyDim: linear.key_dim, valueDim: linear.value_dim, taps: linear.conv } : null,
+      batch: GPU_BLOCK,
       matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,
       cos: cosTable, sin: sinTable, staging, force: gpuForce, remembered: gpuRemembered, direct: Boolean(direct),
@@ -456,9 +495,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     views();
     // the GPU reads the rows from there (T210: on the GPU alone, it embeds the tokens itself)
     if (!direct) embed(tokens, pos0, gpuRows, D);
+    const fresh = stateUp(pos0);
     gpuSerial = ++gpuRequests;
     Atomics.store(ctl!, GPU_WANTED, gpuSerial);
-    gpuWorker!.postMessage({ type: "prompt", serial: gpuSerial, count, pos: pos0, ...(direct ? { tokens } : {}) });
+    gpuWorker!.postMessage({ type: "prompt", serial: gpuSerial, count, pos: pos0, fresh, ...(direct ? { tokens } : {}) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
       stopGpu(REASONS.stalled(stalledMs));
       return false;
@@ -477,8 +517,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       return false;
     }
     if (!direct) fromStaging(pos0, count);
-    // (T545: the state the convolution layers left, which the next block or token goes on from)
-    stateFromStaging(pos0 + count);
+    // (T545: the state the convolution layers left, which the next block or token goes on from; T271.2: the GPU's own is
+    // that position's too)
+    stateFromStaging(pos0 + count, !direct);
+    gpuStateAt = pos0 + count;
     gpuEnd = pos0 + count;
     gpuTokens += count;
     times.gpu(count, now() - began);
@@ -570,10 +612,11 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     const began = now();
     if (!direct && pos + count - 1 >= cpuSide.capacity) grow(pos + count - 1);
     views();
+    const fresh = stateUp(pos);
     gpuSerial = ++gpuRequests;
     Atomics.store(ctl!, GPU_WANTED, gpuSerial);
     // (T210: on the GPU alone, no cache here to go up from, nor any position the GPU does not hold)
-    gpuWorker!.postMessage({ type: "tokens", serial: gpuSerial, count, pos, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length, written,
+    gpuWorker!.postMessage({ type: "tokens", serial: gpuSerial, count, pos, fresh, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length, written,
       cache: direct ? null : { places: cpuSide.places(), row: KV, half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
       stopGpu(REASONS.stalled(stalledMs));
@@ -618,11 +661,13 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       stopGpu(REASONS.keysInStep(pos));
       return undefined;
     }
-    if (!direct) {
-      fromStaging(pos, sampled);
-      // (T545.2: the convolution layers' rows as the last step sampled left them)
-      stateFromStaging(pos + sampled);
-    }
+    // (T545.2: the state of the layers that keep one as the last step left it; T271.2: where a stop token came before the
+    // last, the steps after it went on past the position the CPU is at, and no state of that position came back: only
+    // position 0 goes on from there, as a generation that stopped does)
+    const whole = sampled === count;
+    if (!direct) fromStaging(pos, sampled);
+    stateFromStaging(whole ? pos + count : null, !direct);
+    gpuStateAt = whole ? pos + count : -1;
     gpuEnd = pos + sampled;
     gpuSampled += sampled;
     if (sampled === count) steps.gpu((now() - began) / count);
@@ -683,6 +728,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
    * own keys and values do not */
   function cpuWrote(pos: number) {
     gpuEnd = Math.min(gpuEnd, pos);
+    gpuStateAt = -1;  // (T271.2: the CPU's state moves on: the GPU's is not the one to go on from)
   }
   /** T156: something was to run on the CPU of a model whose layers are on the GPU alone (a block or a step the GPU
    * did not take): the GPU's side is lost (the worker loads the model again on the CPU), and this is the error to throw */

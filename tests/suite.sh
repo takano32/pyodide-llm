@@ -234,14 +234,14 @@ part "the rotated basis's kernels" node tests/rotate-check.mjs
 # instantiates: every half at every place of a 16-byte line, the rest after the eights (no engine's kvDim leaves one), a bad
 # half just outside the run, an address above 4 GiB (a few seconds)
 part "the finite look at float16" node tests/finite-check.mjs
-# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward/gpuside.js's gpuUnfit says so first, and no
-# adapter of CI's reaches that line (a few seconds)
-hybrid_stays_on_the_cpu() {
+# T229 (the review): a Qwen3.5 was not put on a GPU where an adapter is there (no adapter of CI's reaches gpuUnfit's lines);
+# T271.2: its prompts are the GPU's now, its worker started with a plan of its linear-attention layers (a few seconds)
+qwen35_goes_to_the_gpu() {
   mkdir -p .tmp
   python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
   node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-int8
 }
-part "a Qwen3.5 where a GPU adapter is" hybrid_stays_on_the_cpu
+part "a Qwen3.5 where a GPU adapter is" qwen35_goes_to_the_gpu
 # T260: nor was an LFM2, whose convolution layers had no shader; T545: its prompts are the GPU's now, its worker started with
 # a plan of its layers' kinds and places, its taps and rows (a few seconds)
 lfm2_goes_to_the_gpu() {

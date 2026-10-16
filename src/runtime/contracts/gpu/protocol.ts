@@ -42,8 +42,16 @@ export type Vectors = {
   // T261.4: a Gemma 3's norms behind the attention and behind the FFN
   attentionPost?: Vector;
   ffnPost?: Vector;
-  // T545: the taps of an LFM2's convolution layers (taps rows of dim a layer)
+  // T545: the taps of an LFM2's convolution layers (taps rows of dim a layer; T271.2: a Qwen3.5's linear-attention
+  // layers', taps rows of their mixed q, k and v)
   conv?: Vector;
+  // T271.2: a Qwen3.5's linear-attention layers' gates: their two small matrices (float32, a row of dim a value head),
+  // dt_bias and the decay (one a value head), and the norm of a value head
+  wb?: Vector;
+  wa?: Vector;
+  dtBias?: Vector;
+  decay?: Vector;
+  deltaNorm?: Vector;
 };
 
 // T152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
@@ -87,7 +95,8 @@ export type Remembered = { key?: string; matrices?: string; attention?: string; 
 
 // The plan of { type: "start" }: the model's sizes, what RoPE turns, its norm and residual, and addresses in the
 // shared memory (the matrices, the vectors, rows: the rows forward.ts embeds, cos and sin: RoPE's tables, staging:
-// where a block's keys and values come back, and T545 the convolution layers' rows after them)
+// where a block's keys and values come back, and T545 the state of the layers that keep one after them: where it goes
+// up from too, T271.2)
 export type Started = {
   dim: number;
   hidden: number;
@@ -110,13 +119,16 @@ export type Started = {
   local: number[];
   localCos: number;
   localSin: number;
-  // T545: every layer's kind ("attention", or "convolution": an LFM2's) and its place among the layers of its kind; and
-  // of the convolution layers, the taps and where the CPU keeps their rows (taps rows of dim float32 a layer, place after
-  // place: the state a block goes on from), or null where the model has none. The GPU's own keys and values, and the
-  // places a block's come back to, are the attending layers' alone
+  // T545: every layer's kind ("attention", or "convolution": an LFM2's; T271.2 "linear": a Qwen3.5's) and its place
+  // among the layers of its kind; of the convolution layers, the taps; T271.2: of the linear-attention layers, their
+  // heads and their sizes and the taps of their convolution; null where the model has none. The state of those layers
+  // is staged after the keys and values (staging), as the CPU's kinds put it there (forward/convolution.ts, linear.ts:
+  // the convolution layers' rows; the linear-attention layers' states, then their rows). The GPU's own keys and values,
+  // and the places a block's come back to, are the attending layers' alone
   kinds: LayerKind[];
   places: number[];
-  convolution: { taps: number; rows: number } | null;
+  convolution: { taps: number } | null;
+  linear: { keyHeads: number; valueHeads: number; keyDim: number; valueDim: number; taps: number } | null;
   // the most tokens of a block
   batch: number;
   matrices: Record<string, Matrix>;
@@ -149,9 +161,10 @@ export type ToGpu =
   | { type: "open"; plan: Opened; flow: SharedArrayBuffer }
   | { type: "weights"; offset: number; bytes: Uint8Array }
   | { type: "start"; memory: WebAssembly.Memory; plan: Started }
-  // T210: tokens, the ids of a model on the GPU alone, which embeds them there
-  | { type: "prompt"; serial: number; count: number; pos: number; tokens?: number[] }
-  | { type: "tokens"; serial: number; count: number; pos: number; from: number; token: number; history: number[]; length: number;
+  // T210: tokens, the ids of a model on the GPU alone, which embeds them there. T271.2: fresh, the request goes on from
+  // the GPU's own state of the layers that keep one (none, or false: from the CPU's, staged; position 0: none)
+  | { type: "prompt"; serial: number; count: number; pos: number; fresh?: boolean; tokens?: number[] }
+  | { type: "tokens"; serial: number; count: number; pos: number; fresh?: boolean; from: number; token: number; history: number[]; length: number;
       written: number; cache: Cache | null; settings: Sampling; randoms: number[] }
   | { type: "keys"; serial: number; count: number; pos: number }
   | { type: "stop" };

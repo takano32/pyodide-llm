@@ -254,17 +254,15 @@ function halfToFloat(h) {
   // of a block come back through, and its rows), for every model the GPU takes: int8 and six bits of whole groups
   let withGpu = 0, refused = 0, convolutional = 0;
   plans.forEach((p, n) => {
-    if (p.dtype === "ternary" && (p.form.linear || p.form.rotated)) {
+    if (p.dtype === "ternary" && p.form.rotated) {
       // T232 (the review of T237): the GPU takes ternary weights now (the ternary Qwen3s below go on as the int8 models
-      // do), and what it does not take is still refused, each for its own reason, with nothing put aside for a GPU: a
-      // hybrid model for its linear-attention layers (the 27B, T233, which is in a rotated basis too: the first reason
-      // comes first), a Llama in a rotated basis for that
+      // do), and what it does not take is still refused, with nothing put aside for a GPU: a model in a rotated basis
+      // (T271.2: the 27B, T233, a hybrid one too, for its rotated basis now: its linear-attention layers are the GPU's)
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: true, outliers: 8, gpu: false, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
-      const why = p.form.linear ? "linear-attention layers are not on the GPU yet" : "a rotated basis is not on the GPU yet";
-      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}: the GPU was not refused for ${p.form.linear ? "its linear-attention layers" : "its rotated basis"}`);
+      assert.equal(engine.gpuWhyNot, "a rotated basis is not on the GPU yet", `${shapes[n].name}: the GPU was not refused for its rotated basis`);
       assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
       engine.release();
       refused++;
@@ -307,9 +305,13 @@ function halfToFloat(h) {
       convolutional++;
       return;
     }
-    if (!p.keep_int8 || shapes[n].loose || p.form.linear) return;  // (T229: a Qwen3.5 is not on the GPU: forward/gpuside.js's gpuUnfit)
+    // (T271.2: a Qwen3.5's prompts are the GPU's too: what is put aside for it, its linear-attention layers' states and
+    // rows besides the attending layers' keys and values of a block, is footprint()'s)
+    if (!p.keep_int8 || shapes[n].loose) return;
     for (const relaxed of [true, false]) {
-      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: true, shared: true };
+      // (a model the GPU refuses puts nothing aside for it: footprint() is asked as the worker asks it then, T271.2's
+      // Qwen3.5s in a rotated basis, whose state put aside would be 12 MiB)
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: !p.form.rotated, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       const engine = engineOn(p, planOf(p, { relaxed, outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
@@ -318,7 +320,8 @@ function halfToFloat(h) {
       assert.equal(engine.gpuWhyNot, p.form.rotated ? "a rotated basis is not on the GPU yet" : null, `${shapes[n].name}, ${p.dtype}: the GPU's refusal is "${engine.gpuWhyNot}"`);
       engine.release();
       const where = `${shapes[n].name}, ${p.dtype}, ${relaxed ? "relaxed SIMD" : "no relaxed SIMD"}, a GPU asked for`;
-      assert.ok(used <= bound && bound - used <= 1.2 * MiB && bound - used >= 0.9 * MiB,
+      const over = relaxed ? hybridOver(p) : 0;
+      assert.ok(used <= bound && bound - used <= 1.2 * MiB + over && bound - used >= 0.9 * MiB,
         `${where}: createForward put ${(used / MiB).toFixed(2)} MiB after the checkpoint, footprint() counted ${(bound / MiB).toFixed(2)}`);
       withGpu++;
     }

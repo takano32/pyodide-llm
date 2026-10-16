@@ -91,8 +91,8 @@ type TokenBuffers = {
 // a run of steps: what runTokens() is given, and what it read back (kv where it was asked to keep them)
 type Run = { count: number; pos: number; state: GPUAllowSharedBufferSource; settings?: GPUAllowSharedBufferSource; randoms?: Float32Array<ArrayBuffer>; keep?: boolean;
   extra?: (encoder: GPUCommandEncoder) => void };
-// (T545.2: rows, the convolution layers' rows as each step left them, where kv is)
-type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; notFinite: number; kv?: Uint8Array<ArrayBuffer>[][]; rows?: Uint8Array<ArrayBuffer>[] };
+// (T545.2: state, the state of the layers that keep one as the last step left it, where kv is: T271.2, as it goes up)
+type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; notFinite: number; kv?: Uint8Array<ArrayBuffer>[][]; state?: Uint8Array<ArrayBuffer> };
 
 // ---- T152: tokens on the GPU. A step of the engine's generate() (the forward pass of the token fed, the sampling of
 // the next) as one compute pass of shaders.ts's T151 run: EMBED of the state's token, every layer in a fused form, the
@@ -180,7 +180,7 @@ const bindAt = (m: Model, pipeline: GPUComputePipeline, entries: Entry[]) => m.d
 // T378.4: what this makes is the first part of the model's record of a token, m.tokens, which tokenforms.ts's
 // chooseTokens() sets (with the attention and the form chosen); the functions below read it
 async function tokenBuffers(m: Model): Promise<TokenBuffers> {
-  const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows, attending = attendingOf(plan).length, rowsBytes = m.block.conv?.bytes ?? 0;
+  const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows, attending = attendingOf(plan).length, stateBytes = m.block.stateBytes;
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // (one at a time: each in an error scope of its own)
   // (T232: from a table of ternary weights, EMBED_TERNARY)
@@ -194,8 +194,8 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     state: buffer(m, STATE_BYTES, out | COPY_DST), chosen: buffer(m, most * 4, out), randoms: buffer(m, most * 4, STORAGE | COPY_DST),
     step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, SAMPLING_BYTES, UNIFORM | COPY_DST),
     xq: buffer(m, widest), xs: buffer(m, (widest / GROUP) * 4), xb: buffer(m, plan.dim * 4),
-    // (T545.2: the attending layers' keys and values, and the convolution layers' rows after each step)
-    readback: buffer(m, most * 4 + STATE_BYTES + 2 * attending * most * kvDim * 2 + most * rowsBytes, MAP_READ | COPY_DST),
+    // (T545.2: the attending layers' keys and values, and the state of the layers that keep one after the last step)
+    readback: buffer(m, most * 4 + STATE_BYTES + 2 * attending * most * kvDim * 2 + stateBytes, MAP_READ | COPY_DST),
     // (below: the uniforms, and what only some models have)
     u: null, rope: null, qkv: null, qkvBias: null, take: null, columns: null, picked: null, mixed: null };
   // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned
@@ -406,10 +406,12 @@ function tokenStep(m: Model, form: TokenForm, positions: number) {
 // pos + count - 1. extra(encoder): what a check copies out besides. Returns { ids, sampled, stopped, notFinite (T219:
 // the sampler refused the step after the sampled ones: its logits were not finite), kv: [keys, values][layer], the
 // positions' rows of float16 as bytes }
-// T545.2: kv by the attending layers' places; rows (keep), the convolution layers' rows after each step
+// T545.2: kv by the attending layers' places; state (keep), the state of the layers that keep one after the last step
+// (T271.2: of the last step alone: steps that stopped before it leave no state of their position, and the CPU goes on
+// from position 0 then, forward/gpuside.ts)
 async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, settings, randoms, keep = false, extra }: Run) {
-  const { device, tokens: g } = m, { cache, conv } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
-  const layers = cache!.keys.length, rowsBytes = keep && conv ? conv.bytes : 0, rowsAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
+  const { device, tokens: g } = m, { cache, states } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
+  const layers = cache!.keys.length, stateBytes = keep ? m.block.stateBytes : 0, stateAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
   if (pos + count > cache!.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
@@ -424,7 +426,13 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
     pass.end();
     // the Step of the next pass: the state's first four words
     encoder.copyBufferToBuffer(g.state, 0, g.step, 0, 16);
-    if (rowsBytes) encoder.copyBufferToBuffer(conv!.rows, 0, g.readback, rowsAt + i * rowsBytes, rowsBytes);
+  }
+  if (stateBytes) {
+    let at = stateAt;
+    for (const { buffer: from, bytes } of states) {
+      encoder.copyBufferToBuffer(from, 0, g.readback, at, bytes);
+      at += bytes;
+    }
   }
   encoder.copyBufferToBuffer(g.chosen, 0, g.readback, 0, count * 4);
   encoder.copyBufferToBuffer(g.state, 0, g.readback, idsBytes, STATE_BYTES);
@@ -445,12 +453,12 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
     const after = words.subarray(g.most);
     const out: Ran = { ids: words.slice(0, count), sampled: after[5], stopped: after[7], notFinite: after[STATE_NOT_FINITE] };
     if (keep) {
-      const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * layers * g.most * kvRow + count * rowsBytes).slice(0));
+      const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * layers * g.most * kvRow + stateBytes).slice(0));
       out.kv = [0, 1].map((side) => [...Array(layers)].map((_, l) => {
         const at = (side * layers + l) * g.most * kvRow;
         return bytes.subarray(at, at + count * kvRow);
       }));
-      if (rowsBytes) out.rows = [...Array(count)].map((_, i) => bytes.subarray(rowsAt - kvAt + i * rowsBytes, rowsAt - kvAt + (i + 1) * rowsBytes));
+      if (stateBytes) out.state = bytes.subarray(stateAt - kvAt, stateAt - kvAt + stateBytes);
     }
     return out;
   } finally {

@@ -2,8 +2,8 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { model, lost, copyIn } from "./device.ts";
-import { roomFor, keysIn, block, keysOut, keysBack, attendingOf } from "./block.ts";
+import { model, lost } from "./device.ts";
+import { roomFor, keysIn, block, keysOut, keysBack, attendingOf, stateIn } from "./block.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import type { Thrown } from "./device.ts";
@@ -22,18 +22,18 @@ type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 // forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back.
 // T545.2: an LFM2's convolution layers go on from the CPU's rows (none at position 0, as a block), which the CPU holds
-// while it waits; after the attending layers' keys and values (by their places) come the rows as the last step sampled
-// left them, as a block's come back (cpuSide.stateFromStaging takes them)
-function generate({ serial, count, pos, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
+// while it waits; after the attending layers' keys and values (by their places) come the rows as the last step left
+// them, as a block's come back (cpuSide.stateFromStaging takes them). T271.2: and a Qwen3.5's linear-attention layers'
+// states and rows; fresh, from the GPU's own (block.ts's stateIn). On the GPU alone (cache null) the state is its own
+function generate({ serial, count, pos, fresh = false, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
-    const m = model!, { plan, tokens: g } = m, { conv } = m.block, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
+    const m = model!, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
     if (!g?.form) throw new Error("no tokens on this GPU");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);
-    if (cache && conv) {
-      if (pos === 0) m.device.queue.writeBuffer(conv.rows, 0, new Uint8Array(conv.bytes));
-      else copyIn(m, conv.rows, plan.convolution!.rows, conv.bytes);
-    }
+    const encoder = m.device.createCommandEncoder();
+    stateIn(m, encoder, pos, fresh || !cache);
+    m.device.queue.submit([encoder.finish()]);
     const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
       state: samplingState({ token, pos, history, length, written }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
@@ -44,7 +44,7 @@ function generate({ serial, count, pos, from, token, history, length, written, c
           .set(out.kv![side][l].subarray(0, out.sampled * kvRow));
       }
     }
-    if (out.rows && out.sampled >= 1) new Uint8Array(m.memory.buffer, plan.staging + 2 * layers * plan.batch * kvRow, conv!.bytes).set(out.rows[out.sampled - 1]);
+    if (out.state && out.sampled === count) new Uint8Array(m.memory.buffer, plan.staging + 2 * layers * plan.batch * kvRow, out.state.length).set(out.state);
     const ids = new Int32Array(m.memory.buffer, plan.tokens!.ids, 2 + g.most);
     ids[0] = out.sampled;
     ids.set(out.ids.subarray(0, out.sampled), 1);
@@ -53,8 +53,8 @@ function generate({ serial, count, pos, from, token, history, length, written, c
 }
 
 // ---- a block of a prompt (T210: tokens, the ids of a model on the GPU alone, which embeds them here)
-function prompt({ serial, count, pos, tokens }: Asked<"prompt">) {
-  serve(serial, (wanted) => block(model!, count, pos, wanted, false, tokens));
+function prompt({ serial, count, pos, fresh = false, tokens }: Asked<"prompt">) {
+  serve(serial, (wanted) => block(model!, count, pos, wanted, false, tokens, fresh || Boolean(model!.plan.direct)));
 }
 // The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
 // runs while words.beat counts up, then words.failed and words.done = serial, where forward.ts still waits for this
