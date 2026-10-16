@@ -218,7 +218,7 @@
 - T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
-- T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
+- T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — レビュー前
 - T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 未着手
 - T542 [バグ][変換] 偶数でない数のグループの 3 値のテンソルが、次の float32 のテンソルを 4 バイトの境から外す — 未着手
 - T543 [整理][Gemma4] `perlayer.ts` が層ごとの埋め込みの表のスケールを float32 と読む前提 — 未着手
@@ -1583,8 +1583,19 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 状態: 未着手（2026-10-15、T340〜T342 のレビューの気づき）
 - いまの壊し方（ベクトルの道だけ係数をずらす）は「4 つずつと 1 つずつが同じ」の検査が落とす。両方の道で同じ誤りを入れたとき、smoke の NumPy との比べ（rtol 2e-6）と erf との比べ（5e-7）が係数の 1e-5 規模のずれを落とすかは未確認。通すなら線を締める。
 
-### T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 状態: 未着手（2026-10-15、持ち主が選択肢で「数えるようにする」。T129 の持ち主の判断待ちだった件: 案のブランチ `t129-review-model-bytes`）
+### T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 状態: レビュー前（ブランチ `t538-slow-line`。2026-10-15、持ち主が選択肢で「数えるようにする」。T129 の持ち主の判断待ちだった件: 案のブランチ `t129-review-model-bytes`）
 - 0.15 Mbps の回線ではモデルの部品が回線を埋めて jsDelivr の最初のバイトが 30 秒来ず、フォールバック（隔離のない 1 コア）に入る（AGENTS.md の「Pyodide の読み込みの期限」の (3)）。案のブランチを今の木に合わせて読み直し、`slow.yml` で確かめる。本当に止まったときに諦めるまでが少し遅くなる。
+- **形（2026-10-16、Opus medium）**: 案のブランチ（0a644bce）の形を取った: `sources.ts` の `download()`・`readUrl()` が届いたバイトを `modelBytesCame()` で言い、`pyodide.ts` の `silence()`（回ったチックで数える: 決まりはそのまま）が Pyodide 自身のバイトとモデルのバイトの両方が 30 チック止まったら諦める。版の解決も同じ（30 秒の時計をチックに）。案に足したもの 3 つ: (1) **上限 `FILLED_SECONDS` = 300**: モデルが届き続けても、Pyodide 自身のバイトが 300 チック来なければ諦める。(2) **段の包みは Pyodide の base の下の URL だけを数える**（`watchArrivals(base)`、性能の項目の観測者も）: 包みの間に始まるモデルの後ろの部品が Pyodide のものと数えられ、(1) を消していた（worker-check がそれで落ちた）。jinja2 の読み込みは base なしで今まで通り。(3) **段が回線の失敗（failureOf() が `refused` と読む Error）で終わったら、同じ文のまま種類 `runtime`**（ページが Service Worker なしでもう 1 回）: CI の 1 回目で、モデルが埋める回線の jsDelivr の新しい接続がハンドシェイクの途中で切られ（「TypeError: Failed to fetch dynamically imported module」）、前はそれより先に来ていた静けさの 30 秒が来ないので、stall の場合がフォールバックなしの「Could not load」になった。メモリの不足は `memory` のまま。
+- **取りまとめ役の決め**: (a) 上限は 5 分（slow.yml が見た新しい接続の待ちの最長 20.5 秒の約 15 倍、33 MB のモデルを 0.15 Mbps で取る時間の約 6 分の 1。止まった Pyodide（T97 の iOS の NumPy の型）がモデルの届く間も 5 分で見つかる）。(b) 断りの文は変えない（5 分の上限で諦めたときも「got nothing from the network for 30 seconds」と言う。文面は持ち主: まとめの一覧へ）。(c) (3) の回線の失敗をフォールバックにする（前は種類なしで終わっていた: CDN の 404 のような失敗でもページの再読み込みが 1 回増える）。(d) 確かめは `slow.yml`（本番のサイト）でなく、ブランチのサイトをランナーで作る `tests/slow_in_browser.sh`（tests.yml の `extra=`、前の版 `origin/main` と同じランナーで交互に）。そのため `slow-check.mjs` に `--dist`（ふつうの HTTP を同じ速さの回線で通す。サーバが閉じた lane は、並んでいるものを渡し切ってから閉じる）。slow.yml そのものは触っていない。
+- **CI**（CI を回した。訳: 遅い回線と実ブラウザは手元で見られない）: 1 回目 run 38877778099（(3) の前）、2 回目 run 38883245088（(3) の後）。2 回目:
+  - fifo（256 KB の 1 つの待ち行列）0.15 Mbps × 2 回: **前はどちらも版の解決の 30 秒でフォールバック**（「data.jsdelivr.com did not answer in 30 seconds」）。**後は版と loader を越える**（1 回目は pyodide.mjs の接続が切れて、2 回目は 9 MB の大半が届いた 5〜6 分目に pyodide.asm.mjs の接続が切れて、どちらも (3) でフォールバック）。どちらの版も隔離のまま準備完了には届かない。
+  - fair 0.15 Mbps: 前も後も同じ（5〜6 分目に「the runtime」が 30 秒何も受けずフォールバック、隔離なしで約 617 秒で準備完了）。
+  - stall（jsDelivr が 200 kB で止まる）0.4 Mbps: 前も後もフォールバックしてエラー（ok）。1 回目の後の版はここが「Could not load」・フォールバックなしで落ちた: (3) の訳。
+  - 1 回目の fair 0.4 Mbps: 前も後も隔離のまま 226 秒で準備完了（4 本、同じ）。lane（いちばん古い接続が先）は新しい接続を完全に飢えさせ、30 秒でサーバがハンドシェイクを切るので、0.15 Mbps では前も後も pyodide.mjs で落ちる（道具の極端: 結果は読まない）。
+  - **分かったこと（直していない）**: 0.15 Mbps では jsDelivr への接続が 5〜6 分で、途中の要求ごと切れる（手元の Chrome で `net::ERR_FAILED` を 3 つ同時に見た。誰が切るかは未確認）。だから「後はスレッドの道で準備完了」はこの回線では示せなかった: T538 で前に進むのは版と loader の段まで。続けるなら採番して（取りまとめ役へ）。
+- **手元**: worker-check（版と loader がモデルの最後のバイトの 30 秒後に諦める・モデルが届き続けると 300 秒で諦める・回線の失敗は `runtime`・メモリは `memory`。壊し方: `modelBytesCame` を外すと版が 31 秒で、上限を外すと 358 秒で、base で絞らないと loader が 358 秒で落ちる）、軽い組（「suite: light passed in 660 s」、終わりの数 0）、`npm run build && node tests/dist-check.mjs`、網（`origin/main` b3a9e41 と: ok）、`serving-check`・`workflows-check`・`failure-check`（runtime を作る所が 3 つ）、ふつうの回線の e2e（手元の Chrome、tiny-lm、`E2E_TWICE`: 準備完了 12.9 秒・230 tok/s、2 回目 5.6 秒）、`slow-check.mjs --dist` を手元の Chrome で 16 Mbps（14 秒で隔離のまま準備完了）。
+- **持ち主の端末で見るもの**（まとめての一覧へ）: 遅い回線（スマホの速度制限の後）で既定の訪問が、前より遅くフォールバックするか、準備完了まで進むか。速さには触っていない。
+- **見ていないもの**: 本物の Firefox と WebKit（`slow-check` は Chromium だけ）、iPhone、`readUrl()` の道（`?checkpoint=` の URL）の遅い回線、5 分の上限が実機で当たる場合。
 
 ### T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 未着手（2026-10-15、T532 のレビューの気づき）
 - transformers 5 は config に `original_max_position_embeddings` があると factor を `max_position_embeddings / original` で作り直す。こちらは config の factor をそのまま使う（前から）。一覧の 4 つ（Ternary Bonsai）には効かない。一覧の外の yarn のモデルで差が出るかは未計測。
