@@ -34,12 +34,21 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
 // there. Only the keys the page and the engine know, in the ranges they take
 {
   const ranges = { steps: [0, Infinity], temperature: [0, 1.5], topp: [0.05, 1], repetition_penalty: [1, 2], top_k: [0, Infinity],
-    min_p: [0, 1], presence_penalty: [0, 2] };
+    min_p: [0, 1], presence_penalty: [0, 2], thinking: [0, Infinity] };
   for (const entry of MODELS) {
     for (const [key, value] of Object.entries(entry.generation ?? {})) {
       assert.ok(ranges[key], `${entry.id}: generation.${key} is no setting of the page`);
       assert.ok(Number.isFinite(value) && value >= ranges[key][0] && value <= ranges[key][1], `${entry.id}: generation.${key} = ${value} is out of ${ranges[key]}`);
     }
+  }
+}
+// T520: every entry that thinks (Qwen3's and Qwen3.5's thinking forms, DeepSeek-R1's distills, ...) has the budget of a
+// thought, and no other entry has one (a second copy of the number, on purpose: src/models/sampling.js's THOUGHT_BUDGET)
+{
+  const thinking = MODELS.filter((entry) => /\(thinking\)|Thinking|DeepSeek-R1/.test(entry.name) || /<think>\s*$/.test(entry.template ?? ""));
+  assert.ok(thinking.length >= 27, `only ${thinking.length} entries that think were found`);
+  for (const entry of MODELS) {
+    assert.equal(entry.generation?.thinking, thinking.includes(entry) ? 4096 - 512 : undefined, `${entry.id}: the budget of a thought`);
   }
 }
 const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
@@ -120,7 +129,7 @@ assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8),
   // T537: the languages its card says (its metadata's en alone); T539: with 日本語, for it answered Japanese questions in
   // Japanese here (T364), and so among the Japanese ones
   assert.deepEqual([thinks.note, answers.note], [`thinks before it answers · 日本語 / English · ${after}`, `answers at once · 日本語 / English · ${after}`]);
-  assert.deepEqual(thinks.generation, { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0, top_k: 20 });
+  assert.deepEqual(thinks.generation, { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0, top_k: 20, thinking: 4096 - 512 });
   assert.deepEqual(answers.generation, { steps: 0, temperature: 0.0 });
   for (const entry of [thinks, answers]) {
     assert.deepEqual(entry.conversion, { dtype: "int8", blocks: true }, entry.id);

@@ -31,3 +31,14 @@ export const graniteSampling = { steps: 0, temperature: 1.0, topp: 0.95, repetit
 // same, with presence and frequency penalties of 0), thinking or not
 const spark = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };
 export const SPARK_SAMPLING = { thinking: spark, atOnce: spark };
+
+// T520: the budget of a thought, in tokens, of every entry that thinks (its note says "thinks"): a thought that goes on
+// this long is closed (its </think> written in place of a draw) and the model answers. The owner: as high as it can be,
+// so that it holds no model back. Twelve questions (tests/answers.mjs) at the context's whole length, on CI: the
+// thoughts that closed by themselves were 2,591 tokens at the longest outside the Qwen3.5 family, and within it 3,860;
+// the ones that never closed ran to the end of the context and left no answer at all (docs/notes/
+// t520-thinking-budget-2026-10-16.md). The context is 4096 for all of them, and 512 of it is left for the prompt and
+// the answer: a thought of the Qwen3.5 family longer than this (3 of its 32 that closed: 3,701 to 3,860) is closed a little early.
+export const THOUGHT_BUDGET = 4096 - 512;
+/** T520: whether an entry thinks before it answers (its note says so, as every one of them does). */
+export const thinks = (entry) => /^thinks\b/.test(entry.note ?? "");

@@ -12,7 +12,7 @@ import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answ
 import { markdownCame, markdownWanted } from "./markdown.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
-import { drawAnswer, message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
+import { drawAnswer, message, meta, thoughtSaid, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
@@ -170,6 +170,7 @@ worker.onmessage = ({ data }) => {
     else drawTimer ??= setTimeout(drawNow, 32);
   } else if (data.type === "done") {
     if (undrawn) drawNow();  // (T554: the last tokens, before the line under the answer)
+    thoughtSaid(answer!.firstElementChild!, data);  // (T520: how long its thought was, where it had one)
     // (T223's review: the search checks the count remembered from an earlier visit on the first generation and may change
     // it, 4 to 2 on the owner's Android: the line says the count in use as the answer's line below does)
     threadsNow(data.threads);

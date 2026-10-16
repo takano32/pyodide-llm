@@ -5,6 +5,7 @@
 import { LICENSES, NOTICES } from "./models/licenses.js";
 import { modelBytes, devicesOf } from "./models/memory.js";
 import { BUILT } from "./models/built.js";
+import { THOUGHT_BUDGET, thinks } from "./models/sampling.js";
 import { HF_JAPANESE } from "./models/hf-japanese.js";
 import { HF_CLASSICS } from "./models/hf-classics.js";
 import { HF_FAMILIES } from "./models/hf-families.js";
@@ -39,9 +40,11 @@ export const GROUPS = { site: "Models of this site", original: "Unquantized orig
 // Within each group the order is the ones that write Japanese from light to heavy, then the English-only ones from
 // light to heavy (T128): MODELS is sorted so below, so a model added to any part takes its place.
 // in the order they were added, more or less; MODELS below is the order of the list
-// T511.4: "desktop only" and "Chrome and Firefox" are not written in the parts: devicesOf() adds them to every note
+// T511.4: "desktop only" and "Chrome and Firefox" are not written in the parts: devicesOf() adds them to every note.
+// T520: nor the budget of a thought: every entry that thinks has the same one (THOUGHT_BUDGET)
 const LISTED = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
-  .map((entry) => ({ ...entry, note: [entry.note, ...devicesOf(entry)].join(" · ") }));
+  .map((entry) => ({ ...entry, note: [entry.note, ...devicesOf(entry)].join(" · "),
+    ...(thinks(entry) ? { generation: { ...entry.generation, thinking: THOUGHT_BUDGET } } : {}) }));
 
 /** T128: whether a model writes Japanese (its note says 日本語: Japanese alone, with English, or translating). */
 export const writesJapanese = (entry) => (entry.note ?? "").includes("日本語");

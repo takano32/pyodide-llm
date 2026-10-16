@@ -53,6 +53,19 @@ assert simd15.backend.startswith("SIMD"), f"the kernels did not load: {simd15.ba
 reference = "".join(numpy15.generate("Once upon a time", steps=60))
 assert reference.startswith(story), f"stories15M wrote: {reference!r}"
 assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the kernels and NumPy disagree"
+# T520: a thought's budget on the page's forward pass, in Pyodide: the closing mark is written in place of draws once the
+# thought (the format opened it) is 5 tokens long, and the page's engine writes what NumPy writes. stories260K has no
+# marks of a thought: two words of its vocabulary (one piece each) stand for them
+from engine import generation as thought_generation
+thought_marks = (thought_generation.THOUGHT_OPENS, thought_generation.THOUGHT_CLOSES)
+thought_generation.THOUGHT_OPENS, thought_generation.THOUGHT_CLOSES = " Lily", " friend"
+thought_runs = []
+for thinker in (stories, kernel_llama(read("stories260K.bin"), read("tok512.bin"))):
+    thought_runs.append(("".join(thinker.generate("Once upon a time, there was a little girl named Lily", steps=80, echo=False, thinking=5)),
+                         thinker.stats["thought"], thinker.stats["thought_cut"]))
+thought_generation.THOUGHT_OPENS, thought_generation.THOUGHT_CLOSES = thought_marks
+assert thought_runs[0] == thought_runs[1] and thought_runs[0][0].startswith(". She loved to friend") and thought_runs[0][1:] == (5, True), f"the budget of a thought: {thought_runs}"
+assert "".join(stories.generate("Once upon a time", steps=40)) == text and stories.stats["thought"] is None, "a run without the marks is not the same"
 fast = kernel_llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8",
                           tokenizer_kind="unigram", stop_tokens=(1, 2))
 assert "int8" in fast.backend and len("".join(fast.generate("これからの流行りは", steps=12, temperature=0.7, seed=1))) > 3

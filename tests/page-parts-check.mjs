@@ -322,4 +322,22 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.equal(opens("", kept(large.id, true)).id, large.id, "one that was kept is (index.astro then looks whether it still is)");
   assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the default");
 }
+{
+  // T520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line
+  const { thoughtOf, thoughtLine } = await fresh("page/thought.ts");
+  const none = { thought: null, closed: false };
+  assert.deepEqual(thoughtOf("Hello <think>", false), { ...none, answer: "Hello <think>" }, "an answer that does not begin with a thought is all answer");
+  assert.deepEqual(thoughtOf("", true), { thought: "", closed: false, answer: "" }, "a format that opened the thought: nothing written yet is an empty thought");
+  assert.deepEqual(thoughtOf("\nLet me see.\n", true), { thought: "Let me see.\n", closed: false, answer: "" }, "a thought that goes on");
+  assert.deepEqual(thoughtOf("\nLet me see.\n</think>\n\nTokyo.", true), { thought: "Let me see.", closed: true, answer: "Tokyo." }, "a thought the format opened, closed");
+  assert.deepEqual(thoughtOf("<think>\nHm.\n</think>\n\nTokyo. </think> again", false), { thought: "Hm.", closed: true, answer: "Tokyo. </think> again" }, "a thought the model opened (Qwen3's thinking form): it ends at its first closing mark");
+  assert.deepEqual(thoughtOf("\nso 17 × 4</think>\n</think>\n\n408.", true), { thought: "so 17 × 4", closed: true, answer: "408." }, "a thought the budget closed and the model closed once more");
+  assert.deepEqual(thoughtOf("<think>\n\n</think>\n\nTokyo.", true),{ thought: "", closed: true, answer: "Tokyo." }, "an empty thought (its opening mark written again) before the answer");
+  assert.deepEqual([thoughtLine(false), thoughtLine(true)], ["Thinking…", "Thought"], "while it goes on, and once it closed");
+  assert.deepEqual([thoughtLine(true, { thought: 412, thought_cut: false }), thoughtLine(true, { thought: 1, thought_cut: false }),
+    thoughtLine(true, { thought: 3000, thought_cut: true }), thoughtLine(false, { thought: 80, thought_cut: false }), thoughtLine(true, { thought: null, thought_cut: false })],
+  ["Thought for 412 tokens", "Thought for 1 token", "Thought for 3000 tokens, up to its limit", "Thought for 80 tokens, not finished", "Thought"], "at the answer's end, by the engine's count");
+  cases += 1;
+}
+console.log(`page-parts-check: thought.ts by itself: a thought, its end and its line`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);
