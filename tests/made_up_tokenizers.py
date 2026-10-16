@@ -41,15 +41,18 @@ def byte_level(specials, added=(), size=320):
             "model": {"type": "BPE", "vocab": vocab, "merges": merges}}, {token: first + at for at, token in enumerate(tokens)}
 
 
-def sentencepiece(controls=("<s>", "</s>", "<|user|>", "<|assistant|>"), words=("hello", "world", "a", "b", "h", "e", "l", "o")):
+def sentencepiece(controls=("<s>", "</s>", "<|user|>", "<|assistant|>"), words=("hello", "world", "a", "b", "h", "e", "l", "o"),
+                  dummy=True):
     """A sentencepiece model (unigram, identity normalizer) of the tiny model's size: <unk>, the control pieces, then
-    the words with and without the space in front."""
+    the words with and without the space in front. dummy: its normalizer's add_dummy_prefix (T400: sarashina2.2's and
+    CAT-Translate's say false; not said is sentencepiece's default, true)."""
     size = synthetic_weights()[0]["vocab_size"]
     pieces = [("<unk>", UNKNOWN), *((text, CONTROL) for text in controls), ("▁", NORMAL)]
     pieces += [(text, NORMAL) for word in words for text in (f"▁{word}", word)]
     pieces += [(f"▁w{i}", NORMAL) for i in range(size - len(pieces))]
     data = b"".join(field(1, field(1, text.encode()) + field(2, -float(i + 1)) + field(3, kind)) for i, (text, kind) in enumerate(pieces))
-    return data + field(2, field(3, 1)) + field(3, field(1, b"identity") + field(4, 0)), {text: i for i, (text, _) in enumerate(pieces)}
+    normalizer = field(1, b"identity") + (b"" if dummy else field(3, 0)) + field(4, 0)
+    return data + field(2, field(3, 1)) + field(3, normalizer), {text: i for i, (text, _) in enumerate(pieces)}
 
 
 def converted(tokenizer, name="tokenizer.json", config=None, **described):

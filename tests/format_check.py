@@ -105,9 +105,10 @@ KNOWN = {
 # T261.3: and Gemma 3, whose template writes its <bos> first, the BOS the converter takes off and the page sends
 # T333: and Gemma 4, the same: <bos>, then the turn
 # T343: and Spark-X2.5: its template writes <｜start▁of▁sentence｜> first, the BOS the converter takes off
+# T400: and sarashina2.2 and CAT-Translate, whose tokenizer puts no <s> in front and no dummy prefix: <|user|> first
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
           "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
-          "hf-gemma-4-", "hf-spark-x2.5-")
+          "hf-gemma-4-", "hf-spark-x2.5-", "hf-sarashina2.2-", "hf-cat-translate-")
 # T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 # (T364.3: and Underdog Saluki 27B's, whose template is the same one)

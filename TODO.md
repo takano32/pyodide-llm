@@ -34,7 +34,7 @@
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
 - T397 [整理][変換] 書式の読み手を本物の jinja2 に — T397.1 は完了
 - T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 未着手
-- T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 未着手
+- T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — レビュー前
 - T401 [試験][変換] 変換の始まりを見る試験と道具が足りない — 未着手
 - T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 未着手
 - T404 [バグ][変換] `inOrder()` は、変換器が断った部品をもう 1 回変換器に渡すことがある — 未着手
@@ -55,7 +55,7 @@
 - T430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 未着手
 - T431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 未着手
 - T433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 未着手
-- T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 未着手
+- T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — レビュー前
 - T435 [整理][その他] T367.2 の小さな気づき — 未着手
 - T436 [整理][遠隔試験] `tests/e2e.mjs` の `E2E_THEN` と `E2E_TWICE` を一緒に頼むと、HF のモデルは必ず落ちる — 未着手
 - T437 [整理][その他] T367.3 の小さな気づき — 未着手
@@ -217,7 +217,7 @@
 - T520 [追加][モデル] 考える形の「考えの上限」と「考えを畳む」 — 未着手
 - T521 [整理][Gemma4] T329.2.2 のレビューの残り — 未着手
 - T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
-- T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 未着手
+- T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — レビュー前
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
 - T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 未着手
@@ -505,8 +505,20 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 未着手（2026-10-10、T369 から。規模 中）
 - T369 は、頭のトークンか書式を変換器に任せていた一覧の 21 項目（Qwen2.5 の 8 つ・TinySwallow・Qwen3 の 4B 以下の 8 つ・Qwen3 Swallow 8B の 2 つ・EuroLLM・llm-jp-4）と Hermes 3 の止まりを、前の値に手で固定した（送る ID を動かさないため）。手書きの `bos` を持つ項目は 32 → 52、書式は 63 → 80 に増えた。固定を外せば変換器の答え（本物の `apply_chat_template` と同じ ID）になり、手書きが減る。**外す前に測る**: 項目ごとに、素の文・手書きの答え・モデル自身の答えの 3 つ（AGENTS.md の「頭のトークンの効きは…」）。Qwen3 の 4B 以下は `<|im_start|>` のほうが 8〜10% 悪かった記録がある（T250）。外した項目は固定値（`fixed-outputs.json`）を書き直す。`CONVERTER` は上げなくてよい（項目の options を消すだけ）。CAT-Thinking と Bonsai 1.7B・4B も同じ表で。
 
-### T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: 未着手（2026-10-10、T369 から。次に `CONVERTER` を上げる回に。規模 小〜中） **次の `CONVERTER` の回（T533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。
+### T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: レビュー前（(1)・(2)・(5)。2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。(3)・(4) は未着手。2026-10-10、T369 から。規模 小〜中） **次の `CONVERTER` の回（T533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。
 - (1) tokenizer.json の `Lowercase` の normalizer（T265 は sentencepiece の道の `do_lower_case` だけ）。(2) エンジンは「最初の文にダミーの空白を付けない」を言えない: sarashina と CAT-Translate は `?hf=` で頭の BOS が残る。(3) 最初の文が空白で始まっていてもダミーの空白を付ける（Metaspace は付けない）。(4) `T5Tokenizer` の legacy の空白（比べる参照が無い）。(5) `bos_token_id` の鍵が無く書式も読めないモデルは、当て推量の BOS 1 が止まりに残る。
+- **(1)・(2)・(5) の結果（2026-10-16、コミット `T400: read a tokenizer's Lowercase, a model without the dummy prefix, and no guessed BOS as a stop`）**: (1) `tokenizer_json_options()` が normalizer の `Lowercase`（`Sequence` の中のどこでも）を見て `lowercase: true`（unigram と byte-level。書き出した sentencepiece の形は `Lowercase` があると「書き出した形」でなくなるので当たらない）。(2) `sentencepiece_options()` が normalizer_spec の `add_dummy_prefix`（3 番、無ければ真）を読み、偽なら `prefixed: "never"`（T257 の形）。tokenizer_config.json の legacy の `"wanting"` より勝つ。`beginning()` は `"never"` でも頭のトークンを外す（どの文にも空白を付けないので、外しても残りの読みは同じ）。(5) 止まりは書式の頭があっても無くても「名指された BOS と EOS」だけ（当て推量の 1 を入れない）。
+  - **一覧の項目**: sarashina2.2 の instruct の 3 つと CAT-Translate の 3 つは `formats.js` の `sarashina` に `bos: 9`（`<|user|>`）、`SARASHINA` を `{prompt}</s><|assistant|>` に（`bos` と書式は組: 変換器が `<|user|>` を BOS と言うので、前の書式のままだと `<|user|><|user|>…` になる。`conversions_compare.py` の 1 回目がそれを見せた）。`format_check.py` の `STRICT` に `hf-sarashina2.2-`・`hf-cat-translate-` を足した。
+  - **`conversions_compare.py`（一覧の 134 項目、T524 のコミットと）**: 変わったのは 8 項目、(2) だけ（(1)・(5) は当たる項目が無い）。sarashina2.2 0.5B・1B（base）: options に `prefixed: "never"`、送る ID の頭 `[1, 271, 14537, …]` → `[1, 14537, …]`（271 は「▁」。一覧も `?hf=` も）。sarashina2.2 0.5B・1B・3B Instruct と CAT-Translate 0.8B・1.4B・3.3B: options に `bos: 1 → 9`・`prefixed: "never"`・書式 `<|user|>{prompt}</s><|assistant|>` → `{prompt}</s><|assistant|>`、送る ID の頭 `[1, 9, 14537, …]` → `[9, 14537, …]`（一覧も `?hf=` も）。tokenizer.bin はどれも同じ。
+  - **本物と**: `format_check.py`（手元の `.venv`）で 6 つの instruct は一覧が 9/9（`STRICT`: 完全に同じ ID）、`--hf` で 9/9・9 つとも本物と完全に同じ ID（前は「9/9、完全に同じは 0」: T369 の (d)）。base の 2 つと CAT-Translate 0.8B の素の文は、本物の sentencepiece と 12/12 同じ ID（前は頭の「▁」の分だけ違った）。
+  - **書かせて読む（CI、`tests/answers.mjs` の 12 の問い・greedy と種 2 つ・400 トークン、ブランチ run 38826137173 と本線 run 38826167953）**: sarashina2.2 0.5B Instruct は止まり 23/24 と 23/24、日本語の問いに日本語 12/12 と 10/12、崩れ 0 と 0、平均 149 と 172 トークン（ブランチと本線）。文は同じくらい（富士山の答えは本線が途中で英語に替わった）。CAT-Translate 0.8B は 12 の問いが使い方の外（翻訳器: 問いを訳す）で、ブランチは「次の文を英語に訳してください。「…」」で 3 つとも 400 トークンまで繰り返し（本線は 1 文で止まる）、ほかも訳す向きが変わる所がある。**カードの使い方（「Translate the following … text into …」の 8 つ、greedy、ブランチ run 38827964574・本線 run 38827993615）**では 0.8B・1.4B とも 8/8 まともな訳で、違いは言い回しだけ（0.8B「It's a nice day」と「It's a beautiful day」、1.4B「Since the weather is good today, I'll go for a walk.」と「Today the weather is good, so we are going for a walk.」など）。sarashina2.2 0.5B（base）は種 2 つとも読める日本語（greedy は前も今も繰り返す）。
+  - **頭のトークンの効き（`start_check.py`、日本語の Wikipedia の最初の 1500 トークン、原本の float32、同じ 2 つの run）**: sarashina2.2 0.5B（base、ページの BOS は `<s>` のまま）は 11.922 → 11.759（−1.4%、1 文字あたり 1.3968 → 1.3888 nats: 頭の「▁」が無くなった分）。0.5B Instruct は素の文で `<s>` 19.992・`<|user|>` 20.745・なし 19.924（ブランチ。本線の `<s>` は 21.251）。CAT-Translate 0.8B は `<s>` 23.251・`<|user|>` 25.253・なし 23.362（本線の `<s>` 24.099）。素の文では `<|user|>` が `<s>` より 3.8%・8.6% 高いが、一覧の 2 つはチャットの書式で使い、書式の頭は本物が `<|user|>`（apply_chat_template と同じ ID にした）。素の文の数字だけで BOS を替えない（AGENTS.md の「頭のトークンの効き」）。
+  - **参照の道具（T424 の決まり、run 38826198052）**: `reference_llama.sh hf-sarashina2.2-0.5b-instruct hf-cat-translate-0.8b` は logits 3.05e-05・4.12e-05、最尤 96/96、greedy の文が transformers と同じ。**道具は FAILED で終わる**: 文とチャットのプロンプトの ID を transformers 5 のトークナイザと比べる所で、そのトークナイザが sarashina の語を割り（「▁mo」「un」「tain」）、CAT-Translate を 1 字ずつにする（`format_check.py` の `SENTENCEPIECE` に書いてある既知のもの: 本物の sentencepiece とは上のとおり同じ）。本線でも同じ所で落ちる（ページの頭の `<s>` の分も違う）。`reference_qwen35.sh --only=real` は通った。
+  - **試験**: `tests/test_tokenizer_says.py`（新しい: `Lowercase` を `tokenizers` そのものと 3 つの normalizer の形で、`add_dummy_prefix` 偽の作り物を `sentencepiece` そのものと、書式の頭、当て推量の BOS）、`tests/made_up_tokenizers.py` の `sentencepiece(dummy=)`、`tests/test_beginning.py`（書式の無いモデルの止まり）、`tests/test_gguf_alone.py`（原本の config.json に BOS を書いた: Mistral のは書いてある）。pytest 3297 passed・14 skipped（本線 `af6dee52` の上）、smoke、軽い組（「suite: light passed」）、build と `dist-check`。**網**（本線 `af6dee52` と）: `models` が違う（`MODELS`: sarashina と CAT の 6 項目）、`python` が違う（新しい試験と、上の試験の直し。そのほかに作り物のモデルの options が 150 余り違う: 作り物の config.json は `bos_token_id` を持たないので (5) で当て推量の 1 が止まりから消える。(5) だけを戻した木で回すと、違いは T524 の 3 つに減る）。ほかの記録は同じ。
+  - CI を回した。訳: 書かせる文・transformers・GB 級は手元で見られない。
+  - **(3)・(4) を乗せなかった訳**: (3)「最初の文が空白で始まっていてもダミーの空白を付ける」は、本物が 2 つある（素の sentencepiece は付け、`tokenizers` の Metaspace は付けない）ので、どちらに合わせるかが決まらない。(4) `T5Tokenizer` の legacy は比べる参照が無い（持ち主の選択でも乗せない）。
+  - **取りまとめ役の決め**: 一覧の 6 つは `bos` と書式を組で直した（項目の options で前の送り方を固定しない: 持ち主の選択）。`"never"` は legacy の `"wanting"` より勝つ（モデルが空白を付けないなら、特殊トークンの後にも付けない）。base の 2 つは `<s>` から始めたまま（本物は何も置かないが、エンジンはトークンで始める）。`Lowercase` は `Sequence` のどこにあっても最初に小文字にする（`NFKC` との順で違う文字は数えていない）。CAT-Translate の一般の問いでの繰り返しは、カードの使い方で悪くならないので止める理由にしなかった。
+  - **気づき（採番していない）**: `reference_llama.py` の ID の比べは、sarashina と CAT-Translate では transformers 5 のトークナイザが本物でないので落ちる（`format_check.py` のように `SENTENCEPIECE` の項目は本物の sentencepiece と比べるとよい）。
 
 ### T401 [試験][変換] 変換の始まりを見る試験と道具が足りない — 状態: 未着手（2026-10-10、T369 から。規模 小）
 - (1) 項目の `bos` と書式が組として合っているかを見る自動の試験が無い（`format_check.py` は手で回す: T266 と一緒に）。(2) 変換の始まり（トークナイザ・書式・jinja2 の import）を測る道具が無い（`abba-convert.sh` は `Stream.feed` から測る）。(3) e2e の `hf` の作り物に書式が無い（jinja2 が描く道をブラウザで踏むのは実物のモデルだけ）。(4) `tests/template_corpus.py` が jinja2 の環境の 2 つ目の写しを持つ（T391 の候補にも）。(5) 入れ子のループや文字列の掛け算で CPU を使い続ける書式は、sandbox の range の上限（100000）でしか止まらない（transformers と同じ。固まるのは worker だけで、読み込み直せば戻る）。
@@ -574,8 +586,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - `src/python/*.py` を直しても、立ち上げ直すまで古い `public/engine.zip` が配られ、何も言わない。`astro dev`・`astro build` を npm を通さずに直に呼ぶと zip が無く「Could not fetch engine.zip: 404」。軽い組の `python-archive-check` は「zip がソースと合う」を見るが、開発中には走らない。小さな Vite のプラグインか見張りで作り直すか、古いときに言う。
 - `astro dev` は TTY が無いとデーモンになって `timeout` を越えて残る: `npx astro dev stop` で止める。
 
-### T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 状態: 未着手（2026-10-11、T367.2 から。前からある。規模 小） **次の `CONVERTER` の回（T533）と一緒に入れる**（同じ回に入れると安全: 家族のファイルや `engine/` を直しても `make models` が作り直さない穴）。
+### T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 状態: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。2026-10-11、T367.2 から。前からある。規模 小） **次の `CONVERTER` の回（T533）と一緒に入れる**（同じ回に入れると安全: 家族のファイルや `engine/` を直しても `make models` が作り直さない穴）。
 - `CONVERTER` と `%.bin` の規則は `src/python/convert/*.py` だけを並べる: 家族のファイルかエンジンの部品を直しても `make models` が作り直さない（T359 の 3 歩目で `families/` ができた時から）。
+- **結果（2026-10-16、コミット `T434: rebuild the site's models when a family's file or the engine changes`）**: `Makefile` に `MODEL_PYTHON`（窓口 2 つ `llama2_convert.py`・`llama2_numpy.py` と `convert/`・`convert/families/`・`engine/` の `*.py` の全部）を置き、`%.bin` と `CONVERTER` の規則が読む（名前は `python` の的と取り違えないように `MODEL_PYTHON`）。**確かめ**（`make -n -W <ファイル> models`、捨ての写しで、全部の作る物を源より新しくした所で）: 何も変えない → 本線も今も何も作らない。`convert/families/llama.py`・`engine/layout.py`・`llama2_numpy.py` を変えたことにする → 本線は何も作らず、今は 6 つ（llm-jp-3 150M と tiny-lm の int8 と float16、stories15M・42M の int8）を作り直す。`convert/conversion.py` → 両方とも 6 つ。下ろしてくる物（stories260K・tokenizer.bin など）は作り直さない。
+  - CI を省いた。訳: 触ったのは `Makefile` の依存だけで、手元の `make -n` が両方の版を比べる。**変わること**: `engine/` か家族のファイルに触るデプロイは、`make models` が 6 つを作り直す（a1-free で `make models` は 2 分 11 秒: AGENTS.md の土台の記録）。
 
 ### T435 [整理][その他] T367.2 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
 - `src/python/engine/__init__.py` と `convert/__init__.py` のコメントが「public/llama2_….py is the window」のまま（T367.2 は Python を 1 バイトも変えない証明のために残した）。次に Python に触る回に。
@@ -1547,8 +1561,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 状態: 未着手（2026-10-15、T329.2 の実装とレビューが見つけた。本線（`aecb661e`）でも「Initializing...」で止まる: 前からの物。新しい文脈なら動く。原因は未確認。訪問者に当たるのは、同じタブで `?coi=off` に切り替えたときだけの見込み）
 
-### T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 状態: 未着手（2026-10-15、T329.3 が見つけた） **次の `CONVERTER` の回（T533）に乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」）。
+### T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 状態: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。2026-10-15、T329.3 が見つけた） **次の `CONVERTER` の回（T533）に乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」）。
 - 変換器の止まりは [2, 1] で、Gemma 4 の答えの終わり `<turn|>`(106) を含まない（generation_config.json の EOS は [1, 106, 50]: 変換器は generation_config.json を取らない決まり）。一覧の項目は options の止まりで止まる（T333）。`?hf=` の訪問者の分の直し方（書式の終わりの印を止まりに入れる、generation_config を読む、など）は取りまとめ役が案を出す。変換器の出す options が変わるなら `CONVERTER` の回に。
+- **案の比べ（2026-10-16）**: (A) **書式が答えの後に書くトークン**（採った）: 変換器がモデルの書式をもう 1 回描く。会話を答えで終える形（user と assistant、生成の印なし: transformers が学習のために描く形）で、答えのすぐ後が「1 つに読まれるトークン」で始まればそれを止まりに。取得は増えない。harmony の llm-jp-4 は最後の答えの後に `<|return|>`（EOS と同じ）を書くので、考えの後の `<|end|>` は入らない（1 ターンの書式で「`{prompt}` の後のトークン」を取る形だと `<|end|>` が入り、`?hf=` の llm-jp-4 が答えの前で止まる: T369 のレビューの (n) と同じ壊れ方。だから 2 ターンで描く）。(B) `generation_config.json` の `eos_token_id` を読む: transformers の `generate()` がそのまま止まる数で正しさは高いが、取得が 1 つ増え（日本から 1 回 1〜3 秒、無いリポジトリは 404: WebKit はそれをコンソールのエラーに出す）、段取り（`convert/conduct.py`）・fixture（`worker-fetches-check` の `--write`）・フォルダの門が動く。小さい直しにしては動く所が多いので (A)。**覆す条件**: 書式に印が無く generation_config.json にだけ止まりのあるモデルが一覧か `?hf=` で見つかったとき (B) を足す。
+- **結果（2026-10-16、コミット `T524: stop an answer at the token the model's template writes after one`）**: `convert/template.py` の `answer_end()`・`model_answer_end()`（`model_turn()` と書式の取り出し `template_of()`・名前のトークン `named_tokens()`・描く名前 `scope_of()` を分け合う。1 ターンの描き方は 1 字も変えていない）と、`Conversion.start()` が止まりに足す数行（頭のトークンと同じなら足さない、言ってあれば 2 度足さない）。描けない書式（自前の読み手が断る・書式が例外を投げる・答えを 1 回書かない）は今までどおり。
+  - **`conversions_compare.py`（一覧の 134 項目、本線 `2324abef` と）**: 変わったのは 2 項目だけ: `hf-gemma-4-e2b`・`hf-gemma-4-e4b` の `?hf=` の止まり `[2, 1]` → `[2, 1, 106]`（一覧の項目は自分の options の止まり `[1, 106]` のまま。送る ID・書式・tokenizer.bin は全部同じ）。Gemma 3・ChatML の家族・llm-jp-4・sarashina は、書式の印がもう止まりにあるか（トークナイザの EOS）、印が無いので変わらない。
+  - **`?hf=` の Gemma 4 が `<turn|>` を書かずに止まる確かめ**: 変換器の止まりに 106 が入ること（上）と、一覧の項目は同じ止まりで本番で止まっていること（T333）から。実ブラウザで `?hf=` の Gemma 4 は開いていない（10 GB 級: CI でも頼んでいない）。
+  - **試験**: `tests/test_answer_end.py`（新しい: Gemma 4 の形の書式・ChatML・答えで終わる・答えを書かない・2 回書く・断る書式、止まりに入る/入らない、文字やトークンの前の改行の後なら入れない、sentencepiece の制御の語片）、`tests/test_beginning.py` の 2 つ（ChatML の `<|im_end|>` が止まりに足される、harmony の作り物を本物の形（最後の答えの後は `<|return|>`）に直し、答えの後に `<|start|>` を書く書式でも頭は止まりに入らない）。`tests/test_converter_version.py` の要約は変わらない（作り物 3 つは当たらない）。`template_corpus.py`（Hub の上位 500、143 の書式）: 変換器 142 同じ・1 断り、自前の読み手 90 同じ・53 断り、本線の自前の読み手と比べて 0 変わり（「本線の変換器と比べて 52 が断り → 同じ」と出るのは、本線の木の写しを `--before` で読むと jinja2 の環境が使われないため: 1 ターンの描き方は変えていない）。
+  - CI: T400 と一緒に回した（下の T400 の結果）。T424 の決まりの参照の道具: `reference_qwen35.sh --only=real`（run 38826198052）が通った（0.8B の logits 1.78e-04、最尤 96/96、`<|im_end|>` で止まる）。
+  - **取りまとめ役の決め**: (A) を採った（訳は上の比べ）。2 ターンで描く（1 ターンの `{prompt}` の後を取る形は harmony で誤る）。答えのすぐ後のトークンだけを取る（空白や改行の後のトークン・文字の後のトークンは取らない: 変わる項目を最小に）。頭のトークンと同じなら取らない（T264 と同じ訳）。
 
 ### T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T333 のレビューの気づき）
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。

@@ -4,7 +4,7 @@ import json
 from engine.layout import FORM
 from engine.layers import RMS_EPS
 from engine.dtypes import dtype_of
-from convert.template import config_token, model_turn
+from convert.template import config_token, model_answer_end, model_turn
 from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Kept, Stream
@@ -77,8 +77,10 @@ class Conversion:
         else:
             pieces = list(sentencepiece_pieces(tokenizer))
             self.tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(tokenizer))
-            # (T265, T308) and what only tokenizer_config.json says of a sentencepiece model
-            options = {**sentencepiece_options(tokenizer), **described_options(described(tokenizer_config))}
+            # (T265, T308) and what only tokenizer_config.json says of a sentencepiece model. A model with no dummy
+            # prefix has none after a special token either (T400: its "never" over a legacy tokenizer's "wanting")
+            own = sentencepiece_options(tokenizer)
+            options = {**own, **described_options(described(tokenizer_config)), **({"prefixed": "never"} if own.get("prefixed") else {})}
             specials, added = sentencepiece_specials(tokenizer), []
         # T143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
         # another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
@@ -148,8 +150,9 @@ class Conversion:
         # A BOS that nothing names and the template does not begin with is no token of this model's to stop at: token 1
         # of a byte-level vocabulary is '"' (NeoHorse-1's config.json has no bos_token_id, and its answers ended at
         # their first quotation mark through ?hf=)
-        stop = [token for token in [*([bos, *([own] if own != bos else [])] if head is None else said),
-                                    *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
+        # (T400: also where the template does not begin with a token of its own: a guessed 1 that nothing names was a
+        # stop token there, which a model with no template read stopped at too)
+        stop = [token for token in [*said, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
         # And at the EOS the tokenizer names, where that is a token of its own and another than config.json's (T369): a
         # Qwen3.5's config.json says <|endoftext|> and its tokenizer <|im_end|>, which is what ends a turn of its chat
         # template; transformers' generate() stops at either. Without it an answer went on past <|im_end|> to the mark
@@ -158,6 +161,15 @@ class Conversion:
         ending = ids.get(ending.encode("utf-8")) if ending else None  # (no name is no piece: the padding's are empty)
         if ending is not None and ending not in stop:
             stop.append(ending)
+        # T524: and at the token the model's own template writes right after an answer, where that is one of the
+        # tokens the engine reads as one: what ends a turn of the model's (a Gemma 4's <turn|>, which neither its
+        # config.json nor its tokenizer names: ?hf= wrote two to five of them after each answer). Not where it is the
+        # token every text begins with (T264's head: it says where a message begins)
+        end = model_answer_end(described(tokenizer_config), chat_template)
+        marks = [token for token in [*specials, *added] if token and end and end.startswith(token) and token.encode("utf-8") in ids]
+        closing = ids[max(marks, key=len).encode("utf-8")] if marks else None
+        if closing is not None and closing != head and closing not in stop:
+            stop.append(closing)
         bos = bos if head is None else head
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = (Kept if blocks else Stream)(header, int(base), self.config, dtype, int(max_seq_len),
@@ -212,7 +224,8 @@ class Conversion:
         tokenizer puts its dummy prefix before the first text and not before the text after a special token, so text
         that followed the token would be read as the first. Unless that is no other reading: every stretch is
         prefixed ("every"), or every one that does not begin with a space ("wanting") and what follows the token is
-        the template's own text, which does not. options: the tokenizer's, as the engine gets them. ids: piece_ids() of
+        the template's own text, which does not; or no stretch is ("never": T400's sarashina2.2 and CAT-Translate).
+        options: the tokenizer's, as the engine gets them. ids: piece_ids() of
         the tokenizer.bin."""
         if not turn:
             return turn, None, None
@@ -224,7 +237,7 @@ class Conversion:
         head = max(heads, key=len)
         rest = turn[len(head):]
         prefixed = options.get("prefixed")
-        read_the_same = options["tokenizer_kind"] == "bytebpe" or prefixed == "every" \
+        read_the_same = options["tokenizer_kind"] == "bytebpe" or prefixed in ("every", "never") \
             or (prefixed == "wanting" and rest[:1] not in ("", " ") and not rest.startswith("{prompt")) \
             or any(rest.startswith(token) for token in tokens if token)
         return (rest, ids[head.encode("utf-8")], head) if read_the_same else (turn, None, None)

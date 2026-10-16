@@ -33,9 +33,12 @@ export const QWEN3_THINKING_2507 = `${CHATML}<think>\n`;
 // sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
 // reader does not take (T73): one turn of it, as the real Jinja renders it, is this (T81; the 0.5B Instruct had
 // ChatML here until 2026-09-26, whose <|im_start|> its vocabulary does not have). <|user|> (9), <|assistant|> (8)
-// and </s> (2) are tokens of their own, and a model that writes the mark of a turn (7 to 9) has ended its answer
-export const SARASHINA = "<|user|>{prompt}</s><|assistant|>";
-export const sarashina = { specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] };
+// and </s> (2) are tokens of their own, and a model that writes the mark of a turn (7 to 9) has ended its answer.
+// T400: their tokenizer.model adds no dummy prefix (add_dummy_prefix false) and their tokenizer puts no <s> in front,
+// so the real ids begin with <|user|>: that is the BOS here and the format is what follows it (T264's form; the
+// converter says the same of them since T400: an entry says both or neither, the bos and the format)
+export const SARASHINA = "{prompt}</s><|assistant|>";
+export const sarashina = { bos: 9, specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] };
 export const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
 // llm-jp-4's chat_template is OpenAI's harmony (T132), with a system message of the model's name, its knowledge cutoff
 // and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to

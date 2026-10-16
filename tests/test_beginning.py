@@ -101,8 +101,8 @@ def test_a_bos_that_nothing_names_is_no_stop_token_once_the_template_says_where_
     options = made(chat_template=CHATML)
     assert options["bos"] == ids["<|im_start|>"] and options["stop_tokens"] == [ids["<|im_end|>"]]
     assert made(chat_template=CHATML, bos_token="<|endoftext|>")["stop_tokens"] == [ids["<|endoftext|>"], ids["<|im_end|>"]]
-    # without a template the guess is the BOS, as it was
-    assert made()["bos"] == 1 and made()["stop_tokens"] == [1, ids["<|im_end|>"]]
+    # without a template the guess is the BOS, as it was, and no stop token either (T400)
+    assert made()["bos"] == 1 and made()["stop_tokens"] == [ids["<|im_end|>"]]
 
 
 def test_a_sentencepiece_template_keeps_its_bos_where_the_rest_would_be_read_otherwise():
@@ -178,7 +178,8 @@ def test_the_answer_stops_at_the_eos_the_tokenizer_names_too():
     # the same as config.json's, or one the template's first token already is: said once
     assert stops(eos_token="<|endoftext|>") == as_it_was
     # (one that is the template's first token too is a stop because the tokenizer names it, not because it is first)
-    assert stops(eos_token="<|im_start|>", chat_template=CHATML) == [*as_it_was, ids["<|im_start|>"]]
+    # (and the template's <|im_end|> after an answer, T524)
+    assert stops(eos_token="<|im_start|>", chat_template=CHATML) == [*as_it_was, ids["<|im_start|>"], ids["<|im_end|>"]]
     # named, but no piece of the vocabulary (its letters are): no token to stop at
     assert stops(eos_token="<|end|>") == as_it_was
     assert stops(eos_token="user<|im_end|>") == as_it_was
@@ -201,12 +202,21 @@ def test_the_token_a_template_begins_with_does_not_stop_the_answer():
     analysis and its answer, and a page that stopped at <|start|> never showed the answer. An answer ends at what the
     model's files name: the BOS and the EOS of config.json and of the tokenizer."""
     tokenizer, ids = byte_level(["<|startoftext|>", "<|return|>", "<|start|>", "<|message|>", "<|end|>", "<|channel|>"])
-    harmony = "{% for m in messages %}<|start|>{{ m.role }}<|message|>{{ m.content }}<|end|>{% endfor %}<|start|>assistant"
+    # (llm-jp-4's ends the last answer of a conversation with <|return|>, the others with <|end|>: T524 stops at what
+    # follows the last, which is the EOS here)
+    harmony = ("{% for m in messages %}<|start|>{{ m.role }}<|message|>{{ m.content }}"
+               "{% if m.role == 'assistant' and loop.last and not add_generation_prompt %}<|return|>{% else %}<|end|>{% endif %}"
+               "{% endfor %}{% if add_generation_prompt %}<|start|>assistant{% endif %}")
     options, engine = converted(tokenizer, config={"bos_token_id": ids["<|startoftext|>"], "eos_token_id": ids["<|return|>"]},
                                 chat_template=harmony, bos_token="<|startoftext|>", eos_token="<|return|>")
     assert options["bos"] == ids["<|start|>"] and options["template"] == "user<|message|>{prompt}<|end|><|start|>assistant"
     assert options["stop_tokens"] == [ids["<|startoftext|>"], ids["<|return|>"]]
     assert ids["<|start|>"] not in options["stop_tokens"] and ids["<|end|>"] not in options["stop_tokens"]
+    # a template that wrote <|start|> right after an answer: still no stop at it
+    restart = "{% for m in messages %}<|start|>{{ m.role }}<|message|>{{ m.content }}{% endfor %}<|start|>assistant"
+    options, _ = converted(tokenizer, config={"bos_token_id": ids["<|startoftext|>"], "eos_token_id": ids["<|return|>"]},
+                           chat_template=restart, bos_token="<|startoftext|>", eos_token="<|return|>")
+    assert options["bos"] == ids["<|start|>"] and options["stop_tokens"] == [ids["<|startoftext|>"], ids["<|return|>"]]
     # a ChatML one: the EOSes its files name, and not <|im_start|>
     tokenizer, ids = byte_level(["<|endoftext|>", "<|im_start|>", "<|im_end|>"])
     options, _ = converted(tokenizer, config={"bos_token_id": ids["<|endoftext|>"], "eos_token_id": ids["<|endoftext|>"]},

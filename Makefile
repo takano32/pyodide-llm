@@ -45,8 +45,13 @@ src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kerne
 python:
 	python3 python_archive.py
 
+# The Python that makes a model: the two windows and every part under them (T434: the families' files and the
+# engine's parts were not named, and a change to one of them left the old models in place)
+MODEL_PYTHON = src/python/llama2_convert.py src/python/llama2_numpy.py \
+	$(wildcard src/python/convert/*.py src/python/convert/families/*.py src/python/engine/*.py)
+
 # int8, 3.5x smaller than float32 (quantize.py)
-%.bin:	%.f32 quantize.py src/python/llama2_convert.py $(wildcard src/python/convert/*.py)
+%.bin:	%.f32 quantize.py $(MODEL_PYTHON)
 	python3 quantize.py $< $@
 
 # Hugging Face checkpoints: convert_hf.py writes <out>.bin and <out>.tokenizer.bin
@@ -57,7 +62,7 @@ llm-jp-3-150m/model.safetensors:
 # llm-jp-3-150m keeps its whole context of 4096 tokens: the engine lets the KV cache (200 MB at that length) grow
 # with the text instead of reserving it.
 # convert_hf.py writes int8 directly (the same bytes as float32 followed by quantize.py, without the 600 MB between)
-CONVERTER = convert_hf.py src/python/llama2_convert.py $(wildcard src/python/convert/*.py)
+CONVERTER = convert_hf.py $(MODEL_PYTHON)
 
 llm-jp-3-150m.bin llm-jp-3-150m.tokenizer.bin &:	llm-jp-3-150m/model.safetensors $(CONVERTER)
 	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m int8 4096
