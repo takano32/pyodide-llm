@@ -284,7 +284,7 @@ from it (+0.31% either way) and would pay about 3% of speed. `simdkernel.so` is 
 ## Ternary weights (2026-10-01, T230 and T231)
 
 A ternary model's weights (-1, 0, +1 times one scale a group of 128) are held two bits each, in the order of Prism
-ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a float32 scale a group:
+ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a scale a group (a float32 until T533, a float16 from it, below):
 `ternary.ts`. Nothing is widened: `matmul_t2r` loads sixteen bytes (64 weights), and a shift by 0, 2, 4 and 6 bits
 and a mask of 3 give four planes of codes, every fourth weight each. `interleave` lays the int8 activations of
 `quantize_x` (no bias) out the same way, once a token, and leaves minus the sum of every group of 32 after their

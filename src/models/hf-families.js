@@ -128,8 +128,8 @@ export const HF_FAMILIES = [
     { thinking: AGENTS_A1_THINKING, atOnce: AGENTS_A1_AT_ONCE }, AGENTS_A1_SAMPLING),
   // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three
   // value heads to a key head, T245), whose matrices are stored in a rotated basis (T237: the engine turns every
-  // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.66 GB; as int8 it would be
-  // 30 GB), on a 64-bit memory (7.70 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
+  // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.24 GB since T533; as int8 it would be
+  // 30 GB), on a 64-bit memory (7.31 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
   // rotated model has no GPU path yet). The PTQ1_0 file, the smaller of the two that hold the same weights (5.95 GB
   // against PQ2_0's 7.21 GB; both convert to the same checkpoint, byte for byte): Pyodide converts it at 27 MB/s and
   // PQ2_0 at 53, so on a line slower than 33 MB/s it is ready sooner, by the 1.26 GB less it fetches (TODO.md's T233).
