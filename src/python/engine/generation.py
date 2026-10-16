@@ -30,8 +30,19 @@ import numpy as np
 from engine.sampler import Sampling
 
 # T520: the marks of a thought, in the formats of the list that think (Qwen3, Qwen3.5, DeepSeek-R1's distills, Granite
-# 4.2, SmolLM3, MiniCPM5, Spark-X...). A model whose specials lack the closing one has no thought to count.
+# 4.2, SmolLM3, MiniCPM5, Spark-X...): a token each in their vocabularies.
 THOUGHT_OPENS, THOUGHT_CLOSES = "<think>", "</think>"
+
+
+def mark_of(model, mark):
+    """T520: the token of a mark of a thought, where the model's vocabulary has it as one piece (None where it does
+    not: a model that does not think, whose text may spell the mark out). Not only where it is among the specials: a
+    DeepSeek-R1 distill's entry names other specials, and the model writes the token all the same."""
+    try:
+        tokens = model.tokenizer.encode(mark, (mark,))
+    except KeyError:  # (no such piece: Tokenizer.encode() looks the special up in the vocabulary)
+        return None
+    return tokens[0] if len(tokens) == 1 else None
 
 
 def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **settings):
@@ -40,8 +51,8 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     names (temperature, topp, repetition_penalty, top_k, min_p, presence_penalty), which says what each is and
     refuses what it cannot be. None of them is read here: the samplers have them.
 
-    thinking (T520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought among its
-    specials is followed in and out of it (the format may open it: a prompt that ends in <think>); once a thought
+    thinking (T520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought in its
+    vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>); once a thought
     has this many tokens and is still open, the closing mark is written in place of the next draws, as llama.cpp's
     reasoning budget does, and the model goes on to its answer. The stats say how long the thought was (thought: None
     where there was none) and whether the budget closed it (thought_cut).
@@ -60,15 +71,13 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
         raise ValueError(f"The prompt is {len(prompt_tokens)} tokens long, but only {steps - 1} fit.")
     if not (isinstance(thinking, int) and not isinstance(thinking, bool) and thinking >= 0):
         raise ValueError(f"thinking is a number of tokens, 0 or more (not {thinking!r}).")
-    # T520: the thought, followed where the model has its marks: the tokens of each mark, whether a thought is open
-    # (the format may have opened it), its tokens so far (None: no thought yet), the closing tokens still to be
-    # written in place of draws, and whether the budget closed it
-    marked = THOUGHT_CLOSES in model.specials
-    opens = model.tokenizer.encode(THOUGHT_OPENS, model.specials) if marked else []
-    closes = model.tokenizer.encode(THOUGHT_CLOSES, model.specials) if marked else []
-    inside = marked and prompt.rstrip().endswith(THOUGHT_OPENS)
+    # T520: the thought, followed where the model has its closing mark: the token of each mark, whether a thought is
+    # open (the format may have opened it), its tokens so far (None: no thought yet), and whether the budget closed it
+    closes = mark_of(model, THOUGHT_CLOSES)
+    opens = mark_of(model, THOUGHT_OPENS) if closes is not None else None
+    inside = closes is not None and prompt.rstrip().endswith(THOUGHT_OPENS)
     thought = 0 if inside else None
-    closing, cut = [], False
+    cut = False
     rng = np.random.default_rng(seed)
     # a character can be split over several tokens
     utf8 = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -118,12 +127,10 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 chosen = [prompt_tokens[pos]]
                 forced += 1
                 sampling_start = time.perf_counter()
-            elif closing or (thinking and inside and thought >= thinking):
-                # T520: the thought is as long as the budget: its closing mark, a token a step, in place of draws
-                if not closing:
-                    closing, cut = list(closes), True
+            elif thinking and inside and thought >= thinking:
+                # T520: the thought is as long as the budget: its closing mark in place of a draw
                 model.forward(token, pos, need_logits=False)
-                chosen = [closing.pop(0)]
+                chosen, cut = [closes], True
             else:
                 chosen = None
                 if on_gpu is not None:
@@ -150,11 +157,11 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 history.append(token)
                 if pos >= len(prompt_tokens):
                     written.append(token)
-                    if inside:
+                    if inside and token == closes:
+                        inside = False
+                    elif inside:
                         thought += 1
-                        if written[-len(closes):] == closes:
-                            inside, thought = False, thought - len(closes)
-                    elif marked and written[-len(opens):] == opens:
+                    elif opens is not None and token == opens:
                         inside, thought = True, thought or 0
                 count += 1
                 if text and (echo or pos >= len(prompt_tokens)):

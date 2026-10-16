@@ -91,3 +91,12 @@ def test_steps_on_the_gpu_stop_at_the_budget():
     assert text == "xxxxxx</think>y"
     assert [entry for entry in log if entry[0] == "steps"] == [("steps", 2, 4), ("steps", 6, 2), ("steps", 9, 4)]
     assert ("forward", X, 8, False) in log and (model.stats["thought"], model.stats["thought_cut"]) == (6, True)
+
+
+def test_the_marks_are_the_vocabularys_not_only_the_specials():
+    """A DeepSeek-R1 distill's entry names other specials, and the model writes <think> and </think> as the tokens
+    they are: the thought is followed all the same. A vocabulary without them as one piece has no marks."""
+    model = thinker([], [X, X, X, Y, 0], specials=())
+    assert "".join(generation.generate(model, "a<think>", steps=40, echo=False, thinking=2)) == "xx</think>xy"
+    assert (model.stats["thought"], model.stats["thought_cut"]) == (2, True)
+    assert (generation.mark_of(model, "</think>"), generation.mark_of(stand_in_model([], []), "</think>")) == (201, None)
