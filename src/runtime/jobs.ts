@@ -305,9 +305,10 @@ export const PACKED = packings({
   },
   // T230: two bits a weight less one, the layout of llama2_numpy.pack_ternary. T231: its kernels take the activations
   // signed, in all 8 bits, and laid out as the weights' planes are; after the scales of the activations' groups come
-  // as many int32, minus each group's sum (interleave), so they take no corrections
+  // as many int32, minus each group's sum (interleave), so they take no corrections. T533: its scales are float16s
+  // (scale: 2), PQ2_0's own
   ternary: {
-    rowBytes: (n) => n / 4, scale: 4, value: (U, at, i) => ((U[at + (i >> 2)] >> (2 * (i & 3))) & 3) - 1, takes: "interleaved",
+    rowBytes: (n) => n / 4, scale: 2, value: (U, at, i) => ((U[at + (i >> 2)] >> (2 * (i & 3))) & 3) - 1, takes: "interleaved",
     jobs: { relaxed: KIND.matmul_t2r, plain: KIND.matmul_t2 }, sums: null, xs: 8,
     ready: (k) => (xq, xs, x, n) => {
       k.quantize_x(xq, xs, x, n, 0);
@@ -323,7 +324,7 @@ export type Packed = keyof typeof PACKED;
 /** the packing of a tensor stored as stored, or null: float32 and float16 are not packed */
 export const packingOf = (stored: string | undefined): Packing<Packed> | null => (stored !== undefined && Object.hasOwn(PACKED, stored) ? PACKED[stored as Packed] : null);
 /** (T375.5) the bytes a weight takes in a checkpoint so packed: a group's values and its scale, over the
- * group's weights (int8 1.125, int6 0.875, ternary 0.28125; T363.5: a block's bytes over its 256) */
+ * group's weights (int8 1.125, int6 0.875, ternary 0.265625; T363.5: a block's bytes over its 256) */
 export const weightBytes = ({ rowBytes, scale, group }: Packing) => (rowBytes(group) + scale) / group;
 
 /** runRows(job, r0, r1) on these kernels: k, the plain module's exports; r, the relaxed module's or null. job is

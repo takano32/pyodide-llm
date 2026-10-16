@@ -35,9 +35,10 @@ const GO = 0, DONE = 1, NEXT = 2;
 // reads, and the call on rows r0..r1 of the copy at w (its values, then its scales, then its corrections)
 const g128 = (c) => (c[ROWS] * c[N]) / 128;
 const FORMS = {
-  t2r: { module: "tree", bytes: [32, 4, 0], activations: "interleaved",
+  // (T533: kernels/'s scales are float16s, 2 bytes a group; t2c below is the float32 form they were)
+  t2r: { module: "tree", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
-  t2: { module: "plain", bytes: [32, 4, 0], activations: "interleaved",
+  t2: { module: "plain", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   bc: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_bc(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
@@ -53,6 +54,19 @@ const FORMS = {
     run: (k, c, w, r0, r1) => k.matmul_q8r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1) },
   q8: { module: "plain", bytes: [128, 16, 0], activations: "eight",
     run: (k, c, w, r0, r1) => k.matmul_q8(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, c[N], r0, r1) },
+  // T533: the scales as float16 (tests/ternary-forms.ts), and t2c, a copy of t2r in that module: the noise of two copies
+  t2c: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_t2c(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  h2r: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_h2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  p2r: { module: "forms", bytes: [34, 0, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_p2r(c[OUT], c[XQ], c[XS], w, 0, c[N], r0, r1, 3) },
+  t2p: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_t2p(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  h4r: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_h4r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  h2: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_h2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
 };
 // A prompt's tokens (T108) through the same matrix: the token's kernel for every token, the rows in blocks that stay in
 // the first cache (jobs.js's way for a kernel without a tile), the ternary tile (matmul_t2r_tile), and int8's (T159) on
@@ -68,6 +82,10 @@ const PROMPTS = {
   } },
   "t2r tile": { module: "tree", of: "t2r", activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
+  "h2r tile": { module: "forms", of: "h2r", activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_h2r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
+  "p2r tile": { module: "forms", of: "p2r", activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_p2r_tile(c[OUT], c[XQ], c[XS], w, 0, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
   "q8r tile": { module: "tree", of: "q8r", activations: "seven",
     run: (k, c, w, r0, r1) => k.matmul_q8r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
 };
@@ -114,6 +132,9 @@ const text = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1
 const rounds = Number(text("--rounds", 2)), turns = Number(text("--turns", 5)), megabytes = Number(text("--megabytes", 256));
 const shapes = text("--shapes", "2048x2048,6144x2048,2048x6144,5120x5120,17408x5120,5120x17408").split(",").map((shape) => shape.split("x").map(Number));
 const timed = text("--forms", NAMES.join(",")).split(",");
+const prompts = !args.includes("--no-prompt");
+// the forms whose copies are made: those timed, and those the prompts read
+const needed = NAMES.filter((form) => timed.includes(form) || (prompts && Object.values(PROMPTS).some(({ of }) => of === form)));
 fs.mkdirSync(work, { recursive: true });
 const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
   "--sharedMemory", "--maximumMemory", "65536"];
@@ -135,7 +156,7 @@ const bytesOf = (form, rows, n) => align(((rows * n) / 128) * FORMS[form].bytes.
 // the small arrays (the activations of each kind, the outputs), then every form's copies
 const small = align(PAGE + 64 * Math.max(...shapes.map(([rows, n]) => 2 * n + rows * 4)), PAGE);
 const region = (form) => Math.max(megabytes * 2 ** 20, 2 * bytesOf(form, 1, largest));
-const total = small + NAMES.reduce((sum, form) => sum + align(region(form), PAGE), 0);
+const total = small + needed.reduce((sum, form) => sum + align(region(form), PAGE), 0);
 if (total > 65536 * PAGE) throw new Error(`${(total / 2 ** 30).toFixed(1)} GiB of copies do not fit a 32-bit memory: fewer --megabytes`);
 const memory = new WebAssembly.Memory({ initial: Math.ceil(total / PAGE), maximum: 65536, shared: true });
 const control = new SharedArrayBuffer(16), sync = new Int32Array(control);
@@ -153,9 +174,9 @@ function go() {
 const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
 const U = new Uint8Array(memory.buffer), I = new Int8Array(memory.buffer), F = new Float32Array(memory.buffer), N32 = new Int32Array(memory.buffer);
 const firsts = {};
-NAMES.reduce((at, form) => { firsts[form] = at; return at + align(region(form), PAGE); }, small);
+needed.reduce((at, form) => { firsts[form] = at; return at + align(region(form), PAGE); }, small);
 
-const table = [], promptTable = [], prompts = !args.includes("--no-prompt");
+const table = [], promptTable = [];
 for (const [rows, n] of shapes) {
   if (n % 128) throw new Error(`rows of ${n} are not whole groups of 128`);
   const groups = (rows * n) / 128, ng = n / 32;
@@ -164,10 +185,11 @@ for (const [rows, n] of shapes) {
   // the ternary weights (a third each, as the files have them) and their scales
   const tw = new Int8Array(rows * n), d = new Float32Array(groups);
   for (let i = 0; i < tw.length; i++) tw[i] = (next() % 3) - 1;
-  for (let g = 0; g < groups; g++) d[g] = Math.fround(0.005 + (next() % 4096) / 163840);
+  // float16 numbers (T533: the forms that keep them so read the same scales)
+  for (let g = 0; g < groups; g++) d[g] = Math.f16round(0.005 + (next() % 4096) / 163840);
   // ---- each form's copy of the weights
   const writers = {
-    t2r(at) {
+    t2c(at) {
       const scales = at + groups * 32;
       U.fill(0, at, scales);
       for (let j = 0; j < tw.length; j++) U[at + (j >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
@@ -197,6 +219,17 @@ for (const [rows, n] of shapes) {
       }
       F.set(d, scales / 4);
     },
+    h2r(at) {
+      const scales = at + groups * 32;
+      U.fill(0, at, scales);
+      for (let j = 0; j < tw.length; j++) U[at + (j >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
+      new Float16Array(memory.buffer, scales, groups).set(d);
+    },
+    p2r(at) {  // PQ2_0's blocks: the float16 scale, then 32 bytes of codes
+      U.fill(0, at, at + groups * 34);
+      for (let j = 0; j < tw.length; j++) U[at + (j >> 7) * 34 + 2 + ((j & 127) >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
+      for (let g = 0; g < groups; g++) new Float16Array(memory.buffer, at + g * 34, 1)[0] = d[g];
+    },
     q8r(at) {  // T235's int8: -127, 0, 127 and float32(d / 127) a group of 32
       const scales = at + groups * 128, corrections = scales + groups * 16;
       for (let j = 0; j < tw.length; j++) I[at + j] = 127 * tw[j];
@@ -208,10 +241,11 @@ for (const [rows, n] of shapes) {
       }
     },
   };
-  writers.t2 = writers.bc = writers.bs = writers.bx = writers.t2r;
+  writers.bc = writers.bs = writers.bx = writers.t2p = writers.t2c;
+  writers.t2r = writers.t2 = writers.h2 = writers.h4r = writers.h2r;
   writers.q8 = writers.q8r;
   const copies = {};
-  for (const form of NAMES) {
+  for (const form of needed) {
     const stride = bytesOf(form, rows, n), first = firsts[form];
     writers[form](first);
     copies[form] = megabytes ? Math.max(2, Math.floor(region(form) / stride)) : 1;
@@ -284,10 +318,11 @@ for (const [rows, n] of shapes) {
   const whole = (scale) => scale, over127 = (scale) => Math.fround(scale / 127);
   const references = { t2r: reference(eight, whole, 1), c: reference(seven, whole, 1), q8r: reference(seven, over127, 127), q8: reference(eight, over127, 127) };
   references.t2 = references.bc = references.bs = references.bx = references.a = references.t2r;
+  references.t2c = references.t2p = references.h2r = references.h4r = references.p2r = references.h2 = references.t2r;
   Object.assign(c, { [N]: n, [ROWS]: rows });
   const set = (form) => Object.assign(c, { [FORM]: NAMES.indexOf(form), [FIRST]: firsts[form], [STRIDE]: bytesOf(form, rows, n),
     [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs, [COUNT]: 1 });
-  const errors = {};
+  const errors = {}, ownOf = {}, SAME_AS_T2R = ["t2", "t2c", "t2p", "h2r", "h4r", "p2r", "h2"];
   for (const form of timed) {
     set(form);
     for (const [slot, threads] of [[0, 1], [1, 4]]) {
@@ -303,6 +338,11 @@ for (const [rows, n] of shapes) {
     }
     errors[form] = worst / most;
     if (!(errors[form] < 2e-6)) throw new Error(`${rows} x ${n}, ${form}: ${errors[form].toExponential(2)} of the largest output away from the float64 sums`);
+    // T533: the forms of the same integers and scales in the same order are t2r's numbers to the bit
+    if (form === "t2r") ownOf.t2r = F.slice(outs[0] / 4, outs[0] / 4 + rows);
+    else if (SAME_AS_T2R.includes(form) && ownOf.t2r) {
+      for (let i = 0; i < rows; i++) if (!Object.is(F[outs[0] / 4 + i], ownOf.t2r[i])) throw new Error(`${rows} x ${n}, ${form}: differs from t2r at row ${i}`);
+    }
   }
   console.log(`ternary-bench: ${rows} x ${n}: every form within ${Math.max(...Object.values(errors)).toExponential(2)} of its float64 sums (of the largest |output|), and the same to the bit on 1 and 4 threads`);
   // ---- the times, the forms taking turns
@@ -356,14 +396,17 @@ for (const [rows, n] of shapes) {
       Object.assign(c, { [FORM]: EVERY.indexOf(name), [FIRST]: firsts[of], [STRIDE]: bytesOf(of, rows, n), [COPIES]: copies[of],
         [XQ]: frames[activations], [XS]: frames[activations] + n, [COUNT]: count, [FRAME]: frame, [OUT_FRAME]: outFrame });
     };
-    // the tile's numbers are the token kernel's, to the bit
-    for (const [slot, name] of [[0, "t2r, token by token"], [1, "t2r tile"]]) {
+    // the tiles' numbers are the token kernel's, to the bit (T533: the float16 scales' tiles too)
+    setPrompt("t2r, token by token");
+    Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[0] });
+    go();
+    for (const name of ["t2r tile", "h2r tile", "p2r tile"]) {
       setPrompt(name);
-      Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[slot] });
+      Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[1] });
       go();
-    }
-    for (let i = 0; i < (count * outFrame) / 4; i++) {
-      if (!Object.is(F[tokenOuts[0] / 4 + i], F[tokenOuts[1] / 4 + i])) throw new Error(`${rows} x ${n}: the tile differs from the token's kernel at ${i}`);
+      for (let i = 0; i < (count * outFrame) / 4; i++) {
+        if (!Object.is(F[tokenOuts[0] / 4 + i], F[tokenOuts[1] / 4 + i])) throw new Error(`${rows} x ${n}: ${name} differs from the token's kernel at ${i}`);
+      }
     }
     for (const threads of [1, 4]) {
       c[THREADS] = threads;

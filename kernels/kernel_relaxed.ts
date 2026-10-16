@@ -4,6 +4,7 @@
 
 import { sixFirst, sixSecond, sixTops } from "./six";
 import { codes, fourSums } from "./ternary";
+import { half, halves4 } from "./kernel/halves";
 
 const GS: i32 = 32;
 
@@ -218,7 +219,7 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
   }
 }
 
-// T231: ternary weights (ternary.ts: 32 bytes a group of 128, a float32 scale a group) against the activations
+// T231: ternary weights (ternary.ts: 32 bytes a group of 128, a float16 scale a group from T533) against the activations
 // interleave() left (kernel/matmul.ts: int8 in all 8 bits, the planes of a block of 64, and after their scales minus the sum
 // of each group of 32). 64 weights a step: their sixteen bytes loaded once, four planes of codes, four dot products
 // into one accumulator whose lanes 0 and 1 are of the first group of 32 activations and 2 and 3 of the second.
@@ -232,20 +233,33 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
   return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), codes(v, 3, three), acc);
 }
 // A group of 128 weights a turn: the exact integer sums of its four groups of 32 activations (minus each one's sum
-// added: dot(a, w) of the weights -1, 0, 1), times the activations' four scales, times the weights' one. Lane k of the
-// accumulator holds the k-th group of 32 of every group of 128, in order; the lanes are added in order at the end.
+// added: dot(a, w) of the weights -1, 0, 1), times the activations' four scales, times the weights' one (d: in all
+// four lanes). Lane k of the accumulator holds the k-th group of 32 of every group of 128, in order; the lanes are
+// added in order at the end.
+// @ts-ignore: decorator
+@inline function group128(facc: v128, w: usize, x: usize, sums: usize, xs: usize, at: usize, d: v128, mask: v128): v128 {
+  const whole = i32x4.add(fourSums(dot64(w, x, mask), dot64(w + 16, x + 64, mask)), v128.load(sums + at));
+  return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
+}
+// T533: the scales are float16s, four groups' widened at once (ternary.ts), the groups past the last four one at a time.
 // three: 3 (ternary.ts says why it is an argument).
 export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
-  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>three);
   const sums = xs + (<usize>(n >> 5) << 2);  // after the scales: minus the sum of each group's activations
   for (let i = r0; i < r1; i++) {
     const row = wq + <usize>i * <usize>(n >> 2);
-    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
     let facc = f32x4.splat(0);
-    for (let g = 0; g < groups; g++) {
-      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
-      const whole = i32x4.add(fourSums(dot64(w, x, mask), dot64(w + 16, x + 64, mask)), v128.load(sums + at));
-      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), v128.load32_splat(srow + (<usize>g << 2))));
+    let g = 0;
+    for (; g < groups4; g += 4) {
+      const d = halves4(srow + (<usize>g << 1)), w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      facc = group128(facc, w, x, sums, xs, at, v128.shuffle<i32>(d, d, 0, 0, 0, 0), mask);
+      facc = group128(facc, w + 32, x + 128, sums, xs, at + 16, v128.shuffle<i32>(d, d, 1, 1, 1, 1), mask);
+      facc = group128(facc, w + 64, x + 256, sums, xs, at + 32, v128.shuffle<i32>(d, d, 2, 2, 2, 2), mask);
+      facc = group128(facc, w + 96, x + 384, sums, xs, at + 48, v128.shuffle<i32>(d, d, 3, 3, 3, 3), mask);
+    }
+    for (; g < groups; g++) {
+      facc = group128(facc, row + (<usize>g << 5), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
     }
     store<f32>(xout + (<usize>i << 2), f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3));
   }
@@ -279,7 +293,7 @@ export function matmul_t2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
   const sums = <usize>(n >> 5) << 2, outStride = <usize>os, f = <usize>frame;
   for (let i = r0; i < r1; i++) {
     const row = wq + <usize>i * <usize>(n >> 2);
-    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 1);
     let t = 0;
     for (; t < count4; t += 4) {
       const x0 = xq + <usize>t * f, x1 = x0 + f, x2 = x1 + f, x3 = x2 + f;
@@ -293,7 +307,7 @@ export function matmul_t2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
         const a2 = planes(x2 + o, c0, c1, c2, c3), a3 = planes(x3 + o, c0, c1, c2, c3);
         const u = v128.load(w, 16);
         c0 = codes(u, 0, mask); c1 = codes(u, 1, mask); c2 = codes(u, 2, mask); c3 = codes(u, 3, mask);
-        const d = v128.load32_splat(srow + (<usize>g << 2));
+        const d = f32x4.splat(half(srow + (<usize>g << 1)));  // T533: a float16, once for the four tokens
         f0 = f32x4.add(f0, scaled(a0, planes(x0 + o + 64, c0, c1, c2, c3), s0, sums, at, d));
         f1 = f32x4.add(f1, scaled(a1, planes(x1 + o + 64, c0, c1, c2, c3), s1, sums, at, d));
         f2 = f32x4.add(f2, scaled(a2, planes(x2 + o + 64, c0, c1, c2, c3), s2, sums, at, d));

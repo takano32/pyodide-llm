@@ -101,7 +101,7 @@ class Placed(Sized):
 
     def write(self, offset, array):
         self.writes.append((offset, array.size))
-bonsai, bonsai_bytes = [5120, 17408, 64, 24, 4, -248320, 4096], 7662073884
+bonsai, bonsai_bytes = [5120, 17408, 64, 24, 4, -248320, 4096], 7242233884
 bonsai_form = {"arch": "qwen35", "bias": False, "head_dim": 256,
                "linear": {"every": 4, "key_heads": 16, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv": 4}}
 placed = Placed()
@@ -124,8 +124,8 @@ for which, index in (("last", last_matrix), ("largest", largest)):
     assert at > 2 ** 32 or which == "largest", f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
     row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
     placed.writes.clear()
-    writer.write(index, count - width, row)
-    assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 4 * ((count - width) // 128), 4 * (width // 128))], \\
+    writer.write(index, count - width, row)  # (T533: the scales float16s, 2 bytes a group)
+    assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 2 * ((count - width) // 128), 2 * (width // 128))], \\
         f"the last row of the 27B's {which} matrix is written at {placed.writes}"
     assert placed.writes[1][0] + placed.writes[1][1] == ends[index], f"the scales of its {which} matrix do not end where the matrix ends"
     assert placed.writes[1][0] > 2 ** 32, f"the scales of its {which} matrix are written at {placed.writes[1][0]}: not past 2^32"

@@ -98,10 +98,11 @@ def test_a_block_is_256_weights_in_its_bytes_with_its_scales_inside(name):
 
 
 def test_the_quantized_dtypes_are_stored_as_they_were():
-    """What the new columns say of the kinds that were there: a float32 scale behind every group, and bits a value."""
-    for name, (values, scales) in {"int8": (1024, 128), "int6": (768, 128), "ternary": (256, 32)}.items():
+    """What the new columns say of the kinds that were there: a scale behind every group (a float32; T533: ternary's a
+    float16), and bits a value."""
+    for name, (values, scales, scale) in {"int8": (1024, 128, 4), "int6": (768, 128, 4), "ternary": (256, 16, 2)}.items():
         kind = DTYPES[name]
-        assert kind.stored_bytes(1024, kind.group(1024)) == (values, scales) and kind.scale == 4 and not kind.block and kind.read is None
+        assert kind.stored_bytes(1024, kind.group(1024)) == (values, scales) and kind.scale == scale and not kind.block and kind.read is None
     assert not DTYPES["float32"].group and DTYPES["float32"].suits(7) and KINDS["uint8"].itemsize == 1
 
 
@@ -405,7 +406,9 @@ def test_the_writer_puts_the_rows_of_each_layer_where_the_layer_is():
     def ternary_where_asked(row, values=uniform(5)):
         made = values(row)
         if row.name == "w2":
-            made[3] = np.sign(made[3]) * np.abs(made[3]).reshape(-1, 128).max(axis=1).repeat(128).reshape(made[3].shape)
+            # (T533: of a float16 scale, as the ternary kind keeps it)
+            largest = np.abs(made[3]).reshape(-1, 128).max(axis=1).astype(np.float16).astype(np.float32)
+            made[3] = np.sign(made[3]) * largest.repeat(128).reshape(made[3].shape)
         return made
     tensors = {}
     data = checkpoint(header, form, "int8", tensor=lambda row: tensors.setdefault(row.name, ternary_where_asked(row)))

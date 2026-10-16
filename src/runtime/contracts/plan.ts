@@ -10,7 +10,8 @@
 import type { Arch, Convolution, Linear } from "./form.ts";
 
 // Where a tensor of the checkpoint is (engine/checkpoint.py's Tensor.plan()), counted from the start of the file:
-// kind: how its values are stored (int8, int6 and ternary: values, then a float32 scale a group at scales); group: the
+// kind: how its values are stored (int8, int6 and ternary: values, then a scale a group at scales, a float32 but ternary's,
+// which is a float16: T533); group: the
 // values a scale is for (0: no scales); scales: where the scales are (of llama.cpp's blocks, T363: where the blocks end)
 // T363.5: a row may be of a kind of its own (the form's kinds): one of llama.cpp's blocks by its type's name, 256
 // weights a group with the scales inside; and "u8", the bytes of the codebooks a file with such rows carries. A stack

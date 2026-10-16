@@ -100,8 +100,9 @@ holds such weights is the next section.
 ## Ternary weights: 2 bits
 
 A ternary model is not quantized by the page: its weights are kept as the file has them. The format is PQ2_0's
-own, 32 bytes for 128 weights (2 bits each: the weight plus 1) and one float32 scale for the 128, 2.25 bits a
-weight. Ternary Bonsai 1.7B takes 484 MB that way, a quarter of the 1.94 GB it took widened to int8 (which the
+own, 32 bytes for 128 weights (2 bits each: the weight plus 1) and one float16 scale for the 128 (a float32 until
+2026-10-15), 2.125 bits a weight. Ternary Bonsai 1.7B takes 457 MB that way, less than a quarter of the 1.94 GB it
+took widened to int8 (which the
 page did until 2026-10-01, and still does with `?bits=8`). Nothing is rounded: the converter refuses a value
 that is neither 0 nor plus or minus its group's scale, so it cannot turn another model into this format by
 mistake. The other ternary type of that fork, PTQ1_0 (five weights a byte in base 3, 28 bytes for 128), is read
@@ -143,8 +144,8 @@ for the whole block, and the 8B's hold none (64 million blocks, counted).
 
 ### Ternary Bonsai 2 27B
 
-The largest model of the list is a ternary Qwen3.8 27B: 5.95 GB as its PTQ1_0 file, 7.66 GB as the page's ternary
-weights (as int8 it would be 30 GB, past what a browser gives a page), on a 64-bit memory of 7.7 GiB with its 4,096
+The largest model of the list is a ternary Qwen3.8 27B: 5.95 GB as its PTQ1_0 file, 7.24 GB as the page's ternary
+weights (as int8 it would be 30 GB, past what a browser gives a page), on a 64-bit memory of 7.3 GiB with its 4,096
 positions (Chrome and Firefox). Its matrices are stored in a rotated basis: every matrix reads its input after a
 change of signs and a Walsh-Hadamard transform over blocks of 1,024 values, which the engine applies as it goes
 (the weights turned back would not be ternary). Its attention is the hybrid one of Qwen3.5 (three layers of four

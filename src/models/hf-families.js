@@ -43,11 +43,11 @@ export const HF_FAMILIES = [
   // from; as ternary they fit a 32-bit memory with their forward pass (2.2 and 3.3 GiB at 4096 positions; widened to
   // int8 they were 5.3 and 10.1 GiB, on a 64-bit one)
   ternaryBonsai("1.7B", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "3aca840085293d026ce6f6b80fafdae937fd2eeb", 463290464,
-    "fetches 463 MB (GGUF) → ternary 484 MB"),
+    "fetches 463 MB (GGUF) → ternary 457 MB"),
   ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
     "fetches 1.1 GB (GGUF) → ternary 1.1 GB"),
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
-    "fetches 2.2 GB (GGUF) → ternary 2.3 GB", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+    "fetches 2.2 GB (GGUF) → ternary 2.2 GB", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
@@ -128,8 +128,8 @@ export const HF_FAMILIES = [
     { thinking: AGENTS_A1_THINKING, atOnce: AGENTS_A1_AT_ONCE }, AGENTS_A1_SAMPLING),
   // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three
   // value heads to a key head, T245), whose matrices are stored in a rotated basis (T237: the engine turns every
-  // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.66 GB; as int8 it would be
-  // 30 GB), on a 64-bit memory (7.70 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
+  // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.24 GB since T533; as int8 it would be
+  // 30 GB), on a 64-bit memory (7.31 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
   // rotated model has no GPU path yet). The PTQ1_0 file, the smaller of the two that hold the same weights (5.95 GB
   // against PQ2_0's 7.21 GB; both convert to the same checkpoint, byte for byte): Pyodide converts it at 27 MB/s and
   // PQ2_0 at 53, so on a line slower than 33 MB/s it is ready sooner, by the 1.26 GB less it fetches (TODO.md's T233).
@@ -147,7 +147,7 @@ export const HF_FAMILIES = [
   ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Prism ML Ternary Bonsai 2 27B",
     ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
-    "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB",
+    "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.2 GB",
     { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
   // T364.3: Conway Research's Underdog Saluki 27B, the same Qwen3.8 27B at 2.3 bits a weight: a GGUF of llama.cpp's
   // K- and i-quantized blocks, ten types of them, a type to a matrix or to a layer of one (T361). Kept as the file

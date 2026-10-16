@@ -63,8 +63,9 @@ export function keptName(model: Converted) {
  * token a text begins with where the model's chat template was read (T264: the template's own first token, so that the
  * page sends the ids of apply_chat_template), lower case for a sentencepiece model that asks for it (T265), the dummy
  * prefix after a special token (T308), the templates jinja2 reads and the reader did not (T397, and T269's), and
- * qk_norm said by a Llama's file alone. */
-export const CONVERTER = 10;
+ * qk_norm said by a Llama's file alone. 11: a ternary group's scale a float16, PQ2_0's own (T533: 34 bytes a group of
+ * 128, not 36; a ternary model's kept conversion of 10 is fetched and converted again). */
+export const CONVERTER = 11;
 const converterOf = (manifest: Manifest) => manifest.converter ?? 1;
 /** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
  * may choose (T115) */

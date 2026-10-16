@@ -208,7 +208,7 @@ for name in QUANTIZED:
     packed = np.ascontiguousarray(packed).reshape(-1)
     values = dtype.unpack(packed)
     assert len(values) == 3 * n and len(set(values.tolist())) > 2
-    out[dtype.short] = {"group": dtype.group(n), "row": [dtype.stored_bytes(width, dtype.group(width))[0] for width in (128, 256, 1024)], "packed": packed.tolist(), "values": values.tolist()}
+    out[dtype.short] = {"group": dtype.group(n), "row": [dtype.stored_bytes(width, dtype.group(width))[0] for width in (128, 256, 1024)], "packed": packed.tolist(), "values": values.tolist(), "scale": dtype.scale}
 blocks = {name: {"short": kind.short, "group": kind.group(256), "row": [kind.stored_bytes(width, BLOCK)[0] for width in (256, 1024)], "scale": kind.scale, "type": SOURCES[name].ggml} for name, kind in BLOCKS.items()}
 print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, python()], { cwd: fileURLToPath(new URL("..", import.meta.url)) }).toString());
   const tabled = Object.keys(PACKED).filter((name) => PACKED[name].tabled !== undefined);
@@ -231,8 +231,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   assert.ok(BLOCK_TABLES > codebooks, "the kernels' tables hold the checkpoint's codebooks and more");
   const stored = contract("plan.ts").literalsOf("Stored");
   assert.deepEqual([...stored].filter((name) => !Object.hasOwn(PACKED, name)).sort(), ["f16", "f32", "layers", "u8"], "contracts/plan.ts's Stored: the packings, float32 and float16 which are none, the codebooks' bytes, and a stack that is its layers");
-  for (const [name, { group, row, packed, values }] of Object.entries(said)) {
+  for (const [name, { group, row, packed, values, scale }] of Object.entries(said)) {
     const packing = PACKED[name];
+    // (T533: ternary's scales are float16s)
+    assert.equal(packing.scale, scale, `${name}: the bytes of a group's scale (engine/dtypes.py's DTYPES is the owner: put jobs.ts's PACKED right)`);
     assert.deepEqual([128, 256, 1024].map((n) => packing.rowBytes(n)), row, `${name}: the bytes of a row`);
     // (T375.5: of a row 256 wide, which every packing has in its whole groups: an int8 row's groups are smaller where it is narrower)
     assert.equal(packing.group, group, `${name}: the weights a scale is of (engine/dtypes.py's DTYPES is the owner: put jobs.ts's PACKED right)`);
@@ -282,15 +284,15 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
   for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T363.5: none of llama.cpp's blocks on the GPU)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
-  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.28125, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
+  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { takes }]) => [name, takes])),
     { int8: "biased", int6: "biased", ternary: "interleaved", ...Object.fromEntries(Object.keys(BLOCK_TYPES).map((name) => [name, "summed"])) }, "how each packing's kernels take the activations");
   assert.deepEqual(["IQ2_XXS", "Q4_K"].map(aloneTakes), [false, false], "no model of llama.cpp's blocks on the GPU alone");
   assert.deepEqual(["int8", "int6", "ternary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 1.125, 1.125, 1.125, 1.125],
-    "on the GPU: int6 widened to int8, ternary as it is; what the GPU does not take is counted as int8");
+    "on the GPU: int6 widened to int8, ternary as it is (T533: its scales widened to float32); what the GPU does not take is counted as int8");
   assert.deepEqual(["int8", "int6", "ternary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false], "the dtypes a model on the GPU alone may be of");
-  assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 144e6, 36e6],
+  assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
   // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.js)
   const { SIX_OF_EIGHT, TERNARY_OF_EIGHT } = await import("../src/models/memory.js");
@@ -402,7 +404,11 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
       for (const t of Object.values(plan.tensors)) {
         if (!Object.hasOwn(PACKED, t.kind)) continue;
         const groups = t.shape.reduce((a, b) => a * b, 1) / t.group;
-        for (let g = 0; g < groups; g++) view.setFloat32(base + t.scales + g * 4, scaleOf(g), true);
+        // (T533: a float16 where the packing keeps its scales so, ternary; every one of scaleOf()'s is a float16's too)
+        for (let g = 0; g < groups; g++) {
+          if (PACKED[t.kind].scale === 2) view.setFloat16(base + t.scales + g * 2, scaleOf(g), true);
+          else view.setFloat32(base + t.scales + g * 4, scaleOf(g), true);
+        }
       }
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: true, outliers: 8, gpu: false, shared: false };
       const engine = createForward({ memory, base, size: p.size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, halfKeys: keysInHalf(p.header, p.size, options), wrap: kernels });

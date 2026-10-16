@@ -52,9 +52,10 @@ export type GpuOnlyWeights = ReturnType<typeof gpuOnlyWeights>;
 
 // T232, T375.5: the bytes of a weight on the GPU, of a tensor stored as the checkpoint stores it: those of the packing
 // the GPU holds it in (jobs.ts's PACKED: an int8 value and a float32 scale a group of 32, 1.125, which int6 is widened
-// to, T155; ternary, T230, as the checkpoint holds it, two bits and a float32 scale a group of 128, 0.28125). A model
-// whose weights the GPU does not take is counted as int8's, as it always was (it does not go there: gpuFit())
-export const gpuWeightBytes = (stored: string | undefined) => weightBytes(PACKED[packingOf(stored)?.gpu?.as ?? "int8"]);
+// to, T155; ternary, T230, as the checkpoint holds it, two bits and a scale a group of 128, 0.28125). The GPU holds
+// every scale as a float32 (T533: ternary's float16 ones are widened as they go up, gpu/weights.ts). A model whose
+// weights the GPU does not take is counted as int8's, as it always was (it does not go there: gpuFit())
+export const gpuWeightBytes = (stored: string | undefined) => weightBytes({ ...PACKED[packingOf(stored)?.gpu?.as ?? "int8"], scale: 4 });
 /** the weights of a layer's matrices: q, k, v and the output, and the FFN's (three where it is gated, else GPT-2's two) */
 const layerMatrices = (header: Header, { head_dim = 0, arch = "llama" }: Formed) => {
   const [dim, hidden, , heads, kvHeads] = header;
@@ -86,7 +87,7 @@ const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wc
 export function gpuHoles(tensors: Tensors) {
   const holes = new Map(GPU_ALONE.filter((name) => tensors[name]).map((name): [number, Hole] => {
     const t = tensors[name]!, values = t.shape.reduce((a, b) => a * b, 1);
-    return [t.offset, [t.offset, t.scales + (values / t.group) * 4]];
+    return [t.offset, [t.offset, t.scales + (values / t.group) * packingOf(t.kind)!.scale]];
   }));
   return [...holes.values()].sort((a, b) => a[0] - b[0]);
 }
@@ -292,7 +293,7 @@ export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {},
   const matrices = Object.fromEntries(LAYER_MATRICES.map((name): [string, Matrix] => {
     const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, layerBytes = packingOf(t.kind)!.rowBytes(perLayer);
     return [name, { rows, n, ternary: t.kind === "ternary", layers: Array.from({ length: layers }, (_, l) =>
-      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * 4]) }];
+      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]) }];  // (T533: ternary's scales float16s)
   }));
   const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], ternary: t.kind === "ternary", at: [t.offset, t.scales] });
   const embedding = tensors.token_embedding_table!, classifier = tensors.wcls ?? embedding;

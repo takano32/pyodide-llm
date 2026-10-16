@@ -348,11 +348,15 @@ try {
       const float = (t, i) => (t?.kind === "f32" ? base + t.offset + (last * plan.dim + i) * 4 : 0);
       return [["a weight of the attention's norm (before q, k and v)", float(T.rms_att_weight, 7)],
         ["a weight of the FFN's norm (before gate and up)", float(T.rms_ffn_weight, plan.dim - 1)],
-        ["a scale of w1 (before down)", w1?.scales ? base + w1.scales + ((last * rows + 3) * groups + 1) * 4 : 0]].filter(([, address]) => last > 0 && address);
+        // (T533: a ternary matrix's scales are float16s, 2 bytes each)
+        ["a scale of w1 (before down)", w1?.scales ? base + w1.scales + ((last * rows + 3) * groups + 1) * (w1.kind === "ternary" ? 2 : 4) : 0, w1?.kind === "ternary"]]
+        .filter(([, address]) => last > 0 && address);
     };
-    const brokenWeight = async (form, [name, address], value, force) => {
-      const cell = new Float32Array(memory.buffer, address, 1), kept = cell[0];
-      cell[0] = value;
+    // (a float16's bits of the two numbers written: NaN and Infinity)
+    const halfBits = (value) => (Number.isNaN(value) ? 0x7e00 : value > 0 ? 0x7c00 : 0xfc00);
+    const brokenWeight = async (form, [name, address, half], value, force) => {
+      const cell = half ? new Uint16Array(memory.buffer, address, 1) : new Float32Array(memory.buffer, address, 1), kept = cell[0];
+      cell[0] = half ? halfBits(value) : value;
       const engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: { ...TESTS, ...force, tokens: form } });
       const note = await engine.gpu;
       cell[0] = kept;

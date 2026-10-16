@@ -1,7 +1,7 @@
 // ternary.ts (T231): the weights of a ternary model, two bits each, as the dot products take them. kernel/matmul.ts
 // (matmul_t2) and kernel_relaxed.ts (matmul_t2r) import it. The layout is llama2_numpy.pack_ternary's, which is
 // Prism ML's PQ2_0's: a group of 128 weights in 32 bytes, weight j as its code (the weight + 1: 0, 1 or 2) in byte
-// j >> 2 at bits 2 (j & 3), and one float32 scale a group.
+// j >> 2 at bits 2 (j & 3), and one scale a group (a float16 from T533, below).
 //
 // Nothing is widened. Sixteen bytes hold 64 weights, and a shift of all sixteen by 2 p bits and a mask leave the codes
 // of every fourth weight in the bytes: plane p is weights 4 c + p, c = 0..15. The activations are laid out the same
@@ -32,3 +32,12 @@
 @inline export function fourSums(lo: v128, hi: v128): v128 {
   return i32x4.add(v128.shuffle<i32>(lo, hi, 0, 2, 4, 6), v128.shuffle<i32>(lo, hi, 1, 3, 5, 7));
 }
+
+// T533: a group's scale is a float16 (PQ2_0's and PTQ1_0's own: 34 bytes a group of 128, not 36), after all the
+// codes of the matrix as the float32 ones were. A row's kernels widen four groups' at once (kernel/halves.ts's
+// halves4, exact for every finite half) and broadcast a lane of them to each group (a shuffle); the groups past the
+// last four, and the tiles once for four tokens, one at a time (half). Timed against the float32 scales on CI's
+// arm64 and x86-64 (tests/ternary-bench.mjs: TODO.md's T533): the same speed; one half widened a group was 7 to 9 %
+// slower on arm64. The form is ssig33/pyodide-llm's (7d7b776c, MPL-2.0: the blocks of PQ2_0 as they are, a half
+// widened once a block); none of its lines is here.
+// (kernel/matmul.ts and kernel_relaxed.ts import halves4 and half from kernel/halves.ts.)

@@ -284,7 +284,7 @@ from it (+0.31% either way) and would pay about 3% of speed. `simdkernel.so` is 
 ## Ternary weights (2026-10-01, T230 and T231)
 
 A ternary model's weights (-1, 0, +1 times one scale a group of 128) are held two bits each, in the order of Prism
-ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a float32 scale a group:
+ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a scale a group (a float32 until T533, a float16 from it, below):
 `ternary.ts`. Nothing is widened: `matmul_t2r` loads sixteen bytes (64 weights), and a shift by 0, 2, 4 and 6 bits
 and a mask of 3 give four planes of codes, every fourth weight each. `interleave` lays the int8 activations of
 `quantize_x` (no bias) out the same way, once a token, and leaves minus the sum of every group of 32 after their
@@ -310,6 +310,27 @@ widened to int8):
 The mask of 3 is an argument of the kernels (`jobs.ts` passes it): V8 makes a constant vector written in the loop
 again at every use. The form that keeps int16 sums is as fast or faster on x86-64 and half as fast on arm64; the
 phones this is for are arm64.
+
+**The scales are float16s from T533 (2026-10-15)**, as PQ2_0 and PTQ1_0 hold them: 34 bytes a group of 128, not 36
+(a ternary model 5.6% smaller: Ternary Bonsai 1.7B 457 MB, 2 27B 7.24 GB). The form is ssig33/pyodide-llm's
+(`7d7b776c`, MPL-2.0: PQ2_0's blocks as they are, a half widened once a block), written anew in this layout (the
+scales after all the codes, as before). A row's kernels widen four groups' scales at once (`halves4`) and broadcast a
+lane to each group; one half widened a group (`half`) was 7 to 9% slower on arm64. The numbers are the float32
+form's to the bit for the same scales (`tests/ternary-bench.mjs` holds every form to it). Against the float32 form
+(a copy of it, t2c, in the same process; a second copy of it is within 1%), G weights/s, 1 / 4 threads, the
+geometric mean of the widths of 1.7B, 8B and 27B:
+
+| form | CI arm64 (Neoverse-N2) | CI x86-64 (EPYC 9V74) |
+|---|---:|---:|
+| float32 scales (as before) | 20.3 / 73.0 | 21.4 / 42.3 |
+| float16, four groups' at once (taken) | 20.8 (1.02) / 75.3 (1.03) | 21.0 (0.98) / 41.8 (0.99) |
+| float16, one a group | 18.5 (0.91) / 67.6 (0.93) | 20.3 (0.95) / 40.0 (0.95) |
+| PQ2_0's 34-byte blocks, one a group | 18.1 (0.89) / 65.9 (0.90) | 20.2 (0.95) / 40.0 (0.95) |
+
+The prompt's tile widens one half a group for its four tokens: 0.98 of the float32 tile on arm64 (28.1 against 28.8
+and 112.0 against 115.1 G weights/s), 0.99 on x86-64. The kernels as built against their float32 forms: `matmul_t2r`
+1.02 / 1.02 on arm64 (Neoverse-N2), 1.02 / 1.00 on an EPYC 7763 and 0.96 / 0.96 on an EPYC 9V45; `matmul_t2` 1.00 /
+1.00 on arm64 and 0.97 / 0.99 on the 7763 (TODO.md's T533 has the runs).
 
 Two things the review of 2026-10-02 found, which no test in Node can see:
 

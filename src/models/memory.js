@@ -27,9 +27,9 @@ export function modelBytes(entry) {
 // group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
 // slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
 export const SIX_OF_EIGHT = 28 / 36;
-// T230: a ternary model keeps its weights as they are, two bits each: 32 bytes and a scale per group of 128, a quarter
-// of int8's 128 bytes and four scales, with no loss at all (int8 is the same weights widened)
-export const TERNARY_OF_EIGHT = 36 / 144;
+// T230: a ternary model keeps its weights as they are, two bits each: 32 bytes and a scale per group of 128 (T533: a
+// float16, 2 bytes), against int8's 128 bytes and four scales, with no loss at all (int8 is the same weights widened)
+export const TERNARY_OF_EIGHT = 34 / 144;
 
 // T133: Chromium's navigator.deviceMemory stops at 8: a device that says 8 has 8 GB or more, as many as it likes
 export const DEVICE_MEMORY_CAP = 8;

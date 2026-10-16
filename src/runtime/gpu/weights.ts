@@ -3,8 +3,8 @@
 // pieces (T155), the layout of a token's joined matrices (T152), and the widening of int6 (T155) with its check.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, readBack, validated,
-  pipelineOf, bind, dispatch } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, widenIn, widenedHalves, readBack,
+  validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { ENGINE } from "../shaders/engine.ts";
@@ -23,7 +23,16 @@ type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined:
 type Joined = { [joined: string]: [GPUBuffer, GPUBuffer] };
 type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
 // T156: a stretch of the checkpoint, [start, end), the buffer it goes to and the offset in it
-type Route = [number, number, GPUBuffer, number];
+// (halves, T533: a stretch of ternary's float16 scales, which go up widened to float32: the buffer's offset of the
+// stretch's first, and twice its bytes there)
+type Route = [number, number, GPUBuffer, number, boolean?];
+// T533: the bytes of a group's scale in the checkpoint: ternary's a float16, int8's (and int6's) a float32. The GPU
+// holds every one as a float32 (scaleBytes below count those), ternary's widened as they go up (scalesIn, routedHalves)
+const heldScale = ({ ternary }: { ternary: boolean }) => (ternary ? 2 : 4);
+function scalesIn(m: Model, spec: { ternary: boolean }, target: GPUBuffer, address: number, scaleBytes: number, offset = 0) {
+  if (spec.ternary) widenIn(m, target, address, scaleBytes / 4, offset);
+  else copyIn(m, target, address, scaleBytes, offset);
+}
 // T209: a piece of a table
 type TablePiece = { first: number; rows: number; values: GPUBuffer; scales: GPUBuffer };
 type Weights = {
@@ -105,16 +114,16 @@ async function uploadLayers(m: Model, alone = false) {
         const [values, scales]: Bound[] = home
           ? joined![home.joined].map((b, i) => ({ buffer: b, offset: home.at[i], size: i ? scaleBytes : valueBytes }))
           : [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)];
-        const from = [valuesAt + piece.first * row, scalesAt + (piece.first * row / group) * 4];
+        const from = [valuesAt + piece.first * row, scalesAt + (piece.first * row / group) * heldScale(matrix)];
         if (alone) {
-          // (T156: int8 alone, and T232 ternary, whose bytes are the buffer's as they come)
+          // (T156: int8 alone, and T232 ternary, whose bytes are the buffer's as they come; T533: its scales widened)
           routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
-            [from[1], from[1] + scaleBytes, scales.buffer ?? scales, scales.offset ?? 0]);
+            [from[1], from[1] + (scaleBytes / 4) * heldScale(matrix), scales.buffer ?? scales, scales.offset ?? 0, matrix.ternary]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
           if (matrix.six) widen!.into(values, valuesAt + (piece.first * matrix.n * 3) / 4, valueBytes / group);
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
-          copyIn(m, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
+          scalesIn(m, matrix, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
         }
         piece.layers.push([values, scales]);
         bytes += valueBytes + scaleBytes;
@@ -183,8 +192,8 @@ function tablesOn(m: Model) {
   const group = GROUP, { routes } = m.weights;
   let bytes = 0;
   m.weights.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
-    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * 4];
-    routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + scaleBytes, scales, 0]);
+    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * heldScale(spec)];
+    routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales, 0, spec.ternary]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
   // (the last of the routes are made: in the checkpoint's order, for routed() to find a stretch's)
@@ -203,7 +212,11 @@ function routed(m: Model, offset: number, bytes: Uint8Array) {
     else hi = mid;
   }
   for (let i = lo; i < routes!.length && routes![i][0] < end; i++) {
-    const [start, stop, target, at] = routes![i];
+    const [start, stop, target, at, halves] = routes![i];
+    if (halves) {
+      routedHalves(m, routes![i], Math.max(start, offset), Math.min(stop, end), offset, bytes);
+      continue;
+    }
     let a = Math.max(start, offset) - offset, here = at + (a + offset - start);
     const b = Math.min(stop, end) - offset;
     for (; a < b && here % 4; a++, here++) partialByte(m, target, here, bytes[a]);
@@ -211,6 +224,36 @@ function routed(m: Model, offset: number, bytes: Uint8Array) {
     if (whole) m.device.queue.writeBuffer(target, here, bytes, a, whole);
     for (let k = a + whole; k < b; k++) partialByte(m, target, here + (k - a), bytes[k]);
   }
+}
+// T533: the bytes [from, to) of the checkpoint (bytes holds those from offset on) of a route of float16 scales: each
+// half widened to the float32 at the route's offset + twice its place; a half a stretch begins or ends in the middle
+// of waits for its other byte (partial, as the words of partialByte do)
+function routedHalves(m: Model, [start, , target, at]: Route, from: number, to: number, offset: number, bytes: Uint8Array) {
+  let p = from;
+  const place = (q: number) => at + ((q - start) >> 1) * 4;
+  if ((p - start) & 1 && p < to) partialHalf(m, target, place(p), 1, bytes[p++ - offset]);
+  const whole = (to - p) >> 1;
+  if (whole) {
+    const halves = new Uint16Array(whole);
+    for (let i = 0; i < whole; i++) halves[i] = bytes[p - offset + 2 * i] | (bytes[p - offset + 2 * i + 1] << 8);
+    m.device.queue.writeBuffer(target, place(p), widenedHalves(halves, new Float32Array(whole)));
+    p += 2 * whole;
+  }
+  if (p < to) partialHalf(m, target, place(p), 0, bytes[p - offset]);
+}
+// byte k (0, the low one, or 1) of the half whose float32 is at the byte offset at of target, widened and written
+// once both of its bytes are there
+function partialHalf(m: Model, target: GPUBuffer, at: number, k: number, value: number) {
+  const { partial } = m.weights;
+  if (!partial!.has(target)) partial!.set(target, new Map());
+  const halves = partial!.get(target)!;
+  if (!halves.has(at)) halves.set(at, { bytes: new Uint8Array(2), count: 0 });
+  const held = halves.get(at)!;
+  held.bytes[k] = value;
+  if (++held.count < 2) return;
+  m.device.queue.writeBuffer(target, at, widenedHalves(Uint16Array.of(held.bytes[0] | (held.bytes[1] << 8)), new Float32Array(1)));
+  halves.delete(at);
+  if (!halves.size) partial!.delete(target);
 }
 // a byte of target at the byte offset at, the word it is in written once all four of its bytes are there
 function partialByte(m: Model, target: GPUBuffer, at: number, value: number) {
@@ -276,7 +319,7 @@ async function uploadTokens(m: Model, widen: Widen | null) {
     const { first, values, scales } = piece, { n, six, at: [valuesAt, scalesAt] } = spec;
     if (six) widen!.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
-    copyIn(m, scales, scalesAt + (first * rowBytes(spec) / group) * 4, scaleBytes);
+    scalesIn(m, spec, scales, scalesAt + (first * rowBytes(spec) / group) * heldScale(spec), scaleBytes);
     bytes += valueBytes + scaleBytes;
   }));
   // (T226: the final LayerNorm's bias, and GPT-2's learned positions, a row a position as the CPU widened them: a

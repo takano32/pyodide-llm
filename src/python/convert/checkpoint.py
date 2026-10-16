@@ -118,4 +118,4 @@ class Writer:
         fast = self.quantize_rows is not None and place.group % 32 == 0
         packed, scales = self.quantize_rows(rows, kind.name) if fast else kind.pack(rows)
         self.put(place.offset + kind.stored_bytes(first, place.group)[0], packed)
-        self.put(place.scales + 4 * (first // place.group), scales)
+        self.put(place.scales + kind.scale * (first // place.group), np.asarray(scales, dtype=kind.scale_type))

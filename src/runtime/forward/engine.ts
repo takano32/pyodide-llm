@@ -209,13 +209,18 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         const row = packing.row(k, tables), bytes = packing.rowBytes(width);
         for (let r = 0; r < each / width; r++) row(to + r * width * 4, base + part.offset + r * bytes, width);
       } else if (packing?.value) {
-        const g = part.group, values = base + part.offset;
-        for (let i = 0; i < each; i++) F[to / 4 + i] = Math.fround(packing.value(U, values, i) * F[(base + part.scales) / 4 + ((i / g) | 0)]);
+        const g = part.group, values = base + part.offset, scaleAt = scaleOf(packing, base + part.scales);
+        for (let i = 0; i < each; i++) F[to / 4 + i] = Math.fround(packing.value(U, values, i) * scaleAt((i / g) | 0));
       } else {
         throw new Error(`This engine reads no weights stored as ${JSON.stringify(part.kind)}.`);
       }
     });
     return at;
+  }
+  // T533: the scale of group g of a packed tensor whose scales start at address scales: a float32, or a float16
+  // (ternary's: packing.scale says which), widened exactly. Of the views as they are when it is called
+  function scaleOf(packing: Packing, scales: number) {
+    return packing.scale === 2 ? (g: number) => halfToFloat(H[scales / 2 + g]) : (g: number) => F[scales / 4 + g];
   }
   const widened = new Map<string, number>();
   // the address of a float32 tensor, widened once if the file does not hold float32
@@ -264,7 +269,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     return held(t, source, rows, n);
   }
   function held(t: Tensor, source: TensorName, rows: number, n: number): Held {
-    const packing = packingOf(t.kind), scaled = rows * (n / t.group) * 4;
+    // (scaled: the bytes of a layer's scales, T533: float16s for ternary; corrected: of its corrections, int32s)
+    const packing = packingOf(t.kind), scaled = rows * (n / t.group) * (packing?.scale ?? 4), corrected = rows * (n / t.group) * 4;
     // T156: on the GPU alone: where each layer's values and scales start in the checkpoint (what gpu.ts was opened
     // with), for the plan the GPU's worker is started with; the CPU never multiplies by it (T210: nor by the classifier)
     if (direct && GPU_ALONE.includes(source)) {
@@ -291,7 +297,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         k[packing.sums](corrections, values, groups);
       }
       // (a layer's values, scales and corrections: 0 where the packing has none)
-      const layer = (l: number) => [values + l * rows * rowBytes, scales + l * scaled, corrections && corrections + l * scaled];
+      const layer = (l: number) => [values + l * rows * rowBytes, scales + l * scaled, corrections && corrections + l * corrected];
       return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: readyOf(packing) };
     }
     // (a layer of a stack that is float32 by itself: widened or taken as it is, where it is)
@@ -407,10 +413,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     const t = (plan.shared_classifier ? T.token_embedding_table : T.wcls)!;
     columns = alloc(channels.length * vocab * 4);
     picked = alloc(channels.length * 4);
-    const groups = dim / t.group, values = base + t.offset, value = packingOf(t.kind)!.value!;
+    const groups = dim / t.group, values = base + t.offset, packing = packingOf(t.kind)!, value = packing.value!;
+    const scaleAt = scaleOf(packing, base + t.scales);
     channels.forEach((c, i) => {
       for (let v = 0; v < vocab; v++) {
-        F[columns / 4 + i * vocab + v] = Math.fround(value(U, values, v * dim + c) * F[(base + t.scales) / 4 + v * groups + ((c / t.group) | 0)]);
+        F[columns / 4 + i * vocab + v] = Math.fround(value(U, values, v * dim + c) * scaleAt(v * groups + ((c / t.group) | 0)));
       }
     });
   }
@@ -486,9 +493,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     for (let t = 0; t < tokens.length; t++) {
       const row = tokens[t] * dim, to = (rows + t * stride) / 4;
       if (embeddingValue) {
-        const g = embedding.group, values = base + embedding.offset;
+        const g = embedding.group, values = base + embedding.offset, scaleAt = scaleOf(embeddingPacked!, base + embedding.scales);
         for (let i = 0; i < dim; i++) {
-          F[to + i] = Math.fround(embeddingValue(U, values, row + i) * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
+          F[to + i] = Math.fround(embeddingValue(U, values, row + i) * scaleAt(((row + i) / g) | 0));
         }
       } else if (embeddingRow) {
         embeddingRow(rows + t * stride, base + embedding.offset + tokens[t] * embeddingBytes, dim);

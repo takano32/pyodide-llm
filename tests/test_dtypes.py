@@ -43,7 +43,7 @@ def ternary_rows(shape, seed=3):
     rng = np.random.default_rng(seed)
     signs = rng.integers(-1, 2, shape).astype(np.float32)
     signs[..., ::128] = 1.0  # (the largest of every group is its scale)
-    scales = (0.05 + rng.random((*shape[:-1], shape[-1] // 128, 1))).astype(np.float32)
+    scales = (0.05 + rng.random((*shape[:-1], shape[-1] // 128, 1))).astype(np.float16).astype(np.float32)  # (T533: float16s)
     return (signs.reshape(*shape[:-1], -1, 128) * scales).reshape(shape)
 
 
@@ -87,7 +87,7 @@ def test_a_quantized_dtype_packs_what_it_says_it_stores_and_reads_it_back(name):
         values = ternary_rows((5, length)) if name == "ternary" else np.random.default_rng(length).standard_normal((5, length)).astype(np.float32)
         packed, scales = dtype.pack(values)
         stored, scaled = dtype.stored_bytes(values.size, group)
-        assert (packed.nbytes, scales.nbytes) == (stored, scaled) and scales.dtype == np.float32
+        assert (packed.nbytes, scales.nbytes) == (stored, scaled) and scales.dtype == dtype.scale_type
         assert packed.shape == (values.size // group, group * dtype.bits // 8), "rows of a group's bytes"
         back = (dtype.unpack(np.frombuffer(packed.tobytes(), dtype=np.uint8)).reshape(-1, group) * scales[:, None]).reshape(values.shape)
         # at most half a step of the kind away: a step is the group's largest over 127 (int8) or 31 (int6); none (ternary)
@@ -99,12 +99,13 @@ def test_a_quantized_dtype_packs_what_it_says_it_stores_and_reads_it_back(name):
 
 
 def test_the_bytes_of_a_row_are_its_kinds():
-    """placed() asks the registry: the values in groups and a float32 scale for each, or the values alone."""
+    """placed() asks the registry: the values in groups and a scale for each (a float32; T533: ternary's a float16), or
+    the values alone."""
     rows = tensor_rows([128, 256, 2, 4, 4, 320, 24])
     wq = next(row for row in rows if row.name == "wq")
     count = 2 * 128 * 128
     sizes = {"float32": 4 * count, "float16": 2 * count, "int8": count + 4 * count // 32, "int6": count * 24 // 32 + 4 * count // 32,
-             "ternary": count * 32 // 128 + 4 * count // 128}
+             "ternary": count * 32 // 128 + 2 * count // 128}
     for dtype, size in sizes.items():
         assert placed([wq], dtype)[0].size == size == llama2_convert.tensor_bytes(wq.shape, True, dtype)
     assert file_size(rows, "int8") == checkpoint_size([128, 256, 2, 4, 4, 320, 24], "int8")

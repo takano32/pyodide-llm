@@ -43,9 +43,10 @@ def read_tensor(checkpoint, place, whole=True, copy=False):
         return np.stack([read_tensor(checkpoint, layer, whole, copy) for layer in place.layers])
     shape, count, kind = place.row.shape, math.prod(place.row.shape), KINDS[place.kind]
     if kind.group:
-        # quantize.py: int8 values (or their packing), then one float32 scale per group; or blocks, the scales inside
+        # quantize.py: int8 values (or their packing), then one scale per group (a float32; T533: ternary's a
+        # float16); or blocks, the scales inside
         raw = np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset)
-        scales = np.frombuffer(checkpoint, dtype=np.float32, count=(place.offset + place.size - place.scales) // 4,
+        scales = np.frombuffer(checkpoint, dtype=kind.scale_type, count=(place.offset + place.size - place.scales) // (kind.scale or 4),
                                offset=place.scales)
         if not whole:
             return kind.stored(raw, scales, shape, place.group)

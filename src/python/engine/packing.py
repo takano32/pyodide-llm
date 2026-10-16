@@ -92,7 +92,7 @@ def unpacked6(packed):
 
 
 # T230: ternary, two bits a weight. Every weight is -1, 0 or +1 times the scale of its group of 128 along the row (a
-# float32): what Prism ML's Ternary Bonsai models are, and how their GGUFs hold them (PQ2_0: two bits a weight;
+# float16 from T533, as the files have it: 34 bytes a group, 36 before): what Prism ML's Ternary Bonsai models are, and how their GGUFs hold them (PQ2_0: two bits a weight;
 # PTQ1_0: five weights a byte in base 3). A group takes 32 bytes, in PQ2_0's own order: weight j is the code (weight +
 # 1: 0, 1 or 2) in byte j // 4 at bits 2 (j % 4). The kernels multiply the codes as they are (kernels/ternary.ts): a
 # shift of sixteen bytes and a mask give every fourth weight of 64, so nothing is widened, and nothing is kept for a
@@ -115,13 +115,23 @@ def unpack_ternary(packed):
 
 
 def ternary(values):
-    """float32 values, whole rows of groups of 128 -> (32 bytes a group, float32 scales): each value's sign, and the
+    """float32 values, whole rows of groups of 128 -> (32 bytes a group, float16 scales): each value's sign, and the
     largest |value| of its group. Nothing is rounded: a value that is neither 0 nor plus or minus that scale is a
-    ValueError (the weights of a model that is not ternary, which int8 is for)."""
+    ValueError (the weights of a model that is not ternary, which int8 is for), and so is a scale a float16 does not
+    hold (T533: PQ2_0's and PTQ1_0's are float16)."""
     groups = np.asarray(values, dtype=np.float32).reshape(-1, TERNARY_GROUP)
     scales = np.abs(groups).max(axis=1)
     signs = np.sign(groups)
     if not np.array_equal(signs * scales[:, None], groups):
         raise ValueError(NOT_TERNARY)
-    return pack_ternary(signs.astype(np.int8)).reshape(-1, TERNARY_GROUP // 4), scales
+    return pack_ternary(signs.astype(np.int8)).reshape(-1, TERNARY_GROUP // 4), halves_of(scales)
+
+
+def halves_of(scales):
+    """T533: float32 scales -> the same numbers as float16, or a ValueError (NOT_TERNARY) where one is not a float16's."""
+    with np.errstate(over="ignore"):
+        halves = np.asarray(scales, dtype=np.float32).astype(np.float16)
+    if not np.array_equal(halves.astype(np.float32), scales):
+        raise ValueError(NOT_TERNARY)
+    return halves
 
