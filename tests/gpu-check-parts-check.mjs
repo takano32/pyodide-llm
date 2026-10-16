@@ -136,7 +136,8 @@ const REFERENCE = { tokens: [1, 2, 3, 4], header: HEADER, keys: b64(KEYS), value
   keys16: b64(moved(KEYS, E16)), values16: b64(moved(VALUES, E16)), keys8: b64(moved(KEYS, Q8)), values8: b64(moved(VALUES, Q8)),
   logits: b64(LOGITS), logits16: b64(LOGITS.map((x) => x + 1e-3)), logits8: b64(LOGITS.map((x, i) => x + 0.01 * i)),
   greedy: GREEDY, greedyLogits: b64(greedyRows()), greedyKeys: b64(GREEDY_KEYS), greedyValues: b64(GREEDY_VALUES) };
-const CASE = { id: "made-up", reference: REFERENCE, headDim: 0, arch: "llama", dtype: "int8", numpySeconds: 1.25, planSeconds: 0.5 };
+// (T545: plan.layers[0].kind, the kind of the first layer, which verdicts.mjs reads: a Llama's attends)
+const CASE = { id: "made-up", reference: REFERENCE, plan: { layers: [{ kind: "attention" }, { kind: "attention" }] }, headDim: 0, arch: "llama", dtype: "int8", numpySeconds: 1.25, planSeconds: 0.5 };
 const CPU = { keys: b64(moved(KEYS, 0.1)), values: b64(moved(VALUES, 0.1)), logits: b64(LOGITS.map((x, i) => x + 0.05 * i)), promptMs: 6, seconds: 2 };
 // a run of the GPU: its keys and values `off` from `from` (NumPy's by default), block by block and all at once
 const runOf = ({ form = "TF.js's tiles", off = 1e-3, keys = KEYS, values = VALUES, layers, logits = LOGITS, ...more } = {}) => {
@@ -176,6 +177,28 @@ check("a run as it should be passes, by its form's arithmetic", () => {
   // (as far from NumPy's as Q8 is, and more: under K_PACKED × Q8, which no float form's line allows)
   assert.ok(Q8 > HALF_LINE);
   assert.equal(model([runOf({ form: "TF.js's tiles", keys: packed.keys, values: packed.values, off: 1e-3 })]).value, true);
+});
+check("a packed run of a model whose first layer is no attending layer's is held by every layer's line, not by the first keys' against Q8 and their scale (T545)", () => {
+  // an LFM2's first keys and values are of a layer after convolution layers (the real 230M's and 350M's were 1.2e-2 and 2.0e-2
+  // from Q8 where Q8 itself was 2.6e-2 to 3.6e-2 from NumPy's, run 38859332497): one layer's arithmetic no longer
+  const convolved = { ...CASE, plan: { layers: [{ kind: "convolution" }, { kind: "attention" }] } };
+  const packed = { form: "ORT's DP4A", keys: floats(REFERENCE.keys8), values: floats(REFERENCE.values8) };
+  const apart = runOf({ ...packed, off: GPU_LINE * 1.5 }), scaledUp = runOf({ ...packed, off: 0, keys: packed.keys.map((x) => x * (1 + 3e-4)), values: packed.values.map((x) => x * (1 + 3e-4)) });
+  // past the shader's line from Q8, within K_PACKED × Q8's of NumPy's: the attending first layer fails, the convolution's does not
+  assert.ok(Q8 + GPU_LINE * 1.5 < K_PACKED * Q8);
+  for (const run of [apart, scaledUp]) {
+    assert.equal(model([run]).value, true, "the first layer attends: held to Q8 as it was");
+    const held = model([run], {}, convolved);
+    assert.equal(held.value, false, held.text);
+  }
+  // the lines of every layer hold still (K_PACKED × Q8 from NumPy's, in the second layer), and so does every form that is not packed
+  const failed = (run, pattern) => {
+    const { value, text } = model([run], {}, convolved);
+    assert.equal(value, true, text);
+    assert.match(runLine(text), pattern);
+  };
+  failed(runOf({ ...packed, off: K_PACKED * Q8, layers: [1] }), /- the keys and values of the GPU's layer 1 are 8\.00e-2 and 8\.00e-2 from NumPy's \(its line 6\.00e-2\)$/);
+  failed(runOf({ off: GPU_LINE * 1.5, layers: [0] }), /- the first layer's keys and values are 1\.20e-2 from NumPy's \(line 8\.00e-3\)/);
 });
 check("a run wrong in one thing fails, and says which", () => {
   const failed = (run, pattern) => {
