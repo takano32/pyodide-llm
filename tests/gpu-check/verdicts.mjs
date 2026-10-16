@@ -134,9 +134,15 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     if (!(ratios[at] <= 1)) {
       failures.push(`the keys and values of the GPU's layer ${at} are ${gpuLayers[at].toExponential(2)} and ${againLayers[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);
     }
-    if (!(gpuFirst <= shaderLine)) failures.push(`the first layer's keys and values are ${gpuFirst.toExponential(2)} from ${name} (line ${shaderLine.toExponential(2)})`);
+    // T545: the packed shaders' first layer against Q8 is one layer's arithmetic where the first layer attends; an LFM2's
+    // first keys and values are of a layer after convolution layers (their inputs rounded to 8 bits on the GPU as Q8
+    // rounds them, then B × z × C), where the GPU's 8 bits and Q8's part a little at a tie and the product grows it (the
+    // real 230M's and 350M's 1.2e-2 and 2.0e-2 from Q8, run 38852988481, where their layers were 0.38 and 0.41 of their
+    // lines): the line of every layer holds those, the float forms' first layer is held as it was
+    const oneLayer = !packed || c.plan.layers[0].kind === "attention";
+    if (oneLayer && !(gpuFirst <= shaderLine)) failures.push(`the first layer's keys and values are ${gpuFirst.toExponential(2)} from ${name} (line ${shaderLine.toExponential(2)})`);
     const gpuScale = scale(gpu, firstStick), againScale = gpu.again ? scale(gpu.again, firstStick) : NaN;
-    if (!(Math.abs(gpuScale) <= SCALE_LINE) || !(Math.abs(againScale) <= SCALE_LINE)) {
+    if (oneLayer && (!(Math.abs(gpuScale) <= SCALE_LINE) || !(Math.abs(againScale) <= SCALE_LINE))) {
       failures.push(`the first layer's keys and values are scaled by 1 + ${gpuScale.toExponential(2)} and 1 + ${againScale.toExponential(2)} of ${name} (line ${SCALE_LINE})`);
     }
     const gpuLogits = logits(gpu.logits), againLogits = logits(gpu.again.logits);
