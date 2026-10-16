@@ -55,7 +55,7 @@
 - T430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 未着手
 - T431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 未着手
 - T433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 未着手
-- T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 未着手
+- T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — レビュー前
 - T435 [整理][その他] T367.2 の小さな気づき — 未着手
 - T436 [整理][遠隔試験] `tests/e2e.mjs` の `E2E_THEN` と `E2E_TWICE` を一緒に頼むと、HF のモデルは必ず落ちる — 未着手
 - T437 [整理][その他] T367.3 の小さな気づき — 未着手
@@ -574,8 +574,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - `src/python/*.py` を直しても、立ち上げ直すまで古い `public/engine.zip` が配られ、何も言わない。`astro dev`・`astro build` を npm を通さずに直に呼ぶと zip が無く「Could not fetch engine.zip: 404」。軽い組の `python-archive-check` は「zip がソースと合う」を見るが、開発中には走らない。小さな Vite のプラグインか見張りで作り直すか、古いときに言う。
 - `astro dev` は TTY が無いとデーモンになって `timeout` を越えて残る: `npx astro dev stop` で止める。
 
-### T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 状態: 未着手（2026-10-11、T367.2 から。前からある。規模 小） **次の `CONVERTER` の回（T533）と一緒に入れる**（同じ回に入れると安全: 家族のファイルや `engine/` を直しても `make models` が作り直さない穴）。
+### T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 状態: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。2026-10-11、T367.2 から。前からある。規模 小） **次の `CONVERTER` の回（T533）と一緒に入れる**（同じ回に入れると安全: 家族のファイルや `engine/` を直しても `make models` が作り直さない穴）。
 - `CONVERTER` と `%.bin` の規則は `src/python/convert/*.py` だけを並べる: 家族のファイルかエンジンの部品を直しても `make models` が作り直さない（T359 の 3 歩目で `families/` ができた時から）。
+- **結果（2026-10-16、コミット `T434: rebuild the site's models when a family's file or the engine changes`）**: `Makefile` に `MODEL_PYTHON`（窓口 2 つ `llama2_convert.py`・`llama2_numpy.py` と `convert/`・`convert/families/`・`engine/` の `*.py` の全部）を置き、`%.bin` と `CONVERTER` の規則が読む（名前は `python` の的と取り違えないように `MODEL_PYTHON`）。**確かめ**（`make -n -W <ファイル> models`、捨ての写しで、全部の作る物を源より新しくした所で）: 何も変えない → 本線も今も何も作らない。`convert/families/llama.py`・`engine/layout.py`・`llama2_numpy.py` を変えたことにする → 本線は何も作らず、今は 6 つ（llm-jp-3 150M と tiny-lm の int8 と float16、stories15M・42M の int8）を作り直す。`convert/conversion.py` → 両方とも 6 つ。下ろしてくる物（stories260K・tokenizer.bin など）は作り直さない。
+  - CI を省いた。訳: 触ったのは `Makefile` の依存だけで、手元の `make -n` が両方の版を比べる。**変わること**: `engine/` か家族のファイルに触るデプロイは、`make models` が 6 つを作り直す（a1-free で `make models` は 2 分 11 秒: AGENTS.md の土台の記録）。
 
 ### T435 [整理][その他] T367.2 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
 - `src/python/engine/__init__.py` と `convert/__init__.py` のコメントが「public/llama2_….py is the window」のまま（T367.2 は Python を 1 バイトも変えない証明のために残した）。次に Python に触る回に。
