@@ -276,6 +276,87 @@ console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix an
 }
 console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a checkpoint that comes in stretches of any size as whole words, and unwritten() says a word that waits");
 
+// ---- weights.js, ternary (T533): the checkpoint holds a group's scale as a float16, the GPU as a float32 (the shaders
+// read float32s: their text and the device's key are what they were). Widened as they go up from the shared memory,
+// and as a model on the GPU alone's checkpoint comes, in stretches of any size: a half that a stretch cuts waits
+// for its other byte, as a word does
+{
+  // (a half's value written here, not got from the code under test; NaN and infinity are in the random bytes, too)
+  const widenedHalf = (h) => {
+    const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 31, fraction = h & 1023;
+    return exponent === 0 ? sign * fraction * 2 ** -24 : exponent === 31 ? (fraction ? NaN : sign * Infinity) : sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
+  };
+  const TERNARY = { wq: [Q_DIM, 256], wk: [KV_DIM, 256], wv: [KV_DIM, 256], wo: [DIM, 256], w1: [HIDDEN, 256], w3: [HIDDEN, 256], w2: [DIM, 256] };
+  const ternary = (made) => ({ ...made, matrices: Object.fromEntries(Object.entries(made.matrices).map(([name, matrix]) => [name, { ...matrix, ternary: true }])) });
+  const floatsOf = (buffer, at, count) => new Float32Array(buffer.data.buffer, buffer.data.byteOffset + at, count);
+  // from the shared memory (the CPU's side beside the GPU's, and a prompt on the GPU): the scales of a piece, widened
+  {
+    standIn({ language: ["packed_4x8_integer_dot_product"] });
+    const { plan: made, bytes: size } = planned({}, TERNARY);
+    const shared = { buffer: new SharedArrayBuffer(size) };
+    new Uint8Array(shared.buffer).set(random(size));
+    const model = await openDevice(ternary(made));
+    handed(shared, model.plan);
+    await uploadLayers(model);
+    for (const [name, [rows, n]] of Object.entries(TERNARY)) {
+      for (let l = 0; l < LAYERS; l++) {
+        const [values, scales] = model.weights.matrices[name].pieces[0].layers[l], [valuesAt, scalesAt] = model.plan.matrices[name].layers[l];
+        const groups = rows * n / 128, halves = new Uint16Array(shared.buffer, scalesAt, groups);
+        assert.ok(same(values.data.subarray(0, rows * n / 4), new Uint8Array(shared.buffer, valuesAt, rows * n / 4)), `${name} of layer ${l}: its codes as the memory holds them`);
+        assert.equal(scales.size ?? scales.data.length, groups * 4, `${name}: a float32 for each of the ${groups} halves`);
+        assert.ok(floatsOf(scales, 0, groups).every((value, g) => Object.is(value, Math.fround(widenedHalf(halves[g])))), `${name} of layer ${l}: its scales, each half widened to a float32`);
+      }
+    }
+  }
+  // a model on the GPU alone: the checkpoint's stretches of any size (the steps are odd and even, so that a stretch
+  // cuts a half in the middle and begins in one)
+  {
+    const alone = standIn({ language: ["packed_4x8_integer_dot_product"] });
+    const { plan: made, bytes: size } = planned({ tables: { classifier: { rows: 96, n: 256, ternary: true, at: [0, 0] } } }, TERNARY);
+    const direct = ternary(made);
+    direct.tables.classifier.at = [size, size + 96 * 64];
+    const checkpoint = random(size + 96 * 64 + 96 * 2 * 2 + 64);
+    const a = await openDevice({ ...direct, tokens: true });
+    const layersUp = await uploadLayers(a, true), tablesUp = tablesOn(a);
+    const halved = a.weights.routes.filter(([, , , , halves]) => halves);
+    assert.equal(halved.length, Object.keys(TERNARY).length * LAYERS + 1, "a route of halves for each ternary matrix of each layer, and the table's");
+    assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, and its scales as the GPU holds them (float32)");
+    assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , halves]) => sum + (stop - start) * (halves ? 2 : 1), 0), "every byte put up has a route, a half's twice");
+    const steps = [1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1];
+    for (const step of [steps, [1], [2], [3]]) {
+      for (const [, , target] of a.weights.routes) target.data.fill(0);
+      a.weights.partial.clear();
+      for (let offset = 0, k = 0; offset < checkpoint.length; k++) {
+        const length = Math.min(step[k % step.length], checkpoint.length - offset);
+        routed(a, offset, checkpoint.subarray(offset, offset + length));
+        offset += length;
+      }
+      assert.equal(unwritten(a), false, `every half is whole once the checkpoint has come (stretches of ${step.slice(0, 3)}...)`);
+      for (const [start, stop, target, at, halves] of a.weights.routes) {
+        if (!halves) {
+          assert.ok(same(target.data.subarray(at, at + stop - start), checkpoint.subarray(start, stop)), `the codes at ${start} are on the GPU as they came`);
+          continue;
+        }
+        const count = (stop - start) / 2, got = floatsOf(target, at, count);
+        for (let j = 0; j < count; j++) {
+          const want = Math.fround(widenedHalf(checkpoint[start + 2 * j] | (checkpoint[start + 2 * j + 1] << 8)));
+          assert.ok(Object.is(got[j], want), `the scale ${j} of the stretch at ${start} (stretches of ${step.slice(0, 3)}...): ${got[j]} for ${want}`);
+        }
+      }
+    }
+    // a half that waits is told, and a stretch that begins in the middle of a half is held to its low byte
+    for (const [, , target] of a.weights.routes) target.data.fill(0);
+    const [start] = halved[0];
+    routed(a, start + 1, checkpoint.subarray(start + 1, start + 2));
+    assert.equal(unwritten(a), true, "the high byte of a half waits for the low one");
+    routed(a, start, checkpoint.subarray(start, start + 1));
+    assert.equal(unwritten(a), false, "and is widened and written once it came");
+    assert.ok(Object.is(floatsOf(halved[0][2], halved[0][3], 1)[0], Math.fround(widenedHalf(checkpoint[start] | (checkpoint[start + 1] << 8)))), "the half's float32");
+    assert.ok(alone.calls.some(([what]) => what === "write"));
+  }
+}
+console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as float32s, from the shared memory and as the checkpoint of a model on the GPU alone comes in stretches of any size");
+
 // ---- block.js: m.block, from the weights' record and a stand-in for the forms'
 gpu.calls.length = 0;
 // (forms.js makes m.forms once its checks have passed on a device that computes: here the test stands for it)
