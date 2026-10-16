@@ -112,14 +112,14 @@ export const attention: Kind = {
         if (ring) {
           // T510.1: the positions of the ring: position p at p mod size and at p mod size + size. A run may begin at 0,
           // or where the window of its first token is still in the ring: no further back than a block before the last
-          // position written (what came after it has written over the ones before)
+          // position written (what came after it has written over the ones before). T261.4: the last one the ring's own
+          // (ring.latest), which the GPU's blocks write as well
           const { size } = ring, twice = size * KV;
-          let latest = -1;
           return (count, pos0) => {
-            if (pos0 !== 0 && pos0 < latest - BATCH) {
-              throw new Error(`A layer of this model keeps the keys and values of its last ${window} positions alone: position ${pos0} is too far back after ${latest}.`);
+            if (pos0 !== 0 && pos0 < ring.latest - BATCH) {
+              throw new Error(`A layer of this model keeps the keys and values of its last ${window} positions alone: position ${pos0} is too far back after ${ring.latest}.`);
             }
-            latest = pos0 === 0 ? pos0 + count - 1 : Math.max(latest, pos0 + count - 1);
+            ring.latest = pos0 === 0 ? pos0 + count - 1 : Math.max(ring.latest, pos0 + count - 1);
             const { keys, values } = ring;
             matmuls(xb, count, into);
             for (let t = 0; t < count; t++) {

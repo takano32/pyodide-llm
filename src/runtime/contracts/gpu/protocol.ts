@@ -12,6 +12,8 @@
 // Both ends are JavaScript still, which no compiler reads: tests/plan-keys-check.mjs holds the plans' keys written
 // (forward/) to the keys read (gpu/) and to these types, and the messages' kinds and keys to ToGpu and FromGpu.
 
+import type { Activation } from "../plan.ts";
+
 // a matrix of every layer: rows of n values, int6 (T155) or ternary (T232) where the values at a layer's address are
 // packed so, and for every layer [where its values are, where its scales are]
 export type Matrix = { rows: number; n: number; six?: boolean; ternary: boolean; layers: [number, number][] };
@@ -35,6 +37,9 @@ export type Vectors = {
   bo?: Vector;
   b1?: Vector;
   b2?: Vector;
+  // T261.4: a Gemma 3's norms behind the attention and behind the FFN
+  attentionPost?: Vector;
+  ffnPost?: Vector;
 };
 
 // T152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
@@ -94,6 +99,13 @@ export type Started = {
   eps: number;
   layerNorm: boolean;
   parallel: boolean;
+  // T261.4: the activation of the FFN (its gate's, where it has one: a Gemma 3's GELU); every layer's window, the last
+  // positions it attends (0: every one); the layers RoPE turns by the local tables, and where those are (0: none)
+  activation: Activation;
+  windows: number[];
+  local: number[];
+  localCos: number;
+  localSin: number;
   // the most tokens of a block
   batch: number;
   matrices: Record<string, Matrix>;

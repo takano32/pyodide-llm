@@ -102,7 +102,8 @@ function planned(more = {}, sizes = SIZES) {
     [name, { rows, n, layers: Array.from({ length: LAYERS }, () => [take(rows * n), take((rows * n / GROUP) * 4)]) }]));
   const vectors = { attention: { at: take(LAYERS * DIM * 4), size: DIM }, ffn: { at: take(LAYERS * DIM * 4), size: DIM } };
   const plan = { layers: LAYERS, dim: DIM, hidden: HIDDEN, heads: HEADS, kvHeads: KV_HEADS, headSize: HEAD, batch: BATCH, seqLen: CONTEXT, kvStart: 8, turned: HEAD,
-    eps: 1e-5, layerNorm: false, parallel: false, matrices, vectors, tokens: null, force: {},
+    eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: Array(LAYERS).fill(0), local: [], localCos: 0, localSin: 0, unturned: [], matrices, vectors,
+    tokens: null, force: {},
     rows: take(BATCH * DIM * 4), staging: take(2 * LAYERS * BATCH * KV_ROW), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4), ...more };
   return { plan, bytes: at };
 }

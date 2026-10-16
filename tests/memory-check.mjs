@@ -270,10 +270,11 @@ function halfToFloat(h) {
       refused++;
       return;
     }
-    if (p.form.convolution || p.form.arch === "gemma3" || p.form.arch === "gemma4") {
+    if (p.form.convolution || p.form.arch === "gemma4") {
       // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
-      // (T261: and so does a Gemma 3, for what its layers have that the GPU's have not; T331.2: and a Gemma 4)
-      const [model, why] = p.form.convolution ? ["an LFM2", "convolution layers are not on the GPU yet"] : [p.form.arch === "gemma3" ? "a Gemma 3" : "a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
+      // (T331.2: and so does a Gemma 4, for what its layers have that the GPU's have not; T261.4: a Gemma 3, which did
+      // until then, is the GPU's below)
+      const [model, why] = p.form.convolution ? ["an LFM2", "convolution layers are not on the GPU yet"] : ["a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: false, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       let asked = 0;
@@ -305,7 +306,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 or a Gemma 3 refused it; ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 or a Gemma 4 refused it; ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's

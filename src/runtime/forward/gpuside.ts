@@ -25,8 +25,10 @@ export type Shape = {
   // the bytes of a token's row, and of a position's keys in the cache; whether the cache is float16
   D: number; KV: number; halfKV: boolean;
   eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean; unturned: number[];
-  // T261: the FFN's activation, and whether some layer attends a window or is turned by tables of its own
-  activation: Activation; local: boolean;
+  // T261: the FFN's activation, and whether some layer attends a window or is turned by tables of its own; T261.4: and
+  // every layer's window (0: every position) and the layers turned by those tables; extras: what a Gemma 4 has besides
+  // (a norm of v's heads, a cap of the logits, a scale of a layer, layers of other widths, keys and values shared)
+  activation: Activation; local: boolean; windows: number[]; locals: number[]; extras: boolean;
   linear: Linear | null; convolution: Convolution | null;
   // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
   stateful: boolean;
@@ -55,8 +57,9 @@ export type Placed = {
   wq: Held | null; wk: Held | null; wv: Held | null; wo: Held | null; w1: Held | null; w2: Held | null; w3: Held | null; wcls: Held | null;
   attW: number; ffnW: number; attB: number; ffnB: number; finalW: number; finalB: number; bo: number; b1: number; b2: number; bq: number; bk: number; bv: number;
   qNorm: number; kNorm: number; cosTable: number; sinTable: number; positions: number; channels: number[];
-  // T261: the norms behind the attention and behind the FFN (0: the model has none)
-  attPost: number; ffnPost: number;
+  // T261: the norms behind the attention and behind the FFN (0: the model has none); T261.4: RoPE's tables of the
+  // local layers (0: none)
+  attPost: number; ffnPost: number; localCos: number; localSin: number;
 };
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
@@ -96,7 +99,8 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, linear, convolution, stateful, rotated, sharedClassifier } = shape;
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, linear, convolution, stateful, rotated,
+    sharedClassifier } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost } = weights;
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
@@ -119,9 +123,13 @@ export function gpuFit({ shape, weights, device, direct }:
     // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
     // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there
     if (layerNorm === gatedFfn) return REASONS.pair;
-    // T261: nor what a Gemma 3 has besides: a GELU in the gate of its FFN, a norm behind the attention and behind the
-    // FFN, layers that attend a window or are turned by tables of their own. The GPU's layers have none of the four
-    if ((gatedFfn && activation !== "silu") || attPost || ffnPost || local) return REASONS.pair;
+    // T261.4: and what a Gemma 3 has besides, which the GPU's layers have now: a GELU in the gate of its FFN (GEGLU), a
+    // norm behind the attention and behind the FFN (RMSNORM_ADD), layers that attend a window (the flash tiles' window)
+    // or are turned by tables of their own (a second table of angles). Not an activation no shader has (a Spark-X2.5's
+    // exact GELU), nor norms behind LayerNorms, nor what a Gemma 4 has besides (T261: until T261.4 a Gemma 3 was kept
+    // off by this line too). An FFN without a gate is GELU's on the GPU, as it was (T154)
+    if ((gatedFfn && activation !== "silu" && activation !== "gelu") || extras) return REASONS.pair;
+    if ((attPost || ffnPost) && layerNorm) return REASONS.pair;
     if (!sharedMemory) return REASONS.notIsolated;
     if (headSize % 4) return REASONS.heads;
     if (!Object.values(gpuMatrices()).every(onGpuAs)) return REASONS.floats;
@@ -149,6 +157,9 @@ export function gpuFit({ shape, weights, device, direct }:
   // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
+    // T261.4: a token's fused layer has none of a Gemma 3's (a GELU in the gate, the norms behind, a window, the local
+    // tables): its prompts go to the GPU, its steps stay on the CPU (T261.4.2)
+    if ((gatedFfn && activation !== "silu") || attPost || ffnPost || local) return REASONS.pair;
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
@@ -172,7 +183,8 @@ export function gpuFit({ shape, weights, device, direct }:
       ...(layerNorm ? { attentionBias: { at: attB, size: dim }, ffnBias: { at: ffnB, size: dim } } : {}),
       ...(bq ? { bq: { at: bq, size: qDim }, bk: { at: bk, size: kvDim }, bv: { at: bv, size: kvDim } } : {}),
       ...(qNorm ? { qNorm: { at: qNorm, size: headSize }, kNorm: { at: kNorm, size: headSize } } : {}),
-      ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}) };
+      ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}),
+      ...(attPost ? { attentionPost: { at: attPost, size: dim } } : {}), ...(ffnPost ? { ffnPost: { at: ffnPost, size: dim } } : {}) };
   }
   return { matrices: gpuMatrices, vectors: gpuVectors, unfit: gpuUnfit, tokensUnfit };
 }
@@ -196,8 +208,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier } = shape;
-  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels } = weights;
+    unturned, sharedClassifier, activation, windows, locals } = shape;
+  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
   const { memory, views, grow, embed, fromStaging, stagingFinite, run } = cpuSide;
   const { ctl, waitUntil } = control;
@@ -347,7 +359,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // T154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
-      kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), batch: GPU_BLOCK, matrices,
+      kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin, batch: GPU_BLOCK,
+      matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,
       cos: cosTable, sin: sinTable, staging, force: gpuForce, remembered: gpuRemembered, direct: Boolean(direct),
       words: { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED } } });
