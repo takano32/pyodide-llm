@@ -459,6 +459,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
     beside.posted.length = 0;
     beside.ran.length = 0;
     beside.staged.length = 0;
+    beside.stated.length = 0;
     breakIt(beside);
     if (type === "prompt") {
       part.prompt(tokensOf(64), 0);
@@ -469,6 +470,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
       assert.equal(part.sampled, 0, `${title}: none of its ids taken`);
     }
     assert.deepEqual(beside.staged, [], `${title}: nothing of it goes into the cache`);
+    assert.deepEqual(beside.stated, [], `${title}: nor does any state of the layers that keep one (T545: the CPU goes on from its own)`);
     assert.match(part.status, status, title);
     assert.deepEqual([part.ready, part.promptBlock(), part.tokenBlock(), part.cpuStepBegan(true), requests(beside, "stop").length, Atomics.load(beside.ctl, GPU_WANTED)], [undefined, BATCH, 0, false, 1, 0], `${title}: the GPU is stopped`);
     assert.equal(said().filter((line) => /the prompts and the tokens go on on the CPU$/.test(line)).length, 1, `${title}: said once in the console`);
