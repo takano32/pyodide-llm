@@ -165,9 +165,23 @@ try {
       if (!engine.tokenBlock) return { why: engine.gpuTokensWhyNot ?? "the GPU took no steps", planned: engine.gpuTokensPlanned,
         binds: Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize) };
       const greedy = c.reference.greedy, history = (ids) => [...tokens, ...ids];
+      // T545.2: a model whose layers keep a state from token to token (an LFM2's) goes on only from the position after
+      // the last it computed (forward.js's follow()), where keys and values can be written again at any position: a
+      // step asked at position n again has the prompt through first (by the side that took it in the run, or the CPU's
+      // where rewound says so: the CPU's keys and values going up, below), its state then the prompt's
+      const keepsState = plan.layers.some((layer) => layer.kind !== "attention");
+      let rewound = null;
+      const again = (pos) => {
+        if (!keepsState || pos !== n) return;
+        const side = engine.gpuSide;
+        engine.gpuSide = rewound;
+        engine.forwardMany(tokens.slice(0, n), 0);
+        engine.gpuSide = side;
+      };
       // (T546: narrowing, a top-k, min-p and the presence penalty, of which the ids before are the sampled ones)
       const ask = (token, pos, before, count, settings = [0, 0.9, 1], randoms = [], stops = [], narrowing = [0, 0, 0]) => {
         const h = history(before);
+        again(pos);
         return engine.generateMany(token, pos, h.slice(-64), h.length, count, ...settings, randoms, stops, ...narrowing, before.length);
       };
       const out = { form: engine.gpuReady?.tokens, attention: engine.gpuReady?.tokenAttention, pieces: engine.gpuReady?.tablePieces, first: ask(tokens[n], n, [], 4) };
@@ -182,6 +196,7 @@ try {
       out.stopped = ask(tokens[n], n, [], 4, [0, 0.9, 1], [], [greedy[1]]);
       // the penalty: NumPy's first id in the history, 100 greedy
       out.penaltyHistory = [...tokens.slice(0, -1), greedy[0], tokens[n]];
+      again(n);
       out.penalized = engine.generateMany(tokens[n], n, out.penaltyHistory.slice(-64), out.penaltyHistory.length, 1, 0, 0.9, 100, [], []);
       out.sampled = [0.02, 0.98].map((random) => ask(tokens[n], n, [], 1, [2, 0.999, 1], [random]));
       // T546: a top-k of 3 and min-p 0.5 at temperature 2 with random numbers of 0.02 and 0.98; the presence penalty
@@ -190,7 +205,7 @@ try {
       out.narrowed = {
         topK: [0.02, 0.98].map((random) => ask(tokens[n], n, [], 1, [2, 1, 1], [random], [], [3, 0, 0])),
         minP: [0.02, 0.98].map((random) => ask(tokens[n], n, [], 1, [2, 1, 1], [random], [], [0, 0.5, 0])),
-        presence: [1, 2].map((written) => engine.generateMany(tokens[n], n, out.penaltyHistory.slice(-64), out.penaltyHistory.length, 1, 0, 0.9, 1, [], [], 0, 0, 100, written)),
+        presence: [1, 2].map((written) => again(n) ?? engine.generateMany(tokens[n], n, out.penaltyHistory.slice(-64), out.penaltyHistory.length, 1, 0, 0.9, 1, [], [], 0, 0, 100, written)),
       };
       const narrowing = [20, 0.05, 1.5];
       out.narrowed.together = ask(tokens[n], n, [], 4, [2, 0.95, 1.1], [0.3, 0.7, 0.1, 0.9], [], narrowing);
@@ -218,7 +233,9 @@ try {
         // (the CPU's logits of the prompt's last token on the CPU's keys and values, the answer: NumPy's is not, the
         // CPU's keys and values being up to 46% from NumPy's on the made-up models)
         engine.forward(tokens[n], n);
+        rewound = "cpu";
         const logits = b64(engine.logits().slice()), id = ask(tokens[n], n, [], 1), rows = engine.keysAndValues(n, 1);
+        rewound = null;
         return { logits, id, kv: b64(rows.keys) + b64(rows.values) };
       };
       // (the two others differ at every position, the last as well: the first try's two ended on the same token, whose
