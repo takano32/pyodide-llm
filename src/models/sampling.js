@@ -38,7 +38,7 @@ export const SPARK_SAMPLING = { thinking: spark, atOnce: spark };
 // thoughts that closed by themselves were 2,591 tokens at the longest outside the Qwen3.5 family, and within it 3,860;
 // the ones that never closed ran to the end of the context and left no answer at all (docs/notes/
 // t520-thinking-budget-2026-10-16.md). The context is 4096 for all of them, and 512 of it is left for the prompt and
-// the answer: a thought of the Qwen3.5 family longer than this (2 of its 23 that closed) is closed a little early.
+// the answer: a thought of the Qwen3.5 family longer than this (3 of its 32 that closed: 3,701 to 3,860) is closed a little early.
 export const THOUGHT_BUDGET = 4096 - 512;
 /** T520: whether an entry thinks before it answers (its note says so, as every one of them does). */
 export const thinks = (entry) => /^thinks\b/.test(entry.note ?? "");
