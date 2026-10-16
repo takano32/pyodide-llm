@@ -59,6 +59,9 @@ on:
       forms:
         description: "T147: only the matrices' shaders whose names hold one of these, separated by commas (gpu-check --forms)"
         required: false
+      engines:
+        description: "T564: dawn runs the Dawn job alone (no Chromium-family browsers): for real= models, whose SwiftShader job runs into its 90 minutes (empty: both)"
+        required: false
       nan:
         description: "T241's review: where the rounds with a NaN or an infinity run, all, made-up, small or none (gpu-check --nan; empty: Dawn made-up, Chromium small, Chrome and Edge none)"
         required: false
@@ -70,6 +73,8 @@ env:
 jobs:
   gpu:
     name: ${{ matrix.os }} ${{ matrix.engine }}
+    # T564: engines=dawn leaves the browsers out
+    if: inputs.engines != 'dawn'
     runs-on: ${{ matrix.os }}
     # T147: the made-up model's every tiled shader on SwiftShader; gpu-check waits for the page 90 minutes at most
     timeout-minutes: 120
