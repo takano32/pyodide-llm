@@ -47,11 +47,12 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False):
     quantized to 8 bits (Q8)"""
     numpy = Llama(data, vocabulary, **options)
     if q8:
-        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3"):
+        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout"):  # (T545: an LFM2's matrices in and out too)
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name)).view(Q8))
     if half:
-        numpy.key_cache = np.zeros((numpy.n_layers, numpy.n_kv_heads, numpy.seq_len, numpy.head_size), dtype=np.float32).view(Half)
+        # (T545: of the attending layers alone, as the engine keeps them: an LFM2's convolution layers keep none)
+        numpy.key_cache = np.zeros((len(numpy.key_cache), numpy.n_kv_heads, numpy.seq_len, numpy.head_size), dtype=np.float32).view(Half)
         numpy.value_cache = np.zeros_like(numpy.key_cache).view(Half)
     if text:
         tokens = ([numpy.bos] + list(numpy.tokenizer.encode(text)))[:count]
@@ -62,10 +63,10 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False):
         numpy.forward(token, pos, need_logits=False)
     logits = numpy.forward(tokens[-1], count - 1)
     n = count - 1
-    kv = lambda cache, at=0, m=n: np.ascontiguousarray(cache[:, :, at:at + m, :].transpose(0, 2, 1, 3).reshape(numpy.n_layers, m, -1), dtype=np.float32)
+    kv = lambda cache, at=0, m=n: np.ascontiguousarray(cache[:, :, at:at + m, :].transpose(0, 2, 1, 3).reshape(len(cache), m, -1), dtype=np.float32)
     b64 = lambda a: base64.b64encode(np.ascontiguousarray(a, dtype=np.float32).tobytes()).decode()
     out = {"tokens": tokens, "logits": b64(logits), "keys": b64(kv(numpy.key_cache)), "values": b64(kv(numpy.value_cache)),
-           "header": list(struct.unpack_from("<7i", data, 0))}
+           "header": list(struct.unpack_from("<7i", data, 0)), "attending": len(numpy.key_cache)}
     if half:
         return out
     # T152: GEN greedy steps after the prompt: the ids, the logits of each step, the keys and values of their positions

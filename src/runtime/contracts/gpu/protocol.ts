@@ -12,15 +12,17 @@
 // Both ends are JavaScript still, which no compiler reads: tests/plan-keys-check.mjs holds the plans' keys written
 // (forward/) to the keys read (gpu/) and to these types, and the messages' kinds and keys to ToGpu and FromGpu.
 
-import type { Activation } from "../plan.ts";
+import type { Activation, LayerKind } from "../plan.ts";
 
 // a matrix of every layer: rows of n values, int6 (T155) or ternary (T232) where the values at a layer's address are
-// packed so, and for every layer [where its values are, where its scales are]
-export type Matrix = { rows: number; n: number; six?: boolean; ternary: boolean; layers: [number, number][] };
+// packed so, and for every layer [where its values are, where its scales are]. T545: of: the kind of the layers it is
+// a matrix of (an LFM2's q is its attending layers', its matrix in its convolution layers'), whose places index layers;
+// none: every layer's
+export type Matrix = { rows: number; n: number; six?: boolean; ternary: boolean; layers: [number, number][]; of?: LayerKind };
 // a table (the classifier, the embedding): as a matrix, at [values, scales]
 export type Table = { rows: number; n: number; six?: boolean; ternary: boolean; at: [number, number] };
-// a vector of every layer: where it is, and its size a layer
-export type Vector = { at: number; size: number };
+// a vector of every layer: where it is, and its size a layer (T545: of, as a matrix's)
+export type Vector = { at: number; size: number; of?: LayerKind };
 
 // The vectors a model has (gpuside.js's gpuVectors()): the norms' weights always; LayerNorm's biases (T154), Qwen2's
 // biases of q, k and v and Qwen3's norms of a head (T153), a GPT-2's biases after its matrices, where the model has them
@@ -40,6 +42,8 @@ export type Vectors = {
   // T261.4: a Gemma 3's norms behind the attention and behind the FFN
   attentionPost?: Vector;
   ffnPost?: Vector;
+  // T545: the taps of an LFM2's convolution layers (taps rows of dim a layer)
+  conv?: Vector;
 };
 
 // T152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
@@ -83,7 +87,7 @@ export type Remembered = { key?: string; matrices?: string; attention?: string; 
 
 // The plan of { type: "start" }: the model's sizes, what RoPE turns, its norm and residual, and addresses in the
 // shared memory (the matrices, the vectors, rows: the rows forward.ts embeds, cos and sin: RoPE's tables, staging:
-// where a block's keys and values come back)
+// where a block's keys and values come back, and T545 the convolution layers' rows after them)
 export type Started = {
   dim: number;
   hidden: number;
@@ -106,6 +110,13 @@ export type Started = {
   local: number[];
   localCos: number;
   localSin: number;
+  // T545: every layer's kind ("attention", or "convolution": an LFM2's) and its place among the layers of its kind; and
+  // of the convolution layers, the taps and where the CPU keeps their rows (taps rows of dim float32 a layer, place after
+  // place: the state a block goes on from), or null where the model has none. The GPU's own keys and values, and the
+  // places a block's come back to, are the attending layers' alone
+  kinds: LayerKind[];
+  places: number[];
+  convolution: { taps: number; rows: number } | null;
   // the most tokens of a block
   batch: number;
   matrices: Record<string, Matrix>;

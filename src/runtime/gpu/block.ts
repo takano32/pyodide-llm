@@ -20,8 +20,13 @@ type Quantizing = { group: GPUBindGroup; x: number };
 type Added = { group: GPUBindGroup; x: number };
 type Product = { rows: number; group: GPUBindGroup }[];
 type HeadNorm = { group: GPUBindGroup; heads: number };
-// a layer's bind groups (a bias only where the model has it; up where the FFN has a gate)
+// T545: an LFM2's convolution layer's: the matrix in (from xb into the block's mixed), SHORT_CONV (into xb) and
+// CONV_STATE, the matrix out
+type Convolving = { into: Product; conv: GPUBindGroup; state: GPUBindGroup; out: Product };
+// a layer's bind groups (a bias only where the model has it; up where the FFN has a gate). T545: a convolution layer's
+// convolution; its attention's (q, k, v, its biases and norms of the heads, o) are empty
 type Layer = {
+  convolution: Convolving | null;
   attentionNorm: GPUBindGroup;
   q: Product;
   k: Product;
@@ -40,7 +45,8 @@ type Layer = {
   downBias: Added | undefined;
   ffnPost: GPUBindGroup | null;
 };
-// the GPU's own keys and values, a buffer a layer each, and the bind groups that read them
+// the GPU's own keys and values, a buffer a layer each (T545: an attending layer each, by its place), and the bind
+// groups that read them
 type Kept = { capacity: number; owned: GPUBuffer[]; keys: GPUBuffer[]; values: GPUBuffer[]; rope: GPUBindGroup[]; attention: GPUBindGroup[] };
 type Block = {
   norm: GPUComputePipeline;
@@ -79,7 +85,13 @@ type Block = {
   embedGroups: GPUBindGroup[] | null;
   layers: Layer[] | null;
   cache: Kept | null;
+  // T545: an LFM2's convolution layers' shaders, what the matrix in gives a block (3 dim a token), and the rows they go
+  // on from (taps rows of dim a layer, place after place, as the CPU keeps them: bytes of them); null where there are none
+  conv: { short: GPUComputePipeline; state: GPUComputePipeline; mixed: GPUBuffer; rows: GPUBuffer; bytes: number } | null;
 };
+// T545: how many layers keep keys and values here (every one, but an LFM2's convolution layers), and which they are
+const attendingOf = (plan: { kinds?: string[]; layers: number }) =>
+  plan.kinds ? plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : [])) : Array.from({ length: plan.layers }, (_, l) => l);
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
@@ -112,7 +124,15 @@ async function prepare(m: Model) {
   // (T261.4: and those of the local layers' tables, where the model has them)
   const anglesLocal = plan.localCos ? buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST) : null;
   const step = buffer(m, 16, UNIFORM | COPY_DST);
-  const readback = buffer(m, 2 * plan.layers * B * kvDim * 2, MAP_READ | COPY_DST);
+  // T545: of an LFM2's convolution layers
+  let conv: Block["conv"] = null;
+  if (plan.convolution) {
+    const [short, state] = await within(Promise.all([ENGINE.SHORT_CONV, ENGINE.CONV_STATE].map((code) => pipelineOf(m, code))), "the convolution's shaders");
+    const bytes = plan.kinds.filter((kind) => kind === "convolution").length * plan.convolution.taps * plan.dim * 4;
+    conv = { short, state, mixed: buffer(m, B * 3 * plan.dim * 4), rows: buffer(m, bytes, STORAGE | COPY_DST | COPY_SRC), bytes };
+  }
+  // (the attending layers' keys and values, then the convolution layers' rows: T545)
+  const readback = buffer(m, 2 * attendingOf(plan).length * B * kvDim * 2 + (conv?.bytes ?? 0), MAP_READ | COPY_DST);
   // what a request writes into them, from the shared memory
   const rows = new Float32Array(B * plan.dim);
   const turns = new Float32Array(B * plan.headSize);
@@ -145,7 +165,7 @@ async function prepare(m: Model) {
   m.block = { norm, headNorm, add, rope, activation, quantize, normAdd: normAdd ?? null, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, anglesLocal, step,
     readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, embedRows, ids, embedGroups,
     // (bindLayers() and grow())
-    layers: null, cache: null };
+    layers: null, cache: null, conv };
 }
 
 // every layer's bind groups but those of the cache, with the form chosen. T153: a bias (Qwen2's) added to q, k and
@@ -153,15 +173,19 @@ async function prepare(m: Model) {
 // bias after o, w1 and w2 (GPT-2's, GPT-NeoX's)
 function bindLayers(m: Model) {
   const { plan } = m, form = m.forms.form!, V = m.weights.vectors!, b = m.block;
-  // (a piece each, T155)
-  const product = (name: string, l: number, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, l, from, to, add);
   const layers: Layer[] = [];
   for (let l = 0; l < plan.layers; l++) {
+    // T545: a matrix or a vector of the layers of a kind (an LFM2's attending or convolution layers': of) is read at the
+    // layer's place among them, every layer's at the layer
+    const place = plan.places?.[l] ?? l, convolving = plan.kinds?.[l] === "convolution";
+    const index = (of: string | undefined) => (of ? place : l);
+    // (a piece each, T155)
+    const product = (name: string, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, index(plan.matrices[name]?.of), from, to, add);
     const norm = new ArrayBuffer(16);
     new Uint32Array(norm, 0, 2).set([plan.dim, l * plan.dim]);
     new Float32Array(norm, 8, 1)[0] = plan.eps;
     const normShape = uniform(m, norm);
-    const added = (to: GPUBuffer, name: keyof Vectors) => V[name] && { group: bind(m, b.add, [to, V[name], uniform(m, new Uint32Array([plan.vectors[name]!.size, l * plan.vectors[name]!.size, 0, 0])), b.step]),
+    const added = (to: GPUBuffer, name: keyof Vectors) => V[name] && { group: bind(m, b.add, [to, V[name], uniform(m, new Uint32Array([plan.vectors[name]!.size, index(plan.vectors[name]!.of) * plan.vectors[name]!.size, 0, 0])), b.step]),
       x: Math.ceil(plan.vectors[name]!.size / 64) };
     // T154: LayerNorm reads its bias from the same place in its own buffer
     const normed = (weight: string, bias: string, out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias], out, normShape, b.step]
@@ -172,20 +196,28 @@ function bindLayers(m: Model) {
     const headNorm = (of: GPUBuffer, name: string, heads: number) => {
       if (!V[name]) return null;
       const shape = new ArrayBuffer(16);
-      new Uint32Array(shape, 0, 2).set([plan.headSize, l * plan.headSize]);
+      new Uint32Array(shape, 0, 2).set([plan.headSize, index(plan.vectors[name as keyof Vectors]!.of) * plan.headSize]);
       new Float32Array(shape, 8, 1)[0] = plan.eps;
       return { group: bind(m, b.headNorm, [of, V[name], uniform(m, shape), b.step]), heads };
     };
+    // T545: a convolution layer's matrix in, its two shaders on the layer's taps and rows (at its place), its matrix out
+    let convolution: Convolving | null = null;
+    if (convolving) {
+      const c = b.conv!, shape = uniform(m, new Uint32Array([plan.dim, plan.convolution!.taps, place * plan.convolution!.taps * plan.dim, 0]));
+      convolution = { into: product("win", b.xb, c.mixed), conv: bind(m, c.short, [c.mixed, V.conv, c.rows, b.xb, shape, b.step]),
+        state: bind(m, c.state, [c.mixed, c.rows, shape, b.step]), out: V.attentionPost ? product("wout", b.xb, b.gate) : product("wout", b.xb, b.x, true) };
+    }
     layers.push({
+      convolution,
       attentionNorm: normed("attention", "attentionBias", b.xb),
-      q: product("wq", l, b.xb, b.q), k: product("wk", l, b.xb, b.k), v: product("wv", l, b.xb, b.v),
-      biases: [added(b.q, "bq"), added(b.k, "bk"), added(b.v, "bv")].filter(Boolean) as Added[],
-      headNorms: [headNorm(b.q, "qNorm", plan.heads), headNorm(b.k, "kNorm", plan.kvHeads)].filter(Boolean) as HeadNorm[],
-      o: V.attentionPost ? product("wo", l, b.xb, b.gate) : product("wo", l, b.xb, b.x, true), oBias: added(b.x, "bo"), attentionPost: post("attentionPost", b.gate),
+      q: convolving ? [] : product("wq", b.xb, b.q), k: convolving ? [] : product("wk", b.xb, b.k), v: convolving ? [] : product("wv", b.xb, b.v),
+      biases: convolving ? [] : [added(b.q, "bq"), added(b.k, "bk"), added(b.v, "bv")].filter(Boolean) as Added[],
+      headNorms: convolving ? [] : [headNorm(b.q, "qNorm", plan.heads), headNorm(b.k, "kNorm", plan.kvHeads)].filter(Boolean) as HeadNorm[],
+      o: convolving ? [] : V.attentionPost ? product("wo", b.xb, b.gate) : product("wo", b.xb, b.x, true), oBias: added(b.x, "bo"), attentionPost: post("attentionPost", b.gate),
       ffnNorm: normed("ffn", "ffnBias", b.ffnInput),
-      gate: product("w1", l, b.ffnInput, b.gate), gateBias: added(b.gate, "b1"),
-      up: m.weights.matrices.w3 ? product("w3", l, b.ffnInput, b.up!) : null,
-      down: V.ffnPost ? product("w2", l, b.gate, b.xb) : product("w2", l, b.gate, b.x, true), downBias: added(b.x, "b2"), ffnPost: post("ffnPost", b.xb),
+      gate: product("w1", b.ffnInput, b.gate), gateBias: added(b.gate, "b1"),
+      up: m.weights.matrices.w3 ? product("w3", b.ffnInput, b.up!) : null,
+      down: V.ffnPost ? product("w2", b.gate, b.xb) : product("w2", b.gate, b.x, true), downBias: added(b.x, "b2"), ffnPost: post("ffnPost", b.xb),
     });
   }
   m.block.layers = layers;
@@ -195,14 +227,14 @@ function bindLayers(m: Model) {
 // grows (doubling from plan.kvStart: a prompt seldom needs the whole context) and kept from block to block; with them
 // the bind groups that read them
 function grow(m: Model, needed: number) {
-  const { device, plan } = m, b = m.block, old = b.cache;
+  const { device, plan } = m, b = m.block, old = b.cache, attending = attendingOf(plan);
   const kvDim = plan.kvHeads * plan.headSize, row = kvDim * 2;
   const capacity = Math.min(Math.max(2 * (old?.capacity ?? 0), needed), plan.seqLen);
   if (capacity * row > m.limit) throw new Error(`the keys of ${capacity} positions are more than a buffer of this GPU`);
   const cache: Kept = { capacity, owned: [], keys: [], values: [], rope: [], attention: [] };
   const usage = STORAGE | COPY_SRC | COPY_DST;
   const encoder = device.createCommandEncoder();
-  for (let l = 0; l < plan.layers; l++) {
+  for (let l = 0; l < attending.length; l++) {
     const keys = buffer(m, capacity * row, usage, cache.owned), values = buffer(m, capacity * row, usage, cache.owned);
     if (old) {
       encoder.copyBufferToBuffer(old.keys[l], 0, keys, 0, old.capacity * row);
@@ -226,11 +258,12 @@ function grow(m: Model, needed: number) {
     }
     return windows.get(window)!;
   };
-  for (let l = 0; l < plan.layers; l++) {
+  // (T545: an attending layer's by its place p, its layer l's window, tables and RoPE)
+  for (const [p, l] of attending.entries()) {
     // (T261.4: a local layer turned by the angles of its own tables)
     const angles = plan.local.includes(l) ? b.anglesLocal! : b.angles;
-    cache.rope.push(bind(m, b.rope, [b.q, b.k, b.v, cache.keys[l], cache.values[l], angles, plan.unturned?.includes(l) ? b.ropeAlone! : b.ropeShape, b.step]));
-    cache.attention.push(bind(m, m.forms.attention.pipeline, [b.q, cache.keys[l], cache.values[l], b.xb, attentionParams(plan.windows[l] ?? 0), b.step]));
+    cache.rope.push(bind(m, b.rope, [b.q, b.k, b.v, cache.keys[p], cache.values[p], angles, plan.unturned?.includes(l) ? b.ropeAlone! : b.ropeShape, b.step]));
+    cache.attention.push(bind(m, m.forms.attention.pipeline, [b.q, cache.keys[p], cache.values[p], b.xb, attentionParams(plan.windows[l] ?? 0), b.step]));
   }
   m.block.cache = cache;
   // (device.ts's end() lets go of these, the ones held last)
@@ -285,7 +318,7 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   const { device, plan } = m, half = plan.headSize / 2;
   // (T378.4: this module's record taken apart once: the layers' loop below reads locals. The cache after grow())
   const { norm, headNorm, add, rope, activation, quantize, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
-    quantizeAttention, quantizeFfn, quantizeGate, embedRows, embedGroups, layers } = m.block;
+    quantizeAttention, quantizeFfn, quantizeGate, embedRows, embedGroups, layers, conv } = m.block;
   // the rows forward.ts embedded (dense), and the angles of their positions (the tables forward.ts has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address: number, n: number) => new Float32Array(m.memory.buffer, address, n);
@@ -314,7 +347,14 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   device.queue.writeBuffer(step, 0, new Uint32Array([count, pos, 0, 0]));
   roomFor(m, pos + count);
   const { cache } = m.block;
-  const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass(), form = m.forms.form!;
+  const encoder = device.createCommandEncoder(), form = m.forms.form!;
+  // T545: the rows the convolution layers go on from: none at position 0 (the CPU clears its own there), else the CPU's,
+  // as they are while it waits for this block
+  if (conv) {
+    if (pos === 0) encoder.clearBuffer(conv.rows);
+    else copyIn(m, conv.rows, plan.convolution!.rows, conv.bytes);
+  }
+  const pass = encoder.beginComputePass();
   const multiplied = (pieces: Product) => pieces.forEach((piece) => multiply(m, pass, form, piece.group, piece.rows, count));
   // a packed form reads its input quantized: once for the matrices that read the same one
   const quantized = (input: Quantizing) => form.packed && dispatch(pass, quantize, input.group, input.x, count);
@@ -326,21 +366,35 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
     const layer = layers![l];
     dispatch(pass, norm, layer.attentionNorm, 1, count);
     quantized(quantizeXb);
-    multiplied(layer.q);
-    multiplied(layer.k);
-    multiplied(layer.v);
-    // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE
-    layer.biases.forEach(biased);
-    for (const head of layer.headNorms) dispatch(pass, headNorm, head.group, head.heads, count);
-    dispatch(pass, rope, cache!.rope[l], count);
-    if (l === plan.layers - 1) break;  // the keys and values are all a prompt's token leaves
-    // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
-    if (plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
-    dispatch(pass, flash.pipeline, cache!.attention[l], plan.heads * Math.ceil(count / FLASH_Q_TILE));
-    quantized(quantizeAttention);
-    multiplied(layer.o);
-    biased(layer.oBias);
-    if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
+    // T545: a convolution layer: its matrix in, the convolution into xb and the rows moved on by the block's tokens (the
+    // last layer leaves those alone: the rows are all a prompt's token leaves there), its matrix out
+    if (layer.convolution) {
+      const { into, conv: convolved, state, out } = layer.convolution, groups = Math.ceil(plan.dim / 64);
+      multiplied(into);
+      if (l < plan.layers - 1) dispatch(pass, conv!.short, convolved, groups, count);
+      dispatch(pass, conv!.state, state, groups);
+      if (l === plan.layers - 1) break;
+      quantized(quantizeXb);
+      multiplied(out);
+      if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
+    } else {
+      const at = plan.places?.[l] ?? l;
+      multiplied(layer.q);
+      multiplied(layer.k);
+      multiplied(layer.v);
+      // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE
+      layer.biases.forEach(biased);
+      for (const head of layer.headNorms) dispatch(pass, headNorm, head.group, head.heads, count);
+      dispatch(pass, rope, cache!.rope[at], count);
+      if (l === plan.layers - 1) break;  // the keys and values are all a prompt's token leaves
+      // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
+      if (plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
+      dispatch(pass, flash.pipeline, cache!.attention[at], plan.heads * Math.ceil(count / FLASH_Q_TILE));
+      quantized(quantizeAttention);
+      multiplied(layer.o);
+      biased(layer.oBias);
+      if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
+    }
     if (!plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
     quantized(quantizeFfn);
     multiplied(layer.gate);
@@ -362,25 +416,28 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   else await keysBack(m, () => !timing && wanted());
 }
 // the keys of count positions from pos of every layer, then their values, [layers][plan.batch][kvDim] each in float16,
-// into the block's readback as plan.staging lays them out
+// into the block's readback as plan.staging lays them out. T545: of every attending layer, by its place; and after
+// them the convolution layers' rows, as the block left them
 function keysOut(m: Model, encoder: GPUCommandEncoder, pos: number, count: number) {
-  const { plan } = m, { cache, readback } = m.block, B = plan.batch, row = plan.kvHeads * plan.headSize * 2;
-  for (let l = 0; l < plan.layers; l++) {
+  const { plan } = m, { cache, readback, conv } = m.block, B = plan.batch, row = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
+  for (let l = 0; l < layers; l++) {
     encoder.copyBufferToBuffer(cache!.keys[l], pos * row, readback, l * B * row, count * row);
-    encoder.copyBufferToBuffer(cache!.values[l], pos * row, readback, (plan.layers + l) * B * row, count * row);
+    encoder.copyBufferToBuffer(cache!.values[l], pos * row, readback, (layers + l) * B * row, count * row);
   }
+  if (conv) encoder.copyBufferToBuffer(conv.rows, 0, readback, 2 * layers * B * row, conv.bytes);
 }
 // and from the block's readback into plan.staging, where wanted() still says so
 async function keysBack(m: Model, wanted: () => boolean) {
   const { plan } = m, { readback } = m.block;
   await readback.mapAsync(MAP_READ);
   try {
-    const bytes = 2 * plan.layers * plan.batch * plan.kvHeads * plan.headSize * 2;
+    const bytes = 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * plan.headSize * 2 + (m.block.conv?.bytes ?? 0);
     if (wanted()) new Uint8Array(m.memory.buffer, plan.staging, bytes).set(new Uint8Array(readback.getMappedRange(), 0, bytes));
   } finally {
     readback.unmap();
   }
 }
 
-export { prepare, bindLayers, grow, roomFor, keysIn, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack };
+export { prepare, bindLayers, grow, roomFor, keysIn, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack, attendingOf };
+
 export type { Block, Quantizing, Kept };

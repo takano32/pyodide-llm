@@ -66,7 +66,9 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
       steps.why === `${unbound(c)} would not start where this GPU binds a buffer` ||
       // (T261.4: a Gemma 3's steps, whose GEGLU, norms behind, window and local tables a token's fused layer has not:
       // its prompts are the GPU's, its steps the CPU's until T261.4.2)
-      (c.arch === "gemma3" && steps.planned === false && steps.why === "this pair of norms and FFN is not on the GPU yet");
+      (c.arch === "gemma3" && steps.planned === false && steps.why === "this pair of norms and FFN is not on the GPU yet") ||
+      // (T545: an LFM2's, whose convolution layers a token's fused layer has not: its prompts are the GPU's)
+      (c.arch === "lfm2" && steps.planned === false && steps.why === "convolution layers are not on the GPU yet");
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);
     return right;
   }
@@ -104,7 +106,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     `, after a prompt on the CPU ${uploaded}${uploaded === cpuTop ? " as the CPU's" : ` (the CPU's ${cpuTop}, ${gap.toFixed(2)} below it)`}` +
     (first === 4 ? `, the CPU's step between them ${steps.cpuStep === greedy[4] ? "NumPy's" : `${steps.cpuStep} (NumPy's ${greedy[4]})`}` : ""));
   // the keys and values the GPU wrote back of the positions whose inputs were NumPy's (not the CPU's step's: the CPU's)
-  const layers = ref.header[2];
+  const layers = ref.attending ?? ref.header[2];  // (T545: the attending layers alone hold keys and values)
   const rowsOf = (b64) => {
     const all = floats(b64), out = new Float32Array(layers * positions.length * kvDim);
     for (let l = 0; l < layers; l++) {

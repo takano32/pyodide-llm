@@ -106,7 +106,10 @@ async function uploadLayers(m: Model, alone = false) {
       [name, [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)]]));
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
-      const [valuesAt, scalesAt] = matrix.layers[l];
+      // (T545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
+      // them, and none in a layer of another kind: its pieces' layers are by those places)
+      if (matrix.of && plan.kinds[l] !== matrix.of) continue;
+      const [valuesAt, scalesAt] = matrix.layers[matrix.of ? plan.places[l] : l];
       const home = together?.homes[name], row = rowBytes(matrix);
       for (const piece of m.weights.matrices[name].pieces) {
         const valueBytes = piece.rows * row, scaleBytes = (valueBytes / group) * 4;
@@ -142,8 +145,10 @@ async function uploadRest(m: Model) {
   let bytes = 0;
   if (m.weights.together) bytes += await uploadTokens(m, m.weights.widen);
   m.weights.vectors = {};
-  for (const [name, { at, size }] of Object.entries(plan.vectors)) {
-    const vectorBytes = plan.layers * size * 4;
+  for (const [name, { at, size, of }] of Object.entries(plan.vectors)) {
+    // (T545: of the layers of a kind, where it is theirs alone)
+    const vectorBytes = (of ? plan.kinds.filter((kind) => kind === of).length : plan.layers) * size * 4;
+
     m.weights.vectors[name] = buffer(m, vectorBytes, STORAGE | COPY_DST);
     copyIn(m, m.weights.vectors[name], at, vectorBytes);
     bytes += vectorBytes;

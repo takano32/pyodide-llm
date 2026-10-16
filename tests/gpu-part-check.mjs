@@ -34,13 +34,13 @@ const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
   eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0,
-  sharedClassifier: true };
+  sharedClassifier: true, kinds: ["attention", "attention"], places: [0, 1], attending: 2, state: null };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, kind: "int8", group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
   w1: matrixOf(24, 8, 38000), w2: matrixOf(8, 24, 40000), w3: matrixOf(24, 8, 42000), wcls: matrixOf(100, 8, 44000),
   attW: 50000, ffnW: 50100, attB: 0, ffnB: 0, finalW: 50200, finalB: 0, bo: 0, b1: 0, b2: 0, bq: 0, bk: 0, bv: 0, qNorm: 0, kNorm: 0,
-  cosTable: 51000, sinTable: 52000, positions: 0, channels: [], attPost: 0, ffnPost: 0, localCos: 0, localSin: 0 };
+  cosTable: 51000, sinTable: 52000, positions: 0, channels: [], attPost: 0, ffnPost: 0, localCos: 0, localSin: 0, win: null, wout: null, conv: 0 };
 const STAGING = CONTROL_BYTES, ROWS = STAGING + 2 * SHAPE.layers * GPU_BLOCK * SHAPE.kvDim * 2, IDS = ROWS + GPU_BLOCK * SHAPE.D;
 assert.ok(IDS + (2 + GPU_TOKENS) * 4 <= 2 * PAGE, "the places the GPU answers into fit this test's memory");
 
@@ -56,7 +56,9 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
   const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
   const control = controlArea({ memory, sharedMemory: true, stalledMs });
   const words = new Int32Array(memory.buffer, IDS, 2 + GPU_TOKENS), halves = new Uint16Array(memory.buffer);
-  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0,
+  // (T545: follows, whether a block goes on from the CPU's state: false holds the GPU off it; stated, the positions
+  // that came next as a block's state came back)
+  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0, follows: true, stated: [],
     finite: true, capacity: 256, cpuMs: 1, gpuMs: (count) => 4 + count / 16, stepMs: 1, threads: { count: 1, searching: false },
     // what the stand-in GPU answers a request with: silent (no answer), failed, ended (says "ended" after a stop), and
     // for the steps: sampled (how many, by default all asked), ids (by default 500 + position), notFinite
@@ -100,6 +102,8 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     embed(tokens, pos0, rows, stride) { beside.embedded.push([tokens.length, pos0, rows, stride]); },
     fromStaging(pos, count) { beside.staged.push([pos, count]); },
     stagingFinite(count) { return beside.finite; },
+    follows(pos) { return beside.follows; },
+    stateFromStaging(next) { beside.stated.push(next); },
     // (as the engine's run(): it says the CPU wrote from there, or that a model on the GPU alone cannot run here)
     run(tokens, pos0, needLogits) {
       if (direct) throw part.notHere();
@@ -183,12 +187,15 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([beside.made, beside.posted.length, part.gettingReady(), part.status], [1, 1, true, "prompts on the CPU while the GPU gets ready"]);
   const [{ type, memory, plan }] = beside.posted;
   assert.deepEqual([type, memory], ["start", beside.memory]);
-  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kvHeads", "kvStart", "layerNorm", "layers",
-    "local", "localCos", "localSin", "matrices",
-    "parallel", "remembered", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
+  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
+    "layerNorm", "layers", "local", "localCos", "localSin", "matrices",
+    "parallel", "places", "remembered", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
   assert.deepEqual([plan.dim, plan.hidden, plan.layers, plan.heads, plan.kvHeads, plan.headSize, plan.turned, plan.seqLen, plan.kvStart, plan.eps, plan.batch, plan.direct, plan.rows, plan.staging],
     [8, 24, 2, 2, 1, 4, 4, 512, 256, 1e-5, GPU_BLOCK, false, ROWS, STAGING]);
   assert.deepEqual(plan.words, { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED });
+  // (T545: every layer's kind and place among its kind's, and no convolution layers)
+  assert.deepEqual([plan.kinds, plan.places, plan.convolution], [["attention", "attention"], [0, 1], null]);
+
   assert.deepEqual(Object.keys(plan.matrices), ["wq", "wk", "wv", "wo", "w1", "w2", "w3"]);
   assert.deepEqual(plan.matrices.w2, { rows: 8, n: 24, six: false, ternary: false, layers: [[40000, 40500], [41000, 41500]] }, "a matrix: its values and scales a layer");
   assert.deepEqual(plan.vectors, { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 } });
@@ -234,6 +241,13 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
     "its rows are embedded for it, and its keys and values go into the cache");
   assert.deepEqual([sides(beside), part.promptTokens, part.status], [[0, 200], 200, `${PROMPTS_GPU}, answers on WebGPU where it is faster than the CPU`]);
   assert.match(said().join("\n"), /a block of 64 tokens: 8\.0 ms on the GPU, 64\.0 ms on the CPU \(1 thread\), the GPU from 5 tokens: prompts on WebGPU/);
+  // T545: the state of the layers that keep one comes back after each block, with the position that comes next; and a
+  // block that does not go on from the CPU's state (follows) is the CPU's, the GPU asked nothing
+  assert.deepEqual(beside.stated, [64, 128, 192, 200]);
+  beside.follows = false;
+  feed(part, 64);
+  assert.deepEqual([sides(beside), requests(beside, "prompt").length, beside.stated.length], [[64, 0], 0, 4], "a block that does not follow the CPU's state is the CPU's");
+  beside.follows = true;
   part.generationBegan();
   assert.equal(part.promptTokens, 0, "a generation's count begins again");
   // a cache too small for the block is grown first
@@ -445,6 +459,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
     beside.posted.length = 0;
     beside.ran.length = 0;
     beside.staged.length = 0;
+    beside.stated.length = 0;
     breakIt(beside);
     if (type === "prompt") {
       part.prompt(tokensOf(64), 0);
@@ -455,6 +470,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
       assert.equal(part.sampled, 0, `${title}: none of its ids taken`);
     }
     assert.deepEqual(beside.staged, [], `${title}: nothing of it goes into the cache`);
+    assert.deepEqual(beside.stated, [], `${title}: nor does any state of the layers that keep one (T545: the CPU goes on from its own)`);
     assert.match(part.status, status, title);
     assert.deepEqual([part.ready, part.promptBlock(), part.tokenBlock(), part.cpuStepBegan(true), requests(beside, "stop").length, Atomics.load(beside.ctl, GPU_WANTED)], [undefined, BATCH, 0, false, 1, 0], `${title}: the GPU is stopped`);
     assert.equal(said().filter((line) => /the prompts and the tokens go on on the CPU$/.test(line)).length, 1, `${title}: said once in the console`);
@@ -606,7 +622,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.deepEqual(Object.keys(fitOf()).sort(), ["matrices", "tokensUnfit", "unfit", "vectors"]);
   const reasons = [
     [{ linear: { every: 4 } }, {}, {}, /^linear-attention layers are not on the GPU yet$/],
-    [{ convolution: { taps: 3 } }, {}, {}, /^convolution layers are not on the GPU yet$/],
+    // (T545: an LFM2's convolution layers are the GPU's for its prompts, not its steps: below)
     // (T375.2: a kind of layer that keeps a state and is neither of the two: not on the GPU, without a line for it)
     [{ stateful: true }, {}, {}, /^layers that keep a state are not on the GPU yet$/],
     [{ rotated: 1024 }, {}, {}, /^a rotated basis is not on the GPU yet$/],
@@ -637,6 +653,16 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
+  // T545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers), its
+  // steps do not
+  {
+    const lfm2 = fitOf({ convolution: { layers: "ca", taps: 3 }, kinds: ["convolution", "attention"], places: [0, 0], attending: 1, state: { at: 60000, bytes: 96 } },
+      { win: matrixOf(24, 8, 46000), wout: matrixOf(8, 8, 48000), conv: 49000 });
+    assert.deepEqual([lfm2.unfit(), lfm2.tokensUnfit()], [null, "convolution layers are not on the GPU yet"]);
+    assert.deepEqual(Object.keys(lfm2.matrices()), ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout"]);
+    assert.deepEqual(lfm2.vectors().conv, { at: 49000, size: 24, of: "convolution" });
+  }
+
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2's, with its LayerNorms) has no w3");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null }).unfit(), null, "(whose activation is a GELU's, as the GPU's FFN without a gate has it)");
@@ -679,7 +705,9 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.deepEqual(Object.keys(fitOf({ layerNorm: true }, { attB: 1, ffnB: 2, bq: 3, bk: 4, bv: 5, bo: 6, b1: 7, b2: 8, qNorm: 9, kNorm: 10 }).vectors()),
     ["attention", "ffn", "attentionBias", "ffnBias", "bq", "bk", "bv", "qNorm", "kNorm", "bo", "b1", "b2"]);
   assert.deepEqual(fitOf({}, { bq: 3, bk: 4, bv: 5, qNorm: 9, kNorm: 10 }).vectors(), { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 },
-    bq: { at: 3, size: 8 }, bk: { at: 4, size: 4 }, bv: { at: 5, size: 4 }, qNorm: { at: 9, size: 4 }, kNorm: { at: 10, size: 4 } });
+    // (T545: those of the attending layers alone say so, of: their places index them)
+    bq: { at: 3, size: 8, of: "attention" }, bk: { at: 4, size: 4, of: "attention" }, bv: { at: 5, size: 4, of: "attention" }, qNorm: { at: 9, size: 4, of: "attention" },
+    kNorm: { at: 10, size: 4, of: "attention" } });
 }
 console.log("ok: gpuFit() says why the GPU would not take a model or its steps, counts what it would hold to the byte, and names the vectors it reads");
 process.exit(0);

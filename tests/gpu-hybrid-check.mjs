@@ -5,6 +5,9 @@
 // wk, wv in a Gated DeltaNet layer), and the owner's PC and Android are such visitors once T236 lists the model.
 // A model that goes to the GPU alone (T156) is refused by gpuOnlyUnfit()'s arch, which gpu-choice-check.mjs holds.
 // T260: an LFM2 the same (its convolution layers have no wq, wk, wv either, and no shader), by the next line of gpuUnfit().
+// T545: an LFM2's prompts are the GPU's now: its worker is started once, with a plan that says every layer's kind and
+// its place among the layers of its kind, the taps and where the CPU keeps the convolution layers' rows, the matrices
+// in and out and the attending layers' matrices as theirs alone (of), and no steps.
 // T261: and a Gemma 3, whose tensors are a Qwen3's to the GPU's worker (it would run them as one: no norm behind the
 // attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it. T261.4: a Gemma 3's
 // prompts are the GPU's now: its worker is started, and the plan it is started with says what the GPU's worker runs
@@ -40,7 +43,7 @@ const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
 // (T261: a Gemma 3 by its local layers' option, though any of its facts keeps it off: the GELU in its gate and the norms
 // behind as well, which are no option of a model's)
 const REASONS = { qwen35: ["a Qwen3.5", "linear", /linear-attention layers are not on the GPU/],
-  lfm2: ["an LFM2", "convolution", /convolution layers are not on the GPU/],
+  lfm2: ["an LFM2", "convolution", null],
   gemma3: ["a Gemma 3", "local", null],
   spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/] };
 assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3 and no Spark-X2.5`);
@@ -67,7 +70,23 @@ llama = Llama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so",
 // (a GPU that was started would never say it is ready: do not wait for it for ever)
 const status = await Promise.race([outside.engine.gpu, new Promise((resolve) => setTimeout(() => resolve("no answer in 3 s"), 3000))]);
 const failures = [];
-if (!reason) {
+if (!reason && options.arch === "lfm2") {
+  // (T545: started once, with the plan of an LFM2)
+  const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
+  const letters = [...options.convolution.layers], places = letters.map((letter, l) => letters.slice(0, l).filter((x) => x === letter).length);
+  const count = (letter) => letters.filter((x) => x === letter).length;
+  if (gpus.length !== 1 || !plan) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}, with ${plan ? "a plan" : "no plan"}`);
+  else {
+    const wanted = { kinds: letters.map((letter) => (letter === "c" ? "convolution" : "attention")), places, taps: options.convolution.taps, rows: true,
+      matrices: { wq: ["attention", count("a")], wk: ["attention", count("a")], wv: ["attention", count("a")], wo: ["attention", count("a")],
+        w1: [null, letters.length], w2: [null, letters.length], w3: [null, letters.length], win: ["convolution", count("c")], wout: ["convolution", count("c")] },
+      conv: ["convolution", options.convolution.taps * plan.dim], tokens: null };
+    const got = { kinds: plan.kinds, places: plan.places, taps: plan.convolution?.taps, rows: plan.convolution?.rows > 0,
+      matrices: Object.fromEntries(Object.entries(plan.matrices).map(([name, m]) => [name, [m.of ?? null, m.layers.length]])),
+      conv: [plan.vectors.conv?.of, plan.vectors.conv?.size], tokens: plan.tokens };
+    if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
+  }
+} else if (!reason) {
   // (T261.4: started once, with the plan of a Gemma 3)
   const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
   const { layers: local, window } = options.local, count = plan?.layers;
@@ -90,5 +109,7 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(reason ? `ok: ${model} with a GPU adapter present stays on the CPU, its GPU's worker never started (${status})`
+  : options.arch === "lfm2" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its taps and rows, and no steps`
+
   : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, its norms behind and GEGLU, and no steps`);
 process.exit(0);

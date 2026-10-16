@@ -49,8 +49,10 @@ export type Core = {
 export type Step = (count: number, pos0: number) => void;
 // The layers of one kind in a model, which own their tensors and their state: layer() is the step of the place-th of
 // them (fact: what the plan says of it). clear, where the kind keeps a state from token to token that cannot be
-// written again: position 0 clears it, and the engine then takes the positions in turn only (its follow())
-export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void };
+// written again: position 0 clears it, and the engine then takes the positions in turn only (its follow()). T545: rows,
+// where that state is (bytes of it from at), where the GPU's worker has these layers as well: a block there goes on
+// from the state here, and its own comes back here (an LFM2's convolution layers: gpu/block.ts)
+export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void; rows?: { at: number; bytes: number } };
 // A kind. What it says of a model's sizes is asked twice, as the engine is made (of the plan) and before a model is
 // loaded (footprint(), of the header and the form: memory.ts), each time with a Sizes (sizes.ts):
 //   frame()   what a token's frame holds for it (memory.ts's frameArrays(); apart: arrays of a token too large for
@@ -58,6 +60,8 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void }
 //   state()   the bytes of what its count layers keep besides, a number for each thing it takes of the memory, in
 //             the order make() takes them (make() takes these, and footprint() counts them)
 //   cached    its layers keep keys and values in the cache (cache.ts), which grows to the whole context
+//   staged    T545: the GPU's worker has its layers too, and their state (state()'s) comes back from it after a block
+//             with the keys and values (make() says where it is: rows)
 // What only a form can be asked, where there is no plan (Python's plan says both: its layers, its widths):
 //   layers()  which of a model's count layers are of this kind (null: the form has none; a layer that no kind says
 //             is its own attends)
@@ -65,9 +69,10 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void }
 // And make(), its layers in a model that has count of them (T510.1: facts, what the plan says of each of them, by its
 // place among them: what a kind takes of the memory as it is made may depend on it, as a window does the cache's).
 // (A kind whose layers keep a state from token to token says so by clear() of what make() returns: a model with such
-// layers is not on the GPU, whatever the kind. One that keeps none there and is not attention's would be taken there.)
+// layers is not on the GPU, whatever the kind, unless it says where that state is (rows: T545, a convolution layer's,
+// which the GPU's worker has a step for). One that keeps none there and is not attention's would be taken there.)
 export type Kind = {
-  frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean;
+  frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean; staged?: boolean;
   layers?(form: Stateful, count: number): boolean[] | null; widths?(form: Stateful): Partial<Widths>;
   make(core: Core, count: number, facts?: Layer[]): Layers;
 };
