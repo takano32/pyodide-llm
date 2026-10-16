@@ -328,7 +328,9 @@ geometric mean of the widths of 1.7B, 8B and 27B:
 | PQ2_0's 34-byte blocks, one a group | 18.1 (0.89) / 65.9 (0.90) | 20.2 (0.95) / 40.0 (0.95) |
 
 The prompt's tile widens one half a group for its four tokens: 0.98 of the float32 tile on arm64 (28.1 against 28.8
-and 112.0 against 115.1 G weights/s), 0.99 on x86-64.
+and 112.0 against 115.1 G weights/s), 0.99 on x86-64. The kernels as built against their float32 forms: `matmul_t2r`
+1.02 / 1.02 on arm64 (Neoverse-N2), 1.02 / 1.00 on an EPYC 7763 and 0.96 / 0.96 on an EPYC 9V45; `matmul_t2` 1.00 /
+1.00 on arm64 and 0.97 / 0.99 on the 7763 (TODO.md's T533 has the runs).
 
 Two things the review of 2026-10-02 found, which no test in Node can see:
 
