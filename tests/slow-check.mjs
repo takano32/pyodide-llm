@@ -3,7 +3,10 @@
 // way one line is shared). For CI (slow.yml): the development machine runs no browser.
 //
 //   node tests/slow-check.mjs <slow|stall> [site URL] [--rate <bytes per second>] [--model <id>]
-//                             [--queue <lane|fair|fifo>] [--buffer <bytes>]
+//                             [--queue <lane|fair|fifo>] [--buffer <bytes>] [--dist <folder>]
+//
+//   --dist  a site built on this machine (npm run build: dist), served by tests/serving.mjs as plain HTTP through the
+//           same paced line, in place of the deployed one: a branch's (T538: tests/slow_in_browser.sh builds two)
 //
 //   slow   the whole line at --rate (default 50000: 0.4 Mbps). Pyodide's 9 MB take minutes; the load must end
 //          ready, without falling back to no service worker (before T118 a step was given up after 60 to 90
@@ -26,17 +29,21 @@ import http from "node:http";
 import net from "node:net";
 import * as playwright from "playwright-core";
 import { closed, leave } from "./leave.mjs";
+import { serving } from "./serving.mjs";
 
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-const [scenario = "slow", site = "https://takano32.github.io/pyodide-llm/"] = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
+const [scenario = "slow", deployed = "https://takano32.github.io/pyodide-llm/"] = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
+// T538: --dist <folder> serves a site built on this machine (a branch's: tests/slow_in_browser.sh) instead of the deployed one
+const served = option("--dist") ? await serving(option("--dist")) : undefined;
+const site = served?.url ?? deployed;
 const rate = Number(option("--rate", 50000)), model = option("--model", "stories260K");
 const queueMode = option("--queue", "lane"), bufferBytes = Number(option("--buffer", 262144));
 if (!["lane", "fair", "fifo"].includes(queueMode)) throw new Error(`--queue is lane, fair or fifo, not ${queueMode}`);
 const STALL_AFTER = 200_000;
 
 // ---- the proxy: CONNECT tunnels; what comes back from a server is paced, what goes to it is not
-const lanes = new Set(), everyLane = [];
+const lanes = new Set(), everyLane = [], closing = new Set();  // closing: lanes whose upstream closed, until they drain
 const fifo = [];  // fifo: { lane, chunk } in the order the servers sent them
 let fifoBytes = 0, tick = 0;
 const sentByHost = new Map();
@@ -51,6 +58,7 @@ const deliver = (lane, chunk, take) => {
 };
 const stalled = (lane) => scenario === "stall" && lane.host === "cdn.jsdelivr.net" && (sentByHost.get(lane.host) ?? 0) >= STALL_AFTER;
 setInterval(() => {
+  for (const lane of closing) if (lane.closing()) closing.delete(lane);
   budget = Math.min(rate / 10, budget + rate / 20);
   if (queueMode === "fifo") {
     while (fifo.length && budget > 0) {
@@ -97,13 +105,10 @@ setInterval(() => {
   for (const lane of lanes) if (lane.size < 64 * 1024) lane.upstream.resume();
 }, 50).unref();
 const proxy = http.createServer();
-proxy.on("connect", (req, client, head) => {
-  const [host, port] = req.url.split(":");
-  const upstream = net.connect(Number(port) || 443, host, () => {
-    client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-    if (head.length) upstream.write(head);
-    client.pipe(upstream);
-  });
+// a lane: what comes back on upstream is queued, and passed on to client at the line's pace. An upstream that closes
+// (a server's answer of Connection: close) ends the lane once what it queued has gone through (T538: before, the
+// client was closed at once, and what was still queued lost: the tunnels' servers seldom closed first)
+const laneOf = (host, client, upstream) => {
   const lane = { host, client, upstream, queue: [], size: 0, opened: Date.now(), first: undefined, last: undefined, bytes: 0 };
   lanes.add(lane);
   everyLane.push(lane);
@@ -120,14 +125,41 @@ proxy.on("connect", (req, client, head) => {
   });
   const end = () => {
     lanes.delete(lane);
+    lane.queue.length = 0;
     for (let i = fifo.length - 1; i >= 0; i--) {
       if (fifo[i].lane === lane) fifoBytes -= fifo.splice(i, 1)[0].chunk.length;
     }
     client.destroy();
     upstream.destroy();
   };
-  upstream.on("error", end).on("close", end);
+  lane.closing = () => (lane.queue.length || fifo.some((item) => item.lane === lane) ? false : (end(), true));
+  upstream.on("error", end).on("close", () => {
+    if (!lane.closing()) closing.add(lane);
+  });
   client.on("error", end).on("close", end);
+};
+proxy.on("connect", (req, client, head) => {
+  const [host, port] = req.url.split(":");
+  const upstream = net.connect(Number(port) || 443, host, () => {
+    client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    if (head.length) upstream.write(head);
+    client.pipe(upstream);
+  });
+  laneOf(host, client, upstream);
+});
+// T538: a site of this machine (--dist) is plain HTTP, which the browser sends to the proxy as requests, not tunnels
+// (Playwright's Chromium proxies the loopback too). Each goes to the server on a connection of its own (Connection:
+// close), and what it answers comes back paced on a lane, raw, on the browser's socket, which then closes
+proxy.on("request", (req) => {
+  const target = new URL(req.url);
+  const client = req.socket;
+  const upstream = net.connect(Number(target.port) || 80, target.hostname, () => {
+    const headers = Object.entries(req.headers).filter(([name]) => !/^(connection|proxy-connection|keep-alive)$/i.test(name));
+    upstream.write(`${req.method} ${target.pathname}${target.search} HTTP/1.1\r\n` +
+      headers.map(([name, value]) => `${name}: ${value}\r\n`).join("") + "connection: close\r\n\r\n");
+    req.on("data", (chunk) => upstream.write(chunk));  // (not piped: its end would half-close the line, and the server close it unanswered)
+  });
+  laneOf(target.hostname, client, upstream);
 });
 await new Promise((resolve) => proxy.listen(0, "127.0.0.1", resolve));
 
@@ -175,6 +207,7 @@ const pyodideLines = console_.filter((line) => /pyodide|quiet|nothing/i.test(lin
 if (pyodideLines.length) console.log(`console: ${pyodideLines.join(" / ")}`);
 await closed(() => browser.close());  // (T141, T391.6: never waited on for long)
 proxy.close();
+await served?.close();
 const ok = scenario === "slow" ? outcome.ready && !state.fellBack : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);
 console.log(ok ? "ok" : "FAILED");
 await leave(ok ? 0 : 1);
