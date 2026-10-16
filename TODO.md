@@ -235,6 +235,7 @@
 - T561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 - T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
+- T568 [整理][WebGPU] GPU の層の種類を表 1 つに（CPU の `LAYER_KINDS` の形） — 未着手
 <!-- 目次ここまで -->
 
 ## Opus の回とレビューの回（2026-09-25 に持ち主が決めた進め方。レビューは 2026-09-25 の夕方から Opus xhigh）
@@ -1699,3 +1700,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 状態: 未着手（2026-10-16、T261.4.2・T545.2 のレビューの気づき）
 - `src/runtime/forward/alone.ts:191` の「a token's fused layer does not take yet」は古くなった。`gpuside.ts` の `tokensUnfit()` の説明は Llama の流れだけを言う（窓・GELU・後ろの norm・畳み込みを足す）。
+
+### T568 [整理][WebGPU] GPU の層の種類を表 1 つに（CPU の `LAYER_KINDS` の形） — 状態: 未着手（2026-10-16、持ち主「WebGPU 対応ってモデルごとに必要か？抽象化してまとめられないの？」。規模 中〜大。T271 の後、持ち主が再開を言ってから）
+- いまの形: GPU に置くかはモデルの名前でなく計画の事実で決まり、事実の組み合わせが今あるものなら新しいモデルは何もせず GPU に乗る（Llama・Qwen2・Qwen3・Mistral・Granite・SmolLM3 などはそうだった）。手が要ったのは、新しい計算（gate の GELU・後ろの norm・窓・畳み込みの層・DeltaNet の層）が出たときだけで、その計算のシェーダはどう抽象しても 1 つ要る。
+- **まとめられる所**: 新しい層の種類 1 つが、`forward/gpuside.ts`（`gpuFit()`・`KIND_OF`・状態の staging）、`gpu/block.ts`（プロンプトのブロック）、`gpu/tokens.ts`・`gpu/tokenforms.ts`（答えのステップと検査）、`gpu/requests.ts`、`tests/gpu-check/models.mjs` の 5〜6 か所に枝を足している（T545・T261.4・T271）。CPU の側は T375 で「種類の表の 1 行と自分のファイル」にした（`forward/kinds.ts` の `LAYER_KINDS`）。GPU の側も同じ形にする: 種類ごとのファイルに「置けるか・重みの名前・プロンプトのブロックの 1 層・ステップの 1 層・状態の上げと返し・読み込みの検査」を持たせ、表に 1 行。
+- 物差し（AGENTS.md の「物差し」）: 作り物の種類を 1 つ捨ての木に足して、触るファイルを前後で数える。シェーダの文は変えない（鍵を動かさない）。
