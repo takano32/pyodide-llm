@@ -6,7 +6,8 @@ import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHer
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
-import { becameReady, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
+import { arrived, arriving, becameReady, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
+import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
 import { answer, idle, used } from "./answer.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
@@ -21,6 +22,8 @@ const loadedHow = (data: Ready) => ((model as any).hf ? (data.fromCache ? "from 
 let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
 // T156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
 let aloneOnReady: { load: number; alone: Alone } | undefined;
+// T553: a line that says the time left, which says it no more once nothing has arrived for 10 seconds (no report comes then)
+let stillTimer: ReturnType<typeof setTimeout> | undefined;
 if (await isolating()) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
@@ -43,9 +46,17 @@ worker.onmessage = ({ data }) => {
     // the visitor's own disk has nothing to fetch: the share alone
     const converted = data.converted === undefined ? "" : `${Math.floor(data.converted * 100)} % converted`;
     progress.value = data.received || (data.converted ?? 0) * data.total;
-    statusText.textContent = !data.received && converted ? `${model.name}: ${converted}`
+    // T553: and, last, about how long the fetch has left (the owner's words: nothing for its first 3 seconds, nor while
+    // nothing arrived for 10)
+    const now = performance.now();
+    if (data.received) arrived(advanced(arriving, data.received, now));
+    const line = !data.received && converted ? `${model.name}: ${converted}`
       : `${model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
         (data.perSecond ? ` · ${megabytes(data.perSecond)} MB/s` : "") + (converted ? ` · ${converted}` : "");
+    const left = data.received ? leftSaid(secondsLeft(arriving, data.total, now)) : "";
+    statusText.textContent = line + left;
+    clearTimeout(stillTimer);
+    if (left) stillTimer = setTimeout(() => statusText.textContent === line + left && (statusText.textContent = line), STILL_MS);
   } else if (data.type === "bench") {
     // T45 measured, T76 shows it: one bubble with the table, and under it the Markdown to copy or to report
     const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });

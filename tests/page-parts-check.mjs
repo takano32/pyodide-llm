@@ -5,7 +5,8 @@
 // element, no address, no storage, no clock), so Node imports them as the modules they are (Node 24 takes the types
 // off a .ts file), with no browser, no worker and no model:
 //
-//   src/page/model.ts         the model the page has and how far its load has come: each event changes what it says
+//   src/page/model.ts         the model the page has and how far its load has come (T553: and the time its fetch has
+//                             left, from the bytes said and the clock the caller hands over): each event changes what it says
 //                             and nothing else (the others are compared whole, before and after); events out of their
 //                             order do no harm; nothing of it can be assigned from outside
 //   src/page/answer.ts        the answer being written: its bubble, the settings it is written with (the steps held to
@@ -48,7 +49,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
 // ---- src/page/model.ts
 {
   const m = await fresh("page/model.ts");
-  assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false, outdated: false },
+  assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false, outdated: false, arriving: undefined },
     "a visit starts with the default, its first load, nothing ready");
   assert.equal(m.takesPrompts(), false, "a model that is not ready takes no prompt");
   unassignable(m, "model.ts");
@@ -152,6 +153,45 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   quiet.chose(third);
   assert.equal(quiet.outdated, false, "no event but the worker's word makes a page an old one");
   cases += 2;
+}
+{
+  // T553: the reports of a load's fetch, and the time it has left (remaining.ts: the clock is the caller's)
+  const m = await fresh("page/model.ts");
+  const { secondsLeft, leftSaid, advanced } = await fresh("page/remaining.ts");
+  // (receiver.ts says each report so)
+  const report = (bytes, now) => m.arrived(advanced(m.arriving, bytes, now));
+  report(1e6, 1000);
+  assert.deepEqual(m.arriving, { began: 1000, first: 1e6, at: 1000, bytes: 1e6, moved: 1000 }, "a first report: when and how much, no speed yet");
+  assert.equal(secondsLeft(m.arriving, 100e6, 1000), undefined, "no speed: nothing said");
+  for (let t = 1250; t <= 4000; t += 250) report(1e6 + (t - 1000) * 1000, t);  // 1 MB/s
+  assert.equal(m.arriving.speed, 1e6, "the plain average of the first seconds");
+  assert.equal(secondsLeft(m.arriving, 100e6, 3999), undefined, "nothing in the first 3 seconds (the owner's words)");
+  report(4.25e6, 4250);
+  assert.equal(Math.round(secondsLeft(m.arriving, 100e6, 4250)), 96, "after them, the bytes left over the speed");
+  assert.equal(leftSaid(secondsLeft(m.arriving, 100e6, 4250)), " · about 100 s left", "said in tens above a minute");
+  assert.ok(secondsLeft(m.arriving, 100e6, 14249) > 0, "said until 10 seconds pass without an arrival");
+  assert.equal(secondsLeft(m.arriving, 100e6, 14250), undefined, "nothing once nothing arrived for 10 seconds");
+  report(4.25e6, 14000);  // a report of no more bytes (the share converted moved): still nothing arrived
+  assert.equal(secondsLeft(m.arriving, 100e6, 14250), undefined, "a report without new bytes is no arrival");
+  // the speed changes: after 10 seconds the weighted average follows the new one, and forgets the old one in about 10
+  for (let t = 14250; t <= 44000; t += 250) report(m.arriving.bytes + 250e3 * 4, t);  // 4 MB/s from now
+  const a = m.arriving;
+  assert.ok(Math.abs(a.speed - 4e6) < 0.05 * 4e6, `the speed follows a faster line (${a.speed})`);
+  assert.equal(secondsLeft(a, a.bytes, 44000), undefined, "nothing left: nothing said");
+  assert.equal(leftSaid(secondsLeft(a, a.bytes + 1, 44000)), " · about 1 s left", "never under a second");
+  assert.deepEqual([leftSaid(undefined), leftSaid(7.4), leftSaid(33), leftSaid(57.6), leftSaid(61)], ["", " · about 7 s left", " · about 35 s left", " · about 60 s left", " · about 60 s left"]);
+  // a fetch begun again (fewer bytes), and a load chosen anew
+  report(5, 50000);
+  const again = m.arriving;
+  assert.deepEqual(again, { began: 50000, first: 5, at: 50000, bytes: 5, moved: 50000 }, "fewer bytes than before: a fetch begun anew");
+  report(6, 50000);
+  assert.equal(m.arriving, again, "a report at the same time adds nothing to the speed");
+  only(m, () => m.chose(second), { model: second, loads: 2, arriving: undefined }, "another model: nothing of the fetch before");
+  report(1, 1);
+  only(m, () => m.becameReady({ seq_len: 1, backend: "NumPy", threads: 1, pyodide: "" }), { ready: true, longest: 1, readyLine: { backend: "NumPy", threads: 1, pyodide: "" }, arriving: undefined }, "ready: the fetch is over");
+  report(1, 1);
+  only(m, () => m.failed(false), { arriving: undefined }, "an error: the fetch is over");
+  cases += 6;
 }
 console.log(`page-parts-check: model.ts by itself: what a visit opens with, a choice, ready, the GPU's word, the threads, the benchmark, an error, the site's update; each changes what it says alone`);
 
