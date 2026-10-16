@@ -28,8 +28,9 @@ import type { Kernels } from "../jobs.ts";
 import type { Room } from "./kinds.ts";
 
 // T510.1: a layer's ring: its period, and where its keys and its values are (place() says, 2 * size positions each);
-// T331: and the bytes of a position of it (its place's own)
-export type Ring = { size: number; keys: number; values: number; row: number };
+// T331: and the bytes of a position of it (its place's own); T261.4: the last position written to it (-1: none), which
+// the layer and the GPU's blocks (engine.ts's fromStaging) both write
+export type Ring = { size: number; keys: number; values: number; row: number; latest: number };
 
 /** room, k: the engine's memory and kernels. kvDim: the values of one position's keys (T331: of the widest place's);
  * half: kept in float16 (T110);
@@ -57,7 +58,7 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
         if (width > kvDim) throw new Error(`A layer keeps keys and values ${width} wide, and the cache's widest are ${kvDim}.`);
         widths.push(width);
         rows.push(row);
-        rings.push(size ? { size, keys: 0, values: 0, row } : null);
+        rings.push(size ? { size, keys: 0, values: 0, row, latest: -1 } : null);
         if (!size && width) {
           before.push(total);
           total += row;

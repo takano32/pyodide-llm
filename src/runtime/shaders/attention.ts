@@ -31,6 +31,11 @@ type AttentionData = { q: ArrayLike<number>; keys: ArrayLike<number>; values: Ar
 // (this project's: llama.cpp's tile path needs subgroups). The shape is llama.cpp's choice
 // (ggml-webgpu-shader-lib.hpp): Q_TILE 4, KV_TILE at most 64 and what the workgroup's memory holds, WG_SIZE the larger
 // of 128 and 4 subgroups; MIN_SUBGROUP_SIZE sizes the registers.
+// T261.4: a layer that attends a window (a Gemma 3's local ones: the last params.window positions, its own among them;
+// 0, every position) has the positions before a row's window masked as the ones after it are, and the tiles begin
+// where the window of the workgroup's first token does (llama.cpp gives such a layer a mask of -inf there, the
+// sliding window's KQ mask, and runs every tile: here the tiles before a window are not read). The GPU's own keys and
+// values keep every position, so a window is a range of them (the CPU's ring, T510.1, is the CPU's).
 export const FLASH_Q_TILE = 4;
 export const flashShape = ({ headSize, half, subgroups, memory, threads, subgroupMin = 4, subgroupMax = 128 }: Pick<FlashShape, "headSize" | "half" | "subgroups"> & { memory: number; threads: number } & Subgroups): FlashShape => {
   const bytes = half ? 2 : 4;
@@ -68,7 +73,7 @@ const HALVES = /* wgsl */ `fn halves(pair: vec2<u32>) -> vec4<f32> {
   return vec4<f32>(unpack2x16float(pair.x), unpack2x16float(pair.y));
 }`;
 export const flashTile = ({ headSize, half, subgroups, wgSize, kvTile, minSubgroup }: Omit<FlashShape, "none">): string => /* wgsl */ `${half ? "enable f16;\n" : ""}${subgroups ? "enable subgroups;\n" : ""}
-struct Params { heads: u32, kvHeads: u32, scale: f32, unused: u32 }
+struct Params { heads: u32, kvHeads: u32, scale: f32, window: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, read> Q: array<f32>;             // [tokens][heads × HEAD_DIM]
 @group(0) @binding(1) var<storage, read> K: array<vec2<u32>>;       // [positions][kvHeads × HEAD_DIM]: 4 f16 a vec2<u32>
@@ -185,6 +190,8 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
     // causal: the tile's positions up to its last token's, each row's up to its own
     let seq_len_kv = step.pos + min(q_row_start + Q_TILE, step.tokens);
     let row_position = step.pos + global_q_row;
+    let first_position = step.pos + q_row_start;
+    let kv_first = select(0u, first_position + 1u - min(params.window, first_position + 1u), params.window > 0u);
 
     for (var elem_idx = local_id.x; elem_idx < Q_TILE * HEAD_DIM_QK; elem_idx += WG_SIZE) {
         let q_tile_row = elem_idx / HEAD_DIM_QK;
@@ -209,7 +216,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
     let q_base = subgroup_id * HEAD_DIM_QK;
     let subgroup_p_offset = subgroup_id * KV_TILE;
 
-    for (var kv_tile = 0u; kv_tile < seq_len_kv; kv_tile += KV_TILE) {
+    for (var kv_tile = kv_first; kv_tile < seq_len_kv; kv_tile += KV_TILE) {
         let kv_count = min(KV_TILE, seq_len_kv - kv_tile);
         let score_slots = min(SCORE_REGS_PER_LANE, (kv_count + subgroup_size - 1u) / subgroup_size);
         let out_slots = min(OUT_REGS_PER_LANE, (V_CHUNKS + subgroup_size - 1u) / subgroup_size);
@@ -248,7 +255,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
                     dot_val += dot(qv, vec4<f32>(kv));
                 }
                 // the causal mask: no position after the row's own
-                if (global_k_row > row_position) {
+                if (global_k_row > row_position || (params.window > 0u && global_k_row + params.window <= row_position)) {
                     dot_val = FLOAT_MIN;
                 }
                 local_scores[slot] = dot_val;

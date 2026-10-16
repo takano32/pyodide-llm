@@ -87,6 +87,18 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // the last differently, is far from NumPy's in those layers' keys (T255's review: with the second and the fourth
   // alone, a GPU that turned the last layer anyway was as right as the one that left it, the fifth layer turning)
   "synthetic-smollm3": [{ layers: 5 }, { unturned: [1, 4] }],
+  // T261.4: a Gemma 3 (GEGLU, a norm behind the attention and the FFN, norms of the heads, heads of 32 where dim / heads
+  // is 16, one head of keys and values): three local layers of a window of 64 positions with their own base of RoPE
+  // (100, where the others' is 10000), then one that attends every position. The 86 tokens of the prompt past the 64th
+  // leave positions out, a block of 64 straddles the window's edge and the next is all past it, each row of a tile from
+  // its own position; a GPU that attends every position, or turns the local layers by the other tables, or lacks a norm
+  // behind or the GELU, is off in the keys of that layer or of the ones after (a window one too wide or too narrow is a
+  // 64th of the weights: the loading's check of the attention, a window of 13 on random scores, is what sees that). A
+  // context of 160 positions: the CPU keeps every one (a ring, T510.1, is for a context more than twice window + 16, and
+  // a ring's keys and values of the positions past it are no more to read back). The last layer attends every
+  // position: the CPU's step after the prompt reads its keys and values
+  "synthetic-gemma3": [{ layers: 4, kv_heads: 1, arch: "gemma3", head_dim: 32, seq_len: 160 },
+    { arch: "gemma3", head_dim: 32, local: { layers: [0, 1, 2], window: 64, rope_theta: 100 } }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],

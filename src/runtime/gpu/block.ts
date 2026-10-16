@@ -30,12 +30,15 @@ type Layer = {
   headNorms: HeadNorm[];
   o: Product;
   oBias: Added | undefined;
+  // T261.4: a Gemma 3's norms behind the attention and the FFN, each added to the stream (null: none)
+  attentionPost: GPUBindGroup | null;
   ffnNorm: GPUBindGroup;
   gate: Product;
   gateBias: Added | undefined;
   up: Product | null;
   down: Product;
   downBias: Added | undefined;
+  ffnPost: GPUBindGroup | null;
 };
 // the GPU's own keys and values, a buffer a layer each, and the bind groups that read them
 type Kept = { capacity: number; owned: GPUBuffer[]; keys: GPUBuffer[]; values: GPUBuffer[]; rope: GPUBindGroup[]; attention: GPUBindGroup[] };
@@ -46,6 +49,7 @@ type Block = {
   rope: GPUComputePipeline;
   activation: GPUComputePipeline;
   quantize: GPUComputePipeline;
+  normAdd: GPUComputePipeline | null;
   x: GPUBuffer;
   xb: GPUBuffer;
   q: GPUBuffer;
@@ -57,10 +61,12 @@ type Block = {
   xq: GPUBuffer;
   xs: GPUBuffer;
   angles: GPUBuffer;
+  anglesLocal: GPUBuffer | null;
   step: GPUBuffer;
   readback: GPUBuffer;
   rows: Float32Array<ArrayBuffer>;
   turns: Float32Array<ArrayBuffer>;
+  turnsLocal: Float32Array<ArrayBuffer> | null;
   ropeShape: GPUBuffer;
   ropeAlone: GPUBuffer | null;
   activationGroup: GPUBindGroup;
@@ -82,9 +88,12 @@ type Block = {
 async function prepare(m: Model) {
   const { plan } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
-  // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU
-  const [norm, headNorm, add, rope, activation, quantize] = await within(Promise.all([plan.layerNorm ? ENGINE.LAYER_NORM : ENGINE.RMSNORM,
-    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, gated ? ENGINE.SWIGLU : ENGINE.GELU, ENGINE.QUANTIZE].map((code) => pipelineOf(m, code))), "the small steps' shaders");
+  // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU (T261.4: or GEGLU, a
+  // Gemma 3's gate); and the norm added to the stream behind the attention and the FFN where the model has those
+  const posts = Boolean(plan.vectors.attentionPost || plan.vectors.ffnPost);
+  const [norm, headNorm, add, rope, activation, quantize, normAdd] = await within(Promise.all([plan.layerNorm ? ENGINE.LAYER_NORM : ENGINE.RMSNORM,
+    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, !gated ? ENGINE.GELU : plan.activation === "gelu" ? ENGINE.GEGLU : ENGINE.SWIGLU, ENGINE.QUANTIZE,
+    ...(posts ? [ENGINE.RMSNORM_ADD] : [])].map((code) => pipelineOf(m, code))), "the small steps' shaders");
   // a block's tokens, each array dense: token t's row at t times its width
   const x = buffer(m, B * plan.dim * 4, STORAGE | COPY_DST);
   const xb = buffer(m, B * Math.max(plan.dim, qDim) * 4, STORAGE | COPY_DST);
@@ -100,11 +109,14 @@ async function prepare(m: Model) {
   const xq = buffer(m, B * widest);
   const xs = buffer(m, B * (widest / GROUP) * 4);
   const angles = buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST);
+  // (T261.4: and those of the local layers' tables, where the model has them)
+  const anglesLocal = plan.localCos ? buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST) : null;
   const step = buffer(m, 16, UNIFORM | COPY_DST);
   const readback = buffer(m, 2 * plan.layers * B * kvDim * 2, MAP_READ | COPY_DST);
   // what a request writes into them, from the shared memory
   const rows = new Float32Array(B * plan.dim);
   const turns = new Float32Array(B * plan.headSize);
+  const turnsLocal = plan.localCos ? new Float32Array(B * plan.headSize) : null;
   // (T255: a layer RoPE leaves alone turns none of a head, as every layer of a GPT-2)
   const shapeOf = (turned: number) => uniform(m, new Uint32Array([plan.heads, plan.kvHeads, plan.headSize, turned]));
   const ropeShape = shapeOf(plan.turned);
@@ -130,8 +142,8 @@ async function prepare(m: Model) {
     embedGroups = m.weights.tables!.embedding.map((piece) => bind(m, embedRows!,
       [piece.values, piece.scales, ids!, x, uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))]));
   }
-  m.block = { norm, headNorm, add, rope, activation, quantize, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, step, readback, rows, turns,
-    ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, embedRows, ids, embedGroups,
+  m.block = { norm, headNorm, add, rope, activation, quantize, normAdd: normAdd ?? null, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, anglesLocal, step,
+    readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, embedRows, ids, embedGroups,
     // (bindLayers() and grow())
     layers: null, cache: null };
 }
@@ -154,6 +166,9 @@ function bindLayers(m: Model) {
     // T154: LayerNorm reads its bias from the same place in its own buffer
     const normed = (weight: string, bias: string, out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias], out, normShape, b.step]
       : [b.x, V[weight], out, normShape, b.step]);
+    // T261.4: the norm of what joins the stream (from), added to it (a Gemma 3's: the output of o, and of w2, written
+    // apart into gate and xb, which nothing reads by then)
+    const post = (name: keyof Vectors, from: GPUBuffer) => (V[name] ? bind(m, b.normAdd!, [from, V[name], b.x, normShape, b.step]) : null);
     const headNorm = (of: GPUBuffer, name: string, heads: number) => {
       if (!V[name]) return null;
       const shape = new ArrayBuffer(16);
@@ -166,11 +181,11 @@ function bindLayers(m: Model) {
       q: product("wq", l, b.xb, b.q), k: product("wk", l, b.xb, b.k), v: product("wv", l, b.xb, b.v),
       biases: [added(b.q, "bq"), added(b.k, "bk"), added(b.v, "bv")].filter(Boolean) as Added[],
       headNorms: [headNorm(b.q, "qNorm", plan.heads), headNorm(b.k, "kNorm", plan.kvHeads)].filter(Boolean) as HeadNorm[],
-      o: product("wo", l, b.xb, b.x, true), oBias: added(b.x, "bo"),
+      o: V.attentionPost ? product("wo", l, b.xb, b.gate) : product("wo", l, b.xb, b.x, true), oBias: added(b.x, "bo"), attentionPost: post("attentionPost", b.gate),
       ffnNorm: normed("ffn", "ffnBias", b.ffnInput),
       gate: product("w1", l, b.ffnInput, b.gate), gateBias: added(b.gate, "b1"),
       up: m.weights.matrices.w3 ? product("w3", l, b.ffnInput, b.up!) : null,
-      down: product("w2", l, b.gate, b.x, true), downBias: added(b.x, "b2"),
+      down: V.ffnPost ? product("w2", l, b.gate, b.xb) : product("w2", l, b.gate, b.x, true), downBias: added(b.x, "b2"), ffnPost: post("ffnPost", b.xb),
     });
   }
   m.block.layers = layers;
@@ -199,13 +214,23 @@ function grow(m: Model, needed: number) {
   device.queue.submit([encoder.finish()]);
   // the old ones go once the copies are done (a buffer destroyed after its submission lives until the GPU is through)
   old?.owned.forEach((buffer) => buffer.destroy());
-  const params = new ArrayBuffer(16);
-  new Uint32Array(params, 0, 2).set([plan.heads, plan.kvHeads]);
-  new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
-  const attentionParams = uniform(m, params, cache.owned);
+  // (T261.4: a uniform for each window the layers attend, 0 for every position: a Gemma 3's local layers and the others)
+  const windows = new Map<number, GPUBuffer>();
+  const attentionParams = (window: number) => {
+    if (!windows.has(window)) {
+      const params = new ArrayBuffer(16);
+      new Uint32Array(params, 0, 2).set([plan.heads, plan.kvHeads]);
+      new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
+      new Uint32Array(params, 12, 1)[0] = window;
+      windows.set(window, uniform(m, params, cache.owned));
+    }
+    return windows.get(window)!;
+  };
   for (let l = 0; l < plan.layers; l++) {
-    cache.rope.push(bind(m, b.rope, [b.q, b.k, b.v, cache.keys[l], cache.values[l], b.angles, plan.unturned?.includes(l) ? b.ropeAlone! : b.ropeShape, b.step]));
-    cache.attention.push(bind(m, m.forms.attention.pipeline, [b.q, cache.keys[l], cache.values[l], b.xb, attentionParams, b.step]));
+    // (T261.4: a local layer turned by the angles of its own tables)
+    const angles = plan.local.includes(l) ? b.anglesLocal! : b.angles;
+    cache.rope.push(bind(m, b.rope, [b.q, b.k, b.v, cache.keys[l], cache.values[l], angles, plan.unturned?.includes(l) ? b.ropeAlone! : b.ropeShape, b.step]));
+    cache.attention.push(bind(m, m.forms.attention.pipeline, [b.q, cache.keys[l], cache.values[l], b.xb, attentionParams(plan.windows[l] ?? 0), b.step]));
   }
   m.block.cache = cache;
   // (device.ts's end() lets go of these, the ones held last)
@@ -259,8 +284,8 @@ async function timeBlocks(m: Model) {
 async function block(m: Model, count: number, pos: number, wanted: () => boolean, timing = false, tokens?: number[]) {
   const { device, plan } = m, half = plan.headSize / 2;
   // (T378.4: this module's record taken apart once: the layers' loop below reads locals. The cache after grow())
-  const { norm, headNorm, add, rope, activation, quantize, x, angles, step, rows, turns, ids, activationGroup, quantizeXb, quantizeAttention,
-    quantizeFfn, quantizeGate, embedRows, embedGroups, layers } = m.block;
+  const { norm, headNorm, add, rope, activation, quantize, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
+    quantizeAttention, quantizeFfn, quantizeGate, embedRows, embedGroups, layers } = m.block;
   // the rows forward.ts embedded (dense), and the angles of their positions (the tables forward.ts has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address: number, n: number) => new Float32Array(m.memory.buffer, address, n);
@@ -271,16 +296,21 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   // (T154: GPT-2 turns nothing and has no tables)
   if (timing || !plan.turned) {
     turns.fill(0);
+    turnsLocal?.fill(0);
   } else {
     for (let t = 0; t < count; t++) {
       turns.set(floats(plan.cos + (pos + t) * half * 4, half), t * plan.headSize);
       turns.set(floats(plan.sin + (pos + t) * half * 4, half), t * plan.headSize + half);
+      // (T261.4: the local layers' tables, laid out as the others)
+      turnsLocal?.set(floats(plan.localCos + (pos + t) * half * 4, half), t * plan.headSize);
+      turnsLocal?.set(floats(plan.localSin + (pos + t) * half * 4, half), t * plan.headSize + half);
     }
   }
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
   if (!plan.direct) device.queue.writeBuffer(x, 0, rows, 0, count * plan.dim);
   device.queue.writeBuffer(angles, 0, turns, 0, count * plan.headSize);
+  if (anglesLocal) device.queue.writeBuffer(anglesLocal, 0, turnsLocal!, 0, count * plan.headSize);
   device.queue.writeBuffer(step, 0, new Uint32Array([count, pos, 0, 0]));
   roomFor(m, pos + count);
   const { cache } = m.block;
@@ -310,6 +340,7 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
     quantized(quantizeAttention);
     multiplied(layer.o);
     biased(layer.oBias);
+    if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
     if (!plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
     quantized(quantizeFfn);
     multiplied(layer.gate);
@@ -319,6 +350,7 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
     quantized(quantizeGate);
     multiplied(layer.down);
     biased(layer.downBias);
+    if (layer.ffnPost) dispatch(pass, normAdd!, layer.ffnPost, 1, count);
   }
   pass.end();
   // (T210: a model on the GPU alone keeps them there: nothing comes back)

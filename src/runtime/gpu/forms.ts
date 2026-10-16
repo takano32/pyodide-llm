@@ -83,9 +83,13 @@ async function chooseAttention(m: Model) {
 // memory are within 2^-10 of theirs (each rounded either way, WGSL leaves the direction to the device) and so the
 // output within about 1e-3 of the largest value (the sum of the weights is float32), while a wrong mask, head or
 // tile is off by a tenth and more.
-const LINE = 4e-3;
+// T261.4: a model with layers that attend a window (a Gemma 3's) has the check's tokens attend the last WINDOW
+// positions alone: the first tile of positions begins at 49 (61 - 13 + 1, where the first token's window does), each
+// row of a tile has a window of its own (one position on from the row before), and the positions before are not read
+const LINE = 4e-3, WINDOW = 13;
 async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
   const { plan } = m, size = plan.headSize, heads = 4, kvHeads = 2, tokens = 9, pos = 61, positions = pos + tokens;
+  const window = plan.windows?.some((w) => w > 0) ? WINDOW : 0;
   const kvDim = kvHeads * size, qDim = heads * size, scale = 1 / Math.sqrt(size);
   const q = new Float32Array(tokens * qDim).map(() => Math.random() * 2 - 1);
   const halfBits = () => ((Math.random() < 0.5 ? 0x8000 : 0) | ((12 + ((Math.random() * 5) | 0)) << 10) | ((Math.random() * 1024) | 0));
@@ -101,6 +105,7 @@ async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
     const params = new ArrayBuffer(16);
     new Uint32Array(params, 0, 2).set([heads, kvHeads]);
     new Float32Array(params, 8, 1)[0] = scale;
+    new Uint32Array(params, 12, 1)[0] = window;
     const group = bind(m, pipeline, [make(q), make(keys), make(values), out, uniform(m, params, owned),
       uniform(m, new Uint32Array([tokens, pos, 0, 0]), owned)]);
     const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
@@ -112,14 +117,15 @@ async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
     let worst = 0;
     for (let t = 0; t < tokens; t++) {
       for (let h = 0; h < heads; h++) {
-        const kv = Math.floor(h / (heads / kvHeads)) * size, row = t * qDim + h * size, seen = pos + t + 1;
-        const scores = new Float64Array(seen);
-        for (let p = 0; p < seen; p++) {
+        const kv = Math.floor(h / (heads / kvHeads)) * size, row = t * qDim + h * size, seen = pos + t + 1, from = window ? Math.max(0, seen - window) : 0;
+        const scores = new Float64Array(seen).fill(-Infinity);
+        for (let p = from; p < seen; p++) {
+          scores[p] = 0;
           for (let d = 0; d < size; d++) scores[p] += q[row + d] * scale * k[p * kvDim + kv + d];
         }
         const most = Math.max(...scores);
         let sum = 0, largest = 0;
-        for (let p = 0; p < seen; p++) sum += (scores[p] = Math.exp(scores[p] - most));
+        for (let p = 0; p < seen; p++) sum += (scores[p] = Math.exp(scores[p] - most));  // (exp(-Infinity): 0, outside a window)
         for (let p = 0; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(v[p * kvDim + kv + d]));
         for (let d = 0; d < size; d++) {
           let want = 0;

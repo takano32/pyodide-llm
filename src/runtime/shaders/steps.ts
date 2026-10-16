@@ -238,7 +238,11 @@ ${PARTIAL_SUM}
   let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);`;
 // the Norm of LAYER_NORM and NORM_QUANTIZE (RMSNORM's has the rows before the dispatch's first as its fourth word)
 const NORM_STRUCT = /* wgsl */ `struct Norm { size: u32, at: u32, eps: f32, unused: u32 }`;
-const rmsNorm = (inPlace: boolean) => /* wgsl */ `
+// T261.4: add, the norm added to out where it is (a Gemma 3's norms behind the attention and behind the FFN: the
+// stream x += the norm of what joins it), as llama.cpp's Metal fuses RMS_NORM, MUL and ADD (kernel_rms_norm_mul_add_f32,
+// F == 3: f1 is the residual there; the notice above), where its WebGPU runs rms_norm_mul.wgsl and then binary.wgsl's
+// ADD. The CPU's order is the same: the norm (rmsnorm into its own place), then the add (add_inplace)
+const rmsNorm = (inPlace: boolean, add: boolean) => /* wgsl */ `
 struct Norm { size: u32, at: u32, eps: f32, first: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, ${inPlace ? "read_write" : "read"}> x: array<f32>;
@@ -251,10 +255,11 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) rows: vec3u, 
   if (id.y >= step.tokens) { return; }
   let row = (id.y * rows.x + id.x + norm.first) * norm.size;
 ${ROW_RMS}
-  for (var i = t; i < norm.size; i += 64u) { ${inPlace ? "x" : "out"}[row + i] = weight[norm.at + i] * (s * x[row + i]); }
+  for (var i = t; i < norm.size; i += 64u) { ${inPlace ? "x" : "out"}[row + i] ${add ? "+" : ""}= weight[norm.at + i] * (s * x[row + i]); }
 }`;
-export const RMSNORM = rmsNorm(false);
-export const HEAD_NORM = rmsNorm(true);
+export const RMSNORM = rmsNorm(false, false);
+export const HEAD_NORM = rmsNorm(true, false);
+export const RMSNORM_ADD = rmsNorm(false, true);
 
 // T154: LayerNorm (GPT-2's and GPT-NeoX's), out = weight * ((x - mean) / sqrt(variance + eps)) + bias, as the CPU's
 // layernorm kernel computes it: llama.cpp's row_norm.wgsl with NORM (the notice above: the sum of the row, its mean,
@@ -404,6 +409,25 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   let at = id.y * size.n + i;
   let v = gate[at];
   gate[at] = 0.5 * v * (1.0 + tanh(clamp(0.7978845608028654 * (v + 0.044715 * v * v * v), -9.010913, 9.010913)));
+}`;
+
+// T261.4: GEGLU, gate = gelu(gate) * up (a Gemma 3's gated FFN), for every token (the dispatch's y): SWIGLU's frame
+// above with GELU's line (the tanh approximation, as the CPU's geglu kernel and NumPy's gelu() have it), as llama.cpp's
+// GLU op with GEGLU (glu.wgsl) is its unary GELU of the first half times the second (the notice above)
+export const GEGLU = /* wgsl */ `
+${SIZE_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read_write> gate: array<f32>;
+@group(0) @binding(1) var<storage, read> up: array<f32>;
+@group(0) @binding(2) var<uniform> size: Size;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
+  let i = id.x * 64u + t;
+  if (id.y >= step.tokens || i >= size.n) { return; }
+  let at = id.y * size.n + i;
+  let v = gate[at];
+  gate[at] = 0.5 * v * (1.0 + tanh(clamp(0.7978845608028654 * (v + 0.044715 * v * v * v), -9.010913, 9.010913))) * up[at];
 }`;
 
 export { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT };

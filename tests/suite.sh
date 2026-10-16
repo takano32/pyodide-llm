@@ -245,13 +245,13 @@ lfm2_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.mjs .tmp/made-up-lfm2-int8
 }
 part "an LFM2 where a GPU adapter is" lfm2_stays_on_the_cpu
-# T261: nor is a Gemma 3, whose tensors the GPU's worker would take for a Qwen3's: gpuUnfit's line for what it has
-# besides (a few seconds)
-gemma3_stays_on_the_cpu() {
+# T261: a Gemma 3 was kept off the GPU here; T261.4: its prompts are the GPU's now, its worker started with a plan of what
+# it has besides (a few seconds)
+gemma3_goes_to_the_gpu() {
   python tests/make_gemma3.py .tmp/made-up-gemma3-int8 int8
   node tests/gpu-hybrid-check.mjs .tmp/made-up-gemma3-int8
 }
-part "a Gemma 3 where a GPU adapter is" gemma3_stays_on_the_cpu
+part "a Gemma 3 where a GPU adapter is" gemma3_goes_to_the_gpu
 # T342: nor is a Spark-X2.5, whose gate of the heads and exact GELU no shader has: gpuUnfit's line of the pair of norms
 # and FFN (a few seconds)
 spark_stays_on_the_cpu() {

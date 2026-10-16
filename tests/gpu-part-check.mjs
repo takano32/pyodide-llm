@@ -33,13 +33,14 @@ const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
-  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0, sharedClassifier: true };
+  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, gatedFfn: true, activation: "silu", local: false, windows: [0, 0], locals: [], extras: false, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0,
+  sharedClassifier: true };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, kind: "int8", group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
   w1: matrixOf(24, 8, 38000), w2: matrixOf(8, 24, 40000), w3: matrixOf(24, 8, 42000), wcls: matrixOf(100, 8, 44000),
   attW: 50000, ffnW: 50100, attB: 0, ffnB: 0, finalW: 50200, finalB: 0, bo: 0, b1: 0, b2: 0, bq: 0, bk: 0, bv: 0, qNorm: 0, kNorm: 0,
-  cosTable: 51000, sinTable: 52000, positions: 0, channels: [] };
+  cosTable: 51000, sinTable: 52000, positions: 0, channels: [], attPost: 0, ffnPost: 0, localCos: 0, localSin: 0 };
 const STAGING = CONTROL_BYTES, ROWS = STAGING + 2 * SHAPE.layers * GPU_BLOCK * SHAPE.kvDim * 2, IDS = ROWS + GPU_BLOCK * SHAPE.D;
 assert.ok(IDS + (2 + GPU_TOKENS) * 4 <= 2 * PAGE, "the places the GPU answers into fit this test's memory");
 
@@ -182,8 +183,9 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([beside.made, beside.posted.length, part.gettingReady(), part.status], [1, 1, true, "prompts on the CPU while the GPU gets ready"]);
   const [{ type, memory, plan }] = beside.posted;
   assert.deepEqual([type, memory], ["start", beside.memory]);
-  assert.deepEqual(Object.keys(plan).sort(), ["batch", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kvHeads", "kvStart", "layerNorm", "layers", "matrices",
-    "parallel", "remembered", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "words"], "the plan the GPU's worker is started with");
+  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kvHeads", "kvStart", "layerNorm", "layers",
+    "local", "localCos", "localSin", "matrices",
+    "parallel", "remembered", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
   assert.deepEqual([plan.dim, plan.hidden, plan.layers, plan.heads, plan.kvHeads, plan.headSize, plan.turned, plan.seqLen, plan.kvStart, plan.eps, plan.batch, plan.direct, plan.rows, plan.staging],
     [8, 24, 2, 2, 1, 4, 4, 512, 256, 1e-5, GPU_BLOCK, false, ROWS, STAGING]);
   assert.deepEqual(plan.words, { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED });
@@ -193,6 +195,8 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, six: false, ternary: false, at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
     outliers: false, channels: [], ids: IDS, most: GPU_TOKENS });
   assert.deepEqual([plan.cos, plan.sin, plan.remembered, plan.force], [51000, 52000, { key: "kept" }, {}]);
+  // (T261.4: a Gemma 3's facts, none of which this model has)
+  assert.deepEqual([plan.activation, plan.windows, plan.local, plan.localCos, plan.localSin], ["silu", [0, 0], [], 0, 0]);
   // T375.4: how a matrix is packed is one name with the engine (jobs.ts's PACKED); the GPU's worker is told it as it
   // always was, by six and ternary
   for (const [kind, group, six, ternary] of [["int6", 32, true, false], ["ternary", 128, false, true]]) {
@@ -610,13 +614,12 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     // facts, which the CPU's engine runs, is not handed to the GPU's worker to find out)
     [{ gatedFfn: false }, { w3: null }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ layerNorm: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
-    // (T261: nor any of what a Gemma 3 has besides, each by itself: a GELU in the gate of its FFN (an activation that
-    // is not named is no SiLU's), a norm behind the attention, one behind the FFN, a layer that is a local one)
-    [{ activation: "gelu" }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
+    // (T261.4: what a Gemma 3 has besides is the GPU's now (below); not an activation no shader has (a Spark-X2.5's
+    // exact GELU, one not named), norms behind LayerNorms, nor a Gemma 4's layers)
+    [{ activation: "gelu_erf" }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ activation: undefined }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
-    [{}, { attPost: 4096 }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
-    [{}, { ffnPost: 4096 }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
-    [{ local: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
+    [{ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null, attPost: 4096 }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
+    [{ extras: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{}, {}, { sharedMemory: false }, /^the page is not cross-origin isolated$/],
     [{ headSize: 6 }, {}, {}, /^heads of a size that is no multiple of 4 are not on the GPU$/],
     [{}, { wq: { rows: 8, n: 8, kind: "f32", layer: () => [0] } }, {}, /^float32 weights are not on the GPU yet$/],
@@ -637,6 +640,14 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2's, with its LayerNorms) has no w3");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null }).unfit(), null, "(whose activation is a GELU's, as the GPU's FFN without a gate has it)");
+  // T261.4: a Gemma 3's prompts: each of what it has besides by itself, and all of them, but not its steps (T261.4.2);
+  // the norms behind are vectors the GPU reads
+  for (const [shape, weights] of [[{ activation: "gelu" }, {}], [{}, { attPost: 4096 }], [{}, { ffnPost: 4096 }], [{ local: true }, {}],
+    [{ activation: "gelu", local: true, windows: [5, 0], locals: [0] }, { attPost: 4096, ffnPost: 8192, localCos: 53000, localSin: 54000 }]]) {
+    assert.deepEqual([fitOf(shape, weights).unfit(), fitOf(shape, weights).tokensUnfit()], [null, "this pair of norms and FFN is not on the GPU yet"], JSON.stringify([shape, weights]));
+  }
+  assert.deepEqual(fitOf({}, { attPost: 4096, ffnPost: 8192 }).vectors(), { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 }, attentionPost: { at: 4096, size: 8 },
+    ffnPost: { at: 8192, size: 8 } });
   assert.deepEqual(Object.keys(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).matrices()), ["wq", "wk", "wv", "wo", "w1", "w2"]);
   assert.equal(fitOf({}, { w1: matrixOf(24, 128, 0, { kind: "ternary", group: 128 }), w2: matrixOf(8, 128, 0, { kind: "ternary", group: 128 }) }).unfit(), null, "ternary weights in groups of 128");
   const steps = [

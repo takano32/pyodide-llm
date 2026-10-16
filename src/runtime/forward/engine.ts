@@ -426,9 +426,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
     turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, activation: plan.activation,
     local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null, stateful: keeping.length > 0,
-    rotated, sharedClassifier: plan.shared_classifier };
+    rotated, sharedClassifier: plan.shared_classifier,
+    // T261.4: every layer's window and the layers the local tables turn (the GPU's plan has them), and what a Gemma 4's
+    // layers have besides, which the GPU's have not
+    windows: facts.map(({ window }) => window), locals: facts.flatMap(({ local }, l) => (local ? [l] : [])),
+    extras: Boolean(plan.value_norm || softcap || layerScale || perLayered) ||
+      facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place) };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
-    cosTable, sinTable, positions, channels, attPost, ffnPost };
+    cosTable, sinTable, positions, channels, attPost, ffnPost, localCos: floats("local_cis_real"), localSin: floats("local_cis_imag") };
   // T349: what the GPU would hold of this model, and why it would not take it
   const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory }, direct });
 
@@ -513,7 +518,22 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   function fromStaging(pos: number, count: number) {
     const { capacity } = cache;
     for (let l = 0; l < layers; l++) {
-      const layerKeys = cache.keys + l * capacity * KV, layerValues = cache.values + l * capacity * KV;
+      // T261.4: a layer whose window a ring holds (T510.1): each position at its two places there, and the ring told of
+      // the positions written, as the layer itself tells it (attention.ts: a run that would go back past what the ring
+      // still holds is refused there)
+      const ring = cache.ring(l);
+      if (ring) {
+        const twice = ring.size * ring.row;
+        for (let t = 0; t < count; t++) {
+          const slot = ((pos + t) % ring.size) * ring.row, key = staging + (l * GPU_BLOCK + t) * kvDim * 2, value = staging + ((layers + l) * GPU_BLOCK + t) * kvDim * 2;
+          cache.putHalves(ring.keys + slot, ring.values + slot, key, value);
+          cache.putHalves(ring.keys + slot + twice, ring.values + slot + twice, key, value);
+        }
+        ring.latest = pos === 0 ? count - 1 : Math.max(ring.latest, pos + count - 1);
+        continue;
+      }
+      // (a layer's block among those that keep every position: l * KV a position in, where no ring is)
+      const offset = capacity * cache.offset(cache.index(l)), layerKeys = cache.keys + offset, layerValues = cache.values + offset;
       for (let t = 0; t < count; t++) {
         cache.putHalves(layerKeys + (pos + t) * KV, layerValues + (pos + t) * KV,
           staging + (l * GPU_BLOCK + t) * kvDim * 2, staging + ((layers + l) * GPU_BLOCK + t) * kvDim * 2);

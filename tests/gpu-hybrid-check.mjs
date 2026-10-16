@@ -6,7 +6,9 @@
 // A model that goes to the GPU alone (T156) is refused by gpuOnlyUnfit()'s arch, which gpu-choice-check.mjs holds.
 // T260: an LFM2 the same (its convolution layers have no wq, wk, wv either, and no shader), by the next line of gpuUnfit().
 // T261: and a Gemma 3, whose tensors are a Qwen3's to the GPU's worker (it would run them as one: no norm behind the
-// attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it.
+// attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it. T261.4: a Gemma 3's
+// prompts are the GPU's now: its worker is started, and the plan it is started with says what the GPU's worker runs
+// differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables), and no steps.
 // T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
 //
 //   node tests/gpu-hybrid-check.mjs <a made-up Qwen3.5 of tests/make_qwen35.py, its int8 file without the extension>
@@ -20,7 +22,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { loadPyodide } from "pyodide";
-import { workers } from "./fakes/worker.mjs";
+import { workers, ended } from "./fakes/worker.mjs";
 import { built, placeKernels, placePython, runtime, runtimeUrl, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -39,7 +41,7 @@ const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
 // behind as well, which are no option of a model's)
 const REASONS = { qwen35: ["a Qwen3.5", "linear", /linear-attention layers are not on the GPU/],
   lfm2: ["an LFM2", "convolution", /convolution layers are not on the GPU/],
-  gemma3: ["a Gemma 3", "local", /this pair of norms and FFN is not on the GPU/],
+  gemma3: ["a Gemma 3", "local", null],
   spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/] };
 assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3 and no Spark-X2.5`);
 const [model, layers, reason] = REASONS[options.arch];
@@ -55,8 +57,8 @@ const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")),
 const { memory, base } = weightsMemory(checkpoint.length, { shared: true });
 new Uint8Array(memory.buffer, base, checkpoint.length).set(checkpoint);
 
-// a GPU's worker that is asked for and never answers
-const { factory: gpu, made: gpus } = workers();
+// a GPU's worker that is asked for and never answers (but that it ended, once stopped)
+const { factory: gpu, made: gpus } = workers({ answer: ended });  // (T261.4: one that is started ends when it is stopped)
 const outside = external({ memory, base, size: checkpoint.length, kernels, gpu });
 py.globals.set("OUTSIDE", outside);
 py.globals.set("OPTIONS", py.toPy(options));
@@ -65,13 +67,28 @@ llama = Llama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so",
 // (a GPU that was started would never say it is ready: do not wait for it for ever)
 const status = await Promise.race([outside.engine.gpu, new Promise((resolve) => setTimeout(() => resolve("no answer in 3 s"), 3000))]);
 const failures = [];
-if (gpus.length !== 0) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}`);
-if (!reason.test(status ?? "")) failures.push(`the status line says "${status}", not why the GPU is not used`);
-if (!reason.test(outside.engine.gpuStatus ?? "")) failures.push(`gpuStatus is "${outside.engine.gpuStatus}"`);
+if (!reason) {
+  // (T261.4: started once, with the plan of a Gemma 3)
+  const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
+  const { layers: local, window } = options.local, count = plan?.layers;
+  if (gpus.length !== 1 || !plan) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}, with ${plan ? "a plan" : "no plan"}`);
+  else {
+    const wanted = { activation: "gelu", windows: Array.from({ length: count }, (_, l) => (local.includes(l) ? window : 0)), local: [...local].sort((a, b) => a - b),
+      posts: ["attentionPost", "ffnPost"], tables: true, tokens: null };
+    const got = { activation: plan.activation, windows: plan.windows, local: plan.local, posts: Object.keys(plan.vectors).filter((name) => name.endsWith("Post")),
+      tables: plan.localCos > 0 && plan.localSin > 0 && plan.localCos !== plan.cos, tokens: plan.tokens };
+    if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
+  }
+} else {
+  if (gpus.length !== 0) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}`);
+  if (!reason.test(status ?? "")) failures.push(`the status line says "${status}", not why the GPU is not used`);
+  if (!reason.test(outside.engine.gpuStatus ?? "")) failures.push(`gpuStatus is "${outside.engine.gpuStatus}"`);
+}
 await outside.engine.release();
 if (failures.length) {
   console.error(`FAILED\n- ${failures.join("\n- ")}`);
   process.exit(1);
 }
-console.log(`ok: ${model} with a GPU adapter present stays on the CPU, its GPU's worker never started (${status})`);
+console.log(reason ? `ok: ${model} with a GPU adapter present stays on the CPU, its GPU's worker never started (${status})`
+  : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, its norms behind and GEGLU, and no steps`);
 process.exit(0);
