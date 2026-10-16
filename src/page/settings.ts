@@ -13,17 +13,19 @@ import type { Sampled } from "../runtime/contracts/messages.ts";
 type Settings = Sampled & { steps: number; temperature: number; topp: number; repetition_penalty: number };
 const defaults = (current: Model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
 // The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
-// (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=). A value that is not a number, or outside what the field allows, is
+// (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=; T520: &thinking=, the budget of a
+// thought in tokens, 0 for none). A value that is not a number, or outside what the field allows, is
 // ignored. They survive a change of model, like the seed: the link said what to run with.
 const LIMITS: Record<string, [number, number]> = { temperature: [0, 1.5], topp: [0.05, 1], steps: [0, 1 << 20],
                                                    repetition_penalty: [1, 2], seed: [0, 0xffffffff],
-                                                   top_k: [0, 1 << 20], min_p: [0, 1], presence_penalty: [0, 2] };
+                                                   top_k: [0, 1 << 20], min_p: [0, 1], presence_penalty: [0, 2],
+                                                   thinking: [0, 1 << 20] };
 const fromLink: Partial<Settings> = {};
 for (const [name, [low, high]] of Object.entries(LIMITS)) {
   const given = parameters.get(name);
   const value = given === null ? NaN : Number(given);
   if (given !== null && Number.isFinite(value) && value >= low && value <= high) {
-    (fromLink as any)[name] = ["steps", "seed", "top_k"].includes(name) ? Math.round(value) : value;
+    (fromLink as any)[name] = ["steps", "seed", "top_k", "thinking"].includes(name) ? Math.round(value) : value;
   }
 }
 const defaultsWithLink = (current: Model): Settings => ({ ...defaults(current), ...fromLink });

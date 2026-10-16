@@ -90,8 +90,8 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
   const fields = new Set([...sampling.matchAll(/^    (\w+): \w+ = /gm)].map(([, key]) => key));
   assert.ok(fields.has("temperature") && fields.size >= 6, `Sampling's fields were not read out of engine/sampler.py (${[...fields]})`);
   const own = new Set(/^def generate\(model, ([^)]*)\)/m.exec(generation)[1].split(",").map((one) => one.trim().split("=")[0]).filter((one) => !one.startsWith("*")));
-  assert.deepEqual([...own].sort(), ["echo", "prompt", "seed", "steps"], "generate()'s own arguments are others now: say here which of them a page sends");
-  same("contracts/messages.ts's Sampled, to Sampling's fields and generate()'s steps and seed", typed.keysOf("Sampled"), new Set([...fields, "steps", "seed"]));
+  assert.deepEqual([...own].sort(), ["echo", "prompt", "seed", "steps", "thinking"], "generate()'s own arguments are others now: say here which of them a page sends");
+  same("contracts/messages.ts's Sampled, to Sampling's fields and generate()'s steps, seed and thinking", typed.keysOf("Sampled"), new Set([...fields, "steps", "seed", "thinking"]));
 
   // what the worker posts
   const declared = typed.membersOf("FromWorker"), sent = postedBy(trees, "owner");

@@ -77,6 +77,8 @@ export type Sampled = {
   top_k?: number;
   min_p?: number;
   presence_penalty?: number;
+  // T520: the budget of a thought, in tokens (generate()'s thinking: 0 or none, no budget)
+  thinking?: number;
 };
 
 // T45: a round of ?bench=1 (src/bench/rounds.js): the switches it leaves out; skip: the words of its row where the
@@ -107,6 +109,9 @@ export type Stats = {
   prompt_seconds: number;
   prompt_tokens_per_second: number;
   first_token_seconds: number;
+  // T520: the tokens of the answer's thought (null: none), and whether its budget closed it
+  thought: number | null;
+  thought_cut: boolean;
 };
 
 // a row of the rounds: one that ran (its tokens, tok/s, the engine's word of how it ran, the seconds of its load), or

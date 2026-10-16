@@ -34,7 +34,7 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
 // there. Only the keys the page and the engine know, in the ranges they take
 {
   const ranges = { steps: [0, Infinity], temperature: [0, 1.5], topp: [0.05, 1], repetition_penalty: [1, 2], top_k: [0, Infinity],
-    min_p: [0, 1], presence_penalty: [0, 2] };
+    min_p: [0, 1], presence_penalty: [0, 2], thinking: [0, Infinity] };
   for (const entry of MODELS) {
     for (const [key, value] of Object.entries(entry.generation ?? {})) {
       assert.ok(ranges[key], `${entry.id}: generation.${key} is no setting of the page`);

@@ -6,11 +6,13 @@
 //
 // Visits: the page as a visitor opens it (under the service worker: the libraries come from jsDelivr through it), the
 // same with ?coi=off (no service worker), and one where jsDelivr's packages do not answer (with ?coi=off). It sees: the thinking stays
-// plain text (its ** too); headings, lists, bold, italic, code and a table are drawn; the model's HTML, links, images
+// plain text (its ** too), T520: in a fold above the answer that is open while it goes on and closed once the answer
+// begins, whose line says how long the thought was (the made-up worker's stats); headings, lists, bold, italic, code and a table are drawn; the model's HTML, links, images
 // and an onerror are not (no such element, no attribute but align and start, nothing ran) and are said as the text it
 // wrote; a block drawn earlier is the same element at the end (only the blocks that changed are made again: T556); the
 // answer is drawn far fewer times than it has tokens (T554), and whole at its end; without the libraries the answer is
 // plain text, whole, with one line in the console that says so; no console error on any visit.
+// (Without the libraries the answer is plain text below the same fold.)
 // It does not see: a real model, offline (the service worker's copies: e2e's E2E_OFFLINE with a model that answers in a
 // format), how it looks (preview.yml).
 import assert from "node:assert/strict";
@@ -49,6 +51,11 @@ function madeUpWorker(text) {
         const pieces = text.match(/[\s\S]{1,3}/g);
         let i = 0;
         const next = () => {
+          if (i === 6) {
+            // T520: in the thought: its fold is open and says the model is thinking
+            const fold = document.querySelector(".model .bubble > details.thought");
+            window.__thinking = fold ? { open: fold.open, line: fold.querySelector("summary").textContent } : null;
+          }
           if (i === Math.floor(pieces.length / 2)) {
             // halfway: mark the first block drawn, which must be the same element at the end
             const first = document.querySelector(".model .bubble .markdown > div");
@@ -59,7 +66,7 @@ function madeUpWorker(text) {
             setTimeout(next, 1);
           } else {
             this.tell({ type: "done", threads: 1, gpuTokens: 0, gpuSampled: 0, gpu: undefined, tokens: pieces.length + 5, prompt_tokens: 5, sampled: pieces.length,
-              tokens_per_second: 100, prompt_tokens_per_second: 100, first_token_seconds: 0.1, seconds: 1 });
+              tokens_per_second: 100, prompt_tokens_per_second: 100, first_token_seconds: 0.1, seconds: 1, thought: 7, thought_cut: false });
           }
         };
         next();
@@ -105,7 +112,10 @@ async function visit(query, { blocked = false } = {}) {
     const all = [...bubble.querySelectorAll("*")];
     return {
       text: bubble.textContent,
-      thought: bubble.firstChild?.nodeType === 3 ? bubble.firstChild.data : null,
+      thought: bubble.querySelector(":scope > details.thought > div")?.textContent ?? null,
+      fold: bubble.querySelector(":scope > details.thought") && { open: bubble.querySelector(":scope > details.thought").open, line: bubble.querySelector(":scope > details.thought > summary").textContent },
+      thinking: window.__thinking ?? null,
+      answer: bubble.querySelector(":scope > .answer")?.textContent ?? null,
       markdown: Boolean(bubble.querySelector(".markdown")),
       tags: [...new Set(all.map((element) => element.localName))].sort(),
       attributes: [...new Set(all.flatMap((element) => [...element.attributes].map((attribute) => attribute.name)))].sort(),
@@ -125,9 +135,11 @@ const check = (what, fact, why) => { if (!fact) failures.push(`${what}: ${why}`)
 for (const [query, name] of [["", "the page (its service worker)"], ["?coi=off", "?coi=off"]]) {
   const { seen, said } = await visit(query);
   check(name, seen.markdown, "the answer is not drawn as Markdown");
-  check(name, seen.thought === `${THOUGHT}</think>`, `the thinking is not plain text as it was written: ${JSON.stringify(seen.thought)}`);
+  check(name, seen.thought === THOUGHT.trim(), `the thinking is not plain text as it was written: ${JSON.stringify(seen.thought)}`);
+  check(name, seen.thinking?.open === true && seen.thinking.line === "Thinking…", `the fold while it thinks: ${JSON.stringify(seen.thinking)}`);
+  check(name, seen.fold?.open === false && seen.fold.line === "Thought for 7 tokens", `the fold at the end: ${JSON.stringify(seen.fold)}`);
   for (const tag of ["h1", "p", "strong", "em", "code", "pre", "ul", "li", "table", "th", "td", "br"]) check(name, seen.tags.includes(tag), `no ${tag} drawn (${seen.tags})`);
-  for (const tag of seen.tags) check(name, ["div", "h1", "p", "strong", "em", "code", "pre", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "br"].includes(tag), `${tag} drawn`);
+  for (const tag of seen.tags) check(name, ["details", "summary", "div", "h1", "p", "strong", "em", "code", "pre", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "br"].includes(tag), `${tag} drawn`);
   check(name, seen.attributes.every((attribute) => ["class", "align", "start", "data-mark"].includes(attribute)), `attributes ${seen.attributes}`);
   check(name, seen.inChat === 0 && seen.ran === null, `a link, image, script or box in the chat (${seen.inChat}), or the model's script ran (${seen.ran})`);
   for (const text of ["<img src=x onerror=\"window.__ran=1\">", "[x](javascript:window.__ran=2)", "![i](https://example.com/x.png)", "<script>window.__ran=3</script>", "> quoted", "**this** <b>first</b>"]) {
@@ -145,8 +157,9 @@ for (const [query, name] of [["", "the page (its service worker)"], ["?coi=off",
   // (without the service worker: Playwright's routes do not reach the requests a service worker makes in Firefox)
   const { seen, said } = await visit("?coi=off", { blocked: true });
   const name = "jsDelivr's packages blocked";
-  check(name, !seen.markdown && seen.text === TEXT, `not the plain text, whole: ${JSON.stringify(seen.text.slice(0, 80))}`);
-  check(name, seen.tags.length === 0, `elements in the bubble: ${seen.tags}`);
+  check(name, !seen.markdown && seen.answer === ANSWER && seen.thought === THOUGHT.trim(), `not the plain text, whole: ${JSON.stringify(seen.text.slice(0, 80))}`);
+  check(name, seen.fold?.open === false && seen.fold.line === "Thought for 7 tokens", `the fold at the end: ${JSON.stringify(seen.fold)}`);
+  check(name, String(seen.tags) === "details,div,summary", `elements in the bubble: ${seen.tags}`);
   const told = said.filter((line) => /^markdown:/.test(line.text));
   check(name, told.length === 1 && told[0].type === "warning", `the console says ${told.length} times that the libraries did not come`);
   // (the browser's own line for each request it was told to drop is no error of the page's: Chromium's, Firefox's)

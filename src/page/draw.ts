@@ -5,6 +5,7 @@ import { chat, run, statusText } from "./dom.ts";
 import { parameters } from "./address.ts";
 import { benchmarking, gpuNote, gpuSaid, model, outdated, readyLine } from "./model.ts";
 import { generating } from "./answer.ts";
+import { thoughtLine, thoughtOf } from "./thought.ts";
 import { markdownBroke } from "./markdown.ts";
 import type { Markdown } from "./markdown.ts";
 import { fixSeed } from "./settings.ts";
@@ -36,44 +37,81 @@ export function message(kind: string, text = "") {
  * the blocks that changed are made again (the last one as it grows). */
 export function drawAnswer(bubble: Element, text: string, shape?: { markdown: boolean; thinking: boolean }, markdown?: Markdown) {
   const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
-  const blocks = bubble.lastChild?.nodeType === 1 ? bubble.lastChild as HTMLElement : undefined;  // (1: an element)
+  if (shape?.markdown) drawShaped(bubble, text, shape.thinking, markdown);
+  else plainly(bubble, text);
+  if (pinned) chat.scrollTop = chat.scrollHeight;
+}
+/** `text` as the one text node of `element` (what it held before is taken away where it was something else), the new
+ * part added to it where the text before it is the same. */
+function plainly(element: Element, text: string) {
+  let node = element.firstChild as CharacterData | null;
+  if (node?.nodeType !== 3 || element.childNodes.length > 1) {  // (3: a text node)
+    element.textContent = "";
+    element.append(node = document.createTextNode(""));
+  }
+  if (text.startsWith(node!.data)) node!.appendData(text.slice(node!.length));
+  else node!.data = text;
+}
+// T520: the folds of thoughts that have closed, and those a reader opened or closed: the page leaves those as they are
+const folded = new WeakSet<Element>(), touched = new WeakSet<Element>();
+/** An answer in a format: T520, its thought (if any) in a fold above it, open while the model thinks and closed once
+ * it answers (unless the reader opened or closed it), and the answer itself, as Markdown where the libraries came. */
+function drawShaped(bubble: Element, text: string, opened: boolean, markdown?: Markdown) {
+  const { thought, closed, answer } = thoughtOf(text, opened);
+  let fold = bubble.querySelector(":scope > details.thought") as HTMLDetailsElement | null;
+  let said = bubble.querySelector(":scope > div.answer") as HTMLElement | null;
+  if (!said) {
+    bubble.textContent = "";
+    bubble.append(said = document.createElement("div"));
+    said.className = "answer";
+  }
+  if (thought !== null) {
+    if (!fold) {
+      fold = document.createElement("details");
+      fold.className = "thought";
+      const line = document.createElement("summary"), words = document.createElement("div");
+      line.textContent = thoughtLine(false);
+      line.onclick = () => touched.add(fold!);
+      fold.append(line, words);
+      fold.open = !closed;
+      bubble.prepend(fold);
+    }
+    plainly(fold.lastElementChild!, thought);
+    if (closed && !folded.has(fold)) {
+      folded.add(fold);
+      fold.firstElementChild!.textContent = thoughtLine(true);
+      if (!touched.has(fold)) fold.open = false;
+    }
+  }
   let drawn = false;
-  if (shape?.markdown && markdown) {
+  if (markdown) {
     try {
-      if (!blocks) bubble.textContent = "";  // (it was plain text until the libraries came)
-      drawMarkdown(bubble, text, shape.thinking, markdown);
+      drawMarkdown(said, answer, markdown);
       drawn = true;
     } catch (error) {
       markdownBroke(error);
     }
   }
   if (!drawn) {
-    if (blocks) bubble.textContent = "";
-    let node = bubble.lastChild as CharacterData | null;
-    if (node?.nodeType !== 3) bubble.append(node = document.createTextNode(""));  // (3: a text node)
-    node!.appendData(text.slice(node!.length));
+    said.classList.remove("markdown");
+    plainly(said, answer);
   }
-  if (pinned) chat.scrollTop = chat.scrollHeight;
+}
+/** T520: the line of an answer's fold, at its end: how long the thought was, by the engine's count. */
+export function thoughtSaid(bubble: Element, stats: { thought: number | null; thought_cut: boolean }) {
+  const line = bubble.querySelector(":scope > details.thought > summary");
+  if (line) line.textContent = thoughtLine(folded.has(line.parentElement!), stats);
 }
 // the source of each block drawn, by its element
 const sources = new WeakMap<Element, string>();
-const THOUGHT_END = "</think>";
-function drawMarkdown(bubble: Element, text: string, inThought: boolean, markdown: Markdown) {
-  // what is thought (to its end, or all of it while it goes on) and what is said after it
-  const end = text.lastIndexOf(THOUGHT_END);
-  const cut = end >= 0 ? end + THOUGHT_END.length : inThought || text.trimStart().startsWith("<think>") ? text.length : 0;
-  let thought = bubble.firstChild as CharacterData | null, list = bubble.lastChild as HTMLElement | null;
-  if (thought?.nodeType !== 3 || !list || list.nodeType !== 1) {
-    bubble.textContent = "";
-    bubble.append(thought = document.createTextNode(""), list = document.createElement("div"));
-    list.className = "markdown";
+function drawMarkdown(list: Element, text: string, markdown: Markdown) {
+  if (!list.classList.contains("markdown")) {
+    list.textContent = "";  // (it was plain text until the libraries came)
+    list.classList.add("markdown");
   }
-  const thinking = text.slice(0, cut);
-  if (thinking.startsWith(thought!.data)) thought!.appendData(thinking.slice(thought!.length));
-  else thought!.data = thinking;
-  const all = markdown.blocks(text.slice(cut)), links = all.links;  // (marked's references, which a block may name)
+  const all = markdown.blocks(text), links = all.links;  // (marked's references, which a block may name)
   const blocks = all.filter((block) => block.type !== "space");
-  const drawnBlocks = [...list!.children];
+  const drawnBlocks = [...list.children];
   let same = 0;
   while (same < blocks.length && same < drawnBlocks.length && sources.get(drawnBlocks[same]) === blocks[same].raw) same += 1;
   for (const gone of drawnBlocks.slice(same)) gone.remove();
@@ -81,7 +119,7 @@ function drawMarkdown(bubble: Element, text: string, inThought: boolean, markdow
     const element = document.createElement("div");
     element.append(markdown.html(block, links));
     sources.set(element, block.raw);
-    list!.append(element);
+    list.append(element);
   }
 }
 // The numbers are the point of this experiment, so they stay on the page: a short line under the answer that
