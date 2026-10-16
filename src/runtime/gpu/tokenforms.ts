@@ -290,11 +290,26 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const convolving = plan.kinds[0] === "convolution", taps = plan.convolution?.taps ?? 0;
     const rows0 = convolving ? new Float32Array(taps * dim).map(() => Math.random() * 2 - 1) : null;
     if (rows0) device.queue.writeBuffer(m.block.conv!.rows, 0, rows0);
+    // (T271.3: a Qwen3.5's first layer is a linear-attention layer: it goes on from rows of random numbers, ±1, and a
+    // state of random numbers, ±0.1, both of its place 0; and it keeps no keys and values either)
+    const L = plan.kinds[0] === "linear" ? plan.linear! : null, keysWide = L ? L.keyHeads * L.keyDim : 0, readWide = L ? L.valueHeads * L.valueDim : 0;
+    const mixedWide = 2 * keysWide + readWide, stateSize = L ? L.valueHeads * L.keyDim * L.valueDim : 0;
+    const linearRows0 = L ? new Float32Array(L.taps * mixedWide).map(() => Math.random() * 2 - 1) : null;
+    const linearState0 = L ? new Float32Array(stateSize).map(() => (Math.random() * 2 - 1) / 10) : null;
+    if (L) {
+      device.queue.writeBuffer(m.block.linear!.rows, 0, linearRows0!);
+      device.queue.writeBuffer(m.block.linear!.states, 0, linearState0!);
+    }
+    const readLinear = L ? [buffer(m, L.taps * mixedWide * 4, MAP_READ | COPY_DST, owned), buffer(m, stateSize * 4, MAP_READ | COPY_DST, owned)] : null;
     const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned), readRows = rows0 ? buffer(m, taps * dim * 4, MAP_READ | COPY_DST, owned) : null;
     const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
       state: samplingState({ token, pos, history: [token] }), extra: (encoder) => {
         encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4);
         if (readRows) encoder.copyBufferToBuffer(m.block.conv!.rows, 0, readRows, 0, taps * dim * 4);
+        if (readLinear) {
+          encoder.copyBufferToBuffer(m.block.linear!.rows, 0, readLinear[0], 0, L!.taps * mixedWide * 4);
+          encoder.copyBufferToBuffer(m.block.linear!.states, 0, readLinear[1], 0, stateSize * 4);
+        }
       } });
     const read = async (from: GPUBuffer) => {
       await from.mapAsync(MAP_READ);
@@ -303,6 +318,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
       return got;
     };
     const h = await read(readH), rowsAfter = readRows && (await read(readRows));
+    const [linearRowsAfter, linearStateAfter] = readLinear ? [await read(readLinear[0]), await read(readLinear[1])] : [null, null];
     const [gotK, gotV] = kv!.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), halfToFloat));
     // JavaScript's layer
     const [eRow, eScales] = embeddingRow(token);
@@ -325,7 +341,61 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
       }
       return { o: behind(matmul("wout", out), "attentionPost"), now };
     };
-    const { o, k, v, now } = convolving ? { ...convolved(), k: null, v: null } : { ...attended(), now: null };
+    // T271.3: a Qwen3.5's linear-attention layer as the CPU has it (linear.ts): mixed = wqkv · xn and z = wz · xn; the
+    // gates beta = sigmoid(wb · xn) and decay = exp(decay × softplus(wa · xn + dt_bias)) of every value head; the
+    // convolution of mixed over the rows (rows[1] to rows[taps - 1], then mixed) with SiLU; q and k each head over the
+    // root of its sum of squares + 1e-6, q by sqrt(key dim) more; the delta rule over the state from the value head's
+    // key head; the norm of every value head, times silu(z); wout of that. Its rows after: rows[1] to rows[taps - 1],
+    // then mixed; its state after, the rule's
+    const deltaLayer = () => {
+      const { keyHeads, valueHeads, keyDim, valueDim, taps: width } = L!;
+      const mixed = matmul("wqkv", xn), z = matmul("wz", xn), wb = vectorOf("wb")!, wa = vectorOf("wa")!, dt = vectorOf("dtBias")!, decays = vectorOf("decay")!;
+      const weights = vectorOf("conv")!, norms = vectorOf("deltaNorm")!;
+      const dot = (w: Float64Array, h: number) => xn.reduce((sum, value, i) => sum + w[h * dim + i] * value, 0);
+      const beta = Array.from({ length: valueHeads }, (_, h) => 1 / (1 + Math.exp(-dot(wb, h))));
+      const decay = Array.from({ length: valueHeads }, (_, h) => {
+        const step = dot(wa, h) + dt[h];
+        return Math.exp(decays[h] * (step > 20 ? step : Math.log1p(Math.exp(step))));
+      });
+      const convolvedValues = Float64Array.from({ length: mixedWide }, (_, c) => {
+        let sum = 0;
+        for (let j = 0; j < width; j++) sum += weights[j * mixedWide + c] * (j < width - 1 ? linearRows0![(j + 1) * mixedWide + c] : mixed[c]);
+        return sum / (1 + Math.exp(-sum));
+      });
+      const unit = (at: number, scale: number) => {
+        const part = convolvedValues.subarray(at, at + keyDim), s = 1 / Math.sqrt(part.reduce((sum, value) => sum + value * value, 0) + 1e-6);
+        return part.map((value) => value * s * scale);
+      };
+      const state = Float64Array.from(linearState0!), read = new Float64Array(readWide);
+      for (let h = 0; h < valueHeads; h++) {
+        const key = Math.floor(h / (valueHeads / keyHeads)), q = unit(key * keyDim, 1 / Math.sqrt(keyDim)), k = unit(keysWide + key * keyDim, 1);
+        for (let j = 0; j < valueDim; j++) {
+          const at = h * keyDim * valueDim + j;
+          let kv = 0;
+          for (let i = 0; i < keyDim; i++) kv += k[i] * (state[at + i * valueDim] * decay[h]);
+          const d = (convolvedValues[2 * keysWide + h * valueDim + j] - kv) * beta[h];
+          let out = 0;
+          for (let i = 0; i < keyDim; i++) {
+            state[at + i * valueDim] = state[at + i * valueDim] * decay[h] + k[i] * d;
+            out += q[i] * state[at + i * valueDim];
+          }
+          read[h * valueDim + j] = out;
+        }
+        read.set(rms(read.subarray(h * valueDim, (h + 1) * valueDim), norms), h * valueDim);
+      }
+      const gated = read.map((value, i) => value * (z[i] / (1 + Math.exp(-z[i]))));
+      return { o: behind(matmul("wout", gated), "attentionPost"), mixed, state };
+    };
+    const deltaOut = L ? deltaLayer() : null;
+    const { o, k, v, now } = deltaOut ? { o: deltaOut.o, k: null, v: null, now: null } : convolving ? { ...convolved(), k: null, v: null } : { ...attended(), now: null };
+    if (deltaOut) {
+      const moved = linearRowsAfter!.subarray(0, (L!.taps - 1) * mixedWide).every((value, i) => value === linearRows0![mixedWide + i]);
+      const rowOff = off(linearRowsAfter!.subarray((L!.taps - 1) * mixedWide), deltaOut.mixed) / largest(deltaOut.mixed);
+      const stateOff = off(linearStateAfter!, deltaOut.state) / largest(deltaOut.state);
+      if (!moved || !(rowOff <= line) || !(stateOff <= line)) {
+        return `the first layer's rows are ${moved ? `${rowOff.toExponential(2)} of their largest from JavaScript's` : "not moved on by one"} and its state ${stateOff.toExponential(2)} (line ${line})`;
+      }
+    }
     const h1 = x0.map((value, i) => value + o[i]);
     if (now) {
       const moved = rowsAfter!.subarray(0, (taps - 1) * dim).every((value, i) => value === rows0![dim + i]), rowOff = off(rowsAfter!.subarray((taps - 1) * dim), now) / largest(now);
@@ -366,6 +436,11 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
         });
         const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
         for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
+      }
+      // (T271.3: a Qwen3.5's gate of the output, of the normed stream)
+      if (plan.matrices.wg) {
+        const gate = matmul("wg", xn);
+        att.forEach((value, i) => { att[i] = value / (1 + Math.exp(-gate[i])); });
       }
       return { o: behind(plus(matmul("wo", att), "bo"), "attentionPost"), k, v };
     }

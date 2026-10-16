@@ -703,14 +703,14 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     assert.deepEqual(lfm2.vectors().conv, { at: 49000, size: 24, of: "convolution" });
   }
   // T271.2: a Qwen3.5: its prompts go (its linear-attention layers' matrices, taps and gates, each of their own layers,
-  // and the gate of its attending layers' output, theirs), its steps not yet. The GPU's delta rule takes heads up to the
+  // and the gate of its attending layers' output, theirs); T271.3: and its steps. The GPU's delta rule takes heads up to the
   // second copy's width (forward/gpuside.ts's DELTA_MOST is shaders/steps.ts's DELTA_THREADS)
   {
     const linear = { every: 2, key_heads: 1, value_heads: 3, key_dim: 4, value_dim: 8, conv: 4 }, mixed = 2 * 4 + 24;
     const qwen35 = fitOf({ linear, kinds: ["linear", "attention"], places: [0, 0], attending: 1, stateBytes: 4 * (3 * 4 * 8 + 4 * mixed) },
       { wqkv: matrixOf(mixed, 8, 46000), wz: matrixOf(24, 8, 47000), wout: matrixOf(8, 24, 48000), wg: matrixOf(8, 8, 45000), conv: 49000, wb: 49500, wa: 49600,
         dtBias: 49700, decay: 49800, deltaNorm: 49900 });
-    assert.deepEqual([qwen35.unfit(), qwen35.tokensUnfit()], [null, "linear-attention layers are not on the GPU yet"], "T271.2: its prompts, not its steps");
+    assert.deepEqual([qwen35.unfit(), qwen35.tokensUnfit()], [null, null], "T271.3: its prompts and its steps");
     assert.deepEqual(Object.keys(qwen35.matrices()), ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wout", "wqkv", "wz", "wg"]);
     const vectors = qwen35.vectors();
     assert.deepEqual([vectors.conv, vectors.wb, vectors.wa, vectors.dtBias, vectors.decay, vectors.deltaNorm], [{ at: 49000, size: 4 * mixed, of: "linear" },

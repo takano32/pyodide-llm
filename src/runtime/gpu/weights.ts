@@ -104,8 +104,10 @@ async function uploadLayers(m: Model, alone = false) {
   const usage = STORAGE | COPY_DST | (alone ? COPY_SRC : 0);
   const { routes } = m.weights;
   for (let l = 0; l < plan.layers; l++) {
-    // a layer's matrices that are one (T152): a buffer of values and one of scales for all of them
-    const joined = together && Object.fromEntries(Object.entries(together.sizes).map(([name, [valueBytes, scaleBytes]]): [string, [GPUBuffer, GPUBuffer]] =>
+    // a layer's matrices that are one (T152): a buffer of values and one of scales for all of them (T271.3: where the
+    // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
+    const has = (joinedName: string) => Object.entries(together!.homes).some(([name, home]) => home?.joined === joinedName && (!plan.matrices[name].of || plan.matrices[name].of === plan.kinds[l]));
+    const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, [GPUBuffer, GPUBuffer]] =>
       [name, [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)]]));
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
@@ -293,8 +295,9 @@ function tokensLayout(m: Model): Together | null {
   };
   // (T226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
-  // (T545.2: and an LFM2's matrices in and out of its convolution layers)
-  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
+  // (T545.2: and an LFM2's matrices in and out of its convolution layers; T271.3: a Qwen3.5's of its linear-attention
+  // layers and the gate of its output)
+  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout", "wqkv", "wz", "wg"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {};
   for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;

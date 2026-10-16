@@ -200,8 +200,7 @@ export function gpuFit({ shape, weights, device, direct }:
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
     // (T545: an LFM2's steps stayed on the CPU here until T545.2, which gave a token's fused layer its convolution layers)
-    // (T271.2: a Qwen3.5's prompts go to the GPU, its steps stay here until a token's layer has its linear-attention layers)
-    if (linear) return REASONS.linear;
+    // (T271.2: a Qwen3.5's steps stayed on the CPU here until T271.3, which gave a token's layer its linear-attention layers)
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {

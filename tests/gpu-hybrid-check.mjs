@@ -17,7 +17,7 @@
 // T271.2: a Qwen3.5's prompts are the GPU's now: its worker is started once, with a plan of every layer's kind and place,
 // its linear-attention layers' heads, sizes and taps, their matrices (wqkv, wz, wout) and vectors (the taps, the gates'
 // two small matrices, dt_bias, the decay, the norm of a value head) as theirs alone, and the attending layers' matrices
-// with the gate of their output (wg) as theirs; its steps stay on the CPU (no tokens in the plan) until T271.3.
+// with the gate of their output (wg) as theirs; T271.3: and its steps (the plan's tokens).
 //
 //   node tests/gpu-hybrid-check.mjs <a made-up Qwen3.5 of tests/make_qwen35.py, its int8 file without the extension>
 //   node tests/gpu-hybrid-check.mjs <a made-up LFM2 of tests/make_lfm2.py, the same>
@@ -105,7 +105,7 @@ if (!reason && options.arch === "lfm2") {
         w1: [null, count], w2: [null, count], w3: [null, count], wout: ["linear", of("linear")], wqkv: ["linear", of("linear")], wz: ["linear", of("linear")],
         wg: ["attention", of("attention")] },
       vectors: { conv: ["linear", linear.conv * mixed], wb: ["linear", linear.value_heads * plan.dim], wa: ["linear", linear.value_heads * plan.dim],
-        dtBias: ["linear", linear.value_heads], decay: ["linear", linear.value_heads], deltaNorm: ["linear", linear.value_dim] }, tokens: false };
+        dtBias: ["linear", linear.value_heads], decay: ["linear", linear.value_heads], deltaNorm: ["linear", linear.value_dim] }, tokens: true };
     const got = { kinds: plan.kinds, places: plan.places, linear: plan.linear,
       matrices: Object.fromEntries(Object.entries(plan.matrices).map(([name, m]) => [name, [m.of ?? null, m.layers.length]])),
       vectors: Object.fromEntries(Object.keys(wanted.vectors).map((name) => [name, [plan.vectors[name]?.of, plan.vectors[name]?.size]])), tokens: Boolean(plan.tokens) };
@@ -135,6 +135,6 @@ if (failures.length) {
 }
 console.log(reason ? `ok: ${model} with a GPU adapter present stays on the CPU, its GPU's worker never started (${status})`
   : options.arch === "lfm2" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its taps, and its steps`
-  : options.arch === "qwen35" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its linear-attention layers' sizes, matrices and vectors, and no steps`
+  : options.arch === "qwen35" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its linear-attention layers' sizes, matrices and vectors, and its steps`
   : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, its norms behind and GEGLU, and its steps`);
 process.exit(0);
