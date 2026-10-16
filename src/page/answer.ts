@@ -10,13 +10,18 @@ export let used: Sampled = {}; // the generation settings of that run, for the l
 export let written = "";
 export let undrawn = 0;
 export let drawnAt: number | undefined = undefined;
+// T556: whether the answer is drawn as Markdown (a model that answers in a format: not one that goes on from the prompt),
+// and whether it begins inside the model's thinking (a format that ends in <think>), which stays plain text
+export let shape = { markdown: false, thinking: false };
 
 /** An answer begins: its bubble, and the settings it is written with (no more steps than the model's context holds).
  * A run that samples draws its seed here rather than in the engine, so that the answer can say which seed wrote it;
  * greedy models ignore it, and showing one would suggest it mattered. The settings, as the worker is to get them. */
-export function answerBegan(bubble: HTMLElement, settings: Sampled & { steps: number }, longest: number, seed: () => number) {
+export function answerBegan(bubble: HTMLElement, settings: Sampled & { steps: number }, longest: number, seed: () => number,
+  drawn = { markdown: false, thinking: false }) {
   generating = true;
   answer = bubble;
+  shape = { ...drawn };
   written = "";
   undrawn = 0;
   drawnAt = undefined;

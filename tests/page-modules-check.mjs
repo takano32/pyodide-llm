@@ -43,7 +43,7 @@ const OWNERS_GLOBALS = new Set("Boolean Math undefined".split(" "));
 
 // what a page has without declaring it, as far as these files use it (__BUILD__: astro.config.mjs defines it)
 const GLOBALS = new Set(("AbortSignal Array Boolean Error Event JSON Map Math NaN Number Object Option Promise RegExp Set String URL URLSearchParams Uint32Array Worker __BUILD__ confirm console " +
-  "crypto document fetch history innerHeight innerWidth localStorage location navigator self sessionStorage setTimeout undefined window " +
+  "WeakMap crypto document fetch history innerHeight innerWidth localStorage location navigator self sessionStorage setTimeout undefined window " +
   // (/benchmark/'s)
   "SharedArrayBuffer addEventListener clearInterval clearTimeout getSelection performance removeEventListener setInterval").split(" "));
 

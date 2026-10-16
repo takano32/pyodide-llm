@@ -38,10 +38,13 @@ $("composer").onsubmit = (event) => {
   }
   select.disabled = files.disabled = true;
   message("user", prompt.value);
-  const how = answerBegan(message("model"), settings, longest, () => crypto.getRandomValues(new Uint32Array(1))[0]);
-  showRun();
   // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
   // what src/models.js says for this model, or what its own chat_template gave (T73)
   const template = ((model as any).template ?? fromTemplate) as string | undefined;
-  worker.postMessage({ type: "generate", prompt: template ? filled(template, prompt.value) : prompt.value, echo: !template, ...how });
+  const sent = template ? filled(template, prompt.value) : prompt.value;
+  // T556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in <think>
+  const drawn = { markdown: Boolean(template), thinking: Boolean(template) && /<think>\s*$/.test(sent) };
+  const how = answerBegan(message("model"), settings, longest, () => crypto.getRandomValues(new Uint32Array(1))[0], drawn);
+  showRun();
+  worker.postMessage({ type: "generate", prompt: sent, echo: !template, ...how });
 };

@@ -198,7 +198,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
 // ---- src/page/answer.ts
 {
   const a = await fresh("page/answer.ts");
-  assert.deepEqual(held(a), { generating: false, answer: null, used: {}, written: "", undrawn: 0, drawnAt: undefined }, "nothing is being written as the page starts");
+  assert.deepEqual(held(a), { generating: false, answer: null, used: {}, written: "", undrawn: 0, drawnAt: undefined, shape: { markdown: false, thinking: false } }, "nothing is being written as the page starts");
   unassignable(a, "answer.ts");
   const drawn = [];
   const seed = () => (drawn.push(1), 4242);
@@ -250,6 +250,16 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   const bubble = {};
   only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
   assert.equal(a.wrote("z", 0), true, "and its first token is drawn at once");
+  cases += 2;
+}
+{
+  // T556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
+  const a = await fresh("page/answer.ts");
+  const drawn = { markdown: true, thinking: true }, bubble = {};
+  only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1, drawn), { generating: true, answer: bubble, used: { steps: 0, temperature: 0 }, shape: { markdown: true, thinking: true } }, "an answer drawn as Markdown, in a thought");
+  assert.notEqual(a.shape, drawn, "the shape is the owner's own");
+  a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
+  assert.deepEqual(a.shape, { markdown: false, thinking: false }, "an answer that says nothing of it is plain text");
   cases += 2;
 }
 console.log("page-parts-check: answer.ts by itself: the bubble, the settings of the run (steps within the context, a seed where it samples), idle");

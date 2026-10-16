@@ -6,9 +6,10 @@ import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHer
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
-import { arrived, arriving, becameReady, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
+import { arrived, arriving, becameReady, fromTemplate, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
-import { answer, drew, idle, undrawn, used, written, wrote } from "./answer.ts";
+import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answer.ts";
+import { markdownCame, markdownWanted } from "./markdown.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { drawAnswer, message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
@@ -31,7 +32,7 @@ function drawNow() {
   clearTimeout(drawTimer);
   drawTimer = undefined;
   if (!answer) return;
-  drawAnswer(answer.firstElementChild!, written);
+  drawAnswer(answer.firstElementChild!, written, shape, markdownCame);
   drew(performance.now());
 }
 if (await isolating()) {
@@ -101,6 +102,9 @@ worker.onmessage = ({ data }) => {
         rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: model.prompt || "Once upon a time", steps: 64 });
     }
     showSettings();
+    // T556: a model that answers in a format has its answers drawn as Markdown: its libraries are taken now (once a visit),
+    // and an answer that was drawn as plain text meanwhile is drawn again once they come
+    if ((model as { template?: string }).template ?? fromTemplate) void markdownWanted().then((came) => came && answer && shape.markdown && drawNow());
     // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
     navigator.storage?.persist?.();
     // T135, T148: whether the prompts go through the GPU, or why not (and the same line in the console); it changes
