@@ -338,9 +338,10 @@ try {
       const ids = new Int32Array(memory.buffer, seen.plan.tokens.ids, 2 + most);
       const width = cache.half ? 2 : 4, columns = cache.row / width, cases = [];
       for (const [value, half] of [[NaN, 0x7e00], [Infinity, 0x7c00]]) {
-        for (const layer of [0, plan.n_layers - 1]) {
+        // (T261.4.2: an attending layer's place in the CPU's cache, a block or a ring: the first and the last of them)
+        for (const layer of [0, cache.places.length - 1]) {
           for (const [position, column] of [[0, 0], [n - 1, columns - 1]]) {
-            const at = cache.values + (layer * cache.capacity + position) * cache.row + column * width;
+            const place = cache.places[layer], at = place.values + (place.ring ? position % place.ring : position) * cache.row + column * width;
             const cell = cache.half ? new Uint16Array(memory.buffer, at, 1) : new Float32Array(memory.buffer, at, 1), kept = cell[0];
             cell[0] = cache.half ? half : value;
             ids.fill(-2);
