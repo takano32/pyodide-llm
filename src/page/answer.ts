@@ -6,6 +6,10 @@ import type { Sampled } from "../runtime/contracts/messages.ts";
 export let generating = false;
 export let answer: HTMLElement | null = null; // the bubble that is being written
 export let used: Sampled = {}; // the generation settings of that run, for the line under it
+// T554: what the answer says so far, the tokens not drawn yet, and when it was last drawn (the page's clock, in ms)
+export let written = "";
+export let undrawn = 0;
+export let drawnAt: number | undefined = undefined;
 
 /** An answer begins: its bubble, and the settings it is written with (no more steps than the model's context holds).
  * A run that samples draws its seed here rather than in the engine, so that the answer can say which seed wrote it;
@@ -13,6 +17,9 @@ export let used: Sampled = {}; // the generation settings of that run, for the l
 export function answerBegan(bubble: HTMLElement, settings: Sampled & { steps: number }, longest: number, seed: () => number) {
   generating = true;
   answer = bubble;
+  written = "";
+  undrawn = 0;
+  drawnAt = undefined;
   used = { ...settings, steps: settings.steps > 0 ? Math.min(settings.steps, longest) : 0 };
   if (used.temperature) {
     used.seed ??= seed();
@@ -24,4 +31,17 @@ export function answerBegan(bubble: HTMLElement, settings: Sampled & { steps: nu
 /** The worker is idle again: nothing is being written. (The bubble and its settings stay, for a late line under it.) */
 export function idle() {
   generating = false;
+}
+/** T554: a token of the answer came at `now`: whether it is to be drawn now. The first at once, then every 8 tokens or
+ * 32 ms (naidan's form: createOutputPacing() of src/features/llama-cpp-browser/worker/output-pacing.ts at 852bdeab,
+ * MIT, Ryo Ota; no line is copied). What is not drawn now is drawn by the page's timer, or at the answer's end. */
+export function wrote(text: string, now: number) {
+  written += text;
+  undrawn += 1;
+  return drawnAt === undefined || undrawn >= 8 || now - drawnAt >= 32;
+}
+/** What was written so far is drawn, at `now`. */
+export function drew(now: number) {
+  undrawn = 0;
+  drawnAt = now;
 }

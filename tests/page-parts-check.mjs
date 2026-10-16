@@ -198,7 +198,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
 // ---- src/page/answer.ts
 {
   const a = await fresh("page/answer.ts");
-  assert.deepEqual(held(a), { generating: false, answer: null, used: {} }, "nothing is being written as the page starts");
+  assert.deepEqual(held(a), { generating: false, answer: null, used: {}, written: "", undrawn: 0, drawnAt: undefined }, "nothing is being written as the page starts");
   unassignable(a, "answer.ts");
   const drawn = [];
   const seed = () => (drawn.push(1), 4242);
@@ -232,6 +232,25 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   a.answerBegan(next, settings, 4096, seed);
   assert.equal(a.answer, next);
   cases += 4;
+}
+{
+  // T554: the tokens of an answer, drawn at once, then every 8 tokens or 32 ms; a new answer begins with nothing written
+  const a = await fresh("page/answer.ts");
+  a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
+  assert.equal(only(a, () => a.wrote("A", 1000), { written: "A", undrawn: 1 }, "the first token"), true, "is drawn at once");
+  only(a, () => a.drew(1000), { undrawn: 0, drawnAt: 1000 }, "drawn: nothing undrawn, and when");
+  const due = [];
+  for (let i = 0; i < 9; i += 1) due.push(a.wrote(String(i), 1001 + i));
+  assert.deepEqual(due, [false, false, false, false, false, false, false, true, true], "the eighth token after a draw is drawn (and each after it until one is)");
+  assert.equal(a.written, "A012345678");
+  a.drew(1010);
+  assert.equal(a.wrote("x", 1041), false, "31 ms after a draw: not yet");
+  assert.equal(a.wrote("y", 1042), true, "32 ms: drawn");
+  a.drew(1042);
+  const bubble = {};
+  only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
+  assert.equal(a.wrote("z", 0), true, "and its first token is drawn at once");
+  cases += 2;
 }
 console.log("page-parts-check: answer.ts by itself: the bubble, the settings of the run (steps within the context, a seed where it samples), idle");
 

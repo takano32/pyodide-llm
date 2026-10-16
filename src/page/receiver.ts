@@ -8,10 +8,10 @@ import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
 import { arrived, arriving, becameReady, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
-import { answer, idle, used } from "./answer.ts";
+import { answer, drew, idle, undrawn, used, written, wrote } from "./answer.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
-import { message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
+import { drawAnswer, message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
@@ -24,6 +24,16 @@ let benchAsked = false;  // the benchmark is asked for once a page, whatever bec
 let aloneOnReady: { load: number; alone: Alone } | undefined;
 // T553: a line that says the time left, which says it no more once nothing has arrived for 10 seconds (no report comes then)
 let stillTimer: ReturnType<typeof setTimeout> | undefined;
+// T554: the answer is drawn at once, then every 8 tokens or 32 ms (answer.ts's wrote()); what comes between is drawn by
+// this timer, or at the answer's end
+let drawTimer: ReturnType<typeof setTimeout> | undefined;
+function drawNow() {
+  clearTimeout(drawTimer);
+  drawTimer = undefined;
+  if (!answer) return;
+  drawAnswer(answer.firstElementChild!, written);
+  drew(performance.now());
+}
 if (await isolating()) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
@@ -152,13 +162,10 @@ worker.onmessage = ({ data }) => {
       // no storage here: the next visit searches again
     }
   } else if (data.type === "token") {
-    // stick to the bottom only while the reader is there
-    const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
-    answer!.firstElementChild!.textContent += data.text;
-    if (pinned) {
-      chat.scrollTop = chat.scrollHeight;
-    }
+    if (wrote(data.text, performance.now())) drawNow();
+    else drawTimer ??= setTimeout(drawNow, 32);
   } else if (data.type === "done") {
+    if (undrawn) drawNow();  // (T554: the last tokens, before the line under the answer)
     // (T223's review: the search checks the count remembered from an earlier visit on the first generation and may change
     // it, 4 to 2 on the owner's Android: the line says the count in use as the answer's line below does)
     threadsNow(data.threads);
@@ -178,6 +185,7 @@ worker.onmessage = ({ data }) => {
       `generated ${data.tokens - data.prompt_tokens} tokens${onGpuSampled(data)} · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
     ], used.temperature ? used.seed : undefined);
   } else if (data.type === "error") {
+    if (undrawn) drawNow();  // (T554: what the answer wrote before it failed)
     aloneOnReady = undefined;  // (T156: the load on the CPU did not come to ready)
     // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
     // (T156's review: the worker's word that it loads a model on the GPU alone again on the CPU is no error of its own,

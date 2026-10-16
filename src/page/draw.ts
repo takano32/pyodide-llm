@@ -28,6 +28,15 @@ export function message(kind: string, text = "") {
   chat.scrollTop = chat.scrollHeight;
   return element;
 }
+/** T554: the answer's bubble says `text`, all that was written so far: the new part is added to its text node (the
+ * text before it is not made again), and the chat follows it only while the reader is at its bottom. */
+export function drawAnswer(bubble: Element, text: string) {
+  const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
+  let node = bubble.lastChild as CharacterData | null;
+  if (node?.nodeType !== 3) bubble.append(node = document.createTextNode(""));  // (3: a text node)
+  node!.appendData(text.slice(node!.length));
+  if (pinned) chat.scrollTop = chat.scrollHeight;
+}
 // The numbers are the point of this experiment, so they stay on the page: a short line under the answer that
 // opens into the breakdown. Tapping the summary is the only interaction, and closed it reads as one line.
 export function rows(element: Element, lines: string[]) {
