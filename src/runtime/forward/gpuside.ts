@@ -180,8 +180,7 @@ export function gpuFit({ shape, weights, device, direct }:
   // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
-    // T545: an LFM2's prompts go to the GPU, its steps stay on the CPU (a token's fused layer has no convolution layer)
-    if (convolution) return REASONS.convolution;
+    // (T545: an LFM2's steps stayed on the CPU here until T545.2, which gave a token's fused layer its convolution layers)
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
@@ -194,7 +193,9 @@ export function gpuFit({ shape, weights, device, direct }:
     const table = vocab * dim * gpuWeightBytes(wcls.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
     // (T261.4.2: a Gemma 3's local layers' table of RoPE as well)
-    const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
+    // (T545.2: and the convolution layers' rows as each step of a request leaves them)
+    const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
+      GPU_TOKENS * (state?.bytes ?? 0);
     if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;
   }
@@ -555,7 +556,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   function generateMany(token: number, pos: number, history: Listed, length: number, count: number, temperature: number, topp: number, penalty: number,
     randoms: Listed, stops: Listed, topK = 0, minP = 0, presence = 0, written = 0) {
     const list = (x: Listed) => (x?.toJs ? x.toJs() : [...(x ?? [])]);
-    if (!gpuSteps() || count < 1 || count > GPU_TOKENS) return undefined;
+    // (T545.2: and steps that go on from the state of the layers that keep one, where the model has those: else the
+    // CPU's step says why it cannot, follow()'s words)
+    if (!gpuSteps() || count < 1 || count > GPU_TOKENS || (!direct && !follows(pos))) return undefined;
     const stopList = list(stops);
     if (stopList.length > STOPS_MOST) {
       tokensOn = false;
@@ -615,7 +618,11 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       stopGpu(REASONS.keysInStep(pos));
       return undefined;
     }
-    if (!direct) fromStaging(pos, sampled);
+    if (!direct) {
+      fromStaging(pos, sampled);
+      // (T545.2: the convolution layers' rows as the last step sampled left them)
+      stateFromStaging(pos + sampled);
+    }
     gpuEnd = pos + sampled;
     gpuSampled += sampled;
     if (sampled === count) steps.gpu((now() - began) / count);

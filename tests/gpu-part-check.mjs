@@ -390,6 +390,13 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   step(part, 22);
   assert.equal(beside.posted[2].from, 18, "and after the CPU wrote one, the cache goes up from there");
   assert.deepEqual([step(part, 30, { count: 0 }), step(part, 30, { count: GPU_TOKENS + 1 })], [undefined, undefined], "no steps, or more than a submission holds: the CPU's");
+  // T545.2: the state of the layers that keep one is taken from the staging after each request (the position after its
+  // last step), and steps that do not go on from it are the CPU's (nothing asked of the GPU)
+  assert.deepEqual(beside.stated, [20, 22, 26], "the state after each request's steps");
+  beside.follows = false;
+  const before = beside.posted.length;
+  assert.deepEqual([step(part, 30), beside.posted.length], [undefined, before], "steps that do not go on from the CPU's state");
+  beside.follows = true;
   // a stop token sampled: the ids up to it
   beside.answer.sampled = 2;
   assert.deepEqual([step(part, 30, { stops: [31] }), part.sampled], [[30, 31], 12]);
@@ -654,12 +661,12 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
-  // T545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers), its
-  // steps do not
+  // T545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);
+  // T545.2: and its steps
   {
     const lfm2 = fitOf({ convolution: { layers: "ca", taps: 3 }, kinds: ["convolution", "attention"], places: [0, 0], attending: 1, state: { at: 60000, bytes: 96 } },
       { win: matrixOf(24, 8, 46000), wout: matrixOf(8, 8, 48000), conv: 49000 });
-    assert.deepEqual([lfm2.unfit(), lfm2.tokensUnfit()], [null, "convolution layers are not on the GPU yet"]);
+    assert.deepEqual([lfm2.unfit(), lfm2.tokensUnfit()], [null, null], "T545.2: its steps too");
     assert.deepEqual(Object.keys(lfm2.matrices()), ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout"]);
     assert.deepEqual(lfm2.vectors().conv, { at: 49000, size: 24, of: "convolution" });
   }

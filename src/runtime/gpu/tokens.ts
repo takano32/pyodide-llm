@@ -13,6 +13,7 @@ import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersO
 import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Bound, Pass } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
+import { attendingOf } from "./block.ts";
 import type { Kept } from "./block.ts";
 import type { FusedOutput } from "../shaders/fused.ts";
 
@@ -48,6 +49,11 @@ type Uniforms = {
   take?: GPUBuffer;
   columns?: GPUBuffer[];
   hidden?: GPUBuffer;
+  // T545.2: an LFM2's convolution layers': the matrix in's Params a layer (with its norm), the matrix out's, and the
+  // Conv of SHORT_CONV and CONV_STATE a place (the taps and rows of the place's layer)
+  mix?: GPUBuffer[];
+  wout?: GPUBuffer;
+  conv?: GPUBuffer[];
 };
 // What tokenBuffers() makes, the first part of the model's record of a token (tokenforms.ts's m.tokens): the
 // pipelines every form shares, the buffers, the uniforms, and what only some models have (null without)
@@ -79,11 +85,14 @@ type TokenBuffers = {
   take: GPUComputePipeline | null;
   columns: GPUComputePipeline | null;
   picked: GPUBuffer | null;
+  // T545.2: what an LFM2's convolution layer's matrix in gives a token (3 dim: B, C, z), null where none is
+  mixed: GPUBuffer | null;
 };
 // a run of steps: what runTokens() is given, and what it read back (kv where it was asked to keep them)
 type Run = { count: number; pos: number; state: GPUAllowSharedBufferSource; settings?: GPUAllowSharedBufferSource; randoms?: Float32Array<ArrayBuffer>; keep?: boolean;
   extra?: (encoder: GPUCommandEncoder) => void };
-type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; notFinite: number; kv?: Uint8Array<ArrayBuffer>[][] };
+// (T545.2: rows, the convolution layers' rows as each step left them, where kv is)
+type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; notFinite: number; kv?: Uint8Array<ArrayBuffer>[][]; rows?: Uint8Array<ArrayBuffer>[] };
 
 // ---- T152: tokens on the GPU. A step of the engine's generate() (the forward pass of the token fed, the sampling of
 // the next) as one compute pass of shaders.ts's T151 run: EMBED of the state's token, every layer in a fused form, the
@@ -141,19 +150,21 @@ function tokenCandidates(m: Model) {
 // (T261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
 // that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
 const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && !m.ternary;
+// (T545.2: mix, an LFM2's convolution layers, whose matrix in reads the normed stream and writes its rows as they are)
 const tokenShape = (m: Model) => ({ apart: Boolean(m.tokens.qkv), gated: Boolean(m.weights.matrices.w3), geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
-  floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost) });
+  floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost), mix: Boolean(m.plan.convolution) });
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
-const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, geglu, layerNorm, floatHead, posts }: ReturnType<typeof tokenShape>): [string, string][] => {
+const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, geglu, layerNorm, floatHead, posts, mix }: ReturnType<typeof tokenShape>): [string, string][] => {
   const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
   const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: ternary ? "ternary" : "int8" }) : floats;
   // (a matrix whose input is no norm of the stream: the attention's output, the activation's)
   const plain = (output: FusedOutput) => (dp4a ? matrix(output) : ENGINE.fusedMatVec({ input: "plain", output, subgroups }));
   return [...(dp4a && !normApart ? [["normQuantize", ENGINE.NORM_QUANTIZE]] satisfies [string, string][] : []), ["qkv", matrix(apart ? "write" : "rope")],
     ["add", plain("add")], ["glu", matrix(!gated ? "write" : geglu ? "geglu" : "swiglu")],
-    ["classifier", (floatHead ? floats : matrix)("write")], ...(posts ? [["write", plain("write")]] satisfies [string, string][] : [])];
+    ["classifier", (floatHead ? floats : matrix)("write")], ...(posts ? [["write", plain("write")]] satisfies [string, string][] : []),
+    ...(mix ? [["mix", matrix("write")]] satisfies [string, string][] : [])];
 };
 
 // a bind group of the bindings given ([binding, a buffer or a range of one] each: the fused shaders skip binding 4
@@ -169,7 +180,7 @@ const bindAt = (m: Model, pipeline: GPUComputePipeline, entries: Entry[]) => m.d
 // T378.4: what this makes is the first part of the model's record of a token, m.tokens, which tokenforms.ts's
 // chooseTokens() sets (with the attention and the form chosen); the functions below read it
 async function tokenBuffers(m: Model): Promise<TokenBuffers> {
-  const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows;
+  const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows, attending = attendingOf(plan).length, rowsBytes = m.block.conv?.bytes ?? 0;
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // (one at a time: each in an error scope of its own)
   // (T232: from a table of ternary weights, EMBED_TERNARY)
@@ -183,9 +194,10 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     state: buffer(m, STATE_BYTES, out | COPY_DST), chosen: buffer(m, most * 4, out), randoms: buffer(m, most * 4, STORAGE | COPY_DST),
     step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, SAMPLING_BYTES, UNIFORM | COPY_DST),
     xq: buffer(m, widest), xs: buffer(m, (widest / GROUP) * 4), xb: buffer(m, plan.dim * 4),
-    readback: buffer(m, most * 4 + STATE_BYTES + 2 * plan.layers * most * kvDim * 2, MAP_READ | COPY_DST),
+    // (T545.2: the attending layers' keys and values, and the convolution layers' rows after each step)
+    readback: buffer(m, most * 4 + STATE_BYTES + 2 * attending * most * kvDim * 2 + most * rowsBytes, MAP_READ | COPY_DST),
     // (below: the uniforms, and what only some models have)
-    u: null, rope: null, qkv: null, qkvBias: null, take: null, columns: null, picked: null };
+    u: null, rope: null, qkv: null, qkvBias: null, take: null, columns: null, picked: null, mixed: null };
   // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned
   const params = (rows: number, n: number, second = 0, normAt = 0, turned = plan.turned) => {
     const bytes = new ArrayBuffer(48);
@@ -240,7 +252,18 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     }
     g.u.qkvBias = layers.map((_, l) => uniform(m, new Uint32Array([qkvRows, l * qkvRows, 0, 0])));
   }
-  if (qNorm) g.u.headNorms = layers.map((_, l) => [0, plan.heads].map((first) => norm(l * plan.headSize, plan.headSize, first)));
+  // (T545.2: a layer's at its place among the attending layers, an LFM2's)
+  if (qNorm) g.u.headNorms = layers.map((_, l) => [0, plan.heads].map((first) => norm((qNorm.of ? plan.places[l] : l) * plan.headSize, plan.headSize, first)));
+  // T545.2: an LFM2's convolution layers: the matrix in from the normed stream into mixed (3 dim), SHORT_CONV and
+  // CONV_STATE on the place's taps and rows (as a prompt's block binds them), the matrix out
+  const { convolution } = plan;
+  if (convolution) {
+    g.mixed = buffer(m, 3 * plan.dim * 4);
+    g.u.mix = layers.map((at) => params(3 * plan.dim, plan.dim, 0, at));
+    g.u.wout = params(plan.dim, plan.dim);
+    const places = plan.kinds.filter((kind) => kind === "convolution").length;
+    g.u.conv = [...Array(places)].map((_, p) => uniform(m, new Uint32Array([plan.dim, convolution.taps, p * convolution.taps * plan.dim, 0])));
+  }
   // T226, GPT-2's and GPT-NeoX's (T154's dispatches of a prompt's block, on a token's vectors): ADD's shapes of the
   // biases after o, w1 and w2 (a layer's from its place in the vector) and of GPT-2's positions (a row a position), and
   // GELU's size
@@ -306,36 +329,55 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   if (embed && W.positions) list.push(added(g.h, W.positions, g.u.positions!, plan.dim));
   const qkvRows = qDim + 2 * plan.kvHeads * plan.headSize, gated = Boolean(W.matrices.w3);
   for (let l = from; l < to; l++) {
-    const [o] = W.matrices.wo.pieces, [down] = W.matrices.w2.pieces;
+    // (T545.2: a matrix of the layers of a kind, an LFM2's, at the layer's place among them: an attending layer's keys
+    // and values too; every layer's place where there is one kind)
+    const place = plan.places[l], [down] = W.matrices.w2.pieces;
     const attention = normed(V.attention, V.attentionBias, g.u.norm[l]), ffn = normed(V.ffn, V.ffnBias, g.u.norm[l]);
-    const attended = plain(g.att, g.u.quantizeAttention, qDim), activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
-    // where q, k and v go turned: q, and the cache at the Step's position (T261.4.2: a local layer by its own table)
-    const turned: Entry[] = [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, plan.local.includes(l) ? W.localAngleTable! : W.angleTable!], [9, g.step]];
+    const activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
     // T261.4.2: what joins the stream after a matrix: added on its write, or (a Gemma 3's norm behind it) written as it
     // is into xb, which nothing reads by then, and normed into the stream there (RMSNORM_ADD, as a prompt's block)
     const joining = (post: GPUBuffer | undefined, [w, s]: [Bound, Bound], input: Entry[], params: GPUBuffer): Pass[] => (post
       ? [matrix(P.write, [w, s], input, params, plan.dim, [[5, g.xb]]), [b.normAdd!, bind(m, b.normAdd!, [g.xb, post, g.h, g.u.norm[l], g.step]), 1, 1]]
       : [matrix(P.add, [w, s], input, params, plan.dim, [[5, g.h]])]);
-    list.push(...attention.norm, ...attention.quantize,
-      // T226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
-      // RoPE: as the CPU has it and a prompt's block (T153), the biases, the norms of the heads of q and of k, RoPE
-      matrix(P.qkv, W.joined[l].qkv, attention.input, g.u.qkv[l], qkvRows, g.qkv ? [[5, g.qkv]] : turned),
-      ...(g.qkvBias ? [added(g.qkv!, g.qkvBias, g.u.qkvBias![l], qkvRows)] : []),
-      ...(g.u.headNorms ? ([[V.qNorm, plan.heads], [V.kNorm, plan.kvHeads]] satisfies [GPUBuffer, number][]).map(([weights, heads], i): Pass =>
-        [b.headNorm, bind(m, b.headNorm, [g.qkv!, weights, g.u.headNorms![l][i], g.step]), heads, 1]) : []),
-      ...(g.qkv ? [[g.rope!, bindAt(m, g.rope!, [[2, g.qkv], [3, g.u.qkv[l]], ...turned]), 1, 1]] satisfies Pass[] : []),
-      // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which q,
-      // k and v have read by now; a norm on the matrix's read would come too late: chooseTokens refuses the pair)
-      ...(plan.parallel ? ffn.norm : []),
-      ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[l], values: cache.values[l], out: g.att, parts: g.parts, params: g.params,
-        flash: g.u.flash[l], window: plan.windows[l] ?? 0, step: g.step }, plan.heads, positions),
-      ...attended.quantize, ...joining(V.attentionPost, o.layers[l], attended.input, g.u.o), ...biased(g.h, "bo", l),
+    list.push(...attention.norm, ...attention.quantize);
+    // T545.2: an LFM2's convolution layer: its matrix in, the convolution of the token into xb with the rows it goes on
+    // from, the rows moved on by the token (CONV_STATE: the rows a prompt's block left, its own after), its matrix out
+    if (plan.kinds[l] === "convolution") {
+      const c = b.conv!, convolved = plain(g.xb, g.u.quantizeNormed, plan.dim), groups = Math.ceil(plan.dim / 64);
+      list.push(matrix(P.mix, W.matrices.win.pieces[0].layers[place], attention.input, g.u.mix![l], 3 * plan.dim, [[5, g.mixed!]]),
+        [c.short, bind(m, c.short, [g.mixed!, V.conv, c.rows, g.xb, g.u.conv![place], g.step]), groups, 1],
+        [c.state, bind(m, c.state, [g.mixed!, c.rows, g.u.conv![place], g.step]), groups, 1],
+        ...convolved.quantize, ...joining(V.attentionPost, W.matrices.wout.pieces[0].layers[place], convolved.input, g.u.wout!));
+    } else {
+      list.push(...attending(l, place, attention.input, ffn.norm, joining));
+    }
+    list.push(
       ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
       // gate and up as one matrix with SwiGLU on its write; or (T154: no gate) w1, its bias and GELU
       ...(gated ? [matrix(P.glu, W.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
         : [matrix(P.glu, W.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
           [b.activation, bind(m, b.activation, [g.gate, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]),
       ...activated.quantize, ...joining(V.ffnPost, down.layers[l], activated.input, g.u.down), ...biased(g.h, "b2", l));
+  }
+  // an attending layer l, at its place among the attending layers: q, k and v, RoPE into the cache, the attention, o
+  function attending(l: number, place: number, input: Entry[], ffnNorm: Pass[], joining: (post: GPUBuffer | undefined, weights: [Bound, Bound], input: Entry[], params: GPUBuffer) => Pass[]): Pass[] {
+    const [o] = W.matrices.wo.pieces, attended = plain(g.att, g.u.quantizeAttention, qDim);
+    // where q, k and v go turned: q, and the cache at the Step's position (T261.4.2: a local layer by its own table)
+    const turned: Entry[] = [[5, g.q], [6, cache.keys[place]], [7, cache.values[place]], [8, plan.local.includes(l) ? W.localAngleTable! : W.angleTable!], [9, g.step]];
+    return [
+      // T226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
+      // RoPE: as the CPU has it and a prompt's block (T153), the biases, the norms of the heads of q and of k, RoPE
+      matrix(P.qkv, W.joined[l].qkv, input, g.u.qkv[l], qkvRows, g.qkv ? [[5, g.qkv]] : turned),
+      ...(g.qkvBias ? [added(g.qkv!, g.qkvBias, g.u.qkvBias![l], qkvRows)] : []),
+      ...(g.u.headNorms ? ([[V.qNorm, plan.heads], [V.kNorm, plan.kvHeads]] satisfies [GPUBuffer, number][]).map(([weights, heads], i): Pass =>
+        [b.headNorm, bind(m, b.headNorm, [g.qkv!, weights, g.u.headNorms![l][i], g.step]), heads, 1]) : []),
+      ...(g.qkv ? [[g.rope!, bindAt(m, g.rope!, [[2, g.qkv], [3, g.u.qkv[l]], ...turned]), 1, 1]] satisfies Pass[] : []),
+      // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which q,
+      // k and v have read by now; a norm on the matrix's read would come too late: chooseTokens refuses the pair)
+      ...(plan.parallel ? ffnNorm : []),
+      ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[place], values: cache.values[place], out: g.att, parts: g.parts, params: g.params,
+        flash: g.u.flash[l], window: plan.windows[l] ?? 0, step: g.step }, plan.heads, positions),
+      ...attended.quantize, ...joining(V.attentionPost, o.layers[place], attended.input, g.u.o), ...biased(g.h, "bo", l)];
   }
   if (head) {
     // T232: a ternary classifier's outlier channels go out of the normed stream before it is quantized (TAKE_OUTLIERS),
@@ -364,8 +406,10 @@ function tokenStep(m: Model, form: TokenForm, positions: number) {
 // pos + count - 1. extra(encoder): what a check copies out besides. Returns { ids, sampled, stopped, notFinite (T219:
 // the sampler refused the step after the sampled ones: its logits were not finite), kv: [keys, values][layer], the
 // positions' rows of float16 as bytes }
+// T545.2: kv by the attending layers' places; rows (keep), the convolution layers' rows after each step
 async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, settings, randoms, keep = false, extra }: Run) {
-  const { device, plan, tokens: g } = m, { cache } = m.block, kvRow = plan.kvHeads * plan.headSize * 2, idsBytes = g.most * 4;
+  const { device, tokens: g } = m, { cache, conv } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
+  const layers = cache!.keys.length, rowsBytes = keep && conv ? conv.bytes : 0, rowsAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
   if (pos + count > cache!.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
@@ -380,14 +424,15 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
     pass.end();
     // the Step of the next pass: the state's first four words
     encoder.copyBufferToBuffer(g.state, 0, g.step, 0, 16);
+    if (rowsBytes) encoder.copyBufferToBuffer(conv!.rows, 0, g.readback, rowsAt + i * rowsBytes, rowsBytes);
   }
   encoder.copyBufferToBuffer(g.chosen, 0, g.readback, 0, count * 4);
   encoder.copyBufferToBuffer(g.state, 0, g.readback, idsBytes, STATE_BYTES);
   const kvAt = idsBytes + STATE_BYTES;
   if (keep) {
-    for (let l = 0; l < plan.layers; l++) {
+    for (let l = 0; l < layers; l++) {
       encoder.copyBufferToBuffer(cache!.keys[l], pos * kvRow, g.readback, kvAt + l * g.most * kvRow, count * kvRow);
-      encoder.copyBufferToBuffer(cache!.values[l], pos * kvRow, g.readback, kvAt + (plan.layers + l) * g.most * kvRow, count * kvRow);
+      encoder.copyBufferToBuffer(cache!.values[l], pos * kvRow, g.readback, kvAt + (layers + l) * g.most * kvRow, count * kvRow);
     }
   }
   extra?.(encoder);
@@ -400,11 +445,12 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
     const after = words.subarray(g.most);
     const out: Ran = { ids: words.slice(0, count), sampled: after[5], stopped: after[7], notFinite: after[STATE_NOT_FINITE] };
     if (keep) {
-      const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * plan.layers * g.most * kvRow).slice(0));
-      out.kv = [0, 1].map((side) => [...Array(plan.layers)].map((_, l) => {
-        const at = (side * plan.layers + l) * g.most * kvRow;
+      const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * layers * g.most * kvRow + count * rowsBytes).slice(0));
+      out.kv = [0, 1].map((side) => [...Array(layers)].map((_, l) => {
+        const at = (side * layers + l) * g.most * kvRow;
         return bytes.subarray(at, at + count * kvRow);
       }));
+      if (rowsBytes) out.rows = [...Array(count)].map((_, i) => bytes.subarray(rowsAt - kvAt + i * rowsBytes, rowsAt - kvAt + (i + 1) * rowsBytes));
     }
     return out;
   } finally {

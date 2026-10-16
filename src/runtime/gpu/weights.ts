@@ -293,7 +293,8 @@ function tokensLayout(m: Model): Together | null {
   };
   // (T226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
-  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"])]) if (m.weights.matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
+  // (T545.2: and an LFM2's matrices in and out of its convolution layers)
+  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {};
   for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;

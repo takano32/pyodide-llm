@@ -2,8 +2,8 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { model, lost } from "./device.ts";
-import { roomFor, keysIn, block, keysOut, keysBack } from "./block.ts";
+import { model, lost, copyIn } from "./device.ts";
+import { roomFor, keysIn, block, keysOut, keysBack, attendingOf } from "./block.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import type { Thrown } from "./device.ts";
@@ -20,23 +20,31 @@ type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 // after the sampled ones was refused, its logits not finite; a stop token last where one came), and the keys and values of the positions
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
 // forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
-// GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
+// GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back.
+// T545.2: an LFM2's convolution layers go on from the CPU's rows (none at position 0, as a block), which the CPU holds
+// while it waits; after the attending layers' keys and values (by their places) come the rows as the last step sampled
+// left them, as a block's come back (cpuSide.stateFromStaging takes them)
 function generate({ serial, count, pos, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
-    const m = model!, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2;
+    const m = model!, { plan, tokens: g } = m, { conv } = m.block, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
     if (!g?.form) throw new Error("no tokens on this GPU");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);
+    if (cache && conv) {
+      if (pos === 0) m.device.queue.writeBuffer(conv.rows, 0, new Uint8Array(conv.bytes));
+      else copyIn(m, conv.rows, plan.convolution!.rows, conv.bytes);
+    }
     const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
       state: samplingState({ token, pos, history, length, written }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
     if (!wanted()) return;
     for (let side = 0; cache && side < 2; side++) {
-      for (let l = 0; l < plan.layers; l++) {
-        new Uint8Array(m.memory.buffer, plan.staging + (side * plan.layers + l) * plan.batch * kvRow, out.sampled * kvRow)
+      for (let l = 0; l < layers; l++) {
+        new Uint8Array(m.memory.buffer, plan.staging + (side * layers + l) * plan.batch * kvRow, out.sampled * kvRow)
           .set(out.kv![side][l].subarray(0, out.sampled * kvRow));
       }
     }
+    if (out.rows && out.sampled >= 1) new Uint8Array(m.memory.buffer, plan.staging + 2 * layers * plan.batch * kvRow, conv!.bytes).set(out.rows[out.sampled - 1]);
     const ids = new Int32Array(m.memory.buffer, plan.tokens!.ids, 2 + g.most);
     ids[0] = out.sampled;
     ids.set(out.ids.subarray(0, out.sampled), 1);

@@ -285,12 +285,24 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const { keys: cacheKeys, values: cacheValues } = m.block.cache!;
     device.queue.writeBuffer(cacheKeys[0], 0, row0[0]);
     device.queue.writeBuffer(cacheValues[0], 0, row0[1]);
-    const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned);
+    // (T545.2: an LFM2's first layer is a convolution layer: it goes on from rows of random numbers, ±1, whose last
+    // taps - 1 it reads and moves on by one, its own row last; and it keeps no keys and values)
+    const convolving = plan.kinds[0] === "convolution", taps = plan.convolution?.taps ?? 0;
+    const rows0 = convolving ? new Float32Array(taps * dim).map(() => Math.random() * 2 - 1) : null;
+    if (rows0) device.queue.writeBuffer(m.block.conv!.rows, 0, rows0);
+    const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned), readRows = rows0 ? buffer(m, taps * dim * 4, MAP_READ | COPY_DST, owned) : null;
     const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
-      state: samplingState({ token, pos, history: [token] }), extra: (encoder) => encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4) });
-    await readH.mapAsync(MAP_READ);
-    const h = new Float32Array(readH.getMappedRange().slice(0));
-    readH.unmap();
+      state: samplingState({ token, pos, history: [token] }), extra: (encoder) => {
+        encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4);
+        if (readRows) encoder.copyBufferToBuffer(m.block.conv!.rows, 0, readRows, 0, taps * dim * 4);
+      } });
+    const read = async (from: GPUBuffer) => {
+      await from.mapAsync(MAP_READ);
+      const got = new Float32Array(from.getMappedRange().slice(0));
+      from.unmap();
+      return got;
+    };
+    const h = await read(readH), rowsAfter = readRows && (await read(readRows));
     const [gotK, gotV] = kv!.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), halfToFloat));
     // JavaScript's layer
     const [eRow, eScales] = embeddingRow(token);
@@ -298,43 +310,65 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[Math.floor((i * eScales.length) / eRow.length)]);
     if (plan.tokens!.positions) floats(plan.tokens!.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
     const xn = norm(x0, vectorOf("attention")!, vectorOf("attentionBias"));
-    // T226: as the CPU has it (forward.ts), the biases (Qwen2's; T154's), then the norms of the heads of q and k
-    // (Qwen3's), then RoPE (all of a head, T154: a part of it, or none); the first layer's of each, where the model
-    // has them
-    const [q, k, v] = ([["wq", "bq"], ["wk", "bk"], ["wv", "bv"]] satisfies [string, keyof Vectors][]).map(([name, bias]) => plus(matmul(name, xn), bias));
-    for (const [name, x] of [["qNorm", q], ["kNorm", k]] satisfies [keyof Vectors, Float64Array][]) {
-      const weights = vectorOf(name);
-      for (let at = 0; weights && at < x.length; at += headSize) x.set(rms(x.subarray(at, at + headSize), weights), at);
-    }
-    // (T261.4.2: a local layer's angles are of its own tables)
-    const [cosAt, sinAt] = plan.local.includes(0) ? [plan.localCos, plan.localSin] : [plan.cos, plan.sin];
-    const cos = floats(cosAt + pos * half * 4, half), sin = floats(sinAt + pos * half * 4, half);
-    const turn = (vector: Float64Array) => {
-      for (let at = 0; at < vector.length; at += 2) {
-        const i = (at % headSize) / 2;
-        if (at % headSize >= turnedAt(plan, 0)) continue;
-        const [a, b] = [vector[at], vector[at + 1]];
-        vector[at] = a * cos[i] - b * sin[i];
-        vector[at + 1] = a * sin[i] + b * cos[i];
-      }
-    };
-    turn(q);
-    turn(k);
-    const keys = [Float64Array.from(row0[0], halfToFloat), heldFloats(k, gotK)], values = [Float64Array.from(row0[1], halfToFloat), heldFloats(v, gotV)];
-    const att = new Float64Array(qDim), group = plan.heads / plan.kvHeads;
-    for (let head = 0; head < plan.heads; head++) {
-      const kvAt = Math.floor(head / group) * headSize, at = head * headSize;
-      const scores = keys.map((key) => {
-        let sum = 0;
-        for (let d = 0; d < headSize; d++) sum += q[at + d] * key[kvAt + d];
-        return sum / Math.sqrt(headSize);
-      });
-      const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
-      for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
-    }
     // (T261.4.2: a Gemma 3's norm behind the attention and behind the FFN, of what joins the stream)
     const behind = (x: Float64Array, name: keyof Vectors) => (vectorOf(name) ? rms(x, vectorOf(name)!) : x);
-    const o = behind(plus(matmul("wo", att), "bo"), "attentionPost"), h1 = x0.map((value, i) => value + o[i]);
+    // T545.2: an LFM2's convolution layer as the CPU has it (convolution.ts): mixed = win · xn, of which B, C and z; h =
+    // B × z; C × (taps[0] × rows[1] + ... + taps[taps - 2] × rows[taps - 1] + taps[taps - 1] × h); wout of that. Its
+    // rows after: rows[1] to rows[taps - 1], then h
+    const convolved = () => {
+      const mixed = matmul("win", xn), weights = vectorOf("conv")!, now = new Float64Array(dim), out = new Float64Array(dim);
+      for (let c = 0; c < dim; c++) {
+        now[c] = mixed[c] * mixed[2 * dim + c];
+        let sum = 0;
+        for (let j = 0; j < taps; j++) sum += weights[j * dim + c] * (j < taps - 1 ? rows0![(j + 1) * dim + c] : now[c]);
+        out[c] = mixed[dim + c] * sum;
+      }
+      return { o: behind(matmul("wout", out), "attentionPost"), now };
+    };
+    const { o, k, v, now } = convolving ? { ...convolved(), k: null, v: null } : { ...attended(), now: null };
+    const h1 = x0.map((value, i) => value + o[i]);
+    if (now) {
+      const moved = rowsAfter!.subarray(0, (taps - 1) * dim).every((value, i) => value === rows0![dim + i]), rowOff = off(rowsAfter!.subarray((taps - 1) * dim), now) / largest(now);
+      if (!moved || !(rowOff <= line)) return `the first layer's rows are ${moved ? `${rowOff.toExponential(2)} of their largest from JavaScript's (line ${line})` : "not moved on by one"}`;
+    }
+    // (T545.2: an attending first layer's q, k and v, its attention over position 0 and its own, o)
+    function attended() {
+      // T226: as the CPU has it (forward.ts), the biases (Qwen2's; T154's), then the norms of the heads of q and k
+      // (Qwen3's), then RoPE (all of a head, T154: a part of it, or none); the first layer's of each, where the model
+      // has them
+      const [q, k, v] = ([["wq", "bq"], ["wk", "bk"], ["wv", "bv"]] satisfies [string, keyof Vectors][]).map(([name, bias]) => plus(matmul(name, xn), bias));
+      for (const [name, x] of [["qNorm", q], ["kNorm", k]] satisfies [keyof Vectors, Float64Array][]) {
+        const weights = vectorOf(name);
+        for (let at = 0; weights && at < x.length; at += headSize) x.set(rms(x.subarray(at, at + headSize), weights), at);
+      }
+      // (T261.4.2: a local layer's angles are of its own tables)
+      const [cosAt, sinAt] = plan.local.includes(0) ? [plan.localCos, plan.localSin] : [plan.cos, plan.sin];
+      const cos = floats(cosAt + pos * half * 4, half), sin = floats(sinAt + pos * half * 4, half);
+      const turn = (vector: Float64Array) => {
+        for (let at = 0; at < vector.length; at += 2) {
+          const i = (at % headSize) / 2;
+          if (at % headSize >= turnedAt(plan, 0)) continue;
+          const [a, b] = [vector[at], vector[at + 1]];
+          vector[at] = a * cos[i] - b * sin[i];
+          vector[at + 1] = a * sin[i] + b * cos[i];
+        }
+      };
+      turn(q);
+      turn(k);
+      const keys = [Float64Array.from(row0[0], halfToFloat), heldFloats(k, gotK)], values = [Float64Array.from(row0[1], halfToFloat), heldFloats(v, gotV)];
+      const att = new Float64Array(qDim), group = plan.heads / plan.kvHeads;
+      for (let head = 0; head < plan.heads; head++) {
+        const kvAt = Math.floor(head / group) * headSize, at = head * headSize;
+        const scores = keys.map((key) => {
+          let sum = 0;
+          for (let d = 0; d < headSize; d++) sum += q[at + d] * key[kvAt + d];
+          return sum / Math.sqrt(headSize);
+        });
+        const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
+        for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
+      }
+      return { o: behind(plus(matmul("wo", att), "bo"), "attentionPost"), k, v };
+    }
     // (T154: GPT-NeoX's parallel residual, the FFN's norm of the layer's input; no gate, w1's bias and GELU as
     // shaders.ts's has it)
     const xn2 = norm(plan.parallel ? x0 : h1, vectorOf("ffn")!, vectorOf("ffnBias"));
@@ -344,8 +378,8 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const activated = gate.map(!up ? gelu : plan.activation === "gelu" ? (value, i) => gelu(value) * up[i] : (value, i) => (value / (1 + Math.exp(-value))) * up[i]);
     const down = behind(plus(matmul("w2", activated), "b2"), "ffnPost"), h2 = h1.map((value, i) => value + down[i]);
     const stream = off(h, h2) / largest(h2.map((value, i) => value - x0[i]));
-    const keyOff = off(gotK, k) / largest(k), valueOff = off(gotV, v) / largest(v);
     if (!(stream <= line)) return `the first layer's stream is ${stream.toExponential(2)} of its change from JavaScript's (line ${line})`;
+    const keyOff = k ? off(gotK, k) / largest(k) : 0, valueOff = v ? off(gotV, v) / largest(v) : 0;
     if (!(keyOff <= line && valueOff <= line)) {
       return `the first layer's keys are ${keyOff.toExponential(2)} and its values ${valueOff.toExponential(2)} from JavaScript's (line ${line})`;
     }
