@@ -152,12 +152,14 @@ console.log("ok: T375.2, the GPU's worker is told how much of a head RoPE turns 
   engine.generateMany(5, 104, [1, 2], 2, 4, 0, 0.9, 1, [], []);
   const [first, last] = beside.posted.filter((data) => data.type === "tokens").map(({ cache }) => cache);
   assert.ok(first && last, "the steps were asked of the GPU twice, with the cache's places");
-  const layers = 2;
-  assert.equal(first.capacity, 32, "the cache had grown to twice its start");
-  assert.equal(last.capacity, 128, "and to the context after the larger prompt");
-  assert.equal(last.values, last.keys + layers * last.capacity * last.row, "the values begin where the keys end, at the capacity the GPU is told");
-  assert.notEqual(last.values, first.values, "the values moved as the cache grew, and the GPU is told where they are now");
-  assert.ok(last.keys > Math.max(started.staging, started.rows, started.tokens.ids), "the cache is placed after what the GPU answers into, where it can grow");
+  // (T261.4.2: each layer's place, its block a capacity of positions after the one before it)
+  const layers = 2, capacityOf = ({ places: [one, two] }) => (two.keys - one.keys) / last.row;
+  assert.equal(capacityOf(first), 32, "the cache had grown to twice its start");
+  assert.equal(capacityOf(last), 128, "and to the context after the larger prompt");
+  assert.deepEqual(last.places.map((place) => place.ring), [0, 0], "no layer's is a ring");
+  assert.equal(last.places[0].values, last.places[0].keys + layers * capacityOf(last) * last.row, "the values begin where the keys end, at the capacity the GPU is told");
+  assert.notEqual(last.places[0].values, first.places[0].values, "the values moved as the cache grew, and the GPU is told where they are now");
+  assert.ok(last.places[0].keys > Math.max(started.staging, started.rows, started.tokens.ids), "the cache is placed after what the GPU answers into, where it can grow");
   assert.equal(await engine.release(), true);
 }
 console.log("ok: T375.3, the cache of the keys and values grows in place after the GPU's places, and the GPU is told where it is as it is now");

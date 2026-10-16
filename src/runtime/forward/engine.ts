@@ -648,8 +648,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     },
     get H() { return H; },
     get capacity() { return cache.capacity; },
-    get keys() { return cache.keys; },
-    get values() { return cache.values; },
+    // T261.4.2: a ring's (T510.1), or the layer's block among those that keep every position (as fromStaging finds them)
+    places: () => Array.from({ length: attending }, (_, l) => {
+      const ring = cache.ring(l), offset = ring ? 0 : cache.capacity * cache.offset(cache.index(l));
+      return ring ? { keys: ring.keys, values: ring.values, ring: ring.size } : { keys: cache.keys + offset, values: cache.values + offset, ring: 0 };
+    }),
   };
   // what the GPU is to take of this model (gpuFit()'s answers), and the places above where it answers
   const taken: Taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds };

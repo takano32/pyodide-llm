@@ -306,7 +306,9 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
       const weights = vectorOf(name);
       for (let at = 0; weights && at < x.length; at += headSize) x.set(rms(x.subarray(at, at + headSize), weights), at);
     }
-    const cos = floats(plan.cos + pos * half * 4, half), sin = floats(plan.sin + pos * half * 4, half);
+    // (T261.4.2: a local layer's angles are of its own tables)
+    const [cosAt, sinAt] = plan.local.includes(0) ? [plan.localCos, plan.localSin] : [plan.cos, plan.sin];
+    const cos = floats(cosAt + pos * half * 4, half), sin = floats(sinAt + pos * half * 4, half);
     const turn = (vector: Float64Array) => {
       for (let at = 0; at < vector.length; at += 2) {
         const i = (at % headSize) / 2;
@@ -330,14 +332,17 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
       const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
       for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
     }
-    const o = plus(matmul("wo", att), "bo"), h1 = x0.map((value, i) => value + o[i]);
+    // (T261.4.2: a Gemma 3's norm behind the attention and behind the FFN, of what joins the stream)
+    const behind = (x: Float64Array, name: keyof Vectors) => (vectorOf(name) ? rms(x, vectorOf(name)!) : x);
+    const o = behind(plus(matmul("wo", att), "bo"), "attentionPost"), h1 = x0.map((value, i) => value + o[i]);
     // (T154: GPT-NeoX's parallel residual, the FFN's norm of the layer's input; no gate, w1's bias and GELU as
     // shaders.ts's has it)
     const xn2 = norm(plan.parallel ? x0 : h1, vectorOf("ffn")!, vectorOf("ffnBias"));
     const gate = plus(matmul("w1", xn2), "b1"), up = plan.matrices.w3 && matmul("w3", xn2);
     const gelu = (value: number) => 0.5 * value * (1 + Math.tanh(Math.min(9.010913, Math.max(-9.010913, 0.7978845608028654 * (value + 0.044715 * value ** 3)))));
-    const activated = gate.map(up ? (value, i) => (value / (1 + Math.exp(-value))) * up[i] : gelu);
-    const down = plus(matmul("w2", activated), "b2"), h2 = h1.map((value, i) => value + down[i]);
+    // (T261.4.2: GELU in the gate, a Gemma 3's GEGLU)
+    const activated = gate.map(!up ? gelu : plan.activation === "gelu" ? (value, i) => gelu(value) * up[i] : (value, i) => (value / (1 + Math.exp(-value))) * up[i]);
+    const down = behind(plus(matmul("w2", activated), "b2"), "ffnPost"), h2 = h1.map((value, i) => value + down[i]);
     const stream = off(h, h2) / largest(h2.map((value, i) => value - x0[i]));
     const keyOff = off(gotK, k) / largest(k), valueOff = off(gotV, v) / largest(v);
     if (!(stream <= line)) return `the first layer's stream is ${stream.toExponential(2)} of its change from JavaScript's (line ${line})`;

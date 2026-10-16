@@ -18,9 +18,11 @@ type Tiles = { name: string; tiles: true; shape?: undefined; pipeline: GPUComput
 type TokenAttention = Vec | Tiles;
 // what chooseTokenAttention() returns, a part of the model's record of a token (tokenforms.ts's m.tokens): the
 // attention taken, what each came to, and the vec form's parts and Params (undefined with the tiles)
-type Chosen = { attention: TokenAttention; attentions: Tried[]; parts: GPUBuffer | undefined; params: ((nwg: number) => GPUBuffer) | undefined };
-// the buffers an attention's dispatches bind (parts and params: the vec form's)
-type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; flash: GPUBuffer; step: GPUBuffer; parts?: GPUBuffer; params?: (nwg: number) => GPUBuffer };
+type Chosen = { attention: TokenAttention; attentions: Tried[]; parts: GPUBuffer | undefined; params: ((nwg: number, window?: number) => GPUBuffer) | undefined };
+// the buffers an attention's dispatches bind (parts and params: the vec form's; T261.4.2: window, the layer's, which the
+// tiles' flash has in it and the vec form's params are made for)
+type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; flash: GPUBuffer; step: GPUBuffer; parts?: GPUBuffer; params?: (nwg: number, window?: number) => GPUBuffer;
+  window?: number };
 
 // ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.ts's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
@@ -77,12 +79,13 @@ async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
   }
   return { attention, attentions, parts, params };
 }
-// flashVec's Params a count of parts, each made once (owned: where they go)
+// flashVec's Params a count of parts (T261.4.2: and a window), each made once (owned: where they go)
 function paramsOf(m: Model, shape: FlashVecShape, heads: number, kvHeads: number, owned: GPUBuffer[]) {
-  const made = new Map<number, GPUBuffer>();
-  return (nwg: number) => {
-    if (!made.has(nwg)) made.set(nwg, uniform(m, flashVecParams(shape, heads, kvHeads, nwg), owned));
-    return made.get(nwg)!;
+  const made = new Map<string, GPUBuffer>();
+  return (nwg: number, window = 0) => {
+    const key = `${nwg} ${window}`;
+    if (!made.has(key)) made.set(key, uniform(m, flashVecParams(shape, heads, kvHeads, nwg, window), owned));
+    return made.get(key)!;
   };
 }
 // The dispatches of attention a for a token of heads that reads positions: io's q, keys, values into out (flash: the
@@ -90,14 +93,15 @@ function paramsOf(m: Model, shape: FlashVecShape, heads: number, kvHeads: number
 // group, x, y] each: the tiles a workgroup a head; the vec form nwg a head, then (nwg more than 1) the reduce
 function attentionPasses(m: Model, a: TokenAttention, io: Io, heads: number, positions: number): Pass[] {
   if (a.tiles) return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.out, io.flash, io.step]), heads, 1]];
-  const nwg = flashVecSplits(a.shape, positions), params = io.params!(nwg);
+  const nwg = flashVecSplits(a.shape, positions), params = io.params!(nwg, io.window);
   return [[a.pipeline!, bind(m, a.pipeline!, [io.q, io.keys, io.values, io.parts!, io.out, params, io.step]), heads * nwg, 1],
     ...(nwg > 1 ? [[a.reduce!, bind(m, a.reduce!, [io.parts!, io.out, params]), heads, 1]] satisfies Pass[] : [])];
 }
 // Made-up buffers of an attention of a token over positions (heads of q on kvHeads of keys and values, the model's
 // headSize; shaders.ts's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
 // positions - 1, the tiles' Params, and the vec form's parts and Params
-function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, steep = [] }: { heads: number; kvHeads: number; positions: number; steep?: number[] }, owned: GPUBuffer[]) {
+function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, steep = [], window = 0 }: { heads: number; kvHeads: number; positions: number; steep?: number[];
+  window?: number }, owned: GPUBuffer[]) {
   const size = m.plan.headSize, { q, keys, values } = tokenAttentionData({ heads, kvHeads, size, positions, steep });
   const make = (data: GPUAllowSharedBufferSource) => {
     const made = buffer(m, data.byteLength, STORAGE | COPY_DST, owned);
@@ -107,7 +111,8 @@ function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, s
   const flash = new ArrayBuffer(16);
   new Uint32Array(flash, 0, 2).set([heads, kvHeads]);
   new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(size);
-  return { data: { q, keys, values }, q: make(q), keys: make(keys), values: make(values), out: buffer(m, heads * size * 4, STORAGE | COPY_SRC, owned),
+  new Uint32Array(flash, 12, 1)[0] = window;
+  return { data: { q, keys, values }, window, q: make(q), keys: make(keys), values: make(values), out: buffer(m, heads * size * 4, STORAGE | COPY_SRC, owned),
     step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flash, owned),
     ...(a.tiles ? {} : { parts: buffer(m, flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
 }
@@ -117,22 +122,27 @@ function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, s
 // each of more than one tile: the reduce over them), with positions past the token's that it must not read, and head
 // 3's q steep (a largest taken wrong shows only in a steep softmax). Each head's output against its softmax over the
 // positions up to the token's, no farther than LINE of the largest |value| of its head (checkAttention's: the tiles
-// hold the weights in float16)
-const TOKEN_ATTENTION_LENGTHS = [40, 70, 300, 1100];
+// hold the weights in float16). T261.4.2: a model with layers that attend a window (a Gemma 3's local ones) also at 300
+// positions through a window of 37 (TOKEN_ATTENTION_WINDOW: its first position in the middle of a KV_TILE, and parts of
+// the vec form that read nothing), whose output is of those 37 positions alone
+const TOKEN_ATTENTION_LENGTHS = [40, 70, 300, 1100], TOKEN_ATTENTION_WINDOW = [300, 37];
 async function checkTokenAttention(m: Model, a: TokenAttention) {
   const size = m.plan.headSize, heads = 4, kvHeads = 2;
-  for (const positions of TOKEN_ATTENTION_LENGTHS) {
+  const lengths = [...TOKEN_ATTENTION_LENGTHS.map((positions) => [positions, 0]), ...(m.plan.windows.some(Boolean) ? [TOKEN_ATTENTION_WINDOW] : [])];
+  for (const [positions, window] of lengths) {
     const owned: GPUBuffer[] = [];
     try {
-      const io = attentionIo(m, a, { heads, kvHeads, positions, steep: [3] }, owned);
+      const io = attentionIo(m, a, { heads, kvHeads, positions, steep: [3], window }, owned);
       const passes = await validated(m, () => attentionPasses(m, a, io, heads, positions));
       const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
       pass.end();
       m.device.queue.submit([encoder.finish()]);
       const got = new Float32Array(await readBack(m, io.out, heads * size * 4));
-      const worst = tokenAttentionOff(got, io.data, { heads, kvHeads, size, positions });
-      if (!(worst <= LINE)) return `its output is ${worst.toExponential(2)} of the largest value from JavaScript's at ${positions} positions (line ${LINE})`;
+      const worst = tokenAttentionOff(got, io.data, { heads, kvHeads, size, positions, window });
+      if (!(worst <= LINE)) {
+        return `its output is ${worst.toExponential(2)} of the largest value from JavaScript's at ${positions} positions${window ? ` through a window of ${window}` : ""} (line ${LINE})`;
+      }
     } finally {
       owned.forEach((b) => b.destroy());
     }

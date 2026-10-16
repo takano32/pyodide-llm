@@ -14,7 +14,7 @@ import type { Answers } from "./choice.ts";
 import type { Control } from "./control.ts";
 import type { Direct } from "./alone.ts";
 import type { Convolution, Linear } from "../contracts/form.ts";
-import type { Force, FromGpu, Matrix, Remembered, ToGpu, Tokens, Vectors } from "../contracts/gpu/protocol.ts";
+import type { CachePlace, Force, FromGpu, Matrix, Remembered, ToGpu, Tokens, Vectors } from "../contracts/gpu/protocol.ts";
 import type { GpuChose } from "../contracts/messages.ts";
 import type { Activation, LayerKind, Tensor } from "../contracts/plan.ts";
 
@@ -88,7 +88,9 @@ export type CpuSide = {
   // GPU's worker left of a block (next: the position that comes after it)
   follows(pos: number): boolean;
   stateFromStaging(next: number): void;
-  readonly H: Uint16Array; readonly capacity: number; readonly keys: number; readonly values: number;
+  // T261.4.2: where each attending layer's keys and values are now (a block, or a ring: a step's go up from there)
+  places(): CachePlace[];
+  readonly H: Uint16Array; readonly capacity: number;
 };
 // The GPU's worker as this side has it: a Worker (gpu.ts's), or what posts and listens as one
 export type GpuWorker = { postMessage(message: ToGpu): void; onmessage: ((event: MessageEvent<FromGpu>) => void) | null; onerror: ((event: ErrorEvent) => void) | null; terminate?(): void };
@@ -180,9 +182,6 @@ export function gpuFit({ shape, weights, device, direct }:
   function tokensUnfit() {
     // T545: an LFM2's prompts go to the GPU, its steps stay on the CPU (a token's fused layer has no convolution layer)
     if (convolution) return REASONS.convolution;
-    // T261.4: a token's fused layer has none of a Gemma 3's (a GELU in the gate, the norms behind, a window, the local
-    // tables): its prompts go to the GPU, its steps stay on the CPU (T261.4.2)
-    if ((gatedFfn && activation !== "silu") || attPost || ffnPost || local) return REASONS.pair;
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
@@ -194,7 +193,8 @@ export function gpuFit({ shape, weights, device, direct }:
     if (memoryUnsaid) return REASONS.memoryUnsaid;
     const table = vocab * dim * gpuWeightBytes(wcls.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
-    const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
+    // (T261.4.2: a Gemma 3's local layers' table of RoPE as well)
+    const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
     if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;
   }
@@ -571,7 +571,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     Atomics.store(ctl!, GPU_WANTED, gpuSerial);
     // (T210: on the GPU alone, no cache here to go up from, nor any position the GPU does not hold)
     gpuWorker!.postMessage({ type: "tokens", serial: gpuSerial, count, pos, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length, written,
-      cache: direct ? null : { keys: cpuSide.keys, values: cpuSide.values, capacity: cpuSide.capacity, row: KV, half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) });
+      cache: direct ? null : { places: cpuSide.places(), row: KV, half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
       stopGpu(REASONS.stalled(stalledMs));
       return undefined;

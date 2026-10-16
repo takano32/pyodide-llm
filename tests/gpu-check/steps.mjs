@@ -63,10 +63,9 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     // GPT-NeoX's go to the GPU too, and steps.planned === false, which passed them before, is a failure now: T213's rule)
     const right = (c.force?.pieceBytes && !steps.forced && /past a buffer/.test(steps.why)) ||
       (/^the (classifier|embedding) is past a buffer/.test(steps.why ?? "") && table > steps.binds) ||
+      // (T261.4.2: a Gemma 3's steps are the GPU's now: its GEGLU, norms behind, window and local tables are a token's
+      // fused layer's, and its steps on the CPU are a failure)
       steps.why === `${unbound(c)} would not start where this GPU binds a buffer` ||
-      // (T261.4: a Gemma 3's steps, whose GEGLU, norms behind, window and local tables a token's fused layer has not:
-      // its prompts are the GPU's, its steps the CPU's until T261.4.2)
-      (c.arch === "gemma3" && steps.planned === false && steps.why === "this pair of norms and FFN is not on the GPU yet") ||
       // (T545: an LFM2's, whose convolution layers a token's fused layer has not: its prompts are the GPU's)
       (c.arch === "lfm2" && steps.planned === false && steps.why === "convolution layers are not on the GPU yet");
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);

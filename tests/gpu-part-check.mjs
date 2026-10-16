@@ -113,8 +113,8 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     },
     get H() { return halves; },
     get capacity() { return beside.capacity; },
-    get keys() { return 60000; },
-    get values() { return 61000; } };
+    // (T261.4.2: where each attending layer's keys and values are: the first a ring's)
+    places() { return [{ keys: 60000, values: 61000, ring: 21 }, { keys: 62000 + beside.capacity, values: 63000, ring: 0 }]; } };
   const model = { ...SHAPE, ...shape };
   const weights = { ...WEIGHTS, ...other };
   const fit = gpuFit({ shape: model, weights, device: { gpuRoom: undefined, memoryUnsaid: false, sharedMemory: true }, direct });
@@ -381,7 +381,7 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   assert.deepEqual(step(part, 16), [16, 17, 18, 19], "the ids the GPU sampled");
   const [asked] = beside.posted;
   assert.deepEqual([asked.type, asked.count, asked.pos, asked.from, asked.token, asked.history, asked.length, asked.written, asked.randoms], ["tokens", 4, 16, 0, 7, [1, 2, 3], 3, 2, [0.1, 0.2, 0.3, 0.4]]);
-  assert.deepEqual([asked.cache, asked.settings], [{ keys: 60000, values: 61000, capacity: 32, row: 8, half: true }, { temperature: 0.7, topp: 0.9, penalty: 1.1, topK: 20, minP: 0.05, presence: 1.5, stops: [] }],
+  assert.deepEqual([asked.cache, asked.settings], [{ places: [{ keys: 60000, values: 61000, ring: 21 }, { keys: 62032, values: 63000, ring: 0 }], row: 8, half: true }, { temperature: 0.7, topp: 0.9, penalty: 1.1, topK: 20, minP: 0.05, presence: 1.5, stops: [] }],
     "the cache as it is now: after it grew for the steps");
   assert.deepEqual([beside.grown, beside.staged, part.sampled], [[19], [[16, 4]], 4]);
   assert.deepEqual(step(part, 20, { count: 2 }), [20, 21]);
@@ -667,11 +667,11 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2's, with its LayerNorms) has no w3");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null }).unfit(), null, "(whose activation is a GELU's, as the GPU's FFN without a gate has it)");
-  // T261.4: a Gemma 3's prompts: each of what it has besides by itself, and all of them, but not its steps (T261.4.2);
-  // the norms behind are vectors the GPU reads
+  // T261.4: a Gemma 3's prompts: each of what it has besides by itself, and all of them; T261.4.2: and its steps. The
+  // norms behind are vectors the GPU reads
   for (const [shape, weights] of [[{ activation: "gelu" }, {}], [{}, { attPost: 4096 }], [{}, { ffnPost: 4096 }], [{ local: true }, {}],
     [{ activation: "gelu", local: true, windows: [5, 0], locals: [0] }, { attPost: 4096, ffnPost: 8192, localCos: 53000, localSin: 54000 }]]) {
-    assert.deepEqual([fitOf(shape, weights).unfit(), fitOf(shape, weights).tokensUnfit()], [null, "this pair of norms and FFN is not on the GPU yet"], JSON.stringify([shape, weights]));
+    assert.deepEqual([fitOf(shape, weights).unfit(), fitOf(shape, weights).tokensUnfit()], [null, null], JSON.stringify([shape, weights]));
   }
   assert.deepEqual(fitOf({}, { attPost: 4096, ffnPost: 8192 }).vectors(), { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 }, attentionPost: { at: 4096, size: 8 },
     ffnPost: { at: 8192, size: 8 } });
@@ -700,6 +700,10 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   const ternaryTokens = ternaryLayers + 100 * 8 * 0.28125 + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
   assert.deepEqual([fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens }).tokensUnfit(), fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens - 1 }).tokensUnfit() === null], [null, false],
     "the steps' tables of a ternary model, to the byte");
+  // (T261.4.2: a Gemma 3's local layers' table of RoPE as well)
+  const localTable = SHAPE.seqLen * SHAPE.headSize * 4;
+  assert.deepEqual([fitOf({ local: true }, {}, { gpuRoom: tokens + localTable }).tokensUnfit(), fitOf({ local: true }, {}, { gpuRoom: tokens + localTable - 1 }).tokensUnfit() === null], [null, false],
+    "a model with local layers holds their table of RoPE too");
   assert.deepEqual([fitOf({ sharedClassifier: false }, {}, { gpuRoom: tokens + table }).tokensUnfit(), fitOf({ sharedClassifier: false }, {}, { gpuRoom: tokens + table - 1 }).tokensUnfit() === null], [null, false],
     "an embedding that is another table counts twice");
   // the vectors: the norms' weights always, the rest where the model has them

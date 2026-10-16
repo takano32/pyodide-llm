@@ -27,9 +27,10 @@ type Feed = { norm: Pass[]; quantize: Pass[]; input: Entry[] };
 // A token's uniforms: every model's, and what only some have (Qwen2's biases of q, k and v as one, Qwen3's norms of
 // the heads, GPT-2's and GPT-NeoX's biases and positions, a ternary classifier's outlier channels; hidden is GELU's
 // size, set for every model and read where the FFN has no gate)
+// (T261.4.2: flash a layer, the tiles' Params with the layer's window in them)
 type Uniforms = {
   embed: GPUBuffer[];
-  flash: GPUBuffer;
+  flash: GPUBuffer[];
   o: GPUBuffer;
   down: GPUBuffer;
   qkv: GPUBuffer[];
@@ -137,17 +138,22 @@ function tokenCandidates(m: Model) {
 // T150's matrix of floats, which needs no such thing)
 // (T232: a ternary classifier is no matrix of floats: its outlier channels are taken apart as the CPU takes them,
 // shaders.ts's TAKE_OUTLIERS and TERNARY_COLUMNS)
+// (T261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
+// that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
 const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && !m.ternary;
-const tokenShape = (m: Model) => ({ apart: Boolean(m.tokens.qkv), gated: Boolean(m.weights.matrices.w3), layerNorm: m.plan.layerNorm, floatHead: floatHead(m) });
+const tokenShape = (m: Model) => ({ apart: Boolean(m.tokens.qkv), gated: Boolean(m.weights.matrices.w3), geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
+  floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost) });
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
-const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, layerNorm, floatHead }: ReturnType<typeof tokenShape>): [string, string][] => {
+const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, geglu, layerNorm, floatHead, posts }: ReturnType<typeof tokenShape>): [string, string][] => {
   const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
   const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: ternary ? "ternary" : "int8" }) : floats;
+  // (a matrix whose input is no norm of the stream: the attention's output, the activation's)
+  const plain = (output: FusedOutput) => (dp4a ? matrix(output) : ENGINE.fusedMatVec({ input: "plain", output, subgroups }));
   return [...(dp4a && !normApart ? [["normQuantize", ENGINE.NORM_QUANTIZE]] satisfies [string, string][] : []), ["qkv", matrix(apart ? "write" : "rope")],
-    ["add", dp4a ? matrix("add") : ENGINE.fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
-    ["classifier", (floatHead ? floats : matrix)("write")]];
+    ["add", plain("add")], ["glu", matrix(!gated ? "write" : geglu ? "geglu" : "swiglu")],
+    ["classifier", (floatHead ? floats : matrix)("write")], ...(posts ? [["write", plain("write")]] satisfies [string, string][] : [])];
 };
 
 // a bind group of the bindings given ([binding, a buffer or a range of one] each: the fused shaders skip binding 4
@@ -194,11 +200,21 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     new Float32Array(bytes, 8, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
-  const flash = new ArrayBuffer(16);
-  new Uint32Array(flash, 0, 2).set([plan.heads, plan.kvHeads]);
-  new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
+  // (T261.4.2: the tiles' Params of each window the layers attend: 0 for every position, a Gemma 3's local layers')
+  const flashes = new Map<number, GPUBuffer>();
+  const flashOf = (window: number) => {
+    if (!flashes.has(window)) {
+      const flash = new ArrayBuffer(16);
+      new Uint32Array(flash, 0, 2).set([plan.heads, plan.kvHeads]);
+      new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
+      new Uint32Array(flash, 12, 1)[0] = window;
+      flashes.set(window, uniform(m, flash));
+    }
+    return flashes.get(window)!;
+  };
   const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim), qkvRows = qDim + 2 * kvDim;
-  g.u = { embed: m.weights.tables!.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))), flash: uniform(m, flash), o: params(plan.dim, qDim), down: params(plan.dim, plan.hidden),
+  g.u = { embed: m.weights.tables!.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))),
+    flash: layers.map((_, l) => flashOf(plan.windows[l] ?? 0)), o: params(plan.dim, qDim), down: params(plan.dim, plan.hidden),
     qkv: layers.map((at, l) => params(qkvRows, plan.dim, 0, at, turnedAt(plan, l))), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
     norm: layers.map((at) => norm(at)), final: norm(0), classifier: m.weights.tables!.classifier.map((piece) => params(piece.rows, plan.dim)),
     // QUANTIZE's (n, xStride): the attention's output, SwiGLU's
@@ -293,8 +309,13 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
     const [o] = W.matrices.wo.pieces, [down] = W.matrices.w2.pieces;
     const attention = normed(V.attention, V.attentionBias, g.u.norm[l]), ffn = normed(V.ffn, V.ffnBias, g.u.norm[l]);
     const attended = plain(g.att, g.u.quantizeAttention, qDim), activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
-    // where q, k and v go turned: q, and the cache at the Step's position
-    const turned: Entry[] = [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, W.angleTable!], [9, g.step]];
+    // where q, k and v go turned: q, and the cache at the Step's position (T261.4.2: a local layer by its own table)
+    const turned: Entry[] = [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, plan.local.includes(l) ? W.localAngleTable! : W.angleTable!], [9, g.step]];
+    // T261.4.2: what joins the stream after a matrix: added on its write, or (a Gemma 3's norm behind it) written as it
+    // is into xb, which nothing reads by then, and normed into the stream there (RMSNORM_ADD, as a prompt's block)
+    const joining = (post: GPUBuffer | undefined, [w, s]: [Bound, Bound], input: Entry[], params: GPUBuffer): Pass[] => (post
+      ? [matrix(P.write, [w, s], input, params, plan.dim, [[5, g.xb]]), [b.normAdd!, bind(m, b.normAdd!, [g.xb, post, g.h, g.u.norm[l], g.step]), 1, 1]]
+      : [matrix(P.add, [w, s], input, params, plan.dim, [[5, g.h]])]);
     list.push(...attention.norm, ...attention.quantize,
       // T226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
       // RoPE: as the CPU has it and a prompt's block (T153), the biases, the norms of the heads of q and of k, RoPE
@@ -307,14 +328,14 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
       // k and v have read by now; a norm on the matrix's read would come too late: chooseTokens refuses the pair)
       ...(plan.parallel ? ffn.norm : []),
       ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[l], values: cache.values[l], out: g.att, parts: g.parts, params: g.params,
-        flash: g.u.flash, step: g.step }, plan.heads, positions),
-      ...attended.quantize, matrix(P.add, o.layers[l], attended.input, g.u.o, plan.dim, [[5, g.h]]), ...biased(g.h, "bo", l),
+        flash: g.u.flash[l], window: plan.windows[l] ?? 0, step: g.step }, plan.heads, positions),
+      ...attended.quantize, ...joining(V.attentionPost, o.layers[l], attended.input, g.u.o), ...biased(g.h, "bo", l),
       ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
       // gate and up as one matrix with SwiGLU on its write; or (T154: no gate) w1, its bias and GELU
       ...(gated ? [matrix(P.glu, W.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
         : [matrix(P.glu, W.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
           [b.activation, bind(m, b.activation, [g.gate, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]),
-      ...activated.quantize, matrix(P.add, down.layers[l], activated.input, g.u.down, plan.dim, [[5, g.h]]), ...biased(g.h, "b2", l));
+      ...activated.quantize, ...joining(V.ffnPost, down.layers[l], activated.input, g.u.down), ...biased(g.h, "b2", l));
   }
   if (head) {
     // T232: a ternary classifier's outlier channels go out of the normed stream before it is quantized (TAKE_OUTLIERS),

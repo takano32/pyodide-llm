@@ -136,9 +136,11 @@ export type Started = {
 // The plan of { type: "open" } (gpuOnlyPlan()): the layers and their matrices by where they are in the checkpoint
 export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined };
 
-// forward.ts's cache of the keys and values a generation's steps go up from: their addresses, the positions it has
-// room for, the bytes of a position, and whether they are float16
-export type Cache = { keys: number; values: number; capacity: number; row: number; half: boolean };
+// forward.ts's cache of the keys and values a generation's steps go up from: where each attending layer's are now (T261.4.2,
+// places: the address of position 0's keys and values, position p's p rows after; or, where ring is not 0, a ring of so
+// many positions that holds position p at p mod ring, T510.1), the bytes of a position, and whether they are float16
+export type CachePlace = { keys: number; values: number; ring: number };
+export type Cache = { places: CachePlace[]; row: number; half: boolean };
 // the sampling of the steps (the engine's settings; T546: topK, minP and presence too, 0 where none; stops: the stop
 // tokens)
 export type Sampling = { temperature: number; topp: number; penalty: number; topK: number; minP: number; presence: number; stops: number[] };
