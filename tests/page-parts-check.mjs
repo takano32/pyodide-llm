@@ -5,7 +5,8 @@
 // element, no address, no storage, no clock), so Node imports them as the modules they are (Node 24 takes the types
 // off a .ts file), with no browser, no worker and no model:
 //
-//   src/page/model.ts         the model the page has and how far its load has come: each event changes what it says
+//   src/page/model.ts         the model the page has and how far its load has come (T553: and the time its fetch has
+//                             left, from the bytes said and the clock the caller hands over): each event changes what it says
 //                             and nothing else (the others are compared whole, before and after); events out of their
 //                             order do no harm; nothing of it can be assigned from outside
 //   src/page/answer.ts        the answer being written: its bubble, the settings it is written with (the steps held to
@@ -48,7 +49,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
 // ---- src/page/model.ts
 {
   const m = await fresh("page/model.ts");
-  assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false, outdated: false },
+  assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false, outdated: false, arriving: undefined },
     "a visit starts with the default, its first load, nothing ready");
   assert.equal(m.takesPrompts(), false, "a model that is not ready takes no prompt");
   unassignable(m, "model.ts");
@@ -153,12 +154,51 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   assert.equal(quiet.outdated, false, "no event but the worker's word makes a page an old one");
   cases += 2;
 }
+{
+  // T553: the reports of a load's fetch, and the time it has left (remaining.ts: the clock is the caller's)
+  const m = await fresh("page/model.ts");
+  const { secondsLeft, leftSaid, advanced } = await fresh("page/remaining.ts");
+  // (receiver.ts says each report so)
+  const report = (bytes, now) => m.arrived(advanced(m.arriving, bytes, now));
+  report(1e6, 1000);
+  assert.deepEqual(m.arriving, { began: 1000, first: 1e6, at: 1000, bytes: 1e6, moved: 1000 }, "a first report: when and how much, no speed yet");
+  assert.equal(secondsLeft(m.arriving, 100e6, 1000), undefined, "no speed: nothing said");
+  for (let t = 1250; t <= 4000; t += 250) report(1e6 + (t - 1000) * 1000, t);  // 1 MB/s
+  assert.equal(m.arriving.speed, 1e6, "the plain average of the first seconds");
+  assert.equal(secondsLeft(m.arriving, 100e6, 3999), undefined, "nothing in the first 3 seconds (the owner's words)");
+  report(4.25e6, 4250);
+  assert.equal(Math.round(secondsLeft(m.arriving, 100e6, 4250)), 96, "after them, the bytes left over the speed");
+  assert.equal(leftSaid(secondsLeft(m.arriving, 100e6, 4250)), " · about 100 s left", "said in tens above a minute");
+  assert.ok(secondsLeft(m.arriving, 100e6, 14249) > 0, "said until 10 seconds pass without an arrival");
+  assert.equal(secondsLeft(m.arriving, 100e6, 14250), undefined, "nothing once nothing arrived for 10 seconds");
+  report(4.25e6, 14000);  // a report of no more bytes (the share converted moved): still nothing arrived
+  assert.equal(secondsLeft(m.arriving, 100e6, 14250), undefined, "a report without new bytes is no arrival");
+  // the speed changes: after 10 seconds the weighted average follows the new one, and forgets the old one in about 10
+  for (let t = 14250; t <= 44000; t += 250) report(m.arriving.bytes + 250e3 * 4, t);  // 4 MB/s from now
+  const a = m.arriving;
+  assert.ok(Math.abs(a.speed - 4e6) < 0.05 * 4e6, `the speed follows a faster line (${a.speed})`);
+  assert.equal(secondsLeft(a, a.bytes, 44000), undefined, "nothing left: nothing said");
+  assert.equal(leftSaid(secondsLeft(a, a.bytes + 1, 44000)), " · about 1 s left", "never under a second");
+  assert.deepEqual([leftSaid(undefined), leftSaid(7.4), leftSaid(33), leftSaid(57.6), leftSaid(61)], ["", " · about 7 s left", " · about 35 s left", " · about 60 s left", " · about 60 s left"]);
+  // a fetch begun again (fewer bytes), and a load chosen anew
+  report(5, 50000);
+  const again = m.arriving;
+  assert.deepEqual(again, { began: 50000, first: 5, at: 50000, bytes: 5, moved: 50000 }, "fewer bytes than before: a fetch begun anew");
+  report(6, 50000);
+  assert.equal(m.arriving, again, "a report at the same time adds nothing to the speed");
+  only(m, () => m.chose(second), { model: second, loads: 2, arriving: undefined }, "another model: nothing of the fetch before");
+  report(1, 1);
+  only(m, () => m.becameReady({ seq_len: 1, backend: "NumPy", threads: 1, pyodide: "" }), { ready: true, longest: 1, readyLine: { backend: "NumPy", threads: 1, pyodide: "" }, arriving: undefined }, "ready: the fetch is over");
+  report(1, 1);
+  only(m, () => m.failed(false), { arriving: undefined }, "an error: the fetch is over");
+  cases += 6;
+}
 console.log(`page-parts-check: model.ts by itself: what a visit opens with, a choice, ready, the GPU's word, the threads, the benchmark, an error, the site's update; each changes what it says alone`);
 
 // ---- src/page/answer.ts
 {
   const a = await fresh("page/answer.ts");
-  assert.deepEqual(held(a), { generating: false, answer: null, used: {} }, "nothing is being written as the page starts");
+  assert.deepEqual(held(a), { generating: false, answer: null, used: {}, written: "", undrawn: 0, drawnAt: undefined, shape: { markdown: false, thinking: false } }, "nothing is being written as the page starts");
   unassignable(a, "answer.ts");
   const drawn = [];
   const seed = () => (drawn.push(1), 4242);
@@ -192,6 +232,35 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   a.answerBegan(next, settings, 4096, seed);
   assert.equal(a.answer, next);
   cases += 4;
+}
+{
+  // T554: the tokens of an answer, drawn at once, then every 8 tokens or 32 ms; a new answer begins with nothing written
+  const a = await fresh("page/answer.ts");
+  a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
+  assert.equal(only(a, () => a.wrote("A", 1000), { written: "A", undrawn: 1 }, "the first token"), true, "is drawn at once");
+  only(a, () => a.drew(1000), { undrawn: 0, drawnAt: 1000 }, "drawn: nothing undrawn, and when");
+  const due = [];
+  for (let i = 0; i < 9; i += 1) due.push(a.wrote(String(i), 1001 + i));
+  assert.deepEqual(due, [false, false, false, false, false, false, false, true, true], "the eighth token after a draw is drawn (and each after it until one is)");
+  assert.equal(a.written, "A012345678");
+  a.drew(1010);
+  assert.equal(a.wrote("x", 1041), false, "31 ms after a draw: not yet");
+  assert.equal(a.wrote("y", 1042), true, "32 ms: drawn");
+  a.drew(1042);
+  const bubble = {};
+  only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
+  assert.equal(a.wrote("z", 0), true, "and its first token is drawn at once");
+  cases += 2;
+}
+{
+  // T556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
+  const a = await fresh("page/answer.ts");
+  const drawn = { markdown: true, thinking: true }, bubble = {};
+  only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1, drawn), { generating: true, answer: bubble, used: { steps: 0, temperature: 0 }, shape: { markdown: true, thinking: true } }, "an answer drawn as Markdown, in a thought");
+  assert.notEqual(a.shape, drawn, "the shape is the owner's own");
+  a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
+  assert.deepEqual(a.shape, { markdown: false, thinking: false }, "an answer that says nothing of it is plain text");
+  cases += 2;
 }
 console.log("page-parts-check: answer.ts by itself: the bubble, the settings of the run (steps within the context, a seed where it samples), idle");
 

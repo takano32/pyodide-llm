@@ -6,11 +6,13 @@ import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHer
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
-import { becameReady, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
-import { answer, idle, used } from "./answer.ts";
+import { arrived, arriving, becameReady, fromTemplate, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
+import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
+import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answer.ts";
+import { markdownCame, markdownWanted } from "./markdown.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
-import { message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
+import { drawAnswer, message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
@@ -21,6 +23,18 @@ const loadedHow = (data: Ready) => ((model as any).hf ? (data.fromCache ? "from 
 let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
 // T156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
 let aloneOnReady: { load: number; alone: Alone } | undefined;
+// T553: a line that says the time left, which says it no more once nothing has arrived for 10 seconds (no report comes then)
+let stillTimer: ReturnType<typeof setTimeout> | undefined;
+// T554: the answer is drawn at once, then every 8 tokens or 32 ms (answer.ts's wrote()); what comes between is drawn by
+// this timer, or at the answer's end
+let drawTimer: ReturnType<typeof setTimeout> | undefined;
+function drawNow() {
+  clearTimeout(drawTimer);
+  drawTimer = undefined;
+  if (!answer) return;
+  drawAnswer(answer.firstElementChild!, written, shape, markdownCame);
+  drew(performance.now());
+}
 if (await isolating()) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
@@ -43,9 +57,17 @@ worker.onmessage = ({ data }) => {
     // the visitor's own disk has nothing to fetch: the share alone
     const converted = data.converted === undefined ? "" : `${Math.floor(data.converted * 100)} % converted`;
     progress.value = data.received || (data.converted ?? 0) * data.total;
-    statusText.textContent = !data.received && converted ? `${model.name}: ${converted}`
+    // T553: and, last, about how long the fetch has left (the owner's words: nothing for its first 3 seconds, nor while
+    // nothing arrived for 10)
+    const now = performance.now();
+    if (data.received) arrived(advanced(arriving, data.received, now));
+    const line = !data.received && converted ? `${model.name}: ${converted}`
       : `${model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
         (data.perSecond ? ` · ${megabytes(data.perSecond)} MB/s` : "") + (converted ? ` · ${converted}` : "");
+    const left = data.received ? leftSaid(secondsLeft(arriving, data.total, now)) : "";
+    statusText.textContent = line + left;
+    clearTimeout(stillTimer);
+    if (left) stillTimer = setTimeout(() => statusText.textContent === line + left && (statusText.textContent = line), STILL_MS);
   } else if (data.type === "bench") {
     // T45 measured, T76 shows it: one bubble with the table, and under it the Markdown to copy or to report
     const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });
@@ -80,6 +102,9 @@ worker.onmessage = ({ data }) => {
         rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: model.prompt || "Once upon a time", steps: 64 });
     }
     showSettings();
+    // T556: a model that answers in a format has its answers drawn as Markdown: its libraries are taken now (once a visit),
+    // and an answer that was drawn as plain text meanwhile is drawn again once they come
+    if ((model as { template?: string }).template ?? fromTemplate) void markdownWanted().then((came) => came && answer && shape.markdown && drawNow());
     // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
     navigator.storage?.persist?.();
     // T135, T148: whether the prompts go through the GPU, or why not (and the same line in the console); it changes
@@ -141,13 +166,10 @@ worker.onmessage = ({ data }) => {
       // no storage here: the next visit searches again
     }
   } else if (data.type === "token") {
-    // stick to the bottom only while the reader is there
-    const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
-    answer!.firstElementChild!.textContent += data.text;
-    if (pinned) {
-      chat.scrollTop = chat.scrollHeight;
-    }
+    if (wrote(data.text, performance.now())) drawNow();
+    else drawTimer ??= setTimeout(drawNow, 32);
   } else if (data.type === "done") {
+    if (undrawn) drawNow();  // (T554: the last tokens, before the line under the answer)
     // (T223's review: the search checks the count remembered from an earlier visit on the first generation and may change
     // it, 4 to 2 on the owner's Android: the line says the count in use as the answer's line below does)
     threadsNow(data.threads);
@@ -167,6 +189,7 @@ worker.onmessage = ({ data }) => {
       `generated ${data.tokens - data.prompt_tokens} tokens${onGpuSampled(data)} · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
     ], used.temperature ? used.seed : undefined);
   } else if (data.type === "error") {
+    if (undrawn) drawNow();  // (T554: what the answer wrote before it failed)
     aloneOnReady = undefined;  // (T156: the load on the CPU did not come to ready)
     // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
     // (T156's review: the worker's word that it loads a model on the GPU alone again on the CPU is no error of its own,

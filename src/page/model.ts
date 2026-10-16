@@ -5,6 +5,9 @@
 import { DEFAULT_MODEL, MODELS } from "../models.js";
 
 export type Model = typeof MODELS[number];
+/** T553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,
+ * when the bytes last grew (ms of the page's clock), and the speed in bytes a second (none before two reports). */
+export type Arriving = { began: number; first: number; at: number; bytes: number; moved: number; speed?: number };
 // A first visit starts with the default (T511.6); opening.ts says what this visit opens with instead.
 export let model: Model = DEFAULT_MODEL;
 // The model can be changed while one is loading: the worker cancels that download and starts the new one.
@@ -21,6 +24,8 @@ export let benchmarking = false;  // the rounds are running: the run button stay
 // T439: the worker runs on a slower path because a file of this page's build is gone from the site (it was deployed
 // again while the page was open). Of the page and not of a model: it holds for the rest of the visit
 export let outdated = false;
+// T553: what the worker's reports of this load say of its fetch so far, for the time it has left (remaining.ts)
+export let arriving: Arriving | undefined = undefined;
 
 /** The model the page opens with (the URL's, the one remembered). Once a model was chosen that one stays: false. */
 export function opensWith(entry: Model) {
@@ -34,6 +39,7 @@ export function chose(entry: Model) {
   ready = false;
   benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
   readyLine = gpuNote = undefined;  // T148: the status line waits for the new model's
+  arriving = undefined;
   loads += 1;
   return loads;
 }
@@ -43,12 +49,18 @@ export function becameReady({ seq_len, template, backend, threads, pyodide }: { 
   longest = seq_len;
   fromTemplate = typeof template === "string" ? template : undefined;
   readyLine = { backend, threads, pyodide };
+  arriving = undefined;
 }
 /** The worker's error: a round that failed ends the benchmark (the run button must not stay off: the review of T76),
  * and a model the worker loads again on the CPU (T156: its GPU stopped while it was on the GPU alone) is not ready. */
 export function failed(reloading: boolean) {
   benchmarking = false;
+  arriving = undefined;
   if (reloading) ready = false;
+}
+/** The worker's report of the bytes of this load that have arrived, as remaining.ts's advanced() makes it of the one before. */
+export function arrived(next: Arriving) {
+  arriving = next;
 }
 export function benchBegan() {
   benchmarking = true;
@@ -72,3 +84,4 @@ export function siteUpdated() {
 }
 /** Whether a prompt may be sent: one sent during the benchmark would find no model ready. */
 export const takesPrompts = () => ready && !benchmarking;
+

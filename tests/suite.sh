@@ -152,6 +152,9 @@ page_modules() {
   # T378.5: the owners of the pages' state each by itself, imported by Node as the modules they are (model.ts, answer.ts,
   # running.ts: what each event changes and nothing else), and the model a visit opens with (opening.ts, a process a visit)
   node tests/page-parts-check.mjs
+  # T556: what an answer's Markdown makes with the latest marked (from jsDelivr, as the page takes it), before DOMPurify:
+  # what is drawn, and what is said as text (the model's HTML, links, images). The browser's part: markdown-in-browser.mjs
+  node tests/markdown-check.mjs
   # T505.3: which file of a repository nobody listed is its model (src/page/repository.ts: safetensors, else the best
   # GGUF by the order of the quantizations, else the owner's sentence), on made-up lists and on real ones' names
   node tests/repository-check.mjs

@@ -248,6 +248,20 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   .model .bubble:empty::before { content: "…"; color: var(--muted); }
   .meta { font-size: 0.72rem; color: var(--muted); padding-inline: 6px; }
   .error .bubble { color: #dc2626; }
+  /* T556: an answer drawn as Markdown, one element a block (src/page/draw.ts); its thinking before it stays plain text.
+     A wide code block or table scrolls inside its block, never the page */
+  .markdown { white-space: normal; }
+  .markdown > div { overflow-x: auto; }
+  .markdown :is(p, ul, ol, pre, table, h1, h2, h3, h4, h5, h6) { margin: 0 0 0.6em; }
+  .markdown > div:last-child > :last-child { margin-bottom: 0; }
+  .markdown :is(h1, h2, h3, h4, h5, h6) { font-size: 1em; font-weight: 600; }
+  .markdown h1 { font-size: 1.15em; }
+  .markdown :is(ul, ol) { padding-left: 1.4em; }
+  .markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: var(--line); border-radius: 4px; padding: 0 3px; }
+  .markdown pre { white-space: pre; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
+  .markdown pre code { background: none; padding: 0; }
+  .markdown table { border-collapse: collapse; font-size: 0.9em; }
+  .markdown :is(th, td) { border: 1px solid var(--line); padding: 3px 8px; }
   /* T76: the benchmark's table, in the model's bubble */
   .bench .bubble { white-space: normal; }
   .bench-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }

@@ -5,6 +5,8 @@ import { chat, run, statusText } from "./dom.ts";
 import { parameters } from "./address.ts";
 import { benchmarking, gpuNote, gpuSaid, model, outdated, readyLine } from "./model.ts";
 import { generating } from "./answer.ts";
+import { markdownBroke } from "./markdown.ts";
+import type { Markdown } from "./markdown.ts";
 import { fixSeed } from "./settings.ts";
 import { SLOWER } from "../runtime/updated.ts";
 import type { BenchRow, Done } from "../runtime/contracts/messages.ts";
@@ -27,6 +29,60 @@ export function message(kind: string, text = "") {
   chat.append(element);
   chat.scrollTop = chat.scrollHeight;
   return element;
+}
+/** T554: the answer's bubble says `text`, all that was written so far, and the chat follows it only while the reader is
+ * at its bottom. As plain text, the new part is added to its text node (the text before it is not made again). T556: as
+ * Markdown where the answer is drawn so and the libraries came: the thinking stays plain text, and of the rest only
+ * the blocks that changed are made again (the last one as it grows). */
+export function drawAnswer(bubble: Element, text: string, shape?: { markdown: boolean; thinking: boolean }, markdown?: Markdown) {
+  const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
+  const blocks = bubble.lastChild?.nodeType === 1 ? bubble.lastChild as HTMLElement : undefined;  // (1: an element)
+  let drawn = false;
+  if (shape?.markdown && markdown) {
+    try {
+      if (!blocks) bubble.textContent = "";  // (it was plain text until the libraries came)
+      drawMarkdown(bubble, text, shape.thinking, markdown);
+      drawn = true;
+    } catch (error) {
+      markdownBroke(error);
+    }
+  }
+  if (!drawn) {
+    if (blocks) bubble.textContent = "";
+    let node = bubble.lastChild as CharacterData | null;
+    if (node?.nodeType !== 3) bubble.append(node = document.createTextNode(""));  // (3: a text node)
+    node!.appendData(text.slice(node!.length));
+  }
+  if (pinned) chat.scrollTop = chat.scrollHeight;
+}
+// the source of each block drawn, by its element
+const sources = new WeakMap<Element, string>();
+const THOUGHT_END = "</think>";
+function drawMarkdown(bubble: Element, text: string, inThought: boolean, markdown: Markdown) {
+  // what is thought (to its end, or all of it while it goes on) and what is said after it
+  const end = text.lastIndexOf(THOUGHT_END);
+  const cut = end >= 0 ? end + THOUGHT_END.length : inThought || text.trimStart().startsWith("<think>") ? text.length : 0;
+  let thought = bubble.firstChild as CharacterData | null, list = bubble.lastChild as HTMLElement | null;
+  if (thought?.nodeType !== 3 || !list || list.nodeType !== 1) {
+    bubble.textContent = "";
+    bubble.append(thought = document.createTextNode(""), list = document.createElement("div"));
+    list.className = "markdown";
+  }
+  const thinking = text.slice(0, cut);
+  if (thinking.startsWith(thought!.data)) thought!.appendData(thinking.slice(thought!.length));
+  else thought!.data = thinking;
+  const all = markdown.blocks(text.slice(cut)), links = all.links;  // (marked's references, which a block may name)
+  const blocks = all.filter((block) => block.type !== "space");
+  const drawnBlocks = [...list!.children];
+  let same = 0;
+  while (same < blocks.length && same < drawnBlocks.length && sources.get(drawnBlocks[same]) === blocks[same].raw) same += 1;
+  for (const gone of drawnBlocks.slice(same)) gone.remove();
+  for (const block of blocks.slice(same)) {
+    const element = document.createElement("div");
+    element.append(markdown.html(block, links));
+    sources.set(element, block.raw);
+    list!.append(element);
+  }
 }
 // The numbers are the point of this experiment, so they stay on the page: a short line under the answer that
 // opens into the breakdown. Tapping the summary is the only interaction, and closed it reads as one line.
