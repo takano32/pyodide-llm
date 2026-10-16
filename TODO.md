@@ -226,7 +226,7 @@
 - T545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 未着手
 - T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 未着手
 - T547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 未着手
-- T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えの歩を GPU に置くか — 持ち主の判断待ち
+- T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えの歩を GPU に置くか — 未着手
 - T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
 - T550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 候補
 - T551 [性能][WebGPU] 1 回の submit の歩の数とプロンプトのブロックの大きさを、端末で測って選ぶ — 候補
@@ -1611,7 +1611,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **手元で見られない所**: シェーダは CI。Saluki の GPU だけは CI のランナーで回せない（7.9 GB）: 持ち主の PC。
 - **完了の目安**: gpu-check に塊の作り物（`tests/blocks_forward.py` の形）を足して、CPU の塊のカーネルの模型（`tests/blocks-model.mjs`）と型ごとに比べる。4-bit の Shisa が GPU で答える。
 
-### T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えの歩を GPU に置くか — 状態: 持ち主の判断待ち（2026-10-16、WebGPU の洗い出しから。規模 小。区切りのまとめで聞く）
+### T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えの歩を GPU に置くか — 状態: 未着手（2026-10-16、**持ち主が選択肢で「どちらも GPU に」**: Safari も Firefox も答えの歩を GPU に置く。iPhone でタブが落ちうるので、本線に入れた後に持ち主の iPhone で確かめる（端末の一覧に積む）。落ちたら Safari だけ戻す）。前の見出し: 持ち主の判断待ち（2026-10-16、WebGPU の洗い出しから。規模 小。区切りのまとめで聞く）
 - いまは `tokensUnfit()` の `REASONS.memoryUnsaid`（T205）で、`navigator.deviceMemory` を言わないブラウザは答えの歩を GPU に置かない（プロンプトのブロックだけ GPU）。訳: iPhone の `/benchmark/` のモデルの節で、分類器と埋め込みも GPU に置いたらタブが落ちた。メモリの見積もりはもともと 4 GB の仮定（`weightsPlace()` の既定）なので、この行は余分の守り。
 - **選択肢（勧めを先頭に）**: (1) Firefox だけ置き、Safari は今のまま（Firefox の WebGPU はパソコンの版で使われている。Android の Firefox で WebGPU が使えるかは未確認。落ちた報告は iPhone の Safari のものだけ）。(2) 今のまま。(3) どちらも置く（iPhone の Safari のタブが落ちうる: 持ち主の iPhone で確かめてから）。
 - 見分けは端末の事実で（Safari かを UA の文字で見るのでなく、例えば WebKit だけの性質で）: 書くときに決める。鍵は動かない。確かめは CI の Firefox（`browsers.yml` の WebGPU のある組）と持ち主の端末。
