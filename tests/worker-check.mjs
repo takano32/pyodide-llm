@@ -910,16 +910,22 @@ const ok = (line) => {
   }
 
   // Pyodide's runtime that ends as it starts (its standard library did not arrive: loadPyodide() goes on without it, and
-  // Python exits) rejects with Emscripten's ExitStatus: told as a step of Pyodide's that stopped; an Error stays itself
+  // Python exits) rejects with Emscripten's ExitStatus: told as a step of Pyodide's that stopped. An Error of the
+  // network keeps its words (what the visitor read before) and is of the kind "runtime" (T538: on a line the model
+  // fills, a new connection to jsDelivr may die before the quiet spell, which no longer comes, gave the fallback);
+  // memory that ran out stays "memory"
   fresh(() => new Response("", { status: 404 }));
   const ended = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: () => Promise.reject(new ExitStatus(1)) })));
   assert.equal(ended?.error.message,
     'Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived');
   assert.equal(ended.error.kind, "runtime");
   const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new TypeError("Importing a module script failed."); }));
-  assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
+  assert.equal(broke?.error.message, "TypeError: Importing a module script failed.");
+  assert.equal(broke.error.kind, "runtime", "a loader that the network failed: the page would not try again without the service worker");
+  const short = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: () => Promise.reject(new RangeError("WebAssembly.Memory(): could not allocate memory")) })));
+  assert.equal(short?.error.kind, "memory");
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
-  ok("a runtime of Pyodide's that ended as it started is told as a step that stopped");
+  ok("a runtime of Pyodide's that ended as it started is told as a step that stopped, and a network that failed one may be tried again");
 }
 
 // ---- T357: a stop that arrives during a run stops it. Nothing ran generate() outside a browser: `stopped` spelled

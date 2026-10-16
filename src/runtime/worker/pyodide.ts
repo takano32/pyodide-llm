@@ -2,7 +2,7 @@
 // from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.ts keeps what this loads.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { Failure, isError, told } from "../failure.ts";
+import { Failure, failureOf, isError, told } from "../failure.ts";
 import type { Status } from "../contracts/messages.ts";
 import type { Pyodide, PyodideModule } from "../contracts/python.ts";
 
@@ -183,8 +183,17 @@ export async function pyodideSteps(version: string, importer: (url: string) => P
       // T242: loadPyodide() goes on without a standard library whose fetch failed (it writes that to the console), and
       // Python then ends as it starts: the promise rejects with Emscripten's ExitStatus, which is no Error and said
       // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
-      // Told as a step of Pyodide's that stopped, as one whose file never came is
-      if (isError(error)) throw error;
+      // Told as a step of Pyodide's that stopped, as one whose file never came is.
+      // T538: an Error of the network (the browser's TypeError: "Failed to fetch dynamically imported module") is of the
+      // kind "runtime" too, in its own words: the page may try again without the service worker. On a line the model
+      // fills, a new connection to jsDelivr may die before its handshake is through (slow-check.mjs at 0.15 Mbps, the
+      // server closed it after some 30 s), and the quiet spell, which no longer comes while the model's bytes do, gave
+      // the fallback before. A memory that ran out stays "memory", a Failure stays itself
+      if (isError(error)) {
+        const failure = failureOf(error);
+        if (failure.kind !== "refused") throw failure;
+        throw new Failure("runtime", failure.message, { cause: error, stack: failure.stack });
+      }
       throw stop(name, `ended as it started (${told(error)}): one of its files may not have arrived`);
     } finally {
       quiet.cancel();
