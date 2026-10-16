@@ -107,7 +107,7 @@ llama.cpp: 語彙の種類は `llama.h` の `enum llama_vocab_type` に 9（`NON
 
 llama.cpp: `include/llama.h` に `llama_sampler_init_*` が 20、`common/common.h` の `enum common_sampler_type` に 11。既定の並び（`common_params_sampling` の `samplers`）は「罰 → DRY → top-n-sigma → top-k → typical → top-p → min-p → XTC → 温度」で、既定の値は top-k 40・top-p 0.95・min-p 0.05・温度 0.8・罰は無し（窓 64）。
 
-ここ: `engine/sampler.py` の `Sampling` に 6 つの欄（`temperature`・`topp`・`repetition_penalty`・`top_k`・`min_p`・`presence_penalty`）。順は「繰り返しの罰 → presence の罰 → **温度** → top-k → top-p → min-p」。1 つ足す手間は、欄 1 つ・NumPy の段・カーネル（`sample.ts`）と ctypes の署名・JavaScript の模型の 3 つを同じ形に、で、GPU の歩からは自動で外れる（AGENTS.md の「標本抽出の規則を足す」）。
+ここ: `engine/sampler.py` の `Sampling` に 6 つの欄（`temperature`・`topp`・`repetition_penalty`・`top_k`・`min_p`・`presence_penalty`）。順は「繰り返しの罰 → presence の罰 → **温度** → top-k → top-p → min-p」。1 つ足す手間は、欄 1 つ・NumPy の段・カーネル（`sample.ts`）と ctypes の署名・JavaScript の模型の 3 つを同じ形に、で、GPU のステップからは自動で外れる（AGENTS.md の「標本抽出の規則を足す」）。
 
 | 項目 | llama.cpp | ここ | 取り込むなら | 狭まるか | 手間 | 効き目 | 勧め |
 |---|---|---|---|---|---|---|---|
@@ -119,7 +119,7 @@ llama.cpp: `include/llama.h` に `llama_sampler_init_*` が 20、`common/common.
 | DRY | 在る（直近の列の繰り返しを探す） | 無い | Python + カーネル（履歴を見る段） | 狭まらない | 中 | 小さいモデルの繰り返しに効く見込み（未計測） | 後で |
 | mirostat v1・v2、adaptive-p | 在る（状態を持つ） | 無い | Python + カーネル（生成の間の状態） | 狭まらない | 中 | 使われ方は未確認 | やらない |
 | logit bias | 在る | 無い（止まりの語は別の仕組み） | Python だけで書ける（logits に足す 1 行。カーネルの前） | 狭まらない | 小 | 「`<unk>` を引かせない」（rinna の件、持ち主の決め待ち）に使える | 後で |
-| 文法（GBNF）・lazy な文法 | 在る（`llama_sampler_init_grammar*`） | 無い | Python（文法の読み手と、歩ごとに語彙を絞る段: 語彙 × 歩の仕事なので遅い） | 狭まらない | 大 | JSON を書かせる・道具の呼び出し。ページに使う所が無い | やらない |
+| 文法（GBNF）・lazy な文法 | 在る（`llama_sampler_init_grammar*`） | 無い | Python（文法の読み手と、ステップごとに語彙を絞る段: 語彙 × ステップの仕事なので遅い） | 狭まらない | 大 | JSON を書かせる・道具の呼び出し。ページに使う所が無い | やらない |
 | infill・考える長さの上限（reasoning budget） | 在る | 無い | Python | 狭まらない | 中 | 考える形が文脈を使い切る件に効く見込み | 後で |
 
 ## 5. モデルの形
