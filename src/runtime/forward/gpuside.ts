@@ -547,12 +547,13 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   }
   /** T152: count steps of generate() on the GPU from token at pos: the forward pass of each token and the sampling of
    * the next (the penalty over the last of history, whose length is length; temperature, topp; randoms: a number for
-   * each step, the CPU's generator's, none where greedy; stops: the stop tokens). Returns the ids sampled (a stop
+   * each step, the CPU's generator's, none where greedy; stops: the stop tokens; T546: topK, minP, presence, and
+   * written: how many of the history's latest were sampled, of which the presence penalty is). Returns the ids sampled (a stop
    * token last where one came), whose keys and values are in the cache then as the CPU would have written them; or
    * undefined where the GPU did not take them (the CPU takes the step instead: nothing of it was written). Not null:
    * Pyodide makes JavaScript's null jsnull, which is not None (T152's review), and undefined None */
   function generateMany(token: number, pos: number, history: Listed, length: number, count: number, temperature: number, topp: number, penalty: number,
-    randoms: Listed, stops: Listed) {
+    randoms: Listed, stops: Listed, topK = 0, minP = 0, presence = 0, written = 0) {
     const list = (x: Listed) => (x?.toJs ? x.toJs() : [...(x ?? [])]);
     if (!gpuSteps() || count < 1 || count > GPU_TOKENS) return undefined;
     const stopList = list(stops);
@@ -569,8 +570,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     gpuSerial = ++gpuRequests;
     Atomics.store(ctl!, GPU_WANTED, gpuSerial);
     // (T210: on the GPU alone, no cache here to go up from, nor any position the GPU does not hold)
-    gpuWorker!.postMessage({ type: "tokens", serial: gpuSerial, count, pos, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length,
-      cache: direct ? null : { keys: cpuSide.keys, values: cpuSide.values, capacity: cpuSide.capacity, row: KV, half: halfKV }, settings: { temperature, topp, penalty, stops: stopList }, randoms: list(randoms) });
+    gpuWorker!.postMessage({ type: "tokens", serial: gpuSerial, count, pos, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length, written,
+      cache: direct ? null : { keys: cpuSide.keys, values: cpuSide.values, capacity: cpuSide.capacity, row: KV, half: halfKV }, settings: { temperature, topp, penalty, topK, minP, presence, stops: stopList }, randoms: list(randoms) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
       stopGpu(REASONS.stalled(stalledMs));
       return undefined;

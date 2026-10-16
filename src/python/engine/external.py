@@ -31,8 +31,9 @@ from engine.sampler import REPETITION_WINDOW
 # has where there is no engine outside (no blocks of a prompt, no steps on the GPU)
 STEPS = ("forward", "forward_many", "prompt_block", "gpu_steps", "token_block")
 # the settings forward.js's generateMany() takes, which are all the GPU's sampler has (shaders/sample.js): a
-# generation with any other (Sampling.beyond()) is the CPU's, step by step
-ON_GPU = ("temperature", "topp", "repetition_penalty")
+# generation with any other (Sampling.beyond()) is the CPU's, step by step. T546: a top-k, min-p and the presence
+# penalty too
+ON_GPU = ("temperature", "topp", "repetition_penalty", "top_k", "min_p", "presence_penalty")
 
 
 class ExternalForward:
@@ -70,13 +71,19 @@ class ExternalForward:
                 if sampling.beyond(ON_GPU):
                     return None
                 temperature, topp, penalty = sampling.temperature, sampling.topp, sampling.repetition_penalty
+                top_k, min_p, presence = sampling.top_k, sampling.min_p, sampling.presence_penalty
+                first[0] = None
 
                 def many(token, pos, history, count, stops):
                     # a number for every step, drawn in the order the CPU draws them (none where greedy);
                     # those of the steps after a stop token go unused
                     randoms = [rng.random() for _ in range(count)] if temperature != 0.0 else []
+                    # T546: the history's latest tokens from the first step of the generation on are the sampled ones,
+                    # the presence penalty's (generate()'s written: pos is where the history's last token is fed)
+                    if first[0] is None:
+                        first[0] = pos
                     ids = on_gpu(token, pos, list(history[-REPETITION_WINDOW:]), len(history), count, temperature, topp,
-                                penalty, randoms, list(stops))
+                                penalty, randoms, list(stops), top_k, min_p, presence, pos - first[0])
                     return None if ids is None else [int(i) for i in ids]
 
                 return many
@@ -84,9 +91,17 @@ class ExternalForward:
             self.gpu_steps = gpu_steps
             self.token_block = lambda: int(engine.tokenBlock)
 
+        # T546: the position of the first step of a generation (one that makes logits, on the CPU or asked of the GPU),
+        # from which on the history's tokens are sampled ones: gpu_steps() begins a generation with None
+        first = [None]
+
         def forward(token, pos, need_logits=True):
             run(token, pos, need_logits)
-            return logits if need_logits else None
+            if not need_logits:
+                return None
+            if first[0] is None:
+                first[0] = pos
+            return logits
 
         self.forward = forward
 

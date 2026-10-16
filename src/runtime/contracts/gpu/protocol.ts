@@ -139,8 +139,9 @@ export type Opened = { layers: number; matrices: Record<string, Matrix>; tables:
 // forward.ts's cache of the keys and values a generation's steps go up from: their addresses, the positions it has
 // room for, the bytes of a position, and whether they are float16
 export type Cache = { keys: number; values: number; capacity: number; row: number; half: boolean };
-// the sampling of the steps (the engine's settings; stops: the stop tokens)
-export type Sampling = { temperature: number; topp: number; penalty: number; stops: number[] };
+// the sampling of the steps (the engine's settings; T546: topK, minP and presence too, 0 where none; stops: the stop
+// tokens)
+export type Sampling = { temperature: number; topp: number; penalty: number; topK: number; minP: number; presence: number; stops: number[] };
 
 export type ToGpu =
   | { type: "open"; plan: Opened; flow: SharedArrayBuffer }
@@ -149,7 +150,7 @@ export type ToGpu =
   // T210: tokens, the ids of a model on the GPU alone, which embeds them there
   | { type: "prompt"; serial: number; count: number; pos: number; tokens?: number[] }
   | { type: "tokens"; serial: number; count: number; pos: number; from: number; token: number; history: number[]; length: number;
-      cache: Cache | null; settings: Sampling; randoms: number[] }
+      written: number; cache: Cache | null; settings: Sampling; randoms: number[] }
   | { type: "keys"; serial: number; count: number; pos: number }
   | { type: "stop" };
 

@@ -15,20 +15,20 @@ type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 // A request for count steps from token at pos (src/runtime/forward/gpuside.ts's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.ts's cache first (cache: its addresses of the keys and the values, its capacity and the
 // bytes of a position; half: float16 as here, else float32, narrowed on the way up: T160, a grouped-query model's),
-// the state (token, pos, the end of the history and its length), the settings and a random number a step; the ids into
+// the state (token, pos, the end of the history, its length and how many of its latest were sampled: T546), the settings and a random number a step; the ids into
 // plan.tokens.ids ([sampled, id, id, ...] and, after plan.tokens.most ids, the State's not_finite word: T219, the step
 // after the sampled ones was refused, its logits not finite; a stop token last where one came), and the keys and values of the positions
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
 // forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
-function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }: Asked<"tokens">) {
+function generate({ serial, count, pos, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
     const m = model!, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);
     const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
-      state: samplingState({ token, pos, history, length }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
+      state: samplingState({ token, pos, history, length, written }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
     if (!wanted()) return;
     for (let side = 0; cache && side < 2; side++) {

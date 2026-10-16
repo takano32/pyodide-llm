@@ -152,7 +152,8 @@ const cpuStep = (part, beside, ms) => {
   part.cpuStepEnded(ms ?? beside.cpuMs);
   return true;
 };
-const step = (part, pos, { count = GPU_TOKENS, stops = [] } = {}) => part.generateMany(7, pos, [1, 2, 3], 3, count, 0.7, 0.9, 1.1, [0.1, 0.2, 0.3, 0.4].slice(0, count), stops);
+// (T546: a top-k, min-p, the presence penalty and the history's latest 2 sampled)
+const step = (part, pos, { count = GPU_TOKENS, stops = [] } = {}) => part.generateMany(7, pos, [1, 2, 3], 3, count, 0.7, 0.9, 1.1, [0.1, 0.2, 0.3, 0.4].slice(0, count), stops, 20, 0.05, 1.5, 2);
 
 // ---- no WebGPU in the worker: everything on the CPU, and the page is told so
 {
@@ -379,8 +380,8 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   beside.capacity = 16;
   assert.deepEqual(step(part, 16), [16, 17, 18, 19], "the ids the GPU sampled");
   const [asked] = beside.posted;
-  assert.deepEqual([asked.type, asked.count, asked.pos, asked.from, asked.token, asked.history, asked.length, asked.randoms], ["tokens", 4, 16, 0, 7, [1, 2, 3], 3, [0.1, 0.2, 0.3, 0.4]]);
-  assert.deepEqual([asked.cache, asked.settings], [{ keys: 60000, values: 61000, capacity: 32, row: 8, half: true }, { temperature: 0.7, topp: 0.9, penalty: 1.1, stops: [] }],
+  assert.deepEqual([asked.type, asked.count, asked.pos, asked.from, asked.token, asked.history, asked.length, asked.written, asked.randoms], ["tokens", 4, 16, 0, 7, [1, 2, 3], 3, 2, [0.1, 0.2, 0.3, 0.4]]);
+  assert.deepEqual([asked.cache, asked.settings], [{ keys: 60000, values: 61000, capacity: 32, row: 8, half: true }, { temperature: 0.7, topp: 0.9, penalty: 1.1, topK: 20, minP: 0.05, presence: 1.5, stops: [] }],
     "the cache as it is now: after it grew for the steps");
   assert.deepEqual([beside.grown, beside.staged, part.sampled], [[19], [[16, 4]], 4]);
   assert.deepEqual(step(part, 20, { count: 2 }), [20, 21]);

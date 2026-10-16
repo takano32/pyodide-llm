@@ -210,8 +210,9 @@ fn total4(value: vec4<f32>, t: u32) -> vec4<f32> {
 // probability that is present, so the largest passing bits are one (and the draw's is where the CPU's walk stops:
 // S(w) counts every token the sorted walk passes before w's last, and S of the next larger probability is what it
 // passed before w's first). Each round narrows (lo, hi) to a quarter or so: 15 rounds from bits 0 to 1.0, 10 to 14
-// for the draw from the nucleus's probability, each a read of the count gathered. Returns (those bits, that sum)
-fn pivot(lo_start: u32, lo_sum_start: f32, limit: f32, strict: bool, count: u32, t: u32) -> vec2<f32> {
+// for the draw from the nucleus's probability, each a read of the count gathered. Returns (those bits, that sum).
+// T546: counting, S counts the tokens at or over a probability instead of adding them up (the k-th largest of a top-k)
+fn pivot(lo_start: u32, lo_sum_start: f32, limit: f32, strict: bool, counting: bool, count: u32, t: u32) -> vec2<f32> {
     if (t == 0u) {
         bound = Bound(lo_start, ONE_BITS + 1u, lo_sum_start);
     }
@@ -224,7 +225,7 @@ fn pivot(lo_start: u32, lo_sum_start: f32, limit: f32, strict: bool, count: u32,
         var acc = vec4<f32>(0.0);
         for (var k = t; k < count; k += WG_SIZE) {
             let p = probs[k];
-            acc += select(vec4<f32>(0.0), vec4<f32>(p), vec4<bool>(p >= f.x, p >= f.y, p >= f.z, false));
+            acc += select(vec4<f32>(0.0), vec4<f32>(select(p, 1.0, counting)), vec4<bool>(p >= f.x, p >= f.y, p >= f.z, false));
         }
         let sums = total4(acc, t);
         if (t == 0u) {
@@ -245,7 +246,8 @@ fn pivot(lo_start: u32, lo_sum_start: f32, limit: f32, strict: bool, count: u32,
     return vec2<f32>(bitcast<f32>(b.lo), b.sum);
 }
 
-// the token into chosen and the state: the next pass's input at the next position, into the window; or the end
+// the token into chosen and the state: the next pass's input at the next position, into the window (T546: a sampled
+// one, the presence penalty's); or the end
 fn finish(token: u32) {
     let at = state.sampled;
     chosen[at] = token;
@@ -261,19 +263,56 @@ fn finish(token: u32) {
         state.pos = state.pos + 1u;
         state.recent[state.history % WINDOW] = token;
         state.history = state.history + 1u;
+        state.written = state.written + 1u;
     }
 }
 
 // the nucleus of the count gathered (total: the mass of all over the floor), the draw in it for the random number r,
-// and the token into chosen and the state (argmax where no token was found)
+// and the token into chosen and the state (argmax where no token was found). T546: the CPU's order of the samplers
+// (kernel sample(), NumPy's drawing()): a top-k first, then the nucleus of what it kept (topp of its mass: the
+// probabilities add up to one again), then min-p; the tokens walked from the most probable
 fn draw_nucleus(count: u32, total: f32, r: f32, argmax: u32, t: u32) {
+    // the probability the tokens kept are at or over (its bits), and their mass
+    var lo = 0u;
+    var mass = total;
+    // T546: a top-k (where it leaves some out): the k-th largest probability, by the pivots counting the tokens at or
+    // over each, and of the tokens of that probability the first ones in the order of their index (the CPU's sort
+    // takes equal ones in that order: likecpu.ts), keep of them
+    var kth = 0.0;
+    var keep = NONE;
+    if (settings.top_k != 0u && any_of(settings.top_k < count, t)) {
+        kth = pivot(0u, f32(count), f32(settings.top_k), false, true, count, t).x;
+        var acc = vec4<f32>(0.0);
+        for (var k = t; k < count; k += WG_SIZE) {
+            let p = probs[k];
+            acc += select(vec4<f32>(0.0), vec4<f32>(p, 1.0, 0.0, 0.0), p > kth);
+        }
+        let over = total4(acc, t);
+        keep = settings.top_k - u32(over.y);
+        lo = bitcast<u32>(kth);
+        mass = over.x + f32(keep) * kth;
+    }
     // the nucleus: the smallest probability p whose tokens at or over it hold topp of the mass
-    let limit = settings.topp * total;
-    let nucleus_found = pivot(0u, total, limit, false, count, t);
-    let mass = nucleus_found.y;
-    // the draw: the largest probability whose tokens at or over it hold more than r × the nucleus's mass
+    if (settings.topp > 0.0 && settings.topp < 1.0) {
+        let nucleus_found = pivot(lo, mass, settings.topp * mass, false, false, count, t);
+        lo = bitcast<u32>(nucleus_found.x);
+        mass = nucleus_found.y;
+    }
+    // T546: min-p, what is less than min_p times as probable as the most probable left out (the most probable's
+    // probability is exp(0), 1: ONE_BITS), where that is more than the nucleus left out
+    let least = min(settings.min_p, 1.0);
+    if (settings.min_p > 0.0 && bitcast<u32>(least) > lo) {
+        lo = bitcast<u32>(least);
+        var acc = 0.0;
+        for (var k = t; k < count; k += WG_SIZE) {
+            let p = probs[k];
+            acc += select(0.0, p, p >= least);
+        }
+        mass = total4(vec4<f32>(acc, 0.0, 0.0, 0.0), t).x;
+    }
+    // the draw: the largest probability whose tokens at or over it hold more than r × the mass kept
     let goal = r * mass;
-    let drawn = pivot(bitcast<u32>(nucleus_found.x), mass, goal, true, count, t);
+    let drawn = pivot(lo, mass, goal, true, false, count, t);
     let w = drawn.x;
 
     // the tokens of probability w, the mass over it, and which of the equal ones: the order of their index
@@ -292,7 +331,7 @@ fn draw_nucleus(count: u32, total: f32, r: f32, argmax: u32, t: u32) {
     }
     let equals = scan(f32(equal), t);
     let above = scan(over, t).y;
-    let ties = u32(equals.y);
+    let ties = min(u32(equals.y), select(NONE, keep, w == kth));
     let nth = min(u32(max(floor((goal - above) / w), 0.0)), max(ties, 1u) - 1u);
     var rank = u32(equals.x);
     for (var k = first; k < last; k++) {
@@ -349,6 +388,8 @@ const softmaxTerms = (from: string, to: string): string => /* wgsl */ `    var s
 // The penalty, softmax, top-p and the draw of one token, in one workgroup: see the head of run.ts. Bindings: 0 the logits (the
 // penalty is applied to them in place, as the CPU does), 1 and 2 scratch of the vocabulary's size (probabilities and
 // the indices of those gathered), 3 the state, 4 chosen, 5 the random numbers, 6 the settings.
+// T546: the presence penalty, a top-k and min-p too (the CPU's: kernels/kernel/sample.ts): see draw_nucleus above and
+// the penalty and the draw without a nucleus below
 export const SAMPLE = /* wgsl */ `
 ${SAMPLER_COMMON}
 @group(0) @binding(0) var<storage, read_write> logits: array<f32>;
@@ -359,6 +400,9 @@ ${SAMPLER_COMMON}
 @group(0) @binding(5) var<storage, read> randoms: array<f32>;
 @group(0) @binding(6) var<uniform> settings: Sampling;
 ${SAMPLER_DRAW}
+// T546: the last token min-p keeps, in the order of the index (the draw without a nucleus ends on it where no running
+// sum passes)
+var<workgroup> last_kept: atomic<u32>;
 
 @compute @workgroup_size(WG_SIZE)
 fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
@@ -367,22 +411,36 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     if (t == 0u) {
         uniform_word = state.stopped;
         atomicStore(&found, NONE);
+        atomicStore(&last_kept, 0u);
     }
     if (workgroupUniformLoad(&uniform_word) != 0u) {
         return;
     }
 
-    // the repetition penalty (apply_penalty_inplace's thread a token): each distinct token of the window once
+    // the repetition penalty (apply_penalty_inplace's thread a token): each distinct token of the window once. T546:
+    // then the presence penalty taken off each distinct one of those sampled in this generation (the latest
+    // state.written of the history, a slot's age the tokens written after it: the CPU's penalize() over its written
+    // tokens, after the repetition penalty's over the history; the prompt's are not counted)
     let window = min(state.history, WINDOW);
-    if (settings.penalty != 1.0 && t < window) {
+    let written = min(state.written, WINDOW);
+    if ((settings.penalty != 1.0 || settings.presence != 0.0) && t < window) {
         let token = state.recent[t];
         var seen = false;
-        for (var j = 0u; j < t; j++) {
-            seen = seen || state.recent[j] == token;
+        var sampled = false;
+        for (var j = 0u; j < window; j++) {
+            let same = state.recent[j] == token;
+            seen = seen || (same && j < t);
+            sampled = sampled || (same && (state.history - 1u - j) % WINDOW < written);
         }
         if (!seen && token < settings.vocab) {
-            let value = logits[token];
-            logits[token] = select(value * settings.penalty, value / settings.penalty, value > 0.0);
+            var value = logits[token];
+            if (settings.penalty != 1.0) {
+                value = select(value * settings.penalty, value / settings.penalty, value > 0.0);
+            }
+            if (sampled) {
+                value = value - settings.presence;
+            }
+            logits[token] = value;
         }
     }
     storageBarrier();
@@ -425,21 +483,48 @@ ${softmaxTerms("begin", "end")}
     let total = sums.y;
     let r = min(randoms[state.sampled], BELOW_ONE);
 
-    if (!nucleus) {
-        // the draw in the order of the index: the first token whose running sum passes r × total, else the last
-        let goal = r * total;
+    // T546: a top-k that leaves some out walks the tokens from the most probable, as a nucleus does (the CPU's)
+    var walked = nucleus;
+    if (!nucleus && settings.top_k != 0u) {
+        walked = any_of(settings.top_k < u32(scan(f32(kept), t).y), t);
+    }
+    if (!walked) {
+        // the draw in the order of the index: the first token whose running sum passes r × total, else the last.
+        // T546: min-p first leaves out, in that order, what is less than min_p times as probable as the most probable
+        // (whose probability is exp(0), 1): the mass and the running sums are of what it keeps
+        var goal = r * total;
         var running = sums.x;
+        var least = 0.0;
+        var last = vocab - 1u;
+        if (settings.min_p > 0.0) {
+            least = min(settings.min_p, 1.0);
+            var stays = 0.0;
+            for (var i = begin; i < end; i++) {
+                let p = probs[i];
+                if (p >= least) {
+                    stays += p;
+                    atomicMax(&last_kept, i);
+                }
+            }
+            let kept_sums = scan(stays, t);
+            goal = r * kept_sums.y;
+            running = kept_sums.x;
+            last = atomicLoad(&last_kept);
+        }
         for (var i = begin; i < end; i++) {
-            running += probs[i];
-            if (running > goal) {
-                atomicMin(&found, i);
-                break;
+            let p = probs[i];
+            if (p >= least) {
+                running += p;
+                if (running > goal) {
+                    atomicMin(&found, i);
+                    break;
+                }
             }
         }
         workgroupBarrier();
         if (t == 0u) {
             let hit = atomicLoad(&found);
-            finish(select(hit, vocab - 1u, hit == NONE));
+            finish(select(hit, last, hit == NONE));
         }
         return;
     }

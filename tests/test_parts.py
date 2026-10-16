@@ -172,12 +172,28 @@ class SizedBlocks(Blocks):
 class Steps:
     tokenBlock, answer = 4, None
 
-    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops):
+    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops, top_k=0, min_p=0.0,
+                     presence=0.0, written=0):
         self.asked.append(("steps", token, pos, recent, length, count, temperature, topp, penalty, randoms, stops))
         return self.answer
 
 
-OFFERS = {"blocks": SizedBlocks, "blocks without a size": Blocks, "steps": Steps}
+class LateSteps(Steps):
+    """T546: steps the GPU takes from the third step a generation asks on (the CPU takes the first two: a GPU timed
+    again, or a search of the threads), and never answers: what the presence penalty is handed is recorded"""
+    asks = 0
+
+    @property
+    def tokenBlock(self):
+        self.asks += 1
+        return 0 if self.asks <= 2 else 4
+
+    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops, top_k=0, min_p=0.0,
+                     presence=0.0, written=0):
+        self.asked.append(("late steps", pos, length, written, top_k, min_p, presence))
+
+
+OFFERS = {"blocks": SizedBlocks, "blocks without a size": Blocks, "steps": Steps, "late steps": LateSteps}
 
 
 class Outside:
@@ -249,6 +265,27 @@ def test_a_step_the_gpu_gives_back_is_none_and_the_cpu_takes_it():
     list(llama.generate("", steps=3, temperature=0.0))
     kinds = [asked[0] for asked in outside.engine.asked]
     assert kinds == ["steps", "forward"] * 3 and llama.stats["sampled"] == 3
+
+
+@pytest.mark.parametrize("prompt", ["a b c", "a", ""])
+def test_the_gpus_steps_are_told_how_many_of_the_history_were_sampled(prompt):
+    """T546: the presence penalty counts the sampled tokens alone (generate()'s written, not the prompt's): the GPU's
+    steps are told how many of the history's latest those are, from the first step of the generation on, whether the
+    GPU or the CPU took it (the CPU's first steps here), with a prompt of one token too (fed as a step without logits,
+    after gpu_steps() is made), and again from 0 in the next generation"""
+    checkpoint, tokenizer = files()
+    outside = Outside(checkpoint, ("late steps",))
+    llama = Llama(None, tokenizer, external=outside)
+    llama.stop_tokens = {-1}
+    # (the next generation's prompt is longer: a first step kept from the one before would be the wrong one)
+    for prompt in (prompt, prompt + " b a"):
+        first = len(llama.tokenizer.encode(prompt, llama.specials)) if prompt else 0
+        outside.engine.asked.clear()
+        outside.engine.asks = 0
+        list(llama.generate(prompt, steps=first + 6, seed=3, temperature=0.8, top_k=3, min_p=0.05, presence_penalty=1.5))
+        asked = [entry[1:] for entry in outside.engine.asked if entry[0] == "late steps"]
+        assert [pos for pos, *_ in asked] == list(range(first + 2, first + 6))
+        assert [(length - 1, written, *rest) for pos, length, written, *rest in asked] == [(pos, pos - first, 3, 0.05, 1.5) for pos, *_ in asked]
 
 
 def test_what_cannot_run_outside_is_refused():
