@@ -34,7 +34,7 @@
 - T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
 - T397 [整理][変換] 書式の読み手を本物の jinja2 に — T397.1 は完了
 - T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 未着手
-- T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — レビュー前
+- T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 反映済み
 - T401 [試験][変換] 変換の始まりを見る試験と道具が足りない — 未着手
 - T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 未着手
 - T404 [バグ][変換] `inOrder()` は、変換器が断った部品をもう 1 回変換器に渡すことがある — 未着手
@@ -55,7 +55,7 @@
 - T430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 未着手
 - T431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 未着手
 - T433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 未着手
-- T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — レビュー前
+- T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 反映済み
 - T435 [整理][その他] T367.2 の小さな気づき — 未着手
 - T436 [整理][遠隔試験] `tests/e2e.mjs` の `E2E_THEN` と `E2E_TWICE` を一緒に頼むと、HF のモデルは必ず落ちる — 未着手
 - T437 [整理][その他] T367.3 の小さな気づき — 未着手
@@ -217,12 +217,15 @@
 - T520 [追加][モデル] 考える形の「考えの上限」と「考えを畳む」 — 未着手
 - T521 [整理][Gemma4] T329.2.2 のレビューの残り — 未着手
 - T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
-- T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — レビュー前
+- T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 反映済み
 - T525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
 - T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
-- T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 進行中
+- T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 反映済み
 - T538 [性能][その他] 遅い回線で、モデルの部品の届いたバイトも Pyodide の読み込みの「生きている」に数える — 未着手
 - T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 未着手
+- T542 [バグ][変換] 偶数でない数のグループの 3 値のテンソルが、次の float32 のテンソルを 4 バイトの境から外す — 未着手
+- T543 [整理][Gemma4] `perlayer.ts` が層ごとの埋め込みの表のスケールを float32 と読む前提 — 未着手
+- T544 [試験][CPU] `kernels-in-browser` の 3 値に、4 で割り切れないグループの通りを足す — 未着手
 <!-- 目次ここまで -->
 
 ## Opus の回とレビューの回（2026-09-25 に持ち主が決めた進め方。レビューは 2026-09-25 の夕方から Opus xhigh）
@@ -505,7 +508,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 未着手（2026-10-10、T369 から。規模 中）
 - T369 は、頭のトークンか書式を変換器に任せていた一覧の 21 項目（Qwen2.5 の 8 つ・TinySwallow・Qwen3 の 4B 以下の 8 つ・Qwen3 Swallow 8B の 2 つ・EuroLLM・llm-jp-4）と Hermes 3 の止まりを、前の値に手で固定した（送る ID を動かさないため）。手書きの `bos` を持つ項目は 32 → 52、書式は 63 → 80 に増えた。固定を外せば変換器の答え（本物の `apply_chat_template` と同じ ID）になり、手書きが減る。**外す前に測る**: 項目ごとに、素の文・手書きの答え・モデル自身の答えの 3 つ（AGENTS.md の「頭のトークンの効きは…」）。Qwen3 の 4B 以下は `<|im_start|>` のほうが 8〜10% 悪かった記録がある（T250）。外した項目は固定値（`fixed-outputs.json`）を書き直す。`CONVERTER` は上げなくてよい（項目の options を消すだけ）。CAT-Thinking と Bonsai 1.7B・4B も同じ表で。
 
-### T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: レビュー前（(1)・(2)・(5)。2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。(3)・(4) は未着手。2026-10-10、T369 から。規模 小〜中） **次の `CONVERTER` の回（T533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。
+### T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: 反映済み（(1)・(2)・(5)。(3)・(4) は残る。2026-10-16、T533 の `CONVERTER` 11 の回で本線に入れた。**レビュー（Sonnet low、2026-10-16）: OK、直しなし。** `conversions_compare`（134 のうち 124 が同じ）で変わったのは予定の 10 項目（Gemma 4 の 2 つの `?hf=` の止まり `[2,1]→[2,1,106]`、sarashina 5 つと CAT 3 つの `bos`・`prefixed: never`・書式）、tokenizer.bin は全部同じ、`format_check` は sarashina 1B instruct と CAT 0.8B で 9/9。覆す条件: 本番で sarashina instruct か CAT の答えが崩れたら `formats.js` の `sarashina` の `bos: 9` と `SARASHINA` を戻す）。前の見出し: レビュー前（(1)・(2)・(5)。2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。(3)・(4) は未着手。2026-10-10、T369 から。規模 小〜中） **次の `CONVERTER` の回（T533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。
 - (1) tokenizer.json の `Lowercase` の normalizer（T265 は sentencepiece の道の `do_lower_case` だけ）。(2) エンジンは「最初の文にダミーの空白を付けない」を言えない: sarashina と CAT-Translate は `?hf=` で頭の BOS が残る。(3) 最初の文が空白で始まっていてもダミーの空白を付ける（Metaspace は付けない）。(4) `T5Tokenizer` の legacy の空白（比べる参照が無い）。(5) `bos_token_id` の鍵が無く書式も読めないモデルは、当て推量の BOS 1 が止まりに残る。
 - **(1)・(2)・(5) の結果（2026-10-16、コミット `T400: read a tokenizer's Lowercase, a model without the dummy prefix, and no guessed BOS as a stop`）**: (1) `tokenizer_json_options()` が normalizer の `Lowercase`（`Sequence` の中のどこでも）を見て `lowercase: true`（unigram と byte-level。書き出した sentencepiece の形は `Lowercase` があると「書き出した形」でなくなるので当たらない）。(2) `sentencepiece_options()` が normalizer_spec の `add_dummy_prefix`（3 番、無ければ真）を読み、偽なら `prefixed: "never"`（T257 の形）。tokenizer_config.json の legacy の `"wanting"` より勝つ。`beginning()` は `"never"` でも頭のトークンを外す（どの文にも空白を付けないので、外しても残りの読みは同じ）。(5) 止まりは書式の頭があっても無くても「名指された BOS と EOS」だけ（当て推量の 1 を入れない）。
   - **一覧の項目**: sarashina2.2 の instruct の 3 つと CAT-Translate の 3 つは `formats.js` の `sarashina` に `bos: 9`（`<|user|>`）、`SARASHINA` を `{prompt}</s><|assistant|>` に（`bos` と書式は組: 変換器が `<|user|>` を BOS と言うので、前の書式のままだと `<|user|><|user|>…` になる。`conversions_compare.py` の 1 回目がそれを見せた）。`format_check.py` の `STRICT` に `hf-sarashina2.2-`・`hf-cat-translate-` を足した。
@@ -586,7 +589,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - `src/python/*.py` を直しても、立ち上げ直すまで古い `public/engine.zip` が配られ、何も言わない。`astro dev`・`astro build` を npm を通さずに直に呼ぶと zip が無く「Could not fetch engine.zip: 404」。軽い組の `python-archive-check` は「zip がソースと合う」を見るが、開発中には走らない。小さな Vite のプラグインか見張りで作り直すか、古いときに言う。
 - `astro dev` は TTY が無いとデーモンになって `timeout` を越えて残る: `npx astro dev stop` で止める。
 
-### T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 状態: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。2026-10-11、T367.2 から。前からある。規模 小） **次の `CONVERTER` の回（T533）と一緒に入れる**（同じ回に入れると安全: 家族のファイルや `engine/` を直しても `make models` が作り直さない穴）。
+### T434 [バグ][その他] `Makefile` の変換器の依存に `convert/families/*.py` と `engine/` が無い — 状態: 反映済み（2026-10-16、T533 の `CONVERTER` 11 の回で本線に入れた。**レビュー（Sonnet low、2026-10-16）: OK、直しなし。** `conversions_compare`（134 のうち 124 が同じ）で変わったのは予定の 10 項目（Gemma 4 の 2 つの `?hf=` の止まり `[2,1]→[2,1,106]`、sarashina 5 つと CAT 3 つの `bos`・`prefixed: never`・書式）、tokenizer.bin は全部同じ、`format_check` は sarashina 1B instruct と CAT 0.8B で 9/9。覆す条件: 本番で sarashina instruct か CAT の答えが崩れたら `formats.js` の `sarashina` の `bos: 9` と `SARASHINA` を戻す）。前の見出し: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。2026-10-11、T367.2 から。前からある。規模 小） **次の `CONVERTER` の回（T533）と一緒に入れる**（同じ回に入れると安全: 家族のファイルや `engine/` を直しても `make models` が作り直さない穴）。
 - `CONVERTER` と `%.bin` の規則は `src/python/convert/*.py` だけを並べる: 家族のファイルかエンジンの部品を直しても `make models` が作り直さない（T359 の 3 歩目で `families/` ができた時から）。
 - **結果（2026-10-16、コミット `T434: rebuild the site's models when a family's file or the engine changes`）**: `Makefile` に `MODEL_PYTHON`（窓口 2 つ `llama2_convert.py`・`llama2_numpy.py` と `convert/`・`convert/families/`・`engine/` の `*.py` の全部）を置き、`%.bin` と `CONVERTER` の規則が読む（名前は `python` の的と取り違えないように `MODEL_PYTHON`）。**確かめ**（`make -n -W <ファイル> models`、捨ての写しで、全部の作る物を源より新しくした所で）: 何も変えない → 本線も今も何も作らない。`convert/families/llama.py`・`engine/layout.py`・`llama2_numpy.py` を変えたことにする → 本線は何も作らず、今は 6 つ（llm-jp-3 150M と tiny-lm の int8 と float16、stories15M・42M の int8）を作り直す。`convert/conversion.py` → 両方とも 6 つ。下ろしてくる物（stories260K・tokenizer.bin など）は作り直さない。
   - CI を省いた。訳: 触ったのは `Makefile` の依存だけで、手元の `make -n` が両方の版を比べる。**変わること**: `engine/` か家族のファイルに触るデプロイは、`make models` が 6 つを作り直す（a1-free で `make models` は 2 分 11 秒: AGENTS.md の土台の記録）。
@@ -1561,7 +1564,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 状態: 未着手（2026-10-15、T329.2 の実装とレビューが見つけた。本線（`aecb661e`）でも「Initializing...」で止まる: 前からの物。新しい文脈なら動く。原因は未確認。訪問者に当たるのは、同じタブで `?coi=off` に切り替えたときだけの見込み）
 
-### T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 状態: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。2026-10-15、T329.3 が見つけた） **次の `CONVERTER` の回（T533）に乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」）。
+### T524 [不具合][変換] `?hf=` で開いた Gemma 4 が答えの後に `<turn|>` を 2〜5 個書いてから止まる — 状態: 反映済み（2026-10-16、T533 の `CONVERTER` 11 の回で本線に入れた。**レビュー（Sonnet low、2026-10-16）: OK、直しなし。** `conversions_compare`（134 のうち 124 が同じ）で変わったのは予定の 10 項目（Gemma 4 の 2 つの `?hf=` の止まり `[2,1]→[2,1,106]`、sarashina 5 つと CAT 3 つの `bos`・`prefixed: never`・書式）、tokenizer.bin は全部同じ、`format_check` は sarashina 1B instruct と CAT 0.8B で 9/9。覆す条件: 本番で sarashina instruct か CAT の答えが崩れたら `formats.js` の `sarashina` の `bos: 9` と `SARASHINA` を戻す）。前の見出し: レビュー前（2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T533 の回で上げる。2026-10-15、T329.3 が見つけた） **次の `CONVERTER` の回（T533）に乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」）。
 - 変換器の止まりは [2, 1] で、Gemma 4 の答えの終わり `<turn|>`(106) を含まない（generation_config.json の EOS は [1, 106, 50]: 変換器は generation_config.json を取らない決まり）。一覧の項目は options の止まりで止まる（T333）。`?hf=` の訪問者の分の直し方（書式の終わりの印を止まりに入れる、generation_config を読む、など）は取りまとめ役が案を出す。変換器の出す options が変わるなら `CONVERTER` の回に。
 - **案の比べ（2026-10-16）**: (A) **書式が答えの後に書くトークン**（採った）: 変換器がモデルの書式をもう 1 回描く。会話を答えで終える形（user と assistant、生成の印なし: transformers が学習のために描く形）で、答えのすぐ後が「1 つに読まれるトークン」で始まればそれを止まりに。取得は増えない。harmony の llm-jp-4 は最後の答えの後に `<|return|>`（EOS と同じ）を書くので、考えの後の `<|end|>` は入らない（1 ターンの書式で「`{prompt}` の後のトークン」を取る形だと `<|end|>` が入り、`?hf=` の llm-jp-4 が答えの前で止まる: T369 のレビューの (n) と同じ壊れ方。だから 2 ターンで描く）。(B) `generation_config.json` の `eos_token_id` を読む: transformers の `generate()` がそのまま止まる数で正しさは高いが、取得が 1 つ増え（日本から 1 回 1〜3 秒、無いリポジトリは 404: WebKit はそれをコンソールのエラーに出す）、段取り（`convert/conduct.py`）・fixture（`worker-fetches-check` の `--write`）・フォルダの門が動く。小さい直しにしては動く所が多いので (A)。**覆す条件**: 書式に印が無く generation_config.json にだけ止まりのあるモデルが一覧か `?hf=` で見つかったとき (B) を足す。
 - **結果（2026-10-16、コミット `T524: stop an answer at the token the model's template writes after one`）**: `convert/template.py` の `answer_end()`・`model_answer_end()`（`model_turn()` と書式の取り出し `template_of()`・名前のトークン `named_tokens()`・描く名前 `scope_of()` を分け合う。1 ターンの描き方は 1 字も変えていない）と、`Conversion.start()` が止まりに足す数行（頭のトークンと同じなら足さない、言ってあれば 2 度足さない）。描けない書式（自前の読み手が断る・書式が例外を投げる・答えを 1 回書かない）は今までどおり。
@@ -1577,7 +1580,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 状態: 未着手（2026-10-15、T340〜T342 のレビューの気づき）
 - いまの壊し方（ベクトルの道だけ係数をずらす）は「4 つずつと 1 つずつが同じ」の検査が落とす。両方の道で同じ誤りを入れたとき、smoke の NumPy との比べ（rtol 2e-6）と erf との比べ（5e-7）が係数の 1e-5 規模のずれを落とすかは未確認。通すなら線を締める。
 
-### T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 状態: 進行中（**T533.1・T533.2・T533.3 は実装済み・レビュー前**、ブランチ `t533-ternary-half-scales`。本線にはまだ入れていない。2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `7d7b776c` の `matmul_t2`。**進めるかは持ち主に聞く**: T531 の「持ち主に聞くもの」の (2)） **持ち主（2026-10-15、選択肢の答え）: 「かなり遅くなければ入れる」**: arm64 と x86-64 で今の 36 バイトの形と同じプロセスで交互に測り、はっきり大きく遅い（対照の幅のずっと外）のでなければ入れる。`CONVERTER` を上げる次の回にまとめる。 **持ち主（2026-10-15）: `CONVERTER` を上げてよい**（「上げていいよ」: 入れるなら 3 値の保存の形を変える回に上げる。全部の訪問者の保存した変換が 1 回作り直しになることは伝えてある）。待っている変換器の直し（T524 の `<turn|>` の止まりなど）も同じ回にまとめる（AGENTS.md の `CONVERTER` の決まり）。
+### T533 [性能][Bonsai] 3 値の塊を PQ2_0 のまま（float16 のスケール、34 バイト / 128 個）持って掛ける形を測る — 状態: 反映済み（2026-10-16、T524・T400・T434 と一緒に本線に入れ、`CONVERTER` を 11 に上げた。**レビュー（Sonnet high、2026-10-16）: OK、must-fix 無し。** カーネルは壊し方 4 通りが全部落ち、残りのグループ 0〜3 を踏み、同じスケールならビット単位。EPYC 9V45 だけ 0.96（1 回、推定）。GPU の上げ方に stretch が half の途中で切れる道の試験が無かったので足した（`29a79c46`、壊し方 6 通りが落ちる）。網は 3 値だけが違い、シェーダと鍵（192）は同じ。覆す条件: 9V45 の 0.95 割れが再現して持ち主が「かなり遅い」と読む・持ち主の Android で 3 値の 4 本が 5% 以上遅い・偶数でない数のグループの 3 値が実機の GPU で壊れる。本番の確かめはデプロイの後に）。前の見出し: 進行中（**T533.1・T533.2・T533.3 は実装済み・レビュー前**、ブランチ `t533-ternary-half-scales`。本線にはまだ入れていない。2026-10-15、T531 の調べから。元は ssig33/pyodide-llm の `7d7b776c` の `matmul_t2`。**進めるかは持ち主に聞く**: T531 の「持ち主に聞くもの」の (2)） **持ち主（2026-10-15、選択肢の答え）: 「かなり遅くなければ入れる」**: arm64 と x86-64 で今の 36 バイトの形と同じプロセスで交互に測り、はっきり大きく遅い（対照の幅のずっと外）のでなければ入れる。`CONVERTER` を上げる次の回にまとめる。 **持ち主（2026-10-15）: `CONVERTER` を上げてよい**（「上げていいよ」: 入れるなら 3 値の保存の形を変える回に上げる。全部の訪問者の保存した変換が 1 回作り直しになることは伝えてある）。待っている変換器の直し（T524 の `<turn|>` の止まりなど）も同じ回にまとめる（AGENTS.md の `CONVERTER` の決まり）。
 - こちらの 3 値は 32 バイトの符号と float32 のスケール（36 バイト / 128 個、値の全部の後にスケールの全部: T230）。T231 は float16 のまま持つ形を「グループごとに float16 を広げる命令が約 10 個増える（43 → 53）」と見積もりだけで外した（27B で 0.44 GiB の節約）。相手の `matmul_t2` は PQ2_0 の塊（スケール、32 バイト）をそのまま読み、`halfToFloat` を塊ごとに 1 回だけ呼ぶ（符号は 4 バイトから 16 個の int8 に広げて relaxed の `dot32`）。見積もりの前提が違うので、測って決める。
 - 良くなること: 3 値のモデルが 5.6% 小さい（27B 7.66 → 約 7.24 GB）。読む量も 5.6% 減る（帯域で律速される端末では速くなりうる: 未計測）。
 - 測り方: 今の `matmul_t2r` に、スケールを float16 で持つ版（並びは今の形と PQ2_0 の形の 2 つ）を並べ、`tests/ternary-bench.mjs` の形で、行列をメモリから読む形で、x86-64 と arm64 の 1 本と 4 本で交互に。的の arm で決める。
@@ -1604,3 +1607,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 未着手（2026-10-15、T532 のレビューの気づき）
 - transformers 5 は config に `original_max_position_embeddings` があると factor を `max_position_embeddings / original` で作り直す。こちらは config の factor をそのまま使う（前から）。一覧の 4 つ（Ternary Bonsai）には効かない。一覧の外の yarn のモデルで差が出るかは未計測。
+
+### T542 [バグ][変換] 偶数でない数のグループの 3 値のテンソルが、次の float32 のテンソルを 4 バイトの境から外す — 状態: 未着手（2026-10-16、T533 のレビューの気づき）
+- 3 値は 1 グループ 34 バイトなので、グループの数が奇数だと 2 バイト余り、次の float32 のテンソルが 4 バイトの境から外れる（例: 語彙 101・次元 128 で `rms_att_weight` が 3462）。実物の Bonsai の 4 つはどれも偶数で当たらない。CPU の forward-check は奇数でも通った。GPU の実機は未確認。守りの案: `check_suited` で断る一行か、4 バイトにそろえる詰め物（詰め物ならファイルの形式の変更: `CONVERTER`）。
+
+### T543 [整理][Gemma4] `perlayer.ts` が層ごとの埋め込みの表のスケールを float32 と読む前提 — 状態: 未着手（2026-10-16、T533 のレビューの気づき）
+- `forward/perlayer.ts` は `F[scales/4]` で float32 のスケールを読む。この表が 3 値になる道は無い（`ternary_x` が断る）ので今は当たらない。足すなら `packing.scale !== 4` を断る一行。
+
+### T544 [試験][CPU] `kernels-in-browser` の 3 値に、4 で割り切れないグループの通りを足す — 状態: 未着手（2026-10-16、T533 のレビューの気づき）
+- いまは groups=16 の 1 通りだけで、残りのグループの道（`half()`）を Chromium・Firefox・WebKit で踏んでいない。groups=7 のような通りを足す。
