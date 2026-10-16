@@ -13,8 +13,10 @@ export function thoughtOf(text: string, opened: boolean) {
   if (!opened && !begun.startsWith(THOUGHT_OPENS)) return { thought: null, closed: false, answer: text };
   const body = begun.startsWith(THOUGHT_OPENS) ? begun.slice(THOUGHT_OPENS.length) : begun;
   const end = body.indexOf(THOUGHT_CLOSES);
-  return end < 0 ? { thought: body.trimStart(), closed: false, answer: "" }
-    : { thought: body.slice(0, end).trim(), closed: true, answer: body.slice(end + THOUGHT_CLOSES.length).trimStart() };
+  if (end < 0) return { thought: body.trimStart(), closed: false, answer: "" };
+  // (a thought its budget closed may be closed by the model once more, right after: T520's Qwen3.5 0.8B)
+  const answer = body.slice(end + THOUGHT_CLOSES.length).trimStart();
+  return { thought: body.slice(0, end).trim(), closed: true, answer: answer.startsWith(THOUGHT_CLOSES) ? answer.slice(THOUGHT_CLOSES.length).trimStart() : answer };
 }
 /** T520: the one line a folded thought says: while it goes on, once it closed, and at the answer's end (stats: the
  * engine's count of its tokens and whether its budget closed it; thought null where the engine saw no marks). */

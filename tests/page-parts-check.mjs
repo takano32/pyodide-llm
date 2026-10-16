@@ -331,7 +331,8 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(thoughtOf("\nLet me see.\n", true), { thought: "Let me see.\n", closed: false, answer: "" }, "a thought that goes on");
   assert.deepEqual(thoughtOf("\nLet me see.\n</think>\n\nTokyo.", true), { thought: "Let me see.", closed: true, answer: "Tokyo." }, "a thought the format opened, closed");
   assert.deepEqual(thoughtOf("<think>\nHm.\n</think>\n\nTokyo. </think> again", false), { thought: "Hm.", closed: true, answer: "Tokyo. </think> again" }, "a thought the model opened (Qwen3's thinking form): it ends at its first closing mark");
-  assert.deepEqual(thoughtOf("<think>\n\n</think>\n\nTokyo.", true), { thought: "", closed: true, answer: "Tokyo." }, "an empty thought (its opening mark written again) before the answer");
+  assert.deepEqual(thoughtOf("\nso 17 × 4</think>\n</think>\n\n408.", true), { thought: "so 17 × 4", closed: true, answer: "408." }, "a thought the budget closed and the model closed once more");
+  assert.deepEqual(thoughtOf("<think>\n\n</think>\n\nTokyo.", true),{ thought: "", closed: true, answer: "Tokyo." }, "an empty thought (its opening mark written again) before the answer");
   assert.deepEqual([thoughtLine(false), thoughtLine(true)], ["Thinking…", "Thought"], "while it goes on, and once it closed");
   assert.deepEqual([thoughtLine(true, { thought: 412, thought_cut: false }), thoughtLine(true, { thought: 1, thought_cut: false }),
     thoughtLine(true, { thought: 3000, thought_cut: true }), thoughtLine(false, { thought: 80, thought_cut: false }), thoughtLine(true, { thought: null, thought_cut: false })],
