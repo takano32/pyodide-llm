@@ -408,14 +408,16 @@ const stepsOf = (more = {}) => {
   return { form: "fused f32", attention: "llama.cpp flash_attn_vec", pieces: 1, first: GREEDY.slice(0, 4), cpuStep: GREEDY[4], second: GREEDY.slice(5, 8),
     keys: b64(GREEDY_KEYS), values: b64(GREEDY_VALUES),
     uploaded: [3], uploadedTwice: [3], uploadedSame: true, uploadedLogits: b64(cpuLogits),
-    together: [1, 2, 3, 4], apart: [1, 2, 3, 4], stopped: GREEDY.slice(0, 2), penaltyHistory: [5, GREEDY[0]], penalized: [3], sampled: [[2], [0]], ...more };
+    together: [1, 2, 3, 4], apart: [1, 2, 3, 4], stopped: GREEDY.slice(0, 2), penaltyHistory: [GREEDY[0], 5], penalized: [3], sampled: [[2], [0]],
+    narrowed: { topK: [[2], [4]], minP: [[2], [3]], presence: [[2], [3]], together: [1, 2, 3, 4], apart: [1, 2, 3, 4] }, ...more };
 };
 check("a generation's steps as NumPy's", () => {
   const { value, text } = steps(stepsOf());
   assert.equal(value, true, text);
   assert.equal(text, "  a token by fused f32, its attention by llama.cpp flash_attn_vec: 4 and 3 greedy ids as NumPy's, after a prompt on the CPU 3 as the CPU's, " +
     "the CPU's step between them NumPy's, keys and values of 4 positions 0.00e+0, layer 0 0.00 of its line 8.00e-3, 4 sampled steps [1,2,3,4] one at a time too, " +
-    "a stop token after 2 steps, penalized 3 as NumPy's, sampled 2 and 0");
+    "a stop token after 2 steps, penalized 3 as NumPy's, sampled 2 and 0, a top-k of 3 2 and 4 of NumPy's 3, min-p 0.5 2 and 3 of NumPy's 2, " +
+    "presence on the latest 1 and 2 2 and 3, 4 of them [1,2,3,4] one at a time too");
 });
 check("a generation's steps wrong in one thing", () => {
   const wrong = (more, pattern) => {
@@ -452,6 +454,14 @@ check("a generation's steps wrong in one thing", () => {
   wrong({ penalized: [2] }, /- with a penalty of 100 the step is 2, NumPy's 3, and not a near tie/);
   wrong({ sampled: [[2], [2]] }, /- sampled at 0\.02 and 0\.98: 2 and 2, of NumPy's nucleus of \d+, which are to differ/);
   wrong({ cut: true }, /- the tables in 1 piece, not cut/);
+  // T546: a top-k that kept a 4th, the same token at both ends, the presence penalty on the prompt's tokens too (the
+  // latest 1 as the latest 2), the steps of one submission not those one at a time, and none asked
+  const narrowed = stepsOf().narrowed;
+  wrong({ narrowed: { ...narrowed, topK: [[2], [5]] } }, /- a top-k of 3 sampled at 0\.02 and 0\.98: 2 and 5, of NumPy's \[2,3,4\]/);
+  wrong({ narrowed: { ...narrowed, minP: [[2], [2]] } }, /- min-p 0\.5 sampled at 0\.02 and 0\.98: 2 and 2, of NumPy's \[2,3\], which are to differ/);
+  wrong({ narrowed: { ...narrowed, presence: [[3], [3]] } }, /- with a presence penalty of 100 on the latest 1 the step is 3, NumPy's 2, and not a near tie/);
+  wrong({ narrowed: { ...narrowed, together: [1, 2, 3, 5] } }, /- 4 steps with a top-k, min-p and presence together \[1,2,3,5\], one at a time \[1,2,3,4\]/);
+  wrong({ narrowed: undefined }, /- no steps with a top-k, min-p or the presence penalty/);
   assert.equal(steps(stepsOf({ cut: true, pieces: 3 })).value, true);
   // the rounds with a NaN: a value among the keys and values, the logits
   const value = { value: "NaN", layer: 0, position: 1, column: 0, answered: true, failed: false, sampled: 0, notFinite: 1 };

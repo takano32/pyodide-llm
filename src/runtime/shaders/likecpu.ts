@@ -11,13 +11,17 @@ type History = { slice(start: number): Iterable<number> };
 // The CPU's sampling in JavaScript (kernels/kernel.ts's penalize() and sample(), as the engine's generate() calls
 // them): what SAMPLE is held to (/benchmark/'s check), and itself held to the kernel (tests/smoke.mjs). logits: a
 // Float32Array, changed in place by the penalty as the kernel changes them. history: BOS, the prompt and the sampled
-// tokens, the token fed last. T274: presence, the kernel's presence penalty (taken off each after the penalty).
-export function penalizeLikeCpu(logits: Float32Array, history: History, penalty: number, presence = 0) {
+// tokens, the token fed last. T274: presence, the kernel's presence penalty (taken off each after the penalty). T546:
+// written, how many of the history's latest were sampled, of which the presence penalty's window is (the engine's
+// generate() hands the kernel its written tokens apart: the prompt's are not counted); all of them where not given.
+export function penalizeLikeCpu(logits: Float32Array, history: History, penalty: number, presence = 0, written = Infinity) {
   if (penalty === 1 && !(presence > 0)) return;
   const f = Math.fround, p = f(penalty), less = presence > 0 ? f(presence) : 0;
-  for (const token of new Set(history.slice(-REPETITION_WINDOW))) {
+  const window = [...history.slice(-REPETITION_WINDOW)], sampled = new Set(written > 0 ? window.slice(-Math.min(written, REPETITION_WINDOW)) : []);
+  for (const token of new Set(window)) {
     const value = logits[token];
-    logits[token] = f((value > 0 ? f(value / p) : f(value * p)) - less);
+    // (the kernel's two calls: the penalty's, then a penalty of 1 and the presence's, x / 1 being x)
+    logits[token] = f((penalty === 1 ? value : value > 0 ? f(value / p) : f(value * p)) - (sampled.has(token) ? less : 0));
   }
 }
 /** The token kernel.ts's sample() draws for random (in [0, 1)): float32 probabilities, float64 sums; the nucleus

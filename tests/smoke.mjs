@@ -315,8 +315,8 @@ def sample_with(sampler):
         return sampler.drawing(llama2_numpy.Sampling(temperature=temperature, topp=topp, top_k=top_k, min_p=min_p), rng)(logits, [], [])
     return sample
 def penalize_with(sampler):
-    def penalize(logits, history, penalty, presence=0.0):
-        sampler.drawing(llama2_numpy.Sampling(repetition_penalty=penalty, presence_penalty=presence), None)(logits, history, history)
+    def penalize(logits, history, penalty, presence=0.0, written=None):
+        sampler.drawing(llama2_numpy.Sampling(repetition_penalty=penalty, presence_penalty=presence), None)(logits, history, history if written is None else written)
     return penalize
 kernel_sample, numpy_sample = sample_with(fast.sampler), sample_with(llama2_numpy.NumpySampler())
 kernel_penalize, numpy_penalize = penalize_with(fast.sampler), penalize_with(llama2_numpy.NumpySampler())
@@ -831,10 +831,12 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
 {
   const { penalizeLikeCpu, sampleLikeCpu } = await import(runtimeUrl("shaders.js"));
   pyodide.runPython(`
-def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min_p=0.0, presence=0.0):
+def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min_p=0.0, presence=0.0, written=None):
     logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()
     if penalty != 1.0 or presence != 0.0:
-        kernel_penalize(logits, [int(token) for token in history], penalty, presence)
+        tokens = [int(token) for token in history]
+        # (T546: the latest written of the history sampled, the presence penalty's: generate()'s written)
+        kernel_penalize(logits, tokens, penalty, presence, None if written is None else tokens[len(tokens) - written:])
     return kernel_sample(logits, temperature, topp, Fixed(value), top_k, min_p), logits.tobytes()
 `);
   const pick = pyodide.globals.get("kernel_pick"), vocab = pyodide.globals.get("fast").vocab_size;
@@ -875,18 +877,20 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
         // (a min-p of 1 keeps the most probable alone: a comparison that leaves out the equal fails there; a repetition
         // penalty of 1 with a presence penalty is a penalty still)
         for (const minp of [0, 0.05, 1]) {
-          for (const [presence, repetition] of [[0, 1.1], [1.5, 1.1], [1.5, 1]]) {
+          // (T546: and the presence penalty's on the latest 10 of the history alone, the sampled ones, which hold the 4th
+          // most likely again; the 3rd, 5th and the rest of the 40 before are the prompt's)
+          for (const [presence, repetition, written] of [[0, 1.1], [1.5, 1.1], [1.5, 1], [1.5, 1.1, 10], [1.5, 1, 0]]) {
             for (const value of [0, Math.random(), 1 - 1e-12]) {
               const logits = new Float32Array(vocab).map(() => spread * Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()));
               const ranked = [...logits.keys()].sort((a, b) => logits[b] - logits[a]);
               const history = [...ranked.slice(0, 40), ranked[3], ranked.at(-1)];
-              const result = pick(new Uint8Array(logits.buffer), 0.7, topp, value, history, repetition, topk, minp, presence);
+              const result = pick(new Uint8Array(logits.buffer), 0.7, topp, value, history, repetition, topk, minp, presence, written);
               const [theirs, penalized] = result.toJs();
               result.destroy();
               const ours = Float32Array.from(logits);
-              penalizeLikeCpu(ours, history, repetition, presence);
+              penalizeLikeCpu(ours, history, repetition, presence, written);
               if (!ours.every((v, i) => v === new Float32Array(penalized.buffer, penalized.byteOffset, vocab)[i])) {
-                throw new Error(`T274: penalizeLikeCpu is not the kernel's penalize (presence ${presence})`);
+                throw new Error(`T274: penalizeLikeCpu is not the kernel's penalize (presence ${presence}, written ${written})`);
               }
               const token = sampleLikeCpu(ours, 0.7, topp, value, topk, minp);
               if (token !== theirs && !(Math.abs(ours[token] - ours[theirs]) < 1e-3)) {

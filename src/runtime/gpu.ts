@@ -23,7 +23,7 @@
 //                                    { type: "failed", reason }. Nothing is written where words.wanted is no longer
 //                                    serial: forward.ts gave the request up (T147: a worker that went on late must not
 //                                    write into a memory that may hold the next model by then)
-//   { type: "tokens", serial, count, pos, from, token, history, length, cache, settings, randoms }
+//   { type: "tokens", serial, count, pos, from, token, history, length, written, cache, settings, randoms }
 //                                    T152: count steps of a generation from token at pos (the forward pass and the
 //                                    sampling of each, SAMPLE's), after the keys and values of positions from to pos - 1
 //                                    went up from forward.ts's cache; the ids into plan.tokens.ids and the keys and

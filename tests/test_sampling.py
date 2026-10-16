@@ -59,6 +59,10 @@ def test_a_setting_nobody_has_is_refused():
         Sampling(typical_p=0.9)
 
 
+# (T546: ON_GPU has all six now; beyond() itself is held to a sampler that knows the first three)
+THREE = ("temperature", "topp", "repetition_penalty")
+
+
 @pytest.mark.parametrize("settings, beyond", [
     (dict(), []),
     (dict(temperature=1.0, topp=0.5, repetition_penalty=1.3), []),
@@ -72,11 +76,12 @@ def test_a_setting_nobody_has_is_refused():
     (dict(temperature=0.0, top_k=20, presence_penalty=1.5), ["presence_penalty"]),
 ])
 def test_what_is_beyond_a_sampler_that_knows_three(settings, beyond):
-    assert Sampling(**settings).beyond(ON_GPU) == beyond
+    assert Sampling(**settings).beyond(THREE) == beyond
+    assert Sampling(**settings).beyond(ON_GPU) == []
 
 
 def test_beyond_is_by_the_names_it_is_told_and_by_the_defaults():
-    assert ON_GPU == ("temperature", "topp", "repetition_penalty") and NARROWING == ("topp", "top_k", "min_p")
+    assert ON_GPU == (*THREE, "top_k", "min_p", "presence_penalty") and NARROWING == ("topp", "top_k", "min_p")
     warm = Sampling(temperature=0.8, topp=0.5, repetition_penalty=1.2, top_k=3)
     assert warm.beyond(()) == ["temperature", "topp", "repetition_penalty", "top_k"]
     assert warm.beyond(("temperature", "top_k")) == ["topp", "repetition_penalty"]
@@ -247,7 +252,8 @@ class Engine:
     def bind(self, logits):
         pass
 
-    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops):
+    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops, top_k=0, min_p=0.0,
+                     presence=0.0, written=0):
         self.asked.append((count, temperature, topp, penalty, randoms))
         return self.answer
 
@@ -259,12 +265,13 @@ def part_with_steps():
 
 @pytest.mark.parametrize("settings, takes", [
     (dict(temperature=0.8, topp=0.5, repetition_penalty=1.3), True),
-    (dict(temperature=0.8, top_k=20), False), (dict(temperature=0.8, min_p=0.05), False),
-    (dict(temperature=0.8, presence_penalty=1.5), False),
-    (dict(temperature=0.0, top_k=20, min_p=0.05), True), (dict(temperature=0.0, presence_penalty=1.5), False)])
+    (dict(temperature=0.8, top_k=20), True), (dict(temperature=0.8, min_p=0.05), True),
+    (dict(temperature=0.8, presence_penalty=1.5), True),
+    (dict(temperature=0.0, top_k=20, min_p=0.05), True), (dict(temperature=0.0, presence_penalty=1.5), True)])
 def test_the_gpu_is_offered_a_generation_its_sampler_can_draw(settings, takes):
-    """T274: the GPU's SAMPLE has a temperature, a nucleus and a repetition penalty. A generation with anything more
-    gets no steps of it (it would draw without, and nothing would say so)."""
+    """T274: the GPU's SAMPLE has a temperature, a nucleus and a repetition penalty (T546: a top-k, min-p and the
+    presence penalty too). A generation with anything more gets no steps of it (it would draw without, and nothing
+    would say so): test_a_generation_with_a_rule_the_gpu_was_never_told_of_gets_no_steps."""
     part, engine = part_with_steps()
     steps = part.gpu_steps(Sampling(**settings), None)
     assert (steps is not None) == takes and engine.asked == []

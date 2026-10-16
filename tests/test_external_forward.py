@@ -46,7 +46,8 @@ class SizedBlocks(Blocks):
 class Steps:
     tokenBlock, answer = 4.0, None
 
-    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops):
+    def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops, top_k=0, min_p=0.0,
+                     presence=0.0, written=0):
         self.asked.append(("steps", token, pos, recent, length, count, temperature, topp, penalty, randoms, stops))
         return self.answer
 

@@ -165,9 +165,10 @@ try {
       if (!engine.tokenBlock) return { why: engine.gpuTokensWhyNot ?? "the GPU took no steps", planned: engine.gpuTokensPlanned,
         binds: Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize) };
       const greedy = c.reference.greedy, history = (ids) => [...tokens, ...ids];
-      const ask = (token, pos, before, count, settings = [0, 0.9, 1], randoms = [], stops = []) => {
+      // (T546: narrowing, a top-k, min-p and the presence penalty, of which the ids before are the sampled ones)
+      const ask = (token, pos, before, count, settings = [0, 0.9, 1], randoms = [], stops = [], narrowing = [0, 0, 0]) => {
         const h = history(before);
-        return engine.generateMany(token, pos, h.slice(-64), h.length, count, ...settings, randoms, stops);
+        return engine.generateMany(token, pos, h.slice(-64), h.length, count, ...settings, randoms, stops, ...narrowing, before.length);
       };
       const out = { form: engine.gpuReady?.tokens, attention: engine.gpuReady?.tokenAttention, pieces: engine.gpuReady?.tablePieces, first: ask(tokens[n], n, [], 4) };
       if (out.first && out.first.every((id, i) => id === greedy[i])) {
@@ -183,6 +184,21 @@ try {
       out.penaltyHistory = [...tokens.slice(0, -1), greedy[0], tokens[n]];
       out.penalized = engine.generateMany(tokens[n], n, out.penaltyHistory.slice(-64), out.penaltyHistory.length, 1, 0, 0.9, 100, [], []);
       out.sampled = [0.02, 0.98].map((random) => ask(tokens[n], n, [], 1, [2, 0.999, 1], [random]));
+      // T546: a top-k of 3 and min-p 0.5 at temperature 2 with random numbers of 0.02 and 0.98; the presence penalty
+      // (100, greedy) on the history's latest 1 and 2 (NumPy's first id the second last: penalized as a sampled
+      // token only in the second); and 4 steps with all three in one submission against the same 4 one at a time
+      out.narrowed = {
+        topK: [0.02, 0.98].map((random) => ask(tokens[n], n, [], 1, [2, 1, 1], [random], [], [3, 0, 0])),
+        minP: [0.02, 0.98].map((random) => ask(tokens[n], n, [], 1, [2, 1, 1], [random], [], [0, 0.5, 0])),
+        presence: [1, 2].map((written) => engine.generateMany(tokens[n], n, out.penaltyHistory.slice(-64), out.penaltyHistory.length, 1, 0, 0.9, 1, [], [], 0, 0, 100, written)),
+      };
+      const narrowing = [20, 0.05, 1.5];
+      out.narrowed.together = ask(tokens[n], n, [], 4, [2, 0.95, 1.1], [0.3, 0.7, 0.1, 0.9], [], narrowing);
+      out.narrowed.apart = [];
+      for (let i = 0; i < 4; i++) {
+        const before = out.narrowed.apart;
+        out.narrowed.apart.push(...(ask(i ? before[i - 1] : tokens[n], n + i, before.slice(0, i), 1, [2, 0.95, 1.1], [[0.3, 0.7, 0.1, 0.9][i]], [], narrowing) ?? [NaN]));
+      }
       // (T152's review) 4 sampled steps with a penalty in one submission against the same 4 asked one at a time: the
       // GPU's arithmetic is the same, so the ids are to the bit (the random numbers taken in their order, and the
       // penalty's window handed over from the history at every request as the GPU carries it within a submission)

@@ -154,6 +154,32 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     failures.push(`sampled at 0.02 and 0.98: ${low?.[0]} and ${high?.[0]}, of NumPy's nucleus of ${walk.tokens.length}, which are to differ`);
   }
   said.push(`sampled ${low?.[0]} and ${high?.[0]}${peaked ? ` (NumPy's first token has ${(walk.cumulative[0] / walk.mass).toFixed(3)} of its nucleus)` : ""}`);
+  // T546: a top-k of 3 and min-p 0.5 at temperature 2, random numbers of 0.02 and 0.98: tokens of NumPy's walk with
+  // them (or a near tie of one: the GPU's logits are not NumPy's), not the same where it has more than one and its
+  // first token has no more than 0.9 of it; the presence penalty of 100 (greedy) on the sampled ones alone: the largest
+  // of NumPy's logits penalized so, or a near tie; 4 steps with all three in one submission and one at a time the same
+  if (steps.narrowed) {
+    const { topK, minP, presence, together, apart } = steps.narrowed, logits = logitsOf(0);
+    const within = (walked, id) => walked.tokens.includes(id) || walked.tokens.some((token) => near(logits, token, id));
+    for (const [name, got, walked] of [["a top-k of 3", topK, wgsl.walkLikeCpu(logits, 2, 1, 3)], ["min-p 0.5", minP, wgsl.walkLikeCpu(logits, 2, 1, 0, 0.5)]]) {
+      const [a, b] = (got ?? []).map((ids) => ids?.[0]), single = walked.tokens.length === 1 || walked.cumulative[0] > 0.9 * walked.mass;
+      if (!(within(walked, a) && within(walked, b) && (a !== b || single))) {
+        failures.push(`${name} sampled at 0.02 and 0.98: ${a} and ${b}, of NumPy's ${JSON.stringify(walked.tokens)}${single ? "" : ", which are to differ"}`);
+      }
+      said.push(`${name} ${a} and ${b} of NumPy's ${walked.tokens.length}`);
+    }
+    const presenceSaid = [];
+    [1, 2].forEach((written, i) => {
+      const penalized = logits.slice();
+      wgsl.penalizeLikeCpu(penalized, steps.penaltyHistory ?? [], 1, 100, written);
+      const want = wgsl.argmaxLikeCpu(penalized), got = presence?.[i]?.[0];
+      if (!near(penalized, want, got)) failures.push(`with a presence penalty of 100 on the latest ${written} the step is ${got}, NumPy's ${want}, and not a near tie`);
+      presenceSaid.push(`${got}${got === want ? "" : ` (NumPy's ${want})`}`);
+    });
+    said.push(`presence on the latest 1 and 2 ${presenceSaid.join(" and ")}`);
+    if (JSON.stringify(together) !== JSON.stringify(apart)) failures.push(`4 steps with a top-k, min-p and presence together ${JSON.stringify(together)}, one at a time ${JSON.stringify(apart)}`);
+    said.push(`4 of them ${JSON.stringify(together)}${JSON.stringify(together) === JSON.stringify(apart) ? " one at a time too" : ""}`);
+  } else failures.push("no steps with a top-k, min-p or the presence penalty");
   // T241: one value of the keys and values a NaN, or an infinity (the harness's brokenValues: the first layer and the
   // last, the first column and the last): every request answered and refused (nothing sampled, T219's word set)
   if (steps.brokenValues?.cases) {

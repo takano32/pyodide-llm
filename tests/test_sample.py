@@ -213,21 +213,20 @@ def test_generate_with_the_three_reproduces_and_differs(llama):
 
 @pytest.mark.parametrize("settings, on_the_gpu", [
     (dict(), True),
-    (dict(top_k=20), False),
-    (dict(min_p=0.05), False),
-    (dict(presence_penalty=1.5), False),
+    (dict(top_k=20), True),
+    (dict(min_p=0.05), True),
+    (dict(presence_penalty=1.5), True),
     (dict(repetition_penalty=1.3), True),
-    # greedy takes the largest logit, which a top-k and a min-p leave in: the GPU may still take its steps
     (dict(temperature=0.0, top_k=20, min_p=0.05), True),
-    # ... but a presence penalty moves the largest logit
-    (dict(temperature=0.0, presence_penalty=1.5), False),
+    (dict(temperature=0.0, presence_penalty=1.5), True),
 ])
-def test_only_a_step_without_the_three_may_go_to_the_gpu(llama, monkeypatch, settings, on_the_gpu):
-    """T274 (the review): the GPU's SAMPLE has no top-k, min-p or presence penalty, so a step with any of them must
-    not be offered to it (it would draw without them, and nothing says so). Nothing else caught that: the GPU's steps
-    are forward.js's, and pytest has no GPU (a presence penalty alone passed both pytest and smoke with on_cpu left
-    out of it). T359.7: who says so is the part that hands the steps over (ExternalForward's gpu_steps(), by
-    Sampling.beyond()): here it is that part's, around a stand-in for forward.js's engine."""
+def test_a_step_with_the_three_may_go_to_the_gpu(llama, monkeypatch, settings, on_the_gpu):
+    """T274 (the review): a step with a setting the GPU's SAMPLE has not must not be offered to it (it would draw
+    without it, and nothing says so). Nothing else caught that: the GPU's steps are forward.js's, and pytest has no
+    GPU (a presence penalty alone passed both pytest and smoke with on_cpu left out of it). T359.7: who says so is the
+    part that hands the steps over (ExternalForward's gpu_steps(), by Sampling.beyond()): here it is that part's,
+    around a stand-in for forward.js's engine. T546: SAMPLE has a top-k, min-p and the presence penalty too (a rule it
+    has not: tests/test_sampling.py's WithARuleMore)."""
     asked = []
 
     class Engine:
@@ -236,7 +235,8 @@ def test_only_a_step_without_the_three_may_go_to_the_gpu(llama, monkeypatch, set
         def bind(self, logits):
             pass
 
-        def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops):
+        def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops, top_k=0, min_p=0.0,
+                         presence=0.0, written=0):
             asked.append(count)
             return None  # "the CPU takes the step"
 

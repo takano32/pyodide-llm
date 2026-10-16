@@ -14,8 +14,9 @@ import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
 // T368.7: a case of the sampling's check: a vocabulary, the logits it is of (a spread and its peaks, sparse, tied, and
 // what is not finite in them: unfinite, at where that kind has a place), the settings, and the random number ("fifth":
 // the middle of the fifth tied token's share); a run's settings are a case without its one random number
+// T546: and a top-k, min-p and the presence penalty (0 where none), and how many of the history's latest were sampled
 type Case = { vocab: number; spread?: number; peaks?: number; sparse?: boolean; ties?: boolean; short?: boolean; unfinite?: string; at?: number;
-  topp: number; temperature: number; penalty: number; random: number | "fifth" };
+  topp: number; temperature: number; penalty: number; random: number | "fifth" | "eighth"; topK?: number; minP?: number; presence?: number; written?: number };
 type Running = Omit<Case, "random">;
 // what a submission of the sampler left: the ids and the state's words
 type Sampled = { ids: Uint32Array; state: Uint32Array };
@@ -35,8 +36,8 @@ type Held = ReturnType<typeof heldHalves>;
 // logits come from the GPU's own forward pass, any within `band` of it (and of a token acceptable otherwise). The
 // count of tokens that passed by an edge only is in the verdict.
 const EDGE = 1e-4;
-function acceptable(logits: Float32Array, { temperature, topp }: Pick<Case, "temperature" | "topp">, random: number, band = 0) {
-  const picks = new Set([shared.WGSL.sampleLikeCpu(logits, temperature, topp, random)]), [first] = picks;
+function acceptable(logits: Float32Array, { temperature, topp, topK = 0, minP = 0 }: Pick<Case, "temperature" | "topp" | "topK" | "minP">, random: number, band = 0) {
+  const picks = new Set([shared.WGSL.sampleLikeCpu(logits, temperature, topp, random, topK, minP)]), [first] = picks;
   const near = (token: number) => band > 0 ? logits.forEach((value, i) => Math.abs(value - logits[token]) <= band && picks.add(i)) : picks.add(token);
   // the most likely token: NumPy's first index of the largest logit, exactly where the logits are the same
   if (temperature === 0) {
@@ -45,7 +46,7 @@ function acceptable(logits: Float32Array, { temperature, topp }: Pick<Case, "tem
   }
   const nucleus = topp > 0 && topp < 1;
   for (const p of nucleus ? [topp, topp * (1 - EDGE), topp * (1 + EDGE)] : [topp]) {
-    const { tokens, cumulative, mass } = shared.WGSL.walkLikeCpu(logits, temperature, p);
+    const { tokens, cumulative, mass } = shared.WGSL.walkLikeCpu(logits, temperature, p, topK, minP);
     const low = (random - EDGE) * mass, high = (random + EDGE) * mass;
     tokens.forEach((token, k) => (k ? cumulative[k - 1] : 0) <= high && cumulative[k] >= low && near(token));
   }
@@ -95,6 +96,30 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
     cases.push({ vocab, topp: 0.9, temperature: 0.7, penalty: 1, random: "fifth", ties: true });
     cases.push({ vocab, topp: 0.9, temperature: 0, penalty: 1, random: 0.3, ties: true });
   }
+  // T546: a top-k (1, 20, 64 and one past what is over the floor: all kept), min-p and the presence penalty, alone and
+  // together, with a nucleus and without (a top-k without one walks the tokens from the most probable, min-p alone in
+  // the order of the index), greedy with the presence penalty; the history's latest 30 sampled (the presence
+  // penalty's: the three most likely among them; likely ones before them in the window, the prompt's, penalized by
+  // the repetition penalty alone), none (the presence penalty takes nothing) and more than the window. The ties: a
+  // top-k whose border falls inside the run of 20 equal tokens (10: the two at the top and 8 of the run, the first in
+  // the order of their index), the draw on the last of them kept, without a nucleus (a nucleus whose border falls in a
+  // run of equal tokens takes them all: see tiedLogits). Only SAMPLE has these (the sampling in chunks has not)
+  if (kind === "one") {
+    for (const vocab of [1003, 128256]) {
+      for (const spread of vocab === 1003 ? [2, 6] : [2]) {
+        const settings: Partial<Case>[] = [{ topK: 1 }, { topK: 20 }, { topK: 64, presence: 1.5 }, { topK: 200000 }, { minP: 0.05 }, { minP: 1 },
+          { presence: 1.5 }, { topK: 20, presence: 1.5, penalty: 1 }, { topK: 20, minP: 0.05, presence: 1.5 }, { topK: 20, presence: 1.5, written: 0 },
+          { minP: 0.05, presence: 1.1, written: 200 }];
+        for (const extra of shared.fallback && vocab > 1003 ? settings.slice(-3) : settings) {
+          for (const topp of [0.95, 1]) {
+            for (const random of [0, Math.random(), 1 - 2 ** -24]) cases.push({ vocab, spread, topp, temperature: 0.7, penalty: 1.1, random, written: 30, ...extra });
+          }
+        }
+        cases.push({ vocab, spread, topp: 0.9, temperature: 0, penalty: 1, random: 0.5, presence: 100, written: 30 });
+      }
+      cases.push({ vocab, topp: 1, temperature: 0.7, penalty: 1, random: "eighth", ties: true, topK: 10 });
+    }
+  }
   // T219: logits the sampler must refuse (T195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
   // not_finite word set, stopped set, nothing sampled) and ones it must not (UNREFUSED: a few -inf, which the CPU never
   // draws either, and the review's: denormals and -0, one finite logit among -inf): a NaN or +inf at the first token,
@@ -136,10 +161,11 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
       // steps SAMPLE dispatches in one submission, from the case's history; the ids and the state back
       const sampled = async (c: Running, logits: Float32Array<ArrayBuffer>, history: number[], draws: number[], steps: number, stops: number[] = []): Promise<Sampled> => {
         shared.device.queue.writeBuffer(logitsBuffer, 0, logits);
-        shared.device.queue.writeBuffer(state, 0, shared.WGSL.samplingState({ token: history[history.length - 1], pos: 40, history }));
+        shared.device.queue.writeBuffer(state, 0, shared.WGSL.samplingState({ token: history[history.length - 1], pos: 40, history, written: c.written }));
         shared.device.queue.writeBuffer(chosen, 0, new Uint32Array(16).fill(SENTINEL_ID));
         shared.device.queue.writeBuffer(randoms, 0, new Float32Array(draws));
-        shared.device.queue.writeBuffer(settings, 0, shared.WGSL.samplingSettings({ vocab: c.vocab, temperature: c.temperature, topp: c.topp, penalty: c.penalty, stops }));
+        shared.device.queue.writeBuffer(settings, 0, shared.WGSL.samplingSettings({ vocab: c.vocab, temperature: c.temperature, topp: c.topp, penalty: c.penalty,
+          topK: c.topK, minP: c.minP, presence: c.presence, stops }));
         const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
         const list = listOf(c.vocab);
         for (let i = 0; i < steps; i++) list.forEach((d) => run(pass, d));
@@ -157,7 +183,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
         const cpu = Float32Array.from(logits), seen = [...history];
         let k = 0;
         for (; k < draws.length; k++) {
-          shared.WGSL.penalizeLikeCpu(cpu, seen, c.penalty);
+          shared.WGSL.penalizeLikeCpu(cpu, seen, c.penalty, c.presence, (c.written ?? 0) + k);
           const { first, picks } = acceptable(cpu, c, draws[k]);
           checked++;
           // the ties case holds SAMPLE to the token itself: equal probabilities in the order of their index, the
@@ -165,7 +191,8 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
           const right = c.ties && c.temperature ? got.ids[k] === first : picks.has(got.ids[k]);
           if (!right) {
             wrong++;
-            problems.push(`${c.vocab} spread ${c.spread ?? (c.sparse ? "sparse" : "tied")} top-p ${c.topp} T ${c.temperature} r ${draws[k].toFixed(3)}: ${got.ids[k]}, the CPU ${first}`);
+            const more = c.topK || c.minP || c.presence ? ` top-k ${c.topK ?? 0} min-p ${c.minP ?? 0} presence ${c.presence ?? 0} written ${c.written ?? 0}` : "";
+            problems.push(`${c.vocab} spread ${c.spread ?? (c.sparse ? "sparse" : "tied")} top-p ${c.topp}${more} T ${c.temperature} r ${draws[k].toFixed(3)}: ${got.ids[k]}, the CPU ${first}`);
             return;
           }
           if (got.ids[k] !== first) edge++;
@@ -176,6 +203,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
         const stopped = k < draws.length, taken = stopped ? k + 1 : draws.length;
         const s = got.state, fed = stopped ? k : draws.length;
         const right = s[5] === taken && s[7] === (stopped ? 1 : 0) && s[shared.WGSL.STATE_NOT_FINITE] === 0 && s[1] === 40 + fed && s[6] === history.length + fed &&
+          s[2] === (c.written ?? 0) + fed &&
           s[4] === (fed ? got.ids[fed - 1] : history[history.length - 1]) && got.ids[taken] === SENTINEL_ID &&
           (fed === 0 || s[8 + ((history.length + fed - 1) % shared.WGSL.REPETITION_WINDOW)] === got.ids[fed - 1]);
         if (!right) {
@@ -198,10 +226,10 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
         if (c.unfinite === "nan in the window") logits[history[history.length - 1]] = NaN;
         if (c.unfinite === "+inf in the window") logits[history[history.length - 1]] = Infinity;
         let random = c.random;
-        if (random === "fifth") {
-          // the middle of the fifth tied token's share in the CPU's walk (the ties in the order of their index)
-          const walk = shared.WGSL.walkLikeCpu(logits, c.temperature, c.topp);
-          const k = walk.tokens.map((token, at) => [token, at]).filter(([token]) => logits[token] === TIED_RUN)[4][1];
+        if (random === "fifth" || random === "eighth") {
+          // the middle of the fifth (eighth) tied token's share in the CPU's walk (the ties in the order of their index)
+          const walk = shared.WGSL.walkLikeCpu(logits, c.temperature, c.topp, c.topK, c.minP);
+          const k = walk.tokens.map((token, at) => [token, at]).filter(([token]) => logits[token] === TIED_RUN)[random === "fifth" ? 4 : 7][1];
           random = (walk.cumulative[k - 1] + walk.cumulative[k]) / 2 / walk.mass;
         }
         if (c.unfinite && !UNREFUSED.includes(c.unfinite)) {
@@ -233,6 +261,12 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
         const stop = got.ids[2];
         for (const stops of [[NOT_A_TOKEN, stop], [...Array(shared.WGSL.STOPS_MOST - 1)].map((_, i) => NOT_A_TOKEN + i).concat(stop)]) {
           judge(c, logits, history, draws, await sampled(c, logits, history, draws, 4, stops), stops);
+        }
+        // T546: a run with a top-k, min-p and the presence penalty (each token sampled joins the presence penalty's
+        // window: the state's written goes up), its logits of few tokens, so that a token taken comes again
+        if (kind === "one") {
+          const narrowed = { ...c, topK: 20, minP: 0.05, presence: 1.5, written: 3 }, few = madeUpLogits(vocab, 1, 8);
+          judge(narrowed, few, history, draws, await sampled(narrowed, few, history, draws, 4));
         }
       }
     });

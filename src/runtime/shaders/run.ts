@@ -42,6 +42,12 @@ import { GET_BYTE_I32 } from "./prompt.ts";
 //     whose running sum passes the random number
 //   - gathering the tokens over the floor in the order of their index (for the pivots, and the order of equals):
 //     cumsum.wgsl's scan again, of the counts
+//   - T546: a top-k, min-p and the presence penalty, in the CPU's order (top-k, top-p, min-p: kernels/kernel/sample.ts,
+//     llama.cpp's samplers' and transformers'): the top-k's k-th largest probability by the same pivots counting the
+//     tokens at or over each (where MLC's top_p_pivot sums them; WebLLM and TVM sort for a top-k: not taken), and of the
+//     tokens of that probability the first ones in the order of their index; the nucleus and the draw of those kept;
+//     min-p a floor of min_p times the most probable's 1 over the nucleus's. The presence penalty after the repetition
+//     penalty, off each distinct token of the window among the latest State.written (the sampled ones: the CPU's)
 //   - the token's row of the embedding: llama.cpp's WebGPU get_rows.wgsl (copy_elements of Q8_0: each weight times
 //     its block's scale), for this project's int8 in groups of 32
 // This project's: the state that carries the loop from one token to the next (the input token, the position, the
@@ -92,7 +98,9 @@ export const REPETITION_WINDOW = 64;
 export const STOPS_MOST = 8;
 // State: Step's four words first (copied into the Step uniform after each token), then the loop's own
 const STATE = /* wgsl */ `struct State {
-  tokens: u32, pos: u32, unused0: u32,
+  tokens: u32, pos: u32,
+  written: u32,   // T546: how many of the history's latest are sampled tokens (not the prompt's): the presence
+                  // penalty's (the CPU's written[]). Word 2, copied into the Step uniform too (which reads it not)
   not_finite: u32, // T219: 1 once a step's logits held a NaN or +inf, or none over -3.4e38 (all -inf): the sampler
                    // refused that step (nothing sampled, stopped set), and the CPU takes it by T195's rule. Word 3,
                    // the last of the four the Step uniform gets a copy of (which reads only tokens and pos)
@@ -141,10 +149,11 @@ export function halvesOf(floats: ArrayLike<number>, out: Uint16Array) {
 }
 /** The state a run starts from: the token it feeds first, at pos, and the history before it (BOS, the prompt and
  * the tokens sampled before, the fed token last: the penalty's window is its latest REPETITION_WINDOW). length (T152:
- * the engine hands the latest of a longer history over): how long the history is, of which history is the end. */
-export function samplingState({ token, pos, history, length = history.length }: { token: number; pos: number; history: ArrayLike<number>; length?: number }) {
+ * the engine hands the latest of a longer history over): how long the history is, of which history is the end.
+ * written (T546): how many of its latest were sampled (the presence penalty's: the prompt's are not). */
+export function samplingState({ token, pos, history, length = history.length, written = 0 }: { token: number; pos: number; history: ArrayLike<number>; length?: number; written?: number }) {
   const words = new Uint32Array(STATE_BYTES / 4), first = length - history.length;
-  words.set([1, pos, 0, 0, token, 0, length, 0]);
+  words.set([1, pos, written, 0, token, 0, length, 0]);
   for (let at = Math.max(first, length - REPETITION_WINDOW); at < length; at++) {
     words[8 + (at % REPETITION_WINDOW)] = history[at - first];
   }
@@ -152,18 +161,19 @@ export function samplingState({ token, pos, history, length = history.length }: 
 }
 // Sampling, a uniform: the settings of the engine's generate()
 const SAMPLING = /* wgsl */ `struct Sampling {
-  vocab: u32, stops: u32, unused0: u32, unused1: u32,
-  temperature: f32, topp: f32, penalty: f32, unused2: f32,
+  vocab: u32, stops: u32, top_k: u32, presence: f32,
+  temperature: f32, topp: f32, penalty: f32, min_p: f32,
   stop: array<vec4<u32>, ${STOPS_MOST / 4}>,
 }`;
 export const SAMPLING_BYTES = 32 + 4 * STOPS_MOST;
 /** Sampling's bytes: the engine's settings (temperature 0: the most likely token; top-p outside (0, 1): no nucleus;
- * penalty 1: none) and its stop tokens. */
-export function samplingSettings({ vocab, temperature, topp, penalty = 1, stops = [] }: { vocab: number; temperature: number; topp: number; penalty?: number; stops?: ArrayLike<number> }) {
+ * penalty 1: none; T546: topK 0, minP 0 and presence 0: none) and its stop tokens. */
+export function samplingSettings({ vocab, temperature, topp, penalty = 1, topK = 0, minP = 0, presence = 0, stops = [] }: { vocab: number; temperature: number; topp: number; penalty?: number;
+  topK?: number; minP?: number; presence?: number; stops?: ArrayLike<number> }) {
   if (stops.length > STOPS_MOST) throw new Error(`more than ${STOPS_MOST} stop tokens`);
   const bytes = new ArrayBuffer(SAMPLING_BYTES), words = new Uint32Array(bytes), values = new Float32Array(bytes);
-  words.set([vocab, stops.length]);
-  values.set([temperature, topp, penalty], 4);
+  words.set([vocab, stops.length, topK]);
+  values.set([presence, temperature, topp, penalty, minP], 3);
   words.set(stops, 8);
   return new Uint8Array(bytes);
 }
