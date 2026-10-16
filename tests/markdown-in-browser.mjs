@@ -5,7 +5,7 @@
 //   npm run build && node tests/markdown-in-browser.mjs [chromium|firefox|webkit|chrome]
 //
 // Visits: the page as a visitor opens it (under the service worker: the libraries come from jsDelivr through it), the
-// same with ?coi=off (no service worker), and one where jsDelivr's packages do not answer. It sees: the thinking stays
+// same with ?coi=off (no service worker), and one where jsDelivr's packages do not answer (with ?coi=off). It sees: the thinking stays
 // plain text (its ** too); headings, lists, bold, italic, code and a table are drawn; the model's HTML, links, images
 // and an onerror are not (no such element, no attribute but align and start, nothing ran) and are said as the text it
 // wrote; a block drawn earlier is the same element at the end (only the blocks that changed are made again: T556); the
@@ -142,14 +142,16 @@ for (const [query, name] of [["", "the page (its service worker)"], ["?coi=off",
   console.log(`markdown-in-browser: ${engine}, ${name}: ${seen.tags.length} kinds of elements drawn, ${seen.draws} draws for ${tokens} tokens`);
 }
 {
-  const { seen, said } = await visit("", { blocked: true });
+  // (without the service worker: Playwright's routes do not reach the requests a service worker makes in Firefox)
+  const { seen, said } = await visit("?coi=off", { blocked: true });
   const name = "jsDelivr's packages blocked";
   check(name, !seen.markdown && seen.text === TEXT, `not the plain text, whole: ${JSON.stringify(seen.text.slice(0, 80))}`);
   check(name, seen.tags.length === 0, `elements in the bubble: ${seen.tags}`);
   const told = said.filter((line) => /^markdown:/.test(line.text));
   check(name, told.length === 1 && told[0].type === "warning", `the console says ${told.length} times that the libraries did not come`);
-  // (the browser's own line for each request it was told to drop is no error of the page's)
-  const errors = said.filter((line) => line.type === "error" && !/^Failed to load resource: net::ERR_FAILED$/.test(line.text));
+  // (the browser's own line for each request it was told to drop is no error of the page's: Chromium's, Firefox's)
+  const dropped = /^Failed to load resource: net::ERR_FAILED$|Cross-Origin Request Blocked: .* https:\/\/(data|cdn)\.jsdelivr\.(com|net)\//;
+  const errors = said.filter((line) => line.type === "error" && !dropped.test(line.text));
   check(name, errors.length === 0, `console errors: ${errors.map((line) => line.text).join(" | ")}`);
   check(name, seen.draws < tokens / 2, `drawn ${seen.draws} times for ${tokens} tokens`);
   console.log(`markdown-in-browser: ${engine}, ${name}: plain text, ${seen.draws} draws for ${tokens} tokens; the console: ${told[0]?.text}`);
