@@ -223,6 +223,13 @@
 - T542 [バグ][変換] 偶数でない数のグループの 3 値のテンソルが、次の float32 のテンソルを 4 バイトの境から外す — 未着手
 - T543 [整理][Gemma4] `perlayer.ts` が層ごとの埋め込みの表のスケールを float32 と読む前提 — 未着手
 - T544 [試験][CPU] `kernels-in-browser` の 3 値に、4 で割り切れないグループの通りを足す — 未着手
+- T545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 未着手
+- T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 未着手
+- T547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 未着手
+- T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えの歩を GPU に置くか — 持ち主の判断待ち
+- T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
+- T550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 候補
+- T551 [性能][WebGPU] 1 回の submit の歩の数とプロンプトのブロックの大きさを、端末で測って選ぶ — 候補
 <!-- 目次ここまで -->
 
 ## Opus の回とレビューの回（2026-09-25 に持ち主が決めた進め方。レビューは 2026-09-25 の夕方から Opus xhigh）
@@ -719,6 +726,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T271 [性能][Bonsai][WebGPU] 27B を GPU に（T232 の段 2） — 状態: 未着手（2026-10-02、T232 の仕様から。規模 大が 2 つぶん。持ち主の判断: 進めるか、hybrid は「GPU だけか CPU だけ」の 2 択にするか）
 - 小段 5 つ（T232 の項に仕様）: 回した基底のシェーダ（中、元ネタは fork の Vulkan の `fwht.comp`）、Gated DeltaNet の歩（大、元ネタは fork の `gated_delta_net.wgsl`）、linear の層のプロンプト（中）、Qwen3.5 を GPU だけに（中）、27B そのもの（小〜中、持ち主の PC が要る: CI では実物を回せない）。GPU に約 7.5 GiB。
+- **追記（2026-10-16、T545 の WebGPU の洗い出しから。取りまとめ役の決め）: 小段 2〜4 は 27B と切り離して先に進められる**: Gated DeltaNet の歩・linear の層のプロンプト・Qwen3.5 を GPU だけに、は一覧の Qwen3.5 系の 16 項目（Qwen3.5 0.8B・2B・4B・9B、日本語版 0.8B v2.5、NeoHorse-1 4B・9B、Agents-A1 4B のそれぞれ考える形とすぐ答える形）に効き、4B・9B の 10 項目は GPU だけにも置けるようになる。上の持ち主の判断（27B を進めるか）は小段 1 と 5 だけに掛かる。状態を持つ層を GPU が持つ道（位置 0 で消す・順でない位置を断る・CPU と GPU の状態の写し）は T545（LFM2 の畳み込み）が先に作るので、その後に。答えの歩を GPU に残すには、項目の top-k 20・presence penalty の GPU の標本抽出（T546）も要る。勧めの順と表は docs/notes/t545-webgpu-candidates-2026-10-16.md。
 
 ### T452 [バグ][遠隔試験] `tests/page_ternary.sh` が項目の options なしで測る — 状態: 未着手（2026-10-11、T235 の素の RoPE の実装から。規模 小）
 - `perplexity_prepare.py` を `--entry` なしで呼ぶので、変換器の BOS（1）と yarn で測る: ページの数字ではない。`--entry "$id"` を渡す。
@@ -1006,6 +1014,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 状態: 未着手（2026-10-05。規模 中〜大。T333 の後）
 - 窓つきの attention（flash attention に下限）、層ごとの head の大きさ、KV の共有、GeGLU、softcap、層ごとの埋め込み（GPU だけのときは表も GPU に）。いまの `gpuUnfit()` に当たる所を 1 つずつ外す。
+- **追記（2026-10-16、T545 の WebGPU の洗い出しから）**: 窓つきの attention・後ろの norm・GELU の gate は T261.4（Gemma 3 を GPU に、実装中）が作るものを使う。項目の標本抽出は top-k 64 なので、答えの歩を GPU に残すには T546（GPU の標本抽出の top-k）も要る。層ごとの埋め込みの表は保存（OPFS）から読む形（T329.2）なので、GPU だけに置くときの表の置き場はここで決める。
 
 ### T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 状態: 候補（2026-10-05。規模 大。Clef-Flash（T316〜T323）と同じ種類）
 - `TokenRhythm/NeoHorse-Jev-4B`（-GGUF @`b1bc36970f69cef2bfea75aec8f820fd3d20b040`、Q8_0 5,168,327,744 バイト、apache-2.0）。文を書かず、状態と問いから選択肢の確率を出す（タグ: decision-model・non-generative。Clef のカードが言う「Jev / SystemOne」の API の名前）。背骨は 4B（Qwen3.5 の形の見込み、未確認）で、頭は `PointerHead`（決めの位置の隠れ状態と選択肢の位置の隠れ状態から点、幅 256）。付属の `runtime/support/neohorse_decision/_vendor/model.py` を読んだ範囲: 選択肢ごとに**枝の attention の mask**（`branch_mask`・`option_isolation`）と位置の番号を自分で付ける。**linear attention の層（状態を持つ層）に枝の mask をどう掛けるかは未確認**（読む前に決めない）。
@@ -1016,6 +1025,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 状態: 未着手（2026-10-05。T343 の後。規模 中）
 - 窓つきの flash attention（下限）、層ごとの RoPE の表、head ごとの gate（小さな行列 1 つと掛け算）、GELU の FFN（シェーダの GELU は tanh の近似: T342 の決めに合わせる）。
+- **追記（2026-10-16、T545 の WebGPU の洗い出しから）**: 窓つきの attention と層ごとの RoPE の表は T261.4（Gemma 3 を GPU に、実装中）が作るものを使う。項目の標本抽出は top-k なし（カードの `top_k=-1`）なので T546 は要らない。4B（int8 4.6 GB）は 2 重に入らない端末で GPU だけに置くので、`aloneFactsUnfit()` の `aloneGate`・`aloneActivation`（erf の GELU）・`aloneLocal` の 3 つを外すのもこのタスク。
 
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
@@ -1576,3 +1586,48 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T544 [試験][CPU] `kernels-in-browser` の 3 値に、4 で割り切れないグループの通りを足す — 状態: 未着手（2026-10-16、T533 のレビューの気づき）
 - いまは groups=16 の 1 通りだけで、残りのグループの道（`half()`）を Chromium・Firefox・WebKit で踏んでいない。groups=7 のような通りを足す。
+
+### T545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 状態: 未着手（2026-10-16、WebGPU の洗い出しから。持ち主「ほかに WebGPU でできることあったら採番しよう」。勧めの順の 1 番目。規模 中。表と順は docs/notes/t545-webgpu-candidates-2026-10-16.md）
+- **当たるモデル**: 一覧の LFM2 の 8 項目（LFM2.5 230M・350M、LFM2 700M、LFM2.5 1.2B Instruct・1.2B JP、Shisa V2.1c LFM2 350M（**2026-10-15 からの既定**）・その 4-bit、Shisa V2.1 LFM2 1.2B）。4-bit の 1 つは塊の行もあるので T547 も要る。いまは `gpuUnfit()` の `REASONS.convolution` で全部 CPU（`gpu-hybrid-check` が見る）。
+- **作るもの**: (1) 状態を持つ層を GPU が持つ道（どの状態の層にも使う: T271 の DeltaNet が続く）: GPU の Worker が層ごとの状態のバッファを持ち、位置 0 で消し、順でない位置を断る。プロンプトのブロックと歩の後に、CPU と GPU の状態を KV と同じく両側に写す（畳み込みの状態は層ごとに 2 トークン × dim の float32 で小さい）。GPU が断ったら CPU が続けられること。(2) シェーダ: `in_proj` の出（3 dim）を B・C・z に割って h = B × z、チャンネルごとの 3 タップの因果の畳み込み（ブロックの中では前のトークンの h を読む）、C を掛けて `out_proj` へ。行列は今の DP4A・タイルの形のまま。attention の層は Qwen3 と同じ（head の norm・GQA）で今の道。(3) `gpuUnfit()` の `convolution` の行を外し、GPU の計画に層の種類（`layers[l].kind`）を渡す。GPU だけには置かない（一覧の LFM2 は 2 重に入る: `aloneFactsUnfit()` の `stateful` はそのまま）。
+- **元ネタ**: llama.cpp の `ggml_ssm_conv`（Vulkan の `ssm_conv.comp`。ggml-webgpu にあるかは未確認）。式は AGENTS.md の LFM2 の項と `engine/layout.py` の `convolution_form()` の上にあり、元ネタなしでも書ける大きさ（`gpu-writer-unsourced` の範囲）。
+- **鍵**: 動く（新しいシェーダを目録に足す: 鍵を動かす直しは 1 回のデプロイに）。
+- **手元で見られない所**: シェーダの正しさと速さは CI（`gpu-prompt.yml` に `real=hf-lfm2.5-350m` など、gpu-check の作り物に畳み込みの層の形を足す）。端末での選ばれ方は持ち主の端末でまとめて見る一覧に。LFM2 は eps と BOS の 1 本のベクトルに敏感（AGENTS.md の LFM2 の落とし穴 (1)(2)）なので、gpu-check の線は今の E16・Q8 の目盛りで、層ごとの K・V と状態を NumPy と比べる。
+- **完了の目安**: gpu-check で LFM2 の作り物と実物（350M）のプロンプトと歩が線の内、状態の壊し方（タップの向き・1 トークンずれ・位置 0 で消し忘れ）が落ちる、`gpu-hybrid-check` を「LFM2 は GPU を始める・Qwen3.5 は始めない」に直す、本番で既定のモデルが GPU を選ぶ端末で答えが同じ形。
+
+### T546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 状態: 未着手（2026-10-16、WebGPU の洗い出しから。勧めの順の 2 番目。規模 中）
+- **当たるモデル**: 今 GPU に置けるモデルには無い。**T261.4 で Gemma 3 の層が GPU に置けても、項目の top-k 64 で答えの歩は自動で CPU に戻る**（AGENTS.md の「標本抽出の規則を足す」の 3）。続いて Gemma 4（top-k 64、T334）、Qwen3.5 系（top-k 20・presence 1.5、Agents-A1 は presence 1.1、T271）、Bonsai 2 27B の考える形（min-p 0.05）、Saluki（top-k 20）、URL で渡した訪問。取りまとめ役の決め: T261.4 の中でなく別のタスクで、T261.4 の直後に（T261.4 の鍵の回と 1 回のデプロイにまとめられるなら一緒に）。
+- **作るもの**: SAMPLE のシェーダ（`shaders/sample.ts`）に 3 つ。決まった順は CPU と同じ「top-k → top-p → min-p、どの段も前の段が残した確率を 1 に直してから」。top-k は今の pivot の探し（ソートしない）で k 番目の大きさの線を探す。min-p は最大の確率 × p の線。presence penalty は繰り返しの罰の後に、書いた語のうち直近 64 語から 1 回ずつ引く（プロンプトの語は数えない: `engine/sampler.py` の決まり）。top-k があると CPU は確率の大きい順に歩くので、GPU も同じトークンを引くこと（`shaders/likecpu.ts` の模型と smoke の突き合わせ）。`ON_GPU`・`gpu_steps()`・`generateMany` の渡す欄。
+- **元ネタ**: 今の SAMPLE の形の延長（T191）。llama.cpp の CPU の `llama_sampler` の順と同じ。
+- **鍵**: 動く。
+- **手元で見られない所**: シェーダは CI（`gpu-prompt.yml`、`tests/sample-gpu-bench.mjs`）。JavaScript の模型との突き合わせは手元の smoke。
+- **完了の目安**: 作り物で CPU と同じ種から同じトークン（確率がほぼ 0 の語どうしの許しは T274 の線のまま）、壊し方（段の順の入れ替え・確率を 1 に直し忘れ・プロンプトの語を数える）が落ちる、Gemma 3 の項目が答えの歩を GPU に置く。
+
+### T547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 状態: 未着手（2026-10-16、WebGPU の洗い出しから。勧めの順の 4 番目。規模 大。T545・T271 の後）
+- **当たるモデル**: 塊を持つ一覧の 2 項目。Shisa V2.1c LFM2 350M (4-bit)（Q4_K の行列と、広げた int8 の行: T545 の後）と Underdog Saluki 27B（10 種類の型: T271 の DeltaNet の後、2 重には入らないのでパソコンの GPU だけに）。T513 の勧めで 4-bit の項目が増えれば、それも。いまは `PACKED` の塊の行が `gpu: null`、GPU だけにも `gpuOnlyUnfit()` が断る。GPU に置かない訳の文は T503 で持ち主が決めた「llama.cpp's blocks are not on the GPU yet」。
+- **作るもの**: 段に分ける。(1) Q4_K と Q6_K（4-bit の項目の 2 つ）を詰めたまま GPU に置き、歩の行列とプロンプトのタイルで読む（DP4A の形: 塊の float16 × 2 のべきと単位の整数を、CPU のカーネルと同じ「重み = F·S·W − Fm·M」で）。`PACKED` の行の `gpu` の欄、`Packing`・`DP4A_WEIGHTS`（「物を足す手順」の歩の行列に詰め方を足す）。1 つのファイルに型の違う行があるので、GPU の側の「ファイルに 1 つの詰め方」（`gpuOnlyUnfit()` の T363.5 の行）を、行ごとの詰め方に広げるのがいちばん大きい所。(2) Saluki の残りの 8 種類（IQ 系の符号表は 34,992 バイトの表を GPU にも 1 回）。
+- **元ネタ**: llama.cpp の ggml-vulkan の K 量子化・i 量子化の読み（`dequant_funcs`・`mul_mat_vec_*`）。ggml-webgpu の対応している型は未確認。
+- **鍵**: 動く（行ごとにシェーダの組が増える）。
+- **手元で見られない所**: シェーダは CI。Saluki の GPU だけは CI のランナーで回せない（7.9 GB）: 持ち主の PC。
+- **完了の目安**: gpu-check に塊の作り物（`tests/blocks_forward.py` の形）を足して、CPU の塊のカーネルの模型（`tests/blocks-model.mjs`）と型ごとに比べる。4-bit の Shisa が GPU で答える。
+
+### T548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えの歩を GPU に置くか — 状態: 持ち主の判断待ち（2026-10-16、WebGPU の洗い出しから。規模 小。区切りのまとめで聞く）
+- いまは `tokensUnfit()` の `REASONS.memoryUnsaid`（T205）で、`navigator.deviceMemory` を言わないブラウザは答えの歩を GPU に置かない（プロンプトのブロックだけ GPU）。訳: iPhone の `/benchmark/` のモデルの節で、分類器と埋め込みも GPU に置いたらタブが落ちた。メモリの見積もりはもともと 4 GB の仮定（`weightsPlace()` の既定）なので、この行は余分の守り。
+- **選択肢（勧めを先頭に）**: (1) Firefox だけ置き、Safari は今のまま（Firefox の WebGPU はパソコンの版で使われている。Android の Firefox で WebGPU が使えるかは未確認。落ちた報告は iPhone の Safari のものだけ）。(2) 今のまま。(3) どちらも置く（iPhone の Safari のタブが落ちうる: 持ち主の iPhone で確かめてから）。
+- 見分けは端末の事実で（Safari かを UA の文字で見るのでなく、例えば WebKit だけの性質で）: 書くときに決める。鍵は動かない。確かめは CI の Firefox（`browsers.yml` の WebGPU のある組）と持ち主の端末。
+
+### T549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。先に使えるかを調べる）
+- **当たるモデル**: GPU に置ける全部のプロンプトのブロック（その機能のある端末だけ）。
+- **作るもの**: 今の形の候補（llama.cpp の register tiling・TF.js の vec4・ORT の DP4A、`promptForms()`）に、subgroup matrix で掛けるタイルを 1 つ足し、今までどおり読み込みの時に JavaScript と比べて測って選ぶ。**先に調べること**: Chrome の `chromium-experimental-subgroup-matrix` が旗なしで訪問者に出ているか、持ち主の Android（Arm Valhall）で使えるか（どちらも未確認）。旗の後ろだけなら、訪問者に効かないので採らない。
+- **元ネタ**: llama.cpp の ggml-webgpu の行列積（subgroup matrix の形）。
+- **鍵**: 動く（候補が増えると `devicePromptForms()` が変わる）。確かめは CI（Dawn に機能があるか）と端末。
+
+### T550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。今は効く端末が少ない）
+- いまの GPU は int6 を int8 に広げて持つ（T155: 1.125 バイト / 重み）ので、int6（0.875）を選んだメモリの少ない端末では GPU だけに置けない（`PACKED` の int6 の `alone: false`）。**当たるのは** `deviceMemory` が 8 より小さいと言う Chromium（4 GB と丸められる 6 GB の Android など）で int6 になる 2B〜3B 級（64 ビットのメモリのある Chromium は int8 のまま: T133）。Safari は答えの歩を GPU に置かない（T548）ので当たらない。
+- **作るもの**: 歩の行列とプロンプトのタイルで 32 個を 24 バイトから読む（`pack6` の並び）。`Packing` に 1 行、`PACKED` の int6 の `gpu` を `{ as: "int6", alone: true }` に。
+- **元ネタ**: 無い（このプロジェクトの詰め方: `gpu-writer-unsourced`）。**鍵**: 動く。確かめは CI。
+
+### T551 [性能][WebGPU] 1 回の submit の歩の数とプロンプトのブロックの大きさを、端末で測って選ぶ — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 小〜中。効くかは未計測）
+- いまは固定: 答えの歩は `GPU_TOKENS = 4` 歩を 1 回の submit、プロンプトのブロックは `GPU_BLOCK = 64` トークンまで（`forward/choice.ts`）。持ち主の Android は submit の待ちが 2.6〜8.4 ms（T147 のレビュー）で、歩をもっとまとめれば固定費が割れる見込み（未計測）。ただし歩を先に引く乱数の数（Python の `generate()` が歩の数だけ先に引く）・止まりのトークンの後に捨てる歩・`STOPS_MOST` の置き場が数に結び付いている。
+- **作るもの**: まず `/benchmark/` の GPU の節で 4・8・16 歩とブロック 64・128 を測って報告に出す（端末の数字を見てから、選ぶ仕組みにするかを決める）。開発機の値を既定にしない（持ち主の指示）。
+- **鍵**: 調べてから（数がシェーダの文に入るかは未確認）。
