@@ -8,6 +8,7 @@ import { Failure, failureOf, told } from "../failure.ts";
 import { since } from "./clock.ts";
 import { weightsRoom } from "./weights.ts";
 import { innerAbort, worthRetrying, inOrder } from "./ranges.ts";
+import { modelBytesCame } from "./pyodide.ts";
 import type { Thrown } from "../failure.ts";
 import type { Write } from "./weights.ts";
 import type { OfThisSite, OfTwoFiles, OfTwoUrls, Progress } from "../contracts/messages.ts";
@@ -136,6 +137,7 @@ export function download(model: OfThisSite, signal: AbortSignal, load: number) {
         offset += value.length;
         got += value.length;
         received += value.length;
+        modelBytesCame(value.length);  // a line that is alive while Pyodide loads (T538)
         // one message per percent is plenty; none that goes back (T129 (4): a part fetched again takes back what its
         // broken body had brought, and the page showed the bar going back for a moment)
         const percent = Math.floor((received / model.bytes) * 100);
@@ -248,6 +250,7 @@ export function readUrl(model: Sized, signal: AbortSignal, load: number) {
       await inOrder(model.url.checkpoint, 0, model.bytes, (bytes) => {
         write(offset, bytes);
         offset += bytes.length;
+        modelBytesCame(bytes.length);  // (T538, as download()'s)
         const percent = Math.floor((offset / model.bytes) * 100);
         if (percent !== reported) {
           reported = percent;

@@ -520,6 +520,40 @@ const ok = (line) => {
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
 
+  // (T538, the owner's choice; the form of the T129 review's branch t129-review-model-bytes) a model of this site
+  // streams while Pyodide loads, its parts fetched before the counting began: what they bring is a sign that the line is
+  // alive (a line they fill holds back the first bytes of a new connection: slow.yml at 0.15 Mbps). The version and a
+  // step of Pyodide's are not given up at 30 s while the model's bytes come, but 30 s after the last of them; and while
+  // the model comes for longer, 300 s after the last byte of Pyodide's own (FILLED_SECONDS): a Pyodide that stopped is
+  // still found on a line that is full
+  {
+    const FILLED = run("FILLED_SECONDS");
+    assert.equal(FILLED, 300);
+    for (const [name, wait, why] of [
+      ["the version", () => context.resolvePyodideVersion(""), /did not answer in 30 seconds/],
+      ["the loader", () => run("pyodideSteps")("314.0.7", () => new Promise(() => {})), /"the loader" got nothing from the network for 30 seconds/],
+    ]) {
+      for (const [model, delay, until] of [
+        [{ checkpoint: "m", bytes: PART }, 5000, (began) => [began + 40000 + quiet * 1000, began + 40000 + (quiet + 10) * 1000]],  // 8 chunks: the last at 40 s
+        [{ checkpoint: "m", bytes: PART, chunk: 128 * 1024 }, 5000, (began) => [began + FILLED * 1000, began + (FILLED + 10) * 1000]],  // 64: the last at 320 s
+      ]) {
+        const streaming = (url, init) => (url.endsWith(".000") ? new Response(body(0, PART, { signal: init.signal, delay, chunk: model.chunk }), { status: 200 }) : "hang");
+        fresh(streaming);
+        const loading = new AbortController();
+        run("download")(model, loading.signal, 1);
+        const began = clock.now();
+        const failed = await failure(wait());
+        loading.abort();
+        assert.match(failed?.error.message ?? "", why, name);
+        const [from, to] = until(began);
+        assert.ok(failed.at >= from && failed.at < to,
+          `${name} with ${model.bytes / (model.chunk ?? MiB)} chunks of the model was given up after ${(failed.at - began) / 1000} s, not ${(from - began) / 1000} to ${(to - began) / 1000}`);
+      }
+    }
+    assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
+  }
+  ok("the model's bytes are a sign of life while Pyodide loads, for five minutes at most without Pyodide's (T538)");
+
   // (3) T397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
   // name (no version here), with the integrity check loadPackage has by default. Whatever goes wrong, it answers false
   // and throws nothing: the conversion goes on and the converter's own reader reads what it can.

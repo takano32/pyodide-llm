@@ -11,19 +11,19 @@ const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
 
 // the latest release on npm (the "latest" tag never points at an alpha), or ?pyodide=<version> to force one.
 // T129 (1): its answer is a hundred bytes, so a connection that opened and never answered left "Loading Pyodide" for
-// ever (the review of T118). It is given up after QUIET_SECONDS like a step of Pyodide's (the page may try again
-// without the service worker). Not a step under watchArrivals(): that would count every part of the model, which
-// downloads meanwhile, and find a stop of Pyodide only after the model's end. But it is not always quick on a line the
-// model's parts fill: the first bytes of a new connection wait behind them (slow.yml, the review of T129: 20.5 s behind
-// a 1 MB model at 0.4 Mbps with the oldest connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps,
-// 0.8 s with the line shared by turns), so 30 seconds is little more than such a line's queue.
+// ever (the review of T118). It is given up as a step of Pyodide's is (silence(), below: QUIET_SECONDS without a byte,
+// the model's parts counted; the page may try again without the service worker). Not a step under watchArrivals(): its
+// answer is all it waits for. On a line the model's parts fill, the first bytes of a new connection wait behind them
+// (slow.yml, the review of T129: 20.5 s behind a 1 MB model at 0.4 Mbps with the oldest connection served first,
+// 14.2 s through one queue of 256 KB at 0.4 Mbps, 0.8 s with the line shared by turns): T538 counts those parts.
 export async function resolvePyodideVersion(search: string) {
   const forced = new URLSearchParams(search).get("pyodide");
   if (PYODIDE_VERSION_PATTERN.test(forced!)) {  // (none: null, which is read as "null" and is no version)
     return forced!;
   }
   const given = new AbortController();
-  const timer = setTimeout(() => given.abort(), QUIET_SECONDS * 1000);
+  const silent = silence(() => 0);
+  void silent.promise.then(() => given.abort());
   let version: string;
   try {
     const res = await fetch("https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest", { signal: given.signal });
@@ -32,7 +32,7 @@ export async function resolvePyodideVersion(search: string) {
     if (!given.signal.aborted) throw error;
     throw new Failure("runtime", `The latest version of Pyodide: data.jsdelivr.com did not answer in ${QUIET_SECONDS} seconds`);
   } finally {
-    clearTimeout(timer);
+    silent.cancel();
   }
   if (!PYODIDE_VERSION_PATTERN.test(version)) {
     throw new Error(`Unexpected Pyodide version: ${version}`);
@@ -67,9 +67,52 @@ async function prefetchNumpy(base: string) {
 // its limit) the 9 MB took longer than T113's limits of 60 to 90 seconds, and a sound load fell back to no service
 // worker, then timed out again. Nothing arriving for this long is a stop, not a slow line (128 kbps is 16 kB a second).
 const QUIET_SECONDS = 30;
-// (T368.3) what watches a load's arrivals: the count, stop() (the fetch as it was), quiet(seconds) (below)
-type Watch = { arrived: number; stop(): void; quiet(seconds: number): { promise: Promise<void>; cancel(): void } };
-function watchArrivals() {
+// T538 (the owner's choice, 2026-10-15): the bytes of the model's parts count as a line that is alive too. A model of
+// this site is fetched while Pyodide loads, its parts asked for before Pyodide's own files, and on a slow line they fill
+// it: at 0.15 Mbps (slow.yml, the review of T129) the first bytes of jsDelivr's new connection did not come for 30
+// seconds while a part was arriving, and a sound load fell back to one core without isolation. While the model's bytes
+// come, a step waits for its own for FILLED_SECONDS at most: a Pyodide that stopped (a connection to jsDelivr that
+// hangs, the isolation that hung NumPy on iOS: T97) is still given up while a long model comes, after five minutes
+// instead of 30 seconds. With no model coming (one kept, one that has come, one of Hugging Face: converted after
+// Pyodide) nothing changes. Five minutes: some fifteen times the longest wait slow.yml saw ahead of a new connection
+// (20.5 s), and a sixth of a model of 33 MB at 0.15 Mbps. The texts of the stops are as they were (the owner's).
+const FILLED_SECONDS = 300;
+let modelBytes = 0;
+/** download() and readUrl() of sources.ts say the bytes of the model that came (T538) */
+export function modelBytesCame(bytes: number) {
+  modelBytes += bytes;
+}
+
+/** { promise, cancel }: the promise settles once own() (what is counted of Pyodide's own) and the model's bytes have
+ * both stood still for QUIET_SECONDS, or own() alone for FILLED_SECONDS (T538). The silence is counted in the ticks that
+ * ran (one a second), not in the clock's seconds: a page that a phone froze while another app was in front, or a worker
+ * busy for a long while, runs no tick, and a clock that jumped over it would call that a line that stopped (T129's
+ * review; the same lesson as the software threads', T120) */
+function silence(own: () => number) {
+  let timer: ReturnType<typeof setInterval>;
+  const promise = new Promise<void>((resolve) => {
+    let seen = -1, model = -1, quiet = 0, alone = 0;
+    timer = setInterval(() => {
+      const now = own();
+      alone = now !== seen ? 0 : alone + 1;
+      quiet = now !== seen || modelBytes !== model ? 0 : quiet + 1;
+      [seen, model] = [now, modelBytes];
+      if (quiet >= QUIET_SECONDS || alone >= FILLED_SECONDS) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 1000);
+  });
+  return { promise, cancel: () => clearInterval(timer) };
+}
+
+// (T368.3) what watches a load's arrivals: the count, stop() (the fetch as it was), quiet() (below)
+type Watch = { arrived: number; stop(): void; quiet(): ReturnType<typeof silence> };
+// T538: given base, only what comes from under it is counted (Pyodide's own files): the model's later parts, fetched
+// while the watch is on, are counted by modelBytesCame() and pass through as they came, so that FILLED_SECONDS
+// measures Pyodide's bytes alone. Without base (jinja2's load, during a conversion: no part of a model streams then)
+// everything is counted, as before.
+function watchArrivals(base = "") {
   const watch = { arrived: 0 } as Watch;
   const plain = self.fetch;
   // T129 (6): a browser that would not make a Response of a stream piped through a TransformStream gets its responses
@@ -85,6 +128,9 @@ function watchArrivals() {
   })();
   self.fetch = async (...args: Parameters<typeof fetch>) => {
     const res = await plain(...args);
+    if (!String((args[0] as Request).url ?? args[0]).startsWith(base)) {
+      return res;
+    }
     watch.arrived += 1;
     if (!wraps || !res.body || [101, 204, 205, 304].includes(res.status)) {
       return res;
@@ -99,7 +145,7 @@ function watchArrivals() {
   };
   let observer: PerformanceObserver | undefined;
   try {
-    observer = new PerformanceObserver((list) => { watch.arrived += list.getEntries().length; });
+    observer = new PerformanceObserver((list) => { watch.arrived += list.getEntries().filter((entry) => entry.name.startsWith(base)).length; });
     observer.observe({ type: "resource" });
   } catch {
     observer = undefined;  // no PerformanceObserver here: the fetches alone
@@ -108,25 +154,8 @@ function watchArrivals() {
     self.fetch = plain;
     observer?.disconnect();
   };
-  /** { promise, cancel }: the promise settles once nothing has arrived for seconds. The silence is counted in the
-   * ticks that ran (one a second), not in the clock's seconds: a page that a phone froze while another app was in front,
-   * or a worker busy for a long while, runs no tick, and a clock that jumped over it would call that a line that
-   * stopped (T129's review; the same lesson as the software threads', T120) */
-  watch.quiet = (seconds) => {
-    let timer: ReturnType<typeof setInterval>;
-    const promise = new Promise<void>((resolve) => {
-      let seen = -1, silent = 0;
-      timer = setInterval(() => {
-        if (watch.arrived !== seen) {
-          [seen, silent] = [watch.arrived, 0];
-        } else if (++silent >= seconds) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 1000);
-    });
-    return { promise, cancel: () => clearInterval(timer) };
-  };
+  /** { promise, cancel }: the promise settles once nothing has arrived (silence(): the model's bytes count too) */
+  watch.quiet = () => silence(() => watch.arrived);
   return watch;
 }
 
@@ -141,12 +170,12 @@ function watchArrivals() {
 // check of the wheel's hash (SRI) goes; the wheel comes from the same CDN and version as the rest of Pyodide.
 export async function pyodideSteps(version: string, importer: (url: string) => Promise<PyodideModule>) {
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
-  const watch = watchArrivals();
+  const watch = watchArrivals(base);
   // (of the kind "runtime": the page may try again without the service worker, isolation made this hang on iOS)
   const stop = (name: string, why: string) => new Failure("runtime", `Pyodide ${version}: "${name}" ${why}`);
   const step = async <T>(name: string, promise: Promise<T>) => {
     postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` } satisfies Status);
-    const quiet = watch.quiet(QUIET_SECONDS);
+    const quiet = watch.quiet();
     const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
     try {
       return await Promise.race([promise, stalled]);
@@ -168,7 +197,7 @@ export async function pyodideSteps(version: string, importer: (url: string) => P
     const loaded = await step("the runtime", loadPyodide());
     // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice. One
     // that stopped is not waited for past a quiet spell (T118): loadPackage then fetches the wheel itself
-    const quiet = watch.quiet(QUIET_SECONDS);
+    const quiet = watch.quiet();
     await Promise.race([numpy, quiet.promise]);
     quiet.cancel();
     await step("NumPy", loaded.loadPackage("numpy", { checkIntegrity: false }));
@@ -217,7 +246,7 @@ export function templatePackage(pyodide: Pyodide) {
 }
 
 async function loadTemplatePackage(pyodide: Pyodide) {
-  const watch = watchArrivals(), quiet = watch.quiet(QUIET_SECONDS);
+  const watch = watchArrivals(), quiet = watch.quiet();
   try {
     const stalled = quiet.promise.then(() => { throw new Error(`nothing arrived for ${QUIET_SECONDS} seconds`); });
     await Promise.race([pyodide.loadPackage("jinja2", { messageCallback: () => {} }), stalled]);
