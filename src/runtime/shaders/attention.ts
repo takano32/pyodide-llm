@@ -13,7 +13,8 @@ export type FlashVecShape = { headSize: number; subgroups: boolean; wgSize: numb
 // the sizes of a subgroup a device says (the adapter's info), where it has subgroups
 type Subgroups = { subgroupMin?: number; subgroupMax?: number };
 // the made-up numbers of a token's attention (tokenAttentionData's) and the sizes they are of
-type AttentionSizes = { heads: number; kvHeads: number; size: number; positions: number };
+// (T261.4.2: window, the last positions a layer attends: 0 or none, every one)
+type AttentionSizes = { heads: number; kvHeads: number; size: number; positions: number; window?: number };
 type AttentionData = { q: ArrayLike<number>; keys: ArrayLike<number>; values: ArrayLike<number> };
 
 // T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
@@ -379,10 +380,11 @@ export function flashVecSplits({ splits, kvTile }: Pick<FlashVecShape, "splits" 
 }
 // the bytes of the parts a dispatch of heads writes (nwg of the most a head, headSize values and two numbers each)
 export const flashVecPartsBytes = ({ splits, headSize }: Pick<FlashVecShape, "splits" | "headSize">, heads: number) => heads * splits * (headSize + 2) * 4;
-// the Params both dispatches read: heads, kvHeads, the scale of a score, nwg, where the sums and largests start
-export function flashVecParams({ headSize, splits }: Pick<FlashVecShape, "headSize"> & { splits?: number }, heads: number, kvHeads: number, nwg: number) {
+// the Params both dispatches read: heads, kvHeads, the scale of a score, nwg, where the sums and largests start; T261.4.2:
+// the window the layer attends (0: every position)
+export function flashVecParams({ headSize, splits }: Pick<FlashVecShape, "headSize"> & { splits?: number }, heads: number, kvHeads: number, nwg: number, window = 0) {
   const bytes = new ArrayBuffer(32);
-  new Uint32Array(bytes).set([heads, kvHeads, 0, nwg, heads * nwg * headSize, 0, 0, 0]);
+  new Uint32Array(bytes).set([heads, kvHeads, 0, nwg, heads * nwg * headSize, window, 0, 0]);
   new Float32Array(bytes, 8, 1)[0] = 1 / Math.sqrt(headSize);
   return new Uint8Array(bytes);
 }
@@ -419,7 +421,7 @@ fn lanes_add4(value: vec4<f32>) -> vec4<f32> {
   return v;
 }
 fn lanes_add(value: f32) -> f32 { return lanes_add4(vec4<f32>(value)).x; }`);
-const FLASH_VEC_PARAMS = /* wgsl */ `struct Params { heads: u32, kvHeads: u32, scale: f32, nwg: u32, stats: u32, unused0: u32, unused1: u32, unused2: u32 }`;
+const FLASH_VEC_PARAMS = /* wgsl */ `struct Params { heads: u32, kvHeads: u32, scale: f32, nwg: u32, stats: u32, window: u32, unused1: u32, unused2: u32 }`;
 const flashVecHead = (subgroups: boolean) => (subgroups ? "diagnostic(off, subgroup_uniformity);\nenable subgroups;\nrequires subgroup_id;\n" : "");
 
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/flash_attn_vec_split.wgsl and flash_attn_vec_reduce.wgsl
@@ -442,7 +444,10 @@ const flashVecHead = (subgroups: boolean) => (subgroups ? "diagnostic(off, subgr
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 //
-// The first dispatch: heads × nwg workgroups (the head wg_id.x / nwg, its part wg_id.x % nwg)
+// The first dispatch: heads × nwg workgroups (the head wg_id.x / nwg, its part wg_id.x % nwg). T261.4.2: a layer that
+// attends a window (Params.window, a Gemma 3's local layers; 0: every position) reads its last window positions: the
+// parts' tiles begin at the first of them (kv_first), as flashTile's begin at its workgroup's (llama.cpp gives such a
+// layer the sliding window's mask of -inf and reads every tile)
 export const flashVec = ({ headSize, subgroups, wgSize, kvTile, dSplit }: Pick<FlashVecShape, "headSize" | "subgroups" | "wgSize" | "kvTile" | "dSplit">): string => {
   // only the first subgroup works where the workgroup holds more than one (llama.cpp's); the lanes are one subgroup
   const first = subgroups ? "if (subgroup_id == 0u) {" : "{";
@@ -501,13 +506,14 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
     let v_head_offset = k_head_idx * HEAD_DIM_V;
     // the token's positions: up to its own
     let seq_len_kv = step.pos + 1u;
+    let kv_first = select(0u, seq_len_kv - min(params.window, seq_len_kv), params.window > 0u);
 
     // load the single Q row into shared memory
     for (var elem_idx = local_id.x; elem_idx < HEAD_DIM_QK; elem_idx += WG_SIZE) {
         q_shmem[elem_idx] = Q[head_idx * HEAD_DIM_QK + elem_idx];
     }
 
-    for (var kv_tile = iwg * KV_TILE; kv_tile < seq_len_kv; kv_tile += KV_TILE * params.nwg) {
+    for (var kv_tile = kv_first + iwg * KV_TILE; kv_tile < seq_len_kv; kv_tile += KV_TILE * params.nwg) {
         for (var elem_idx = local_id.x; elem_idx < KV_TILE; elem_idx += WG_SIZE) {
             inter_shmem[elem_idx] = 0.0;
         }
@@ -762,22 +768,24 @@ export function tokenAttentionData({ heads, kvHeads, size, positions, steep = []
 const fromHalf = (h: number) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
 /** T224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
  * (tokenAttentionData's, heads of q on kvHeads, each head of q to kvHeads' own, the token reading positions) in float64:
- * the largest difference of a head's output over the largest |value| of its head. NaN where got holds one. */
-export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: AttentionData, { heads, kvHeads, size, positions }: AttentionSizes) {
-  const kvDim = kvHeads * size, scale = 1 / Math.sqrt(size);
+ * the largest difference of a head's output over the largest |value| of its head. NaN where got holds one. T261.4.2: of
+ * a layer that attends a window, of the last window positions alone. */
+export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: AttentionData, { heads, kvHeads, size, positions, window = 0 }: AttentionSizes) {
+  const kvDim = kvHeads * size, scale = 1 / Math.sqrt(size), first = window ? Math.max(0, positions - window) : 0;
   let worst = 0;
   for (let h = 0; h < heads; h++) {
-    const kv = Math.floor(h / (heads / kvHeads)) * size, row = h * size, weights = new Float64Array(positions);
-    for (let p = 0; p < positions; p++) {
+    const kv = Math.floor(h / (heads / kvHeads)) * size, row = h * size, weights = new Float64Array(positions).fill(-Infinity);
+    for (let p = first; p < positions; p++) {
+      weights[p] = 0;
       for (let d = 0; d < size; d++) weights[p] += q[row + d] * fromHalf(keys[p * kvDim + kv + d]) * scale;
     }
     const most = weights.reduce((a, b) => Math.max(a, b), -Infinity);
     let sum = 0, largest = 0;
-    for (let p = 0; p < positions; p++) sum += (weights[p] = Math.exp(weights[p] - most));
-    for (let p = 0; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(fromHalf(values[p * kvDim + kv + d])));
+    for (let p = first; p < positions; p++) sum += (weights[p] = Math.exp(weights[p] - most));
+    for (let p = first; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(fromHalf(values[p * kvDim + kv + d])));
     for (let d = 0; d < size; d++) {
       let want = 0;
-      for (let p = 0; p < positions; p++) want += weights[p] * fromHalf(values[p * kvDim + kv + d]);
+      for (let p = first; p < positions; p++) want += weights[p] * fromHalf(values[p * kvDim + kv + d]);
       // (Math.max keeps a NaN, as the comment above says: `if (!(off <= worst)) worst = off` let the next value take its
       // place, and a NaN in one head, or in the first values of the last, passed: T224's review)
       worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);

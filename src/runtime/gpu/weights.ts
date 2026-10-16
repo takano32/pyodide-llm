@@ -49,6 +49,8 @@ type Weights = {
   finalBias: GPUBuffer | null;
   positions: GPUBuffer | null;
   angleTable: GPUBuffer | null;
+  // T261.4.2: a Gemma 3's local layers' table of RoPE, laid out as angleTable (null: none)
+  localAngleTable: GPUBuffer | null;
 };
 // what tablesOf() reads of a plan: the tables of a model on the GPU alone as it opens, else a token's
 type Tabled = { tables?: Tables; tokens: Tables | null };
@@ -89,7 +91,8 @@ async function uploadLayers(m: Model, alone = false) {
   // (routes, partial: T156, a model on the GPU alone; the routes of the checkpoint's stretches, and the bytes of a word
   // that wait for the rest of it, routed())
   m.weights = { matrices, together: null, unjoined: null, joined: [], widen: null, routes: alone ? [] : null, partial: alone ? new Map() : null,
-    vectors: null, tables: null, finalNorm: null, finalBias: null, positions: null, angleTable: null };
+    vectors: null, tables: null, finalNorm: null, finalBias: null, positions: null, angleTable: null,
+    localAngleTable: null };
   const together = plan.tokens ? tokensLayout(m) : null;
   m.weights.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T156)
@@ -290,7 +293,8 @@ function tokensLayout(m: Model): Together | null {
   };
   // (T226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
-  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"])]) if (m.weights.matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
+  // (T545.2: and an LFM2's matrices in and out of its convolution layers)
+  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {};
   for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;
@@ -338,18 +342,24 @@ async function uploadTokens(m: Model, widen: Widen | null) {
   m.weights.finalNorm = vector(plan.tokens!.final, plan.dim);
   m.weights.finalBias = plan.tokens!.finalBias ? vector(plan.tokens!.finalBias, plan.dim) : null;
   m.weights.positions = plan.tokens!.positions ? vector(plan.tokens!.positions, plan.seqLen * plan.dim) : null;
-  m.weights.angleTable = buffer(m, plan.seqLen * plan.headSize * 4, STORAGE | COPY_DST);
   const rows = Math.max(1, Math.floor(CHUNK / (plan.headSize * 4))), chunk = new Float32Array(rows * plan.headSize);
-  // (GPT-2 turns nothing and has no tables: the buffer stays, bound and never read)
-  for (let p = 0; plan.turned && p < plan.seqLen; p += rows) {
-    const count = Math.min(rows, plan.seqLen - p);
-    for (let r = 0; r < count; r++) {
-      chunk.set(new Float32Array(m.memory.buffer, plan.cos + (p + r) * half * 4, half), r * plan.headSize);
-      chunk.set(new Float32Array(m.memory.buffer, plan.sin + (p + r) * half * 4, half), r * plan.headSize + half);
+  // (T261.4.2: and a Gemma 3's local layers' table, from its own two)
+  const table = (cos: number, sin: number) => {
+    const made = buffer(m, plan.seqLen * plan.headSize * 4, STORAGE | COPY_DST);
+    // (GPT-2 turns nothing and has no tables: the buffer stays, bound and never read)
+    for (let p = 0; plan.turned && p < plan.seqLen; p += rows) {
+      const count = Math.min(rows, plan.seqLen - p);
+      for (let r = 0; r < count; r++) {
+        chunk.set(new Float32Array(m.memory.buffer, cos + (p + r) * half * 4, half), r * plan.headSize);
+        chunk.set(new Float32Array(m.memory.buffer, sin + (p + r) * half * 4, half), r * plan.headSize + half);
+      }
+      m.device.queue.writeBuffer(made, p * plan.headSize * 4, chunk, 0, count * plan.headSize);
     }
-    m.device.queue.writeBuffer(m.weights.angleTable, p * plan.headSize * 4, chunk, 0, count * plan.headSize);
-  }
-  bytes += plan.seqLen * plan.headSize * 4;
+    bytes += plan.seqLen * plan.headSize * 4;
+    return made;
+  };
+  m.weights.angleTable = table(plan.cos, plan.sin);
+  m.weights.localAngleTable = plan.localCos ? table(plan.localCos, plan.localSin) : null;
   await within(m.device.queue.onSubmittedWorkDone(), "the classifier's weights");
   return bytes;
 }

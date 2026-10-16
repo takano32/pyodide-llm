@@ -184,7 +184,7 @@ console.log("gpu-worker-parts-check: device.js makes the model's record of 12 fi
 const up = await upload(m);
 {
   const W = m.weights;
-  assert.deepEqual(Object.keys(W).sort(), ["angleTable", "finalBias", "finalNorm", "joined", "matrices", "partial", "positions", "routes", "tables", "together", "unjoined", "vectors", "widen"]);
+  assert.deepEqual(Object.keys(W).sort(), ["angleTable", "finalBias", "finalNorm", "joined", "localAngleTable", "matrices", "partial", "positions", "routes", "tables", "together", "unjoined", "vectors", "widen"]);
   let expected = 0;
   for (const [name, [rows, n]] of Object.entries(SIZES)) {
     assert.deepEqual(W.matrices[name].pieces.map((piece) => [piece.first, piece.rows]), [[0, rows]], `${name} is one piece where it fits a buffer`);
@@ -463,24 +463,39 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
 {
   const { cache: now } = m.block, row = KV_ROW, capacity = 16, from = 2, pos = 7;
   const address = plan.rows;  // (any place of the memory: [keys, values] of LAYERS × capacity rows)
-  const halves = { keys: address, values: address + LAYERS * capacity * row, capacity, row, half: true };
+  // (T261.4.2: where each layer's are: here the blocks of a cache of LAYERS × capacity rows each)
+  const placesOf = (bytes) => Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * capacity * bytes, values: address + (LAYERS + l) * capacity * bytes, ring: 0 }));
+  const halves = { places: placesOf(row), row, half: true };
   new Uint8Array(memory.buffer, address, 2 * LAYERS * capacity * row).set(random(2 * LAYERS * capacity * row));
   for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); }
   keysIn(m, halves, from, pos);
   for (let l = 0; l < LAYERS; l++) {
-    assert.ok(same(now.keys[l].data.subarray(from * KV_ROW, pos * KV_ROW), new Uint8Array(memory.buffer, halves.keys + (l * capacity + from) * row, (pos - from) * KV_ROW)), `layer ${l}'s keys of positions ${from} to ${pos - 1} go up as they are (float16)`);
-    assert.ok(same(now.values[l].data.subarray(from * KV_ROW, pos * KV_ROW), new Uint8Array(memory.buffer, halves.values + (l * capacity + from) * row, (pos - from) * KV_ROW)), `and its values`);
+    assert.ok(same(now.keys[l].data.subarray(from * KV_ROW, pos * KV_ROW), new Uint8Array(memory.buffer, address + (l * capacity + from) * row, (pos - from) * KV_ROW)), `layer ${l}'s keys of positions ${from} to ${pos - 1} go up as they are (float16)`);
+    assert.ok(same(now.values[l].data.subarray(from * KV_ROW, pos * KV_ROW), new Uint8Array(memory.buffer, address + ((LAYERS + l) * capacity + from) * row, (pos - from) * KV_ROW)), `and its values`);
     assert.ok(now.keys[l].data.subarray(0, from * KV_ROW).every((byte) => byte === 0) && now.keys[l].data.subarray(pos * KV_ROW).every((byte) => byte === 0), "no other position is written");
   }
   // a float32 cache (a grouped-query model's, T160): narrowed to float16 on the way up
-  const floats = { keys: address, values: address + LAYERS * capacity * KV_DIM * 4, capacity, row: KV_DIM * 4, half: false };
+  const floats = { places: placesOf(KV_DIM * 4), row: KV_DIM * 4, half: false };
   new Float32Array(memory.buffer, address, 2 * LAYERS * capacity * KV_DIM).forEach((_, i, all) => { all[i] = (i % 17) - 8; });
   keysIn(m, floats, from, pos);
   const half = (value) => { const view = new DataView(new ArrayBuffer(2)); view.setFloat16(0, value, true); return view.getUint16(0, true); };
   if (DataView.prototype.setFloat16) {
     const got = new Uint16Array(now.values[1].data.buffer, from * KV_ROW, (pos - from) * KV_DIM);
-    const want = new Float32Array(memory.buffer, floats.values + (capacity + from) * KV_DIM * 4, (pos - from) * KV_DIM);
+    const want = new Float32Array(memory.buffer, floats.places[1].values + from * KV_DIM * 4, (pos - from) * KV_DIM);
     assert.ok(got.every((bits, i) => bits === half(want[i])), "a float32 cache's values go up as float16");
+  }
+  // T261.4.2: a layer whose window a ring of 3 positions holds (T510.1: position p at p mod 3 and at p mod 3 + 3): the
+  // last three positions before pos and no more, from where the oldest of them is, wrapped or not
+  for (const late of [7, 8]) {
+    const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
+    rows.set(random(4 * ring * row));
+    const ringed = { places: [{ keys: address, values: address + 2 * ring * row, ring }, ...placesOf(row).slice(1)], row, half: true };
+    for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); }
+    keysIn(m, ringed, from, late);
+    const slot = (late - ring) % ring;
+    assert.ok(same(now.keys[0].data.subarray((late - ring) * KV_ROW, late * KV_ROW), rows.subarray(slot * row, (slot + ring) * row)), `positions ${late - ring} to ${late - 1} of a ring, from its slot ${slot}`);
+    assert.ok(same(now.values[0].data.subarray((late - ring) * KV_ROW, late * KV_ROW), rows.subarray((2 * ring + slot) * row, (3 * ring + slot) * row)), "and their values");
+    assert.ok(now.keys[0].data.subarray(0, (late - ring) * KV_ROW).every((byte) => byte === 0), "none older: the ring no longer holds them");
   }
 }
 console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up");

@@ -23,7 +23,8 @@ import type { Packing } from "./common.ts";
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
 // names a maker's text branches on. (T379.1) Each a list of values, which the catalogue walks (engine.ts), and the
 // type is made of the list: a name more is written here once
-const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write"] as const;
+// (T261.4.2: "geglu", a Gemma 3's gate, the last: the rows before it are where they were)
+const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write", "geglu"] as const;
 export type FusedInput = (typeof FUSED_INPUTS)[number];
 export type FusedOutput = (typeof FUSED_OUTPUTS)[number];
 // the rows a workgroup has, of the two forms a token's matrix takes: the model's worker dispatches by them, and
@@ -93,7 +94,8 @@ export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBits
 // input: "norm" (x is the residual stream, normed on the read with norm_weight from params.normAt) or "plain".
 // output: "rope" (rows of q, then kvRows of k, then of v: q into q, k and v into the cache at step.pos), "add" (added
 // to dst: the residual stream), "swiglu" (silu(gate) × up into dst, up's rows params.second after gate's) or "write"
-// (into dst: the classifier's logits, T151).
+// (into dst: the classifier's logits, T151). T261.4.2: "geglu", as "swiglu" with GELU's line where SiLU's is (a Gemma
+// 3's gate: steps.ts's GEGLU, the tanh approximation as the CPU's geglu kernel has it, as glu.wgsl's GEGLU writes it).
 // Bindings: 0 the weights, 1 their scales, 2 x, 3 params; 4 norm_weight (norm); 5 dst (add, swiglu, write), or 5 q,
 // 6 the keys, 7 the values, 8 the angles and 9 the step (rope). T151 (T150's review, (c)): the position is the Step's
 // (a uniform of its own, which a run of tokens on the GPU copies from the sampler's state after each token), and the
@@ -159,7 +161,10 @@ const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair 
             // llama.cpp's result *= silu(gate_value), as the GLU writes it (glu.wgsl's OP_SWIGLU)
             let gate = value;
             let up = totals[OUTPUTS_PER_WG + thread_id] * scale;
-            dst[row] = gate / (1.0 + exp(-gate)) * up;` : output === "write" ? `
+            dst[row] = gate / (1.0 + exp(-gate)) * up;` : output === "geglu" ? `
+            let gate = value;
+            let up = totals[OUTPUTS_PER_WG + thread_id] * scale;
+            dst[row] = 0.5 * gate * (1.0 + tanh(clamp(0.7978845608028654 * (gate + 0.044715 * gate * gate * gate), -9.010913, 9.010913))) * up;` : output === "write" ? `
             dst[row] = value;` : `
             dst[row] = dst[row] + value;`}
         }
@@ -207,7 +212,7 @@ const mulMatVecMain = (subgroups: boolean): string => /* wgsl */ `fn main(
 
     let row_base = wg_linear * OUTPUTS_PER_WG;`;
 export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; output: FusedOutput; subgroups: boolean }): string => {
-  const norm = input === "norm", glu = output === "swiglu";
+  const norm = input === "norm", glu = output === "swiglu" || output === "geglu";
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}
 ${FUSED_PARAMS}
@@ -537,7 +542,7 @@ const workgroup_size_x = 128u;
 const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
 const tile_size_k_vec = 32u;
 const sub_tile_count = workgroup_size_x / tile_size_k_vec;
-const MATRICES = ${output === "swiglu" ? 2 : 1}u;
+const MATRICES = ${output === "swiglu" || output === "geglu" ? 2 : 1}u;
 // fusedWrite's name for the rows of a workgroup
 const OUTPUTS_PER_WG = tile_size;
 
@@ -588,7 +593,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
                 let own_scale_b = scales_b[${packing.scale("b_global")}];
                 let own_b = ${packing.word("b_offset * 2")};
                 let own_b1 = ${packing.word("b_offset * 2 + 1")};
-                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${output === "swiglu" ? `
+                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${output === "swiglu" || output === "geglu" ? `
                 // up's row, params.second rows after gate's (mmvq.cu's vgate beside vx), with the same own_a
                 let up_global = b_global + params.second;
                 let up_offset = up_global * K32 + k_offset;

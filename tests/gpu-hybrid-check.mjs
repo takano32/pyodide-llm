@@ -7,11 +7,12 @@
 // T260: an LFM2 the same (its convolution layers have no wq, wk, wv either, and no shader), by the next line of gpuUnfit().
 // T545: an LFM2's prompts are the GPU's now: its worker is started once, with a plan that says every layer's kind and
 // its place among the layers of its kind, the taps and where the CPU keeps the convolution layers' rows, the matrices
-// in and out and the attending layers' matrices as theirs alone (of), and no steps.
+// in and out and the attending layers' matrices as theirs alone (of); T545.2: and its steps (the plan's tokens).
 // T261: and a Gemma 3, whose tensors are a Qwen3's to the GPU's worker (it would run them as one: no norm behind the
 // attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it. T261.4: a Gemma 3's
 // prompts are the GPU's now: its worker is started, and the plan it is started with says what the GPU's worker runs
-// differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables), and no steps.
+// differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables); T261.4.2: and
+// its steps (the plan's tokens).
 // T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
 //
 //   node tests/gpu-hybrid-check.mjs <a made-up Qwen3.5 of tests/make_qwen35.py, its int8 file without the extension>
@@ -80,10 +81,10 @@ if (!reason && options.arch === "lfm2") {
     const wanted = { kinds: letters.map((letter) => (letter === "c" ? "convolution" : "attention")), places, taps: options.convolution.taps, rows: true,
       matrices: { wq: ["attention", count("a")], wk: ["attention", count("a")], wv: ["attention", count("a")], wo: ["attention", count("a")],
         w1: [null, letters.length], w2: [null, letters.length], w3: [null, letters.length], win: ["convolution", count("c")], wout: ["convolution", count("c")] },
-      conv: ["convolution", options.convolution.taps * plan.dim], tokens: null };
+      conv: ["convolution", options.convolution.taps * plan.dim], tokens: true };
     const got = { kinds: plan.kinds, places: plan.places, taps: plan.convolution?.taps, rows: plan.convolution?.rows > 0,
       matrices: Object.fromEntries(Object.entries(plan.matrices).map(([name, m]) => [name, [m.of ?? null, m.layers.length]])),
-      conv: [plan.vectors.conv?.of, plan.vectors.conv?.size], tokens: plan.tokens };
+      conv: [plan.vectors.conv?.of, plan.vectors.conv?.size], tokens: Boolean(plan.tokens) };
     if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
   }
 } else if (!reason) {
@@ -93,9 +94,9 @@ if (!reason && options.arch === "lfm2") {
   if (gpus.length !== 1 || !plan) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}, with ${plan ? "a plan" : "no plan"}`);
   else {
     const wanted = { activation: "gelu", windows: Array.from({ length: count }, (_, l) => (local.includes(l) ? window : 0)), local: [...local].sort((a, b) => a - b),
-      posts: ["attentionPost", "ffnPost"], tables: true, tokens: null };
+      posts: ["attentionPost", "ffnPost"], tables: true, tokens: true };
     const got = { activation: plan.activation, windows: plan.windows, local: plan.local, posts: Object.keys(plan.vectors).filter((name) => name.endsWith("Post")),
-      tables: plan.localCos > 0 && plan.localSin > 0 && plan.localCos !== plan.cos, tokens: plan.tokens };
+      tables: plan.localCos > 0 && plan.localSin > 0 && plan.localCos !== plan.cos, tokens: Boolean(plan.tokens) };
     if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
   }
 } else {
@@ -109,7 +110,7 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(reason ? `ok: ${model} with a GPU adapter present stays on the CPU, its GPU's worker never started (${status})`
-  : options.arch === "lfm2" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its taps and rows, and no steps`
+  : options.arch === "lfm2" ? `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its layers' kinds and places, its taps and rows, and its steps`
 
-  : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, its norms behind and GEGLU, and no steps`);
+  : `ok: ${model} with a GPU adapter present starts the GPU's worker once, with a plan of its window, its local layers' tables, its norms behind and GEGLU, and its steps`);
 process.exit(0);

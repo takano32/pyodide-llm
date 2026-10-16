@@ -22,7 +22,6 @@
 export const REASONS = {
   // ---- what the model is: its prompts stay on the CPU (gpuFit()'s unfit())
   linear: "linear-attention layers are not on the GPU yet",  // T229
-  convolution: "convolution layers are not on the GPU yet",  // T260
   // (T375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
   stateful: "layers that keep a state are not on the GPU yet",
   rotated: "a rotated basis is not on the GPU yet",  // T237

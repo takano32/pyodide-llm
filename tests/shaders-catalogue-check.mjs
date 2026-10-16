@@ -40,10 +40,12 @@ const ORDER = {
     ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
     ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),
     ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
-    ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
-    "fusedDp4aMatVec(output=rope, weights=int8)", "fusedDp4aMatVec(output=add, weights=int8)", "fusedDp4aMatVec(output=swiglu, weights=int8)", "fusedDp4aMatVec(output=write, weights=int8)"],
+    ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
+    "fusedDp4aMatVec(output=rope, weights=int8)", "fusedDp4aMatVec(output=add, weights=int8)", "fusedDp4aMatVec(output=swiglu, weights=int8)", "fusedDp4aMatVec(output=write, weights=int8)",
+    "fusedDp4aMatVec(output=geglu, weights=int8)"],
   ternary: [
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
+    "fusedDp4aMatVec(output=geglu, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS"],
 };
 const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T379.2 was). If that is meant, this list is to say the same";

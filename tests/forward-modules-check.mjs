@@ -124,8 +124,9 @@ for (const [part, declared, call] of calls) {
     }
   }
 }
-// (cpuSide's four getters are read as cpuSide.<name> each time, not taken out once: the places below hold those)
-const READ_THROUGH = { cpuSide: ["H", "capacity", "keys", "values"] };
+// (cpuSide's two getters are read as cpuSide.<name> each time, not taken out once: the places below hold those)
+// (T261.4.2: and places(), where each attending layer's keys and values are, called as cpuSide.places())
+const READ_THROUGH = { cpuSide: ["H", "capacity", "places"] };
 for (const [where, keys] of made) {
   const unread = keys.filter((name) => !taken.get(where).has(name) && !READ_THROUGH[where]?.includes(name));
   assert.deepEqual(unread, [], `createForward() makes ${where} with ${unread}, which no part takes out of it`);

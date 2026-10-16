@@ -137,15 +137,16 @@ parentPort.on("message", (data) => {
     for (let i = 0; i < sampled; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
     ids[1 + most] = refuse ? 1 : 0;
     writeBack("tokens", sampled);
-    // T349's review: where the request says the engine's cache is (keys, values, capacity: forward/gpuside.js reads them off
-    // forward/engine.js's held at the moment), and whether the halves the earlier blocks wrote back are there: a cache
-    // that grew moves its values and changes its capacity, and an old address would read the wrong ones (or nothing)
+    // T349's review: where the request says the engine's cache is (T261.4.2: each layer's place, forward/gpuside.js
+    // reads them off forward/engine.js's held at the moment), and whether the halves the earlier blocks wrote back are
+    // there: a cache that grew moves its values and changes its capacity, and an old address would read the wrong ones
     if (line.kv?.probe && data.cache) {
       const H = new Uint16Array(memory.buffer), row = data.cache.half ? data.cache.row / 2 : NaN, last = data.pos - 1, L = plan.layers;
-      const at = (base, l, p, i) => base / 2 + (l * data.cache.capacity + p) * row + i;
+      const at = (side, l, p, i) => data.cache.places[l][side] / 2 + p * row + i;
       const right = [[0, 0], [L - 1, last], [L - 1, 256]].every(([l, p]) => [0, 1, row - 1].every((i) =>
-        H[at(data.cache.keys, l, p, i)] === madeUpHalf(l, p % 64, i) && H[at(data.cache.values, l, p, i)] === madeUpHalf(L + l, p % 64, i)));
-      parentPort.postMessage({ type: "probe", right, capacity: data.cache.capacity });
+        H[at("keys", l, p, i)] === madeUpHalf(l, p % 64, i) && H[at("values", l, p, i)] === madeUpHalf(L + l, p % 64, i)));
+      const places = data.cache.places, capacity = L > 1 ? (places[1].keys - places[0].keys) / data.cache.row : NaN;
+      parentPort.postMessage({ type: "probe", right, capacity });
     }
     Atomics.store(ctl, words.failed, fail ? 1 : 0);
     Atomics.store(ctl, words.done, data.serial);

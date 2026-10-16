@@ -274,18 +274,21 @@ function grow(m: Model, needed: number) {
 function roomFor(m: Model, positions: number) {
   if (positions > m.block.cache!.capacity) grow(m, positions);
 }
-// T152: the keys and values of positions from to pos - 1 up from forward.ts's cache (cache: its addresses of the keys
-// and the values in the shared memory, its capacity and the bytes of a position; half: float16 as here, else float32,
-// narrowed on the way up: T160, a grouped-query model's), before the steps of a generation read them
+// T152: the keys and values of positions from to pos - 1 up from forward.ts's cache (cache: where each attending layer's
+// are in the shared memory and the bytes of a position; half: float16 as here, else float32, narrowed on the way up:
+// T160, a grouped-query model's), before the steps of a generation read them. T261.4.2: a layer whose window a ring
+// holds there (T510.1) has the last ring positions of them and no more, and needs no more (its window is shorter); a
+// position at p mod ring and again ring after it, so that they are one run however they wrap
 function keysIn(m: Model, cache: Sent, from: number, pos: number) {
   const { plan } = m, { keys, values } = m.block.cache!, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
-  const at = (block: number, l: number, p: number) => block + l * cache.capacity * cache.row + p * cache.row;
-  for (let l = 0; l < plan.layers; l++) {
-    for (const [block, target] of [[cache.keys, keys[l]], [cache.values, values[l]]] satisfies [number, GPUBuffer][]) {
-      if (cache.half) copyIn(m, target, at(block, l, from), (pos - from) * kvRow, from * kvRow);
-      else narrowIn(m, target, at(block, l, from), (pos - from) * kvDim, from * kvRow);
+  cache.places.forEach((place, l) => {
+    const first = place.ring ? Math.max(from, pos - place.ring) : from, slot = place.ring ? first % place.ring : first;
+    if (first >= pos) return;
+    for (const [base, target] of [[place.keys, keys[l]], [place.values, values[l]]] satisfies [number, GPUBuffer][]) {
+      if (cache.half) copyIn(m, target, base + slot * cache.row, (pos - first) * kvRow, first * kvRow);
+      else narrowIn(m, target, base + slot * cache.row, (pos - first) * kvDim, first * kvRow);
     }
-  }
+  });
 }
 
 // T148: what a whole block takes here, from the submission to its keys and values read back, for 16 and for 64 tokens
