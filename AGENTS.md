@@ -219,7 +219,7 @@
 | `forward/gpuside.ts`（`gpuSide()`） | GPU の Worker・どちらに回すか・測り直し | `generationBegan()`・`prompt()`・`cpuWrote()`・`cpuStepBegan()`/`cpuStepEnded()`・`generateMany()`・`put()`・`notHere()`・`release()`、getter 7 つ |
 | `forward/control.ts`・`forward/cache.ts` | 制御領域の語と待ち / KV のキャッシュ（`hold()`・`place()` は 1 回） | エンジンが作って部品に渡す |
 | `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録の土台。記録は 4 つ（`m.weights`・`m.block`・`m.forms`・`m.tokens`）で、**持ち主のファイルがリテラルで作り、そのリテラルの鍵が宣言** | `stopAsked()`・`handed()`・`held()`。別の部品の記録には代入しない |
-| `src/page/model.ts`・`answer.ts` | ページが持つモデルと読み込みの進み / 書いている答え | `opensWith()`・`chose()`・`becameReady()`・`failed()`・`benchBegan()`/`benchEnded()`・`gpuSaid()`・`threadsNow()`・`siteUpdated()`・`arrived()`（取得の報告の積み重ね、T553） / `answerBegan()`・`idle()` |
+| `src/page/model.ts`・`answer.ts` | ページが持つモデルと読み込みの進み / 書いている答え | `opensWith()`・`chose()`・`becameReady()`・`failed()`・`benchBegan()`/`benchEnded()`・`gpuSaid()`・`threadsNow()`・`siteUpdated()`・`arrived()`（取得の報告の積み重ね、T553） / `answerBegan()`・`idle()`・`wrote()`/`drew()`（答えを描く間合い: 最初はすぐ、その後 8 トークンか 32 ms ごと、T554） |
 | `src/benchmark/running.ts` | 走っている run | `runBegan()`・`sectionBegan()`・`runEnded()` |
 
 - **持ち主の決まり**: 順の違う出来事は害が無い形にする（断らない）。ページの持ち主（`model.ts`・`answer.ts`）は、ほかの部品を import せず、出来事でない関数も定数も持てない（`page-modules-check` が「誰も呼ばない出来事」と数える）: 計算は純な部品に置き、持ち主には出来上がった値を渡す（T553: `remaining.ts` の `advanced()` の値を `arrived()` に）。時計と乱数は引数で渡す（持ち主はページのもの・時計を読まない: Node がそのまま import して試験できる）。描く関数は状態を書かない（出来事を言う所は「言う」と「描く」の 2 行）。**持ち主に変数を足すと、部品の試験の「最初の状態」の断言が落ちる**（試験が全部の変数の 2 つ目の写しを持つ）。`opening.ts` は、`model` を読み込みの時に読む部品より先に走る（`index.astro` の import の順。検査が見る）。最上位で待つ部品（`receiver.ts`）の後に走るべき部品は、その部品を import する。
