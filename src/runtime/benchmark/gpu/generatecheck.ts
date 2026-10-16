@@ -108,7 +108,8 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
     for (const vocab of [1003, 128256]) {
       for (const spread of vocab === 1003 ? [2, 6] : [2]) {
         const settings: Partial<Case>[] = [{ topK: 1 }, { topK: 20 }, { topK: 64, presence: 1.5 }, { topK: 200000 }, { minP: 0.05 }, { minP: 1 },
-          { presence: 1.5 }, { topK: 20, minP: 0.05, presence: 1.5 }, { topK: 20, presence: 1.5, written: 0 }, { minP: 0.05, presence: 1.1, written: 200 }];
+          { presence: 1.5 }, { topK: 20, presence: 1.5, penalty: 1 }, { topK: 20, minP: 0.05, presence: 1.5 }, { topK: 20, presence: 1.5, written: 0 },
+          { minP: 0.05, presence: 1.1, written: 200 }];
         for (const extra of shared.fallback && vocab > 1003 ? settings.slice(-3) : settings) {
           for (const topp of [0.95, 1]) {
             for (const random of [0, Math.random(), 1 - 2 ** -24]) cases.push({ vocab, spread, topp, temperature: 0.7, penalty: 1.1, random, written: 30, ...extra });
