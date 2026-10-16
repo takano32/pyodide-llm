@@ -46,6 +46,12 @@ export const linear: Kind = {
       ...(sizes.numbers.tiled ? [["tiled", read * 4]] satisfies Framed[] : [])], widest: read };
   },
   state: (sizes, count) => kept(sizes, count).blocks,
+  // T271.2: the GPU's worker has these layers too: their states (one of the two a layer, the one that holds it now)
+  // and their convolution's rows go up to it and come back (make()'s staging)
+  staged: (sizes, count) => {
+    const { stateBytes, convBytes } = kept(sizes, count);
+    return count * (stateBytes + convBytes);
+  },
   make({ plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase }, count): Layers {
     const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: tapsCount, mixed: mixedWidth, read: readWidth } = linearNumbers(sizes);
     const { dim } = plan, { xb, xb2, mixed, conv, z, work } = at, D = dim * 4;
@@ -57,15 +63,31 @@ export const linear: Kind = {
     const wb = floats("wb"), wa = floats("wa"), taps = floats("conv"), dtBias = floats("dt_bias"), decays = floats("decay");
     const deltaNorm = floats("delta_norm");
     const { stateBytes, convBytes, blocks } = kept(sizes, count);
-    const [states, convRows, qUnit, kUnit] = blocks.map((bytes) => room.alloc(bytes));
+    const [statesAt, convRows, qUnit, kUnit] = blocks.map((bytes) => room.alloc(bytes));
     const flips = new Uint8Array(count);
     room.F.fill(1 / keyDim, qUnit / 4, qUnit / 4 + keyDim);
     room.F.fill(1 / Math.sqrt(keyDim), kUnit / 4, kUnit / 4 + keyDim);
     const C = mixedWidth * 4, KD = keyDim * 4, VD = valueDim * 4, l2 = 1e-6 / keyDim;
+    // T271.2: the state as the GPU's worker holds it: every layer's matrices (the one of its two that holds them now:
+    // flips), place after place, then the convolution's rows as they lie here
+    const states = count * stateBytes, now = (a: number) => statesAt + (2 * a + flips[a]) * stateBytes;
     return {
+      staging: {
+        bytes: states + count * convBytes,
+        put(to) {
+          const { U } = room;
+          for (let a = 0; a < count; a++) U.copyWithin(to + a * stateBytes, now(a), now(a) + stateBytes);
+          U.copyWithin(to + states, convRows, convRows + count * convBytes);
+        },
+        take(from) {
+          const { U } = room;
+          for (let a = 0; a < count; a++) U.copyWithin(now(a), from + a * stateBytes, from + (a + 1) * stateBytes);
+          U.copyWithin(convRows, from + states, from + states + count * convBytes);
+        },
+      },
       clear() {
         const { F } = room;
-        F.fill(0, states / 4, (states + 2 * count * stateBytes) / 4);
+        F.fill(0, statesAt / 4, (statesAt + 2 * count * stateBytes) / 4);
         F.fill(0, convRows / 4, (convRows + count * convBytes) / 4);
       },
       // count tokens through the a-th layer, from xb (the norm of x) into xb2, as the output projection of an attending
@@ -96,7 +118,7 @@ export const linear: Kind = {
             k.rmsnorm(ct + h * KD, ct + h * KD, qUnit, keyDim, l2);
             k.rmsnorm(ct + (keyHeads + h) * KD, ct + (keyHeads + h) * KD, kUnit, keyDim, l2);
           }
-          const now = states + (2 * a + flips[a]) * stateBytes, next = states + (2 * a + 1 - flips[a]) * stateBytes;
+          const now = statesAt + (2 * a + flips[a]) * stateBytes, next = statesAt + (2 * a + 1 - flips[a]) * stateBytes;
           phase([[KIND.delta_rule, xt, now, next, ct, wt, keyHeads, keyDim, valueDim, valueHeads, 1, 0, 0, 0]]);
           flips[a] ^= 1;
           // the norm of every value head, and z's gate

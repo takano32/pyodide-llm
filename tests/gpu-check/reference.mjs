@@ -47,7 +47,9 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False):
     quantized to 8 bits (Q8)"""
     numpy = Llama(data, vocabulary, **options)
     if q8:
-        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout"):  # (T545: an LFM2's matrices in and out too)
+        # (T545: an LFM2's matrices in and out too; T271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
+        # attention's output)
+        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name)).view(Q8))
     if half:
@@ -170,16 +172,17 @@ function caseOf(py, directory, id, options, reference, bytes) {
   py.runPython(`Llama(None, vocabulary, kernels="simdkernel.so", external=recorder, **OPTIONS).release()`);
   plan.kv_start = KV_START;
   // T156: a Llama of int8 whose steps the GPU takes goes on the GPU alone too: where its tensors are from its header
-  // (T226: Qwen2 and Qwen3 with it; T232: and of ternary weights)
+  // (T226: Qwen2 and Qwen3 with it; T232: and of ternary weights; T271.4: and a Qwen3.5, whose form the GPU alone's plan
+  // is made with: options, in the case)
   let places;
-  if ((options.arch ?? "llama") === "llama" && ["int8", "ternary"].includes(options.dtype)) {
+  if (["llama", "qwen35"].includes(options.arch ?? "llama") && ["int8", "ternary"].includes(options.dtype)) {
     py.globals.set("HEADER", py.toPy([...new Int32Array(bytes.slice(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }
   for (const [name, value] of Object.entries(plan.derived)) plan.derived[name] = Buffer.from(value).toString("base64");
   const name = path.basename(id), file = path.join(directory, `${name}.bin`);
   fs.writeFileSync(file, bytes);
-  return { id, plan, places, headDim: options.head_dim ?? 0, arch: options.arch ?? "llama", dtype: options.dtype, checkpoint: `/case/${name}.bin`, file, reference,
+  return { id, plan, places, options, headDim: options.head_dim ?? 0, arch: options.arch ?? "llama", dtype: options.dtype, checkpoint: `/case/${name}.bin`, file, reference,
     planSeconds: (performance.now() - began) / 1000 };
 }
 

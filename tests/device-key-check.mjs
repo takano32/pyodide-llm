@@ -206,6 +206,7 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "kept.code",  // the same, the remembered one
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
   "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
+  "ENGINE.OUTPUT_GATE",  // (T271.2: a Qwen3.5's gate of the attention's output)
   "ENGINE.flashTile(shape)", "ENGINE.flashVec(a.shape)", "ENGINE.flashVecReduce(a.shape)",
 ].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile of the catalogue (ENGINE.<name>) or a tile (devicePromptForms)?");
 for (const { n, file } of gpuNodes) {

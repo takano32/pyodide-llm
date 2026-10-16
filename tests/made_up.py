@@ -504,6 +504,10 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
             values = values if row.name in BIASES else 1.0 + values * (1.0 if calm else 0.1)
             if outliers and row.name == "rms_final_weight":
                 values[np.arange(outliers) * spread % row.shape[-1]] = 12.0
+            # (T271.2: a Qwen3.5's decay is -exp(A_log), below 0: one over 1 grows the state token after token, and
+            # 149 tokens make it an infinity. The same numbers, below 0: no other value is drawn otherwise)
+            if row.name == "decay":
+                values = -values
             return values.astype(np.float32)
         if calm and row.per is not None:
             values = values / 3  # a layer's matrix (the embedding, the positions and the classifier: as they are)

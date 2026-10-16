@@ -42,7 +42,6 @@ const SAID = [
   ["fallback", "a fallback adapter: the CPU in the GPU's place"],
   ["packed", ["ternary"], "ternary weights need the packed int8 dot product of WGSL, which this browser lacks"],
   ["aloneFallback", "a fallback adapter"],
-  ["aloneGate", "a gate of the attention's output is not on the GPU alone yet"],
   ["alonePositions", "a table of positions is not on the GPU alone yet"],
   ["aloneFfn", "an FFN without a gate is not on the GPU alone yet"],
   ["aloneNorms", "LayerNorms are not on the GPU alone yet"],

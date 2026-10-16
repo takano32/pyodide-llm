@@ -36,6 +36,7 @@ const ORDER = {
   engine: ["RMSNORM", "HEAD_NORM", "ADD", "ROPE", "SWIGLU", "QUANTIZE", "LAYER_NORM", "GELU", "EMBED", "EMBED_ROWS", "SAMPLE", "NORM_QUANTIZE", "TOKEN_ROPE", "WIDEN_SIX",
     "RMSNORM_ADD", "GEGLU",  // (T261.4: a Gemma 3's norms behind and its gate)
     "SHORT_CONV", "CONV_STATE",  // (T545: an LFM2's convolution layers)
+    "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T271.2: a Qwen3.5's linear-attention layers and its output gate)
     // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
     ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
     ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),

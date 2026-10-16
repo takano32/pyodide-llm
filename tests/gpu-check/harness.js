@@ -489,7 +489,8 @@ try {
     const direct = async (force, cpu) => {
       const worker = openGpu();
       const weights = gpuOnlyWeights({ memory, base, size, tensors: c.places, worker });
-      worker.postMessage({ type: "open", plan: gpuOnlyPlan(c.reference.header, c.places, force), flow: weights.flow });
+      // (T271.4: by the model's form, a Qwen3.5's layers of two kinds)
+      worker.postMessage({ type: "open", plan: gpuOnlyPlan(c.reference.header, c.places, force, undefined, c.options), flow: weights.flow });
       const began = performance.now(), stretches = [1234567, 777, 3, 65536, 1 << 20];
       for (let at = 0, k = 0; at < size; at += stretches[k++ % stretches.length]) {
         weights.write(at, checkpoint.subarray(at, Math.min(size, at + stretches[k % stretches.length])));

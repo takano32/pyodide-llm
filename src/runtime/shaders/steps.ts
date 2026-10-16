@@ -492,4 +492,222 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) i: u3
   }
 }`;
 
+// ---- T271.2: a Qwen3.5's linear-attention layers (Gated DeltaNet; forward/linear.ts and the CPU's kernels gate,
+// convolve and delta_rule have the rule) for the tokens of a block and for a generated token, between the matrix of q,
+// k and v (wqkv: mixed, as wide as 2 × keys + the values) with the one of z, and the matrix out. The order of the CPU:
+// the two gates of every value head from the normed stream (beta = sigmoid(wb · x), decay = exp(decay × softplus(wa ·
+// x + dt_bias))), the causal convolution of mixed with SiLU after it (the layer's rows: the last taps tokens' mixed,
+// the oldest first, as the CPU keeps them), the l2 norms of the heads of q and k (HEAD_NORM, with the weights 1 / n and
+// 1 / sqrt(n) and an epsilon of 1e-6 / n, as linear.ts has them), the delta rule a value head at a time over the
+// layer's state, the norm of every value head (HEAD_NORM), z's gate (SWIGLU: silu(z) × what the rule read), the matrix
+// out. What the convolution writes is q, k and v each apart (batch tokens' room each: q's from 0, k's from batch ×
+// keys, v's from 2 × batch × keys), so that HEAD_NORM's rows of a token are its heads of q or of k alone.
+// DELTA_GATES: a workgroup a value head and a token (the dispatch's x and y), its two sums by the workgroup's tree
+// (RMSNORM's), the rest on its first thread: wb and wa are the layer's (gates.at: its first row, place × heads), float32
+// as the CPU has them. No public implementation was taken for it (llama.cpp computes them as a graph of its ops).
+const GATES_STRUCT = /* wgsl */ `struct Gates { dim: u32, heads: u32, at: u32, unused: u32 }`;
+export const DELTA_GATES = /* wgsl */ `
+${GATES_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read> x: array<f32>;
+@group(0) @binding(1) var<storage, read> wb: array<f32>;
+@group(0) @binding(2) var<storage, read> wa: array<f32>;
+@group(0) @binding(3) var<storage, read> dtBias: array<f32>;
+@group(0) @binding(4) var<storage, read> decay: array<f32>;
+@group(0) @binding(5) var<storage, read_write> work: array<f32>;
+@group(0) @binding(6) var<uniform> gates: Gates;
+@group(0) @binding(7) var<uniform> step: Step;
+var<workgroup> partial: array<f32, 64>;
+var<workgroup> partialA: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
+  if (id.y >= step.tokens) { return; }
+  let h = id.x;
+  let row = (gates.at + h) * gates.dim;
+  let input = id.y * gates.dim;
+  var b = 0.0;
+  var a = 0.0;
+  for (var i = t; i < gates.dim; i += 64u) {
+    b += wb[row + i] * x[input + i];
+    a += wa[row + i] * x[input + i];
+  }
+  partial[t] = b;
+  partialA[t] = a;
+  workgroupBarrier();
+  for (var half = 32u; half > 0u; half >>= 1u) {
+    if (t < half) {
+      partial[t] += partial[t + half];
+      partialA[t] += partialA[t + half];
+    }
+    workgroupBarrier();
+  }
+  if (t == 0u) {
+    let s = partialA[0] + dtBias[gates.at + h];
+    let softplus = select(log(1.0 + exp(s)), s, s > 20.0);
+    let out = id.y * 2u * gates.heads;
+    work[out + h] = 1.0 / (1.0 + exp(-partial[0]));
+    work[out + gates.heads + h] = exp(decay[gates.at + h] * softplus);
+  }
+}`;
+// DELTA_CONV: out = silu(taps[0] × m[t - taps + 1] + ... + taps[taps - 1] × m[t]), a channel of mixed a thread (the
+// dispatch's x) and a token its y, added in that order as the CPU's convolve adds them; where the window reaches back
+// past the block it reads the layer's rows (SHORT_CONV's form above). DELTA_CONV_STATE after it: the rows of the layer
+// the last taps tokens' mixed, the block's own and, for a block shorter than the taps, the rows before it (CONV_STATE's)
+const DELTA_CONV_STRUCT = /* wgsl */ `struct Conv { n: u32, taps: u32, at: u32, keys: u32, batch: u32, unused0: u32, unused1: u32, unused2: u32 }`;
+export const DELTA_CONV = /* wgsl */ `
+${DELTA_CONV_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read> mixed: array<f32>;
+@group(0) @binding(1) var<storage, read> taps: array<f32>;
+@group(0) @binding(2) var<storage, read> rows: array<f32>;
+@group(0) @binding(3) var<storage, read_write> out: array<f32>;
+@group(0) @binding(4) var<uniform> conv: Conv;
+@group(0) @binding(5) var<uniform> step: Step;
+fn moved(t: i32, c: u32) -> f32 {
+  if (t < 0) { return rows[conv.at + u32(i32(conv.taps) + t) * conv.n + c]; }
+  return mixed[u32(t) * conv.n + c];
+}
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) i: u32) {
+  let c = id.x * 64u + i;
+  let token = id.y;
+  if (token >= step.tokens || c >= conv.n) { return; }
+  let first = i32(token) + 1 - i32(conv.taps);
+  var sum = taps[conv.at + c] * moved(first, c);
+  for (var j = 1u; j < conv.taps; j++) {
+    sum += taps[conv.at + j * conv.n + c] * moved(first + i32(j), c);
+  }
+  let value = sum / (1.0 + exp(-sum));
+  let keys = conv.keys;
+  if (c < keys) {
+    out[token * keys + c] = value;
+  } else if (c < 2u * keys) {
+    out[(conv.batch + token) * keys + c - keys] = value;
+  } else {
+    out[2u * conv.batch * keys + token * (conv.n - 2u * keys) + c - 2u * keys] = value;
+  }
+}`;
+export const DELTA_CONV_STATE = /* wgsl */ `
+${DELTA_CONV_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read> mixed: array<f32>;
+@group(0) @binding(1) var<storage, read_write> rows: array<f32>;
+@group(0) @binding(2) var<uniform> conv: Conv;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) i: u32) {
+  let c = id.x * 64u + i;
+  if (c >= conv.n) { return; }
+  for (var j = 0u; j < conv.taps; j++) {
+    let t = i32(step.tokens + j) - i32(conv.taps);
+    var h = 0.0;
+    if (t < 0) {
+      h = rows[conv.at + (j + step.tokens) * conv.n + c];
+    } else {
+      h = mixed[u32(t) * conv.n + c];
+    }
+    rows[conv.at + j * conv.n + c] = h;
+  }
+}`;
+// DELTA_NET: the delta rule, a workgroup a value head (the dispatch's x) and a thread a column of its state (a value
+// of the head's v: DELTA_THREADS of them, the value_dim of a model at the most), the column of the state in the
+// thread's own memory for the tokens of the block, which it goes through in turn (a token's state is what the next one
+// reads); q and k of the key head the value head reads (h / (value heads / key heads), Hugging Face's order) in the
+// workgroup's memory. For each token, with beta and decay its gates: delta = (v - Σ k[i] × (S[i] × decay)) × beta, then
+// S[i] = S[i] × decay + k[i] × delta and out = Σ q[i] × S[i], each sum in i's order as the CPU's delta_rule adds it.
+// The state is the CPU's (forward/linear.ts: a matrix of key_dim rows of value_dim a value head, a layer's after
+// another, place by place from delta.at), so that it goes up and comes back as the CPU keeps it.
+// The form is llama.cpp's gated_delta_net.wgsl (a workgroup a head, a thread a column of the state in its own array,
+// q and k in the workgroup's memory, the tokens a loop inside, the state written once after them). Changed: the state's
+// column lies in rows of value_dim (the CPU's, where llama.cpp's is the column's own row), the decay is a factor of the
+// gates (the CPU's exp, not llama.cpp's log), the decay multiplies the state inside the first sum as the CPU's does, no
+// KDA and no snapshots of earlier tokens, q's scale is in its norm (linear.ts), and q, k and v are where DELTA_CONV
+// writes them; a key dim and a value dim of DELTA_THREADS at the most (forward/gpuside.ts keeps a model of others on the
+// CPU). From https://github.com/ggml-org/llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/gated_delta_net.wgsl, commit
+// 2a667032, under the MIT License:
+export const DELTA_THREADS = 128;
+/*! Copyright (c) 2023-2026 The ggml authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+ * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+export const DELTA_NET = /* wgsl */ `
+struct Delta { keyHeads: u32, valueHeads: u32, keyDim: u32, valueDim: u32, batch: u32, at: u32, unused0: u32, unused1: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read> conv: array<f32>;
+@group(0) @binding(1) var<storage, read> work: array<f32>;
+@group(0) @binding(2) var<storage, read_write> state: array<f32>;
+@group(0) @binding(3) var<storage, read_write> out: array<f32>;
+@group(0) @binding(4) var<uniform> delta: Delta;
+@group(0) @binding(5) var<uniform> step: Step;
+var<workgroup> sh_q: array<f32, ${DELTA_THREADS}>;
+var<workgroup> sh_k: array<f32, ${DELTA_THREADS}>;
+@compute @workgroup_size(${DELTA_THREADS})
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) col: u32) {
+  let h = id.x;
+  let kd = delta.keyDim;
+  let vd = delta.valueDim;
+  let keys = delta.keyHeads * kd;
+  let read = delta.valueHeads * vd;
+  let key = h / (delta.valueHeads / delta.keyHeads);
+  let base = delta.at + h * kd * vd + col;
+  let live = col < vd;
+  var s: array<f32, ${DELTA_THREADS}>;
+  if (live) {
+    for (var i = 0u; i < kd; i++) { s[i] = state[base + i * vd]; }
+  }
+  for (var t = 0u; t < step.tokens; t++) {
+    if (col < kd) {
+      sh_q[col] = conv[t * keys + key * kd + col];
+      sh_k[col] = conv[(delta.batch + t) * keys + key * kd + col];
+    }
+    workgroupBarrier();
+    if (live) {
+      let gates = t * 2u * delta.valueHeads;
+      let beta = work[gates + h];
+      let decay = work[gates + delta.valueHeads + h];
+      var kv = 0.0;
+      for (var i = 0u; i < kd; i++) { kv += sh_k[i] * (s[i] * decay); }
+      let d = (conv[2u * delta.batch * keys + t * read + h * vd + col] - kv) * beta;
+      var attn = 0.0;
+      for (var i = 0u; i < kd; i++) {
+        s[i] = s[i] * decay + sh_k[i] * d;
+        attn += sh_q[i] * s[i];
+      }
+      out[t * read + h * vd + col] = attn;
+    }
+    workgroupBarrier();
+  }
+  if (live) {
+    for (var i = 0u; i < kd; i++) { state[base + i * vd] = s[i]; }
+  }
+}`;
+// T271.2: a Qwen3.5's gate of the attention's output (its full-attention layers: a matrix wg of the same input as q,
+// k and v), x = x / (1 + exp(-g)) value by value as the CPU's gate kernel has it, for every token (the dispatch's y):
+// SWIGLU's frame above
+export const OUTPUT_GATE = /* wgsl */ `
+${SIZE_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read_write> x: array<f32>;
+@group(0) @binding(1) var<storage, read> g: array<f32>;
+@group(0) @binding(2) var<uniform> size: Size;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
+  let i = id.x * 64u + t;
+  if (id.y >= step.tokens || i >= size.n) { return; }
+  let at = id.y * size.n + i;
+  x[at] = x[at] / (1.0 + exp(-g[at]));
+}`;
+
 export { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT };
