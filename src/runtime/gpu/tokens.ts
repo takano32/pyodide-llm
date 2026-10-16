@@ -483,7 +483,7 @@ function tokenStep(m: Model, form: TokenForm, positions: number) {
 // from position 0 then, forward/gpuside.ts)
 async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, settings, randoms, keep = false, extra }: Run) {
   const { device, tokens: g } = m, { cache, states } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
-  const layers = cache!.keys.length, stateBytes = keep ? m.block.stateBytes : 0, stateAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
+  const layers = cache!.keys.length, stateBytes = keep && !m.plan.direct ? m.block.stateBytes : 0, stateAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
   if (pos + count > cache!.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
