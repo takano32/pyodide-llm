@@ -446,7 +446,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
     failed ??= event;
     weights.gone();
   });
-  worker.postMessage({ type: "open", plan: forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered), flow: weights.flow } satisfies ToGpu);
+  worker.postMessage({ type: "open", plan: forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options), flow: weights.flow } satisfies ToGpu);
   // (T156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.ts's aloneVerdict)
   const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,

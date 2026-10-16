@@ -15,7 +15,7 @@ import type { Formed } from "./sizes.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
 import type { Force, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
-import type { Tensor, TensorName, Tensors } from "../contracts/plan.ts";
+import type { LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.ts";
 
 // (T368.4, the types) what of a form says whether a model can go on the GPU, and how many bytes it takes there
 // (T375.5: the architecture's name, the size of a head, and the numbers of the layers that keep a state: sizes.ts's Formed)
@@ -56,28 +56,41 @@ export type GpuOnlyWeights = ReturnType<typeof gpuOnlyWeights>;
 // every scale as a float32 (T533: ternary's float16 ones are widened as they go up, gpu/weights.ts). A model whose
 // weights the GPU does not take is counted as int8's, as it always was (it does not go there: gpuFit())
 export const gpuWeightBytes = (stored: string | undefined) => weightBytes({ ...PACKED[packingOf(stored)?.gpu?.as ?? "int8"], scale: 4 });
-/** the weights of a layer's matrices: q, k, v and the output, and the FFN's (three where it is gated, else GPT-2's two) */
-const layerMatrices = (header: Header, { head_dim = 0, arch = "llama" }: Formed) => {
-  const [dim, hidden, , heads, kvHeads] = header;
-  const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
-  return 2 * qDim * dim + 2 * kvDim * dim + (architectureOf(arch).gatedFfn ? 3 : 2) * hidden * dim;
+/** the weights of the layers' matrices, all of them: an attending layer's q, k, v and output (and T271.4 the gate of
+ * its output, a Qwen3.5's), a linear-attention layer's (T271.4: q, k and v as one, z, and its output), and every
+ * layer's FFN (three where it is gated, else GPT-2's two); how many layers attend; and the bytes of what a Qwen3.5's
+ * linear-attention layers keep and read besides on the GPU (their states and rows, the gates' small matrices of
+ * float32 and their vectors) */
+const layersOf = (header: Header, form: Formed) => {
+  const [dim, hidden, layers] = header, sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim, linear } = sizes.widths;
+  const attending = sizes.kinds.filter((kind) => kind === ATTENTION).length, deltas = sizes.kinds.filter((kind) => kind === "linear").length;
+  const ffn = (architectureOf(form.arch ?? "llama").gatedFfn ? 3 : 2) * hidden * dim;
+  const attention = (2 * qDim + 2 * kvDim + (sizes.gate ? qDim : 0)) * dim, delta = linear ? (linear.mixed + 2 * linear.read) * dim : 0;
+  const numbers = form.linear, held = numbers && linear ? deltas * 4 * (numbers.value_heads * numbers.key_dim * numbers.value_dim + numbers.conv * linear.mixed +
+    2 * numbers.value_heads * dim + 2 * numbers.value_heads + numbers.value_dim) : 0;
+  return { weights: attending * attention + deltas * delta + layers * ffn, attending, held };
 };
 /** T156: the bytes the GPU holds of a model with this header and form (FORM): its layers' matrices (as the GPU holds
  * their packing: gpuWeightBytes()), its two norms a layer, its own keys
  * and values (float16, the whole context), and for a generation's steps (T152) the classifier (and the embedding where
  * it is another table), RoPE's table of every position and the sampling's three arrays of the vocabulary. forward.js
  * counts the same of a model it runs (layersOnGpu, tokensUnfit). */
+// (T271.4: the keys and values of the attending layers alone, and a Qwen3.5's linear-attention layers' own: layersOf())
 export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & { dtype?: Dtype } = {}) {
   const [dim, , layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = form.head_dim || dim / heads, kvDim = kvHeads * headSize;
-  const each = gpuWeightBytes(dtype);
-  const layerBytes = layers * layerMatrices(header, form) * each + layers * 2 * dim * 4 + 2 * layers * seqLen * kvDim * 2;
+  const each = gpuWeightBytes(dtype), { weights, attending, held } = layersOf(header, form);
+  const layerBytes = weights * each + layers * 2 * dim * 4 + 2 * attending * seqLen * kvDim * 2 + held;
   const table = vocab * dim * each;
   return layerBytes + table * (signedVocab > 0 ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4;
 }
 
-// the layers' matrices of a Llama, which the GPU alone holds (T156)
-const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3"];
+// the layers' matrices of a Llama, which the GPU alone holds (T156); T271.4: and a Qwen3.5's (its linear-attention
+// layers' and the gate of its attending layers' output), each of the layers of its kind (KINDS) where some layers are of
+// another kind than attention
+const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wqkv", "wz", "wout", "wg"];
+const KINDS: Partial<Record<TensorName, LayerKind>> = { wq: "attention", wk: "attention", wv: "attention", wo: "attention", wg: "attention", wqkv: "linear",
+  wz: "linear", wout: "linear" };
 // T210: and its tables, the embedding and a classifier of its own (wcls is the embedding's tensor where it is shared):
 // the GPU embeds a prompt's rows too (shaders.ts's EMBED_ROWS), and nothing of them is here
 const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
@@ -119,7 +132,7 @@ export function weightsPlace({ cpu, gpuOnly, gpu, deviceMemory = 4, eligible = f
 }
 
 /** T156: the multiply-adds of a model's layers a token of a prompt makes (every weight of its matrices once) */
-export const layerWeightsOf = (header: Header, form: Formed = {}) => header[2] * layerMatrices(header, form);
+export const layerWeightsOf = (header: Header, form: Formed = {}) => layersOf(header, form).weights;
 // T156 (the owner, 2026-09-27: the prompt counts too): the tokens of a prompt against the tokens written, where the
 // page has not kept how they are used here yet: as many (a chat's question with its template and an answer of about
 // the same length; no measurement of the site's visitors says otherwise)
@@ -176,12 +189,13 @@ const BINDS_AT = 256;
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
 /** T382: why a model of these facts cannot go on the GPU alone, or null: the first fact that keeps it off, each by its
- * own reason (stateful: it has a layer that keeps a state; the rest are its architecture's line and its sizes' gate).
- * Apart from gpuOnlyUnfit() so that a set of facts no architecture of the table has can be asked too (the tests) */
-export function aloneFactsUnfit({ stateful, gate, positions, gatedFfn, layerNorm, activation, local }:
-  Pick<Architecture, "gate" | "positions" | "gatedFfn" | "layerNorm" | "activation" | "local"> & { stateful: boolean }) {
+ * own reason (stateful: it has a layer that keeps a state the GPU alone does not hold, T271.4: an LFM2's convolution
+ * layers; the rest are its architecture's line). Apart from gpuOnlyUnfit() so that a set of facts no architecture of
+ * the table has can be asked too (the tests). (T271.4: a gate of the attending layers' output is a token's layer's now,
+ * a Qwen3.5's; a Spark-X2.5's gate of its heads goes with its exact GELU, below) */
+export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, activation, local }:
+  Pick<Architecture, "positions" | "gatedFfn" | "layerNorm" | "activation" | "local"> & { stateful: boolean }) {
   if (stateful) return REASONS.stateful;
-  if (gate) return REASONS.aloneGate;
   if (positions) return REASONS.alonePositions;
   if (!gatedFfn) return REASONS.aloneFfn;
   if (layerNorm) return REASONS.aloneNorms;
@@ -198,11 +212,12 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const [dim, hidden] = header;
   if (!adapter) return REASONS.noAdapter;
   if (adapter.fallback && !force.fallback) return REASONS.aloneFallback;
-  // T375.5: by the model's facts, not by its architecture's name: RMSNorms, a gated FFN, no table of positions, no
-  // gate of the attention's output, and every layer attending (which of the five architectures a Llama's alone are)
-  const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim } = sizes.widths;
-  // (T382: the architecture's line as it is, so that no fact of it is handed on by hand, and the two the sizes say)
-  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), gate: sizes.gate, stateful: sizes.kinds.some((kind) => kind !== ATTENTION) });
+  // T375.5: by the model's facts, not by its architecture's name: RMSNorms, a gated FFN, no table of positions, and
+  // every layer attending (which of the five architectures a Llama's alone are). T271.4: or a Qwen3.5's linear-attention
+  // layers, whose state the GPU keeps itself, and the gate of its attending layers' output, which a token's layer has
+  const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim, linear } = sizes.widths;
+  // (T382: the architecture's line as it is, so that no fact of it is handed on by hand, and the one the sizes say)
+  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => kind !== ATTENTION && kind !== "linear") });
   if (facts) return facts;
   if (form.rotated) return REASONS.rotated;  // T237
   // T363.5: nor a model whose rows have kinds of their own (llama.cpp's blocks are the CPU's kernels' alone: gpu.ts
@@ -218,7 +233,9 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // (a joined matrix's parts start where the device binds: the values a row's bytes on, the scales four bytes a group)
   const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim];
   if (starts.some((weights) => packing.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return REASONS.aloneStarts;
-  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden)].some((weights) => packing.rowBytes(weights) > binds)) return REASONS.alonePast;
+  // (T271.4: and a Qwen3.5's linear-attention layers' matrices, each one piece: a token's layer reads them whole)
+  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...(linear ? [linear.mixed * dim, linear.read * dim] : [])]
+    .some((weights) => packing.rowBytes(weights) > binds)) return REASONS.alonePast;
   return null;
 }
 /** T375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker
@@ -289,18 +306,23 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
  * matrices, before a byte comes): each matrix's rows and length and, a layer each, where its values and scales start in
  * the checkpoint (the offsets the bytes come with). T210: and the tables' ({ classifier, embedding }, the embedding
  * null where the classifier is it: { rows, n, at: [values, scales] } each, in the checkpoint too) */
-export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered): Opened {
-  const layers = header[2];
+// T271.4: form, the model's (FORM): a Qwen3.5's linear-attention layers, whose matrices (and the attending layers') are
+// of the layers of their kind alone: the plan says every layer's kind and its place among the layers of its kind then,
+// and those matrices' kind (of), as the plan of { type: "start" } does
+export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered, form: Formed = {}): Opened {
+  const layers = header[2], kinds = sizesOfForm(header, form, LAYER_KINDS).kinds as LayerKind[], mixed = kinds.some((kind) => kind !== ATTENTION);
+  const places = kinds.map((kind, l) => kinds.slice(0, l).filter((other) => other === kind).length);
   // (T232: the bytes of a layer's values are its packing's, jobs.ts's PACKED; ternary is what the GPU's worker is told)
-  const matrices = Object.fromEntries(LAYER_MATRICES.map((name): [string, Matrix] => {
+  const matrices = Object.fromEntries(LAYER_MATRICES.filter((name) => tensors[name]).map((name): [string, Matrix] => {
     const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, layerBytes = packingOf(t.kind)!.rowBytes(perLayer);
-    return [name, { rows, n, ternary: t.kind === "ternary", layers: Array.from({ length: layers }, (_, l) =>
-      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]) }];  // (T533: ternary's scales float16s)
+    const of = mixed ? KINDS[name] : undefined, count = of ? kinds.filter((kind) => kind === of).length : layers;
+    return [name, { rows, n, ternary: t.kind === "ternary", layers: Array.from({ length: count }, (_, l) =>
+      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]), ...(of ? { of } : {}) }];  // (T533: ternary's scales float16s)
   }));
   const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], ternary: t.kind === "ternary", at: [t.offset, t.scales] });
   const embedding = tensors.token_embedding_table!, classifier = tensors.wcls ?? embedding;
   const tables = { classifier: table(classifier), embedding: classifier.offset === embedding.offset ? null : table(embedding) };
-  return { layers, matrices, tables, force, remembered };
+  return { layers, matrices, tables, force, remembered, ...(mixed ? { kinds, places } : {}) };
 }
 
 // (T349) what forward.ts and the other modules read besides, which was not exported where it was one file

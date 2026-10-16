@@ -49,7 +49,6 @@ export const REASONS = {
   // (T382: a fact of the model each, in aloneFactsUnfit()'s order; layers that keep a state are "stateful" above. A
   // model with one of these that is too large to hold twice (Pythia 6.9B, Qwen3.5 4B and 9B of the list) goes on the CPU
   // alone: the GPU alone has no steps made for them. The reasons are read as yes or no, and by the tests)
-  aloneGate: "a gate of the attention's output is not on the GPU alone yet",
   alonePositions: "a table of positions is not on the GPU alone yet",
   aloneFfn: "an FFN without a gate is not on the GPU alone yet",
   aloneNorms: "LayerNorms are not on the GPU alone yet",

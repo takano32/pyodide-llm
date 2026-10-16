@@ -146,7 +146,9 @@ export type Started = {
 };
 
 // The plan of { type: "open" } (gpuOnlyPlan()): the layers and their matrices by where they are in the checkpoint
-export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined };
+// (T271.4: kinds and places, as Started's, where some layers are of another kind than attention: a Qwen3.5's)
+export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined; kinds?: LayerKind[];
+  places?: number[] };
 
 // forward.ts's cache of the keys and values a generation's steps go up from: where each attending layer's are now (T261.4.2,
 // places: the address of position 0's keys and values, position p's p rows after; or, where ring is not 0, a ring of so

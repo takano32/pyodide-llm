@@ -196,7 +196,8 @@ const bindAt = (m: Model, pipeline: GPUComputePipeline, entries: Entry[]) => m.d
 // T378.4: what this makes is the first part of the model's record of a token, m.tokens, which tokenforms.ts's
 // chooseTokens() sets (with the attention and the form chosen); the functions below read it
 async function tokenBuffers(m: Model): Promise<TokenBuffers> {
-  const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows, attending = attendingOf(plan).length, stateBytes = m.block.stateBytes;
+  // (T271.4: the state of the layers that keep one comes back where the CPU holds it too: not on the GPU alone)
+  const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows, attending = attendingOf(plan).length, stateBytes = plan.direct ? 0 : m.block.stateBytes;
   // (T271.3: and the read of a Qwen3.5's linear-attention layer, which z's gate leaves for its matrix out to quantize)
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, read = plan.linear ? plan.linear.valueHeads * plan.linear.valueDim : 0;
   const widest = Math.max(plan.dim, qDim, plan.hidden, read);

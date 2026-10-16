@@ -175,8 +175,9 @@ async function prepare(m: Model) {
   const states = [...(conv ? [{ buffer: conv.rows, bytes: conv.bytes }] : []),
     ...(linear ? [{ buffer: linear.states, bytes: linear.matricesBytes }, { buffer: linear.rows, bytes: linear.rowsBytes }] : [])];
   const stateBytes = states.reduce((sum, { bytes }) => sum + bytes, 0);
-  // (the attending layers' keys and values, then the state of the layers that keep one: T545)
-  const readback = buffer(m, 2 * attendingOf(plan).length * B * kvDim * 2 + stateBytes, MAP_READ | COPY_DST);
+  // (the attending layers' keys and values, then the state of the layers that keep one: T545; T271.4: none of it on the
+  // GPU alone, whose state stays here, and whose keys and values come back for the tests alone)
+  const readback = buffer(m, 2 * attendingOf(plan).length * B * kvDim * 2 + (plan.direct ? 0 : stateBytes), MAP_READ | COPY_DST);
   // what a request writes into them, from the shared memory
   const rows = new Float32Array(B * plan.dim);
   const turns = new Float32Array(B * plan.headSize);
@@ -536,7 +537,7 @@ function keysOut(m: Model, encoder: GPUCommandEncoder, pos: number, count: numbe
     encoder.copyBufferToBuffer(cache!.values[l], pos * row, readback, (layers + l) * B * row, count * row);
   }
   let at = 2 * layers * B * row;
-  for (const { buffer: from, bytes } of states) {
+  for (const { buffer: from, bytes } of plan.direct ? [] : states) {
     encoder.copyBufferToBuffer(from, 0, readback, at, bytes);
     at += bytes;
   }
@@ -546,7 +547,7 @@ async function keysBack(m: Model, wanted: () => boolean) {
   const { plan } = m, { readback } = m.block;
   await readback.mapAsync(MAP_READ);
   try {
-    const bytes = 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * plan.headSize * 2 + m.block.stateBytes;
+    const bytes = 2 * attendingOf(plan).length * plan.batch * plan.kvHeads * plan.headSize * 2 + (plan.direct ? 0 : m.block.stateBytes);
     if (wanted()) new Uint8Array(m.memory.buffer, plan.staging, bytes).set(new Uint8Array(readback.getMappedRange(), 0, bytes));
   } finally {
     readback.unmap();
