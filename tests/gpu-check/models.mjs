@@ -99,6 +99,15 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // position: the CPU's step after the prompt reads its keys and values
   "synthetic-gemma3": [{ layers: 4, kv_heads: 1, arch: "gemma3", head_dim: 32, seq_len: 160 },
     { arch: "gemma3", head_dim: 32, local: { layers: [0, 1, 2], window: 64, rope_theta: 100 } }],
+  // T545: an LFM2 (convolution layers among attending ones, an LFM2's norms of the heads of q and k), of six layers:
+  // two of convolution first (the first, whose matrices the loading's check does not read, and one whose rows the second
+  // block goes on from), then attending and convolution in turn, the last a convolution layer (a prompt's block leaves
+  // its rows alone and the CPU's step after the prompt goes on from them: CONV_STATE without SHORT_CONV). The prompt's
+  // 149 tokens are blocks of 64, 64 and 21: each goes on from the rows the one before left, which come back to the CPU
+  // and go up again; a GPU that moves the rows by a token too many or too few, reads the taps backwards, or does not
+  // clear them at position 0 is off in the keys of the attending layers after (the third layer's and the fifth's), and
+  // the CPU's last token and steps, which go on from the rows that came back, are off in the logits
+  "synthetic-lfm2": [{ layers: 6, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 } }, { arch: "lfm2", convolution: { layers: "ccacac", taps: 3 } }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],

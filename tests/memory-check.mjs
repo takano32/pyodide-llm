@@ -270,11 +270,30 @@ function halfToFloat(h) {
       refused++;
       return;
     }
-    if (p.form.convolution || p.form.arch === "gemma4") {
+    if (p.form.convolution) {
+      // T545: an LFM2's prompts are the GPU's: its worker is started, and what is put aside for it (the attending layers'
+      // keys and values of a block, the convolution layers' rows that come back with them) is footprint()'s
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: true, shared: true };
+      const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
+      let asked = 0;
+      const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys,
+        gpu: () => { asked++; return silentGpu(); } });
+      const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
+      const floats = p.dtype === "float32" || p.dtype === "float16";
+      assert.equal(engine.gpuWhyNot, floats ? "float32 weights are not on the GPU yet" : null, `${shapes[n].name}, ${p.dtype}: the GPU's refusal is "${engine.gpuWhyNot}"`);
+      assert.equal(asked, floats ? 0 : 1, `${shapes[n].name}, ${p.dtype}: a GPU's worker was started ${asked} times`);
+      assert.ok(used <= bound && (floats || bound - used <= 1.2 * MiB),
+        `${shapes[n].name}, ${p.dtype}, a GPU asked for: createForward put ${(used / MiB).toFixed(2)} MiB after the checkpoint, footprint() counted ${(bound / MiB).toFixed(2)}`);
+      engine.release();
+      convolutional++;
+      return;
+    }
+    if (p.form.arch === "gemma4") {
       // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
       // (T331.2: and so does a Gemma 4, for what its layers have that the GPU's have not; T261.4: a Gemma 3, which did
       // until then, is the GPU's below)
-      const [model, why] = p.form.convolution ? ["an LFM2", "convolution layers are not on the GPU yet"] : ["a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
+      const [model, why] = ["a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
+
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: false, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       let asked = 0;
@@ -306,7 +325,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 or a Gemma 4 refused it; ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 (T545: taken, but a float one) or a Gemma 4 (refused); ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's

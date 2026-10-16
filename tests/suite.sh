@@ -242,12 +242,13 @@ hybrid_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-int8
 }
 part "a Qwen3.5 where a GPU adapter is" hybrid_stays_on_the_cpu
-# T260: nor is an LFM2, whose convolution layers have no shader: the next line of gpuUnfit (a few seconds)
-lfm2_stays_on_the_cpu() {
+# T260: nor was an LFM2, whose convolution layers had no shader; T545: its prompts are the GPU's now, its worker started with
+# a plan of its layers' kinds and places, its taps and rows (a few seconds)
+lfm2_goes_to_the_gpu() {
   python tests/make_lfm2.py .tmp/made-up-lfm2-int8 int8
   node tests/gpu-hybrid-check.mjs .tmp/made-up-lfm2-int8
 }
-part "an LFM2 where a GPU adapter is" lfm2_stays_on_the_cpu
+part "an LFM2 where a GPU adapter is" lfm2_goes_to_the_gpu
 # T261: a Gemma 3 was kept off the GPU here; T261.4: its prompts are the GPU's now, its worker started with a plan of what
 # it has besides (a few seconds)
 gemma3_goes_to_the_gpu() {

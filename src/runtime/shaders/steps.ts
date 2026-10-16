@@ -430,4 +430,66 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   gate[at] = 0.5 * v * (1.0 + tanh(clamp(0.7978845608028654 * (v + 0.044715 * v * v * v), -9.010913, 9.010913))) * up[at];
 }`;
 
+// T545: an LFM2's convolution layer (convolution.ts and the CPU's short_conv kernel have the rule) for the tokens of a
+// block, between its matrix in and its matrix out. The form is llama.cpp's for that layer (src/models/lfm2.cpp: B times
+// z, the state before the block put in front of it, ggml_ssm_conv, then C times that; the state the last taps of what
+// was put together) and of its ssm_conv shader (ggml-vulkan's ssm_conv.comp, MIT): an invocation an output, a channel
+// of a token (the channel the dispatch's x, the token its y), the sum over the taps of the window that ends at its
+// token. No line is copied, so no notice stands here. Changed: the state is not put in front of the block's values in
+// a buffer of its own; where a window reaches back past the block, it reads the rows the layer went on from. Those rows
+// are the CPU's (convolution.ts): taps rows of dim a layer, the oldest token's first, the last the newest's, the
+// layer's at conv.at; mixed holds a token's B, C and z (3 dim) a token after another.
+// SHORT_CONV: out = C × (taps[0] × h[t - taps + 1] + ... + taps[taps - 1] × h[t]), h = B × z, added in that order as
+// the CPU adds them. CONV_STATE, after it: the rows of the layer the last taps tokens' h, the block's own and, for a
+// block shorter than the taps, the rows before it (a channel a thread, oldest first: a row read is one not written yet)
+const CONV_STRUCT = /* wgsl */ `struct Conv { dim: u32, taps: u32, at: u32, unused: u32 }`;
+export const SHORT_CONV = /* wgsl */ `
+${CONV_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read> mixed: array<f32>;
+@group(0) @binding(1) var<storage, read> taps: array<f32>;
+@group(0) @binding(2) var<storage, read> rows: array<f32>;
+@group(0) @binding(3) var<storage, read_write> out: array<f32>;
+@group(0) @binding(4) var<uniform> conv: Conv;
+@group(0) @binding(5) var<uniform> step: Step;
+fn moved(t: i32, c: u32) -> f32 {
+  if (t < 0) { return rows[conv.at + u32(i32(conv.taps) + t) * conv.dim + c]; }
+  let at = u32(t) * 3u * conv.dim + c;
+  return mixed[at] * mixed[at + 2u * conv.dim];
+}
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) i: u32) {
+  let c = id.x * 64u + i;
+  if (id.y >= step.tokens || c >= conv.dim) { return; }
+  let first = i32(id.y) + 1 - i32(conv.taps);
+  var sum = taps[conv.at + c] * moved(first, c);
+  for (var j = 1u; j < conv.taps; j++) {
+    sum += taps[conv.at + j * conv.dim + c] * moved(first + i32(j), c);
+  }
+  out[id.y * conv.dim + c] = mixed[id.y * 3u * conv.dim + conv.dim + c] * sum;
+}`;
+export const CONV_STATE = /* wgsl */ `
+${CONV_STRUCT}
+${STEP}
+@group(0) @binding(0) var<storage, read> mixed: array<f32>;
+@group(0) @binding(1) var<storage, read_write> rows: array<f32>;
+@group(0) @binding(2) var<uniform> conv: Conv;
+@group(0) @binding(3) var<uniform> step: Step;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) i: u32) {
+  let c = id.x * 64u + i;
+  if (c >= conv.dim) { return; }
+  for (var j = 0u; j < conv.taps; j++) {
+    let t = i32(step.tokens + j) - i32(conv.taps);
+    var h = 0.0;
+    if (t < 0) {
+      h = rows[conv.at + (j + step.tokens) * conv.dim + c];
+    } else {
+      let at = u32(t) * 3u * conv.dim + c;
+      h = mixed[at] * mixed[at + 2u * conv.dim];
+    }
+    rows[conv.at + j * conv.dim + c] = h;
+  }
+}`;
+
 export { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT };

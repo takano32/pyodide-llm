@@ -18,7 +18,7 @@
 // forms again and weighs a model on the GPU alone again (T148, T156), as a changed character of a text does. The order
 // is: the texts, then each maker's rows together (T379.2, the deployment that changed the texts: until then the makers
 // of each value of subgroups stood together, as the key had walked them since T366).
-import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU, RMSNORM_ADD, GEGLU } from "./steps.ts";
+import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU, RMSNORM_ADD, GEGLU, SHORT_CONV, CONV_STATE } from "./steps.ts";
 import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
 import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, FUSED_INPUTS, FUSED_OUTPUTS } from "./fused.ts";
 import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.ts";
@@ -41,7 +41,7 @@ type Named<Row extends { name: string; shader: unknown }> = { [Each in Row as Ea
 const EITHER = [false, true];
 /** every model's shaders */
 export const ENGINE_SHADERS = [
-  ...texts({ RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX, RMSNORM_ADD, GEGLU }),
+  ...texts({ RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX, RMSNORM_ADD, GEGLU, SHORT_CONV, CONV_STATE }),
   ...EITHER.flatMap((subgroups) => EITHER.map((half) => made({ flashTile }, { headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 }))),
   ...EITHER.map((subgroups) => made({ flashVec }, { headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 })),
   ...EITHER.map((subgroups) => made({ flashVecReduce }, { headSize: 64, subgroups, reduceSize: 32 })),

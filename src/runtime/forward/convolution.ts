@@ -25,12 +25,17 @@ export const convolution: Kind = {
     return { arrays: [["mixed", 3 * sizes.dim * 4]] };
   },
   state: kept,
+  // T545: the GPU's worker has these layers too (make()'s rows)
+  staged: true,
   make({ plan, sizes, k, room, floats, matrix, at, S, matmuls }, count): Layers {
     const { dim } = plan, { taps: tapsCount } = convolutionNumbers(sizes), D = dim * 4;
     const { xb, xb2, mixed } = at;
     const wout = matrix("wout"), taps = floats("conv"), win = matrix("win");
     const convBytes = rowsBytes(sizes), [convRows] = kept(sizes, count).map((bytes) => room.alloc(bytes));
     return {
+      // T545: the GPU's worker takes these layers too (gpu/block.ts): a block goes on there from these rows, and gives
+      // its own back here
+      rows: { at: convRows, bytes: count * convBytes },
       clear() {
         room.F.fill(0, convRows / 4, (convRows + count * convBytes) / 4);
       },

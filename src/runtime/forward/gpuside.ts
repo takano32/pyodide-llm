@@ -16,7 +16,7 @@ import type { Direct } from "./alone.ts";
 import type { Convolution, Linear } from "../contracts/form.ts";
 import type { Force, FromGpu, Matrix, Remembered, ToGpu, Tokens, Vectors } from "../contracts/gpu/protocol.ts";
 import type { GpuChose } from "../contracts/messages.ts";
-import type { Activation, Tensor } from "../contracts/plan.ts";
+import type { Activation, LayerKind, Tensor } from "../contracts/plan.ts";
 
 // ---- (T368.4, the types) what createForward() (engine.ts) makes once and hands the two functions of this file
 // the model's facts
@@ -35,6 +35,10 @@ export type Shape = {
   // the block of a rotated basis (0: the model's own basis)
   rotated: number;
   sharedClassifier: boolean;
+  // T545: every layer's kind and its place among the layers of its kind; how many layers keep keys and values in the
+  // cache (every one, but an LFM2's convolution layers); and the state the GPU's worker goes on from (where the CPU keeps
+  // it, and its bytes: an LFM2's convolution layers' rows; null: none)
+  kinds: LayerKind[]; places: number[]; attending: number; state: { at: number; bytes: number } | null;
 };
 // A matrix as createForward()'s matrix() made it: kind, how it is multiplied: packed (the name of its line of jobs.ts's
 // PACKED, in groups of group) or float32; and for a layer the addresses of its values and, where it is packed, of its
@@ -50,6 +54,10 @@ const onGpuAs = (m: Held) => {
   const packing = packingOf(m.kind);
   return Boolean(packing?.gpu) && m.group === packing!.group;
 };
+// T545: the kind of the layers a matrix or a vector of the GPU's is of, where it is not every layer's (its places index
+// those layers alone: an LFM2's attending layers are some of its layers)
+const KIND_OF: Partial<Record<string, LayerKind>> = { wq: "attention", wk: "attention", wv: "attention", wo: "attention", bq: "attention", bk: "attention",
+  bv: "attention", qNorm: "attention", kNorm: "attention", win: "convolution", wout: "convolution", conv: "convolution" };
 // where the model's tensors are in the memory: the matrices (null: the model has none of that name), and the addresses
 // of the vectors and the tables (0: none)
 export type Placed = {
@@ -60,6 +68,8 @@ export type Placed = {
   // T261: the norms behind the attention and behind the FFN (0: the model has none); T261.4: RoPE's tables of the
   // local layers (0: none)
   attPost: number; ffnPost: number; localCos: number; localSin: number;
+  // T545: an LFM2's matrices in and out of its convolution layers, and their taps (null, 0: none)
+  win: Held | null; wout: Held | null; conv: number;
 };
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
@@ -74,6 +84,10 @@ export type CpuSide = {
   fromStaging(pos: number, count: number): void;
   stagingFinite(count: number): boolean;
   run(tokens: number[], pos0: number, needLogits: boolean): void;
+  // T545: whether a block at pos goes on from the state of the layers that keep one, and that state taken from what the
+  // GPU's worker left of a block (next: the position that comes after it)
+  follows(pos: number): boolean;
+  stateFromStaging(next: number): void;
   readonly H: Uint16Array; readonly capacity: number; readonly keys: number; readonly values: number;
 };
 // The GPU's worker as this side has it: a Worker (gpu.ts's), or what posts and listens as one
@@ -100,23 +114,27 @@ let gpuRequests = 0;
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, linear, convolution, stateful, rotated,
-    sharedClassifier } = shape;
-  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost } = weights;
+    sharedClassifier, kinds, attending, state } = shape;
+  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, win, wout,
+    conv } = weights;
+  // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: KIND_OF)
+  const countOf = (name: string) => (KIND_OF[name] ? kinds.filter((kind) => kind === KIND_OF[name]).length : layers);
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
   // (T153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T154:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T155: int6 weights and 64-bit memories too)
   // (a function, not a const: gpuUnfit runs before this line, AGENTS.md)
   function gpuMatrices() {
-    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).filter(([, m]) => m)) as Record<string, Held>;
+    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, win, wout }).filter(([, m]) => m)) as Record<string, Held>;
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers:
   // either of the first two lines keeps it on the CPU)
   function gpuUnfit() {
     if (linear) return REASONS.linear;  // T229
-    if (convolution) return REASONS.convolution;  // T260
-    // (T375.2: and a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
+    // (T260: an LFM2's convolution layers were kept off here until T545, which gave the GPU's worker a step for them and
+    // the state they go on from. T375.2: and a kind of layer that keeps a state which the engine comes to have, and the
+    // GPU's worker has no step for: on the CPU until the GPU has it too)
     if (stateful) return REASONS.stateful;
     if (rotated) return REASONS.rotated;  // T237
     // T375.5 (T484): the GPU's layers are of two pairs, RMSNorms with a gated FFN (a Llama's) and LayerNorms with
@@ -143,8 +161,11 @@ export function gpuFit({ shape, weights, device, direct }:
   }
   // the bytes of the layers on the GPU, and its own keys and values
   function layersOnGpu() {
-    return Object.values(gpuMatrices()).reduce((bytes, m) => bytes + layers * m.rows * m.n * gpuWeightBytes(m.kind), 0) +
-      Object.values(gpuVectors()).reduce((bytes, { size }) => bytes + layers * size * 4, 0) + 2 * layers * seqLen * kvDim * 2;
+    // (T545: each of the layers it is of, and the keys and values of the attending ones; and the state the convolution
+    // layers go on from, with its copy where a block's comes back)
+    return Object.entries(gpuMatrices()).reduce((bytes, [name, m]) => bytes + countOf(name) * m.rows * m.n * gpuWeightBytes(m.kind), 0) +
+      Object.entries(gpuVectors()).reduce((bytes, [name, { size }]) => bytes + countOf(name) * size * 4, 0) + 2 * attending * seqLen * kvDim * 2 +
+      2 * (state?.bytes ?? 0);
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.ts):
   // Llama's (RMSNorm, RoPE on whole heads, SwiGLU), and T226: with what the prompt's blocks take besides (T153: Qwen2's
@@ -157,6 +178,8 @@ export function gpuFit({ shape, weights, device, direct }:
   // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
+    // T545: an LFM2's prompts go to the GPU, its steps stay on the CPU (a token's fused layer has no convolution layer)
+    if (convolution) return REASONS.convolution;
     // T261.4: a token's fused layer has none of a Gemma 3's (a GELU in the gate, the norms behind, a window, the local
     // tables): its prompts go to the GPU, its steps stay on the CPU (T261.4.2)
     if ((gatedFfn && activation !== "silu") || attPost || ffnPost || local) return REASONS.pair;
@@ -184,9 +207,16 @@ export function gpuFit({ shape, weights, device, direct }:
       ...(bq ? { bq: { at: bq, size: qDim }, bk: { at: bk, size: kvDim }, bv: { at: bv, size: kvDim } } : {}),
       ...(qNorm ? { qNorm: { at: qNorm, size: headSize }, kNorm: { at: kNorm, size: headSize } } : {}),
       ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}),
-      ...(attPost ? { attentionPost: { at: attPost, size: dim } } : {}), ...(ffnPost ? { ffnPost: { at: ffnPost, size: dim } } : {}) };
+      ...(attPost ? { attentionPost: { at: attPost, size: dim } } : {}), ...(ffnPost ? { ffnPost: { at: ffnPost, size: dim } } : {}),
+      // T545: an LFM2's taps, taps rows of dim a convolution layer
+      ...(conv ? { conv: { at: conv, size: convolution!.taps * dim } } : {}) };
   }
-  return { matrices: gpuMatrices, vectors: gpuVectors, unfit: gpuUnfit, tokensUnfit };
+  // T545: the same, each with the kind of the layers it is of where it is not every layer's (KIND_OF), for the plan
+  function gpuVectorsOf(): Vectors {
+    return Object.fromEntries(Object.entries(gpuVectors()).map(([name, vector]) => [name, KIND_OF[name] ? { ...vector, of: KIND_OF[name] } : vector])) as Vectors;
+  }
+  return { matrices: gpuMatrices, vectors: gpuVectorsOf, unfit: gpuUnfit, tokensUnfit };
+
 }
 
 /** T349: the GPU's side of one engine (createForward(), which hands in what it reads of it): the GPU's worker started
@@ -208,10 +238,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier, activation, windows, locals } = shape;
+    unturned, sharedClassifier, activation, windows, locals, convolution, kinds, places, attending, state } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
-  const { memory, views, grow, embed, fromStaging, stagingFinite, run } = cpuSide;
+  const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
   const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now = () => performance.now() } = options;
   // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
@@ -284,8 +314,12 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     const turned = !turning ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
     // (six, T155: the values at a layer's address are int6, packed as llama2_numpy.pack6 packs them; ternary, T232:
     // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
-    const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] =>
-      [name, { rows: m.rows, n: m.n, six: m.kind === "int6", ternary: m.kind === "ternary", layers: Array.from({ length: layers }, (_, l) => m.layer(l).slice(0, 2) as [number, number]) }]));
+    // (T545: a matrix of some of the layers, an LFM2's attending or convolution layers', is theirs alone: of says whose)
+    const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
+      const of = KIND_OF[name], count = of ? kinds.filter((kind) => kind === of).length : layers;
+      return [name, { rows: m.rows, n: m.n, six: m.kind === "int6", ternary: m.kind === "ternary",
+        layers: Array.from({ length: count }, (_, l) => m.layer(l).slice(0, 2) as [number, number]), ...(of ? { of } : {}) }];
+    }));
     const listen = () => {
       clearTimeout(quietTimer);
       quietTimer = setTimeout(() => stopGpu(REASONS.quiet(GPU_QUIET_MS)), GPU_QUIET_MS);
@@ -359,7 +393,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // T154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
-      kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin, batch: GPU_BLOCK,
+      kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
+      kinds, places, convolution: convolution && state ? { taps: convolution.taps, rows: state.at } : null, batch: GPU_BLOCK,
       matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,
       cos: cosTable, sin: sinTable, staging, force: gpuForce, remembered: gpuRemembered, direct: Boolean(direct),
@@ -390,7 +425,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // and is faster for count tokens than the CPU on the threads in use now (promptTimes); and the first whole block of
   // a prompt where the GPU is to be timed again (recheck)
   function gpuTakes(count: number, pos0: number) {
-    if (!gpuOn || pos0 > gpuEnd || gpuSide === "cpu") return false;
+    // (T545: and where the state of the layers that keep one is that of the position before it, as the CPU's would be:
+    // else the CPU says it is not)
+    if (!gpuOn || pos0 > gpuEnd || gpuSide === "cpu" || !follows(pos0)) return false;
     if (always || gpuSide === "gpu") return true;
     const known = times.of(count, threads.count);
     if (!known) return false;  // the CPU is timed first, on this prompt
@@ -439,6 +476,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       return false;
     }
     if (!direct) fromStaging(pos0, count);
+    // (T545: the state the convolution layers left, which the next block or token goes on from)
+    stateFromStaging(pos0 + count);
     gpuEnd = pos0 + count;
     gpuTokens += count;
     times.gpu(count, now() - began);
@@ -448,7 +487,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // T210: the GPU's own keys and values of count positions from pos (a model on the GPU alone keeps none here), read
   // back GPU_BLOCK positions a request through staging: in float32, [layers][count][kvDim] each, as keysAndValues
   function gpuKeysAndValues(pos: number, count: number) {
-    const out = [0, 1].map(() => new Float32Array(layers * count * kvDim));
+    // (T545: the attending layers', by their places)
+    const out = [0, 1].map(() => new Float32Array(attending * count * kvDim));
     for (let at = 0; at < count; at += GPU_BLOCK) {
       const part = Math.min(GPU_BLOCK, count - at);
       if (!gpuOn) throw new Error(`The GPU stopped (${directLost ?? gpuReason}), and this model's keys and values were on it alone`);
@@ -460,9 +500,10 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       }
       views();
       for (let side = 0; side < 2; side++) {
-        for (let l = 0; l < layers; l++) {
+        for (let l = 0; l < attending; l++) {
           for (let t = 0; t < part; t++) {
-            const from = (staging + ((side * layers + l) * GPU_BLOCK + t) * kvDim * 2) / 2, to = (l * count + at + t) * kvDim;
+            const from = (staging + ((side * attending + l) * GPU_BLOCK + t) * kvDim * 2) / 2, to = (l * count + at + t) * kvDim;
+
             for (let i = 0; i < kvDim; i++) out[side][to + i] = halfToFloat(cpuSide.H[from + i]);
           }
         }

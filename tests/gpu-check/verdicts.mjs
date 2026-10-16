@@ -30,7 +30,7 @@ function quantizersWrong(outcome) {
 function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSeconds }) {
   let failed = false;
   const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
-  const [dim, , layers, heads, kvHeads] = ref.header, kvDim = (c.headDim || dim / heads) * kvHeads;
+  const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values };
   // T187: the worst row of every layer (the lines are held a layer at a time)
   const byLayer = (got, want = exact) => Array.from({ length: layers }, (_, l) => {

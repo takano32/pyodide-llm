@@ -391,6 +391,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count, facts.filter((fact) => fact.kind === kind))]));
   const steps = facts.map((fact) => parts[fact.kind].layer(fact.place, fact));
   const keeping = Object.values(parts).filter((part) => part.clear);
+  // T545: the state the GPU's worker goes on from, of the kind whose layers it has a step for (an LFM2's convolution
+  // layers: null where the model has none), and how many layers keep keys and values in the cache (the GPU's own and
+  // what comes back from it are theirs: every layer, but for the layers of such a kind)
+  const gpuState = Object.values(parts).find((part) => part.rows)?.rows ?? null;
+  const attending = had.filter(({ kind }) => kinds[kind].cached).reduce((sum, { count }) => sum + count, 0);
   const ffn = (plan.gated_ffn ? gatedFfn : plainFfn)(core);
   // T329.2: every layer's input of a table of its own (null: the model has none), its rows read by rows, or copied from
   // the checkpoint here
@@ -425,15 +430,22 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
     turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, activation: plan.activation,
-    local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null, stateful: keeping.length > 0,
-    rotated, sharedClassifier: plan.shared_classifier,
+    local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null,
+    // (T545: a kind that keeps a state the GPU's worker has no step for)
+    stateful: keeping.some((part) => !part.rows), rotated, sharedClassifier: plan.shared_classifier,
+    // T545: every layer's kind and its place among the layers of its kind, the layers that keep keys and values in the
+    // cache, and the state the GPU's worker goes on from
+    kinds: facts.map(({ kind }) => kind), places: facts.map(({ place }) => place), attending, state: gpuState,
     // T261.4: every layer's window and the layers the local tables turn (the GPU's plan has them), and what a Gemma 4's
     // layers have besides, which the GPU's have not
     windows: facts.map(({ window }) => window), locals: facts.flatMap(({ local }, l) => (local ? [l] : [])),
     extras: Boolean(plan.value_norm || softcap || layerScale || perLayered) ||
       facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place) };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
-    cosTable, sinTable, positions, channels, attPost, ffnPost, localCos: floats("local_cis_real"), localSin: floats("local_cis_imag") };
+    cosTable, sinTable, positions, channels, attPost, ffnPost, localCos: floats("local_cis_real"), localSin: floats("local_cis_imag"),
+    // (T545: an LFM2's matrices in and out and its taps, which its kind made: null and 0 where there are none. A Qwen3.5's
+    // linear-attention layers have a wout and taps of their own, which are no convolution layer's)
+    win: plan.convolution ? matrix("win") : null, wout: plan.convolution ? matrix("wout") : null, conv: plan.convolution ? floats("conv") : 0 };
   // T349: what the GPU would hold of this model, and why it would not take it
   const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory }, direct });
 
@@ -443,7 +455,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const gpuWhyNot = gpu ? fit.unfit() : null;
   // (T210: a model on the GPU alone has its keys and values read back there only for the tests, keysAndValues; and the
   // GPU embeds its rows itself)
-  const staging = gpu && !gpuWhyNot ? alloc(2 * layers * GPU_BLOCK * kvDim * 2) : 0;
+  // (T545: the attending layers' alone, and after them the state the GPU's worker leaves of a block, where it has one)
+  const stagingKeys = 2 * attending * GPU_BLOCK * kvDim * 2;
+  const staging = gpu && !gpuWhyNot ? alloc(stagingKeys + (gpuState?.bytes ?? 0)) : 0;
   const gpuRows = staging && !direct ? alloc(GPU_BLOCK * D) : 0;
   // T152: why a generation's steps stay on the CPU where the prompt's blocks may go to the GPU (else null), and where
   // the GPU's worker writes the ids of the steps it took ([sampled, id, ...])
@@ -515,9 +529,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   }
   // T147: the keys and values of count positions from pos that the GPU's worker put into staging (float16, [keys,
   // values][layer][GPU_BLOCK positions]), into the cache
+  // (T545: by the cache's places, the attending layers in order: every layer where every layer attends; and the
+  // staging place lays out as many)
   function fromStaging(pos: number, count: number) {
     const { capacity } = cache;
-    for (let l = 0; l < layers; l++) {
+    for (let l = 0; l < attending; l++) {
       // T261.4: a layer whose window a ring holds (T510.1): each position at its two places there, and the ring told of
       // the positions written, as the layer itself tells it (attention.ts: a run that would go back past what the ring
       // still holds is refused there)
@@ -525,7 +541,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       if (ring) {
         const twice = ring.size * ring.row;
         for (let t = 0; t < count; t++) {
-          const slot = ((pos + t) % ring.size) * ring.row, key = staging + (l * GPU_BLOCK + t) * kvDim * 2, value = staging + ((layers + l) * GPU_BLOCK + t) * kvDim * 2;
+          const slot = ((pos + t) % ring.size) * ring.row, key = staging + (l * GPU_BLOCK + t) * kvDim * 2, value = staging + ((attending + l) * GPU_BLOCK + t) * kvDim * 2;
           cache.putHalves(ring.keys + slot, ring.values + slot, key, value);
           cache.putHalves(ring.keys + slot + twice, ring.values + slot + twice, key, value);
         }
@@ -536,7 +552,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       const offset = capacity * cache.offset(cache.index(l)), layerKeys = cache.keys + offset, layerValues = cache.values + offset;
       for (let t = 0; t < count; t++) {
         cache.putHalves(layerKeys + (pos + t) * KV, layerValues + (pos + t) * KV,
-          staging + (l * GPU_BLOCK + t) * kvDim * 2, staging + ((layers + l) * GPU_BLOCK + t) * kvDim * 2);
+          staging + (l * GPU_BLOCK + t) * kvDim * 2, staging + ((attending + l) * GPU_BLOCK + t) * kvDim * 2);
       }
     }
   }
@@ -546,7 +562,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // steps and its logits (T195 sees nothing then). They are looked at by their bits (finite_f16: the exponent's five)
   // before anything of them is written: one pass of a kernel over what fromStaging reads, none in the attention's loops
   function stagingFinite(count: number) {
-    for (let part = 0; part < 2 * layers; part++) {
+    for (let part = 0; part < 2 * attending; part++) {
       if (!k.finite_f16(staging + part * GPU_BLOCK * kvDim * 2, count * kvDim)) return false;
     }
     return true;
@@ -622,6 +638,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // it is now (T349: getters, read each time: the cache moves as it grows) and grown, and what the CPU does for a block
   const cpuSide: CpuSide = {
     memory, views, grow: cache.grow, embed, fromStaging, stagingFinite, run,
+    // T545: whether a block at pos may go on from the state the layers that keep one have (follow()'s rule: position 0,
+    // or the one that comes next), and that state taken from what the GPU's worker left of a block after its keys and
+    // values, the tokens up to next there now
+    follows: (pos: number) => !keeping.length || pos === 0 || pos === stateAt,
+    stateFromStaging(next: number) {
+      if (gpuState) U.copyWithin(gpuState.at, staging + stagingKeys, staging + stagingKeys + gpuState.bytes);
+      if (keeping.length) stateAt = next;
+    },
     get H() { return H; },
     get capacity() { return cache.capacity; },
     get keys() { return cache.keys; },

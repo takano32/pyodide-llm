@@ -19,7 +19,7 @@ import { floats, worstRow } from "./measures.mjs";
 // forms it chose), then one a form of the matrices (T147), then the attention without subgroups.
 function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
   const ref = c.reference, n = ref.tokens.length - 1;
-  const [dim, , layers, heads, kvHeads] = ref.header, kvDim = (c.headDim || dim / heads) * kvHeads;
+  const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values }, half = { keys: ref.keys16, values: ref.values16 };
   const eight = { keys: ref.keys8, values: ref.values8 };
   const byLayer = (got, want) => Array.from({ length: layers }, (_, l) => {

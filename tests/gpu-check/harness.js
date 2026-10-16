@@ -272,17 +272,18 @@ try {
       engine.newGeneration();
       engine.forwardMany(tokens.slice(0, 16), 0);
       if (engine.gpuTokens !== 16) return { skipped: "the GPU took " + engine.gpuTokens + " tokens of a block of 16" };
-      const cases = [], row = P.kvHeads * P.headSize;
+      // (T545: the staging place holds the attending layers' keys and values alone)
+      const cases = [], row = P.kvHeads * P.headSize, attending = P.kinds.filter((kind) => kind === "attention").length;
       for (const [value, t, j] of [[NaN, 3, 5], [Infinity, 15, plan.dim - 1]]) {
         const cell = new Float32Array(memory.buffer, P.rows + (t * plan.dim + j) * 4, 1), kept = cell[0];
         cell[0] = value;
         const [answered, failed] = own(seen.worker, { type: "prompt", count: 16, pos: 0 });
         cell[0] = kept;
         let finite = 0;
-        for (let part = 0; part < 2 * P.layers; part++) {
+        for (let part = 0; part < 2 * attending; part++) {
           for (const half of new Uint16Array(memory.buffer, P.staging + (part * P.batch + t) * row * 2, row)) finite += (half & 0x7c00) !== 0x7c00;
         }
-        cases.push({ value: String(value), token: t, at: j, answered, failed, finite, of: 2 * P.layers * row });
+        cases.push({ value: String(value), token: t, at: j, answered, failed, finite, of: 2 * attending * row });
       }
       return { cases };
     };
