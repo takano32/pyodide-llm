@@ -68,7 +68,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
       steps.why === `${unbound(c)} would not start where this GPU binds a buffer` ||
       // (T.547.2.3: a model with matrices of Q4_K blocks, whose steps stay on the CPU until T.547.2.4 gives a token's
       // layer their reading: by the form, its first matrix of them in the plan's order)
-      steps.why === `${Object.keys(c.options.kinds ?? {}).find((name) => c.options.kinds[name] === "Q4_K")} is of llama.cpp's blocks (Q4_K), which a token's step does not read yet`;
+      steps.why === `${Object.entries(c.options?.kinds ?? {}).find(([, kind]) => kind === "Q4_K")?.[0]} is of llama.cpp's blocks (Q4_K), which a token's step does not read yet`;
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);
     return right;
   }

@@ -392,6 +392,10 @@ check("the steps left on the CPU, for a reason that is right or not", () => {
   const aligned = { ...CASE, reference: { ...REFERENCE, header: [64, 256, 2, 4, 2, VOCAB, 256] } };
   assert.equal(steps({ why: "wk would not start where this GPU binds a buffer" }, aligned).value, false);
   assert.match(steps({ why: "wv would not start where this GPU binds a buffer" }, stories).text, / — FAILED$/);
+  // (T.547.2.3) a model with matrices of Q4_K blocks: its first one named, right; of a model without them, or another
+  // matrix's name, not right
+  const blocks = { ...CASE, options: { kinds: { wq: "Q4_K", w1: "Q4_K" } } }, why = (name) => ({ why: `${name} is of llama.cpp's blocks (Q4_K), which a token's step does not read yet` });
+  assert.deepEqual([steps(why("wq"), blocks).value, steps(why("w1"), blocks).value, steps(why("wq")).value], [true, false, false]);
   // a classifier past what the adapter binds: right where the table (vocabulary × dim) is larger than that
   const table = VOCAB * HEADER[0];
   assert.equal(steps({ why: "the classifier is past a buffer of this GPU", binds: table - 1 }).value, true);
@@ -525,7 +529,8 @@ check("the harness is a module, and the runtime's files it names are in this tre
   assert.equal(text.split("/runtime/").length - 1, named.length, "a file of the runtime named in another way than by a string of its path");
   const engines = fs.readFileSync(new URL("./gpu-check/engines.mjs", import.meta.url), "utf8");
   assert.ok(engines.includes(`HARNESS.replaceAll('import("/runtime/', `), "engines.mjs no longer rewrites the harness's imports so");
-  for (const built of text.matchAll(/"\/built\/([^"]+)"/g)) assert.match(built[1], /^simdkernel_(relaxed_)?shared(64)?\.wasm$/);
+  // (T.547.2.3: and the kernels of llama.cpp's blocks, for a model with rows of them)
+  for (const built of text.matchAll(/"\/built\/([^"]+)"/g)) assert.match(built[1], /^(simd|block)kernel_(relaxed_)?shared(64)?\.wasm$/);
 });
 
 // ---- reference.mjs's Python: the two classes that make E16 and Q8, in the native Python (NumPy alone)
