@@ -3,7 +3,7 @@
 //
 // A reason is a value, not an error: nothing is thrown, the model runs on the CPU, and the reason is what the status
 // line says after "prompts on the CPU (", what the console says, and what /benchmark/ puts in a cell the GPU did not
-// run. Whoever finds the cause names it here (REASONS.rotated); nobody writes its words a second time, and nobody
+// run. Whoever finds the cause names it here (REASONS.notIsolated); nobody writes its words a second time, and nobody
 // tells two causes apart by their words (src/bench/path.js asks whether a reason IS one of these).
 //
 // Who reads this file: the GPU's side of the engine (gpuside.ts: what the model is, what stopped the GPU), alone.ts (a
@@ -24,7 +24,6 @@ export const REASONS = {
   linear: "linear-attention layers are not on the GPU yet",  // T229
   // (T375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
   stateful: "layers that keep a state are not on the GPU yet",
-  rotated: "a rotated basis is not on the GPU yet",  // T237
   // (T375.5, T484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)
   pair: "this pair of norms and FFN is not on the GPU yet",
   // (said wherever the memory is not a shared one: T371, ?threads=1 on an isolated page reads this too)

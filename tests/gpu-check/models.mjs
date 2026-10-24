@@ -72,6 +72,21 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 // which a second layer alone would not tell from 0 + size
 const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
+// T271.1: a rotated basis (T237) as the options carry one: its block, and the signs of each width a matrix reads as
+// llama2_numpy.sign_bits() writes them (a bit a value, 1 for -1, the first value the highest bit of the first byte, in
+// hexadecimal), here drawn from a seed (a simple generator: what matters is that they are not all one sign)
+const signBits = (width, seed) => {
+  let state = seed;
+  return Array.from({ length: width / 8 }, () => {
+    state = (state * 1103515245 + 12345) % 2147483648;
+    return ((state >> 8) & 255).toString(16).padStart(2, "0");
+  }).join("");
+};
+const rotatedBasis = (block, widths) => ({ block, signs: Object.fromEntries(widths.map((width, i) => [String(width), signBits(width, 7 + i)])) });
+// (TERNARY's widths: dim 128, the attention's output 8 heads of 32, the FFN's 384; blocks of 64, two to six a row)
+const ROTATED = rotatedBasis(64, [128, 256, 384]);
+// (the untied one's: dim 256, the attention's output 256, the FFN's 1152; blocks of 128, nine of the FFN's)
+const ROTATED_UNTIED = rotatedBasis(128, [256, 1152]);
 const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
@@ -151,7 +166,14 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // a row, as wo's 256), the classifier apart (vocab -320), eight outlier channels at 0, 37, ... 259 mod 256 (some in each
   // group), a hidden size of 1152 (w2's rows are 9 groups of 128, 36 of 32: a second pass of 4), and calm (T226's review),
   // so that the packed lines also show a layer's weights read from another layer
-  "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS] };
+  "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS],
+  // T271.1: the same in a rotated basis, as Ternary Bonsai 2 27B's file is (T237): every matrix reads R of its input, which
+  // the GPU turns as it quantizes it (ROTATE_QUANTIZE), and a token's embedded row is turned back (UNROTATE). No outlier
+  // channels (the CPU uses none in a rotated basis). The first: several blocks to a row; the second: a classifier apart,
+  // and an FFN of nine blocks
+  "synthetic-ternary-rotated": [{ ...TERNARY, rotated: ROTATED }, { ...TERNARY_OPTIONS, rotated: ROTATED }],
+  "synthetic-ternary-rotated-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, spread: 37, calm: true, rotated: ROTATED_UNTIED },
+    { ...TERNARY_OPTIONS, rotated: ROTATED_UNTIED }] };
 // which made-up models an engine runs for "made-up"
 // T241's review (the full suite's time: Chrome 38 and Edge 42 minutes in main's run 36902097346, Edge 23 before T241): a run
 // of a model on SwiftShader costs 5 to 7 s of its shaders' compiling before anything is checked, a made-up model has 14
@@ -162,7 +184,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // TASKS.md's T241 has the minutes (the review of 2026-10-01)
 // (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
-const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
+const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
+  "synthetic-ternary-rotated-untied"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };

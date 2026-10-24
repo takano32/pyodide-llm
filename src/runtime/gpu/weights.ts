@@ -51,6 +51,8 @@ type Weights = {
   angleTable: GPUBuffer | null;
   // T261.4.2: a Gemma 3's local layers' table of RoPE, laid out as angleTable (null: none)
   localAngleTable: GPUBuffer | null;
+  // T271.1: a rotated basis's signs, by the width a matrix reads (null: the model's own basis)
+  signs: Record<number, GPUBuffer> | null;
 };
 // what tablesOf() reads of a plan: the tables of a model on the GPU alone as it opens, else a token's
 type Tabled = { tables?: Tables; tokens: Tables | null };
@@ -92,7 +94,7 @@ async function uploadLayers(m: Model, alone = false) {
   // that wait for the rest of it, routed())
   m.weights = { matrices, together: null, unjoined: null, joined: [], widen: null, routes: alone ? [] : null, partial: alone ? new Map() : null,
     vectors: null, tables: null, finalNorm: null, finalBias: null, positions: null, angleTable: null,
-    localAngleTable: null };
+    localAngleTable: null, signs: null };
   const together = plan.tokens ? tokensLayout(m) : null;
   m.weights.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T156)
@@ -157,6 +159,15 @@ async function uploadRest(m: Model) {
     m.weights.vectors[name] = buffer(m, vectorBytes, STORAGE | COPY_DST);
     copyIn(m, m.weights.vectors[name], at, vectorBytes);
     bytes += vectorBytes;
+  }
+  // T271.1: a rotated basis's signs of each width, from the shared memory (Python's derived tables)
+  if (plan.rotated) {
+    m.weights.signs = {};
+    for (const { width, at } of plan.rotated.signs) {
+      m.weights.signs[width] = buffer(m, width * 4, STORAGE | COPY_DST);
+      copyIn(m, m.weights.signs[width], at, width * 4);
+      bytes += width * 4;
+    }
   }
   return bytes;
 }

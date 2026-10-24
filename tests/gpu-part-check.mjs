@@ -209,7 +209,8 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([type, memory], ["start", beside.memory]);
   assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
     "layerNorm", "layers", "linear", "local", "localCos", "localSin", "matrices",
-    "parallel", "places", "remembered", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
+    "parallel", "places", "remembered", "rotated", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
+  assert.equal(plan.rotated, null, "T271.1: no rotated basis in the model's own basis");
   assert.deepEqual([plan.dim, plan.hidden, plan.layers, plan.heads, plan.kvHeads, plan.headSize, plan.turned, plan.seqLen, plan.kvStart, plan.eps, plan.batch, plan.direct, plan.rows, plan.staging],
     [8, 24, 2, 2, 1, 4, 4, 512, 256, 1e-5, GPU_BLOCK, false, ROWS, STAGING]);
   assert.deepEqual(plan.words, { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED });
@@ -681,7 +682,6 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     // (T545: an LFM2's convolution layers are the GPU's for its prompts, not its steps: below)
     // (T375.2: a kind of layer that keeps a state and is neither of the two: not on the GPU, without a line for it)
     [{ stateful: true }, {}, {}, /^layers that keep a state are not on the GPU yet$/],
-    [{ rotated: 1024 }, {}, {}, /^a rotated basis is not on the GPU yet$/],
     // (T375.5, T484: the GPU's layers are RMSNorms with a gated FFN or LayerNorms with GPT-2's; another pair of the two
     // facts, which the CPU's engine runs, is not handed to the GPU's worker to find out)
     [{ gatedFfn: false }, { w3: null }, {}, /^this pair of norms and FFN is not on the GPU yet$/],

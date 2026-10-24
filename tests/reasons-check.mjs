@@ -27,7 +27,6 @@ const { gpuSkipped } = await import("../src/bench.js");
 const SAID = [
   ["linear", "linear-attention layers are not on the GPU yet"],
   ["stateful", "layers that keep a state are not on the GPU yet"],
-  ["rotated", "a rotated basis is not on the GPU yet"],
   ["pair", "this pair of norms and FFN is not on the GPU yet"],
   ["notIsolated", "the page is not cross-origin isolated"],
   ["heads", "heads of a size that is no multiple of 4 are not on the GPU"],
@@ -143,8 +142,8 @@ console.log(`reasons-check: the table's ${Object.keys(REASONS).length} reasons, 
 }
 
 // ---- /benchmark/'s words for a cell the GPU did not run: by which reason it is
-assert.deepEqual([REASONS.noWebGpu, REASONS.noAdapter, REASONS.fallback, REASONS.rotated, "", undefined].map((why) => gpuSkipped(why)),
-  ["not here", "not here", "not on a fallback adapter", REASONS.rotated, "not measured", "not measured"]);
+assert.deepEqual([REASONS.noWebGpu, REASONS.noAdapter, REASONS.fallback, REASONS.heads, "", undefined].map((why) => gpuSkipped(why)),
+  ["not here", "not here", "not on a fallback adapter", REASONS.heads, "not measured", "not measured"]);
 // (a reason that only has such words in it is said as it is: it is another cause)
 for (const why of [`the layers did not go up to the GPU (${REASONS.noAdapter})`, "a fallback adapter", `${REASONS.fallback}, as it said`]) assert.equal(gpuSkipped(why), why);
 console.log("reasons-check: a cell the GPU did not run is said by which reason it is");

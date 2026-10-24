@@ -14,7 +14,7 @@
 //
 // The models: a Llama; a Qwen3 (biases of q, k and v, norms of the heads); a Gemma 3 (GEGLU, the norms behind, a
 // window and a local layer); an LFM2 (convolution layers around an attending one); a Qwen3.5 (two linear-attention
-// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate). Each
+// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T271.1). Each
 // with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T156, T271.4). A step's keys and
 // values going up from the CPU's cache (keysIn) besides, float16 and float32, a ring where a layer has a window.
 import crypto from "node:crypto";
@@ -55,11 +55,13 @@ function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }
     rows: take(BATCH * DIM * 4), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4),
     tokens: { classifier: { rows: VOCAB, n: DIM, six: false, ternary: false, at: [take(VOCAB * DIM), take((VOCAB * DIM / GROUP) * 4)] }, embedding: null, final: take(DIM * 4),
       finalBias: 0, positions: 0, outliers: false, channels: [], ids: take(4096), most: MOST },
-    staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, ...more,
+    staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, rotated: null, ...more,
   };
   if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (HEAD / 2) * 4), localSin: take(CONTEXT * (HEAD / 2) * 4) });
   if (positions) plan.tokens.positions = take(CONTEXT * DIM * 4);
   if (plan.layerNorm) plan.tokens.finalBias = take(DIM * 4);
+  // (T271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
+  if (plan.rotated === true) plan.rotated = { block: 32, signs: [...new Set([DIM, Q_DIM, HIDDEN])].map((width) => ({ width, at: take(width * 4) })) };
   // (T210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
   if (direct) Object.assign(plan, { direct: true, tables: { classifier: plan.tokens.classifier, embedding: null } });
   // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer)
@@ -88,9 +90,11 @@ const MODELS = {
     more: { linear: LINEAR } },
   gpt2: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: 0, activation: "gelu", positions: true } },
   neox: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: HEAD / 2, parallel: true, activation: "gelu" } },
+  // T271.1: a Llama in a rotated basis (every matrix's input turned as it is quantized, a token's embedded row turned back)
+  rotated: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: norms, more: { rotated: true } },
 };
 // (T156, T271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
-const ALONE = ["llama", "qwen35"];
+const ALONE = ["llama", "qwen35", "rotated"];
 
 const hash = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const random = (bytes) => Uint8Array.from({ length: bytes }, (_, i) => (i * 131 + 7 * (i >> 8) + 89) & 255);
@@ -100,7 +104,8 @@ const record = (name, lines) => {
   trace.push(`== ${name}`, ...lines);
 };
 
-const runs = Object.entries(MODELS).flatMap(([model, made]) => [[model, made, true, false], [model, made, false, false],
+// (a rotated basis takes the packed forms alone: gpu/forms.ts's candidates)
+const runs = Object.entries(MODELS).flatMap(([model, made]) => [[model, made, true, false], ...(made.more?.rotated ? [] : [[model, made, false, false]]),
   ...(ALONE.includes(model) ? [[model, made, true, true]] : [])]);
 for (const [model, made, packed, direct] of runs) {
   {

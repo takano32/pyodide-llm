@@ -135,6 +135,9 @@ export type Started = KindNumbers & {
   // and the places a block's come back to, are the attending layers' alone
   kinds: LayerKind[];
   places: number[];
+  // T271.1: a rotated basis (T237): its block, and where the signs of each width a matrix reads are (float32, Python's,
+  // each times 1 / sqrt(block)); null: the model's own basis
+  rotated: { block: number; signs: { width: number; at: number }[] } | null;
   // the most tokens of a block
   batch: number;
   matrices: Record<string, Matrix>;

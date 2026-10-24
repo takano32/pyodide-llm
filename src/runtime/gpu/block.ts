@@ -68,6 +68,12 @@ type Block = {
   quantizeAttention: Quantizing;
   quantizeFfn: Quantizing;
   quantizeGate: Quantizing;
+  // T271.1: what quantizes n values of a block's buffer for the packed matrices (the kinds' inputs too: QUANTIZE, or in a
+  // rotated basis ROTATE_QUANTIZE), and the rotated basis's two shaders (null: the model's own basis), and the turning back
+  // of the rows a model on the GPU alone embeds here (null: none)
+  quantizing(from: GPUBuffer, n: number): Quantizing;
+  rotate: { quantize: GPUComputePipeline; unrotate: GPUComputePipeline } | null;
+  unrotateRows: Quantizing | null;
   embedRows: GPUComputePipeline | null;
   ids: GPUBuffer | null;
   embedGroups: GPUBindGroup[] | null;
@@ -116,6 +122,9 @@ async function prepare(m: Model) {
   // (T261.4: and those of the local layers' tables, where the model has them)
   const anglesLocal = plan.localCos ? buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST) : null;
   const step = buffer(m, 16, UNIFORM | COPY_DST);
+  // T271.1: a rotated basis's shaders
+  const rotate: Block["rotate"] = plan.rotated ? await within(Promise.all([ENGINE.ROTATE_QUANTIZE, ENGINE.UNROTATE].map((code) => pipelineOf(m, code))), "the rotated basis's shaders")
+    .then(([turn, back]) => ({ quantize: turn, unrotate: back })) : null;
   // T568.2: what each kind of the model's layers makes of a block (T545: an LFM2's convolution layers'; T271.2: a
   // Qwen3.5's linear-attention layers', and the gate of its attending layers' output)
   const kinds: Block["kinds"] = {};
@@ -137,8 +146,11 @@ async function prepare(m: Model) {
   const activationGroup = bind(m, activation, gated ? [gate, up!, hidden, step] : [gate, hidden, step]);
   // QUANTIZE of the inputs the matrices read: xb (the norm's, dim wide; the attention's, heads × headSize wide, which
   // is not dim where the heads are of another size, T153) and gate (SwiGLU's)
-  const quantizing = (from: GPUBuffer, n: number): Quantizing => ({ group: bind(m, quantize, [from, xq, xs, uniform(m, new Uint32Array([n, n, 0, 0])), step]),
-    x: Math.ceil(n / GROUP / 64) });
+  // (T271.1: in a rotated basis R of them, a workgroup a block of a token: the signs of their width)
+  const quantizing = (from: GPUBuffer, n: number): Quantizing => (rotate
+    ? { pipeline: rotate.quantize, group: bind(m, rotate.quantize, [from, xq, xs, m.weights.signs![n], uniform(m, new Uint32Array([n, n, plan.rotated!.block, 0]))]),
+      x: n / plan.rotated!.block }
+    : { pipeline: quantize, group: bind(m, quantize, [from, xq, xs, uniform(m, new Uint32Array([n, n, 0, 0])), step]), x: Math.ceil(n / GROUP / 64) });
   const quantizeXb = quantizing(xb, plan.dim);
   const quantizeAttention = quantizing(xb, qDim);
   const quantizeFfn = plan.parallel ? quantizing(ffnInput, plan.dim) : quantizeXb;
@@ -154,8 +166,12 @@ async function prepare(m: Model) {
     embedGroups = m.weights.tables!.embedding.map((piece) => bind(m, embedRows!,
       [piece.values, piece.scales, ids!, x, uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))]));
   }
+  // (T271.1: the embedding of a rotated basis holds R^-1 of its rows: turned back here, where the GPU embeds them)
+  const unrotateRows = plan.direct && rotate ? { pipeline: rotate.unrotate, group: bind(m, rotate.unrotate, [x, m.weights.signs![plan.dim],
+    uniform(m, new Uint32Array([plan.dim, plan.dim, plan.rotated!.block, 0]))]), x: plan.dim / plan.rotated!.block } : null;
   m.block = { norm, headNorm, add, rope, activation, quantize, normAdd: normAdd ?? null, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, anglesLocal, step,
-    readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, embedRows, ids, embedGroups,
+    readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, quantizing, rotate, unrotateRows,
+    embedRows, ids, embedGroups,
     // (bindLayers() and grow())
     layers: null, cache: null, kinds, states, stateBytes };
 }
@@ -310,8 +326,8 @@ function stateIn(m: Model, encoder: GPUCommandEncoder, pos: number, fresh: boole
 async function block(m: Model, count: number, pos: number, wanted: () => boolean, timing = false, tokens?: number[], fresh = false) {
   const { device, plan } = m, half = plan.headSize / 2;
   // (T378.4: this module's record taken apart once: the layers' loop below reads locals. The cache after grow())
-  const { norm, add, activation, quantize, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
-    quantizeFfn, quantizeGate, embedRows, embedGroups, layers } = m.block;
+  const { norm, add, activation, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
+    quantizeFfn, quantizeGate, unrotateRows, embedRows, embedGroups, layers } = m.block;
   // the rows forward.ts embedded (dense), and the angles of their positions (the tables forward.ts has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address: number, n: number) => new Float32Array(m.memory.buffer, address, n);
@@ -345,10 +361,11 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   const pass = encoder.beginComputePass();
   const multiplied = (pieces: Product) => pieces.forEach((piece) => multiply(m, pass, form, piece.group, piece.rows, count));
   // a packed form reads its input quantized: once for the matrices that read the same one
-  const quantized = (input: Quantizing) => form.packed && dispatch(pass, quantize, input.group, input.x, count);
+  const quantized = (input: Quantizing) => form.packed && dispatch(pass, input.pipeline, input.group, input.x, count);
   // a bias added to a matrix's output (T153: Qwen2's q, k and v; T154: GPT-2's and GPT-NeoX's every matrix's)
   const biased = (bias: Added | undefined) => bias && dispatch(pass, add, bias.group, bias.x, count);
   embedGroups?.forEach((group) => dispatch(pass, embedRows!, group, 1, count));
+  if (unrotateRows) dispatch(pass, unrotateRows.pipeline, unrotateRows.group, unrotateRows.x, count);
   for (let l = 0; l < plan.layers; l++) {
     const layer = layers![l];
     dispatch(pass, norm, layer.attentionNorm, 1, count);

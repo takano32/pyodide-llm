@@ -34,7 +34,8 @@ type Timed = [string, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 
 // the tiled shaders of T146 this device can make (shaders.ts's promptForms)
-const candidates = ({ device, ternary }: Model) => devicePromptForms(device, ternary);
+// (T271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone)
+const candidates = ({ device, ternary, plan }: Model) => devicePromptForms(device, ternary).filter((form) => form.packed || !plan.rotated);
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
 // shader-f16 and its subgroups where there are (and subgroup_id), else the same without them; each checked first
@@ -274,7 +275,7 @@ async function checkForm(m: Model, form: Tiled) {
 async function timeForms(m: Model, forms: Tiled[]) {
   const { device, plan } = m, owned: GPUBuffer[] = [], layer: { rows: number; group: GPUBindGroup; quantize: Quantizing | null | undefined }[][] = [];
   // (the block's own buffers and quantizations, block.ts's: read here, written by a pass)
-  const { step, x, xb, q, k, v, gate, up, ffnInput, quantize: quantizer, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate } = m.block;
+  const { step, x, xb, q, k, v, gate, up, ffnInput, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate } = m.block;
   try {
     device.queue.writeBuffer(step, 0, new Uint32Array([plan.batch, 0, 0, 0]));
     const products = ([["wq", xb, q, false, quantizeXb], ["wk", xb, k], ["wv", xb, v], ["wo", xb, x, true, quantizeAttention],
@@ -289,7 +290,7 @@ async function timeForms(m: Model, forms: Tiled[]) {
       const form = forms[i], encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let p = 0; p < passes; p++) {
         for (const { group, rows, quantize } of layer[i]) {
-          if (form.packed && quantize) dispatch(pass, quantizer, quantize.group, quantize.x, plan.batch);
+          if (form.packed && quantize) dispatch(pass, quantize.pipeline, quantize.group, quantize.x, plan.batch);
           multiply(m, pass, form, group, rows, plan.batch);
         }
       }

@@ -197,7 +197,7 @@ const KINDS = { attention: plain, echo };
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35" }, narrow), null, "(the same without its linear-attention layers)");
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), STATE);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "a".repeat(16), taps: 3 } }, adapter), null, "(an LFM2 without a convolution layer has a Llama's facts)");
-  assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), "a rotated basis is not on the GPU yet");
+  assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), null, "(T271.1: a rotated basis is the GPU's, its packed forms')");
   // (T363.5's review: a model of llama.cpp's blocks says the dtype int8, so this line of gpuOnlyUnfit() alone keeps it
   // off the GPU alone; a form that names no kinds is as before)
   assert.notEqual(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["IQ2_XXS", "int8"] } }, adapter), null, "rows as blocks are not for the GPU alone");

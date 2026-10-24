@@ -46,6 +46,8 @@ type Uniforms = {
   take?: GPUBuffer;
   columns?: GPUBuffer[];
   hidden?: GPUBuffer;
+  // T271.1: a rotated basis's Shape of each width (ROTATE_QUANTIZE's and UNROTATE's: n, xStride, block)
+  rotate?: Record<number, GPUBuffer>;
 };
 // What tokenBuffers() makes, the first part of the model's record of a token (tokenforms.ts's m.tokens): the
 // pipelines every form shares, the buffers, the uniforms, and what only some models have (null without)
@@ -126,8 +128,10 @@ function tokenCandidates(m: Model) {
   const packed = Boolean(features?.has("packed_4x8_integer_dot_product"));
   // (T226: NORM_QUANTIZE is RMSNorm's: a model with LayerNorm has its norms apart, and the form with them fused is
   // the same as the one with them apart)
+  // (T271.1: a rotated basis turns every matrix's input as it quantizes it, ROTATE_QUANTIZE: the forms of DP4A with the
+  // norms apart alone, where no norm is on a matrix's read)
   return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === m.ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) &&
-    (!m.plan.layerNorm || !form.dp4a || form.normApart));
+    (!m.plan.layerNorm || !form.dp4a || form.normApart) && (!m.plan.rotated || (form.dp4a && form.normApart)));
 }
 // T226: what of the model's form shapes a token's dispatches: apart, q, k and v are written as they are for what comes
 // before RoPE (the biases, the norms of the heads); gated, the FFN has a gate (SwiGLU on the write of gate and up; else
@@ -234,6 +238,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     g.u.columns = m.weights.tables!.classifier.map((piece) => uniform(m, outliersOf(channels, piece.rows, plan.dim)));
   }
   g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
+  if (plan.rotated) g.u.rotate = Object.fromEntries(plan.rotated.signs.map(({ width }) => [width, uniform(m, new Uint32Array([width, width, plan.rotated!.block, 0]))]));
   return g as TokenBuffers;
 }
 
@@ -251,7 +256,10 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   const rows = form.dp4a ? ORT_DP4A_MATVEC_ROWS : MUL_MAT_VEC_ROWS;
   const matrix = (pipeline: GPUComputePipeline, [w, s]: [Bound, Bound], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass =>
     [pipeline, bindAt(m, pipeline, [[0, w], [1, s], ...input, [3, params], ...output]), ...spread(m, count, rows)];
-  const quantize = (x: GPUBuffer, params: GPUBuffer, n: number): Pass => [b.quantize, bindAt(m, b.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, params], [4, g.step]]), Math.ceil(n / GROUP / 64), 1];
+  // (T271.1: in a rotated basis R of the vector, quantized: ROTATE_QUANTIZE with the signs of its width)
+  const quantize = (x: GPUBuffer, params: GPUBuffer, n: number): Pass => (b.rotate
+    ? [b.rotate.quantize, bindAt(m, b.rotate.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, W.signs![n]], [4, g.u.rotate![n]]]), n / plan.rotated!.block, 1]
+    : [b.quantize, bindAt(m, b.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, params], [4, g.step]]), Math.ceil(n / GROUP / 64), 1]);
   // What a matrix reads: { norm, quantize, input }, the dispatches before it (the stream's norm where it is one of its
   // own, the quantizing of DP4A's vector: T175) and its bindings of the vector.
   // The stream normed, for a matrix of floats (T150's; T226: the classifier of a model with outlier channels on DP4A
@@ -279,6 +287,8 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
     [g.embed, bindAt(m, g.embed, [[0, piece.values], [1, piece.scales], [2, g.state], [3, g.h], [4, g.u.embed[i]]]), 1, 1]);
   // T226: GPT-2's learned positions: the row of the Step's position added to the embedding's (the CPU's embed())
   if (embed && W.positions) list.push(added(g.h, W.positions, g.u.positions!, plan.dim));
+  // T271.1: the embedding of a rotated basis holds R^-1 of its rows: turned back (UNROTATE)
+  if (embed && b.rotate) list.push([b.rotate.unrotate, bindAt(m, b.rotate.unrotate, [[0, g.h], [1, W.signs![plan.dim]], [2, g.u.rotate![plan.dim]]]), plan.dim / plan.rotated!.block, 1]);
   const gated = Boolean(W.matrices.w3);
   for (let l = from; l < to; l++) {
     // (T545.2: a matrix of the layers of a kind, an LFM2's, at the layer's place among them: an attending layer's keys

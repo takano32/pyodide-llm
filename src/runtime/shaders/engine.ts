@@ -24,6 +24,7 @@ import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
 import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, FUSED_INPUTS, FUSED_OUTPUTS } from "./fused.ts";
 import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.ts";
 import { SAMPLE } from "./sample.ts";
+import { ROTATE_QUANTIZE, UNROTATE } from "./rotate.ts";
 
 // rows of texts, each under its own name ({ RMSNORM, ADD }: the names are the object's keys, in its order)
 const texts = <Name extends string>(named: Record<Name, string>) =>
@@ -52,7 +53,9 @@ export const ENGINE_SHADERS = [
 /** T232: and those of a model of ternary weights alone, after them (its tiles: devicePromptForms' ternary) */
 export const TERNARY_SHADERS = [
   ...FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights: "ternary" })),
-  ...texts({ EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS })];
+  ...texts({ EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS }),
+  // T271.1: a rotated basis's (T237: Ternary Bonsai 2 27B's, whose weights are ternary)
+  ...texts({ ROTATE_QUANTIZE, UNROTATE })];
 /** the shaders by name, for the worker: a text, or a maker to call with a model's own numbers */
 export const ENGINE = Object.fromEntries([...ENGINE_SHADERS, ...TERNARY_SHADERS].map(({ name, shader }) => [name, shader])) as
   Named<(typeof ENGINE_SHADERS)[number] | (typeof TERNARY_SHADERS)[number]>;

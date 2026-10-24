@@ -21,7 +21,8 @@ import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 // a matrix's product (a bind group and its rows for each piece, forms.ts's productGroups()), an input's quantization
 // (QUANTIZE's bind group and workgroups), a bias added (ADD's)
 export type Product = { rows: number; group: GPUBindGroup }[];
-export type Quantizing = { group: GPUBindGroup; x: number };
+// (T271.1: its own pipeline: QUANTIZE, or ROTATE_QUANTIZE in a rotated basis, which block.ts's quantizing() picks)
+export type Quantizing = { pipeline: GPUComputePipeline; group: GPUBindGroup; x: number };
 export type Added = { group: GPUBindGroup; x: number };
 // What a kind's layer l is handed as block.ts binds it: its place among the layers of its kind, and
 //   product()  a matrix of the model (name) of the layer, from one buffer of a block's into another (add: onto it)

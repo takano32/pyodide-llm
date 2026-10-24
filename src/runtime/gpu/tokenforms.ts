@@ -12,6 +12,7 @@ import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.ts";
 import { sixValues } from "../shaders/steps.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
+import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
 import type { Model, Thrown } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import type { Chosen } from "./tokenattention.ts";
@@ -231,10 +232,15 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const [bytes, scales] = back.tableRows![name].get(r)!;
     return [valuesOf(tableSpec(name), bytes), scales];
   } : inMemory(tableSpec(name), tableSpec(name).at));
-  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first).
-  // The vector's groups are of 32; a row's scales cover as many of them each as they are fewer (one; T232, ternary: four)
-  const product = (n: number, rowOf: (r: number) => Row, x: ArrayLike<number>, rows: number[], packed = form.dp4a) => {
-    const q = packed ? quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / GROUP;
+  // T271.1: a rotated basis's signs of a width (float32, Python's, each times 1 / sqrt(block)), and R x, as the CPU's
+  // rotate (the matrices read it)
+  const signsOf = (n: number) => new Float32Array(m.memory.buffer, plan.rotated!.signs.find(({ width }) => width === n)!.at, n);
+  const turned = (x: ArrayLike<number>, n: number) => (plan.rotated ? rotateLikeCpu(x, signsOf(n), plan.rotated.block) : x);
+  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first; T271.1,
+  // in a rotated basis R x). The vector's groups are of 32; a row's scales cover as many of them each as they are fewer
+  // (one; T232, ternary: four)
+  const product = (n: number, rowOf: (r: number) => Row, given: ArrayLike<number>, rows: number[], packed = form.dp4a) => {
+    const x = turned(given, n), q = packed ? quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / GROUP;
     return Float64Array.from(rows, (r) => {
       const [w, s] = rowOf(r), each = perRow / s.length;
       let sum = 0;
@@ -304,6 +310,8 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     // (T226: with GPT-2's learned position of pos, as the CPU's embed() adds it)
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[Math.floor((i * eScales.length) / eRow.length)]);
     if (plan.tokens!.positions) floats(plan.tokens!.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
+    // (T271.1: the embedding of a rotated basis holds R^-1 of its rows, turned back as the CPU's embed() does)
+    if (plan.rotated) x0.set(unrotateLikeCpu(x0, signsOf(dim), plan.rotated.block));
     const xn = norm(x0, vectorOf("attention")!, vectorOf("attentionBias"));
     // (T261.4.2: a Gemma 3's norm behind the attention and behind the FFN, of what joins the stream)
     const behind = (x: Float64Array, name: keyof Vectors) => (vectorOf(name) ? rms(x, vectorOf(name)!) : x);

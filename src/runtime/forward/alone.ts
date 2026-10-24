@@ -217,7 +217,6 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // (T382: the architecture's line as it is, so that no fact of it is handed on by hand, and the one the sizes say)
   const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => kind !== ATTENTION && !LAYER_KINDS[kind as LayerKind].gpu?.alone) });
   if (facts) return facts;
-  if (form.rotated) return REASONS.rotated;  // T237
   // T363.5: nor a model whose rows have kinds of their own (llama.cpp's blocks are the CPU's kernels' alone: gpu.ts
   // takes one packing for a file)
   if (form.kinds && Object.keys(form.kinds).length) return REASONS.aloneDtype("rows of kinds of their own: such");

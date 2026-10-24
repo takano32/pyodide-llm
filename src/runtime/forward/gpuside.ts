@@ -73,6 +73,8 @@ export type Placed = {
   // T261: the norms behind the attention and behind the FFN (0: the model has none); T261.4: RoPE's tables of the
   // local layers (0: none)
   attPost: number; ffnPost: number; localCos: number; localSin: number;
+  // T271.1: the signs of a rotated basis by the width a matrix reads (their addresses: null in the model's own basis)
+  signs: Record<number, number> | null;
   // T568.4: the matrices and vectors the kinds of its layers have of their own on the GPU, by the GPU's names (forward/kinds.ts's
   // gpu: T545 an LFM2's matrices in and out of its convolution layers and their taps; T271.2 a Qwen3.5's linear-attention
   // layers' matrices and their gates' vectors, and the gate of its full-attention layers' output), where the model has them
@@ -123,7 +125,7 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful,
     sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own } = weights;
   // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
@@ -138,8 +140,8 @@ export function gpuFit({ shape, weights, device, direct }:
     return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, ...own.matrices }).filter(([, m]) => m)) as Record<string, Held>;
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
-  // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers:
-  // either of the first two lines keeps it on the CPU)
+  // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers: the
+  // GPU's worker has both since T271.2 and T271.1, a rotated basis the packed forms' alone, which it chooses among)
   function gpuUnfit() {
     // (T568.4: why the GPU would not take the layers of a kind, the kind's to say: T229, a Qwen3.5's linear-attention
     // layers were kept off here until T271.2, and those of heads wider than the delta rule takes still are)
@@ -149,7 +151,6 @@ export function gpuFit({ shape, weights, device, direct }:
     // the state they go on from. T375.2: and a kind of layer that keeps a state which the engine comes to have, and the
     // GPU's worker has no step for: on the CPU until the GPU has it too)
     if (stateful) return REASONS.stateful;
-    if (rotated) return REASONS.rotated;  // T237
     // T375.5 (T484): the GPU's layers are of two pairs, RMSNorms with a gated FFN (a Llama's) and LayerNorms with
     // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
     // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there
@@ -252,8 +253,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes } = shape;
-  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin } = weights;
+    unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated } = shape;
+  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
   const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateToStaging, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
@@ -424,6 +425,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
       kinds, places, ...numbers,
+      // (T271.1: a rotated basis, which the GPU's worker turns every matrix's input into and an embedded row back from)
+      rotated: rotated ? { block: rotated, signs: Object.entries(signs!).map(([width, at]) => ({ width: Number(width), at })) } : null,
       batch: GPU_BLOCK,
       matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,

@@ -6,7 +6,6 @@
 // CPU keeps them (forward/linear.ts), and the check of a first layer of this kind.
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, within, buffer, uniform, normShape as headNorm, pipelineOf, bind, dispatch } from "./device.ts";
-import { GROUP } from "../shaders/common.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Quantizing } from "./kinds.ts";
 import type { Pass } from "./device.ts";
@@ -34,7 +33,7 @@ export const linear: GpuKind = {
       layer({ place, product, out: joins }) {
         const b = m.block, V = m.weights.vectors!;
         // (z quantized for the matrix out: one for every layer, as the block's own inputs' are)
-        quantizeZ ??= { group: bind(m, b.quantize, [z, b.xq, b.xs, uniform(m, new Uint32Array([read, read, 0, 0])), b.step]), x: Math.ceil(read / GROUP / 64) };
+        quantizeZ ??= b.quantizing(z, read);
         const conv = uniform(m, new Uint32Array([mixed, taps, place * taps * mixed, keys, B, 0, 0, 0]));
         const into = product("wqkv", b.xb, mixedOut), zOf = product("wz", b.xb, z);
         const gated = bind(m, gates, [b.xb, V.wb, V.wa, V.dtBias, V.decay, work, uniform(m, new Uint32Array([plan.dim, valueHeads, place * valueHeads, 0])), b.step]);
