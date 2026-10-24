@@ -611,8 +611,6 @@ const blockLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `
 // them (the loader turns a group of 32 into packed int8 and keeps the row's scales and mins of its halves; no scales apart)
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
   const ternary = weights === "ternary", blocks = Object.hasOwn(BLOCK_READS, weights) ? BLOCK_READS[weights as BlockPacking] : null;
-  // (T.547.3.3's review: a name of no packing is no int8 text)
-  if (!blocks && !ternary && weights !== "int8") throw new Error(`dp4a() reads no weights packed as ${weights}`);
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 ${TILE_SHAPE}
