@@ -13,7 +13,7 @@ import { attention } from "./attention.ts";
 import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
 import type { Bound, Model, Pass } from "./device.ts";
-import type { Entry, Feed, TokenForm } from "./tokens.ts";
+import type { Entry, Feed, Held, TokenForm } from "./tokens.ts";
 import type { LayerKind } from "../contracts/plan.ts";
 import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 
@@ -63,9 +63,10 @@ export type State = { buffer: GPUBuffer; bytes: number };
 //   bindAt()    a bind group of the bindings given (the fused shaders skip a binding where they read no norm)
 export type Stepping = {
   l: number; place: number; form: TokenForm;
-  matrix(pipeline: GPUComputePipeline, weights: [Bound, Bound | null], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
+  // (T.547.3.3: weights, its values, scales and packing, by which a matrix of llama.cpp's blocks takes its type's pipeline)
+  matrix(pipeline: GPUComputePipeline, weights: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
   plain(x: GPUBuffer, params: GPUBuffer, n: number): Omit<Feed, "norm">;
-  joining(post: GPUBuffer | undefined, weights: [Bound, Bound | null], input: Entry[], params: GPUBuffer): Pass[];
+  joining(post: GPUBuffer | undefined, weights: Held, input: Entry[], params: GPUBuffer): Pass[];
   normed: Feed; ffnNorm: Pass[]; biased(to: GPUBuffer, name: "bo", l: number): Pass[]; positions: number;
   bindAt(pipeline: GPUComputePipeline, entries: Entry[]): GPUBindGroup;
 };

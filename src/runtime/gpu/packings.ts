@@ -4,7 +4,9 @@
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 import { GROUP } from "../shaders/common.ts";
 import { sixValues } from "../shaders/steps.ts";
-import { ternaryValues, q4kWeights } from "../shaders/prompt.ts";
+import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS } from "../shaders/prompt.ts";
+import { BLOCK_PACKINGS } from "../shaders/common.ts";
+import type { BlockPacking } from "../shaders/common.ts";
 import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 
 // What a packing is to the GPU:
@@ -26,15 +28,25 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
   values(bytes: Uint8Array): ArrayLike<number> };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
-const blocks = (n: number) => (n / 256) * 144;
+// (T.547.3.3: llama.cpp's blocks of a type of prompt.ts's BLOCK_READS, as the checkpoint holds them)
+const blocks = (packing: BlockPacking): HeldAs => {
+  const { bytes } = BLOCK_READS[packing], { weights } = BLOCK_WEIGHTS[packing], row = (n: number) => (n / 256) * bytes;
+  return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, values: weights };
+};
 export const PACKINGS: Record<GpuPacking, HeldAs> = {
   int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, values: asBytes },
   int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, values: sixValues },
   ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, values: ternaryValues },
-  Q4_K: { row: blocks, scales: () => 0, stored: blocks, scale: 0, widened: false, dot: true, values: q4kWeights },
+  Q4_K: blocks("Q4_K"),
+  Q2_K: blocks("Q2_K"),
 };
 // T.547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
 // "layers": its packings'), and the packings a matrix has
 type Packed = Pick<Matrix, "packing" | "packings">;
 export const packingAt = ({ packing, packings }: Packed, place: number): GpuPacking => (packing === "layers" ? packings![place] : packing);
 export const packingsOf = ({ packing, packings }: Packed): GpuPacking[] => (packing === "layers" ? [...new Set(packings!)] : [packing]);
+// T.547.3.3: whether a packing is one of llama.cpp's blocks the GPU reads (a type of BLOCK_READS)
+export const isBlock = (packing: GpuPacking): packing is BlockPacking => (BLOCK_PACKINGS as readonly string[]).includes(packing);
+// T.547.3.3: the types of llama.cpp's blocks the matrices have, in BLOCK_PACKINGS' order (the texts a model compiles)
+export const blocksOf = (matrices: Record<string, Packed>): BlockPacking[] =>
+  BLOCK_PACKINGS.filter((packing) => Object.values(matrices).some((matrix) => packingsOf(matrix).includes(packing)));

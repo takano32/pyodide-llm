@@ -190,7 +190,7 @@ const up = await upload(m);
   new Uint8Array(layeredMemory.buffer).set(random(layeredMemory.buffer.byteLength));
   const wq = { rows: Q_DIM, n, packing: "layers", packings: ["Q4_K", "int8"], layers: [[at, 0], [at + q4k, at + q4k + int8]] };
   const layered = await openDevice({ ...base, matrices: { ...base.matrices, wq } });
-  assert.equal(layered.own, "Q4_K", "a stack's layer of Q4_K gives the model Q4_K's shaders");
+  assert.equal(layered.own, "blocks", "a stack's layer of Q4_K gives the model the shaders of llama.cpp's blocks");
   handed(layeredMemory, layered.plan);
   await uploadLayers(layered);
   const [first, second] = layered.weights.matrices.wq.pieces[0].layers;
@@ -622,25 +622,26 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: { wgslLanguageFeatures: new Set(["packed_4x8_integer_dot_product", "subgroup_id"]) } } });
   let forms = 0, codes = 0;
-  // (T.547.2.4: and a model of Q4_K blocks besides int8, whose forms are DP4A's alone and have the matrices' keys again
-  // with ":Q4_K", of its own rows; an int8 model has none of those)
-  for (const own of [null, "ternary", "Q4_K"]) for (const layerNorm of [false, true]) {
-    const ternary = own === "ternary", blocks = own === "Q4_K";
+  // (T.547.2.4: and a model of llama.cpp's blocks besides int8, whose forms are DP4A's alone and have the matrices' keys
+  // again with ":" and a type after them, of its own rows: T.547.3.3, a type each of those it has; an int8 model has none)
+  for (const [own, types] of [[null, []], ["ternary", []], ["blocks", ["Q4_K"]], ["blocks", ["Q2_K"]], ["blocks", ["Q4_K", "Q2_K"]]]) for (const layerNorm of [false, true]) {
+    const ternary = own === "ternary", blocks = types;
     const candidates = tokenCandidates({ ternary, own, device: { features: new Set(["subgroups"]) }, plan: { layerNorm } });
     assert.ok(candidates.length > 0, "a device with subgroups and the packed dot has forms of a token's layer");
-    if (blocks) assert.ok(candidates.every((form) => form.dp4a && !form.ternary), "a Q4_K model's forms are DP4A's, of int8");
+    if (blocks.length) assert.ok(candidates.every((form) => form.dp4a && !form.ternary), "a model of blocks' forms are DP4A's, of int8");
     for (const form of candidates) for (const apart of [false, true]) for (const gated of [false, true]) for (const floatHead of [false, true]) {
       forms += 1;
       const made = tokenCodes(form, { apart, gated, layerNorm, floatHead, blocks });
-      assert.equal(made.some(([key]) => key.endsWith(":Q4_K")), blocks, `${form.name}: the matrices' keys of Q4_K where the model has its blocks alone`);
+      const typeOf = (key) => key.split(":")[1];
+      assert.deepEqual([...new Set(made.map(([key]) => typeOf(key)).filter(Boolean))], form.dp4a ? blocks : [], `${form.name}: the matrices' keys of each type the model has, and none of another`);
       for (const [key, code] of made) {
         const row = rowOf.get(code), said = `${form.name}${own ? ` (a ${own} model)` : ""}, ${key}`;
         assert.ok(row, `${said}: a text of no row of the catalogue, which the device's key does not hold`);
         codes += 1;
         if (row.name !== "fusedDp4aMatVec") continue;
-        assert.equal(row.given.weights, ternary ? "ternary" : key.endsWith(":Q4_K") ? "Q4_K" : "int8", `${said}: the matrix of the other packing of the weights`);
+        assert.equal(row.given.weights, ternary ? "ternary" : typeOf(key) ?? "int8", `${said}: the matrix of the other packing of the weights`);
         assert.equal(TERNARY_SHADERS.includes(row), ternary, `${said}: a ternary model's shaders are its own rows, and no other model takes them`);
-        assert.equal(BLOCK_SHADERS.includes(row), key.endsWith(":Q4_K"), `${said}: a Q4_K model's own shaders are its own rows, and none other's`);
+        assert.equal(BLOCK_SHADERS.includes(row), Boolean(typeOf(key)), `${said}: a model of blocks' own shaders are its own rows, and none other's`);
       }
     }
   }

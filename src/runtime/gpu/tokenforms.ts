@@ -14,6 +14,7 @@ import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
 import type { Model, Thrown } from "./device.ts";
+import type { BlockPacking } from "../shaders/common.ts";
 import type { TablePiece } from "./weights.ts";
 import type { Chosen } from "./tokenattention.ts";
 import type { TokenBuffers, TokenForm } from "./tokens.ts";
@@ -75,9 +76,16 @@ async function choose(m: Model) {
         if (!compiled.has(code)) compiled.set(code, await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`));
         form.pipes[key] = compiled.get(code)!;
       }
-      // (T.547.2.4: each pipeline's counterpart for a matrix of Q4_K blocks, by its key with ":Q4_K" after it)
-      const blocks = Object.keys(form.pipes).filter((key) => key.endsWith(":Q4_K"));
-      if (blocks.length) form.blocks = new Map(blocks.map((key) => [form.pipes[key.slice(0, -":Q4_K".length)], form.pipes[key]]));
+      // (T.547.2.4: each pipeline's counterparts for matrices of llama.cpp's blocks, by its key with ":" and the type after
+      // it: T.547.3.3, a type each)
+      for (const key of Object.keys(form.pipes)) {
+        const [own, packing] = key.split(":") as [string, BlockPacking | undefined];
+        if (!packing) continue;
+        form.blocks ??= new Map();
+        const of = form.blocks.get(form.pipes[own]) ?? {};
+        of[packing] = form.pipes[key];
+        form.blocks.set(form.pipes[own], of);
+      }
       const wrong = await within(checkTokens(m, form, back), `checking ${form.name}`);
       if (wrong) tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(form);

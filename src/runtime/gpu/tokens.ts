@@ -10,6 +10,7 @@ import { flashVecSplits } from "../shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
 import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersOf } from "../shaders/run.ts";
 import { ENGINE } from "../shaders/engine.ts";
+import { isBlock, blocksOf } from "./packings.ts";
 import type { Model, Bound, Pass } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
@@ -17,6 +18,8 @@ import type { Kept } from "./block.ts";
 import type { Steps } from "./kinds.ts";
 import type { LayerKind } from "../contracts/plan.ts";
 import type { FusedOutput } from "../shaders/fused.ts";
+import type { BlockPacking } from "../shaders/common.ts";
+import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: a form of a token's layer: one of TOKEN_FORMS (Candidate), and, once tokenforms.ts's choose() tries it, its
 // pipelines by their keys (tokenCodes()'s: normQuantize, qkv, add, glu, classifier) and its steps' dispatches, made
@@ -24,10 +27,13 @@ import type { FusedOutput } from "../shaders/fused.ts";
 type Candidate = { name: string; dp4a: boolean; subgroups: boolean; normApart?: boolean; ternary?: boolean };
 // (T.547.2.4: blocks, a pipeline's counterpart for a matrix of Q4_K blocks, where the model has them: tokenCodes' keys
 // with ":Q4_K" after them, chooseTokens')
-type TokenForm = Candidate & { pipes: { [key: string]: GPUComputePipeline }; blocks?: Map<GPUComputePipeline, GPUComputePipeline>;
+type TokenForm = Candidate & { pipes: { [key: string]: GPUComputePipeline }; blocks?: Map<GPUComputePipeline, Partial<Record<BlockPacking, GPUComputePipeline>>>;
   steps?: { cache: Kept | null; lists: Map<number, Pass[]> } };
 // a binding and what is bound there (bindAt()), and what a matrix reads: the dispatches before it and its bindings
 type Entry = [number, Bound];
+// (T.547.3.3: a matrix as a token's step reads it: its values, its scales, and its packing where it is one of llama.cpp's
+// blocks, which takes its type's pipeline: weights.ts's Piece and Joined; a table has none)
+type Held = [Bound, Bound | null, GpuPacking?];
 type Feed = { norm: Pass[]; quantize: Pass[]; input: Entry[] };
 // A token's uniforms: every model's, and what only some have (Qwen2's biases of q, k and v as one, Qwen3's norms of
 // the heads, GPT-2's and GPT-NeoX's biases and positions, a ternary classifier's outlier channels; hidden is GELU's
@@ -136,7 +142,7 @@ function tokenCandidates(m: Model) {
   // (T.271.1: a rotated basis turns every matrix's input as it quantizes it, ROTATE_QUANTIZE: the forms of DP4A with the
   // norms apart alone, where no norm is on a matrix's read)
   // (T.547.2.4: a model of Q4_K blocks besides int8, the forms of DP4A alone: its blocks are read as packed int8 there)
-  return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === m.ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) && (form.dp4a || m.own !== "Q4_K") &&
+  return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === m.ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) && (form.dp4a || m.own !== "blocks") &&
     (!m.plan.layerNorm || !form.dp4a || form.normApart) && (!m.plan.rotated || (form.dp4a && form.normApart)));
 }
 // T.226: what of the model's form shapes a token's dispatches: apart, q, k and v are written as they are for what comes
@@ -163,7 +169,7 @@ const tokenShape = (m: Model) => {
   return { apart: Boolean(m.plan.vectors.bq || m.plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
     geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
     floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost), mix: writes.has("mix"), write: writes.has("write"),
-    blocks: m.own === "Q4_K" };
+    blocks: blocksOf(m.plan.matrices) };
 };
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T.150's matrices where it is RMSNorm
@@ -183,7 +189,7 @@ const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart,
     ["add", plain("add")], ["glu", matrix(glu)],
     ["classifier", (floatHead ? floats : matrix)("write")], ...(posts || write ? [["write", plain("write")]] satisfies [string, string][] : []),
     ...(mix ? [["mix", matrix("write")]] satisfies [string, string][] : []),
-    ...(blocks && dp4a ? outputs.map(([key, output]): [string, string] => [`${key}:Q4_K`, ENGINE.fusedDp4aMatVec({ output, weights: "Q4_K" })]) : [])];
+    ...(dp4a ? blocks.flatMap((weights) => outputs.map(([key, output]): [string, string] => [`${key}:${weights}`, ENGINE.fusedDp4aMatVec({ output, weights })])) : [])];
 };
 
 // a bind group of the bindings given ([binding, a buffer or a range of one] each: the fused shaders skip binding 4
@@ -275,8 +281,9 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   const rows = form.dp4a ? ORT_DP4A_MATVEC_ROWS : MUL_MAT_VEC_ROWS;
   // (T.547.2.3: no scales where a matrix's blocks hold them, Q4_K's)
   // (T.547.2.4: a matrix of no scales apart, Q4_K's blocks, by the pipeline's counterpart for them)
-  const matrix = (given: GPUComputePipeline, [w, s]: [Bound, Bound | null], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass => {
-    const pipeline = s ? given : form.blocks!.get(given)!;
+  // (T.547.3.3: by the type of its blocks, the third of what it is held as: weights.ts's Piece and Joined)
+  const matrix = (given: GPUComputePipeline, [w, s, packing]: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass => {
+    const pipeline = packing && isBlock(packing) ? form.blocks!.get(given)![packing]! : given;
     return [pipeline, bindAt(m, pipeline, [[0, w], ...(s ? [[1, s] satisfies Entry] : []), ...input, [3, params], ...output]), ...spread(m, count, rows)];
   };
   // (T.271.1: in a rotated basis R of the vector, quantized: ROTATE_QUANTIZE with the signs of its width)
@@ -321,9 +328,9 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
     const activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
     // T.261.4.2: what joins the stream after a matrix: added on its write, or (a Gemma 3's norm behind it) written as it
     // is into xb, which nothing reads by then, and normed into the stream there (RMSNORM_ADD, as a prompt's block)
-    const joining = (post: GPUBuffer | undefined, [w, s]: [Bound, Bound | null], input: Entry[], params: GPUBuffer): Pass[] => (post
-      ? [matrix(P.write, [w, s], input, params, plan.dim, [[5, g.xb]]), [b.normAdd!, bind(m, b.normAdd!, [g.xb, post, g.h, g.u.norm[l], g.step]), 1, 1]]
-      : [matrix(P.add, [w, s], input, params, plan.dim, [[5, g.h]])]);
+    const joining = (post: GPUBuffer | undefined, held: Held, input: Entry[], params: GPUBuffer): Pass[] => (post
+      ? [matrix(P.write, held, input, params, plan.dim, [[5, g.xb]]), [b.normAdd!, bind(m, b.normAdd!, [g.xb, post, g.h, g.u.norm[l], g.step]), 1, 1]]
+      : [matrix(P.add, held, input, params, plan.dim, [[5, g.h]])]);
     // T.568.2: the layer's kind's dispatches (gpu/kinds.ts), from the stream as it is (the kind norms it: attention.norm and
     // quantize, or a dispatch of its own) to what joins it
     list.push(...g.kinds[plan.kinds[l]]!.step({ l, place, form, matrix, plain, joining, normed: attention, ffnNorm: ffn.norm, biased, positions,
@@ -428,4 +435,4 @@ async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, sett
 }
 
 export { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens };
-export type { TokenBuffers, TokenForm, Entry, Feed };
+export type { TokenBuffers, TokenForm, Entry, Feed, Held };

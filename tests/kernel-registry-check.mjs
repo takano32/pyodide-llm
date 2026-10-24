@@ -284,6 +284,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
   for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU,
   GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T.547.2.3's Q4_K, as it is, by the packed int8 dot)
+  GPU.Q2_K = { as: "Q2_K", alone: false, dot: true };              // (T.547.3.3: and Q2_K's, the same way)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
   // (T.547.1's review: the GPU plan's packing names, contracts/gpu/protocol.ts's GpuPacking, are the packings with a gpu:
   // a packing given one there and not the name, or the name and no gpu, is said here and by no type)

@@ -16,7 +16,8 @@ import type { GpuPacking, Matrix, Table, Tables } from "../contracts/gpu/protoco
 // a piece of a matrix: its first row, its rows, and for every layer its values and scales (buffers of its own, or its
 // ranges of the layer's joined ones)
 // (T.547.2.3: no scales where its blocks hold them, Q4_K's)
-type Piece = { first: number; rows: number; layers: [Bound, Bound | null][] };
+// (T.547.3.3: and its packing, which a token's step chooses the pipeline of llama.cpp's blocks by: tokens.ts's matrix())
+type Piece = { first: number; rows: number; layers: [Bound, Bound | null, GpuPacking][] };
 // (T.547.3.1: packing and packings, the plan's: a stack whose layers are each of a packing of its own has them by place)
 type MatrixOn = { rows: number; n: number; packing: Matrix["packing"]; packings?: GpuPacking[]; pieces: Piece[] };
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
@@ -27,7 +28,8 @@ type Home = { joined: string; at: [number, number] };
 // and joined by the activation's dispatch)
 type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
 // (T.547.2.3: no scales where its matrices' blocks hold them)
-type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null] };
+// (T.547.3.3: and their packing, every matrix's of them)
+type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null, GpuPacking] };
 type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
 // T.156: a stretch of the checkpoint, [start, end), the buffer it goes to and the offset in it
 // (halves, T.533: a stretch of ternary's float16 scales, which go up widened to float32: the buffer's offset of the
@@ -121,8 +123,9 @@ async function uploadLayers(m: Model, alone = false) {
     // a layer's matrices that are one (T.152): a buffer of values and one of scales for all of them (T.271.3: where the
     // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
     const has = (joinedName: string) => Object.entries(together!.homes).some(([name, home]) => home?.joined === joinedName && (!plan.matrices[name].of || plan.matrices[name].of === plan.kinds[l]));
-    const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, [GPUBuffer, GPUBuffer | null]] =>
-      [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : null]]));
+    const packingOf = (joinedName: string) => packingAt(plan.matrices[Object.keys(together!.homes).find((name) => together!.homes[name]?.joined === joinedName)!], 0);
+    const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, Joined[string]] =>
+      [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : null, packingOf(name)]]));
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
       // (T.545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
@@ -148,7 +151,7 @@ async function uploadLayers(m: Model, alone = false) {
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
           if (scales) scalesIn(m, held, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
         }
-        piece.layers.push([values, scales]);
+        piece.layers.push([values, scales, held.packing]);
         bytes += valueBytes + scaleBytes;
       }
     }
