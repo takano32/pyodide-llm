@@ -88,6 +88,9 @@ export type Force = {
   tokenAttention?: string;
   pieceBytes?: number;
   tablePieceBytes?: number;
+  // T.565: the most bytes of a bundle of a linear-attention layer's states (gpu/linear.ts), so that a small model's go
+  // in bundles as the 27B's past a buffer of the device do
+  stateBytes?: number;
 };
 
 // what the page kept of an earlier visit on this device (T.148, T.152): the shaders chosen then, under the device's key

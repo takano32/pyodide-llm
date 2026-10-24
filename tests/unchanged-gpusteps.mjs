@@ -14,7 +14,7 @@
 //
 // The models: a Llama; a Qwen3 (biases of q, k and v, norms of the heads); a Gemma 3 (GEGLU, the norms behind, a
 // window and a local layer); an LFM2 (convolution layers around an attending one); a Qwen3.5 (two linear-attention
-// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T.271.1). Each
+// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T.271.1); the Qwen3.5 with its states in bundles (T.565, packed alone). Each
 // with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T.156, T.271.4). A step's keys and
 // values going up from the CPU's cache (keysIn) besides, float16 and float32, a ring where a layer has a window.
 import crypto from "node:crypto";
@@ -93,6 +93,9 @@ const MODELS = {
   // T.271.1: a Llama in a rotated basis (every matrix's input turned as it is quantized, a token's embedded row turned back)
   rotated: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: norms, more: { rotated: true } },
 };
+// T.565: the Qwen3.5 with its linear layers' states in bundles of one place each (as the 27B's go past what a phone's
+// GPU binds)
+MODELS["qwen35 (states in bundles)"] = { ...MODELS.qwen35, more: { linear: LINEAR, force: { stateBytes: LINEAR.valueHeads * LINEAR.keyDim * LINEAR.valueDim * 4 } } };
 // (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
 const ALONE = ["llama", "qwen35", "rotated"];
 
@@ -105,7 +108,7 @@ const record = (name, lines) => {
 };
 
 // (a rotated basis takes the packed forms alone: gpu/forms.ts's candidates)
-const runs = Object.entries(MODELS).flatMap(([model, made]) => [[model, made, true, false], ...(made.more?.rotated ? [] : [[model, made, false, false]]),
+const runs = Object.entries(MODELS).flatMap(([model, made]) => [[model, made, true, false], ...(made.more?.rotated || made.more?.force ? [] : [[model, made, false, false]]),
   ...(ALONE.includes(model) ? [[model, made, true, true]] : [])]);
 for (const [model, made, packed, direct] of runs) {
   {

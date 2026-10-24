@@ -91,6 +91,8 @@ const ROTATED_UNTIED = rotatedBasis(128, [256, 1152]);
 // values and over its pairs, and 32 threads quantizing. dim 1024, the attention's output 8 heads of 128, the FFN's 2048)
 const ROTATED_1024 = rotatedBasis(1024, [1024, 2048]);
 const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
+// (a place's state: value heads × key dim × value dim floats)
+const QWEN35_STATE = 6 * 32 * 64 * 4;
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
   // the review of T.235: Qwen3 with yarn's RoPE (Ternary Bonsai's): the cos and sin of every pair are 1 + 0.1 ln 4 = 1.1386
@@ -146,6 +148,16 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // rows keep the block before's for the tokens the block has none of
   "synthetic-qwen35-short": [{ layers: 4, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR },
     { count: 131 }],
+  // T.565: the same of six layers (three linear ones) with the states in bundles of two places at the most (as the 27B's
+  // 48 places go in bundles past what a phone's GPU binds): the third place is the second bundle's first, at 0 of it; a
+  // GPU that reads a place's state from the wrong bundle or at the wrong place in it is off from the fifth layer's on
+  "synthetic-qwen35-bundles": [{ layers: 6, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR },
+    { force: { stateBytes: 2 * QWEN35_STATE } }],
+  // T.271.5: Ternary Bonsai 2 27B's form (T.233), small: a Qwen3.5 of ternary weights in a rotated basis, three value
+  // heads to a key head. Its linear layers' matrices read R of their input (wqkv and wz of the stream, wout of z's gate
+  // of 384), the gates' small matrices the stream as it is (T.271.1)
+  "synthetic-qwen35-ternary-rotated": [{ ...TERNARY, layers: 4, qk_norm: false, arch: "qwen35", linear: QWEN35_LINEAR, rotated: ROTATED },
+    { dtype: "ternary", arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR, rotated: ROTATED }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],
@@ -190,7 +202,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // (T.232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
-  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024"];
+  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };

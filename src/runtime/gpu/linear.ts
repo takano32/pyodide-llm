@@ -23,12 +23,19 @@ export const linear: GpuKind = {
     // (the l2 norms' weights: 1 / key dim of q's, which norms it over the root of key dim more, and 1 / sqrt(key dim) of k's)
     const units = buffer(m, 2 * keyDim * 4, STORAGE | COPY_DST);
     m.device.queue.writeBuffer(units, 0, Float32Array.from({ length: 2 * keyDim }, (_, i) => (i < keyDim ? 1 / keyDim : 1 / Math.sqrt(keyDim))));
-    const matricesBytes = places * valueHeads * keyDim * valueDim * 4, rowsBytes = places * taps * mixed * 4;
+    const rowsBytes = places * taps * mixed * 4;
     const mixedOut = buffer(m, B * mixed * 4), convolved = buffer(m, B * mixed * 4), work = buffer(m, B * 2 * valueHeads * 4), out = buffer(m, B * read * 4);
-    const states = buffer(m, matricesBytes, STORAGE | COPY_DST | COPY_SRC), rows = buffer(m, rowsBytes, STORAGE | COPY_DST | COPY_SRC);
+    // T.565: the state matrices in bundles of whole places, each no more than a buffer the device binds (m.limit, or
+    // plan.force.stateBytes in the tests): the 27B's 48 places are 144 MiB, past the 128 MiB a phone's GPU binds. The
+    // bundles one after another are the places in order, as the CPU stages them (place p: bundle p / per, at p % per)
+    const stateSize = valueHeads * keyDim * valueDim, per = Math.max(1, Math.floor((plan.force.stateBytes ?? m.limit) / (stateSize * 4)));
+    const bundles = [...Array(Math.ceil(places / per))].map((_, i) => Math.min(per, places - i * per) * stateSize * 4)
+      .map((bytes) => ({ buffer: buffer(m, bytes, STORAGE | COPY_DST | COPY_SRC), bytes }));
+    const stateOf = (place: number) => bundles[Math.floor(place / per)].buffer, stateAt = (place: number) => (place % per) * stateSize;
+    const rows = buffer(m, rowsBytes, STORAGE | COPY_DST | COPY_SRC);
     let quantizeZ: Quantizing | undefined;
     return {
-      states: [{ buffer: states, bytes: matricesBytes }, { buffer: rows, bytes: rowsBytes }],
+      states: [...bundles, { buffer: rows, bytes: rowsBytes }],
       // the bind groups of the layer at place among them (a block's: B tokens' room in its buffers)
       layer({ place, product, out: joins }) {
         const b = m.block, V = m.weights.vectors!;
@@ -40,7 +47,7 @@ export const linear: GpuKind = {
         const convolution = bind(m, convolving, [mixedOut, V.conv, rows, convolved, conv, b.step]), moved = bind(m, moving, [mixedOut, rows, conv, b.step]);
         const qNorm = bind(m, b.headNorm, [convolved, units, headNorm(m, keyDim, 0, 1e-6 / keyDim, 0), b.step]);
         const kNorm = bind(m, b.headNorm, [convolved, units, headNorm(m, keyDim, keyDim, 1e-6 / keyDim, B * keyHeads), b.step]);
-        const ruled = bind(m, rule, [convolved, work, states, out, uniform(m, new Uint32Array([keyHeads, valueHeads, keyDim, valueDim, B, place * valueHeads * keyDim * valueDim, 0, 0])), b.step]);
+        const ruled = bind(m, rule, [convolved, work, stateOf(place), out, uniform(m, new Uint32Array([keyHeads, valueHeads, keyDim, valueDim, B, stateAt(place), 0, 0])), b.step]);
         const valueNorm = bind(m, b.headNorm, [out, V.deltaNorm, headNorm(m, valueDim, place * valueDim, plan.eps, 0), b.step]);
         const gate = bind(m, swiglu, [z, out, uniform(m, new Uint32Array([read, 0, 0, 0])), b.step]), wout = joins("wout", z);
         // its two matrices of the normed stream, its gates, the convolution and its rows moved on, the l2 norms of q and
@@ -70,7 +77,7 @@ export const linear: GpuKind = {
         const u = { wqkv: params(mixed, plan.dim), wz: params(read, plan.dim), wout: params(plan.dim, read),
           gates: [...Array(places)].map((_, p) => uniform(m, new Uint32Array([plan.dim, valueHeads, p * valueHeads, 0]))),
           conv: [...Array(places)].map((_, p) => uniform(m, new Uint32Array([mixed, taps, p * taps * mixed, keys, 1, 0, 0, 0]))),
-          rule: [...Array(places)].map((_, p) => uniform(m, new Uint32Array([keyHeads, valueHeads, keyDim, valueDim, 1, p * valueHeads * keyDim * valueDim, 0, 0]))),
+          rule: [...Array(places)].map((_, p) => uniform(m, new Uint32Array([keyHeads, valueHeads, keyDim, valueDim, 1, stateAt(p), 0, 0]))),
           qNorm: headNorm(m, keyDim, 0, 1e-6 / keyDim, 0), kNorm: headNorm(m, keyDim, keyDim, 1e-6 / keyDim, keyHeads),
           norm: [...Array(places)].map((_, p) => headNorm(m, valueDim, p * valueDim, plan.eps, 0)), read: uniform(m, new Uint32Array([read, 0, 0, 0])),
           quantizeZ: uniform(m, new Uint32Array([read, read, 0, 0])) };
@@ -89,7 +96,7 @@ export const linear: GpuKind = {
               [moving, bind(m, moving, [t.mixed, rows, u.conv[place], g.step]), groups, 1],
               [b.headNorm, bind(m, b.headNorm, [t.convolved, units, u.qNorm, g.step]), keyHeads, 1],
               [b.headNorm, bind(m, b.headNorm, [t.convolved, units, u.kNorm, g.step]), keyHeads, 1],
-              [rule, bind(m, rule, [t.convolved, t.work, states, t.out, u.rule[place], g.step]), valueHeads, 1],
+              [rule, bind(m, rule, [t.convolved, t.work, stateOf(place), t.out, u.rule[place], g.step]), valueHeads, 1],
               [b.headNorm, bind(m, b.headNorm, [t.out, V.deltaNorm, u.norm[place], g.step]), valueHeads, 1],
               [swiglu, bind(m, swiglu, [t.z, t.out, u.read, g.step]), Math.ceil(read / 64), 1],
               ...gatedZ.quantize, ...joining(V.attentionPost, W.matrices.wout.pieces[0].layers[place], gatedZ.input, u.wout)] satisfies Pass[];
@@ -104,10 +111,10 @@ export const linear: GpuKind = {
       // head's key head; the norm of every value head, times silu(z); wout of that. Its rows after: rows[1] to
       // rows[taps - 1], then mixed; its state after, the rule's
       first(owned) {
-        const { dim } = plan, stateSize = valueHeads * keyDim * valueDim;
+        const { dim } = plan;
         const rows0 = new Float32Array(taps * mixed).map(() => Math.random() * 2 - 1), state0 = new Float32Array(stateSize).map(() => (Math.random() * 2 - 1) / 10);
         m.device.queue.writeBuffer(rows, 0, rows0);
-        m.device.queue.writeBuffer(states, 0, state0);
+        m.device.queue.writeBuffer(stateOf(0), 0, state0);
         const readRows = buffer(m, taps * mixed * 4, MAP_READ | COPY_DST, owned), readState = buffer(m, stateSize * 4, MAP_READ | COPY_DST, owned);
         const back = async (from: GPUBuffer) => {
           await from.mapAsync(MAP_READ);
@@ -118,7 +125,7 @@ export const linear: GpuKind = {
         return {
           copies(encoder) {
             encoder.copyBufferToBuffer(rows, 0, readRows, 0, taps * mixed * 4);
-            encoder.copyBufferToBuffer(states, 0, readState, 0, stateSize * 4);
+            encoder.copyBufferToBuffer(stateOf(0), 0, readState, 0, stateSize * 4);
           },
           async then({ xn, matmul, vectorOf, rms, behind, off, largest, line }) {
             const rowsAfter = await back(readRows), stateAfter = await back(readState);
