@@ -61,7 +61,8 @@ export const TERNARY_SHADERS = [
  * devicePromptForms' blocks, each with a text a type), T.547.3.3: a type after another, in BLOCK_PACKINGS' order */
 export const BLOCK_SHADERS = [...BLOCK_PACKINGS.flatMap((weights) => FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights }))),
   // T.547.3.6: the embedding's row of a table of each type
-  ...BLOCK_PACKINGS.map((weights) => made({ embedBlocks }, { weights }))];
+  // (T.547.3.7: and a prompt's rows of it, for a model on the GPU alone)
+  ...EITHER.flatMap((rows) => BLOCK_PACKINGS.map((weights) => made({ embedBlocks }, { weights, rows })))];
 /** the shaders by name, for the worker: a text, or a maker to call with a model's own numbers */
 export const ENGINE = Object.fromEntries([...ENGINE_SHADERS, ...TERNARY_SHADERS, ...BLOCK_SHADERS].map(({ name, shader }) => [name, shader])) as
   Named<(typeof ENGINE_SHADERS)[number] | (typeof TERNARY_SHADERS)[number] | (typeof BLOCK_SHADERS)[number]>;

@@ -72,17 +72,26 @@ type Tabled = { tables?: Tables; tokens: Tables | null };
 // T.547.3.4, T.547.3.6: the codebooks of llama.cpp's IQ types, the checkpoint's row as it is, a buffer a model, made where
 // its first matrix or table of an IQ type goes up: bound where an int8 matrix binds its scales (its pieces' and joined
 // buffers' second, a table piece's scales), which the model owns
-const codebooksOn = new WeakMap<Model, GPUBuffer>();
+// (T.547.3.7: a model on the GPU alone makes it as it opens, before the shared memory is handed: its bytes go in then,
+// gridsFilled(), from start()'s plan: the codebooks stay in the CPU's memory too, whose kernels make their tables of
+// them)
+const codebooksOn = new WeakMap<Model, { buffer: GPUBuffer; filled: boolean }>();
 function gridsOf(m: Model) {
   let made = codebooksOn.get(m);
   if (!made) {
-    // (T.547.3.4's review: a model of an IQ type without them is no model the CPU made)
-    if (!m.plan.codebooks) throw new Error("The model has matrices of llama.cpp's IQ types, and its plan no codebooks.");
-    made = buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST);
-    copyIn(m, made, m.plan.codebooks, CODEBOOK_BYTES);
+    made = { buffer: buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST), filled: false };
     codebooksOn.set(m, made);
+    if (m.memory) gridsFilled(m);
   }
-  return made;
+  return made.buffer;
+}
+function gridsFilled(m: Model) {
+  const made = codebooksOn.get(m);
+  if (!made || made.filled) return;
+  // (T.547.3.4's review: a model of an IQ type without them is no model the CPU made)
+  if (!m.plan.codebooks) throw new Error("The model has matrices of llama.cpp's IQ types, and its plan no codebooks.");
+  copyIn(m, made.buffer, m.plan.codebooks, CODEBOOK_BYTES);
+  made.filled = true;
 }
 
 // every layer's matrices (values and scales, as the checkpoint holds them; T.154: no w3 where there is no gate) and its
@@ -187,6 +196,8 @@ async function uploadLayers(m: Model, alone = false) {
 async function uploadRest(m: Model) {
   const { plan } = m;
   let bytes = 0;
+  // (T.547.3.7: the codebooks of a model on the GPU alone, made as it opened)
+  gridsFilled(m);
   if (m.weights.together) bytes += await uploadTokens(m, m.weights.widen);
   m.weights.vectors = {};
   for (const [name, { at, size, of }] of Object.entries(plan.vectors)) {

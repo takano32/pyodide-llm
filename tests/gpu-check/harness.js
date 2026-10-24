@@ -582,11 +582,9 @@ try {
     // review: a case whose force is the bundles of its states alone runs it too: the 27B's way is the GPU alone)
     let alone;
     const tokenRun = gpu.find((r) => r.steps?.forced === tokenForms[0] && r.steps?.first);
-    // (T.547.3.2: not a model of stacks whose layers are each of a packing of their own: the GPU alone places none until
-    // T.547.3.6, alone.ts's gpuHoles(); T.547.3.4: nor of an IQ type, whose codebooks the GPU alone does not take yet)
-    // (T.547.3.6: nor of tables of llama.cpp's blocks, which the GPU alone does not embed yet: T.547.3.7)
-    const layered = Object.entries(c.options.kinds ?? {}).some(([row, kind]) => Array.isArray(kind) || (wgsl.BLOCK_PACKINGS.includes(kind) && (wgsl.readsGrid(kind) || ["wcls", "token_embedding_table"].includes(row))));
-    if (c.places && tokenRun && !c.wide && !c.force?.pieceBytes && !layered) {
+    // (T.547.3.2 to T.547.3.6 left out a model of llama.cpp's blocks by layer, of IQ types or of tables of blocks, until
+    // T.547.3.7 gave the GPU alone their places, codebooks and tables)
+    if (c.places && tokenRun && !c.wide && !c.force?.pieceBytes) {
       const force = { ...TESTS, matrices: forms[0], quick: true, tokens: tokenForms[0], pieceBytes: Infinity, tablePieceBytes };
       const synthetic = c.id === "synthetic";
       alone = { right: await direct(force, synthetic ? { GBps: 1e-6, promptGMACs: 1e-6 } : undefined), pieces: await direct({ ...force, pieceBytes: 4096 }),

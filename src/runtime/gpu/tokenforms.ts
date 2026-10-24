@@ -207,19 +207,23 @@ const checkRows = (vocab: number) => [...new Set([...[...Array(Math.ceil(vocab /
 async function tableRows(m: Model) {
   const vocab = m.plan.tokens!.classifier.rows, specs = tablesOf(m.plan);
   const read = async (pieces: TablePiece[], spec: Table, rows: number[]) => {
-    const n = rowBytes(spec), perRow = PACKINGS[spec.packing].scales(spec.n) * 4;
-    const target = m.device.createBuffer({ size: rows.length * (n + perRow), usage: MAP_READ | COPY_DST });
+    // (T.547.3.7: a row of llama.cpp's blocks need not be whole words, which a copy moves: the words around it, a slot
+    // each, and the row where it starts in them)
+    const n = rowBytes(spec), perRow = PACKINGS[spec.packing].scales(spec.n) * 4, slot = Math.ceil(n / 4) * 4 + 4;
+    const target = m.device.createBuffer({ size: rows.length * (slot + perRow), usage: MAP_READ | COPY_DST });
     try {
-      const encoder = m.device.createCommandEncoder();
+      const encoder = m.device.createCommandEncoder(), within: number[] = [];
       rows.forEach((r, j) => {
-        const piece = pieces.find((p) => r >= p.first && r < p.first + p.rows)!;
-        encoder.copyBufferToBuffer(piece.values, (r - piece.first) * n, target, j * n, n);
-        if (perRow) encoder.copyBufferToBuffer(piece.scales!, (r - piece.first) * perRow, target, rows.length * n + j * perRow, perRow);
+        const piece = pieces.find((p) => r >= p.first && r < p.first + p.rows)!, from = (r - piece.first) * n, start = from - (from % 4);
+        within.push(from - start);
+        encoder.copyBufferToBuffer(piece.values, start, target, j * slot, Math.ceil((from + n - start) / 4) * 4);
+        if (perRow) encoder.copyBufferToBuffer(piece.scales!, (r - piece.first) * perRow, target, rows.length * slot + j * perRow, perRow);
       });
       m.device.queue.submit([encoder.finish()]);
       await target.mapAsync(MAP_READ);
       const bytes = target.getMappedRange().slice(0);
-      return new Map(rows.map((r, j): [number, [Uint8Array<ArrayBuffer>, Float32Array<ArrayBuffer>]] => [r, [new Uint8Array(bytes, j * n, n), new Float32Array(bytes, rows.length * n + j * perRow, perRow / 4)]]));
+      return new Map(rows.map((r, j): [number, [Uint8Array<ArrayBuffer>, Float32Array<ArrayBuffer>]] =>
+        [r, [new Uint8Array(bytes, j * slot + within[j], n), new Float32Array(bytes, rows.length * slot + j * perRow, perRow / 4)]]));
     } finally {
       target.destroy();
     }

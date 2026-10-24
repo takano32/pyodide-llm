@@ -218,7 +218,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   // (T.232: from a table of ternary weights, EMBED_TERNARY)
   // (T.547.3.6: from a table of llama.cpp's blocks, its type's embedBlocks)
   const embedded = tablesOf(plan).embedding.packing;
-  const embedCode = isBlock(embedded) ? ENGINE.embedBlocks({ weights: embedded }) : embedded === "ternary" ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
+  const embedCode = isBlock(embedded) ? ENGINE.embedBlocks({ weights: embedded, rows: false }) : embedded === "ternary" ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
   const embed = await within(validated(m, () => pipelineOf(m, embedCode)), "compiling the embedding's row");
   const sample = await within(validated(m, () => pipelineOf(m, ENGINE.SAMPLE)), "compiling the sampling");
   const out = STORAGE | COPY_SRC;
