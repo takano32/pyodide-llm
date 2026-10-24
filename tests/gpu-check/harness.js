@@ -1,5 +1,5 @@
 const search = "?v=gpu-check";
-const { compileKernels, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.ts" + search);
+const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.ts" + search);
 const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const b64 = (floats) => {
@@ -18,11 +18,12 @@ let refusals = 0;
 // GPU's worker chooses by timing them (the first run)
 const wgsl = await import("/runtime/shaders.ts" + search);
 const adapter = await navigator.gpu?.requestAdapter();
-// (T.232, ternary: those of a model of ternary weights, the packed ones alone; --forms does not narrow them)
-const formsOf = (ternary) => (!adapter ? [] : wgsl.promptForms({ half: adapter.features.has("shader-f16"), subgroups: adapter.features.has("subgroups"),
+// (T.232, ternary: those of a model of ternary weights, the packed ones alone; T.547.2.3: or a model's of Q4_K blocks;
+// --forms does not narrow them)
+const formsOf = (own) => (!adapter ? [] : wgsl.promptForms({ half: adapter.features.has("shader-f16"), subgroups: adapter.features.has("subgroups"),
   packed: navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product"),
-  memory: adapter.limits.maxComputeWorkgroupStorageSize, threads: adapter.limits.maxComputeInvocationsPerWorkgroup, ternary })
-  .filter((form) => !form.none).map((form) => form.name).filter((name) => ternary || !ONLY.length || ONLY.some((part) => name.includes(part))));
+  memory: adapter.limits.maxComputeWorkgroupStorageSize, threads: adapter.limits.maxComputeInvocationsPerWorkgroup, own })
+  .filter((form) => !form.none).map((form) => form.name).filter((name) => own || !ONLY.length || ONLY.some((part) => name.includes(part))));
 // T.152: the forms of a token's layer this adapter can make (gpu.js's TOKEN_FORMS), each forced in a run of its own
 // (T.271.1: a model in a rotated basis takes those with the norms apart alone, gpu/tokens.ts's tokenCandidates())
 const features = navigator.gpu?.wgslLanguageFeatures;
@@ -132,14 +133,18 @@ try {
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
     const plan = c.plan, ternary = c.dtype === "ternary";
-    const forms = formsOf(ternary), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated));
+    // (T.547.2.3: a model with Q4_K blocks among its matrices: its own tiles, and no step on the GPU yet)
+    const shaders = ternary ? "ternary" : Object.values(c.options.kinds ?? {}).includes("Q4_K") ? "Q4_K" : null;
+    const forms = formsOf(shaders), tokenForms = shaders === "Q4_K" ? [] : tokenFormsOf(ternary, Boolean(plan.rotated));
     // T.209: what a third of a table is in bytes on the GPU (T.232: a ternary weight is a quarter of a byte)
     const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / (ternary ? 4 : 1) / 3);
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
     const checkpoint = await fetched(c.checkpoint), size = checkpoint.length, tokens = c.reference.tokens, n = tokens.length - 1;
     // T.155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
     const high = c.wide ? 2 ** 32 : 0;
-    const kernels = c.wide ? compileKernels(await fetched("/built/simdkernel_shared64.wasm"), await fetched("/built/simdkernel_relaxed_shared64.wasm"), true) : narrow;
+    const built = c.wide ? compileKernels(await fetched("/built/simdkernel_shared64.wasm"), await fetched("/built/simdkernel_relaxed_shared64.wasm"), true) : narrow;
+    // (T.547.2.3: and the kernels of llama.cpp's blocks for a model with rows of them, which its CPU's side multiplies by)
+    const kernels = shaders === "Q4_K" ? { ...built, blocks: compileBlocks(await fetched("/built/blockkernel_shared.wasm"), await fetched("/built/blockkernel_relaxed_shared.wasm")) } : built;
     const after = footprint(c.reference.header, size, { dtype: c.dtype, halfKV: true, shared: true, gpu: true, head_dim: c.headDim, arch: c.arch });
     const { memory, base: low } = weightsMemory(size + high, { shared: true, wide: Boolean(c.wide), after });
     const base = low + high;

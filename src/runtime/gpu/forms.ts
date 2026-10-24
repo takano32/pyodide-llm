@@ -4,7 +4,7 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
-import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
+import { ternaryValues, q4kWeights, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { devicePromptForms } from "../shaders/key.ts";
@@ -18,7 +18,8 @@ import type { Tried } from "../contracts/gpu/protocol.ts";
 // it), the tiled shader chosen (chooseMatrices(): null until then, read with a ! after it), and what each tried came to.
 // A tiled shader is one of shaders/prompt.ts's forms with its pipeline, and whether it is the one the page remembered
 type Attention = { name: string; pipeline: GPUComputePipeline; shape: FlashShape };
-type Tiled = PromptForm & { pipeline: GPUComputePipeline; remembered?: boolean };
+// (T.547.2.3: blockPipeline, the pipeline of the form's text for Q4_K matrices, its blocks, where it has one)
+type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipeline?: GPUComputePipeline; remembered?: boolean };
 type Forms = { attention: Attention; form: Tiled | null; tried: Tried[] };
 // timeForms(): a matrix of the layer, what it reads and writes (up is null where the FFN has no gate, and then no w3
 // is there to multiply), whether it adds, and the quantization of its input where it is the first to read it
@@ -34,8 +35,9 @@ type Timed = [string, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 
 // the tiled shaders of T.146 this device can make (shaders.ts's promptForms)
-// (T.271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone)
-const candidates = ({ device, ternary, plan }: Model) => devicePromptForms(device, ternary).filter((form) => form.packed || !plan.rotated);
+// (T.271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone;
+// T.547.2.3: a model's own forms, a ternary model's or a Q4_K one's, are packed ones too)
+const candidates = (m: Model) => devicePromptForms(m.device, m.own).filter((form) => form.packed || !m.plan.rotated);
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
 // shader-f16 and its subgroups where there are (and subgroup_id), else the same without them; each checked first
@@ -147,6 +149,9 @@ function halfToFloat(h: number) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
+// a form's pipelines: its text's, and (T.547.2.3) its Q4_K text's where it has one
+const compiled = async (m: Model, form: PromptForm) => ({ ...form, pipeline: await within(validated(m, () => pipelineOf(m, form.code, form.constants)), `compiling ${form.name}`),
+  blockPipeline: form.blocks ? await within(validated(m, () => pipelineOf(m, form.blocks!)), `compiling ${form.name}'s Q4_K text`) : undefined });
 // ---- the matrices: the tiled shaders of T.146 that this device can make (shaders.ts's promptForms), each checked on a
 // small matrix against JavaScript (checkForm: subgroups, f16 rounding and drivers differ from device to device, and
 // only the device can say), the right ones timed on the model's own gate matrix by a whole block, and the fastest
@@ -160,7 +165,7 @@ async function chooseMatrices(m: Model) {
   const kept = !plan.force.matrices && forms.find((form) => !form.none && form.name === m.remembered?.matrices);
   if (kept) {
     try {
-      const tiled = { ...kept, remembered: true, pipeline: await within(validated(m, () => pipelineOf(m, kept.code, kept.constants)), `compiling ${kept.name}`) };
+      const tiled = { ...(await compiled(m, kept)), remembered: true };
       const wrong = await within(checkForm(m, tiled), `checking ${kept.name}`);
       if (!wrong) {
         m.forms.tried.push({ name: kept.name, remembered: true });
@@ -183,8 +188,7 @@ async function chooseMatrices(m: Model) {
       continue;
     }
     try {
-      const pipeline = await within(validated(m, () => pipelineOf(m, form.code, form.constants)), `compiling ${form.name}`);
-      const tiled = { ...form, pipeline };
+      const tiled = await compiled(m, form);
       const wrong = await within(checkForm(m, tiled), `checking ${form.name}`);
       if (wrong) m.forms.tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(tiled);
@@ -207,19 +211,22 @@ const threadsOf = (device: GPUDevice) => Math.min(device.limits.maxComputeInvoca
 
 // layer l's matrix name by the tokens of from into to (added where add): a bind group of form and its rows for each
 // piece (T.155), which writes its rows of to (bound from its first row; a token's row of to is the whole matrix's)
+// (T.547.2.3: by the pipeline of the matrix's packing: a Q4_K matrix's is the form's Q4_K text's, which binds no scales)
 const productGroups = (m: Model, form: Tiled, name: string, l: number, from: GPUBuffer, to: GPUBuffer, add?: boolean, owned = m.owned) => {
-  const { rows, n, pieces } = m.weights.matrices[name], { xq, xs, step } = m.block;
+  const { rows, n, pieces, packing } = m.weights.matrices[name], { xq, xs, step } = m.block;
+  const pipeline = packing === "Q4_K" ? form.blockPipeline! : form.pipeline;
   return pieces.map(({ first, rows: count, layers }) => {
     const out = first ? { buffer: to, offset: first * 4, size: to.size - first * 4 } : to;
-    return { rows: count, group: bind(m, form.pipeline, [...layers[l], form.packed ? xq : from, out,
+    return { rows: count, pipeline, group: bind(m, pipeline, [...layers[l], form.packed ? xq : from, out,
       uniform(m, new Uint32Array([count, n / 4, n / GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), step, ...(form.packed ? [xs] : [])]) };
   });
 };
-// the workgroups of form for rows by count tokens: the tiles numbered over x, then y (as T.146's shaders number them)
-function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, group: GPUBindGroup, rows: number, count: number) {
+// the workgroups of form for rows by count tokens: the tiles numbered over x, then y (as T.146's shaders number them),
+// by pipeline (T.547.2.3: the form's, or its Q4_K text's: one tile either way)
+function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, pipeline: GPUComputePipeline, group: GPUBindGroup, rows: number, count: number) {
   const tiles = Math.ceil(rows / form.tile.rows) * Math.ceil(count / form.tile.tokens);
   const across = Math.min(tiles, m.device.limits.maxComputeWorkgroupsPerDimension);
-  dispatch(pass, form.pipeline, group, across, Math.ceil(tiles / across));
+  dispatch(pass, pipeline, group, across, Math.ceil(tiles / across));
 }
 
 // T.146's check (src/runtime/benchmark/gpu/check.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
@@ -230,11 +237,38 @@ function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, group: GPU
 // a weight's scale holds for four steps of the width, and the next is another), the weights random bytes of codes (all
 // four codes, the one no file has too: every bit of a word matters), against JavaScript's on the codes' values
 // (shaders.ts's ternaryValues)
+// T.547.2.3, a form with a Q4_K text beside (blocks): that text too, on rows of 768 weights (three blocks of 256, every
+// group of a block: eight of the activations' groups of 32, each its own s and m) of random bytes (any bytes are blocks)
+// with d and dmin of 2^-12 to 2^-11 and either sign, against JavaScript's on the weights they read as (q4kWeights: d s q
+// - dmin m, each times a scale of 1)
 async function checkForm(m: Model, form: Tiled) {
-  const { device } = m, { quantize } = m.block, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / GROUP;
-  const scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale
-  const stored = ternary ? new Uint8Array((rows * n) / 4).map(() => (Math.random() * 256) | 0) : new Int8Array(rows * n).map(() => (Math.random() * 256) | 0);
-  const w = ternary ? ternaryValues(stored) : stored, s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
+  const wrong = await checkWith(m, form, form.pipeline, form.ternary ? "ternary" : "int8");
+  if (wrong || !form.blockPipeline) return wrong;
+  const blocks = await checkWith(m, form, form.blockPipeline, "Q4_K");
+  return blocks && `its Q4_K text: ${blocks}`;
+}
+// the weights of the check: their bytes as a matrix of the packing holds them, what they read as (w, by the scale of
+// each `scaled` of them: s), and the bytes of a row
+function checkWeights(rows: number, packing: "int8" | "ternary" | "Q4_K") {
+  const random = (bytes: number) => new Uint8Array(bytes).map(() => (Math.random() * 256) | 0);
+  if (packing === "Q4_K") {
+    const n = 768, stored = random((rows * n) / 256 * 144);
+    for (let at = 0; at < stored.length; at += 144) {
+      for (const half of [0, 2]) {
+        const bits = ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0);
+        stored[at + half] = bits & 255;
+        stored[at + half + 1] = bits >> 8;
+      }
+    }
+    return { n, stored, w: q4kWeights(stored), s: new Float32Array(rows).fill(1), scaled: n, scales: null };
+  }
+  const ternary = packing === "ternary", n = ternary ? 640 : 544, scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale
+  const stored = ternary ? random((rows * n) / 4) : new Int8Array(random(rows * n).buffer);
+  const s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
+  return { n, stored, w: ternary ? ternaryValues(stored as Uint8Array) : stored, s, scaled, scales: s };
+}
+async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, packing: "int8" | "ternary" | "Q4_K") {
+  const { device } = m, { quantize } = m.block, rows = 300, { n, stored, w, s, scaled, scales } = checkWeights(rows, packing), perRow = n / GROUP;
   for (const { tokens, wider } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned: GPUBuffer[] = [];
     const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2);
@@ -246,16 +280,16 @@ async function checkForm(m: Model, form: Tiled) {
     try {
       const io = { xq: buffer(m, tokens * xStride, STORAGE | COPY_SRC, owned), xs: buffer(m, tokens * (xStride / GROUP) * 4, STORAGE | COPY_SRC, owned),
         step: uniform(m, new Uint32Array([tokens, 0, 0, 0]), owned) };
-      const wb = make(stored), sb = make(s), xb = make(x), y = make(new Float32Array(tokens * yStride));
+      const wb = make(stored), sb = scales && make(scales), xb = make(x), y = make(new Float32Array(tokens * yStride));
       const shape = (add: boolean) => uniform(m, new Uint32Array([rows, n / 4, perRow, 0, xStride, yStride, add ? 1 : 0, 0]), owned);
-      const group = (add: boolean) => bind(m, form.pipeline, [wb, sb, form.packed ? io.xq : xb, y, shape(add), io.step, ...(form.packed ? [io.xs] : [])]);
+      const group = (add: boolean) => bind(m, pipeline, [wb, sb, form.packed ? io.xq : xb, y, shape(add), io.step, ...(form.packed ? [io.xs] : [])]);
       const groups = await validated(m, () => [group(false), group(true)]);
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       if (form.packed) {
         dispatch(pass, quantize, bind(m, quantize, [xb, io.xq, io.xs, uniform(m, new Uint32Array([n, xStride, 0, 0]), owned), io.step]),
           Math.ceil(n / GROUP / 64), tokens);
       }
-      groups.forEach((g) => multiply(m, pass, form, g, rows, tokens));
+      groups.forEach((g) => multiply(m, pass, form, pipeline, g, rows, tokens));
       pass.end();
       device.queue.submit([encoder.finish()]);
       const got = new Float32Array(await readBack(m, y, tokens * yStride * 4));
@@ -273,7 +307,7 @@ async function checkForm(m: Model, form: Tiled) {
 // ms of a pass of the model's first layer with each of forms (see TIMED_MS): the seven matrices by plan.batch tokens,
 // each packed one's inputs quantized first
 async function timeForms(m: Model, forms: Tiled[]) {
-  const { device, plan } = m, owned: GPUBuffer[] = [], layer: { rows: number; group: GPUBindGroup; quantize: Quantizing | null | undefined }[][] = [];
+  const { device, plan } = m, owned: GPUBuffer[] = [], layer: { rows: number; group: GPUBindGroup; pipeline: GPUComputePipeline; quantize: Quantizing | null | undefined }[][] = [];
   // (the block's own buffers and quantizations, block.ts's: read here, written by a pass)
   const { step, x, xb, q, k, v, gate, up, ffnInput, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate } = m.block;
   try {
@@ -289,9 +323,9 @@ async function timeForms(m: Model, forms: Tiled[]) {
     const submission = async (i: number, passes: number) => {
       const form = forms[i], encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let p = 0; p < passes; p++) {
-        for (const { group, rows, quantize } of layer[i]) {
+        for (const { group, rows, quantize, pipeline } of layer[i]) {
           if (form.packed && quantize) dispatch(pass, quantize.pipeline, quantize.group, quantize.x, plan.batch);
-          multiply(m, pass, form, group, rows, plan.batch);
+          multiply(m, pass, form, pipeline, group, rows, plan.batch);
         }
       }
       pass.end();

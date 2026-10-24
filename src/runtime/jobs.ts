@@ -273,7 +273,8 @@ const biased = (k: Kernels, relaxed: boolean): Ready => {
 const packings = <Name extends string>(table: Record<Name, Packing<NoInfer<Name>>>) => table;
 // T.363.5: llama.cpp's blocks, a line each, alike but for the type: the activations signed in all 8 bits (-127 to 127),
 // and after the scales of their groups the int16 sums of each 16 and each 8 of them (sums_x: 16 bytes a group of 32 in
-// all). No corrections (a group's sum is an exact integer before it meets a float), and none of it on the GPU
+// all). No corrections (a group's sum is an exact integer before it meets a float), and none of it on the GPU but
+// (T.547.2.3) Q4_K's, as it is (the GPU's worker keeps its blocks: gpu/packings.ts), by the packed int8 dot
 const blocks = ([type, bytes]: readonly [number, number]): Packing<never> => ({
   rowBytes: (n) => (n / BLOCK) * bytes, scale: 0,
   row: (k, tables) => (out, w, n) => { k.sb_row(out, w, tables, n, type); },
@@ -316,7 +317,7 @@ export const PACKED = packings({
     },
     group: 128, gpu: { as: "ternary", alone: true, dot: true },
   },
-  Q2_K: blocks(BLOCK_TYPES.Q2_K), Q4_K: blocks(BLOCK_TYPES.Q4_K), IQ2_XXS: blocks(BLOCK_TYPES.IQ2_XXS), IQ2_XS: blocks(BLOCK_TYPES.IQ2_XS),
+  Q2_K: blocks(BLOCK_TYPES.Q2_K), Q4_K: { ...blocks(BLOCK_TYPES.Q4_K), gpu: { as: "Q4_K", alone: false, dot: true } }, IQ2_XXS: blocks(BLOCK_TYPES.IQ2_XXS), IQ2_XS: blocks(BLOCK_TYPES.IQ2_XS),
   IQ3_XXS: blocks(BLOCK_TYPES.IQ3_XXS), IQ1_S: blocks(BLOCK_TYPES.IQ1_S), IQ3_S: blocks(BLOCK_TYPES.IQ3_S), IQ2_S: blocks(BLOCK_TYPES.IQ2_S),
   IQ4_XS: blocks(BLOCK_TYPES.IQ4_XS), IQ1_M: blocks(BLOCK_TYPES.IQ1_M),
 });

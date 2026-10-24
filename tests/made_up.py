@@ -460,6 +460,45 @@ def drawn_blocks(seed=0):
     return blocks
 
 
+def q4k_blocks(values):
+    """T.547.2.3: values (whole blocks of 256 along their last axis) quantized to Q4_K's blocks as llama.cpp lays them out
+    (convert/superblocks.py reads them): for each group of 32, a step d s over the range from its smallest value (or 0)
+    up, and dmin m the smallest's distance below 0; d and dmin the largest of a block's steps and distances over 63,
+    float16. Not llama.cpp's search for the best s and m: a quantizer that gives blocks whose weights are the values,
+    near enough (a step and a half of rounding), centred as they are."""
+    groups = np.asarray(values, dtype=np.float32).reshape(-1, 8, 32)
+    low = np.minimum(groups.min(axis=2), 0.0)
+    steps, below = (groups.max(axis=2) - low) / 15, -low
+    d = (steps.max(axis=1) / 63).astype(np.float16)
+    dmin = (below.max(axis=1) / 63).astype(np.float16)
+    d32, dmin32 = d.astype(np.float32)[:, None], dmin.astype(np.float32)[:, None]
+    s = np.clip(np.rint(np.divide(steps, d32, out=np.zeros_like(steps), where=d32 > 0)), 1, 63).astype(np.uint8)
+    m = np.clip(np.rint(np.divide(below, dmin32, out=np.zeros_like(below), where=dmin32 > 0)), 0, 63).astype(np.uint8)
+    q = np.clip(np.rint((groups + (dmin32 * m)[:, :, None]) / (d32 * s)[:, :, None]), 0, 15).astype(np.uint8)
+    out = np.zeros((len(groups), 144), dtype=np.uint8)
+    out[:, 0:2] = d.view(np.uint8).reshape(-1, 2)
+    out[:, 2:4] = dmin.view(np.uint8).reshape(-1, 2)
+    out[:, 4:8] = (s[:, :4] & 63) | ((s[:, 4:] >> 4) << 6)
+    out[:, 8:12] = (m[:, :4] & 63) | ((m[:, 4:] >> 4) << 6)
+    out[:, 12:16] = (s[:, 4:] & 15) | ((m[:, 4:] & 15) << 4)
+    for pair in range(4):
+        out[:, 16 + 32 * pair:48 + 32 * pair] = q[:, 2 * pair] | (q[:, 2 * pair + 1] << 4)
+    return out.tobytes()
+
+
+def valued_blocks(seed=0, scale=0.3):
+    """T.547.2.3: blocks(name, count) -> count blocks of Q4_K of values scale N, quantized (q4k_blocks()): a model's
+    matrices of blocks as drawn() draws an int8 one's, around 0 (drawn_blocks()'s random bytes are weights of one sign
+    mostly, which grow the stream layer after layer). Q4_K's alone."""
+    rng = np.random.default_rng(seed)
+
+    def blocks(name, count):
+        if name != "Q4_K":
+            raise ValueError(f"valued_blocks makes Q4_K's blocks, not {name}'s")
+        return q4k_blocks((rng.standard_normal((count, 256)) * scale).astype(np.float32))
+    return blocks
+
+
 def tensors_of(data, form=None):
     """{a row's name: its values} of a float32 checkpoint, read back by the same rows."""
     header, offset, tensors = struct.unpack_from("<7i", data, 0), 28, {}
@@ -522,13 +561,15 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
 
 
 def quantized(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, dtype="int8", outliers=0,
-              calm=False, spread=7, **form):
+              calm=False, spread=7, valued=False, **form):
     """A made-up checkpoint of drawn()'s values in a quantized dtype (int8 as quantize.py writes one, int6 of T.98,
     ternary of T.230) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
     llama2_numpy.FORM's keys (arch, bias, qk_norm, head_dim ...). A negative vocab (the header's own way of saying so):
     a classifier apart from the embedding."""
     tensor = drawn(seed, outliers, spread, calm, ternary=dtype == "ternary")
-    return checkpoint((dim, hidden, layers, heads, kv_heads, vocab, seq_len), form, dtype, tensor=tensor), numbered(abs(vocab))
+    # (T.547.2.3: valued, the form's rows of Q4_K blocks quantized from values: valued_blocks())
+    blocks = valued_blocks(seed + 1, 0.1 if calm else 0.3) if valued else None
+    return checkpoint((dim, hidden, layers, heads, kv_heads, vocab, seq_len), form, dtype, tensor=tensor, blocks=blocks), numbered(abs(vocab))
 
 
 # ---- a Llama's, from synthetic_weights()

@@ -51,7 +51,9 @@ const DEVICES = [false, true].flatMap((half) => [false, true].map((subgroups) =>
   limits: { maxComputeWorkgroupStorageSize: 32768, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256 } })));
 Object.defineProperty(globalThis, "navigator", { configurable: true,
   value: { userAgent: "UA", gpu: { wgslLanguageFeatures: new Set(["packed_4x8_integer_dot_product"]) } } });
-const keysOf = (deviceKey, ternary) => DEVICES.map((device) => deviceKey(device, device, ternary));
+// (T.547.2.3: the key takes a model's own shaders by name: none, a ternary model's or a Q4_K one's)
+const OWN = { plain: null, ternary: "ternary", q4k: "Q4_K" };
+const keysOf = (deviceKey, which) => DEVICES.map((device) => deviceKey(device, device, OWN[which]));
 
 // ---- the file's syntax tree: every node under one, and the top-level declarations by name
 function* under(node) {
@@ -120,9 +122,9 @@ function run(text, places = exportWords) {
   return new Function(`${plain}\nreturn { deviceKey };`)().deviceKey;
 }
 const real = (await import(runtimeUrl("shaders.js")));
-const KEYS = { plain: keysOf(real.deviceKey, false), ternary: keysOf(real.deviceKey, true) };
-assert.deepEqual(keysOf(run(source), false), KEYS.plain, "the modules run as one function's body give the keys of shaders.js imported");
-assert.equal(new Set([...KEYS.plain, ...KEYS.ternary]).size, 2 * DEVICES.length, "a key for each device, and for its ternary models");
+const KEYS = { plain: keysOf(real.deviceKey, "plain"), ternary: keysOf(real.deviceKey, "ternary"), q4k: keysOf(real.deviceKey, "q4k") };
+assert.deepEqual(keysOf(run(source), "plain"), KEYS.plain, "the modules run as one function's body give the keys of shaders.js imported");
+assert.equal(new Set([...KEYS.plain, ...KEYS.ternary, ...KEYS.q4k]).size, 3 * DEVICES.length, "a key for each device, for its ternary models and for its Q4_K ones");
 
 // ---- (1) what the engine runs, and that each piece of it reaches the hash
 // the prompt's tiles (gpu.js takes them through devicePromptForms), and the makers' own
@@ -141,6 +143,8 @@ const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).include
 // (and the makers of every model's shaders that have branches for ternary weights, and what only those branches write:
 // TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row)
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
+// (T.547.2.3: and those of the tiles for Q4_K blocks: dp4a's branch, and what only it writes)
+const Q4K_BRANCHES = ["dp4a", "Q4_K_BLOCK", "blockLines"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
 // What gpu.js takes of the shaders (T.379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
@@ -202,8 +206,8 @@ for (const { n, file } of gpuNodes) {
 assert.deepEqual([...new Set(compiled)].sort(), [
   "code",  // the small steps' (RMSNORM or LAYER_NORM, HEAD_NORM, ADD, ROPE, SWIGLU or GELU, QUANTIZE) and a token's layer, tokenCodes' (the fused matrices, NORM_QUANTIZE)
   "embedCode",  // EMBED or EMBED_TERNARY
-  "form.code",  // a prompt's tile (devicePromptForms)
-  "kept.code",  // the same, the remembered one
+  "form.code",  // a prompt's tile (devicePromptForms; the remembered one too: forms.ts's compiled())
+  "form.blocks",  // (T.547.2.3) the same form's Q4_K text, a tile of devicePromptForms too
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
   "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
   "ENGINE.OUTPUT_GATE",  // (T.271.2: a Qwen3.5's gate of the attention's output)
@@ -221,10 +225,10 @@ const engine = reached(shaders), general = reached(others);
 const itself = new Set([...KEY_ITSELF, ...reached(FORMS)].filter((name) => !engine.has(name)));
 
 // (the devices one at a time, those with most of the forms first: most pieces move the first one's key)
-const moves = (deviceKey, ternary) => DEVICES.toReversed().some((device) => deviceKey(device, device, ternary) !== KEYS[ternary ? "ternary" : "plain"][DEVICES.indexOf(device)]);
+const moves = (deviceKey, which) => DEVICES.toReversed().some((device) => deviceKey(device, device, OWN[which]) !== KEYS[which][DEVICES.indexOf(device)]);
 const changedBy = (pieces) => run(withInserts(source, pieces.map((piece) => [piece.at, piece.insert])),
   exportWords.map((at) => at + pieces.filter((piece) => piece.at < at).reduce((sum, piece) => sum + piece.insert.length, 0)));
-const counted = { engine: 0, ternary: 0, branches: 0, numbers: 0, apart: [] };
+const counted = { engine: 0, ternary: 0, branches: 0, q4k: 0, numbers: 0, apart: [] };
 for (const name of declared.keys()) {
   if (itself.has(name)) continue;  // (a reason a form is not made is no shader's text; a form's name is in the key)
   const ternaryOnly = !general.has(name);
@@ -237,27 +241,31 @@ for (const name of declared.keys()) {
     const said = `${name}, ${JSON.stringify(piece.says.slice(0, 60))} (at ${piece.at})`;
     const deviceKey = changedBy([piece]);
     if (ternaryOnly) {
-      assert.ok(moves(deviceKey, true), `${said}, of a ternary model's shaders, did not reach the hash of a ternary model's key`);
-      assert.ok(!moves(deviceKey, false), `${said}, of a ternary model's shaders, moved the key of the other models`);
+      assert.ok(moves(deviceKey, "ternary"), `${said}, of a ternary model's shaders, did not reach the hash of a ternary model's key`);
+      assert.ok(!moves(deviceKey, "plain"), `${said}, of a ternary model's shaders, moved the key of the other models`);
       counted.ternary += 1;
-    } else if (moves(deviceKey, false)) {
+    } else if (moves(deviceKey, "plain")) {
       counted.engine += 1;
-    } else {
+    } else if (TERNARY_BRANCHES.includes(name) && moves(deviceKey, "ternary")) {
       // (the branches for ternary weights of a maker every model's shaders come from)
-      assert.ok(TERNARY_BRANCHES.includes(name) && moves(deviceKey, true),
-        `${said}, of the engine's shaders, did not reach the hash: a branch of a maker that deviceKey() does not walk?`);
       counted.branches += 1;
+    } else {
+      // (T.547.2.3: the branches for Q4_K blocks: a Q4_K model's key alone)
+      assert.ok(Q4K_BRANCHES.includes(name) && moves(deviceKey, "q4k") && !moves(deviceKey, "ternary"),
+        `${said}, of the engine's shaders, did not reach the hash: a branch of a maker that deviceKey() does not walk?`);
+      counted.q4k += 1;
     }
     if (piece.insert === "1") counted.numbers += 1;
   }
 }
 // the rest of the file (the benchmark's shaders, the JavaScript the checks compare with): all changed at once
 const apart = changedBy(counted.apart);
-assert.ok(!moves(apart, false) && !moves(apart, true), "what gpu.js does not run moved the key");
-assert.ok(counted.engine > 100 && counted.ternary > 10 && counted.branches > 0 && counted.apart.length > 50, `too few pieces: ${JSON.stringify({ ...counted, apart: counted.apart.length })}`);
+assert.ok(!moves(apart, "plain") && !moves(apart, "ternary") && !moves(apart, "q4k"), "what gpu.js does not run moved the key");
+assert.ok(counted.engine > 100 && counted.ternary > 10 && counted.branches > 0 && counted.q4k > 10 && counted.apart.length > 50, `too few pieces: ${JSON.stringify({ ...counted, apart: counted.apart.length })}`);
 console.log(`device-key-check: ${shaders.length} shaders of gpu.js (${shaders.join(", ")}), made of ${engine.size} declarations`);
 console.log(`device-key-check: one character more in each of ${counted.engine + counted.ternary + counted.branches} pieces of them moved the key ` +
-  `(${counted.numbers} of the pieces are numbers; ${counted.ternary} pieces of the ternary shaders and ${counted.branches} of the branches for ternary weights moved a ternary model's alone), ` +
+  `(${counted.numbers} of the pieces are numbers; ${counted.ternary} pieces of the ternary shaders and ${counted.branches} of the branches for ternary weights moved a ternary model's alone, ` +
+  `${counted.q4k} of those for Q4_K blocks a Q4_K model's alone), ` +
   `and one more in all ${counted.apart.length} pieces of the rest of the file did not`);
 
 // ---- (1b) the arguments of the makers: the key walks every choice a text branches on and one set of numbers. A piece of
@@ -364,22 +372,22 @@ const hashed = "...written(ENGINE_SHADERS),";
 assert.equal(source.split(hashed).length, 2, "deviceKey() names the catalogue's rows of every model once");
 const control = source.replace(hashed, `${hashed} String(fusedMatVec),`);
 const controlTree = parse(control, { sourceType: "module" }).program;
-const controlKeys = keysOf(runAny(control), false);
+const controlKeys = keysOf(runAny(control), "plain");
 assert.notDeepEqual(controlKeys, KEYS.plain, "the control hashes more");
 for (const [name, change] of Object.entries(CHANGES)) {
   const changed = await change(source, program);
   assert.notEqual(changed, source, `${name}: the source is another`);
   const deviceKey = runAny(changed);
-  assert.deepEqual(keysOf(deviceKey, false), KEYS.plain, `${name}: the key moved`);
-  assert.deepEqual(keysOf(deviceKey, true), KEYS.ternary, `${name}: a ternary model's key moved`);
-  assert.notDeepEqual(keysOf(runAny(await change(control, controlTree)), false), controlKeys, `${name}: the control's key did not move (the change does nothing a function's text shows?)`);
+  assert.deepEqual(keysOf(deviceKey, "plain"), KEYS.plain, `${name}: the key moved`);
+  assert.deepEqual(keysOf(deviceKey, "ternary"), KEYS.ternary, `${name}: a ternary model's key moved`);
+  assert.notDeepEqual(keysOf(runAny(await change(control, controlTree)), "plain"), controlKeys, `${name}: the control's key did not move (the change does nothing a function's text shows?)`);
 }
 // and all of them at once, each on the last one's text
 let all = source;
 for (const name of ["a comment in every function", "a parameter more for every function", "every maker renamed", "minified by esbuild (white space, names, syntax)", "bundled and minified by rolldown (Vite 8's)"]) {
   all = await CHANGES[name](all, parse(all, { sourceType: "module" }).program);
 }
-assert.deepEqual(keysOf(runAny(all), true), KEYS.ternary, "all the changes at once: the key moved");
+assert.deepEqual(keysOf(runAny(all), "ternary"), KEYS.ternary, "all the changes at once: the key moved");
 console.log(`device-key-check: the key is the same with the source ${Object.keys(CHANGES).join("; ")}; and all at once (${source.length} characters to ${all.length}). ` +
   "A copy that hashes a maker's own source moved with every one of them");
 
@@ -387,14 +395,14 @@ console.log(`device-key-check: the key is the same with the source ${Object.keys
 // a character moved from the end of one text to the start of the next leaves the concatenation as it was
 const moved = source.replace("texts({ RMSNORM, HEAD_NORM, ADD,", "texts({ RMSNORM: RMSNORM.slice(0, -1), HEAD_NORM: RMSNORM.slice(-1) + HEAD_NORM, ADD,");
 assert.notEqual(moved, source, "the engine's list of texts starts as this check expects");
-assert.notDeepEqual(keysOf(runAny(moved), false), KEYS.plain, "a character moved from one text to the next did not move the key");
+assert.notDeepEqual(keysOf(runAny(moved), "plain"), KEYS.plain, "a character moved from one text to the next did not move the key");
 // the two features of the browser's WGSL that choose which shaders a device makes (packed int8 dot, subgroup_id)
 {
   const was = globalThis.navigator;
   const features = (...names) => Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, gpu: { wgslLanguageFeatures: new Set(names) } } });
   const keys = [[], ["packed_4x8_integer_dot_product"], ["subgroup_id"], ["packed_4x8_integer_dot_product", "subgroup_id"], ["a_feature_no_shader_reads"]].map((names) => {
     features(...names);
-    return [keysOf(real.deviceKey, false)[0], keysOf(real.deviceKey, true)[0]];
+    return [keysOf(real.deviceKey, "plain")[0], keysOf(real.deviceKey, "ternary")[0]];
   });
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: was });
   assert.equal(new Set(keys.map(([plain]) => plain)).size, 4, "packed and subgroup_id each move the key (a feature that no shader reads is the same as none)");

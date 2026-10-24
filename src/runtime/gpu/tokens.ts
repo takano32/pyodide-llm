@@ -254,8 +254,9 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   embed?: boolean; positions?: number } = {}) {
   const { plan, tokens: g } = m, W = m.weights, b = m.block, V = W.vectors!, P = form.pipes;
   const rows = form.dp4a ? ORT_DP4A_MATVEC_ROWS : MUL_MAT_VEC_ROWS;
-  const matrix = (pipeline: GPUComputePipeline, [w, s]: [Bound, Bound], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass =>
-    [pipeline, bindAt(m, pipeline, [[0, w], [1, s], ...input, [3, params], ...output]), ...spread(m, count, rows)];
+  // (T.547.2.3: no scales where a matrix's blocks hold them, Q4_K's)
+  const matrix = (pipeline: GPUComputePipeline, [w, s]: [Bound, Bound | null], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass =>
+    [pipeline, bindAt(m, pipeline, [[0, w], ...(s ? [[1, s] satisfies Entry] : []), ...input, [3, params], ...output]), ...spread(m, count, rows)];
   // (T.271.1: in a rotated basis R of the vector, quantized: ROTATE_QUANTIZE with the signs of its width)
   const quantize = (x: GPUBuffer, params: GPUBuffer, n: number): Pass => (b.rotate
     ? [b.rotate.quantize, bindAt(m, b.rotate.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, W.signs![n]], [4, g.u.rotate![n]]]), n / plan.rotated!.block, 1]
@@ -298,7 +299,7 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
     const activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
     // T.261.4.2: what joins the stream after a matrix: added on its write, or (a Gemma 3's norm behind it) written as it
     // is into xb, which nothing reads by then, and normed into the stream there (RMSNORM_ADD, as a prompt's block)
-    const joining = (post: GPUBuffer | undefined, [w, s]: [Bound, Bound], input: Entry[], params: GPUBuffer): Pass[] => (post
+    const joining = (post: GPUBuffer | undefined, [w, s]: [Bound, Bound | null], input: Entry[], params: GPUBuffer): Pass[] => (post
       ? [matrix(P.write, [w, s], input, params, plan.dim, [[5, g.xb]]), [b.normAdd!, bind(m, b.normAdd!, [g.xb, post, g.h, g.u.norm[l], g.step]), 1, 1]]
       : [matrix(P.add, [w, s], input, params, plan.dim, [[5, g.h]])]);
     // T.568.2: the layer's kind's dispatches (gpu/kinds.ts), from the stream as it is (the kind norms it: attention.norm and

@@ -15,10 +15,11 @@
 import type { Activation, LayerKind } from "../plan.ts";
 
 // T.547.1: how a matrix's or a table's values are packed at their addresses, the checkpoint's own (jobs.ts's PACKED
-// names): int8, int6 (T.155: widened to int8 as it goes up) or ternary (T.232: two bits a weight, as they are)
-export type GpuPacking = "int8" | "int6" | "ternary";
+// names): int8, int6 (T.155: widened to int8 as it goes up), ternary (T.232: two bits a weight, as they are) or Q4_K
+// (T.547.2.3: llama.cpp's blocks of 256, as they are, their scales in them)
+export type GpuPacking = "int8" | "int6" | "ternary" | "Q4_K";
 // a matrix of every layer: rows of n values, packed so, and for every layer [where its values are, where its scales
-// are]. T.545: of: the kind of the layers it is a matrix of (an LFM2's q is its attending layers', its matrix in its
+// are (T.547.2.3: unread where they are in its blocks: Q4_K's)]. T.545: of: the kind of the layers it is a matrix of (an LFM2's q is its attending layers', its matrix in its
 // convolution layers'), whose places index layers; none: every layer's
 export type Matrix = { rows: number; n: number; packing: GpuPacking; layers: [number, number][]; of?: LayerKind };
 // a table (the classifier, the embedding): as a matrix, at [values, scales]

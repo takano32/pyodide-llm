@@ -98,11 +98,12 @@ const memory = { buffer: new SharedArrayBuffer(memoryBytes) };
 new Uint8Array(memory.buffer).set(random(memoryBytes));
 const m = await openDevice(plan);
 assert.equal(m, device_.model, "openDevice() returns the record the other modules read as model");
-assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "held", "info", "key", "limit", "memory", "owned", "plan", "remembered", "ternary"],
+assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "held", "info", "key", "limit", "memory", "own", "owned", "plan", "remembered", "ternary"],
   "what device.js puts in the model's record: the device and what it said of itself, the plan and the memory, the buffers owned and held; the records are their owners'");
 assert.equal(m.device, gpu.device);
 assert.equal(m.memory, null, "no memory until start() hands one");
 assert.equal(m.ternary, false);
+assert.equal(m.own, null, "no shaders of its own: an int8 model's (T.547.2.3)");
 assert.equal(m.remembered, null, "nothing remembered where the page kept nothing");
 assert.equal(m.limit, 1 << 27, "the largest buffer the device binds");
 // (start()'s plan is another object than the one a model on the GPU alone was opened with)

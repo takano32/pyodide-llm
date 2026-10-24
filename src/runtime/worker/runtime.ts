@@ -62,7 +62,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
     const wgsl = await import("../shaders/key.ts");
     gpuAdapter.key = wgsl.deviceKey(adapter);
     // (T.232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one)
-    gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);
+    gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, "ternary");
   } catch (error) {
     // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
     console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);

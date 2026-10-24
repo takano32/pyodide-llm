@@ -159,7 +159,7 @@ export function keysOf(module) {
     for (const f16 of [false, true]) for (const subgroups of [false, true]) for (const memory of [16384, 32768, 49152, 65536]) for (const threads of [128, 256, 1024]) for (const ternary of [false, true]) {
       const device = { info: { vendor: "v", architecture: "a", device: "d", description: "x" }, features: new Set([...(f16 ? ["shader-f16"] : []), ...(subgroups ? ["subgroups"] : [])]),
         limits: { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup: threads, maxComputeWorkgroupSizeX: threads } };
-      keys[JSON.stringify([packed, f16, subgroups, memory, threads, ternary])] = module.deviceKey(device, device, ternary);
+      keys[JSON.stringify([packed, f16, subgroups, memory, threads, ternary])] = module.deviceKey(device, device, ternary ? "ternary" : null);
     }
   }
   return keys;

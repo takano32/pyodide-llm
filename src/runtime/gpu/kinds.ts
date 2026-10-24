@@ -20,7 +20,8 @@ import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 // ---- a prompt's block
 // a matrix's product (a bind group and its rows for each piece, forms.ts's productGroups()), an input's quantization
 // (QUANTIZE's bind group and workgroups), a bias added (ADD's)
-export type Product = { rows: number; group: GPUBindGroup }[];
+// (T.547.2.3: and its pipeline: the form's, or its Q4_K text's for a matrix of Q4_K blocks)
+export type Product = { rows: number; group: GPUBindGroup; pipeline: GPUComputePipeline }[];
 // (T.271.1: its own pipeline: QUANTIZE, or ROTATE_QUANTIZE in a rotated basis, which block.ts's quantizing() picks)
 export type Quantizing = { pipeline: GPUComputePipeline; group: GPUBindGroup; x: number };
 export type Added = { group: GPUBindGroup; x: number };
@@ -62,9 +63,9 @@ export type State = { buffer: GPUBuffer; bytes: number };
 //   bindAt()    a bind group of the bindings given (the fused shaders skip a binding where they read no norm)
 export type Stepping = {
   l: number; place: number; form: TokenForm;
-  matrix(pipeline: GPUComputePipeline, weights: [Bound, Bound], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
+  matrix(pipeline: GPUComputePipeline, weights: [Bound, Bound | null], input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
   plain(x: GPUBuffer, params: GPUBuffer, n: number): Omit<Feed, "norm">;
-  joining(post: GPUBuffer | undefined, weights: [Bound, Bound], input: Entry[], params: GPUBuffer): Pass[];
+  joining(post: GPUBuffer | undefined, weights: [Bound, Bound | null], input: Entry[], params: GPUBuffer): Pass[];
   normed: Feed; ffnNorm: Pass[]; biased(to: GPUBuffer, name: "bo", l: number): Pass[]; positions: number;
   bindAt(pipeline: GPUComputePipeline, entries: Entry[]): GPUBindGroup;
 };

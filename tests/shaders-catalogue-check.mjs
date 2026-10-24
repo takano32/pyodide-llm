@@ -115,9 +115,10 @@ console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} make
 const LEFT = { "flashVec(subgroups=true)": ["lanes_add4"],
   "flashVecReduce(subgroups=false)": ["shuffle_down", "shuffle_down4", "shuffle"], "flashVecReduce(subgroups=true)": ["shuffle_down", "shuffle_down4", "shuffle"] };
 const given = [...rows.map((row) => [said(row), row.text()]),
-  ...[false, true].flatMap((ternary) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, ternary)
-    .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, ternary))
-    .map((form) => [`the tile ${form.name}`, form.code]))];
+  // (T.547.2.3: and a Q4_K model's, each with its Q4_K text)
+  ...[null, "ternary", "Q4_K"].flatMap((own) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own)
+    .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own))
+    .flatMap((form) => [[`the tile ${form.name}`, form.code], ...(form.blocks ? [[`the Q4_K text of ${form.name}`, form.blocks]] : [])]))];
 let declarations = 0;
 for (const [what, raw] of given) {
   const text = raw.replace(/\/\/.*$/gm, "");
@@ -141,7 +142,7 @@ console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the t
 {
   const every = { features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } };
   const reads = (form) => /fn ternary_packed\(/.test(form.code) && /var<storage, read> b: array<u32>;/.test(form.code);
-  const ternary = devicePromptForms(every, true), others = devicePromptForms(every, false);
+  const ternary = devicePromptForms(every, "ternary"), others = devicePromptForms(every, null);
   assert.ok(ternary.length > 0 && ternary.every((form) => form.ternary && / ternary$/.test(form.name) && reads(form)), "every tile of a ternary model unpacks its weights' codes (ternary_packed), under a name that says ternary");
   assert.ok(others.length > ternary.length && others.every((form) => !form.ternary && !/ternary/.test(form.name) && !reads(form)), "no tile of another model reads ternary codes");
   console.log(`shaders-catalogue-check: the ${ternary.length} tiles of a ternary model read codes, the ${others.length} of the others do not`);
@@ -167,12 +168,12 @@ function folded(texts) {
   }
   return (hash >>> 0).toString(16);
 }
-const tiles = (device, ternary) => devicePromptForms(device, ternary).flatMap((form) => [form.name, form.code]);
+const tiles = (device, ternary) => devicePromptForms(device, ternary ? "ternary" : null).flatMap((form) => [form.name, form.code]);
 const texts = (list) => list.map((row) => row.text());
 const hashes = new Set();
 for (const device of DEVICES) {
   for (const ternary of [false, true]) {
-    const key = deviceKey(device, device, ternary);
+    const key = deviceKey(device, device, ternary ? "ternary" : null);
     const expected = folded([...tiles(device, false), ...texts(ENGINE_SHADERS), ...(ternary ? [...tiles(device, true), ...texts(TERNARY_SHADERS)] : [])]);
     assert.equal(key.split("|").at(-1), expected, `the key's hash is the fold of the device's tiles and the catalogue's rows${ternary ? ", a ternary model's after every model's" : ""}`);
     hashes.add(expected);

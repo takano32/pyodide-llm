@@ -147,8 +147,9 @@ async function shaders(other) {
           features: new Set([...(f16 ? ["shader-f16"] : []), ...(subgroups ? ["subgroups"] : [])]),
           limits: { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup: threads, maxComputeWorkgroupSizeX: threads } };
         const name = JSON.stringify([packed, f16, subgroups, memory, threads, ternary]);
-        keys.was[name] = was.deviceKey(device, device, ternary);
-        keys.now[name] = now.deviceKey(device, device, ternary);
+        // (T.547.2.3: a model's own shaders by name; a tree before it reads any true value as ternary)
+        keys.was[name] = was.deviceKey(device, device, ternary ? "ternary" : null);
+        keys.now[name] = now.deviceKey(device, device, ternary ? "ternary" : null);
       }
     }
   }
