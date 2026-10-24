@@ -631,7 +631,9 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
     if (blocks.length) assert.ok(candidates.every((form) => form.dp4a && !form.ternary), "a model of blocks' forms are DP4A's, of int8");
     for (const form of candidates) for (const apart of [false, true]) for (const gated of [false, true]) for (const floatHead of [false, true]) {
       forms += 1;
-      const made = tokenCodes(form, { apart, gated, layerNorm, floatHead, blocks });
+      // (T.579: every role's matrices int8 or ternary, and of each type the model has)
+      const roles = new Map(["qkv", "add", "glu", "classifier", "write", "mix"].map((role) => [role, new Set([ternary ? "ternary" : "int8", ...blocks])]));
+      const made = tokenCodes(form, { apart, gated, layerNorm, floatHead, roles });
       const typeOf = (key) => key.split(":")[1];
       assert.deepEqual([...new Set(made.map(([key]) => typeOf(key)).filter(Boolean))], form.dp4a ? blocks : [], `${form.name}: the matrices' keys of each type the model has, and none of another`);
       for (const [key, code] of made) {
@@ -644,6 +646,14 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
         assert.equal(BLOCK_SHADERS.includes(row), Boolean(typeOf(key)), `${said}: a model of blocks' own shaders are its own rows, and none other's`);
       }
     }
+  }
+  // T.579: a form compiles the pipelines its model's matrices take and no other: a role all of blocks has no key of int8,
+  // a type no matrix of a role has is no key of it, and a role the model has no matrix of (mix, write) none at all
+  {
+    const [form] = tokenCandidates({ ternary: false, own: "blocks", device: { features: new Set(["subgroups"]) }, plan: { layerNorm: false } });
+    const roles = new Map([["qkv", new Set(["Q4_K", "IQ2_XS"])], ["add", new Set(["int8", "Q4_K"])], ["glu", new Set(["IQ1_M"])], ["classifier", new Set(["Q2_K"])]]);
+    const keys = tokenCodes(form, { apart: false, gated: true, layerNorm: false, floatHead: false, roles }).map(([key]) => key);
+    assert.deepEqual(keys, ["normQuantize", "qkv:Q4_K", "qkv:IQ2_XS", "add", "add:Q4_K", "glu:IQ1_M", "classifier:Q2_K"], `${form.name}: the keys of a model of blocks are those its matrices take (${keys})`);
   }
   if (was) Object.defineProperty(globalThis, "navigator", was); else delete globalThis.navigator;
   console.log(`gpu-worker-parts-check: tokens.js's ${forms} forms of a token's layer (by the model's packing, its norm and its shape) compile ${codes} texts, each a row of the catalogue and of the model's own packing`);

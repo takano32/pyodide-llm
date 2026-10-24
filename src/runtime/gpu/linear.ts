@@ -21,7 +21,7 @@ export function stateBundles(places: number, stateSize: number, most: number) {
 export const linear: GpuKind = {
   // (the read, which z's gate leaves for the matrix out to quantize)
   widest: (plan) => plan.linear!.valueHeads * plan.linear!.valueDim,
-  writes: () => ["write"],
+  matrices: () => ({ write: ["wqkv", "wz"], join: ["wout"] }),
   async block(m) {
     const { plan } = m, B = plan.batch, { keyHeads, valueHeads, keyDim, valueDim, taps } = plan.linear!, places = plan.kinds.filter((kind) => kind === "linear").length;
     const keys = keyHeads * keyDim, read = valueHeads * valueDim, mixed = 2 * keys + read, groups = Math.ceil(mixed / 64);
@@ -92,12 +92,12 @@ export const linear: GpuKind = {
           // a layer l at its place among those layers: the stream normed into xb (a dispatch of its own: the gates read it
           // as floats), wqkv's and wz's of it, the gates, the convolution and its rows moved on by the token, the l2 norms
           // of q and k, the delta rule over the place's state, the norm of every value head, z's gate, the matrix out
-          step({ l, place, form, matrix, plain, joining }) {
-            const g = m.tokens, b = m.block, W = m.weights, V = W.vectors!, P = form.pipes;
+          step({ l, place, matrix, plain, joining }) {
+            const g = m.tokens, b = m.block, W = m.weights, V = W.vectors!;
             const normed = plain(g.xb, g.u.quantizeNormed, plan.dim), gatedZ = plain(t.z, u.quantizeZ, read);
             return [[b.norm, bind(m, b.norm, [g.h, V.attention, g.xb, g.u.norm[l], g.step]), 1, 1], ...normed.quantize,
-              matrix(P.write, W.matrices.wqkv.pieces[0].layers[place], normed.input, u.wqkv, mixed, [[5, t.mixed]]),
-              matrix(P.write, W.matrices.wz.pieces[0].layers[place], normed.input, u.wz, read, [[5, t.z]]),
+              matrix("write", W.matrices.wqkv.pieces[0].layers[place], normed.input, u.wqkv, mixed, [[5, t.mixed]]),
+              matrix("write", W.matrices.wz.pieces[0].layers[place], normed.input, u.wz, read, [[5, t.z]]),
               [gates, bind(m, gates, [g.xb, V.wb, V.wa, V.dtBias, V.decay, t.work, u.gates[place], g.step]), valueHeads, 1],
               [convolving, bind(m, convolving, [t.mixed, V.conv, rows, t.convolved, u.conv[place], g.step]), groups, 1],
               [moving, bind(m, moving, [t.mixed, rows, u.conv[place], g.step]), groups, 1],

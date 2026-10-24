@@ -13,7 +13,7 @@ import { attention } from "./attention.ts";
 import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
 import type { Bound, Model, Pass } from "./device.ts";
-import type { Entry, Feed, Held, TokenForm } from "./tokens.ts";
+import type { Entry, Feed, Held, TokenForm, TokenRole } from "./tokens.ts";
 import type { LayerKind } from "../contracts/plan.ts";
 import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 
@@ -52,7 +52,7 @@ export type State = { buffer: GPUBuffer; bytes: number };
 
 // ---- a token's step
 // What a kind's layer l is handed as tokens.ts makes a step's dispatches: its place, the form of the step, and
-//   matrix()    a dispatch of a fused matrix (its pipeline, [values, scales], its input's bindings, its Params, its rows,
+//   matrix()    a dispatch of a fused matrix (its role, [values, scales], its input's bindings, its Params, its rows,
 //               its output's bindings)
 //   plain()     what a matrix of a vector as it is reads (the vector quantized first on DP4A)
 //   joining()   a matrix whose output joins the stream (added on its write, or written and normed into it behind)
@@ -63,8 +63,9 @@ export type State = { buffer: GPUBuffer; bytes: number };
 //   bindAt()    a bind group of the bindings given (the fused shaders skip a binding where they read no norm)
 export type Stepping = {
   l: number; place: number; form: TokenForm;
-  // (T.547.3.3: weights, its values, scales and packing, by which a matrix of llama.cpp's blocks takes its type's pipeline)
-  matrix(pipeline: GPUComputePipeline, weights: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
+  // (T.547.3.3: weights, its values, scales and packing, by which a matrix of llama.cpp's blocks takes its type's pipeline;
+  // T.579: role, the key of the form's pipelines it takes, with the type after it for a matrix of blocks)
+  matrix(role: TokenRole, weights: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
   plain(x: GPUBuffer, params: GPUBuffer, n: number): Omit<Feed, "norm">;
   joining(post: GPUBuffer | undefined, weights: Held, input: Entry[], params: GPUBuffer): Pass[];
   normed: Feed; ffnNorm: Pass[]; biased(to: GPUBuffer, name: "bo", l: number): Pass[]; positions: number;
@@ -112,8 +113,9 @@ export type First = {
 // What a kind is to the worker:
 //   cached    its layers keep keys and values on the GPU (block.ts's cache), which go back and forth with the CPU's
 //   widest()  the widest vector its layers quantize besides the stream, the attention's output and the FFN's
-//   writes()  the fused outputs of a token's matrices it needs besides every layer's (tokens.ts's tokenCodes()): mix, a
-//             matrix of the normed stream written as it is; write, of a vector of its own
+//   matrices() its matrices of a token's step by the pipeline each takes (tokens.ts's tokenShape(), T.579): qkv, q, k
+//             and v; mix, a matrix of the normed stream written as it is; write, of a vector of its own; join, the matrix
+//             whose output joins the stream (Stepping's joining())
 //   block()   what it makes once of a prompt's block (its shaders, its buffers: nothing of m.block yet), which says
 //             the state its layers keep (states: as the CPU stages them; none where they keep none), binds its layer l
 //             once the forms are chosen (layer(): its step), makes its own of a token (tokens()) and checks its first
@@ -127,7 +129,7 @@ export type KindBlock = {
 export type GpuKind = {
   cached?: boolean;
   widest?(plan: Started): number;
-  writes?(plan: Started): ("mix" | "write")[];
+  matrices(plan: Started): Partial<Record<"qkv" | "mix" | "write" | "join", string[]>>;
   block(m: Model): Promise<KindBlock>;
 };
 
