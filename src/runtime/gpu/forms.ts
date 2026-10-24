@@ -270,14 +270,10 @@ async function checkForm(m: Model, form: Tiled) {
 function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking, codebooks: Uint8Array<ArrayBuffer> | null) {
   const random = (bytes: number) => new Uint8Array(bytes).map(() => (Math.random() * 256) | 0);
   if (packing !== "int8" && packing !== "ternary") {
-    const { bytes } = BLOCK_READS[packing], { halves, weights } = BLOCK_WEIGHTS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
-    for (let at = 0; at < stored.length; at += bytes) {
-      for (const half of halves) {
-        const bits = ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0);
-        stored[at + half] = bits & 255;
-        stored[at + half + 1] = bits >> 8;
-      }
-    }
+    const { bytes } = BLOCK_READS[packing], { scale, weights } = BLOCK_WEIGHTS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
+    // (each float16 scale of a block drawn small: T.547.3.5, where the type has them, BLOCK_WEIGHTS' scale)
+    const drawn = () => ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0);
+    for (let at = 0; at < stored.length; at += bytes) scale(stored, at, drawn());
     return { n, stored, w: weights(stored, codebooks ?? undefined), s: new Float32Array(rows).fill(1), scaled: n, scales: null,
       grids: PACKINGS[packing].grid ? codebooks : null };
   }

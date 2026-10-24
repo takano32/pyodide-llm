@@ -702,12 +702,12 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{}, { w1: matrixOf(24, 8, 0, { kind: "toString" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 128, 0, { kind: "ternary" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { kind: "int6", group: 16 }) }, {}, /^float32 weights are not on the GPU yet$/],
-    // (T.363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer: T.547.3.4, of a
-    // type the GPU does not read yet, IQ3_S;
+    // (T.363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer: T.547.3.4, T.547.3.5, of a
+    // kind no packing has, Q6_K: every type of BLOCKS is the GPU's now;
     // T.547.2.3: but Q4_K's, which the GPU keeps as they are: below)
-    [{}, { w1: matrixOf(24, 256, 0, { kind: "IQ3_S", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "Q6_K", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 256, 0, { kind: "Q4_K", group: 32 }) }, {}, /^float32 weights are not on the GPU yet$/],
-    [{}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [{ kind: "IQ3_S" }, { kind: "int8" }] }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [{ kind: "Q6_K" }, { kind: "int8" }] }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
@@ -719,7 +719,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     const stack = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers }) });
     assert.equal(stack.unfit(), null, "a stack of Q4_K's and int8's layers");
     // (the review: but one of a kind the GPU does not take keeps the model on the CPU)
-    const one = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [layers[0], matrixOf(24, 256, 5000, { kind: "IQ3_S", group: 256 })] }) });
+    const one = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [layers[0], matrixOf(24, 256, 5000, { kind: "Q6_K", group: 256 })] }) });
     assert.match(one.unfit(), /^float32 weights are not on the GPU yet$/, "a stack with a layer the GPU does not take");
   }
   // T.545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);

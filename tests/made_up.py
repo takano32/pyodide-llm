@@ -562,7 +562,103 @@ def iq2_blocks(name):
     return blocks
 
 
-VALUED = {"Q4_K": q4k_blocks, "Q2_K": q2k_blocks, **{name: iq2_blocks(name) for name in ("IQ2_XXS", "IQ2_XS", "IQ2_S")}}
+def nearest(target, table):
+    """The index of table's nearest row to each row of target (|t|^2 - 2 t.g + |g|^2), a few at a time (Pyodide's NumPy
+    has 32-bit sizes)."""
+    flat, norms = target.reshape(-1, table.shape[1]), (table ** 2).sum(axis=1)
+    return np.concatenate([(norms[None] - 2 * flat[at:at + 4096] @ table.T).argmin(axis=1) for at in range(0, len(flat), 4096)])
+
+
+def iq_rest_blocks(name):
+    """T.547.3.5: values (whole blocks of 256) -> IQ3_XXS's, IQ3_S's, IQ1_S's, IQ1_M's or IQ4_XS's blocks (name), as
+    llama.cpp lays them out (convert/superblocks.py reads them), near the values: a group's scale from its largest
+    magnitude, each entry the grid's (or IQ4NL's) nearest. IQ1's shift is the sign of the group's (IQ1_M: the 8's) mean
+    left over, IQ3_XXS's eighth sign of 8 the parity (the smallest value's flipped). Not llama.cpp's search."""
+    from convert.grids import IQ4NL, grid
+
+    def blocks(values):
+        v = np.asarray(values, dtype=np.float32).reshape(-1, 256)
+        n = len(v)
+        out = np.zeros((n, {"IQ3_XXS": 98, "IQ3_S": 110, "IQ1_S": 50, "IQ1_M": 56, "IQ4_XS": 136}[name]), dtype=np.uint8)
+        groups = v.reshape(n, 8, 32)
+        if name == "IQ4_XS":
+            table = IQ4NL.astype(np.float32)
+            want = np.abs(groups).max(axis=2) / 127
+            d = (want.max(axis=1) / 31).astype(np.float16)
+            d32 = d.astype(np.float32)[:, None]
+            ls = np.clip(np.rint(np.divide(want, d32, out=np.zeros_like(want), where=d32 > 0)), 1, 31).astype(np.int32) + 32
+            scale = d32 * (ls - 32)
+            codes = np.abs(groups[..., None] / np.where(scale > 0, scale, 1)[:, :, None, None] - table).argmin(axis=3).astype(np.uint8)
+            out[:, 0:2] = d.view(np.uint8).reshape(-1, 2)
+            out[:, 2:4] = np.asarray((((ls >> 4) & 3) << (2 * np.arange(8))).sum(axis=1), dtype="<u2").view(np.uint8).reshape(n, 2)
+            out[:, 4:8] = ((ls[:, 0::2] & 15) | ((ls[:, 1::2] & 15) << 4)).astype(np.uint8)
+            out[:, 8:] = (codes[:, :, :16] | (codes[:, :, 16:] << 4)).reshape(n, 128)
+            return out.tobytes()
+        if name.startswith("IQ3"):
+            table = grid("IQ3XXS" if name == "IQ3_XXS" else "IQ3S").astype(np.float32)
+            want = np.abs(groups).max(axis=2) / table.max()
+            if name == "IQ3_XXS":  # d (s + 1/2) / 2
+                d = (want.max(axis=1) / (15.5 / 2)).astype(np.float16)
+                d32 = d.astype(np.float32)[:, None]
+                s = np.clip(np.rint(np.divide(want * 2, d32, out=np.zeros_like(want), where=d32 > 0) - 0.5), 0, 15).astype(np.uint32)
+                scale = d32 * (0.5 + s) / 2
+            else:  # d (2 s + 1)
+                d = (want.max(axis=1) / 31).astype(np.float16)
+                d32 = d.astype(np.float32)[:, None]
+                s = np.clip(np.rint((np.divide(want, d32, out=np.zeros_like(want), where=d32 > 0) - 1) / 2), 0, 15).astype(np.uint32)
+                scale = d32 * (2 * s + 1)
+            target = np.abs(groups) / np.where(scale > 0, scale, 1)[:, :, None]
+            index = nearest(target.reshape(-1, 4), table).reshape(n, 8, 8)
+            minus = (groups < 0).reshape(n, 8, 4, 8)
+            if name == "IQ3_XXS":
+                odd = minus.sum(axis=3) % 2 == 1
+                least = np.abs(groups.reshape(n, 8, 4, 8)).argmin(axis=3)
+                a, b, c = np.nonzero(odd)
+                minus[a, b, c, least[a, b, c]] ^= True
+            signs = (minus * (1 << np.arange(8))).sum(axis=3).astype(np.uint32)
+            out[:, 0:2] = d.view(np.uint8).reshape(-1, 2)
+            if name == "IQ3_XXS":
+                out[:, 2:66] = index.reshape(n, 64)
+                aux = sum((signs[:, :, j] & 127) << (7 * j) for j in range(4)) | (s << 28)
+                out[:, 66:98] = aux.astype("<u4").view(np.uint8).reshape(n, 32)
+            else:
+                out[:, 2:66] = (index & 255).reshape(n, 64)
+                out[:, 66:74] = ((index >> 8) << np.arange(8)).sum(axis=2)
+                out[:, 74:106] = signs.reshape(n, 32)
+                out[:, 106:110] = (s[:, 0::2] | (s[:, 1::2] << 4)).astype(np.uint8)
+            return out.tobytes()
+        # IQ1: d (2 s + 1) (v +- 1/8), v of -1, 0 and 1
+        table = grid("IQ1S").astype(np.float32)
+        unit = 32 if name == "IQ1_S" else 16
+        units = v.reshape(n, -1, unit)
+        shift = np.where(units.reshape(n, -1, 8 if name == "IQ1_M" else unit).mean(axis=2) < 0, -0.125, 0.125).astype(np.float32)
+        want = np.abs(units).max(axis=2) / 1.125
+        d = (want.max(axis=1) / 15).astype(np.float16)
+        d32 = d.astype(np.float32)[:, None]
+        s = np.clip(np.rint((np.divide(want, d32, out=np.zeros_like(want), where=d32 > 0) - 1) / 2), 0, 7).astype(np.uint32)
+        scale = np.repeat(d32 * (2 * s + 1), unit // 8, axis=1)  # an entry of 8's
+        eighths = v.reshape(n, 32, 8)
+        shifts = np.repeat(shift, unit // 8, axis=1) if name == "IQ1_S" else shift
+        target = eighths / np.where(scale > 0, scale, 1)[:, :, None] - shifts[:, :, None]
+        index = nearest(target, table).reshape(n, 32)
+        if name == "IQ1_S":
+            out[:, 0:2] = d.view(np.uint8).reshape(-1, 2)
+            out[:, 2:34] = index & 255
+            qh = sum(((index[:, l::4] >> 8) & 7) << (3 * l) for l in range(4)) | (s << 12) | ((shift < 0) << 15)
+            out[:, 34:50] = qh.astype("<u2").view(np.uint8).reshape(n, 16)
+        else:
+            out[:, 0:32] = index & 255
+            four = ((index >> 8) & 7) | ((shift < 0) << 3)
+            out[:, 32:48] = (four[:, 0::2] | (four[:, 1::2] << 4)).astype(np.uint8)
+            bits = d.view(np.uint16).astype(np.uint32)
+            words = sum(s[:, k::4] << (3 * k) for k in range(4)) | (((bits[:, None] >> (4 * np.arange(4))) & 15) << 12)
+            out[:, 48:56] = words.astype("<u2").view(np.uint8).reshape(n, 8)
+        return out.tobytes()
+    return blocks
+
+
+VALUED = {"Q4_K": q4k_blocks, "Q2_K": q2k_blocks, **{name: iq2_blocks(name) for name in ("IQ2_XXS", "IQ2_XS", "IQ2_S")},
+          **{name: iq_rest_blocks(name) for name in ("IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS")}}
 
 
 def valued_blocks(seed=0, scale=0.3):

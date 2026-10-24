@@ -112,6 +112,11 @@ const BLOCK_LAYERS = { wq: ["Q2_K", "Q4_K", "int8"], wk: ["Q4_K", "Q2_K", "Q2_K"
 const IQ2_KINDS = { wq: "IQ2_XS", wk: "IQ2_XS", wv: "IQ2_XS", wo: "IQ2_XXS", w1: "IQ2_S", w2: "IQ2_XXS", w3: "IQ2_S" };
 const IQ2_LAYERS = { wq: ["IQ2_XXS", "Q4_K", "IQ2_S"], wk: ["IQ2_XS", "IQ2_XXS", "int8"], wv: ["IQ2_S", "Q2_K", "IQ2_XXS"], wo: ["IQ2_XXS", "IQ2_XS", "Q2_K"],
   w1: ["IQ2_S", "int8", "IQ2_XXS"], w2: ["IQ2_XXS", "IQ2_S", "IQ2_XS"], w3: ["IQ2_XS", "IQ2_XXS", "IQ2_S"] };
+// (T.547.3.5: the rest of Saluki's types: q, k and v one of IQ3_XXS, o IQ3_S, gate and up one of IQ4_XS, down IQ1_S; and
+// stacks of all ten by layer with int8, as Saluki's stacks have them, IQ1_M among them)
+const IQ_REST_KINDS = { wq: "IQ3_XXS", wk: "IQ3_XXS", wv: "IQ3_XXS", wo: "IQ3_S", w1: "IQ4_XS", w2: "IQ1_S", w3: "IQ4_XS" };
+const SALUKI_LAYERS = { wq: ["IQ1_M", "IQ3_S", "Q2_K"], wk: ["IQ4_XS", "IQ1_S", "IQ3_XXS"], wv: ["IQ3_S", "Q4_K", "IQ2_S"], wo: ["IQ1_S", "IQ2_XS", "IQ1_M"],
+  w1: ["IQ3_XXS", "IQ2_XXS", "IQ4_XS"], w2: ["IQ2_XXS", "IQ1_M", "IQ3_S"], w3: ["IQ2_S", "int8", "IQ1_S"] };
 // (the review: and an LFM2's, whose stacks of a kind's layers are by their places among that kind's: two attending
 // layers' q and k, four convolution layers' matrices in and out)
 const LFM2_Q4K_LAYERS = { wq: ["int8", "Q4_K"], wk: ["Q4_K", "int8"], win: ["Q4_K", "int8", "int8", "Q4_K"], wout: ["int8", "Q4_K", "Q4_K", "int8"],
@@ -208,6 +213,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-blocks-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: BLOCK_LAYERS, valued: true }, { kinds: BLOCK_LAYERS }],
   "synthetic-iq2": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_KINDS, valued: true }, { kinds: IQ2_KINDS }],
   "synthetic-iq2-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_LAYERS, valued: true }, { kinds: IQ2_LAYERS }],
+  "synthetic-iq-rest": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ_REST_KINDS, valued: true }, { kinds: IQ_REST_KINDS }],
+  "synthetic-saluki-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: SALUKI_LAYERS, valued: true }, { kinds: SALUKI_LAYERS }],
   "synthetic-q4k-qk-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_QK_APART, valued: true }, { kinds: Q4K_QK_APART }],
   "synthetic-q4k-up-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_UP_APART, valued: true }, { kinds: Q4K_UP_APART }],
   "synthetic-lfm2-q4k-layers": [{ dim: 256, hidden: 768, layers: 6, heads: 4, kv_heads: 2, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_LAYERS, valued: true },
@@ -261,7 +268,7 @@ const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-q4k-wide",
   "synthetic-lfm2-q4k", "synthetic-q4k-layers",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
-  "synthetic-blocks-layers", "synthetic-iq2-layers"];
+  "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };
