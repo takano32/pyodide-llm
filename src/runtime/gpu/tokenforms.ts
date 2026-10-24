@@ -308,7 +308,8 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? plan.tokens!.embedding ?? plan.tokens!.classifier : plan.tokens!.classifier);
   const tableRow = (name: "embedding" | "classifier") => (back.tableRows ? (r: number): Row => {
     const [bytes, scales] = back.tableRows![name].get(r)!;
-    return [valuesOf(tableSpec(name), bytes), scales];
+    // (T.547.3.7: a table of blocks' one scale of 1, as inMemory's)
+    return [valuesOf(tableSpec(name), bytes), scalesOf(tableSpec(name)) ? scales : ONE];
   } : inMemory(tableSpec(name), tableSpec(name).at));
   // T.271.1: a rotated basis's signs of a width (float32, Python's, each times 1 / sqrt(block)), and R x, as the CPU's
   // rotate (the matrices read it)
