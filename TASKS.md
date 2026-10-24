@@ -238,7 +238,6 @@
 - T.574 [試験][Bonsai][WebGPU] 塊 1024 の回した基底を持つ Qwen3.5 の作り物 — 未着手
 - T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 未着手
 - T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 反映済み
-- T.580 [バグ][遠隔試験] `blocks-forward-check` が ok の後の終わりでまれに止まる — 反映済み
 - T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
 - T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 未着手
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
@@ -1784,10 +1783,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 状態: 反映済み（2026-10-24、Opus medium。前の状態: 未着手、T.547.2.3 の本番の確かめから。規模 小）
 - e2e は準備完了の後に設定の欄 `steps` を 256（Agents-A1・SmolLM3 は 512）にする。`models.yml` の `query=gpuTest=on&steps=16` の `steps=16` はその前にページが読むので消える（AGENTS.md の「SwiftShader で GPU のステップを回す e2e は数トークンで確かめる: `query=…&steps=`」が働かない）。直し: `E2E_QUERY` が `steps=` を言うときは欄に触らない。
 - **結果**: `E2E_QUERY` が `steps=` を言うときは欄に触らず、決まった文（stories260K の greedy）は「答えがその頭」なら通す（短く切った答えは文の終わりまで届かない）。CI を回した。訳: 手元に Playwright のブラウザが無い（入れると `$HOME` に書く）。**run 40085965803**（軽い組と e2e 2 回）: `steps=16` で 16 トークン、無しで 256 トークン、どちらも通る。1 回目は `only_extra` で依存が無くビルドが止まり、2 回目は決まった文の比べが短い答えを落とした（直した）。
-
-### T.580 [バグ][遠隔試験] `blocks-forward-check` が ok の後の終わりでまれに止まる — 状態: 反映済み（2026-10-24、Opus medium。前の状態: 未着手、T.547.3.4 の手元の軽い組で 1 回。規模 小）
-- 「blocks-forward-check: ok」を書いた後、`limited.mjs` の期限 30 分で切れた（「Node wrote no report: it was in JavaScript that did not return to the event loop (or in native code)」）。T.575 の `plan-facts-check` と同じ現れ方（AGENTS.md の落とし穴「Node は重い仕事の直後の `process.exit()` の中でまれに止まる」）。この検査は `tests/leave.mjs` の `leave()`（出力を流してすぐ `process.exit()`）で終わる。直す案: `leave()` そのものが 200 ms 待ってから終わる（T.575 の形を 1 か所に: `leave()` で終わる道具の全部に効く）。同じ木で回し直した軽い組は通った。
-- **結果**: `leave()` が流した後 200 ms 待ってから終わる（`tests/leave.mjs`。`leave()` で終わる道具 35 本の全部に効く）。単独では直す前に 80 回で 0（軽い組の中で他と並ぶときだけ出たのか、もっとまれなのかは分からない: 未再現）、直した後 40 回で 0。`serving-check` も通る。CI を省いた。訳: 道具の終わり方だけで、手元の軽い組が踏む。
 
 ### T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 状態: 未着手（2026-10-24、T.547.2.3 のレビューの勧め。規模 小）
 - いまはスレッドごとに k の 1 ステップで群の和を DP4A 8 回で作り（内側のループの ALU が約 25% 増、同じトークンを 4 スレッドが重ねて作る）、int8 のタイルの 0.6〜0.8 倍の見込み（未計測）。案: `loadSHMA` でトークン × 群の和を workgroup のメモリ `sum_A` に 1 回書く（+256 バイト、Q4_K の文と鍵だけが動く）。先に CI の `bench.yml` か gpu-check の秒で int8 の形と Q4_K の形の ms / トークンを測る（覆す条件: 0.9 倍以上なら入れない）。
