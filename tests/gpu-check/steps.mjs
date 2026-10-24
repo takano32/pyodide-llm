@@ -68,7 +68,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
       steps.why === `${unbound(c)} would not start where this GPU binds a buffer`
       // (T.547.3.1: and a model of a stack whose layers are each of a packing of their own, until T.547.3.2 gives a
       // token's layer matrices apart)
-      || (/^\w+'s layers are each of a packing of their own$/.test(steps.why) && Object.values(c.kinds ?? {}).some(Array.isArray));
+      || (/^\w+'s layers are each of a packing of their own$/.test(steps.why) && Object.values(c.options?.kinds ?? {}).some(Array.isArray));
     // (T.547.2.3 took a model of Q4_K blocks' steps on the CPU, until T.547.2.4 gave a token's layer their reading)
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);
     return right;
