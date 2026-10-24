@@ -235,7 +235,7 @@
 - T561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 - T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
-- T571 [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 進行中
+- T571 [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 反映済み
 - T568 [整理][WebGPU] GPU の層の種類を表 1 つに（CPU の `LAYER_KINDS` の形） — 進行中
 - T565 [設計][Bonsai][WebGPU] 27B の linear の層の状態（144 MiB）を、束縛の上限 128 MiB の端末で — 未着手
 - T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
