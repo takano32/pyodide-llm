@@ -489,10 +489,10 @@ ${ROW_RMS}
 //              BLOCK_READS, its reading of a block its own (blockRows)
 // (T.547.3.3: a type's row: its blocks' bytes the step from a block to the next)
 const blockRow = (packing: BlockPacking) => {
-  const { bytes, grid, code } = BLOCK_READS[packing];
+  const { bytes, helpers, code } = BLOCK_READS[packing];
   return {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' blocks, ${bytes} bytes each`,
-    unpacking: BLOCK_COMMON + grid + code,
+    unpacking: BLOCK_COMMON + helpers + code,
     rowScales: "",
     own: `
         let own_sums = vec2<f32>(f32(blk_sum(own_a)), f32(blk_sum(own_a1)));`,

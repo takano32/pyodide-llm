@@ -501,8 +501,8 @@ fn iq_signs(bits: u32) -> vec4<i32> {
 fn iq_eight(at: u32, signs: u32) -> vec2<u32> {
   return vec2<u32>(pack4xI8(unpack4xI8(grid[at]) * iq_signs(signs)), pack4xI8(unpack4xI8(grid[at + 1u]) * iq_signs(signs >> 4u)));
 }`;
-// Each type: its bytes, the WGSL its reading takes besides (grid: T.547.3.4, the codebooks of the IQ types, IQ_GRID, or
-// the K types' K_BITS) and its WGSL
+// Each type: its bytes, the WGSL its reading takes besides (helpers, T.547.3.4: the K types' K_BITS, or the IQ types'
+// IQ_GRID, which reads the codebooks: codebooks) and its WGSL
 // (JavaScript's reading is BLOCK_WEIGHTS', below: the key hashes the shaders' texts, and no line of that is one).
 // Q4_K: 144 bytes. Bytes 0 to 3: d and dmin; 4 to 15: the 6-bit s and m of the eight groups (llama.cpp's
 // get_scale_min_k4: group g < 4 has s = byte g & 63 and m = byte g + 4 & 63, the others have their low four bits in byte
@@ -512,7 +512,7 @@ fn iq_eight(at: u32, signs: u32) -> vec2<u32> {
 // to 79: the 2-bit q, of every 32 bytes the bits at 0 the weights of a group, at 2 the next group's, at 4 and at 6 the
 // two after (128 weights); 80 to 83: d and dmin.
 export const BLOCK_READS = {
-  Q4_K: { bytes: 144, grid: K_BITS, code: /* wgsl */ `
+  Q4_K: { bytes: 144, helpers: K_BITS, codebooks: false, code: /* wgsl */ `
 fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
   return blk_bits(block + 16u + 32u * (g / 2u) + 16u * col, 4u * (g % 2u), 0x0F0F0F0Fu);
 }
@@ -530,7 +530,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   let least = blk_f16(block + 2u) * f32(m);
   return vec4<f32>(scale, least, scale, least);
 }` },
-  Q2_K: { bytes: 84, grid: K_BITS, code: /* wgsl */ `
+  Q2_K: { bytes: 84, helpers: K_BITS, codebooks: false, code: /* wgsl */ `
 fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
   return blk_bits(block + 16u + 32u * (g / 4u) + 16u * col, 2u * (g % 4u), 0x03030303u);
 }
@@ -544,7 +544,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   // T.547.3.4: IQ2_XXS, 66 bytes: d, then 8 bytes for each group of 32: four indices of 8 bits into the grid IQ2XXS, each
   // 8 weights, and a word whose low 28 bits are their signs (7 bits each: IQ_GRID's iq_seven) and whose top four the
   // group's scale s; a weight is d (s + 1/2) / 4 times the grid's value, with its sign
-  IQ2_XXS: { bytes: 66, grid: IQ_GRID + IQ_SEVEN, code: /* wgsl */ `
+  IQ2_XXS: { bytes: 66, helpers: IQ_GRID + IQ_SEVEN, codebooks: true, code: /* wgsl */ `
 fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
   let at = block + 2u + 8u * g;
   let aux = blk_word(at + 4u) >> (14u * col);
@@ -558,7 +558,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
 }` },
   // IQ2_XS, 74 bytes: d, 32 words of 16 bits (each 8 weights: an index of 9 bits into the grid IQ2XS and 7 bits of
   // signs), a byte of scales for each group of 32 (the low four bits the first half's s, the high four the second's)
-  IQ2_XS: { bytes: 74, grid: IQ_GRID + IQ_SEVEN, code: /* wgsl */ `
+  IQ2_XS: { bytes: 74, helpers: IQ_GRID + IQ_SEVEN, codebooks: true, code: /* wgsl */ `
 fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
   let words = blk_word(block + 2u + 8u * g + 4u * col);
   let first = iq_eight(${IQ_WORDS.IQ2XS}u + 2u * (words & 511u), iq_seven((words >> 9u) & 127u));
@@ -573,7 +573,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   // IQ2_S, 82 bytes: d, qs[32], signs[32], qh[8], scales[8]: 8 weights are an index of 10 bits into the grid IQ2S (its
   // low 8 in qs, its high 2 in qh: a byte for each group, bits 2 l and 2 l + 1 for its l-th index) and a byte of signs;
   // the scales as IQ2_XS's
-  IQ2_S: { bytes: 82, grid: IQ_GRID, code: /* wgsl */ `
+  IQ2_S: { bytes: 82, helpers: IQ_GRID, codebooks: true, code: /* wgsl */ `
 fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
   let entry = 4u * g + 2u * col;
   let high = blk_byte(block + 66u + g) >> (4u * col);
@@ -586,9 +586,9 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   let scales = blk_byte(block + 74u + g);
   return vec4<f32>(d * (0.5 + f32(scales & 15u)) * 0.25, 0.0, d * (0.5 + f32(scales >> 4u)) * 0.25, 0.0);
 }` },
-} satisfies Record<BlockPacking, { bytes: number; grid?: string; code: string }>;
+} satisfies Record<BlockPacking, { bytes: number; helpers: string; codebooks: boolean; code: string }>;
 /** T.547.3.4: whether a type's text reads the codebooks (an IQ type: gpu/packings.ts's grid) */
-export const readsGrid = (packing: BlockPacking) => BLOCK_READS[packing].grid.startsWith(IQ_GRID);
+export const readsGrid = (packing: BlockPacking) => BLOCK_READS[packing].codebooks;
 // T.547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.mjs's read(): the weights,
 // float32 at each step), and the bytes of its float16 scales (d and dmin: where a check draws them small)
 const halfAt = (bytes: Uint8Array, at: number) => {
@@ -742,7 +742,7 @@ ${blocks ? `@group(0) @binding(0) var<storage, read> b: array<u32>;             
 @group(0) @binding(4) var<uniform> shape: Shape;
 @group(0) @binding(5) var<uniform> step: Step;
 @group(0) @binding(6) var<storage, read> scales_a: array<f32>;       // QUANTIZE's xs: a scale a token and group of 32
-${blocks ? BLOCK_COMMON + blocks.grid + blocks.code : sdp8ai}${ternary ? TERNARY_PACKED : ""}
+${blocks ? BLOCK_COMMON + blocks.helpers + blocks.code : sdp8ai}${ternary ? TERNARY_PACKED : ""}
 
 const tile_size = 64u;
 const subtile_size = 16u;
