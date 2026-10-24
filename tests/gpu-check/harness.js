@@ -139,10 +139,11 @@ try {
     const shaders = ternary ? "ternary" : Object.values(c.options.kinds ?? {}).flat().some((kind) => wgsl.BLOCK_PACKINGS.includes(kind)) ? "blocks" : null;
     const forms = formsOf(shaders), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated)).filter((name) => shaders !== "blocks" || name.startsWith("DP4A"));
     // T.209: what a third of a table is in bytes on the GPU (T.232: a ternary weight is a quarter of a byte)
-    // (T.547.3.6: of a classifier of llama.cpp's blocks, its blocks' bytes)
-    const classifierKind = c.options.kinds?.wcls ?? c.options.kinds?.token_embedding_table;
-    const tablePieceBytes = Math.ceil((wgsl.BLOCK_PACKINGS.includes(classifierKind) ? (plan.vocab_size * plan.dim) / 256 * wgsl.BLOCK_READS[classifierKind].bytes
-      : (plan.vocab_size * plan.dim) / (ternary ? 4 : 1)) / 3);
+    // (T.547.3.6: a table's rows in its packing's bytes, llama.cpp's blocks' too: the classifier in three pieces, and no
+    // piece of the embedding smaller than the 64 rows a piece starts at a multiple of)
+    const rowBytesOf = (kind) => (wgsl.BLOCK_PACKINGS.includes(kind) ? (plan.dim / 256) * wgsl.BLOCK_READS[kind].bytes : ternary ? plan.dim / 4 : plan.dim);
+    const kinds = c.options.kinds ?? {}, embeddingKind = kinds.token_embedding_table, classifierKind = kinds.wcls ?? embeddingKind;
+    const tablePieceBytes = Math.max(Math.ceil((plan.vocab_size * rowBytesOf(classifierKind)) / 3), 64 * rowBytesOf(embeddingKind));
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
     const checkpoint = await fetched(c.checkpoint), size = checkpoint.length, tokens = c.reference.tokens, n = tokens.length - 1;
     // T.155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
