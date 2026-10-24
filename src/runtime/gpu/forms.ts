@@ -4,10 +4,10 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
-import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, tiledOff } from "../shaders/prompt.ts";
+import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, CODEBOOK_BYTES, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { packingAt, isBlock, blocksOf } from "./packings.ts";
+import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
 import type { Model, Thrown } from "./device.ts";
 import type { Quantizing } from "./block.ts";
@@ -266,7 +266,8 @@ async function checkForm(m: Model, form: Tiled) {
 // each `scaled` of them: s), and the bytes of a row
 // (T.547.3.3: of a type of llama.cpp's blocks by its line of BLOCK_READS: its bytes, where its float16 scales are, and
 // JavaScript's reading)
-function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking) {
+// (T.547.3.4: an IQ type's of the model's codebooks, which its text binds where an int8 one binds scales: grids)
+function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking, codebooks: Uint8Array<ArrayBuffer> | null) {
   const random = (bytes: number) => new Uint8Array(bytes).map(() => (Math.random() * 256) | 0);
   if (packing !== "int8" && packing !== "ternary") {
     const { bytes } = BLOCK_READS[packing], { halves, weights } = BLOCK_WEIGHTS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
@@ -277,17 +278,20 @@ function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking) 
         stored[at + half + 1] = bits >> 8;
       }
     }
-    return { n, stored, w: weights(stored), s: new Float32Array(rows).fill(1), scaled: n, scales: null };
+    return { n, stored, w: weights(stored, codebooks ?? undefined), s: new Float32Array(rows).fill(1), scaled: n, scales: null,
+      grids: PACKINGS[packing].grid ? codebooks : null };
   }
   const ternary = packing === "ternary", n = ternary ? 640 : 544, scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale
   const stored = ternary ? random((rows * n) / 4) : new Int8Array(random(rows * n).buffer);
   const s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
-  return { n, stored, w: ternary ? ternaryValues(stored as Uint8Array) : stored, s, scaled, scales: s };
+  return { n, stored, w: ternary ? ternaryValues(stored as Uint8Array) : stored, s, scaled, scales: s, grids: null };
 }
 // (T.547.2.3's review: and Q4_K's on activations of one sign mostly, +0.5 on each: the sums of the groups that take the
 // blocks' dmin m are large then, as a stream after SiLU's are)
 async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, packing: "int8" | "ternary" | BlockPacking) {
-  const { device } = m, { quantize } = m.block, rows = 300, { n, stored, w, s, scaled, scales } = checkWeights(rows, packing), perRow = n / GROUP;
+  const { device } = m, { quantize } = m.block, rows = 300;
+  const codebooks = m.plan.codebooks && m.memory ? new Uint8Array(new Uint8Array(m.memory.buffer, m.plan.codebooks, CODEBOOK_BYTES)) : null;
+  const { n, stored, w, s, scaled, scales, grids } = checkWeights(rows, packing, codebooks), perRow = n / GROUP;
   for (const { tokens, wider, shift = 0 } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }, ...(packing !== "int8" && packing !== "ternary" ? [{ tokens: 11, wider: 0, shift: 0.5 }] : [])]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned: GPUBuffer[] = [];
     const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2 + shift);
@@ -299,7 +303,7 @@ async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, pa
     try {
       const io = { xq: buffer(m, tokens * xStride, STORAGE | COPY_SRC, owned), xs: buffer(m, tokens * (xStride / GROUP) * 4, STORAGE | COPY_SRC, owned),
         step: uniform(m, new Uint32Array([tokens, 0, 0, 0]), owned) };
-      const wb = make(stored), sb = scales && make(scales), xb = make(x), y = make(new Float32Array(tokens * yStride));
+      const wb = make(stored), sb = scales ? make(scales) : grids && make(grids), xb = make(x), y = make(new Float32Array(tokens * yStride));
       const shape = (add: boolean) => uniform(m, new Uint32Array([rows, n / 4, perRow, 0, xStride, yStride, add ? 1 : 0, 0]), owned);
       const group = (add: boolean) => bind(m, pipeline, [wb, sb, form.packed ? io.xq : xb, y, shape(add), io.step, ...(form.packed ? [io.xs] : [])]);
       const groups = await validated(m, () => [group(false), group(true)]);

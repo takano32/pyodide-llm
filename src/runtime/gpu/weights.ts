@@ -6,6 +6,7 @@
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, widenIn, widenedHalves, readBack,
   validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
+import { CODEBOOK_BYTES } from "../shaders/prompt.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, packingsOf } from "./packings.ts";
 import type { Model, Bound } from "./device.ts";
@@ -64,6 +65,9 @@ type Weights = {
   localAngleTable: GPUBuffer | null;
   // T.271.1: a rotated basis's signs, by the width a matrix reads (null: the model's own basis)
   signs: Record<number, GPUBuffer> | null;
+  // T.547.3.4: the codebooks of llama.cpp's IQ types (the checkpoint's row as it is), which their matrices bind where an
+  // int8 one binds its scales (null: the model has none of those types)
+  grids: GPUBuffer | null;
 };
 // what tablesOf() reads of a plan: the tables of a model on the GPU alone as it opens, else a token's
 type Tabled = { tables?: Tables; tokens: Tables | null };
@@ -108,7 +112,7 @@ async function uploadLayers(m: Model, alone = false) {
   // that wait for the rest of it, routed())
   m.weights = { matrices, together: null, unjoined: null, joined: [], widen: null, routes: alone ? [] : null, partial: alone ? new Map() : null,
     vectors: null, tables: null, finalNorm: null, finalBias: null, positions: null, angleTable: null,
-    localAngleTable: null, signs: null };
+    localAngleTable: null, signs: null, grids: null };
   const together = plan.tokens ? tokensLayout(m) : null;
   m.weights.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T.156)
@@ -119,13 +123,20 @@ async function uploadLayers(m: Model, alone = false) {
   // (T.156: a model on the GPU alone reads its first layer back to check a token's layer against: firstLayer)
   const usage = STORAGE | COPY_DST | (alone ? COPY_SRC : 0);
   const { routes } = m.weights;
+  // (T.547.3.4: the codebooks, once, where a matrix of an IQ type reads them)
+  const grids = m.weights.grids = Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some((packing) => PACKINGS[packing].grid))
+    ? buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST) : null;
+  if (grids) {
+    copyIn(m, grids, plan.codebooks, CODEBOOK_BYTES);
+    bytes += CODEBOOK_BYTES;
+  }
   for (let l = 0; l < plan.layers; l++) {
     // a layer's matrices that are one (T.152): a buffer of values and one of scales for all of them (T.271.3: where the
     // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
     const has = (joinedName: string) => Object.entries(together!.homes).some(([name, home]) => home?.joined === joinedName && (!plan.matrices[name].of || plan.matrices[name].of === plan.kinds[l]));
     const packingOf = (joinedName: string) => packingAt(plan.matrices[Object.keys(together!.homes).find((name) => together!.homes[name]?.joined === joinedName)!], 0);
     const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, Joined[string]] =>
-      [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : null, packingOf(name)]]));
+      [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : PACKINGS[packingOf(name)].grid ? grids : null, packingOf(name)]]));
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
       // (T.545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
@@ -137,19 +148,21 @@ async function uploadLayers(m: Model, alone = false) {
       for (const piece of m.weights.matrices[name].pieces) {
         const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
         // its own buffers, or its range of the layer's joined ones (T.547.2.3: no scales where its blocks hold them)
-        const [values, scales]: [Bound, Bound | null] = home
+        const [values, own]: [Bound, Bound | null] = home
           ? [{ buffer: joined![home.joined][0], offset: home.at[0], size: valueBytes }, perRow ? { buffer: joined![home.joined][1]!, offset: home.at[1], size: scaleBytes } : null]
           : [buffer(m, valueBytes, usage), perRow ? buffer(m, scaleBytes, usage) : null];
+        // (T.547.3.4: an IQ type's binds the codebooks in their place)
+        const scales = own ?? (PACKINGS[held.packing].grid ? grids : null);
         const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(held)];
         if (alone) {
           // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened)
           routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0]);
-          if (scales) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(held), scales.buffer ?? scales, scales.offset ?? 0, heldScale(held) === 2]);
+          if (own) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(held), own.buffer ?? own, own.offset ?? 0, heldScale(held) === 2]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
           if (PACKINGS[held.packing].widened) widen!.into(values, valuesAt + PACKINGS[held.packing].stored(piece.first * matrix.n), piece.rows * perRow);
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
-          if (scales) scalesIn(m, held, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
+          if (own) scalesIn(m, held, own.buffer ?? own, from[1], scaleBytes, own.offset ?? 0);
         }
         piece.layers.push([values, scales, held.packing]);
         bytes += valueBytes + scaleBytes;

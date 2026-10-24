@@ -17,7 +17,7 @@ import type { Activation, LayerKind } from "../plan.ts";
 // T.547.1: how a matrix's or a table's values are packed at their addresses, the checkpoint's own (jobs.ts's PACKED
 // names): int8, int6 (T.155: widened to int8 as it goes up), ternary (T.232: two bits a weight, as they are) or Q4_K
 // (T.547.2.3: llama.cpp's blocks of 256, as they are, their scales in them)
-export type GpuPacking = "int8" | "int6" | "ternary" | "Q4_K" | "Q2_K";
+export type GpuPacking = "int8" | "int6" | "ternary" | "Q4_K" | "Q2_K" | "IQ2_XXS" | "IQ2_XS" | "IQ2_S";
 // a matrix of every layer: rows of n values, packed so, and for every layer [where its values are, where its scales
 // are (T.547.2.3: unread where they are in its blocks: Q4_K's)]. T.545: of: the kind of the layers it is a matrix of (an LFM2's q is its attending layers', its matrix in its
 // convolution layers'), whose places index layers; none: every layer's. T.547.3.1: packing "layers", a stack whose
@@ -148,6 +148,9 @@ export type Started = KindNumbers & {
   // the most tokens of a block
   batch: number;
   matrices: Record<string, Matrix>;
+  // T.547.3.4: where the codebooks of llama.cpp's blocks are (the checkpoint's row "codebooks", engine/dtypes.py's
+  // CODEBOOKS bytes: convert/grids.py's codebooks()); 0: the model has none
+  codebooks: number;
   vectors: Vectors;
   rows: number;
   tokens: Tokens | null;

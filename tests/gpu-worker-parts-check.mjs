@@ -129,7 +129,7 @@ console.log("gpu-worker-parts-check: device.js makes the model's record of 12 fi
 const up = await upload(m);
 {
   const W = m.weights;
-  assert.deepEqual(Object.keys(W).sort(), ["angleTable", "finalBias", "finalNorm", "joined", "localAngleTable", "matrices", "partial", "positions", "routes", "signs", "tables", "together", "unjoined", "vectors", "widen"]);
+  assert.deepEqual(Object.keys(W).sort(), ["angleTable", "finalBias", "finalNorm", "grids", "joined", "localAngleTable", "matrices", "partial", "positions", "routes", "signs", "tables", "together", "unjoined", "vectors", "widen"]);
   let expected = 0;
   for (const [name, [rows, n]] of Object.entries(SIZES)) {
     assert.deepEqual(W.matrices[name].pieces.map((piece) => [piece.first, piece.rows]), [[0, rows]], `${name} is one piece where it fits a buffer`);

@@ -9,7 +9,7 @@ import { roomFor, BLOCK_ROUNDS } from "./block.ts";
 import { chooseTokenAttention } from "./tokenattention.ts";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
 import { GROUP } from "../shaders/common.ts";
-import { quantizedLikeCpu } from "../shaders/prompt.ts";
+import { quantizedLikeCpu, CODEBOOK_BYTES } from "../shaders/prompt.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
@@ -185,7 +185,7 @@ async function firstLayer(m: Model) {
     for (const piece of matrix.pieces) {
       const [v, s] = piece.layers[0], valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
       values.set(new Uint8Array(await readBack(m, v.buffer ?? v, valueBytes, v.offset ?? 0)), piece.first * row);
-      if (s) scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), piece.first * perRow);
+      if (s && perRow) scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), piece.first * perRow);
     }
     out[name] = [values, scales];
   }
@@ -231,7 +231,9 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => PACKINGS[spec.packing].scales(spec.n);
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are (T.547.2.4: Q4_K's
   // blocks as their weights, whose one scale is 1: ONE)
-  const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes), ONE = Float32Array.of(1);
+  // (T.547.3.4: an IQ type's of the model's codebooks)
+  const codebooks = m.plan.codebooks ? new Uint8Array(m.memory.buffer, m.plan.codebooks, CODEBOOK_BYTES).slice() : undefined;
+  const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes, codebooks), ONE = Float32Array.of(1);
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
     // (T.533: ternary's scales are float16s there, which went up widened)
