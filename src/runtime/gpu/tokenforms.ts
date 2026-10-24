@@ -356,7 +356,13 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     // a token of the second half of the vocabulary whose row is large: the rows of tokens no text has (llm-jp-3's
     // last) are nearly 0, and their keys and values then float16's subnormals (a check of them was 15% off, CI)
     const embeddingRow = tableRow("embedding");
-    const sizeOf = (t: number) => embeddingRow(t)[1].reduce((sum, v) => sum + Math.abs(v), 0);
+    // (T.547.3.6's review: of a table of llama.cpp's blocks, whose one scale is 1, by its weights themselves)
+    const sizeOf = (t: number) => {
+      const [values, scales] = embeddingRow(t), of = scales.length === 1 ? values : scales;
+      let sum = 0;
+      for (let i = 0; i < of.length; i++) sum += Math.abs(of[i]);
+      return sum;
+    };
     const token = checkCandidates(vocab).reduce((best, t) => (sizeOf(t) > sizeOf(best) ? t : best));
     const pos = 1;
     const halfBits = () => (Math.random() < 0.5 ? 0x8000 : 0) | ((13 + ((Math.random() * 3) | 0)) << 10) | ((Math.random() * 1024) | 0);

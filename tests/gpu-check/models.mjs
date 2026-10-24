@@ -218,6 +218,12 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-iq-rest": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ_REST_KINDS, valued: true }, { kinds: IQ_REST_KINDS }],
   "synthetic-saluki-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: SALUKI_LAYERS, valued: true }, { kinds: SALUKI_LAYERS }],
   "synthetic-saluki-tables": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: SALUKI_TABLES, valued: true }, { kinds: SALUKI_TABLES }],
+  // (the review: a tied table of a K type, which binds nothing at 1; and an int8 embedding beside a classifier of Q2_K,
+  // in pieces of a third of the table: a piece's rows from its first)
+  "synthetic-q4k-tied": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true },
+    { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
+  "synthetic-q2k-classifier": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: { ...Q2K_KINDS, wcls: "Q2_K" }, valued: true },
+    { kinds: { ...Q2K_KINDS, wcls: "Q2_K" } }],
   "synthetic-q4k-qk-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_QK_APART, valued: true }, { kinds: Q4K_QK_APART }],
   "synthetic-q4k-up-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_UP_APART, valued: true }, { kinds: Q4K_UP_APART }],
   "synthetic-lfm2-q4k-layers": [{ dim: 256, hidden: 768, layers: 6, heads: 4, kv_heads: 2, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_LAYERS, valued: true },

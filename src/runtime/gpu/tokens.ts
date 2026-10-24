@@ -176,7 +176,7 @@ const tokenShape = (m: Model) => {
 // under two keys is compiled once (chooseTokens). The norm is on the read of T.150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
 // (T.547.2.4: blocks, and each of the matrices' keys again with ":Q4_K" after it, fusedDp4aMatVec's text for Q4_K's blocks:
-// a matrix of them dispatches its key's counterpart; the classifier is no such matrix, tokensUnfit())
+// a matrix of them dispatches its key's counterpart; T.547.3.6: the classifier's too, where it is one)
 const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, up, geglu, layerNorm, floatHead, posts, mix, write, blocks }: ReturnType<typeof tokenShape>): [string, string][] => {
   const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
   const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: ternary ? "ternary" : "int8" }) : floats;
