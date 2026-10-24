@@ -3,7 +3,7 @@
 
 import { COPY_DST, MAP_READ, rowBytes, stopping, within, isLate, buffer, readBack, validated, pipelineOf, widenedHalves } from "./device.ts";
 import { tablesOf } from "./weights.ts";
-import { PACKINGS } from "./packings.ts";
+import { PACKINGS, packingAt } from "./packings.ts";
 import { halfToFloat } from "./forms.ts";
 import { roomFor, BLOCK_ROUNDS } from "./block.ts";
 import { chooseTokenAttention } from "./tokenattention.ts";
@@ -171,7 +171,8 @@ export { heldFloats };  // (tests/gpu-choice-check.mjs)
 async function firstLayer(m: Model) {
   const out: { [name: string]: [Uint8Array<ArrayBuffer>, Float32Array<ArrayBuffer>] } = {};
   for (const [name, matrix] of Object.entries(m.weights.matrices)) {
-    const row = rowBytes(matrix), perRow = PACKINGS[matrix.packing].scales(matrix.n), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
+    // (T.547.3.1: the first layer's packing, where each layer has its own)
+    const held = { n: matrix.n, packing: packingAt(matrix, 0) }, row = rowBytes(held), perRow = PACKINGS[held.packing].scales(matrix.n), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
     const values = new Uint8Array(rows * row), scales = new Float32Array(rows * perRow);
     for (const piece of matrix.pieces) {
       const [v, s] = piece.layers[0], valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
@@ -257,8 +258,8 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   };
   const all = (n: number) => [...Array(n).keys()];
   const matmul = (name: string, x: ArrayLike<number>) => {
-    const matrix = plan.matrices[name];
-    return product(matrix.n, back.firstLayer ? readBackRows(matrix, back.firstLayer[name]) : inMemory(matrix, matrix.layers[0]), x, all(matrix.rows));
+    const matrix = plan.matrices[name], first = { ...matrix, packing: packingAt(matrix, 0) };
+    return product(matrix.n, back.firstLayer ? readBackRows(first, back.firstLayer[name]) : inMemory(first, matrix.layers[0]), x, all(matrix.rows));
   };
   const rms = (x: Float64Array, weights: Float64Array) => {
     const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length + plan.eps);

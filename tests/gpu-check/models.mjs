@@ -94,6 +94,10 @@ const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, val
 // (T.547.2.3: the matrices kept as Q4_K blocks; the others are int8)
 const Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K", w3: "Q4_K" };
 const LFM2_Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", win: "Q4_K", wout: "Q4_K", w1: "Q4_K", w3: "Q4_K" };
+// (T.547.3.1: a stack's layers each of a packing of its own, as Saluki's are: int8 and Q4_K by layer, every matrix's
+// layers of both, and in a layer q, k and v, gate and up of two packings)
+const Q4K_LAYERS = { wq: ["Q4_K", "int8", "Q4_K"], wk: ["int8", "Q4_K", "Q4_K"], wv: ["int8", "int8", "Q4_K"], wo: ["Q4_K", "Q4_K", "int8"],
+  w1: ["int8", "Q4_K", "int8"], w2: ["Q4_K", "int8", "Q4_K"], w3: ["Q4_K", "Q4_K", "int8"] };
 // (a place's state: value heads × key dim × value dim floats)
 const QWEN35_STATE = 6 * 32 * 64 * 4;
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
@@ -170,6 +174,9 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // prompt's matrices go to the GPU by the DP4A tiles, the Q4_K ones by their Q4_K text; its steps stay on the CPU.
   // The blocks are values of 0.3 N quantized (made_up.valued_blocks(): random bytes are weights of one sign mostly)
   "synthetic-q4k": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_KINDS, valued: true }, { kinds: Q4K_KINDS }],
+  // (T.547.3.1: the same of layers each of a packing of its own, Q4K_LAYERS: a prompt's matrix by its layer's text; its
+  // steps on the CPU until T.547.3.2)
+  "synthetic-q4k-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_LAYERS, valued: true }, { kinds: Q4K_LAYERS }],
   // (T.547.2.4's review: the same wider, rows of 1280 and 1536 weights, 40 and 48 groups of 32: a token's matrix goes
   // round its loop over the row twice, the second at blocks of the row past the first round's; calm, as rows this wide
   // grow the stream past the logits' line otherwise, on the CPU too. Seed 3: of seed 0, NumPy's greedy steps in float32
@@ -226,7 +233,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-q4k-wide",
-  "synthetic-lfm2-q4k"];
+  "synthetic-lfm2-q4k", "synthetic-q4k-layers"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };

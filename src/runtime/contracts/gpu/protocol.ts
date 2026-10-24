@@ -20,8 +20,9 @@ import type { Activation, LayerKind } from "../plan.ts";
 export type GpuPacking = "int8" | "int6" | "ternary" | "Q4_K";
 // a matrix of every layer: rows of n values, packed so, and for every layer [where its values are, where its scales
 // are (T.547.2.3: unread where they are in its blocks: Q4_K's)]. T.545: of: the kind of the layers it is a matrix of (an LFM2's q is its attending layers', its matrix in its
-// convolution layers'), whose places index layers; none: every layer's
-export type Matrix = { rows: number; n: number; packing: GpuPacking; layers: [number, number][]; of?: LayerKind };
+// convolution layers'), whose places index layers; none: every layer's. T.547.3.1: packing "layers", a stack whose
+// layers are each of a packing of its own (Saluki's, llama.cpp's types a tensor), and packings, each layer's by its place
+export type Matrix = { rows: number; n: number; packing: GpuPacking | "layers"; packings?: GpuPacking[]; layers: [number, number][]; of?: LayerKind };
 // a table (the classifier, the embedding): as a matrix, at [values, scales]
 export type Table = { rows: number; n: number; packing: GpuPacking; at: [number, number] };
 // a vector of every layer: where it is, and its size a layer (T.545: of, as a matrix's)
