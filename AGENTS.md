@@ -88,7 +88,7 @@
 | `src/runtime/worker.ts` と `worker/` | モデルの Web Worker。持ち主の `runtime.ts`（Pyodide・カーネル・forward・URL の旗・WebGPU）・`request.ts`・`loaded.ts`・`weights.ts`（重みの置き場）と、`pyodide.ts`・`sources.ts`（サイトの部品）・`ranges.ts`（HF の Range）・`conduct.ts`（段取りに答える輪と答え手）・`convert.ts`・`load.ts`・`timing.ts`・`clock.ts`・`outdated.ts` |
 | `src/runtime/forward.ts` と `forward/` | 1 トークンの forward（JavaScript が自前の `WebAssembly.Memory` の上でカーネルを呼ぶ）。`engine.ts`（`createForward()`）・`kinds.ts`（層の種類の表 `LAYER_KINDS`）と `attention.ts`・`linear.ts`・`convolution.ts`・`ffn.ts`・`cache.ts`（KV）・`perlayer.ts`・`control.ts`・`threads.ts`・`gpuside.ts`・`choice.ts`・`paths.ts`・`sizes.ts`・`architectures.ts`・`memory.ts`（`footprint()`）・`alone.ts`・`reasons.ts` |
 | `src/runtime/jobs.ts`・`helper.ts` | 制御領域の語・カーネルの番地 `ADDRESSES`・仕事の種類の表 `WORK`（`KIND`）・詰め方の表 `PACKED`・`runner()` / ソフトウェアスレッド（Node の試験は `tests/helper-node.mjs`） |
-| `src/runtime/gpu.ts` と `gpu/` | モデルのページの GPU の Worker。`device.ts`・`weights.ts`・`forms.ts`・`block.ts`（プロンプトのブロック）・`tokenattention.ts`・`tokens.ts`・`tokenforms.ts`（生成のステップ）・`requests.ts`・`start.ts` |
+| `src/runtime/gpu.ts` と `gpu/` | モデルのページの GPU の Worker。`device.ts`・`weights.ts`・`forms.ts`・`block.ts`（プロンプトのブロック）・`tokenattention.ts`・`tokens.ts`・`tokenforms.ts`（生成のステップ）・`requests.ts`・`start.ts`、層の種類の表 `kinds.ts`（`GPU_KINDS`）と種類ごとの `attention.ts`・`linear.ts`・`convolution.ts` |
 | `src/runtime/shaders.ts` と `shaders/` | WGSL。エンジンの `common`・`prompt`・`steps`・`attention`・`fused`・`run`・`sample`、目録 `engine.ts`（`ENGINE_SHADERS`・`TERNARY_SHADERS`・`ENGINE`）、端末の鍵 `key.ts`、ベンチだけの `bench`・`matvec`・`stages`、CPU の標本抽出の模型 `likecpu.ts` |
 | `src/runtime/contracts/` | 境目の型だけ: `plan.ts`・`messages.ts`・`gpu/protocol.ts`・`form.ts`・`conduct.ts`・`python.ts`・`benchmark.ts` |
 | `src/runtime/failure.ts`・`updated.ts`・`built.ts`・`kept.ts` | 失敗の運び方 / 「サイトが更新された」の判定と文 / 作る物の表 `BUILT` / 変換したモデルの保存（OPFS、無ければ Cache API。`CONVERTER`・`keptName()`・`replaced()`・`keeper()`） |
@@ -195,7 +195,7 @@
 | `worker/weights.ts` | 使い回すメモリ・GPU だけのモデル・CPU に戻したモデル・層ごとの埋め込みの表を読むファイル（`rowsNow`） |
 | `forward/threads.ts`・`forward/gpuside.ts` | スレッドと本数の検索 / GPU の Worker・どちらに回すか・測り直し |
 | `forward/control.ts`・`forward/cache.ts` | 制御領域の語と待ち / KV のキャッシュ |
-| `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録（`m.weights`・`m.block`・`m.forms`・`m.tokens`: **持ち主のファイルがリテラルで作り、その鍵が宣言**。別の部品の記録には代入しない） |
+| `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録（`m.weights`・`m.block`・`m.forms`・`m.tokens`: **持ち主のファイルがリテラルで作り、その鍵が宣言**。別の部品の記録には代入しない。層の種類が作る物は種類のファイルの閉包の中にあり、`m.block.kinds`・`m.tokens.kinds` に置くのは `block.ts`・`tokens.ts`） |
 | `src/page/model.ts`・`answer.ts` | ページが持つモデルと読み込みの進み / 書いている答え（描く間合い: 最初はすぐ、その後 8 トークンか 32 ms ごと） |
 | `src/benchmark/running.ts` | 走っている run |
 
@@ -315,7 +315,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 2. **状態を読んで書く段をスレッドに出すなら、読む所と書く所を分ける**（2 枚持つ: 止まったスレッドの段をやり直しても同じ数になる。`linear.ts`）。取りまとめ役だけが段の外で触るなら 1 枚でよい。
 3. `forward/kinds.ts` の表の**最後**に 1 行。型: `contracts/plan.ts` の `LayerKind` と `TensorName`、`contracts/form.ts` の `Stateful`。
 4. 試験: `tests/layer-parts-check.mjs` に種類の節と表の順、`tests/plan_facts.py` の `cases()`、`tests/engine_plans.py` に家族。
-5. 状態を持つ層のあるモデルは何も書かなければ GPU に置かれない。**GPU にも置くなら**: `make()` の返す物に `staging: { bytes, put(to), take(from) }`（GPU が持つ形の状態のバイト数と、staging に書く・戻す関数）、種類に `staged(sizes, count)`（`footprint()` が数える）、GPU の Worker の層の形（`gpu/block.ts` の種類の枝とシェーダ、`m.block.states` に CPU の `put()` と同じ順で）、`gpuside.ts` の `KIND_OF` にその種類だけの名前。**状態の持ち主は CPU**: 頼みの前に `stateToStaging()` で K・V の後ろに置き、GPU はそこから上げ（位置 0 は 0 から、**頼みの `fresh` が真なら上げずに自分の状態から**: `gpuStateAt`）、K・V の後ろに返し、CPU が `stateFromStaging()` で写す。答えのステップは最後のステップの状態だけを返す（止まりで少なく引いたときは返らず、CPU は位置 0 からしか続けない）。GPU だけのモデルは状態を GPU が持ち、何も返さない。
+5. 状態を持つ層のあるモデルは何も書かなければ GPU に置かれない。**GPU にも置くなら**: `make()` の返す物に `staging: { bytes, put(to), take(from) }`（GPU が持つ形の状態のバイト数と、staging に書く・戻す関数）、種類に `staged(sizes, count)`（`footprint()` が数える）、GPU の Worker の種類（`gpu/<種類>.ts` に `GpuKind` と `gpu/kinds.ts` の `GPU_KINDS` に 1 行。順は CPU の `LAYER_KINDS` と同じ。`block()` がシェーダと置き場を作り、状態の置き場 `states` を CPU の `put()` と同じ順で言い、`layer()` がブロックの 1 層、`tokens()` が答えのステップの 1 層、`first()` が最初の層の読み込みの検査（JavaScript の層）。`block.ts`・`tokens.ts`・`tokenforms.ts` は種類の名前を比べない。シェーダは目録の行。網の `gpusteps` の作り物に種類のモデルを 1 つ足す）、`gpuside.ts` の `KIND_OF` にその種類だけの名前。**状態の持ち主は CPU**: 頼みの前に `stateToStaging()` で K・V の後ろに置き、GPU はそこから上げ（位置 0 は 0 から、**頼みの `fresh` が真なら上げずに自分の状態から**: `gpuStateAt`）、K・V の後ろに返し、CPU が `stateFromStaging()` で写す。答えのステップは最後のステップの状態だけを返す（止まりで少なく引いたときは返らず、CPU は位置 0 からしか続けない）。GPU だけのモデルは状態を GPU が持ち、何も返さない。
 
 ### dtype（詰め方）を足す
 

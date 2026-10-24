@@ -6,46 +6,24 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within,
   dispatch } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { productGroups, multiply } from "./forms.ts";
+import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import { GROUP } from "../shaders/common.ts";
-import { FLASH_Q_TILE } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { Model } from "./device.ts";
-import type { Tiled } from "./forms.ts";
+import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
+import type { LayerKind } from "../contracts/plan.ts";
 import type { Cache as Sent, Vectors } from "../contracts/gpu/protocol.ts";
 
 // T368.6: this module's record, m.block, as prepare() makes it (the layers' bind groups and the keys and values come
 // later, bindLayers() and grow(): null until then, and read with a ! after).
-// an input's quantization (QUANTIZE's bind group and workgroups), a bias added (ADD's), a matrix's product (a bind
-// group and its rows for each piece, forms.ts's productGroups())
-type Quantizing = { group: GPUBindGroup; x: number };
-type Added = { group: GPUBindGroup; x: number };
-type Product = { rows: number; group: GPUBindGroup }[];
-type HeadNorm = { group: GPUBindGroup; heads: number };
-// T545: an LFM2's convolution layer's: the matrix in (from xb into the block's mixed), SHORT_CONV (into xb) and
-// CONV_STATE, the matrix out
-type Convolving = { into: Product; conv: GPUBindGroup; state: GPUBindGroup; out: Product };
-// T271.2: a Qwen3.5's linear-attention layer's: its matrices of q, k and v (into mixed) and of z, its gates, its
-// convolution (DELTA_CONV into conv) and its rows moved on (DELTA_CONV_STATE), the l2 norms of q and of k (HEAD_NORM),
-// the delta rule (into out), the norm of a value head, z's gate (SWIGLU: into z), its matrix out
-type Delta = { into: Product; z: Product; gates: GPUBindGroup; conv: GPUBindGroup; state: GPUBindGroup; qNorm: GPUBindGroup; kNorm: GPUBindGroup;
-  rule: GPUBindGroup; norm: GPUBindGroup; gate: GPUBindGroup; out: Product };
-// a layer's bind groups (a bias only where the model has it; up where the FFN has a gate). T545: a convolution layer's
-// convolution; its attention's (q, k, v, its biases and norms of the heads, o) are empty
+// (a matrix's product, an input's quantization and a bias added are gpu/kinds.ts's types, which the kinds' layers bind too)
+// a layer's bind groups: its kind's step (T568.2: gpu/kinds.ts's table; T545: an LFM2's convolution layers, T271.2 a
+// Qwen3.5's linear-attention layers, besides the attending ones), and what every layer has around it: the norm before,
+// T261.4 a Gemma 3's norms behind the step and the FFN, each added to the stream (null: none), the FFN (a bias only where
+// the model has it; up where the FFN has a gate)
 type Layer = {
-  convolution: Convolving | null;
-  // T271.2: a linear-attention layer's (its attention's are empty then), and a full-attention layer's gate of its
-  // output (a matrix of xb into the block's gated, OUTPUT_GATE on the attention's output; null: none)
-  delta: Delta | null;
-  outputGate: { into: Product; gate: GPUBindGroup } | null;
+  step: BlockStep;
   attentionNorm: GPUBindGroup;
-  q: Product;
-  k: Product;
-  v: Product;
-  biases: Added[];
-  headNorms: HeadNorm[];
-  o: Product;
-  oBias: Added | undefined;
-  // T261.4: a Gemma 3's norms behind the attention and the FFN, each added to the stream (null: none)
   attentionPost: GPUBindGroup | null;
   ffnNorm: GPUBindGroup;
   gate: Product;
@@ -95,24 +73,14 @@ type Block = {
   embedGroups: GPUBindGroup[] | null;
   layers: Layer[] | null;
   cache: Kept | null;
-  // T545: an LFM2's convolution layers' shaders, what the matrix in gives a block (3 dim a token), and the rows they go
-  // on from (taps rows of dim a layer, place after place, as the CPU keeps them: bytes of them); null where there are none
-  conv: { short: GPUComputePipeline; state: GPUComputePipeline; mixed: GPUBuffer; rows: GPUBuffer; bytes: number } | null;
-  // T271.2: a Qwen3.5's linear-attention layers' shaders and buffers (what wqkv gives a block, what the convolution
-  // gives, z, the gates, the delta rule's output; the states and the rows they go on from, place after place, as the CPU
-  // keeps them; the l2 norms' weights), null where there are none; and the gate of its full-attention layers' output
-  linear: { gates: GPUComputePipeline; conv: GPUComputePipeline; state: GPUComputePipeline; rule: GPUComputePipeline; swiglu: GPUComputePipeline;
-    mixed: GPUBuffer; convolved: GPUBuffer; z: GPUBuffer; work: GPUBuffer; out: GPUBuffer; states: GPUBuffer; matricesBytes: number; rows: GPUBuffer; rowsBytes: number;
-    units: GPUBuffer; quantizeZ: Quantizing } | null;
-  outputGate: { pipeline: GPUComputePipeline; gated: GPUBuffer } | null;
-  // the state of the layers that keep one, as the CPU stages it (T545: an LFM2's rows; T271.2: a Qwen3.5's states,
-  // then its rows), and its bytes
-  states: { buffer: GPUBuffer; bytes: number }[];
+  // T568.2: what each kind the model's layers are of made of a block (gpu/kinds.ts: its shaders, its buffers, its
+  // layers' steps, its own of a token), by its name
+  kinds: Partial<Record<LayerKind, KindBlock>>;
+  // the state of the layers that keep one, as the CPU stages it (the kinds' in their table's order: T545 an LFM2's rows;
+  // T271.2 a Qwen3.5's states, then its rows), and its bytes
+  states: State[];
   stateBytes: number;
 };
-// T545: how many layers keep keys and values here (every one, but an LFM2's convolution layers), and which they are
-const attendingOf = (plan: { kinds?: string[]; layers: number }) =>
-  plan.kinds ? plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : [])) : Array.from({ length: plan.layers }, (_, l) => l);
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
@@ -120,9 +88,10 @@ const attendingOf = (plan: { kinds?: string[]; layers: number }) =>
 // pipelines and buffers for their own bind groups
 async function prepare(m: Model) {
   const { plan } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
-  // (T271.2: and a Qwen3.5's linear-attention layers' read, which z's gate leaves for their matrix out)
-  const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, read = plan.linear ? plan.linear.valueHeads * plan.linear.valueDim : 0;
-  const widest = Math.max(plan.dim, qDim, plan.hidden, read);
+  // (T568.2: and what a kind's layers quantize besides: T271.2 a Qwen3.5's linear-attention layers' read, which z's gate
+  // leaves for their matrix out)
+  const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, present = kindsOf(plan);
+  const widest = Math.max(plan.dim, qDim, plan.hidden, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
   // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU (T261.4: or GEGLU, a
   // Gemma 3's gate); and the norm added to the stream behind the attention and the FFN where the model has those
   const posts = Boolean(plan.vectors.attentionPost || plan.vectors.ffnPost);
@@ -147,33 +116,11 @@ async function prepare(m: Model) {
   // (T261.4: and those of the local layers' tables, where the model has them)
   const anglesLocal = plan.localCos ? buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST) : null;
   const step = buffer(m, 16, UNIFORM | COPY_DST);
-  // T545: of an LFM2's convolution layers
-  let conv: Block["conv"] = null;
-  if (plan.convolution) {
-    const [short, state] = await within(Promise.all([ENGINE.SHORT_CONV, ENGINE.CONV_STATE].map((code) => pipelineOf(m, code))), "the convolution's shaders");
-    const bytes = plan.kinds.filter((kind) => kind === "convolution").length * plan.convolution.taps * plan.dim * 4;
-    conv = { short, state, mixed: buffer(m, B * 3 * plan.dim * 4), rows: buffer(m, bytes, STORAGE | COPY_DST | COPY_SRC), bytes };
-  }
-  // T271.2: of a Qwen3.5's linear-attention layers
-  let linear: Block["linear"] = null;
-  if (plan.linear) {
-    const { keyHeads, valueHeads, keyDim, valueDim, taps } = plan.linear, places = plan.kinds.filter((kind) => kind === "linear").length;
-    const keys = keyHeads * keyDim, mixed = 2 * keys + read;
-    const [gates, convolving, moving, rule, swiglu] = await within(Promise.all([ENGINE.DELTA_GATES, ENGINE.DELTA_CONV, ENGINE.DELTA_CONV_STATE, ENGINE.DELTA_NET,
-      ENGINE.SWIGLU].map((code) => pipelineOf(m, code))), "the linear attention's shaders");
-    const z = buffer(m, B * read * 4);
-    const units = buffer(m, 2 * keyDim * 4, STORAGE | COPY_DST);
-    m.device.queue.writeBuffer(units, 0, Float32Array.from({ length: 2 * keyDim }, (_, i) => (i < keyDim ? 1 / keyDim : 1 / Math.sqrt(keyDim))));
-    const matricesBytes = places * valueHeads * keyDim * valueDim * 4, rowsBytes = places * taps * mixed * 4;
-    linear = { gates, conv: convolving, state: moving, rule, swiglu, mixed: buffer(m, B * mixed * 4), convolved: buffer(m, B * mixed * 4), z,
-      work: buffer(m, B * 2 * valueHeads * 4), out: buffer(m, B * read * 4), states: buffer(m, matricesBytes, STORAGE | COPY_DST | COPY_SRC), matricesBytes,
-      rows: buffer(m, rowsBytes, STORAGE | COPY_DST | COPY_SRC), rowsBytes, units,
-      quantizeZ: { group: bind(m, quantize, [z, xq, xs, uniform(m, new Uint32Array([read, read, 0, 0])), step]), x: Math.ceil(read / GROUP / 64) } };
-  }
-  // T271.2: the gate of a Qwen3.5's full-attention layers' output
-  const outputGate = plan.matrices.wg ? { pipeline: await within(pipelineOf(m, ENGINE.OUTPUT_GATE), "the output's gate"), gated: buffer(m, B * qDim * 4) } : null;
-  const states = [...(conv ? [{ buffer: conv.rows, bytes: conv.bytes }] : []),
-    ...(linear ? [{ buffer: linear.states, bytes: linear.matricesBytes }, { buffer: linear.rows, bytes: linear.rowsBytes }] : [])];
+  // T568.2: what each kind of the model's layers makes of a block (T545: an LFM2's convolution layers'; T271.2: a
+  // Qwen3.5's linear-attention layers', and the gate of its attending layers' output)
+  const kinds: Block["kinds"] = {};
+  for (const kind of present) kinds[kind] = await GPU_KINDS[kind].block(m);
+  const states = present.flatMap((kind) => kinds[kind]!.states);
   const stateBytes = states.reduce((sum, { bytes }) => sum + bytes, 0);
   // (the attending layers' keys and values, then the state of the layers that keep one: T545; T271.4: none of it on the
   // GPU alone, whose state stays here, and whose keys and values come back for the tests alone)
@@ -210,7 +157,7 @@ async function prepare(m: Model) {
   m.block = { norm, headNorm, add, rope, activation, quantize, normAdd: normAdd ?? null, x, xb, q, k, v, gate, up, ffnInput, xq, xs, angles, anglesLocal, step,
     readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, embedRows, ids, embedGroups,
     // (bindLayers() and grow())
-    layers: null, cache: null, conv, linear, outputGate, states, stateBytes };
+    layers: null, cache: null, kinds, states, stateBytes };
 }
 
 // every layer's bind groups but those of the cache, with the form chosen. T153: a bias (Qwen2's) added to q, k and
@@ -222,7 +169,7 @@ function bindLayers(m: Model) {
   for (let l = 0; l < plan.layers; l++) {
     // T545: a matrix or a vector of the layers of a kind (an LFM2's attending or convolution layers': of) is read at the
     // layer's place among them, every layer's at the layer
-    const place = plan.places?.[l] ?? l, convolving = plan.kinds?.[l] === "convolution" || plan.kinds?.[l] === "linear";
+    const place = plan.places?.[l] ?? l;
     const index = (of: string | undefined) => (of ? place : l);
     // (a piece each, T155)
     const product = (name: string, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, index(plan.matrices[name]?.of), from, to, add);
@@ -235,39 +182,15 @@ function bindLayers(m: Model) {
     // T154: LayerNorm reads its bias from the same place in its own buffer
     const normed = (weight: string, bias: string, out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias], out, normShape, b.step]
       : [b.x, V[weight], out, normShape, b.step]);
-    // T261.4: the norm of what joins the stream (from), added to it (a Gemma 3's: the output of o, and of w2, written
-    // apart into gate and xb, which nothing reads by then)
+    // T261.4: the norm of what joins the stream (from), added to it (a Gemma 3's: the output of the step's matrix out,
+    // and of w2, written apart into gate and xb, which nothing reads by then)
     const post = (name: keyof Vectors, from: GPUBuffer) => (V[name] ? bind(m, b.normAdd!, [from, V[name], b.x, normShape, b.step]) : null);
-    const headNorm = (of: GPUBuffer, name: string, heads: number) => {
-      if (!V[name]) return null;
-      const shape = new ArrayBuffer(16);
-      new Uint32Array(shape, 0, 2).set([plan.headSize, index(plan.vectors[name as keyof Vectors]!.of) * plan.headSize]);
-      new Float32Array(shape, 8, 1)[0] = plan.eps;
-      return { group: bind(m, b.headNorm, [of, V[name], uniform(m, shape), b.step]), heads };
-    };
-    // T545: a convolution layer's matrix in, its two shaders on the layer's taps and rows (at its place), its matrix out
-    let convolution: Convolving | null = null;
-    if (plan.kinds?.[l] === "convolution") {
-      const c = b.conv!, shape = uniform(m, new Uint32Array([plan.dim, plan.convolution!.taps, place * plan.convolution!.taps * plan.dim, 0]));
-      convolution = { into: product("win", b.xb, c.mixed), conv: bind(m, c.short, [c.mixed, V.conv, c.rows, b.xb, shape, b.step]),
-        state: bind(m, c.state, [c.mixed, c.rows, shape, b.step]), out: V.attentionPost ? product("wout", b.xb, b.gate) : product("wout", b.xb, b.x, true) };
-    }
-    // T271.2: a linear-attention layer's matrices, its gates, convolution, l2 norms, delta rule, norm, z's gate (at its
-    // place among those layers: its rows, its state, its vectors) and its matrix out; and an attending layer's gate of
-    // its output where the model has one (a Qwen3.5's)
-    let delta: Delta | null = null;
-    if (plan.kinds?.[l] === "linear") {
-      delta = linearLayer(m, form, place);
-    }
-    const outputGate = !convolving && b.outputGate ? { into: product("wg", b.xb, b.outputGate.gated),
-      gate: bind(m, b.outputGate.pipeline, [b.xb, b.outputGate.gated, uniform(m, new Uint32Array([plan.heads * plan.headSize, 0, 0, 0])), b.step]) } : null;
+    // (the step's matrix out: added to the stream, or written into gate for the norm behind it)
+    const out = (name: string, from: GPUBuffer) => (V.attentionPost ? product(name, from, b.gate) : product(name, from, b.x, true));
     layers.push({
-      convolution, delta, outputGate,
-      attentionNorm: normed("attention", "attentionBias", b.xb),
-      q: convolving ? [] : product("wq", b.xb, b.q), k: convolving ? [] : product("wk", b.xb, b.k), v: convolving ? [] : product("wv", b.xb, b.v),
-      biases: convolving ? [] : [added(b.q, "bq"), added(b.k, "bk"), added(b.v, "bv")].filter(Boolean) as Added[],
-      headNorms: convolving ? [] : [headNorm(b.q, "qNorm", plan.heads), headNorm(b.k, "kNorm", plan.kvHeads)].filter(Boolean) as HeadNorm[],
-      o: convolving ? [] : V.attentionPost ? product("wo", b.xb, b.gate) : product("wo", b.xb, b.x, true), oBias: added(b.x, "bo"), attentionPost: post("attentionPost", b.gate),
+      // T568.2: the layer's kind's step (gpu/kinds.ts)
+      step: b.kinds[plan.kinds[l]]!.layer({ l, place, product, out, added }),
+      attentionNorm: normed("attention", "attentionBias", b.xb), attentionPost: post("attentionPost", b.gate),
       ffnNorm: normed("ffn", "ffnBias", b.ffnInput),
       gate: product("w1", b.ffnInput, b.gate), gateBias: added(b.gate, "b1"),
       up: m.weights.matrices.w3 ? product("w3", b.ffnInput, b.up!) : null,
@@ -276,30 +199,6 @@ function bindLayers(m: Model) {
   }
   m.block.layers = layers;
 }
-// T271.2: the bind groups of the linear-attention layer at place among them (a block's: B tokens' room in its buffers)
-function linearLayer(m: Model, form: Tiled, place: number): Delta {
-  const { plan } = m, V = m.weights.vectors!, b = m.block, L = b.linear!, B = plan.batch;
-  const { keyHeads, valueHeads, keyDim, valueDim, taps } = plan.linear!, keys = keyHeads * keyDim, read = valueHeads * valueDim, mixed = 2 * keys + read;
-  const product = (name: string, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, place, from, to, add);
-  // HEAD_NORM's Norm: size, at (of the weights), eps, first (the rows before its first)
-  const headNorm = (size: number, at: number, eps: number, first: number) => {
-    const shape = new ArrayBuffer(16);
-    new Uint32Array(shape).set([size, at, 0, first]);
-    new Float32Array(shape, 8, 1)[0] = eps;
-    return uniform(m, shape);
-  };
-  const conv = uniform(m, new Uint32Array([mixed, taps, place * taps * mixed, keys, B, 0, 0, 0]));
-  return { into: product("wqkv", b.xb, L.mixed), z: product("wz", b.xb, L.z),
-    gates: bind(m, L.gates, [b.xb, V.wb, V.wa, V.dtBias, V.decay, L.work, uniform(m, new Uint32Array([plan.dim, valueHeads, place * valueHeads, 0])), b.step]),
-    conv: bind(m, L.conv, [L.mixed, V.conv, L.rows, L.convolved, conv, b.step]), state: bind(m, L.state, [L.mixed, L.rows, conv, b.step]),
-    qNorm: bind(m, b.headNorm, [L.convolved, L.units, headNorm(keyDim, 0, 1e-6 / keyDim, 0), b.step]),
-    kNorm: bind(m, b.headNorm, [L.convolved, L.units, headNorm(keyDim, keyDim, 1e-6 / keyDim, B * keyHeads), b.step]),
-    rule: bind(m, L.rule, [L.convolved, L.work, L.states, L.out, uniform(m, new Uint32Array([keyHeads, valueHeads, keyDim, valueDim, B, place * valueHeads * keyDim * valueDim, 0, 0])), b.step]),
-    norm: bind(m, b.headNorm, [L.out, V.deltaNorm, headNorm(valueDim, place * valueDim, plan.eps, 0), b.step]),
-    gate: bind(m, L.swiglu, [L.z, L.out, uniform(m, new Uint32Array([read, 0, 0, 0])), b.step]),
-    out: V.attentionPost ? product("wout", L.z, b.gate) : product("wout", L.z, b.x, true) };
-}
-
 // The GPU's own keys and values (float16, a pair to a u32), per layer [positions][kvDim], grown as the CPU's cache
 // grows (doubling from plan.kvStart: a prompt seldom needs the whole context) and kept from block to block; with them
 // the bind groups that read them
@@ -411,8 +310,8 @@ function stateIn(m: Model, encoder: GPUCommandEncoder, pos: number, fresh: boole
 async function block(m: Model, count: number, pos: number, wanted: () => boolean, timing = false, tokens?: number[], fresh = false) {
   const { device, plan } = m, half = plan.headSize / 2;
   // (T378.4: this module's record taken apart once: the layers' loop below reads locals. The cache after grow())
-  const { norm, headNorm, add, rope, activation, quantize, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
-    quantizeAttention, quantizeFfn, quantizeGate, embedRows, embedGroups, layers, conv, linear, outputGate } = m.block;
+  const { norm, add, activation, quantize, normAdd, x, angles, anglesLocal, step, rows, turns, turnsLocal, ids, activationGroup, quantizeXb,
+    quantizeFfn, quantizeGate, embedRows, embedGroups, layers } = m.block;
   // the rows forward.ts embedded (dense), and the angles of their positions (the tables forward.ts has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address: number, n: number) => new Float32Array(m.memory.buffer, address, n);
@@ -440,7 +339,6 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   if (anglesLocal) device.queue.writeBuffer(anglesLocal, 0, turnsLocal!, 0, count * plan.headSize);
   device.queue.writeBuffer(step, 0, new Uint32Array([count, pos, 0, 0]));
   roomFor(m, pos + count);
-  const { cache } = m.block;
   const encoder = device.createCommandEncoder(), form = m.forms.form!;
   // T545: the rows the convolution layers go on from (T271.2: and the linear-attention layers' states and rows)
   stateIn(m, encoder, pos, fresh);
@@ -448,7 +346,6 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   const multiplied = (pieces: Product) => pieces.forEach((piece) => multiply(m, pass, form, piece.group, piece.rows, count));
   // a packed form reads its input quantized: once for the matrices that read the same one
   const quantized = (input: Quantizing) => form.packed && dispatch(pass, quantize, input.group, input.x, count);
-  const flash = m.forms.attention;
   // a bias added to a matrix's output (T153: Qwen2's q, k and v; T154: GPT-2's and GPT-NeoX's every matrix's)
   const biased = (bias: Added | undefined) => bias && dispatch(pass, add, bias.group, bias.x, count);
   embedGroups?.forEach((group) => dispatch(pass, embedRows!, group, 1, count));
@@ -456,57 +353,10 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
     const layer = layers![l];
     dispatch(pass, norm, layer.attentionNorm, 1, count);
     quantized(quantizeXb);
-    // T545: a convolution layer: its matrix in, the convolution into xb and the rows moved on by the block's tokens (the
-    // last layer leaves those alone: the rows are all a prompt's token leaves there), its matrix out
-    if (layer.convolution) {
-      const { into, conv: convolved, state, out } = layer.convolution, groups = Math.ceil(plan.dim / 64);
-      multiplied(into);
-      if (l < plan.layers - 1) dispatch(pass, conv!.short, convolved, groups, count);
-      dispatch(pass, conv!.state, state, groups);
-      if (l === plan.layers - 1) break;
-      quantized(quantizeXb);
-      multiplied(out);
-      if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
-    } else if (layer.delta) {
-      // T271.2: a linear-attention layer: its two matrices of the normed stream, its gates, the convolution and its rows
-      // moved on, the l2 norms of q and k, the delta rule over its state, the norm of every value head, z's gate, its
-      // matrix out (the last layer's too: its state is what the next token goes on from)
-      const { into, z, gates, conv: convolved, state, qNorm, kNorm, rule, norm: valueNorm, gate, out } = layer.delta, L = linear!, { keyHeads, valueHeads, valueDim } = plan.linear!;
-      const keys = keyHeads * plan.linear!.keyDim, mixed = 2 * keys + valueHeads * valueDim;
-      multiplied(into);
-      multiplied(z);
-      dispatch(pass, L.gates, gates, valueHeads, count);
-      dispatch(pass, L.conv, convolved, Math.ceil(mixed / 64), count);
-      dispatch(pass, L.state, state, Math.ceil(mixed / 64));
-      dispatch(pass, headNorm, qNorm, keyHeads, count);
-      dispatch(pass, headNorm, kNorm, keyHeads, count);
-      dispatch(pass, L.rule, rule, valueHeads);
-      dispatch(pass, headNorm, valueNorm, valueHeads, count);
-      dispatch(pass, L.swiglu, gate, Math.ceil((valueHeads * valueDim) / 64), count);
-      if (l === plan.layers - 1) break;
-      quantized(L.quantizeZ);
-      multiplied(out);
-      if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
-    } else {
-      const at = plan.places?.[l] ?? l;
-      multiplied(layer.q);
-      multiplied(layer.k);
-      multiplied(layer.v);
-      if (layer.outputGate) multiplied(layer.outputGate.into);  // (T271.2: a Qwen3.5's gate of the output)
-      // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE
-      layer.biases.forEach(biased);
-      for (const head of layer.headNorms) dispatch(pass, headNorm, head.group, head.heads, count);
-      dispatch(pass, rope, cache!.rope[at], count);
-      if (l === plan.layers - 1) break;  // the keys and values are all a prompt's token leaves
-      // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
-      if (plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
-      dispatch(pass, flash.pipeline, cache!.attention[at], plan.heads * Math.ceil(count / FLASH_Q_TILE));
-      if (layer.outputGate) dispatch(pass, outputGate!.pipeline, layer.outputGate.gate, Math.ceil((plan.heads * plan.headSize) / 64), count);
-      quantized(quantizeAttention);
-      multiplied(layer.o);
-      biased(layer.oBias);
-      if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
-    }
+    // T568.2: the layer's kind's step (gpu/kinds.ts), which the last layer ends the block in
+    const running = { pass, count, last: l === plan.layers - 1, multiplied, quantized, biased, ffnNorm: () => dispatch(pass, norm, layer.ffnNorm, 1, count) };
+    if (layer.step(running)) break;
+    if (layer.attentionPost) dispatch(pass, normAdd!, layer.attentionPost, 1, count);
     if (!plan.parallel) dispatch(pass, norm, layer.ffnNorm, 1, count);
     quantized(quantizeFfn);
     multiplied(layer.gate);
@@ -554,6 +404,6 @@ async function keysBack(m: Model, wanted: () => boolean) {
   }
 }
 
-export { prepare, bindLayers, grow, roomFor, keysIn, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack, attendingOf, stateIn };
+export { prepare, bindLayers, grow, roomFor, keysIn, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack, stateIn };
 
 export type { Block, Quantizing, Kept };

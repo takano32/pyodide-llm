@@ -3,7 +3,8 @@
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { model, lost } from "./device.ts";
-import { roomFor, keysIn, block, keysOut, keysBack, attendingOf, stateIn } from "./block.ts";
+import { roomFor, keysIn, block, keysOut, keysBack, stateIn } from "./block.ts";
+import { attendingOf } from "./kinds.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import type { Thrown } from "./device.ts";

@@ -45,7 +45,8 @@ function planned(more = {}, sizes = SIZES) {
     [name, { rows, n, layers: Array.from({ length: LAYERS }, () => [take(rows * n), take((rows * n / GROUP) * 4)]) }]));
   const vectors = { attention: { at: take(LAYERS * DIM * 4), size: DIM }, ffn: { at: take(LAYERS * DIM * 4), size: DIM } };
   const plan = { layers: LAYERS, dim: DIM, hidden: HIDDEN, heads: HEADS, kvHeads: KV_HEADS, headSize: HEAD, batch: BATCH, seqLen: CONTEXT, kvStart: 8, turned: HEAD,
-    eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: Array(LAYERS).fill(0), local: [], localCos: 0, localSin: 0, unturned: [], matrices, vectors,
+    eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: Array(LAYERS).fill(0),
+    kinds: Array(LAYERS).fill("attention"), places: Array.from({ length: LAYERS }, (_, l) => l), local: [], localCos: 0, localSin: 0, unturned: [], matrices, vectors,
     tokens: null, force: {},
     rows: take(BATCH * DIM * 4), staging: take(2 * LAYERS * BATCH * KV_ROW), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4), ...more };
   return { plan, bytes: at };
@@ -324,10 +325,11 @@ await prepare(m);
 bindLayers(m);
 assert.equal(m.block.layers.length, LAYERS);
 for (const layer of m.block.layers) {
-  for (const name of ["q", "k", "v", "o", "gate", "up", "down"]) assert.deepEqual(layer[name].map((piece) => piece.rows), [SIZES[{ q: "wq", k: "wk", v: "wv", o: "wo", gate: "w1", up: "w3", down: "w2" }[name]][0]], `a layer's ${name}: one piece of the matrix's rows`);
-  assert.equal(layer.q[0].group.entries[2].resource.buffer, m.block.xq, "a packed form reads the quantized input");
-  assert.equal(layer.q[0].group.entries.length, 7, "and its scales");
-  assert.deepEqual([layer.biases, layer.headNorms, layer.oBias, layer.gateBias, layer.downBias], [[], [], undefined, undefined, undefined], "no bias and no norm of a head where the model has no such vector");
+  for (const name of ["gate", "up", "down"]) assert.deepEqual(layer[name].map((piece) => piece.rows), [SIZES[{ gate: "w1", up: "w3", down: "w2" }[name]][0]], `a layer's ${name}: one piece of the matrix's rows`);
+  assert.equal(layer.gate[0].group.entries[2].resource.buffer, m.block.xq, "a packed form reads the quantized input");
+  assert.equal(layer.gate[0].group.entries.length, 7, "and its scales");
+  assert.deepEqual([layer.gateBias, layer.downBias], [undefined, undefined], "no bias where the model has no such vector");
+  assert.equal(typeof layer.step, "function", "the layer's kind's step (T568.2: gpu/kinds.js)");
 }
 assert.equal(m.held, null, "nothing is held for end() before the cache is made");
 grow(m, 8);
@@ -336,6 +338,22 @@ assert.equal(firstCache.capacity, 8);
 assert.equal(firstCache.keys.length, LAYERS);
 assert.equal(firstCache.keys[0].size, 8 * KV_ROW);
 assert.equal(m.held, firstCache.owned, "grow() tells device.js which buffers the cache has now");
+// (T568.2: an attending layer's step, what it asks block.js to dispatch for it: its products in order, q's reading the
+// quantized input; no bias and no norm of a head where the model has no such vector)
+{
+  const products = [], biases = [], dispatched = [], quantized = [];
+  const pass = { setPipeline(pipeline) { pass.pipeline = pipeline; }, setBindGroup(index, group) { pass.group = group; }, dispatchWorkgroups(x) { dispatched.push([pass.pipeline, pass.group, x]); } };
+  const ended = m.block.layers[0].step({ pass, count: 5, last: false, multiplied: (pieces) => products.push(pieces), quantized: (input) => quantized.push(input),
+    biased: (bias) => biases.push(bias), ffnNorm: () => assert.fail("no parallel residual") });
+  assert.equal(ended, false, "a layer that is not the last does not end the block");
+  assert.deepEqual(products.map((pieces) => pieces.map((piece) => piece.rows)), [[Q_DIM], [KV_DIM], [KV_DIM], [DIM]], "q, k, v, then o: one piece of each matrix's rows");
+  assert.equal(products[0][0].group.entries[2].resource.buffer, m.block.xq, "q reads the quantized input");
+  assert.deepEqual(quantized, [m.block.quantizeAttention], "o's input is the attention's output, quantized");
+  assert.deepEqual(biases, [undefined], "no bias after o (and none of q, k and v asked for)");
+  assert.deepEqual(dispatched.map(([pipeline, group]) => [pipeline, group]), [[m.block.rope, firstCache.rope[0]], [m.forms.attention.pipeline, firstCache.attention[0]]],
+    "RoPE into the layer's cache, then the attention over it: no norm of a head");
+  assert.equal(m.block.layers[1].step({ pass, count: 5, last: true, multiplied() {}, quantized() {}, biased() {}, ffnNorm() {} }), true, "the last layer ends the block after RoPE");
+}
 firstCache.keys[1].data.set(random(8 * KV_ROW));
 firstCache.values[0].data.set(random(8 * KV_ROW).reverse());
 roomFor(m, 8);
