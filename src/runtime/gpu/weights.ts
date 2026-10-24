@@ -22,8 +22,10 @@ type MatrixOn = { rows: number; n: number; packing: Matrix["packing"]; packings?
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
 type Home = { joined: string; at: [number, number] };
 // (T.547.2.4: vAt, where v is written after q and k in the buffer of the three where it is apart from them, of another
-// packing: attention.ts's split; 0 where the three are one matrix)
-type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] }; vAt: number };
+// packing: attention.ts's split; 0 where the three are one matrix. T.547.3.2: kAt, where k is written after q where the
+// two are apart as well, 0 where they are one; up, whether gate and up are apart, written each into a buffer of its own
+// and joined by the activation's dispatch)
+type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
 // (T.547.2.3: no scales where its matrices' blocks hold them)
 type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null] };
 type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
@@ -320,22 +322,24 @@ function tokensLayout(m: Model): Together | null {
   // (T.545.2: and an LFM2's matrices in and out of its convolution layers; T.271.3: a Qwen3.5's of its linear-attention
   // layers and the gate of its output)
   for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout", "wqkv", "wz", "wg"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
-  // (T.547.3.1: a stack whose layers are each of a packing of its own is joined to none yet: a token's step stays on the
-  // CPU, T.547.3.2)
-  const layered = Object.keys(m.weights.matrices).find((name) => m.weights.matrices[name].packing === "layers");
-  if (layered) return why(`${layered}'s layers are each of a packing of their own`);
-  const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, packing = (name: string) => m.weights.matrices[name]?.packing;
+  const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, matrices = m.weights.matrices;
   // T.547.2.4: matrices are one of a packing alone (a matrix's shader reads one): q, k and v one where they are; q and
   // k where v is of another (a 4-bit Q4_K_M's q and k of Q4_K blocks, its v int8: a token's layer writes v apart into
-  // the buffer q and k are written to, attention.ts); gate and up one where they are, as a token's SwiGLU reads them
-  const kv = packing("wq") === packing("wv") ? { qkv: ["wq", "wk", "wv"] } : { qk: ["wq", "wk"] };
-  if (packing("wq") !== packing("wk")) return why(`wq and wk are of two packings (${packing("wq")}, ${packing("wk")})`);
-  if (gated && packing("w1") !== packing("w3")) return why(`w1 and w3 are of two packings (${packing("w1")}, ${packing("w3")})`);
-  // (v apart: one piece, as a matrix a token reads; and written after q's and k's rows where the device binds)
-  if (!kv.qkv && m.weights.matrices.wv.pieces.length > 1) return why("wv is past a buffer of this GPU");
-  const vAt = kv.qkv ? 0 : (m.weights.matrices.wq.rows + m.weights.matrices.wk.rows) * 4;
+  // the buffer q and k are written to, attention.ts); gate and up one where they are, as a token's SwiGLU reads them.
+  // T.547.3.2: and none where two of them are of two packings, or of layers of their own packings (Saluki's, whose q and
+  // k, gate and up are mostly of two types): each written apart, q, k and v into the buffer of the three, gate and up
+  // into theirs (tokens.ts)
+  const one = (a: string, b: string) => matrices[a].packing !== "layers" && matrices[a].packing === matrices[b].packing;
+  const qk = Boolean(matrices.wq) && one("wq", "wk"), kv = qk && one("wq", "wv") ? { qkv: ["wq", "wk", "wv"] } : qk ? { qk: ["wq", "wk"] } : {};
+  const up = gated && !one("w1", "w3");
+  // (a matrix apart: one piece, as a matrix a token reads; and written where the device binds, k after q's rows and v
+  // after q's and k's)
+  const aparts = [...(matrices.wq && !qk ? ["wq", "wk"] : []), ...(matrices.wq && !("qkv" in kv) ? ["wv"] : []), ...(up ? ["w1", "w3"] : [])];
+  for (const name of aparts) if (matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
+  const vAt = !matrices.wq || "qkv" in kv ? 0 : (matrices.wq.rows + matrices.wk.rows) * 4, kAt = !matrices.wq || qk ? 0 : matrices.wq.rows * 4;
+  if (kAt % align) return why("k would not start where this GPU binds a buffer, after q");
   if (vAt % align) return why("v would not start where this GPU binds a buffer, after q and k");
-  for (const [joined, names] of Object.entries({ ...kv, ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
+  for (const [joined, names] of Object.entries({ ...kv, ...(gated && !up ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;
     for (const name of names) {
       const matrix = m.weights.matrices[name];
@@ -352,7 +356,7 @@ function tokensLayout(m: Model): Together | null {
     if (values > m.limit) return why(`${names.join(" and ")} together are past a buffer of this GPU`);
     sizes[joined] = [values, scales];
   }
-  return { homes, sizes, vAt };
+  return { homes, sizes, vAt, kAt, up };
 }
 // T.152: the tables onto the GPU (int6 widened as a layer's matrices are), the final norm's weights, and RoPE's table
 // of every position, a row a position: the cos of its headSize / 2 angles, then their sin (shaders.ts's fusedMatVec
