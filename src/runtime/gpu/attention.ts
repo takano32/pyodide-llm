@@ -84,7 +84,7 @@ export const attention: GpuKind = {
         const vAt = m.weights.together?.vAt ?? 0, kAt = m.weights.together?.kAt ?? 0, split = vAt > 0;
         const u = { flash: layers.map((_, l) => flashOf(plan.windows[l] ?? 0)), o: params(plan.dim, qDim),
           qkv: layers.map((at, l) => params(qkvRows, plan.dim, 0, at, turnedAt(plan, l))),
-          qk: split && !kAt ? layers.map((at) => params(qDim + kvDim, plan.dim, 0, at)) : [], v: split ? layers.map((at) => params(kvDim, plan.dim, 0, at)) : [],
+          qk: split && !kAt ? layers.map((at) => params(qDim + kvDim, plan.dim, 0, at)) : [], kv: split ? layers.map((at) => params(kvDim, plan.dim, 0, at)) : [],
           q: kAt ? layers.map((at) => params(qDim, plan.dim, 0, at)) : [],
           // QUANTIZE's (n, xStride) of the attention's output
           quantizeAttention: uniform(m, new Uint32Array([qDim, qDim, 0, 0])) };
@@ -121,9 +121,9 @@ export const attention: GpuKind = {
               // T.226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
               // RoPE: as the CPU has it and a prompt's block (T.153), the biases, the norms of the heads of q and of k, RoPE
               ...(split ? [...(kAt ? [matrix(P.qkv, W.matrices.wq.pieces[0].layers[place], normed.input, u.q[l], qDim, [[5, { buffer: qkv!, offset: 0, size: qDim * 4 }]]),
-                matrix(P.qkv, W.matrices.wk.pieces[0].layers[place], normed.input, u.v[l] /* (v's: as many rows) */, kvDim, [[5, { buffer: qkv!, offset: kAt, size: kvDim * 4 }]])]
+                matrix(P.qkv, W.matrices.wk.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: kAt, size: kvDim * 4 }]])]
                 : [matrix(P.qkv, W.joined[l].qk, normed.input, u.qk[l], qDim + kvDim, [[5, qkv!]])]),
-                matrix(P.qkv, W.matrices.wv.pieces[0].layers[place], normed.input, u.v[l], kvDim, [[5, { buffer: qkv!, offset: vAt, size: kvDim * 4 }]])]
+                matrix(P.qkv, W.matrices.wv.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: vAt, size: kvDim * 4 }]])]
                 : [matrix(P.qkv, W.joined[l].qkv, normed.input, u.qkv[l], qkvRows, qkv ? [[5, qkv]] : turned)]),
               // (T.271.3: a Qwen3.5's gate of the output, of the same normed stream)
               ...(gated ? [matrix(P.mix, W.matrices.wg.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
