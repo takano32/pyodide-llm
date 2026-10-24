@@ -172,7 +172,7 @@ const up = await upload(m);
 {
   standIn();
   // (wk starts after wq's 1024 bytes, which is no multiple of the 256 a buffer binds at for the scales (128): not joined)
-  const unbound = await openDevice({ ...plan, tokens: { classifier: { rows: 96, n: DIM, at: [0, 0] } } });
+  const unbound = await openDevice({ ...plan, tokens: { classifier: { rows: 96, n: DIM, packing: "int8", at: [0, 0] } } });
   handed(memory, unbound.plan);
   await uploadLayers(unbound);
   assert.equal(unbound.weights.unjoined, "wk would not start where this GPU binds a buffer", "why a token's layer could not be joined is the weights' to say");
@@ -184,7 +184,7 @@ console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix an
 // ---- weights.js: a model on the GPU alone, its checkpoint coming in stretches
 {
   const alone = standIn();
-  const { plan: direct, bytes: size } = planned({ tables: { classifier: { rows: 96, n: DIM, at: [0, 0] } } });
+  const { plan: direct, bytes: size } = planned({ tables: { classifier: { rows: 96, n: DIM, packing: "int8", at: [0, 0] } } });
   direct.tables.classifier.at = [size, size + 96 * DIM];
   const checkpoint = random(size + 96 * DIM + (96 * DIM / GROUP) * 4 + 64);
   const a = await openDevice({ ...direct, tokens: true });

@@ -12,6 +12,7 @@ import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
+import { PACKINGS } from "./packings.ts";
 import type { FromGpu, GpuPacking, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
@@ -66,10 +67,8 @@ const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 
 const CHUNK = 8 << 20;
 
 
-// T.232: the bytes of a row of a matrix or a table ({ n, packing }) on the GPU: a byte a weight (int8, and int6 widened),
-// or two bits (ternary: the codes as the checkpoint holds them, 16 weights a u32). A float32 scale goes with every
-// GROUP (32) bytes of a row either way: an int8 group of 32 weights, a ternary group of 128
-const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => (packing === "ternary" ? n / 4 : n);
+// T.232: the bytes of a row of a matrix or a table ({ n, packing }) on the GPU (T.547.2.1: its packing's, packings.ts)
+const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKINGS[packing].row(n);
 // (whether the model's weights are ternary: a ternary checkpoint's matrices are all ternary, llama2_numpy's dtype, and no
 // other model has a ternary one)
 const ternaryPlan = (plan: { matrices: Record<string, Matrix> }) => Object.values(plan.matrices).some((matrix) => matrix.packing === "ternary");
