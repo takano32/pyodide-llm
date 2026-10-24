@@ -31,6 +31,7 @@ type Route = [number, number, GPUBuffer, number, boolean?];
 // holds every one as a float32 (scaleBytes below count those), ternary's widened as they go up (scalesIn, routedHalves)
 // (T.547.2.1: the packing's, packings.ts)
 const heldScale = ({ packing }: { packing: GpuPacking }) => PACKINGS[packing].scale;
+const scalesOf = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKINGS[packing].scales(n);
 function scalesIn(m: Model, spec: { packing: GpuPacking }, target: GPUBuffer, address: number, scaleBytes: number, offset = 0) {
   if (heldScale(spec) === 2) widenIn(m, target, address, scaleBytes / 4, offset);
   else copyIn(m, target, address, scaleBytes, offset);
@@ -119,14 +120,14 @@ async function uploadLayers(m: Model, alone = false) {
       // them, and none in a layer of another kind: its pieces' layers are by those places)
       if (matrix.of && plan.kinds[l] !== matrix.of) continue;
       const [valuesAt, scalesAt] = matrix.layers[matrix.of ? plan.places[l] : l];
-      const home = together?.homes[name], row = rowBytes(matrix);
+      const home = together?.homes[name], row = rowBytes(matrix), perRow = scalesOf(matrix);
       for (const piece of m.weights.matrices[name].pieces) {
-        const valueBytes = piece.rows * row, scaleBytes = (valueBytes / group) * 4;
+        const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
         // its own buffers, or its range of the layer's joined ones
         const [values, scales]: Bound[] = home
           ? joined![home.joined].map((b, i) => ({ buffer: b, offset: home.at[i], size: i ? scaleBytes : valueBytes }))
           : [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)];
-        const from = [valuesAt + piece.first * row, scalesAt + (piece.first * row / group) * heldScale(matrix)];
+        const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(matrix)];
         if (alone) {
           // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened)
           routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
@@ -202,7 +203,7 @@ function tablesOf(plan: Tabled, make: (spec: Table) => unknown = (spec) => spec)
 // and one of scales each, [{ first, rows, values, scales }]; fill(piece, valueBytes, scaleBytes) puts its bytes there
 function tablePieces(m: Model, spec: Table, fill: (piece: TablePiece, valueBytes: number, scaleBytes: number) => void, usage = STORAGE | COPY_DST): TablePiece[] {
   return piecesOf(m, spec.rows, rowBytes(spec), m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
-    const valueBytes = count * rowBytes(spec), scaleBytes = (valueBytes / GROUP) * 4;
+    const valueBytes = count * rowBytes(spec), scaleBytes = count * scalesOf(spec) * 4;
     const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: buffer(m, scaleBytes, usage) };
     fill(piece, valueBytes, scaleBytes);
     return piece;
@@ -212,10 +213,10 @@ function tablePieces(m: Model, spec: Table, fill: (piece: TablePiece, valueBytes
 // their stretches routes that take() writes the bytes to as they come; COPY_SRC for the check's rows (checkTokens).
 // The bytes on the GPU
 function tablesOn(m: Model) {
-  const group = GROUP, { routes } = m.weights;
+  const { routes } = m.weights;
   let bytes = 0;
   m.weights.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
-    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * heldScale(spec)];
+    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + first * scalesOf(spec) * heldScale(spec)];
     routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales, 0, heldScale(spec) === 2]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
@@ -301,7 +302,7 @@ const unwritten = (m: Model) => m.weights.partial!.size > 0;
 // (b); T.232: of 8192 ternary weights, whose scales are a byte to 32 weights), and a matrix a token reads must be one piece (T.155). The tables may be in pieces (T.209: uploadTokens). null
 // where it cannot, and why in m.weights.unjoined: the prompts go on the GPU as before, the tokens stay on the CPU
 function tokensLayout(m: Model): Together | null {
-  const align = m.device.limits.minStorageBufferOffsetAlignment, group = GROUP;
+  const align = m.device.limits.minStorageBufferOffsetAlignment;
   const why = (reason: string) => {
     m.weights.unjoined = reason;
     return null;
@@ -322,7 +323,7 @@ function tokensLayout(m: Model): Together | null {
       }
       homes[name] = { joined, at: [values, scales] };
       values += matrix.rows * rowBytes(matrix);
-      scales += (matrix.rows * rowBytes(matrix) / group) * 4;
+      scales += matrix.rows * scalesOf(matrix) * 4;
     }
     if (values > m.limit) return why(`${names.join(" and ")} together are past a buffer of this GPU`);
     sizes[joined] = [values, scales];
@@ -344,7 +345,7 @@ async function uploadTokens(m: Model, widen: Widen | null) {
     const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
     if (PACKINGS[packing].widened) widen!.into(values, valuesAt + PACKINGS[packing].stored(first * n), valueBytes / group);
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
-    scalesIn(m, spec, scales, scalesAt + (first * rowBytes(spec) / group) * heldScale(spec), scaleBytes);
+    scalesIn(m, spec, scales, scalesAt + first * scalesOf(spec) * heldScale(spec), scaleBytes);
     bytes += valueBytes + scaleBytes;
   }));
   // (T.226: the final LayerNorm's bias, and GPT-2's learned positions, a row a position as the CPU widened them: a
@@ -391,8 +392,8 @@ async function widener(m: Model, tables: Table[] = []): Promise<Widen> {
   const owned: GPUBuffer[] = [];
   // (T.152: and the classifier's and the embedding's, one piece each)
   const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => PACKINGS[matrix.packing].widened)
-    .flatMap(([name, { n }]) => m.weights.matrices[name].pieces.map((piece) => (piece.rows * n * 3) / 4)),
-  ...tables.filter((table) => PACKINGS[table.packing].widened).map(({ rows, n }) => (rows * n * 3) / 4));
+    .flatMap(([name, { n, packing }]) => m.weights.matrices[name].pieces.map((piece) => PACKINGS[packing].stored(piece.rows * n))),
+  ...tables.filter((table) => PACKINGS[table.packing].widened).map(({ rows, n, packing }) => PACKINGS[packing].stored(rows * n)));
   const packed = buffer(m, largest, STORAGE | COPY_DST, owned);
   const run = (values: Bound, groups: number, most = device.limits.maxComputeWorkgroupsPerDimension) => {
     const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
