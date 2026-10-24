@@ -93,6 +93,7 @@ const ROTATED_1024 = rotatedBasis(1024, [1024, 2048]);
 const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
 // (T.547.2.3: the matrices kept as Q4_K blocks; the others are int8)
 const Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K", w3: "Q4_K" };
+const LFM2_Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", win: "Q4_K", wout: "Q4_K", w1: "Q4_K", w3: "Q4_K" };
 // (a place's state: value heads × key dim × value dim floats)
 const QWEN35_STATE = 6 * 32 * 64 * 4;
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
@@ -169,6 +170,14 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // prompt's matrices go to the GPU by the DP4A tiles, the Q4_K ones by their Q4_K text; its steps stay on the CPU.
   // The blocks are values of 0.3 N quantized (made_up.valued_blocks(): random bytes are weights of one sign mostly)
   "synthetic-q4k": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_KINDS, valued: true }, { kinds: Q4K_KINDS }],
+  // (T.547.2.4's review: the same wider, rows of 1280 and 1536 weights, 40 and 48 groups of 32: a token's matrix goes
+  // round its loop over the row twice, the second at blocks of the row past the first round's; calm, as rows this wide
+  // grow the stream past the logits' line otherwise, on the CPU too)
+  "synthetic-q4k-wide": [{ dim: 1280, hidden: 1536, layers: 2, heads: 10, kv_heads: 2, kinds: Q4K_KINDS, valued: true, calm: true }, { kinds: Q4K_KINDS }],
+  // (and an LFM2 of Q4_K blocks, the 4-bit Shisa's shape: its convolution layers' matrices in and out of Q4_K, q and k
+  // of Q4_K with v int8 apart and the norms of the heads, attending layers among the others)
+  "synthetic-lfm2-q4k": [{ dim: 256, hidden: 768, layers: 6, heads: 4, kv_heads: 2, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_KINDS, valued: true },
+    { arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_KINDS }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],
@@ -213,7 +222,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // (T.232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
-  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated"];
+  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-q4k-wide",
+  "synthetic-lfm2-q4k"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };
