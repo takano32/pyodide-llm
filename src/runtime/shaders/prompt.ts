@@ -435,7 +435,8 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
 // which a token takes once (the dot of its 16 int8 with ones, an integer: never a float16, as d s Σqx and dmin m Σx
 // cancel). Written from the layouts here (the arithmetic of ggml-vulkan's mul_mmq_funcs.glsl and of ggml-webgpu's
 // blocks, a group's scales beside the integers' dot, without their lines). What every type shares, BLOCK_COMMON (b, the
-// weights' words, whose blocks need not start at a word: Q2_K's 84 bytes do, others' do not), and each type's two
+// weights' words; a block and what is read of it need not start at a word: Q2_K's dmin at byte 82 does not, nor do
+// most IQ types' blocks), and each type's two
 // functions: blk_values(block, g, col), half col of group g as packed int8 (q, 0 up), and blk_scales(block, g), the
 // group's (scale, min) of each half, of the block whose first byte is block
 const BLOCK_COMMON = /* wgsl */ `
@@ -553,8 +554,6 @@ export const BLOCK_WEIGHTS = {
     },
   },
 } satisfies Record<BlockPacking, { halves: number[]; weights(blocks: Uint8Array): Float32Array }>;
-/** T.547.2.3, JavaScript's reading of Q4_K's blocks (the checks' answer; BLOCK_READS' Q4_K) */
-export const q4kWeights = (blocks: Uint8Array) => BLOCK_WEIGHTS.Q4_K.weights(blocks);
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
  * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.ts's weightAt read them */
 export function ternaryValues(packed: ArrayLike<number>) {
@@ -612,6 +611,8 @@ const blockLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `
 // them (the loader turns a group of 32 into packed int8 and keeps the row's scales and mins of its halves; no scales apart)
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
   const ternary = weights === "ternary", blocks = Object.hasOwn(BLOCK_READS, weights) ? BLOCK_READS[weights as BlockPacking] : null;
+  // (T.547.3.3's review: a name of no packing is no int8 text)
+  if (!blocks && !ternary && weights !== "int8") throw new Error(`dp4a() reads no weights packed as ${weights}`);
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 ${TILE_SHAPE}

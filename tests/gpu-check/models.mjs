@@ -103,7 +103,8 @@ const Q4K_LAYERS = { wq: ["Q4_K", "int8", "Q4_K"], wk: ["int8", "Q4_K", "Q4_K"],
 const Q4K_QK_APART = { wq: "Q4_K", wk: "int8", wv: "int8", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K", w3: "Q4_K" };
 const Q4K_UP_APART = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K" };
 // (T.547.3.3: Q2_K's blocks, every matrix but v; and stacks of the three packings by layer, Saluki's way)
-const Q2K_KINDS = { wq: "Q2_K", wk: "Q2_K", wo: "Q2_K", w1: "Q2_K", w2: "Q2_K", w3: "Q2_K" };
+// (the review: v of Q2_K too, so that q, k and v are one matrix of blocks and a token's Q2_K text writes them turned)
+const Q2K_KINDS = { wq: "Q2_K", wk: "Q2_K", wv: "Q2_K", wo: "Q2_K", w1: "Q2_K", w2: "Q2_K", w3: "Q2_K" };
 const BLOCK_LAYERS = { wq: ["Q2_K", "Q4_K", "int8"], wk: ["Q4_K", "Q2_K", "Q2_K"], wv: ["int8", "Q2_K", "Q4_K"], wo: ["Q2_K", "int8", "Q4_K"],
   w1: ["Q4_K", "Q2_K", "int8"], w2: ["Q2_K", "Q2_K", "Q4_K"], w3: ["Q2_K", "int8", "Q2_K"] };
 // (the review: and an LFM2's, whose stacks of a kind's layers are by their places among that kind's: two attending
