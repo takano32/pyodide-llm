@@ -218,21 +218,21 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([plan.kinds, plan.places, plan.convolution], [["attention", "attention"], [0, 1], null]);
 
   assert.deepEqual(Object.keys(plan.matrices), ["wq", "wk", "wv", "wo", "w1", "w2", "w3"]);
-  assert.deepEqual(plan.matrices.w2, { rows: 8, n: 24, six: false, ternary: false, layers: [[40000, 40500], [41000, 41500]] }, "a matrix: its values and scales a layer");
+  assert.deepEqual(plan.matrices.w2, { rows: 8, n: 24, packing: "int8", layers: [[40000, 40500], [41000, 41500]] }, "a matrix: its values and scales a layer");
   assert.deepEqual(plan.vectors, { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 } });
-  assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, six: false, ternary: false, at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
+  assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, packing: "int8", at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
     outliers: false, channels: [], ids: IDS, most: GPU_TOKENS });
   assert.deepEqual([plan.cos, plan.sin, plan.remembered, plan.force], [51000, 52000, { key: "kept" }, {}]);
   // (T.261.4: a Gemma 3's facts, none of which this model has)
   assert.deepEqual([plan.activation, plan.windows, plan.local, plan.localCos, plan.localSin], ["silu", [0, 0], [], 0, 0]);
-  // T.375.4: how a matrix is packed is one name with the engine (jobs.ts's PACKED); the GPU's worker is told it as it
-  // always was, by six and ternary
-  for (const [kind, group, six, ternary] of [["int6", 32, true, false], ["ternary", 128, false, true]]) {
+  // T.375.4: how a matrix is packed is one name with the engine (jobs.ts's PACKED); T.547.1: the GPU's worker is told
+  // the same name
+  for (const [kind, group] of [["int6", 32], ["ternary", 128]]) {
     const packed = Object.fromEntries(["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wcls"].map((name) => [name, { ...WEIGHTS[name], kind, group }]));
     const other = made({ weights: { ...packed, embedding: { ...WEIGHTS.embedding, kind, group } } });
     const [{ plan: told }] = other.beside.posted;
-    assert.deepEqual(Object.values(told.matrices).map((m) => [m.six, m.ternary]), Array(7).fill([six, ternary]), `${kind}: every matrix`);
-    assert.deepEqual([told.tokens.classifier.six, told.tokens.classifier.ternary], [six, ternary], `${kind}: the classifier`);
+    assert.deepEqual(Object.values(told.matrices).map((m) => m.packing), Array(7).fill(kind), `${kind}: every matrix`);
+    assert.equal(told.tokens.classifier.packing, kind, `${kind}: the classifier`);
     await other.part.release();
   }
   // T.375.2: how many values of a head RoPE turns is a fact of the layers (does it turn any) and the model's rotary: all

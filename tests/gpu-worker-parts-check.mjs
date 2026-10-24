@@ -42,7 +42,7 @@ function planned(more = {}, sizes = SIZES) {
   let at = 4096;
   const take = (bytes) => { const here = at; at += Math.ceil(bytes / 256) * 256; return here; };
   const matrices = Object.fromEntries(Object.entries(sizes).map(([name, [rows, n]]) =>
-    [name, { rows, n, layers: Array.from({ length: LAYERS }, () => [take(rows * n), take((rows * n / GROUP) * 4)]) }]));
+    [name, { rows, n, packing: "int8", layers: Array.from({ length: LAYERS }, () => [take(rows * n), take((rows * n / GROUP) * 4)]) }]));
   const vectors = { attention: { at: take(LAYERS * DIM * 4), size: DIM }, ffn: { at: take(LAYERS * DIM * 4), size: DIM } };
   const plan = { layers: LAYERS, dim: DIM, hidden: HIDDEN, heads: HEADS, kvHeads: KV_HEADS, headSize: HEAD, batch: BATCH, seqLen: CONTEXT, kvStart: 8, turned: HEAD,
     eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: Array(LAYERS).fill(0),
@@ -232,7 +232,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
     return exponent === 0 ? sign * fraction * 2 ** -24 : exponent === 31 ? (fraction ? NaN : sign * Infinity) : sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
   };
   const TERNARY = { wq: [Q_DIM, 256], wk: [KV_DIM, 256], wv: [KV_DIM, 256], wo: [DIM, 256], w1: [HIDDEN, 256], w3: [HIDDEN, 256], w2: [DIM, 256] };
-  const ternary = (made) => ({ ...made, matrices: Object.fromEntries(Object.entries(made.matrices).map(([name, matrix]) => [name, { ...matrix, ternary: true }])) });
+  const ternary = (made) => ({ ...made, matrices: Object.fromEntries(Object.entries(made.matrices).map(([name, matrix]) => [name, { ...matrix, packing: "ternary" }])) });
   const floatsOf = (buffer, at, count) => new Float32Array(buffer.data.buffer, buffer.data.byteOffset + at, count);
   // from the shared memory (the CPU's side beside the GPU's, and a prompt on the GPU): the scales of a piece, widened
   {
@@ -257,7 +257,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
   // cuts a half in the middle and begins in one)
   {
     const alone = standIn({ language: ["packed_4x8_integer_dot_product"] });
-    const { plan: made, bytes: size } = planned({ tables: { classifier: { rows: 96, n: 256, ternary: true, at: [0, 0] } } }, TERNARY);
+    const { plan: made, bytes: size } = planned({ tables: { classifier: { rows: 96, n: 256, packing: "ternary", at: [0, 0] } } }, TERNARY);
     const direct = ternary(made);
     direct.tables.classifier.at = [size, size + 96 * 64];
     const checkpoint = random(size + 96 * 64 + 96 * 2 * 2 + 64);

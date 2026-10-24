@@ -160,7 +160,7 @@ async function prepare(m: Model) {
   let embedRows: GPUComputePipeline | null = null, ids: GPUBuffer | null = null, embedGroups: GPUBindGroup[] | null = null;
   if (plan.direct) {
     // (T.232: from a table of ternary weights, EMBED_ROWS_TERNARY)
-    const rowsCode = tablesOf(plan).embedding.ternary ? ENGINE.EMBED_ROWS_TERNARY : ENGINE.EMBED_ROWS;
+    const rowsCode = tablesOf(plan).embedding.packing === "ternary" ? ENGINE.EMBED_ROWS_TERNARY : ENGINE.EMBED_ROWS;
     embedRows = await within(validated(m, () => pipelineOf(m, rowsCode)), "compiling the embedding's rows");
     ids = buffer(m, B * 4, STORAGE | COPY_DST);
     embedGroups = m.weights.tables!.embedding.map((piece) => bind(m, embedRows!,

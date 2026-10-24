@@ -9,14 +9,14 @@ import { GROUP } from "../shaders/common.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Bound } from "./device.ts";
-import type { Table, Tables } from "../contracts/gpu/protocol.ts";
+import type { GpuPacking, Table, Tables } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: this module's record, m.weights, as uploadLayers() makes it and the rest fills it (what is null there until
 // its part has gone up is read with a ! by the modules that come after).
 // a piece of a matrix: its first row, its rows, and for every layer its values and scales (buffers of its own, or its
 // ranges of the layer's joined ones)
 type Piece = { first: number; rows: number; layers: [Bound, Bound][] };
-type MatrixOn = { rows: number; n: number; ternary: boolean; pieces: Piece[] };
+type MatrixOn = { rows: number; n: number; packing: GpuPacking; pieces: Piece[] };
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
 type Home = { joined: string; at: [number, number] };
 type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] } };
@@ -28,9 +28,9 @@ type Widen = { into(values: Bound, address: number, groups: number): void; done(
 type Route = [number, number, GPUBuffer, number, boolean?];
 // T.533: the bytes of a group's scale in the checkpoint: ternary's a float16, int8's (and int6's) a float32. The GPU
 // holds every one as a float32 (scaleBytes below count those), ternary's widened as they go up (scalesIn, routedHalves)
-const heldScale = ({ ternary }: { ternary: boolean }) => (ternary ? 2 : 4);
-function scalesIn(m: Model, spec: { ternary: boolean }, target: GPUBuffer, address: number, scaleBytes: number, offset = 0) {
-  if (spec.ternary) widenIn(m, target, address, scaleBytes / 4, offset);
+const heldScale = ({ packing }: { packing: GpuPacking }) => (packing === "ternary" ? 2 : 4);
+function scalesIn(m: Model, spec: { packing: GpuPacking }, target: GPUBuffer, address: number, scaleBytes: number, offset = 0) {
+  if (spec.packing === "ternary") widenIn(m, target, address, scaleBytes / 4, offset);
   else copyIn(m, target, address, scaleBytes, offset);
 }
 // T.209: a piece of a table
@@ -88,8 +88,8 @@ async function upload(m: Model) {
 async function uploadLayers(m: Model, alone = false) {
   const { plan } = m, group = GROUP;
   let bytes = 0;
-  const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, ternary }]): [string, MatrixOn] =>
-    [name, { rows, n, ternary, pieces: piecesOf(m, rows, rowBytes({ n, ternary })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
+  const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, packing }]): [string, MatrixOn] =>
+    [name, { rows, n, packing, pieces: piecesOf(m, rows, rowBytes({ n, packing })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
   // (routes, partial: T.156, a model on the GPU alone; the routes of the checkpoint's stretches, and the bytes of a word
   // that wait for the rest of it, routed())
   m.weights = { matrices, together: null, unjoined: null, joined: [], widen: null, routes: alone ? [] : null, partial: alone ? new Map() : null,
@@ -99,7 +99,7 @@ async function uploadLayers(m: Model, alone = false) {
   m.weights.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T.156)
   const tables = together && !alone ? Object.values(tablesOf(plan)) : [];
-  const six = [...Object.values(plan.matrices), ...tables].some((matrix) => matrix.six);
+  const six = [...Object.values(plan.matrices), ...tables].some((matrix) => matrix.packing === "int6");
   // (kept for the tables, uploadRest; upload() lets it go)
   const widen = m.weights.widen = six ? await widener(m, tables) : null;
   // (T.156: a model on the GPU alone reads its first layer back to check a token's layer against: firstLayer)
@@ -128,10 +128,10 @@ async function uploadLayers(m: Model, alone = false) {
         if (alone) {
           // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened)
           routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
-            [from[1], from[1] + (scaleBytes / 4) * heldScale(matrix), scales.buffer ?? scales, scales.offset ?? 0, matrix.ternary]);
+            [from[1], from[1] + (scaleBytes / 4) * heldScale(matrix), scales.buffer ?? scales, scales.offset ?? 0, matrix.packing === "ternary"]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
-          if (matrix.six) widen!.into(values, valuesAt + (piece.first * matrix.n * 3) / 4, valueBytes / group);
+          if (matrix.packing === "int6") widen!.into(values, valuesAt + (piece.first * matrix.n * 3) / 4, valueBytes / group);
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
           scalesIn(m, matrix, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
         }
@@ -214,7 +214,7 @@ function tablesOn(m: Model) {
   let bytes = 0;
   m.weights.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
     const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * heldScale(spec)];
-    routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales, 0, spec.ternary]);
+    routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales, 0, spec.packing === "ternary"]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
   // (the last of the routes are made: in the checkpoint's order, for routed() to find a stretch's)
@@ -339,8 +339,8 @@ async function uploadTokens(m: Model, widen: Widen | null) {
   const { plan } = m, group = GROUP, half = plan.headSize / 2;
   let bytes = 0;
   m.weights.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
-    const { first, values, scales } = piece, { n, six, at: [valuesAt, scalesAt] } = spec;
-    if (six) widen!.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
+    const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
+    if (packing === "int6") widen!.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
     scalesIn(m, spec, scales, scalesAt + (first * rowBytes(spec) / group) * heldScale(spec), scaleBytes);
     bytes += valueBytes + scaleBytes;
@@ -388,9 +388,9 @@ async function widener(m: Model, tables: Table[] = []): Promise<Widen> {
   const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.WIDEN_SIX)), "compiling the widening of int6");
   const owned: GPUBuffer[] = [];
   // (T.152: and the classifier's and the embedding's, one piece each)
-  const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => matrix.six)
+  const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => matrix.packing === "int6")
     .flatMap(([name, { n }]) => m.weights.matrices[name].pieces.map((piece) => (piece.rows * n * 3) / 4)),
-  ...tables.filter((table) => table.six).map(({ rows, n }) => (rows * n * 3) / 4));
+  ...tables.filter((table) => table.packing === "int6").map(({ rows, n }) => (rows * n * 3) / 4));
   const packed = buffer(m, largest, STORAGE | COPY_DST, owned);
   const run = (values: Bound, groups: number, most = device.limits.maxComputeWorkgroupsPerDimension) => {
     const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();

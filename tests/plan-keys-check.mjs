@@ -220,7 +220,7 @@ const returned = (fn) => {
   // with the derived tables below)
   held("the tensors' names, Python to forward.js", tensors, new Set([...readTensors].filter((name) => tensors.has(name) || !derived.has(name))));
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
-  const entryRead = new Set([...readEntry].filter((key) => entryKeys.has(key) || !["rows", "n", "six", "ternary", "at", "slice", "length"].includes(key)));
+  const entryRead = new Set([...readEntry].filter((key) => entryKeys.has(key) || !["rows", "n", "packing", "at", "slice", "length"].includes(key)));
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
   held("the derived tables' names, Python to forward.js", derived, new Set([...readDerived].filter((name) => derived.has(name) || !tensors.has(name))));
 

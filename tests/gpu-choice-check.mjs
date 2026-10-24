@@ -426,7 +426,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.deepEqual(plan.matrices.w2.layers[1], [tensors.w2.offset + 64 * 96, tensors.w2.scales + (64 * 96 / 32) * 4]);
   // T.210: and the tables, where they start in the checkpoint (the embedding null where the classifier is it)
   const e = tensors.token_embedding_table;
-  assert.deepEqual(plan.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] }, embedding: null });
+  assert.deepEqual(plan.tables, { classifier: { rows: 100, n: 64, packing: "int8", at: [e.offset, e.scales] }, embedding: null });
   // T.271.4, T.568.4: a Qwen3.5's (its layers linear, attending, linear, attending): a matrix of the layers of a kind (the
   // kind's that names it, forward/kinds.ts's gpu.names) is theirs alone, its layers by their places; the FFN's every layer's
   {
@@ -446,7 +446,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     assert.deepEqual(hybrid.matrices.wout.layers[1], [mixedTensors.wout.offset + 64 * 32, mixedTensors.wout.scales + (64 * 32 / 32) * 4], "a linear layer's second at its place");
   }
   const apart = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], { ...tensors, wcls: tensor(end, [100, 64], true) });
-  assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [end, end + 6400] }, embedding: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] } });
+  assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, packing: "int8", at: [end, end + 6400] }, embedding: { rows: 100, n: 64, packing: "int8", at: [e.offset, e.scales] } });
   assert.equal(gpuHoles({ ...tensors, wcls: tensor(end, [100, 64], true) }).length, 9, "a classifier of its own is a stretch of its own");
   // T.232: a ternary model's: a layer of a matrix is a quarter of a byte a weight on, and its scales one a group of 128 (T.533: float16s)
   let at = 28;
@@ -459,17 +459,17 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     at += matrix ? count / 4 + count / 64 : count * 4;
   }
   const ternary = gpuOnlyPlan([128, 256, 2, 4, 2, 100, 32], codes);
-  assert.deepEqual(ternary.matrices.w2, { rows: 128, n: 256, ternary: true, layers: [[codes.w2.offset, codes.w2.scales],
+  assert.deepEqual(ternary.matrices.w2, { rows: 128, n: 256, packing: "ternary", layers: [[codes.w2.offset, codes.w2.scales],
     [codes.w2.offset + 128 * 256 / 4, codes.w2.scales + (128 * 256 / 128) * 2]] });
-  assert.deepEqual(ternary.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] }, embedding: null });
+  assert.deepEqual(ternary.tables, { classifier: { rows: 100, n: 128, packing: "ternary", at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] }, embedding: null });
   // (its stretches: every matrix's codes and then its scales, to where the next tensor begins)
   assert.deepEqual(gpuHoles(codes).find(([start]) => start === codes.w1.offset), [codes.w1.offset, codes.w2.offset]);
   // (the review of T.232: a ternary classifier apart from the embedding, as the 8B's: two tables, each its own codes and
   // scales, and a stretch of its own, its codes and then its scales; no gpu-check model was untied before)
   const wcls = tensor(at, [100, 128], true, true);
   const untied = gpuOnlyPlan([128, 256, 2, 4, 2, -100, 32], { ...codes, wcls });
-  assert.deepEqual(untied.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [wcls.offset, wcls.scales] },
-    embedding: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] } });
+  assert.deepEqual(untied.tables, { classifier: { rows: 100, n: 128, packing: "ternary", at: [wcls.offset, wcls.scales] },
+    embedding: { rows: 100, n: 128, packing: "ternary", at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] } });
   assert.equal(gpuHoles({ ...codes, wcls }).length, gpuHoles(codes).length + 1, "a ternary classifier of its own is a stretch of its own");
   assert.deepEqual(gpuHoles({ ...codes, wcls }).at(-1), [wcls.offset, wcls.scales + ((100 * 128) / 128) * 2], "its codes, then its scales");
 
