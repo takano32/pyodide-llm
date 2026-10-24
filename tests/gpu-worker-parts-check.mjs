@@ -180,6 +180,26 @@ const up = await upload(m);
   assert.equal(unbound.weights.together, null);
   assert.deepEqual(unbound.weights.joined, []);
 }
+// T.547.3.1: a stack whose layers are each of a packing of its own (Saluki's): each layer's rows as its packing holds them,
+// Q4_K's blocks without scales and int8's with, the model's own shaders Q4_K's, and no layer joined for a token's step
+{
+  standIn({ language: ["packed_4x8_integer_dot_product"] });
+  const n = 256, { plan: base, bytes } = planned({ tokens: { classifier: { rows: 96, n: DIM, packing: "int8", at: [0, 0] } } });
+  const at = Math.ceil(bytes / 256) * 256, q4k = Q_DIM * (n / 256) * 144, int8 = Q_DIM * n, scales = Q_DIM * (n / GROUP) * 4;
+  const layeredMemory = { buffer: new SharedArrayBuffer(at + q4k + int8 + scales + 1024) };
+  new Uint8Array(layeredMemory.buffer).set(random(layeredMemory.buffer.byteLength));
+  const wq = { rows: Q_DIM, n, packing: "layers", packings: ["Q4_K", "int8"], layers: [[at, 0], [at + q4k, at + q4k + int8]] };
+  const layered = await openDevice({ ...base, matrices: { ...base.matrices, wq } });
+  assert.equal(layered.own, "Q4_K", "a stack's layer of Q4_K gives the model Q4_K's shaders");
+  handed(layeredMemory, layered.plan);
+  await uploadLayers(layered);
+  const [first, second] = layered.weights.matrices.wq.pieces[0].layers;
+  assert.equal(first[1], null, "the Q4_K layer has no scales apart: its blocks hold them");
+  assert.ok(same(first[0].data.subarray(0, q4k), new Uint8Array(layeredMemory.buffer, at, q4k)), "and its blocks as the memory holds them");
+  assert.ok(same(second[0].data.subarray(0, int8), new Uint8Array(layeredMemory.buffer, at + q4k, int8)), "the int8 layer its values");
+  assert.ok(same(second[1].data.subarray(0, scales), new Uint8Array(layeredMemory.buffer, at + q4k + int8, scales)), "and its scales");
+  assert.equal(layered.weights.unjoined, "wq's layers are each of a packing of their own", "a token's layer is not joined of such a stack (T.547.3.2)");
+}
 console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix and vector on the GPU as the shared memory holds it, and says why a token's layer is not joined");
 
 // ---- weights.js: a model on the GPU alone, its checkpoint coming in stretches

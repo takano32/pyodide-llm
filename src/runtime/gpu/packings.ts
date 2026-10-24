@@ -5,7 +5,7 @@
 import { GROUP } from "../shaders/common.ts";
 import { sixValues } from "../shaders/steps.ts";
 import { ternaryValues, q4kWeights } from "../shaders/prompt.ts";
-import type { GpuPacking } from "../contracts/gpu/protocol.ts";
+import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 
 // What a packing is to the GPU:
 //   row()     the bytes of a row of n weights on the GPU: a byte a weight (int8, and int6 widened), two bits (ternary:
@@ -33,3 +33,8 @@ export const PACKINGS: Record<GpuPacking, HeldAs> = {
   ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, values: ternaryValues },
   Q4_K: { row: blocks, scales: () => 0, stored: blocks, scale: 0, widened: false, dot: true, values: q4kWeights },
 };
+// T.547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
+// "layers": its packings'), and the packings a matrix has
+type Packed = Pick<Matrix, "packing" | "packings">;
+export const packingAt = ({ packing, packings }: Packed, place: number): GpuPacking => (packing === "layers" ? packings![place] : packing);
+export const packingsOf = ({ packing, packings }: Packed): GpuPacking[] => (packing === "layers" ? [...new Set(packings!)] : [packing]);

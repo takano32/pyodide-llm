@@ -7,6 +7,7 @@ import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, q4kWeights, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
+import { packingAt } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
 import type { Model, Thrown } from "./device.ts";
 import type { Quantizing } from "./block.ts";
@@ -211,10 +212,11 @@ const threadsOf = (device: GPUDevice) => Math.min(device.limits.maxComputeInvoca
 
 // layer l's matrix name by the tokens of from into to (added where add): a bind group of form and its rows for each
 // piece (T.155), which writes its rows of to (bound from its first row; a token's row of to is the whole matrix's)
-// (T.547.2.3: by the pipeline of the matrix's packing: a Q4_K matrix's is the form's Q4_K text's, which binds no scales)
+// (T.547.2.3: by the pipeline of the matrix's packing: a Q4_K matrix's is the form's Q4_K text's, which binds no scales;
+// T.547.3.1: the layer's, where each layer of the stack has a packing of its own)
 const productGroups = (m: Model, form: Tiled, name: string, l: number, from: GPUBuffer, to: GPUBuffer, add?: boolean, owned = m.owned) => {
-  const { rows, n, pieces, packing } = m.weights.matrices[name], { xq, xs, step } = m.block;
-  const pipeline = packing === "Q4_K" ? form.blockPipeline! : form.pipeline;
+  const matrix = m.weights.matrices[name], { rows, n, pieces } = matrix, { xq, xs, step } = m.block;
+  const pipeline = packingAt(matrix, l) === "Q4_K" ? form.blockPipeline! : form.pipeline;
   return pieces.map(({ first, rows: count, layers }) => {
     const out = first ? { buffer: to, offset: first * 4, size: to.size - first * 4 } : to;
     return { rows: count, pipeline, group: bind(m, pipeline, [...layers[l], form.packed ? xq : from, out,

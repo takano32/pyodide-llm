@@ -712,6 +712,12 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
   // T.547.2.3: a matrix of Q4_K blocks beside int8 ones goes to the GPU (as it is there, by the packed forms' Q4_K text)
   assert.equal(fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "Q4_K", group: 256 }) }).unfit(), null, "Q4_K's blocks beside int8 matrices");
+  // T.547.3.1: and a stack whose layers are each of a kind of their own, of Q4_K and int8 (each layer's bytes as its own)
+  {
+    const layers = [matrixOf(24, 256, 0, { kind: "Q4_K", group: 256 }), matrixOf(24, 256, 5000)];
+    const stack = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers }) });
+    assert.equal(stack.unfit(), null, "a stack of Q4_K's and int8's layers");
+  }
   // T.545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);
   // T.545.2: and its steps
   {

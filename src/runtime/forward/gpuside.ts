@@ -53,8 +53,10 @@ export type Shape = {
 export type Held = { rows: number; n: number; kind: "f32" | Packed | "layers"; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null; layers?: Held[] };
 // T.375.4, T.375.5: whether the GPU takes a matrix as it is packed: its packing's line of jobs.ts's PACKED says how the GPU
 // holds it (gpu.ts widens int6 to int8, T.155, and takes ternary as it is, T.232), in the groups that line says. A
-// matrix that is not packed, or whose packing the GPU has not, stays on the CPU
-const onGpuAs = (m: Held) => {
+// matrix that is not packed, or whose packing the GPU has not, stays on the CPU. (T.547.3.1: a stack whose layers are each
+// of a kind of their own, where the GPU takes every layer's)
+const onGpuAs = (m: Held): boolean => {
+  if (m.kind === "layers") return m.layers!.every(onGpuAs);
   const packing = packingOf(m.kind);
   return Boolean(packing?.gpu) && m.group === packing!.group;
 };
@@ -180,7 +182,9 @@ export function gpuFit({ shape, weights, device, direct }:
   function layersOnGpu() {
     // (T.545: each of the layers it is of, and the keys and values of the attending ones; and the state the convolution
     // layers go on from, with its copy where a block's comes back; T.271.2: the linear-attention layers' too)
-    return Object.entries(gpuMatrices()).reduce((bytes, [name, m]) => bytes + countOf(name) * m.rows * m.n * gpuWeightBytes(m.kind), 0) +
+    // (T.547.3.1: a stack whose layers are each of a kind of their own, each layer's as its kind)
+    return Object.entries(gpuMatrices()).reduce((bytes, [name, m]) => bytes + m.rows * m.n *
+      (m.layers ? m.layers.reduce((sum, layer) => sum + gpuWeightBytes(layer.kind), 0) : countOf(name) * gpuWeightBytes(m.kind)), 0) +
       Object.entries(gpuVectors()).reduce((bytes, [name, { size }]) => bytes + countOf(name) * size * 4, 0) + 2 * attending * seqLen * kvDim * 2 +
       2 * stateBytes;
   }
@@ -346,10 +350,13 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // (T.547.1: packing, the checkpoint's: int6, T.155, as llama2_numpy.pack6 packs them; ternary, T.232, two bits a
     // weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     // (T.545: a matrix of some of the layers, an LFM2's attending or convolution layers', is theirs alone: of says whose)
+    // (T.547.3.1: a stack whose layers are each of a kind of their own, packing "layers" and each layer's packing, its
+    // values where its own matrix has them)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
       const of = kindOf(name, shape), count = of ? kinds.filter((kind) => kind === of).length : layers;
-      return [name, { rows: m.rows, n: m.n, packing: gpuPacking(m.kind),
-        layers: Array.from({ length: count }, (_, l) => m.layer(l).slice(0, 2) as [number, number]), ...(of ? { of } : {}) }];
+      const at = (l: number) => (m.layers ? m.layers[l].layer(0) : m.layer(l)).slice(0, 2) as [number, number];
+      return [name, { rows: m.rows, n: m.n, ...(m.layers ? { packing: "layers", packings: m.layers.map((layer) => gpuPacking(layer.kind)) } : { packing: gpuPacking(m.kind) }),
+        layers: Array.from({ length: count }, (_, l) => at(l)), ...(of ? { of } : {}) }];
     }));
     const listen = () => {
       clearTimeout(quietTimer);

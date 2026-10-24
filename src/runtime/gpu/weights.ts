@@ -7,9 +7,9 @@ import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer,
   validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { PACKINGS } from "./packings.ts";
+import { PACKINGS, packingAt, packingsOf } from "./packings.ts";
 import type { Model, Bound } from "./device.ts";
-import type { GpuPacking, Table, Tables } from "../contracts/gpu/protocol.ts";
+import type { GpuPacking, Matrix, Table, Tables } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: this module's record, m.weights, as uploadLayers() makes it and the rest fills it (what is null there until
 // its part has gone up is read with a ! by the modules that come after).
@@ -17,7 +17,8 @@ import type { GpuPacking, Table, Tables } from "../contracts/gpu/protocol.ts";
 // ranges of the layer's joined ones)
 // (T.547.2.3: no scales where its blocks hold them, Q4_K's)
 type Piece = { first: number; rows: number; layers: [Bound, Bound | null][] };
-type MatrixOn = { rows: number; n: number; packing: GpuPacking; pieces: Piece[] };
+// (T.547.3.1: packing and packings, the plan's: a stack whose layers are each of a packing of its own has them by place)
+type MatrixOn = { rows: number; n: number; packing: Matrix["packing"]; packings?: GpuPacking[]; pieces: Piece[] };
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
 type Home = { joined: string; at: [number, number] };
 // (T.547.2.4: vAt, where v is written after q and k in the buffer of the three where it is apart from them, of another
@@ -94,8 +95,11 @@ async function upload(m: Model) {
 async function uploadLayers(m: Model, alone = false) {
   const { plan } = m;
   let bytes = 0;
-  const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, packing }]): [string, MatrixOn] =>
-    [name, { rows, n, packing, pieces: piecesOf(m, rows, rowBytes({ n, packing })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
+  // (T.547.3.1: a matrix whose layers are each of a packing of its own in pieces of the rows its widest rows fit)
+  const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, matrix]): [string, MatrixOn] => {
+    const { rows, n, packing, packings } = matrix, widest = Math.max(...packingsOf(matrix).map((one) => rowBytes({ n, packing: one })));
+    return [name, { rows, n, packing, ...(packings ? { packings } : {}), pieces: piecesOf(m, rows, widest).map(([first, count]) => ({ first, rows: count, layers: [] })) }];
+  }));
   // (routes, partial: T.156, a model on the GPU alone; the routes of the checkpoint's stretches, and the bytes of a word
   // that wait for the rest of it, routed())
   m.weights = { matrices, together: null, unjoined: null, joined: [], widen: null, routes: alone ? [] : null, partial: alone ? new Map() : null,
@@ -105,7 +109,7 @@ async function uploadLayers(m: Model, alone = false) {
   m.weights.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T.156)
   const tables = together && !alone ? Object.values(tablesOf(plan)) : [];
-  const six = [...Object.values(plan.matrices), ...tables].some((matrix) => PACKINGS[matrix.packing].widened);
+  const six = [...Object.values(plan.matrices).flatMap(packingsOf), ...tables.map((table) => table.packing)].some((packing) => PACKINGS[packing].widened);
   // (kept for the tables, uploadRest; upload() lets it go)
   const widen = m.weights.widen = six ? await widener(m, tables) : null;
   // (T.156: a model on the GPU alone reads its first layer back to check a token's layer against: firstLayer)
@@ -122,24 +126,25 @@ async function uploadLayers(m: Model, alone = false) {
       // (T.545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
       // them, and none in a layer of another kind: its pieces' layers are by those places)
       if (matrix.of && plan.kinds[l] !== matrix.of) continue;
-      const [valuesAt, scalesAt] = matrix.layers[matrix.of ? plan.places[l] : l];
-      const home = together?.homes[name], row = rowBytes(matrix), perRow = scalesOf(matrix);
+      // (T.547.3.1: held, the layer's rows as its packing holds them, where each layer has a packing of its own)
+      const place = matrix.of ? plan.places[l] : l, [valuesAt, scalesAt] = matrix.layers[place], held = { n: matrix.n, packing: packingAt(matrix, place) };
+      const home = together?.homes[name], row = rowBytes(held), perRow = scalesOf(held);
       for (const piece of m.weights.matrices[name].pieces) {
         const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
         // its own buffers, or its range of the layer's joined ones (T.547.2.3: no scales where its blocks hold them)
         const [values, scales]: [Bound, Bound | null] = home
           ? [{ buffer: joined![home.joined][0], offset: home.at[0], size: valueBytes }, perRow ? { buffer: joined![home.joined][1]!, offset: home.at[1], size: scaleBytes } : null]
           : [buffer(m, valueBytes, usage), perRow ? buffer(m, scaleBytes, usage) : null];
-        const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(matrix)];
+        const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(held)];
         if (alone) {
           // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened)
           routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0]);
-          if (scales) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(matrix), scales.buffer ?? scales, scales.offset ?? 0, heldScale(matrix) === 2]);
+          if (scales) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(held), scales.buffer ?? scales, scales.offset ?? 0, heldScale(held) === 2]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
-          if (PACKINGS[matrix.packing].widened) widen!.into(values, valuesAt + PACKINGS[matrix.packing].stored(piece.first * matrix.n), piece.rows * perRow);
+          if (PACKINGS[held.packing].widened) widen!.into(values, valuesAt + PACKINGS[held.packing].stored(piece.first * matrix.n), piece.rows * perRow);
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
-          if (scales) scalesIn(m, matrix, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
+          if (scales) scalesIn(m, held, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
         }
         piece.layers.push([values, scales]);
         bytes += valueBytes + scaleBytes;
@@ -315,6 +320,10 @@ function tokensLayout(m: Model): Together | null {
   // (T.545.2: and an LFM2's matrices in and out of its convolution layers; T.271.3: a Qwen3.5's of its linear-attention
   // layers and the gate of its output)
   for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout", "wqkv", "wz", "wg"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
+  // (T.547.3.1: a stack whose layers are each of a packing of its own is joined to none yet: a token's step stays on the
+  // CPU, T.547.3.2)
+  const layered = Object.keys(m.weights.matrices).find((name) => m.weights.matrices[name].packing === "layers");
+  if (layered) return why(`${layered}'s layers are each of a packing of their own`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, packing = (name: string) => m.weights.matrices[name]?.packing;
   // T.547.2.4: matrices are one of a packing alone (a matrix's shader reads one): q, k and v one where they are; q and
   // k where v is of another (a 4-bit Q4_K_M's q and k of Q4_K blocks, its v int8: a token's layer writes v apart into
@@ -335,8 +344,10 @@ function tokensLayout(m: Model): Together | null {
         return why(`${name} would not start where this GPU binds a buffer`);
       }
       homes[name] = { joined, at: [values, scales] };
-      values += matrix.rows * rowBytes(matrix);
-      scales += matrix.rows * scalesOf(matrix) * 4;
+      // (every layer's packing the same: none of them is a stack of layers of their own, above)
+      const held = { n: matrix.n, packing: packingAt(matrix, 0) };
+      values += matrix.rows * rowBytes(held);
+      scales += matrix.rows * scalesOf(held) * 4;
     }
     if (values > m.limit) return why(`${names.join(" and ")} together are past a buffer of this GPU`);
     sizes[joined] = [values, scales];
@@ -404,8 +415,9 @@ async function widener(m: Model, tables: Table[] = []): Promise<Widen> {
   const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.WIDEN_SIX)), "compiling the widening of int6");
   const owned: GPUBuffer[] = [];
   // (T.152: and the classifier's and the embedding's, one piece each)
-  const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => PACKINGS[matrix.packing].widened)
-    .flatMap(([name, { n, packing }]) => m.weights.matrices[name].pieces.map((piece) => PACKINGS[packing].stored(piece.rows * n))),
+  // (T.547.3.1: each packing of a matrix whose layers have their own)
+  const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).flatMap(([name, matrix]) => packingsOf(matrix).filter((packing) => PACKINGS[packing].widened)
+    .flatMap((packing) => m.weights.matrices[name].pieces.map((piece) => PACKINGS[packing].stored(piece.rows * matrix.n)))),
   ...tables.filter((table) => PACKINGS[table.packing].widened).map(({ rows, n, packing }) => PACKINGS[packing].stored(rows * n)));
   const packed = buffer(m, largest, STORAGE | COPY_DST, owned);
   const run = (values: Bound, groups: number, most = device.limits.maxComputeWorkgroupsPerDimension) => {
