@@ -180,4 +180,6 @@ try {
   fs.rmSync(folder, { recursive: true, force: true });
 }
 console.log(failed ? `plan-facts-check: FAILED (${failed})` : "plan-facts-check: ok");
-process.exit(failed ? 1 : 0);
+// (T.575: T.384's stand-still in process.exit() right after heavy work: 2 of 250 runs at once on the development machine,
+// one of them in a run of the light suite; a moment first, as worker-fetches-check's)
+setTimeout(() => process.stdout.write("", () => process.exit(failed ? 1 : 0)), 200);
