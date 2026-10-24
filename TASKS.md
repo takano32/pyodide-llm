@@ -235,6 +235,7 @@
 - T561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 - T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
+- T571 [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 進行中
 - T568 [整理][WebGPU] GPU の層の種類を表 1 つに（CPU の `LAYER_KINDS` の形） — 進行中
 - T565 [設計][Bonsai][WebGPU] 27B の linear の層の状態（144 MiB）を、束縛の上限 128 MiB の端末で — 未着手
 - T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
@@ -1726,6 +1727,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 状態: 未着手（2026-10-16、T261.4.2・T545.2 のレビューの気づき）
 - `src/runtime/forward/alone.ts:191` の「a token's fused layer does not take yet」は古くなった。`gpuside.ts` の `tokensUnfit()` の説明は Llama の流れだけを言う（窓・GELU・後ろの norm・畳み込みを足す）。
+
+### T571 [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 状態: 進行中（2026-10-24、Opus medium。T568.2 の本番の確かめ（`models.yml`、run 40051864570、`query=gpuTest=on&steps=16`）で見つけた。T271.4 から）
+- **起きたこと**: `hf-qwen3.5-0.8b` が 10 秒で「Could not load Alibaba Qwen3.5 0.8B (no thinking)」。コンソールは Python の `ValueError: The architecture 'qwen35' and the layers of its form go together: it has linear that keep a state, and the form says none.`（`worker/weights.ts` の `gpuOnlyWeightsFor()` → `llama2_numpy.external_tensors()`）。
+- **訳**: `gpuOnlyWeightsFor()` は、GPU だけに置けると決めたモデルのテンソルの置き場を Python に聞くときに、form を 4 つの鍵（`arch`・`bias`・`qk_norm`・`head_dim`）だけで渡していた。T271.4 で Qwen3.5 が GPU だけに置けるようになり、linear の層の数（form の `linear`）が要るようになったのに渡っていなかった。同じ関数の `gpuOnlyUnfit()` と、ほかの `placesOf()` の呼び出しは options をまるごと渡している（Python の `form_of()` が FORM の鍵だけを取る）。
+- **誰に当たるか**: GPU だけに置かれる Qwen3.5 系（`deviceMemory` 8 の端末の 4B・9B と NeoHorse-1・Agents-A1 の 4B・9B: 持ち主の Android）と、`?gpuTest=on`・`only` の訪問。2 重に入るモデル（0.8B・2B を Android で）や GPU の無い訪問には当たらない。
+- **直し**: `placesOf(header, dtype, options)`（form をまるごと）。試験: `worker-sink-check` の GPU だけのモデルの節で、`external_tensors()` に渡る form が FORM の全部の鍵を持つことを見る（直す前に落ちることを確かめた）。素の Python で、作り物の Qwen3.5 の options（`bos`・`template` も入れて）は 24 のテンソルを返し、前の 4 つの鍵の form は同じ文で断られる。
+- **同じ run のもう 1 つの「落ち」は誤りではない**: 既定の Shisa は「prompts and answers on WebGPU (gpuTest)」まで進み、答えが 1800 秒に入らなかった。SwiftShader で GPU のステップを回すと tiny-lm でも 66 トークンに 467 秒（run 36866409090）で、350M の答えは入らない（AGENTS.md の落とし穴のとおり）。頼み方の誤り（取りまとめ役）: GPU の Worker の変更の後の本番は `gpuTest` なしで回す。
 
 ### T568 [整理][WebGPU] GPU の層の種類を表 1 つに（CPU の `LAYER_KINDS` の形） — 状態: 進行中（2026-10-24、Opus medium。子タスクの番号: T568.1 完了、T568.2 完了（T568.3 を畳んだ）、T568.4 完了）。前の状態: 未着手（2026-10-16、持ち主「WebGPU 対応ってモデルごとに必要か？抽象化してまとめられないの？」。規模 中〜大。T271 の後、持ち主が再開を言ってから）
 - いまの形: GPU に置くかはモデルの名前でなく計画の事実で決まり、事実の組み合わせが今あるものなら新しいモデルは何もせず GPU に乗る（Llama・Qwen2・Qwen3・Mistral・Granite・SmolLM3 などはそうだった）。手が要ったのは、新しい計算（gate の GELU・後ろの norm・窓・畳み込みの層・DeltaNet の層）が出たときだけで、その計算のシェーダはどう抽象しても 1 つ要る。

@@ -387,7 +387,7 @@ const aloneKept = (dtype: Dtype) => Boolean(gpuAdapter) &&
 // for a Llama of int8 (T232: or of ternary weights) the GPU's steps take (gpuOnlyUnfit), where the page and the device
 // may (gpuOnlyPossible)
 function gpuOnlyWeightsFor(size: number, header: Header, options: Options, after: number, deviceMemory: number): Placed {
-  const { dtype = "float32" } = options, form = { arch: options.arch, bias: options.bias, qk_norm: options.qk_norm, head_dim: options.head_dim };
+  const { dtype = "float32" } = options;
   const cpu = size + after, gpu = forwardModule!.gpuBytes(header, { ...options, dtype });
   // (T232: with the form's rotated basis, which the GPU does not turn the inputs for (T237): the worker did not hand it
   // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built.
@@ -401,7 +401,9 @@ function gpuOnlyWeightsFor(size: number, header: Header, options: Options, after
       "on the CPU (a new run of /benchmark/'s CPU section, another browser version or new shaders weigh the two again)");
   }
   if (!eligible) return forwardModule!.weightsPlace({ cpu, gpu, deviceMemory });
-  const tensors = placesOf(header, dtype, form), stored = size - forwardModule!.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
+  // (T571: of the whole form as the options carry it, as gpuOnlyUnfit() is asked above: four keys of it went before, and a
+  // Qwen3.5 on the GPU alone, whose linear-attention layers are in the form's linear, was refused by Python)
+  const tensors = placesOf(header, dtype, options), stored = size - forwardModule!.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
   const gpuOnly = stored + afterCheckpoint(header, stored, { ...options, direct: true }, true);
   return { ...forwardModule!.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: gpuForce.only }), tensors, stored, gpuOnly };
 }

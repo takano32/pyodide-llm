@@ -374,6 +374,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     if (data.type === "stop") setTimeout(() => worker.say({ type: "ended" }), 5);
   } });
   const typesPosted = (worker) => worker.posted.map(({ type }) => type);
+  const placedForms = [];
   const android = { deviceMemory: 8, gpu: { requestAdapter: async () => ({ info: { isFallbackAdapter: false },
     limits: { maxStorageBufferBindingSize: 2 ** 28, maxBufferSize: 2 ** 28, minStorageBufferOffsetAlignment: 256 } }) } };
   const gpuContext = vm.createContext({
@@ -390,7 +391,8 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       growMemory() {},
       external: () => ({ engine: { gpu: engineGpu } }),
     },
-    llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: () => ({ toJs: () => tensors, destroy() {} }),
+    // (T571: the form it is asked with is written down: where the tensors are depends on all of it)
+    llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: (header, dtype, form) => { placedForms.push(form); return { toJs: () => tensors, destroy() {} }; },
       Llama: { callKwargs: () => ({}) } },
   };
   vm.runInContext(strictly("forwardModule = stand.forward; llama2_numpy = stand.llama2_numpy; jsKernels = { relaxed: true }; " +
@@ -400,6 +402,12 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     const into = vm.runInContext(strictly("checkpointSink()"), gpuContext);
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.ok(into.weights.direct, "Llama 3.2 3B on a device that says 8 GB did not go on the GPU alone");
+    // T571: where its tensors are is asked of the whole form (FORM's every key, as the options carry it: a Qwen3.5's linear
+    // too). Before, four keys of it went, and Python refused a Qwen3.5 on the GPU alone: "it has linear that keep a state,
+    // and the form says none" (models.yml run 40051864570)
+    const asked = placedForms.at(-1);
+    const keys = new Set(Object.keys(asked?.toJs?.() ?? asked ?? {}));
+    assert.deepEqual(Object.keys(FORM).filter((key) => !keys.has(key)), [], "the form where the tensors of a model on the GPU alone are asked: every key of FORM");
     const worker = workers.at(-1);
     assert.deepEqual(typesPosted(worker), ["open"]);
     return { into, worker };
