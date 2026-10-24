@@ -46,7 +46,8 @@ function scalesIn(m: Model, spec: { packing: GpuPacking }, target: GPUBuffer, ad
   else copyIn(m, target, address, scaleBytes, offset);
 }
 // T.209: a piece of a table
-type TablePiece = { first: number; rows: number; values: GPUBuffer; scales: GPUBuffer };
+// (T.547.3.6: no scales where the table's blocks hold them; an IQ type's binds the codebooks there)
+type TablePiece = { first: number; rows: number; values: GPUBuffer; scales: GPUBuffer | null };
 type Weights = {
   matrices: { [name: string]: MatrixOn };
   together: Together | null;
@@ -68,6 +69,21 @@ type Weights = {
 };
 // what tablesOf() reads of a plan: the tables of a model on the GPU alone as it opens, else a token's
 type Tabled = { tables?: Tables; tokens: Tables | null };
+// T.547.3.4, T.547.3.6: the codebooks of llama.cpp's IQ types, the checkpoint's row as it is, a buffer a model, made where
+// its first matrix or table of an IQ type goes up: bound where an int8 matrix binds its scales (its pieces' and joined
+// buffers' second, a table piece's scales), which the model owns
+const codebooksOn = new WeakMap<Model, GPUBuffer>();
+function gridsOf(m: Model) {
+  let made = codebooksOn.get(m);
+  if (!made) {
+    // (T.547.3.4's review: a model of an IQ type without them is no model the CPU made)
+    if (!m.plan.codebooks) throw new Error("The model has matrices of llama.cpp's IQ types, and its plan no codebooks.");
+    made = buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST);
+    copyIn(m, made, m.plan.codebooks, CODEBOOK_BYTES);
+    codebooksOn.set(m, made);
+  }
+  return made;
+}
 
 // every layer's matrices (values and scales, as the checkpoint holds them; T.154: no w3 where there is no gate) and its
 // vectors: the weights of its two norms, and (T.153) Qwen2's biases of q, k and v, Qwen3's norms of a head of q and of
@@ -120,16 +136,8 @@ async function uploadLayers(m: Model, alone = false) {
   // (T.156: a model on the GPU alone reads its first layer back to check a token's layer against: firstLayer)
   const usage = STORAGE | COPY_DST | (alone ? COPY_SRC : 0);
   const { routes } = m.weights;
-  // (T.547.3.4: the codebooks of llama.cpp's IQ types, the checkpoint's row as it is, once, where a matrix of one reads
-  // them: bound where an int8 matrix binds its scales, its pieces' and joined buffers' second, which the model owns)
-  const grids = Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some((packing) => PACKINGS[packing].grid))
-    ? buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST) : null;
-  if (grids) {
-    // (T.547.3.4's review: a model of an IQ type without them is no model the CPU made)
-    if (!plan.codebooks) throw new Error("The model has matrices of llama.cpp's IQ types, and its plan no codebooks.");
-    copyIn(m, grids, plan.codebooks, CODEBOOK_BYTES);
-    bytes += CODEBOOK_BYTES;
-  }
+  // (T.547.3.4: the codebooks of llama.cpp's IQ types, where a matrix of one reads them: gridsOf())
+  const grids = Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some((packing) => PACKINGS[packing].grid)) ? gridsOf(m) : null;
   for (let l = 0; l < plan.layers; l++) {
     // a layer's matrices that are one (T.152): a buffer of values and one of scales for all of them (T.271.3: where the
     // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
@@ -230,7 +238,7 @@ function tablesOf(plan: Tabled, make: (spec: Table) => unknown = (spec) => spec)
 function tablePieces(m: Model, spec: Table, fill: (piece: TablePiece, valueBytes: number, scaleBytes: number) => void, usage = STORAGE | COPY_DST): TablePiece[] {
   return piecesOf(m, spec.rows, rowBytes(spec), m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
     const valueBytes = count * rowBytes(spec), scaleBytes = count * scalesOf(spec) * 4;
-    const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: buffer(m, scaleBytes, usage) };
+    const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: scaleBytes ? buffer(m, scaleBytes, usage) : PACKINGS[spec.packing].grid ? gridsOf(m) : null };
     fill(piece, valueBytes, scaleBytes);
     return piece;
   });
@@ -243,7 +251,8 @@ function tablesOn(m: Model) {
   let bytes = 0;
   m.weights.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
     const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + first * scalesOf(spec) * heldScale(spec)];
-    routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales, 0, heldScale(spec) === 2]);
+    routes!.push([from[0], from[0] + valueBytes, values, 0]);
+    if (scaleBytes) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales!, 0, heldScale(spec) === 2]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
   // (the last of the routes are made: in the checkpoint's order, for routed() to find a stretch's)
@@ -389,7 +398,7 @@ async function uploadTokens(m: Model, widen: Widen | null) {
     const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
     if (PACKINGS[packing].widened) widen!.into(values, valuesAt + PACKINGS[packing].stored(first * n), piece.rows * scalesOf(spec));
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
-    scalesIn(m, spec, scales, scalesAt + first * scalesOf(spec) * heldScale(spec), scaleBytes);
+    if (scaleBytes) scalesIn(m, spec, scales!, scalesAt + first * scalesOf(spec) * heldScale(spec), scaleBytes);
     bytes += valueBytes + scaleBytes;
   }));
   // (T.226: the final LayerNorm's bias, and GPT-2's learned positions, a row a position as the CPU widened them: a

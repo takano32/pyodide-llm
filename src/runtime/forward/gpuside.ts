@@ -132,7 +132,7 @@ export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
     sharedClassifier, kinds, attending, stateBytes } = shape;
-  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own } = weights;
+  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, channels } = weights;
   // T.545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
   const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
@@ -204,9 +204,14 @@ export function gpuFit({ shape, weights, device, direct }:
     // (T.545: an LFM2's steps stayed on the CPU here until T.545.2, which gave a token's fused layer its convolution layers)
     // (T.271.2: a Qwen3.5's steps stayed on the CPU here until T.271.3, which gave a token's layer its linear-attention layers)
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
-    // (T.547.2.3: and a packing of a scale a group: no EMBED reads llama.cpp's blocks, Q4_K's)
+    // (T.547.2.3: and a packing of a scale a group: no EMBED reads llama.cpp's blocks, Q4_K's. T.547.3.6: each table in a
+    // packing of its own where one of them is of llama.cpp's blocks, which the GPU embeds and multiplies by its type's
+    // shaders (Saluki's: an embedding of IQ1_M, a classifier of IQ3_S); not with outlier channels, whose classifier is
+    // multiplied as floats of int8)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
-    if (!wcls || !held || !PACKED[held].scale || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
+    const embedded = packingOf(embedding.kind)?.gpu && embedding.group === packingOf(embedding.kind)!.group ? packingOf(embedding.kind)!.gpu!.as : null;
+    const blocks = Boolean(held && embedded) && (!PACKED[held!].scale || !PACKED[embedded!].scale);
+    if (!wcls || !held || !embedded || (blocks ? channels.length > 0 : !PACKED[held].scale || embedded !== held)) {
       return REASONS.floatClassifier;
     }
     // T.205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where

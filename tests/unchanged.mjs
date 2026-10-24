@@ -101,7 +101,8 @@ function said(what, { count, differ, gone, added }, more = "") {
 // list (T.379.2: read by the light suite too, which holds that no maker of WGSL is left out of both)
 function makersOf(module) {
   const found = { ...MAKERS_APART };
-  for (const { name, given } of [...module.ENGINE_SHADERS, ...module.TERNARY_SHADERS]) if (given) (found[name] ??= []).push([given]);
+  // (T.547.3.6: and a model of llama.cpp's blocks', where the tree has them: T.547.2.4 on)
+  for (const { name, given } of [...module.ENGINE_SHADERS, ...module.TERNARY_SHADERS, ...(module.BLOCK_SHADERS ?? [])]) if (given) (found[name] ??= []).push([given]);
   // (T.379.2) a maker with no arguments here would be compared as a syntax tree, and a text of its own never
   const unwalked = makersOfWgsl(module).filter((name) => !found[name]);
   if (unwalked.length) throw new Error(`${unwalked.join(", ")}: a maker of WGSL of shaders.ts that neither the catalogue (shaders/engine.ts) nor tests/shader-makers.mjs gives arguments: the net cannot compare the texts it makes`);

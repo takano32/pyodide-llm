@@ -32,6 +32,7 @@ const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, deviceKey, devic
 // ---- the order. A row: its name, and for a maker the choices it is given (what is no number), in the row's own order
 const said = ({ name, given }) => (given ? `${name}(${Object.entries(given).filter(([, value]) => typeof value !== "number").map(([key, value]) => `${key}=${value}`).join(", ")})` : name);
 const EITHER = [false, true];
+const BLOCK_TYPES = ["Q4_K", "Q2_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"];
 const ORDER = {
   engine: ["RMSNORM", "HEAD_NORM", "ADD", "ROPE", "SWIGLU", "QUANTIZE", "LAYER_NORM", "GELU", "EMBED", "EMBED_ROWS", "SAMPLE", "NORM_QUANTIZE", "TOKEN_ROPE", "WIDEN_SIX",
     "RMSNORM_ADD", "GEGLU",  // (T.261.4: a Gemma 3's norms behind and its gate)
@@ -49,7 +50,9 @@ const ORDER = {
     "fusedDp4aMatVec(output=geglu, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "ROTATE_QUANTIZE", "UNROTATE"],
   // T.547.2.4: a model's of llama.cpp's blocks besides int8 (T.547.3.3: a type after another)
-  blocks: ["Q4_K", "Q2_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"].flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
+  blocks: [...BLOCK_TYPES.flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
+    // (T.547.3.6: the embedding's row of a table of each type)
+    ...BLOCK_TYPES.map((weights) => `embedBlocks(weights=${weights})`)],
 };
 const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T.379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);

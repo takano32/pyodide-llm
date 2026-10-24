@@ -439,7 +439,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
 // most IQ types' blocks), and each type's two
 // functions: blk_values(block, g, col), half col of group g as packed int8 (q, 0 up), and blk_scales(block, g), the
 // group's (scale, min) of each half, of the block whose first byte is block
-const BLOCK_COMMON = /* wgsl */ `
+const BLK_READ = /* wgsl */ `
 // a byte of the weights
 fn blk_byte(at: u32) -> u32 {
   return (b[at / 4u] >> (8u * (at % 4u))) & 255u;
@@ -451,7 +451,9 @@ fn blk_word(at: u32) -> u32 {
     return b[at / 4u];
   }
   return (b[at / 4u] >> shift) | (b[at / 4u + 1u] << (32u - shift));
-}
+}`;
+// (T.547.3.6: and what a matrix's text adds, which an embedded row's does not read)
+const BLK_DOT = /* wgsl */ `
 // the sum of 16 packed int8
 fn blk_sum(a: vec4<u32>) -> i32 {
   return dot4I8Packed(a[0], 0x01010101u) + dot4I8Packed(a[1], 0x01010101u) + dot4I8Packed(a[2], 0x01010101u) + dot4I8Packed(a[3], 0x01010101u);
@@ -465,6 +467,7 @@ fn blk_dot(a: vec4<u32>, w: vec4<u32>) -> i32 {
 fn BLK(a0: vec4<u32>, w0: vec4<u32>, a1: vec4<u32>, w1: vec4<u32>, s: vec4<f32>, sums: vec2<f32>) -> f32 {
   return f32(blk_dot(a0, w0)) * s.x + f32(blk_dot(a1, w1)) * s.z - s.y * sums.x - s.w * sums.y;
 }`;
+const BLOCK_COMMON = BLK_READ + BLK_DOT;
 // (T.547.3.5: the float16 scale at a byte, which every type reads but IQ1_M, whose d is in pieces)
 const BLK_F16 = /* wgsl */ `
 // the float16 at byte at
@@ -1170,4 +1173,4 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
   return { worst, wrong, far, apart, values };
 }
 
-export { TERNARY_PACKED, BLOCK_COMMON, sdp8ai, GET_BYTE_I32 };
+export { TERNARY_PACKED, BLOCK_COMMON, BLK_READ, sdp8ai, GET_BYTE_I32 };

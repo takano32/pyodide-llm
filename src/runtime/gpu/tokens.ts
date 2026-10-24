@@ -169,7 +169,8 @@ const tokenShape = (m: Model) => {
   return { apart: Boolean(m.plan.vectors.bq || m.plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
     geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
     floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost), mix: writes.has("mix"), write: writes.has("write"),
-    blocks: blocksOf(m.plan.matrices) };
+    // (T.547.3.6: and the classifier's type, a token's matrix too)
+    blocks: blocksOf({ ...m.plan.matrices, classifier: m.plan.tokens!.classifier }) };
 };
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T.150's matrices where it is RMSNorm
@@ -184,7 +185,9 @@ const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart,
   // (T.547.3.2: gate and up apart are each written as they are)
   const glu: FusedOutput = !gated || up ? "write" : geglu ? "geglu" : "swiglu";
   const outputs: [string, FusedOutput][] = [["qkv", apart ? "write" : "rope"], ["add", "add"], ["glu", glu],
-    ...(posts || write ? [["write", "write"]] satisfies [string, FusedOutput][] : []), ...(mix ? [["mix", "write"]] satisfies [string, FusedOutput][] : [])];
+    ...(posts || write ? [["write", "write"]] satisfies [string, FusedOutput][] : []), ...(mix ? [["mix", "write"]] satisfies [string, FusedOutput][] : []),
+    // (T.547.3.6: the classifier's, where it is a matrix of the form's: one of blocks takes its type's)
+    ...(floatHead ? [] : [["classifier", "write"]] satisfies [string, FusedOutput][])];
   return [...(dp4a && !normApart ? [["normQuantize", ENGINE.NORM_QUANTIZE]] satisfies [string, string][] : []), ["qkv", matrix(apart ? "write" : "rope")],
     ["add", plain("add")], ["glu", matrix(glu)],
     ["classifier", (floatHead ? floats : matrix)("write")], ...(posts || write ? [["write", plain("write")]] satisfies [string, string][] : []),
@@ -213,7 +216,9 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const widest = Math.max(plan.dim, qDim, plan.hidden, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
   // (one at a time: each in an error scope of its own)
   // (T.232: from a table of ternary weights, EMBED_TERNARY)
-  const embedCode = tablesOf(plan).embedding.packing === "ternary" ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
+  // (T.547.3.6: from a table of llama.cpp's blocks, its type's embedBlocks)
+  const embedded = tablesOf(plan).embedding.packing;
+  const embedCode = isBlock(embedded) ? ENGINE.embedBlocks({ weights: embedded }) : embedded === "ternary" ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
   const embed = await within(validated(m, () => pipelineOf(m, embedCode)), "compiling the embedding's row");
   const sample = await within(validated(m, () => pipelineOf(m, ENGINE.SAMPLE)), "compiling the sampling");
   const out = STORAGE | COPY_SRC;
@@ -314,7 +319,8 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   const biased = (to: GPUBuffer, name: "bo" | "b1" | "b2", l: number) => (V[name] ? [added(to, V[name], g.u.biases![l][name], plan.vectors[name]!.size)] : []);
   // (T.209: a dispatch a piece of the table, each writing the row where the token is in its rows)
   const list: Pass[] = !embed ? [] : W.tables!.embedding.map((piece, i): Pass =>
-    [g.embed, bindAt(m, g.embed, [[0, piece.values], [1, piece.scales], [2, g.state], [3, g.h], [4, g.u.embed[i]]]), 1, 1]);
+    // (T.547.3.6: a table of blocks binds no scales, or (an IQ type) the codebooks there)
+    [g.embed, bindAt(m, g.embed, [[0, piece.values], ...(piece.scales ? [[1, piece.scales] satisfies Entry] : []), [2, g.state], [3, g.h], [4, g.u.embed[i]]]), 1, 1]);
   // T.226: GPT-2's learned positions: the row of the Step's position added to the embedding's (the CPU's embed())
   if (embed && W.positions) list.push(added(g.h, W.positions, g.u.positions!, plan.dim));
   // T.271.1: the embedding of a rotated basis holds R^-1 of its rows: turned back (UNROTATE)
@@ -355,8 +361,9 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
     const logitsOf = (piece: TablePiece) => ({ buffer: g.logits, offset: piece.first * 4, size: piece.rows * 4 });
     list.push(...final.norm, ...final.quantize,
       // (T.209: a piece at a time into its range of the logits: its first row is where the device binds, piecesOf)
-      ...W.tables!.classifier.flatMap((piece, i): Pass[] => [matrix(P.classifier, [piece.values, piece.scales], final.input, g.u.classifier[i], piece.rows, [[5, logitsOf(piece)]]),
-        ...(take ? [[g.columns!, bind(m, g.columns!, [piece.values, piece.scales, g.picked!, logitsOf(piece), g.u.columns![i]]), ...spread(m, piece.rows, 256)]] satisfies Pass[] : [])]),
+      // (T.547.3.6: a classifier of blocks by its type's pipeline)
+      ...W.tables!.classifier.flatMap((piece, i): Pass[] => [matrix(P.classifier, [piece.values, piece.scales, plan.tokens!.classifier.packing], final.input, g.u.classifier[i], piece.rows, [[5, logitsOf(piece)]]),
+        ...(take ? [[g.columns!, bind(m, g.columns!, [piece.values, piece.scales!, g.picked!, logitsOf(piece), g.u.columns![i]]), ...spread(m, piece.rows, 256)]] satisfies Pass[] : [])]),
       [g.sample, bindAt(m, g.sample, [[0, g.logits], [1, g.probs], [2, g.order], [3, g.state], [4, g.chosen], [5, g.randoms], [6, g.settings]]), 1, 1]);
   }
   return list;
