@@ -574,5 +574,18 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   if (was) Object.defineProperty(globalThis, "navigator", was); else delete globalThis.navigator;
   console.log(`gpu-worker-parts-check: tokens.js's ${forms} forms of a token's layer (by the model's packing, its norm and its shape) compile ${codes} texts, each a row of the catalogue and of the model's own packing`);
 }
+// ---- T.565: the bundles of a linear-attention layer's states (gpu/linear.ts's stateBundles()), as the 27B's go past a
+// 128 MiB binding: 48 places of 3 MiB, 42 a bundle; the place after the first bundle's is the second's at 0, a place
+// past the first of the second bundle at its place in it (the made-up models' bundles are a place each: T.271.5's review)
+{
+  const { stateBundles } = await import(runtimeUrl("gpu/linear.js"));
+  const size = 48 * 128 * 128, MiB = 2 ** 20, of = stateBundles(48, size, 128 * MiB);
+  assert.deepEqual(of.bytes, [42 * 3 * MiB, 6 * 3 * MiB]);
+  assert.deepEqual([0, 41, 42, 47].map(of.of), [[0, 0], [0, 41 * size], [1, 0], [1, 5 * size]]);
+  // (a device that binds all of them: one bundle, every place at its own; one that binds less than a place: a place a bundle)
+  assert.deepEqual(stateBundles(48, size, 2 ** 31).bytes, [48 * 3 * MiB]);
+  assert.deepEqual(stateBundles(3, size, MiB).bytes, [3 * MiB, 3 * MiB, 3 * MiB]);
+  console.log("gpu-worker-parts-check: the 27B's 48 places of state go in bundles of 42 and 6 where a device binds 128 MiB, each place at its own in its bundle");
+}
 console.log("gpu-worker-parts-check: ok");
 process.exit(0);

@@ -10,6 +10,14 @@ import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Quantizing } from "./kinds.ts";
 import type { Pass } from "./device.ts";
 
+// T.565: the bundles of places' states of stateSize floats each, no bundle more than most bytes (a place a bundle at the
+// least): every bundle's bytes, and a place's bundle and its first float in it
+export function stateBundles(places: number, stateSize: number, most: number) {
+  const per = Math.max(1, Math.floor(most / (stateSize * 4)));
+  return { bytes: [...Array(Math.ceil(places / per))].map((_, i) => Math.min(per, places - i * per) * stateSize * 4),
+    of: (place: number): [number, number] => [Math.floor(place / per), (place % per) * stateSize] };
+}
+
 export const linear: GpuKind = {
   // (the read, which z's gate leaves for the matrix out to quantize)
   widest: (plan) => plan.linear!.valueHeads * plan.linear!.valueDim,
@@ -28,10 +36,9 @@ export const linear: GpuKind = {
     // T.565: the state matrices in bundles of whole places, each no more than a buffer the device binds (m.limit, or
     // plan.force.stateBytes in the tests): the 27B's 48 places are 144 MiB, past the 128 MiB a phone's GPU binds. The
     // bundles one after another are the places in order, as the CPU stages them (place p: bundle p / per, at p % per)
-    const stateSize = valueHeads * keyDim * valueDim, per = Math.max(1, Math.floor((plan.force.stateBytes ?? m.limit) / (stateSize * 4)));
-    const bundles = [...Array(Math.ceil(places / per))].map((_, i) => Math.min(per, places - i * per) * stateSize * 4)
-      .map((bytes) => ({ buffer: buffer(m, bytes, STORAGE | COPY_DST | COPY_SRC), bytes }));
-    const stateOf = (place: number) => bundles[Math.floor(place / per)].buffer, stateAt = (place: number) => (place % per) * stateSize;
+    const stateSize = valueHeads * keyDim * valueDim, bundled = stateBundles(places, stateSize, plan.force.stateBytes ?? m.limit);
+    const bundles = bundled.bytes.map((bytes) => ({ buffer: buffer(m, bytes, STORAGE | COPY_DST | COPY_SRC), bytes }));
+    const stateOf = (place: number) => bundles[bundled.of(place)[0]].buffer, stateAt = (place: number) => bundled.of(place)[1];
     const rows = buffer(m, rowsBytes, STORAGE | COPY_DST | COPY_SRC);
     let quantizeZ: Quantizing | undefined;
     return {
