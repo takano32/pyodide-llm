@@ -530,7 +530,9 @@ def iq2_blocks(name):
         scale = np.repeat(d32 * (np.float32(0.5) + s) / 4, unit // 8, axis=1)  # (n, 32): a scale an entry of 8
         eights = v.reshape(n, 32, 8)
         target = np.abs(eights) / np.where(scale > 0, scale, 1)[:, :, None]
-        index = ((target[:, :, None, :] - table[None, None]) ** 2).sum(axis=3).argmin(axis=2)
+        # (the nearest entry by |t|^2 - 2 t.g + |g|^2, a few blocks at a time: Pyodide's NumPy has 32-bit sizes)
+        flat, norms = target.reshape(-1, 8), (table ** 2).sum(axis=1)
+        index = np.concatenate([(norms[None] - 2 * flat[at:at + 4096] @ table.T).argmin(axis=1) for at in range(0, len(flat), 4096)]).reshape(n, 32)
         minus = eights < 0
         if name != "IQ2_S":
             odd = minus.sum(axis=2) % 2 == 1
