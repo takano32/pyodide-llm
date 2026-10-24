@@ -250,7 +250,7 @@ function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, pipeline: 
 // (shaders.ts's ternaryValues)
 // T.547.2.3, a form with a Q4_K text beside (blocks): that text too, on rows of 768 weights (three blocks of 256, every
 // group of a block: eight of the activations' groups of 32, each its own s and m) of random bytes (any bytes are blocks)
-// with d and dmin of 2^-12 to 2^-11 and either sign, against JavaScript's on the weights they read as (q4kWeights: d s q
+// with d and dmin of 2^-12 to 2^-11 and either sign, against JavaScript's on the weights they read as (BLOCK_WEIGHTS: d s q
 // - dmin m, each times a scale of 1)
 async function checkForm(m: Model, form: Tiled) {
   const wrong = await checkWith(m, form, form.pipeline, form.ternary ? "ternary" : "int8");

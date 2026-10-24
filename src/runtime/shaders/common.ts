@@ -8,7 +8,7 @@ export const GROUP = 32;
 // (T.379.2) how the weights of a matrix are packed, where a shader's text reads them packed: int8 (four to a u32, a
 // scale a group of 32; int6 is widened to it as it goes up, T.155) or ternary codes (sixteen to a u32, a scale a group
 // of 128, T.232). The name of the choice for every maker that has both: the prompt's DP4A tile and a token's DP4A matrix
-// (T.547.2.4: and Q4_K's blocks of 256, as they are: prompt.ts's Q4_K_BLOCK; T.547.3.3: and every type of llama.cpp's
+// (T.547.2.4: and Q4_K's blocks of 256, as they are; T.547.3.3: and every type of llama.cpp's
 // blocks the GPU reads, BLOCK_PACKINGS, in the order of the catalogue: prompt.ts's BLOCK_READS)
 export const BLOCK_PACKINGS = ["Q4_K", "Q2_K"] as const;
 export type BlockPacking = (typeof BLOCK_PACKINGS)[number];
