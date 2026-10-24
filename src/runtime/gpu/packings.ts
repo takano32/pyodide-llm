@@ -4,7 +4,7 @@
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 import { GROUP } from "../shaders/common.ts";
 import { sixValues } from "../shaders/steps.ts";
-import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS } from "../shaders/prompt.ts";
+import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, readsGrid } from "../shaders/prompt.ts";
 import { BLOCK_PACKINGS } from "../shaders/common.ts";
 import type { BlockPacking } from "../shaders/common.ts";
 import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
@@ -24,21 +24,21 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 //             the CPU)
 //   values()  the bytes of a row as the checkpoint holds them, as its int8 values (the checks' answer), which a group's
 //             scale times is the row's weights; (T.547.2.4) a packing of no scales apart, its weights themselves (Q4_K's
-//             d s q - dmin m), which its one scale of 1 times is
+//             d s q - dmin m), which its one scale of 1 times is; (T.547.3.4) of an IQ type, of the codebooks too
+//   grid      (T.547.3.4) whether its shaders read the codebooks, bound where an int8 matrix's scales are (the IQ types)
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
-  values(bytes: Uint8Array): ArrayLike<number> };
+  grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number> };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
 // (T.547.3.3: llama.cpp's blocks of a type of prompt.ts's BLOCK_READS, as the checkpoint holds them)
 const blocks = (packing: BlockPacking): HeldAs => {
   const { bytes } = BLOCK_READS[packing], { weights } = BLOCK_WEIGHTS[packing], row = (n: number) => (n / 256) * bytes;
-  return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, values: weights };
+  return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, grid: readsGrid(packing), values: weights };
 };
 export const PACKINGS: Record<GpuPacking, HeldAs> = {
-  int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, values: asBytes },
-  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, values: sixValues },
-  ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, values: ternaryValues },
-  Q4_K: blocks("Q4_K"),
-  Q2_K: blocks("Q2_K"),
+  int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, grid: false, values: asBytes },
+  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, grid: false, values: sixValues },
+  ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, grid: false, values: ternaryValues },
+  ...(Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blocks(packing)])) as Record<BlockPacking, HeldAs>),
 };
 // T.547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
 // "layers": its packings'), and the packings a matrix has

@@ -207,7 +207,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual([beside.made, beside.posted.length, part.gettingReady(), part.status], [1, 1, true, "prompts on the CPU while the GPU gets ready"]);
   const [{ type, memory, plan }] = beside.posted;
   assert.deepEqual([type, memory], ["start", beside.memory]);
-  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
+  assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "codebooks", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
     "layerNorm", "layers", "linear", "local", "localCos", "localSin", "matrices",
     "parallel", "places", "remembered", "rotated", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
   assert.equal(plan.rotated, null, "T.271.1: no rotated basis in the model's own basis");
@@ -702,11 +702,12 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{}, { w1: matrixOf(24, 8, 0, { kind: "toString" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 128, 0, { kind: "ternary" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { kind: "int6", group: 16 }) }, {}, /^float32 weights are not on the GPU yet$/],
-    // (T.363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer;
+    // (T.363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer: T.547.3.4, of a
+    // type the GPU does not read yet, IQ3_S;
     // T.547.2.3: but Q4_K's, which the GPU keeps as they are: below)
-    [{}, { w1: matrixOf(24, 256, 0, { kind: "IQ2_XXS", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "IQ3_S", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 256, 0, { kind: "Q4_K", group: 32 }) }, {}, /^float32 weights are not on the GPU yet$/],
-    [{}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [{ kind: "IQ2_XXS" }, { kind: "int8" }] }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [{ kind: "IQ3_S" }, { kind: "int8" }] }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
@@ -718,7 +719,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     const stack = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers }) });
     assert.equal(stack.unfit(), null, "a stack of Q4_K's and int8's layers");
     // (the review: but one of a kind the GPU does not take keeps the model on the CPU)
-    const one = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [layers[0], matrixOf(24, 256, 5000, { kind: "IQ2_XXS", group: 256 })] }) });
+    const one = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [layers[0], matrixOf(24, 256, 5000, { kind: "IQ3_S", group: 256 })] }) });
     assert.match(one.unfit(), /^float32 weights are not on the GPU yet$/, "a stack with a layer the GPU does not take");
   }
   // T.545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);

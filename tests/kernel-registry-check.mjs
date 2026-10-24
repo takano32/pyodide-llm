@@ -189,7 +189,7 @@ for (const [name, from, , { tile, rowBytes }] of KINDS) {
 {
   // Python's registry: the quantized dtypes by the name a plan's tensor has, the bytes of a row of each, and a matrix
   // packed by each with its weights as int8
-  const { packed: said, blocks, codebooks } = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", `
+  const { packed: said, blocks, codebooks, places } = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", `
 import json, sys
 sys.path.insert(0, sys.argv[1])
 import numpy as np
@@ -210,7 +210,13 @@ for name in QUANTIZED:
     assert len(values) == 3 * n and len(set(values.tolist())) > 2
     out[dtype.short] = {"group": dtype.group(n), "row": [dtype.stored_bytes(width, dtype.group(width))[0] for width in (128, 256, 1024)], "packed": packed.tolist(), "values": values.tolist(), "scale": dtype.scale}
 blocks = {name: {"short": kind.short, "group": kind.group(256), "row": [kind.stored_bytes(width, BLOCK)[0] for width in (256, 1024)], "scale": kind.scale, "type": SOURCES[name].ggml} for name, kind in BLOCKS.items()}
-print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, python()], { cwd: fileURLToPath(new URL("..", import.meta.url)) }).toString());
+from convert.grids import codebooks
+print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "places": codebooks()[1]}))`, python()], { cwd: fileURLToPath(new URL("..", import.meta.url)) }).toString());
+  // (T.547.3.4: the GPU's IQ texts read the codebooks by the word each grid begins at, prompt.ts's IQ_WORDS, a second
+  // copy of convert/grids.py's places; and their bytes are engine/dtypes.py's CODEBOOKS)
+  const { IQ_WORDS, CODEBOOK_BYTES } = await import(runtimeUrl("shaders.js"));
+  assert.deepEqual(IQ_WORDS, Object.fromEntries(Object.keys(IQ_WORDS).map((name) => [name, places[name] / 4])), "where each grid begins in the codebooks, a word of 4 bytes (prompt.ts's IQ_WORDS: convert/grids.py's codebooks() has them)");
+  assert.equal(CODEBOOK_BYTES, codebooks, "the bytes of the codebooks (prompt.ts's CODEBOOK_BYTES: engine/dtypes.py's CODEBOOKS)");
   const tabled = Object.keys(PACKED).filter((name) => PACKED[name].tabled !== undefined);
   assert.deepEqual(Object.keys(PACKED).filter((name) => !tabled.includes(name)).sort(), Object.keys(said).sort(), "the packings with scales of their own are the quantized dtypes of Python's registry (engine/dtypes.py), by the names a plan's tensors have");
   // T.363.5: and the others llama.cpp's blocks, the kinds a row alone may have (engine/dtypes.py's BLOCKS): the name a
@@ -285,6 +291,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU,
   GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T.547.2.3's Q4_K, as it is, by the packed int8 dot)
   GPU.Q2_K = { as: "Q2_K", alone: false, dot: true };              // (T.547.3.3: and Q2_K's, the same way)
+  for (const name of ["IQ2_XXS", "IQ2_XS", "IQ2_S"]) GPU[name] = { as: name, alone: false, dot: true };  // (T.547.3.4)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
   // (T.547.1's review: the GPU plan's packing names, contracts/gpu/protocol.ts's GpuPacking, are the packings with a gpu:
   // a packing given one there and not the name, or the name and no gpu, is said here and by no type)

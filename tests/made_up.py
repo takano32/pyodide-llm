@@ -510,7 +510,57 @@ def q2k_blocks(values):
     return out.tobytes()
 
 
-VALUED = {"Q4_K": q4k_blocks, "Q2_K": q2k_blocks}
+def iq2_blocks(name):
+    """T.547.3.4: values (whole blocks of 256 along their last axis) -> IQ2_XXS's, IQ2_XS's or IQ2_S's blocks (name), as
+    llama.cpp lays them out (convert/superblocks.py reads them): each 8 values the grid's entry nearest their magnitudes
+    over their group's scale d (s + 1/2) / 4 (a scale a group of 32 for IQ2_XXS, of 16 for the others) and their signs;
+    where 7 bits hold the signs (IQ2_XXS, IQ2_XS), an odd count of minus signs flips the smallest value's. d the largest
+    scale a group wants over 15.5 / 4, float16. Near the values, not llama.cpp's search."""
+    from convert.grids import grid
+    table = grid({"IQ2_XXS": "IQ2XXS", "IQ2_XS": "IQ2XS", "IQ2_S": "IQ2S"}[name]).astype(np.float32)
+    unit, size = (32, 66) if name == "IQ2_XXS" else (16, 74 if name == "IQ2_XS" else 82)
+
+    def blocks(values):
+        v = np.asarray(values, dtype=np.float32).reshape(-1, 256)
+        n = len(v)
+        want = np.abs(v).reshape(n, -1, unit).max(axis=2) / table.max()
+        d = (want.max(axis=1) / (15.5 / 4)).astype(np.float16)
+        d32 = d.astype(np.float32)[:, None]
+        s = np.clip(np.rint(np.divide(want * 4, d32, out=np.zeros_like(want), where=d32 > 0) - 0.5), 0, 15).astype(np.uint8)
+        scale = np.repeat(d32 * (np.float32(0.5) + s) / 4, unit // 8, axis=1)  # (n, 32): a scale an entry of 8
+        eights = v.reshape(n, 32, 8)
+        target = np.abs(eights) / np.where(scale > 0, scale, 1)[:, :, None]
+        index = ((target[:, :, None, :] - table[None, None]) ** 2).sum(axis=3).argmin(axis=2)
+        minus = eights < 0
+        if name != "IQ2_S":
+            odd = minus.sum(axis=2) % 2 == 1
+            least = np.abs(eights).argmin(axis=2)
+            rows, entries = np.nonzero(odd)
+            minus[rows, entries, least[rows, entries]] ^= True
+        signs = (minus * (1 << np.arange(8))).sum(axis=2).astype(np.uint32)
+        out = np.zeros((n, size), dtype=np.uint8)
+        out[:, 0:2] = d.view(np.uint8).reshape(-1, 2)
+        if name == "IQ2_XXS":
+            for g in range(8):
+                out[:, 2 + 8 * g:6 + 8 * g] = index[:, 4 * g:4 * g + 4]
+                aux = sum((signs[:, 4 * g + j] & 127) << (7 * j) for j in range(4)) | (s[:, g].astype(np.uint32) << 28)
+                out[:, 6 + 8 * g:10 + 8 * g] = aux.astype("<u4").view(np.uint8).reshape(n, 4)
+        else:
+            nibbles = (s[:, 0::2] | (s[:, 1::2] << 4)).astype(np.uint8)
+            if name == "IQ2_XS":
+                words = (index | ((signs & 127) << 9)).astype("<u2")
+                out[:, 2:66] = words.view(np.uint8).reshape(n, 64)
+                out[:, 66:74] = nibbles
+            else:
+                out[:, 2:34] = index & 255
+                out[:, 34:66] = signs
+                out[:, 66:74] = sum(((index[:, k::4] >> 8) & 3) << (2 * k) for k in range(4))
+                out[:, 74:82] = nibbles
+        return out.tobytes()
+    return blocks
+
+
+VALUED = {"Q4_K": q4k_blocks, "Q2_K": q2k_blocks, **{name: iq2_blocks(name) for name in ("IQ2_XXS", "IQ2_XS", "IQ2_S")}}
 
 
 def valued_blocks(seed=0, scale=0.3):

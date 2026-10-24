@@ -10,7 +10,7 @@ export const GROUP = 32;
 // of 128, T.232). The name of the choice for every maker that has both: the prompt's DP4A tile and a token's DP4A matrix
 // (T.547.2.4: and Q4_K's blocks of 256, as they are; T.547.3.3: and every type of llama.cpp's
 // blocks the GPU reads, BLOCK_PACKINGS, in the order of the catalogue: prompt.ts's BLOCK_READS)
-export const BLOCK_PACKINGS = ["Q4_K", "Q2_K"] as const;
+export const BLOCK_PACKINGS = ["Q4_K", "Q2_K", "IQ2_XXS", "IQ2_XS", "IQ2_S"] as const;
 export type BlockPacking = (typeof BLOCK_PACKINGS)[number];
 export type Packing = "int8" | "ternary" | BlockPacking;
 

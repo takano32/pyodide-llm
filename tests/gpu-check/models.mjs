@@ -107,6 +107,11 @@ const Q4K_UP_APART = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K
 const Q2K_KINDS = { wq: "Q2_K", wk: "Q2_K", wv: "Q2_K", wo: "Q2_K", w1: "Q2_K", w2: "Q2_K", w3: "Q2_K" };
 const BLOCK_LAYERS = { wq: ["Q2_K", "Q4_K", "int8"], wk: ["Q4_K", "Q2_K", "Q2_K"], wv: ["int8", "Q2_K", "Q4_K"], wo: ["Q2_K", "int8", "Q4_K"],
   w1: ["Q4_K", "Q2_K", "int8"], w2: ["Q2_K", "Q2_K", "Q4_K"], w3: ["Q2_K", "int8", "Q2_K"] };
+// (T.547.3.4: the IQ2 types, which read the codebooks: q, k and v one of IQ2_XS, gate and up one of IQ2_S, o and down
+// IQ2_XXS; and stacks of them by layer with the K types and int8)
+const IQ2_KINDS = { wq: "IQ2_XS", wk: "IQ2_XS", wv: "IQ2_XS", wo: "IQ2_XXS", w1: "IQ2_S", w2: "IQ2_XXS", w3: "IQ2_S" };
+const IQ2_LAYERS = { wq: ["IQ2_XXS", "Q4_K", "IQ2_S"], wk: ["IQ2_XS", "IQ2_XXS", "int8"], wv: ["IQ2_S", "Q2_K", "IQ2_XXS"], wo: ["IQ2_XXS", "IQ2_XS", "Q2_K"],
+  w1: ["IQ2_S", "int8", "IQ2_XXS"], w2: ["IQ2_XXS", "IQ2_S", "IQ2_XS"], w3: ["IQ2_XS", "IQ2_XXS", "IQ2_S"] };
 // (the review: and an LFM2's, whose stacks of a kind's layers are by their places among that kind's: two attending
 // layers' q and k, four convolution layers' matrices in and out)
 const LFM2_Q4K_LAYERS = { wq: ["int8", "Q4_K"], wk: ["Q4_K", "int8"], win: ["Q4_K", "int8", "int8", "Q4_K"], wout: ["int8", "Q4_K", "Q4_K", "int8"],
@@ -201,6 +206,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // of Q4_K with v int8 apart and the norms of the heads, attending layers among the others)
   "synthetic-q2k": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q2K_KINDS, valued: true }, { kinds: Q2K_KINDS }],
   "synthetic-blocks-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: BLOCK_LAYERS, valued: true }, { kinds: BLOCK_LAYERS }],
+  "synthetic-iq2": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_KINDS, valued: true }, { kinds: IQ2_KINDS }],
+  "synthetic-iq2-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_LAYERS, valued: true }, { kinds: IQ2_LAYERS }],
   "synthetic-q4k-qk-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_QK_APART, valued: true }, { kinds: Q4K_QK_APART }],
   "synthetic-q4k-up-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_UP_APART, valued: true }, { kinds: Q4K_UP_APART }],
   "synthetic-lfm2-q4k-layers": [{ dim: 256, hidden: 768, layers: 6, heads: 4, kv_heads: 2, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_LAYERS, valued: true },
@@ -254,7 +261,7 @@ const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-q4k-wide",
   "synthetic-lfm2-q4k", "synthetic-q4k-layers",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
-  "synthetic-blocks-layers"];
+  "synthetic-blocks-layers", "synthetic-iq2-layers"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };

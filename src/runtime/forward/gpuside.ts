@@ -78,6 +78,8 @@ export type Placed = {
   attPost: number; ffnPost: number; localCos: number; localSin: number;
   // T.271.1: the signs of a rotated basis by the width a matrix reads (their addresses: null in the model's own basis)
   signs: Record<number, number> | null;
+  // T.547.3.4: the codebooks of llama.cpp's blocks, the checkpoint's row (its address: 0, a file with no such rows)
+  codebooks: number;
   // T.568.4: the matrices and vectors the kinds of its layers have of their own on the GPU, by the GPU's names (forward/kinds.ts's
   // gpu: T.545 an LFM2's matrices in and out of its convolution layers and their taps; T.271.2 a Qwen3.5's linear-attention
   // layers' matrices and their gates' vectors, and the gate of its full-attention layers' output), where the model has them
@@ -262,7 +264,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
     unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated } = shape;
-  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs } = weights;
+  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs, codebooks } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
   const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateToStaging, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
@@ -441,7 +443,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       // (T.271.1: a rotated basis, which the GPU's worker turns every matrix's input into and an embedded row back from)
       rotated: rotated ? { block: rotated, signs: Object.entries(signs!).map(([width, at]) => ({ width: Number(width), at })) } : null,
       batch: GPU_BLOCK,
-      matrices,
+      matrices, codebooks,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,
       cos: cosTable, sin: sinTable, staging, force: gpuForce, remembered: gpuRemembered, direct: Boolean(direct),
       words: { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED } } });
