@@ -38,7 +38,8 @@ const Q_DIM = HEADS * HEAD, KV_DIM = KV_HEADS * HEAD, KV_ROW = KV_DIM * 2;
 const LINEAR = { keyHeads: 1, valueHeads: 2, keyDim: 16, valueDim: 16, taps: 4 }, KEYS = LINEAR.keyHeads * LINEAR.keyDim, READ = LINEAR.valueHeads * LINEAR.valueDim;
 const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 
-// (T.547.1: a matrix's and a table's packing by name; six and ternary besides, which the trees before it read)
+// (T.547.1: a matrix's and a table's packing by name; six and ternary besides, which the trees before it read: they can
+// go once the net's other tree is never one before 351fc6cb)
 /** A plan as forward/gpuside.ts hands one (a Started), over a memory it lays out: kinds, every layer's kind; more, the
  * model's own; matrices and vectors, [rows, n, of] and [size, of] by name. */
 function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }, direct = false) {

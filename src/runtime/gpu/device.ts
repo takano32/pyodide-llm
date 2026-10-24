@@ -70,7 +70,8 @@ const CHUNK = 8 << 20;
 // or two bits (ternary: the codes as the checkpoint holds them, 16 weights a u32). A float32 scale goes with every
 // GROUP (32) bytes of a row either way: an int8 group of 32 weights, a ternary group of 128
 const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => (packing === "ternary" ? n / 4 : n);
-// (whether the model's weights are ternary: its layers' matrices are all of one kind, llama2_numpy's dtype)
+// (whether the model's weights are ternary: a ternary checkpoint's matrices are all ternary, llama2_numpy's dtype, and no
+// other model has a ternary one)
 const ternaryPlan = (plan: { matrices: Record<string, Matrix> }) => Object.values(plan.matrices).some((matrix) => matrix.packing === "ternary");
 // T.255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
 // and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)

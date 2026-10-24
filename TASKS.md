@@ -236,7 +236,7 @@
 - T.563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
 - T.573 [整理][WebGPU] 1 つの層の状態だけで束縛の上限を越える linear の層を、読み込みの前に断る — 未着手
 - T.574 [試験][Bonsai][WebGPU] 塊 1024 の回した基底を持つ Qwen3.5 の作り物 — 未着手
-- T.575 [バグ][遠隔試験] `plan-facts-check` が終わりの `process.exit()` の中でまれに止まる — 反映済み
+- T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 未着手
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T.567 [バグ][WebGPU] `gpuBytes()` が linear の層の畳み込みのタップ分を数えない — 未着手
 <!-- 目次ここまで -->
@@ -1661,6 +1661,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - **T.547.1** [整理]: GPU の計画の行列が自分の詰め方を言い（今の `six`・`ternary` の真偽を 1 つの名前に）、GPU の Worker は行列ごとに読む形とシェーダを選ぶ。今あるモデルの動きは変えない（網の `gpusteps`・`shaders` が同じ）。
   - **T.547.2**: Q4_K を GPU に（答えのステップの DP4A の形とプロンプトのタイル、`PACKED` の Q4_K の行の `gpu`）。int8 と Q4_K の行の混ざる 4-bit の Shisa が GPU で答える。端末の鍵が 1 回動く。
   - **T.547.1 の結果（2026-10-24、Opus medium、状態: 反映済み）**: GPU の計画の `Matrix`・`Table` の `six`・`ternary` の真偽 2 つを、名前 1 つ `packing`（`GpuPacking`: int8・int6・ternary、チェックポイントの `PACKED` の名前）にした。書く側は `alone.ts` の `gpuPacking()`（GPU が取らない名前は投げる: `gpuFit()`・`gpuOnlyUnfit()` が先に断っているはずの物）を `gpuside.ts` と `gpuOnlyPlan()` が呼ぶ。読む側（`gpu/device.ts`・`weights.ts`・`tokenforms.ts`・`block.ts`・`tokens.ts`）は名前を比べる。モデルに 1 つの `m.ternary`（形の選び方・端末の鍵）はそのまま（T.547.2 で行列ごとに要る所だけ広げる）。網は全部同じ（`gpusteps` 277・`shaders` 120 と 192・`calls` 4869・`choices` 170: 網の作り物は `packing` と前の木のための真偽の両方を書く）。CI を回した。訳: GPU の Worker の道。**run 40074034309**（Dawn、作り物 6 つ: int8・int6・3 値・3 値で分類器が別・回した基底・Qwen3.5）: FAILED 0。手元: 型検査、GPU の側の検査 10 本、軽い組（431 秒。1 回目は T.575 で止まった）。
+  - **T.547.1 のレビュー（Sonnet high、2026-10-24）: must-fix なし**（動きは変わっていない: 古い旗の読み手は残らず、int6 と 3 値の広げはどの道も `packing` で同じ枝、`gpuPacking()` が投げうるのは `gpuFit()`・`gpuOnlyUnfit()` が先に断る物だけ）。勧めから直したもの: `gpuPacking()` を `PACKED` の行の `gpu` で決める形に、`kernel-registry-check` が `GpuPacking` の名前と `gpu` のある `PACKED` の名前を突き合わせる（共用体に `Q4_K` を足すと落ちるのを見た）、`ternaryPlan` の古いコメント、網の作り物の古い旗を外せる時期（相手の木が 351fc6cb より前でなくなったら）。CI を省いた。訳: 通る名前は前と同じ 3 つで、手元の検査が全部踏む。勧めの残り: 計画を GPU の Worker を開く前に作る（T.576）、行の形の表（下の T.547.2 の設計で決める）。
+  - **T.547.2 の設計の前に決めること（T.547.1 のレビューの勧め）**: 行の形（GPU で持つ行のバイト数・チェックポイントのバイト数・尺度を広げるか・値を広げるか）は `packing` の比べで約 10 か所に散っている（`device.ts` の `rowBytes`、`weights.ts` の `heldScale`・`scalesIn`・道の旗・int6 の広げ、`tokenforms.ts` の `stored`・`valuesOf`・`inMemory`）。Q4_K は 144 バイトの塊に尺度が入っていて、`Matrix.layers` の [値の番地, 尺度の番地] と float32 の尺度の前提に合わない。先に `gpu/` に詰め方ごとの表を 1 つ置き、Q4_K の「尺度の番地なし」をどう書くかを決めてから足す。
   - **T.547.3**: Saluki の残りの 9 種類（Q2_K と IQ 系、符号表を GPU に 1 回）と、GPU だけ（実物はパソコン）。
 
 - **当たるモデル**: 塊を持つ一覧の 2 項目。Shisa V2.1c LFM2 350M (4-bit)（Q4_K の行列と、広げた int8 の行: T.545 の後）と Underdog Saluki 27B（10 種類の型: T.271 の DeltaNet の後、2 重には入らないのでパソコンの GPU だけに）。T.513 の勧めで 4-bit の項目が増えれば、それも。いまは `PACKED` の塊の行が `gpu: null`、GPU だけにも `gpuOnlyUnfit()` が断る。GPU に置かない訳の文は T.503 で持ち主が決めた「llama.cpp's blocks are not on the GPU yet」。
@@ -1725,9 +1727,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.574 [試験][Bonsai][WebGPU] 塊 1024 の回した基底を持つ Qwen3.5 の作り物 — 状態: 未着手（2026-10-24、T.271.5 のレビューの勧め。規模 小）
 - 27B は塊 1024・linear の層の z の幅 6144（6 塊）・FFN 17408。作り物は塊 64 の Qwen3.5 と塊 1024 の Llama で、その組は無い（シェーダは独立なので危険は低い）。gpu-check に `rotatedBasis(1024, …)` の Qwen3.5 を 1 つ（6 層は f16 のタイルで線を越えたので 4 層まで）。
 
-### T.575 [バグ][遠隔試験] `plan-facts-check` が終わりの `process.exit()` の中でまれに止まる — 状態: 反映済み（2026-10-24、Opus medium。T.547.1 の手元の軽い組が 1 回止まって見つけた。規模 小）
-- T.547.1 の軽い組が「plan-facts-check: ok」の後で止まり、外の期限 25 分で切れた（`limited.mjs` の期限 30 分より先）。この検査だけを回すと 250 回に 2 回止まった（どちらも ok を書いた後）。AGENTS.md の落とし穴「Node は重い仕事の直後の `process.exit()` の中でまれに止まる」（T.384）と同じで、この検査は待たずに終わっていた。`worker-fetches-check` と同じく 200 ms 待ってから終わる形にして、400 回で 0。CI を省いた。訳: 手元で再現と直しが両方見られた（検査の終わり方だけ）。
-- ほかに待たずに `process.exit()` で終わる重い検査が残っているかは未確認（次に止まったら同じ形で）。
+### T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 状態: 未着手（2026-10-24、T.547.1 のレビューの勧め。規模 小）
+- `worker/weights.ts`（425〜451 行あたり）は `openGpu()` で GPU の Worker を作り `gpuOnlyWeights` を作った後で `gpuOnlyPlan()` を呼ぶ。`gpuOnlyPlan()` は純な関数で、T.547.1 から `gpuPacking()` が投げうる（今は届かない枝）。投げると Worker が残るので、計画を先に作る。
 
 ### T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 未着手（2026-10-16、T.271 のレビューの気づき。持ち主の端末で費用を測ってから）
 - いまはブロックごとと 4 ステップごとに状態全体（Qwen3.5 0.8B で約 20 MiB）を読み戻して写す。見積もり（未計測）でブロックの 3〜5%、ステップの 10〜15%。

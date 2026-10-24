@@ -247,10 +247,11 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
 /** T.375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker
  * asks before it opens a file to keep a conversion in as it comes */
 export const aloneTakes = (dtype: string) => Boolean(packingOf(dtype)?.gpu?.alone);
-/** T.547.1: the packing of a matrix or a table of the GPU's plan: a stored kind the GPU takes (what gpuFit() and
- * gpuOnlyUnfit() have let through: one it does not take is a mistake of theirs) */
+/** T.547.1: the packing of a matrix or a table of the GPU's plan: a stored kind the GPU takes, its line of PACKED having
+ * a gpu (what gpuFit() and gpuOnlyUnfit() have let through: one it does not take is a mistake of theirs). GpuPacking is
+ * those names, which kernel-registry-check holds to PACKED */
 export function gpuPacking(kind: string): GpuPacking {
-  if (kind === "int8" || kind === "int6" || kind === "ternary") return kind;
+  if (packingOf(kind)?.gpu) return kind as GpuPacking;
   throw new Error(`the GPU takes no matrix of ${kind}`);
 }
 

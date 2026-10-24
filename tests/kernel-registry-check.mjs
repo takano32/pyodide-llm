@@ -284,6 +284,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
   for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
+  // (T.547.1's review: the GPU plan's packing names, contracts/gpu/protocol.ts's GpuPacking, are the packings with a gpu:
+  // a packing given one there and not the name, or the name and no gpu, is said here and by no type)
+  assert.deepEqual([...contract("gpu/protocol.ts").literalsOf("GpuPacking")].sort(),
+    Object.entries(PACKED).filter(([, { gpu }]) => gpu).map(([name]) => name).sort(), "GpuPacking's names are those of the packings the GPU holds");
   assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { takes }]) => [name, takes])),
