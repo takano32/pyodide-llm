@@ -97,7 +97,7 @@ const MODELS = {
 // GPU binds)
 MODELS["qwen35 (states in bundles)"] = { ...MODELS.qwen35, more: { linear: LINEAR, force: { stateBytes: LINEAR.valueHeads * LINEAR.keyDim * LINEAR.valueDim * 4 } } };
 // (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
-const ALONE = ["llama", "qwen35", "rotated"];
+const ALONE = ["llama", "qwen35", "rotated", "qwen35 (states in bundles)"];
 
 const hash = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const random = (bytes) => Uint8Array.from({ length: bytes }, (_, i) => (i * 131 + 7 * (i >> 8) + 89) & 255);

@@ -567,10 +567,11 @@ try {
       remembered = { same: (await run(openGpu, {}, kept)).ready, other: (await run(openGpu, {}, { ...kept, key: kept.key + "|another" })).ready };
     }
     const cpu = await run(undefined), lateRun = c.id === "synthetic" ? await late() : undefined;
-    // T.156: the model on the GPU alone, last (it packs the memory the others read the checkpoint whole from)
+    // T.156: the model on the GPU alone, last (it packs the memory the others read the checkpoint whole from). (T.271.5's
+    // review: a case whose force is the bundles of its states alone runs it too: the 27B's way is the GPU alone)
     let alone;
     const tokenRun = gpu.find((r) => r.steps?.forced === tokenForms[0] && r.steps?.first);
-    if (c.places && tokenRun && !c.wide && !c.force) {
+    if (c.places && tokenRun && !c.wide && !c.force?.pieceBytes) {
       const force = { ...TESTS, matrices: forms[0], quick: true, tokens: tokenForms[0], pieceBytes: Infinity, tablePieceBytes };
       const synthetic = c.id === "synthetic";
       alone = { right: await direct(force, synthetic ? { GBps: 1e-6, promptGMACs: 1e-6 } : undefined), pieces: await direct({ ...force, pieceBytes: 4096 }),
