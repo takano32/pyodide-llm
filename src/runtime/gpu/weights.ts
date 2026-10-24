@@ -337,10 +337,6 @@ function tokensLayout(m: Model): Together | null {
   const aparts = [...(matrices.wq && !qk ? ["wq", "wk"] : []), ...(matrices.wq && !("qkv" in kv) ? ["wv"] : []), ...(up ? ["w1", "w3"] : [])];
   for (const name of aparts) if (matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
   const vAt = !matrices.wq || "qkv" in kv ? 0 : (matrices.wq.rows + matrices.wk.rows) * 4, kAt = !matrices.wq || qk ? 0 : matrices.wq.rows * 4;
-  // (q's and k's rows are the heads' that TOKEN_ROPE reads in the buffer of the three: T.547.3.2's review)
-  if (matrices.wq && (matrices.wq.rows !== m.plan.heads * m.plan.headSize || matrices.wk.rows !== m.plan.kvHeads * m.plan.headSize)) {
-    return why("q and k are not as many rows as their heads");
-  }
   if (kAt % align) return why("k would not start where this GPU binds a buffer, after q");
   if (vAt % align) return why("v would not start where this GPU binds a buffer, after q and k");
   for (const [joined, names] of Object.entries({ ...kv, ...(gated && !up ? { gateUp: ["w1", "w3"] } : {}) })) {
