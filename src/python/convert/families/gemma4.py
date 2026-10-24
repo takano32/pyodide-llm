@@ -1,4 +1,4 @@
-# convert/families/gemma4.py (T331): Google's Gemma 4, the language model of it (config.json's text_config, model_type
+# convert/families/gemma4.py (T.331): Google's Gemma 4, the language model of it (config.json's text_config, model_type
 # gemma4_text), as engine/layout.py's "gemma4". The formulas are taken from transformers' modeling_gemma4.py and
 # configuration_gemma4.py at 2126f65b (Apache-2.0; no line of them): Gemma4TextAttention, Gemma4TextDecoderLayer,
 # Gemma4TextModel, Gemma4ForCausalLM, Gemma4RMSNorm, and modeling_rope_utils.py's proportional RoPE.
@@ -10,11 +10,11 @@
 # of its own (layer_scalar); the full-attention layers have heads of their own size (global_head_dim) and turn the first
 # quarter of each by the angles of the whole head (proportional RoPE); the logits are capped by a tanh.
 #
-# T330: its last num_kv_shared_layers layers read the keys and values of the last layer before them of their kind in
+# T.330: its last num_kv_shared_layers layers read the keys and values of the last layer before them of their kind in
 # place of their own (Gemma4TextAttention's store_full_length_kv and shared_kv_states), and where use_double_wide_mlp
-# their FFN is twice as wide. T329: every layer takes an input of its own (Gemma4TextModel.get_per_layer_inputs() and
+# their FFN is twice as wide. T.329: every layer takes an input of its own (Gemma4TextModel.get_per_layer_inputs() and
 # project_per_layer_inputs(), Gemma4TextDecoderLayer): a row of a table of every layer, and a projection of the
-# embedding's row. The page's forward pass reads that from T329.2 (PAGE_READS_EMBEDDINGS: until then a model with it was
+# embedding's row. The page's forward pass reads that from T.329.2 (PAGE_READS_EMBEDDINGS: until then a model with it was
 # refused here, where a visitor of ?hf= would have fetched and converted gigabytes of it for nothing; a test may say so
 # again).
 import math
@@ -27,7 +27,7 @@ from engine.layers import rope_frequencies
 
 # transformers' Gemma4TextConfig, where config.json says nothing (configuration_gemma4.py)
 HEAD, WIDE_HEAD, PROPORTION = 256, 512, 0.25
-# (T329: True since the page's forward pass reads the embedding of every layer, T329.2.2)
+# (T.329: True since the page's forward pass reads the embedding of every layer, T.329.2.2)
 PAGE_READS_EMBEDDINGS = True
 
 
@@ -87,14 +87,14 @@ def wide(config):
 
 
 def shared_layers(config):
-    """The last num_kv_shared_layers layers, which read the keys and values of a layer before them (T330)."""
+    """The last num_kv_shared_layers layers, which read the keys and values of a layer before them (T.330)."""
     config = gemma4_config(config)
     layers = config["num_hidden_layers"]
     return list(range(layers - config["num_kv_shared_layers"], layers)) if config["num_kv_shared_layers"] else []
 
 
 def shared(config):
-    """T330: FORM's "kv_shared": the layers that read another's keys and values, and the one each reads, the last layer of
+    """T.330: FORM's "kv_shared": the layers that read another's keys and values, and the one each reads, the last layer of
     its kind (layer_types) before the first of them. None for a model without any."""
     config = gemma4_config(config)
     layers = shared_layers(config)
@@ -106,7 +106,7 @@ def shared(config):
 
 
 def per_layer(config):
-    """T329: FORM's "per_layer", the width of every layer's input of its own (0: none)."""
+    """T.329: FORM's "per_layer", the width of every layer's input of its own (0: none)."""
     return int(gemma4_config(config)["hidden_size_per_layer_input"] or 0)
 
 
@@ -161,7 +161,7 @@ def gemma4_check(config):
     layers, full, said = config["num_hidden_layers"], full_layers(config), shared(config)
     if not 0 <= config["num_kv_shared_layers"] < layers or (said and None in said["from"]):
         refuse("its layers read the keys and values of layers it has not")
-    # (a stack of one layer is read as no stack: the converter has no file of it, as no LFM2 of one such layer; T330:
+    # (a stack of one layer is read as no stack: the converter has no file of it, as no LFM2 of one such layer; T.330:
     # the layers that compute their keys and values are stacks of each size too)
     kept = [layer for layer in range(layers) if not said or layer not in said["layers"]]
     if wide(config) and 1 in (len(full), layers - len(full), len(set(full) & set(kept)), len(set(kept) - set(full))):
@@ -189,7 +189,7 @@ def gemma4_sources(d, prefix, rotary):
                "layer_scale": (prefix + "layers.{}.layer_scalar", None),
                "rms_final_weight": (prefix + "norm.weight", ("scale", 1.0 / scale) if d.shared else None),
                "wcls": ("lm_head.weight", None),
-               # T329: the table's row is multiplied by sqrt(P) and the sum of it and the normalized projection by
+               # T.329: the table's row is multiplied by sqrt(P) and the sum of it and the normalized projection by
                # 1 / sqrt(2): into the table and the norm's weight. The projection of the embedding's row (sqrt(dim)
                # times it, as the table has it) is multiplied by 1 / sqrt(dim) before its norm, whose epsilon would
                # not let a scale through: into the matrix
@@ -227,7 +227,7 @@ def gemma4_prefix(source):
     return "model.language_model." if "model.language_model.embed_tokens.weight" in source else "model."
 
 
-# ---- a GGUF of a Gemma 4 (T529)
+# ---- a GGUF of a Gemma 4 (T.529)
 # What llama.cpp writes of one (conversion/gemma.py's Gemma4Model, gguf-py's constants.py and tensor_mapping.py, and
 # src/models/gemma4.cpp, at b76b1337; MIT, no line of them): every tensor as Hugging Face has it (its norm_shift is 0:
 # a Gemma 4's norms are of their weight, and nothing is folded: the scales of the embeddings and of the projection are

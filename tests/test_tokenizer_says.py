@@ -1,4 +1,4 @@
-"""T400: what a tokenizer says of how its text is read and begins, which the converter did not read until then.
+"""T.400: what a tokenizer says of how its text is read and begins, which the converter did not read until then.
 (1) a tokenizer.json's Lowercase normalizer, (2) a sentencepiece model whose normalizer adds no dummy prefix
 (sarashina2.2's and CAT-Translate's: add_dummy_prefix false), (5) the BOS 1 that nothing names is no stop token.
 Each against the real library where there is one here (tokenizers, sentencepiece)."""
@@ -56,7 +56,7 @@ def test_no_lowercase_where_the_tokenizer_json_does_not_lower():
 
 
 def test_a_sentencepiece_model_without_the_dummy_prefix():
-    """(2) sarashina2.2's and CAT-Translate's tokenizer.model: no "▁" before the first text either ("never", T257's), as
+    """(2) sarashina2.2's and CAT-Translate's tokenizer.model: no "▁" before the first text either ("never", T.257's), as
     the sentencepiece library reads it; and decode() takes no space off what follows the BOS."""
     spm = pytest.importorskip("sentencepiece")
     data, ids = sentencepiece(dummy=False)
@@ -70,14 +70,14 @@ def test_a_sentencepiece_model_without_the_dummy_prefix():
     for said in (sentencepiece()[0],):
         options, engine = converted(said, "tokenizer.model", {"bos_token_id": ids["<s>"]}, tokenizer_class="LlamaTokenizer", legacy=False)
         assert "prefixed" not in options and engine.encode("hello") == spm.SentencePieceProcessor(model_proto=said).encode("hello")
-    # a legacy Llama tokenizer's "wanting" (T308) is for a model that has the dummy prefix: none here is none anywhere
+    # a legacy Llama tokenizer's "wanting" (T.308) is for a model that has the dummy prefix: none here is none anywhere
     options, _ = converted(data, "tokenizer.model", {"bos_token_id": ids["<s>"]}, tokenizer_class="LlamaTokenizer", legacy=True)
     assert options["prefixed"] == "never"
 
 
 def test_without_the_dummy_prefix_the_format_begins_with_its_own_first_token():
     """(2) sarashina2.2's format begins with <|user|> and the text typed follows it: with no dummy prefix anywhere,
-    taking <|user|> off reads the rest the same, so it is the BOS and the ids are apply_chat_template's (T264), with
+    taking <|user|> off reads the rest the same, so it is the BOS and the ids are apply_chat_template's (T.264), with
     no <s> in front."""
     data, ids = sentencepiece(dummy=False)
     template = "{% for m in messages %}{{ '<|user|>' if m.role == 'user' else '<|assistant|>' }}{{ m.content }}</s>{% endfor %}" \
@@ -86,7 +86,7 @@ def test_without_the_dummy_prefix_the_format_begins_with_its_own_first_token():
                                 chat_template=template, bos_token="<s>", tokenizer_class="LlamaTokenizer", legacy=False)
     assert options["bos"] == ids["<|user|>"] and options["template"] == "{prompt}</s><|assistant|>"
     assert sent(options, engine, "hello world") == [ids["<|user|>"], ids["hello"], ids["▁world"], ids["</s>"], ids["<|assistant|>"]]
-    # with the dummy prefix (as before T400 for these two): the BOS stays in front
+    # with the dummy prefix (as before T.400 for these two): the BOS stays in front
     data, ids = sentencepiece()
     options, engine = converted(data, "tokenizer.model", {"bos_token_id": ids["<s>"], "eos_token_id": ids["</s>"]},
                                 chat_template=template, bos_token="<s>", tokenizer_class="LlamaTokenizer", legacy=False)

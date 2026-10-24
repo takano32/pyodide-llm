@@ -62,19 +62,19 @@ def convert(directory, out_path, dtype, max_seq_len):
         data = np.memmap(safetensors, dtype=np.uint8, mode="r")
         source = Safetensors(lambda offset, length: data[offset:offset + length])
     elif index.exists():
-        # split over several files (T105): the index says which; each is read like the one file above
+        # split over several files (T.105): the index says which; each is read like the one file above
         files = sorted(set(json.loads(index.read_text())["weight_map"].values()))
         maps = [np.memmap(directory / name, dtype=np.uint8, mode="r") for name in files]
         source = Shards([Safetensors(lambda offset, length, data=data: data[offset:offset + length]) for data in maps])
     else:
         source = Arrays(load_torch_pickle(directory / "pytorch_model.bin"))
     # a GPT-2 or a GPT-NeoX has more tensors than a Llama of the same header, a Qwen3 the norms of q and k and maybe
-    # heads of another size (T124): the size needs what the header cannot say
+    # heads of another size (T.124): the size needs what the header cannot say
     size = checkpoint_size(checkpoint_header(normalize(config), source, max_seq_len), dtype, checkpoint_form(config, source))
     out = np.memmap(out_path, dtype=np.uint8, mode="w+", shape=(size,))
     convert_weights(source, config, dtype, max_seq_len, out)
     out.flush()
-    return normalize(config)["vocab_size"]  # a Qwen3.5 has it one level down (T229)
+    return normalize(config)["vocab_size"]  # a Qwen3.5 has it one level down (T.229)
 
 
 def tokenizer_of(name, data, vocab_size):
@@ -87,7 +87,7 @@ def tokenizer_of(name, data, vocab_size):
 
 
 def convert_tokenizer(directory, out_path, vocab_size):
-    """The tokenizer of the directory: of the candidates the page tries, in its order (T374.2.3: convert.conduct's
+    """The tokenizer of the directory: of the candidates the page tries, in its order (T.374.2.3: convert.conduct's
     TOKENIZERS, the one list), the first that is there and that the converter reads. Where none will do, the refusal
     of one that is there says why."""
     refusal = None
@@ -105,7 +105,7 @@ def convert_tokenizer(directory, out_path, vocab_size):
 
 
 def options_note(directory):
-    """T255: the file of a SmolLM3 is a Llama's, and only the options (src/models.js) say which layers RoPE leaves alone: a
+    """T.255: the file of a SmolLM3 is a Llama's, and only the options (src/models.js) say which layers RoPE leaves alone: a
     model listed without them runs as a Llama, writes worse text and throws nothing. The line to say it, or None."""
     left = unturned_layers(normalize(json.loads((directory / "config.json").read_text())))
     return f"options: unturned {left} (to be given to the engine with the file: the file does not say it)" if left else None

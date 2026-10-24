@@ -1,11 +1,11 @@
-// tests/attention-check.mjs (T217, the review of T201): attention's softmax against its meaning where the largest score
+// tests/attention-check.mjs (T.217, the review of T.201): attention's softmax against its meaning where the largest score
 // decides something. The kernel takes exp(score - largest) with its exponent held to at most 88 (fexp and vexp), and
 // divides by the sum, so a largest that leaves out one position (the largest one) moves nothing past rounding: that
 // position's weight is exp(its lead) over the sum either way, and past a lead of 88 every other weight is below
 // float32's reach in both. It does matter where two or more positions lead the largest taken by more than 88: they
 // all get exp(88) and so the same weight (and where the largest taken is too high, every weight is exp(-87) or 0).
 // forward-check's models never lead by that much, so its line (1e-3) does not see a largest that leaves positions out
-// (T201's record: only attention-compare --exact did, to the bit). Here the scores of a head are made so: two
+// (T.201's record: only attention-compare --exact did, to the bit). Here the scores of a head are made so: two
 // positions far above the rest, 3 apart, at every pair 1, 4 and 32 apart (a lane, a vector of four, a turn of the
 // eight maxima), in every count of positions from 2 to 72; one head far above zero and one far below it (a largest
 // begun at 0 instead of -f32.MAX_VALUE is wrong only there). Their weights are then 1 / (1 + e^-3) and the rest,

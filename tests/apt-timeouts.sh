@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T262: apt's time-outs on a runner of GitHub, before anything that runs apt there (`npx playwright-core install
+# T.262: apt's time-outs on a runner of GitHub, before anything that runs apt there (`npx playwright-core install
 # --with-deps`, `sudo apt-get install`). Run 36902097346 of main (gpu-prompt.yml) had its Chromium job stay in the apt of
 # that install (the last line of the log was a "Get:" of archive.ubuntu.com's noble-security InRelease) until the job's
 # 120 minutes were over: the tests never began. With this, a download that stops is given up after 30 seconds and tried

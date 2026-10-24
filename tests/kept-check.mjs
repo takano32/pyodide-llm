@@ -1,4 +1,4 @@
-// kept-check.mjs (T99): src/runtime/kept.js in Node, on small stand-ins for the origin private file system and the Cache
+// kept-check.mjs (T.99): src/runtime/kept.js in Node, on small stand-ins for the origin private file system and the Cache
 // API (Node has neither). What a browser does with them is for CI (tests/e2e.mjs with E2E_TWICE); this holds the
 // logic: a kept model reads back the same bytes, OPFS comes before the Cache API, the Cache API is the fallback and
 // still read, a write that fails leaves nothing, and forget() removes what the list shows.
@@ -9,7 +9,7 @@ import { cacheStorage } from "./fakes/cache.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
 // ---- stand-ins: a directory tree of files (the Cache API is tests/fakes/cache.mjs's)
-// (T329.2.2: a file has one sync access handle at most, as in a browser: a second is refused while it is open, and a
+// (T.329.2.2: a file has one sync access handle at most, as in a browser: a second is refused while it is open, and a
 // folder that holds an open one is not removed)
 class File {
   constructor() { this.bytes = new Uint8Array(0); this.open = false; }
@@ -101,7 +101,7 @@ const readBack = async (found) => {
   assert.equal((await kept.keptModels()).length, 0);
   assert.equal((await root.getDirectoryHandle("converted-v1")).children.size, 0);
 }
-// no OPFS: the Cache API, as before T99, and read back the same
+// no OPFS: the Cache API, as before T.99, and read back the same
 {
   const { cache } = browser({ opfs: false });
   assert.equal(await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary), undefined);
@@ -112,7 +112,7 @@ const readBack = async (found) => {
   await kept.forget(list[0]);
   assert.equal(cache.map.size, 0);
 }
-// a model kept in the Cache API before T99 is still found where OPFS is now, and not moved
+// a model kept in the Cache API before T.99 is still found where OPFS is now, and not moved
 {
   const { cache } = browser({ opfs: false });
   await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary);
@@ -164,7 +164,7 @@ const readBack = async (found) => {
   assert.equal((await kept.keptModels()).length, 0);
   assert.equal(await kept.openKept(model), undefined);
 }
-// T116: the bits. A model kept as int8 serves one that asks for int8 or for no bits (the worker chooses, T115), never
+// T.116: the bits. A model kept as int8 serves one that asks for int8 or for no bits (the worker chooses, T.115), never
 // one that asks for six bits: that one is converted again, and the page does not call it kept
 {
   browser();
@@ -180,7 +180,7 @@ const readBack = async (found) => {
   await kept.keep(as("int6"), manifest, (a, b) => bytes.slice(a, b), vocabulary);
   assert.deepEqual(await readBack(await kept.openKept(as(undefined))), bytes);
   assert.equal(await kept.openKept(as("int8")), undefined);
-  // T230: a ternary model is converted to the ternary dtype (the page asks for it by name: src/models.js's
+  // T.230: a ternary model is converted to the ternary dtype (the page asks for it by name: src/models.js's
   // weightsFor), kept under that name. What was kept of it as int8 before serves ?bits=8 alone, never the ternary one
   const [six] = await kept.keptModels();
   assert.ok(!kept.serves(six, as("ternary")));
@@ -190,13 +190,13 @@ const readBack = async (found) => {
   const ternary = (await kept.keptModels()).find((one) => one.name === kept.keptName(as("ternary")));
   assert.ok(ternary && kept.serves(ternary, as("ternary")) && !kept.serves(ternary, as(undefined)) && !kept.serves(ternary, as("int8")));
 }
-// T116: the converter. What an older one kept is not used and is deleted; what a newer one kept (a tab of an older
+// T.116: the converter. What an older one kept is not used and is deleted; what a newer one kept (a tab of an older
 // page next to a newer one) is not used either, and is left alone
 {
   const { root } = browser();
   const manifestOf = async () => (await (await root.getDirectoryHandle("converted-v1")).getDirectoryHandle(kept.keptName(model))).children.get("manifest.json");
   await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary);
-  (await manifestOf()).bytes = new TextEncoder().encode(JSON.stringify(manifest));  // as before T116: no converter
+  (await manifestOf()).bytes = new TextEncoder().encode(JSON.stringify(manifest));  // as before T.116: no converter
   const [old] = await kept.keptModels();
   assert.ok(kept.outdated(old) && !kept.serves(old, model));
   assert.equal(await kept.openKept(model), undefined);
@@ -208,13 +208,13 @@ const readBack = async (found) => {
   assert.equal(await kept.openKept(model), undefined);
   assert.equal((await kept.keptModels()).length, 1, "the newer one stays");
 }
-// T136: a GGUF's weights with another repository's vocabulary and config.json is kept under both: the same GGUF with
+// T.136: a GGUF's weights with another repository's vocabulary and config.json is kept under both: the same GGUF with
 // another vocabulary is another conversion. Without one, the name is what it always was
 {
   const withVocabulary = { ...model, hf: { ...model.hf, vocabulary: { repo: "c/d", revision: "4567", tokenizer: "tokenizer.model" } } };
   assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8:4096");
   assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8:4096");
-  // T363.5: a conversion that kept a GGUF's blocks is another than the same file widened, and neither serves the other
+  // T.363.5: a conversion that kept a GGUF's blocks is another than the same file widened, and neither serves the other
   const blocks = { ...model, conversion: { dtype: "int8", blocks: true } };
   assert.equal(decodeURIComponent(kept.keptName(blocks)), "a/b@0123:int8:4096:blocks");
   assert.equal(kept.keptName({ ...model, conversion: { dtype: "int8", blocks: false } }), kept.keptName({ ...model, conversion: { dtype: "int8" } }));
@@ -223,7 +223,7 @@ const readBack = async (found) => {
   assert.ok(kept.serves(one(kept.keptName(blocks)), blocks) && !kept.serves(one(kept.keptName(blocks)), { ...model, conversion: { dtype: "int8" } }) &&
     !kept.serves(one(kept.keptName(model)), blocks), "a model's blocks kept serve the one that asks for them, and no other");
 }
-// T136's review: a model whose source changed (the 19 of stage 2) keeps its new conversion under a new name. What it
+// T.136's review: a model whose source changed (the 19 of stage 2) keeps its new conversion under a new name. What it
 // was kept as before is replaced: never served, and in the way of the new one where the room is short. Its other
 // bits are not, nor another model, nor what ?hf= and folders keep (all "local")
 {
@@ -241,15 +241,15 @@ const readBack = async (found) => {
   assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype: "int8" } })), names(await kept.replaced(moved)),
     "asking for eight bits does not make its own six-bit conversion replaced");
   assert.deepEqual(await kept.replaced({ ...model, id: "local", hf: { repo: "r/s", revision: "3" } }), []);
-  // the review of T230: a ternary model's ?bits=8 (or =6) visit converts it to int8, and must leave its ternary one:
+  // the review of T.230: a ternary model's ?bits=8 (or =6) visit converts it to int8, and must leave its ternary one:
   // the next visit without ?bits asks for the ternary one again (484 MB of Bonsai 1.7B and 2.3 GB of the 8B fetched and
   // converted again, for each ?bits=8 and plain visit in turn, when it was replaced). Nor does the ternary visit
   // replace the int8 and int6 conversions of the same source
-  // T375.5: kept.ts names the dtypes itself (the page reads it without the runtime): every packing of jobs.ts's PACKED
+  // T.375.5: kept.ts names the dtypes itself (the page reads it without the runtime): every packing of jobs.ts's PACKED
   // is one of them. A packing that is added there is added to replaced()'s names in src/runtime/kept.ts
   const { PACKED } = await import(runtimeUrl("jobs.js"));
   assert.ok(["ternary", "int8", "int6"].every((dtype) => Object.hasOwn(PACKED, dtype)));
-  // (T363.5: the packings a file's dtype may be: llama.cpp's blocks are a row's alone, kept under conversion.blocks)
+  // (T.363.5: the packings a file's dtype may be: llama.cpp's blocks are a row's alone, kept under conversion.blocks)
   const dtypes = Object.keys(PACKED).filter((name) => PACKED[name].tabled === undefined);
   for (const dtype of dtypes) await keepAs(moved, dtype);
   // (and the same source with its blocks kept: its own too, whichever is asked for)
@@ -264,7 +264,7 @@ const readBack = async (found) => {
       "(a packing of jobs.ts's PACKED that kept.ts's replaced() does not name is deleted here: add its name there)");
   }
 }
-// the review of T203: a Qwen3's two forms share one conversion, kept under the id of the form that converted it. When
+// the review of T.203: a Qwen3's two forms share one conversion, kept under the id of the form that converted it. When
 // their source changes, opening the other form first replaces it too (it left a 9 GB conversion of the 8B behind)
 {
   browser();
@@ -278,7 +278,7 @@ const readBack = async (found) => {
   assert.deepEqual(names(await kept.replaced({ ...after, id: "q-thinking" })), ["a/q@1:int8:4096"]);
   assert.deepEqual(await kept.replaced({ ...after, shares: undefined }), [], "without shares only its own id's");
 }
-// T329.2.2: a conversion kept as it comes whose table of every layer's inputs the engine reads from the file: the file
+// T.329.2.2: a conversion kept as it comes whose table of every layer's inputs the engine reads from the file: the file
 // stays open past finish() and is read from at once; let go of, a kept one opened again (one handle at a time); one that
 // ran out of room after the table was whole is read on and removed once let go of, one that ran out before is not whole
 {

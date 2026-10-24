@@ -1,11 +1,11 @@
-// T173: the page-memory section of /benchmark/ in Chromium, on a limit a runner holds well below its own: (1) ?run=memory
+// T.173: the page-memory section of /benchmark/ in Chromium, on a limit a runner holds well below its own: (1) ?run=memory
 // holds all it is asked to and removes its mark, "Run all" leaves it out; (2) a page left while it grows (a reload)
 // leaves no mark: a visitor's reload is no limit; (3) a page hidden while it grows stops at once and says so; (4) a
 // tab ended while it grows (its renderer killed with SIGKILL, no event in the page, as a phone's jetsam or low-memory
 // killer ends it) is loaded again in the same tab: the page reports the last step it held, from the mark, and does not
 // run the section again although the address still says ?run=memory. (DevTools' Page.crash did not end the tab in
 // Playwright's Chromium: no crash came in 30 s.)
-// With --ended <MiB> (T173's review) the run is the section's own 4 GiB and the tab is ended by the kernel for its
+// With --ended <MiB> (T.173's review) the run is the section's own 4 GiB and the tab is ended by the kernel for its
 // memory: the workflow puts the whole browser in a cgroup of that many MiB with no swap (preview.yml), and the page
 // must report a number below it. Never on the development machine (AGENTS.md: gigabytes held there take the machine
 // down). Meant for CI (preview.yml).
@@ -28,7 +28,7 @@ const endedAt = args.includes("--ended") ? Number(args[args.indexOf("--ended") +
 let site = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--ended") ?? "https://takano32.github.io/pyodide-llm/";
 let server;
 if (dist) {
-  server = await serving();  // (T391.6: tests/serving.mjs)
+  server = await serving();  // (T.391.6: tests/serving.mjs)
   site = server.url;
 }
 
@@ -37,7 +37,7 @@ const check = (ok, what) => {
   console.log(`${ok ? "ok" : "FAILED"}: ${what}`);
   if (!ok) failed = true;
 };
-// a wait that starts again when the page loads again (the service worker's first reload, T93, or the test's own)
+// a wait that starts again when the page loads again (the service worker's first reload, T.93, or the test's own)
 async function waitFor(page, fn, arg, timeout = 300000) {
   for (;;) {
     try {
@@ -178,7 +178,7 @@ if (errors.length) {
   console.log(`page errors: ${errors.join(" / ")}`);
   failed = true;
 }
-// T141: never wait on a browser's close for long
+// T.141: never wait on a browser's close for long
 await closed(() => context.close());
 fs.rmSync(PROFILE, { recursive: true, force: true });
 server?.close();

@@ -1,22 +1,22 @@
 name: Tests
 
-# T188: the tests the deploy runs, and more, on any branch (--ref), without deploying: the development machine (an ARM
+# T.188: the tests the deploy runs, and more, on any branch (--ref), without deploying: the development machine (an ARM
 # box of 2 cores, shared) runs none of them any more (the owner, 2026-09-27: "いったん、テスト CI だけにしねぇか？").
 # `extra` runs more commands after them, for a branch's own measurements (the same process takes the old and the new,
 # as AGENTS.md says).
 #
-# T193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): by default the light
+# T.193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): by default the light
 # suite, the very steps the deploy runs (tests/suite.sh light: pytest, the page's modules, smoke; then the build).
 # full=true, and the nightly schedule on main, run the full one (tests/suite.sh full: and forward-check shared, --plain
 # and --wide, gpu-default-check, threads-check). An empty full= is the default, light (a dispatch fills an empty input
-# with its default: T192).
+# with its default: T.192).
 #
 #   node tests/ci.mjs run tests.yml [full=true] [extra="node tests/profile.mjs"] [runner=ubuntu-24.04-arm] --ref <branch>
 #
-# T238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
+# T.238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
 # like tests/reference_27b.sh, which builds another program and fetches a model of its own), and minutes= is the job's
 # time limit (90 where it says nothing).
-# T233: what the extra commands leave in .tmp/keep is kept with the run (an artifact, a week).
+# T.233: what the extra commands leave in .tmp/keep is kept with the run (an artifact, a week).
 on:
   schedule:
     # every night at 03:17 in Japan (18:17 UTC; off the hour, when GitHub's schedules crowd), the full suite on main
@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       full:
-        description: 'T193: the full suite (forward-check, gpu-default-check, threads-check too), not only the light one the deploy runs'
+        description: 'T.193: the full suite (forward-check, gpu-default-check, threads-check too), not only the light one the deploy runs'
         type: boolean
         required: false
         default: false
@@ -33,22 +33,22 @@ on:
         required: false
         default: ''
       runner:
-        description: 'the runner (optional), e.g. ubuntu-24.04-arm for arm64 (T166: a kernel measured where it matters)'
+        description: 'the runner (optional), e.g. ubuntu-24.04-arm for arm64 (T.166: a kernel measured where it matters)'
         required: false
         default: 'ubuntu-latest'
       only_extra:
-        description: 'T238: run the extra commands alone: no models, no suite, no build'
+        description: 'T.238: run the extra commands alone: no models, no suite, no build'
         type: boolean
         required: false
         default: false
       minutes:
-        description: 'T238: the time limit of the job in minutes (optional, 90)'
+        description: 'T.238: the time limit of the job in minutes (optional, 90)'
         required: false
         default: '90'
 
 permissions:
   contents: read
-  # T233: the extra commands may fetch what an earlier run kept (gh run download)
+  # T.233: the extra commands may fetch what an earlier run kept (gh run download)
   actions: read
 
 jobs:
@@ -101,7 +101,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash -c "$EXTRA"
 
-      # T233: what the extra commands put in .tmp/keep stays with the run for a week (tests/page_27b.sh: the references
+      # T.233: what the extra commands put in .tmp/keep stays with the run for a week (tests/page_27b.sh: the references
       # of the 27B, 50 minutes of a runner, which a later run takes with REFERENCES=<this run's id>)
       - name: Keep what the extra commands left in .tmp/keep
         if: ${{ always() && inputs.extra != '' }}

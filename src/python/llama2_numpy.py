@@ -25,9 +25,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #
-# This file is the window (T348): the engine is the package engine/ beside it, and the names that something outside
+# This file is the window (T.348): the engine is the package engine/ beside it, and the names that something outside
 # src/python/ reads (the worker, the converter, the tests, the tools) are imported here, so that `import llama2_numpy`
-# gives them what it gave. (T391.5: the names nothing outside read are the parts' own now; to give one out, import
+# gives them what it gave. (T.391.5: the names nothing outside read are the parts' own now; to give one out, import
 # it here.) A name set here is not the one the parts read: to change what the engine does (a test's KV_START, a
 # tool's Tokenizer), set it in the part that reads it (engine.model).
 

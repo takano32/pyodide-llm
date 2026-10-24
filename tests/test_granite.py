@@ -1,4 +1,4 @@
-"""A Granite (T253: IBM's, transformers' model_type "granite") is a Llama whose attention multiplies its scores by
+"""A Granite (T.253: IBM's, transformers' model_type "granite") is a Llama whose attention multiplies its scores by
 config.json's attention_multiplier where a Llama divides them by the root of a head's size. The converter multiplies q
 by attention_multiplier * sqrt(head) (llama2_convert.query_scale), and the file, the options and the engine are a
 Llama's. Its other three multipliers (the embedding's, the branches', the logits') the engine has not: a model whose
@@ -107,7 +107,7 @@ def test_only_a_granite_is_scaled():
 
 def test_a_granite_that_names_no_attention_multiplier_has_transformers_default_of_one():
     """transformers' GraniteConfig leaves attention_multiplier 1.0 where config.json names none, so its scores are not divided
-    by the root of the head's size at all (the review of T253: a default of one over the root, a Llama's, passed every test):
+    by the root of the head's size at all (the review of T.253: a default of one over the root, a Llama's, passed every test):
     q is multiplied by the whole root, as where config.json says 1.0 itself. llama.cpp writes no attention.scale then and
     divides by the root: test_a_granite_gguf_that_names_no_scale_scores_as_a_llama refuses that pair."""
     settings, weights = synthetic_weights()

@@ -1,4 +1,4 @@
-"""The rotated basis (T237): Ternary Bonsai 2 27B's matrices are stored as W R^-1 with R = H S (signs, then the
+"""The rotated basis (T.237): Ternary Bonsai 2 27B's matrices are stored as W R^-1 with R = H S (signs, then the
 normalized Walsh-Hadamard transform of every block), and the forward pass multiplies them by R x; the embedding's rows
 are stored as R e and turned back. The defining property is that nothing else changes: a model folded into the basis
 by hand computes what the model computed before.
@@ -261,9 +261,9 @@ def test_a_gpt2_in_a_rotated_basis_is_refused():
 
 # ------------------------------------------------------------------------------------------- what forward.js is handed
 def test_the_plan_hands_forward_js_the_basis_and_no_outlier_channels():
-    """T237 (the review): forward.js rotates by what Python's plan says: the block, and the signs of every width with
+    """T.237 (the review): forward.js rotates by what Python's plan says: the block, and the signs of every width with
     the transform's 1 / sqrt(block) in them (what the kernel multiplies by). And it keeps no outlier channels apart
-    (T92) in a rotated basis, where the classifier reads R of its input and a column of its stored matrix is no
+    (T.92) in a rotated basis, where the classifier reads R of its input and a column of its stored matrix is no
     channel's: so a final norm that has outliers gives none (the 27B's has none: its largest is 1.39 times its median,
     and the real file never reaches this line), where the same norm in a model's own basis gives them."""
     tensors, config = qwen35_model(value_dim=8)  # every row whole groups of 32: the int8 stays int8 (the plan keeps outliers apart)
@@ -389,15 +389,15 @@ def prism_metadata(config, block, signs, tensors):
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
 @pytest.mark.parametrize("shape", ["two value heads to a key head", "three value heads to a key head (the 27B)", "three to one, every fourth"])
 def test_a_rotated_gguf_of_more_value_heads_than_key_heads_has_every_head_back_but_its_output_columns(shape, dtype, monkeypatch):
-    """T245's reader and T237's together, on the 27B's own kind of file: llama.cpp tiles the value heads of the rows of
+    """T.245's reader and T.237's together, on the 27B's own kind of file: llama.cpp tiles the value heads of the rows of
     q-k-v, z, the two gates' matrices, A and dt_bias and the convolution, and where the output matrix is folded into the
     rotated basis it leaves its columns in Hugging Face's order (prism.hadamard.gdn_v_grouped: a column moved after the
     fold would be another matrix). So the reader puts every head back but those columns, and the converted checkpoint is
-    the one of the model folded by hand. (The review of T237 ran it on T245's branch merged in: it passes there, and fails
+    the one of the model folded by hand. (The review of T.237 ran it on T.245's branch merged in: it passes there, and fails
     for every shape and dtype where gguf_model() does not drop the "tiled" mark of linear_attn.out_proj.weight.)"""
     import test_gguf
     if not hasattr(test_gguf, "QWEN35_VALUE_HEADS"):
-        pytest.skip("T245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
+        pytest.skip("T.245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
     monkeypatch.delitem(test_gguf.QWEN35_VALUE_HEADS, "linear_attn.out_proj.weight")  # the file's columns are left alone
     shape = {**test_gguf.QWEN35, **test_gguf.QWEN35_SHAPES[shape], "shared": False}
     tensors, config = qwen35_model(**shape)

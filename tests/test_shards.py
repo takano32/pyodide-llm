@@ -1,4 +1,4 @@
-# A model split over several .safetensors files (T105): the page joins the shards' headers into the header of one
+# A model split over several .safetensors files (T.105): the page joins the shards' headers into the header of one
 # file and feeds each shard's tensor data after the other (llama2_convert.joined_shards); the build reads them as one
 # source (llama2_convert.Shards). Either way the checkpoint is the one the same tensors make in one file.
 import json
@@ -63,7 +63,7 @@ def test_shards_give_the_checkpoint_of_one_file(name, tensors, published, pieces
 
 
 def test_one_shard_is_one_file():
-    """A model published as one shard with an index (T78) goes the same way and makes the same bytes."""
+    """A model published as one shard with an index (T.78) goes the same way and makes the same bytes."""
     config, weights = synthetic_weights()
     tensors, published = hugging_face(config, weights, True)
     file = safetensors_file(tensors)

@@ -1,4 +1,4 @@
-// page-27b.mjs (T233): Ternary Bonsai 2 27B on the page's forward pass (src/runtime/forward.js, the ternary kernels, the
+// page-27b.mjs (T.233): Ternary Bonsai 2 27B on the page's forward pass (src/runtime/forward.js, the ternary kernels, the
 // rotated basis, a 64-bit shared memory, software threads), in Node, for CI: the model is 7.66 GB as the ternary
 // checkpoint, so the development machine runs none of this (tests/page_27b.sh has the stages and fetches the files).
 //
@@ -15,7 +15,7 @@
 // <out>.json (--wide: on a 64-bit memory whatever its size, as the 27B is). The engine gets the options the page's worker merges: the conversion's, then those of the list's entry
 // (--entry <id>, hf-ternary-bonsai-2-27b where the list has it; --entry none: the conversion's alone).
 //
-// compare: what the review of T238 listed (TASKS.md, "T233 が比べること"). <references> is the work directory of
+// compare: what the review of T.238 listed (TASKS.md, "T.233 が比べること"). <references> is the work directory of
 //   tests/reference_27b.sh run with SAVE_LOGITS=<references>/saved: fork-<i>.ids (the fork's own ids of each text, and
 //   the 16 tokens it wrote), f32/fork-<i>.single (the logits of the fork with float32 activations, a token at a time),
 //   saved/engine-<i>-as-8-bits-round.{logits,keys,values} (the engine's NumPy forward pass with the activations rounded
@@ -38,7 +38,7 @@
 // write: the page's generate() (Python's loop, the sampling kernels, the entry's sampling and format) for a prompt:
 //   how many tokens until it stops, how long, and the text (--entry hf-ternary-bonsai-2-27b-thinking: the entry that
 //   thinks, its format and its sampling).
-// long (the review of T233): a prompt past the 4096 positions the list's context is, through the page's way of a prompt
+// long (the review of T.233): a prompt past the 4096 positions the list's context is, through the page's way of a prompt
 //   (forwardMany in blocks, a token with its logits where the reference has a row), against what the fork of llama.cpp
 //   computes for the same ids (tests/reference_27b.sh's `long` stage: <references>/fork-long.{ids,rows,logits} and
 //   long.txt). --context 8192: the checkpoint's header says that many positions (the 4 bytes of it are all that differs
@@ -53,7 +53,7 @@
 //   two are no more than twice the row's largest difference apart. --lines none: the numbers alone.
 // convert: the page's conversion (Pyodide, NumPy with 32-bit integers, the kernels' quantizer) of the GGUF into a
 //   64-bit shared memory through a sink, as the worker's checkpointSink has it, by the conduct of a conversion answered
-//   from the folder (T374.4, tests/conducting.mjs), the tensors fed 16 MiB at a time; the time (from the first of those on), the
+//   from the folder (T.374.4, tests/conducting.mjs), the tensors fed 16 MiB at a time; the time (from the first of those on), the
 //   megabytes a second, Pyodide's heap at the end, and the sha256 of the checkpoint (page_27b.sh holds it to the
 //   native conversion's file).
 import crypto from "node:crypto";
@@ -70,22 +70,22 @@ import { converted, fromFolder, listed } from "./conducting.mjs";
 const root = new URL("../", import.meta.url).pathname;
 const GiB = 2 ** 30, MiB = 2 ** 20;
 // The lines of compare. Logits against the float32 fork: twice the step the rounding of the activations moves the
-// engine's own NumPy forward pass by (the review of T238 saw 0.075 to 0.171 and a KL of 1.0e-3 at most, on three kinds
+// engine's own NumPy forward pass by (the review of T.238 saw 0.075 to 0.171 and a KL of 1.0e-3 at most, on three kinds
 // of x86-64 and on arm64): 0.35 and 2e-3; the most likely token may be another only where the fork's own first two
 // are closer than twice the largest difference. This line does not see an error as small as one sign of the 17408
 // values (0.11), which is what the keys and values are for: against the engine's own run with the same rounding the
 // noise is float32's order of sums and the rounding steps it tips, not the step itself. kv: the largest difference of
-// a key or a value, as a part of the largest key or value of its layer (TASKS.md's T233 has what was measured).
+// a key or a value, as a part of the largest key or value of its layer (TASKS.md's T.233 has what was measured).
 const LINES = { logits: 0.35, kl: 2e-3, kv: 0.05 };
-// The lines of long (the review of T233): not the fork with float32 activations (it widens every row it multiplies by,
+// The lines of long (the review of T.233): not the fork with float32 activations (it widens every row it multiplies by,
 // 9 seconds a token: 15 hours for 6,000) but the fork as it is, whose own batch and one-token paths are 0.1 apart: so the
 // floor is measured in the same run, on the first rows, and what is looked for is growth with the position. A row
 // past 127 positions may be as far as LOGITS, or GROWTH times the largest of the floor, whichever is more (KL likewise).
 // The lines of the first comparison (0.35 and 2e-3: tests/page-27b.mjs compare), which the long pass measured itself against in the
-// review of T233: 42 rows to position 6001 of a text of 5,987 tokens, 0.055 to 0.186 over the likely tokens and a KL of 1.0e-3 at most
+// review of T.233: 42 rows to position 6001 of a text of 5,987 tokens, 0.055 to 0.186 over the likely tokens and a KL of 1.0e-3 at most
 // (runs 36967190043, 36977437791 and 36980828635 print the same rows: the page's forward pass is deterministic, and equal on x86-64 and arm64 to four digits in the first comparison)
 const LONG_LINES = { logits: 0.35, kl: 2e-3, growth: 2 };
-// The long pass holds the largest difference of a row over the tokens the fork gives a probability of at least this (the T233 review:
+// The long pass holds the largest difference of a row over the tokens the fork gives a probability of at least this (the T.233 review:
 // over all 248,320 tokens, one of 42 rows had a tail token of a probability of 4e-8 move 0.79 where the row's KL was 7e-6, and the
 // 155 positions of the first comparison moved at most 0.19: the largest over a vocabulary has a tail; what no sampling reaches
 // is not a logit anyone reads). The largest over all of them is told all the same
@@ -95,7 +95,7 @@ const FLOOR_BELOW = 128;
 // place, or all>) or by a kernel that does nothing (embedding: the rows of the embedding are not turned back)
 const breakOf = (name) => {
   if (name === "embedding") return { what: "the embedding's rows not turned back", kernel: "unrotate" };
-  // T364.2: a plan of llama.cpp's blocks (Underdog Saluki 27B) said wrong in ways no refusal catches
+  // T.364.2: a plan of llama.cpp's blocks (Underdog Saluki 27B) said wrong in ways no refusal catches
   const another = (kind) => { const names = Object.keys(BLOCK_TYPES); return names[(names.indexOf(kind) + 1) % names.length]; };
   if (name === "untiled") return { what: "the linear layers' output matrices read in the other order of the value heads", plan: (plan) => ({ ...plan, tiled: !plan.tiled }) };
   if (name === "codebooks") return { what: "the codebooks read a byte off",
@@ -124,7 +124,7 @@ const base4GiB = (bytes) => bytes > 4 * GiB;
  * a module of a 64-bit memory it imports, splat(address) = lane 0 of v128.load32_splat) */
 function splatsRight(again = false) {
   // asked again (after --no-liftoff), the module has a custom section the engine ignores: V8 keeps the compiled code of a
-  // module by its bytes, and the same bytes would hand back the function Liftoff compiled for the first question (T233's
+  // module by its bytes, and the same bytes would hand back the function Liftoff compiled for the first question (T.233's
   // review: the second question got the right answer here only because a new 4 GiB memory had made the engine collect it)
   const canary = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 125, 2, 15, 1, 3, 101, 110, 118, 6, 109, 101, 109, 111, 114, 121, 2, 4, 1,
     3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11, ...(again ? [0, 2, 1, 97] : [])]);
@@ -151,7 +151,7 @@ if (isMainThread) {
   }
   const { pyodideWithEngine } = await import("./engine.mjs");
   const { MODELS, filled } = await import("../src/models.js");
-  // --as <a JSON file>:<a name>: what an entry would be, for a model the list does not have yet (T364: tests/page_saluki.py entries)
+  // --as <a JSON file>:<a name>: what an entry would be, for a model the list does not have yet (T.364: tests/page_saluki.py entries)
   const drafted = option("--as", "");
   const asked = drafted || option("--entry", "hf-ternary-bonsai-2-27b");
   const entry = drafted ? JSON.parse(fs.readFileSync(drafted.slice(0, drafted.lastIndexOf(":")), "utf8"))[drafted.slice(drafted.lastIndexOf(":") + 1)]
@@ -170,13 +170,13 @@ if (isMainThread) {
   const head = Buffer.alloc(28);
   fs.readSync(fd, head, 0, 28, 0);
   const header = Array.from({ length: 7 }, (_, i) => head.readInt32LE(4 * i));
-  // --context: the header says another number of positions (the review of T233: a ternary checkpoint of another context
+  // --context: the header says another number of positions (the review of T.233: a ternary checkpoint of another context
   // is this file with those 4 bytes changed; the memory is made for it and the engine reads it from there)
   const asksContext = args.includes("--context") && Number(option("--context", 0)) !== header[6];
   if (asksContext) header[6] = Number(option("--context", 0));
   // what the worker asks footprint() with (worker/weights.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
   // (Python and its tokenizer first: a form with kinds of its own has the weights of the file's dtype counted by Python,
-  // worker/weights.ts's forwardOptions(), T363.5. The memory of the weights is made after Pyodide's, as on the page)
+  // worker/weights.ts's forwardOptions(), T.363.5. The memory of the weights is made after Pyodide's, as on the page)
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: args.includes("--wide") || size > 3 * GiB });
   py.globals.set("HEADER", py.toPy(header));
   py.globals.set("OPTIONS", py.toPy(options));
@@ -185,8 +185,8 @@ if (isMainThread) {
   const after = footprint(header, size, forwardOptions), wide = needsWide(size, after) || args.includes("--wide"), halfKeys = keysInHalf(header, size, forwardOptions);
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
     `${(after / GiB).toFixed(3)} GiB after it (${((size + after) / GiB).toFixed(2)} GiB in all), a ${wide ? "64" : "32"}-bit memory, keys and values in ${halfKeys ? "float16" : "float32"}`);
-  // The review of T230 and T231: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat of an address above 4 GiB at
-  // its low 32 bits, and the ternary kernels take every scale so. The review of T233 found where: in Liftoff, V8's baseline
+  // The review of T.230 and T.231: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat of an address above 4 GiB at
+  // its low 32 bits, and the ternary kernels take every scale so. The review of T.233 found where: in Liftoff, V8's baseline
   // compiler (a function runs as Liftoff's code until its budget runs out and TurboFan's replaces it, within a few
   // milliseconds of a kernel's first call: so a kernel whose first call is above 4 GiB is computed wrongly, and one that
   // begins below, as every kernel of this model does, is not: the 27B's numbers on arm64 agreed with x86-64's); TurboFan's
@@ -227,7 +227,7 @@ if (isMainThread) {
     job.references = references;
     const linesAsked = option("--lines", "");  // none, or logits,kl,kv (a made-up model's own)
     job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "kv", "mean"][i], Number(value)])) : LINES;
-    // T364.2: a fourth line, the KL on average over a text's positions; and --quiet <texts>: the lines of the logits and of
+    // T.364.2: a fourth line, the KL on average over a text's positions; and --quiet <texts>: the lines of the logits and of
     // the keys and values hold these texts alone (Underdog Saluki 27B: after a turn's marks, <|im_end|> and "assistant",
     // the rounding of the activations moves a logit by 13 and the last layer's values by as much as they are, whichever
     // way the last bit before it falls: tests/reference_saluki_numpy.py's nudged runs; the two KL lines hold every text)
@@ -236,7 +236,7 @@ if (isMainThread) {
     job.weak = option("--weak", "").split(",").filter(Boolean);
     job.weak.forEach(breakOf);
     job.expectFailure = args.includes("--expect-failure");
-    // T364.2: --likely holds the logits' line to the tokens the reference gives a probability of LIKELY or more (as long does: the
+    // T.364.2: --likely holds the logits' line to the tokens the reference gives a probability of LIKELY or more (as long does: the
     // largest over a vocabulary has a tail no sampling reaches); --exact <n>: n rows of every product of the blocks' kernels
     // held to the model of the kernels (tests/blocks-model.mjs) to the bit, on the first of --threads (1: every call is seen)
     job.likely = args.includes("--likely");
@@ -250,7 +250,7 @@ if (isMainThread) {
       job.texts.push({ index, prompt, wrote });
       // the engine's tokenizer (the converter's tokenizer.bin, the merged options' specials) against the fork's ids:
       // a text as it is, and for a text that is the entry's format of a question, the ids the page sends for that
-      // question: its BOS, then the format filled (the review of T250: what stands in front matters to this family)
+      // question: its BOS, then the format filled (the review of T.250: what stands in front matters to this family)
       const textFile = `${references}/prompt-${index}.txt`;
       if (!fs.existsSync(textFile)) continue;
       const text = fs.readFileSync(textFile, "utf8");
@@ -297,7 +297,7 @@ if (isMainThread) {
   if (mode === "speed") Object.assign(job, { positions: Number(option("--positions", 12)), rounds: Number(option("--rounds", 2)),
     prompts: option("--prompts", "").split(",").filter(Boolean).map(Number) });
   if (mode === "starts") {
-    // T364.2: a bare text after each of some first tokens (--heads: ids, or none), a token at a time: how surprised the model is by it
+    // T.364.2: a bare text after each of some first tokens (--heads: ids, or none), a token at a time: how surprised the model is by it
     py.globals.set("TEXT", fs.readFileSync(third, "utf8"));
     const ids = Array.from(py.runPython("llama.tokenizer.encode(TEXT, [])").toJs()).slice(0, Number(option("--positions", 128)));
     job.starts = option("--heads", `${options.bos},none`).split(",").map((head) => ({ head, ids: head === "none" ? ids : [Number(head), ...ids] }));
@@ -322,7 +322,7 @@ if (isMainThread) {
   const say = (line) => parentPort.postMessage({ line: `page: ${line}` });
   const suffix = wide ? "64" : "";
   const kernels = compileKernels(fs.readFileSync(built(`simdkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_shared${suffix}.wasm`)), wide);
-  // (T364.2: and the kernels of llama.cpp's blocks beside them where the plan has such rows, as the page fetches them)
+  // (T.364.2: and the kernels of llama.cpp's blocks beside them where the plan has such rows, as the page fetches them)
   if (plan.own_kinds) kernels.blocks = compileBlocks(fs.readFileSync(built(`blockkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`blockkernel_relaxed_shared${suffix}.wasm`)));
   const cpu = (await import("node:os")).cpus()[0].model;
   /** an engine on the memory, as the page's worker makes it; broken: what breakOf() made of a name */
@@ -365,7 +365,7 @@ if (isMainThread) {
       }
       const la = logSoftmax(a), lb = logSoftmax(b);
       // (the token the largest difference is at, with what each says of it and the probability the reference gives it:
-      // the review of T233 found a row past the line whose KL was 7e-6: a token of no probability)
+      // the review of T.233 found a row past the line whose KL was 7e-6: a token of no probability)
       if (worst > found.worst) Object.assign(found, { worst, where: position, token, ours: a[token], theirs: b[token], probability: Math.exp(lb[token]) });
       for (let i = 0; i < vocab; i++) if (lb[i] >= Math.log(LIKELY)) found.likely = Math.max(found.likely, Math.abs(a[i] - b[i]));
       let kl = 0;
@@ -461,7 +461,7 @@ if (isMainThread) {
         }
         const rounded = distance(rows, floats(`${stem}.logits`));
         say(`${label}: the logits against "as 8 bits round": ${told(rounded)}`);
-        // the logits, against the fork with float32 activations; where no such run left its file (T364: a model whose
+        // the logits, against the fork with float32 activations; where no such run left its file (T.364: a model whose
         // llama.cpp has no float32 path yet), against the engine's own NumPy run with float32 activations
         const single = `${references}/f32/fork-${text.index}.single`, forked = fs.existsSync(single) && fs.statSync(single).size > 0;
         const fork = distance(rows, floats(forked ? single : `${references}/saved/engine-${text.index}-float32.logits`));
@@ -544,7 +544,7 @@ if (isMainThread) {
     say(`a prompt of ${positions - 1} tokens in blocks, the last logits the same to the bit as a token at a time: ${blocks.join("; ")}`);
     const placed = engine.memoryBytes() - base - size, bound = footprint(header, size, forwardOptions);
     say(`after the checkpoint at position ${positions}: ${(placed / MiB).toFixed(1)} MiB placed, footprint() counts ${(bound / MiB).toFixed(1)} MiB for the whole context of ${plan.seq_len}`);
-    // T364.2 (--prompts 40,256): a prompt of so many tokens as the page hands one over (blocks of 16, no logits) on the most threads
+    // T.364.2 (--prompts 40,256): a prompt of so many tokens as the page hands one over (blocks of 16, no logits) on the most threads
     for (const length of job.prompts) {
       await engine.setThreads(counts.at(-1));
       const began = performance.now();
@@ -555,7 +555,7 @@ if (isMainThread) {
     engine.stopThreads();
     await engine.release();
     if (plan.own_kinds) {
-      // T364.2: the tile of the signed dot product (arm64's relaxed SIMD) and the tile every engine has, on the model's
+      // T.364.2: the tile of the signed dot product (arm64's relaxed SIMD) and the tile every engine has, on the model's
       // own rows: the same text as a prompt in blocks with each, the last logits the same to the bit
       for (const signed of [false, true]) {
         let tried;
@@ -732,7 +732,7 @@ if (isMainThread) {
     await live.engine.setThreads(job.threads[0]);
     const { sampling } = job;
     py.globals.set("PROMPT", job.text);
-    // (the entry's sampling as the page hands it over: top_k, min_p and presence_penalty too where it has them, T274)
+    // (the entry's sampling as the page hands it over: top_k, min_p and presence_penalty too where it has them, T.274)
     const { steps: _, ...settings } = sampling;
     py.globals.set("SETTINGS", py.toPy({ ...settings, steps: job.tokens, seed: job.seed }));
     say(`${job.entry}: writing with ${JSON.stringify(sampling)} and the seed ${job.seed}, ${live.engine.threads} threads, at most ${job.tokens} positions, the format ${JSON.stringify(job.template)}`);
@@ -755,8 +755,8 @@ async function convert(out, folder, context, pyodideWithEngine, blocks = false) 
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: true });
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");
   const quantizeRows = numpy.kernel_quantizer("simdkernel.so");
-  const readers = convert.kernel_readers("simdkernel.so");  // the stored types on the kernels, as the page (T273: the two ternary ones)
-  // T374.4: by the conduct of a conversion, answered from the folder (tests/conducting.mjs) as the worker answers it from
+  const readers = convert.kernel_readers("simdkernel.so");  // the stored types on the kernels, as the page (T.273: the two ternary ones)
+  // T.374.4: by the conduct of a conversion, answered from the folder (tests/conducting.mjs) as the worker answers it from
   // huggingface.co: the GGUF's head in growing pieces, the original's config.json, its tokenizer (the conduct's
   // candidates) and its template, then the tensors, 16 MiB at a time as the worker's later parts are
   const { hf } = listed(folder), gguf = hf.weights, size = fs.statSync(`${folder}/${gguf}`).size;

@@ -1,5 +1,5 @@
-# T100, stage 1: how often a small model's drafts would be accepted by a larger one of the same vocabulary
-# (tests/draft_check.mjs), on T85's texts. The development machine has not the memory for the pairs. By hand only;
+# T.100, stage 1: how often a small model's drafts would be accepted by a larger one of the same vocabulary
+# (tests/draft_check.mjs), on T.85's texts. The development machine has not the memory for the pairs. By hand only;
 # the tables go to the summary.
 name: Drafts for speculative decoding
 
@@ -16,13 +16,13 @@ jobs:
       matrix:
         include:
           - { small: hf-llm-jp-3-150m-instruct3, large: hf-llm-jp-3-440m-instruct3, language: ja }
-          # T136: the list takes this one's weights from a GGUF with the original's vocabulary, which
+          # T.136: the list takes this one's weights from a GGUF with the original's vocabulary, which
           # tests/perplexity_prepare.py does not put together: the original it is
           - { small: hf-llm-jp-3-150m-instruct3, large: 'hf:llm-jp/llm-jp-3-980m-instruct3@c079dbf3f88aa2ab702b9696231fc3336c46b1be', language: ja }
           - { small: hf-qwen2.5-0.5b-instruct, large: hf-qwen2.5-1.5b-instruct, language: en }
           - { small: hf-qwen2.5-0.5b-instruct, large: hf-qwen2.5-1.5b-instruct, language: ja }
           - { small: hf-smollm2-135m-instruct, large: hf-smollm2-360m-instruct, language: en }
-          # T136's third stage: the list takes the Pythias' weights from GGUFs too; the originals it is
+          # T.136's third stage: the list takes the Pythias' weights from GGUFs too; the originals it is
           - { small: 'hf:EleutherAI/pythia-70m-deduped@e93a9faa9c77e5d09219f6c868bfc7a1bd65593c', large: 'hf:EleutherAI/pythia-410m@9879c9b5f8bea9051dcb0e68dff21493d67e9d4f', language: en }
           - { small: 'hf:EleutherAI/pythia-70m-deduped@e93a9faa9c77e5d09219f6c868bfc7a1bd65593c', large: 'hf:EleutherAI/pythia-1b@f73d7dcc545c8bd326d8559c8ef84ffe92fea6b2', language: en }
     steps:

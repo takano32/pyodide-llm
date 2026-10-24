@@ -19,7 +19,7 @@ Rules of this repository (AGENTS.md):
 - Write to the owner in Japanese, short, few commas.
 - Work in a worktree of your own on a branch `t<number>-review`; do not push to or merge into main (the main conversation merges your branch). Its own `npm ci`; never a link to the main node_modules.
 - Work files go in the worktree's .tmp/. Nothing in $HOME, /tmp or ~/tmp.
-- Tests run in CI (the owner, 2026-09-27, T188): locally only edits, `node --check`, `bash -n` and small pure-Node or pytest unit checks. Push your branch and run `node tests/ci.mjs run tests.yml full=true --ref <branch>` (and `models.yml`, `slow.yml`, `bench.yml`, `preview.yml` where the task needs them; `extra=` for a mutation or a before/after timing on the runner). One ci.mjs call waits on the run ids with a deadline.
+- Tests run in CI (the owner, 2026-09-27, T.188): locally only edits, `node --check`, `bash -n` and small pure-Node or pytest unit checks. Push your branch and run `node tests/ci.mjs run tests.yml full=true --ref <branch>` (and `models.yml`, `slow.yml`, `bench.yml`, `preview.yml` where the task needs them; `extra=` for a mutation or a before/after timing on the runner). One ci.mjs call waits on the run ids with a deadline.
 - Wait by run id, PID or a marker file, with a deadline; never `pgrep -f` or `pkill -f` by name, never `&` inside a background command.
 - Do not ask the owner to measure on a device (the owner, 2026-10-01: once, after the implementations are all in): add what should be read then to TASKS.md's list 「持ち主の端末でまとめて見るもの」.
 - Commits: English, imperative, `T<number> review: …`, one concern each.

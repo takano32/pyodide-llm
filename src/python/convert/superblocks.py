@@ -1,5 +1,5 @@
-# llama.cpp's K- and i-quantized types read to float32 (T362): Q2_K, Q4_K, IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS,
-# IQ3_S and IQ4_XS, the ten a GGUF of Underdog Saluki 27B is made of, and (T505.1) Q3_K, Q5_K and Q6_K, the rest of the K
+# llama.cpp's K- and i-quantized types read to float32 (T.362): Q2_K, Q4_K, IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS,
+# IQ3_S and IQ4_XS, the ten a GGUF of Underdog Saluki 27B is made of, and (T.505.1) Q3_K, Q5_K and Q6_K, the rest of the K
 # types, which a Q4_K_M file has too. Every one of them holds 256 weights to a block (a
 # "super-block"), with a float16 scale d of the block and small integer scales of its groups of 16 or 32: a weight is
 # d times its group's integer times a small integer of its own, which the i-quantized types look up 8 or 4 at a time in
@@ -191,7 +191,7 @@ def iq4_xs(b):
     return scale[:, :, None] * IQ4NL[np.concatenate([q & 15, q >> 4], axis=2)].astype(np.float32)
 
 
-# ---- T505.1: the K types that are read and not kept (no kernel multiplies their blocks: WIDENED, below)
+# ---- T.505.1: the K types that are read and not kept (no kernel multiplies their blocks: WIDENED, below)
 def q3_k(b):
     """110 bytes: hmask[32], qs[64], scales[12], d. Sixteen groups of 16, each a scale s of six bits: its low four bits
     are a half of one of the first 8 bytes (the low halves are groups 0 to 7, the high halves groups 8 to 15), its high
@@ -253,13 +253,13 @@ def reader(size, read):
 
 
 # the type's name in a GGUF -> (its id in ggml, the bytes of a block, the reader). The bytes of a block are the
-# engine's to say (engine/dtypes.py's BLOCKS, which lays a checkpoint's rows of these types out, T363), and the
+# engine's to say (engine/dtypes.py's BLOCKS, which lays a checkpoint's rows of these types out, T.363), and the
 # engine reads such a row with the reader here, by the name.
 SUPERBLOCKS = {name: (ggml, BLOCKS[name].block, reader(BLOCKS[name].block, read)) for name, ggml, read in (
     ("Q2_K", 10, q2_k), ("Q4_K", 12, q4_k), ("IQ2_XXS", 16, iq2_xxs), ("IQ2_XS", 17, iq2_xs),
     ("IQ3_XXS", 18, iq3_xxs), ("IQ1_S", 19, iq1_s), ("IQ3_S", 21, iq3_s), ("IQ2_S", 22, iq2_s),
     ("IQ4_XS", 23, iq4_xs), ("IQ1_M", 29, iq1_m))}
-# T505.1: the same of the three K types that are read and never kept: the engine's BLOCKS does not have them (no
+# T.505.1: the same of the three K types that are read and never kept: the engine's BLOCKS does not have them (no
 # kernel multiplies their blocks), so a conversion widens them to float32 and stores them as its dtype says, whether
 # or not it keeps the others' blocks (convert/stream.py's kept()).
 WIDENED = {name: (ggml, size, reader(size, read)) for name, ggml, size, read in (

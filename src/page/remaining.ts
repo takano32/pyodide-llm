@@ -1,4 +1,4 @@
-// src/page/remaining.ts (T553): how long the fetch of a model has left, from the bytes the worker says have arrived and
+// src/page/remaining.ts (T.553): how long the fetch of a model has left, from the bytes the worker says have arrived and
 // the times they were said at (model.ts holds what the reports so far say). The form is naidan's
 // (src/features/llama-cpp-browser/hugging-face/download-estimate.ts at 852bdeab, MIT, Ryo Ota: no line of it is
 // copied): the speed is an average of what each report adds, weighted by the time it covers so that it forgets the
@@ -29,7 +29,7 @@ export function secondsLeft(arriving: Arriving | undefined, total: number, now: 
   return Math.max(1, (total - arriving.bytes) / arriving.speed);
 }
 
-/** How the status line says it (the owner's words, T553): " · about 40 s left", or nothing. Whole seconds under 10,
+/** How the status line says it (the owner's words, T.553): " · about 40 s left", or nothing. Whole seconds under 10,
  * fives under a minute, tens above: the estimate moves with the line, and a number that jumps by one each report reads
  * as more than it knows. */
 export function leftSaid(seconds: number | undefined) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/slow_in_browser.sh (T538): the page on a slow line and on one that stops (tests/slow-check.mjs), from the site of
+# tests/slow_in_browser.sh (T.538): the page on a slow line and on one that stops (tests/slow-check.mjs), from the site of
 # this checkout built on the runner, and from that of another commit (BEFORE) on the same runner by turns: a branch's
 # check before and after, which slow.yml (the deployed site) cannot give. After tests.yml has made the models, the
 # kernels and the build (not only_extra):
@@ -7,8 +7,8 @@
 #   node tests/ci.mjs run tests.yml minutes=120 extra="bash tests/slow_in_browser.sh" \
 #     --grep "^(slow|stall|the |through|console|ok|FAILED|---)" --minutes 130 --ref <branch>
 #
-#   CASES   scenario:rate:queue:model, spaced (default: 0.15 Mbps as one deep queue, which fell back before T538 (the
-#           review of T129), and as the oldest connection first; 0.4 Mbps shared by turns; and a stop)
+#   CASES   scenario:rate:queue:model, spaced (default: 0.15 Mbps as one deep queue, which fell back before T.538 (the
+#           review of T.129), and as the oldest connection first; 0.4 Mbps shared by turns; and a stop)
 #   BEFORE  the commit whose site goes first in each case (default origin/main; none: this checkout's alone)
 set -euo pipefail
 cd "$(dirname "$0")/.."

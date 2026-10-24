@@ -1,4 +1,4 @@
-// T189: the sampling kernel (kernels/kernel.ts's sample) of main and of this tree, and of any commits given, in one
+// T.189: the sampling kernel (kernels/kernel.ts's sample) of main and of this tree, and of any commits given, in one
 // process, taking turns (AGENTS.md: the old and the new side by side), on the real logits of the models' generation.
 // Every form must draw main's token for the same random number (the same logits, the same penalty): it is checked on
 // every position with several random numbers before anything is timed. Compiles each form's kernel.ts with
@@ -10,9 +10,9 @@
 // The logits: generate() as tests/overhead.mjs runs it, one position after another from BOS with the model's
 // temperature, top-p and repetition penalty (penalized, as sample() gets them), the tokens drawn by the page's kernel.
 // Per model, µs a call, the median of the rounds (the first round warms up and is left out):
-//   sample     each position's logits copied into the kernel's array (which warms them, as T164's "again") and one
+//   sample     each position's logits copied into the kernel's array (which warms them, as T.164's "again") and one
 //              call; the forms take turns at each position, in an order that turns round
-//   walk       the logits of which the best alone passes the floor (T164's "1 past"), 200 calls in a loop: what
+//   walk       the logits of which the best alone passes the floor (T.164's "1 past"), 200 calls in a loop: what
 //              walking the whole vocabulary costs
 // and what the floor and llama2.c's cutoff leave, the median of the positions (computed here in float64, as the
 // kernel does to within a rounding): C past the floor, L past the cutoff (what sortNucleus() sorts), K the nucleus.
@@ -34,7 +34,7 @@ const ids = args.filter((a, i) => !a.startsWith("--") && !["--rounds", "--tokens
 const work = root + ".tmp/sample-bench/";
 
 // main's kernels and the commits asked for (CI checks out one commit: kernelSources() fetches each alone; no ref is written)
-// (T356: each form's kernels/ whole, from its tree: kernel.ts is one file in a commit of before T356, a window over
+// (T.356: each form's kernels/ whole, from its tree: kernel.ts is one file in a commit of before T.356, a window over
 // kernel/*.ts after it. A form is what kernelSources() takes, and what is done to its copy before it is compiled)
 const forms = { main: { from: "origin/main" } };
 for (const sha of commits) forms[sha.slice(0, 7)] = { from: sha };
@@ -71,7 +71,7 @@ for (const [name, form] of Object.entries(forms)) {
 }
 const names = Object.keys(kernels).filter((n) => n !== "stages");
 
-// --edges (T189's review): every form must draw main's token on logits made for the edges too, not only on a model's
+// --edges (T.189's review): every form must draw main's token on logits made for the edges too, not only on a model's
 // (whose vocabularies are multiples of 16 and whose best token is seldom in the tails): each length from 1 to 80 and
 // some near 1000 (the tails of the fours, the eights and the sixteens), the best one in each place, ties at the best,
 // ties exactly at the floor and a float32 step either side, NaN, ±Infinity, -0, -3.4e38, two far above the rest

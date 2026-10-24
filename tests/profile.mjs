@@ -1,15 +1,15 @@
-// Where the time of one token goes, in the forward pass of src/runtime/forward.js (the page's, since T93), measured in
+// Where the time of one token goes, in the forward pass of src/runtime/forward.js (the page's, since T.93), measured in
 // Node: every kernel call is wrapped and timed (performance.now() resolves well below a microsecond here, and a
 // token makes about a hundred calls), and the calls are summed by kind. What the wrapping itself costs is the
 // difference between the wrapped and the plain run, and is shown. The classifier is the difference between a
-// token with logits and one without. (Until T93 this measured the Python forward, ctypes calls included: those
+// token with logits and one without. (Until T.93 this measured the Python forward, ctypes calls included: those
 // numbers are in AGENTS.md and kernels/README.md. Replacing kernels by functions that do nothing, as it did then,
 // leaves NaN in the activations and slows what follows: that is why this one times the calls instead.)
 //
 //   node tests/profile.mjs [model id ...] [--positions 64] [--from 16]
 //
-// --from: the position the timed tokens start at. The KV cache is filled up to it first (with forwardMany, T108), so
-// that the attention of a long context shows (T109).
+// --from: the position the timed tokens start at. The KV cache is filled up to it first (with forwardMany, T.108), so
+// that the attention of a long context shows (T.109).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";

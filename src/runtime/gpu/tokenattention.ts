@@ -1,6 +1,6 @@
-// The attention of a generated token (T224): llama.cpp's decode form and the prompt's tiles, checked against
+// The attention of a generated token (T.224): llama.cpp's decode form and the prompt's tiles, checked against
 // JavaScript, timed and chosen, and their dispatches.
-// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
+// (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.ts";
@@ -11,7 +11,7 @@ import type { Model, Pass, Thrown } from "./device.ts";
 import type { FlashVecShape } from "../shaders/attention.ts";
 import type { Tried } from "../contracts/gpu/protocol.ts";
 
-// T368.6: an attention of a token: llama.cpp's decode form (its shape; its two pipelines once they are compiled), or
+// T.368.6: an attention of a token: llama.cpp's decode form (its shape; its two pipelines once they are compiled), or
 // the prompt's tiles (their pipeline, which is there already)
 type Vec = { name: string; tiles?: undefined; shape: FlashVecShape; pipeline?: GPUComputePipeline; reduce?: GPUComputePipeline };
 type Tiles = { name: string; tiles: true; shape?: undefined; pipeline: GPUComputePipeline; reduce?: undefined };
@@ -19,19 +19,19 @@ type TokenAttention = Vec | Tiles;
 // what chooseTokenAttention() returns, a part of the model's record of a token (tokenforms.ts's m.tokens): the
 // attention taken, what each came to, and the vec form's parts and Params (undefined with the tiles)
 type Chosen = { attention: TokenAttention; attentions: Tried[]; parts: GPUBuffer | undefined; params: ((nwg: number, window?: number) => GPUBuffer) | undefined };
-// the buffers an attention's dispatches bind (parts and params: the vec form's; T261.4.2: window, the layer's, which the
+// the buffers an attention's dispatches bind (parts and params: the vec form's; T.261.4.2: window, the layer's, which the
 // tiles' flash has in it and the vec form's params are made for)
 type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; flash: GPUBuffer; step: GPUBuffer; parts?: GPUBuffer; params?: (nwg: number, window?: number) => GPUBuffer;
   window?: number };
 
-// ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.ts's flashVec and
+// ---- T.224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.ts's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
 // subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.forms.attention: one
-// row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
+// row of four used, a workgroup a head, T.150's (a)). Each checked against JavaScript (checkTokenAttention), the right
 // ones timed (timeTokenAttention), the fastest taken: attention, with what each came to (attentions), which
-// tokenforms.ts's chooseTokens() puts in the model's record of a token (T378.4: this returns them; null where a stop was asked).
+// tokenforms.ts's chooseTokens() puts in the model's record of a token (T.378.4: this returns them; null where a stop was asked).
 // plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
-// remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
+// remembered (T.148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
 // compiled, checked and timed at every start.
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
 async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
@@ -79,7 +79,7 @@ async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
   }
   return { attention, attentions, parts, params };
 }
-// flashVec's Params a count of parts (T261.4.2: and a window), each made once (owned: where they go)
+// flashVec's Params a count of parts (T.261.4.2: and a window), each made once (owned: where they go)
 function paramsOf(m: Model, shape: FlashVecShape, heads: number, kvHeads: number, owned: GPUBuffer[]) {
   const made = new Map<string, GPUBuffer>();
   return (nwg: number, window = 0) => {
@@ -122,7 +122,7 @@ function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, s
 // each of more than one tile: the reduce over them), with positions past the token's that it must not read, and head
 // 3's q steep (a largest taken wrong shows only in a steep softmax). Each head's output against its softmax over the
 // positions up to the token's, no farther than LINE of the largest |value| of its head (checkAttention's: the tiles
-// hold the weights in float16). T261.4.2: a model with layers that attend a window (a Gemma 3's local ones) also at 300
+// hold the weights in float16). T.261.4.2: a model with layers that attend a window (a Gemma 3's local ones) also at 300
 // positions through a window of 37 (TOKEN_ATTENTION_WINDOW: its first position in the middle of a KV_TILE, and parts of
 // the vec form that read nothing), whose output is of those 37 positions alone
 const TOKEN_ATTENTION_LENGTHS = [40, 70, 300, 1100], TOKEN_ATTENTION_WINDOW = [300, 37];
@@ -152,9 +152,9 @@ async function checkTokenAttention(m: Model, a: TokenAttention) {
 // ms of the attention of a token (every layer's) with each of right, on made-up numbers: at 128 positions and at 2048
 // (the model's context where shorter), all in turn, as the tiled shaders are timed (timeForms: a submission of n
 // attentions and one of 2n, n doubled from 1 until n takes TIMED_MS, up to MOST_PASSES layers of them, PAIRS pairs,
-// the median), times the layers; the two lengths' ms added. (T224's review: n counts attentions, not layers of them.
+// the median), times the layers; the two lengths' ms added. (T.224's review: n counts attentions, not layers of them.
 // A submission of a whole token's layers at the least made the slowest one long: the prompt's tiles at 2048
-// positions, if they take the time of T202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
+// positions, if they take the time of T.202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
 // the owner's Android), 16 × 14 ms a submission and some 3.9 s of timing at every start, 0.5 s so)
 async function timeTokenAttention(m: Model, right: TokenAttention[]) {
   const { device, plan } = m, owned: GPUBuffer[] = [];

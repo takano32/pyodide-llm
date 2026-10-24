@@ -1,4 +1,4 @@
-// T238: what Prism ML's fork of llama.cpp computes for Ternary Bonsai 2 27B on the CPU, written out for
+// T.238: what Prism ML's fork of llama.cpp computes for Ternary Bonsai 2 27B on the CPU, written out for
 // tests/reference_27b.py to compare the engine with. Only the public API of the fork's include/llama.h
 // (https://github.com/PrismML-Eng/llama.cpp at 88c4bc60b9c9578f134385be9535e853f2db9b9f, MIT); no line of the fork
 // is in this file. tests/reference_27b.sh builds the fork's libraries and this file against them.
@@ -16,7 +16,7 @@
 // and on stdout the texts, the largest logits of every written position and the seconds of every decode. The
 // writing stops early once <seconds> have passed (the files then hold what was written).
 //
-// T237's review, three switches (the environment), for a second run beside the first that computes the model with the
+// T.237's review, three switches (the environment), for a second run beside the first that computes the model with the
 // ternary matrices multiplied by float32 activations, where the fork rounds them to Q8_0 first (tests/reference_27b_patch.py
 // adds the float32 path to the fork: PTQ1_0_F32_ACTIVATIONS=1 asks for it):
 //   KV_F32=1            the keys and values of the attention layers are float32 (the fork's own default is float16)
@@ -24,11 +24,11 @@
 //                       <dir>/fork-<i>.ids (its prompt's, then what it wrote but the last), one token at a time, into
 //                       <out>/fork-<i>.single (a row for each); the prompt arguments only count the prompts
 //   REPLAY_BATCH=1      and the same tokens as one batch, into <out>/fork-<i>.logits
-// T364.1 (stock llama.cpp, Underdog Saluki 27B: tests/reference_saluki_patch.py's BLOCKS_F32_ACTIVATIONS is the same switch
+// T.364.1 (stock llama.cpp, Underdog Saluki 27B: tests/reference_saluki_patch.py's BLOCKS_F32_ACTIVATIONS is the same switch
 // as PTQ1_0_F32_ACTIVATIONS for that file's types), a switch of a build with -DREFERENCE_NO_REPACK:
 //   NO_REPACK=1         the weights stay the types the file has (llama_model_params.use_extra_bufts off)
 //
-// T233's review, a fourth switch (the environment), for a prompt past the 4096 positions the list's context has: what the
+// T.233's review, a fourth switch (the environment), for a prompt past the 4096 positions the list's context has: what the
 // fork computes on a long text, with the logits of some positions only (a row is 1 MB: all of 6,000 would be 6 GB):
 //   LONG_TEXT=<a text file>   decode its tokens (the prompt arguments only count: one is needed, and is not used), in batches
 //                             of n_batch, asking for the logits of the positions of LONG_ROWS and of the last only; then
@@ -139,7 +139,7 @@ static bool decode_rows(llama_context * ctx, const std::vector<llama_token> & to
     return status == 0;
 }
 
-// T233's review: the long prompt (the switches LONG_* above)
+// T.233's review: the long prompt (the switches LONG_* above)
 static int run_long(const llama_vocab * vocab, llama_context * ctx, int n_vocab, int n_batch, const std::string & out, int written,
                     double began, double seconds) {
     const std::string text = read_file(getenv("LONG_TEXT"));
@@ -265,7 +265,7 @@ int main(int argc, char ** argv) {
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = 0;
 #ifdef REFERENCE_NO_REPACK
-    // T364.1 (built with -DREFERENCE_NO_REPACK against a llama.cpp that has the field: tests/reference_saluki.sh):
+    // T.364.1 (built with -DREFERENCE_NO_REPACK against a llama.cpp that has the field: tests/reference_saluki.sh):
     // NO_REPACK=1 leaves the weights the types the file has them in (llama.cpp repacks Q4_K and Q8_0 matrices at load
     // into types of their own, which tests/reference_saluki_patch.py's switch does not reach)
     if (getenv("NO_REPACK") != NULL) {
@@ -283,7 +283,7 @@ int main(int argc, char ** argv) {
     printf("fork: loaded in %.1f s, a vocabulary of %d, %d threads\n", now() - began, n_vocab, threads);
 
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = getenv("LONG_CTX") != NULL ? atoi(getenv("LONG_CTX")) : 512;  // (T233's review: a long text has its own)
+    ctx_params.n_ctx = getenv("LONG_CTX") != NULL ? atoi(getenv("LONG_CTX")) : 512;  // (T.233's review: a long text has its own)
     ctx_params.n_batch = 256;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;

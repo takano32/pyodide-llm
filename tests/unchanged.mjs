@@ -1,13 +1,13 @@
-// unchanged.mjs (T346)
+// unchanged.mjs (T.346)
 // The net under a refactoring: what the working tree does, held to what another commit does (main, by default).
 // Nothing here knows how the files are divided; it asks both trees the same questions and compares the answers.
 //
 //   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls choices exports layouts python page bench gpuworker gpusteps sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
-//   --built [<a dist>]: `shaders` with the working tree's side read from a build (T367.3.1: see where the flag is read)
+//   --built [<a dist>]: `shaders` with the working tree's side read from a build (T.367.3.1: see where the flag is read)
 //
-//   shaders  every export of src/runtime/shaders.js (a text as it is; T366: a maker of WGSL as the texts it makes, for every
+//   shaders  every export of src/runtime/shaders.js (a text as it is; T.366: a maker of WGSL as the texts it makes, for every
 //            choice its text branches on; another function as its source) and deviceKey() for 192 made-up adapters: a
 //            device forgets the forms it measured when the key changes (AGENTS.md). The key holds the WGSL a device is
 //            given and no function's source (tests/device-key-check.mjs holds that every piece of the engine's shaders
@@ -15,13 +15,13 @@
 //   models   every export of src/models.js: the data as JSON, and what every exported function answers for every
 //            entry of the list (a builder moved to another file leaves both as they were)
 //   calls    tests/unchanged-calls.mjs: the plan Python hands forward.js and every call of a kernel, 150 hashes
-//   layouts  (T357) tests/unchanged_layouts.py: what a tree says of a checkpoint's file over a grid of made-up headers, forms
+//   layouts  (T.357) tests/unchanged_layouts.py: what a tree says of a checkpoint's file over a grid of made-up headers, forms
 //            and dtypes (18 families of the four layouts, five dtypes): layout(), Writer's places and checkpoint_size(),
 //            checkpoint_dtype(), the plan Llama(external=) hands forward.js (the engine's own order of the tensors),
 //            external_tensors() and conversion_plan(); what the converter reads of 23 made-up config.json files (the
 //            header, the form, an LFM2's FFN); and the repetition penalty's window. The order of a file's tensors is
 //            written in four places and the unit tests walk the branches of the few models they make: here all four
-//            answer for the same grid, and the next one to move them (T359) is shown what moved
+//            answer for the same grid, and the next one to move them (T.359) is shown what moved
 //   python   the unit tests under tests/unchanged_recorder.py: the checkpoints, options and tokenizers of every
 //            conversion the tests make, the logits of every forward pass, the ids of every encode (two runs of pytest)
 //   choices  (review) tests/unchanged-choices.mjs: what forward.js decides without a browser over a grid of made-up numbers (GPU or CPU for
@@ -29,21 +29,21 @@
 //   exports  (review) the names a window keeps: every export of forward.js, jobs.js, kept.js, gpu.js and src/bench.js (a function by its
 //            arity, a constant as JSON), and every public name of llama2_convert and llama2_numpy with its signature, a class's methods too
 //            (tests/unchanged_exports.py): the tests reach only the names they use, a facade that forgets one breaks the page
-//   page     (T355 review) the model page's script (src/pages/index.astro's <script> and src/page/*.ts): what it is made of, counted: every
+//   page     (T.355 review) the model page's script (src/pages/index.astro's <script> and src/page/*.ts): what it is made of, counted: every
 //            string, number and regular expression, every operator, every `.name` and object key, every kind of statement and
 //            expression. A moved statement counts the same wherever it is; a branch dropped, a key spelled otherwise, a limit
 //            changed or `===` turned to `!==` is a count that differs. (No test outside CI's browsers runs the page's script.)
-//            (T353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
-//   bench    (T353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
+//            (T.353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
+//   bench    (T.353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
 //            the arguments and the Markdown or numbers that come back. The tables' words, cells and warnings, read by nothing else
-//   gpuworker (T353 review) the statements of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js and src/runtime/benchmark/gpu/*.js), and (T352)
+//   gpuworker (T.353 review) the statements of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js and src/runtime/benchmark/gpu/*.js), and (T.352)
 //            of the model's (src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common` where the benchmark's share `shared`), each
 //            function and constant as its syntax tree: `shared.<x>` (the fields the modules share) read as the `let` it was, the
 //            ../ of a URL dropped, positions and comments dropped. A field taken for another (`shared.fallback` for `shared.packed`:
 //            a device that is not a fallback and has the packed dot product tells them apart, one that is neither or both does not),
 //            a condition, a number or a name changed in a moved statement is a statement that differs. The worker runs nowhere but in CI's
 //            GPU jobs; this is the one check that reads every line of it, against the commit it was divided from
-//   gpusteps (T568.1) tests/unchanged-gpusteps.mjs: what the model's GPU worker asks of a device (tests/fakes/webgpu.mjs) for seven
+//   gpusteps (T.568.1) tests/unchanged-gpusteps.mjs: what the model's GPU worker asks of a device (tests/fakes/webgpu.mjs) for seven
 //            made-up models (a Llama, a Qwen3, a Gemma 3, an LFM2, a Qwen3.5, a GPT-2, a GPT-NeoX; two on the GPU alone too): the buffers
 //            and shaders it makes, a prompt's blocks, a step's keys and values going up, and a token's steps in every form, dispatch by dispatch. gpuworker reads the statements; this runs them, so a statement moved
 //            to another file (a kind's) that binds or dispatches as before is the same here
@@ -67,7 +67,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
-// --built [<a dist>] (T367.3.1): the working tree's side of `shaders` is the shaders as a build wrote them
+// --built [<a dist>] (T.367.3.1): the working tree's side of `shaders` is the shaders as a build wrote them
 // (dist/_astro/shaders.<hash>.js: tests/bundle.mjs), not the sources: every text, every maker's WGSL over its branches
 // and every key, as the worker of a visitor's browser has them. A function that makes no WGSL is a bundler's print of
 // its source there and is counted, not compared.
@@ -87,22 +87,22 @@ function differences(was, now) {
 }
 function said(what, { count, differ, gone, added }, more = "") {
   const wrong = differ.length + gone.length + added.length;
-  // (T379.2: UNCHANGED_NAMES=<n> for more than the first twelve: a change meant to differ is read name by name)
+  // (T.379.2: UNCHANGED_NAMES=<n> for more than the first twelve: a change meant to differ is read name by name)
   const most = Number(process.env.UNCHANGED_NAMES ?? 12);
   const list = (label, names) => (names.length ? `; ${label}: ${names.slice(0, most).join(", ")}${names.length > most ? ` and ${names.length - most} more` : ""}` : "");
   console.log(`unchanged: ${what}: ${wrong ? "CHANGED" : "the same"}: ${count} compared${more}${list("differ", differ)}${list("gone", gone)}${list("new", added)}`);
   return wrong === 0;
 }
 
-// T366: the makers of WGSL among src/runtime/shaders.js's exports, and the arguments that walk every branch of each one's
-// text (a number is written into the text and chooses nothing). T379.1: the engine's makers and their arguments are the
+// T.366: the makers of WGSL among src/runtime/shaders.js's exports, and the arguments that walk every branch of each one's
+// text (a number is written into the text and chooses nothing). T.379.1: the engine's makers and their arguments are the
 // catalogue's rows (this tree's shaders/engine.ts, which deviceKey() hashes: makersOf()); the makers of the prompt's
 // tiles (the key holds them by promptForms) and the benchmark's (fmaCeiling, mulMatVec) are tests/shader-makers.mjs's
-// list (T379.2: read by the light suite too, which holds that no maker of WGSL is left out of both)
+// list (T.379.2: read by the light suite too, which holds that no maker of WGSL is left out of both)
 function makersOf(module) {
   const found = { ...MAKERS_APART };
   for (const { name, given } of [...module.ENGINE_SHADERS, ...module.TERNARY_SHADERS]) if (given) (found[name] ??= []).push([given]);
-  // (T379.2) a maker with no arguments here would be compared as a syntax tree, and a text of its own never
+  // (T.379.2) a maker with no arguments here would be compared as a syntax tree, and a text of its own never
   const unwalked = makersOfWgsl(module).filter((name) => !found[name]);
   if (unwalked.length) throw new Error(`${unwalked.join(", ")}: a maker of WGSL of shaders.ts that neither the catalogue (shaders/engine.ts) nor tests/shader-makers.mjs gives arguments: the net cannot compare the texts it makes`);
   return found;
@@ -117,7 +117,7 @@ function madeBy(module, name, given) {
   }
 }
 
-// T368.5: a function of the shaders that makes no WGSL (the checks' JavaScript, the shapes, the key) by its statements, as
+// T.368.5: a function of the shaders that makes no WGSL (the checks' JavaScript, the shapes, the key) by its statements, as
 // a syntax tree: Node runs a .ts file with its types blanked, so that String(a function) of shaders.ts has spaces where a
 // type stood, and brackets round an expression that was cast. A name, a number, a string or an operator that changed
 // is another tree; a comment, white space and such brackets are not.
@@ -181,7 +181,7 @@ function calls(other) {
   return said("the plans and the kernels' calls", differences(run(other), run(root)));
 }
 
-// (T357) what both trees say of a checkpoint's file, a config.json and the penalty's window, over one grid
+// (T.357) what both trees say of a checkpoint's file, a config.json and the penalty's window, over one grid
 function layouts(other) {
   const run = (tree) => JSON.parse(execFileSync(python, [path.join(root, "tests/unchanged_layouts.py"), tree], { maxBuffer: 1 << 28, env: { ...process.env, PYTHONHASHSEED: "0" } }));
   return said("the checkpoints' layouts", differences(run(other), run(root)));
@@ -219,7 +219,7 @@ async function exports(other) {
   let ok = true;
   const [was, now] = await Promise.all([other, root].map(async (tree) => {
     const found = {};
-    // (T367.1: a window of the runtime by its name there, wherever the tree keeps the runtime: tests/tree.mjs)
+    // (T.367.1: a window of the runtime by its name there, wherever the tree keeps the runtime: tests/tree.mjs)
     for (const file of ["forward.js", "jobs.js", "kept.js", "gpu.js", "src/bench.js"]) {
       let module;
       try { module = await import(file.startsWith("src/") ? pathToFileURL(path.join(tree, file)) : treeOf(tree).runtimeUrl(file)); } catch (error) { found[`${file}: import`] = `throws ${error.message}`; continue; }
@@ -234,7 +234,7 @@ async function exports(other) {
   return said("exports, the Python windows", differences(python_(other), python_(root))) && ok;
 }
 
-// the parts of a page's script, counted (T355): the script of index.astro and every .ts of src/page/ of a tree (T353: and
+// the parts of a page's script, counted (T.355): the script of index.astro and every .ts of src/page/ of a tree (T.353: and
 // of benchmark.astro and src/benchmark/)
 function pageShape(tree, astro = "index.astro", modules = "page") {
   const sources = [];
@@ -255,7 +255,7 @@ function pageShape(tree, astro = "index.astro", modules = "page") {
     // (the one object the parts share: the names of its fields were the names of the `let`s)
     if (type === "VariableDeclarator" && node.id.name === "page" && node.init?.type === "ObjectExpression") { node.init.properties.forEach((property) => visit(property.value)); return; }
     if (!SKIPPED.test(type)) add(`node ${type}`);
-    // (T368.7: a file of the runtime that a page names, a worker's in new URL(), is the same file under its other ending:
+    // (T.368.7: a file of the runtime that a page names, a worker's in new URL(), is the same file under its other ending:
     // "../runtime/benchmark/gpu.ts" was "../runtime/benchmark/gpu.js". Only such a name, and only its ending)
     if (type === "StringLiteral" || type === "NumericLiteral" || type === "BooleanLiteral") add(`literal ${JSON.stringify(typeof node.value === "string" ? node.value.replace(/^(\.\.\/runtime\/[\w./-]+)\.ts$/, "$1.js") : node.value)}`);
     if (type === "RegExpLiteral") add(`regular expression /${node.pattern}/${node.flags}`);
@@ -296,14 +296,14 @@ function bench(other) {
   return said("src/bench.js, the calls tests/bench.mjs makes", differences(was, now));
 }
 
-// the statements of /benchmark/'s GPU worker (T353 review), as syntax trees. What the division adds is told apart from what it moves:
+// the statements of /benchmark/'s GPU worker (T.353 review), as syntax trees. What the division adds is told apart from what it moves:
 // imports, the window's loading and early queue, the `shared` object, the destructuring of what a module takes from another
-// (T352: of the model's GPU worker too. worker: { window: the file a worker starts from, object: the name of the object its modules share })
+// (T.352: of the model's GPU worker too. worker: { window: the file a worker starts from, object: the name of the object its modules share })
 function gpuWorker(tree, fields, worker) {
   const files = [worker.window], inFolder = worker.window.replace(/\.js$/, ""), runtime = treeOf(tree).runtime;
   const folder = runtime(inFolder, { maybe: true });
   if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`${inFolder}/${file}`);
-  // (T368.6: a file that is TypeScript with its types blanked, by the name the tree has for it: the statements are then
+  // (T.368.6: a file that is TypeScript with its types blanked, by the name the tree has for it: the statements are then
   // the JavaScript they were, and a type's declaration or import is none)
   const asts = files.map((file) => parse(untyped(fs.readFileSync(runtime(file), "utf8"), runtime(file)), { sourceType: "module" }).program);
   const declared = (statement) => {
@@ -323,7 +323,7 @@ function gpuWorker(tree, fields, worker) {
       if (["loc", "start", "end", "extra", "range", "leadingComments", "trailingComments", "innerComments", "shorthand"].includes(key)) continue;
       out[key] = norm(node[key]);
     }
-    // (T368.5: the module an import() names is the same one under its other ending: import("../../shaders.ts") was
+    // (T.368.5: the module an import() names is the same one under its other ending: import("../../shaders.ts") was
     // import("../../shaders.js"). Only the argument of an import(), and only its ending)
     if ((node.type === "ImportExpression" ? [node.source] : node.type === "CallExpression" && node.callee.type === "Import" ? node.arguments : []).some((s) => s.type === "StringLiteral")) {
       const named = (s) => (s?.type === "StringLiteral" ? { type: "StringLiteral", value: s.value.replace(/\.ts$/, ".js") } : s);
@@ -349,7 +349,7 @@ function gpuWorker(tree, fields, worker) {
     let key;
     if (statement.type === "FunctionDeclaration") key = `function ${statement.id.name}`;
     else if (statement.type === "VariableDeclaration") {
-      // (not moved: the `let`s that became fields (T352: where a `let` declared one of them with others, the others are what is
+      // (not moved: the `let`s that became fields (T.352: where a `let` declared one of them with others, the others are what is
       // compared), `shared`, the window's `modules` and `early`, what a module takes from another)
       if (statement.kind === "let" && statement.declarations.some((d) => fields.has(d.id.name))) {
         statement = { ...statement, declarations: statement.declarations.filter((d) => !fields.has(d.id.name)) };
@@ -359,7 +359,7 @@ function gpuWorker(tree, fields, worker) {
       if (names.some((name) => [worker.object, "modules", "early"].includes(name)) || statement.declarations.some((d) => d.init && importsAModule(d.init) && d.id.type === "ObjectPattern")) continue;
       key = `${statement.kind === "let" ? "let" : "const"} ${names.join(",")}`;
     } else if (statement.type === "ExpressionStatement" && statement.expression.type === "AssignmentExpression" && statement.expression.left.name === "onmessage") {
-      // (the early queue is the division's; T352: the model's worker's receiver is no async function)
+      // (the early queue is the division's; T.352: the model's worker's receiver is no async function)
       const right = statement.expression.right, queue = right.body.type === "CallExpression" && right.body.callee.object?.name === "early";
       if (queue) continue;
       key = right.async ? "onmessage = async" : "onmessage =";
@@ -371,17 +371,17 @@ function gpuWorker(tree, fields, worker) {
 }
 // the keys of the `shared` object a tree's modules hold between them (none before the division)
 function sharedFields(tree, worker) {
-  // (T368.7: device.ts or device.js, whichever the tree has: asked for with `maybe`, the name comes back as it was
+  // (T.368.7: device.ts or device.js, whichever the tree has: asked for with `maybe`, the name comes back as it was
   // spelled, and a tree whose file is TypeScript read as having no such object at all)
   const spelled = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
   const file = [spelled.replace(/\.js$/, ".ts"), spelled].find((one) => fs.existsSync(one));
   if (!file) return new Set();
   const program = parse(untyped(fs.readFileSync(file, "utf8"), file), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
-  // (T378.4: the model's worker has no such object any more: its fields are device.js's `let`s again)
+  // (T.378.4: the model's worker has no such object any more: its fields are device.js's `let`s again)
   return new Set(shared?.declarations[0].init.properties.map((p) => p.key.name) ?? []);
 }
-// (T352: the model's GPU worker, src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
+// (T.352: the model's GPU worker, src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
 // (window: the file a worker starts from, as the runtime names it)
 const GPU_WORKERS = [{ window: "benchmark/gpu.js", object: "shared", name: "/benchmark/'s GPU worker" },
   { window: "gpu.js", object: "common", name: "the model's GPU worker" }];
@@ -397,7 +397,7 @@ function gpuworker(other) {
   return same;
 }
 
-// (T568.1) what both trees' GPU workers ask of a stand-in device
+// (T.568.1) what both trees' GPU workers ask of a stand-in device
 function gpusteps(other) {
   const run = (tree) => JSON.parse(execFileSync("node", [path.join(root, "tests/unchanged-gpusteps.mjs"), tree], { maxBuffer: 1 << 28 }));
   return said("the GPU worker's blocks and steps", differences(run(other), run(root)));

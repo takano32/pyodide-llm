@@ -1,4 +1,4 @@
-# T505.2: a GGUF opened alone (Conversion.from_gguf: its own vocabulary and settings, no original's files), where it
+# T.505.2: a GGUF opened alone (Conversion.from_gguf: its own vocabulary and settings, no original's files), where it
 # was refused before: one that names no BOS and whose chat template begins with a token of its own; a Llama 3's
 # rope_freqs table, read back into the rope_scaling that makes it; a sentencepiece BPE vocabulary (tokenizer.ggml.model
 # "llama"); and two more of llama.cpp's names of a pre-tokenizer. Each on a small made-up GGUF against what the
@@ -51,7 +51,7 @@ def chat_gguf(template=CHATML, bos=None, eos=END):
 def test_a_gguf_that_names_no_bos_begins_with_the_token_its_template_begins_with():
     """unsloth's Qwen3.5 GGUFs: no bos_token_id, a template whose every text begins with <|im_start|>. That token is
     what the engine begins with, the format is what follows it, and the answer stops at the EOS alone: not at token 1,
-    which nothing named (the review of T203: '"' of a byte-level vocabulary)."""
+    which nothing named (the review of T.203: '"' of a byte-level vocabulary)."""
     got = fed(chat_gguf(), "int8")
     assert got.options["bos"] == START and got.options["stop_tokens"] == [END]
     assert got.options["template"] == "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
@@ -145,7 +145,7 @@ def test_the_table_is_read_off_the_head_and_more_is_asked_for_until_it_is_there(
             return super().range(where, name, begin, end)
 
     conversion = converted(Asked(tmp_path), {"weights": "model.gguf"}, dtype="int8")
-    assert Asked.ranges == [(0, base + 8), (base + 8, 4 * (base + 8))]  # (no byte asked for twice, T374.3)
+    assert Asked.ranges == [(0, base + 8), (base + 8, 4 * (base + 8))]  # (no byte asked for twice, T.374.3)
     assert conversion.options["rope_scaling"] == LLAMA3 and bytes(conversion.checkpoint) == bytes(fed(file, "int8").checkpoint)
 
 
@@ -252,7 +252,7 @@ def test_a_sentencepiece_bpe_vocabulary_alone_is_the_models_own_files(bytes_too,
     pieces = pieces_of(1000, bytes_too)
     published, file = spm_gguf(pieces, more=[("tokenizer.ggml.remove_extra_whitespaces", 7, collapse)])
     got = fed(file, "int8")
-    # (a Mistral's config.json names the BOS the GGUF names: one that names none has none to stop at, T400)
+    # (a Mistral's config.json names the BOS the GGUF names: one that names none has none to stop at, T.400)
     staged = with_original(file, {**published, "bos_token_id": 1}, model_of(pieces, collapse), "tokenizer.model", "int8")
     assert bytes(got.tokenizer) == bytes(staged.tokenizer) and bytes(got.checkpoint) == bytes(staged.checkpoint)
     assert got.options == staged.options
@@ -296,9 +296,9 @@ def test_a_real_models_scores_are_read_as_a_bpes():
 NAMES = {"gpt-2": ("gpt2", False, False), "gpt2": ("gpt2", False, False), "smollm": ("gpt2-digits", False, False),
          "qwen2": ("qwen", True, False), "llama-bpe": ("llama3", False, True), "qwen35": ("qwen35", True, False),
          "granite-docling": ("gpt2", False, False), "minicpm5": ("minicpm5", False, False), "lfm2": ("llama3", False, False),
-         # T505.2: each held to a real GGUF and its original's tokenizer.json
+         # T.505.2: each held to a real GGUF and its original's tokenizer.json
          "smaug-bpe": ("llama3", False, True), "deepseek-r1-qwen": ("qwen", True, False),
-         # T340: held to XHToken's Q8_0 GGUF of Spark-X2.5 1.7B and its original's tokenizer.json
+         # T.340: held to XHToken's Q8_0 GGUF of Spark-X2.5 1.7B and its original's tokenizer.json
          "spark2_5": ("spark2_5", False, False)}
 
 
@@ -327,7 +327,7 @@ def test_a_name_no_real_file_was_held_to_is_refused_as_it_was(name):
 
 
 def test_a_gguf_alone_that_does_not_say_how_its_text_is_split_is_refused():
-    """T505.3 (the owner, 2026-10-13): a byte-level BPE GGUF without tokenizer.ggml.pre was read as a GPT-2's, which is
+    """T.505.3 (the owner, 2026-10-13): a byte-level BPE GGUF without tokenizer.ggml.pre was read as a GPT-2's, which is
     another split than a Llama 3's or a Qwen's own (three of the 500 most downloaded were such files). llama.cpp reads
     it as "default", and that is the name the refusal says. A sentencepiece vocabulary has no such name to say, and is
     opened as before (spm_gguf() writes none)."""
@@ -340,7 +340,7 @@ def test_a_gguf_alone_that_does_not_say_how_its_text_is_split_is_refused():
 
 
 def test_a_sentencepiece_vocabulary_that_comes_with_its_normalizer_is_refused():
-    """T505.3: tokenizer.ggml.precompiled_charsmap is a sentencepiece model's normalizer, which nothing here reads from
+    """T.505.3: tokenizer.ggml.precompiled_charsmap is a sentencepiece model's normalizer, which nothing here reads from
     a GGUF: a vocabulary with one (not an empty one) is not read as if its normalizer were identity."""
     metadata = gguf_read(spm_gguf(pieces_of(400))[1])[0]
     key = "tokenizer.ggml.precompiled_charsmap"
@@ -353,7 +353,7 @@ def test_a_sentencepiece_vocabulary_that_comes_with_its_normalizer_is_refused():
 
 
 def test_a_gguf_alone_of_before_gives_the_tokenizer_it_gave():
-    """What gguf_tokenizer() gives of a byte-level BPE GGUF is what it gave before T505.2: the pieces by their merges'
+    """What gguf_tokenizer() gives of a byte-level BPE GGUF is what it gave before T.505.2: the pieces by their merges'
     ranks, the padding empty, the control tokens special and the user-defined ones added."""
     tokens, kinds = ["a", "b", "ab", "<s>", "<x>", "[PAD5]"], [1, 1, 1, 3, 4, 5]
     metadata = {"tokenizer.ggml.model": "gpt2", "tokenizer.ggml.pre": "qwen2", "tokenizer.ggml.tokens": tokens,

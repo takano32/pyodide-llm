@@ -1,4 +1,4 @@
-# tests/reference_saluki.py (T361): what tests/reference_saluki.sh needs of Python, for the reference of Underdog Saluki
+# tests/reference_saluki.py (T.361): what tests/reference_saluki.sh needs of Python, for the reference of Underdog Saluki
 # 27B (stock llama.cpp's logits; docs/notes/t361-saluki-2026-10-13.md). NumPy and the standard library alone.
 #
 #   python tests/reference_saluki.py head <directory> [<the GGUF, where it was fetched>]

@@ -1,5 +1,5 @@
 """Made-up models and tokenizers for the tests of what the converter says of how a model's text begins and is read
-(T369: test_beginning.py, test_lowercase.py, test_prefixed.py): a tiny Llama, a byte-level BPE tokenizer.json, a
+(T.369: test_beginning.py, test_lowercase.py, test_prefixed.py): a tiny Llama, a byte-level BPE tokenizer.json, a
 sentencepiece model, and the conversion of the one with the other as the worker makes it."""
 import json
 import struct
@@ -44,7 +44,7 @@ def byte_level(specials, added=(), size=320):
 def sentencepiece(controls=("<s>", "</s>", "<|user|>", "<|assistant|>"), words=("hello", "world", "a", "b", "h", "e", "l", "o"),
                   dummy=True):
     """A sentencepiece model (unigram, identity normalizer) of the tiny model's size: <unk>, the control pieces, then
-    the words with and without the space in front. dummy: its normalizer's add_dummy_prefix (T400: sarashina2.2's and
+    the words with and without the space in front. dummy: its normalizer's add_dummy_prefix (T.400: sarashina2.2's and
     CAT-Translate's say false; not said is sentencepiece's default, true)."""
     size = synthetic_weights()[0]["vocab_size"]
     pieces = [("<unk>", UNKNOWN), *((text, CONTROL) for text in controls), ("▁", NORMAL)]

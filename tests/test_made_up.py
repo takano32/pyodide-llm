@@ -1,4 +1,4 @@
-"""T357.2: the one maker of the tests' made-up models (tests/made_up.py), on its own: that the file it writes is laid
+"""T.357.2: the one maker of the tests' made-up models (tests/made_up.py), on its own: that the file it writes is laid
 out by the engine's rows and is the file the engine reads back, in every layout and dtype; that a Llama's is still
 llama2.c's file (by the one order the tests write out themselves, tests/test_layout.py's ORDER); what the values of each kind of
 made-up model are; and that a tool can import it without the test suite."""

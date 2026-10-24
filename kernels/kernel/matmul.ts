@@ -1,4 +1,4 @@
-// kernel/matmul.ts (T356): the matrix products without relaxed SIMD (those with it are kernel_relaxed.ts), W (d, n)
+// kernel/matmul.ts (T.356): the matrix products without relaxed SIMD (those with it are kernel_relaxed.ts), W (d, n)
 // times x (n) for rows r0 to r1, and what they take beside the weights: the sums of the weights' groups (the
 // corrections of the relaxed products), the activations laid out for the ternary products (interleave), and the
 // outliers' columns of the classifier (add_columns).
@@ -31,8 +31,8 @@ export function matmul_f32(xout: usize, x: usize, w: usize, n: i32, r0: i32, r1:
   }
 }
 
-// T98: the corrections of matmul_q6r for int6 weights (w, groups of 24 bytes): out[g] = -64 times the sum of the
-// group's int8 values, an int32 (T197: before it the float32 scale times the sum; the kernels of kernel_relaxed.ts
+// T.98: the corrections of matmul_q6r for int6 weights (w, groups of 24 bytes): out[g] = -64 times the sum of the
+// group's int8 values, an int32 (T.197: before it the float32 scale times the sum; the kernels of kernel_relaxed.ts
 // add it to the group's integer sum now)
 export function six_sums(out: usize, w: usize, groups: i32): void {
   for (let g = 0; g < groups; g++) {
@@ -44,7 +44,7 @@ export function six_sums(out: usize, w: usize, groups: i32): void {
   }
 }
 
-// T123: the same for int8 weights: the sums of groups of 32 int8 values (w), times -64 (T197), the corrections of
+// T.123: the same for int8 weights: the sums of groups of 32 int8 values (w), times -64 (T.197), the corrections of
 // matmul_q8r. forward.js made them one value at a time in JavaScript (7B: 266 s of its construct)
 export function int8_sums(out: usize, w: usize, groups: i32): void {
   for (let g = 0; g < groups; g++) {
@@ -56,11 +56,11 @@ export function int8_sums(out: usize, w: usize, groups: i32): void {
   }
 }
 
-// T165: the 32 products of one group (a0 b0, a1 b1: 16 int8 each), summed into four int32 lanes. Two products are
+// T.165: the 32 products of one group (a0 b0, a1 b1: 16 int8 each), summed into four int32 lanes. Two products are
 // added in int16 before the widening: 9 instructions, not 11 (V8 on arm64 folds the add into smlal: 6, not 9).
 // int8 times int8 is 16384 at most (-128 times -128), and two such sums are within int16 unless both factors are
 // -128 twice over. The weights and the activations reach -128 only in a group whose scale is below 2.9e-39
-// (quantize_x where 1/scale overflows, T136), so the scale of that product (the two scales multiplied) is 0 in
+// (quantize_x where 1/scale overflows, T.136), so the scale of that product (the two scales multiplied) is 0 in
 // float32 and the lane is multiplied by 0 either way (at most the sign of a zero changes). The lanes hold the same
 // products as before (lane k: products 2k, 2k + 1, 2k + 8, 2k + 9 of each half), so the sums are the same integers.
 // @ts-ignore: decorator
@@ -71,7 +71,7 @@ export function int8_sums(out: usize, w: usize, groups: i32): void {
 }
 
 // int8 weights (wq) with one float32 scale per group (ws), int8 activations from quantize_x(bias = 0)
-// T165: four groups a turn share one load of their scales (ws times xs, four at a time: the same products as one by
+// T.165: four groups a turn share one load of their scales (ws times xs, four at a time: the same products as one by
 // one) and one step of the loop, and add into facc in the same order, so the result is the same to the bit
 export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
   const ng = n / GS;
@@ -102,7 +102,7 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
   return dot32(v128.load(row + o), v128.load(xq + o), v128.load(row + o + 16), v128.load(xq + o + 16));
 }
 
-// ---- T230, T231: ternary weights (ternary.ts)
+// ---- T.230, T.231: ternary weights (ternary.ts)
 // The int8 activations of quantize_x (no bias) as the ternary kernels read them, in place: every block of 64 in four
 // planes, byte 16 p + c of the block activation 4 c + p (plane p meets the codes of weights 4 c + p), and after the
 // n / 32 scales at xs an int32 a group of 32: minus the sum of its activations, which a row's sums take (the codes
@@ -119,7 +119,7 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 // vector, then dwords of two, then qwords of two), and JavaScriptCore's optimizing tier on x86-64 (seen in WebKit on Linux, on
 // AMD EPYCs and an Intel Xeon alike; Safari on an Intel Mac has the same compiler and was not tried), which a function reaches after about 2000
 // calls, folded those three wrongly: three quarters of the bytes
-// came out wrong, and a ternary model wrote nonsense (T230's review; tests/kernels-in-browser.mjs finds it). Every piece of
+// came out wrong, and a ternary model wrote nonsense (T.230's review; tests/kernels-in-browser.mjs finds it). Every piece of
 // it alone and a swizzle in place of the first shuffle were right, and this costs 5 to 8 ns more a block of 64 bytes
 // (V8 on CI's runners: 3.6 to 10.5 on an EPYC 9V74, 4.8 to 9.9 on a 7763, 4.5 to 12.4 on arm64): of the 5,400 blocks of a
 // token of the 1.7B, 0.03 to 0.04 ms (the other threads wait for it), against a token of 30 ms (arm64, 4 threads) to 90 ms (1 thread).
@@ -166,7 +166,7 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
   const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
   return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
 }
-// (T533: the float16 scales as matmul_t2r reads them)
+// (T.533: the float16 scales as matmul_t2r reads them)
 export function matmul_t2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
   const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>three);
   const sums = xs + (<usize>(n >> 5) << 2);
@@ -189,7 +189,7 @@ export function matmul_t2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
   }
 }
 
-// T98: int6 weights (24 bytes a group, six.ts) with one float32 scale per group: matmul_q8 on the widened groups
+// T.98: int6 weights (24 bytes a group, six.ts) with one float32 scale per group: matmul_q8 on the widened groups
 export function matmul_q6(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
   const ng = n / GS;
   for (let i = r0; i < r1; i++) {

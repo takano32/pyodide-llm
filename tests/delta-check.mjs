@@ -1,4 +1,4 @@
-// delta-check.mjs (T229): the three kernels of Qwen3.5's hybrid attention (kernels/kernel.ts: gate, convolve,
+// delta-check.mjs (T.229): the three kernels of Qwen3.5's hybrid attention (kernels/kernel.ts: gate, convolve,
 // delta_rule) against the same arithmetic written out here, as llama2_numpy.py does it (linear_attention(),
 // delta_rule()). Node and the compiled kernels alone, under a second: the light suite runs it.
 //   delta_rule: to the bit. Every number is a float32 product or sum in an order the kernel fixes (the rows of the
@@ -8,7 +8,7 @@
 //   convolve: the sum to the bit (the taps in turn, the oldest token first), then SiLU by the kernels' own exp
 //     (Cephes's expf, a few ulp from Math.exp): within 4e-7 of JavaScript's, relative.
 //   gate: x * sigmoid(g), the same way.
-// And (the review of T229) against llama2_numpy.py's own functions on random numbers, from a native Python (PYTHON, else
+// And (the review of T.229) against llama2_numpy.py's own functions on random numbers, from a native Python (PYTHON, else
 // python3; NumPy is there where pytest is): delta_rule(), silu() and the sigmoid, which the NumPy engine runs and which
 // the engine, transformers and the made-up models' float32 logits agree on, within 2e-5. The arithmetic above is written
 // from the kernels, and a kernel and its copy could be wrong the same way; NumPy's is the definition.

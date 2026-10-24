@@ -11,14 +11,14 @@ def transformed(values, transform, head_size):
     """What a tensor of the Hugging Face checkpoint becomes in the checkpoint this engine reads.
 
     None: nothing (the rows go straight through, as they arrive). ("permute", heads): the head interleaving of
-    wq and wk (("permute", heads, size): of heads of that size, T331). ("transpose",): GPT-2 stores its matrices the other way round (Conv1D). ("part", i, n): one of
+    wq and wk (("permute", heads, size): of heads of that size, T.331). ("transpose",): GPT-2 stores its matrices the other way round (Conv1D). ("part", i, n): one of
     the n stacked matrices of GPT-2's c_attn, transposed with it; ("row", i, n) the same for its bias.
     ("heads", parts, i, heads, rot): the i-th of the parts each head's rows are stacked in, with the halves of its
     first rot rows interleaved (GPT-NeoX's query_key_value: 3 parts; Qwen3.5's q_proj: q and its gate; 1 part: a k
-    or a norm of which RoPE turns part). ("scale", c): every value times c (T253: a Granite's q). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
+    or a norm of which RoPE turns part). ("scale", c): every value times c (T.253: a Granite's q). T.229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
     A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
     one after the other. ("permute" and "heads" move whole rows and change no value: what a row kept in a GGUF's blocks
-    may come by, T363.) ("rows", start, stop, total): rows start to stop of a tensor of total rows (T342: a Spark-X2.5's
+    may come by, T.363.) ("rows", start, stop, total): rows start to stop of a tensor of total rows (T.342: a Spark-X2.5's
     q_k_v_proj, q, k and v one after the other, which are not of one size).
     """
     if transform is None:
@@ -28,7 +28,7 @@ def transformed(values, transform, head_size):
             values = transformed(values, step, head_size)
         return values
     if transform[0] == "permute":
-        # (T331: ("permute", heads, size) of heads of their own size, a Gemma 4's wide layers')
+        # (T.331: ("permute", heads, size) of heads of their own size, a Gemma 4's wide layers')
         return permute_heads(values, transform[1], transform[2] if len(transform) > 2 else head_size)
     if transform[0] == "transpose":
         return values.T
@@ -57,7 +57,7 @@ def transformed(values, transform, head_size):
             raise ValueError(f"{values.shape[0]} rows are not the {total} that rows {start} to {stop} are taken of.")
         return values[start:stop]
     if transform[0] == "scale":
-        # T253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
+        # T.253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
         return np.asarray(values, dtype=np.float32) * np.float32(transform[1])
     if transform[0] == "one":
         # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
@@ -68,7 +68,7 @@ def transformed(values, transform, head_size):
     if transform[0] == "taps":
         # conv1d.weight is (channels, 1, taps): a row of all the channels for each tap, the oldest token's first
         return np.asarray(values).reshape(values.shape[0], -1).T
-    # a name nobody wrote must not quietly take a slice of rows (T77)
+    # a name nobody wrote must not quietly take a slice of rows (T.77)
     raise ValueError(f"there is no transform called {transform[0]!r}")
 
 
@@ -98,7 +98,7 @@ def permute_heads(w, heads, head_size):
     # llama2.c rotates adjacent pairs, so interleave the two halves again. A bias is a vector of the same rows,
     # and -1 as the last dimension lets one line do both.
     if w.shape[0] != heads * head_size:
-        # a head of another size reshapes without complaint and turns rows across heads (the review of T124 found
+        # a head of another size reshapes without complaint and turns rows across heads (the review of T.124 found
         # half the rows of a Qwen3 0.6B's wq moved so)
         raise ValueError(f"{w.shape[0]} rows are not {heads} heads of {head_size}.")
     return w.reshape(heads, 2, head_size // 2, -1).transpose(0, 2, 1, 3).reshape(w.shape)
@@ -106,13 +106,13 @@ def permute_heads(w, heads, head_size):
 
 def name_prefix(source, arch):
     """What stands in front of the tensors' names in this source, for the layouts whose sources ask (their family's
-    prefix()): a GPT-2's "transformer." or nothing, and a Qwen3.5's (T229) "model.language_model." or "model."."""
+    prefix()): a GPT-2's "transformer." or nothing, and a Qwen3.5's (T.229) "model.language_model." or "model."."""
     return of_layout(arch).prefix(source)
 
 
 def checkpoint_form(config, source):
     """The form of the checkpoint converted from this config.json and source (llama2_numpy.FORM): what its file will
-    not say. head_dim is 0 where the heads fill dim exactly, the way the engine reads a form without one (T144: not
+    not say. head_dim is 0 where the heads fill dim exactly, the way the engine reads a form without one (T.144: not
     where dim // heads is the head's size, which a dim that heads do not divide would pass with narrower heads)."""
     config = normalize(config)
     family, size = family_of(config), head_size(config)
@@ -123,7 +123,7 @@ def checkpoint_form(config, source):
     form.update(family.found(source))
     form.update({key: make(config) for key, make in family.form.items()})
     if form["rotated"] is not None:
-        # T237: a rotated basis is no tensor and no number of config.json: the source says it (a GGUF's metadata).
+        # T.237: a rotated basis is no tensor and no number of config.json: the source says it (a GGUF's metadata).
         # Held to the model here: signs for every width its matrices read, in whole blocks, and no GPT-2's
         if not family.rotatable:
             raise ValueError("This model cannot be converted: a GPT-2, a GPT-NeoX or an LFM2 in a rotated basis.")
@@ -135,9 +135,9 @@ def checkpoint_form(config, source):
 def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.0):
     """For every row of the checkpoint (engine/layout.py's tensor_rows()), in file order: the tensors of the Hugging
     Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table,
-    and CODES for the codebooks of llama.cpp's blocks (T363: made(), below, has the values of both).
+    and CODES for the codebooks of llama.cpp's blocks (T.363: made(), below, has the values of both).
     And the shapes of the rows. The sources are the layout's family's, by the row's name (convert/families/). scale:
-    what q is multiplied by (query_scale(), T253), for a layout without biases and without norms of its heads."""
+    what q is multiplied by (query_scale(), T.253), for a layout without biases and without norms of its heads."""
     form = form_of(form)
     arch, d = form["arch"], Dims(header, form)
     rows = d.rows()
@@ -155,7 +155,7 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
         if row.role in (TABLE, CODES):
             plan.append(None if row.role == TABLE else CODES)
             continue
-        # {} in a name: the layer, for a row that stacks the tensors of the layers its "per" says. T341: a transform
+        # {} in a name: the layer, for a row that stacks the tensors of the layers its "per" says. T.341: a transform
         # may be a function of the layer, for a stack whose layers are made otherwise (a Spark-X2.5's q and k: RoPE
         # turns the whole head of a sliding-attention layer and a quarter of a full-attention one's, and each is
         # interleaved over that width)
@@ -168,7 +168,7 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
 
 
 def model_plan(config, source, header, form):
-    """conversion_plan() of a model: what stands in front of its source's names, how much of a head RoPE turns (T341:
+    """conversion_plan() of a model: what stands in front of its source's names, how much of a head RoPE turns (T.341:
     of each layer's, where the family's layers differ in it) and what q is multiplied by are its family's to say."""
     family = family_of(config)
     rotary = family.turns(config) if family.turns else rotary_dim(config) if family.partly else 0
@@ -177,7 +177,7 @@ def model_plan(config, source, header, form):
 
 def made(config, header, plan, index):
     """The values of row number index of a plan that no tensor of the source is: a RoPE table (cos, then sin), or the
-    codebooks a checkpoint with rows of llama.cpp's blocks carries (T363: convert/grids.py's, as bytes)."""
+    codebooks a checkpoint with rows of llama.cpp's blocks carries (T.363: convert/grids.py's, as bytes)."""
     if plan[index] is None:
         return rope_table(config, header, plan[:index].count(None))
     from convert.grids import codebooks
@@ -191,7 +191,7 @@ def rope_table(config, header, which):
     the layout gives it (head_size // 2 columns); the columns past the rotated part are never read.
     """
     if family_of(config).table is not None:
-        return family_of(config).table(config, header, which)  # (T331: a Gemma 4's)
+        return family_of(config).table(config, header, which)  # (T.331: a Gemma 4's)
     size, seq_len = head_size(config), header[6]
     width = rotary_dim(config) if family_of(config).partly else size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]

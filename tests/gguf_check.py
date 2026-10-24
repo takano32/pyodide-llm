@@ -1,6 +1,6 @@
 # gguf_check.py
-# The check T74 needs before a GGUF reader is written: a mistake there does not raise, it only makes the text
-# worse (the way T72 broke), so what "right" means is fixed first, on a real model, and the reader is held to it.
+# The check T.74 needs before a GGUF reader is written: a mistake there does not raise, it only makes the text
+# worse (the way T.72 broke), so what "right" means is fixed first, on a real model, and the reader is held to it.
 #
 # The GGUF reading here is a reference of its own, written from the format's description and kept apart from
 # src/python/llama2_convert.py on purpose: the reader that goes into the page must not share code with what checks it.
@@ -10,37 +10,37 @@
 #       Every tensor of the GGUF against the Hugging Face one: its name, shape and relative error, and for the
 #       q and k matrices which order the GGUF holds (Hugging Face's, or turned the way llama.cpp and llama2.c turn
 #       them). For Q8_0, also how many int8 values equal what llama2_convert.quantize() makes of the original.
-#       The embedding and the classifier also row by row (T136 stage 2), and Llama 3's rope_freqs.weight against
+#       The embedding and the classifier also row by row (T.136 stage 2), and Llama 3's rope_freqs.weight against
 #       the engine's rope_frequencies() of the original's rope_scaling. The metadata against config.json (after
-#       normalize()), and the vocabulary against tokenizer.json and tokenizer.model. T145: every tensor also against
+#       normalize()), and the vocabulary against tokenizer.json and tokenizer.model. T.145: every tensor also against
 #       the nearest of what a GGUF made the usual ways holds (TIGHT), and the rows that pass only against a Q8_0 of
 #       the original are listed with their id, piece and norm. --original-vocabulary (stage 2:
 #       the page takes the vocabulary from the original) shows a difference in the GGUF's vocabulary without
-#       counting it. The last line is the summary as JSON. T136's third stage: GPT-2 (its Conv1D matrices, which
+#       counting it. The last line is the summary as JSON. T.136's third stage: GPT-2 (its Conv1D matrices, which
 #       llama.cpp turns to (out, in), and its output.weight, a copy of the embedding) and GPT-NeoX (its
 #       query_key_value, which llama.cpp splits into all of q, k, then v); the order found is said as for q and k.
-#       T250's review: and the order found is a line of the check: a tensor in another order than the one the page's
+#       T.250's review: and the order found is a line of the check: a tensor in another order than the one the page's
 #       reader puts back (reads_as(): a Llama's and a Granite's q and k turned, GPT-NeoX's query_key_value split, GPT-2's matrices
 #       turned to (out, in), a Qwen's q and k as Hugging Face) is a mismatch, whatever its values (a GPT-NeoX GGUF of 2023
 #       passed with "as Hugging Face" and was read into nonsense).
-#       T235: a PQ2_0 GGUF (Prism ML's ternary blocks of 128) against the float16 safetensors of the same ternary
+#       T.235: a PQ2_0 GGUF (Prism ML's ternary blocks of 128) against the float16 safetensors of the same ternary
 #       weights (the reference is the original's values, as for an F16 tensor), and yarn's factor and original context
 #       against config.json's rope_scaling. Ternary-Bonsai 1.7B's is 8.7e-5 off at its worst tensor, not 0: a block here
 #       and there has two magnitudes in the safetensors, 0.5% apart, and the larger one for all its values in the GGUF
 #       (blk.0.attn_k.weight: one block of 16384, 63 values).
-#       T236: a Qwen3.5 (hybrid attention), whose linear-attention layers llama.cpp names after a state-space model's
+#       T.236: a Qwen3.5 (hybrid attention), whose linear-attention layers llama.cpp names after a state-space model's
 #       (ssm_*) and some of whose tensors it changes as it writes them: the norms with the 1 the model adds to them,
 #       A_log as -exp(A_log), the convolution without its axis of one (as_llama_cpp_writes()); its metadata's heads,
-#       interval and turned part of a head against config.json's. T245: one with more value heads than key heads (the
+#       interval and turned part of a head against config.json's. T.245: one with more value heads than key heads (the
 #       4B and up) must hold its value heads tiled, as llama.cpp writes them (tiled()) and the page reads them: the
 #       order found is said for each such tensor, and Hugging Face's order there is a mismatch.
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
-#       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
+#       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T.74 is
 #       this between the int8 made from the GGUF and the int8 made from safetensors: top-1 agreement of 99% and
 #       perplexity within 0.2% (exit 1 otherwise). That line holds for models whose int8 costs about 0.6% or less
 #       (SmolLM2 135M, Pythia 410M): where it costs 1 to 3% (Pythia 70M and 160M, GPT-2), an int8 of the original
-#       rounded again as well (its scales made float16) is outside it too (T136's third stage, the review).
+#       rounded again as well (its scales made float16) is outside it too (T.136's third stage, the review).
 import json
 import math
 import struct
@@ -60,11 +60,11 @@ sys.path.insert(0, python_folder(HERE.parent))
 SCALARS = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
 STRING, ARRAY = 8, 9
 F32, F16, Q8_0, BF16 = 0, 1, 8, 30
-# T98: the 4- and 5-bit types of the GGUF files that are about int4, read only to measure them (widened to float32)
+# T.98: the 4- and 5-bit types of the GGUF files that are about int4, read only to measure them (widened to float32)
 Q4_0, Q4_1, Q5_0, Q4_K, Q6_K = 2, 3, 6, 12, 14
-# T235: the ternary type of Prism ML's fork of llama.cpp (Ternary-Bonsai), which the page reads (llama2_convert.pq2_0)
+# T.235: the ternary type of Prism ML's fork of llama.cpp (Ternary-Bonsai), which the page reads (llama2_convert.pq2_0)
 PQ2_0 = 142
-# T230: its other ternary type, five values a byte in base 3 (Ternary Bonsai 2's smaller GGUF; llama2_convert.ptq1_0)
+# T.230: its other ternary type, five values a byte in base 3 (Ternary Bonsai 2's smaller GGUF; llama2_convert.ptq1_0)
 PTQ1_0 = 143
 TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16", Q4_0: "Q4_0", Q4_1: "Q4_1", Q5_0: "Q5_0",
               Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0", PTQ1_0: "PTQ1_0"}
@@ -234,7 +234,7 @@ def tensor(info, data, base, first=0, last=None):
 # ------------------------------------------------------------------------------------------- names and orders
 # llama.cpp's names and Hugging Face's, for each architecture: the tensors outside the layers, where a layer's go,
 # and the layer's. GPT-2's are openai-community/gpt2's (no "transformer." in front; check_tensors() tries both), and
-# its output.weight is the copy of the embedding llama.cpp writes for a GPT-2 (T136's third stage)
+# its output.weight is the copy of the embedding llama.cpp writes for a GPT-2 (T.136's third stage)
 NAMES = {
     "llama": ({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
                "output.weight": "lm_head.weight"}, "model.layers.{}.",
@@ -252,10 +252,10 @@ NAMES = {
                  "ffn_norm": "post_attention_layernorm", "ffn_up": "mlp.dense_h_to_4h", "ffn_down": "mlp.dense_4h_to_h"}),
 }
 NAMES["qwen2"] = NAMES["llama"]
-# T203: a Qwen3's are a Llama's and the norms of each head of q and k
+# T.203: a Qwen3's are a Llama's and the norms of each head of q and k
 NAMES["qwen3"] = (NAMES["llama"][0], NAMES["llama"][1],
                   {**NAMES["llama"][2], "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm"})
-# T236: a Qwen3.5's (llama.cpp's conversion/qwen.py and gguf-py's tensor_mapping.py at dcd387a4: the second norm is
+# T.236: a Qwen3.5's (llama.cpp's conversion/qwen.py and gguf-py's tensor_mapping.py at dcd387a4: the second norm is
 # post_attention_norm here, a linear-attention layer's tensors are attn_qkv, attn_gate and ssm_*). The names are those
 # of the language model saved alone; the vision-language checkpoint has "model.language_model." (check_tensors() tries
 # both)
@@ -266,7 +266,7 @@ NAMES["qwen35"] = (NAMES["llama"][0], NAMES["llama"][1],
                     "ssm_conv1d": "linear_attn.conv1d", "ssm_norm": "linear_attn.norm", "ssm_out": "linear_attn.out_proj"})
 # and the two whose names llama.cpp changes whole: dt_bias is written as dt_proj.bias, A_log has no ".weight"
 WHOLE = {"qwen35": {"ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}}
-# T260: an LFM2's (llama.cpp's conversion/lfm2.py and gguf-py's tensor_mapping.py at f1cee994): the last norm, which the
+# T.260: an LFM2's (llama.cpp's conversion/lfm2.py and gguf-py's tensor_mapping.py at f1cee994): the last norm, which the
 # model calls embedding_norm, is token_embd_norm; a convolution layer's three tensors are shortconv.*; the FFN's w1, w3
 # and w2 are the gate, up and down
 NAMES["lfm2"] = ({"token_embd.weight": "model.embed_tokens.weight", "token_embd_norm.weight": "model.embedding_norm.weight",
@@ -277,7 +277,7 @@ NAMES["lfm2"] = ({"token_embd.weight": "model.embed_tokens.weight", "token_embd_
                   "ffn_gate": "feed_forward.w1", "ffn_up": "feed_forward.w3", "ffn_down": "feed_forward.w2",
                   "shortconv.in_proj": "conv.in_proj", "shortconv.conv": "conv.conv", "shortconv.out_proj": "conv.out_proj"})
 
-# T261.3: a Gemma 3's (llama.cpp's conversion/gemma.py and src/models/gemma3.cpp at 4413a192): the norm behind the
+# T.261.3: a Gemma 3's (llama.cpp's conversion/gemma.py and src/models/gemma3.cpp at 4413a192): the norm behind the
 # attention is post_attention_norm and the one behind the FFN post_ffw_norm, and ffn_norm is the one in front of the
 # FFN (transformers' pre_feedforward_layernorm, where a Llama's ffn_norm is its post_attention_layernorm). The
 # classifier is the embedding (no output.weight). Written out here rather than taken from the converter's family
@@ -288,7 +288,7 @@ NAMES["gemma3"] = ({"token_embd.weight": "model.embed_tokens.weight", "output_no
                     "attn_q": "self_attn.q_proj", "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj",
                     "attn_output": "self_attn.o_proj", "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
                     "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"})
-# T343: a Spark-X2.5's (XHToken's own GGUFs, docs/notes/t339-spark-x-2026-10-15.md): q, k and v one matrix as the
+# T.343: a Spark-X2.5's (XHToken's own GGUFs, docs/notes/t339-spark-x-2026-10-15.md): q, k and v one matrix as the
 # original's (attn_qkv, in Hugging Face's order: nothing turned), the gate of each head attn_gate, the embedding
 # model.embedding. The norms are the weights as they are. Written out here rather than taken from the converter's family
 NAMES["spark2_5"] = ({"token_embd.weight": "model.embedding.weight", "output_norm.weight": "model.norm.weight",
@@ -297,7 +297,7 @@ NAMES["spark2_5"] = ({"token_embd.weight": "model.embedding.weight", "output_nor
                       "attn_output": "self_attn.out_proj", "ffn_norm": "post_attention_layernorm",
                       "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"})
 
-# T529: a Gemma 4's (llama.cpp's conversion/gemma.py's Gemma4Model, gguf-py's constants.py and tensor_mapping.py at
+# T.529: a Gemma 4's (llama.cpp's conversion/gemma.py's Gemma4Model, gguf-py's constants.py and tensor_mapping.py at
 # b76b1337): a Gemma 3's, and the embeddings of every layer outside the layers (per_layer_*) and in them (inp_gate, proj,
 # post_norm), and the number a layer ends with, whose name llama.cpp changes whole (layer_scalar, written with a
 # ".weight"). The names are those of the language model saved alone; the published checkpoint is the whole model's,
@@ -311,7 +311,7 @@ WHOLE["gemma4"] = {"layer_output_scale.weight": "layer_scalar"}
 
 
 def hugging_face_name(name, arch="llama"):
-    """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T74 starts with it). None for a
+    """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T.74 starts with it). None for a
     tensor Hugging Face has no counterpart of (rope_freqs.weight: llama.cpp's table of Llama 3's RoPE scaling,
     made from config.json's rope_scaling, checked on its own)."""
     fixed, layer, parts = NAMES.get(arch, NAMES["llama"])
@@ -330,16 +330,16 @@ def hugging_face_name(name, arch="llama"):
 
 
 def as_llama_cpp_writes(target, original, arch):
-    """What llama.cpp's converter makes of a Qwen3.5's tensor besides quantizing it (T236, conversion/qwen.py's
+    """What llama.cpp's converter makes of a Qwen3.5's tensor besides quantizing it (T.236, conversion/qwen.py's
     Qwen3NextModel.modify_tensors at dcd387a4), and what it is called here: the norms with the 1 the model adds to them
     (all but a linear-attention layer's own), A_log as -exp(A_log), the convolution without its axis of one. Written
-    out here rather than taken from llama2_convert.transformed, which is what is being checked. T260: an LFM2's
+    out here rather than taken from llama2_convert.transformed, which is what is being checked. T.260: an LFM2's
     convolution comes without its axis of one too (conversion/lfm2.py's modify_tensors), and nothing else of it is
-    changed. T261.3: a Gemma 3's norms are written with their 1, as a Qwen3.5's."""
+    changed. T.261.3: a Gemma 3's norms are written with their 1, as a Qwen3.5's."""
     if arch == "lfm2" and target.endswith(".conv.conv.weight"):
         return original.reshape(original.shape[0], original.shape[-1]), "(channels, taps)"
     if arch == "gemma3" and target.endswith("norm.weight"):
-        # T261.3: a Gemma 3's norms, every one of them (the heads' too), with the 1 the model adds to them (conversion/
+        # T.261.3: a Gemma 3's norms, every one of them (the heads' too), with the 1 the model adds to them (conversion/
         # gemma.py's Gemma3Model.norm_shift: a tensor whose name ends in norm.weight). The embedding is stored as it is
         # (llama.cpp multiplies the row by sqrt(dim) at run time)
         return original.astype(np.float32) + np.float32(1), "1 + weight"
@@ -354,7 +354,7 @@ def as_llama_cpp_writes(target, original, arch):
     return original, ""
 
 
-# T245: where a Qwen3.5's linear-attention layer has the value heads along an axis of a tensor, by the GGUF's name:
+# T.245: where a Qwen3.5's linear-attention layer has the value heads along an axis of a tensor, by the GGUF's name:
 # (whether q and k stand before them, whether a head has linear_value_head_dim entries there or one, the axis). From
 # llama.cpp's conversion/qwen.py at dcd387a4, _LinearAttentionVReorderBase.modify_tensors (lines 584 to 633): the rows
 # of in_proj_qkv after q and k, the rows of in_proj_z, of in_proj_a and in_proj_b (one to a head), the entries of
@@ -369,7 +369,7 @@ TILED, UNTILED = "value heads tiled (llama.cpp's order)", "value heads as Huggin
 
 def value_heads(name, config):
     """(first, key heads, value heads to a key head, entries to a head, axis) of the value heads in this GGUF tensor
-    of a Qwen3.5 with more value heads than key heads, else None (T245)."""
+    of a Qwen3.5 with more value heads than key heads, else None (T.245)."""
     keys, values = config.get("linear_num_key_heads", 16), config.get("linear_num_value_heads", 32)
     part = name.split(".", 2)[-1] if name.startswith("blk.") else None
     if part not in VALUE_HEADS or values == keys:
@@ -405,7 +405,7 @@ def split(w, heads):
     return w.reshape(heads, 3, w.shape[0] // heads // 3, *w.shape[1:]).swapaxes(0, 1).reshape(w.shape)
 
 
-TURNED = ("llama", "granite", "smollm3")  # (T255: a SmolLM3 is a Llama to llama.cpp's converter) whose q and k llama.cpp's converter turns, and the reader (gguf_model) turns back
+TURNED = ("llama", "granite", "smollm3")  # (T.255: a SmolLM3 is a Llama to llama.cpp's converter) whose q and k llama.cpp's converter turns, and the reader (gguf_model) turns back
 
 
 def reads_as(arch, name, conv1d=False):
@@ -413,7 +413,7 @@ def reads_as(arch, name, conv1d=False):
     GGUF files differ in; None for the others. llama.cpp's converter turns q and k of a Llama and a Granite only (a
     Qwen2's and Qwen3's stay as Hugging Face has them), splits GPT-NeoX's query_key_value into all of q, then k, then v,
     and turns GPT-2's Conv1D matrices to (out, in); the reader puts back exactly those. A GGUF in the other order holds
-    the very values (T250's review: mmnga's 2023 GGUF of stockmark's GPT-NeoX keeps query_key_value as Hugging Face
+    the very values (T.250's review: mmnga's 2023 GGUF of stockmark's GPT-NeoX keeps query_key_value as Hugging Face
     does, from before llama.cpp split it, and passed every line of the table) and is read into nonsense without a
     word: a line of its own here, not only a note of which order the check found."""
     if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
@@ -484,7 +484,7 @@ def original_vocabularies(directory):
 def compare_vocabulary(metadata, pieces, name, rows):
     """How many ids hold another piece in the GGUF than in the original, and whether the only difference in
     length is llama.cpp's padding: it fills the vocabulary up to the rows of the embedding with pieces of its
-    own ([PAD151665] ..., token type 5, unused), where tokenizer.json ends earlier (T136: Qwen2.5's 151665 of
+    own ([PAD151665] ..., token type 5, unused), where tokenizer.json ends earlier (T.136: Qwen2.5's 151665 of
     151936)."""
     tokens = metadata.get("tokenizer.ggml.tokens", [])
     kinds = metadata.get("tokenizer.ggml.token_type", [])
@@ -499,7 +499,7 @@ def compare_vocabulary(metadata, pieces, name, rows):
 
 # ------------------------------------------------------------------------------------------- the two checks
 BLOCK = 8 << 20  # values; larger tensors are compared in blocks of rows
-# T136 stage 2: the embedding and the classifier are held row by row. The error of the whole tensor under 0.02
+# T.136 stage 2: the embedding and the classifier are held row by row. The error of the whole tensor under 0.02
 # let 8 rows of Qwen2.5 0.5B's embedding be swapped (0.0122; 26 rows before it failed), while one wrong row is
 # a token that means another. A row of Q8_0 is off by about 0.005 (row_check() says what else passes).
 ROW_LINE = 0.05
@@ -509,7 +509,7 @@ BY_ROW = ("token_embd.weight", "output.weight")
 def q8_0_of(original):
     """What llama.cpp's Q8_0 makes of these values (quantize_row_q8_0_ref): per 32, d = largest / 127, the values
     rounded (half away from zero) times 1/d, and d kept as float16. A row whose values are all below about 7.6e-6
-    has a d under float16's smallest step, and comes back as 0 or coarse (llm-jp-3 980M's unused rows, T136)."""
+    has a d under float16's smallest step, and comes back as 0 or coarse (llm-jp-3 980M's unused rows, T.136)."""
     groups = original.reshape(-1, 32).astype(np.float32)
     d = np.abs(groups).max(axis=1) / 127
     inverse = np.divide(1.0, d, out=np.zeros_like(d), where=d > 0)
@@ -519,9 +519,9 @@ def q8_0_of(original):
     return np.where(scale > 0, np.sign(scaled) * np.floor(np.abs(scaled) + 0.5) * scale, 0).reshape(original.shape)
 
 
-# T145: a GGUF made from the original holds its values as they are where it keeps them (F32: 0 off) and llama.cpp's
+# T.145: a GGUF made from the original holds its values as they are where it keeps them (F32: 0 off) and llama.cpp's
 # Q8_0 of them where it quantizes (sarashina2.2's two and llm-jp-3 980M: 0 off, int8 99.999% the same; the review of
-# T136's second stage). So each tensor is also held to TIGHT against the nearest of those, where the whole tensor's
+# T.136's second stage). So each tensor is also held to TIGHT against the nearest of those, where the whole tensor's
 # 0.02 lets 4% of noise or a scale of 1.05 through. The base and the instruct model of one family are 8.3e-3 apart at
 # their nearest tensor. Should one of the list's GGUFs be past it, the line goes back to what it was (the review).
 TIGHT = 1e-3
@@ -542,13 +542,13 @@ def bfloat16_of(values):
 
 
 # float16 has no step under 2^-24, so a scale under 2^-14 (blocks whose largest value is under 0.0077) is off the float32
-# one by up to 2^-25 absolute, not 2^-11 of itself: 127 of them, at the largest value of the block (T307's review: a
+# one by up to 2^-25 absolute, not 2^-11 of itself: 127 of them, at the largest value of the block (T.307's review: a
 # matrix of weights 0.001 wide was 19 values outside, one 0.0001 wide 17%, from nothing but this)
 SMALLEST_STEP = 127 * 2.0 ** -25
 
 
 def outside_bfloat16(values, original, raw):
-    """T307: how many values of a GGUF tensor cannot have come from wider weights the original is the bfloat16 of
+    """T.307: how many values of a GGUF tensor cannot have come from wider weights the original is the bfloat16 of
     (LFM2.5 230M's GGUF was made from the float32 its maker has; the published safetensors is that rounded). For a
     tensor kept whole (F32), a value whose bfloat16 is not the original's, bit for bit. For a Q8_0 one, a value further
     from the original's than the two roundings allow: Q8_0's half step of its block's scale d (and what the float16 d
@@ -576,7 +576,7 @@ def squares(values, original, raw):
 
 
 def from_wider(near, outside, stored):
-    """T307: whether a tensor is past TIGHT against what a GGUF made from the original holds, and yet has no value
+    """T.307: whether a tensor is past TIGHT against what a GGUF made from the original holds, and yet has no value
     outside what wider weights of the same model give (outside_bfloat16(), summed over the blocks). Only an original
     stored as bfloat16 has a rounding to allow for. The distance near (nearest()) stays what it is: the line of
     TIGHT is not moved, the tensor is let through by a reading of its own."""
@@ -590,12 +590,12 @@ def original_name(name, arch, hf):
     if target is not None and target not in hf and f"transformer.{target}" in hf:
         target = f"transformer.{target}"  # a GPT-2 of the other spelling (rinna's)
     if target is not None and target not in hf and target.replace("model.", "model.language_model.", 1) in hf:
-        target = target.replace("model.", "model.language_model.", 1)  # a Qwen3.5 with its vision model (T236)
+        target = target.replace("model.", "model.language_model.", 1)  # a Qwen3.5 with its vision model (T.236)
     return target if target in hf else None
 
 
 def made_from_wider(infos, data, base, hf, arch):
-    """T307: whether the GGUF shows it was made from weights wider than the bfloat16 its original is stored in: one
+    """T.307: whether the GGUF shows it was made from weights wider than the bfloat16 its original is stored in: one
     tensor it keeps whole (F32) that is not the original's but rounds to it, bit for bit. Only then does a Q8_0 tensor
     get the per-value reading of outside_bfloat16() beside the line of TIGHT; a GGUF without such a tensor (every
     other one of the list: made of the bfloat16 itself, its F32 tensors the original's) is held to TIGHT alone, where
@@ -620,7 +620,7 @@ def nearest(sums):
 def row_parts(values, original, q8_0):
     """Per row (in float64: a row of 1e-37 squares to nothing in float32): the norm of the difference and of the
     original, and for a Q8_0 tensor the same against q8_0_of(original) and q8_0_of(the original made float16):
-    some GGUFs went through a float16 file first (mradermacher's RakutenAI 7B chat, T136), and float16 rounds the
+    some GGUFs went through a float16 file first (mradermacher's RakutenAI 7B chat, T.136), and float16 rounds the
     values under 6.1e-5 more coarsely than bfloat16 holds them."""
     norm = lambda a: np.linalg.norm(a.reshape(len(a), -1).astype(np.float64), axis=1)
     parts = [norm(values - original), norm(original)]
@@ -660,7 +660,7 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
     blocks are whole heads, and the order is the one of the first block (the order found is returned too).
     split_heads: GPT-NeoX's query_key_value of that many heads, which the GGUF may hold split (split()): the blocks
     are one head's q, k or v, and the original's rows of it are fetched from where Hugging Face keeps them.
-    tile: value_heads() of a Qwen3.5's tensor (T245), which the GGUF may hold tiled: along the rows the blocks after q
+    tile: value_heads() of a Qwen3.5's tensor (T.245), which the GGUF may hold tiled: along the rows the blocks after q
     and k are one value head's, fetched from where Hugging Face keeps that head; along the columns each block's are
     moved."""
     rows = max(1, BLOCK // math.prod(shape[1:]))
@@ -733,7 +733,7 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
 def config_pairs(config, arch="llama"):
     """(GGUF key, config.json name, the value config.json says, counted) of the original's config.json after
     normalize(): what the page reads (CAT-Translate 1.4b writes transformers 5's rope_parameters). The context is
-    shown and not counted: a Mistral's sliding window cuts it in normalize(). GPT-2's and GPT-NeoX's (T136's third
+    shown and not counted: a Mistral's sliding window cuts it in normalize(). GPT-2's and GPT-NeoX's (T.136's third
     stage): LayerNorm's epsilon, and GPT-NeoX's rotated part of a head and parallel branches, which no tensor says."""
     from llama2_convert import head_size, normalize, rotary_dim
 
@@ -762,13 +762,13 @@ def config_pairs(config, arch="llama"):
              ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
              ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)]
     if arch == "granite":
-        # T253: a Granite's four multipliers, which are no tensor (llama.cpp multiplies at run time, and the page's
+        # T.253: a Granite's four multipliers, which are no tensor (llama.cpp multiplies at run time, and the page's
         # converter puts the scores' into q). transformers' default where config.json names none is 1
         pairs += [(key, name, config.get(name, 1.0), True) for key, name in (
             ("attention.scale", "attention_multiplier"), ("embedding_scale", "embedding_multiplier"),
             ("residual_scale", "residual_multiplier"), ("logit_scale", "logits_scaling"))]
     if arch == "qwen35":
-        # T236: which layers attend over all positions, the heads of the others and the taps of their convolution (the
+        # T.236: which layers attend over all positions, the heads of the others and the taps of their convolution (the
         # tensors show only the products of heads and sizes), and how much of a head turns. The defaults are those of
         # transformers' Qwen3_5TextConfig
         value_heads = config.get("linear_num_value_heads", 32)
@@ -781,7 +781,7 @@ def config_pairs(config, arch="llama"):
                    config.get("linear_value_head_dim", 128) * value_heads, True),
                   ("rope.dimension_count", "partial_rotary_factor (as values)", rotary_dim(config), True)]
     if arch == "lfm2":
-        # T260: which layers are convolution layers, which llama.cpp says by the key-value heads of every layer (0 for
+        # T.260: which layers are convolution layers, which llama.cpp says by the key-value heads of every layer (0 for
         # a convolution layer), and the taps. The FFN's size above is what transformers' Lfm2MLP makes of the config
         # (normalize()), and the tensors' shapes hold it too
         groups = config.get("num_key_value_heads", heads)
@@ -790,7 +790,7 @@ def config_pairs(config, arch="llama"):
                     [groups if kind == "full_attention" else 0 for kind in kinds], True)
         pairs.append(("shortconv.l_cache", "conv_L_cache", config.get("conv_L_cache", 3), True))
     if arch == "gemma3":
-        # T261.3: which layers attend a window, the window and their base of RoPE, which are no tensor. llama.cpp
+        # T.261.3: which layers attend a window, the window and their base of RoPE, which are no tensor. llama.cpp
         # writes the layers as attention.sliding_window_pattern, a yes or no a layer (conversion/gemma.py at 4413a192:
         # set_swa_pattern); config.json says layer_types, or a pattern of every sixth layer attending them all
         # (transformers' Gemma3TextConfig, 28034545: the 1B's config.json has the pattern and no list)
@@ -803,7 +803,7 @@ def config_pairs(config, arch="llama"):
                   ("attention.sliding_window", "sliding_window", config.get("sliding_window"), True),
                   ("rope.freq_base_swa", "rope_local_base_freq", config.get("rope_local_base_freq", 10000.0), True)]
     if arch == "gemma4":
-        # T529: a Gemma 4's (conversion/gemma.py's Gemma4Model.set_gguf_parameters at b76b1337). The heads: key_length is
+        # T.529: a Gemma 4's (conversion/gemma.py's Gemma4Model.set_gguf_parameters at b76b1337). The heads: key_length is
         # the full-attention layers' (global_head_dim) and key_length_swa the others' (head_dim); the FFN a width a layer
         # where use_double_wide_mlp (twice in the last num_kv_shared_layers), else one; the layers that read another's
         # keys and values, the width of every layer's own input and the cap, which are no tensor; rope.dimension_count
@@ -836,7 +836,7 @@ def config_pairs(config, arch="llama"):
 
 
 def gemma4_rope_factors(config):
-    """T529: what llama.cpp writes as a Gemma 4's rope_freqs.weight (conversion/gemma.py's
+    """T.529: what llama.cpp writes as a Gemma 4's rope_freqs.weight (conversion/gemma.py's
     Gemma4Model.generate_extra_tensors at b76b1337): a divisor of each pair of the full-attention layers' heads, 1 for
     the int(global_head_dim * partial_rotary_factor / 2) pairs that turn and 1e30 for the others. From the original's
     config.json (normalized: its rope_proportion is the full-attention layers' partial_rotary_factor)."""
@@ -858,7 +858,7 @@ def rope_factors(config, width):
 
 
 def check_tensors(gguf_path, directory, original_vocabulary=False):
-    """True when the GGUF holds the original's weights. original_vocabulary (T136 stage 2): the page takes the
+    """True when the GGUF holds the original's weights. original_vocabulary (T.136 stage 2): the page takes the
     vocabulary from the original, so a difference in the GGUF's is shown and not counted. The summary (worst
     error, mismatches, the rope_freqs difference, the vocabulary differences) is printed last as one JSON line."""
     from llama2_convert import Safetensors, Shards, quantize, yarn
@@ -867,7 +867,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     raw_config = json.loads((directory / "config.json").read_text())
     index = directory / "model.safetensors.index.json"
     if not (directory / "model.safetensors").exists() and index.exists():
-        # a model split over several files (T136: Qwen2.5 3B and 7B): every shard as one source, as convert_hf.py reads it
+        # a model split over several files (T.136: Qwen2.5 3B and 7B): every shard as one source, as convert_hf.py reads it
         files = sorted(set(json.loads(index.read_text())["weight_map"].values()))
         maps = [np.memmap(directory / name, dtype=np.uint8, mode="r") for name in files]
         hf = Shards([Safetensors(lambda offset, length, data=data: data[offset:offset + length]) for data in maps])
@@ -887,24 +887,24 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             ours = metadata.get(f"{arch}.embedding_length", 0) // metadata.get(f"{arch}.attention.head_count", 1)
         defaulted = ""
         if ours is None and arch == "gemma3" and key in GEMMA3_DEFAULTS:
-            # T261.3: what llama.cpp (and the page's reader) takes where a Gemma 3's GGUF says nothing (unsloth's 270M,
+            # T.261.3: what llama.cpp (and the page's reader) takes where a Gemma 3's GGUF says nothing (unsloth's 270M,
             # of August 2025, writes neither): every sixth layer a full-attention one (src/llama-model.cpp's
             # set_swa_pattern(6) at 4413a192), and a base of 1e4 for the others
             ours, defaulted = GEMMA3_DEFAULTS[key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
         # the GGUF writes floats as float32: 1e-6 of relative difference is its rounding
         if isinstance(ours, list) or isinstance(theirs, list):
-            same = ours == theirs  # an LFM2's key-value heads, a number a layer (T260)
+            same = ours == theirs  # an LFM2's key-value heads, a number a layer (T.260)
         else:
             same = ours is not None and theirs is not None and math.isclose(float(ours), float(theirs), rel_tol=1e-6)
         mismatched += counted and not same
         note = "" if same else " **differs**" if counted else " (differs, not counted)"
         print(f"| {arch}.{key} | {ours}{defaulted} | {name} = {theirs}{note} |")
-    # T235: yarn, where either says it: its factor and original context change every angle, and no tensor shows them
+    # T.235: yarn, where either says it: its factor and original context change every angle, and no tensor shows them
     said = metadata.get(f"{arch}.rope.scaling.type") == "yarn"
     theirs = yarn(config)
     if said or theirs is not None:
         names = {"factor": "factor", "original_context_length": "original_max_position_embeddings",
-                 # T532: as families/llama.py reads them (the bounds by transformers' names, the rest by llama.cpp's)
+                 # T.532: as families/llama.py reads them (the bounds by transformers' names, the rest by llama.cpp's)
                  "yarn_beta_fast": "beta_fast", "yarn_beta_slow": "beta_slow", "attn_factor": "attn_factor",
                  "yarn_attn_factor": "yarn_attn_factor", "yarn_log_multiplier": "yarn_log_multiplier",
                  "yarn_ext_factor": "yarn_ext_factor"}
@@ -916,14 +916,14 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         print(f"| {arch}.rope.scaling (yarn) | {ours} | rope_scaling = {theirs}{'' if same else ' **differs**'} |")
     rows = infos["token_embd.weight"]["shape"][0] if "token_embd.weight" in infos else None
     # a GPT-2 always shares its classifier: llama.cpp writes a copy of the embedding as output.weight, which is held
-    # to the original's embedding below (T136's third stage)
+    # to the original's embedding below (T.136's third stage)
     tied = "output.weight" not in infos or arch == "gpt2"
     for what, ours, theirs in (("embedding rows", rows, config.get("vocab_size")),
                                ("classifier shared with the embedding", tied, bool(config.get("tie_word_embeddings", False)))):
         mismatched += ours != theirs
         print(f"| {what} | {ours} | {theirs}{'' if ours == theirs else ' **differs**'} |")
     if arch == "qwen35" and config.get("linear_num_value_heads", 32) % config.get("linear_num_key_heads", 16):
-        # T245: llama.cpp stores the value heads tiled where a key head has more than one: as many to each, or no order
+        # T.245: llama.cpp stores the value heads tiled where a key head has more than one: as many to each, or no order
         mismatched += 1
         print("| value heads to a key head | | not a whole number **differs** |")
 
@@ -944,11 +944,11 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     wider_source = made_from_wider(infos, data, base, hf, arch)
     if wider_source:
         print("(a tensor it keeps whole is not the original's but rounds to it: made from weights wider than the "
-              "bfloat16 the original is stored in, so the tensors are also read value by value, T307)")
+              "bfloat16 the original is stored in, so the tensors are also read value by value, T.307)")
     for name, info in infos.items():
         if name == "rope_freqs.weight":
             values, _ = tensor(info, data, base)
-            # (T529: a Gemma 4's table is which pairs turn, not a scaling: each value against its own, for the norm of
+            # (T.529: a Gemma 4's table is which pairs turn, not a scaling: each value against its own, for the norm of
             # a table of 1e30s would not see a pair of 1 made 2)
             factors = gemma4_rope_factors(config) if arch == "gemma4" else rope_factors(config, 2 * len(values))
             if values.shape != factors.shape:
@@ -978,7 +978,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         if math.prod(shape) > BLOCK and len(shape) > 1 and tuple(info["shape"]) == shape and not conv1d:
             # a large matrix (Qwen's embedding is 545 MB as float32) is compared a block of rows at a time: two
             # whole copies side by side are what took this machine down
-            # (q and k of an 8B are 16.8M values: before T136's stage 2 they were compared here as Hugging Face holds
+            # (q and k of an 8B are 16.8M values: before T.136's stage 2 they were compared here as Hugging Face holds
             # them, and a turned GGUF read as 1.4 off)
             head_rows = 0
             if name.endswith(("attn_q.weight", "attn_k.weight")):
@@ -994,7 +994,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             original, order = as_llama_cpp_writes(target, original, arch)
             tile = value_heads(name, config) if arch == "qwen35" else None
             if tile and values.shape == original.shape:
-                # T245: and the value heads tiled, where a key head has more than one
+                # T.245: and the value heads tiled, where a key head has more than one
                 moved = tiled(original, *tile)
                 way = TILED if relative(values, moved) < relative(values, original) else UNTILED
                 order = f"{order}, {way}" if order else way
@@ -1009,7 +1009,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                 if turn < as_is:
                     original = turned(original, n)
             if arch == "gptneox" and name.endswith(("attn_qkv.weight", "attn_qkv.bias")):
-                # T136's third stage: llama.cpp splits query_key_value into all of q, k, then v
+                # T.136's third stage: llama.cpp splits query_key_value into all of q, k, then v
                 as_is, moved = relative(values, original), relative(values, split(original, heads))
                 order = "split (q, k, v)" if moved < as_is else "as Hugging Face"
                 orders.add(order)
@@ -1047,7 +1047,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         worst = max(worst, error) if not math.isnan(error) else math.inf
         near_note = f"{near:.2e}"
         if wider:
-            # T307: no value outside what wider weights give, of which the original is the bfloat16. The distance is
+            # T.307: no value outside what wider weights give, of which the original is the bfloat16. The distance is
             # shown, and left out of the worst one (that line says how near the others are)
             widened.append(name)
             near_note += " (wider than its bfloat16 original)"
@@ -1067,14 +1067,14 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             rows_note = (f"{rowwise[0]} ({rowwise[1]:.4f} at row {rowwise[2]}){' **differs**' if rowwise[0] else ''}"
                          + (f"; {rowwise[4]} more only as Q8_0's float16 scale rounds them" if rowwise[4] else ""))
         if UNTILED in order:
-            # T245: the page puts the value heads back from llama.cpp's order (as llama.cpp itself reads them): a file
+            # T.245: the page puts the value heads back from llama.cpp's order (as llama.cpp itself reads them): a file
             # that has them as Hugging Face does would be read with other heads, however near its values are
             mismatched += 1
             order += " **differs**"
         print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | {near_note} | {order} | {equal} | {rows_note} |")
     if any(rounded_detail.values()):
-        # T145: what passes only against a Q8_0 of the original, to be read: an unused piece of a small norm, or not.
-        # The pieces are the original's (what the page reads, T136's second stage), or else the GGUF's
+        # T.145: what passes only against a Q8_0 of the original, to be read: an unused piece of a small norm, or not.
+        # The pieces are the original's (what the page reads, T.136's second stage), or else the GGUF's
         pieces = next(iter(originals.values()), None) or metadata.get("tokenizer.ggml.tokens", [])
         print("\n| tensor | row (id) | piece | error against the original | against the nearest Q8_0 | norm / median |"
               "\n|---|---:|---|---:|---:|---:|")
@@ -1134,12 +1134,12 @@ def check_logits(a, b, text_file, count):
             nll[i] -= shifted[tokens[pos + 1]] - math.log(np.exp(shifted).sum())
     n = len(tokens) - 1
     first_ppl, second_ppl = math.exp(nll[0] / n), math.exp(nll[1] / n)
-    # The line T74 is held to (Fable, 2026-09-24): the two int8 differ only by the rounding of the scales
+    # The line T.74 is held to (Fable, 2026-09-24): the two int8 differ only by the rounding of the scales
     # (float16 in Q8_0, float32 here), so they must agree on the most likely token 99 times in 100 and be within
     # 0.2% of perplexity. The float32 against int8 of the same model measures 96.3% and 0.6%: a mistake in the
     # reader (a wrong order, a wrong scale) lands far outside this. Only for a model as little bothered by int8: on
     # Pythia 70M and 160M and GPT-2 (int8 costs 1 to 3% there) two int8 of the same quality agree 94.5 to 98.6% of
-    # the time and differ by up to 0.2% (T136's third stage, the review): read those against such a rounding again.
+    # the time and differ by up to 0.2% (T.136's third stage, the review): read those against such a rounding again.
     ok = agree / n >= 0.99 and abs(second_ppl / first_ppl - 1) <= 0.002
     print(json.dumps({"a": Path(a).name, "b": Path(b).name, "tokens": n, "largest logit difference": largest,
                       "top-1 agreement": agree / n, "perplexity a": first_ppl, "perplexity b": second_ppl,

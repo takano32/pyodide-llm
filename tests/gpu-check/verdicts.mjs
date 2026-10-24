@@ -1,4 +1,4 @@
-// T357.3: the verdicts of tests/gpu-check.mjs, a part of that tool: what the harness posted for the quantizers and
+// T.357.3: the verdicts of tests/gpu-check.mjs, a part of that tool: what the harness posted for the quantizers and
 // for a model (its runs on the CPU and with the GPU, lines.mjs's lines) against the model's case (NumPy's
 // answers), said in the log's lines, and whether any of them failed. Functions of what they are given: no GPU, no
 // browser, no Pyodide (tests/gpu-check-parts-check.mjs runs them on made-up numbers).
@@ -7,10 +7,10 @@ import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACK
 import { stepsRight } from "./steps.mjs";
 import { layerTables } from "./tables.mjs";
 
-// the status of a GPU that takes the prompts (T152: what it says of the tokens after it)
-// (T152: "prompts and answers on WebGPU", or "prompts on WebGPU, answers on the CPU")
+// the status of a GPU that takes the prompts (T.152: what it says of the tokens after it)
+// (T.152: "prompts and answers on WebGPU", or "prompts on WebGPU, answers on the CPU")
 const promptsOnGpu = (note) => /^prompts (and answers )?on WebGPU($|, )/.test(note ?? "");
-// T241's review: the quantizers alone (the harness's quantizerProbe): the word of every group's scale as the contract in
+// T.241's review: the quantizers alone (the harness's quantizerProbe): the word of every group's scale as the contract in
 // shaders.js says (a finite group's the largest |value| / 127, a group with a NaN or an infinity a NaN)
 function quantizersWrong(outcome) {
   let failed = false;
@@ -32,20 +32,20 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
   const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
   const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values };
-  // T187: the worst row of every layer (the lines are held a layer at a time)
+  // T.187: the worst row of every layer (the lines are held a layer at a time)
   const byLayer = (got, want = exact) => Array.from({ length: layers }, (_, l) => {
     const layer = (b64) => floats(b64).subarray(l * n * kvDim, (l + 1) * n * kvDim);
     return Math.max(worstRow(layer(got.keys), layer(want.keys), kvDim), worstRow(layer(got.values), layer(want.values), kvDim));
   });
   const kv = (run, want = exact) => Math.max(worstRow(floats(run.keys), floats(want.keys), kvDim), worstRow(floats(run.values), floats(want.values), kvDim));
-  // T153: the first layer's alone (a wrong step shows there already; the float16 of the cache grows over the layers)
+  // T.153: the first layer's alone (a wrong step shows there already; the float16 of the cache grows over the layers)
   const first = (b64) => floats(b64).subarray(0, n * kvDim);
   const firstKv = (run, want = exact) => Math.max(worstRow(first(run.keys), first(want.keys), kvDim), worstRow(first(run.values), first(want.values), kvDim));
-  // T187: the first layer's scale against NumPy's, the larger of the keys' and the values'
+  // T.187: the first layer's scale against NumPy's, the larger of the keys' and the values'
   const scale = (run, want = exact) => [scaleOff(first(run.keys), first(want.keys)), scaleOff(first(run.values), first(want.values))]
     .reduce((worst, x) => (Math.abs(x) > Math.abs(worst) ? x : worst), 0);
   const cpuKv = kv(cpu);
-  // T153: E16, NumPy's answer with its cache in float16 against NumPy's. T187: Q8, with the matrices' inputs in 8 bits
+  // T.153: E16, NumPy's answer with its cache in float16 against NumPy's. T.187: Q8, with the matrices' inputs in 8 bits
   const half = { keys: ref.keys16, values: ref.values16 }, eight = { keys: ref.keys8, values: ref.values8 };
   const e16 = kv(half), q8 = kv(eight), q8First = firstKv(eight), e16s = byLayer(half), q8s = byLayer(eight);
   const want = floats(ref.logits), largest = want.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
@@ -65,27 +65,27 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     `E16 (NumPy's cache in float16) ${e16.toExponential(2)} (KL ${measures.kl16.toExponential(1)}, scale ${scale(half).toExponential(1)}); ` +
     `Q8 (and its matrices' inputs in 8 bits) ${q8.toExponential(2)}, the first layer ${q8First.toExponential(2)} (KL ${measures.kl8.toExponential(1)}, scale ${scale(eight).toExponential(1)})`);
   if (late) {
-    // T147: a request forward.js gave up on is answered by nothing
+    // T.147: a request forward.js gave up on is answered by nothing
     const tried = promptsOnGpu(late.note) && late.gpuTokens === 0;
-    // T148: and the CPU did those blocks itself: its keys are the CPU's own run's, to the bit
+    // T.148: and the CPU did those blocks itself: its keys are the CPU's own run's, to the bit
     const cpuDid = late.keys === cpu.keys;
     const wrong = tried && (late.done !== 0 || late.failed !== 0 || !cpuDid);
     console.log(`  a GPU that answers late: ${!tried ? `not tried (${late.note}, ${late.gpuTokens} tokens on the GPU)` : wrong ? `it answered (done ${late.done}, failed ${late.failed}) or the CPU did not do its blocks (${cpuDid ? "it did" : "it did not"}) — FAILED` : "given up, it wrote nothing, and the CPU did the blocks"}`);
     failed ||= wrong;
   }
   if (refused) {
-    // T148: refused before anything was compiled (SwiftShader compiles a shader in 10 to 90 s): within a few seconds
+    // T.148: refused before anything was compiled (SwiftShader compiles a shader in 10 to 90 s): within a few seconds
     const right = /a fallback adapter/.test(refused.note) && refused.seconds < 30 && refused.ended;
     console.log(`  a fallback adapter without the tests' leave: ${refused.note} in ${refused.seconds.toFixed(1)} s, ` +
       `${refused.ended ? "its worker ended" : "its worker did not say it ended"}${right ? "" : " — FAILED"}`);
     failed ||= !right;
-    // T205: stopped while it got ready, it ends and says so (within forward.js's 5 s)
+    // T.205: stopped while it got ready, it ends and says so (within forward.js's 5 s)
     const { whileStarting: w } = refused;
     console.log(`  a GPU let go while it got ready: ${w.ended ? "its worker ended" : "its worker did not say it ended"} in ${w.seconds.toFixed(1)} s${w.ended ? "" : " — FAILED"}`);
     failed ||= !w.ended;
   }
   if (alone) {
-    // T156: on the GPU alone the same shaders on the same weights write the same keys and values and ids as the run
+    // T.156: on the GPU alone the same shaders on the same weights write the same keys and values and ids as the run
     // with every byte in memory, to the bit; a step on the CPU throws; a GPU that fails as it opens is lost at once,
     // and says why
     const { right: r, pieces: p } = alone;
@@ -110,19 +110,19 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
   for (const gpu of runs) {
     const failures = [];
     if (!promptsOnGpu(gpu.note)) failures.push(`the GPU did not take it: ${gpu.note}`);
-    // T226: the status line of a run whose steps were asked for is the owner's words (forward.js's gpuLine): with the
+    // T.226: the status line of a run whose steps were asked for is the owner's words (forward.js's gpuLine): with the
     // steps on the GPU, or with why they are not (the reason itself in the console alone)
     const line = !gpu.steps ? gpu.note : gpu.steps.why ? "prompts on WebGPU, answers on the CPU" : "prompts and answers on WebGPU";
     if (promptsOnGpu(gpu.note) && gpu.note !== line) failures.push(`the status line is "${gpu.note}", not "${line}"`);
     if (gpu.gpuTokens !== n || gpu.again?.gpuTokens !== n) failures.push(`the GPU took ${gpu.gpuTokens} and ${gpu.again?.gpuTokens} of ${n} tokens`);
-    if (gpu.ended === false) failures.push("the GPU's worker did not say it ended within 5 s of the release (T205)");
+    if (gpu.ended === false) failures.push("the GPU's worker did not say it ended within 5 s of the release (T.205)");
     if (gpu.past?.gpuTokens !== 0) failures.push(`a block past the GPU's keys and values went to the GPU (${gpu.past?.gpuTokens} tokens)`);
     const kind = /DP4A/.test(gpu.form ?? "") ? "packed" : /f16/.test(gpu.form ?? "") ? "f16" : "float32";
-    // T187: the packed shaders' first layer and scale against Q8, their own arithmetic, and all their layers against
+    // T.187: the packed shaders' first layer and scale against Q8, their own arithmetic, and all their layers against
     // NumPy's by Q8's distance from it (see lines.mjs); the others against NumPy's
     const packed = kind === "packed", [firstStick, name] = packed ? [eight, "Q8"] : [exact, "NumPy's"];
     const shaderLine = kind === "f16" ? HALF_LINE : GPU_LINE;
-    // T187: a line a layer (the review: the largest of all layers against the largest of E16's or Q8's let a deep
+    // T.187: a line a layer (the review: the largest of all layers against the largest of E16's or Q8's let a deep
     // model's early layers go 10 times their own E16 or Q8)
     const lines = e16s.map((e16l, l) => (packed ? K_PACKED * q8s[l] : Math.max(shaderLine, K[kind] * e16l)));
     const gpuKv = kv(gpu), againKv = gpu.again ? kv(gpu.again) : NaN, gpuFirst = firstKv(gpu, firstStick);
@@ -134,7 +134,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     if (!(ratios[at] <= 1)) {
       failures.push(`the keys and values of the GPU's layer ${at} are ${gpuLayers[at].toExponential(2)} and ${againLayers[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);
     }
-    // T545: the packed shaders' first layer against Q8 is one layer's arithmetic where the first layer attends; an LFM2's
+    // T.545: the packed shaders' first layer against Q8 is one layer's arithmetic where the first layer attends; an LFM2's
     // first keys and values are of a layer after convolution layers (their inputs rounded to 8 bits on the GPU as Q8
     // rounds them, then B × z × C), where the GPU's 8 bits and Q8's part a little at a tie and the product grows it (the
     // real 230M's and 350M's 1.2e-2 and 2.0e-2 from Q8, run 38852988481, where their layers were 0.38 and 0.41 of their
@@ -147,7 +147,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     }
     const gpuLogits = logits(gpu.logits), againLogits = logits(gpu.again.logits);
     if (!near(gpuLogits.token) || !near(againLogits.token)) failures.push(`another most likely token (${gpuLogits.token}, ${againLogits.token}) than NumPy's ${top}, and not a near tie`);
-    // T241: a block whose row held a NaN, or an infinity: the GPU answered it, and none of that token's keys and
+    // T.241: a block whose row held a NaN, or an infinity: the GPU answered it, and none of that token's keys and
     // values of any layer came back a finite number (the harness's brokenRows)
     for (const b of gpu.brokenRows?.cases ?? []) {
       if (!b.answered || b.failed || b.finite !== 0) {
@@ -160,7 +160,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
       said.push(gpu.brokenRows.skipped ? `not tried (${gpu.brokenRows.skipped})`
         : gpu.brokenRows.cases.map((b) => `${b.value} ${b.finite} of ${b.of} finite`).join(", "));
     }
-    // T243: the same block through forward.js (the harness's refusedBlock): refused whole (no token of it on the GPU,
+    // T.243: the same block through forward.js (the harness's refusedBlock): refused whole (no token of it on the GPU,
     // nor of the block after it), the status line says why, and the cache of the two blocks is the CPU's own run's, to
     // the bit (the CPU's kernels would have read the GPU's NaN as finite numbers: the cache held 65536 and more)
     const r = gpu.refusedBlock;
@@ -189,7 +189,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     const stepsFine = gpu.steps ? stepsRight(c, gpu.steps, { e16s, q8s, kvDim, prompt: gpuLayers }) : true;
     failed ||= !stepsFine;
   }
-  // T241: a weight of the last layer that is no finite number on the GPU (the harness's brokenWeight): the step was
+  // T.241: a weight of the last layer that is no finite number on the GPU (the harness's brokenWeight): the step was
   // asked of the GPU and refused whole, the status line saying that the logits were not finite; a line a form
   for (const form of [...new Set((broken ?? []).map((b) => b.form))]) {
     const failures = [], said = [];
@@ -204,7 +204,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     failed ||= failures.length > 0;
   }
   layerTables(c, cpu, runs, measures);
-  // T241's review: what the NaN rounds took of the seconds above, summed over the runs, where this browser runs them
+  // T.241's review: what the NaN rounds took of the seconds above, summed over the runs, where this browser runs them
   if (nanSeconds && Object.values(nanSeconds).some((s) => s > 0)) {
     console.log(`seconds of the NaN rounds of ${id}: ${Object.entries(nanSeconds).map(([round, s]) => `${round} ${s.toFixed(1)}`).join(", ")}`);
   }

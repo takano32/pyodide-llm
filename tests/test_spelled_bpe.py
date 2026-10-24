@@ -1,4 +1,4 @@
-"""T257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, CAT-Translate 7B's): the whole path
+"""T.257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, CAT-Translate 7B's): the whole path
 tokenizer.json -> converter -> tokenizer.bin -> engine, against the tokenizers library reading the same file, against
 sentencepiece reading the model the file was written from, and against the definition written out here.
 
@@ -181,7 +181,7 @@ def test_the_dummy_prefix_is_before_every_text_or_before_none(dummy):
 
 def test_added_tokens_that_are_not_special_are_one_token_wherever_they_are():
     """A Gemma 3's: runs of line breaks and of U+2581 and thousands of <unusedN>, each one token wherever it is written
-    (T143), named to the engine by the conversion, the longest first. A run of U+2581 is a piece the engine's
+    (T.143), named to the engine by the conversion, the longest first. A run of U+2581 is a piece the engine's
     vocabulary spells with spaces."""
     added = ["\n" * count for count in range(1, 6)] + ["▁" * count for count in range(2, 6)] + [f"<unused{n}>" for n in range(40)] + ["[multimodal]"]
     spec, _ = written_out(False, True, added=added)
@@ -360,7 +360,7 @@ def test_an_added_token_past_the_models_last_row_is_left_out():
 
 
 def test_a_gemmas_turn_begins_with_its_bos_and_ends_at_its_end_of_turn():
-    """What T261 gets of a Gemma 3's files (made up here in their shape): the BOS the tokenizer names, which its
+    """What T.261 gets of a Gemma 3's files (made up here in their shape): the BOS the tokenizer names, which its
     template writes first, is the engine's and is taken off the format; the turn's own tokens are specials; the answer
     stops at <end_of_turn>, the EOS tokenizer_config.json names, and at config.json's."""
     from made_up_tokenizers import sent

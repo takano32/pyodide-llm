@@ -1,8 +1,8 @@
 # reference_27b_patch.py
-# T237's review: adds one thing to a checkout of Prism ML's fork of llama.cpp (the pinned commit of tests/reference_27b.sh):
+# T.237's review: adds one thing to a checkout of Prism ML's fork of llama.cpp (the pinned commit of tests/reference_27b.sh):
 # a way to multiply the ternary matrices (PTQ1_0) by float32 activations. The fork's CPU rounds the activation of such a
 # matrix to Q8_0 first (blocks of 32, a float16 scale, int8 values), so what it computes is itself a few tenths of a
-# logit away from any other way of computing the model, its own batched and one-token paths included (0.10 to 0.13: T238),
+# logit away from any other way of computing the model, its own batched and one-token paths included (0.10 to 0.13: T.238),
 # and a comparison with the engine can be no closer than that. With the activations left as they are, what stands between
 # the fork and the engine's NumPy forward pass is float32's rounding (the rotation, the order of the value heads, the
 # attention and the norms are the fork's own). It is a switch of the environment, PTQ1_0_F32_ACTIVATIONS: without it the
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 DOT = r'''
-// T237's review (tests/reference_27b_patch.py): a ternary row against float32 activations, for the switch
+// T.237's review (tests/reference_27b_patch.py): a ternary row against float32 activations, for the switch
 // PTQ1_0_F32_ACTIVATIONS of ggml_cpu_vec_dot_type() and ggml_cpu_vec_dot()
 void ggml_vec_dot_ptq1_0_f32(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     assert(n % QK_PTQ1_0 == 0);
@@ -70,7 +70,7 @@ void ggml_vec_dot_ptq1_0_f32(int n, float * GGML_RESTRICT s, size_t bs, const vo
 DECLARATION = ("void ggml_vec_dot_ptq1_0_f32(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, "
                "size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);\n")
 
-WANTS = '''// T237's review (tests/reference_27b_patch.py): the ternary matrices take float32 activations where the environment says so
+WANTS = '''// T.237's review (tests/reference_27b_patch.py): the ternary matrices take float32 activations where the environment says so
 static inline bool ggml_cpu_ptq1_wants_f32(const struct ggml_tensor * src0) {
     static int wanted = -1;
     if (wanted < 0) {

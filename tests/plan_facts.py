@@ -1,4 +1,4 @@
-# plan_facts.py (T375.2)
+# plan_facts.py (T.375.2)
 # Small made-up models whose architecture is a record of facts (engine/layout.py's LAYOUTS), each as what an engine
 # outside Python is handed (the checkpoint and the plan: engine/plan.py's forward_plan(), as Llama(external=) makes it)
 # and what the reference in NumPy answers for a few tokens. tests/plan-facts-check.mjs runs forward.ts on them.
@@ -6,9 +6,9 @@
 # Beside the five architectures there are, three whose facts are no architecture's pair: every one of the table has
 # LayerNorms with GPT-2's FFN or RMSNorms with a gated one, so that an engine that read one fact for the other, or
 # the name, would answer right for all five. Their names are none an engine outside Python has heard of.
-# T261: and a Gemma 3 (a GELU in the gate of its FFN, norms behind the attention and the FFN, local layers), with three
+# T.261: and a Gemma 3 (a GELU in the gate of its FFN, norms behind the attention and the FFN, local layers), with three
 # that have one of its three each and are Llamas otherwise: only a Gemma has any of them, and it has them all.
-# T331.2: and a Gemma 4 (heads of another size in its full-attention layers, turned in part by the whole head's angles,
+# T.331.2: and a Gemma 4 (heads of another size in its full-attention layers, turned in part by the whole head's angles,
 # an FFN twice as wide in some layers, the heads of v normalized, a number every layer ends with, the logits capped),
 # with three Llamas that have one of its facts each: the norm of v, the number of every layer, the cap of the logits.
 import json
@@ -37,28 +37,28 @@ def cases(L):
     gated = lambda d: [*gpt2(d), d.stack("w3", L.MATRIX, L.EVERY, d.hidden_dim, d.dim)]
     layouts["layer norms and a gate"] = layouts["neox"]._replace(rows=gated, gated_ffn=True)
     # and a Llama that RoPE turns no layer of, which is no GPT-2 in anything else
-    # (T237, a rotated basis: signs for every width the model's matrices read, every seventh of them minus)
+    # (T.237, a rotated basis: signs for every width the model's matrices read, every seventh of them minus)
     def rotated(header, form):
         q_dim = header[3] * (form.get("head_dim") or header[0] // header[3])
         widths = L.rotated_widths(header[0], q_dim, header[1], L.linear_form(form.get("linear")))
         return {**form, "rotated": {"block": 8, "signs": {str(width): L.sign_bits(np.where(np.arange(width) % 7 == 3, -1.0, 1.0)) for width in widths}}}
     qwen35 = {"arch": "qwen35", "head_dim": 16, "linear": LINEAR}
-    # T261: a Llama with a GELU in its gate, one with local layers (a window of 3 of the 10 tokens, another base), and
+    # T.261: a Llama with a GELU in its gate, one with local layers (a window of 3 of the 10 tokens, another base), and
     # one with the two norms behind, each of the three by itself
     layouts["a gelu in the gate"] = layouts["llama"]._replace(activation=L.GELU)
     layouts["local layers"] = layouts["llama"]._replace(local=True)
     behind = lambda d: [*layouts["llama"].rows(d), d.stack("rms_att_post_weight", L.VECTOR, L.EVERY, d.dim),
                         d.stack("rms_ffn_post_weight", L.VECTOR, L.EVERY, d.dim)]
     layouts["norms behind"] = layouts["llama"]._replace(rows=behind)
-    # T331.2: a Llama whose heads of v are normalized, and one whose layers end by a number of their own
+    # T.331.2: a Llama whose heads of v are normalized, and one whose layers end by a number of their own
     layouts["a norm of v"] = layouts["llama"]._replace(value_norm=True)
     scaled = lambda d: [*layouts["llama"].rows(d), d.stack("layer_scale", L.VECTOR, L.EVERY, 1)]
     layouts["a number of every layer"] = layouts["llama"]._replace(rows=scaled)
     local = {"layers": [0, 1, 3], "window": 3, "rope_theta": 100.0}
-    # T341: a Spark-X2.5's two kinds of layers, as a Llama's: local ones that turn their whole heads by a base of their
+    # T.341: a Spark-X2.5's two kinds of layers, as a Llama's: local ones that turn their whole heads by a base of their
     # own, the others a part of each head by the angles of that part (GPT-NeoX's, a Qwen3.5's)
     layouts["local layers, turned in part"] = layouts["llama"]._replace(local=True, rope=L.PARTLY)
-    # T342: and a Llama with the exact GELU in its gate, which no other has, and one with a gate of each head's output
+    # T.342: and a Llama with the exact GELU in its gate, which no other has, and one with a gate of each head's output
     layouts["the exact gelu"] = layouts["llama"]._replace(activation=L.GELU_ERF)
     gated = lambda d: L.after(layouts["llama"].rows(d), "wo", d.stack("head_gate", L.MATRIX, L.ATTENDING, d.n_heads, d.dim))
     layouts["a gate of every head"] = layouts["llama"]._replace(rows=gated)
@@ -82,7 +82,7 @@ def cases(L):
         ("local layers", GROUPED, {"arch": "local layers"}, {"local": local}),
         ("local layers, turned in part", GROUPED, {"arch": "local layers, turned in part", "head_dim": 32},
          {"local": local, "rotary": 8, "rope_theta": 5000.0}),
-        # T342: a Spark-X2.5 (three local layers of four, heads of 32 of which RoPE turns 8 in the other, a gate of
+        # T.342: a Spark-X2.5 (three local layers of four, heads of 32 of which RoPE turns 8 in the other, a gate of
         # every head's output, the exact GELU), one whose heads do not fill the width and whose classifier is its own,
         # and the Llamas of one of its facts each
         ("spark", [64, 128, 4, 4, 2, 320, 48], {"arch": "spark", "head_dim": 16},
@@ -92,7 +92,7 @@ def cases(L):
         ("the exact gelu", GROUPED, {"arch": "the exact gelu"}, {}),
         ("a gate of every head", GROUPED, {"arch": "a gate of every head", "head_dim": 32}, {}),
         ("norms behind", GROUPED, {"arch": "norms behind"}, {}),
-        # T331.2: two layers of heads of 32 (the full-attention ones, of which RoPE turns 8 values by the angles of 32),
+        # T.331.2: two layers of heads of 32 (the full-attention ones, of which RoPE turns 8 values by the angles of 32),
         # and an FFN twice as wide in the last three
         ("gemma4", [64, 128, 6, 4, 1, 320, 48], {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32},
                                                 "double": [3, 4, 5]},
@@ -104,7 +104,7 @@ def cases(L):
         ("gemma4, the cache's blocks of two widths", [64, 128, 4, 4, 1, 320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3], "head_dim": 32}},
          {"local": {"layers": [0, 2], "window": 30, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
-        # T330.2: its last two layers read the keys and values of the last of their width before them (and the first of
+        # T.330.2: its last two layers read the keys and values of the last of their width before them (and the first of
         # them has an FFN twice as wide)
         ("gemma4, keys and values shared", [64, 128, 6, 4, 1, 320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "double": [4, 5],
@@ -115,7 +115,7 @@ def cases(L):
         ("gemma4, a layer in the middle reading another's keys and values", [64, 128, 6, 4, 1, 320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "kv_shared": {"layers": [1], "from": [0]}},
          {"local": {"layers": [0, 1, 3, 4], "window": 4, "rope_theta": 100.0}, "rotary": 8, "softcap": 30.0}),
-        # T329.2: and an embedding of every layer (of 32 values: the int8 kernels' groups)
+        # T.329.2: and an embedding of every layer (of 32 values: the int8 kernels' groups)
         ("gemma4, an embedding of every layer", [64, 128, 6, 4, 1, 320, 48],
          {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [2, 5], "head_dim": 32}, "double": [4, 5],
           "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 32},

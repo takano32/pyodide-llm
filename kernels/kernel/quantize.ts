@@ -1,4 +1,4 @@
-// kernel/quantize.ts (T356): numbers from one form to another. The converter's kernels: the stored forms of a
+// kernel/quantize.ts (T.356): numbers from one form to another. The converter's kernels: the stored forms of a
 // checkpoint widened to float32 (bfloat16, GGUF's Q8_0, Prism ML's PQ2_0 and PTQ1_0) and float32 quantized to what
 // the page keeps (int8, six bits, ternary), each the same bytes as the converter's NumPy. quantize_x is the forward's
 // too: the activations of every int8 matrix product go through it.
@@ -18,7 +18,7 @@ import { GS } from "./math";
   return amax;
 }
 
-// T123: n bfloat16 values (raw) to float32 (out): a bfloat16 is the upper half of a float32, so each is its 16 bits
+// T.123: n bfloat16 values (raw) to float32 (out): a bfloat16 is the upper half of a float32, so each is its 16 bits
 // shifted up, exactly as the converter's NumPy bfloat16() does. 8 at a time, the last few one by one.
 export function widen_bf16(out: usize, raw: usize, n: i32): void {
   let i = 0;
@@ -43,7 +43,7 @@ export function widen_bf16(out: usize, raw: usize, n: i32): void {
   return reinterpret<f32>(sign | (((h & 0x7fff) << 13) + (112 << 23))); // the exponent bias 15 -> 127
 }
 
-// T136: n blocks of GGUF's Q8_0 (raw, 34 bytes each: a float16 scale and 32 int8) to 32 n float32 (out), each int8
+// T.136: n blocks of GGUF's Q8_0 (raw, 34 bytes each: a float16 scale and 32 int8) to 32 n float32 (out), each int8
 // times its block's scale in float32: exactly the converter's NumPy q8_0() (one rounding, the product).
 export function widen_q8_0(out: usize, raw: usize, n: i32): void {
   for (let b = 0; b < n; b++) {
@@ -63,7 +63,7 @@ export function widen_q8_0(out: usize, raw: usize, n: i32): void {
   }
 }
 
-// T273: n blocks of Prism ML's PQ2_0 (raw, 34 bytes each: a float16 scale d and 32 bytes of two bits a value, the
+// T.273: n blocks of Prism ML's PQ2_0 (raw, 34 bytes each: a float16 scale d and 32 bytes of two bits a value, the
 // first value in the lowest bits of the first byte) to 128 n float32 (out), (code - 1) * d each: exactly the
 // converter's NumPy pq2_0(). A byte's four codes are its products with 64, 16, 4 and 1, shifted down by six.
 export function widen_pq2_0(out: usize, raw: usize, n: i32): void {
@@ -85,7 +85,7 @@ export function widen_pq2_0(out: usize, raw: usize, n: i32): void {
   v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.sub(i32x4.extend_high_i16x8_u(digits), one)), scale), 16);
 }
 
-// T273: n blocks of Prism ML's PTQ1_0 (raw, 28 bytes each: 24 bytes of five base 3 digits, 2 bytes of four, and a
+// T.273: n blocks of Prism ML's PTQ1_0 (raw, 28 bytes each: 24 bytes of five base 3 digits, 2 bytes of four, and a
 // float16 scale d) to 128 n float32 (out), (digit - 1) * d each: exactly the converter's NumPy ptq1_0() and base3().
 // A digit is the high byte of three times the byte, and the low byte goes on to the next digit. The values are
 // digit by digit, not byte by byte: 16 n + m for digit n of byte m of the first 16 bytes, 80 + 8 n + m of the next
@@ -124,7 +124,7 @@ export function widen_ptq1_0(out: usize, raw: usize, n: i32): void {
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the
   // product, round half to even), so the int8 and the scales are the same to the bit as before, and as NumPy's
-  // llama2_convert.quantize(), which the converter now hands to this (T89). Only a NaN in the input tells them
+  // llama2_convert.quantize(), which the converter now hands to this (T.89). Only a NaN in the input tells them
   // apart (SIMD max keeps it, the scalar compare skipped it), and a NaN in a checkpoint is broken on every path.
   const qmax: f32 = bias == 0 ? 127.0 : 63.0;
   const offset = i32x4.splat(bias);
@@ -150,7 +150,7 @@ export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): v
   }
 }
 
-// T98: the converter's six bits (llama2_numpy.quantize6 and pack6 in one pass, the same bytes): per group of 32,
+// T.98: the converter's six bits (llama2_numpy.quantize6 and pack6 in one pass, the same bytes): per group of 32,
 // scale = the largest |value| / 31, v = round(value / scale) in -32..31, stored as the int8 4 v packed into 24 bytes
 // (six.ts reads them back) and the scale as scale / 4 (xs).
 // round(value / scale), clipped to six bits (-32..31), as NumPy's rint and clip
@@ -181,7 +181,7 @@ export function quantize6_x(out: usize, xs: usize, x: usize, n: i32): void {
   }
 }
 
-// T230: the converter's ternary() (llama2_numpy.py) in one pass, the same bytes: n float32 values (x), whole groups of
+// T.230: the converter's ternary() (llama2_numpy.py) in one pass, the same bytes: n float32 values (x), whole groups of
 // 128, to two bits a value (out, 32 bytes a group: the code sign + 1 of value j in byte j >> 2 at bits 2 (j & 3)) and
 // the largest |value| of every group (xs). Returns 1 where a value is neither 0 nor plus or minus its group's largest
 // (the weights are not ternary, or not a number), else 0.

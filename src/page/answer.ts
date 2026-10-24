@@ -1,4 +1,4 @@
-// src/page/answer.ts (T378.5): the answer that is being written. The owner of that: the other parts read these by the
+// src/page/answer.ts (T.378.5): the answer that is being written. The owner of that: the other parts read these by the
 // names they import and say what happened to the two functions below; none of them sets one. It imports nothing but a type and
 // reads nothing of a page: Node imports this file as it is (tests/page-parts-check.mjs).
 import type { Sampled } from "../runtime/contracts/messages.ts";
@@ -6,11 +6,11 @@ import type { Sampled } from "../runtime/contracts/messages.ts";
 export let generating = false;
 export let answer: HTMLElement | null = null; // the bubble that is being written
 export let used: Sampled = {}; // the generation settings of that run, for the line under it
-// T554: what the answer says so far, the tokens not drawn yet, and when it was last drawn (the page's clock, in ms)
+// T.554: what the answer says so far, the tokens not drawn yet, and when it was last drawn (the page's clock, in ms)
 export let written = "";
 export let undrawn = 0;
 export let drawnAt: number | undefined = undefined;
-// T556: whether the answer is drawn as Markdown (a model that answers in a format: not one that goes on from the prompt),
+// T.556: whether the answer is drawn as Markdown (a model that answers in a format: not one that goes on from the prompt),
 // and whether it begins inside the model's thinking (a format that ends in <think>), which stays plain text
 export let shape = { markdown: false, thinking: false };
 
@@ -37,7 +37,7 @@ export function answerBegan(bubble: HTMLElement, settings: Sampled & { steps: nu
 export function idle() {
   generating = false;
 }
-/** T554: a token of the answer came at `now`: whether it is to be drawn now. The first at once, then every 8 tokens or
+/** T.554: a token of the answer came at `now`: whether it is to be drawn now. The first at once, then every 8 tokens or
  * 32 ms (naidan's form: createOutputPacing() of src/features/llama-cpp-browser/worker/output-pacing.ts at 852bdeab,
  * MIT, Ryo Ota; no line is copied). What is not drawn now is drawn by the page's timer, or at the answer's end. */
 export function wrote(text: string, now: number) {

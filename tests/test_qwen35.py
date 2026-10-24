@@ -1,4 +1,4 @@
-"""Qwen3.5's hybrid attention (T229): a Qwen3 most of whose layers are Gated DeltaNet ("linear attention") layers,
+"""Qwen3.5's hybrid attention (T.229): a Qwen3 most of whose layers are Gated DeltaNet ("linear attention") layers,
 which keep a state of a fixed size where the others keep keys and values, and whose full-attention layers gate
 their output.
 
@@ -81,7 +81,7 @@ def test_a_qwen35_converts_and_runs_like_transformers(model):
         assert np.allclose(llama.forward(token, pos), want[pos], rtol=2e-4, atol=2e-4), pos
 
 
-# T534 (the form of ssig33/pyodide-llm's 3a038d25): transformers' own logits of two of these made-up models, written
+# T.534 (the form of ssig33/pyodide-llm's 3a038d25): transformers' own logits of two of these made-up models, written
 # once in CI (tests/reference_qwen35.py --only=fixture). naive_qwen35_logits is transformers' formulas written again
 # by the hand that wrote the engine's, and the two could share a misreading; the fixture cannot. It holds the settings
 # and the tokens, and a hash of the tensors it was made of: a change of tests/made_up.py's values says so here, and
@@ -242,7 +242,7 @@ def test_the_gates_of_a_linear_layer_are_never_quantized():
 
 @pytest.mark.parametrize("model", ["small", "three value heads a key head", "every fourth"])
 def test_the_conversion_tells_the_engine_what_the_file_cannot(model):
-    """The lesson of T72: the engine built from exactly the options the conversion gives runs like the reference."""
+    """The lesson of T.72: the engine built from exactly the options the conversion gives runs like the reference."""
     tensors, config = qwen35_model(**MODELS[model])
     made = conversion(tensors, config)
     text = config["text_config"]
@@ -328,7 +328,7 @@ def test_the_rotation_and_the_heads_follow_transformers_where_the_config_leaves_
     assert said["rotary_pct"] == 0.25 and said["head_dim"] == 16
 
 
-# Qwen/Qwen3.8-27B's config.json (revision 1d4bf0f2, the text model's part; layer_types are the interval's): what T233 and T237
+# Qwen/Qwen3.8-27B's config.json (revision 1d4bf0f2, the text model's part; layer_types are the interval's): what T.233 and T.237
 # will read. It says output_gate_type "swish" (the activation of the gate that a Gated DeltaNet layer's norm multiplies by:
 # silu, as vLLM and Modular read it; Qwen3.5-27B's says nothing), the bos and the partial_rotary_factor at the top of the
 # text model as well as in rope_parameters, and a classifier of its own.

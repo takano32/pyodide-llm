@@ -1,4 +1,4 @@
-"""engine/external.py (T359.5): ExternalForward with a plan made by hand and a stand-in for forward.js's engine. No
+"""engine/external.py (T.359.5): ExternalForward with a plan made by hand and a stand-in for forward.js's engine. No
 Llama, no checkpoint and no tokenizer is made in this file: the part is handed a plan and what makes the engine, and
 that is all it reads."""
 import gc
@@ -136,7 +136,7 @@ def test_steps_on_the_gpu_return_ids_or_none():
     # before the GPU is asked)
     numbers = iter((0.1, 0.2, 0.3, 0.4) * 2)
     steps = part.gpu_steps(Sampling(temperature=0.8, topp=0.9, repetition_penalty=1.2), types.SimpleNamespace(random=lambda: next(numbers)))
-    # T152: the GPU did not take the steps: None, and the CPU takes them
+    # T.152: the GPU did not take the steps: None, and the CPU takes them
     assert steps(99, 100, history, 4, {1}) is None
     # the ids it sampled, as Python's integers
     outside.engine.answer = np.array([4, 5, 6], dtype=np.int32)
@@ -163,6 +163,6 @@ def test_an_engine_that_offers_everything():
 def test_release_lets_go_once_and_answers_what_the_engine_answers():
     outside = Outside()
     part = ExternalForward({"vocab_size": 4}, outside)
-    assert part.release() == "released 1"  # (forward.js's answer: a promise to wait on, T205)
+    assert part.release() == "released 1"  # (forward.js's answer: a promise to wait on, T.205)
     assert part.engine is None and part.logits is None
     assert part.release() is None and outside.engine.released == 1

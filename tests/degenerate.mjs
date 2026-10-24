@@ -1,4 +1,4 @@
-// degenerate.mjs (T249's review): how often a model of the list, sampled as the page samples it, writes something that has
+// degenerate.mjs (T.249's review): how often a model of the list, sampled as the page samples it, writes something that has
 // come apart, over many seeds and a few openings. tests/write.mjs shows what a model writes for one prompt, for a person to
 // read; whether a model that wrote `<unk>` under greedy (rinna's japanese-gpt2 xsmall) does it as the page runs it is a
 // question of how often, which three seeds do not answer. The arguments are write.mjs's, and tests/write.sh runs this in
@@ -13,7 +13,7 @@
 //   unk     the answer has <unk> in it (the model wrote the piece that stands for what its vocabulary lacks)
 //   loop    more than half of its 5-character windows are ones it wrote before (it repeats itself)
 //   other   less than half of its letters are in the prompt's script: Japanese (kana, kanji, full-width) where the prompt has any,
-//           else Latin (T251's review: it was Japanese whatever the prompt, so every answer of an English model came out "other")
+//           else Latin (T.251's review: it was Japanese whatever the prompt, so every answer of an English model came out "other")
 // and the line has the mean share of repeated 5-character windows besides (the loop's measure as a number, for models that loop
 // less than all the way). The lines it prints are `degenerate <id>: <prompt> ...` for each prompt and a total (ci.mjs's --grep "degenerate").
 import fs from "node:fs";
@@ -73,7 +73,7 @@ def judge(answer, japanese):
     letters = LETTERS.findall(answer)
     windows = [answer[i:i + 5] for i in range(max(0, len(answer) - 4))]
     repeated = 1 - len(set(windows)) / len(windows) if windows else 0.0
-    script = JAPANESE if japanese else LATIN  # the script of the prompt (T251's review: the check was Japanese whatever the prompt)
+    script = JAPANESE if japanese else LATIN  # the script of the prompt (T.251's review: the check was Japanese whatever the prompt)
     return {"unk": "<unk>" in answer,
             "loop": len(windows) >= 20 and repeated > 0.5,
             "other": len(letters) >= 10 and sum(1 for c in letters if script.match(c)) / len(letters) < 0.5,
@@ -103,5 +103,5 @@ line("all", result.rows);
 const shown = (row) => `degenerate ${id}: ${JSON.stringify(prompts[row.prompt])} seed ${row.seed}: ${JSON.stringify(row.answer.slice(0, 160))}`;
 for (const row of result.rows.filter((row) => row.unk || row.loop || row.other).slice(0, 3)) console.log(shown(row));
 for (const row of result.rows.filter((row) => !row.unk && !row.loop && !row.other).slice(0, 2)) console.log(shown(row) + " (fine)");
-// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+// (T.357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
 await leave(0);

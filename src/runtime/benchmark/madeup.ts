@@ -1,4 +1,4 @@
-// benchmark/madeup.ts (T375.2): the made-up model /benchmark/'s CPU section runs, and its plan. A module of
+// benchmark/madeup.ts (T.375.2): the made-up model /benchmark/'s CPU section runs, and its plan. A module of
 // src/runtime/benchmark/sections.ts, with nothing of a worker in it, so that a test reads it too.
 //
 // A model of Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and values) with two layers
@@ -62,7 +62,7 @@ export function madeUpModel() {
     // a Llama's facts: every layer attends, the i-th of them, and RoPE turns its q and k; RMSNorms and a gated FFN; no
     // layer that keeps a state, none RoPE leaves alone, the model's own basis (rotated: the widths its matrices read)
     linear: null, convolution: null, unturned: [], rotated: 0,
-    // (T331: every layer's heads and FFN the model's, at its place in the stacks)
+    // (T.331: every layer's heads and FFN the model's, at its place in the stacks)
     layers: Array.from({ length: layers }, (_, place) => ({ kind: "attention" as const, place, rope: true, window: 0, local: false,
       head: headSize, rotary: headSize, wide: false, stack: place, double: false, ffn: place, kept: place, reads: place })),
     widths: { q: heads * headSize, kv: kvDim, linear: null, rotated: [...new Set([dim, heads * headSize, hidden])].sort((a, b) => a - b) },

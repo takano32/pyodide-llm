@@ -1,7 +1,7 @@
-// tests/ternary-forms.ts (T231): the inner loops that were set against the one kernels/ took for the matrix product
+// tests/ternary-forms.ts (T.231): the inner loops that were set against the one kernels/ took for the matrix product
 // on ternary weights (-1, 0, +1 times one scale a group of 128, as Prism ML's PQ2_0 and PTQ1_0 hold them).
 // tests/ternary-bench.mjs compiles this file and times each form beside the kernels of kernels/ (matmul_t2r and
-// matmul_t2, and the int8 kernels on the same weights widened to int8); TASKS.md's T231 has the table and the choice.
+// matmul_t2, and the int8 kernels on the same weights widened to int8); TASKS.md's T.231 has the table and the choice.
 // Not a kernel of the page: nothing here is shipped.
 //
 // In every form a row is whole groups of 128 weights, the activations are int8 in groups of 32 with a float32 scale a
@@ -26,7 +26,7 @@
 //       n = 4) and six zeros.
 
 //
-// T533 (2026-10-15): the group's scale as a float16, as PQ2_0 has it (ssig33/pyodide-llm's 7d7b776c, MPL-2.0, keeps
+// T.533 (2026-10-15): the group's scale as a float16, as PQ2_0 has it (ssig33/pyodide-llm's 7d7b776c, MPL-2.0, keeps
 // the blocks of PQ2_0 as they are and widens the scale once a block; its lines are not here). Each against t2c, a copy
 // of kernels/'s matmul_t2r in this module (the noise of two copies of one form):
 //   h2r  matmul_t2r with the scales after all the codes as float16 (2 bytes a group): one scalar widening a group
@@ -209,7 +209,7 @@ export function matmul_a(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize
   }
 }
 
-// ---- T533: float16 scales. The widening is halves.ts's half(): exact for every finite half
+// ---- T.533: float16 scales. The widening is halves.ts's half(): exact for every finite half
 // @ts-ignore: decorator
 @inline function half(p: usize): f32 {
   return reinterpret<f32>((<i32>load<i16>(p) << 13) & <i32>0x8fffffff) * <f32>5.192296858534828e33;
@@ -293,7 +293,7 @@ export function matmul_h2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
     store<f32>(xout + (<usize>i << 2), hsum(facc));
   }
 }
-// t2p: matmul_t2 as it was with float32 scales (T231), the plain kernels' control
+// t2p: matmul_t2 as it was with float32 scales (T.231), the plain kernels' control
 export function matmul_t2p(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
   const groups = n >> 7, mask = i8x16.splat(<i8>three);
   const sums = xs + (<usize>(n >> 5) << 2);

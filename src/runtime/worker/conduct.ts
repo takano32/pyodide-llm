@@ -1,6 +1,6 @@
-// worker/conduct.ts (T374.2.1): the worker's side of a conversion's conduct. Which file a model needs, how much of its
+// worker/conduct.ts (T.374.2.1): the worker's side of a conversion's conduct. Which file a model needs, how much of its
 // head, which tokenizer is tried next and which parts of the weights follow is Python's (src/python/convert/conduct.py: a
-// generator that asks). Here is what answers it (T374.2.2): the loop, which knows nothing of where a file is, and the
+// generator that asks). Here is what answers it (T.374.2.2): the loop, which knows nothing of where a file is, and the
 // two answerers it is handed one of: huggingface.co's (the fetches, their parts and their order, what is tried again)
 // and a folder's of the visitor's disk (its Files, read as the disk gives them). Nothing of a model's layout is known
 // here, and nothing of a line or a disk there.
@@ -10,7 +10,7 @@
 // that is not there is answered with undefined, which is None in Python (null is not). Every other failure is thrown
 // and never answered. missing(where, name): the error of a conduct that ended for want of that file, in the words of
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
-// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T.367.3).
 
 import { pyodide } from "./runtime.ts";
 import { fileSize, refused, fetchRange, inOrder } from "./ranges.ts";
@@ -59,7 +59,7 @@ function requestOf(step: ReturnType<Conduct["next"]>): Request {
 // and never answered: whoever called closes the generator (return()) and lets go of it, as it does after the end.
 //
 // A proxy a request brings (the feed of a stream: the conversion's own) is the loop's to let go of, once the request is
-// answered, or failed, or was of a kind nothing answers (T407): no answerer has to remember it.
+// answered, or failed, or was of a kind nothing answers (T.407): no answerer has to remember it.
 export async function answered(steps: Conduct, { answers, missing }: Answerer, signal: AbortSignal) {
   for (let request = requestOf(steps.next()); ;) {
     const [kind, ...asked] = request;
@@ -87,13 +87,13 @@ export async function answered(steps: Conduct, { answers, missing }: Answerer, s
 }
 
 // What answers a conduct from huggingface.co. hf: where the places are ({ repo, revision }, and the same under
-// vocabulary where the model names another repository for it, T136).
+// vocabulary where the model names another repository for it, T.136).
 //
 // A 404 is the answer "not there", and the 404 of the file a conduct ends on is what missing() gives: the words are
 // refused()'s.
 //
 // progress: of(total) once the size of what is streamed is known, arriving(bytes in so far), converting(feed): feed()
-// hands a part to the conversion and returns the share converted (the time it takes is the converter's, T84).
+// hands a part to the conversion and returns the share converted (the time it takes is the converter's, T.84).
 // A stream's parts go from here to the conversion's own feed, which the request brings: the call the worker's own
 // steps made for a part, and nothing more.
 export function fromHub(hf: Hf, signal: AbortSignal, progress: Progress): Answerer {
@@ -125,7 +125,7 @@ export function fromHub(hf: Hf, signal: AbortSignal, progress: Progress): Answer
       text: of((url) => orNot(url, async () => (await file(url)).text())),
       bytes: of((url) => orNot(url, async () => new Uint8Array(await (await file(url)).arrayBuffer()))),
       // [the bytes, the size of the whole file]; undefined for a size the answer did not show (Content-Range is not a
-      // header CORS shows by default, T112): the conduct then asks for it
+      // header CORS shows by default, T.112): the conduct then asks for it
       range: of((url, begin: number, end: number) => orNot(url, async (): Promise<[Uint8Array, number | undefined]> => {
         const { bytes, total } = await fetchRange(url, begin, end, signal);
         return [bytes, Number.isFinite(total) && total > 0 ? total : undefined];
@@ -133,7 +133,7 @@ export function fromHub(hf: Hf, signal: AbortSignal, progress: Progress): Answer
       size: of((url) => fileSize(url, signal)),
       // the parts go to the conversion itself (feed) as inOrder() has them in the order of the file: nothing of the
       // conduct runs for a part, which costs what it did. What is answered is the end of the stream. Of total bytes,
-      // before were in when this stream began (the shards count one after another: the review of T119)
+      // before were in when this stream began (the shards count one after another: the review of T.119)
       stream: of(async (url, begin: number, end: number, before: number, total: number, feed: Feed) => {
         progress.of(total);
         await inOrder(url, begin, end, (part) => progress.converting(() => feed(part)), signal,
@@ -145,16 +145,16 @@ export function fromHub(hf: Hf, signal: AbortSignal, progress: Progress): Answer
   };
 }
 
-// What answers a conduct from a folder of the visitor's disk (T374.2.2). files: the Files chosen, all of them; the
+// What answers a conduct from a folder of the visitor's disk (T.374.2.2). files: the Files chosen, all of them; the
 // conduct asks for each by its name, and a name is found whatever its letters' case (as the page finds the three files
 // a model needs; of two names that differ in that alone, the first). where is not looked at: a folder is one place.
 //
 // A name the folder does not have is the answer "not there". A file that is there and cannot be read is a failure,
-// thrown as the browser says it. A file a conduct ends for want of is said in the folder's words (T427: the page asks
+// thrown as the browser says it. A file a conduct ends for want of is said in the folder's words (T.427: the page asks
 // for a model's three files before the worker hears of the folder, so it is a file one of those names).
 //
 // progress: as fromHub()'s, but for arriving(): what a disk gives has all arrived. A part goes to the conversion's
-// feed as the disk gives it, one call a part, and waits for the room its weights need where they go on (T156).
+// feed as the disk gives it, one call a part, and waits for the room its weights need where they go on (T.156).
 export function fromFolder(files: File[], signal: AbortSignal, progress: Progress): Answerer {
   const named = new Map<string, File>();
   for (const file of files) {
@@ -185,7 +185,7 @@ export function fromFolder(files: File[], signal: AbortSignal, progress: Progres
             signal.throwIfAborted();
           }
           progress.converting(() => feed(value));
-          await weightsRoom();  // (T156)
+          await weightsRoom();  // (T.156)
         }
       }),
     },

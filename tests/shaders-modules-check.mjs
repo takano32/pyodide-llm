@@ -1,11 +1,11 @@
-// tests/shaders-modules-check.mjs (T351): what the type check does not hold of the names src/runtime/shaders.ts (the
+// tests/shaders-modules-check.mjs (T.351): what the type check does not hold of the names src/runtime/shaders.ts (the
 // window) and its modules (src/runtime/shaders/*.ts) hand one another. Node only, under a second:
 //
 //   node tests/shaders-modules-check.mjs
 //
 // The window imports every name of every module and exports it; a module imports a neighbour's. /benchmark/'s GPU
 // worker reads the window as one object of names (shared.WGSL.<name>), and so do the tools (wgsl.<name>).
-// T368.8: the shaders are TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a
+// T.368.8: the shaders are TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a
 // name used and declared nowhere, a name exported twice, and a name of the window that /benchmark/'s worker reads and
 // the window has not. What is left here is what tsc, the build and Node all let pass, each with why:
 //   - a file of shaders/ that the window takes nothing of, and a module that takes from one after it or from itself

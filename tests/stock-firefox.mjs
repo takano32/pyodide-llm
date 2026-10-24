@@ -1,7 +1,7 @@
 // The same check as tests/e2e.mjs, in the Firefox that is installed on the machine, driven by Selenium and
 // geckodriver instead of Playwright. Playwright can only drive its own patched Firefox, and it drives it through the
 // debugger, which makes SpiderMonkey compile WebAssembly for debugging: baseline only, 13 to 17 times slower than
-// Chromium even on a bare SIMD loop with nothing of Pyodide (T59). Marionette, which geckodriver talks to, does not.
+// Chromium even on a bare SIMD loop with nothing of Pyodide (T.59). Marionette, which geckodriver talks to, does not.
 //
 //   node tests/stock-firefox.mjs [model id = stories260K] [url of the site]
 import { Builder, Key } from "selenium-webdriver";
@@ -17,7 +17,7 @@ try {
   const capabilities = await driver.getCapabilities();
   const until = async (script, seconds) => {
     for (const end = Date.now() + seconds * 1000; Date.now() < end; await new Promise((r) => setTimeout(r, 250))) {
-      // T93: the first visit reloads once under the service worker (coi.js); a script the reload cuts off is tried again
+      // T.93: the first visit reloads once under the service worker (coi.js); a script the reload cuts off is tried again
       if (await driver.executeScript(script).catch(() => false)) {
         return;
       }
@@ -44,13 +44,13 @@ try {
   console.log(`status: ${result.status}`);
   console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 } finally {
-  // T145: given up on after 15 s, as tests/e2e.mjs gives up on browser.close() (T141): the verdict is known by then
+  // T.145: given up on after 15 s, as tests/e2e.mjs gives up on browser.close() (T.141): the verdict is known by then
   await closed(() => driver.quit());
 }
 if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
   await leave(1);
 }
-// T141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
+// T.141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
 console.log("ok");
 await leave(0);

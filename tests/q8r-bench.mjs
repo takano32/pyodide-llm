@@ -1,15 +1,15 @@
-// T167: matmul_q8r and matmul_q6r (relaxed SIMD, the one-token path of Chromium and Firefox) with main's kernels and
+// T.167: matmul_q8r and matmul_q6r (relaxed SIMD, the one-token path of Chromium and Firefox) with main's kernels and
 // this tree's, in one process, taking turns (AGENTS.md: the old and the new side by side). The two forms round each
-// group differently (T167: one rounding a group, before it one a lane), so the outputs are compared with a float64
+// group differently (T.167: one rounding a group, before it one a lane), so the outputs are compared with a float64
 // sum of the same integers and scales: the error of each against it, and how far the two are apart. Compiles each
 // form with AssemblyScript into .tmp/q8r-bench/ (needs `npm ci`; `make kernels` not).
 //
 //   node tests/q8r-bench.mjs [--rounds 3] [--turns 7]
 //
-// Three sizes: 8192 x 8192 (64 MiB of int8, far past the caches), 2048 x 2048 (4 MiB: T167's size "in the caches"
+// Three sizes: 8192 x 8192 (64 MiB of int8, far past the caches), 2048 x 2048 (4 MiB: T.167's size "in the caches"
 // of a server's last level) and 256 x 1024 (in the first levels, called over and over). GB/s counts the bytes a row
-// reads: 32 a group of int8 (24 of int6), its float32 scale and its correction (4 bytes: float32 before T197, int32 from it).
-// T167's review: and the runner's ceilings, T163's loops (kernels/ceilings*.ts): at each size the read-only loop over
+// reads: 32 a group of int8 (24 of int6), its float32 scale and its correction (4 bytes: float32 before T.197, int32 from it).
+// T.167's review: and the runner's ceilings, T.163's loops (kernels/ceilings*.ts): at each size the read-only loop over
 // as many bytes as matmul_q8r reads (40 a group), taking turns with the kernels, and once relaxed_dot with its two
 // loads in L1. A form at the read's GB/s is held by the memory there, not by its own instructions.
 import { execFileSync } from "node:child_process";
@@ -25,7 +25,7 @@ const rounds = option("--rounds", 3), turns = option("--turns", 7);
 const work = root + ".tmp/q8r-bench/";
 
 // main's kernels (CI checks out one commit: kernelSources() fetches main's alone; the ref origin/main is never written)
-// (T356: each side's kernels/ whole, from its tree: kernel.ts alone is a window over kernel/*.ts now)
+// (T.356: each side's kernels/ whole, from its tree: kernel.ts alone is a window over kernel/*.ts now)
 const forms = { main: "origin/main", tree: "tree" };
 
 const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1"];
@@ -43,12 +43,12 @@ execFileSync("npx", [...asc, root + "kernels/ceilings.ts", "-o", work + "ceiling
 execFileSync("npx", [...asc, root + "kernels/ceilings_relaxed.ts", "-o", work + "ceilings_relaxed.wasm", "--enable", "simd,relaxed-simd"], { cwd: root, stdio: "inherit" });
 const ceilings = { ...instance(work + "ceilings.wasm"), ...instance(work + "ceilings_relaxed.wasm") };
 
-// the runner's CPU by name: GitHub's ubuntu-latest hands out different ones (T167's review: EPYC 7763, 9V74 and 9V45,
+// the runner's CPU by name: GitHub's ubuntu-latest hands out different ones (T.167's review: EPYC 7763, 9V74 and 9V45,
 // Xeon 6973P-C, 8573C and 8370C, where the same change was 0.88 to 1.18 times main)
 console.log(`cpu: ${os.cpus()[0]?.model ?? "unknown"}, ${os.cpus().length} logical cores, ${process.arch}`);
 const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
-// the corrections of matmul_q8r and matmul_q6r as a form makes them: before T197 int8_sums and six_sums took the
-// scales (out, w, scales, groups: float32 scale × sum), from T197 not (out, w, groups: int32 −64 × sum)
+// the corrections of matmul_q8r and matmul_q6r as a form makes them: before T.197 int8_sums and six_sums took the
+// scales (out, w, scales, groups: float32 scale × sum), from T.197 not (out, w, groups: int32 −64 × sum)
 const sums = (plain, kernel, out, w, ws, groups) => (plain[kernel].length === 4 ? plain[kernel](out, w, ws, groups) : plain[kernel](out, w, groups));
 {  // relaxed_dot with its two loads, on 8 KB at 4096 (below the matrices), the second 4 KB 0..127 as the loop wants
   const I = new Int8Array(memory.buffer);
@@ -61,7 +61,7 @@ for (const [rows, n, calls] of [[8192, 8192, 1], [2048, 2048, 12], [256, 1024, 2
   const ng = n / 32;
   let top = 65536;
   const take = (bytes) => { const at = top; top += Math.ceil(bytes / 64) * 64; return at; };
-  // each form's corrections in its own place: T197 changed them from the float32 scale × sum to the int32 −64 × sum
+  // each form's corrections in its own place: T.197 changed them from the float32 scale × sum to the int32 −64 × sum
   const w8 = take(rows * n), w6 = take(rows * ng * 24), ws = take(rows * ng * 4);
   const wc8 = { main: take(rows * ng * 4), tree: take(rows * ng * 4) }, wc6 = { main: take(rows * ng * 4), tree: take(rows * ng * 4) };
   const x = take(n), xs = take(ng * 4), out = take(rows * 4);

@@ -1,5 +1,5 @@
-// The sections of /benchmark/ (T134) that need neither Pyodide nor a GPU, in a module worker of their own: the page
-// starts one for a section and ends it after, so that no WebAssembly memory of one section outlives it (T96: Chromium
+// The sections of /benchmark/ (T.134) that need neither Pyodide nor a GPU, in a module worker of their own: the page
+// starts one for a section and ends it after, so that no WebAssembly memory of one section outlives it (T.96: Chromium
 // refused a page its third memory; a phone has little room for the next section's).
 //
 //   { step: "device" }                          what this browser can do: SIMD, relaxed SIMD, 64-bit memories, shared
@@ -7,22 +7,22 @@
 //   { step: "cpu", threads }                    the forward pass of forward.ts, the one the model page runs, on a
 //                                               made-up int8 model of Llama 3.2 1B's width (random weights, two
 //                                               layers), one token at a time at each count of software threads, and
-//                                               a prompt's tokens 16 at a time (T108), as the GPU section does them;
-//                                               and the CPU's ceilings beside them (T163)
+//                                               a prompt's tokens 16 at a time (T.108), as the GPU section does them;
+//                                               and the CPU's ceilings beside them (T.163)
 //   { step: "line", site, hf, rates, seconds }  the line: a part of the site's model and a range of a model on
 //                                               huggingface.co, how long until the first byte and how fast; then
 //                                               huggingface.co read no faster than each of rates (MB/s)
 //
 // The first message is claimed before anything is awaited (a module worker's port opens at its first await, and a
-// message that comes before onmessage is set is lost: T109). While a step runs, it tells the page each stage it starts
-// ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
+// message that comes before onmessage is set is lost: T.109). While a step runs, it tells the page each stage it starts
+// ({stage, at, of}, T.177): the page shows it, and it answers none of the page's questions.
 import { built } from "../built.ts";
 import { isUpdated, saidOf, named, unstarted } from "../updated.ts";
 import { Failure, kindOf } from "../failure.ts";
-// T375.2: the CPU section's made-up model and its plan (a module of its own, so that a test holds the plan to Python's)
+// T.375.2: the CPU section's made-up model and its plan (a module of its own, so that a test holds the plan to Python's)
 import { GROUP, SHAPE, madeUpModel } from "./madeup.ts";
 import type { MadeName, Model } from "./madeup.ts";
-// T368.7: what the page asks and is answered (contracts/benchmark.ts), and the engine's own types of what it is handed
+// T.368.7: what the page asks and is answered (contracts/benchmark.ts), and the engine's own types of what it is handed
 import type * as Forward from "../forward.ts";
 import type { Compiled, Spawn } from "../forward.ts";
 import type { Built } from "../built.ts";
@@ -50,7 +50,7 @@ self.onmessage = async ({ data }: MessageEvent<ToSections>) => {
     postMessage({ step: data.step, error: failed(error) } satisfies Failed);
   }
 };
-// What a caught value is said as. T367.4: a file of this build that is gone (the page was left open across a
+// What a caught value is said as. T.367.4: a file of this build that is gone (the page was left open across a
 // deployment) is said as that, alone, and ends the step wherever it is caught: a section measures this build, and what
 // half of its files measure is nothing to report.
 const failed = (error: unknown) => saidOf(error, `${(error as Thrown)?.name ?? "Error"}: ${(error as Thrown)?.message ?? error}`);
@@ -100,7 +100,7 @@ async function device(): Promise<DeviceFound> {
 // (createForward, the kernels of simdkernel_*.wasm, the software threads of helper.js): what differs from the model
 // page is only that the plan comes from there instead of from Python.
 const TOKENS = 12, WARM = 3;
-// T108: a prompt's tokens go through the layers BATCH (16) at a time, without logits
+// T.108: a prompt's tokens go through the layers BATCH (16) at a time, without logits
 const PROMPT = Array.from({ length: 16 }, (_, i) => 1 + i), PROMPT_RUNS = 5;
 
 // random bytes for the int8 values, a scale that keeps the activations near 1, and norms of 1
@@ -132,7 +132,7 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
   const shared = self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
   const kernels = shared ? await kernelsOf(forward, "shared") : await kernelsOf(forward, "plain");
   if (!kernels) return { none: "no WebAssembly SIMD in this browser: the model page runs on NumPy here" };
-  // T177: making the model, then each count of software threads (one only without shared memory)
+  // T.177: making the model, then each count of software threads (one only without shared memory)
   const stages = 1 + counts.filter((asked) => shared || asked === 1).length;
   let done = 0;
   stage("making the model", ++done, stages);
@@ -141,7 +141,7 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
   const { memory, base } = forward.weightsMemory(model.size, { shared, after });
   fillWeights(memory, base, model);
   const engine = forward.createForward({ memory, base, size: model.size, kernels, plan: model.plan, spawn: shared ? spawn : undefined });
-  // T163: the ceilings' loops on the same memory (no memory more: T96); their failure leaves the forward pass alone
+  // T.163: the ceilings' loops on the same memory (no memory more: T.96); their failure leaves the forward pass alone
   let ceilings: Ceilings | null = null, ceilingsFailed: string | undefined;
   try {
     ceilings = await ceilingsOf(memory, base, model.size, shared);
@@ -181,7 +181,7 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
       blocks.sort((a, b) => a - b);
       rows.push({ asked, threads, msPerToken: ms, GBps: model.size / (ms / 1000) / 1e9,
                   promptMsPerToken: blocks[blocks.length >> 1] / PROMPT.length, finite: logits.every(Number.isFinite) });
-      // T163: the ceilings right after the row they are held against (a phone that warms up slows both alike): reading
+      // T.163: the ceilings right after the row they are held against (a phone that warms up slows both alike): reading
       // at the same count, and the compute loops after the row of one thread
       if (ceilings) ceilings.read.push({ threads, ...(await attempt(() => ceilings!.reading(threads))) });
       if (ceilings && threads === 1) {
@@ -201,8 +201,8 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
 }
 
 // what a token reads: the checkpoint, and with relaxed SIMD matmul_q8r's corrections too (an int32 for each group of
-// every int8 matrix: 23.4 MB here). The GB/s column stays the checkpoint's (T157 turns it into other models' speeds);
-// its share of reading alone counts these bytes (T163's review). Safari's matmul_q8 reads no corrections.
+// every int8 matrix: 23.4 MB here). The GB/s column stays the checkpoint's (T.157 turns it into other models' speeds);
+// its share of reading alone counts these bytes (T.163's review). Safari's matmul_q8 reads no corrections.
 const tokenBytes = ({ plan, size }: Model, kernels: Compiled) => size + (kernels.relaxed ? Object.values(plan.tensors)
   .filter((t) => t.kind === "int8").reduce((sum, t) => sum + (t.shape.reduce((a, b) => a * b, 1) / t.group) * 4, 0) : 0);
 
@@ -210,14 +210,14 @@ const tokenBytes = ({ plan, size }: Model, kernels: Compiled) => size + (kernels
 const layerWeights = ({ plan }: Model) => (["wq", "wk", "wv", "wo", "w1", "w2", "w3"] satisfies MadeName[])
   .reduce((sum, name) => sum + plan.tensors[name].shape.reduce((a, b) => a * b, 1), 0);
 
-// ---- T163: the CPU's ceilings, loops of one kind of instruction (kernels/ceilings.ts, kernels/ceilings_relaxed.ts,
-// the forms of T158's audit): reading alone (GB/s) at each count of software threads, over the made-up model's weights
+// ---- T.163: the CPU's ceilings, loops of one kind of instruction (kernels/ceilings.ts, kernels/ceilings_relaxed.ts,
+// the forms of T.158's audit): reading alone (GB/s) at each count of software threads, over the made-up model's weights
 // (the bytes a token reads); relaxed_dot with its two loads from L1 and f32 multiply + add on registers (G MAC/s), one
-// thread. Timed as the GPU section's ceilings are (T168): passes doubled until one run takes PAIR_MS, then PAIRS runs of
+// thread. Timed as the GPU section's ceilings are (T.168): passes doubled until one run takes PAIR_MS, then PAIRS runs of
 // n and of 2n passes, the median of the differences; a ratio of 2n to n past STEADY takes the pairs once more, then is
 // unsteady. The watch on a loop the compiler cut short: its checksum of n passes must be the one computed here, it
 // must take PAIR_MS by MOST_PASSES, and 2n passes must take at least SHORT times n (a loop whose passes were dropped
-// takes the same time for any count: T163's review). cutShort: the section is then wrong, as for logits not finite.
+// takes the same time for any count: T.163's review). cutShort: the section is then wrong, as for logits not finite.
 const PAIR_MS = 20, PAIRS = 5, STEADY = [1.6, 2.2], SHORT = 1.3, MOST_PASSES = 2 ** 30;
 const cutShort = (message: string) => new Failure("cut-short", message);
 const middle = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1];
@@ -260,13 +260,13 @@ const rate = (work: number, r: ReturnType<typeof paired>): Rated => ({ rate: (wo
 // the checksum of the int loops: the lane j of their sum is n times one pass's (lanes[j]), wrapped to 32 bits
 const xorOf = (lanes: number[], n: number) => lanes.reduce((x, lane) => x ^ Math.imul(n, lane), 0);
 
-// the control words of the reading threads, on a SharedArrayBuffer of their own (not a WebAssembly memory: T96): as
-// forward.ts cuts a matrix's rows (T93), the weights are read a CHUNK at a time, each thread taking the next one from
+// the control words of the reading threads, on a SharedArrayBuffer of their own (not a WebAssembly memory: T.96): as
+// forward.ts cuts a matrix's rows (T.93), the weights are read a CHUNK at a time, each thread taking the next one from
 // NEXT until TOTAL (passes × chunks), so that a slow core (a little one of a big.LITTLE phone) takes fewer instead of
-// holding the others back (T163's review: equal parts read at the slowest thread's speed)
+// holding the others back (T.163's review: equal parts read at the slowest thread's speed)
 const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5, CHUNK = 1 << 20, STARTING_MS = 30_000;
 
-// The loops on the memory of the made-up model, its weights at base (size bytes): nothing new is reserved (T96).
+// The loops on the memory of the made-up model, its weights at base (size bytes): nothing new is reserved (T.96).
 // dotting() makes 4 KB of them 7-bit for its loop (see ceilings_relaxed.ts) and puts them back after.
 async function ceilingsOf(memory: WebAssembly.Memory, base: number, size: number, shared: boolean): Promise<Ceilings> {
   const kind = shared ? "shared" : "plain";
@@ -399,9 +399,9 @@ function dotRegistersSum(n: number) {
 // ---- the line. A fetch read to its end, or read no faster than rate (MB/s): each piece is taken only when the bytes
 // so far are due at that rate. Chromium and Firefox then stop taking from the connection, and the server's sending
 // slows with it (the connection's flow control): what is paced is this page's download, not the whole line of the
-// device. WebKit does not stop taking (T134's review): there only this page's reading is paced.
+// device. WebKit does not stop taking (T.134's review): there only this page's reading is paced.
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-// A fetch that brings nothing for STALL_MS is given up (as the model's worker gives up on Pyodide, T118), and while
+// A fetch that brings nothing for STALL_MS is given up (as the model's worker gives up on Pyodide, T.118), and while
 // bytes come the page hears of it once a second: its own deadline is for a section that says nothing at all.
 const STALL_MS = 30_000;
 // range: false for a part of the site's model, which GitHub Pages sends gzipped and answers a range of with a piece of
@@ -438,7 +438,7 @@ async function measure(url: string, { bytes, rate, range = true }: { bytes: numb
         if (due > performance.now()) await sleep(due - performance.now());
       }
       if (got >= bytes) {
-        // a server that sends the whole file for a range (WebKit and Hugging Face's CDN, T112) is read no further
+        // a server that sends the whole file for a range (WebKit and Hugging Face's CDN, T.112) is read no further
         reader.cancel().catch(() => {});
         break;
       }

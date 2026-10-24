@@ -1,7 +1,7 @@
-// threads-late-helper.mjs (T229's review): a software thread of tests/threads-check.mjs that stops late. It is
+// threads-late-helper.mjs (T.229's review): a software thread of tests/threads-check.mjs that stops late. It is
 // src/runtime/helper.js, with one difference: of the chunk of a delta rule's phase (job kind 7, a hybrid model's Gated
 // DeltaNet layer) it takes, it writes the first value head only, and ends without counting the chunk: what a thread
-// that a browser stops half way through its work leaves behind (T120). The coordinator must give it up and run the
+// that a browser stops half way through its work leaves behind (T.120). The coordinator must give it up and run the
 // phase again, to the numbers a single thread computes (the new state is written beside the old one: forward.js's flips).
 import { parentPort } from "node:worker_threads";
 import { runtimeUrl } from "./tree.mjs";

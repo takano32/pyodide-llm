@@ -1,8 +1,8 @@
-// forward/perlayer.ts (T329.2): a Gemma 4's embedding of every layer, which the engine takes as it is made (null where
+// forward/perlayer.ts (T.329.2): a Gemma 4's embedding of every layer, which the engine takes as it is made (null where
 // the model has no table of it: a token's path then compares null twice). Made of what the engine hands a kind of layer
 // (kinds.ts's Core), and of rows: what reads a token's row of the table (createForward()'s, the comments say). Python's
-// side is engine/model.py's Llama.forward() (where it says T329), and the converter folded the model's scales into the
-// table, the projection and its norm (TASKS.md's T329). A module of src/runtime/forward.ts.
+// side is engine/model.py's Llama.forward() (where it says T.329), and the converter folded the model's scales into the
+// table, the projection and its norm (TASKS.md's T.329). A module of src/runtime/forward.ts.
 import { packingOf } from "../jobs.ts";
 import { align, halfToFloat, perLayerBytes } from "./memory.ts";
 import type { Core } from "./kinds.ts";
@@ -75,7 +75,7 @@ export function perLayer({ plan, eps, k, room, floats, matrix, at, S, matmuls }:
   };
 }
 
-/** T329.2.2: the stretch of the checkpoint the table of every layer's inputs takes ([start, end): its values, then its
+/** T.329.2.2: the stretch of the checkpoint the table of every layer's inputs takes ([start, end): its values, then its
  * scales where it has them, as llama2_numpy's Tensor places them), of the tensors llama2_numpy.external_tensors()
  * places; null where the model has no such table */
 export function tableHole(tensors: Tensors): [number, number] | null {

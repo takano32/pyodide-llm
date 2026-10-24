@@ -1,10 +1,10 @@
-// T231: the matrix product of a token on ternary weights: the kernels of kernels/ (t2r: matmul_t2r, t2: matmul_t2 without
-// relaxed SIMD; q8r and q8: the int8 kernels on the same weights widened to int8, which is how T235 ran a ternary
+// T.231: the matrix product of a token on ternary weights: the kernels of kernels/ (t2r: matmul_t2r, t2: matmul_t2 without
+// relaxed SIMD; q8r and q8: the int8 kernels on the same weights widened to int8, which is how T.235 ran a ternary
 // model) and the forms of tests/ternary-forms.ts that were set against them (bc, bs, bx, c, a), in one process, taking turns, on 1 and 4 threads of one shared memory, the rows in chunks taken in turn as forward.js's
-// phase() cuts them (TASKS.md's T231 has what each form is and the table).
+// phase() cuts them (TASKS.md's T.231 has what each form is and the table).
 //
 // The matrices are read from memory, as a model's are (each read once a token): copies of each past every cache
-// (--megabytes a form, default 256), a call on each in turn (T159's review: one matrix timed again and again stays in
+// (--megabytes a form, default 256), a call on each in turn (T.159's review: one matrix timed again and again stays in
 // the caches). Every form is held to the float64 sums of its own integers and scales, and to itself on 1 and 4 threads,
 // to the bit. G weights/s is rows x n a second; GB/s counts what a row reads of the weights (their scales and
 // corrections too).
@@ -12,7 +12,7 @@
 //   node tests/ternary-bench.mjs [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms t2r,q8r] [--no-prompt]
 //
 // Then a prompt of 16 tokens through the same matrices: the ternary tile (matmul_t2r_tile, a row against four tokens)
-// against the token's kernel for every token, and int8's tile (T159) on the widened weights.
+// against the token's kernel for every token, and int8's tile (T.159) on the widened weights.
 //
 // The shapes are those of Ternary Bonsai 1.7B (2048 wide, its FFN 6144) and of the 27B (5120 wide, its FFN 17408).
 // Compiles with AssemblyScript into .tmp/ternary-bench/ (needs `npm ci`).
@@ -35,7 +35,7 @@ const GO = 0, DONE = 1, NEXT = 2;
 // reads, and the call on rows r0..r1 of the copy at w (its values, then its scales, then its corrections)
 const g128 = (c) => (c[ROWS] * c[N]) / 128;
 const FORMS = {
-  // (T533: kernels/'s scales are float16s, 2 bytes a group; t2c below is the float32 form they were)
+  // (T.533: kernels/'s scales are float16s, 2 bytes a group; t2c below is the float32 form they were)
   t2r: { module: "tree", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   t2: { module: "plain", bytes: [32, 2, 0], activations: "interleaved",
@@ -54,7 +54,7 @@ const FORMS = {
     run: (k, c, w, r0, r1) => k.matmul_q8r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1) },
   q8: { module: "plain", bytes: [128, 16, 0], activations: "eight",
     run: (k, c, w, r0, r1) => k.matmul_q8(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, c[N], r0, r1) },
-  // T533: the scales as float16 (tests/ternary-forms.ts), and t2c, a copy of t2r in that module: the noise of two copies
+  // T.533: the scales as float16 (tests/ternary-forms.ts), and t2c, a copy of t2r in that module: the noise of two copies
   t2c: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_t2c(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   h2r: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
@@ -68,8 +68,8 @@ const FORMS = {
   h2: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_h2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
 };
-// A prompt's tokens (T108) through the same matrix: the token's kernel for every token, the rows in blocks that stay in
-// the first cache (jobs.js's way for a kernel without a tile), the ternary tile (matmul_t2r_tile), and int8's (T159) on
+// A prompt's tokens (T.108) through the same matrix: the token's kernel for every token, the rows in blocks that stay in
+// the first cache (jobs.js's way for a kernel without a tile), the ternary tile (matmul_t2r_tile), and int8's (T.159) on
 // the same weights widened. of: whose copies of the weights it reads
 const blockOf = (n) => Math.max(1, Math.floor(16384 / (n / 4)));
 const PROMPTS = {
@@ -93,7 +93,7 @@ const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
   [name, new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(work + file)), { env: { memory } }).exports]));
-// forward/threads.js's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
+// forward/threads.js's phase(): chunks of a quarter of a thread's share (T.93), taken in turn; one thread the whole matrix
 // (a prompt's chunks in fours of rows, as phase() cuts them for the tiles)
 const chunkOf = (rows, threads, quad = 1) => (threads === 1 ? rows : quad * Math.ceil(rows / (threads * 4 * quad)));
 function runCalls(kernels, sync, c, index) {
@@ -185,7 +185,7 @@ for (const [rows, n] of shapes) {
   // the ternary weights (a third each, as the files have them) and their scales
   const tw = new Int8Array(rows * n), d = new Float32Array(groups);
   for (let i = 0; i < tw.length; i++) tw[i] = (next() % 3) - 1;
-  // float16 numbers (T533: the forms that keep them so read the same scales)
+  // float16 numbers (T.533: the forms that keep them so read the same scales)
   for (let g = 0; g < groups; g++) d[g] = Math.f16round(0.005 + (next() % 4096) / 163840);
   // ---- each form's copy of the weights
   const writers = {
@@ -230,7 +230,7 @@ for (const [rows, n] of shapes) {
       for (let j = 0; j < tw.length; j++) U[at + (j >> 7) * 34 + 2 + ((j & 127) >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
       for (let g = 0; g < groups; g++) new Float16Array(memory.buffer, at + g * 34, 1)[0] = d[g];
     },
-    q8r(at) {  // T235's int8: -127, 0, 127 and float32(d / 127) a group of 32
+    q8r(at) {  // T.235's int8: -127, 0, 127 and float32(d / 127) a group of 32
       const scales = at + groups * 128, corrections = scales + groups * 16;
       for (let j = 0; j < tw.length; j++) I[at + j] = 127 * tw[j];
       for (let g = 0; g < groups * 4; g++) {
@@ -338,7 +338,7 @@ for (const [rows, n] of shapes) {
     }
     errors[form] = worst / most;
     if (!(errors[form] < 2e-6)) throw new Error(`${rows} x ${n}, ${form}: ${errors[form].toExponential(2)} of the largest output away from the float64 sums`);
-    // T533: the forms of the same integers and scales in the same order are t2r's numbers to the bit
+    // T.533: the forms of the same integers and scales in the same order are t2r's numbers to the bit
     if (form === "t2r") ownOf.t2r = F.slice(outs[0] / 4, outs[0] / 4 + rows);
     else if (SAME_AS_T2R.includes(form) && ownOf.t2r) {
       for (let i = 0; i < rows; i++) if (!Object.is(F[outs[0] / 4 + i], ownOf.t2r[i])) throw new Error(`${rows} x ${n}, ${form}: differs from t2r at row ${i}`);
@@ -396,7 +396,7 @@ for (const [rows, n] of shapes) {
       Object.assign(c, { [FORM]: EVERY.indexOf(name), [FIRST]: firsts[of], [STRIDE]: bytesOf(of, rows, n), [COPIES]: copies[of],
         [XQ]: frames[activations], [XS]: frames[activations] + n, [COUNT]: count, [FRAME]: frame, [OUT_FRAME]: outFrame });
     };
-    // the tiles' numbers are the token kernel's, to the bit (T533: the float16 scales' tiles too)
+    // the tiles' numbers are the token kernel's, to the bit (T.533: the float16 scales' tiles too)
     setPrompt("t2r, token by token");
     Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[0] });
     go();

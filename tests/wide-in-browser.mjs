@@ -1,4 +1,4 @@
-// tests/wide-in-browser.mjs (T506): what a browser does when a worker of the site asks it for a large WebAssembly memory,
+// tests/wide-in-browser.mjs (T.506): what a browser does when a worker of the site asks it for a large WebAssembly memory,
 // as the model's worker does for a model past 4 GiB (worker/weights.ts: one memory with the whole checkpoint as its
 // first size, 64-bit, shared where the page is isolated, then written from end to end as the weights come).
 //
@@ -110,7 +110,7 @@ for (const engine of args.length ? args : ["chromium"]) {
       const began = Date.now();
       let found;
       try {
-        // (T511.6: the bare page opens the default, 379 MB from Hugging Face: the probes take the smallest model of the site)
+        // (T.511.6: the bare page opens the default, 379 MB from Hugging Face: the probes take the smallest model of the site)
         await page.goto(`${site}?model=stories260K`);
         // the first visit reloads once, under the service worker that isolates the page: asked again until it has
         for (let attempt = 0; attempt < 30 && !crashed; attempt++) {

@@ -1,11 +1,11 @@
-// src/wake.js (T194): keep the screen on while /benchmark/ runs, and count the seconds the page was hidden.
+// src/wake.js (T.194): keep the screen on while /benchmark/ runs, and count the seconds the page was hidden.
 //
 // A phone that turns its screen off puts the page away: its timers and workers slow down or stop, and a section that
 // takes minutes then measures a device asleep. While sections run, the page asks for a Screen Wake Lock
 // (navigator.wakeLock.request("screen")); a browser without one, or one that refuses it (a battery saver, a page not
 // shown), changes nothing. The browser lets the lock go by itself when the page is hidden, so the page asks again
 // when it is shown. Whatever the lock did, the seconds the page was hidden while it ran go at the head of the report
-// ("hidden for N s"), so that a reader knows which numbers were taken on a device put away. T173's page-memory
+// ("hidden for N s"), so that a reader knows which numbers were taken on a device put away. T.173's page-memory
 // section stops by itself when the page is hidden (benchmark.astro), as before.
 //
 // A plain module with its document, navigator and clock handed in, so that tests/wake.mjs runs it in Node alone.

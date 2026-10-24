@@ -1,4 +1,4 @@
-# int6 (T98): six bits a weight, groups of 32 with a float32 scale each, the values packed 32 to 24 bytes. The
+# int6 (T.98): six bits a weight, groups of 32 with a float32 scale each, the values packed 32 to 24 bytes. The
 # NumPy engine widens them to exactly what a float32 checkpoint of the same rounded values holds, so the logits of the
 # two are the same to the bit. The kernels (forward.js) are held to NumPy by tests/forward-check.mjs.
 import struct

@@ -1,5 +1,5 @@
 # make_gemma3.py
-# T261: a made-up Gemma 3 (a norm behind the attention and the FFN, a GELU in the FFN's gate, layers that attend a
+# T.261: a made-up Gemma 3 (a norm behind the attention and the FFN, a GELU in the FFN's gate, layers that attend a
 # window with a base of RoPE of their own) as files, for the checks of forward.js that take a model by its files
 # (tests/forward-check.mjs, tests/threads-check.mjs, tests/gpu-hybrid-check.mjs: <out>.bin, <out>.tokenizer.bin and
 # <out>.json, as tests/perplexity_prepare.py writes them). The real ones are too large to be built with the site (the

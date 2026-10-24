@@ -1,5 +1,5 @@
 # make_smollm3.py
-# T255: a made-up SmolLM3 (a Llama some of whose layers RoPE leaves alone) as files, for the checks of forward.js that
+# T.255: a made-up SmolLM3 (a Llama some of whose layers RoPE leaves alone) as files, for the checks of forward.js that
 # take a model by its files (tests/forward-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). The real one is too large to be built with the site (3.3 GB as int8), so
 # this one stands in: random Hugging Face tensors (tests/made_up.py's synthetic_weights) converted the way the page

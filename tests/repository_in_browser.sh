@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/repository_in_browser.sh (T505.3): a repository of GGUFs alone opened by ?hf= in real browsers, from the site of
+# tests/repository_in_browser.sh (T.505.3): a repository of GGUFs alone opened by ?hf= in real browsers, from the site of
 # this checkout, built and served on the runner: for a branch, which no deployed site has, and for the browsers the
 # development machine does not run (Firefox, WebKit). What it sees that nothing else does: whether huggingface.co lets
 # a page of each browser read the list of a repository's files (its API, under the service worker), and that the page

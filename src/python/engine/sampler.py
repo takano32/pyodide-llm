@@ -29,7 +29,7 @@ from dataclasses import dataclass, fields
 import numpy as np
 
 REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the latest tokens
-# T195: what a draw says, on the kernels and in NumPy, when the largest logit is NaN or an infinity (a NaN anywhere,
+# T.195: what a draw says, on the kernels and in NumPy, when the largest logit is NaN or an infinity (a NaN anywhere,
 # +inf anywhere, or all -inf): a broken model or an overflow. No token is drawn from logits like these
 NOT_FINITE = "The model computed logits that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed."
 # what greedy leaves no say: it takes the largest logit, which a nucleus, a top-k and a min-p all leave in
@@ -47,9 +47,9 @@ class Sampling:
     temperature: float = 0.0  # 0: greedy
     topp: float = 0.9  # the nucleus (0 or 1: none)
     repetition_penalty: float = 1.0  # on every token of the last REPETITION_WINDOW, the prompt's too (1: none)
-    top_k: int = 0  # T274: of the top_k most probable (0: none)
-    min_p: float = 0.0  # T274: without what is less than min_p times as probable as the most probable (0: none)
-    # T274: taken off the logit of each of the last REPETITION_WINDOW sampled tokens, the same however often it came
+    top_k: int = 0  # T.274: of the top_k most probable (0: none)
+    min_p: float = 0.0  # T.274: without what is less than min_p times as probable as the most probable (0: none)
+    # T.274: taken off the logit of each of the last REPETITION_WINDOW sampled tokens, the same however often it came
     # (0: none). Not the prompt's: with those in it, the format's own stop token would lose it too (as OpenAI's)
     presence_penalty: float = 0.0
 
@@ -69,7 +69,7 @@ class Sampling:
 
 def greedy(logits):
     """Greedy argmax sampling: take the token with the highest probability. NumPy's argmax takes a NaN for the
-    largest, so the logit it picks is finite exactly when the largest one is (T195)."""
+    largest, so the logit it picks is finite exactly when the largest one is (T.195)."""
     token = int(np.argmax(logits))
     if not math.isfinite(logits[token]):
         raise ValueError(NOT_FINITE)
@@ -77,7 +77,7 @@ def greedy(logits):
 
 
 class NumpySampler:
-    """Draws in NumPy: the reference, and what draws where there are no kernels (or without them, T52's "sampler").
+    """Draws in NumPy: the reference, and what draws where there are no kernels (or without them, T.52's "sampler").
     It keeps nothing from step to step."""
 
     def drawing(self, sampling, rng):
@@ -101,7 +101,7 @@ class NumpySampler:
                 logits[np.unique(written[-REPETITION_WINDOW:])] -= less
             if temperature == 0.0:
                 return greedy(logits)
-            # max() keeps a NaN (T195)
+            # max() keeps a NaN (T.195)
             best = logits.max()
             if not math.isfinite(best):
                 raise ValueError(NOT_FINITE)
@@ -127,7 +127,7 @@ class NumpySampler:
                 # Top-p (nucleus) sampling: only the most probable tokens whose probabilities add up to topp.
                 # Tokens below (1 - topp) / (n - 1) cannot be part of that set (llama2.c), so they need not be sorted.
                 # That holds while one token at least stays: when all are below it (n * topp < 1, which the floor
-                # above makes possible, T178), the others add up to less than (1 - topp), so the set is the most
+                # above makes possible, T.178), the others add up to less than (1 - topp), so the set is the most
                 # probable token alone. It always stays
                 cutoff = min((1.0 - topp) / max(probabilities.size - 1, 1), probabilities.max())
                 likely = np.flatnonzero(probabilities >= cutoff)

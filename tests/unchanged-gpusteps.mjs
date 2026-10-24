@@ -1,4 +1,4 @@
-// unchanged-gpusteps.mjs (T568.1)
+// unchanged-gpusteps.mjs (T.568.1)
 // What the model's GPU worker (src/runtime/gpu/) asks of a device for a few made-up models, as one JSON object of
 // hashes: every buffer it makes (their sizes and usages, counted), the shaders it compiles (counted), a prompt's blocks
 // (the writes with their bytes, the clears, the copies and the dispatches of three blocks, the second going on from the state the CPU
@@ -14,8 +14,8 @@
 //
 // The models: a Llama; a Qwen3 (biases of q, k and v, norms of the heads); a Gemma 3 (GEGLU, the norms behind, a
 // window and a local layer); an LFM2 (convolution layers around an attending one); a Qwen3.5 (two linear-attention
-// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T271.1). Each
-// with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T156, T271.4). A step's keys and
+// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T.271.1). Each
+// with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T.156, T.271.4). A step's keys and
 // values going up from the CPU's cache (keysIn) besides, float16 and float32, a ring where a layer has a window.
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -60,9 +60,9 @@ function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }
   if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (HEAD / 2) * 4), localSin: take(CONTEXT * (HEAD / 2) * 4) });
   if (positions) plan.tokens.positions = take(CONTEXT * DIM * 4);
   if (plan.layerNorm) plan.tokens.finalBias = take(DIM * 4);
-  // (T271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
+  // (T.271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
   if (plan.rotated === true) plan.rotated = { block: 32, signs: [...new Set([DIM, Q_DIM, HIDDEN])].map((width) => ({ width, at: take(width * 4) })) };
-  // (T210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
+  // (T.210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
   if (direct) Object.assign(plan, { direct: true, tables: { classifier: plan.tokens.classifier, embedding: null } });
   // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer)
   const cache = kinds.filter((kind) => kind === "attention").map(() => [take(CONTEXT * KV_DIM * 4), take(CONTEXT * KV_DIM * 4)]);
@@ -90,10 +90,10 @@ const MODELS = {
     more: { linear: LINEAR } },
   gpt2: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: 0, activation: "gelu", positions: true } },
   neox: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: HEAD / 2, parallel: true, activation: "gelu" } },
-  // T271.1: a Llama in a rotated basis (every matrix's input turned as it is quantized, a token's embedded row turned back)
+  // T.271.1: a Llama in a rotated basis (every matrix's input turned as it is quantized, a token's embedded row turned back)
   rotated: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: norms, more: { rotated: true } },
 };
-// (T156, T271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
+// (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
 const ALONE = ["llama", "qwen35", "rotated"];
 
 const hash = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -169,7 +169,7 @@ for (const [model, made, packed, direct] of runs) {
     await block_.block(m, 2, 8, () => true, false, tokens(2), true);
     record(`${name}: a block of 2 at 8, from the GPU's own state`, since(from));
     // a step's keys and values up from the CPU's cache (requests.ts's generate()): float16 rows as they are, and float32 ones
-    // narrowed; a ring (T510.1) for the windowed layers, the others' whole
+    // narrowed; a ring (T.510.1) for the windowed layers, the others' whole
     if (!direct) {
       for (const half of [true, false]) {
         const places = cache.map(([keys, values], p) => ({ keys, values, ring: plan.windows[plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : []))[p]] ? 6 : 0 }));

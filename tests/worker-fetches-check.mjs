@@ -1,8 +1,8 @@
-// tests/worker-fetches-check.mjs (T357)
+// tests/worker-fetches-check.mjs (T.357)
 // What a conversion asks of the network, in order, for every kind of source the page converts: the requests (the
 // file and its range) made for a made-up repository of huggingface.co, and what the converter is handed on the way,
 // held to tests/fixtures/conversion-fetches.json. The conduct of a conversion (which file, how much of its head, which
-// candidate next) is Python's since T374.2.1 (src/python/convert/conduct.py), the answers (the fetches, the parts of the
+// candidate next) is Python's since T.374.2.1 (src/python/convert/conduct.py), the answers (the fetches, the parts of the
 // weights) the worker's (src/runtime/worker/conduct.js): this ran the worker's own steps before, and the fixture is what
 // showed that the two together ask for the same things in the same order.
 //
@@ -29,7 +29,7 @@ const { hfEntry } = await import("../src/page/address.ts");
 import { settled } from "../src/page/repository.ts";
 
 const FIXTURE = new URL("fixtures/conversion-fetches.json", import.meta.url);
-// T374.1: the cases themselves (the model as it is listed, what the made-up hub has, the line), written down beside
+// T.374.1: the cases themselves (the model as it is listed, what the made-up hub has, the line), written down beside
 // what they ask for: tests/test_conduct.py reads them, so that the Python that conducts a conversion is held to the
 // requests of the very repositories this check makes. This file is where a case is written; that one is its record
 const CASES_FIXTURE = new URL("fixtures/conversion-cases.json", import.meta.url);
@@ -119,7 +119,7 @@ const chosen = async (files) => (await openHuggingFace(Object.entries(files).map
 
 // ---- the conduct is the real one (src/python/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
 // answers it (src/runtime/worker/conduct.js): the requests below are what the two make together. The converter is a
-// stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T374.1), which writes down what it is handed;
+// stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T.374.1), which writes down what it is handed;
 // here it also opens the place of the weights as Writer does, and has the options and the tokenizer a conversion ends with
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("numpy", { messageCallback: () => {} });
@@ -175,7 +175,7 @@ const index = (names) => JSON.stringify({ weight_map: Object.fromEntries(names.m
 // a repository nobody has looked at (?hf=, the sheet): the model as the page's own function lists it (src/page/address.ts),
 // so that what the page hands the worker of such a repository and what is then asked of it are held together
 const unlisted = () => hfEntry("owner/model", REVISION).hf;
-// T505.3: and one that has no safetensors: the page looks at the list of its files (one request of huggingface.co's API,
+// T.505.3: and one that has no safetensors: the page looks at the list of its files (one request of huggingface.co's API,
 // which is the page's and not the worker's: tests/repository-check.mjs) and hands the worker the best GGUF there, or
 // the file the link named (&file=). The model is the page's own (src/page/repository.ts's settled(), of these files)
 const ggufs = { "model-Q4_K_M.gguf": gguf(1000, 1 * MiB), "model-Q8_0.gguf": gguf(1000, 2 * MiB), "model-Q8_0-00001-of-00002.gguf": gguf(1000, 3 * MiB), "mmproj-model-F16.gguf": gguf(1000, MiB) };
@@ -202,7 +202,7 @@ const CASES = [
     vocabulary: { repo: "owner/model", revision: REVISION.split("").reverse().join(""), tokenizer: "tokenizer.model" } }),
   { ...repo("maker/model-GGUF", { "model.Q8_0.gguf": gguf(9 * MiB, 20 * MiB), "config.json": "{\"the\":\"maker's, never asked for\"}" }),
     ...repo("owner/model", { "config.json": CONFIG, "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template", "tokenizer.model": "a sentencepiece model" }) }],
-  // (T374.3: the one above comes whole with the third piece of its head, which ends past the file; this one goes on after it)
+  // (T.374.3: the one above comes whole with the third piece of its head, which ends past the file; this one goes on after it)
   ["a GGUF whose head takes three pieces, and a stream after them", hf({ weights: "model.Q8_0.gguf", tokenizer: undefined }), repo("owner/model", { "model.Q8_0.gguf": gguf(9 * MiB, 40 * MiB) })],
   ["a sentencepiece model (no tokenizer.json)", unlisted(), repo("owner/model", { ...left(whole(small), "tokenizer.json"), "tokenizer.model": "a sentencepiece model" })],
   ["a tokenizer.json the converter refuses, then spiece.model", unlisted(), repo("owner/model", whole(small, { "tokenizer.json": "unreadable", "spiece.model": "a sentencepiece model" }))],
@@ -229,7 +229,7 @@ const CASES = [
     whole("not a model", { "model.safetensors.index.json": index(["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]) })],
 ];
 
-// ---- T374.2.3: the candidates for a tokenizer are in one place, Python's (TOKENIZERS of src/python/convert/conduct.py). The
+// ---- T.374.2.3: the candidates for a tokenizer are in one place, Python's (TOKENIZERS of src/python/convert/conduct.py). The
 // page names none for a repository nobody has looked at, and keeps one list of its own, for the folder it must look
 // into before there is a Pyodide to ask: that list is held to Python's here
 {
@@ -241,7 +241,7 @@ const CASES = [
   const entry = hfEntry("owner/model", REVISION, { template: "{prompt}" });
   assert.deepEqual(entry.hf, { repo: "owner/model", revision: REVISION, weights: "model.safetensors", config: "config.json" },
     "the page names more of a repository nobody has looked at than its weights and its config.json: the candidates for its tokenizer are the conduct's to name");
-  // T505.3: a repository with nothing the page opens never reaches the worker: the page says so (the owner's sentence)
+  // T.505.3: a repository with nothing the page opens never reaches the worker: the page says so (the owner's sentence)
   assert.throws(() => lookedAt({ "README.md": { size: 1 }, "mmproj-model-F16.gguf": { size: 1 } }), { message: "owner/model has no model.safetensors and no GGUF file this page can read." });
   assert.deepEqual(lookedAt(ggufs), { repo: "owner/model", revision: REVISION, weights: "model-Q8_0.gguf", config: "config.json" }, "the page hands the worker another file of a repository of GGUFs than its Q8_0");
   console.log(`ok: the candidates for a tokenizer are Python's (${candidates.join(", ")}): the page names none for ?hf=, and looks for the same in a folder`);
@@ -332,7 +332,7 @@ if (cases !== fs.readFileSync(CASES_FIXTURE, "utf8")) {
 console.log(differ ? `worker-fetches-check: FAILED: ${differ} cases ask for something else than tests/fixtures/conversion-fetches.json says (--write after reading why)`
   : `worker-fetches-check: ${Object.keys(found).length} cases ask for what the fixture says`);
 // (a ReadableStream left unread keeps nothing alive here; the harness's timers are let go of with the process)
-// T384: not at once. An exit right after the last case stood still for good about once in 70 runs on the development
+// T.384: not at once. An exit right after the last case stood still for good about once in 70 runs on the development
 // machine (and twice in CI, to the job's limit): the main thread and one of V8's own threads both asleep on a futex,
 // inside Node's leaving (24.20; nodejs/node 54918 tells of one like it). With this pause, 0 of 400.
 setTimeout(() => process.stdout.write("", () => process.exit(differ ? 1 : 0)), 200);

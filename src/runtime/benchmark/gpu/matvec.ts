@@ -1,6 +1,6 @@
-// The steps "bandwidth" and "token": GB/s of one int8 matrix times a vector by every shader (T134, T149) against the CPU's
+// The steps "bandwidth" and "token": GB/s of one int8 matrix times a vector by every shader (T.134, T.149) against the CPU's
 // kernel, and a whole token's work of a model's shapes.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { built } from "../../built.ts";
 import { shared, MODELS, layerMatrices, SMALL_PER_LAYER, matrixBytes, gpu, MAP_READ, COPY_DST, buffer, noise, floats,
   pipelinesFor, matVecShaders, kindOf, quantizer, matrix, placed, bound, vectors, destroyVectors, run, argmaxOf,
@@ -10,15 +10,15 @@ import type { Alive, Bandwidth, BandwidthRow, CpuBandwidth, GpuModel, TokenFound
 // a kernel of simdkernel_plain.wasm, as it is called here: by addresses and counts
 type Kernel = (...numbers: number[]) => unknown;
 
-// ---- bandwidth: one matrix by every shader of matVecShaders() (T149), timed as the ceilings are (paired: a submission
-// of 2n of it less one of n, so that what a submission costs besides its work drops out, T168). The weights are
+// ---- bandwidth: one matrix by every shader of matVecShaders() (T.149), timed as the ceilings are (paired: a submission
+// of 2n of it less one of n, so that what a submission costs besides its work drops out, T.168). The weights are
 // placed once for every shader (only the bind groups are the shader's), in as many copies as make MATVEC_BYTES, read
 // in turn: the same small matrix read again and again stays in the GPU's caches (a phone's system cache of 19 MB and
-// more holds Llama 3.2 1B's w1, T149's review), and a token reads each matrix once. The first shader is measured again
+// more holds Llama 3.2 1B's w1, T.149's review), and a token reads each matrix once. The first shader is measured again
 // at the end (a device that slows down as it warms shows it there, as the prompt's batched row does). A packed shader
 // takes its vector quantized: what QUANTIZE costs for this width, once, goes beside them. On a fallback adapter each
 // once, one copy, and no matrix past FALLBACK_BYTES (the check holds the shaders to JavaScript; SwiftShader took 13
-// minutes of bench-check's 20 for the GPU section with the classifier's 295 MB 8 times). widen and packed: T134's two;
+// minutes of bench-check's 20 for the GPU section with the classifier's 295 MB 8 times). widen and packed: T.134's two;
 // cpu: the CPU's kernel on the same bytes
 const MATVEC_MOST = 1 << 14, MATVEC_BYTES = 128 << 20, FALLBACK_BYTES = 32 << 20;
 async function bandwidth(shape: Shape): Promise<Bandwidth> {
@@ -93,7 +93,7 @@ async function bandwidth(shape: Shape): Promise<Bandwidth> {
 
 // the CPU on the kernel the model page uses for int8 on one thread (matmul_q8, without relaxed SIMD: every
 // browser has it), on four matrices of this shape in turn so that no cache holds them. The page's forward pass does
-// more than this with relaxed SIMD and its software threads (2.9 times on the owner's Android, T157), which is why the
+// more than this with relaxed SIMD and its software threads (2.9 times on the owner's Android, T.157), which is why the
 // token's table holds the GPU against the CPU section instead.
 let cpuKernel: WebAssembly.Module | undefined;
 async function cpuBandwidth([rows, n]: Shape): Promise<CpuBandwidth> {

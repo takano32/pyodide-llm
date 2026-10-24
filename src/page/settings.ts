@@ -1,4 +1,4 @@
-// src/page/settings.ts (T355): the generation settings and their sheet, the engine's switches and bits in it, and
+// src/page/settings.ts (T.355): the generation settings and their sheet, the engine's switches and bits in it, and
 // what the page shows of a model as it is chosen.
 import { $, fit, prompt, select } from "./dom.ts";
 import { parameters } from "./address.ts";
@@ -8,12 +8,12 @@ import type { Sampled } from "../runtime/contracts/messages.ts";
 // The generation settings. They start as the model's own and go back to them with every change of model, except
 // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
 // steps: 0 stands for as many tokens as the model's context holds, which is the default of every model
-// T274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
+// T.274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
 // (the worker's contract has their names: one that is added is added there)
 type Settings = Sampled & { steps: number; temperature: number; topp: number; repetition_penalty: number };
 const defaults = (current: Model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
-// The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
-// (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=; T520: &thinking=, the budget of a
+// The URL may set any of them (T.43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
+// (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=; T.520: &thinking=, the budget of a
 // thought in tokens, 0 for none). A value that is not a number, or outside what the field allows, is
 // ignored. They survive a change of model, like the seed: the link said what to run with.
 const LIMITS: Record<string, [number, number]> = { temperature: [0, 1.5], topp: [0.05, 1], steps: [0, 1 << 20],
@@ -78,7 +78,7 @@ $("settings-reset").onclick = () => {
   settings = defaults(model);
   showSettings();
 };
-// T75: the engine's switches. They are read from the URL (?without=, and ?kernel=off as it always was) and written
+// T.75: the engine's switches. They are read from the URL (?without=, and ?kernel=off as it always was) and written
 // back to it: the page reloads with the model it has, and the worker starts from the new URL.
 const without = new Set((parameters.get("without") ?? "").split(",").map((name) => name.trim()).filter(Boolean));
 if (parameters.get("kernel") === "off") {
@@ -97,14 +97,14 @@ for (const box of switches) {
     const names = [...switches.map((each) => each.dataset.switch!).filter((each) => without.has(each)),
                    ...[...without].filter((each) => !switches.some((box) => box.dataset.switch === each))];
     names.length ? url.searchParams.set("without", names.join(",")) : url.searchParams.delete("without");
-    url.searchParams.delete("bench");  // T119: the reload is to run with the switches, not to measure again
+    url.searchParams.delete("bench");  // T.119: the reload is to run with the switches, not to measure again
     if (model.id !== "local") {
       url.searchParams.set("model", model.id);
     }
     location.assign(url);
   };
 }
-// T98: the bits of a converted model, from ?bits= (weighed() reads it) and back to it, the same way
+// T.98: the bits of a converted model, from ?bits= (weighed() reads it) and back to it, the same way
 const asked = ["6", "8"].includes(parameters.get("bits") ?? "") ? parameters.get("bits")! : "";
 for (const choice of document.querySelectorAll<HTMLInputElement>('#engine input[name="bits"]')) {
   choice.checked = choice.value === asked;
@@ -128,7 +128,7 @@ panel.addEventListener("beforetoggle", (event) => {
   const button = $("settings-open").getBoundingClientRect();
   panel.style.left = `${button.left}px`;
   panel.style.bottom = `${innerHeight - button.top + 10}px`;
-  // T119: no taller than the room above the button: with Engine and More both open, a phone lost its top
+  // T.119: no taller than the room above the button: with Engine and More both open, a phone lost its top
   panel.style.maxHeight = `${button.top - 26}px`;
 });
 

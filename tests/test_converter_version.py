@@ -1,4 +1,4 @@
-"""CONVERTER (src/runtime/kept.js) goes up when what the converter makes of a model changes (T116, T369 review): a kept
+"""CONVERTER (src/runtime/kept.js) goes up when what the converter makes of a model changes (T.116, T.369 review): a kept
 conversion of the old version is used otherwise, with the old options.
 
 tests/fixtures/converter-output.json holds the version and a digest of what the converter makes of three made-up models

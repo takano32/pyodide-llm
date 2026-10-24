@@ -1,4 +1,4 @@
-// tests/fakes/worker.mjs (T357.5)
+// tests/fakes/worker.mjs (T.357.5)
 // A stand-in for a Worker as the code that made it sees it: its face (postMessage, onmessage and onerror or
 // addEventListener, terminate), what it was posted written down, and the check speaking for it. For the checks of
 // what talks to the GPU's worker (forward/gpuside.ts through createForward()'s `gpu`, a factory: gpu-part-check.mjs,

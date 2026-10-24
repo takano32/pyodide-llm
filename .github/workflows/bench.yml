@@ -1,5 +1,5 @@
-# /benchmark/ (T134) in every browser the runners offer (tests/bench-check.mjs): every section once, the Markdown of
-# each browser in the summary. It took the place of gpu.yml (T94) and opfs.yml (T137). The runners have no GPU and are
+# /benchmark/ (T.134) in every browser the runners offer (tests/bench-check.mjs): every section once, the Markdown of
+# each browser in the summary. It took the place of gpu.yml (T.94) and opfs.yml (T.137). The runners have no GPU and are
 # not the owner's devices: this shows that the page works everywhere (the shaders agree with JavaScript on a software
 # adapter, every piece of the file reads back right, the forward pass gives finite numbers); the speeds that count are
 # the owner's. Playwright's Firefox runs under a debugger (AGENTS.md): its numbers are not Firefox's. By hand only.
@@ -18,26 +18,26 @@ on:
         description: MiB the storage section writes
         default: '256'
       os:
-        description: 'T242: one runner only (ubuntu-latest, macos-latest or windows-latest); all three when left out'
+        description: 'T.242: one runner only (ubuntu-latest, macos-latest or windows-latest); all three when left out'
         default: 'all'
       browsers:
-        description: 'T242: the browsers, e.g. "webkit"; all five when left out'
+        description: 'T.242: the browsers, e.g. "webkit"; all five when left out'
         default: 'chromium firefox webkit chrome msedge'
       run:
-        description: 'T242: the page''s ?run= (e.g. model, or cpu,model)'
+        description: 'T.242: the page''s ?run= (e.g. model, or cpu,model)'
         default: 'all'
       query:
-        description: 'T242: more of the page''s query, e.g. full (the six rounds of ?full)'
+        description: 'T.242: more of the page''s query, e.g. full (the six rounds of ?full)'
         default: ''
       times:
-        description: 'T242: how many times over, each a fresh browser (a failure that comes now and then)'
+        description: 'T.242: how many times over, each a fresh browser (a failure that comes now and then)'
         default: '1'
       build:
-        description: 'T242: a commit or branch to build (with tiny-lm alone) and serve from the runner in place of the site: a version before it goes out, or an old one'
+        description: 'T.242: a commit or branch to build (with tiny-lm alone) and serve from the runner in place of the site: a version before it goes out, or an old one'
         default: ''
 
 jobs:
-  # T242: the site of inputs.build, built once on Linux (the kernels and tiny-lm alone) and handed to every runner
+  # T.242: the site of inputs.build, built once on Linux (the kernels and tiny-lm alone) and handed to every runner
   site:
     if: ${{ inputs.build != '' }}
     runs-on: ubuntu-latest
@@ -99,7 +99,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and the browsers
         timeout-minutes: 20
         shell: bash

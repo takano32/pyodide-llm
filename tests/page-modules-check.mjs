@@ -1,10 +1,10 @@
-// tests/page-modules-check.mjs (T355): what the type check does not hold of the model page's script, in
-// src/pages/index.astro and in its modules (src/page/*.ts); and (T353) the same of /benchmark/'s script, in
+// tests/page-modules-check.mjs (T.355): what the type check does not hold of the model page's script, in
+// src/pages/index.astro and in its modules (src/page/*.ts); and (T.353) the same of /benchmark/'s script, in
 // src/pages/benchmark.astro and src/benchmark/*.ts. Node only, under a second:
 //
 //   node tests/page-modules-check.mjs
 //
-// T368.8: the modules are TypeScript, and tsc (tests/types.mjs) says a name of theirs that is declared nowhere and an
+// T.368.8: the modules are TypeScript, and tsc (tests/types.mjs) says a name of theirs that is declared nowhere and an
 // imported name that is assigned (TS2632; in a page's own script, which tsc does not read, the build refuses the
 // assignment). What is left here is what tsc, the build and Node all let pass, each with why:
 //   1. every name a file uses is declared in it, imported by it, or a global of a page listed below. The script inside
@@ -14,9 +14,9 @@
 //      import of dom.ts's prompt is window.prompt to it;
 //   2. the imports go round nowhere (the build links a ring without a word), and the script reaches every file of the
 //      folder;
-//   3. (T378.5) what the parts hold has owners: the modules that own the page's state (OWNERS, below) each declare
+//   3. (T.378.5) what the parts hold has owners: the modules that own the page's state (OWNERS, below) each declare
 //      their own `export let`s, which the others read by the name they import and never set. No imported name is
-//      hidden by a local of the same name (the lines below it read the local, without a word: T367.4's pitfall), and
+//      hidden by a local of the same name (the lines below it read the local, without a word: T.367.4's pitfall), and
 //      no name is declared at the top of two modules of one page (which of the two a reader means is then a matter of
 //      an import's line). The owners read nothing of a page and import no other part, so that Node can import them
 //      (tests/page-parts-check.mjs runs what it calls, and no more); every function of an owner is called by another
@@ -37,7 +37,7 @@ import { stripTypeScriptTypes } from "node:module";
 const root = fileURLToPath(new URL("..", import.meta.url));
 // [the page, the folder of its script's modules]
 const PAGES = [["src/pages/index.astro", "src/page"], ["src/pages/benchmark.astro", "src/benchmark"]];
-// T378.5: the owners of what a page's script holds, and all they may use without declaring it (nothing of a page)
+// T.378.5: the owners of what a page's script holds, and all they may use without declaring it (nothing of a page)
 export const OWNERS = { "src/page": ["model.ts", "answer.ts"], "src/benchmark": ["running.ts"] };
 const OWNERS_GLOBALS = new Set("Boolean Math undefined".split(" "));
 
@@ -123,7 +123,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
   assert.deepEqual([...files.keys()].filter((name) => !reached.has(name)), [], `files of ${FOLDER}/ that the page's script never imports`);
   console.log(`page-modules-check: the imports go round nowhere; in the order they run: ${[...reached].map((name) => path.posix.basename(name)).join(", ")}`);
 
-  // ---- 3. T378.5: what the parts hold has owners
+  // ---- 3. T.378.5: what the parts hold has owners
   // (the types off by Node itself, which leaves every name as it is written: esbuild gives a local that hides an
   // import another name (model2), and the line that reads the wrong one would pass)
   const names = new Map([...files].map(([name, { text }]) => [name, namesOf(written(text))]));

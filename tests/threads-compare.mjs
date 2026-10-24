@@ -1,4 +1,4 @@
-// tests/threads-compare.mjs (T378.1, T447): two builds' forward pass WITH software threads, in one process, turn by turn.
+// tests/threads-compare.mjs (T.378.1, T.447): two builds' forward pass WITH software threads, in one process, turn by turn.
 // tests/compare-engines.mjs measures the page's path with no software thread; a change of the threads' part
 // (src/runtime/forward/threads.js), of helper.js or of jobs.js is not seen there. Here each side is a build's
 // _astro/forward.<hash>.js and its own _astro/helper.<hash>.js (what a browser runs: tests/bundle.mjs), each on a shared

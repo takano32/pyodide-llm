@@ -139,7 +139,7 @@ in Pyodide (7.8 → 8.7 MiB).
 ## Long texts
 
 By default a model writes until it stops or its context is full; llm-jp-3-150m has 4096 tokens. Its KV cache grows
-with the text (302 MB of heap for a short text, 522 MB at the end; since T130 the cache grows in place, so less
+with the text (302 MB of heap for a short text, 522 MB at the end; since T.130 the cache grows in place, so less
 at the end: not measured), and the speed falls with the position: about
 85 tok/s at position 8, 65 at 1000, 50 at 2000, 35 at 4070 (Node). The tables above are about 256 tokens.
 
@@ -160,11 +160,11 @@ bandwidth is full:
   2.91 times, the first development machine).
 - With threads, the KV cache is kept in float16: half the reads, which is faster when memory is the limit (4
   threads at position 4000: 44 → 52-55 tok/s) and slower on one thread (38 → 21), on the first development machine.
-  Its quality cannot be told from float32 (perplexity 29.957 against 30.094). Since T160 a float16 number is widened
+  Its quality cannot be told from float32 (perplexity 29.957 against 30.094). Since T.160 a float16 number is widened
   in four instructions instead of seven (at position 4000, 1.14 to 1.35 times the tokens per second on the CI
   runners), yet on those runners a float32 cache is still as fast or faster at 1, 2 and 4 threads, and 1.15 to 1.44
   times faster for a model with grouped-query attention (Qwen2.5 0.5B at position 2000), which widens each key and
-  value once for every query head that shares it. So since T160 such a model keeps its cache in float32 with threads
+  value once for every query head that shares it. So since T.160 such a model keeps its cache in float32 with threads
   too (Qwen2.5 0.5B at position 2000, against float16: 1.45 to 1.52 times on one thread, 1.16 to 1.31 on four, CI's
   x86-64 and arm64), unless float32 would not fit a 32-bit memory (Qwen2.5 3B) or the model needs a 64-bit memory
   anyway (Llama 3.2 3B, the 7B and 8B models): those keep float16, and so does a model with a key for every head.

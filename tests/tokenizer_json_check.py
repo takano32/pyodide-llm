@@ -1,4 +1,4 @@
-"""T257: a real tokenizer.json, read by the converter and the engine, against the tokenizers library reading the same
+"""T.257: a real tokenizer.json, read by the converter and the engine, against the tokenizers library reading the same
 file (and against sentencepiece reading the model's own file, where the folder has a tokenizer.model): the ids of
 many texts, one by one. Run by hand (the files are megabytes and another's; pytest has made-up vocabularies of the
 same shapes, tests/test_spelled_bpe.py):

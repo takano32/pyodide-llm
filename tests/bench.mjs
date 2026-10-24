@@ -1,4 +1,4 @@
-// src/bench.js: the table a visitor pastes into an issue (T45). A plain module, so this runs in Node alone.
+// src/bench.js: the table a visitor pastes into an issue (T.45). A plain module, so this runs in Node alone.
 //
 //   node tests/bench.mjs
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ assert.ok(lines.some((line) => line.includes("|---|---|---|---|")), "the separat
 assert.ok(markdown.includes("| everything | 334.6 | 8.4 s | SIMD kernels, int8, relaxed SIMD |"), markdown);
 assert.ok(markdown.includes("8 logical cores") && markdown.includes("8 GB or more"), "what the browser told us");
 assert.ok(markdown.includes("Mozilla/5.0 (X11)"), "the user agent, for a report that means something");
-assert.ok(markdown.includes("Pyodide 314.0.7 · site abc1234"), "the site's version (T176), for which shaders and kernels ran");
+assert.ok(markdown.includes("Pyodide 314.0.7 · site abc1234"), "the site's version (T.176), for which shaders and kernels ran");
 
 // a browser that says nothing about itself must not make anything up
 const bare = benchMarkdown(rows, environmentOf({}, {}));
@@ -37,10 +37,10 @@ const broken = benchMarkdown([{ name: "everything", speed: undefined, backend: "
 assert.ok(broken.includes("| everything | ? |"), broken);
 
 assert.equal(ROUNDS.length, 2, "?bench=1 runs with and without the kernels");
-assert.equal(FULL_ROUNDS.length, 6, "?bench=full walks the steps of T52, and T110's");
+assert.equal(FULL_ROUNDS.length, 6, "?bench=full walks the steps of T.52, and T.110's");
 assert.deepEqual(FULL_ROUNDS.at(-1).without, [], "the last step is everything switched on");
-// T214: a browser that does not say its memory (Safari, Firefox: no navigator.deviceMemory) skips the round without the
-// kernels (NumPy's float32 weights took an iPhone's tab down, T205's review), and its row says why; one that says runs all
+// T.214: a browser that does not say its memory (Safari, Firefox: no navigator.deviceMemory) skips the round without the
+// kernels (NumPy's float32 weights took an iPhone's tab down, T.205's review), and its row says why; one that says runs all
 const quiet = roundsHere(ROUNDS, undefined);
 assert.deepEqual(quiet.map((round) => round.name), ROUNDS.map((round) => round.name), "every round keeps its row");
 assert.deepEqual(quiet.map((round) => round.skip), [undefined, MEMORY_UNSAID], "only the round without the kernels is skipped");
@@ -64,7 +64,7 @@ assert.equal(reportsTable([{ number: 11, url: "u", body: reportBody(iphone) }]).
 // a reason with a | in it stays one cell
 assert.equal(parseReport(benchMarkdown([{ name: "x", skip: "a | b" }], environmentOf({}, {}))).rows[0].skip, "a | b");
 // both pages ask for the rounds through roundsHere() with the browser's own deviceMemory, and the worker writes the row
-// (T355: the model page's script is index.astro's and the modules of src/page/: a page's text is all of them; T353:
+// (T.355: the model page's script is index.astro's and the modules of src/page/: a page's text is all of them; T.353:
 // and /benchmark/'s is benchmark.astro's and the modules of src/benchmark/)
 const PAGE_MODULES = { "index.astro": "page", "benchmark.astro": "benchmark" };
 const pageText = (page) => [new URL(`../src/pages/${page}`, import.meta.url),
@@ -78,7 +78,7 @@ for (const page of ["index.astro", "benchmark.astro"]) {
 }
 assert.ok(/if \(round\.skip !== undefined\) \{\s*rows\.push\(\{ name: round\.name, without: round\.without, skip: round\.skip \}\);\s*continue;/
   .test(fs.readFileSync(runtimeUrl("worker.js"), "utf8")), "the worker writes a skipped round's row and loads nothing");
-// T91: the issue the page opens, and the table the issues make
+// T.91: the issue the page opens, and the table the issues make
 const url = new URL(reportUrl(markdown, environment));
 assert.equal(url.searchParams.get("template"), "benchmark.md");
 assert.equal(url.searchParams.get("title"), "Benchmark: tiny-lm 29M");
@@ -93,7 +93,7 @@ const report = parseReport(answered);
 assert.deepEqual([report.device, report.os, report.browser, report.model, report.cores], ["Pixel 8", "", "Chrome 148", "tiny-lm 29M", "8"]);
 assert.deepEqual(report.rows.map((row) => row.speed), [334.6, 44.8]);
 assert.equal(parseReport("no table here"), undefined);
-// a report from before T91 (the Markdown alone, "8 threads") still reads
+// a report from before T.91 (the Markdown alone, "8 threads") still reads
 const old = markdown.replace("8 logical cores", "8 threads");
 const table = reportsTable([{ number: 7, url: "https://github.com/x/y/issues/7", body: answered },
                             { number: 8, url: "https://github.com/x/y/issues/8", body: reportBody(old) },
@@ -102,20 +102,20 @@ const tableLines = table.split("\n");
 assert.equal(tableLines.length, 4, "a header, the separator, and the two issues that are reports");
 assert.equal(tableLines[2], "| Pixel 8 | ? | Chrome 148 | tiny-lm 29M | 8 | 334.6 | 44.8 | SIMD kernels, int8, relaxed SIMD | [#7](https://github.com/x/y/issues/7) |");
 assert.ok(tableLines[3].startsWith("| ? | ? | ? | tiny-lm 29M | 8 | 334.6 |"), tableLines[3]);
-// T134: /benchmark/ writes the model's table first and its other sections after it, with tables and bold lines of
+// T.134: /benchmark/ writes the model's table first and its other sections after it, with tables and bold lines of
 // their own: the report reads as the model's table alone
 const everything = [markdown, "#### This browser\n\n| feature | here |\n|---|---|\n| WebAssembly SIMD | yes |",
   "#### GPU\n\n**Adapter**: apple · metal-3; max binding 2048 MiB\n\n| int8 matrix × vector | GPU |\n|---|---:|\n| Llama 3.2 1B w1 | 51.0 GB/s |",
-  // T168: the device's ceilings, and the share of them in the prompt's table (with a % in its cells)
+  // T.168: the device's ceilings, and the share of them in the prompt's table (with a % in its cells)
   "**The device's ceilings** (each a loop of that alone):\n\n| ceiling | GPU |\n|---|---:|\n| f32 multiply-adds | 1520.3 GFLOPS |\n" +
   "| f16 multiply-adds | no shader-f16 here |\n| int8 dots (dot4I8Packed) | 2710.0 GOPS |\n| reading the workgroup's memory (16-byte reads) | 310 GB/s |\n| reading a buffer (128 MiB) | 38.2 GB/s |",
-  // T146: the prompt's table names its shaders with × and parentheses
+  // T.146: the prompt's table names its shaders with × and parentheses
   "| shader | tokens at once on the GPU | GPU ms | GPU ms a token | GFLOPS | of the ceiling |\n|---|---:|---:|---:|---:|---:|\n| batched (T135) | 64 | 352.8 | 5.51 | 44 | 2.9% of f32 |\n" +
   "| ORT DP4A 64×64 | 64 | 60.0 | 0.94 | 260 | 9.6% of int8 dots |\n\n**Fastest on the GPU**: at 64 tokens ORT DP4A 64×64, 0.94 ms a token (260 GFLOPS)"].join("\n\n");
 const whole = parseReport(reportBody(everything).replace(/\*\*Device\*\*: \(.*\)/, "**Device**: iPhone 15"));
 assert.deepEqual([whole.device, whole.model, whole.cores], ["iPhone 15", "tiny-lm 29M", "8"]);
 assert.deepEqual(whole.rows.map((row) => row.name), ["everything", "without the kernels"]);
-// T134: a report without the model's section has no table and no model, so that reportsTable() leaves it out rather
+// T.134: a report without the model's section has no table and no model, so that reportsTable() leaves it out rather
 // than writing a row of question marks under a model that did not run
 const deviceOnly = [benchMarkdown([], environmentOf({ hardwareConcurrency: 4, userAgent: "UA" }, {})),
   "#### GPU\n\n| int8 matrix × vector | GPU |\n|---|---:|\n| Llama 3.2 1B w1 | 51.0 GB/s |"].join("\n\n");
@@ -123,14 +123,14 @@ assert.ok(!deviceOnly.includes("| what ran |"), deviceOnly);
 assert.equal(parseReport(reportBody(deviceOnly)), undefined);
 assert.equal(reportsTable([{ number: 10, url: "u", body: reportBody(deviceOnly) }]).split("\n").length, 2, "no row for it");
 assert.equal(new URL(reportUrl(deviceOnly, environmentOf({}, {}))).searchParams.get("title"), "Benchmark: this device");
-// T134: a report too long for the address goes by the clipboard; the address says so and stays short
+// T.134: a report too long for the address goes by the clipboard; the address says so and stays short
 assert.ok(!reportTooLong(everything, environment));
 const long = [everything, `#### Line\n\n${"| x | y |\n".repeat(600)}`].join("\n\n");
 assert.ok(reportTooLong(long, environment));
 const longUrl = reportUrl(long, environment);
 assert.ok(loginUrl(long, environment).length <= REPORT_LIMIT, `${loginUrl(long, environment).length}`);
 // what GitHub's login drops is the address once more encoded: a report of pipes and × (a table's) is too long long
-// before its own address is (the second review of T134: 4,935 characters of it were dropped by the login)
+// before its own address is (the second review of T.134: 4,935 characters of it were dropped by the login)
 for (let rows = 1; rows < 120; rows++) {
   const markdown = `#### GPU\n\n${"| Llama 3.2 1B · 16 tokens | 12.3 ms | 45.6 GB/s | ok × |\n".repeat(rows)}`;
   if (!reportTooLong(markdown, environment)) assert.ok(reportUrl(markdown, environment).length < 4935, `${rows} rows`);
@@ -139,7 +139,7 @@ for (let rows = 1; rows < 120; rows++) {
 assert.ok(new URL(longUrl).searchParams.get("body").endsWith(TOO_LONG));
 assert.ok(new URL(longUrl).searchParams.get("body").includes("**Device**: ("), "the three questions stay");
 
-// T157: the GPU's token table against the CPU section's forward pass. The owner's Android (T134's first report): the
+// T.157: the GPU's token table against the CPU section's forward pass. The owner's Android (T.134's first report): the
 // CPU section 11.2, 10.3 and 7.3 ms a token with 1, 2 and 4 threads (18.9, 20.5, 28.7 GB/s), its prompt 5.80, 4.50
 // and 2.77; the GPU's packed token of Llama 3.2 1B 48.4 ms, which the old column called 1.44×
 const cpuSection = { status: "ok", data: { shared: true, rows: [
@@ -158,7 +158,7 @@ assert.equal(cpuBaseline({ status: "error", markdown: "stopped" }).why, "the CPU
 assert.equal(cpuBaseline({ status: "wrong", data: cpuSection.data }).why, "the CPU section computed something wrong");
 assert.equal(cpuBaseline({ status: "none", markdown: "no WebAssembly SIMD" }).why, "the CPU section found nothing to run on here");
 assert.ok(cpuBaseline({ status: "ok", data: { rows: [{ asked: 1, none: "x" }] } }).why);
-// T163: the CPU section's table with the ceilings beside it: a token's reads against reading alone with as many threads
+// T.163: the CPU section's table with the ceilings beside it: a token's reads against reading alone with as many threads
 // (211 MB of checkpoint and 23.4 MB of corrections: 18.9 GB/s of checkpoint reads 21.0, 56% of 37.8), the prompt's
 // G MAC/s with one thread against relaxed_dot with its loads (121.6 M weights in the layers: 5.80 ms a token is 21.0)
 const ceilingsOf = (read, extra = {}) => ({ read, dot: { GMACs: 43.4 }, dotRegisters: { GMACs: 67.9 }, fma: { GMACs: 8.3 }, ...extra });
@@ -179,11 +179,11 @@ const safari = cpuTable({ ...cpuResult, tokenMegabytes: 211, ceilings: ceilingsO
 assert.ok(safari.includes("| relaxed_dot, registers only | 1 | not in this browser |"));
 assert.ok(safari.includes("| relaxed_dot with its two loads (int8) | 1 | not in this browser |"));
 assert.ok(safari.includes("| 1 | 11.2 | 18.9 (50%) | 89.3 | 5.80 | 21.0 |"), safari.join("\n"));
-// the ceilings could not start: the forward pass stands, the ceilings say why (T227's review: "failed:", as the GPU
+// the ceilings could not start: the forward pass stands, the ceilings say why (T.227's review: "failed:", as the GPU
 // section's steps say it, so that the report's warnings list it)
 const unstarted = cpuTable({ ...cpuResult, ceilings: { error: "Error: the ceilings' loops could not be fetched" } });
 assert.ok(unstarted.includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | 21.0 |") && unstarted.at(-1).startsWith("failed: Error"), unstarted.join("\n"));
-// a report from before T163 (no ceilings, no layerWeights) still makes a table
+// a report from before T.163 (no ceilings, no layerWeights) still makes a table
 assert.ok(cpuTable({ ...cpuResult, layerWeights: undefined, ceilings: undefined }).includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | ? |"));
 // the counts of threads: doubling up to the logical cores, and the cores themselves
 assert.deepEqual(threadCounts(8), [1, 2, 4, 8]);
@@ -240,7 +240,7 @@ assert.ok(withCpu.some((line) => line.includes("could not hold \\| the weights a
 // and the report with it still reads as the model's table alone
 const withGpu = parseReport(reportBody([markdown, "#### GPU", ...withCpu].join("\n\n")));
 assert.deepEqual(withGpu.rows.map((row) => row.name), ["everything", "without the kernels"]);
-// T149: the matrix × vector table holds each GB/s against the buffer's reads, but not after a lost device (its times
+// T.149: the matrix × vector table holds each GB/s against the buffer's reads, but not after a lost device (its times
 // are no GPU's, and too fast: past 100%) nor on a fallback adapter; a failure's | stays in its cell
 const matVecSteps = [{ name: "bandwidth: Llama 3.2 1B w1", result: { rows: [{ shader: "widened (T134)", check: "widen", GBps: 20 },
   { shader: "llama.cpp MMVQ, 4 rows", check: "llama.cpp MMVQ, 4 rows", error: "a | b" }], cpu: { GBps: 9 } } }];
@@ -251,7 +251,7 @@ assert.equal(matVecRow(matVecTable(matVecSteps, {}, matVecCeilings, { lost: "los
 assert.ok(matVecTable(matVecSteps, {}, matVecCeilings, { lost: "lost" }).some((line) => line.includes("the device was lost")));
 assert.equal(matVecRow(matVecTable(matVecSteps, {}, { ...matVecCeilings, fallback: true })), "| widened (T134) | 20.0 GB/s |");
 assert.ok(matVecTable(matVecSteps, {}, matVecCeilings).includes("| llama.cpp MMVQ, 4 rows | failed: a \\| b |"));
-// T150: the layer's table: "faster than the separate steps" beside a fused row, against the separate steps of the
+// T.150: the layer's table: "faster than the separate steps" beside a fused row, against the separate steps of the
 // same reduction, but none after a lost device, on a fallback adapter, for a row the check found WRONG or an unsteady
 // one; the share of the buffer's reads beside GB/s, but not after a lost device or on a fallback adapter; every row
 // as many cells as the header, a failure's | in its cell
@@ -269,7 +269,7 @@ const layerCeilings = { global: { GBps: 40 } };
 const fasterOf = (lines, form) => cellsOf(lines.find((line) => line.startsWith(`| ${form} |`) || line.startsWith(`| ${form} (WRONG`))).at(-1).trim();
 const layerLines = layerTable(layerStep, layerRight, layerCeilings);
 assert.ok(layerLines.includes("| llama.cpp, fused (T150) | 5 | 2.10 | 32.6 (81.5%) | 33.6 | 2.0× |"), layerLines.join("\n"));
-// T175: the DP4A forms against DP4A's separate steps (not llama.cpp's: 4.2 / 1.5 would say 2.8×)
+// T.175: the DP4A forms against DP4A's separate steps (not llama.cpp's: 4.2 / 1.5 would say 2.8×)
 assert.ok(layerLines.includes("| DP4A, fused (T175) | 9 | 1.50 | 45.6 (114.0%) | 24.0 | 2.0× |"), layerLines.join("\n"));
 assert.ok(layerLines.includes("| DP4A, fused (T175), the norms apart | 11 | 2.00 | 34.2 (85.5%) | 32.0 | 1.5× |"), layerLines.join("\n"));
 assert.equal(fasterOf(layerLines, "llama.cpp, separate steps"), "");
@@ -301,7 +301,7 @@ assert.ok(layerTable(layerStep, layerWrong).some((line) => line.startsWith("| DP
 // the separate steps WRONG: nothing right to hold the fused one against
 assert.equal(fasterOf(layerTable(layerStep, { ...layerRight, "a layer, DP4A, separate steps": { ok: false } }), "DP4A, fused (T175)"), "");
 
-// T202: where a layer's time goes. The times are multiples of 1/64 ms, so that every sum below is exact: the fused
+// T.202: where a layer's time goes. The times are multiples of 1/64 ms, so that every sum below is exact: the fused
 // form's steps sum to 3.25 ms (matrices 2.75, attention 0.25, norms and quantizing 0.25), its layer 3.5 (the chain
 // 0.25), the matrices alone 2.0 (fusing adds 0.75); the form with the norms apart sums to 3.375 against a layer of
 // 3.25 (the chain less than nothing, as it can come out)
@@ -332,7 +332,7 @@ assert.ok(stepsText.includes('- "DP4A, fused (T175)", 9 dispatches: the layer 3.
   "+ the attention 0.25 + the norms and quantizing 0.25 + the chain 0.25. A dispatch of one workgroup takes 15.6 µs: 9 of them 0.14 ms."), stepsText);
 assert.ok(stepsText.includes('- "DP4A, fused (T175), the norms apart", 11 dispatches: the layer 3.25 ms. Its steps one by one 3.38 ms'), stepsText);
 assert.ok(stepsText.includes("what the chain costs beyond each step alone: −0.13 ms"), stepsText);
-// the fewest MB read before the same weights again (T202's review: a matrix alone on ranges of all the copies), and
+// the fewest MB read before the same weights again (T.202's review: a matrix alone on ranges of all the copies), and
 // without it a word, never "undefined"
 assert.ok(layerStepsTable({ ...stepsStep, result: { ...stepsStep.result, cycleMB: 75.5 } }, layerRight, layerCeilings)[0].includes("(none read again before 76 MB of other weights: not from the GPU's caches)"));
 assert.ok(stepsLines[0].includes("(none read again soon: not from the GPU's caches)"), stepsLines[0]);
@@ -369,39 +369,39 @@ assert.ok(!layerStepsTable(stepsStep, layerRight, layerCeilings, { lost: "lost" 
 assert.ok(layerStepsTable(stepsStep, layerRight, layerCeilings, { lost: "lost" }).some((line) => line.includes("the device was lost")));
 assert.ok(layerStepsTable(stepsStep, layerWrong, layerCeilings).join("\n").includes('in "DP4A, fused (T175)" (WRONG in the check), µs a layer'));
 assert.deepEqual(layerStepsTable({ name: "the steps of a layer", error: "no | here" }), ["**Where a layer's time goes**: failed: no \\| here"]);
-// T208: the forms chosen by the layer table's fastest (named in the head, with the partner's norms), or by the packed
+// T.208: the forms chosen by the layer table's fastest (named in the head, with the partner's norms), or by the packed
 // int8 dot where it gave none (and why); the attention alone on its caches; the spares; the whole layer by timestamps
 // in one line, or why not
 const chosenStep = { ...stepsStep, result: { ...stepsStep.result, chosen: { by: "layer", fastest: "DP4A, fused (T175)" }, spares: 2, cycleMB: 137.2,
   caches: { count: 512, MB: 134.2 }, timestamps: { layers: 32, rounds: 5, forms: [{ form: "DP4A, fused (T175), the norms apart", ms: 3.125, span: 3.1875 }, { form: "DP4A, fused (T175)", ms: 3.375, span: 3.4375 }] } } };
 const chosenLines = layerStepsTable(chosenStep, layerRight, layerCeilings), chosenText = chosenLines.join("\n");
-assert.ok(chosenLines[0].includes('the fastest fused layer of the table above that the check found right, "DP4A, fused (T175)", as the engine chooses it (T152), ' +
+assert.ok(chosenLines[0].includes('the fastest fused layer of the table above that the check found right, "DP4A, fused (T175)", as the engine chooses it (T.152), ' +
   'and beside it the same with its norms apart: "DP4A, fused (T175), the norms apart" and "DP4A, fused (T175)"'), chosenLines[0]);
 assert.ok(chosenLines[0].includes("and of 2 spare matrices of random weights (none read again before 137 MB of other weights"), chosenLines[0]);
 assert.ok(chosenLines[0].includes("The attention alone reads 512 copies of the cache"), chosenLines[0]);
 assert.ok(chosenText.includes('The whole layer by the GPU\'s own clock (timestamp-query), a check of the times above: "DP4A, fused (T175), the norms apart" 3.13 ms (first to last 3.19; above: 3.25), ' +
   '"DP4A, fused (T175)" 3.38 ms (first to last 3.44; above: 3.50) a layer, each the median of 5 submissions of 32 layers'), chosenText);
-// T208's review: first to last cuts the timestamps by 65.5 µs / the layers or less
+// T.208's review: first to last cuts the timestamps by 65.5 µs / the layers or less
 assert.ok(chosenText.includes("first to last by 2 µs or less whatever they do"), chosenText);
 const oneForm = { ...chosenStep, result: { ...chosenStep.result, chosen: { by: "layer", fastest: "llama.cpp, fused (T150), subgroups" },
   forms: [{ ...stepsStep.result.forms[1], form: "llama.cpp, fused (T150), subgroups", check: "a layer, llama.cpp, fused (T150), subgroups" }], timestamps: { none: "no | clock" } } };
 const oneFormLines = layerStepsTable(oneForm, layerRight, layerCeilings);
-assert.ok(oneFormLines[0].includes('as the engine chooses it (T152): "llama.cpp, fused (T150), subgroups")'), oneFormLines[0]);
+assert.ok(oneFormLines[0].includes('as the engine chooses it (T.152): "llama.cpp, fused (T150), subgroups")'), oneFormLines[0]);
 assert.ok(oneFormLines.includes("The whole layer by the GPU's own clock (timestamp-query), a check of the times above: not here: no \\| clock."), oneFormLines.join("\n"));
 const byPacked = layerStepsTable({ ...stepsStep, result: { ...stepsStep.result, chosen: { by: "packed", why: "no layer table was timed before" } } }, layerRight, layerCeilings);
 assert.ok(byPacked[0].includes("by the packed int8 dot alone (no layer table was timed before: ONNX Runtime's DP4A, the packed int8 dot is here)"), byPacked[0]);
 assert.ok(layerStepsTable({ ...chosenStep, result: { ...chosenStep.result, timestamps: { error: "refused" } } }, layerRight, layerCeilings)
   .some((line) => line.endsWith("a check of the times above: failed: refused.")));
-assert.ok(!stepsText.includes("GPU's own clock"), "no line where no timestamps were taken (a result before T208)");
+assert.ok(!stepsText.includes("GPU's own clock"), "no line where no timestamps were taken (a result before T.208)");
 for (const [label, lines] of [["chosen", chosenLines], ["one form", oneFormLines], ["by packed", byPacked],
   ["timestamps lost", layerStepsTable({ ...chosenStep, result: { ...chosenStep.result, timestamps: { layers: 32, rounds: 5, forms: [{ form: "DP4A, fused (T175)", ms: NaN, span: undefined }] } } }, layerRight, layerCeilings)]]) {
   const rowsOf = lines.filter((line) => line.startsWith("|"));
   for (const line of rowsOf) assert.equal(cellsOf(line).length, cellsOf(rowsOf[0]).length, `${label}: ${line}`);
   assert.ok(!lines.join("\n").includes("undefined") && !lines.join("\n").includes("NaN"), `${label}: ${lines.join("\n")}`);
 }
-// T224: a token's attention alone by the positions it reads, under the steps' table: µs a length, the vec forms how
+// T.224: a token's attention alone by the positions it reads, under the steps' table: µs a length, the vec forms how
 // many times faster than the tiles (not where either is unsteady, nor on a fallback adapter), a form not here, a
-// length that failed; nothing where the result has no lengths (before T224), one line where they failed
+// length that failed; nothing where the result has no lengths (before T.224), one line where they failed
 const lengthsStep = { ...chosenStep, result: { ...chosenStep.result, lengths: { positions: [128, 1024, 4096], MB: 134.2, rows: [
   { attention: "the prompt's tiles (flash attention's tile)", times: [{ ms: 0.05 }, { ms: 0.4 }, { ms: 1.6 }] },
   { attention: "flash_attn_vec (subgroups)", times: [{ ms: 0.025 }, { ms: 0.1, unsteady: true }, { ms: 0.2 }] },
@@ -412,7 +412,7 @@ assert.ok(lengthsLines.includes("| the prompt's tiles (flash attention's tile) |
 assert.ok(lengthsLines.includes("| flash_attn_vec (subgroups) | 25.0 (2.0× the tiles) | unsteady: 100.0 | 200.0 (8.0× the tiles) |"), lengthsText);
 assert.ok(lengthsLines.includes("| flash_attn_vec | not here: a \\| b | failed: refused | 400.0 (4.0× the tiles) |"), lengthsText);
 assert.ok(!layerStepsTable(lengthsStep, layerRight, { ...layerCeilings, fallback: true }, { fallback: true }).join("\n").includes("the tiles)"));
-// T224's review: the tiles twice where the engine makes them otherwise (f16, subgroups): the vec rows against the
+// T.224's review: the tiles twice where the engine makes them otherwise (f16, subgroups): the vec rows against the
 // engine's (base), the f32 tiles with no ratio
 {
   const twoStep = { ...chosenStep, result: { ...chosenStep.result, lengths: { positions: [128, 1024, 4096], MB: 134.2, base: 1, rows: [
@@ -426,7 +426,7 @@ assert.ok(!layerStepsTable(lengthsStep, layerRight, { ...layerCeilings, fallback
   assert.ok(twoText.includes("The tiles are here twice"), twoText);
   assert.ok(!twoText.includes("undefined") && !twoText.includes("NaN"), twoText);
   assert.ok(!twoText.includes("GB/s: the keys and values"), "no GB/s of the cache before the review's bytes");
-  // T224's review: bytes, the keys and values of each length read once (Llama 3.2 1B's: positions × 512 × 2 B × 2): the
+  // T.224's review: bytes, the keys and values of each length read once (Llama 3.2 1B's: positions × 512 × 2 B × 2): the
   // GB/s of every cell, and against the buffer's reads (40 GB/s here) where there is that ceiling
   const bytes = [128, 1024, 4096].map((positions) => positions * 512 * 4);
   const rateStep = { ...twoStep, result: { ...twoStep.result, lengths: { ...twoStep.result.lengths, bytes } } };
@@ -442,9 +442,9 @@ assert.ok(!layerStepsTable(lengthsStep, layerRight, { ...layerCeilings, fallback
     layerRight, layerCeilings).join("\n");
   assert.ok(unsteadyRates.includes("| a | unsteady: 1000.0 | 1000.0 (2.1 GB/s, 5% of the buffer's reads) | 1000.0 (8.4 GB/s, 21% of the buffer's reads) |"), unsteadyRates);
 }
-assert.ok(!chosenText.includes("A token's attention alone"), "no lengths where none were taken (a result before T224)");
+assert.ok(!chosenText.includes("A token's attention alone"), "no lengths where none were taken (a result before T.224)");
 assert.ok(layerStepsTable({ ...chosenStep, result: { ...chosenStep.result, lengths: { error: "no | memory" } } }, layerRight, layerCeilings)
-  .includes("**A token's attention alone, by the positions it reads** (T224): failed: no \\| memory"));
+  .includes("**A token's attention alone, by the positions it reads** (T.224): failed: no \\| memory"));
 {
   const rowsOf = lengthsLines.slice(lengthsLines.indexOf("| attention | 128 positions, µs | 1024 positions, µs | 4096 positions, µs |")).filter((line) => line.startsWith("|"));
   assert.equal(rowsOf.length, 5, lengthsText);
@@ -457,7 +457,7 @@ assert.ok(layerTable(unsteadyStep, layerRight).includes("| llama.cpp, fused (T15
 const slowStep = { ...layerStep, result: { ...layerStep.result, rows: [{ ...layerStep.result.rows[0], msPerLayer: 2900, GBps: 0.0236 }] } };
 assert.ok(layerTable(slowStep, layerRight, undefined, { fallback: true }).includes("| llama.cpp, separate steps | 14 | 2900.00 | 0.024 | 46400.0 |  |"));
 assert.equal(layerTable({ name: "a layer of a token", error: "x | y" })[0], "**A layer of a token**: failed: x \\| y");
-// T151: the table of tokens generated on the GPU: what a submission costs besides its tokens and how many times faster
+// T.151: the table of tokens generated on the GPU: what a submission costs besides its tokens and how many times faster
 // several a submission are than one, neither after a lost device, on a fallback adapter or with the sampling WRONG
 const generateStep = { name: "tokens generated on the GPU", result: { model: "Llama 3.2 1B's width", layers: 2, vocab: 32000, GB: 0.21,
   dispatches: 13, chunkDispatches: 16, tokens: 16, settings: { temperature: 0.7, topp: 0.9, penalty: 1.3 }, work: { ms: 9.1 }, chunkWork: { ms: 4.25 },
@@ -466,18 +466,18 @@ const generateStep = { name: "tokens generated on the GPU", result: { model: "Ll
   sampling: { vocab: 128256, msEach: 0.31, over: 5114, flat: { msEach: 1.2, over: 128256, unsteady: true } } } };
 const generateRight = { sampling: { ok: true }, "sampling in chunks": { ok: true }, "tokens on the GPU": { ok: true } };
 const generateLines = generateTable(generateStep, generateRight);
-// T175: the layer the tokens ran, by its name in the layer table
+// T.175: the layer the tokens ran, by its name in the layer table
 assert.ok(generateTable({ ...generateStep, result: { ...generateStep.result, layer: "DP4A, fused (T175)" } }, generateRight)[0].includes(`the layer table's "DP4A, fused (T175)"`));
 assert.ok(generateLines.includes("| 1, each read back as it comes | 14.20 | 9.30 | 5.10 | 5.10 |  |"), generateLines.join("\n"));
 assert.ok(generateLines.includes("| 16, read back once | 9.40 | 4.51 | 4.80 | 0.30 | 1.5× |"), generateLines.join("\n"));
 assert.ok(generateLines[0].includes("(16 dispatches a token)"), generateLines[0]);
 assert.ok(generateLines.at(-1).includes("9.10 ms (with the sampling in chunks 4.25 ms)"), generateLines.at(-1));
-// T191: the sampling alone in one workgroup and in chunks, and the chunks' column WRONG where their check is
+// T.191: the sampling alone in one workgroup and in chunks, and the chunks' column WRONG where their check is
 const bothSamplers = generateTable({ ...generateStep, result: { ...generateStep.result, sampling: { vocab: 128256, msEach: 5.893, over: 3695,
   chunks: { msEach: 0.812 }, flat: { msEach: 6.104, over: 128256, chunks: { error: "a | b" } } } } }, generateRight).at(-1);
 assert.ok(bothSamplers.includes("one workgroup 5.893 ms (3695 tokens over the floor), in chunks 0.812 ms; on flat logits, one workgroup 6.104 ms " +
   "(128256 tokens over the floor), in chunks failed: a \\| b."), bothSamplers);
-// T191's review: of the sampling in chunks, its last stage alone (SAMPLE's search), and a timing that failed on either
+// T.191's review: of the sampling in chunks, its last stage alone (SAMPLE's search), and a timing that failed on either
 const withLast = generateTable({ ...generateStep, result: { ...generateStep.result, sampling: { vocab: 128256, error: "c | d", over: 3695,
   chunks: { msEach: 0.812, pick: { msEach: 0.25, unsteady: true } } } } }, generateRight).at(-1);
 assert.ok(withLast.includes("one workgroup failed: c \\| d (3695 tokens over the floor), in chunks 0.812 ms (of it the last stage, one workgroup's " +
@@ -507,7 +507,7 @@ assert.ok(generateTable(generateStep, generateRight, { fallback: true }).some((l
 assert.equal(generateTable({ name: "x", error: "a | b" })[0], "**Tokens generated on the GPU**: failed: a \\| b");
 const unmeasured = generateTable({ ...generateStep, result: { ...generateStep.result, work: undefined, sampling: undefined, rows: [{ perSubmission: 1, msPerToken: 900 }, { perSubmission: 2, msPerToken: 800 }] } }, generateRight, { fallback: true });
 assert.ok(unmeasured.at(-1).includes("not measured here"), unmeasured.at(-1));
-// T184: the model page's own path, one table: a device whose GPU took the prompts, one whose GPU stopped while timed,
+// T.184: the model page's own path, one table: a device whose GPU took the prompts, one whose GPU stopped while timed,
 // CI's fallback adapter, a model the GPU does not take, a failure
 const cell = (speed, low, high, gpuTokens, unsteady = false) => ({ speed, low, high, gpuTokens, unsteady });
 const real = { threads: 4, gpu: { seconds: 4.23, matrices: "TF.js 64×64", attention: "llama.cpp flash" }, status: "prompts of 32 tokens and more on WebGPU, answers on the CPU (faster here)",
@@ -520,9 +520,9 @@ assert.ok(pathLines.includes("| a prompt of 64 tokens | 820 tok/s (800–830), G
 assert.ok(pathLines.includes("| a prompt of 256 tokens | 1300 tok/s (1280–1310), GPU 192 of 256 | 650 tok/s (640–655) | 1310 tok/s (1300–1320) | 2.0× |"), pathLines.join("\n"));
 assert.ok(pathLines.includes("| writing 64 tokens | same as CPU only | 80.4 tok/s (79.1–81.2) | not on the GPU yet |  |"), pathLines.join("\n"));
 const pathRows = pathLines.filter((line) => line.startsWith("|"));
-assert.equal(pathRows.length, 2 + real.rows.length, "a header, the separator, a row each: 3 to 6 rows (T185 keeps the report short)");
+assert.equal(pathRows.length, 2 + real.rows.length, "a header, the separator, a row each: 3 to 6 rows (T.185 keeps the report short)");
 for (const line of pathRows) assert.equal(cellsOf(line).length, cellsOf(pathRows[0]).length, line);
-// the review's must-fix: a GPU that stopped while the sides were timed says so, and no ratio stands (T157)
+// the review's must-fix: a GPU that stopped while the sides were timed says so, and no ratio stands (T.157)
 const stopped = pathTable({ ...real, gpu: { ...real.gpu, lost: "the GPU failed on a block of the prompt" },
   rows: [real.rows[0], { ...real.rows[1], chosen: cell(640, 630, 650, 0), gpu: { skip: "the GPU failed on a block of the prompt" } }] });
 assert.ok(stopped.includes("WebGPU stopped while timed: the GPU failed on a block of the prompt") && !stopped.includes("ready in"), stopped);
@@ -541,7 +541,7 @@ assert.ok(float32.includes("WebGPU: float32 weights are not on the GPU yet") && 
 assert.equal(pathTable({ error: "a | b" }, "x"), "**The model page's path** (x): failed: a \\| b");
 assert.ok(!pathTable(undefined).includes("undefined"));
 for (const text of [pathTable(real), stopped, onFallback, float32]) assert.ok(!text.includes("undefined") && !text.includes("NaN"), text);
-// T190: the page path's threads are the model page's: the count it remembers (same key on both pages), or the search's
+// T.190: the page path's threads are the model page's: the count it remembers (same key on both pages), or the search's
 // verdicts here, or why there is one thread
 const nav = { hardwareConcurrency: 8, deviceMemory: 8, userAgent: "Mozilla/5.0 (Linux; Android 15)" };
 assert.equal(threadsKey("llm-jp-3-150m", nav), "threads:llm-jp-3-150m:8:8:Mozilla/5.0 (Linux; Android 15)");
@@ -556,7 +556,7 @@ assert.ok(headOf({ searched: [[8, 4, 4], [4, 2, 4]] }).includes("4 software thre
 assert.ok(headOf({ unfinished: 120 }).includes("4 software threads: the search had not ended after 120 s ·"));
 assert.ok(headOf({ alone: "no shared memory here" }, 1).includes("1 software thread: no shared memory here ·"));
 assert.ok(headOf({ searched: [] }).includes("4 software threads ·"), "no search: nothing more");
-// T190's review: a software thread that stopped says so (worker/timing.js reads engine.lostThreads: found is 1 then, and the
+// T.190's review: a software thread that stopped says so (worker/timing.js reads engine.lostThreads: found is 1 then, and the
 // search's verdicts would name another count); one that stopped after the count was found, too
 assert.ok(headOf({ alone: "a software thread stopped" }, 1).includes("1 software thread: a software thread stopped ·"));
 assert.ok(headOf({ remembered: true, stopped: true }).includes("4 software threads, as the model page remembers; a software thread stopped while timed, and one thread went on ·"));
@@ -574,7 +574,7 @@ assert.equal(PATH_WRITES, 64);
 // in the report, under the rounds' table: parseReport() still reads the rounds alone
 const withPath = [markdown, pathTable(real, "tiny-lm 29M")].join("\n\n");
 assert.deepEqual(parseReport(withPath).rows.map((row) => row.name), ["everything", "without the kernels"]);
-// T186: a layer's verdict in one short line: the four quantized vectors summed, the fused form against the norms apart
+// T.186: a layer's verdict in one short line: the four quantized vectors summed, the fused form against the norms apart
 const quantized = [{ point: "q, k, v", wrong: null, scale: 1.2e-7, apart: 3, of: 2112 }, { point: "o", wrong: null, scale: 2.5e-7, apart: 1, of: 2112 },
   { point: "gate, up", wrong: null, scale: 0, apart: 0, of: 2112 }, { point: "down", wrong: null, scale: 1e-8, apart: 2, of: 2080 }];
 assert.equal(layerCheckNumbers({ quantized }), "quantized: scales 2.5e-7, 6 of 8416 off by 1");
@@ -583,7 +583,7 @@ assert.equal(layerCheckNumbers({ quantized, sameAsNormsApart: { ulps: 2, apart: 
 assert.equal(layerCheckNumbers({ sameAsNormsApart: { ulps: 0, apart: 0, stream: 0, bitForBit: true } }), "norms apart: bit for bit");
 assert.equal(layerCheckNumbers({ quantized: [quantized[0], { ...quantized[1], wrong: "far from quantize_x's" }] }), "quantized: o far from quantize_x's");
 assert.equal(layerCheckNumbers({ worstRelative: 1e-6, ok: true }), "");
-// T225: the worker's line of the layer's stages comes last, as it is
+// T.225: the worker's line of the layer's stages comes last, as it is
 assert.equal(layerCheckNumbers({ stages: "stages: q 2.1e-7, K and V 396 to the nearest float16" }), "stages: q 2.1e-7, K and V 396 to the nearest float16");
 assert.equal(layerCheckNumbers({ quantized, stages: "stages: q 2.1e-7; first to depart: none" }), "quantized: scales 2.5e-7, 6 of 8416 off by 1; stages: q 2.1e-7; first to depart: none");
 // and the line of the tokens' steps, in the verdict of the tokens (after the first problem, where there is one)
@@ -591,7 +591,7 @@ assert.equal(checkVerdict(["tokens on the GPU", { ok: true, worstRelative: 0, to
   "tokens on the GPU ok (12 tokens, 0 next to a border; steps: T 0: logits within 2.0e-6 of the largest)");
 assert.equal(checkVerdict(["tokens on the GPU", { ok: false, worstRelative: 0, tokens: 9, edge: 0, problems: ["T 0.7, token 2: 48, the CPU 483"], steps: "steps: T 0.7: logits 1.0e-3 | 2.0e-3" }]),
   "tokens on the GPU WRONG (9 tokens, 0 next to a border: T 0.7, token 2: 48, the CPU 483; steps: T 0.7: logits 1.0e-3 \\| 2.0e-3)");
-// T185: a report of a real GPU is about four times the link's limit (the owner's Android's shape: packed int8 dot,
+// T.185: a report of a real GPU is about four times the link's limit (the owner's Android's shape: packed int8 dot,
 // shader-f16 and subgroups, 8 logical cores, the page's path; the numbers made up). Where the whole is too long the link
 // holds the head and a line a section, and asks for the whole from the clipboard; parseReport() reads it as before.
 const android = environmentOf({ hardwareConcurrency: 8, deviceMemory: 8, userAgent: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36" },
@@ -658,7 +658,7 @@ const onFallbackAdapter = gpuSummary([{ ...aSteps[0], result: { ...aSteps[0].res
 assert.ok(onFallbackAdapter[0].includes("a fallback adapter: nothing timed") && !onFallbackAdapter.slice(1).join().includes("the CPU)") && !onFallbackAdapter.join().includes("% of"), onFallbackAdapter.join("\n"));
 const afterLost = gpuSummary(aSteps, aBaseline, { lost: "gone" });
 assert.ok(afterLost[0].endsWith("; the device was lost (gone)") && !/\(\d[\d.]*×/.test(afterLost.join()) && !afterLost.join().includes("% of"), afterLost.join("\n"));
-// T202: the summary says where the fastest broken-down layer's time goes (the norms apart: 3.25 ms, its small steps
+// T.202: the summary says where the fastest broken-down layer's time goes (the norms apart: 3.25 ms, its small steps
 // 0.375, its chain −0.125), not after a lost device
 const withSteps = gpuSummary([...aSteps, stepsStep], aBaseline);
 assert.ok(withSteps.includes("GPU, where the time of a layer DP4A, fused (T175), the norms apart goes: 3.25 ms, the matrices alone 2.00, fusing adds 0.75, " +
@@ -676,7 +676,7 @@ for (const lines of [gpuSummary(aSteps.slice(0, 2), {}), gpuSummary([{ name: "th
 // a report that fits is in the link whole, summary or not; a summary too long as well leaves the request alone
 assert.equal(new URL(reportUrl(everything, environment, aSummary)).searchParams.get("body"), reportBody(everything));
 assert.ok(new URL(reportUrl(long, environment, long)).searchParams.get("body").endsWith(TOO_LONG));
-// T227: all that came out WRONG, failed, unsteady or skipped, in one place at the top of the report and in the summary,
+// T.227: all that came out WRONG, failed, unsteady or skipped, in one place at the top of the report and in the summary,
 // in the page's words. The GPU section as the page's gpuMarkdown() writes it: the line of every verdict, then the tables
 // (which mark the rows of a WRONG shader: those marks are not listed again); said, its verdicts that are not ok.
 const gpuSection = (check) => {
@@ -695,7 +695,7 @@ assert.deepEqual(warnings(cleanSections), []);
 assert.equal(warningsBlock([]), "");
 assert.ok(!wholeOf(cleanHead, cleanSections).includes("Warnings"));
 assert.equal(shortReport(cleanHead, aLines, [], android), shortReport(cleanHead, aLines));
-// T225's run (the owner's PC, an NVIDIA GPU): the seven layers of the check WRONG, the DP4A ones with their quantized o,
+// T.225's run (the owner's PC, an NVIDIA GPU): the seven layers of the check WRONG, the DP4A ones with their quantized o,
 // and the tokens generated on the GPU WRONG with the first token that differed; here also a time of the page's path
 // unsteady (the head's table: a row under its headers)
 const offLine = { ok: false, worstRelative: 1.8e-3 };
@@ -762,7 +762,7 @@ assert.deepEqual(others, [
 assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: [...tokenTable([{ name: "a token of Llama 3.2 1B", error: "out of memory" }], aBaseline), "",
   ...layerTable({ name: "a layer of a token", error: "x | y" }), "", ...generateTable({ name: "tokens generated on the GPU" })].join("\n") }]),
   ["GPU: a token (weights, dispatches, logits back): Llama 3.2 1B; GPU ms: failed: out of memory", "GPU: **A layer of a token**: failed: x \\| y"]);
-// T227's review: a device's error message has line breaks (a validation error of Dawn's: "Invalid ComputePipeline …\n - While
+// T.227's review: a device's error message has line breaks (a validation error of Dawn's: "Invalid ComputePipeline …\n - While
 // validating …\n - While calling …"). A verdict that FAILED with one is a line of the check's line and one warning: the
 // message's own lines are no lines to read again, however it ran over them (the line of the check was cut at the first break
 // into a warning of every verdict before it, 451 characters here)
@@ -781,7 +781,7 @@ const lost = "**The device was lost** (destroyed: Device was destroyed.\n - Whil
 assert.deepEqual(warnings([{ title: "GPU", status: "error", said: [lost], markdown: `${lost}\n\n${layerTable({ name: "a layer of a token", error: "a\nb" }).join("\n")}` }]),
   ["GPU: **The device was lost** (destroyed: Device was destroyed. - While calling [Queue].Submit() failed): the times measured after it are not the GPU's.",
     "GPU: **A layer of a token**: failed: a b"]);
-// T227's review: the worst first. T225 made the WRONG rows 250 to 530 characters each (the worker's line of the stages and
+// T.227's review: the worst first. T.225 made the WRONG rows 250 to 530 characters each (the worker's line of the stages and
 // where the layer departed first; the words are of CI run 36867111944's probe, K and V rounded a float16 too far), and a
 // device with every one of the 11 forms of the layer table and the tokens WRONG has 12 of them. At the link's limit a
 // summary has room for one or two. On a device whose page's path is rough all through (as CI's are) the section order put
@@ -813,7 +813,7 @@ const probeKept = probeSummary.split("\n").filter((line) => probeWarned.some((on
 assert.ok(loginUrl(aWhole, android, probeSummary).length <= REPORT_LIMIT, `${loginUrl(aWhole, android, probeSummary).length}`);
 assert.ok(probeKept.length >= 1 && probeKept.length < 12 && probeKept.every((line) => line.startsWith("- GPU: ") && line.includes(" WRONG (")), `the summary keeps WRONG rows first: ${probeKept.join("\n")}`);
 assert.ok(probeSummary.includes(`- … and ${probeWarned.length - probeKept.length} more, in the whole report below`), "and says how many are left to the whole report");
-// T227's review: what the model page's path says went wrong in words none of warnings()'s: the GPU stopped while the sides
+// T.227's review: what the model page's path says went wrong in words none of warnings()'s: the GPU stopped while the sides
 // were timed (forward.js's reasons: only "the GPU failed on …" has "failed" in it), software threads that stopped or did not
 // start, a search for their count that did not end. pathTable() writes them in its first line, pathWarnings() hands the same
 // words to warnings() as the section's own; a page that is not isolated has one thread, which is no failure
@@ -863,13 +863,13 @@ for (const [what, pattern] of [
   ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
   ["the report lists the head's and the sections' warnings", /warnings\(\[\{ title: TITLES\.model, markdown: head, said: measured\?\.said \}, \.\.\.shown\.map\(/],
   ["and cuts the summary to the link", /shortReport\(head, .*, warned, environment\)/],
-  // T242's review: the worker makes its shared memory for the loads it is told follow, without a gigabyte for a next model
+  // T.242's review: the worker makes its shared memory for the loads it is told follow, without a gigabyte for a next model
   // (the Windows WebKit of bench.yml went down in that gigabyte, one run in four), and only this page's init says them
   ["the model section tells its worker the rounds that follow", /type: "init"[^}]*\}[^;]*ahead: rounds\.map\(\(round\) => round\.without\)/],
 ]) assert.ok(pattern.test(benchmarkPage), `benchmark.astro: ${what}`);
-// ... and the model page, whose visitor may choose a next model, tells none: its memory keeps that gigabyte (T96)
-assert.ok(/type: "init"/.test(pageText("index.astro")) && !/\bahead\b/.test(pageText("index.astro")), "index.astro tells its worker no loads ahead (T242)");
-// T367.3's review: the worker builds the URLs of models/ from the root the page hands it (state.root, set by the first init
+// ... and the model page, whose visitor may choose a next model, tells none: its memory keeps that gigabyte (T.96)
+assert.ok(/type: "init"/.test(pageText("index.astro")) && !/\bahead\b/.test(pageText("index.astro")), "index.astro tells its worker no loads ahead (T.242)");
+// T.367.3's review: the worker builds the URLs of models/ from the root the page hands it (state.root, set by the first init
 // or load that carries one): an init without it is a worker whose every model's parts are a TypeError. Every message that
 // starts a worker of the model (both pages' inits, and the loads) names it.
 for (const [page, text] of [["index.astro", pageText("index.astro")], ["benchmark.astro", benchmarkPage]]) {
@@ -877,7 +877,7 @@ for (const [page, text] of [["index.astro", pageText("index.astro")], ["benchmar
   assert.ok(starts.length > 0, `${page} starts a worker with an init or a load`);
   for (const [message, kind] of starts) assert.ok(/\broot\b/.test(message), `${page}: its ${kind} message hands the worker the site's root (models/ is under it)`);
 }
-// the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
+// the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T.227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
 assert.equal(noCeilings.at(-1), "failed: out of memory second \\| line");

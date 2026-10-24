@@ -1,11 +1,11 @@
-// tests/dist-check.mjs (T367.3.1): what a build wrote, held to what the Service Worker does with a file's name.
+// tests/dist-check.mjs (T.367.3.1): what a build wrote, held to what the Service Worker does with a file's name.
 //
 //   node tests/dist-check.mjs [<dist>] [--tree <the tree it was built of>]      after `npm run build` (dist/, this tree)
 //
-// public/coi.js keeps a copy of this site's files for a visit without a network (T111), and drops the old copy of a file
+// public/coi.js keeps a copy of this site's files for a visit without a network (T.111), and drops the old copy of a file
 // when it keeps a new one: two addresses are "the same file" where family() gives them one name, and a file under
 // /_astro/ is <name>.<hash>.<ext> to it. A bundler's names are not the Service Worker's business until they disagree
-// with that, and then nothing fails where anyone looks (T365 measured both):
+// with that, and then nothing fails where anyone looks (T.365 measured both):
 //   - a name family() does not take apart is a family of its own for ever: every deployment leaves one more copy
 //     (Vite names a worker's files <name>-<hash>.js unless it is told otherwise: 27 files);
 //   - two files of one build in one family put each other's copy out: one is kept, the other's copy is deleted, and
@@ -25,7 +25,7 @@
 //   7. the built key module (the model's worker's), the built GPU worker and the built shaders module (/benchmark/'s)
 //      give the same deviceKey() as the sources, for 192 made-up devices.
 //   8. no file of dist/_astro/ asks for a module of Node's, or is the bundler's stand-in for one: the runtime is a
-//      browser's (T367.5: what Node's tests need of a worker is tests/helper-node.mjs's to give).
+//      browser's (T.367.5: what Node's tests need of a worker is tests/helper-node.mjs's to give).
 // 3 to 8 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
 // served as it is from the same folder as the Service Worker, the root is those files, and this says so and checks 1
 // and 2 alone.
@@ -91,7 +91,7 @@ export function distSaid(dist, tree = treeOf()) {
     const lines = got.toString("utf8").split("\n").length;
     if (got.length / lines > 200) said.push(`_astro/${name} is minified (${Math.round(got.length / lines)} characters a line): the workers are served as the bundler prints them (vite.worker's output.minify: false)`);
   }
-  // 6 (T367.3's review): the parts that are read only when they are used stay chunks of their own. A static import of one
+  // 6 (T.367.3's review): the parts that are read only when they are used stay chunks of their own. A static import of one
   // (or a bundler's choice to fold a small one in) puts it into the worker's text, and then every visit fetches and
   // evaluates it: the first request list is longer by it and nothing else fails. (key.js is the shaders' hash for the
   // device's key, read when a GPU is there; kept.js the store of converted models; gpu and shaders the GPU's worker.)
@@ -126,7 +126,7 @@ export function distSaid(dist, tree = treeOf()) {
     const there = chunk.notices.filter((one) => one === notice).length;
     if (there < owing.length) said.push(`_astro/${chunk.name} holds the code of ${[...new Set(owing)].join(", ")} with ${there} of the ${owing.length} notices "${notice.slice(0, 60)}…" (${notice.length} characters): served code keeps the copyright line and the whole licence text`);
   }
-  // 8 (T367.5): Node's modules. A file of the runtime that imports one (helper.js had a branch for worker_threads) is
+  // 8 (T.367.5): Node's modules. A file of the runtime that imports one (helper.js had a branch for worker_threads) is
   // built with a warning and no error: the bundler puts an empty module in its place, a chunk of its own, and a
   // fragment of its runtime that the importer then fetches on every visit.
   for (const [name, got] of bytes) {
@@ -166,7 +166,7 @@ export function keysOf(module) {
 }
 
 /** 7 (a bundled tree): the model's worker reads the device's key from one built module (key) and the GPU's worker
- * computes it in its own file (gpu: T367.5, the shaders' parts linked into it), each with its own copy of the shaders'
+ * computes it in its own file (gpu: T.367.5, the shaders' parts linked into it), each with its own copy of the shaders'
  * texts: what the page remembers of a device under the one's key is looked up under the other's, so the two and the
  * sources must give the same key for every device. And shaders, /benchmark/'s module of all of them, as the sources.
  * (gpu.<hash>.js is the worker itself, and a build keeps no export of a worker's entry: its text is imported here

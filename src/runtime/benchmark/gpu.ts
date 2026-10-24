@@ -1,35 +1,35 @@
-// The GPU section of /benchmark/ (T134; T94's stage 0 until then, at /gpu-test/): what WebGPU gives this device,
+// The GPU section of /benchmark/ (T.134; T.94's stage 0 until then, at /gpu-test/): what WebGPU gives this device,
 // measured in a worker (where a GPU forward pass would run). The page (src/pages/benchmark.astro) asks for one step at
 // a time and shows what comes back, and ends the worker after the section; nothing here touches the model page.
 //
 //   { step: "info" }                      the adapter, its limits and features, WGSL's language features
-//   { step: "check" }                     the int8 shaders against JavaScript on small matrices (T146: the tiled ones
+//   { step: "check" }                     the int8 shaders against JavaScript on small matrices (T.146: the tiled ones
 //                                         too, with their edges)
 //   { step: "bandwidth", shape }          GB/s of one int8 matrix times a vector, by every shader of matVecShaders()
-//                                         (T134's two and T149's from llama.cpp and ONNX Runtime), and the CPU's
+//                                         (T.134's two and T.149's from llama.cpp and ONNX Runtime), and the CPU's
 //   { step: "token", model, kind, sample }
 //                                         a whole token's work of a model's shapes (every layer's matrices, a few small
 //                                         dispatches, the classifier, the logits read back), ms per token. sample: the
 //                                         most likely token found on the GPU, and only its id read back instead of every
 //                                         logit
-//   { step: "layer" }                     T150: one layer of a token of Llama 3.2 1B's width, as its fourteen separate
+//   { step: "layer" }                     T.150: one layer of a token of Llama 3.2 1B's width, as its fourteen separate
 //                                         steps and fused into five dispatches (shaders.ts's fusedMatVec), ms a layer;
-//                                         T175: the same on ORT's DP4A for small M (fusedDp4aMatVec), its vector
+//                                         T.175: the same on ORT's DP4A for small M (fusedDp4aMatVec), its vector
 //                                         quantized before each matrix
-//   { step: "layer steps" }               T202: where the time of a layer goes: each step of the fused forms a token
+//   { step: "layer steps" }               T.202: where the time of a layer goes: each step of the fused forms a token
 //                                         would run here alone, the matrices alone, a dispatch that does next to
-//                                         nothing, and the whole layer, timed in turn, ms each (T208: the forms the
+//                                         nothing, and the whole layer, timed in turn, ms each (T.208: the forms the
 //                                         layer table's fastest, and the whole layer by timestamps where they are)
-//   { step: "generate" }                  T151: tokens generated on the GPU (the sampling too), each read back as it
-//                                         comes against 4, 8 and 16 a submission read back once, ms a token; T191:
+//   { step: "generate" }                  T.151: tokens generated on the GPU (the sampling too), each read back as it
+//                                         comes against 4, 8 and 16 a submission read back once, ms a token; T.191:
 //                                         each also with the sampling in chunks (many workgroups), and the sampling
 //                                         alone both ways
 //   { step: "overhead" }                  what a token costs besides the weights: 240 empty dispatches, a submission
 //                                         with and without waiting for it, reading back 4 bytes and all the logits
 //   { step: "prompt", counts }            the tokens of a prompt through the matrices all at once (matrix × matrix,
-//                                         T135's first candidate), on the made-up model of the CPU section's shape,
-//                                         by T135's batched shader and T146's tiled ones, with the GFLOPS of each
-//   { step: "ceilings" }                  T168: the device's ceilings: f32 and f16 multiply-adds (GFLOPS), dot4I8Packed
+//                                         T.135's first candidate), on the made-up model of the CPU section's shape,
+//                                         by T.135's batched shader and T.146's tiled ones, with the GFLOPS of each
+//   { step: "ceilings" }                  T.168: the device's ceilings: f32 and f16 multiply-adds (GFLOPS), dot4I8Packed
 //                                         (GOPS), reading the workgroup's memory and a storage buffer (GB/s), each a
 //                                         loop of that alone (shaders.ts), for the share of them the prompt's shaders reach
 //   { step: "bridge", memory, rounds }    the round trip of a worker that waits with Atomics.wait and this one, which
@@ -37,12 +37,12 @@
 //
 // The weights are random: only their size and layout matter. int8 in groups of 32 with a float32 scale each, as the
 // checkpoints of this project (llama2_numpy's layout), 4 values to a u32.
-// T353: this file is the window of the worker: the page starts it and its steps are asked of it, and the tests import the
+// T.353: this file is the window of the worker: the page starts it and its steps are asked of it, and the tests import the
 // pure helpers from it. The steps are the modules of gpu/: device.ts (the shaders' module, the device, buffers, a matrix
 // bound and run, how a time is taken), halves.ts (the float16 of the cache), layerparts.ts, layercheck.ts and layer.ts
 // (one layer of a token: its forms, its check, its times), matvec.ts (a matrix times a vector, a token's work),
 // generate.ts and generatecheck.ts (generated tokens and the sampling, and their check), check.ts (the step "check"),
-// ceilings.ts and prompt.ts. Each is a static import: a bundler links them into this worker's file (T367.3), and
+// ceilings.ts and prompt.ts. Each is a static import: a bundler links them into this worker's file (T.367.3), and
 // nothing is awaited before the steps' receiver further down is set.
 import { load, info } from "./gpu/device.ts";
 import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.ts";
@@ -53,7 +53,7 @@ import { generate } from "./gpu/generate.ts";
 import { check } from "./gpu/check.ts";
 import { overhead, ceilings } from "./gpu/ceilings.ts";
 import { prompt } from "./gpu/prompt.ts";
-// T368.7: what the page asks and what it is answered (contracts/benchmark.ts): a step's result by the step's name, or
+// T.368.7: what the page asks and what it is answered (contracts/benchmark.ts): a step's result by the step's name, or
 // undefined for a step that is none of them
 import type { Thrown } from "./gpu/device.ts";
 import type { Answer, BenchGpuResults, Bridged, ToBenchGpu } from "../contracts/benchmark.ts";

@@ -1,7 +1,7 @@
-// T164: what a token costs outside forward.js, in Node's Pyodide, as the page runs it: the forward pass in
+// T.164: what a token costs outside forward.js, in Node's Pyodide, as the page runs it: the forward pass in
 // src/runtime/forward.js, the sampling kernels of simdkernel.so through ctypes, and generate() in Python, driven from
 // JavaScript as src/runtime/worker.js drives it. One thread: tests/engine.mjs starts no software threads (the page's
-// threads shorten the forward pass and leave the outside as it is, see T164 in TASKS.md).
+// threads shorten the forward pass and leave the outside as it is, see T.164 in TASKS.md).
 //
 // A generated token, at the positions 0..N-1, with the model's temperature, top-p and repetition penalty:
 //   JS forward     engine.forward() in a loop of JavaScript: the forward pass, and the copy of the logits into
@@ -13,7 +13,7 @@
 // and what makes the outside up, each timed alone with Python's garbage collector off, µs a call. Right after a
 // forward pass, as generate() runs them (the pass has just streamed the weights through the caches):
 //   penalize, sample   the page's kernels on the real logits of each position; C is how many tokens pass the floor
-//                  (the best's 1e-7) that the sampler keeps, the median of the positions. (T359.7: a sampler draws by
+//                  (the best's 1e-7) that the sampler keeps, the median of the positions. (T.359.7: a sampler draws by
 //                  its settings as one value, the penalties and the token in one call, so the two are two draws
 //                  here: the penalty with greedy after it, which is the argmax of the next column on top of the
 //                  penalty, and then the token with no penalty)
@@ -22,7 +22,7 @@
 //   again          sample() once more on the same logits at once
 //   1 past         sample() in a loop on logits of which the best alone passes the floor: its walks over the whole
 //                  vocabulary; again less 1 past is what the tokens past the floor cost
-//   T158's         sample() in a loop on T158's artificial logits (uniform in ±10: most of the vocabulary passes)
+//   T.158's         sample() in a loop on T.158's artificial logits (uniform in ±10: most of the vocabulary passes)
 //   crossing       a call from Python of a JavaScript function that does nothing, with forward()'s arguments
 //   ctypes         a call of a kernel that has nothing to do (add_inplace of 0 numbers); and the same right after a
 //                  forward pass: what the first code after the pass pays for the caches
@@ -233,7 +233,7 @@ llama.release(); del llama, engine, logits; gc.collect()
   promptRows.push(`| ${entry.name} ${prompt}`);
 }
 console.log("A generated token: ms, and µs a call");
-console.log("| model | JS forward (ms) | copy (µs) | generate() (ms) | outside (ms, share; range) | crossing (µs) | ctypes (µs; after a forward) | penalize (µs) | sample (µs; C) | again (µs) | 1 past (µs) | T158's (µs; C) | argmax (µs) | GC (µs; collections) | the rest (µs) |");
+console.log("| model | JS forward (ms) | copy (µs) | generate() (ms) | outside (ms, share; range) | crossing (µs) | ctypes (µs; after a forward) | penalize (µs) | sample (µs; C) | again (µs) | 1 past (µs) | T.158's (µs; C) | argmax (µs) | GC (µs; collections) | the rest (µs) |");
 console.log("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
 for (const row of tokenRows) console.log(row);
 console.log("A prompt: the tokenizer's ms for the whole of it, and ms a token");

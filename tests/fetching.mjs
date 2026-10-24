@@ -1,4 +1,4 @@
-// tests/fetching.mjs (T357.6)
+// tests/fetching.mjs (T.357.6)
 // Fetching for the Node tools, in one place: a file to disk, and an answer's body as bytes. The Node side of
 // tests/fetching.py, with its rules:
 //
@@ -17,7 +17,7 @@
 //
 // Where Node differs from Python, and this file with it:
 //   - Node's fetch fails by itself where a connection closes before the promised length ("TypeError: terminated";
-//     http.client's read() returns what came, without a word: the review of T247). The comparison of the lengths is
+//     http.client's read() returns what came, without a word: the review of T.247). The comparison of the lengths is
 //     what holds past that: an answer that ends in order and short of what it said.
 //   - Node's fetch asks for a compressed body and unpacks it, and Content-Length is then the length that travelled
 //     (GitHub Pages says 9,634 of a page of 55,199 bytes). So the body is asked for as it is (Accept-Encoding:

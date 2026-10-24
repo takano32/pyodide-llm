@@ -1,5 +1,5 @@
 # The build's converter (convert_hf.py) on every architecture: it sized the output as a Llama, so a GPT-2 or a
-# GPT-NeoX stopped on "the buffer has not the size of the checkpoint" (found in T85). The page's path was fine.
+# GPT-NeoX stopped on "the buffer has not the size of the checkpoint" (found in T.85). The page's path was fine.
 import json
 
 import numpy as np
@@ -26,7 +26,7 @@ def qwen2_model():
 
 
 def qwen3_model():
-    # heads of 16 in a dim of 32 with 4 heads: q twice as wide as dim, as in Qwen3 0.6B (T124)
+    # heads of 16 in a dim of 32 with 4 heads: q twice as wide as dim, as in Qwen3 0.6B (T.124)
     config, weights = synthetic_weights(n_kv_heads=2, head_size=16)
     return qwen3(config, weights, True)
 
@@ -38,7 +38,7 @@ def qwen35_model():
 
 # all four architectures (Fable's review: the Llama path was the one that worked, and a change to it should say so)
 def lfm2_model():
-    # T260: the FFN's inside is not config.json's intermediate_size but what normalize() makes of it (96 becomes 64)
+    # T.260: the FFN's inside is not config.json's intermediate_size but what normalize() makes of it (96 becomes 64)
     from conftest import lfm2_model as mixed
     return mixed()
 
@@ -62,7 +62,7 @@ def test_convert_hf_writes_what_the_page_writes(tmp_path, model, dtype):
 
 
 def test_a_smollm3_directory_is_told_to_carry_the_layers_in_its_options(tmp_path):
-    """T255 review: the file of a SmolLM3 is a Llama's; only options name the layers RoPE leaves alone (convert_hf prints them)."""
+    """T.255 review: the file of a SmolLM3 is a Llama's; only options name the layers RoPE leaves alone (convert_hf prints them)."""
     settings, weights = synthetic_weights(n_layers=4)
     _, config = hugging_face(settings, weights, True)
     (tmp_path / "config.json").write_text(json.dumps({**config, "model_type": "smollm3", "no_rope_layers": [1, 1, 1, 0]}))
@@ -71,7 +71,7 @@ def test_a_smollm3_directory_is_told_to_carry_the_layers_in_its_options(tmp_path
     assert convert_hf.options_note(tmp_path) is None
 
 
-# ---- T374.2.3: the build tries the tokenizers the page tries, in its order, by the one list (convert.conduct's TOKENIZERS)
+# ---- T.374.2.3: the build tries the tokenizers the page tries, in its order, by the one list (convert.conduct's TOKENIZERS)
 def tokenizers(vocab_size=64):
     from test_gguf import sentencepiece, unigram
     json_file, model = unigram(vocab_size), sentencepiece(vocab_size)

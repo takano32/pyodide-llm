@@ -1,8 +1,8 @@
-// shaders/fused.ts (T351): a layer of a generated token in five dispatches (T150): llama.cpp's matrix × vector with
-// the norm on its read and RoPE, the residual add or SwiGLU on its write, the same on ONNX Runtime's DP4A (T175, with
-// NORM_QUANTIZE) and on ternary weights (T232).
+// shaders/fused.ts (T.351): a layer of a generated token in five dispatches (T.150): llama.cpp's matrix × vector with
+// the norm on its read and RoPE, the residual add or SwiGLU on its write, the same on ONNX Runtime's DP4A (T.175, with
+// NORM_QUANTIZE) and on ternary weights (T.232).
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 //
 // The notice of what NORM_QUANTIZE (with steps.ts's SCALE_WORD, which its text holds) takes its test of a float's bits from (isnan() of TensorFlow.js,
@@ -20,20 +20,20 @@ import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
 import type { Packing } from "./common.ts";
 
-// (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
-// names a maker's text branches on. (T379.1) Each a list of values, which the catalogue walks (engine.ts), and the
+// (T.368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
+// names a maker's text branches on. (T.379.1) Each a list of values, which the catalogue walks (engine.ts), and the
 // type is made of the list: a name more is written here once
-// (T261.4.2: "geglu", a Gemma 3's gate, the last: the rows before it are where they were)
+// (T.261.4.2: "geglu", a Gemma 3's gate, the last: the rows before it are where they were)
 const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write", "geglu"] as const;
 export type FusedInput = (typeof FUSED_INPUTS)[number];
 export type FusedOutput = (typeof FUSED_OUTPUTS)[number];
 // the rows a workgroup has, of the two forms a token's matrix takes: the model's worker dispatches by them, and
-// /benchmark/'s matrix × vector (matvec.ts) has the same. (T391.4: here, so that this part reads nothing of matvec.ts,
+// /benchmark/'s matrix × vector (matvec.ts) has the same. (T.391.4: here, so that this part reads nothing of matvec.ts,
 // which takes its lines of these two forms from this one)
 export const MUL_MAT_VEC_ROWS = 4;  // llama.cpp's WEBGPU_MUL_MAT_VEC_LEGACY_Q_OUTPUTS_PER_WG
 export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBitsSmallMProgram
 
-// ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
+// ---- T.150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):
 //   1. q, k and v as one matrix (their rows one after the other in one buffer), the norm on its read of the input, and
 //      RoPE and the cache on its write: q turned into q, k turned and v as they are into the cache at step.pos
@@ -42,8 +42,8 @@ export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBits
 //   4. gate and up in one workgroup (gate's rows, then up's in the same buffer), the norm on the read, SwiGLU on the
 //      write
 //   5. down, added to the residual stream on its write
-// For /benchmark/'s GPU section first (T150), and for the model's GPU worker when it generates on the GPU (T152).
-// The matrix × vector is llama.cpp's mul_mat_vec in its widened form (T149's mulMatVec), and each fold takes its form
+// For /benchmark/'s GPU section first (T.150), and for the model's GPU worker when it generates on the GPU (T.152).
+// The matrix × vector is llama.cpp's mul_mat_vec in its widened form (T.149's mulMatVec), and each fold takes its form
 // from a public implementation:
 //   - gate and up in one kernel with the GLU on the write: llama.cpp's CUDA mul_mat_vec_q with its fusion (mmvq.cu:
 //     vgate beside vx, tmp_gate beside tmp, reduced alike, and result *= silu(gate) where a row is written; commit
@@ -59,17 +59,17 @@ export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBits
 //     sums in the same reduction (FlashNorm, Graef et al. 2024, arXiv 2407.09577: the scale deferred past the matrix).
 //     No public WGSL does this (llama.cpp's WebGPU fuses the norm with its weight only, rms_norm_mul.wgsl): the lines
 //     are this project's, written as llama.cpp's rms_norm_mul computes it (eps inside the sqrt with the mean, as the
-//     engine's rmsnorm and steps.ts's RMSNORM). Checked (T150, Fable): the deferred scale rounds once at the end where the
+//     engine's rmsnorm and steps.ts's RMSNORM). Checked (T.150, Fable): the deferred scale rounds once at the end where the
 //     separate form rounds every x·s, so both are within a few float32 ulp of float64 (4e-7 of the largest row at
 //     worst, with channels at 1000× the rest too: the sum of x² adds the small terms among themselves before the tree
 //     meets a large one). What it costs a workgroup: reading g (4·dim bytes from the cache, beside x) and 2·dim more
 //     ALU next to the rows' 4·dim·1.125 bytes from DRAM; what it saves a layer: two dispatches and a vector written and
 //     read. Which is cheaper is the device's (the layer table's fused row against the separate one).
-//     A norm of a head (Qwen3's q and k, T153) cannot go on the write: a head's rows span headSize / 4 workgroups and
+//     A norm of a head (Qwen3's q and k, T.153) cannot go on the write: a head's rows span headSize / 4 workgroups and
 //     WGSL has no sum across them; the read side stays as it is, the write side gets a small dispatch after the matrix.
 // Changed from mul_mat_vec besides: the sums are SUMS (the rows', gate's rows' too, and x²'s), reduced as llama.cpp
 // reduces its rows' (the workgroup's tree, or subgroupAdd), into totals that the write (the epilogue) reads; where a
-// row is written differs by the output. The weights' layout, the scales and Params' first four are T149's.
+// row is written differs by the output. The weights' layout, the scales and Params' first four are T.149's.
 //
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/mul_mat_vec.wgsl and mul_mat_vec_acc.tmpl (MUL_ACC_Q8_0),
 // and ggml/src/ggml-cuda/mmvq.cu (the fusion of gate, bias and GLU) (https://github.com/ggml-org/llama.cpp, commit
@@ -94,19 +94,19 @@ export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBits
 // input: "norm" (x is the residual stream, normed on the read with norm_weight from params.normAt) or "plain".
 // output: "rope" (rows of q, then kvRows of k, then of v: q into q, k and v into the cache at step.pos), "add" (added
 // to dst: the residual stream), "swiglu" (silu(gate) × up into dst, up's rows params.second after gate's) or "write"
-// (into dst: the classifier's logits, T151). T261.4.2: "geglu", as "swiglu" with GELU's line where SiLU's is (a Gemma
+// (into dst: the classifier's logits, T.151). T.261.4.2: "geglu", as "swiglu" with GELU's line where SiLU's is (a Gemma
 // 3's gate: steps.ts's GEGLU, the tanh approximation as the CPU's geglu kernel has it, as glu.wgsl's GEGLU writes it).
 // Bindings: 0 the weights, 1 their scales, 2 x, 3 params; 4 norm_weight (norm); 5 dst (add, swiglu, write), or 5 q,
-// 6 the keys, 7 the values, 8 the angles and 9 the step (rope). T151 (T150's review, (c)): the position is the Step's
+// 6 the keys, 7 the values, 8 the angles and 9 the step (rope). T.151 (T.150's review, (c)): the position is the Step's
 // (a uniform of its own, which a run of tokens on the GPU copies from the sampler's state after each token), and the
 // angles are the whole table of RoPE on the GPU, a row a position: the cos of its headSize / 2 angles, then their sin
 // (the rows of the CPU's table: the model's own, Llama 3's scaling too).
 const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: u32, second: u32, eps: f32, normAt: u32, qRows: u32, kvRows: u32,
                 headSize: u32, turned: u32, unused0: u32, unused1: u32 }`;
-// where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
+// where the write of an output goes (bindings 5 on): T.150's, and T.175's DP4A form's alike. T.226: the write of a pair
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)
-// T379.2: the Step struct is declared where the step is bound (the "rope" output), and in no other text
+// T.379.2: the Step struct is declared where the step is bound (the "rope" output), and in no other text
 const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `${STEP}
 @group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
@@ -146,7 +146,7 @@ fn write_pair(row: u32, v0: f32, v1: f32) {
         values[step.pos * params.kvRows / 2u + j / 2u] = pack2x16float(vec2<f32>(v0, v1));
     }
 }` : "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;");
-// The write (the epilogue), T150's and T175's DP4A form's alike: a workgroup's OUTPUTS_PER_WG rows from row_base on,
+// The write (the epilogue), T.150's and T.175's DP4A form's alike: a workgroup's OUTPUTS_PER_WG rows from row_base on,
 // their sums in totals (up's rows' after them, for SwiGLU), each times scale (the norm's, or 1), by thread thread_id
 const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair of neighbouring rows a thread
     if (thread_id < OUTPUTS_PER_WG / 2u) {
@@ -169,8 +169,8 @@ const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair 
             dst[row] = dst[row] + value;`}
         }
     }`);
-// T226: RoPE and the cache of a generated token whose q, k and v cannot be turned on their matrix's write: Qwen2's
-// biases (ADD) and Qwen3's norms of the heads (HEAD_NORM) come between, as on the CPU and in a prompt's block (T153:
+// T.226: RoPE and the cache of a generated token whose q, k and v cannot be turned on their matrix's write: Qwen2's
+// biases (ADD) and Qwen3's norms of the heads (HEAD_NORM) come between, as on the CPU and in a prompt's block (T.153:
 // the biases, the norms of the heads, RoPE). The matrix then writes q, k and v as they are into one buffer (output
 // "write": the rows of q, then k's, then v's), those dispatches change them in place, and this one does with every
 // pair what the matrix's write would have done (write_pair above: ROPE's turning, the keys and values as pairs of
@@ -188,7 +188,7 @@ fn main(@builtin(local_invocation_index) t: u32) {
         write_pair(row, src1[row], src1[row + 1u]);
     }
 }`;
-// (T391.4) mul_mat_vec's main() as far as the rows its workgroup has: the builtins (those of subgroups where the
+// (T.391.4) mul_mat_vec's main() as far as the rows its workgroup has: the builtins (those of subgroups where the
 // text sums by them), the thread's number (thread_id), and the workgroup's first row (row_base), after leaving where
 // the dispatch's workgroups go past the rows. The text of this part's fusedMatVec and of matvec.ts's mulMatVec, which
 // go on from row_base each its own way; "@compute @workgroup_size(WG_SIZE)" stands before it in both (a maker of WGSL
@@ -351,15 +351,15 @@ ${fusedWrite(output)}
 }`;
 };
 
-// ---- T175: T150's layer on ONNX Runtime's DP4A for small M (T149's ortDp4aMatVec), the form that read Llama 3.2 1B's
-// w1 at 96.8% of the buffer's reads on the owner's Android where llama.cpp's mul_mat_vec (T150's) read a layer at
+// ---- T.175: T.150's layer on ONNX Runtime's DP4A for small M (T.149's ortDp4aMatVec), the form that read Llama 3.2 1B's
+// w1 at 96.8% of the buffer's reads on the owner's Android where llama.cpp's mul_mat_vec (T.150's) read a layer at
 // 18.5%. ORT runs it after a dispatch of its own that quantizes the vector (dp4a_matmul_nbits.cc:
 // DP4AMatMulQuantizeProgram, then DP4AMatMulNBitsSmallMProgram), and adds the bias on the write. So here: the vector
-// quantized first (QUANTIZE, T146's, as the CPU's quantize_x makes it), then the matrix, and on its write what
-// T150's fusedMatVec does (fusedWrite: RoPE and the cache, the residual's add, SwiGLU, or the logits). Four
+// quantized first (QUANTIZE, T.146's, as the CPU's quantize_x makes it), then the matrix, and on its write what
+// T.150's fusedMatVec does (fusedWrite: RoPE and the cache, the residual's add, SwiGLU, or the logits). Four
 // quantizations a layer, one where a new vector comes in: the normed stream before q, k and v (one for the three),
 // the attention's output before o, the normed stream before gate and up (one for both), silu(gate) × up before down;
-// the classifier's normed stream a fifth, once a token. The norm cannot go on the matrix's read as in T150: the
+// the classifier's normed stream a fifth, once a token. The norm cannot go on the matrix's read as in T.150: the
 // matrix reads the quantized vector, and a group's scale is of the values after the norm, so the norm goes with the
 // quantizer (NORM_QUANTIZE), one dispatch where RMSNORM and QUANTIZE are two.
 //
@@ -370,7 +370,7 @@ ${fusedWrite(output)}
 // with layernorm_utils.cuh, https://github.com/vllm-project/vllm, commit 24c9772d, Apache-2.0): the row's rms in one
 // block, then each group's scale from its normed values, then the values normed and quantized (compute_rms,
 // compute_dynamic_per_token_scales, norm_and_quant). No lines are taken from it: these are RMSNORM's and QUANTIZE's
-// in one workgroup (vLLM's block reduction, fp8 and residual paths are not here). T241: the group's largest by the
+// in one workgroup (vLLM's block reduction, fp8 and residual paths are not here). T.241: the group's largest by the
 // bits and its scale's word as QUANTIZE's (scale_word, above steps.ts's QUANTIZE: a NaN where a value of the group is no finite
 // number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
 // whose s is 0 and 0 × inf a NaN).
@@ -412,10 +412,10 @@ ${ROW_RMS}
 
 // The matrix: ORT's DP4A for small M as ortDp4aMatVec has it (128 threads for 4 rows, 32 of them along the width,
 // each a group of 32 as two vec4<u32> against the quantized vector in the workgroup's memory, the partial sums of a
-// row reduced in inter_results), on T150's Params and bindings (the scales of the vector at 4, where T150's norm
-// weight is), and T150's write on its rows. Changed from ortDp4aMatVec besides: for SwiGLU a thread multiplies up's row
+// row reduced in inter_results), on T.150's Params and bindings (the scales of the vector at 4, where T.150's norm
+// weight is), and T.150's write on its rows. Changed from ortDp4aMatVec besides: for SwiGLU a thread multiplies up's row
 // (params.second rows after gate's) beside gate's with the same registers of the vector, into rows of inter_results of
-// its own (llama.cpp's CUDA mul_mat_vec_q fuses gate so, T150: vgate beside vx); the reduced sums go to totals, and
+// its own (llama.cpp's CUDA mul_mat_vec_q fuses gate so, T.150: vgate beside vx); the reduced sums go to totals, and
 // the write reads them there (ORT writes a row where it reduces it, and RoPE needs a pair).
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
@@ -439,7 +439,7 @@ ${ROW_RMS}
  */
 //
 //
-// ---- T232: fusedDp4aMatVec's text for ternary weights, DP4A_WEIGHTS' ternary (see prompt.ts's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
+// ---- T.232: fusedDp4aMatVec's text for ternary weights, DP4A_WEIGHTS' ternary (see prompt.ts's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
 // The same Params, bindings, dispatch and write; the weights at binding 0 are the codes, 16 to a u32, and a row's scales
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
@@ -473,7 +473,7 @@ ${ROW_RMS}
 //
 // (ternary_packed: the notice of Prism ML's fork of llama.cpp is above prompt.ts's TERNARY_PACKED.)
 //
-// (T379.1) What the text has for each packing of the weights: its lines that read them, and nothing else. One maker
+// (T.379.1) What the text has for each packing of the weights: its lines that read them, and nothing else. One maker
 // makes every packing's text from this table, so a packing more is a row here (and its rows in engine.ts's catalogue).
 //   bindings   bindings 0 and 1: the weights as the shader reads their words, and the scales of their groups
 //   unpacking  what turns a word of the weights into packed int8, after SDP8AI (nothing where they are int8)
@@ -504,7 +504,7 @@ const DP4A_WEIGHTS = {
 } satisfies Record<Packing, object>;
 // (a row for every packing, and no other: common.ts's Packing)
 export type FusedWeights = keyof typeof DP4A_WEIGHTS;
-// (T391.4) ORT's loadSHMA of the DP4A form for small M, as this project has it (matvec.ts, above ortDp4aMatVec: a
+// (T.391.4) ORT's loadSHMA of the DP4A form for small M, as this project has it (matvec.ts, above ortDp4aMatVec: a
 // scale of the vector a group of 32, loaded with a bound of its own): a thread's vec4<u32> of the quantized vector
 // into the workgroup's tile_A, and the scale of its group into scale_A. The text of this part's fusedDp4aMatVec and
 // of matvec.ts's ortDp4aMatVec; shape is the name each gives its uniform (words and perRow are read of it)

@@ -1,4 +1,4 @@
-"""Google's Gemma 3, the text model (T261): a Qwen3's attention and a gated FFN, with a norm behind each as well as in
+"""Google's Gemma 3, the text model (T.261): a Qwen3's attention and a gated FFN, with a norm behind each as well as in
 front, a GELU in the FFN's gate, an embedding multiplied by the root of its width, and layers of two kinds: most attend
 a window of the last positions and turn their q and k by a base of RoPE of their own.
 
@@ -247,7 +247,7 @@ def test_the_table_goes_piece_by_piece_and_is_the_table_taken_whole(monkeypatch)
 @pytest.mark.parametrize("model", ["small", "a classifier of its own", "the kinds by a pattern", "every layer attends all",
                                    "the bases as transformers 5 writes them", "heads that fill the width"])
 def test_the_conversion_tells_the_engine_what_the_file_cannot(model):
-    """The lesson of T72: the engine built from exactly the options the conversion gives runs like the reference."""
+    """The lesson of T.72: the engine built from exactly the options the conversion gives runs like the reference."""
     shape = MODELS[model]
     tensors, config = gemma3_model(**shape)
     made = conversion(tensors, config)
@@ -327,9 +327,9 @@ def test_the_local_layers_are_a_gemmas_and_layers_of_the_model():
 
 
 def test_the_pages_engine_is_handed_what_a_gemma_is():
-    """T261.2: the plan of a model whose weights are outside Python says the three things forward.js runs a Gemma 3 by:
+    """T.261.2: the plan of a model whose weights are outside Python says the three things forward.js runs a Gemma 3 by:
     the tensors of the two norms behind, the FFN's activation, and of every layer its window and whether the local
-    layers' tables turn it, with those tables. (T261.1 let go of the engine and refused the model here.)"""
+    layers' tables turn it, with those tables. (T.261.1 let go of the engine and refused the model here.)"""
     tensors, config = gemma3_model()
     checkpoint = engine(tensors, config, "int8")[1]
     handed = {}

@@ -1,8 +1,8 @@
-// T163: the relaxed SIMD ceiling of the CPU section of /benchmark/ (ceilings.ts has the others and says why these
+// T.163: the relaxed SIMD ceiling of the CPU section of /benchmark/ (ceilings.ts has the others and says why these
 // loops are here). Its own module: a browser without relaxed SIMD cannot compile it, and says "not in this browser".
 
 // relaxed_dot_i8x16_i7x16_add_s with the two loads every dot has in matmul_q8r (weights, activations), from 8 KB at p
-// that stay in L1, 8 accumulators: what the int8 matrix products can reach at most (a prompt's, T108, and a token's
+// that stay in L1, 8 accumulators: what the int8 matrix products can reach at most (a prompt's, T.108, and a token's
 // when its weights are in the cache). 4096 multiply-adds a pass. The second 4 KB (x) must hold bytes of 0 to 127, as
 // the activations of matmul_q8r are: then every browser's relaxed_dot gives the exact sums, and the checksum (the
 // xor of the lanes of the accumulators' sum) is one the page computes too.
@@ -26,7 +26,7 @@ export function dot(p: usize, passes: i32): i32 {
 }
 
 // relaxed_dot on registers only, 8 accumulators: the instruction's own rate (what a form that keeps weights and
-// activations in registers, a tile of rows and tokens, could reach; T158's dot_regs). 4096 multiply-adds is 32 dots:
+// activations in registers, a tile of rows and tokens, could reach; T.158's dot_regs). 4096 multiply-adds is 32 dots:
 // this is 8 dots, 128 multiply-adds, a pass. a moves by step each pass (so that nothing is hoisted); b stays (0 to
 // 127: exact in every browser). a, b and the step come from the caller: V8 made a constant splat again before each dot
 // (movi). The accumulators start apart (lanes 1000k + j) and the checksum is the sum of the lanes of their sum, which

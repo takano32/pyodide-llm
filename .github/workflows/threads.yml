@@ -1,4 +1,4 @@
-# T93: the software threads of forward.js on machines with more memory bandwidth than the development machine
+# T.93: the software threads of forward.js on machines with more memory bandwidth than the development machine
 # (a phone-class ARM): the same logits with 1 to 16 threads, the speeds, and what the search for the count chooses.
 # By hand only; the tables go to the summary.
 name: Threads prototype
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       args:
-        description: 'what tests/threads-check.mjs is given (T101: add --wide --high to place the model above 4 GiB of a 64-bit memory)'
+        description: 'what tests/threads-check.mjs is given (T.101: add --wide --high to place the model above 4 GiB of a 64-bit memory)'
         default: 'tiny-lm llm-jp-3-150m --threads 1,2,4,8,16 --rounds 5 --positions 128'
       os:
         description: 'the runners, as a JSON list'
@@ -48,6 +48,6 @@ jobs:
         shell: bash
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
-          # T93 stage 2: the helper threads of forward.js itself (bit for bit against one thread, then the speeds)
+          # T.93 stage 2: the helper threads of forward.js itself (bit for bit against one thread, then the speeds)
           echo "### forward.js with helper threads" >> "$GITHUB_STEP_SUMMARY"
           node tests/threads-check.mjs ${{ inputs.args }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

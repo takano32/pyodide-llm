@@ -1,4 +1,4 @@
-# unchanged_layouts.py (T357)
+# unchanged_layouts.py (T.357)
 # What a tree says of a checkpoint's file, over a grid of made-up headers, forms and dtypes, as one JSON object: the
 # record tests/unchanged.mjs compares between two trees (its kind "layouts"). The order of a file's tensors is written
 # down in four places that must agree (the converter's layout(), the engine's *_tensors(), conversion_plan() and
@@ -17,7 +17,7 @@
 #   config    normalize(), checkpoint_header(), checkpoint_form(), query_scale(), unturned_layers() and rotary_dim()
 #             of made-up config.json files of every family (an LFM2's FFN by block_multiple_of among them)
 #   window    which of a history's tokens penalize() reaches (the repetition penalty's window)
-# A refusal is an answer too, and it is compared by the class of its exception alone (the review of T357, T359): its
+# A refusal is an answer too, and it is compared by the class of its exception alone (the review of T.357, T.359): its
 # words are for whoever reads them, and a refactoring that says the same in other words has changed nothing here.
 #
 #   python tests/unchanged_layouts.py <the root of a tree>        -> one JSON object {name: what was said}
@@ -102,22 +102,22 @@ FAMILIES = [
      {"prefix": "model.", "rotary": 64}),
     ("lfm2", "lfm2", {"arch": "lfm2", "convolution": {"layers": "ccaccaca", "taps": 3}}, {}, {}),
     ("lfm2, four taps", "lfm2", {"arch": "lfm2", "convolution": {"layers": "acaccacc", "taps": 4}}, {}, {}),
-    # (T261: with local layers, as the options say them, and without)
+    # (T.261: with local layers, as the options say them, and without)
     ("gemma3", "gemma3", {"arch": "gemma3", "head_dim": 128}, {"local": {"layers": [0, 1, 3, 4], "window": 96, "rope_theta": 100.0}}, {}),
     ("gemma3, no local layers", "gemma3", {"arch": "gemma3", "head_dim": 128}, {}, None),
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
-# the keys of the plan that T359.5 added: every layer's facts, and the widths
+# the keys of the plan that T.359.5 added: every layer's facts, and the widths
 AHEAD = {"layers", "widths"}
-# and those T375.2 added, a record of their own for the same reason: the kind of the norms and of the FFN
+# and those T.375.2 added, a record of their own for the same reason: the kind of the norms and of the FFN
 FACTS = {"layer_norm", "gated_ffn"}
-# and T363.5's: the order of a linear-attention layer's value heads, and whether rows have kinds of their own
+# and T.363.5's: the order of a linear-attention layer's value heads, and whether rows have kinds of their own
 KINDS_SAID = {"tiled", "own_kinds"}
-# and T261's: the FFN's activation, and of every layer its window and whether it is turned by the local layers' tables
+# and T.261's: the FFN's activation, and of every layer its window and whether it is turned by the local layers' tables
 # (two keys of a layer's facts, which are taken out of the layers' record above and said here)
 LOCAL_SAID = {"activation"}
 LOCAL_FACTS = ("window", "local")
-# and T331.2's: the heads of v normalized and the cap of the logits, and of every layer the size of its heads, how much
+# and T.331.2's: the heads of v normalized and the cap of the logits, and of every layer the size of its heads, how much
 # RoPE turns, its stacks and its FFN's
 WIDE_SAID = {"value_norm", "softcap"}
 WIDE_FACTS = ("head", "rotary", "wide", "stack", "double", "ffn", "kept", "reads")
@@ -143,7 +143,7 @@ for name, headers, form, engine, source in FAMILIES:
                 None, header, dtype, whole, sink=type("Sink", (), {"open": lambda *_: None, "write": lambda *_: None})())))
             said(f"{case}, {dtype}: dtype", lambda: L.checkpoint_dtype(header, size, whole))
             if engine is not None:
-                # (T359.5's keys are a record of their own, so that the plan as it was before them is still compared
+                # (T.359.5's keys are a record of their own, so that the plan as it was before them is still compared
                 # with a tree that has none)
                 plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS | KINDS_SAID | LOCAL_SAID | WIDE_SAID)
                 if plan is not None and AHEAD & set(plan):
@@ -197,7 +197,7 @@ CONFIGS = {
     "lfm2, a multiplier": ({**LFM2, "block_ff_dim": 1000, "block_ffn_dim_multiplier": 1.5, "block_multiple_of": 48}, []),
     "lfm2, no multiplier": ({**LFM2, "block_ff_dim": 1000, "block_ffn_dim_multiplier": None, "block_multiple_of": 64}, []),
     "lfm2, as it is": ({**LFM2, "intermediate_size": 1000, "block_auto_adjust_ff_dim": False, "block_multiple_of": 64}, ["lm_head.weight"]),
-    # (T261)
+    # (T.261)
     "gemma3, the kinds listed": ({**BASE, "model_type": "gemma3_text", "num_hidden_layers": 6, "num_attention_heads": 4, "num_key_value_heads": 1,
                                   "head_dim": 128, "sliding_window": 512, "rope_theta": 1000000.0, "rope_local_base_freq": 10000.0,
                                   "layer_types": ["sliding_attention"] * 5 + ["full_attention"]}, []),

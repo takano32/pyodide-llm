@@ -1,4 +1,4 @@
-// kernel/math.ts (T356): what the kernels of several kinds use. No kernel is here: kernel.ts exports none of this.
+// kernel/math.ts (T.356): what the kernels of several kinds use. No kernel is here: kernel.ts exports none of this.
 // No static data and no std math, as everywhere in kernels/: exp is table-free.
 
 const GS: i32 = 32; // int8 quantization group size, as in quantize.py
@@ -41,10 +41,10 @@ const GS: i32 = 32; // int8 quantization group size, as in quantize.py
   return f32x4.mul(e, scale);
 }
 
-// The largest of from and the n floats at at. A NaN anywhere makes it NaN (f32x4.max and max keep a NaN, T195), and
+// The largest of from and the n floats at at. A NaN anywhere makes it NaN (f32x4.max and max keep a NaN, T.195), and
 // max does not depend on the order, so the result is the one of a scalar walk to the bit (and -0 is below +0 in both).
-// T189 (sample): maxima side by side, since x86 has no instruction for f32x4.max (NaN, -0): V8 writes it as 8
-// instructions, a chain of about 14 cycles, and one maximum waited on itself. T201: eight of them, 32 floats a turn
+// T.189 (sample): maxima side by side, since x86 has no instruction for f32x4.max (NaN, -0): V8 writes it as 8
+// instructions, a chain of about 14 cycles, and one maximum waited on itself. T.201: eight of them, 32 floats a turn
 // (four still waited on the chain on x86), for sample's logits and attention's scores (which took one scalar maximum
 // a position). No public implementation's lines: llama.cpp's ggml_vec_max_f32 is a scalar walk.
 // @ts-ignore: decorator

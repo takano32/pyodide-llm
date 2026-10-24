@@ -1,4 +1,4 @@
-// tests/worker-parts-check.mjs (T378.3): the parts of the worker that hold something, each by itself.
+// tests/worker-parts-check.mjs (T.378.3): the parts of the worker that hold something, each by itself.
 //
 // What the worker's modules keep has owners (worker/request.js: what the page asked for with a load; worker/loaded.js:
 // the model loaded now; worker/runtime.js: what the visit finds once; each other module its own `let`s). The others say
@@ -112,7 +112,7 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   // nothing loaded: nothing to let go of, and the collector is not run
   await run("letGo")(new AbortController().signal);
   assert.deepEqual(told, []);
-  // T329.2.2 (review): a load that took the file of a table and was cancelled before the model was built (nothing adopted)
+  // T.329.2.2 (review): a load that took the file of a table and was cancelled before the model was built (nothing adopted)
   // leaves the file open, which only one handle can have: the next load lets go of it all the same
   context.stand.reader = { close: () => told.push("the file of a table never built on let go of") };
   run("rowsNow = stand.reader");
@@ -127,8 +127,8 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   assert.deepEqual(loaded(), ["first", { threads: 4 }]);
   assert.equal(run("engineNow()"), context.stand.made.outside.engine, "the engine is the one forward.js made, not a copy");
   // let go: Python's release first (it says what forward.js holds), the proxy, the two forgotten, the collector, and
-  // only then the wait for what release() returned (T205: the GPU's worker)
-  // (T329.2.2: and the file its table of every layer's inputs is read from, weights.js's, once the rest is let go of)
+  // only then the wait for what release() returned (T.205: the GPU's worker)
+  // (T.329.2.2: and the file its table of every layer's inputs is read from, weights.js's, once the rest is let go of)
   context.stand.reader = { close: () => told.push("first: the file of its table let go of") };
   run("rowsNow = stand.reader");
   let done = false;
@@ -228,7 +228,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.deepEqual(told, ["llama 1: destroy", "python: import gc; gc.collect()", "the next is built"]);
   assert.deepEqual([of("ready").length, of("ready")[0].load, run("llama") === built[1], run("engineNow()").n, of("ready")[0].seconds.download >= 0], [1, 2, true, 2, true]);
 
-  // T156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
+  // T.156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
   // alone is tests/worker-sink-check.mjs's to make: here the model is said to be on it as its engine is built, and its
   // GPU to have failed.) load() asks weights.js with the engine it just adopted, and loads again where the answer is no
   let ended = 0;
@@ -241,7 +241,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.ok(said.some((line) => /the model was on the GPU alone, and is loaded again on the CPU/.test(line)), "the console did not say why the model is loaded again");
   context.stand.asBuilt = undefined;
 
-  // T148: a GPU that gets ready after its model was let go of says nothing to the page (its line is of another engine)
+  // T.148: a GPU that gets ready after its model was let go of says nothing to the page (its line is of another engine)
   let late;
   const before = engines;
   context.stand.gpuOf = (n) => (n === before + 1 ? new Promise((resolve) => { late = resolve; }) : undefined);
@@ -252,7 +252,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.deepEqual(of("gpu").map(({ load, note }) => [load, note]), [[6, "prompts on the CPU (a stand-in)"]], "the GPU of a model let go of told the page its line");
   context.stand.gpuOf = undefined;
 
-  // T380.1: an engine with no GPU's side (no WebGPU in a worker here): the status line says the engine's own reason,
+  // T.380.1: an engine with no GPU's side (no WebGPU in a worker here): the status line says the engine's own reason,
   // which is written once, where the engine can read it (forward/reasons.ts: the worker's entry cannot)
   context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "the engine's reason (a stand-in)", threads: 1 });
   await load({ load: 60, model: model("plain") });
@@ -260,7 +260,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     "the line of an engine without a GPU's side is the engine's reason, and no GPU is waited for");
   context.stand.engineOf = undefined;
 
-  // T380.2: software threads that do not start leave the model ready on one thread, as before, and the console is told
+  // T.380.2: software threads that do not start leave the model ready on one thread, as before, and the console is told
   // why; threads that start say nothing
   {
     let stopped = 0;
@@ -275,7 +275,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     context.stand.engineOf = undefined;
   }
 
-  // T380.2: two files of the visitor's, the second of which is no tokenizer.bin of the first: said with the last line
+  // T.380.2: two files of the visitor's, the second of which is no tokenizer.bin of the first: said with the last line
   // of what the engine threw, Python's own with the exception's name (failure.ts's lastLine(); failureOf() would say
   // a ValueError without its name and another exception by its whole traceback: another sentence)
   {
@@ -318,8 +318,8 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       "a model of Hugging Face on the GPU alone whose GPU failed was not loaded again: converted twice, its GPU's worker ended, one ready, the engine of the second");
   }
 
-  // ---- timing.js with stand-ins: the page's path (T184) on the model loaded now. What it tells request.js: the count
-  // the search ended on, which the rounds that follow load the model on (T190)
+  // ---- timing.js with stand-ins: the page's path (T.184) on the model loaded now. What it tells request.js: the count
+  // the search ended on, which the rounds that follow load the model on (T.190)
   const generator = () => ({ next: () => ({ done: true }), destroy() {} });
   const engine = { gpuSampled: 0, lostThreads: false, searchLog: [], gpuStatus: "prompts on the CPU (a stand-in)", setThreads: async (count) => count };
   context.stand.loaded = { outside: { engine }, llama: { backend: "a stand-in's", bos: 1, seq_len: 256, destroy() {},
@@ -343,7 +343,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
 }
 console.log("ok: load.js on stand-ins: a load to its ready, the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
 
-// ---- T380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
+// ---- T.380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
 // cannot be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)
 {
   const begun = async (gpu) => {
@@ -371,5 +371,5 @@ console.log("ok: load.js on stand-ins: a load to its ready, the next model after
   assert.deepEqual(keyless.adapter, { fallback: false, limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, packed: false });
   assert.match(keyless.said.join("|"), /^gpu: no key of this device \([^|]+\): what the page kept of it is not used$/);
 }
-console.log("ok: T380.2, an adapter that cannot be asked for and a device without a key are said on the console; no adapter at all is no failure and says nothing");
+console.log("ok: T.380.2, an adapter that cannot be asked for and a device without a key are said on the console; no adapter at all is no failure and says nothing");
 console.log("worker-parts-check: ok");

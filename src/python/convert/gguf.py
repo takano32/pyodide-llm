@@ -1,6 +1,6 @@
-# GGUF as a source (T74): the header's metadata and tensor table shown as a safetensors-like header, what llama.cpp
+# GGUF as a source (T.74): the header's metadata and tensor table shown as a safetensors-like header, what llama.cpp
 # wrote differently put back, and the checks against the original's config.json. What a family's GGUF is called, says
-# and holds otherwise than another's is the family's (convert/families/, T359), looked up by general.architecture.
+# and holds otherwise than another's is the family's (convert/families/, T.359), looked up by general.architecture.
 import json
 import math
 import struct
@@ -26,18 +26,18 @@ class Incomplete(Exception):
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
 # (ggml's types of tensors, and which of them are read: convert/readers.py's SOURCES)
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
-# (granite-docling, T253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern.
-# minicpm5, T254: llama.cpp's two patterns of that name are tokenizer.json's but for the contractions, written out by
+# (granite-docling, T.253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern.
+# minicpm5, T.254: llama.cpp's two patterns of that name are tokenizer.json's but for the contractions, written out by
 # case, which leaves a 's after U+017F unmatched; openbmb's own GGUFs of 2026-09 still say llama-bpe)
-# (lfm2, T260: llama.cpp splits an LFM2's text as a Llama 3's, which is the pattern of its tokenizer.json; it also
+# (lfm2, T.260: llama.cpp splits an LFM2's text as a Llama 3's, which is the pattern of its tokenizer.json; it also
     # takes a piece that is in the vocabulary whole, which that tokenizer.json does not: ignore_merges is false there,
     # and GGUF_IGNORE_MERGES says it of llama-bpe and not of lfm2)
-# (T505.2: smaug-bpe and deepseek-r1-qwen, which llama.cpp splits by the patterns of llama-bpe and of qwen2
+# (T.505.2: smaug-bpe and deepseek-r1-qwen, which llama.cpp splits by the patterns of llama-bpe and of qwen2
 # (src/llama-vocab.cpp at the commit convert/superblocks.py names), each held to a real GGUF and its original's
 # tokenizer.json: a SmolLM3's and a Llama 3.1's say smaug-bpe, DeepSeek-R1's Qwen distills deepseek-r1-qwen. A name is
 # added once a real file of it is held to its original so, and not for being on llama.cpp's list:
 # docs/notes/t505-gguf-alone-2026-10-13.md has the names seen and the ones left out)
-# (spark2_5, T340: XHToken's Q8_0 GGUF of Spark-X2.5 1.7B has the 131,072 tokens and 130,716 merges of the original's
+# (spark2_5, T.340: XHToken's Q8_0 GGUF of Spark-X2.5 1.7B has the 131,072 tokens and 130,716 merges of the original's
 # tokenizer.json, each the same, in the same order: docs/notes/t339-spark-x-2026-10-15.md)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
                       "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5", "lfm2": "llama3",
@@ -105,7 +105,7 @@ def gguf_read(data):
 def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
     """The safetensors-like header (Hugging Face's names, offsets from base) and the config.json of a GGUF.
     rope_freqs: keep llama.cpp's table of Llama 3's RoPE scaling in the header, to be checked against the original's
-    rope_scaling as it streams past (gguf_weights, T136). table (T505.2): that table's values, where the GGUF is
+    rope_scaling as it streams past (gguf_weights, T.136). table (T.505.2): that table's values, where the GGUF is
     alone and its head held them (rope_freqs_values()): the config.json says the rope_scaling that makes it
     (llama3_scaling()). With neither, a GGUF that has the table is refused."""
     arch = metadata.get("general.architecture")
@@ -120,7 +120,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
               "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2)}
     header = {}
     if "rope_freqs.weight" in tensors and family.gguf_rope_freqs:
-        # T529: a table of the family's own RoPE (a Gemma 4's proportional one), which no rope_scaling says: held to
+        # T.529: a table of the family's own RoPE (a Gemma 4's proportional one), which no rope_scaling says: held to
         # what the config.json makes as it streams past (rope_freqs_agree()), whichever config.json that is
         info = tensors["rope_freqs.weight"]
         if info["type"] != 0:
@@ -167,21 +167,21 @@ def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         stored(entry, info, target, parts)
         header[target] = entry
-    # T237: a rotated basis is the header's to say (header_rotated), next to the tensors it is about. Whether a
-    # linear-attention layer has more value heads than key heads: whether T245's order of them is there to put back
+    # T.237: a rotated basis is the header's to say (header_rotated), next to the tensors it is about. Whether a
+    # linear-attention layer has more value heads than key heads: whether T.245's order of them is there to put back
     rotated = gguf_rotated(metadata, tensors, any("tiled" in entry for entry in header.values()))
     if rotated is not None:
         header["__metadata__"] = {ROTATED: json.dumps(rotated)}
         # A rotated GGUF holds the columns of a linear-attention layer's output matrix in Hugging Face's order of value
         # heads (gdn_v_grouped: columns moved after the fold would be another matrix), where llama.cpp otherwise
-        # stores them in its own. So the reader of that order (T245's "tiled", once it is here) must leave them be
+        # stores them in its own. So the reader of that order (T.245's "tiled", once it is here) must leave them be
         for target, entry in header.items():
             if target.endswith("linear_attn.out_proj.weight"):
                 entry.pop("tiled", None)
     return header, config
 
 
-# T237: the kinds of a layer's matrices that the engine multiplies a rotated input by, by llama.cpp's names (and
+# T.237: the kinds of a layer's matrices that the engine multiplies a rotated input by, by llama.cpp's names (and
 # output.weight): all the matrices of a Llama, a Qwen and a Qwen3.5 but the two small ones of a linear-attention
 # layer's gates (ssm_alpha, ssm_beta)
 GGUF_ROTATED = ("attn_q", "attn_k", "attn_v", "attn_output", "attn_qkv", "attn_gate", "ssm_out", "ffn_gate", "ffn_up",
@@ -189,7 +189,7 @@ GGUF_ROTATED = ("attn_q", "attn_k", "attn_v", "attn_output", "attn_qkv", "attn_g
 
 
 def gguf_rotated(metadata, tensors, more_value_heads=False):
-    """T237: the rotated basis a GGUF of Prism ML's says its matrices are in (prism.hadamard.*), as FORM's "rotated"
+    """T.237: the rotated basis a GGUF of Prism ML's says its matrices are in (prism.hadamard.*), as FORM's "rotated"
     ({"block", "signs": {width: sign_bits()}}), or None where it says none. The fork's loader is the definition
     (src/llama-model.cpp, lines 1196 to 1355 at 88c4bc60): version 1 (2 with tied_output: the embedding is the
     classifier too), the transform's name, the axis, a block that is a power of two and divides every width,
@@ -245,7 +245,7 @@ def gguf_rotated(metadata, tensors, more_value_heads=False):
 
 
 def gguf_weights(head, config):
-    """T136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository,
+    """T.136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository,
     for the GGUF's own vocabulary is of no use there (a sentencepiece one says neither Unigram or BPE nor its
     normalization; llm-jp's scores are all -1000). head: the GGUF's beginning, as far as the tensors' data (Incomplete
     when it is not), config: the text of the original's config.json. Returns the safetensors-like header (JSON text)
@@ -269,7 +269,7 @@ def gguf_agrees(own, config):
     through cut to that many: Stream reads the layers the header asks for), a classifier that would silently be the
     embedding (Stream shares it where lm_head is missing), and the numbers that are no tensor. The context is not
     compared: a sliding window cuts it (RakutenAI 2.0 mini: 131072 in the GGUF, 8192 as normalize() cuts it).
-    Both are normalize()d. GPT-NeoX's (T136's third stage): also how much of each head turns and whether the two
+    Both are normalize()d. GPT-NeoX's (T.136's third stage): also how much of each head turns and whether the two
     branches run in parallel, which the options say (no tensor does)."""
     scaled = lambda c: yarn(c) and {key: f32(value) for key, value in yarn(c).items()}
     heads = config.get("num_attention_heads")
@@ -279,7 +279,7 @@ def gguf_agrees(own, config):
              ("number of key-value heads", own.get("num_key_value_heads", own["num_attention_heads"]),
               config.get("num_key_value_heads", heads)),
              ("RoPE theta", f32(own.get("rope_theta", 10000.0)), f32(config.get("rope_theta", 10000.0))),
-             # T235: what a yarn says (None: no yarn), which changes every angle and is no tensor
+             # T.235: what a yarn says (None: no yarn), which changes every angle and is no tensor
              ("yarn RoPE scaling", scaled(own), scaled(config))]
     if own.get("head_dim") and config.get("hidden_size") and heads:
         pairs.append(("size of a head", own["head_dim"], head_size(config)))
@@ -301,7 +301,7 @@ NO_TABLE = "This GGUF scales its RoPE with a rope_freqs table, which the engine 
 
 
 def rope_freqs_values(head, tensors, base, metadata=None):
-    """T505.2: llama.cpp's rope_freqs table of a GGUF alone, read off its head (the file from its beginning): float64,
+    """T.505.2: llama.cpp's rope_freqs table of a GGUF alone, read off its head (the file from its beginning): float64,
     or None where the file has none. llama.cpp's converter writes the table before every other tensor, a few hundred
     bytes: Incomplete where the head ends before it does (whoever fetches the head fetches on). A table anywhere else
     (Swallow 8B's GGUF has it after every other tensor, gigabytes in) is refused as before: the RoPE tables of a float32
@@ -309,7 +309,7 @@ def rope_freqs_values(head, tensors, base, metadata=None):
     info = tensors.get("rope_freqs.weight")
     arch = (metadata or {}).get("general.architecture")
     if info is None or (arch in GGUF and GGUF[arch][1].gguf_rope_freqs):
-        # (T529: a family's own table, a Gemma 4's, is checked as it streams past and says no rope_scaling)
+        # (T.529: a family's own table, a Gemma 4's, is checked as it streams past and says no rope_scaling)
         return None
     if info["type"] != 0 or info["offset"] != 0:
         raise ValueError(NO_TABLE)
@@ -321,7 +321,7 @@ def rope_freqs_values(head, tensors, base, metadata=None):
 
 
 def llama3_scaling(table, config):
-    """T505.2: the rope_scaling (config.json's, of the llama3 kind) that makes llama.cpp's rope_freqs table, which is
+    """T.505.2: the rope_scaling (config.json's, of the llama3 kind) that makes llama.cpp's rope_freqs table, which is
     all a GGUF says of it: a divisor of each pair's angle (rope_freqs_agree). None for a table of ones (no scaling).
     The divisor is 1 for the pairs that turn fast, factor for the slow ones, and between them 1 / ((1 - s) / factor + s)
     with s a line in a pair's frequency: s = (original / wavelength - low) / (high - low). So factor is the largest
@@ -360,7 +360,7 @@ def llama3_scaling(table, config):
 
 def rope_freqs_agree(table, config):
     """ValueError unless llama.cpp's rope_freqs (a divisor of each pair's angle) is what the original's rope_scaling
-    makes: the engine makes its RoPE tables from rope_scaling (rope_frequencies), and the table is not used. T529: or
+    makes: the engine makes its RoPE tables from rope_scaling (rope_frequencies), and the table is not used. T.529: or
     the family's own table, where it has one (a Gemma 4's: which pairs turn)."""
     own = family_of(normalize(config)).gguf_rope_freqs
     if own:
@@ -398,7 +398,7 @@ def gguf_tokenizer(metadata, vocab_size):
 
 def gguf_bytebpe(metadata, tokens, kind):
     """(the pieces, the engine's options, False: a space is no U+2581) of a GGUF's byte-level BPE vocabulary, split as
-    its tokenizer.ggml.pre says: one of GGUF_PRETOKENIZERS, or it is refused. T505.3: and so is one that does not say
+    its tokenizer.ggml.pre says: one of GGUF_PRETOKENIZERS, or it is refused. T.505.3: and so is one that does not say
     (the owner, 2026-10-13): llama.cpp reads such a file as "default", which splits as no model of these does (the
     GGUF of a Llama 3 or a Qwen made before the key was there would be split as a GPT-2's, and answer badly without a
     word)."""
@@ -410,7 +410,7 @@ def gguf_bytebpe(metadata, tokens, kind):
         left, right = merge.split(" ")
         ranks.setdefault(left + right, -float(rank))
     # what tokenizer.json calls special: llama.cpp's control tokens (type 3). Its padding up to the vocabulary's size
-    # ([PAD151665] ..., type 5, unused) is text no piece of tokenizer.json has: empty, as the safetensors path pads (T143)
+    # ([PAD151665] ..., type 5, unused) is text no piece of tokenizer.json has: empty, as the safetensors path pads (T.143)
     pieces = [("" if kind(id) == 5 else text, ranks.get(text, UNMATCHABLE), text in ranks and kind(id) != 3)
               for id, text in enumerate(tokens)]
     # Qwen's tokenizer.json normalizes to NFC, which a GGUF does not say: the page's safetensors path does it
@@ -424,7 +424,7 @@ NORMAL, UNKNOWN, CONTROL, USER_DEFINED, UNUSED, BYTE = 1, 2, 3, 4, 5, 6
 
 
 def sentencepiece_bpe(metadata):
-    """T505.2: whether a GGUF's sentencepiece vocabulary (tokenizer.ggml.model "llama") is one the engine reads as
+    """T.505.2: whether a GGUF's sentencepiece vocabulary (tokenizer.ggml.model "llama") is one the engine reads as
     llama2.c's BPE (merge the pair whose piece scores highest), which is how llama.cpp reads every such vocabulary.
     The GGUF does not say what the model was: a sentencepiece BPE model scores a piece by minus the number of its
     merge, so its normal pieces' scores are whole numbers and nearly all different (a Mistral 7B's 31,741: 31,727
@@ -436,7 +436,7 @@ def sentencepiece_bpe(metadata):
     scores = metadata.get("tokenizer.ggml.scores", [])
     if not (len(tokens) == len(kinds) == len(scores)) or metadata.get("tokenizer.ggml.add_space_prefix", True) is not True:
         return False
-    # T505.3: a vocabulary that comes with its normalizer (sentencepiece's precompiled_charsmap) normalizes otherwise
+    # T.505.3: a vocabulary that comes with its normalizer (sentencepiece's precompiled_charsmap) normalizes otherwise
     # than by identity, and nothing here reads that map from a GGUF
     if metadata.get("tokenizer.ggml.precompiled_charsmap"):
         return False
@@ -452,7 +452,7 @@ def gguf_sentencepiece(metadata, tokens, kind):
     model's normalizer (its precompiled_charsmap): identity, as llama.cpp reads it and as a Llama's and a Mistral's
     is. collapse and unknown: sentencepiece_options()'s, from llama.cpp's key and from the types of the pieces.
     The dummy prefix stands before the first text alone, as for a model whose tokenizer_config.json says nothing else
-    (T308's "prefixed", which a GGUF cannot say). llama.cpp puts it before the text after every special token too;
+    (T.308's "prefixed", which a GGUF cannot say). llama.cpp puts it before the text after every special token too;
     that was held to two real files: a Mistral 7B v0.2's ids are the original's either way, and a v0.3's (whose
     [INST] is a token) are the original tokenizer's of the same text without it and not with it (a space twice)."""
     if not sentencepiece_bpe(metadata):

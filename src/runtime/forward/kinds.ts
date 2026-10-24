@@ -1,4 +1,4 @@
-// forward/kinds.ts (T375.3): the kinds of layers an engine has a step for, as one table, and what a kind is to the
+// forward/kinds.ts (T.375.3): the kinds of layers an engine has a step for, as one table, and what a kind is to the
 // engine. A module of src/runtime/forward.ts.
 //
 // createForward() (engine.ts) compares no kind's name: for every kind the plan's layers have (contracts/plan.ts's
@@ -50,8 +50,8 @@ export type Core = {
 export type Step = (count: number, pos0: number) => void;
 // The layers of one kind in a model, which own their tensors and their state: layer() is the step of the place-th of
 // them (fact: what the plan says of it). clear, where the kind keeps a state from token to token that cannot be
-// written again: position 0 clears it, and the engine then takes the positions in turn only (its follow()). T545:
-// staging, where the GPU's worker has these layers as well (an LFM2's convolution layers, T271.2 a Qwen3.5's linear-
+// written again: position 0 clears it, and the engine then takes the positions in turn only (its follow()). T.545:
+// staging, where the GPU's worker has these layers as well (an LFM2's convolution layers, T.271.2 a Qwen3.5's linear-
 // attention layers: gpu/block.ts): the bytes of that state as the GPU holds it, put() writes it there from here (at an
 // address of the shared memory, which the GPU's worker takes it up from: a block there goes on from the state here),
 // and take() makes the state here what comes back from it
@@ -64,26 +64,26 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void; 
 //   state()   the bytes of what its count layers keep besides, a number for each thing it takes of the memory, in
 //             the order make() takes them (make() takes these, and footprint() counts them)
 //   cached    its layers keep keys and values in the cache (cache.ts), which grows to the whole context
-//   staged()  T545: the GPU's worker has its layers too, and their state goes up to it and comes back from it with the
+//   staged()  T.545: the GPU's worker has its layers too, and their state goes up to it and comes back from it with the
 //             keys and values: the bytes of that state of count layers (make()'s staging)
 // What only a form can be asked, where there is no plan (Python's plan says both: its layers, its widths):
 //   layers()  which of a model's count layers are of this kind (null: the form has none; a layer that no kind says
 //             is its own attends)
 //   widths()  its own widths, as the plan's widths has them
-// And make(), its layers in a model that has count of them (T510.1: facts, what the plan says of each of them, by its
+// And make(), its layers in a model that has count of them (T.510.1: facts, what the plan says of each of them, by its
 // place among them: what a kind takes of the memory as it is made may depend on it, as a window does the cache's).
 // (A kind whose layers keep a state from token to token says so by clear() of what make() returns: a model with such
-// layers is not on the GPU, whatever the kind, unless it hands that state over (staging: T545, a convolution layer's;
-// T271.2, a linear-attention layer's: the GPU's worker has a step for them). One that keeps none there and is not
+// layers is not on the GPU, whatever the kind, unless it hands that state over (staging: T.545, a convolution layer's;
+// T.271.2, a linear-attention layer's: the GPU's worker has a step for them). One that keeps none there and is not
 // attention's would be taken there.)
-// T568.4: what the GPU's side (gpuside.ts, alone.ts) reads of a kind whose layers the GPU's worker has a step for (its
+// T.568.4: what the GPU's side (gpuside.ts, alone.ts) reads of a kind whose layers the GPU's worker has a step for (its
 // table is gpu/kinds.ts's GPU_KINDS, which a module of this chunk does not import):
 //   names     the tensors of its layers alone, whose places index those layers (a matrix's or a vector's `of`)
 //   matrices  its matrices the GPU takes besides every model's (q, k, v, o and the FFN's)
 //   vectors() its vectors the GPU reads, by the GPU's name: the plan's tensor and its floats a layer
 //   unfit()   why the GPU does not take its layers (null: it does)
 //   plan()    its numbers in the GPU's plan (Started's)
-//   alone     the GPU alone holds its state too, and a model of its layers may be on the GPU alone (T271.4)
+//   alone     the GPU alone holds its state too, and a model of its layers may be on the GPU alone (T.271.4)
 export type OnGpu = {
   names: string[]; matrices?: TensorName[]; vectors?(sizes: Sizes): Record<string, [TensorName, number]>; unfit?(sizes: Sizes): string | null;
   plan?(sizes: Sizes): Partial<KindNumbers>; alone?: boolean;

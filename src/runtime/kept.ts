@@ -1,18 +1,18 @@
-// kept.ts (T99): the models this browser converted from Hugging Face, kept for the next visit. The worker writes
+// kept.ts (T.99): the models this browser converted from Hugging Face, kept for the next visit. The worker writes
 // and reads them; the page lists them and deletes them. Two places, one interface:
 //
 //   the origin private file system (OPFS), where the browser has it: a folder per model with model.bin (the whole
 //   checkpoint in one file), tokenizer.bin and manifest.json. The worker writes and reads with a sync access handle.
-//   The Cache API, as before T99 (converted-v1): parts of 8 MiB, the tokenizer and the manifest, under one URL
+//   The Cache API, as before T.99 (converted-v1): parts of 8 MiB, the tokenizer and the manifest, under one URL
 //   prefix per model. New conversions go there only where there is no OPFS; what a visitor kept there before is read
 //   and deleted as it always was, never moved.
 //
 // The manifest is written last in both: a folder without one is rubbish from a write that did not finish.
-// TypeScript of which only the types are erased (T368.1): the worker imports it, and so does the page.
+// TypeScript of which only the types are erased (T.368.1): the worker imports it, and so does the page.
 
 import type { Options } from "./contracts/python.ts";
 
-// (T368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
+// (T.368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
 export type Kept = { name: string; where: "opfs" | "cache"; manifest: Manifest };
 // what is written beside a kept model: what the worker says of the conversion (worker/convert.ts: the model's id and
 // name, where it came from, the checkpoint's bytes, the options the engine gets, when), and this file's own two: the
@@ -24,7 +24,7 @@ export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?:
 // a file of the origin private file system as a worker has it, and its synchronous access (the page's types know neither)
 type Access = { write(bytes: Uint8Array, options: { at: number }): number; truncate(size: number): void; flush(): void; close(): void;
   read(bytes: Uint8Array, options: { at: number }): number; getSize(): number };
-// T329.2.2: what reads bytes of a kept checkpoint at once (a sync access handle's read()), and lets go of it
+// T.329.2.2: what reads bytes of a kept checkpoint at once (a sync access handle's read()), and lets go of it
 export type Reader = { read(bytes: Uint8Array, at: number): number; close(): void };
 type WorkerFile = FileSystemFileHandle & { createSyncAccessHandle(): Promise<Access> };
 
@@ -33,11 +33,11 @@ const FOLDER = "converted-v1";
 const PART_BYTES = 8 * 1024 * 1024;
 
 // the name of a model's conversion: its repository, revision, dtype and context, as the Cache API key has it, and
-// where the vocabulary and config.json come from another repository than the weights (T136), that one too.
-// T363.5: a conversion that kept a GGUF's blocks as they are (conversion.blocks) is another one than the same file
+// where the vocabulary and config.json come from another repository than the weights (T.136), that one too.
+// T.363.5: a conversion that kept a GGUF's blocks as they are (conversion.blocks) is another one than the same file
 // widened, though both say the dtype int8 (how the rows that are no blocks are stored): ":blocks" after its name. Every
 // other name is what it was.
-// T505.3: a repository nobody listed (?hf=, the sheet: the id "local") may be opened by one file of it or by another
+// T.505.3: a repository nobody listed (?hf=, the sheet: the id "local") may be opened by one file of it or by another
 // (&file=: its Q8_0.gguf, its Q4_K_M.gguf), and each is another conversion: the file's name after the revision, unless
 // it is the model.safetensors every such repository was opened by before. A model of the list is one file, and its
 // name is what it was
@@ -48,27 +48,27 @@ export function keptName(model: Converted) {
   const file = model.id === "local" && weights && weights !== "model.safetensors" ? `/${weights}` : "";
   return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${file}${from}:${dtype}:${max_seq_len}${blocks ? ":blocks" : ""}`);
 }
-/** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
+/** T.116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
  * Raise it when either changes: a conversion kept by an older converter is then converted again, and deleted (the
- * options of T106, BOS and specials, stayed wrong in what was kept before). 1: the manifests without it. 3: T127,
+ * options of T.106, BOS and specials, stayed wrong in what was kept before). 1: the manifests without it. 3: T.127,
  * the templates the converter reads now (selectattr, namespace(), chat_template.jinja, trim_blocks) in the options;
  * 4: and the control pieces of a sentencepiece model as their specials; 5: the nmt and collapse of a sentencepiece
- * model's normalizer (the review of T126: rinna's newlines); 6: a template's strftime_now() as {date:format}, filled
- * when the prompt is sent, and or / and, comments and escapes as Jinja reads them (the review of T127); 7: the
- * rms_norm_eps of a model whose is not 1e-5 (T124: the Qwen2.5 of the list, TinySwallow, DeepSeek-R1 and llm-jp-4, at 1e-6);
- * 8: {prompt:trim} for a template that trims what was typed (T138: Llama 3.1 and 3.2, Swallow 8B); 9: the batch the
+ * model's normalizer (the review of T.126: rinna's newlines); 6: a template's strftime_now() as {date:format}, filled
+ * when the prompt is sent, and or / and, comments and escapes as Jinja reads them (the review of T.127); 7: the
+ * rms_norm_eps of a model whose is not 1e-5 (T.124: the Qwen2.5 of the list, TinySwallow, DeepSeek-R1 and llm-jp-4, at 1e-6);
+ * 8: {prompt:trim} for a template that trims what was typed (T.138: Llama 3.1 and 3.2, Swallow 8B); 9: the batch the
  * owner held for one version (2026-09-28): the added tokens that are not special as specials, the BOS the tokenizer
- * names, a GGUF's padding as empty pieces, a byte-level tokenizer.bin's own U+2581 (T143), and a sentencepiece
- * model's charsmap after the pieces in place of the nfkc and nmt options (T216). 10: the round of T369 (2026-10-10): the
- * token a text begins with where the model's chat template was read (T264: the template's own first token, so that the
- * page sends the ids of apply_chat_template), lower case for a sentencepiece model that asks for it (T265), the dummy
- * prefix after a special token (T308), the templates jinja2 reads and the reader did not (T397, and T269's), and
- * qk_norm said by a Llama's file alone. 11: a ternary group's scale a float16, PQ2_0's own (T533: 34 bytes a group of
+ * names, a GGUF's padding as empty pieces, a byte-level tokenizer.bin's own U+2581 (T.143), and a sentencepiece
+ * model's charsmap after the pieces in place of the nfkc and nmt options (T.216). 10: the round of T.369 (2026-10-10): the
+ * token a text begins with where the model's chat template was read (T.264: the template's own first token, so that the
+ * page sends the ids of apply_chat_template), lower case for a sentencepiece model that asks for it (T.265), the dummy
+ * prefix after a special token (T.308), the templates jinja2 reads and the reader did not (T.397, and T.269's), and
+ * qk_norm said by a Llama's file alone. 11: a ternary group's scale a float16, PQ2_0's own (T.533: 34 bytes a group of
  * 128, not 36; a ternary model's kept conversion of 10 is fetched and converted again). */
 export const CONVERTER = 11;
 const converterOf = (manifest: Manifest) => manifest.converter ?? 1;
 /** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
- * may choose (T115) */
+ * may choose (T.115) */
 export function keptNames(model: Converted) {
   const asked = model.conversion?.dtype;
   return (asked ? [asked] : ["int8", "int6"]).map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype } }));
@@ -78,17 +78,17 @@ export const serves = (kept: Kept, model: Converted) => keptNames(model).include
 /** Whether a kept conversion is of an older converter: not used, and deleted. (One of a newer converter is left
  * alone: a tab of the older page must not delete what the newer one kept.) */
 export const outdated = (kept: Pick<Kept, "manifest">) => converterOf(kept.manifest) < CONVERTER;
-/** The conversions kept for a model of the list under a name it has no more, of either bits (T136: its weights come
+/** The conversions kept for a model of the list under a name it has no more, of either bits (T.136: its weights come
  * from another repository now, or its vocabulary): never served again, and in the way of the new one (a 7B's 8 GB
  * each). The worker deletes them before it keeps the new one. Not those of ?hf= and of folders, which all have the
- * id "local". shares: the ids of the list that share one conversion (a Qwen3's two forms, T124), kept under the id of
- * whichever converted it (the review of T203: the other form's left its 9 GB behind). */
+ * id "local". shares: the ids of the list that share one conversion (a Qwen3's two forms, T.124), kept under the id of
+ * whichever converted it (the review of T.203: the other form's left its 9 GB behind). */
 export async function replaced(model: Converted) {
   if (model.id === "local") return [];
-  // its own conversions of every bits stay, whichever one is asked for: the ternary one too (the review of T230: a
+  // its own conversions of every bits stay, whichever one is asked for: the ternary one too (the review of T.230: a
   // ?bits=8 visit of a ternary model deleted its ternary conversion, and the next plain visit fetched and converted it
   // again, for each visit in turn)
-  // (T363.5: and both of a model whose blocks are kept: with its blocks, and widened, which a load without the int8
+  // (T.363.5: and both of a model whose blocks are kept: with its blocks, and widened, which a load without the int8
   // kernels asks for: ?without=kernels, a browser without WebAssembly SIMD)
   const names = [...keptNames(model), ...[false, true].flatMap((blocks) => ["int8", "int6", "ternary"].map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype, blocks } })))];
   const ids = model.shares ?? [model.id];
@@ -133,7 +133,7 @@ export async function keptModels() {
 }
 
 /** A kept model to read: { manifest, where, parts(), tokenizer() }, or undefined. parts() yields its bytes in order.
- * The first of its names (keptNames) kept by this converter; what an older one kept is deleted on the way (T116). */
+ * The first of its names (keptNames) kept by this converter; what an older one kept is deleted on the way (T.116). */
 export async function openKept(model: Converted) {
   for (const name of keptNames(model)) {
     const found = await openNamed(name);
@@ -154,7 +154,7 @@ async function openNamed(name: string) {
           manifest,
           where: "opfs" as const,
           name,
-          // (T329.2.2, skip: a stretch nothing reads from the memory, whose parts are not read: zeros in their place)
+          // (T.329.2.2, skip: a stretch nothing reads from the memory, whose parts are not read: zeros in their place)
           async *parts(skip: { range?: [number, number] } = {}) {
             for (let offset = 0; offset < file.size; offset += PART_BYTES) {
               const end = Math.min(offset + PART_BYTES, file.size), range = skip.range;
@@ -188,7 +188,7 @@ async function openNamed(name: string) {
 
 /** Keep a conversion: slice(begin, end) gives the checkpoint's bytes (a copy), tokenizer is a Uint8Array.
  * Returns why nothing was kept, or undefined. Whatever was half written is removed again. Nothing asks the browser
- * beforehand how much room there is: its estimate said yes where the write then failed (T60). */
+ * beforehand how much room there is: its estimate said yes where the write then failed (T.60). */
 export async function keep(model: Converted, kept: Conversion, slice: (begin: number, end: number) => Uint8Array<ArrayBuffer>, tokenizer: Uint8Array<ArrayBuffer>, signal?: AbortSignal) {
   const name = keptName(model), manifest = { ...kept, converter: CONVERTER };
   if (opfsWritable()) {
@@ -249,12 +249,12 @@ export async function keep(model: Converted, kept: Conversion, slice: (begin: nu
   }
 }
 
-/** T156: a conversion kept as it comes, for a model whose weights go to the GPU alone (nothing holds them whole to
+/** T.156: a conversion kept as it comes, for a model whose weights go to the GPU alone (nothing holds them whole to
  * copy from afterwards, as keep() does): write(offset, bytes) as they come, in any order; finish(kept, tokenizer) writes
  * the tokenizer and the manifest last (a folder without one is rubbish, as keep()'s) and returns why nothing was kept,
  * or undefined; drop() lets go of it. On OPFS alone (a sync access handle): undefined where there is none. Whatever
  * was kept under the name before is removed first (openKept did not find it serving, or there would be no conversion) */
-/** T329.2.2: holding(stretch), before the first write: a stretch of the checkpoint the engine reads from the file
+/** T.329.2.2: holding(stretch), before the first write: a stretch of the checkpoint the engine reads from the file
  * ([start, end): a table of every layer's inputs, not in the memory). model.bin then stays open past finish(), for
  * read(); close() lets go of it. A conversion that could not be kept may still be read where the stretch was all
  * written before a write failed (whole()): the file is removed once it is let go of. dtype: what it is kept as (its
@@ -275,7 +275,7 @@ export async function keeper(model: Converted) {
     handle?.close();
     handle = null;
   };
-  // (T329.2.2: the bytes of the stretch held that were written)
+  // (T.329.2.2: the bytes of the stretch held that were written)
   const within = (offset: number, length: number) => (hold ? Math.max(0, Math.min(offset + length, hold[1]) - Math.max(offset, hold[0])) : 0);
   const whole = () => Boolean(hold) && held === hold![1] - hold![0];
   const drop = async () => {
@@ -301,7 +301,7 @@ export async function keeper(model: Converted) {
       try {
         if (failed) throw new Error(failed);
         handle!.flush();
-        // (T329.2.2: open still where the engine reads the stretch held from it)
+        // (T.329.2.2: open still where the engine reads the stretch held from it)
         if (!hold) close();
         for (const [file, bytes] of [["tokenizer.bin", tokenizer], ["manifest.json", new TextEncoder().encode(JSON.stringify(manifest))]] as [string, Uint8Array][]) {
           const target = await (await folder.getFileHandle(file, { create: true }) as WorkerFile).createSyncAccessHandle();
@@ -317,7 +317,7 @@ export async function keeper(model: Converted) {
         if (size !== manifest.bytes) throw new Error(`the origin private file system holds ${size} of ${manifest.bytes} bytes after writing`);
         return undefined;
       } catch (error) {
-        // (T329.2.2: a stretch held that was all written is read on: its file goes once it is let go of)
+        // (T.329.2.2: a stretch held that was all written is read on: its file goes once it is let go of)
         if (hold && handle && whole()) {
           rubbish = true;
           await directory.removeEntry(name, { recursive: true }).catch(() => {});
@@ -328,22 +328,22 @@ export async function keeper(model: Converted) {
       }
     },
     drop,
-    /** T329.2.2: bytes of the file at at, at once (the handle it is written by, open past finish() where a stretch is
+    /** T.329.2.2: bytes of the file at at, at once (the handle it is written by, open past finish() where a stretch is
      * held); how many were read */
     read(bytes: Uint8Array, at: number) {
       if (!handle) throw new Error("the kept checkpoint is closed");
       return handle.read(bytes, { at });
     },
-    /** T329.2.2: whether every byte of the stretch held was written */
+    /** T.329.2.2: whether every byte of the stretch held was written */
     whole,
-    /** T329.2.2: lets go of the file, and of what is left of it where it was not kept */
+    /** T.329.2.2: lets go of the file, and of what is left of it where it was not kept */
     async close() {
       close();
       if (rubbish) await directory.removeEntry(name, { recursive: true }).catch(() => {});
     },
   };
 }
-/** T329.2.2: what reads a kept checkpoint (openKept()'s, of the origin private file system) at once: a sync access
+/** T.329.2.2: what reads a kept checkpoint (openKept()'s, of the origin private file system) at once: a sync access
  * handle of its model.bin, the only one its file can have while it is open (close() lets go of it); undefined where
  * it cannot be had (another tab of this site holds it, or the browser has no such handles) */
 export async function openRows(name: string): Promise<Reader | undefined> {

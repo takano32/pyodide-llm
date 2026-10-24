@@ -1,16 +1,16 @@
-// T227: what came out WRONG, failed, unsteady or skipped in a run, listed once at the report's head.
-// (T353: a part of src/bench.js, which is the window that exports every name of these)
+// T.227: what came out WRONG, failed, unsteady or skipped in a run, listed once at the report's head.
+// (T.353: a part of src/bench.js, which is the window that exports every name of these)
 import { STATES } from "./cpu.js";
 
-// a | that tableCell() escaped stays in its cell (T214: a skipped round's reason is the words of a cell)
+// a | that tableCell() escaped stays in its cell (T.214: a skipped round's reason is the words of a cell)
 const cells = (line) => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));
 
-// T227: the words the page writes where something did not come out right
+// T.227: the words the page writes where something did not come out right
 const MARKED = /\b(?:WRONG|FAILED|failed|unsteady|skipped)\b/;
 // a row or a sentence that only repeats a verdict of the GPU's check, which is listed itself
 const REPEATED = /\(WRONG in the check\)|The check found [^.]*WRONG\./g;
 const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
-// how much a warning matters (T227's review), the worst first: 0 a result that cannot be right or a step that did not
+// how much a warning matters (T.227's review), the worst first: 0 a result that cannot be right or a step that did not
 // run (WRONG, FAILED, failed), 1 a round that was skipped, 2 a time that was rough (unsteady)
 const severity = (text) => {
   const words = text.replace(REPEATED, "");
@@ -18,7 +18,7 @@ const severity = (text) => {
 };
 
 /**
- * T227: all that came out WRONG, failed, unsteady or skipped in a run, a line each, in the words the page shows (the
+ * T.227: all that came out WRONG, failed, unsteady or skipped in a run, a line each, in the words the page shows (the
  * owner picked them off the screen by hand: they were spread over the report's tables, and the summary had none of
  * the reasons). Read from the Markdown the sections wrote, so that what is listed is what the page says. sections:
  * [{title, status, markdown, said}], the top of the report (the rounds, the model page's path) as one of them. Of each:
@@ -59,7 +59,7 @@ export function warnings(sections) {
   return [...new Set(out.sort((a, b) => a.rank - b.rank).map(({ text }) => text))];
 }
 
-/** T227: the warnings as the report holds them, under a heading of their own ("" where there are none); kept: how
+/** T.227: the warnings as the report holds them, under a heading of their own ("" where there are none); kept: how
  * many of them a summary has room for (shortReport()), the rest counted in a last line. */
 export function warningsBlock(warned, kept = warned.length) {
   if (!warned.length) return "";

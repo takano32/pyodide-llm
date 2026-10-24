@@ -1,6 +1,6 @@
-// The step "generate" (T151, T191): tokens generated on the GPU, the sampling too, read back each or once a submission, the
+// The step "generate" (T.151, T.191): tokens generated on the GPU, the sampling too, read back each or once a submission, the
 // sampling alone, and the logits the sampling is measured and checked on.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { shared, MODELS, PROMPT_MODEL, matrixBytes, gpu, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, fill,
   floats, run, middle, interleaved, scoped } from "./device.ts";
 import { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } from "./layerparts.ts";
@@ -8,7 +8,7 @@ import type * as Shaders from "../../shaders.ts";
 import type { Dispatch, ModelShape, Owned, Shape, Weights } from "./device.ts";
 import type { Form, Grouping, MatrixKey, PipeKey, Pipes } from "./layerparts.ts";
 import type { Alive, GenerateFound, SamplingAlone, SamplingTimed, TokenWork } from "../../contracts/benchmark.ts";
-// T368.7: the types of a run of tokens.
+// T.368.7: the types of a run of tokens.
 // the model a run is of: a shape and a vocabulary
 export type GenerateModel = ModelShape & { vocab: number };
 // the two ways of sampling (SAMPLERS), and their pipelines: SAMPLE's, and a stage's of the sampling in chunks
@@ -23,10 +23,10 @@ export type GenerationData = { layers: Record<MatrixKey, Weights>[]; classifier:
 type Pair = { n: number; xq: GPUBuffer; xs: GPUBuffer };
 export type GenerationParts = ReturnType<typeof generationParts>;
 
-// ---- T151: generated tokens on the GPU (shaders.ts's EMBED, fusedMatVec and SAMPLE): a token a compute pass, the
+// ---- T.151: generated tokens on the GPU (shaders.ts's EMBED, fusedMatVec and SAMPLE): a token a compute pass, the
 // sampler's state carried from one to the next on the GPU, and the ids read back once for the run: against reading
-// each one back, whose wait (3 to 8.6 ms for 4 bytes on the owner's Android, T134) a token pays alone.
-// The layers are tokenForm()'s (T175): the fused layer on DP4A where the packed int8 dot is, else T150's with the
+// each one back, whose wait (3 to 8.6 ms for 4 bytes on the owner's Android, T.134) a token pays alone.
+// The layers are tokenForm()'s (T.175): the fused layer on DP4A where the packed int8 dot is, else T.150's with the
 // workgroup's reduction (which layer is faster is the layer table's; every row here runs the same layers, so their
 // difference is the reading back alone). On DP4A the classifier takes its normed input quantized too
 // (NORM_QUANTIZE, then fusedDp4aMatVec's "write")
@@ -51,7 +51,7 @@ async function generationPipes(headSize: number, form: Form): Promise<Generation
   pipes.sampler = await samplerPipes();
   return pipes;
 }
-// T191: the two ways of sampling a token on the GPU, measured side by side: SAMPLE's one workgroup (T151) and the
+// T.191: the two ways of sampling a token on the GPU, measured side by side: SAMPLE's one workgroup (T.151) and the
 // sampling in chunks of the vocabulary (shaders.ts's SAMPLER_STAGES, a workgroup a chunk)
 const SAMPLERS: Sampler[] = ["one", "chunks"];
 async function samplerPipes(): Promise<SamplerPipes> {
@@ -73,14 +73,14 @@ function samplerDispatches(kind: Sampler, pipes: SamplerPipes, b: Record<number,
   const chunks = shared.WGSL.sampleChunks(vocab);
   return pipes.chunks.map((stage) => [stage.pipeline, group(stage.pipeline, stage.bindings), stage.chunks ? chunks : 1, 1]);
 }
-// A model on the GPU for a run of tokens: its layers (T150's four matrices each, the cache of its own), the norms
+// A model on the GPU for a run of tokens: its layers (T.150's four matrices each, the cache of its own), the norms
 // (two a layer, then the final one), the classifier (the embedding too: tied, as Llama 3.2 1B's), RoPE's table of
 // `positions`, and the sampler's buffers. form: the layer's (tokenForm()). data: the check's ({layers: [{qkv, o,
 // gateUp, down: {w, s}}], classifier, norms, keys, values}), else random. encode(encoder): one token's pass and the
-// Step copied from the state after it. T175: on DP4A with the check's data, every quantized vector of a pass is its
+// Step copied from the state after it. T.175: on DP4A with the check's data, every quantized vector of a pass is its
 // own (four a layer, then the classifier's), and encode copies them into `recorded` after the pass, token by token
 // from reset() on (recording: their sizes; recorded(bytes) cuts what was read back into [token][vector] {xq, xs}).
-// T225: with the check's data every form records the token's logits after them (as the sampling left them: the
+// T.225: with the check's data every form records the token's logits after them (as the sampling left them: the
 // penalty divides in place), recorded(bytes).logits[token], and caches holds the layers' keys and values
 function generationParts(model: GenerateModel, form: Form, pipes: GenerationPipes, positions: number, owned: Owned[], data?: GenerationData) {
   const shape = layerShape(model), { dim, hidden, heads, kvDim, headSize } = shape, { vocab, layers } = model;
@@ -117,7 +117,7 @@ function generationParts(model: GenerateModel, form: Form, pipes: GenerationPipe
     return { ...m, keys, values };
   });
   const classifier = weights([vocab, dim], data?.classifier);
-  // T175: one quantized vector serves all of a token's quantizations (each is read before the next is made), but for
+  // T.175: one quantized vector serves all of a token's quantizations (each is read before the next is made), but for
   // the check, which reads each one back
   const pair = (n: number): Pair => ({ n, xq: make(n), xs: make((n / shared.GROUP) * 4) });
   const kept = form.dp4a && data;
@@ -166,7 +166,7 @@ function generationParts(model: GenerateModel, form: Form, pipes: GenerationPipe
   } else {
     dispatches.push([pipes.classifier, group(pipes.classifier, [[0, classifier.w], [1, classifier.s], [2, v.h], [3, u.classifier], [4, v.norms], [5, v.logits]]), across, Math.ceil(rows / across)]);
   }
-  // the token's sampling: SAMPLE's one workgroup, or in chunks (T191), as use() says
+  // the token's sampling: SAMPLE's one workgroup, or in chunks (T.191), as use() says
   const samplerBuffers = { 0: v.logits, 1: v.probs, 2: v.order, 3: v.state, 4: v.chosen, 5: v.randoms, 6: v.settings, 7: v.parts };
   const samplers = Object.fromEntries(SAMPLERS.map((kind) => [kind, samplerDispatches(kind, pipes.sampler, samplerBuffers, vocab)])) as Record<Sampler, Dispatch[]>;
   let sampling = samplers.one;
@@ -239,7 +239,7 @@ async function generationRun(parts: Pick<GenerationParts, "vectors" | "encode">,
   }
   const ms = performance.now() - began;
   if (!target) into.destroy();
-  // T219's review: a step whose logits were not finite is refused by the sampler (the run is stopped there, the tokens
+  // T.219's review: a step whose logits were not finite is refused by the sampler (the run is stopped there, the tokens
   // after it are not sampled), which would make the time of a run, and of a token, a shorter one than it is: said, not timed
   if (state[shared.WGSL.STATE_NOT_FINITE]) throw new Error("the sampler refused a step: its logits were not finite numbers, so the time is not a token's");
   return { ms, ids, state };
@@ -262,14 +262,14 @@ async function generate(): Promise<GenerateFound> {
     const targets = new Map(counts.map((per) => [per, buffer(per * 4 + shared.WGSL.STATE_BYTES, MAP_READ | COPY_DST)]));
     owned.push(...targets.values());
     postMessage({ alive: true } satisfies Alive);
-    // the ms of a run of `tokens` from the start, per of them a submission, sampled the sampler's way (T191)
+    // the ms of a run of `tokens` from the start, per of them a submission, sampled the sampler's way (T.191)
     const timed = async (per: number, kind: Sampler) => {
       parts.use(kind);
       parts.reset(start);
       return (await generationRun(parts, tokens, per, targets.get(per))).ms;
     };
-    // the work of a token without the reading back: n tokens in one submission against 2n (T168's), each sampler's,
-    // the samplers in turn (interleaved(): T150's review)
+    // the work of a token without the reading back: n tokens in one submission against 2n (T.168's), each sampler's,
+    // the samplers in turn (interleaved(): T.150's review)
     const works: Partial<Record<Sampler, TokenWork>> = {};
     if (!shared.fallback) {
       const found = await interleaved(SAMPLERS.map((kind) => async (n: number) => {
@@ -283,7 +283,7 @@ async function generate(): Promise<GenerateFound> {
       });
     }
     postMessage({ alive: true } satisfies Alive);
-    // the forms and the samplers in turn (T150's review), each a run of `tokens`, after one run each to warm up
+    // the forms and the samplers in turn (T.150's review), each a run of `tokens`, after one run each to warm up
     const rounds = shared.fallback ? 1 : GENERATE_ROUNDS, times = SAMPLERS.map(() => counts.map((): number[] => []));
     if (!shared.fallback) for (const per of counts) for (const kind of SAMPLERS) await timed(per, kind);
     for (let round = 0; round < rounds; round++) {
@@ -306,15 +306,15 @@ async function generate(): Promise<GenerateFound> {
       ...(works.chunks ? { chunkWork: works.chunks } : {}), rows, sampling };
   });
 }
-// the sampling alone (paired(): T168's n and 2n) on Llama 3's vocabulary, twice: on logits as a model's (madeUpLogits:
+// the sampling alone (paired(): T.168's n and 2n) on Llama 3's vocabulary, twice: on logits as a model's (madeUpLogits:
 // a spread of 2 and 20 tokens far above it, a few percent of the vocabulary over the nucleus's floor) and on flat ones
 // (a spread of 1, none above: every token over the floor, so that SAMPLE gathers and reads all of them each round
 // of its searches: its worst case). `over` is how many tokens are over the floor.
-// Without the repetition penalty (T191's review): the penalty changes the logits in place, sampling after sampling,
+// Without the repetition penalty (T.191's review): the penalty changes the logits in place, sampling after sampling,
 // and they are written once for all the submissions, so with it each sampled peak was divided down and the logits as a
 // model's went about flat while they were timed: the count over the floor the table named was not what was timed. The
 // penalty itself is a thread a token of the window in either sampler.
-// T191: SAMPLE's one workgroup, the sampling in chunks, and of that its last stage alone (one workgroup: the nucleus
+// T.191: SAMPLE's one workgroup, the sampling in chunks, and of that its last stage alone (one workgroup: the nucleus
 // and the draw, the same search as SAMPLE's): each submission of the last runs one sampling in chunks, then n of its
 // last stage on what that gathered, so that 2n less n is n of the last stage alone
 async function samplingAlone() {
@@ -333,7 +333,7 @@ async function samplingAlone() {
     shared.device.queue.writeBuffer(settings, 0, shared.WGSL.samplingSettings({ vocab, ...GENERATE_SETTINGS, penalty: 1 }));
     const history = [...Array(64)].map(() => (Math.random() * vocab) | 0), start = shared.WGSL.samplingState({ token: history[63], pos: 0, history });
     const b = { 0: logits, 1: probs, 2: order, 3: state, 4: chosen, 5: randoms, 6: settings, 7: parts };
-    // T191: SAMPLE's one workgroup, the sampling in chunks and its last stage alone, in turn (interleaved(): T150's
+    // T.191: SAMPLE's one workgroup, the sampling in chunks and its last stage alone, in turn (interleaved(): T.150's
     // review), each [the dispatches once before the n, the dispatches n times]
     const [one, chunks] = SAMPLERS.map((kind) => samplerDispatches(kind, pipes, b, vocab));
     const last = chunks[shared.WGSL.SAMPLER_STAGES.findIndex((stage) => stage.name === "pick")];
@@ -372,7 +372,7 @@ function overTheFloor(logits: Float32Array, temperature: number) {
 // 0.7, their indices descending as written so the order of the index is not the order written), and a tail of 200
 // distinct values below (a fiftieth each, rising by the index) that a nucleus of top-p 0.9 reaches into: no equal
 // logits at its border, where SAMPLE takes every equal token and the CPU's sort takes some (a different mass).
-// T191: past one chunk of the sampling in chunks (WGSL.SAMPLE_CHUNK), the same spread over the chunks: the second of the
+// T.191: past one chunk of the sampling in chunks (WGSL.SAMPLE_CHUNK), the same spread over the chunks: the second of the
 // top at 64000, the run at multiples of 3000 (from 60000 down), the tail at odd indices from 1001 (so that the order
 // of equal ones and of the nucleus crosses the chunks)
 const TIED_RUN = Math.fround(8.87);
@@ -384,7 +384,7 @@ function tiedLogits(vocab: number) {
   for (let i = 0; i < 200; i++) logits[wide ? 1001 + 618 * i : 200 + i] = 7.26 + i * 1e-3;
   return logits;
 }
-// T191 (Fable's check): a few tokens far over the rest, on the borders of the chunks of the sampling in chunks (the
+// T.191 (Fable's check): a few tokens far over the rest, on the borders of the chunks of the sampling in chunks (the
 // first and the last token of a chunk, the very last token of the vocabulary: a thread's fourth), two of them equal
 // across a border (1023 and 1024), the rest a narrow normal spread: at temperature 0.4 the floor (best − 6.45) is
 // above every other token, so nearly every chunk gathers nothing, the count over the floor is far below a workgroup,
@@ -395,9 +395,9 @@ function sparseLogits(vocab: number) {
   for (const [at, value] of SPARSE_PEAKS) logits[at] = value;
   return logits;
 }
-// T219: logits that are not finite, in place, at `at` (the kinds of two or three logits take the places after it). What
-// the sampler must refuse (T195's rule: the largest logit is no finite number: a NaN or +inf anywhere, or every logit
-// -inf), and what it must not (UNREFUSED). The bits of a NaN are a device's to give (the review of T219): the NaN
+// T.219: logits that are not finite, in place, at `at` (the kinds of two or three logits take the places after it). What
+// the sampler must refuse (T.195's rule: the largest logit is no finite number: a NaN or +inf anywhere, or every logit
+// -inf), and what it must not (UNREFUSED). The bits of a NaN are a device's to give (the review of T.219): the NaN
 // JavaScript writes is the quiet one, and a device may give one with the sign set (x86's default NaN), a signaling one,
 // or one of all ones, which a test of a quiet NaN alone, or of the bits as a signed number, does not see. The kinds
 // "... in the window" are set where the history is known (the penalty multiplies or divides the logit of its tokens).

@@ -1,10 +1,10 @@
-// kernel/activations.ts (T356): what is done to one vector of activations between the matrix products: the norms
+// kernel/activations.ts (T.356): what is done to one vector of activations between the matrix products: the norms
 // (rmsnorm, layernorm), the feed-forward's activations (gelu, swiglu, geglu), the residual's add, and the rotated basis of
 // the matrices that are stored rotated (rotate, unrotate).
 
 import { hsum, fexp, vexp } from "./math";
 
-// eps: the model's (config.json's rms_norm_eps): Qwen3's 1e-6 against 1e-5 moved its perplexity by 0.12% (T124)
+// eps: the model's (config.json's rms_norm_eps): Qwen3's 1e-6 against 1e-5 moved its perplexity by 0.12% (T.124)
 export function rmsnorm(out: usize, x: usize, w: usize, n: i32, eps: f32): void {
   let acc = f32x4.splat(0);
   let j = 0;
@@ -43,7 +43,7 @@ export function layernorm(out: usize, x: usize, w: usize, b: usize, n: i32): voi
   }
 }
 
-// T162: gelu and swiglu four at a time by vexp. Their results are fexp's bit for bit: where vexp and fexp differ (below
+// T.162: gelu and swiglu four at a time by vexp. Their results are fexp's bit for bit: where vexp and fexp differ (below
 // -87), 1 + exp(x) is 1 either way.
 export function gelu(out: usize, x: usize, b: usize, n: i32): void {
   // GPT-2's gelu_new, with the bias of the projection added first. 0.5 * (1 + tanh(z)) is 1 / (1 + exp(-2z)).
@@ -78,7 +78,7 @@ export function swiglu(out: usize, h1: usize, h3: usize, n: i32): void {
   }
 }
 
-// T261: a Gemma's gated FFN, gelu(h1) * h3: gelu's own numbers (the same steps in the same order, no bias) times h3,
+// T.261: a Gemma's gated FFN, gelu(h1) * h3: gelu's own numbers (the same steps in the same order, no bias) times h3,
 // as swiglu is silu(h1) * h3. Four at a time and one at a time are the same to the bit, as gelu's are.
 export function geglu(out: usize, h1: usize, h3: usize, n: i32): void {
   const one = f32x4.splat(1.0), c = f32x4.splat(0.7978845608028654), cube = f32x4.splat(0.044715), two = f32x4.splat(-2.0);
@@ -97,7 +97,7 @@ export function geglu(out: usize, h1: usize, h3: usize, n: i32): void {
   }
 }
 
-// T342: a Spark-X2.5's gated FFN, gelu(h1) * h3 by the exact GELU: llama2_numpy's gelu_erf() has the steps (erf by
+// T.342: a Spark-X2.5's gated FFN, gelu(h1) * h3 by the exact GELU: llama2_numpy's gelu_erf() has the steps (erf by
 // Abramowitz and Stegun's 7.1.26, z no more than 9 so that exp's argument stays above -87, where vexp is fexp to the
 // bit), taken in the same order four at a time and one at a time, so that the two are the same to the bit.
 export function geglu_erf(out: usize, h1: usize, h3: usize, n: i32): void {
@@ -131,7 +131,7 @@ export function add_inplace(x: usize, y: usize, n: i32): void {
   for (let j = 0; j < n; j++) { const o = <usize>j << 2; store<f32>(x + o, load<f32>(x + o) + load<f32>(y + o)); }
 }
 
-// T237: the rotated basis (llama2_numpy.py has the definition, above hadamard()). The normalized Walsh-Hadamard
+// T.237: the rotated basis (llama2_numpy.py has the definition, above hadamard()). The normalized Walsh-Hadamard
 // transform of a block of values in place, after its values were multiplied by 1 / sqrt(block): sums and differences
 // of values 1, 2, 4, ... apart, the order of llama2_numpy.hadamard() and of the fork's ggml_compute_forward_fwht
 // (ggml/src/ggml-cpu/ops.cpp at 88c4bc60; the order, no line of it). Every number is one float32 sum or difference,

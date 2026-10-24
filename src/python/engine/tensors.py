@@ -43,7 +43,7 @@ def read_tensor(checkpoint, place, whole=True, copy=False):
         return np.stack([read_tensor(checkpoint, layer, whole, copy) for layer in place.layers])
     shape, count, kind = place.row.shape, math.prod(place.row.shape), KINDS[place.kind]
     if kind.group:
-        # quantize.py: int8 values (or their packing), then one scale per group (a float32; T533: ternary's a
+        # quantize.py: int8 values (or their packing), then one scale per group (a float32; T.533: ternary's a
         # float16); or blocks, the scales inside
         raw = np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset)
         scales = np.frombuffer(checkpoint, dtype=kind.scale_type, count=(place.offset + place.size - place.scales) // (kind.scale or 4),
@@ -68,7 +68,7 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
         # the RoPE tables are the file's in float32 alone (rope_tables() makes the others).
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8
         # or float16 table stays as it is and Llama.embedding() widens the row it needs. (Codebooks stay bytes.)
-        # (T329: and a table every layer reads a row of, which multiplies nothing)
+        # (T.329: and a table every layer reads a row of, which multiplies nothing)
         as_stored = (CODES, ROWS) if shared_weights else (CODES, ROWS, EMBEDDING)
         held = {place.row.name: read_tensor(checkpoint, place, place.row.role not in as_stored, copy=dtype in QUANTIZED)
                 for place in placed(rows, dtype)
@@ -93,7 +93,7 @@ def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies)
     if layout.rope == PARTLY:
         return partial_tables(seq_len, head_size, rotary, frequencies)
     if layout.rope == PROPORTIONAL:
-        # T331: the first rotary values, by the first angles of the whole head (transformers' proportional RoPE: the
+        # T.331: the first rotary values, by the first angles of the whole head (transformers' proportional RoPE: the
         # pairs past them turn by an angle of 0, which is none)
         return partial_tables(seq_len, head_size, rotary, lambda width: frequencies(head_size)[:width // 2])
     # (yarn's magnitude is in a Llama's tables alone, as it always was)
@@ -103,7 +103,7 @@ def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies)
 
 
 def local_tables(seq_len, head_size, theta, frequencies):
-    """The RoPE tables (cos, sin) of a model's local layers (T261: engine/layout.py's local_layers()), which no file
+    """The RoPE tables (cos, sin) of a model's local layers (T.261: engine/layout.py's local_layers()), which no file
     has: whole heads turned by the base theta. frequencies(width, theta): the angle per position of each pair."""
     angles = np.arange(seq_len)[:, None] * frequencies(head_size, theta)
     return tuple(turn(angles).astype(np.float32) for turn in (np.cos, np.sin))

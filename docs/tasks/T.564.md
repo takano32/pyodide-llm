@@ -1,0 +1,2 @@
+### T.564 [運用][遠隔試験] `gpu-prompt.yml` に、実物のモデルを Dawn だけで回す入力 — 状態: 完了（2026-10-16。入力 `engines=dawn` で `gpu` のジョブ（Chromium・Chrome・Edge）を飛ばす。既定は今のまま。CI を省いた: 訳は、触ったのはワークフローの入力 1 つと `if:` 1 行で、`workflows-check` が手元で読み、すぐ T.271 の確かめで dispatch する。前の見出し: 未着手（2026-10-16、T.271 の実装の気づき）
+- `real=` の実物を Chromium（SwiftShader）でも回すので、1B 級で 90 分の期限まで走り、結果の手渡しが毎回 2 時間近く遅れる（T.261.4・T.545・T.271）。入力 `engines=dawn`（既定は今のまま）を足し、実物は Dawn だけで回す。AGENTS.md の検証手順 4 に 1 行。

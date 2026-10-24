@@ -1,0 +1,3 @@
+### T.390 [バグ][CPU] `generate_many` が空の一覧を返すと `generate()` が終わらない — 状態: 完了（2026-10-10、T.359.7 で直して本線に入れた。T.359.4 から。前からある。規模 小）
+- forward.js は ID の一覧か undefined を返すので、いまは起きない。空を「断られた」と同じに扱う守りを足す（T.359.7 で標本抽出と生成に触るときに）。
+- **直し（T.359.7、2026-10-10）**: `generate()` は GPU のステップの答えが空（`[]`・`()`・None）なら、そのステップを CPU で引く（`if not chosen:`）。試験は `tests/test_parts.py` の `test_steps_that_answer_no_tokens_are_the_cpus`（守りを `is None` に戻すと、代役が 40 回目の頼みで落とす）。

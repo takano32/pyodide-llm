@@ -1,5 +1,5 @@
 # reference_yarn.py
-# T532: the RoPE tables of a yarn scaling (llama2_numpy.rope_frequencies(), rope_magnitude()) against transformers'
+# T.532: the RoPE tables of a yarn scaling (llama2_numpy.rope_frequencies(), rope_magnitude()) against transformers'
 # own _compute_yarn_parameters, with every key a config.json may say of a yarn (attention_factor, mscale and
 # mscale_all_dim, beta_fast, beta_slow, truncate), on a grid of heads, thetas, factors and original contexts.
 # tests/test_llama3.py holds the same to a transcription of the file in float64 (without PyTorch); this holds the

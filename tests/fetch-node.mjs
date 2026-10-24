@@ -1,7 +1,7 @@
-// fetch-node.mjs (T136): how fast this machine fetches a file of Hugging Face by range requests, the way the worker
+// fetch-node.mjs (T.136): how fast this machine fetches a file of Hugging Face by range requests, the way the worker
 // does (inOrder(): parts of one size, several connections, each taking the next part), for each part size and
 // number of connections. The bytes are counted and dropped: nothing is converted and little is held. For measuring
-// the line of the machine it runs on (the owner's, in Japan), where the CI's (fetch.yml, T107) is in the United States.
+// the line of the machine it runs on (the owner's, in Japan), where the CI's (fetch.yml, T.107) is in the United States.
 // Node's fetch is not a browser's (HTTP/1.1 connections of its own, no HTTP/2 to share), so this measures the
 // line and the server, not the page.
 //

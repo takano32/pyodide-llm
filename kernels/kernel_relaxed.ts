@@ -8,7 +8,7 @@ import { half, halves4 } from "./kernel/halves";
 
 const GS: i32 = 32;
 
-// T167: the four int32 lanes of each of four groups' dot products added up into one lane per group: [sum d0, sum d1,
+// T.167: the four int32 lanes of each of four groups' dot products added up into one lane per group: [sum d0, sum d1,
 // sum d2, sum d3] (a transpose by shuffles and two adds, as sums4 in kernel/attention.ts for float32; integers, so the order of
 // the adds does not matter). A group's sum is at most 32 × 128 × 127 = 520192, within float32's exact integers.
 // @ts-ignore: decorator
@@ -23,14 +23,14 @@ const GS: i32 = 32;
 }
 
 // activations from quantize_x(bias = 64). wc = -64 * sum(group weights), an int32 a group (int8_sums, six_sums),
-// removes that bias again: dot(w, q - 64) = dot(w, q) - 64 * sum(w). T197: it is added to the group's integer sum
+// removes that bias again: dot(w, q - 64) = dot(w, q) - 64 * sum(w). T.197: it is added to the group's integer sum
 // before the sum is scaled, so that the sum is dot(w, q - 64) exactly (|32 × 128 × 127| at most on the way: int32 and
-// float32 hold it exactly) and is rounded once a group. Before T197 wc was the float32 scale * sum(w), dotted with the
+// float32 hold it exactly) and is rounded once a group. Before T.197 wc was the float32 scale * sum(w), dotted with the
 // activations' scales on its own and taken off at the end: a multiply and an add more a group, four more accumulators
 // in the tile, and the difference of two large float32 sums at the end.
-// T167: four groups at a time; their dot products are added up to one integer a group (groupSums), converted and
+// T.167: four groups at a time; their dot products are added up to one integer a group (groupSums), converted and
 // multiplied by the four scales (weight scale times activation scale) at once, and added into one accumulator whose
-// lane k holds the groups 4j + k: each group's sum times its scale is rounded once (before T167 each of the four
+// lane k holds the groups 4j + k: each group's sum times its scale is rounded once (before T.167 each of the four
 // lanes of a group was scaled and rounded on its own, and four groups cost 4 × (convert, splat, mul, add)). A last
 // group or three take the same steps one at a time.
 export function matmul_q8r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, wc: usize, n: i32, r0: i32, r1: i32): void {
@@ -68,7 +68,7 @@ export function matmul_q8r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
   }
 }
 
-// T159: matmul_q8r for count tokens of a prompt (T108) at once: token t's activations and their scales at xq + t * frame
+// T.159: matmul_q8r for count tokens of a prompt (T.108) at once: token t's activations and their scales at xq + t * frame
 // and xs + t * frame (one frame a token), its outputs at xout + t * os. Four rows by four tokens a tile, where a group's
 // 32 bytes of a weight row are loaded once for the four tokens and a token's 32 bytes once for the four rows
 // (matmul_q8r loads both for every row and token). The form is that of the 4 x 4 GEMM of llama.cpp's CPU backend for
@@ -80,7 +80,7 @@ export function matmul_q8r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
 // the four lanes are added in order, then the groups past the last four one at a time; so the tile takes the groups
 // 4j + k in one pass for each k (its lanes are the tokens), adds the passes in that order, then the groups past the
 // fours, each with the same float32 operations (the weight scale times the activation scale, times the group's exact
-// integer sum with the correction in it, T197). The rows past the last four and the tokens past the last four go
+// integer sum with the correction in it, T.197). The rows past the last four and the tokens past the last four go
 // through matmul_q8r itself.
 // @ts-ignore: decorator
 @inline function scalesOf(xs: usize, frame: usize, g: i32): v128 {  // the four tokens' scales of group g
@@ -93,7 +93,7 @@ export function matmul_q8r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
 // @ts-ignore: decorator
 @inline function sumsOf(w: usize, c: usize, x0: v128, x1: v128, x2: v128, x3: v128, x4: v128, x5: v128, x6: v128, x7: v128): v128 {
   // a row's group (32 bytes at w, its correction at c) with the four tokens' (x0 and x1 the first token's two halves,
-  // ...): its four exact integer sums with the bias taken out, as float32 (exact). T197: each token's dot product
+  // ...): its four exact integer sums with the bias taken out, as float32 (exact). T.197: each token's dot product
   // starts from the correction in its lane 0 and zeros in the others (groupSums adds the four lanes), where it
   // started from zeros before
   const lo = v128.load(w), hi = v128.load(w, 16), start = v128.load32_zero(c);
@@ -154,12 +154,12 @@ function tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, wc: usize
 }
 
 // rows r0..r1 for count tokens: the tiles row by row of four, so that a tile's four weight rows stay in the first
-// cache for every token (T108's blocks of 16 KB are not needed here).
-// T159's review: a quad of rows up to 10 KB is read once in order before its tiles. A tile reads its rows in four
+// cache for every token (T.108's blocks of 16 KB are not needed here).
+// T.159's review: a quad of rows up to 10 KB is read once in order before its tiles. A tile reads its rows in four
 // lane passes, each every fourth group: every other 64-byte line, 128 bytes apart, and a pass over a row of 2 KB is
 // 16 steps long. From memory (a model's weights, read once a block) the x86 prefetchers did not keep up with passes
 // that short: on the EPYC 9V74 and 9V45 (Zen 4 and 5) the tile took up to 1.6 times as long as the blocks before it,
-// at 4 to 8 tokens (the numbers are in TASKS.md's T159). Past rows of 2560 bytes the passes are long enough, and a read
+// at 4 to 8 tokens (the numbers are in TASKS.md's T.159). Past rows of 2560 bytes the passes are long enough, and a read
 // ahead of 12 KB and more fell out of the first cache before the tile got to it (slower than none on the 9V45). The
 // sum is there only so that the reads stay (a load whose value is not used goes away): it is stored where the tile
 // writes next.
@@ -184,8 +184,8 @@ export function matmul_q8r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
   }
 }
 
-// T98: the same on int6 weights (six.ts: 24 bytes a group, widened straight into int8), in the same order as
-// matmul_q8r: four groups at a time, one sum a group (T167) with the corrections in it (T197), their scales as
+// T.98: the same on int6 weights (six.ts: 24 bytes a group, widened straight into int8), in the same order as
+// matmul_q8r: four groups at a time, one sum a group (T.167) with the corrections in it (T.197), their scales as
 // vectors. wc as for matmul_q8r (-64 times the sum of the group's int8 values, six_sums).
 // @ts-ignore: decorator
 @inline function dot6(p: usize, x: usize): v128 {
@@ -219,7 +219,7 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
   }
 }
 
-// T231: ternary weights (ternary.ts: 32 bytes a group of 128, a float16 scale a group from T533) against the activations
+// T.231: ternary weights (ternary.ts: 32 bytes a group of 128, a float16 scale a group from T.533) against the activations
 // interleave() left (kernel/matmul.ts: int8 in all 8 bits, the planes of a block of 64, and after their scales minus the sum
 // of each group of 32). 64 weights a step: their sixteen bytes loaded once, four planes of codes, four dot products
 // into one accumulator whose lanes 0 and 1 are of the first group of 32 activations and 2 and 3 of the second.
@@ -241,7 +241,7 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
   const whole = i32x4.add(fourSums(dot64(w, x, mask), dot64(w + 16, x + 64, mask)), v128.load(sums + at));
   return f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d));
 }
-// T533: the scales are float16s, four groups' widened at once (ternary.ts), the groups past the last four one at a time.
+// T.533: the scales are float16s, four groups' widened at once (ternary.ts), the groups past the last four one at a time.
 // three: 3 (ternary.ts says why it is an argument).
 export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
   const groups = n >> 7, groups4 = groups & ~3, mask = i8x16.splat(<i8>three);
@@ -265,7 +265,7 @@ export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
   }
 }
 
-// T231: matmul_t2r for count tokens of a prompt (T108) at once: token t's activations and their scales (and sums) at
+// T.231: matmul_t2r for count tokens of a prompt (T.108) at once: token t's activations and their scales (and sums) at
 // xq + t * frame and xs + t * frame, its outputs at xout + t * os. A row against four tokens a turn: the codes of its
 // 64 weights are made once for the four (the load, the shifts and the masks are half of what a token's 64 weights
 // cost) and meet each token's activations in turn. Every (row, token) is matmul_t2r's number to the bit: the same
@@ -307,7 +307,7 @@ export function matmul_t2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
         const a2 = planes(x2 + o, c0, c1, c2, c3), a3 = planes(x3 + o, c0, c1, c2, c3);
         const u = v128.load(w, 16);
         c0 = codes(u, 0, mask); c1 = codes(u, 1, mask); c2 = codes(u, 2, mask); c3 = codes(u, 3, mask);
-        const d = f32x4.splat(half(srow + (<usize>g << 1)));  // T533: a float16, once for the four tokens
+        const d = f32x4.splat(half(srow + (<usize>g << 1)));  // T.533: a float16, once for the four tokens
         f0 = f32x4.add(f0, scaled(a0, planes(x0 + o + 64, c0, c1, c2, c3), s0, sums, at, d));
         f1 = f32x4.add(f1, scaled(a1, planes(x1 + o + 64, c0, c1, c2, c3), s1, sums, at, d));
         f2 = f32x4.add(f2, scaled(a2, planes(x2 + o + 64, c0, c1, c2, c3), s2, sums, at, d));

@@ -1,18 +1,18 @@
-// tests/worker-modules-check.mjs (T350): what the type check does not hold of src/runtime/worker.ts and its modules
+// tests/worker-modules-check.mjs (T.350): what the type check does not hold of src/runtime/worker.ts and its modules
 // (src/runtime/worker/*.ts). Node only, under a second:
 //
 //   node tests/worker-modules-check.mjs
 //
-// T368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// T.368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
 // used and neither declared nor imported (with the one rule tsc cannot hold, an ambient name: tests/types.mjs's own),
 // a name imported and assigned (TS2632; the build refuses it too), a key or a kind of a message that its type has not.
 // What is left here is what tsc, the build and Node all let pass, each with why:
 //   - a name declared inside a function that the file also imports: the lines below it read the local, and the types
-//     may well agree (T367.4's pitfall: `let unstarted` beside the imported unstarted);
+//     may well agree (T.367.4's pitfall: `let unstarted` beside the imported unstarted);
 //   - a name declared at the top of two modules: two variables to tsc and in a browser, one in the one context the
 //     checks run the worker in (tests/worker-source.mjs: a `let` twice is a SyntaxError there, a function twice is the
 //     second one, silently);
-//   - worker/state.ts, the one object the modules shared, back (T378.3: what they hold has owners);
+//   - worker/state.ts, the one object the modules shared, back (T.378.3: what they hold has owners);
 //   - what a type of src/runtime/contracts/messages.ts has and nobody writes or reads (a kind never posted, an optional
 //     key no message has, a key of a load that the worker never reads), and its two ends that are Python's (the engine's
 //     stats, the settings of an answer): to tsc a type with more than is used is a correct type;
@@ -33,12 +33,12 @@ import fs from "node:fs";
 import { namesOf } from "./names.mjs";
 import { untyped } from "./untyped.mjs";
 
-// (T368.3: each file as the JavaScript it is once its types are blanked, tests/untyped.mjs: a type's name is no name used)
+// (T.368.3: each file as the JavaScript it is once its types are blanked, tests/untyped.mjs: a type's name is no name used)
 const plain = (url) => untyped(fs.readFileSync(url, "utf8"), url.pathname);
 // (a module of the folder that the window does not reach, and a ring: workerScripts() throws)
 const files = new Map(workerScripts().map(({ name, url }) => [name, namesOf(plain(url))]));
 
-// ---- T378.3: what the modules hold has owners: a module's own `let`, which the others read by the name they import
+// ---- T.378.3: what the modules hold has owners: a module's own `let`, which the others read by the name they import
 // (a live binding) and never set (tsc: an import cannot be assigned). Two mistakes that tsc does not say:
 let owned = 0;
 for (const [name, { imported, inner }] of files) {
@@ -54,14 +54,14 @@ for (const [name, { kinds }] of files) {
     owners.set(declared, name);
   }
 }
-// (and no module shares an object for the others to set fields of, as worker/state.js's was: what T378.3 took apart)
+// (and no module shares an object for the others to set fields of, as worker/state.js's was: what T.378.3 took apart)
 assert.ok(!files.has("state"), "worker/state.js is back: what the modules hold has owners (runtime.js, request.js, loaded.js, and each module's own)");
 const lets = [...files].flatMap(([name, { kinds }]) => [...kinds].filter(([, kind]) => kind === "let").map(([declared]) => `${name}: ${declared}`));
 console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables at their tops; ${owned} names imported, none hidden by a local; no top-level name twice`);
 
-// ---- T368.2: what the worker and a page say to one another is src/runtime/contracts/messages.ts's. Both ends are
-// TypeScript (the worker from T368.3), and tsc holds what each writes and reads to those types: a kind or a key that
-// the type has not is its error (T368.8: broken both ways and seen). What tsc does not hold is the other direction,
+// ---- T.368.2: what the worker and a page say to one another is src/runtime/contracts/messages.ts's. Both ends are
+// TypeScript (the worker from T.368.3), and tsc holds what each writes and reads to those types: a kind or a key that
+// the type has not is its error (T.368.8: broken both ways and seen). What tsc does not hold is the other direction,
 // and that is what the comparisons below are kept for: the types have nothing that nobody writes or reads. By the
 // syntax trees: the kinds the worker posts and the kinds it tells apart are the types', and so are the keys of every
 // message it posts. A key that is in no literal is followed to where it is written (the engine's stats in Python,
@@ -110,7 +110,7 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
     same(`contracts/messages.ts's FromWorker, the keys of "${kind}"`, keys, sent.get(kind).keys, more);
   }
 
-  // T368.3: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
+  // T.368.3: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
   // postMessage({ … } satisfies <a member of FromWorker>). The worker's own postMessage() takes anything, so a
   // message without that is held by nothing but the keys above: every one says it (one is cast, and says why:
   // load.ts's "gpu", whose spread tsc reads otherwise).
@@ -145,7 +145,7 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
 
 // ---- the files as the modules they are, linked by Node: a name imported that is not exported where it is taken
 // from is a SyntaxError here. worker.js awaits nothing before its receiver is set (a module worker's port opens at the
-// module's first await, and a message that finds no onmessage then is lost: AGENTS.md, helper.js, T109). A "generate"
+// module's first await, and a message that finds no onmessage then is lost: AGENTS.md, helper.js, T.109). A "generate"
 // before any model: the worker's own handler answers "The model is not ready."
 const posted = [];
 Object.assign(globalThis, { self: globalThis, postMessage: (message) => posted.push(message) });

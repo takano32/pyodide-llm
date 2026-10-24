@@ -1,4 +1,4 @@
-// tests/gpu-part-check.mjs (T378.2): the GPU's side of the engine (src/runtime/forward/gpuside.js's gpuSide() and
+// tests/gpu-part-check.mjs (T.378.2): the GPU's side of the engine (src/runtime/forward/gpuside.js's gpuSide() and
 // gpuFit()) by itself, with stand-ins for everything beside it: two pages of shared memory of its own, a "GPU's worker"
 // on this very thread that answers a request in the control area as it is posted (so that the wait finds its answer
 // there), a clock the test moves (a block on the stand-in GPU and a block on the stand-in CPU each take what the test
@@ -7,7 +7,7 @@
 // control.js (the wait on one, the real one here), choice.js (the times of either side and what the status line says)
 // and alone.js (a model on the GPU alone's verdict).
 //
-// The state has one owner (T378.2): the rest of the engine tells it what happened (generationBegan, prompt, cpuWrote,
+// The state has one owner (T.378.2): the rest of the engine tells it what happened (generationBegan, prompt, cpuWrote,
 // cpuStepBegan and cpuStepEnded, generateMany, put, notHere, release), asks it (gettingReady, promptBlock, tokenBlock,
 // keysAndValues) and reads what the page is shown. Held here:
 //   - each of those does what it says, seen in what the GPU's worker is posted, what the CPU's side is asked and what is
@@ -31,7 +31,7 @@ const { GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, PROMPTS_U
 const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 const { DELTA_THREADS } = await import(runtimeUrl("shaders.js"));
 const { LAYER_KINDS } = await import(runtimeUrl("forward/kinds.js"));
-// T568.4: what createForward() (forward/engine.ts) hands the GPU's side of the kinds of a model's layers, a second copy of
+// T.568.4: what createForward() (forward/engine.ts) hands the GPU's side of the kinds of a model's layers, a second copy of
 // its lines over the kinds' own (forward/kinds.ts's gpu): of each kind (in the table's order), the names of its tensors,
 // why the GPU would not take its layers and its numbers in the GPU's plan, of the sizes given (sizes.ts's: the numbers
 // and widths of a stateful kind, and dim); and the matrices and vectors the kinds have of their own (the matrices of
@@ -73,9 +73,9 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
   const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
   const control = controlArea({ memory, sharedMemory: true, stalledMs });
   const words = new Int32Array(memory.buffer, IDS, 2 + GPU_TOKENS), halves = new Uint16Array(memory.buffer);
-  // (T545: follows, whether a block goes on from the CPU's state: false holds the GPU off it; stated, the positions
+  // (T.545: follows, whether a block goes on from the CPU's state: false holds the GPU off it; stated, the positions
   // that came next as a block's state came back)
-  // (T271.2: put, how many times the CPU's state was put where the GPU's worker takes it up)
+  // (T.271.2: put, how many times the CPU's state was put where the GPU's worker takes it up)
   const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0, follows: true, stated: [], put: 0,
     finite: true, capacity: 256, cpuMs: 1, gpuMs: (count) => 4 + count / 16, stepMs: 1, threads: { count: 1, searching: false },
     // what the stand-in GPU answers a request with: silent (no answer), failed, ended (says "ended" after a stop), and
@@ -132,7 +132,7 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     },
     get H() { return halves; },
     get capacity() { return beside.capacity; },
-    // (T261.4.2: where each attending layer's keys and values are: the first a ring's)
+    // (T.261.4.2: where each attending layer's keys and values are: the first a ring's)
     places() { return [{ keys: 60000, values: 61000, ring: 21 }, { keys: 62000 + beside.capacity, values: 63000, ring: 0 }]; } };
   const model = { ...SHAPE, ...shape };
   const weights = { ...WEIGHTS, ...other };
@@ -171,7 +171,7 @@ const cpuStep = (part, beside, ms) => {
   part.cpuStepEnded(ms ?? beside.cpuMs);
   return true;
 };
-// (T546: a top-k, min-p, the presence penalty and the history's latest 2 sampled)
+// (T.546: a top-k, min-p, the presence penalty and the history's latest 2 sampled)
 const step = (part, pos, { count = GPU_TOKENS, stops = [] } = {}) => part.generateMany(7, pos, [1, 2, 3], 3, count, 0.7, 0.9, 1.1, [0.1, 0.2, 0.3, 0.4].slice(0, count), stops, 20, 0.05, 1.5, 2);
 
 // ---- no WebGPU in the worker: everything on the CPU, and the page is told so
@@ -210,11 +210,11 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(Object.keys(plan).sort(), ["activation", "batch", "convolution", "cos", "dim", "direct", "eps", "force", "headSize", "heads", "hidden", "kinds", "kvHeads", "kvStart",
     "layerNorm", "layers", "linear", "local", "localCos", "localSin", "matrices",
     "parallel", "places", "remembered", "rotated", "rows", "seqLen", "sin", "staging", "tokens", "turned", "unturned", "vectors", "windows", "words"], "the plan the GPU's worker is started with");
-  assert.equal(plan.rotated, null, "T271.1: no rotated basis in the model's own basis");
+  assert.equal(plan.rotated, null, "T.271.1: no rotated basis in the model's own basis");
   assert.deepEqual([plan.dim, plan.hidden, plan.layers, plan.heads, plan.kvHeads, plan.headSize, plan.turned, plan.seqLen, plan.kvStart, plan.eps, plan.batch, plan.direct, plan.rows, plan.staging],
     [8, 24, 2, 2, 1, 4, 4, 512, 256, 1e-5, GPU_BLOCK, false, ROWS, STAGING]);
   assert.deepEqual(plan.words, { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED });
-  // (T545: every layer's kind and place among its kind's, and no convolution layers)
+  // (T.545: every layer's kind and place among its kind's, and no convolution layers)
   assert.deepEqual([plan.kinds, plan.places, plan.convolution], [["attention", "attention"], [0, 1], null]);
 
   assert.deepEqual(Object.keys(plan.matrices), ["wq", "wk", "wv", "wo", "w1", "w2", "w3"]);
@@ -223,9 +223,9 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, six: false, ternary: false, at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
     outliers: false, channels: [], ids: IDS, most: GPU_TOKENS });
   assert.deepEqual([plan.cos, plan.sin, plan.remembered, plan.force], [51000, 52000, { key: "kept" }, {}]);
-  // (T261.4: a Gemma 3's facts, none of which this model has)
+  // (T.261.4: a Gemma 3's facts, none of which this model has)
   assert.deepEqual([plan.activation, plan.windows, plan.local, plan.localCos, plan.localSin], ["silu", [0, 0], [], 0, 0]);
-  // T375.4: how a matrix is packed is one name with the engine (jobs.ts's PACKED); the GPU's worker is told it as it
+  // T.375.4: how a matrix is packed is one name with the engine (jobs.ts's PACKED); the GPU's worker is told it as it
   // always was, by six and ternary
   for (const [kind, group, six, ternary] of [["int6", 32, true, false], ["ternary", 128, false, true]]) {
     const packed = Object.fromEntries(["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wcls"].map((name) => [name, { ...WEIGHTS[name], kind, group }]));
@@ -235,7 +235,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
     assert.deepEqual([told.tokens.classifier.six, told.tokens.classifier.ternary], [six, ternary], `${kind}: the classifier`);
     await other.part.release();
   }
-  // T375.2: how many values of a head RoPE turns is a fact of the layers (does it turn any) and the model's rotary: all
+  // T.375.2: how many values of a head RoPE turns is a fact of the layers (does it turn any) and the model's rotary: all
   // of a head, a part of it, none where no layer is turned (a GPT-2), whatever the rotary says
   const turnedOf = (shape) => made({ shape }).beside.posted[0].plan.turned;
   assert.deepEqual([turnedOf({ rotary: 2 }), turnedOf({ rotary: 4 }), turnedOf({ turning: false }), turnedOf({ turning: false, rotary: 2 })], [2, 4, 0, 0]);
@@ -262,7 +262,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
     "its rows are embedded for it, and its keys and values go into the cache");
   assert.deepEqual([sides(beside), part.promptTokens, part.status], [[0, 200], 200, `${PROMPTS_GPU}, answers on WebGPU where it is faster than the CPU`]);
   assert.match(said().join("\n"), /a block of 64 tokens: 8\.0 ms on the GPU, 64\.0 ms on the CPU \(1 thread\), the GPU from 5 tokens: prompts on WebGPU/);
-  // T545: the state of the layers that keep one comes back after each block, with the position that comes next; and a
+  // T.545: the state of the layers that keep one comes back after each block, with the position that comes next; and a
   // block that does not go on from the CPU's state (follows) is the CPU's, the GPU asked nothing
   assert.deepEqual(beside.stated, [64, 128, 192, 200]);
   beside.follows = false;
@@ -277,7 +277,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   feed(part, 128);
   assert.deepEqual(beside.grown, [127], "the cache grows to hold a block before the GPU writes it back");
   sides(beside);
-  // T135: where the CPU wrote, the GPU's keys and values end: a block that begins after it is the CPU's
+  // T.135: where the CPU wrote, the GPU's keys and values end: a block that begins after it is the CPU's
   part.generationBegan();
   part.prompt(tokensOf(64), 0);
   part.cpuWrote(10);
@@ -285,7 +285,7 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(sides(beside), [64, 64], "after the CPU wrote position 10, a block at 64 is the CPU's");
   part.prompt(tokensOf(64), 10);
   assert.deepEqual(sides(beside), [0, 64], "and one that begins where the GPU's end is its own");
-  // T205: let go: the worker is told to stop and the engine waits for its "ended"
+  // T.205: let go: the worker is told to stop and the engine waits for its "ended"
   assert.equal(await part.release(), true);
   assert.deepEqual([requests(beside, "stop").length, part.status, part.whyNot, part.ready, part.promptBlock(), Atomics.load(beside.ctl, GPU_WANTED)],
     [1, "prompts on the CPU (the model was let go)", "the model was let go", undefined, BATCH, 0]);
@@ -331,7 +331,7 @@ console.log("ok: the GPU's worker is started with the model's plan; the CPU is t
   assert.deepEqual(sides(beside), [16, 64], "the GPU on the first whole block of the prompt, once");
   feed(part, 128);
   assert.deepEqual(sides(beside), [128, 0]);
-  // T184: the benchmark puts every block on a side
+  // T.184: the benchmark puts every block on a side
   part.put("gpu");
   assert.equal(part.promptBlock(), GPU_BLOCK);
   feed(part, 100);
@@ -373,7 +373,7 @@ console.log("ok: the GPU's worker is started with the model's plan; the CPU is t
   assert.deepEqual(sides(beside), [40, 64], "(and the 8 before them, too few for this GPU)");
   feed(part, 64 + 40);
   assert.deepEqual(sides(beside), [0, 104], "once");
-  // T184: where the GPU is the faster, put("cpu") keeps every block from it, and Python is handed the CPU's size
+  // T.184: where the GPU is the faster, put("cpu") keeps every block from it, and Python is handed the CPU's size
   part.put("cpu");
   assert.equal(part.promptBlock(), BATCH);
   feed(part, 100);
@@ -410,7 +410,7 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   step(part, 22);
   assert.equal(beside.posted[2].from, 18, "and after the CPU wrote one, the cache goes up from there");
   assert.deepEqual([step(part, 30, { count: 0 }), step(part, 30, { count: GPU_TOKENS + 1 })], [undefined, undefined], "no steps, or more than a submission holds: the CPU's");
-  // T545.2: the state of the layers that keep one is taken from the staging after each request (the position after its
+  // T.545.2: the state of the layers that keep one is taken from the staging after each request (the position after its
   // last step), and steps that do not go on from it are the CPU's (nothing asked of the GPU)
   assert.deepEqual(beside.stated, [20, 22, 26], "the state after each request's steps");
   beside.follows = false;
@@ -462,7 +462,7 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
 }
 console.log("ok: the steps go to the GPU where they are faster, the CPU's are timed again every GPU_RECHECK generations, and a model or a GPU without them says why");
 
-// ---- T271.2: the state of the layers that keep one goes up to the GPU's worker only where the GPU's own is not the
+// ---- T.271.2: the state of the layers that keep one goes up to the GPU's worker only where the GPU's own is not the
 // one to go on from: a request at position 0, or at the position the GPU's last request left its own at, puts nothing
 // up (fresh); after the CPU wrote, or steps that stopped before their last (no state of a position came back: only
 // position 0 goes on), the CPU's is put where the GPU's worker takes it up
@@ -522,7 +522,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
       assert.equal(part.sampled, 0, `${title}: none of its ids taken`);
     }
     assert.deepEqual(beside.staged, [], `${title}: nothing of it goes into the cache`);
-    assert.deepEqual(beside.stated, [], `${title}: nor does any state of the layers that keep one (T545: the CPU goes on from its own)`);
+    assert.deepEqual(beside.stated, [], `${title}: nor does any state of the layers that keep one (T.545: the CPU goes on from its own)`);
     assert.match(part.status, status, title);
     assert.deepEqual([part.ready, part.promptBlock(), part.tokenBlock(), part.cpuStepBegan(true), requests(beside, "stop").length, Atomics.load(beside.ctl, GPU_WANTED)], [undefined, BATCH, 0, false, 1, 0], `${title}: the GPU is stopped`);
     assert.equal(said().filter((line) => /the prompts and the tokens go on on the CPU$/.test(line)).length, 1, `${title}: said once in the console`);
@@ -543,7 +543,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
   unstarted.beside.worker.fail({ message: "no such file" });
   assert.equal(await unstarted.part.note, "prompts on the CPU (the GPU's worker did not start (no such file))");
   assert.equal(await unstarted.part.release(), true, "a worker that did not start holds nothing to wait for");
-  // (T377: under a model on the GPU alone the worker is told so, once: it loads the model again on the CPU. worker/weights.js
+  // (T.377: under a model on the GPU alone the worker is told so, once: it loads the model again on the CPU. worker/weights.js
   // hands the engine an error its GPU's worker said before the engine was built, by this same handler)
   const gone = [], alone = made({ direct: { onLost: (why) => gone.push(why) } });
   alone.beside.worker.fail({ message: "no such file" });
@@ -556,7 +556,7 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
 }
 console.log("ok: a request with no answer, a failure, an id outside the vocabulary or numbers that are not finite stops the GPU with its reason, and the CPU goes on");
 
-// ---- T156, T210: a model on the GPU alone
+// ---- T.156, T.210: a model on the GPU alone
 {
   const lost = [];
   const { part, beside } = made({ direct: { onLost: (why) => lost.push(why) } });
@@ -570,11 +570,11 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   assert.deepEqual([beside.embedded, beside.staged, beside.grown, beside.ran], [[], [], [], []], "no rows, no cache and nothing run on the CPU");
   assert.deepEqual(step(part, 100), [0, 1, 2, 3]);
   assert.deepEqual([beside.posted.at(-1).cache, beside.posted.at(-1).from, beside.staged], [null, 100, []]);
-  // T210: its keys and values are read back from the GPU, GPU_BLOCK positions a request
+  // T.210: its keys and values are read back from the GPU, GPU_BLOCK positions a request
   const { keys, values } = part.keysAndValues(3, 70);
   assert.deepEqual(requests(beside, "keys").map(({ count, pos }) => [count, pos]), [[64, 3], [6, 67]]);
   assert.deepEqual([keys.length, values.length, new Set(keys), new Set(values)], [2 * 70 * 4, 2 * 70 * 4, new Set([2]), new Set([4])], "[layers][count][kvDim] in float32, the keys and the values each from their side");
-  // T219: an id outside the vocabulary cannot be taken again on the CPU: it stops with words, and the model is not loaded again
+  // T.219: an id outside the vocabulary cannot be taken again on the CPU: it stops with words, and the model is not loaded again
   beside.answer.ids = [-1];
   assert.throws(() => step(part, 104), { message: OUTSIDE_VOCABULARY });
   delete beside.answer.ids;
@@ -601,7 +601,7 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   beaten.beside.ready();
   assert.match(await beaten.part.note, /^prompts on the CPU \(the CPU as \/benchmark\/ measured it \(1000000\.0 GB\/s\): /);
   assert.deepEqual([direct.verdict, lost.length], [{ key: "the key", cpu: direct.cpu }, 2], "the page is handed the verdict to keep");
-  // (T375.4, the review: a ternary model's CPU reads a quarter of an int8 model's bytes but is no faster for it, so the
+  // (T.375.4, the review: a ternary model's CPU reads a quarter of an int8 model's bytes but is no faster for it, so the
   // verdict counts its weights as int8's: the same size and speed of the CPU are the CPU's win for an int8 model and
   // the GPU's for a ternary one, whatever packing the matrices say they are)
   for (const [kind, group, cpuFaster] of [["int8", 32, true], ["ternary", 128, false]]) {
@@ -620,7 +620,7 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
 }
 console.log("ok: a model on the GPU alone runs nothing on the CPU, reads its keys and values back from the GPU, and what the GPU does not take is lost, said once");
 
-// ---- T205: a worker that does not say it ended is not waited for for ever (the wait itself, GPU_END_MS, is
+// ---- T.205: a worker that does not say it ended is not waited for for ever (the wait itself, GPU_END_MS, is
 // gpu-default-check's: five seconds); and one that says so late is waited for
 {
   const { part, beside } = made();
@@ -638,7 +638,7 @@ console.log("ok: a model on the GPU alone runs nothing on the CPU, reads its key
 console.log("ok: letting go waits for the GPU's worker to say it ended");
 
 // ---- the control area (control.js), which the part waits on: cleared for a new engine, none on a memory that is not
-// shared, and a wait that sees the GPU's worker count while it works does not give it up (T135: the beat)
+// shared, and a wait that sees the GPU's worker count while it works does not give it up (T.135: the beat)
 {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
   new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4).fill(7);
@@ -673,20 +673,20 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.deepEqual([fitOf().unfit(), fitOf().tokensUnfit()], [null, null]);
   assert.deepEqual(Object.keys(fitOf()).sort(), ["matrices", "tokensUnfit", "unfit", "vectors"]);
   const reasons = [
-    // (T271.2: a Qwen3.5's linear-attention layers are the GPU's for its prompts, not yet its steps: below; heads wider
+    // (T.271.2: a Qwen3.5's linear-attention layers are the GPU's for its prompts, not yet its steps: below; heads wider
     // than its delta rule takes, or value heads no whole multiple of the key heads, are not)
-    // (T568.4: the linear kind's to say: forward/linear.ts's gpu.unfit())
+    // (T.568.4: the linear kind's to say: forward/linear.ts's gpu.unfit())
     ...[{ key_heads: 2, value_heads: 2, key_dim: DELTA_THREADS + 4, value_dim: 128 }, { key_heads: 2, value_heads: 2, key_dim: 128, value_dim: DELTA_THREADS + 4 },
       { key_heads: 2, value_heads: 3, key_dim: 128, value_dim: 128 }].map((heads) =>
       [{ gpuKinds: kindsOf(["attention", "linear"], linearSizes({ every: 4, conv: 4, ...heads })) }, {}, {}, /^linear-attention layers are not on the GPU yet$/]),
-    // (T545: an LFM2's convolution layers are the GPU's for its prompts, not its steps: below)
-    // (T375.2: a kind of layer that keeps a state and is neither of the two: not on the GPU, without a line for it)
+    // (T.545: an LFM2's convolution layers are the GPU's for its prompts, not its steps: below)
+    // (T.375.2: a kind of layer that keeps a state and is neither of the two: not on the GPU, without a line for it)
     [{ stateful: true }, {}, {}, /^layers that keep a state are not on the GPU yet$/],
-    // (T375.5, T484: the GPU's layers are RMSNorms with a gated FFN or LayerNorms with GPT-2's; another pair of the two
+    // (T.375.5, T.484: the GPU's layers are RMSNorms with a gated FFN or LayerNorms with GPT-2's; another pair of the two
     // facts, which the CPU's engine runs, is not handed to the GPU's worker to find out)
     [{ gatedFfn: false }, { w3: null }, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ layerNorm: true }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
-    // (T261.4: what a Gemma 3 has besides is the GPU's now (below); not an activation no shader has (a Spark-X2.5's
+    // (T.261.4: what a Gemma 3 has besides is the GPU's now (below); not an activation no shader has (a Spark-X2.5's
     // exact GELU, one not named), norms behind LayerNorms, nor a Gemma 4's layers)
     [{ activation: "gelu_erf" }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
     [{ activation: undefined }, {}, {}, /^this pair of norms and FFN is not on the GPU yet$/],
@@ -696,31 +696,31 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{ headSize: 6 }, {}, {}, /^heads of a size that is no multiple of 4 are not on the GPU$/],
     [{}, { wq: { rows: 8, n: 8, kind: "f32", layer: () => [0] } }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { group: 128 }) }, {}, /^float32 weights are not on the GPU yet$/],
-    // (T375.4: a packing the GPU does not know, whatever its groups: on the CPU, without a line for it here)
+    // (T.375.4: a packing the GPU does not know, whatever its groups: on the CPU, without a line for it here)
     [{}, { w1: matrixOf(24, 8, 0, { kind: "made-up" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 128, 0, { kind: "made-up", group: 128 }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { kind: "toString" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 128, 0, { kind: "ternary" }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { kind: "int6", group: 16 }) }, {}, /^float32 weights are not on the GPU yet$/],
-    // (T363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer)
+    // (T.363.5's review: llama.cpp's blocks, alone, beside int8 matrices, and as a stack with a kind to each layer)
     [{}, { w1: matrixOf(24, 256, 0, { kind: "Q4_K", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 256, 0, { kind: "IQ2_XXS", group: 256 }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [{ kind: "IQ2_XXS" }, { kind: "int8" }] }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
-  // T545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);
-  // T545.2: and its steps
+  // T.545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);
+  // T.545.2: and its steps
   {
     const sizes = { dim: 8, numbers: { convolution: { layers: "ca", taps: 3 } } }, kinds = ["attention", "convolution"];
     const lfm2 = fitOf({ gpuKinds: kindsOf(kinds, sizes), kinds: ["convolution", "attention"], places: [0, 0], attending: 1, stateBytes: 96 },
       { own: ownOf(kinds, sizes, { win: matrixOf(24, 8, 46000), wout: matrixOf(8, 8, 48000) }, { conv: 49000 }) });
-    assert.deepEqual([lfm2.unfit(), lfm2.tokensUnfit()], [null, null], "T545.2: its steps too");
+    assert.deepEqual([lfm2.unfit(), lfm2.tokensUnfit()], [null, null], "T.545.2: its steps too");
     assert.deepEqual(Object.keys(lfm2.matrices()), ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout"]);
     assert.deepEqual(lfm2.vectors().conv, { at: 49000, size: 24, of: "convolution" });
   }
-  // T271.2: a Qwen3.5: its prompts go (its linear-attention layers' matrices, taps and gates, each of their own layers,
-  // and the gate of its attending layers' output, theirs); T271.3: and its steps. The GPU's delta rule takes heads up to the
+  // T.271.2: a Qwen3.5: its prompts go (its linear-attention layers' matrices, taps and gates, each of their own layers,
+  // and the gate of its attending layers' output, theirs); T.271.3: and its steps. The GPU's delta rule takes heads up to the
   // second copy's width (forward/gpuside.ts's DELTA_MOST is shaders/steps.ts's DELTA_THREADS)
   {
     const linear = { every: 2, key_heads: 1, value_heads: 3, key_dim: 4, value_dim: 8, conv: 4 }, mixed = 2 * 4 + 24;
@@ -728,8 +728,8 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     const qwen35 = fitOf({ gpuKinds: kindsOf(kinds, sizes), kinds: ["linear", "attention"], places: [0, 0], attending: 1, stateBytes: 4 * (3 * 4 * 8 + 4 * mixed) },
       { own: ownOf(kinds, sizes, { wqkv: matrixOf(mixed, 8, 46000), wz: matrixOf(24, 8, 47000), wout: matrixOf(8, 24, 48000), wg: matrixOf(8, 8, 45000) },
         { conv: 49000, wb: 49500, wa: 49600, dt_bias: 49700, decay: 49800, delta_norm: 49900 }) });
-    assert.deepEqual([qwen35.unfit(), qwen35.tokensUnfit()], [null, null], "T271.3: its prompts and its steps");
-    // (T568.4: the kinds' own after every model's, in the table's order: the attending layers' gate, then the linear layers')
+    assert.deepEqual([qwen35.unfit(), qwen35.tokensUnfit()], [null, null], "T.271.3: its prompts and its steps");
+    // (T.568.4: the kinds' own after every model's, in the table's order: the attending layers' gate, then the linear layers')
     assert.deepEqual(Object.keys(qwen35.matrices()), ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wg", "wqkv", "wz", "wout"]);
     assert.deepEqual(kindsOf(kinds, sizes).map(({ plan }) => plan), [{}, { linear: { keyHeads: 1, valueHeads: 3, keyDim: 4, valueDim: 8, taps: 4 } }], "its numbers in the GPU's plan");
     const vectors = qwen35.vectors();
@@ -738,7 +738,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
       { at: 49900, size: 8, of: "linear" }]);
     const { DELTA_MOST } = await import(runtimeUrl("forward/linear.js"));
     assert.equal(DELTA_MOST, DELTA_THREADS, "the widest heads the GPU's delta rule takes, forward/linear.ts's copy of shaders/steps.ts's");
-    // T271.1: and the blocks of a rotated basis its shaders take, forward/alone.ts's copy of shaders/rotate.ts's
+    // T.271.1: and the blocks of a rotated basis its shaders take, forward/alone.ts's copy of shaders/rotate.ts's
     const { ROTATE_MOST } = await import(runtimeUrl("forward/alone.js")), shaders = await import(runtimeUrl("shaders.js")), { REASONS } = await import(runtimeUrl("forward/reasons.js"));
     assert.equal(ROTATE_MOST, shaders.ROTATE_MOST, "the largest block, forward/alone.ts's copy of shaders/rotate.ts's");
     for (const [block, why] of [[0, null], [32, null], [64, null], [1024, null], [16, REASONS.rotatedBlock], [96, REASONS.rotatedBlock], [2048, REASONS.rotatedBlock]]) {
@@ -749,7 +749,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false }, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2's, with its LayerNorms) has no w3");
   assert.equal(fitOf({ layerNorm: true, gatedFfn: false, activation: "gelu" }, { w3: null }).unfit(), null, "(whose activation is a GELU's, as the GPU's FFN without a gate has it)");
-  // T261.4: a Gemma 3's prompts: each of what it has besides by itself, and all of them; T261.4.2: and its steps. The
+  // T.261.4: a Gemma 3's prompts: each of what it has besides by itself, and all of them; T.261.4.2: and its steps. The
   // norms behind are vectors the GPU reads
   for (const [shape, weights] of [[{ activation: "gelu" }, {}], [{}, { attPost: 4096 }], [{}, { ffnPost: 4096 }], [{ local: true }, {}],
     [{ activation: "gelu", local: true, windows: [5, 0], locals: [0] }, { attPost: 4096, ffnPost: 8192, localCos: 53000, localSin: 54000 }]]) {
@@ -771,18 +771,18 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   const weightsOf = (m) => SHAPE.layers * m.rows * m.n * 1.125, { wq, wk, wv, wo, w1, w2, w3 } = WEIGHTS;
   const layers = [wq, wk, wv, wo, w1, w2, w3].reduce((sum, m) => sum + weightsOf(m), 0) + 2 * SHAPE.layers * 8 * 4 + 2 * SHAPE.layers * SHAPE.seqLen * SHAPE.kvDim * 2;
   assert.deepEqual([fitOf({}, {}, { gpuRoom: layers }).unfit(), fitOf({}, {}, { gpuRoom: layers - 1 }).unfit() === null], [null, false], "the layers on the GPU, to the byte");
-  // (T232: ternary weights are a quarter of a byte and a scale a group of 128, 0.28125 bytes a weight)
+  // (T.232: ternary weights are a quarter of a byte and a scale a group of 128, 0.28125 bytes a weight)
   const ternaryOf = Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).map(([name, m]) => [name, { ...m, kind: "ternary", group: 128 }]));
   const ternaryLayers = layers - [wq, wk, wv, wo, w1, w2, w3].reduce((sum, m) => sum + weightsOf(m), 0) * (1 - 0.28125 / 1.125);
   assert.deepEqual([fitOf({}, ternaryOf, { gpuRoom: ternaryLayers }).unfit(), fitOf({}, ternaryOf, { gpuRoom: ternaryLayers - 1 }).unfit() === null], [null, false], "ternary layers on the GPU, to the byte");
   const table = 100 * 8 * 1.125, tokens = layers + table + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
   assert.deepEqual([fitOf({}, {}, { gpuRoom: tokens }).tokensUnfit(), fitOf({}, {}, { gpuRoom: tokens - 1 }).tokensUnfit() === null], [null, false], "and the steps' tables with them");
-  // (T375.4, the review: and with ternary weights the classifier's table is a quarter of a byte a weight as well)
+  // (T.375.4, the review: and with ternary weights the classifier's table is a quarter of a byte a weight as well)
   const ternaryTokensOf = { ...ternaryOf, wcls: { ...WEIGHTS.wcls, kind: "ternary", group: 128 }, embedding: { ...WEIGHTS.embedding, kind: "ternary", group: 128 } };
   const ternaryTokens = ternaryLayers + 100 * 8 * 0.28125 + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
   assert.deepEqual([fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens }).tokensUnfit(), fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens - 1 }).tokensUnfit() === null], [null, false],
     "the steps' tables of a ternary model, to the byte");
-  // (T261.4.2: a Gemma 3's local layers' table of RoPE as well)
+  // (T.261.4.2: a Gemma 3's local layers' table of RoPE as well)
   const localTable = SHAPE.seqLen * SHAPE.headSize * 4;
   assert.deepEqual([fitOf({ local: true }, {}, { gpuRoom: tokens + localTable }).tokensUnfit(), fitOf({ local: true }, {}, { gpuRoom: tokens + localTable - 1 }).tokensUnfit() === null], [null, false],
     "a model with local layers holds their table of RoPE too");
@@ -792,7 +792,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.deepEqual(Object.keys(fitOf({ layerNorm: true }, { attB: 1, ffnB: 2, bq: 3, bk: 4, bv: 5, bo: 6, b1: 7, b2: 8, qNorm: 9, kNorm: 10 }).vectors()),
     ["attention", "ffn", "attentionBias", "ffnBias", "bq", "bk", "bv", "qNorm", "kNorm", "bo", "b1", "b2"]);
   assert.deepEqual(fitOf({}, { bq: 3, bk: 4, bv: 5, qNorm: 9, kNorm: 10 }).vectors(), { attention: { at: 50000, size: 8 }, ffn: { at: 50100, size: 8 },
-    // (T545: those of the attending layers alone say so, of: their places index them)
+    // (T.545: those of the attending layers alone say so, of: their places index them)
     bq: { at: 3, size: 8, of: "attention" }, bk: { at: 4, size: 4, of: "attention" }, bv: { at: 5, size: 4, of: "attention" }, qNorm: { at: 9, size: 4, of: "attention" },
     kNorm: { at: 10, size: 4, of: "attention" } });
 }

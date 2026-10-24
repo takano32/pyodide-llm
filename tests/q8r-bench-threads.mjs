@@ -1,4 +1,4 @@
-// T167's review: matmul_q8r of main and of this tree with 1, 2 and 4 threads on one shared memory, taking turns,
+// T.167's review: matmul_q8r of main and of this tree with 1, 2 and 4 threads on one shared memory, taking turns,
 // at 8192 x 8192 (past the caches) and 2048 x 2048. The page runs the token with software threads where it is
 // cross-origin isolated, so a form that is slower with one thread at the memory's wall (the EPYC 9V45) may not be
 // slower with four (it was not: 0.99 to 1.01). Rows split evenly, as the static share of the threads. Two threads
@@ -13,7 +13,7 @@ import { Worker, isMainThread, workerData } from "node:worker_threads";
 import { kernelSources } from "./other-tree.mjs";
 
 const CONTROL = 16;  // int32s: 0 go, 1 done, 2 form, 3 n, 4..7 addresses (out, x, xs, w8), 8 ws, 9 main's wc8, 10 rows, 11 threads,
-// 12 the tree's wc8 (T197 changed the corrections: each form reads its own)
+// 12 the tree's wc8 (T.197 changed the corrections: each form reads its own)
 
 if (!isMainThread) {
   const { memory, forms, control, index } = workerData;
@@ -42,7 +42,7 @@ if (!isMainThread) {
   const files = [];
   for (const name of ["main", "tree"]) {
     const dir = `${work}${name}/`;
-    kernelSources(name === "main" ? "origin/main" : "tree", dir);  // (T356: the side's kernels/ whole, from its tree)
+    kernelSources(name === "main" ? "origin/main" : "tree", dir);  // (T.356: the side's kernels/ whole, from its tree)
     execFileSync("npx", [...asc, dir + "kernel_relaxed.ts", "-o", dir + "relaxed.wasm", "--enable", "simd,relaxed-simd,threads"], { cwd: root, stdio: "inherit" });
     files.push(dir + "relaxed.wasm");
   }
@@ -51,7 +51,7 @@ if (!isMainThread) {
 
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
   const plains = ["main", "tree"].map((name) => new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${work}${name}/plain.wasm`)), { env: { memory } }).exports);
-  // before T197 int8_sums took the scales (out, w, scales, groups: float32 scale × sum), from T197 not (int32 −64 × sum)
+  // before T.197 int8_sums took the scales (out, w, scales, groups: float32 scale × sum), from T.197 not (int32 −64 × sum)
   const sums = (plain, out, w, ws, groups) => (plain.int8_sums.length === 4 ? plain.int8_sums(out, w, ws, groups) : plain.int8_sums(out, w, groups));
   const control = new SharedArrayBuffer(CONTROL * 4), c = new Int32Array(control);
   const workers = [0, 1, 2, 3].map((index) => new Worker(new URL(import.meta.url), { workerData: { memory, forms: files, control, index } }));

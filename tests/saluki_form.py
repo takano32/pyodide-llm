@@ -1,4 +1,4 @@
-# tests/saluki_form.py (T363.2): the header and the form of Underdog Saluki 27B's checkpoint as the page will hold it,
+# tests/saluki_form.py (T.363.2): the header and the form of Underdog Saluki 27B's checkpoint as the page will hold it,
 # its matrices in the blocks the GGUF has them in (llama.cpp's K- and i-quantized types, a type to a tensor: a layer of
 # a stack, in the engine's rows), for what sizes such a file and lays it out. No weights, and nothing of pytest or of
 # the converter is imported: tests/smoke.mjs reads this inside Pyodide, whose NumPy has integers of 32 bits.
@@ -16,7 +16,7 @@ COUNTS = {
     # (the GGUF's attn_q is q and its gate in one tensor, so the two rows have a layer's type together)
     "wq": {"IQ2_XXS": 8, "Q2_K": 8},
     "wg": {"IQ2_XXS": 8, "Q2_K": 8},
-    # (T363.3: k and v as the real head has them, which tests/saluki_rows.py holds these counts to: the note's "others"
+    # (T.363.3: k and v as the real head has them, which tests/saluki_rows.py holds these counts to: the note's "others"
     # had been dealt out with one IQ3_XXS and the IQ2_XS on the other of the two, which are the same shape)
     "wk": {"IQ3_S": 5, "IQ3_XXS": 3, "IQ4_XS": 2, "Q4_K": 1, "IQ2_S": 1, "IQ1_M": 1, "IQ2_XS": 1, "IQ2_XXS": 1, "Q2_K": 1},
     "wv": {"IQ3_S": 5, "IQ3_XXS": 4, "IQ4_XS": 2, "Q4_K": 2, "IQ2_S": 1, "IQ1_M": 1, "IQ1_S": 1},
@@ -42,7 +42,7 @@ TENSORS = {"IQ2_XXS": 119, "IQ3_S": 44, "Q2_K": 46, "IQ2_S": 46, "IQ2_XS": 39, "
            "IQ4_XS": 7, "Q4_K": 4}
 
 
-# ---- T363.3: the file as the converter is given it
+# ---- T.363.3: the file as the converter is given it
 # config.json of the model the file was made from, as far as the converter reads it (Qwen/Qwen3.8-27B's text_config)
 CONFIG = {"model_type": "qwen3_5_text", "hidden_size": 5120, "intermediate_size": 17408, "num_hidden_layers": 64,
           "num_attention_heads": 24, "num_key_value_heads": 4, "head_dim": 256, "vocab_size": 248320,

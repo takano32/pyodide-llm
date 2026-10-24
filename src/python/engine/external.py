@@ -1,4 +1,4 @@
-# The forward pass outside Python: public/forward.js's, over weights in a WebAssembly memory of its own (T93). What
+# The forward pass outside Python: public/forward.js's, over weights in a WebAssembly memory of its own (T.93). What
 # the page runs; the reference in NumPy is Llama's own (engine/model.py).
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
@@ -31,13 +31,13 @@ from engine.sampler import REPETITION_WINDOW
 # has where there is no engine outside (no blocks of a prompt, no steps on the GPU)
 STEPS = ("forward", "forward_many", "prompt_block", "gpu_steps", "token_block")
 # the settings forward.js's generateMany() takes, which are all the GPU's sampler has (shaders/sample.js): a
-# generation with any other (Sampling.beyond()) is the CPU's, step by step. T546: a top-k, min-p and the presence
+# generation with any other (Sampling.beyond()) is the CPU's, step by step. T.546: a top-k, min-p and the presence
 # penalty too
 ON_GPU = ("temperature", "topp", "repetition_penalty", "top_k", "min_p", "presence_penalty")
 
 
 class ExternalForward:
-    """forward() in public/forward.js (T93): the engine is made from a plan (engine/plan.py: where every tensor is, and
+    """forward() in public/forward.js (T.93): the engine is made from a plan (engine/plan.py: where every tensor is, and
     the few small arrays Python computes itself), and it writes the logits into one array of Python's, which the
     sampling kernels then read.
 
@@ -55,13 +55,13 @@ class ExternalForward:
         engine.bind(logits)
         self.engine, self.logits = engine, logits  # keep both alive: JS writes into the array
         run = engine.forward
-        # T108: a prompt's tokens go through the layers several at a time, when forward.js offers that
+        # T.108: a prompt's tokens go through the layers several at a time, when forward.js offers that
         many = getattr(engine, "forwardMany", None)
         if many is not None:
             self.forward_many = lambda tokens, pos: many(list(tokens), pos)
             if getattr(engine, "promptBlock", None) is not None:
                 self.prompt_block = lambda: int(engine.promptBlock)
-        # T152: the steps of generate() on the GPU, where forward.js offers that
+        # T.152: the steps of generate() on the GPU, where forward.js offers that
         on_gpu = getattr(engine, "generateMany", None)
         if on_gpu is not None:
             def gpu_steps(sampling, rng):
@@ -78,7 +78,7 @@ class ExternalForward:
                     # a number for every step, drawn in the order the CPU draws them (none where greedy);
                     # those of the steps after a stop token go unused
                     randoms = [rng.random() for _ in range(count)] if temperature != 0.0 else []
-                    # T546: the history's latest tokens from the first step of the generation on are the sampled ones,
+                    # T.546: the history's latest tokens from the first step of the generation on are the sampled ones,
                     # the presence penalty's (generate()'s written: pos is where the history's last token is fed)
                     if first[0] is None:
                         first[0] = pos
@@ -91,7 +91,7 @@ class ExternalForward:
             self.gpu_steps = gpu_steps
             self.token_block = lambda: int(engine.tokenBlock)
 
-        # T546: the position of the first step of a generation (one that makes logits, on the CPU or asked of the GPU),
+        # T.546: the position of the first step of a generation (one that makes logits, on the CPU or asked of the GPU),
         # from which on the history's tokens are sampled ones: gpu_steps() begins a generation with None
         first = [None]
 
@@ -106,7 +106,7 @@ class ExternalForward:
         self.forward = forward
 
     def release(self):
-        """Lets go of what JavaScript holds for this engine (forward.js's forward pass and the array it fills). T205:
+        """Lets go of what JavaScript holds for this engine (forward.js's forward pass and the array it fills). T.205:
         what forward.js answers (a promise, settled once the GPU's worker let go of the device); None the second
         time."""
         engine, self.engine, self.logits = self.engine, None, None

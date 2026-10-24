@@ -1,4 +1,4 @@
-// tests/imports-check.mjs (T367.1): tests/imports.mjs alone, on made-up texts and made-up folders (stand-ins for the
+// tests/imports-check.mjs (T.367.1): tests/imports.mjs alone, on made-up texts and made-up folders (stand-ins for the
 // reading and the listing: nothing of the product is read). The two forms a file takes its neighbours' names in, what
 // is refused in each, what is left out of a text, the order of what takes from what, and a window held to its folder.
 // Node only, under a second:

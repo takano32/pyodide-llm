@@ -1,4 +1,4 @@
-// T93, part 2: a service worker that adds the two headers that make a page cross-origin isolated, the way
+// T.93, part 2: a service worker that adds the two headers that make a page cross-origin isolated, the way
 // coi-serviceworker does, for GitHub Pages, which cannot send them. Its scope is this directory only
 // (/coi-test/): the model page is never under it. ?coep= picks credentialless (the default) or require-corp.
 const coep = new URL(self.location).searchParams.get("coep") === "require-corp" ? "require-corp" : "credentialless";

@@ -1,15 +1,15 @@
 // What every step of /benchmark/'s GPU worker stands on: the shaders' module, the device and its adapter, the models' shapes,
 // buffers and random weights, the int8 shaders of a matrix and how one is bound and run, a read back, and how a time is
 // taken (pairs of n and 2n, forms in turn, an error scope around a measured path).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 
-// the WGSL, shared with the model's GPU worker (src/runtime/shaders.ts, T135), a module of its own that both ask for. Not
+// the WGSL, shared with the model's GPU worker (src/runtime/shaders.ts, T.135), a module of its own that both ask for. Not
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
-// lost (T109); every step awaits it instead. (T367.4: where it is gone because the site was updated since the page
+// lost (T.109); every step awaits it instead. (T.367.4: where it is gone because the site was updated since the page
 // was opened, the step that awaits it says so: updated.ts)
 import { named } from "../../updated.ts";
 const shaders = named(import.meta.url, () => import("../../shaders.ts"));
-// T368.7: the types of what the steps hand one another. They are written here, where the things are made, and the
+// T.368.7: the types of what the steps hand one another. They are written here, where the things are made, and the
 // steps take them with `import type` (what crosses to the page is contracts/benchmark.ts's).
 import type * as Shaders from "../../shaders.ts";
 import type { PromptForm, Tile } from "../../shaders/prompt.ts";
@@ -50,7 +50,7 @@ export type Submission = (n: number) => Promise<number>;
 export type Paired = { ms: number; dispatches: number; ratio?: number; unsteady?: boolean; short?: undefined };
 export type Short = { short: true };
 export type Timed = { ms: number; dispatches: number; ratio?: number; unsteady?: boolean; error?: undefined } | { error: string; ms?: undefined; dispatches?: undefined; ratio?: undefined; unsteady?: undefined };
-// T353: what the steps share and one of them sets (a module's `let` cannot be assigned from another module, and the
+// T.353: what the steps share and one of them sets (a module's `let` cannot be assigned from another module, and the
 // steps are the modules of gpu/): the fields were this file's `let`s of the same names
 const shared = {
   // shaders.ts's module, and its GROUP and TILE (load())
@@ -60,11 +60,11 @@ const shared = {
   // a fallback adapter (SwiftShader: the CPU pretending to be a GPU, as in CI) says nothing of a GPU's speed, and takes
   // 16 s for one token of Llama 3.2 1B: every measurement is taken once there, and only its answers are worth anything
   fallback: false,
-  // the layer a token runs on the GPU (generate(), T151): T175's fused DP4A where the check found it right (checkLayer
-  // ran in this worker and its verdict is ok: T175's review), else T150's fused one (generate() builds the fused forms
-  // only; which is fastest on the device is the layer table's, and the engine's choice is T152's)
+  // the layer a token runs on the GPU (generate(), T.151): T.175's fused DP4A where the check found it right (checkLayer
+  // ran in this worker and its verdict is ok: T.175's review), else T.150's fused one (generate() builds the fused forms
+  // only; which is fastest on the device is the layer table's, and the engine's choice is T.152's)
   layerVerdicts: undefined,
-  // T208: the layer table's rows (layer()), for the steps' table to break down the layer a token would run here
+  // T.208: the layer table's rows (layer()), for the steps' table to break down the layer a token would run here
   layerTimes: undefined,
 } satisfies Unset as unknown as Shared;
 // (every step awaits this first; so do the tests that import the pure helpers below)
@@ -84,7 +84,7 @@ const layerMatrices = ({ dim, hidden, heads, kvHeads }: ModelShape): Shape[] => 
   const kvDim = (dim / heads) * kvHeads;
   return [[dim, dim], [kvDim, dim], [kvDim, dim], [dim, dim], [hidden, dim], [hidden, dim], [dim, hidden]];
 };
-// the small steps a layer dispatches on its own, as the CPU's forward pass has them (a stand-in each, SMALL; T150's
+// the small steps a layer dispatches on its own, as the CPU's forward pass has them (a stand-in each, SMALL; T.150's
 // layer step runs the real ones)
 const SMALL_PER_LAYER = 7;
 // the CPU section's made-up model (src/runtime/benchmark/sections.ts): Llama 3.2 1B's width, two layers
@@ -98,7 +98,7 @@ async function gpu(): Promise<GPUDevice> {
   if (!shared.adapter) throw new Error("navigator.gpu gave no adapter");
   shared.fallback = Boolean(shared.adapter.info?.isFallbackAdapter ?? (shared.adapter as Older).isFallbackAdapter);
   shared.packed = navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product") ?? false;
-  // as much of a buffer and of a binding as the adapter allows: the weights are the point. T146's tiled shaders use
+  // as much of a buffer and of a binding as the adapter allows: the weights are the point. T.146's tiled shaders use
   // shader-f16 and subgroups where the adapter has them (asked for only then: a device refuses a feature it lacks)
   shared.device = await shared.adapter.requestDevice({
     requiredFeatures: (["shader-f16", "subgroups", "timestamp-query"] satisfies GPUFeatureName[]).filter((name) => shared.adapter.features.has(name)),
@@ -122,7 +122,7 @@ async function info(): Promise<GpuInfo> {
     maxStorageBufferBindingSize: shared.adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: shared.adapter.limits.maxBufferSize,
     maxComputeWorkgroupsPerDimension: shared.adapter.limits.maxComputeWorkgroupsPerDimension,
-    // what a tiled shader (T146) may take: the device's, though the tiles keep to the defaults (16 KiB, 256)
+    // what a tiled shader (T.146) may take: the device's, though the tiles keep to the defaults (16 KiB, 256)
     maxComputeWorkgroupStorageSize: shared.adapter.limits.maxComputeWorkgroupStorageSize,
     maxComputeInvocationsPerWorkgroup: shared.adapter.limits.maxComputeInvocationsPerWorkgroup,
     // the DP4A shader's subgroup path runs only where a subgroup is 16 wide (SwiftShader's is not: CI never runs it)
@@ -160,7 +160,7 @@ function pipelinesFor(): Pipelines {
   return pipelines;
 }
 
-// T146: the shaders of a prompt: T135's batched one, then the tiled ones of shaders.ts: llama.cpp's register tiles
+// T.146: the shaders of a prompt: T.135's batched one, then the tiled ones of shaders.ts: llama.cpp's register tiles
 // (f16 in the workgroup's memory where shader-f16 is, else f32) in both shapes of REG_TILES, and ONNX Runtime's DP4A
 // (where the packed int8 dot is), with its subgroup path where subgroups are. A shape past the device's workgroup
 // memory or threads is not made (none says why). A tiled shader's pipeline is made when first asked for, asynchronously
@@ -168,18 +168,18 @@ function pipelinesFor(): Pipelines {
 const tiledPipelines = new Map<string, Promise<GPUComputePipeline>>();
 function promptShaders(): PromptShader[] {
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = shared.device.limits;
-  // T147: the tiled ones are the model's GPU worker's candidates (shaders.ts's promptForms), the same list
+  // T.147: the tiled ones are the model's GPU worker's candidates (shaders.ts's promptForms), the same list
   return [{ name: "batched (T135)", kind: "batched" }, ...shared.WGSL.promptForms({ half: shared.device.features.has("shader-f16"),
     subgroups: shared.device.features.has("subgroups"), packed: shared.packed, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) })];
 }
-// T149: the shaders of a matrix times one vector (a generated token's): T134's two, then llama.cpp's mul_mat_vec (its
+// T.149: the shaders of a matrix times one vector (a generated token's): T.134's two, then llama.cpp's mul_mat_vec (its
 // float form and its MMVQ one, each with the workgroup's reduction and, where subgroups are, with subgroupAdd) and
 // ONNX Runtime's MatMulNBits and DP4A for small M (shaders.ts). rows: the rows a workgroup takes
 function matVecShaders(): MatVecShader[] {
   const noPacked = shared.packed ? undefined : "no packed int8 dot here";
   const subgroups = shared.device.features.has("subgroups");
   const noSubgroupId = navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ? undefined : "no subgroup_id in this WGSL";
-  // check: the name of the shader's verdict in check() (T134's two are checked on their own there)
+  // check: the name of the shader's verdict in check() (T.134's two are checked on their own there)
   const shaders: MatVecShader[] = [{ name: "widened (T134)", kind: "widen", check: "widen" },
     { name: "packed int8 (T134)", kind: "packed", check: "packed", none: noPacked }];
   for (const [form, isPacked] of [["mul_mat_vec", false], ["MMVQ", true]] satisfies [string, boolean][]) {
@@ -195,7 +195,7 @@ function matVecShaders(): MatVecShader[] {
   return shaders;
 }
 // what matrix() takes for a shader: "widen", "packed", "batched", or { pipeline, tile or rows, packed } of one with code
-// of its own (a tiled one, T146, or a matrix × vector's of T149)
+// of its own (a tiled one, T.146, or a matrix × vector's of T.149)
 async function kindOf(shader: PromptShader | MatVecShader): Promise<Kind | undefined> {
   if (!shader.code) return shader.kind;
   if (!tiledPipelines.has(shader.name)) {
@@ -225,7 +225,7 @@ function matrix([rows, n]: Shape, io: Vectors, kind: Kind = "widen", data?: Weig
   const held = placed([rows, n], io, data, { add, chunk });
   return { ...bound(held, io, kind), owned: held.owned, bytes: held.bytes };
 }
-// the weights of a matrix on the GPU, in chunks of rows that each fit a binding, with each chunk's Shape (T149: placed
+// the weights of a matrix on the GPU, in chunks of rows that each fit a binding, with each chunk's Shape (T.149: placed
 // once and bound by every shader of a matrix × vector)
 function placed([rows, n]: Shape, io: Vectors, data?: Weights, { add = false, chunk }: { add?: boolean; chunk?: number } = {}): Placed {
   const words = n / 4, perRow = n / shared.GROUP, rowBytes = n;
@@ -269,7 +269,7 @@ function bound({ chunks }: Pick<Placed, "chunks">, io: Vectors, kind: Kind = "wi
       const across = Math.min(tiles, shared.device.limits.maxComputeWorkgroupsPerDimension);
       dispatches.push([pipeline, group, across, Math.ceil(tiles / across)]);
     } else if (matVec) {
-      // T149: kind.rows rows a workgroup, numbered over x and then y
+      // T.149: kind.rows rows a workgroup, numbered over x and then y
       const groups = Math.ceil(count / kind.rows!), across = Math.min(groups, shared.device.limits.maxComputeWorkgroupsPerDimension);
       dispatches.push([pipeline, group, across, Math.ceil(groups / across)]);
     } else {
@@ -342,12 +342,12 @@ async function validated<Made>(fn: () => Made | Promise<Made>): Promise<Made> {
   }
 }
 
-// ---- the ceilings (T168): each loop of shaders.ts alone. First its loop count doubles until one dispatch takes
+// ---- the ceilings (T.168): each loop of shaders.ts alone. First its loop count doubles until one dispatch takes
 // DISPATCH_MS (a dispatch's own cost is then small beside its work), then the dispatches of a submission until it
 // takes SUBMISSION_MS. The time of n dispatches is that of a submission of 2n less one of n: what a submission costs
-// besides its work (3.7 ms waited for on the owner's Android, T134) is in both and drops out. The two are measured
+// besides its work (3.7 ms waited for on the owner's Android, T.134) is in both and drops out. The two are measured
 // in turn, PAIRS times, and the median of the pairs' differences taken: measured one after the other, a device's
-// load moved the numbers by several times (T168's review, lavapipe under load: 4 of 55 readings 30% or more off,
+// load moved the numbers by several times (T.168's review, lavapipe under load: 4 of 55 readings 30% or more off,
 // one ten times). A pair's 2n should take about twice its n: past STEADY the pairs are taken again once, and if
 // they are still past it the ceiling says "unsteady" and the prompt is not held against it. Everything runs in
 // error scopes, validation and out of memory: a pipeline, bind group or buffer the device refused makes an error,
@@ -365,7 +365,7 @@ const middle = (values: number[]) => [...values].sort((x, y) => x - y)[values.le
 // the time of n dispatches (what submission(n) submits and waits for, in ms): n doubles, up to most, until a submission
 // takes SUBMISSION_MS (short: it never did), then PAIRS submissions of n and of 2n in turn, and the median of their
 // differences; past STEADY the pairs once more, then unsteady, or an error where 2n took no longer than n (lavapipe
-// under load once read a negative time, T149). T168's, and T149's matrix × vector. strict: none of the pairs when
+// under load once read a negative time, T.149). T.168's, and T.149's matrix × vector. strict: none of the pairs when
 // most never took SUBMISSION_MS (a loop that did no work), only { short: true }
 async function paired(submission: Submission, most: number): Promise<Paired>;
 async function paired(submission: Submission, most: number, strict: boolean): Promise<Paired | Short>;
@@ -390,7 +390,7 @@ async function paired(submission: Submission, most: number, strict = false): Pro
     }
   }
 }
-// T150's review: paired() for several things at once, in turn (T147's timeForms): n for each as paired() finds it, then
+// T.150's review: paired() for several things at once, in turn (T.147's timeForms): n for each as paired() finds it, then
 // PAIRS rounds of a submission of n and one of 2n of each, so that a device's warming and load fall on all of them
 // alike. Each: { ms, dispatches (n), ratio } as paired() says it, unsteady past STEADY after the rounds are taken
 // once more, or { error } where its 2n took no longer than its n. On a fallback adapter one submission of 1 each.

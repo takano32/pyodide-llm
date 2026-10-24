@@ -1,4 +1,4 @@
-// tests/markdown-check.mjs (T556): what src/page/markdown.ts makes of an answer's Markdown with the latest marked, as the
+// tests/markdown-check.mjs (T.556): what src/page/markdown.ts makes of an answer's Markdown with the latest marked, as the
 // page takes it (the latest version on jsDelivr, bundled there as one module), before DOMPurify. Node has no DOM, so
 // DOMPurify and the drawing are tests/markdown-in-browser.mjs's.
 //

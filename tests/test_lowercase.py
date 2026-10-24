@@ -1,9 +1,9 @@
-"""Lower case before the tokenizer reads a text (T265, T369): rinna's japanese-gpt2."""
+"""Lower case before the tokenizer reads a text (T.265, T.369): rinna's japanese-gpt2."""
 from made_up_tokenizers import byte_level, converted, sentencepiece
 
 
 def test_do_lower_case_is_read_for_a_sentencepiece_model():
-    """T265: rinna's japanese-gpt2 (tokenizer_config.json's do_lower_case, a vocabulary with no capital Latin letter):
+    """T.265: rinna's japanese-gpt2 (tokenizer_config.json's do_lower_case, a vocabulary with no capital Latin letter):
     the text is lowered before the model reads it, a special token is not."""
     data, ids = sentencepiece()
     options, engine = converted(data, "spiece.model", do_lower_case=True)
@@ -25,7 +25,7 @@ def test_do_lower_case_is_not_read_for_a_tokenizer_json():
 
 def test_the_model_reads_as_its_options_say():
     """The options go to Llama() as the worker spreads them, and the model's own tokenizer reads by them: lower case
-    (T265) and the dummy prefix after a special token (T308)."""
+    (T.265) and the dummy prefix after a special token (T.308)."""
     import json
     import llama2_convert
     from llama2_numpy import Llama

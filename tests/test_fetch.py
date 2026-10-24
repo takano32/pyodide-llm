@@ -1,9 +1,9 @@
 # tests/fetching.py (the files of a model of the list for the measurements in CI: the tools reach it through
-# tests/conducting.py's answerers since T374.4, which a model of the list is fetched by here): a
-# download that stops short is asked for again. (T357: the loop is download(), which the reference
-# tools use too; and ranged(), a range of a file, held to its length the same way. T374.4: sized().) http.client's read(amount) returns what came when the connection
+# tests/conducting.py's answerers since T.374.4, which a model of the list is fetched by here): a
+# download that stops short is asked for again. (T.357: the loop is download(), which the reference
+# tools use too; and ranged(), a range of a file, held to its length the same way. T.374.4: sized().) http.client's read(amount) returns what came when the connection
 # closes early and says nothing, so a 4.5 GB GGUF that stopped short was a file that "ended before all of its tensors
-# were read" a minute into its conversion (the review of T247, a runner's CI run), and the failure named the converter.
+# were read" a minute into its conversion (the review of T.247, a runner's CI run), and the failure named the converter.
 import io
 
 import urllib.error
@@ -69,7 +69,7 @@ def test_a_whole_download_and_one_that_names_no_length_are_taken_as_they_come(tm
     serving(monkeypatch, [Response(b"z" * 100, 100), Response(b"w" * 7)])
     assert fetch(ENTRY, "a.bin", tmp_path).read_bytes() == b"z" * 100
     assert fetch(ENTRY, "b.bin", tmp_path).read_bytes() == b"w" * 7
-    # T357: a file that is there is not asked for again; a file the repository does not have is refused at once (a split
+    # T.357: a file that is there is not asked for again; a file the repository does not have is refused at once (a split
     # model's index is found by that 404), or is nothing where it is optional; a server's own failure is asked again
     refused = lambda code: urllib.error.HTTPError("https://huggingface.co/x", code, "refused", {}, None)
     asked = serving(monkeypatch, [refused(404), refused(404), refused(503), Response(b"v" * 5, 5)])
@@ -99,7 +99,7 @@ def test_a_whole_download_and_one_that_names_no_length_are_taken_as_they_come(tm
 
 
 def test_a_body_that_closed_before_its_length_is_asked_for_again(monkeypatch):
-    # T357's review: read() with no amount raises http.client.IncompleteRead there, which is no OSError (a real server
+    # T.357's review: read() with no amount raises http.client.IncompleteRead there, which is no OSError (a real server
     # closing early, tried by hand: the first version of ranged() let it through unasked-again)
     import http.client
 
@@ -115,7 +115,7 @@ def test_a_body_that_closed_before_its_length_is_asked_for_again(monkeypatch):
 
 
 def test_the_size_of_a_file_is_what_the_answer_to_a_range_of_one_byte_says(monkeypatch):
-    # T374.4: for whoever reads a file by its ranges and must not ask past its end
+    # T.374.4: for whoever reads a file by its ranges and must not ask past its end
     class Ranged(Response):
         def __init__(self, said, status=206):
             super().__init__(b"x")

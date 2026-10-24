@@ -1,10 +1,10 @@
-// T163: a reading thread of the CPU section's ceilings (sections.ts): each time the section says go, it takes chunks
+// T.163: a reading thread of the CPU section's ceilings (sections.ts): each time the section says go, it takes chunks
 // of the made-up model's weights in turn with the section (NEXT, until TOTAL) and reads each with the loop of
 // kernels/ceilings.ts, on the section's shared memory, then counts itself done. It sleeps between (Atomics.wait) and
-// never spins. The control words are sections.ts's; the first message is claimed before anything is awaited (T109).
+// never spins. The control words are sections.ts's; the first message is claimed before anything is awaited (T.109).
 const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5;
 
-// T368.7: what the section starts a thread with (sections.ts's started()): the ceilings' module and the section's
+// T.368.7: what the section starts a thread with (sections.ts's started()): the ceilings' module and the section's
 // memory, the control words, where the weights are and how they are cut, and which thread this is
 type Started = { module: WebAssembly.Module; memory: WebAssembly.Memory; control: SharedArrayBuffer; base: number; chunk: number; chunks: number; share: number };
 self.onmessage = ({ data: { module, memory, control, base, chunk, chunks, share } }: MessageEvent<Started>) => {

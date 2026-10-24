@@ -1,4 +1,4 @@
-// tests/repository-check.mjs (T505.3)
+// tests/repository-check.mjs (T.505.3)
 // What the page makes of a repository of huggingface.co nobody listed (src/page/repository.ts, and hfEntry() of
 // src/page/address.ts): which file of it is the model. Node imports the two as the modules they are; the list of a
 // repository's files is a made-up answer of the API, or the names of a real one (tests/fixtures/repository-files.json).
@@ -208,7 +208,7 @@ console.log("ok: a file is named in an address by names with / between them, non
   const q8 = settled(pinned, listOf("m-Q8_0.gguf")), q4 = hfEntry("owner/model", REVISION, { file: "m-Q4_K_M.gguf" });
   assert.deepEqual(names(q8), [`owner/model@${REVISION}/m-Q8_0.gguf:int8:4096`, `owner/model@${REVISION}/m-Q8_0.gguf:int6:4096`]);
   assert.equal(new Set([pinned, q8, q4].map((model) => keptName(model))).size, 3, "two files of one repository share what is kept of one of them");
-  // a model of the list names its GGUF too, and is kept as before (T136, T203: its name is its repository's)
+  // a model of the list names its GGUF too, and is kept as before (T.136, T.203: its name is its repository's)
   const listed = { id: "hf-some-model", hf: { repo: "owner/model", revision: REVISION, weights: "m-Q8_0.gguf" } };
   assert.deepEqual(names(listed), [`owner/model@${REVISION}:int8:4096`, `owner/model@${REVISION}:int6:4096`], "a model of the list is kept under another name than it was: every visitor's conversion of it is fetched again");
   console.log("ok: a conversion of ?hf= is kept by its repository, revision and file; of model.safetensors and of the list, as it always was");

@@ -1,11 +1,11 @@
-# tests/fetching.py (T357)
+# tests/fetching.py (T.357)
 # Fetching for the tools that take a model's files from huggingface.co in CI, in one place: a whole file to disk and a
 # range of one. Both hold what came to the length that was promised: http.client's read() returns what came when the
 # connection closes early, without a word, and a 4.5 GB GGUF that stopped short was "The file ended before all of its
-# tensors were read." a minute into its conversion, a failure that named the converter (the review of T247; AGENTS.md).
+# tensors were read." a minute into its conversion, a failure that named the converter (the review of T.247; AGENTS.md).
 # tests/fixed_outputs.py had the check; the reference tools' copies of the same loop (reference_llama.py,
 # reference_qwen35.py, and reference_lfm2.py through it) did not.
-# T374.4: and the size of a file, for whoever reads a file by its ranges and must know where it ends (ranged() holds
+# T.374.4: and the size of a file, for whoever reads a file by its ranges and must know where it ends (ranged() holds
 # an answer to the length asked for: a range past the end of the file is never right). The tools reach all three
 # through tests/conducting.py's answerers, or call them as they are.
 import http.client
@@ -40,7 +40,7 @@ def download(url, target, tries=3, timeout=60, optional=False, said=None):
             if error.code < 500 and optional:
                 return None
             if error.code < 500 or attempt == tries - 1:
-                raise  # (T192: a split model's 404 is how its index is found)
+                raise  # (T.192: a split model's 404 is how its index is found)
             if said:
                 said(error)
         except (OSError, http.client.HTTPException) as error:  # (a chunked body that ends early: IncompleteRead is no OSError)
@@ -65,7 +65,7 @@ def ranged(url, start, length, tries=4, timeout=120, wait=0, said=None):
                 raise OSError(f"{len(data)} bytes of {length}")
             return data
         except (OSError, http.client.HTTPException) as error:  # (URLError and HTTPError are OSErrors; read() of a body that
-            # closed before its Content-Length raises IncompleteRead, which is not: T357's review)
+            # closed before its Content-Length raises IncompleteRead, which is not: T.357's review)
             if attempt == tries - 1:
                 raise
             if said:

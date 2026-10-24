@@ -1,4 +1,4 @@
-# The classifier's outlier channels (T92, OUTLIER_CHANNELS): the channels with the largest final-norm weight, and
+# The classifier's outlier channels (T.92, OUTLIER_CHANNELS): the channels with the largest final-norm weight, and
 # their columns of the int8 classifier widened to float32, which the kernel forward multiplies separately.
 import numpy as np
 

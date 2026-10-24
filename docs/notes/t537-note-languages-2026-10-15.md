@@ -1,4 +1,4 @@
-# T537 note の言語の語とモデルのカード（2026-10-15）
+# T.537 note の言語の語とモデルのカード（2026-10-15）
 
 持ち主「English / 中文に、他にも同じような例があればカードに従う」（Spark-X2.5 の note を問われて）。一覧の 144 項目の note の言語の語（「日本語」「English」「中文」「translates 日本語 ⇄ English」「… and 33 more languages」）を、カードと 1 つずつ並べた。
 
@@ -19,7 +19,7 @@
 | `hf-llm-jp-3-440m-instruct3`・`hf-llm-jp-3-980m-instruct3`・`hf-llm-jp-3-1.8b-instruct3`・`hf-llm-jp-3.1-1.8b-instruct4`・`hf-llm-jp-3-3.7b-instruct3` | 同上 | 同上 | 動かない（1.8B の 2 つと 3.7B は、前の Spark が抜けた分だけ番号が 2〜6 上がる） |
 | `hf-sarashina2.2-0.5b`・`hf-sarashina2.2-1b` | 日本語 → **日本語 / English** | language が ja・en、本文「trained the model on 10 trillion tokens, including Japanese, English, and code」（instruct の 3 つは「Language(s): Japanese」で、そのまま） | 動かない |
 
-並びの決まり（T128、`src/models.js`）: 同じグループの中は note に「日本語」がある項目が先。Spark と Saluki の 6 つは「日本語」が無くなって英語の側に移り、その間の項目（Qwen3.5 2B から NeoHorse-1 9B まで）は 2〜6 つ前に詰まる。全部の動きは下の「動いた項目」。
+並びの決まり（T.128、`src/models.js`）: 同じグループの中は note に「日本語」がある項目が先。Spark と Saluki の 6 つは「日本語」が無くなって英語の側に移り、その間の項目（Qwen3.5 2B から NeoHorse-1 9B まで）は 2〜6 つ前に詰まる。全部の動きは下の「動いた項目」。
 
 ## 直さなかった項目（130）
 
@@ -46,10 +46,10 @@
 
 ## 迷いが残るもの
 
-1. **Saluki を「English」にした。** カードのメタデータは en だけで、本文は言語を言わない。T364 で日本語の問いに読める日本語を書いた（docs/notes/t364-saluki-2026-10-13.md）が、持ち主の言葉は「カードに従う」。note の文は 2026-10-13 に持ち主が決めた文（`tests/models-check.mjs` が丸ごと持つ）で、その中の言語の語だけを替えた。戻すのは `hf-families.js` の `languages: "English"` を外す 1 か所と試験の 1 行。
+1. **Saluki を「English」にした。** カードのメタデータは en だけで、本文は言語を言わない。T.364 で日本語の問いに読める日本語を書いた（docs/notes/t364-saluki-2026-10-13.md）が、持ち主の言葉は「カードに従う」。note の文は 2026-10-13 に持ち主が決めた文（`tests/models-check.mjs` が丸ごと持つ）で、その中の言語の語だけを替えた。戻すのは `hf-families.js` の `languages: "English"` を外す 1 か所と試験の 1 行。
 2. **Ternary Bonsai 2 27B は「日本語 / English」のまま。** 同じ Qwen3.8-27B から作った Saluki を English にしたのに、Prism のカードは言語を何も言わない（メタデータも無い）ので、食い違いが無いとして残した。Saluki と同じにするなら English。
 3. **カードが 3 つ以上の言語を言うものを 1 つ・2 つで言う note**（Llama 3.x の English、SmolLM3 の English、LFM2・Granite・Gemma・Qwen の日本語 / English）は、間違いではないとして残した。EuroLLM の形（「… and 33 more languages」）にそろえるかは持ち主の決め。
-4. **Spark-X2.5 の問いの例（prompt と placeholder）は日本語のまま。** English / 中文 の MiniCPM5 は英語の例を持つが、Spark-X2.5 は日本語の問いに日本語で答えた（T343: 18/18）ので、note の語だけを替えた。
+4. **Spark-X2.5 の問いの例（prompt と placeholder）は日本語のまま。** English / 中文 の MiniCPM5 は英語の例を持つが、Spark-X2.5 は日本語の問いに日本語で答えた（T.343: 18/18）ので、note の語だけを替えた。
 
 ## 動いた項目（一覧の番号、前 → 後）
 

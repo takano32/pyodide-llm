@@ -1,4 +1,4 @@
-// rotate-check.mjs (T237): the two kernels of the rotated basis (kernels/kernel.ts: rotate, unrotate) against the
+// rotate-check.mjs (T.237): the two kernels of the rotated basis (kernels/kernel.ts: rotate, unrotate) against the
 // same arithmetic written out here in the order llama2_numpy.hadamard() computes in (times 1 / sqrt(block), then the
 // sums and differences of values 1, 2, 4, ... apart), to the bit: every number is one float32 product, sum or
 // difference, which Math.fround follows. Node and the compiled kernels alone, under a second: the light suite runs it
@@ -6,7 +6,7 @@
 //   every block from 1 to 4096, one, two, three and five blocks of it (and lengths that are no multiple of four, for
 //   blocks of 1 and 2), into another place and in place, on a 32-bit and on a 64-bit memory; nothing is written past
 //   the n values, and the input of a call that writes elsewhere is left as it was.
-// It also says how long a block of 1024 takes (T237: one token of the 27B turns 2,122 of them).
+// It also says how long a block of 1024 takes (T.237: one token of the 27B turns 2,122 of them).
 import fs from "node:fs";
 import { built } from "./tree.mjs";
 

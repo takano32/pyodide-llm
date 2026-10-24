@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tests/small_models.sh (T511.5): the small models a phone can hold, side by side by one measure, for the choice of the
-# page's default model (T511.6). For each model of the list named:
+# tests/small_models.sh (T.511.5): the small models a phone can hold, side by side by one measure, for the choice of the
+# page's default model (T.511.6). For each model of the list named:
 #   1. the nats per character of the same Japanese text (tests/start_check.mjs, the page's engine, int8, from the page's
 #      BOS, windows of 512): the beginning of Japanese Wikipedia's 富士山, CHARACTERS characters of it (3000), the same
 #      characters for every model, so that models of other vocabularies are held to the same text (a perplexity is not:

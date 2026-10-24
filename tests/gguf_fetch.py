@@ -1,14 +1,14 @@
-# tests/gguf_fetch.py (T357.6; out of .github/workflows/gguf.yml, where two jobs each had a copy of it in a here-document)
+# tests/gguf_fetch.py (T.357.6; out of .github/workflows/gguf.yml, where two jobs each had a copy of it in a here-document)
 # The files tests/gguf_check.py tensors compares, into one folder: an original's config.json, its tokenizer and its
 # safetensors (one file, or the shards its index names) from huggingface.co, and a GGUF as model.gguf.
 #
 #   python3 tests/gguf_fetch.py <repo>@<revision> <repo>@<revision>/<file>.gguf <folder> [--either-tokenizer]
 #
-# Each by tests/fetching.py's download(): held to its length and asked for again where it stopped short (T307: of 80
+# Each by tests/fetching.py's download(): held to its length and asked for again where it stopped short (T.307: of 80
 # GGUFs in one run, six came short), where the connection broke and where the server failed, four times in all; each
 # try that failed is a line. --either-tokenizer: tokenizer.json and tokenizer.model, whichever the original has (a
 # candidate of stage 2: each is compared); without it tokenizer.json, which must be there.
-# T517: an original with no safetensors at all (LINE's japanese-large-lm 1.7B instruction-sft has only PyTorch's
+# T.517: an original with no safetensors at all (LINE's japanese-large-lm 1.7B instruction-sft has only PyTorch's
 # pytorch_model.bin) has its pickle read without PyTorch (only the globals that rebuild tensors, as convert_hf.py) and
 # written beside it as model.safetensors, the tensors as they are stored, so that gguf_check.py reads one kind.
 # HF_ENDPOINT: another hub than huggingface.co (tests/fetching-check.mjs's, on this machine).

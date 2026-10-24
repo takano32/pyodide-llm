@@ -1,5 +1,5 @@
 # saluki_rows.py
-# T362.2: the K- and i-quantized tensors of Underdog Saluki 27B's GGUF as the converter reads them, against the model the
+# T.362.2: the K- and i-quantized tensors of Underdog Saluki 27B's GGUF as the converter reads them, against the model the
 # file was made from (Qwen/Qwen3.8-27B, 55.6 GB of bfloat16), without the 7.9 GB: the GGUF's head and a few rows of
 # tensors by Range requests (34 MB all told in 213 requests, about four minutes; kept in the work directory, so that a
 # second run asks the network nothing).
@@ -21,7 +21,7 @@
 #   - the same values moved by 8 places, which must not correlate at all (the comparison can tell);
 #   - where the value heads are put back: the rows or columns left as the file has them, which must not correlate.
 # And the head: the tensors, the types and how many of each (COUNTS), which the converter's own reader of a GGUF takes
-# with the original's config.json; and (T363.3) what the conversion that keeps the blocks makes of that head, without
+# with the original's config.json; and (T.363.3) what the conversion that keeps the blocks makes of that head, without
 # the weights: the kinds of the rows (as many layers of each type to a row as tests/saluki_form.py counted), that the
 # output matrices of the linear-attention layers stay tiled, which tensors' rows move, and the checkpoint's size.
 #
@@ -259,7 +259,7 @@ def main():
     whole = json.loads(header)
     header = {name: entry for name, entry in whole.items() if name != "__metadata__"}
     check(len(header) == len(tensors) and base == 10994816, f"the converter's reader takes all {len(header)} of them; the data begin at {base:,}")
-    # T363.3: the conversion that keeps the blocks, of this head
+    # T.363.3: the conversion that keeps the blocks, of this head
     sink = Sized()
     kept = llama2_convert.Kept(whole, base, json.loads(config), "int8", 4096, sink=sink)
     kinds = kept.form["kinds"] or {}

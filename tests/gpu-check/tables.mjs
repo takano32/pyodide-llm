@@ -1,22 +1,22 @@
-// T357.3: the tables of tests/gpu-check.mjs, a part of that tool: what a person reads in the log of a model.
+// T.357.3: the tables of tests/gpu-check.mjs, a part of that tool: what a person reads in the log of a model.
 //
-// T183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
-// how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T153's review), and
+// T.183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
+// how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T.153's review), and
 // for each model a table of the keys and values by layer, a column E16 and one a run (the CPU's, and the GPU's lettered
 // A, B...) against NumPy's, another against NumPy's with its cache in float16, a line a run with its form, its line and
-// the ratio to it, how many E16 it is and its most likely token, and the seconds of every step. T187: Q8 (NumPy's
+// the ratio to it, how many E16 it is and its most likely token, and the seconds of every step. T.187: Q8 (NumPy's
 // with the inputs of the layers' matrices in 8 bits as well) beside E16 and a table against it, the first layer's
 // scale, the logits' KL divergence and the difference of the ten most likely (in place of the logits' ratio to the
 // CPU's).
 import { floats, worstRow } from "./measures.mjs";
 
-// T183: what a person reads in the log of CI to judge the numbers (Markdown: gpu-prompt.yml puts the log in the run's
+// T.183: what a person reads in the log of CI to judge the numbers (Markdown: gpu-prompt.yml puts the log in the run's
 // summary too). A table of the keys and values by layer against NumPy's, with E16's column (NumPy's with its cache in
-// float16) and T187's Q8 (and its matrices' inputs in 8 bits) beside the runs', where a layer that jumps shows; the same
+// float16) and T.187's Q8 (and its matrices' inputs in 8 bits) beside the runs', where a layer that jumps shows; the same
 // against NumPy's with its cache in float16 (what is left is the arithmetic, not the cache); a line a run: its form, its
 // line and the ratio to it, how many E16 and Q8, the first layer's scale, its logits' KL and the largest difference of
 // NumPy's ten most likely, its most likely token; the seconds of every step. The runs are the GPU's worker's first (the
-// forms it chose), then one a form of the matrices (T147), then the attention without subgroups.
+// forms it chose), then one a form of the matrices (T.147), then the attention without subgroups.
 function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
   const ref = c.reference, n = ref.tokens.length - 1;
   const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
@@ -30,7 +30,7 @@ function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
   const columns = [["CPU", cpu], ...runs.map((run, i) => [letter(i), run])];
   const tables = [[`against NumPy's (E16: NumPy's with its cache in float16; Q8: and the matrices' inputs in 8 bits)`, exact,
     [["E16", half], ["Q8", eight]]], ["against NumPy's with its cache in float16", half, []],
-    ["against Q8 (T187: what the packed shaders are held to)", eight, []]];
+    ["against Q8 (T.187: what the packed shaders are held to)", eight, []]];
   for (const [title, want, more] of tables) {
     const table = [...more, ...columns].map(([, got]) => byLayer(got, want));
     console.log(`\nkeys and values of ${c.id} by layer, ${title}: the worst row, its largest difference over its largest value\n`);

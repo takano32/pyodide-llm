@@ -1,5 +1,5 @@
-// tests/dist-same.mjs (T368.1): whether two builds are the same code. The proof of a step that only adds types (a file
-// of the runtime made TypeScript, T368): what a browser is given is what it was given before, so nothing of its speed or
+// tests/dist-same.mjs (T.368.1): whether two builds are the same code. The proof of a step that only adds types (a file
+// of the runtime made TypeScript, T.368): what a browser is given is what it was given before, so nothing of its speed or
 // its behaviour is asked again.
 //
 //   node tests/dist-same.mjs <a build> <another>      each a dist/ (everything in it but models/) or a dist/_astro/

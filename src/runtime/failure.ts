@@ -1,4 +1,4 @@
-// failure.ts (T380.1): the one way a failure is carried and told apart in what a browser runs here.
+// failure.ts (T.380.1): the one way a failure is carried and told apart in what a browser runs here.
 //
 // Three things are thrown in this site's JavaScript, and each is read in one way:
 // - an Error with a sentence (new Error("…")): a message for the reader, as Python's ValueError is one. Its name is
@@ -13,12 +13,12 @@
 // Imports nothing: the worker, the GPU's worker, /benchmark/'s workers and the pages each bundle their own copy (and a
 // Failure is known by its kind, not by its class: one that another copy of this module made is one). forward.ts and
 // its parts do not read this file: a module that the worker's entry and the chunk it fetches later both import is
-// put into the entry by the bundler, and the chunk then imports the worker's own file (measured, T380.1).
+// put into the entry by the bundler, and the chunk then imports the worker's own file (measured, T.380.1).
 
 // The kinds, each made somewhere and read somewhere else (a kind nobody reads is not one):
 //   refused    a sentence for the reader and nothing else to tell: a server's answer, a file that is not a model, a
 //              write the memory would not take. What failureOf() calls whatever it has no other kind for.
-//   memory     the memory ran out (T90): the page says so in its own words, with how much it had (worker.ts → the page).
+//   memory     the memory ran out (T.90): the page says so in its own words, with how much it had (worker.ts → the page).
 //   runtime    Pyodide did not load (worker/pyodide.ts): the page may try once more without the service worker.
 //   updated    a file of this page's build is gone from the site (updated.ts): said by its one sentence, wherever caught.
 //   late       a step of putting a model on the GPU took too long (gpu/device.ts): not a shader that is wrong, which
@@ -56,7 +56,7 @@ export function kindOf(caught: unknown): Kind | undefined {
   return KINDS.find((one) => one === kind);
 }
 
-// T242: a caught value in words. An Error reads as it always did ("TypeError: Load failed"). What is thrown is not always
+// T.242: a caught value in words. An Error reads as it always did ("TypeError: Load failed"). What is thrown is not always
 // one: Emscripten's ExitStatus (Pyodide's runtime ending) is an object with a name and a message, and String() of it, or
 // of any plain object, is "[object Object]", which is what /benchmark/ showed a visitor. Such a value is told by its name
 // and message, else by what kind of thing it is and its own fields
@@ -82,9 +82,9 @@ export function told(err: unknown) {
 // A JavaScript error thrown inside a call from Python comes back as a PythonError of type JsException, its own name
 // and message on the last line: the memory of the weights, which the converter opens through the sink (Safari's
 // refusal of a model past 4 GB, a memory the browser will not make or grow), and forward.ts growing the keys and
-// values. It is told as itself (the review of T133: it was a traceback)
+// values. It is told as itself (the review of T.133: it was a traceback)
 const JS_EXCEPTION = /^pyodide\.ffi\.JsException: (\w+): (.*)$/;
-// (T380.2, exported: the one other reader of a last line, a tokenizer that does not fit its checkpoint, worker/load.ts,
+// (T.380.2, exported: the one other reader of a last line, a tokenizer that does not fit its checkpoint, worker/load.ts,
 // says Python's own last line with the exception's name, which failureOf() does not)
 export const lastLine = (text: unknown) => String(text).trim().split("\n").pop()!;
 
@@ -93,7 +93,7 @@ export const lastLine = (text: unknown) => String(text).trim().split("\n").pop()
  * - a ValueError of the engine or the converter is a message for the reader (wrong file, prompt too long): its last
  *   line, no traceback;
  * - an Error by that name (also one of this site's that crossed Python) is its sentence;
- * - T90, the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in JavaScript
+ * - T.90, the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in JavaScript
  *   (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused; Firefox says InternalError: out of memory;
  *   V8 also raises RangeError for a stack overflow, which is not this): kind "memory", and the error's last line;
  * - anything else by its name and words (told(): "TypeError: Load failed", and never "[object Object]").

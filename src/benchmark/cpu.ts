@@ -1,5 +1,5 @@
 // The sections "This browser" and "CPU" (src/runtime/benchmark/sections.ts's steps).
-// (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
+// (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { threadCounts, cpuTable } from "../bench.js";
 import type { Result } from "./dom.ts";
 import { ask, worker, yes } from "./section.ts";

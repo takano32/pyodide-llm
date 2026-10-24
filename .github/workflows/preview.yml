@@ -7,16 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       offline:
-        description: 'T111: also open the branch in Chromium, Firefox and WebKit, go offline, load again and answer'
+        description: 'T.111: also open the branch in Chromium, Firefox and WebKit, go offline, load again and answer'
         type: boolean
         default: false
       model:
-        description: 'T184: the model of /benchmark/ (stories15M is int8: its prompts can go on the GPU)'
+        description: 'T.184: the model of /benchmark/ (stories15M is int8: its prompts can go on the GPU)'
         type: choice
         options: [stories260K, stories15M]
         default: stories260K
       query:
-        description: 'T184: more of /benchmark/''s query, e.g. gpuTest=on (the fallback adapter taken as a GPU: its side of the page path)'
+        description: 'T.184: more of /benchmark/''s query, e.g. gpuTest=on (the fallback adapter taken as a GPU: its side of the page path)'
         type: string
         default: ''
 
@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: '3.x'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Build the site with its smallest model
         timeout-minutes: 20
         shell: bash
@@ -62,7 +62,7 @@ jobs:
       - name: Take the screenshots
         run: node tests/screenshots.mjs screenshots
 
-      # T134: /benchmark/ of this branch, every section in Chromium (tests/bench-check.mjs serves dist/ itself)
+      # T.134: /benchmark/ of this branch, every section in Chromium (tests/bench-check.mjs serves dist/ itself)
       - name: The benchmark page
         shell: bash
         env:
@@ -70,7 +70,7 @@ jobs:
           QUERY: ${{ inputs.query }}
         run: node tests/bench-check.mjs --dist chromium --model "$MODEL" --size 64 --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # T227's review: the GPU section's worker served with its layer check's line cut to 1e-12, so that every layer
+      # T.227's review: the GPU section's worker served with its layer check's line cut to 1e-12, so that every layer
       # verdict is WRONG (no runner makes one): the report must hold them under "Warnings", the worst first (the model
       # section's rough times, which every report has, come after them), before the sections, and the link what fits of
       # them (the fallback adapter checks the shaders and times nothing: a few minutes)
@@ -79,21 +79,21 @@ jobs:
         shell: bash
         run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 --run model,gpu --wrong | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # T214: the model section where the browser does not say its memory (Safari, Firefox): the round without the
+      # T.214: the model section where the browser does not say its memory (Safari, Firefox): the round without the
       # kernels is a row that says why, and never loads
       - name: The benchmark's model section without deviceMemory
         if: always()
         shell: bash
         run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 --run model --unsaid | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # T173: the page-memory section, on a limit the runner holds well below its own, and a tab ended in the middle of
+      # T.173: the page-memory section, on a limit the runner holds well below its own, and a tab ended in the middle of
       # it played by loading the page again (never Run all: it may end a phone's tab)
       - name: The benchmark's page memory
         if: always()
         shell: bash
         run: node tests/page-memory-check.mjs --dist | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # T173's review: the tab ended by the kernel for its memory, as a phone's jetsam or low-memory killer ends it (no
+      # T.173's review: the tab ended by the kernel for its memory, as a phone's jetsam or low-memory killer ends it (no
       # error in the page): the whole browser in a cgroup of 2 GiB with no swap, the section asked for its 4 GiB. The
       # page loaded again must say it held less than 2 GiB (the runner's swap stays off for the steps after it).
       - name: The benchmark's page memory, the tab ended for its memory
@@ -106,7 +106,7 @@ jobs:
           echo $$ | sudo tee /sys/fs/cgroup/page-memory/cgroup.procs
           node tests/page-memory-check.mjs --dist --ended 2048 | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # T262: a step of its own, so that the limit is the install's alone (apt's time-outs are set by the build's step)
+      # T.262: a step of its own, so that the limit is the install's alone (apt's time-outs are set by the build's step)
       - name: Install Firefox and WebKit for the offline runs
         if: inputs.offline
         timeout-minutes: 20
@@ -114,7 +114,7 @@ jobs:
         run: npx playwright-core install --with-deps firefox webkit
 
       # a change to the service worker is tried here, on the branch, before it goes out (AGENTS.md)
-      - name: Offline (T111)
+      - name: Offline (T.111)
         if: inputs.offline
         shell: bash
         run: |

@@ -1,4 +1,4 @@
-// T357.3: a stand-in for the npm package webgpu (what tests/gpu-check.mjs's --webgpu names) with no GPU in it: an
+// T.357.3: a stand-in for the npm package webgpu (what tests/gpu-check.mjs's --webgpu names) with no GPU in it: an
 // adapter that says what it has and gives no device. Nothing of WebGPU runs: the GPU's worker fails as it opens, every
 // run of the harness goes to the CPU, and gpu-check says FAILED of each, as it is to. tests/gpu-check-dry-check.mjs
 // runs the tool with it, on a machine that runs no WebGPU.

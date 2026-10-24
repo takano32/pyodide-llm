@@ -1,5 +1,5 @@
 # reference_lfm2.py
-# T260: the engine's LFM2 (Liquid AI's LFM2 and LFM2.5: convolution layers among attention layers) against transformers
+# T.260: the engine's LFM2 (Liquid AI's LFM2 and LFM2.5: convolution layers among attention layers) against transformers
 # itself. PyTorch is not on the development machine, so this runs in CI:
 #
 #   pip install numpy tokenizers torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
@@ -192,7 +192,7 @@ def real(directory, positions, name, with_faults):
         fetch(file, directory, repo, revision)
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
 
-    # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
+    # the conversion, the way the page does it (T.374.4: by the conduct of a conversion, answered from the files fetched
     # above and no others), float32
     path = directory / "float32.bin"
     conversion, seconds = float32_file(Directory(directory), {"weights": "model.safetensors", "tokenizer": "tokenizer.json"}, path)

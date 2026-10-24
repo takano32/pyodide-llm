@@ -1,16 +1,16 @@
-// wikipedia.mjs: the beginnings of Wikipedia articles as plain text, for measurements on a real text (T55, T85,
-// T100). Fetched when a measurement runs: nothing of it is stored in this repository.
+// wikipedia.mjs: the beginnings of Wikipedia articles as plain text, for measurements on a real text (T.55, T.85,
+// T.100). Fetched when a measurement runs: nothing of it is stored in this repository.
 //
 //   import { wikipediaText } from "./wikipedia.mjs";  await wikipediaText("ja", ["富士山", "夏目漱石", "新幹線"])
-//   node tests/wikipedia.mjs <en | ja> <out file> [title ...]   (the three articles of T85 by default)
+//   node tests/wikipedia.mjs <en | ja> <out file> [title ...]   (the three articles of T.85 by default)
 import fs from "node:fs";
 import { fetched } from "./fetching.mjs";
 
-// T85's articles: the same three subjects in both languages
+// T.85's articles: the same three subjects in both languages
 export const ARTICLES = { en: ["Mount Fuji", "Natsume Sōseki", "Shinkansen"], ja: ["富士山", "夏目漱石", "新幹線"] };
 
-// (the review of T236: a CI runner's connection to Wikipedia timed out once, and a measurement an hour in began with
-// nothing: a few tries, 10, 20, 30 and 40 seconds apart. T357.6: the tries are tests/fetching.mjs's, which asks again
+// (the review of T.236: a CI runner's connection to Wikipedia timed out once, and a measurement an hour in began with
+// nothing: a few tries, 10, 20, 30 and 40 seconds apart. T.357.6: the tries are tests/fetching.mjs's, which asks again
 // for what another try may mend, and not for what Wikipedia refuses (a 4xx; but 408 and 429, a busy shared address, are asked for again as before))
 const ASKING = {
   tries: 5, wait: 10000, again: [408, 429], timeout: 60000, headers: { "User-Agent": "pyodide-llm perplexity measurement" },

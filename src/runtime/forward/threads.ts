@@ -1,6 +1,6 @@
-// forward/threads.ts (T349): the software threads of one engine: a phase's rows shared out among them on the control
-// area of a shared memory (jobs.ts has its layout; helper.ts is a thread), a thread that stopped given up (T120), and
-// the search for how many of them to use (T93's stage 2b, T199, T223, T239).
+// forward/threads.ts (T.349): the software threads of one engine: a phase's rows shared out among them on the control
+// area of a shared memory (jobs.ts has its layout; helper.ts is a thread), a thread that stopped given up (T.120), and
+// the search for how many of them to use (T.93's stage 2b, T.199, T.223, T.239).
 // A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
@@ -10,10 +10,10 @@ import type { Job } from "../jobs.ts";
 import type { Control } from "./control.ts";
 import type { ThreadsCompared } from "../contracts/messages.ts";
 
-// (T368.4, the types) a software thread, started and warm, and what starts one (the worker's spawn(): share is the
+// (T.368.4, the types) a software thread, started and warm, and what starts one (the worker's spawn(): share is the
 // thread's own word of the control area)
 export type Thread = { terminate?(): void };
-// (blocks, T363.5: the modules of the kernels of llama.cpp's blocks, for a model with such rows; else null)
+// (blocks, T.363.5: the modules of the kernels of llama.cpp's blocks, for a model with such rows; else null)
 export type Spawn = (start: { memory: WebAssembly.Memory; wide: boolean; plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; blocks: Blocks | null; share: number }) => Promise<Thread>;
 type Blocks = { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null };
 // a comparison of two counts as the page is told it, and as the log keeps it
@@ -27,20 +27,20 @@ type Search = { best: number; direction: "down" | "up"; moved: boolean; far: boo
 
 // ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.ts has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
-// (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
+// (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T.93); fewer does not steal.
 const CHUNKS_PER_THREAD = 4;
 
-/** T349: the phases and the software threads of one engine (createForward(), which hands in what they read of it):
- * phase(jobs) shares a phase's rows out among the threads in use and waits for them (T93, T120), and the search finds
- * how many to use (T199, T223, T239, T240).
- * T378.1: the state here (the count in use, the search, what a visit remembers) has this one owner. The rest of the
+/** T.349: the phases and the software threads of one engine (createForward(), which hands in what they read of it):
+ * phase(jobs) shares a phase's rows out among the threads in use and waits for them (T.93, T.120), and the search finds
+ * how many to use (T.199, T.223, T.239, T.240).
+ * T.378.1: the state here (the count in use, the search, what a visit remembers) has this one owner. The rest of the
  * engine tells it what happened, by functions named for that (use, find, generationBegan, tokenBegan and tokenEnded,
  * stop), and reads three things of it (count, lost, searching); nothing outside assigns a variable of it. The engine
  * takes the functions out by name once (phase() and tokenBegan() are a token's path: plain calls of closures).
  * spawn: left out where no software thread is ever to run (a memory that is not shared has none either; the engine
- * leaves it out where the model is on the GPU alone, T156). gpuGettingReady(): whether the GPU's side is still getting
+ * leaves it out where the model is on the GPU alone, T.156). gpuGettingReady(): whether the GPU's side is still getting
  * ready, which is made after this.
- * T378.2: kernels: the two a thread is started with ({ plain, relaxed }, relaxed null where the model does not run on
+ * T.378.2: kernels: the two a thread is started with ({ plain, relaxed }, relaxed null where the model does not run on
  * it): the part knows nothing of the plan. control: the control area (control.js), which is the engine's and the GPU's
  * side's as well. */
 export function softwareThreads({ memory, wide, kernels, spawn, control, runRows, gpuGettingReady }: {
@@ -58,7 +58,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.ts)
   const helpers: Thread[] = [];
   let threads = 1, gen = 0;
-  // T120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
+  // T.120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
   // each chunk writes only its own rows, from inputs that no phase changes while it runs, so what the helpers did
   // before they stopped is written over with the same numbers
   let lost = false;
@@ -84,7 +84,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     ctl![JOBS] = jobs.length;
     jobs.forEach((job, i) => {
       const at = i * JOB, rows = job[ROWS];
-      const quad = job[COUNT] > 1 ? 4 : 1;  // T159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile
+      const quad = job[COUNT] > 1 ? 4 : 1;  // T.159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile
       const size = quad * Math.ceil(rows / (threads * CHUNKS_PER_THREAD * quad));
       table!.set(job, at);
       table![at + SIZE] = size;
@@ -117,34 +117,34 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // ---- the number of threads (stage 2b): found by measuring, never written down. The search starts from a hint
   // (navigator.hardwareConcurrency, which counts the little cores of a big.LITTLE phone too) and compares the best
   // count so far with half of it and, if half is not faster, with twice as many; it goes on in that direction while
-  // the other is faster by more than the noise of a run, and stops at the first that is not (T239: on the way down, at
+  // the other is faster by more than the noise of a run, and stops at the first that is not (T.239: on the way down, at
   // the second in a row that is not: a quarter is compared where half was not faster). Only the tokens that
   // make logits are timed (a prompt's tokens skip the classifier). One comparison runs the two counts in blocks,
   // best-candidate-candidate-best, so that the growing cost of later positions falls on both alike, and drops the
   // first token of every block (the switch). Helpers that a count needs are started in the background; until they
   // are ready the tokens run on the best count and are not timed.
-  // T199: a count's time is the lower median of its 8 (two blocks of 4). What else runs (a collection of the garbage,
+  // T.199: a count's time is the lower median of its 8 (two blocks of 4). What else runs (a collection of the garbage,
   // another tab, the page on its way to the background) slows a block, never speeds one up, so one block slowed whole
   // leaves the other block's 4 below it and the verdict stands. The upper median it was took that block's time: twice
-  // in CI 2 threads 1.24 to 1.34 times as fast as 1 lost to it (T190's review).
-  // T223: a count is remembered only where a search timed it with nothing of the GPU's getting ready beside it (its
-  // upload, its shaders checked against JavaScript and timed use the CPU and the memory: T148 does not time the CPU's
+  // in CI 2 threads 1.24 to 1.34 times as fast as 1 lost to it (T.190's review).
+  // T.223: a count is remembered only where a search timed it with nothing of the GPU's getting ready beside it (its
+  // upload, its shaders checked against JavaScript and timed use the CPU and the memory: T.148 does not time the CPU's
   // prompts then either). A search on the first texts goes on while the GPU gets ready (the first visit is not left on
   // the logical cores meanwhile), but its verdict is used only until the GPU is ready: the first generation after that
   // searches again from it, and that search's verdict is the one remembered. A count remembered from an earlier visit
   // is searched again the same way once a visit (the first generation with no GPU getting ready), not only every
   // recheck generations of one load: the owner's Android kept 4 threads for llm-jp-3 150M where 2 wrote 3.2 times as
-  // fast (T223), and a visit seldom writes 8 answers. unchecked: the count in use is not such a search's verdict yet.
-  // T239: half may be a dip with a faster count below it. The owner's PC (16 logical cores) stopped at 8 threads ("16 or
+  // fast (T.223), and a visit seldom writes 8 answers. unchecked: the count in use is not such a search's verdict yet.
+  // T.239: half may be a dip with a faster count below it. The owner's PC (16 logical cores) stopped at 8 threads ("16 or
   // 8: 8, 8 or 4: 8") where 2 wrote faster, and the search of every later visit began from that 8 and ended on it. So a
   // count that half did not beat is compared with a quarter of it too (far), and the way down goes on by halves from a
   // quarter that is faster. A comparison more (20 tokens) where the best count is 4 or more and nothing below it is
   // faster; none more where it is 1 or 2. Not on the way up: a visit that remembers 2 would time 8 threads every time
-  // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TASKS.md's T239 has the table).
-  // T240: the search the count in use is owed (unchecked) does not wait for the next generation where the GPU is ready
+  // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TASKS.md's T.239 has the table).
+  // T.240: the search the count in use is owed (unchecked) does not wait for the next generation where the GPU is ready
   // inside one: it begins at the first token after that (engine.ts's forward()), so that a long first answer is not written
   // to its end on a count timed beside the GPU's getting ready. Only where the page began a generation: /benchmark/
-  // begins none and takes the count the model page remembers as it is (T190).
+  // begins none and takes the count the model page remembers as it is (T.190).
   const BLOCK = 4;
   let search: Search | null = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen: ((count: number) => void) | null | undefined = null,
     onCompared: ((verdict: Compared) => void) | null | undefined = null, unchecked = false;
@@ -170,13 +170,13 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
         if (complete) search.waiting = false;
         else finish();
       }, (error) => {
-        // (T380.2: said. forward.ts's parts do not read failure.ts, so the caught value in its own words)
+        // (T.380.2: said. forward.ts's parts do not read failure.ts, so the caught value in its own words)
         console.warn(`threads: a software thread did not start (${String(error)}): the search ends at ${best}`);
         finish();
       });
     }
   }
-  // the candidate was not faster than the best, or there is no count there: the next one, or the end (T239: a quarter
+  // the candidate was not faster than the best, or there is no count there: the next one, or the end (T.239: a quarter
   // after half; then twice as many, where the best is still the count the search began from)
   function passed() {
     if (search!.direction === "down" && !search!.far) search!.far = true;
@@ -187,9 +187,9 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   function finish() {
     chosen = lost ? 1 : search ? search.best : threads;
     threads = chosen;
-    unchecked = !lost && Boolean(search?.whileGpu);  // T223: searched again once the GPU is ready, and remembered then
+    unchecked = !lost && Boolean(search?.whileGpu);  // T.223: searched again once the GPU is ready, and remembered then
     search = null;
-    // one thread after a give-up says nothing about the device: the page would start with it next time (the review of T120)
+    // one thread after a give-up says nothing about the device: the page would start with it next time (the review of T.120)
     if (!lost && !unchecked) onChosen?.(chosen);
   }
   // the count for the next token, and whether it is timed
@@ -213,7 +213,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     const faster = candidateMs < bestMs * BETTER;
     const { whileGpu } = search;
     searchLog.push({ best, candidate, times: search.times!, faster, whileGpu });
-    // T114: every verdict, so that a device's choice can be followed afterwards (the page writes it to the console)
+    // T.114: every verdict, so that a device's choice can be followed afterwards (the page writes it to the console)
     onCompared?.({ best, candidate, bestMs, candidateMs, faster, whileGpu, tokens: search.times![best].length + search.times![candidate].length });
     if (!faster) return passed();
     Object.assign(search, { best: candidate, moved: true, far: false });
@@ -233,11 +233,11 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     threads = 1;
   }
   // Resolves to whether the n threads are there. A helper that becomes ready after this engine let its helpers go
-  // (release(), stopThreads(), giveUp()) is ended at once: the review of T120 found such ones left alive when the
+  // (release(), stopThreads(), giveUp()) is ended at once: the review of T.120 found such ones left alive when the
   // visitor chose another model while the search started more, and the next model's engine on the same memory
-  // (T96) woke them, with the old engine's kernels (one threw holding a chunk: 10 s still, then one thread)
+  // (T.96) woke them, with the old engine's kernels (one threw holding a chunk: 10 s still, then one thread)
   async function ensureHelpers(n: number) {
-    if (lost) return false;  // T120: none again after a helper stopped under this engine
+    if (lost) return false;  // T.120: none again after a helper stopped under this engine
     const since = stops;
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl!, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
@@ -251,9 +251,9 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     return true;
   }
 
-  // ---- T378.1: what happens to the threads, as the rest of the engine tells it
+  // ---- T.378.1: what happens to the threads, as the rest of the engine tells it
   /** n threads from the next token on, with no search: the helpers that are missing are started. Resolves to the count
-   * in use: 1 where there are no software threads here, or one stopped under this engine (T120) */
+   * in use: 1 where there are no software threads here, or one stopped under this engine (T.120) */
   async function use(n: number) {
     if (!shared || lost) return (threads = 1);
     search = null;
@@ -262,7 +262,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     return threads;
   }
   /** The count is to be found while tokens are written: from a hint, or from a count remembered from an earlier visit,
-   * which is searched again from on this visit (T223) and then every recheck generations. chose(count) is told the
+   * which is searched again from on this visit (T.223) and then every recheck generations. chose(count) is told the
    * answer, compared(verdict) every comparison on the way. The helpers of the starting count are started before this
    * resolves (to the count in use), so the first tokens do not wait for them */
   async function find({ from, remembered = 0, recheck = 8, chose, compared }:
@@ -276,13 +276,13 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     threads = start;
     if (remembered) {
       chosen = remembered;
-      unchecked = true;  // T223: searched again from it on this visit
+      unchecked = true;  // T.223: searched again from it on this visit
     } else {
       beginSearch(start);
     }
     return threads;
   }
-  /** the page began a generation: now and then the count in use is checked against its neighbours again (T223: and
+  /** the page began a generation: now and then the count in use is checked against its neighbours again (T.223: and
    * first on the first generation with no GPU getting ready, where the count is remembered from an earlier visit or
    * was found while the GPU got ready) */
   function generationBegan() {
@@ -292,7 +292,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // A token's turn in the search, between tokenBegan() and tokenEnded(): [the count it runs on, whether it is timed]
   let turn: [number, boolean] | null = null;
   /** A token is about to run. Whether it is the search's: it then runs on the count the search wants next, and the
-   * caller times it and says tokenEnded(its milliseconds). T240: the search the count in use is owed begins here. Only
+   * caller times it and says tokenEnded(its milliseconds). T.240: the search the count in use is owed begins here. Only
    * the tokens that make logits are the search's */
   function tokenBegan(needLogits: boolean) {
     if (unchecked && generations && mayRecheck()) beginSearch(chosen);
@@ -321,5 +321,5 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     get searching() { return search !== null; },
   };
 }
-// (T368.4) what the rest of an engine has of its software threads
+// (T.368.4) what the rest of an engine has of its software threads
 export type Threads = ReturnType<typeof softwareThreads>;

@@ -1,4 +1,4 @@
-// chat_fluency.mjs (T251's and T252's review): what the first token the page puts in front of a chat does to the model, on answers no
+// chat_fluency.mjs (T.251's and T.252's review): what the first token the page puts in front of a chat does to the model, on answers no
 // model wrote, on the page's engine (forward.js on the int8 kernels with 7-bit activations, tests/engine.mjs). It is part 1 of
 // tests/chat_nll.py (which holds the original in float32 with transformers and cannot take a 7B on a runner) on the engine
 // of the page: the 24 chat turns written by hand (tests/fixtures/chat-answers.jsonl: 12 Japanese, 12 English, a prompt and a
@@ -13,7 +13,7 @@
 //
 // END: <|im_end|> of a ChatML format (Qwen 151645, Hermes 128039), <|eot_id|> of Llama 3's (128009): the token the answer ends
 // with. START=<id>: the token in front in B (else the options' bos). FIRST=<id>: for an entry whose BOS is its format's own first
-// token and whose template begins after it (a Qwen3 8B's, Hermes 3's since T252's review): A is then [FIRST] + the format, the real
+// token and whose template begins after it (a Qwen3 8B's, Hermes 3's since T.252's review): A is then [FIRST] + the format, the real
 // ids, and START=<the BOS to compare, the converter's> goes in front of those in B. PICK="0,3,5": only these pairs. FIXTURE=<file>.
 // For a byte-level BPE vocabulary (an answer is encoded alone, as chat_nll.py does, and that is the same ids as after the format only
 // where the format ends in a newline). tests/write.sh runs it (WRITER=chat_fluency.mjs, its TOKENS unused).
@@ -88,5 +88,5 @@ const report = (name, rows) => {
 report("ja", result.rows.filter((row) => row.japanese));
 report("en", result.rows.filter((row) => !row.japanese));
 report("all", result.rows);
-// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+// (T.357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
 await leave(0);

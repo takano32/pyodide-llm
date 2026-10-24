@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_saluki.sh (T364.1, T364.2): Underdog Saluki 27B on the page's forward pass, its matrices kept in the blocks
+# tests/page_saluki.sh (T.364.1, T.364.2): Underdog Saluki 27B on the page's forward pass, its matrices kept in the blocks
 # llama.cpp stores them in, held to its references, on a CI runner (never on the development machine: it fetches 7.9 GB
 # and makes a checkpoint of 7.96 GB). On demand, not nightly (but for `dry`):
 #
@@ -46,7 +46,7 @@
 # LINES: the lines of the comparison (logits,kl,kv,the KL on average), as tests/page-27b.mjs takes them, the logits' over
 # the tokens the reference gives a probability; QUIET: the texts whose logits, keys and values are held (the bare
 # texts: after the marks of a chat's turn this model's logits move by 13 with the last bit of an activation, in the
-# engine's own NumPy run too). What T364's runs measured (TASKS.md): the page is 0.14 and 0.25 from llama.cpp with
+# engine's own NumPy run too). What T.364's runs measured (TASKS.md): the page is 0.14 and 0.25 from llama.cpp with
 # float32 activations on the bare texts, a KL of 1.4e-3 at most there and 6.5e-2 at most (1.9e-3 on average) on a
 # chat's turn, the keys and values 0.046 of a layer's largest; the weakest plan broken on purpose (one layer of a
 # linear-attention matrix read as another type) 5.0, a KL of 0.48 at most and 0.08 on average, 0.48.
@@ -136,7 +136,7 @@ if has convert; then
   began=$SECONDS
   sha256sum "$work/page.bin" | cut -d' ' -f1 > "$work/page.sha256"
   echo "page: sha256 of the native conversion's checkpoint $(cat "$work/page.sha256") ($((SECONDS - began)) s); of its tokenizer.bin $(sha256sum "$work/page.tokenizer.bin" | cut -d' ' -f1)"
-  [ "$(stat -c %s "$work/page.bin")" = 7956712492 ] && echo "page: the checkpoint is the 7,956,712,492 bytes its header and its form say (T363.3)" \
+  [ "$(stat -c %s "$work/page.bin")" = 7956712492 ] && echo "page: the checkpoint is the 7,956,712,492 bytes its header and its form say (T.363.3)" \
     || { echo "page: the checkpoint has $(stat -c %s "$work/page.bin") bytes, not 7,956,712,492 — FAILED"; status=1; }
 fi
 if has pyodide; then

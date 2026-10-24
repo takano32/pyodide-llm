@@ -1,4 +1,4 @@
-// conducting.mjs (T374.4): what a Node tool that converts a model in Pyodide answers the conduct of a conversion with
+// conducting.mjs (T.374.4): what a Node tool that converts a model in Pyodide answers the conduct of a conversion with
 // (src/python/convert/conduct.py: a generator that asks which file comes next; the page's worker answers the same one,
 // src/runtime/worker/conduct.js). A tool says where the files are and what the conversion is made with, and nothing of
 // which files a model needs, which tokenizer is tried or where its template comes from:
@@ -18,8 +18,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-/** { hf, folder } of a path: a .gguf file that says everything itself (T74); a folder with the original's config.json
- * and tokenizer and a GGUF beside them (T136's second stage: the first .gguf by its name); or a folder with
+/** { hf, folder } of a path: a .gguf file that says everything itself (T.74); a folder with the original's config.json
+ * and tokenizer and a GGUF beside them (T.136's second stage: the first .gguf by its name); or a folder with
  * model.safetensors, or with the shards its index names. No tokenizer is named: the conduct's candidates, in its order. */
 export function listed(target) {
   if (target.endsWith(".gguf")) return { hf: { weights: path.basename(target) }, folder: path.dirname(target) };

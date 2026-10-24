@@ -1,8 +1,8 @@
 # reference_27b.py
-# T238: the engine's own NumPy forward pass (src/python/llama2_numpy.py's Llama.forward, as it is) over Ternary Bonsai 2
+# T.238: the engine's own NumPy forward pass (src/python/llama2_numpy.py's Llama.forward, as it is) over Ternary Bonsai 2
 # 27B, whose matrices widened to float32 are 107 GB: the GGUF is read by memory map and a matrix is widened a few
 # hundred megabytes at a time, multiplied and let go. What is checked is the engine's computation on the real model:
-# the hybrid attention, the rotated basis (T237), the order of the value heads in a GGUF (llama.cpp stores them
+# the hybrid attention, the rotated basis (T.237), the order of the value heads in a GGUF (llama.cpp stores them
 # another way where they outnumber the key heads) and how q, its gate and k are stored, against what Prism ML's fork
 # of llama.cpp computes (tests/reference_27b_fork.cpp wrote its ids and logits; tests/reference_27b.sh runs both).
 #
@@ -27,22 +27,22 @@
 # that far from each other). The runs of this file with a rounding of their own measure it: "float32" (the engine as the page
 # will run it without its own rounding of the activations), "as the fork rounds" (the same activations rounded the fork's way
 # before every matrix), "as 7 bits round" (the page's int8 weights with relaxed SIMD: matmul_q8r) and "as 8 bits round" (its
-# int8 weights without relaxed SIMD: Safari's; and, since T231, its ternary weights in every browser: the ternary kernels take
+# int8 weights without relaxed SIMD: Safari's; and, since T.231, its ternary weights in every browser: the ternary kernels take
 # the activations signed, in all 8 bits, so this is the run that stands for the 27B on the page), "bfloat16 gates" (float32
 # but for the two small matrices).
-# Against the fork as it is, the line is three times what that rounding moves the engine (T238). It cannot see an error
+# Against the fork as it is, the line is three times what that rounding moves the engine (T.238). It cannot see an error
 # that moves the logits by less, and a few errors of this kind do (one sign of 17408 values moves them by 0.11 to 0.43,
 # one of 6144 by 0.16), so
-# (T237's review) the fork is also run with float32 activations (tests/reference_27b_patch.py, REPLAY of the tokens of
+# (T.237's review) the fork is also run with float32 activations (tests/reference_27b_patch.py, REPLAY of the tokens of
 # the first run): then the engine is 0.003 to 0.008 from it, KL 5e-6 at most, and the line is 0.03 (TIGHT_LINE).
 #
 # Runs with the engine broken on purpose (the first text only; BREAKS has them, 25) show what the comparison catches: the
 # value heads read in the GGUF's order, no signs, no rotation, the embedding's rows not turned back, q and k read as if no
-# part of a head were stored in halves (T238's five), and weaker ones: a sign or a few, a block of signs, signs of another
+# part of a head were stored in halves (T.238's five), and weaker ones: a sign or a few, a block of signs, signs of another
 # width, a normalization twice, one layer that reads the model's own basis, the gates that read the rotated one.
 # SAVE_LOGITS=<a directory> writes the logits, and the keys and values of the layers that attend, of the runs that stand for
 # the page (float32, as 7 bits round, as 8 bits round): the comparison of forward.js's own numbers with them needs no pass
-# over the file again (T233; save_run() says the layout).
+# over the file again (T.233; save_run() says the layout).
 import json
 import math
 import os
@@ -298,8 +298,8 @@ TIGHT_KL = 1e-4
 
 
 # ------------------------------------------------------------------------------------------- what is computed wrong
-# (the review of T237: how far from the fork can an error of the rotated basis be and still not be seen?) The first five are
-# T238's, the rest are weaker ones: a sign or a few of them, a block of signs, signs of another width, a normalization
+# (the review of T.237: how far from the fork can an error of the rotated basis be and still not be seen?) The first five are
+# T.238's, the rest are weaker ones: a sign or a few of them, a block of signs, signs of another width, a normalization
 # twice, one layer that reads the model's own basis where the others read the rotated one, the gates that read the rotated
 # one. A name here is a "broken" of Streamed; the text of what each does is its description.
 SIGN_BREAKS = {  # name: (the width of the signs, the places whose signs are the other way round)
@@ -444,7 +444,7 @@ class Streamed(Llama):
         table = source.stored("token_embd.weight")
         self.token_embedding_table = Rows(table, None if broken != "embedding" else (
             lambda row: rotate(row, self.rotated["signs"][self.dim], self.rotated["block"])))
-        # (llama.cpp wrote the norms with the 1 the model adds to them, and ssm_a as -exp(A_log): T236)
+        # (llama.cpp wrote the norms with the 1 the model adds to them, and ssm_a as -exp(A_log): T.236)
         self.rms_att_weight = vectors("attn_norm.weight", everything)
         self.wq, self.wg = stack("attn_q", full, q_order), stack("attn_q", full, gate_order)
         self.wk, self.wv, self.wo = stack("attn_k", full, k_order), stack("attn_v", full), stack("attn_output", full)
@@ -544,7 +544,7 @@ def compare(name, ours, theirs, wrote=None):
 
 
 def save_run(saved, index, name, model, rows):
-    """What a run leaves for the comparison of the page's forward pass with it (T233), in <saved>/engine-<text>-<the
+    """What a run leaves for the comparison of the page's forward pass with it (T.233), in <saved>/engine-<text>-<the
     run's name>.{logits,keys,values}, float32: the logits, a row for every position; and the keys and values of the
     layers that attend, in the layout of forward.js's keysAndValues(): [layers][positions][kv heads x head size]. A key
     or a value of a layer is a function of everything below it, so these hold forward.js to the run where the noise is
@@ -577,7 +577,7 @@ def main():
         text["fork"] = np.fromfile(work / f"fork-{index}.logits", dtype=np.float32).reshape(-1, vocab)
         text["single"] = np.fromfile(work / f"fork-{index}.single", dtype=np.float32).reshape(-1, vocab)
         assert len(text["fork"]) == len(text["ids"]), (len(text["fork"]), len(text["ids"]))
-        # the fork with float32 activations (the review of T237), over the same tokens, if it ran: a row for every
+        # the fork with float32 activations (the review of T.237), over the same tokens, if it ran: a row for every
         # position one at a time, and as one batch where it was asked to
         text["f32"] = rows_of_file(work / "f32" / f"fork-{index}.single", vocab)
         text["f32 batch"] = rows_of_file(work / "f32" / f"fork-{index}.logits", vocab)
@@ -605,7 +605,7 @@ def main():
     conductor = Conductor()
     roundings = list(ROUNDINGS) if float32_fork else [name for name in ROUNDINGS if name != "bfloat16 gates"]
     runs = [(index, name, Streamed(source, conductor, rounding=name)) for index in range(len(texts)) for name in roundings]
-    # the weaker errors of this review go beside T238's five, on the first text
+    # the weaker errors of this review go beside T.238's five, on the first text
     runs += [(0, name, Streamed(source, conductor, broken=name)) for name in BREAKS]
     jobs = [(lambda model=model, token=token, position=position: np.array(model.forward(token, position)))
             for index, _, model in runs for position, token in enumerate(texts[index]["ids"])]
@@ -626,7 +626,7 @@ def main():
     del results
     # SAVE_LOGITS=<a directory>: what the runs that stand for the page (float32, and as 7 bits round with relaxed SIMD, and
     # as 8 bits round: Safari's and the ternary kernels') hold, for the comparison of the page's own forward pass (forward.js,
-    # T233) with them without the pass over the file again (save_run())
+    # T.233) with them without the pass over the file again (save_run())
     if os.environ.get("SAVE_LOGITS"):
         saved = Path(os.environ["SAVE_LOGITS"])
         saved.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-# T363.2: a checkpoint whose matrices are held as the file has them, in llama.cpp's blocks (the K- and i-quantized types
+# T.363.2: a checkpoint whose matrices are held as the file has them, in llama.cpp's blocks (the K- and i-quantized types
 # of a GGUF of Underdog Saluki 27B), a type to a tensor: to each layer of a stack. What the registry says of such a kind
 # (engine/dtypes.py's BLOCKS), the form's "kinds" with a kind for each layer, where the rows then are and how large the
 # file is, what checkpoint_dtype() answers, the codebooks such a file carries, and the engine in NumPy reading it: on a
@@ -71,7 +71,7 @@ def made():
 
 # ---- the registry
 def test_the_blocks_are_kinds_of_a_row_and_no_dtype_of_a_file():
-    # (T505.1: the converter reads three more types of blocks of 256, which no row is stored in: WIDENED)
+    # (T.505.1: the converter reads three more types of blocks of 256, which no row is stored in: WIDENED)
     assert set(BLOCKS) == set(SIZES) == set(SUPERBLOCKS) == {name for name, source in SOURCES.items() if source.values == 256} - set(WIDENED)
     assert list(DTYPES) == ["float32", "float16", "int8", "int6", "ternary"], "a file's dtypes are the five they were"
     assert not set(BLOCKS) & (set(DTYPES) | set(QUANTIZED) | set(PACKED) | set(EITHER))
@@ -98,7 +98,7 @@ def test_a_block_is_256_weights_in_its_bytes_with_its_scales_inside(name):
 
 
 def test_the_quantized_dtypes_are_stored_as_they_were():
-    """What the new columns say of the kinds that were there: a scale behind every group (a float32; T533: ternary's a
+    """What the new columns say of the kinds that were there: a scale behind every group (a float32; T.533: ternary's a
     float16), and bits a value."""
     for name, (values, scales, scale) in {"int8": (1024, 128, 4), "int6": (768, 128, 4), "ternary": (256, 16, 2)}.items():
         kind = DTYPES[name]
@@ -374,7 +374,7 @@ def test_the_gates_small_matrices_are_read_in_the_kinds_the_form_gives_their_lay
 
 
 def test_forward_js_is_given_a_file_of_blocks_layer_by_layer(made):
-    """T363.5: where every tensor is, with the weights outside Python: a stack with a type for each layer says its
+    """T.363.5: where every tensor is, with the weights outside Python: a stack with a type for each layer says its
     layers, each where the file has it, and the file says where its codebooks are."""
     data, _, _ = made
     outside = Outside(data)
@@ -396,7 +396,7 @@ def test_forward_js_is_given_a_file_of_blocks_layer_by_layer(made):
 
 # ---- the Writer
 def test_the_writer_puts_the_rows_of_each_layer_where_the_layer_is():
-    """A kind to a layer, of the kinds values are packed into (blocks are copied, which is T363.3's): rows written a few
+    """A kind to a layer, of the kinds values are packed into (blocks are copied, which is T.363.3's): rows written a few
     at a time, across the layers, make the file the maker makes."""
     header = [128, 256, 4, 4, 2, 320, 24]
     kinds = {"wq": ["int8", "int6", "float16", "int8"], "w2": ["int6", "int6", "float32", "ternary"], "w3": "int6",
@@ -406,7 +406,7 @@ def test_the_writer_puts_the_rows_of_each_layer_where_the_layer_is():
     def ternary_where_asked(row, values=uniform(5)):
         made = values(row)
         if row.name == "w2":
-            # (T533: of a float16 scale, as the ternary kind keeps it)
+            # (T.533: of a float16 scale, as the ternary kind keeps it)
             largest = np.abs(made[3]).reshape(-1, 128).max(axis=1).astype(np.float16).astype(np.float32)
             made[3] = np.sign(made[3]) * largest.repeat(128).reshape(made[3].shape)
         return made

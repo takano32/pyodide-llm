@@ -1,4 +1,4 @@
-// answer_check.mjs (T250's review): what the token the page puts in front does to a chat model's own answers. The page begins every text
+// answer_check.mjs (T.250's review): what the token the page puts in front does to a chat model's own answers. The page begins every text
 // with the BOS of its options; a Qwen3's real tokenizer puts nothing in front, and its format begins with <|im_start|>
 // (tests/start_check.mjs found Shisa V2.1 Qwen3 8B 54% worse on plain Japanese with <|endoftext|> in front, 1.1% better with
 // <|im_start|>). Plain text is not what a chat is, so this takes the answers: for each question the model writes greedily from the
@@ -118,5 +118,5 @@ result.answers.forEach((row, k) => {
 console.log(`answer_check ${id}: all: ${tokens} tokens, perplexity ${Math.exp(natural / tokens).toFixed(3)} natural, ${Math.exp(paged / tokens).toFixed(3)} with ${result.bos} in front ` +
   `(${(Math.exp((paged - natural) / tokens) * 100 - 100).toFixed(1)}%), likeliest token the same ${agree}/${tokens} (${(agree / tokens * 100).toFixed(1)}%), KL ${(kl / tokens).toFixed(4)} a token; ` +
   `${differ} of ${result.answers.length} answers written again differ, the same for ${same} of ${tokens} tokens`);
-// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+// (T.357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
 await leave(0);

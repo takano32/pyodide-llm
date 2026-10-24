@@ -1,4 +1,4 @@
-// blocks/row.ts (T363.4): a row of llama.cpp's blocks as float32, sb_row. blocks/types.ts has what a type is.
+// blocks/row.ts (T.363.4): a row of llama.cpp's blocks as float32, sb_row. blocks/types.ts has what a type is.
 import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_ONES, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, sizeOf, hasMinimums, halfAt, vectorAt, magnitudes, weights, shiftsDown, scaleOf, minimumOf, wholeScale, blockMinimum } from "./types";
 
 // ---- a row as float32: the n weights of the row at w, each as src/python/convert/superblocks.py reads it, to the

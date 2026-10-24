@@ -1,10 +1,10 @@
-# An LFM2 and an LFM2.5 (T359, from T260: Liquid AI's): a Qwen3 some of whose layers are convolution layers.
+# An LFM2 and an LFM2.5 (T.359, from T.260: Liquid AI's): a Qwen3 some of whose layers are convolution layers.
 from convert.families.family import Family, refuse
 from convert.families.llama import check, gguf_config
 
 
 def lfm2_config(config):
-    """T260: an LFM2's config.json by the names the rest of the converter reads, as transformers' Lfm2Config and Lfm2MLP
+    """T.260: an LFM2's config.json by the names the rest of the converter reads, as transformers' Lfm2Config and Lfm2MLP
     read it (7cd73d9d: configuration_lfm2.py, lines 81 to 92; modeling_lfm2.py, 119 to 133). layer_types, or every
     layer of full_attn_idxs an attention layer and the others convolution layers. The FFN's inside: block_ff_dim where
     there is one, else intermediate_size; with block_auto_adjust_ff_dim (on unless said off) two thirds of it, times
@@ -46,9 +46,9 @@ def convolution(config):
 
 
 def lfm2_check(config):
-    """T260: what transformers' Lfm2 has and the engine has not (a bias in the convolution layers: conv_bias, which
+    """T.260: what transformers' Lfm2 has and the engine has not (a bias in the convolution layers: conv_bias, which
     no published model sets), and what conversion_plan() cannot tell apart (a single layer of a kind is one
-    tensor to it, as the only layer of a Llama is: the review of T229)."""
+    tensor to it, as the only layer of a Llama is: the review of T.229)."""
     check(config)
     layers = convolution(config)["layers"]
     if config.get("conv_bias"):
@@ -58,7 +58,7 @@ def lfm2_check(config):
 
 
 def lfm2_sources(d, prefix, rotary):
-    # T260: by transformers' names of an Lfm2. q and k (and the norms of their heads) are turned as a Qwen3's; the
+    # T.260: by transformers' names of an Lfm2. q and k (and the norms of their heads) are turned as a Qwen3's; the
     # taps as a Qwen3.5's convolution's
     of = lambda name, transform=None: ("model.layers.{}." + name + ".weight", transform)
     return {"token_embedding_table": ("model.embed_tokens.weight", None), "rms_att_weight": of("operator_norm"),
@@ -73,7 +73,7 @@ def lfm2_sources(d, prefix, rotary):
 
 # ---- a GGUF of an LFM2
 def lfm2_gguf_config(key, tensors):
-    """T260: llama.cpp says an LFM2's layers by their key-value heads, one number a layer and 0 for a convolution
+    """T.260: llama.cpp says an LFM2's layers by their key-value heads, one number a layer and 0 for a convolution
     layer (conversion/lfm2.py's set_gguf_parameters at f1cee994), the taps as shortconv.l_cache, and the FFN's
     inside as it is (no two thirds left to take). By config.json's names, for lfm2_config()."""
     config = gguf_config(key, tensors)
@@ -93,20 +93,20 @@ def lfm2_gguf_config(key, tensors):
 def lfm2_gguf_stored(config):
     def stored(entry, info, target, parts):
         if target.endswith("conv.conv.weight") and len(info["shape"]) == 2:
-            # T260: an LFM2's convolution comes without its axis of one too, (channels, taps) for Hugging Face's
+            # T.260: an LFM2's convolution comes without its axis of one too, (channels, taps) for Hugging Face's
             # (channels, 1, taps); nothing else of an LFM2 is stored another way than the original has it
             entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
     return stored
 
 
 def lfm2_agrees(own, config):
-    # T260: which layers are convolution layers and their taps, and the FFN's inside as the config's rule makes it
+    # T.260: which layers are convolution layers and their taps, and the FFN's inside as the config's rule makes it
     # (the tensors' sizes would show it too, but only once they stream past)
     return [("convolution layers", convolution(own), convolution(config)),
             ("size of the FFN", own.get("intermediate_size"), config.get("intermediate_size"))]
 
 
-# T260: its GGUF by transformers' names of it. llama.cpp calls the last norm token_embd_norm (the model's own name
+# T.260: its GGUF by transformers' names of it. llama.cpp calls the last norm token_embd_norm (the model's own name
 # for it is embedding_norm), the convolution layer's three tensors shortconv.*, and writes q and k in Hugging
 # Face's order, as a Qwen3's (its converter is no child of the Llama's: conversion/lfm2.py at f1cee994)
 LFM2 = Family("LFM2", "lfm2", lfm2_sources, lfm2_check, before=lfm2_config, rms_norm=True,

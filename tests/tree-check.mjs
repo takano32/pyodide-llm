@@ -1,4 +1,4 @@
-// tests/tree-check.mjs (T367.1): tests/tree.mjs and tests/tree.py alone, on made-up trees under .tmp/. A file is found
+// tests/tree-check.mjs (T.367.1): tests/tree.mjs and tests/tree.py alone, on made-up trees under .tmp/. A file is found
 // by looking at the tree asked about, wherever it lies: every layout the tools are to read (all in public/, the Python
 // moved, both moved, and one nobody planned), what stops a search from taking the wrong file (found twice, found
 // nowhere, the folders that are never entered, links, one walk a process, another tree searched under its own root),
@@ -111,7 +111,7 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   said(hidden, "runtime", "hidden.js", /no hidden\.js/);
   said(hidden, "runtime", "only-there.js", /no only-there\.js/);
   for (const kind of ["runtime", "python", "served"]) assert.equal(pythonOf("--root", hidden, kind).stdout.trim(), treeOf(hidden)[kind](), `tree.py skips the same, ${kind}`);
-  // T429, the three weak places of the first search. (1) a fixture or a note with an anchor's name stops no tool, and
+  // T.429, the three weak places of the first search. (1) a fixture or a note with an anchor's name stops no tool, and
   // (2) a name that is not under its kind's folder is not taken from the tests or the documents:
   assert.ok(RULE.skip.includes("tests") && RULE.skip.includes("docs"), "the tests' and the documents' folders are no part of what is searched");
   const fixtures = madeUp("fixtures with the anchors' names", { "public/forward.js": "", "public/llama2_numpy.py": "", "public/coi.js": "", "public/simdkernel.so": "",
@@ -141,7 +141,7 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   }
 }
 
-// ---- T368.1, one name in two spellings: a file of the runtime is found as x.js or x.ts, whichever is asked for
+// ---- T.368.1, one name in two spellings: a file of the runtime is found as x.js or x.ts, whichever is asked for
 {
   const half = madeUp("half TypeScript", { "src/runtime/forward.ts": LINKED, "src/runtime/jobs.ts": "", "src/runtime/worker.js": "", "src/runtime/worker/part.ts": "", "src/runtime/types.d.ts": "",
     "src/python/llama2_numpy.py": "", "src/runtime/built/simdkernel.so": "", "public/coi.js": "", "public/page.ts": "", "elsewhere/deep/lone.ts": "", "kernels/kernel.ts": "" });

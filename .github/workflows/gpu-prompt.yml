@@ -1,31 +1,31 @@
-# The prompt on the GPU (T135; by default since T148) against the CPU and NumPy, in Chromium-family browsers with WebGPU
+# The prompt on the GPU (T.135; by default since T.148) against the CPU and NumPy, in Chromium-family browsers with WebGPU
 # on a software adapter (SwiftShader: the runners have no GPU): tests/gpu-check.mjs on the models this workflow builds
 # (the site's int8 models and a made-up one with grouped-query attention). It shows that the numbers are right; the
-# speeds that count are the owner's devices'. The page refuses a fallback adapter such as SwiftShader (T148): the
-# page itself on it with the tests' flag, models.yml with query "gpuTest=on". By hand, and every night (T193, below).
-# T147: SwiftShader compiles a tiled shader in 10 to 90 s and has no shader-f16, so the browsers take the made-up model
+# speeds that count are the owner's devices'. The page refuses a fallback adapter such as SwiftShader (T.148): the
+# page itself on it with the tests' flag, models.yml with query "gpuTest=on". By hand, and every night (T.193, below).
+# T.147: SwiftShader compiles a tiled shader in 10 to 90 s and has no shader-f16, so the browsers take the made-up model
 # only (every shader, 150 tokens), and Dawn in Node on Mesa's lavapipe (shader-f16 and subgroups) takes every model
 # (about 5 minutes on the development machine).
 #
-# T183: real= takes models of src/models.js from Hugging Face (as the page does, at the revisions the list pins:
+# T.183: real= takes models of src/models.js from Hugging Face (as the page does, at the revisions the list pins:
 # tests/hf_fetch.py), converts them to int8 as the page converts them (tests/perplexity_prepare.py) and checks them too;
-# NumPy's answer is then the native Python's (Pyodide has no room for Qwen3 0.6B in float32, T153). With real= and no
+# NumPy's answer is then the native Python's (Pyodide has no room for Qwen3 0.6B in float32, T.153). With real= and no
 # models=, only those. The log has, for every model, E16 (how far NumPy's answer moves with its cache in float16),
 # tables of the keys and values by layer against NumPy's and against NumPy's with its cache in float16, each run's line
-# and ratio, and the seconds of every step. SwiftShader takes a real model slowly (every form, 150 tokens; T147: 10 to
+# and ratio, and the seconds of every step. SwiftShader takes a real model slowly (every form, 150 tokens; T.147: 10 to
 # 90 s to compile a tiled shader): give forms= there. A branch's tests with --ref (AGENTS.md: WebGPU's tests run in CI,
 # not on the development machine):
 #
 #   gh workflow run gpu-prompt.yml [-f models="synthetic tiny-lm"] [-f real="hf-qwen3-0.6b"] [-f forms="TF.js"] [--ref <branch>]
 #   node tests/ci.mjs run gpu-prompt.yml real=hf-qwen2.5-0.5b-instruct --ref <branch>
 #
-# T193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): two suites of what
+# T.193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): two suites of what
 # runs when models= and real= are not given. Light, the default: Chromium only with the made-up model "synthetic", and
 # Dawn with every made-up model. Full (full=true, and the nightly schedule on main): Chromium, Chrome and Edge with
 # the made-up models gpu-check gives a browser for "made-up", and Dawn with every made-up model and the site's three.
 # models= and real= choose the models in either; full= still chooses the browsers. An empty full= is the default,
-# light (T192).
-# T241's review (the full suite took 38 minutes on Chrome and 42 on Edge in main's run 36902097346, 23 on Edge before T241:
+# light (T.192).
+# T.241's review (the full suite took 38 minutes on Chrome and 42 on Edge in main's run 36902097346, 23 on Edge before T.241:
 # SwiftShader compiles a model's shaders in each of its 14 runs, 5 to 7 s, and Chromium, Chrome and Edge run the same
 # SwiftShader): "made-up" is every made-up model on Dawn; on Chromium all but those that only change the numbers a form is
 # held to (DAWN_ONLY in tests/gpu-check/models.mjs); on Chrome and Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds
@@ -34,7 +34,7 @@
 #
 #   node tests/ci.mjs run gpu-prompt.yml full=true --ref <branch>
 #
-# T225's review: the Dawn job also runs /benchmark/'s checks on devices that round a float32 to a float16 toward zero (as
+# T.225's review: the Dawn job also runs /benchmark/'s checks on devices that round a float32 to a float16 toward zero (as
 # Direct3D does) and, in the full suite, away from zero and in every conversion (tests/rounding-check.mjs), when models=
 # and real= are not given: lavapipe's own rounding is the nearest, and a check that rests on it was WRONG on the owner's PC.
 name: The prompt on the GPU
@@ -46,7 +46,7 @@ on:
   workflow_dispatch:
     inputs:
       full:
-        description: 'T193: the full suite (Chrome and Edge too, every made-up model in the browsers, the site models on Dawn), not the light one'
+        description: 'T.193: the full suite (Chrome and Edge too, every made-up model in the browsers, the site models on Dawn), not the light one'
         type: boolean
         required: false
         default: false
@@ -54,35 +54,35 @@ on:
         description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: tests/gpu-check/models.mjs madeUpOn; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
         required: false
       real:
-        description: 'T183: ids of Hugging Face models of src/models.js, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'
+        description: 'T.183: ids of Hugging Face models of src/models.js, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'
         required: false
       forms:
-        description: "T147: only the matrices' shaders whose names hold one of these, separated by commas (gpu-check --forms)"
+        description: "T.147: only the matrices' shaders whose names hold one of these, separated by commas (gpu-check --forms)"
         required: false
       engines:
-        description: "T564: dawn runs the Dawn job alone (no Chromium-family browsers): for real= models, whose SwiftShader job runs into its 90 minutes (empty: both)"
+        description: "T.564: dawn runs the Dawn job alone (no Chromium-family browsers): for real= models, whose SwiftShader job runs into its 90 minutes (empty: both)"
         required: false
       nan:
-        description: "T241's review: where the rounds with a NaN or an infinity run, all, made-up, small or none (gpu-check --nan; empty: Dawn made-up, Chromium small, Chrome and Edge none)"
+        description: "T.241's review: where the rounds with a NaN or an infinity run, all, made-up, small or none (gpu-check --nan; empty: Dawn made-up, Chromium small, Chrome and Edge none)"
         required: false
 
-# T193: light or full, for both jobs (the browsers' matrix below says the same by itself: a matrix cannot read env)
+# T.193: light or full, for both jobs (the browsers' matrix below says the same by itself: a matrix cannot read env)
 env:
   SUITE: ${{ (github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && 'full' || 'light' }}
 
 jobs:
   gpu:
     name: ${{ matrix.os }} ${{ matrix.engine }}
-    # T564: engines=dawn leaves the browsers out
+    # T.564: engines=dawn leaves the browsers out
     if: inputs.engines != 'dawn'
     runs-on: ${{ matrix.os }}
-    # T147: the made-up model's every tiled shader on SwiftShader; gpu-check waits for the page 90 minutes at most
+    # T.147: the made-up model's every tiled shader on SwiftShader; gpu-check waits for the page 90 minutes at most
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         # the models are built as the deployment builds them, on Linux; Chrome and Edge are the runner's own, in the full
-        # suite only (T193)
+        # suite only (T.193)
         os: [ubuntu-latest]
         engine: ${{ fromJSON((github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && '["chromium","chrome","msedge"]' || '["chromium"]') }}
     steps:
@@ -100,10 +100,10 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T241's review: this step is about 2 to 5 minutes. Run 36902097346 of main (the full suite) had its Chromium job stay in
+      # T.241's review: this step is about 2 to 5 minutes. Run 36902097346 of main (the full suite) had its Chromium job stay in
       # `npx playwright-core install --with-deps chromium`, in the apt it runs (the last line of the log was a "Get:" of
       # archive.ubuntu.com's noble-security InRelease), until the job's 120 minutes were over: the tests never began. apt gets
-      # time-outs and retries here (tests/apt-timeouts.sh, T262: the one place for every workflow), and the step a limit of
+      # time-outs and retries here (tests/apt-timeouts.sh, T.262: the one place for every workflow), and the step a limit of
       # 20 minutes, so that a stuck download fails the job in minutes
       - name: Download and convert the models, compile the kernels, install the browser
         timeout-minutes: 20
@@ -133,14 +133,14 @@ jobs:
           echo "## ${{ matrix.os }} ${{ matrix.engine }}" >> "$GITHUB_STEP_SUMMARY"
           ids="$MODELS"
           for id in $REAL; do ids="$ids .tmp/real/$id.json"; done
-          # T193: the suite's models when none are given: "synthetic" alone (light) or every made-up one (full)
+          # T.193: the suite's models when none are given: "synthetic" alone (light) or every made-up one (full)
           [ "$SUITE" = full ] && suite=made-up || suite=synthetic
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-$suite}"
           node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
   dawn:
-    # T147: shader-f16 and subgroups, which SwiftShader lacks: the npm package webgpu (Dawn, not a dependency of this
+    # T.147: shader-f16 and subgroups, which SwiftShader lacks: the npm package webgpu (Dawn, not a dependency of this
     # project: installed under .tmp/) on Mesa's lavapipe (the package mesa-vulkan-drivers; its manifest is named
     # lvp_icd.<arch>.json on Ubuntu 24.04, lvp_icd.json on 26.04)
     name: ubuntu-latest dawn (lavapipe)
@@ -161,7 +161,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # (the same time-outs as the browsers' jobs' step above, T241's review)
+      # (the same time-outs as the browsers' jobs' step above, T.241's review)
       - name: Download and convert the models, compile the kernels, install Dawn and lavapipe
         timeout-minutes: 20
         shell: bash
@@ -192,14 +192,14 @@ jobs:
           echo "## ubuntu-latest dawn ($VK_ICD_FILENAMES)" >> "$GITHUB_STEP_SUMMARY"
           ids="$MODELS"
           for id in $REAL; do ids="$ids .tmp/real/$id.json"; done
-          # T193: the suite's models when none are given: every made-up one (light), and the site's three too (full:
+          # T.193: the suite's models when none are given: every made-up one (light), and the site's three too (full:
           # gpu-check's default)
           [ "$SUITE" = full ] && suite="" || suite=made-up
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
           node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
-      # T225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
+      # T.225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
       # lets a device (§15.7.6): Direct3D, which Chrome on Windows runs, rounds toward zero, where lavapipe's own is the
       # nearest (tests/rounding.mjs). About half a minute a rounding and subgroup width; with the models of the default only
       - name: The benchmark's checks on devices that round to a float16 toward zero and away from it, on Dawn

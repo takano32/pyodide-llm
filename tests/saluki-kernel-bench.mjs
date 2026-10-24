@@ -1,4 +1,4 @@
-// T363.1: the matrix product on the weights of Underdog Saluki 27B as its GGUF holds them (llama.cpp's blocks of 256
+// T.363.1: the matrix product on the weights of Underdog Saluki 27B as its GGUF holds them (llama.cpp's blocks of 256
 // weights), in the forms of tests/saluki-forms.ts, beside the kernels of kernels/ on the same shapes (t2r: matmul_t2r
 // on ternary weights, which is how Ternary Bonsai 2 27B runs; q8r: matmul_q8r on int8) and a loop that only reads
 // (kernels/ceilings.ts's read: the memory's ceiling). One process, the forms taking turns in an order that changes
@@ -7,10 +7,10 @@
 // choice. Nothing here is of the page.
 //
 // The matrices are read from memory, as a model's are (each read once a token): copies of each past every cache
-// (--megabytes a kind of weights, default 512), a call on each in turn (T159's review: one matrix timed again and
+// (--megabytes a kind of weights, default 512), a call on each in turn (T.159's review: one matrix timed again and
 // again stays in the caches). The blocks are random bytes with finite scales: every byte string is a block.
 //
-// Before anything is timed, every form is held to the converter's own reading of the blocks (T362:
+// Before anything is timed, every form is held to the converter's own reading of the blocks (T.362:
 // tests/saluki_blocks.py runs convert/superblocks.py on the first rows; the sums are float64, the activations
 // rounded as the form takes them), the forms that are one arithmetic to one another to the bit on every row, and each
 // to itself on 1 and 4 threads to the bit. A form that differs stops the run.
@@ -47,7 +47,7 @@ const SCRATCH_BYTES = 131072;  // a thread's own: four rows widened to int8 with
 // The bytes 256 weights take in each kind of weights (values, scales and corrections)
 const BYTES = { IQ2_XXS: 66, IQ3_S: 110, Q2_K: 84, IQ1_M: 56, IQ2_XS: 74, IQ2_S: 82, IQ3_XXS: 98, IQ1_S: 50, IQ4_XS: 136, Q4_K: 144, ternary: 72, int8: 320 };
 const KINDS = Object.keys(BYTES), BLOCKS = KINDS.filter((kind) => kind !== "ternary" && kind !== "int8");
-// T363.4: the kernels of the page (kernels/blocks.ts, blocks_relaxed.ts), by the type's number in a GGUF: "p.<TYPE>" is
+// T.363.4: the kernels of the page (kernels/blocks.ts, blocks_relaxed.ts), by the type's number in a GGUF: "p.<TYPE>" is
 // matmul_sbr on rows of the type, "pp.<TYPE>" matmul_sb (no relaxed SIMD). Their tables are sb_tables's, at c[AREA]
 const TYPE = { Q2_K: 10, Q4_K: 12, IQ2_XXS: 16, IQ2_XS: 17, IQ3_XXS: 18, IQ1_S: 19, IQ3_S: 21, IQ2_S: 22, IQ4_XS: 23, IQ1_M: 29 };
 const product = (kernel, module, of) => ({ module, of, activations: "eight",
@@ -84,7 +84,7 @@ const FORMS = {
 // the forms that are one arithmetic: the same numbers to the bit
 const SAME = [["rb", "rbp"], ["rb", "any"], ["rb", "rb2"], ["rb", "rb3"], ["rb", "p.IQ2_XXS"], ["rb", "pp.IQ2_XXS"], ["iq3s", "p.IQ3_S"],
   ["p.IQ3_S", "pp.IQ3_S"], ["q2k", "p.Q2_K"], ["iq1m", "p.IQ1_M"]];
-// A prompt's tokens (T108) through the same matrix. A kernel without a tile takes the rows in blocks that stay in
+// A prompt's tokens (T.108) through the same matrix. A kernel without a tile takes the rows in blocks that stay in
 // the first cache, every token on each (jobs.ts's way)
 const blockOf = (n, bytes) => Math.max(1, Math.floor(16384 / ((n / 256) * bytes)));
 const byToken = (form) => (k, c, w, r0, r1, scratch) => {
@@ -108,7 +108,7 @@ const PROMPTS = {
     run: (k, c, w, r0, r1, scratch) => k.matmul_iq2xxs_sb_tile(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], scratch) },
   "sw tile": { module: "forms", of: "IQ2_XXS", activations: "eight", signed: true,
     run: (k, c, w, r0, r1, scratch) => k.matmul_iq2xxs_sw_tile(c[OUT], c[XQ], c[XS], w, c[TAB], c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], scratch) },
-  // T363.4: the page's tiles: matmul_sbr_tile, and matmul_sbw_tile where the engine multiplies signed by signed
+  // T.363.4: the page's tiles: matmul_sbr_tile, and matmul_sbw_tile where the engine multiplies signed by signed
   ...Object.fromEntries(["IQ2_XXS", "IQ3_S", "IQ2_S", "IQ1_M", "Q2_K"].flatMap((of) => [
     [`p.${of}, token by token`, { module: "blocksr", of, activations: "eight", run: byToken(`p.${of}`), base: true }],
     [`p.${of} tile`, { module: "blocksr", of, activations: "eight", by: `p.${of}, token by token`,
@@ -128,7 +128,7 @@ const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm", ceilings: "ceilings.wasm", blocks: "blocks.wasm", blocksr: "blocksr.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
   [name, new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(work + file)), { env: { memory } }).exports]));
-// forward/threads.ts's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
+// forward/threads.ts's phase(): chunks of a quarter of a thread's share (T.93), taken in turn; one thread the whole matrix
 // (a prompt's chunks in fours of rows, as phase() cuts them for the tiles)
 const chunkOf = (rows, threads, quad = 1) => (threads === 1 ? rows : quad * Math.ceil(rows / (threads * 4 * quad)));
 function runCalls(kernels, sync, c, index) {
@@ -533,7 +533,7 @@ if (["rb", "iq3s", "q2k", "iq1m"].every((form) => timed.includes(form)) && shape
       `K ${seconds("q2k", VALUES.q2k).toFixed(2)}, IQ1 ${seconds("iq1m", VALUES.iq1m).toFixed(2)})${others.length ? `; ${others.join("; ")}` : ""}`);
   }
 }
-// T363.4: the same from the page's kernels, every type at its own speed (a token reads every matrix but the embedding:
+// T.363.4: the same from the page's kernels, every type at its own speed (a token reads every matrix but the embedding:
 // IQ1_M's 2,844,262,400 less the embedding's 1,271,398,400)
 const READ = { IQ2_XXS: 9201254400, IQ3_S: 2901934080, Q2_K: 2721054720, IQ2_S: 2715811840, IQ2_XS: 2160066560, IQ1_M: 1572864000, IQ3_XXS: 1399848960,
   IQ1_S: 2589982720, IQ4_XS: 230686720, Q4_K: 104857600 };

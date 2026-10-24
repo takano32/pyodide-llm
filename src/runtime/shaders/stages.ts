@@ -1,7 +1,7 @@
-// shaders/stages.ts (T351): the sampling in chunks of the vocabulary, many workgroups (T191's SAMPLER_STAGES).
+// shaders/stages.ts (T.351): the sampling in chunks of the vocabulary, many workgroups (T.191's SAMPLER_STAGES).
 // /benchmark/'s GPU section alone runs them.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 //
 // The notices of what the stages are adapted from (the forms and what was changed are described at the head of
@@ -27,7 +27,7 @@
  */
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T.191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -56,7 +56,7 @@
  */
 import { SAMPLER_COMMON, SAMPLER_DRAW, largestLogit, softmaxTerms } from "./sample.ts";
 
-// ---- T191: the sampling in chunks of the vocabulary, many workgroups. SAMPLE's one workgroup reads the vocabulary on
+// ---- T.191: the sampling in chunks of the vocabulary, many workgroups. SAMPLE's one workgroup reads the vocabulary on
 // one of the GPU's cores (the owner's Android: 5.9 ms of 11 a token of the CPU section's model, Llama 3's 128256
 // tokens), and each of its threads a run of 501 consecutive logits. Here a workgroup a chunk of SAMPLE_CHUNK tokens,
 // four consecutive ones a thread (a subgroup's loads side by side), in four dispatches: SAMPLE_MAX (the penalty on the
@@ -83,7 +83,7 @@ import { SAMPLER_COMMON, SAMPLER_DRAW, largestLogit, softmaxTerms } from "./samp
 // Bindings, of the same numbers as SAMPLE's (each stage binds those it reads: samplerStages): 0 the logits, 1 probs, 2
 // order, 3 the state, 4 chosen, 5 the random numbers, 6 the settings, and 7 the chunks' partial results
 // (samplePartsBytes: CHUNKS_COMMON's counted() and flagged()).
-// T219: SAMPLE_MAX (the one stage that reads every logit whatever the settings) flags each chunk that holds a NaN in
+// T.219: SAMPLE_MAX (the one stage that reads every logit whatever the settings) flags each chunk that holds a NaN in
 // the partial results, and SAMPLE_PICK, which alone writes the state, folds the chunks' flags (and sees +inf as the
 // largest logit) and refuses the
 // step as SAMPLE does (the stages between run on such logits harmlessly: a NaN is under any floor, +inf over it, and
@@ -403,7 +403,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let count = u32(sum_all(kept, t));
     draw_nucleus(count, sum_all(mass, t), r, argmax, t);
 }`;
-/** The sampling in chunks (T191): its four stages in order, each with the bindings it takes (of SAMPLE's numbers and
+/** The sampling in chunks (T.191): its four stages in order, each with the bindings it takes (of SAMPLE's numbers and
  * 7 the partial results) and whether it runs a workgroup a chunk (else one workgroup) */
 export const SAMPLER_STAGES = [
   { name: "max", code: SAMPLE_MAX, bindings: [0, 3, 6, 7], chunks: true },

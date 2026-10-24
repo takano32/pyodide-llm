@@ -1,4 +1,4 @@
-// T357.3: the two engines of tests/gpu-check.mjs, a part of that tool: the server that gives a browser its page, the
+// T.357.3: the two engines of tests/gpu-check.mjs, a part of that tool: the server that gives a browser its page, the
 // harness (harness.js, the text beside this file: the worker that runs forward.js on the CPU and with the GPU's
 // worker), the cases and the runtime's files; a browser of Playwright's on that page; and Node with Dawn, the same
 // harness in a worker thread. Either gives what the harness posted, and puts the console's lines into `lines`.
@@ -33,13 +33,13 @@ const served = (cases, only, nanRounds) => http.createServer((req, res) => {
   const found = cases.find((c) => c.checkpoint === pathname);
   if (pathname === "/") return send(types[".html"], PAGE);
   if (pathname === "/harness.js") return send(types[".js"], `const ONLY = ${JSON.stringify(only ? only.split(",") : [])};\nconst NAN_ROUNDS = ${JSON.stringify(nanRounds)};\n${HARNESS}`);
-  // (T152: and NumPy's greedy ids after the prompt, which the harness feeds the GPU's steps)
+  // (T.152: and NumPy's greedy ids after the prompt, which the harness feeds the GPU's steps)
   if (pathname === "/cases.json") return send(types[".json"], JSON.stringify(cases.map(({ file, reference: { tokens, header, greedy }, ...c }) => ({ ...c, reference: { tokens, header, greedy } }))));
   if (found) return send("application/octet-stream", fs.readFileSync(found.file));
   // (the runtime's files and the built kernels, each from where this tree keeps them: tests/tree.mjs)
   const kinds = { "/runtime/": runtime, "/built/": built };
   const kind = Object.keys(kinds).find((prefix) => pathname.startsWith(prefix));
-  // (T368.1: a file of the runtime that is TypeScript goes to the browser as the JavaScript it is with its types
+  // (T.368.1: a file of the runtime that is TypeScript goes to the browser as the JavaScript it is with its types
   // blanked, tests/untyped.mjs: a browser takes no .ts, and the sources' imports name it so)
   let file = "";
   try { file = kind ? kinds[kind](pathname.slice(kind.length)) : ""; } catch { /* not in this tree: 404 */ }
@@ -60,23 +60,23 @@ async function inBrowser({ engine, server, lines }) {
   page.on("console", (message) => lines.push(`[${message.type()}] ${message.text()}`));
   page.on("pageerror", (error) => lines.push(`[pageerror] ${error.message}`));
   await page.goto(`http://localhost:${server.address().port}/`);
-  // SwiftShader compiles a tiled shader in 10 to 90 s (T147): every shader of the made-up model takes some minutes
+  // SwiftShader compiles a tiled shader in 10 to 90 s (T.147): every shader of the made-up model takes some minutes
   await page.waitForFunction(() => window.__gpuCheck, null, { timeout: 5400000 });
   const result = await page.evaluate(() => window.__gpuCheck);
   await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
   return result;
 }
 
-// T147: the harness in a worker thread of Node, WebGPU from Dawn (the npm package webgpu at --webgpu), the GPU's
+// T.147: the harness in a worker thread of Node, WebGPU from Dawn (the npm package webgpu at --webgpu), the GPU's
 // worker (src/runtime/gpu.js) in a worker thread of its own, the modules from their files and the rest from the server
 async function inDawn({ webgpu, directory, server, only, nanRounds, lines }) {
   const { Worker } = await import("node:worker_threads");
   if (!webgpu) throw new Error("--engine dawn wants --webgpu <the directory of the npm package webgpu>");
   const dir = path.join(directory, "dawn");
   fs.mkdirSync(dir, { recursive: true });
-  // (T225's review: GPU_ROUNDING=toward-zero|away|everything has the device round a float32 to a float16 that way, as
+  // (T.225's review: GPU_ROUNDING=toward-zero|away|everything has the device round a float32 to a float16 that way, as
   // Direct3D's and Mesa's AMD do and lavapipe does not: tests/rounding.mjs. The lines of this check that hold a key or a
-  // value of the cache to NumPy's (the first layer's scale, T187) assume the nearest and fail where it is not: read the
+  // value of the cache to NumPy's (the first layer's scale, T.187) assume the nearest and fail where it is not: read the
   // engine's own checks of its forms by the "gpu:" lines of the log)
   const prelude = `import { parentPort, Worker as NodeWorker } from "node:worker_threads";
 import { create, globals } from ${JSON.stringify(pathToFileURL(path.resolve(webgpu, "index.js")).href)};
@@ -91,7 +91,7 @@ console.log = console.info = console.warn = (...parts) => parentPort.postMessage
 `;
   const gpuFile = path.join(dir, "gpu-worker.mjs"), harnessFile = path.join(dir, "harness.mjs");
   // the GPU's worker: its messages wait until gpu.js has set onmessage (a module worker's port opens at its first await)
-  // (T352: until gpu.js is through, not until it first sets onmessage: the window sets one of its own while its modules
+  // (T.352: until gpu.js is through, not until it first sets onmessage: the window sets one of its own while its modules
   // load and plays what that one kept when they have; a message taken here before it and played after would overtake)
   fs.writeFileSync(gpuFile, `${prelude}
 const waiting = [];

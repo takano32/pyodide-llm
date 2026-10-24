@@ -1,4 +1,4 @@
-// T357.3: the measures of tests/gpu-check.mjs, a part of that tool: how far two arrays of floats are from each other
+// T.357.3: the measures of tests/gpu-check.mjs, a part of that tool: how far two arrays of floats are from each other
 // (the worst row, the scale, the logits' KL divergence). Arithmetic on what it is given, nothing else.
 const floats = (b64) => {
   const bytes = Buffer.from(b64, "base64");
@@ -19,10 +19,10 @@ function worstRow(got, want, width) {
 }
 // the worst layer of the ratios of its distances to its lines: the first that is NaN (a NaN is worse than any number),
 // else the largest. A comparison with a NaN is false, so "x is not within the worst so far" alone let the layer after a
-// NaN take its place and the NaN go unsaid unless it was the last (T357.3's review)
+// NaN take its place and the NaN go unsaid unless it was the last (T.357.3's review)
 const worstAt = (ratios) => ratios.reduce((worst, x, l) => (Number.isNaN(ratios[worst]) ? worst : !(x <= ratios[worst]) ? l : worst), 0);
 const argmax = (xs) => xs.reduce((best, x, i) => (x > xs[best] ? i : best), 0);
-// T187: the log-probabilities of logits (float64)
+// T.187: the log-probabilities of logits (float64)
 function logSoftmax(logits) {
   const top = logits.reduce((m, x) => Math.max(m, x), -Infinity);
   let sum = 0;

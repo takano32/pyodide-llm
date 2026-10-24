@@ -1,17 +1,17 @@
-// shaders/likecpu.ts (T351): no shader: the CPU's sampling in JavaScript (the kernel's and NumPy's order of
+// shaders/likecpu.ts (T.351): no shader: the CPU's sampling in JavaScript (the kernel's and NumPy's order of
 // operations), which the checks of the GPU's SAMPLE are held to.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { REPETITION_WINDOW } from "./run.ts";
 
-// (T368.5) the tokens so far, of which the penalty reads the latest: an array or a typed one
+// (T.368.5) the tokens so far, of which the penalty reads the latest: an array or a typed one
 type History = { slice(start: number): Iterable<number> };
 
 // The CPU's sampling in JavaScript (kernels/kernel.ts's penalize() and sample(), as the engine's generate() calls
 // them): what SAMPLE is held to (/benchmark/'s check), and itself held to the kernel (tests/smoke.mjs). logits: a
 // Float32Array, changed in place by the penalty as the kernel changes them. history: BOS, the prompt and the sampled
-// tokens, the token fed last. T274: presence, the kernel's presence penalty (taken off each after the penalty). T546:
+// tokens, the token fed last. T.274: presence, the kernel's presence penalty (taken off each after the penalty). T.546:
 // written, how many of the history's latest were sampled, of which the presence penalty's window is (the engine's
 // generate() hands the kernel its written tokens apart: the prompt's are not counted); all of them where not given.
 export function penalizeLikeCpu(logits: Float32Array, history: History, penalty: number, presence = 0, written = Infinity) {
@@ -39,10 +39,10 @@ export function argmaxLikeCpu(logits: ArrayLike<number>) {
   for (let i = 0; i < logits.length; i++) if (logits[i] > best) [best, first] = [logits[i], i];
   return first;
 }
-/** T195: the engine draws no token when the largest logit is no finite number (a NaN anywhere, +inf anywhere, or
+/** T.195: the engine draws no token when the largest logit is no finite number (a NaN anywhere, +inf anywhere, or
  * all -inf): the kernel returns -1 and NumPy's sample() raises, and the engine stops with an error. So does this: it
  * throws, and returns the logits otherwise. (argmaxLikeCpu alone passes over a NaN, as `>` is false for it.) SAMPLE
- * is held to it by T219: it sees such logits by their bits (not_finite: WGSL lets an implementation assume that no NaN
+ * is held to it by T.219: it sees such logits by their bits (not_finite: WGSL lets an implementation assume that no NaN
  * nor infinity occurs, §15.7, so a comparison would not do), refuses the step with the State's not_finite word, and the
  * CPU takes the step and decides by this rule. */
 export function finiteLikeCpu<Logits extends ArrayLike<number>>(logits: Logits): Logits {
@@ -55,14 +55,14 @@ export function finiteLikeCpu<Logits extends ArrayLike<number>>(logits: Logits):
   return logits;
 }
 /** The tokens kernel.ts's sample() walks for a random number, in its order (the nucleus's, sorted; else the index's),
- * the running sum after each (float64) and the mass the random number is a share of. T274: the kernel's top-k (the
+ * the running sum after each (float64) and the mass the random number is a share of. T.274: the kernel's top-k (the
  * topk most probable, whose nucleus it is then, walked from the most probable also without a nucleus) and min-p (what
  * is less than minp times as probable as the most probable is left out, last). */
 export function walkLikeCpu(logits: ArrayLike<number>, temperature: number, topp: number, topk = 0, minp = 0) {
   const f = Math.fround, n = logits.length, best = logits[argmaxLikeCpu(finiteLikeCpu(logits))];
   const nucleus = topp > 0 && topp < 1;
   // without a nucleus the kernel's floor is -f32.MAX_VALUE (and SAMPLE's -3.4e38): a -inf logit is left out, not
-  // given the exp(-87) of vexp() below (T195: with a random number of 0 that drew a token at -inf)
+  // given the exp(-87) of vexp() below (T.195: with a random number of 0 that drew a token at -inf)
   const lowest = nucleus ? f(best - f(f(temperature) * f(16.118095))) : -3.4028234663852886e38, inverse = f(1 / f(temperature));
   const probs: number[] = [], index: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -72,7 +72,7 @@ export function walkLikeCpu(logits: ArrayLike<number>, temperature: number, topp
     }
   }
   // kernel.ts's exp(): four at a time (vexp) holds x at -87 at least, the last count % 4 one by one (fexp) are 0 under
-  // it. Only a random number of 0 draws such a token (tests/smoke.mjs found one: T151's review round)
+  // it. Only a random number of 0 draws such a token (tests/smoke.mjs found one: T.151's review round)
   const simd = probs.length - (probs.length % 4);
   probs.forEach((x, k) => (probs[k] = x < -87 ? (k < simd ? f(Math.exp(-87)) : 0) : f(Math.exp(x))));
   let total = 0, top = 0;
@@ -88,7 +88,7 @@ export function walkLikeCpu(logits: ArrayLike<number>, temperature: number, topp
   const least = minp > 0 ? f(Math.min(f(minp), 1) * top) : 0;
   let last = order.length - 1;
   if (nucleus || narrowed) {
-    // the most probable token always stays (kernel.ts, T178)
+    // the most probable token always stays (kernel.ts, T.178)
     const cutoff = nucleus ? Math.min(((1 - f(topp)) / (order.length > 1 ? order.length - 1 : 1)) * total, top) : 0;
     order = order.filter((k) => probs[k] >= cutoff && probs[k] >= least).sort(fromTheMost);
     const limit = nucleus ? f(topp) * total : Infinity;

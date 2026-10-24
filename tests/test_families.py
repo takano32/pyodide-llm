@@ -1,4 +1,4 @@
-"""convert/families/ (T359): what differs between one model_type of config.json and another is one record in one
+"""convert/families/ (T.359): what differs between one model_type of config.json and another is one record in one
 table, which the converter's shared flow looks up. These hold the table to what the flow asks of it; what each family
 converts to is its own tests' (test_granite.py, test_smollm3.py, test_qwen35.py, test_lfm2.py, test_gpt2.py,
 test_neox.py, test_gguf.py), and the net's kinds "layouts" and "python" compare the answers between two trees."""
@@ -53,7 +53,7 @@ LAYOUTS = {
     "gemma4": ([256, 768, 6, 4, 1, -2048, 320], {"arch": "gemma4", "head_dim": 128,
                                                  "wide": {"layers": [2, 5], "head_dim": 256}, "double": [4, 5],
                                                  "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 16}, 0),
-    # (T341: a number for each layer, RoPE turning a part of some layers' heads and all of the others')
+    # (T.341: a number for each layer, RoPE turning a part of some layers' heads and all of the others')
     "spark": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "spark", "head_dim": 128}, (128, 128, 128, 32)),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
@@ -156,7 +156,7 @@ def test_a_family_has_a_source_for_every_row_of_its_layout_and_no_other(model_ty
 
 
 def test_a_source_of_a_stack_may_be_made_otherwise_in_each_layer(monkeypatch):
-    """T341: a transform that is a function of the layer's number gives each layer of the stack its own (a
+    """T.341: a transform that is a function of the layer's number gives each layer of the stack its own (a
     Spark-X2.5's q and k are interleaved over the width RoPE turns of that layer); a tuple is every layer's."""
     header, form, rotary = LAYOUTS["llama"]
     name, transform = LLAMA.sources(Dims(header, form), "", rotary)["wq"]
@@ -189,7 +189,7 @@ def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(m
     and a Gemma 4's are the language model saved alone, "model.")."""
     family = FAMILIES[model_type]
     if family.gguf is None:
-        # (a Gemma 4's whole model, T529: its GGUF is its language model's, gemma4_text)
+        # (a Gemma 4's whole model, T.529: its GGUF is its language model's, gemma4_text)
         assert model_type in ("mistral", "qwen3_5", "gemma4") and family.renamed
         return
     assert families.GGUF[family.gguf] == (model_type, family)
@@ -316,7 +316,7 @@ BIASES, NORMS = "model.layers.0.self_attn.q_proj.bias", "model.layers.0.self_att
 
 @by_type
 def test_the_biases_and_the_norms_of_the_heads_are_said_by_the_llamas_alone(model_type):
-    """T369 (T359.3's finding): FORM's "bias" and "qk_norm" are rows a Llama's layout has where the file has their
+    """T.369 (T.359.3's finding): FORM's "bias" and "qk_norm" are rows a Llama's layout has where the file has their
     tensors, and the form of no other layout reads them. They were asked of every source by a Llama's names: a Qwen3.5
     saved as a language model has a tensor of the norm's name, and its options said qk_norm where those of the same
     model saved with its vision model (the names begin otherwise) said nothing."""

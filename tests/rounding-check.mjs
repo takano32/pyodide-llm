@@ -1,8 +1,8 @@
-// T225's review: /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) checking the shaders on devices that round a float32 to a
+// T.225's review: /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) checking the shaders on devices that round a float32 to a
 // float16 the other ways WGSL lets a device (tests/rounding.mjs: toward zero, as Direct3D does, which the owner's NVIDIA
 // PC on Windows did; away from zero; every conversion toward zero), in Node on Dawn + lavapipe at subgroups of 4 and 16
 // (tests/bench-dawn.mjs, the step "check"). CI's own implementations round to the nearest, so nothing else in CI says
-// whether a check of the keys and values the GPU writes rests on that (T225's did). Every check must be right on each,
+// whether a check of the keys and values the GPU writes rests on that (T.225's did). Every check must be right on each,
 // and the cache must show the rounding asked: about half of the keys and values (35 to 65%) the way asked and not the
 // nearest, at most 1% the other way (a float32 sum in the GPU's order falls across a rounding boundary now and then),
 // none farther than a neighbour.
@@ -34,7 +34,7 @@ const counted = (text) => {
 };
 
 let failures = 0;
-// T232's review: the emulation itself first, a second or two (tests/rounding-self.mjs: a NaN, an infinity and an overflow
+// T.232's review: the emulation itself first, a second or two (tests/rounding-self.mjs: a NaN, an infinity and an overflow
 // went through it as the largest finite float16, and nothing said so). "everything" rounds as toward zero does
 const modes = [...new Set(hows.filter((how) => how !== "nearest").map((how) => (how === "everything" ? "toward-zero" : how)))];
 if (modes.length) {

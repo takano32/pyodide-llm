@@ -1,23 +1,23 @@
-// gpu-hybrid-check.mjs (T229's review): a Qwen3.5 (hybrid attention) is not put on the GPU, whatever adapter the browser has.
+// gpu-hybrid-check.mjs (T.229's review): a Qwen3.5 (hybrid attention) is not put on the GPU, whatever adapter the browser has.
 // forward/gpuside.js's gpuUnfit() says so in its first line, and nothing ran that line: CI has no real adapter (a fallback one is
 // refused before it), and the made-up GPU of gpu-default-check.mjs is given llm-jp-3's Llama layers. Without that line a
 // visitor with a GPU would have a linear-attention layer's matrices read as a full-attention layer's (a Qwen3.5 has no wq,
-// wk, wv in a Gated DeltaNet layer), and the owner's PC and Android are such visitors once T236 lists the model.
-// A model that goes to the GPU alone (T156) is refused by gpuOnlyUnfit()'s arch, which gpu-choice-check.mjs holds.
-// T260: an LFM2 the same (its convolution layers have no wq, wk, wv either, and no shader), by the next line of gpuUnfit().
-// T545: an LFM2's prompts are the GPU's now: its worker is started once, with a plan that says every layer's kind and
+// wk, wv in a Gated DeltaNet layer), and the owner's PC and Android are such visitors once T.236 lists the model.
+// A model that goes to the GPU alone (T.156) is refused by gpuOnlyUnfit()'s arch, which gpu-choice-check.mjs holds.
+// T.260: an LFM2 the same (its convolution layers have no wq, wk, wv either, and no shader), by the next line of gpuUnfit().
+// T.545: an LFM2's prompts are the GPU's now: its worker is started once, with a plan that says every layer's kind and
 // its place among the layers of its kind, the taps and where the CPU keeps the convolution layers' rows, the matrices
-// in and out and the attending layers' matrices as theirs alone (of); T545.2: and its steps (the plan's tokens).
-// T261: and a Gemma 3, whose tensors are a Qwen3's to the GPU's worker (it would run them as one: no norm behind the
-// attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it. T261.4: a Gemma 3's
+// in and out and the attending layers' matrices as theirs alone (of); T.545.2: and its steps (the plan's tokens).
+// T.261: and a Gemma 3, whose tensors are a Qwen3's to the GPU's worker (it would run them as one: no norm behind the
+// attention or the FFN, a SiLU in the gate, every position attended), by gpuUnfit()'s line for it. T.261.4: a Gemma 3's
 // prompts are the GPU's now: its worker is started, and the plan it is started with says what the GPU's worker runs
-// differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables); T261.4.2: and
+// differently for it (GEGLU, the norms behind, every layer's window, the local layers and their tables); T.261.4.2: and
 // its steps (the plan's tokens).
-// T342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
-// T271.2: a Qwen3.5's prompts are the GPU's now: its worker is started once, with a plan of every layer's kind and place,
+// T.342: and a Spark-X2.5, whose gate of the heads and exact GELU no shader has, by the same line (its FFN's activation).
+// T.271.2: a Qwen3.5's prompts are the GPU's now: its worker is started once, with a plan of every layer's kind and place,
 // its linear-attention layers' heads, sizes and taps, their matrices (wqkv, wz, wout) and vectors (the taps, the gates'
 // two small matrices, dt_bias, the decay, the norm of a value head) as theirs alone, and the attending layers' matrices
-// with the gate of their output (wg) as theirs; T271.3: and its steps (the plan's tokens).
+// with the gate of their output (wg) as theirs; T.271.3: and its steps (the plan's tokens).
 //
 //   node tests/gpu-hybrid-check.mjs <a made-up Qwen3.5 of tests/make_qwen35.py, its int8 file without the extension>
 //   node tests/gpu-hybrid-check.mjs <a made-up LFM2 of tests/make_lfm2.py, the same>
@@ -45,7 +45,7 @@ const { compileKernels, external, weightsMemory } = await import(forwardFile);
 
 const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
 // the kind of layer that keeps it off the GPU, as forward/gpuside.js's gpuUnfit() says it
-// (T261: a Gemma 3 by its local layers' option, though any of its facts keeps it off: the GELU in its gate and the norms
+// (T.261: a Gemma 3 by its local layers' option, though any of its facts keeps it off: the GELU in its gate and the norms
 // behind as well, which are no option of a model's)
 const REASONS = { qwen35: ["a Qwen3.5", "linear", null],
   lfm2: ["an LFM2", "convolution", null],
@@ -53,7 +53,7 @@ const REASONS = { qwen35: ["a Qwen3.5", "linear", null],
   spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/] };
 assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3 and no Spark-X2.5`);
 const [model, layers, reasonOfArch] = REASONS[options.arch];
-// (T568.4: a Qwen3.5 whose key heads are wider than the GPU's delta rule takes, which its kind says, forward/linear.ts's
+// (T.568.4: a Qwen3.5 whose key heads are wider than the GPU's delta rule takes, which its kind says, forward/linear.ts's
 // gpu.unfit(), and createForward() hands on: on the CPU)
 const reason = options.arch === "qwen35" && options.linear.key_dim > 128 ? /^linear-attention layers are not on the GPU yet$|\(linear-attention layers are not on the GPU yet\)/ : reasonOfArch;
 assert.ok(options[layers], `${prefix} has no ${layers} layers`);
@@ -69,7 +69,7 @@ const { memory, base } = weightsMemory(checkpoint.length, { shared: true });
 new Uint8Array(memory.buffer, base, checkpoint.length).set(checkpoint);
 
 // a GPU's worker that is asked for and never answers (but that it ended, once stopped)
-const { factory: gpu, made: gpus } = workers({ answer: ended });  // (T261.4: one that is started ends when it is stopped)
+const { factory: gpu, made: gpus } = workers({ answer: ended });  // (T.261.4: one that is started ends when it is stopped)
 const outside = external({ memory, base, size: checkpoint.length, kernels, gpu });
 py.globals.set("OUTSIDE", outside);
 py.globals.set("OPTIONS", py.toPy(options));
@@ -79,7 +79,7 @@ llama = Llama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so",
 const status = await Promise.race([outside.engine.gpu, new Promise((resolve) => setTimeout(() => resolve("no answer in 3 s"), 3000))]);
 const failures = [];
 if (!reason && options.arch === "lfm2") {
-  // (T545: started once, with the plan of an LFM2)
+  // (T.545: started once, with the plan of an LFM2)
   const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
   const letters = [...options.convolution.layers], places = letters.map((letter, l) => letters.slice(0, l).filter((x) => x === letter).length);
   const count = (letter) => letters.filter((x) => x === letter).length;
@@ -95,7 +95,7 @@ if (!reason && options.arch === "lfm2") {
     if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
   }
 } else if (!reason && options.arch === "qwen35") {
-  // (T271.2: started once, with the plan of a Qwen3.5)
+  // (T.271.2: started once, with the plan of a Qwen3.5)
   const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
   const linear = options.linear, count = plan?.layers;
   if (gpus.length !== 1 || !plan) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}, with ${plan ? "a plan" : "no plan"}`);
@@ -105,7 +105,7 @@ if (!reason && options.arch === "lfm2") {
     const mixed = 2 * linear.key_heads * linear.key_dim + linear.value_heads * linear.value_dim;
     const wanted = { kinds, places, linear: { keyHeads: linear.key_heads, valueHeads: linear.value_heads, keyDim: linear.key_dim, valueDim: linear.value_dim, taps: linear.conv },
       matrices: { wq: ["attention", of("attention")], wk: ["attention", of("attention")], wv: ["attention", of("attention")], wo: ["attention", of("attention")],
-        // (T568.4: the kinds' own after every model's, in the table's order: the attending layers' gate, then the linear layers')
+        // (T.568.4: the kinds' own after every model's, in the table's order: the attending layers' gate, then the linear layers')
         w1: [null, count], w2: [null, count], w3: [null, count], wg: ["attention", of("attention")], wqkv: ["linear", of("linear")], wz: ["linear", of("linear")],
         wout: ["linear", of("linear")] },
       vectors: { conv: ["linear", linear.conv * mixed], wb: ["linear", linear.value_heads * plan.dim], wa: ["linear", linear.value_heads * plan.dim],
@@ -116,7 +116,7 @@ if (!reason && options.arch === "lfm2") {
     if (JSON.stringify(got) !== JSON.stringify(wanted)) failures.push(`the plan says ${JSON.stringify(got)}, where ${JSON.stringify(wanted)} is to be`);
   }
 } else if (!reason) {
-  // (T261.4: started once, with the plan of a Gemma 3)
+  // (T.261.4: started once, with the plan of a Gemma 3)
   const { plan } = gpus[0]?.posted.find((data) => data.type === "start") ?? {};
   const { layers: local, window } = options.local, count = plan?.layers;
   if (gpus.length !== 1 || !plan) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}, with ${plan ? "a plan" : "no plan"}`);

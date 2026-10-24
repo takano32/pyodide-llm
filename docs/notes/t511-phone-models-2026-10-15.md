@@ -1,4 +1,4 @@
-# T511 スマホのユーザ向けに一覧を見直す（小さい ELYZA を含む）（2026-10-15）
+# T.511 スマホのユーザ向けに一覧を見直す（小さい ELYZA を含む）（2026-10-15）
 
 調べと表だけ。製品のコードは変えていない。Hugging Face の API（一覧と検索 約 45 回）、カードの README、config.json を読んだ。重みは取っていない。数字は API・カード・config・一覧（`src/models.js` を Node で読んだもの）と台帳（TASKS.md・AGENTS.md・docs/performance.md）から取った。書いていない数は未計測。
 
@@ -11,13 +11,13 @@
 
 ## 足す候補の勧め（順に）
 
-1. **T511.1 Shisa V2.1c LFM2 350M**（`shisa-ai/shisa-v2.1c-lfm2-350m`、GGUF は mradermacher の Q8_0 379 MB → int8 約 0.40 GB）: スマホの大きさで、問いに日本語で答える力がいまの 350M 級より上（カードの Shaberi 平均 4.51、元の LFM2-350M 3.76、Qwen3-0.6B 4.14、Gemma 3 270M 2.53）。LFM2 の形（一覧の LFM2 700M と同じ）なので項目だけ。**カードにライセンスの欄が無い**（元は LFM Open License v1.0）: 持ち主に聞くもの (A)。仕事は小（項目と GGUF の突き合わせ・書式・書かせて読む）。
-2. **T511.2 Qwen3.5 0.8B Japanese SFT v2.5**（`Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5`、Q8_0 812 MB → int8 約 0.85 GB、apache-2.0）: 一覧の Qwen3.5 0.8B と同じ大きさで、日本語の会話に寄せた版（カード: 中国語の混入 1% → 0%、「AI なので」の断り 17% → 5%、JCommonsenseQA の生成 42.6% → 71.0%）。トークナイザ・書式・`tokenizer_config.json` は元の Qwen3.5-0.8B とバイト単位で同じ（API の blobId が一致）ので、NeoHorse-1 と同じ形で項目だけ。**個人の非公式の派生**。仕事は小（考える形とすぐ答える形の 2 項目）。
-3. **T511.3 Shisa V2.1 LFM2 1.2B**（`shisa-ai/shisa-v2.1-lfm2-1.2b`、Q8_0 1.25 GB → int8 約 1.3 GB、LFM Open License v1.0）: 1B 級で日本語を最もよく話すと作り手が言うもの（Shaberi V2.1 5.35。同じ表に元の LFM2-1.2B は無い）。8 と言う Android なら入る。仕事は小。
-4. **T511.4 LFM2 350M ENJP MT**（`LiquidAI/LFM2-350M-ENJP-MT`、Q8_0 379 MB → int8 約 0.40 GB、LFM Open License v1.0）: スマホで使える翻訳（一覧の翻訳は CAT-Translate 0.8B の 0.9 GB から上で、どれも「desktop only」）。**system の文が必須で向きが 2 つ**（「Translate to Japanese.」「Translate to English.」）なので項目は 2 つ。仕事は小〜中（書式の手書き）。
+1. **T.511.1 Shisa V2.1c LFM2 350M**（`shisa-ai/shisa-v2.1c-lfm2-350m`、GGUF は mradermacher の Q8_0 379 MB → int8 約 0.40 GB）: スマホの大きさで、問いに日本語で答える力がいまの 350M 級より上（カードの Shaberi 平均 4.51、元の LFM2-350M 3.76、Qwen3-0.6B 4.14、Gemma 3 270M 2.53）。LFM2 の形（一覧の LFM2 700M と同じ）なので項目だけ。**カードにライセンスの欄が無い**（元は LFM Open License v1.0）: 持ち主に聞くもの (A)。仕事は小（項目と GGUF の突き合わせ・書式・書かせて読む）。
+2. **T.511.2 Qwen3.5 0.8B Japanese SFT v2.5**（`Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5`、Q8_0 812 MB → int8 約 0.85 GB、apache-2.0）: 一覧の Qwen3.5 0.8B と同じ大きさで、日本語の会話に寄せた版（カード: 中国語の混入 1% → 0%、「AI なので」の断り 17% → 5%、JCommonsenseQA の生成 42.6% → 71.0%）。トークナイザ・書式・`tokenizer_config.json` は元の Qwen3.5-0.8B とバイト単位で同じ（API の blobId が一致）ので、NeoHorse-1 と同じ形で項目だけ。**個人の非公式の派生**。仕事は小（考える形とすぐ答える形の 2 項目）。
+3. **T.511.3 Shisa V2.1 LFM2 1.2B**（`shisa-ai/shisa-v2.1-lfm2-1.2b`、Q8_0 1.25 GB → int8 約 1.3 GB、LFM Open License v1.0）: 1B 級で日本語を最もよく話すと作り手が言うもの（Shaberi V2.1 5.35。同じ表に元の LFM2-1.2B は無い）。8 と言う Android なら入る。仕事は小。
+4. **T.511.4 LFM2 350M ENJP MT**（`LiquidAI/LFM2-350M-ENJP-MT`、Q8_0 379 MB → int8 約 0.40 GB、LFM Open License v1.0）: スマホで使える翻訳（一覧の翻訳は CAT-Translate 0.8B の 0.9 GB から上で、どれも「desktop only」）。**system の文が必須で向きが 2 つ**（「Translate to Japanese.」「Translate to English.」）なので項目は 2 つ。仕事は小〜中（書式の手書き）。
 5. （低い）**LFM2.5 1.2B Thinking**（`LiquidAI/LFM2.5-1.2B-Thinking`、Q8_0 1.25 GB → int8 約 1.3 GB）: 考える形の 1.2B。カードの言語に日本語。スマホでは 16 tok/s ほどの見込みで、考える分だけ答えが遅い。
 
-ほかに一覧そのものの直し（足さない）を 2 つ（下の 3 節）: **T511.5**「desktop only」の線を規則にする（文面なので持ち主）、**T511.6** 選択欄でスマホに入らない項目の見え方（同上）。
+ほかに一覧そのものの直し（足さない）を 2 つ（下の 3 節）: **T.511.5**「desktop only」の線を規則にする（文面なので持ち主）、**T.511.6** 選択欄でスマホに入らない項目の見え方（同上）。
 
 ## 持ち主に聞くもの（選択肢、勧めを先頭に）
 
@@ -30,7 +30,7 @@
   2. 入れない（作り手が会社か研究機関のものだけにする）。
 - **(C) スマホの既定のモデル**（方針 4。今は tiny-lm、イントロのボタンは llm-jp-3 150M）
   1. **今のまま（tiny-lm）**: 取得 33 MB で準備がいちばん速い。訪問者は選び直せる。
-  2. 既定は tiny-lm のまま、**イントロのボタンに問いに答える小さいモデルを 1 つ足す**（例: LFM2.5 230M 247 MB、または T511.1 の Shisa 350M 約 380 MB）。文面は持ち主。
+  2. 既定は tiny-lm のまま、**イントロのボタンに問いに答える小さいモデルを 1 つ足す**（例: LFM2.5 230M 247 MB、または T.511.1 の Shisa 350M 約 380 MB）。文面は持ち主。
   3. 既定を llm-jp-3 150M（171 MB）にする: 日本語の質は上がる（1 文字あたり 2.507 → 1.950 nats）が、毎回の取得が 5 倍。
   4. 既定を問いに答えるモデル（LFM2.5 230M など）にする: 取得 247 MB・HF から取って変換（GitHub Pages のサイトの外）。
 - **(D)「desktop only」の線**（文面）
@@ -112,12 +112,12 @@
 
 ### 見つけたこと
 
-1. **「desktop only」は手書きで、線は約 0.8 GB**。付いていない最大は Qwen3 0.6B の 671 MB、付いている最小は（Hugging Face の組で）LFM2 700M の 836 MB。台帳の記録も割れている（T249 の (h) は「int8 が 1.4 GiB 以上」と書き、T251 は「0.8 GB 以上」と書く。今の一覧は後者）。
+1. **「desktop only」は手書きで、線は約 0.8 GB**。付いていない最大は Qwen3 0.6B の 671 MB、付いている最小は（Hugging Face の組で）LFM2 700M の 836 MB。台帳の記録も割れている（T.249 の (h) は「int8 が 1.4 GiB 以上」と書き、T.251 は「0.8 GB 以上」と書く。今の一覧は後者）。
    - ページ自身の決まりとずれる: `memoryWarning()` が `deviceMemory` 4 の端末に警告を出すのは int8 + 0.3 GB が 2 GiB を超えるとき（約 1.85 GB から）。1.85 GB 以下の 31 項目（Hugging Face の組の 28 とサイトの組の 3）は、4 の端末でも警告が出ないのに「desktop only」と書いてある。
    - 持ち主の Android（8 と言う）は「desktop only」の Llama 3.2 3B Instruct（3.6 GB）を 6.0 tok/s で動かした（TASKS.md、2026-09-28）。8 と言う端末には「desktop only」の 3B 級まで実際は開く。
-   - **iPhone の上限は未計測**（Safari は `deviceMemory` を言わず、警告も出ない。Page memory の節は iPhone で未確認: T173）。線を 1.85 GB に上げると、iPhone で落ちる項目が「desktop only」なしになる恐れがある（覆す条件: 持ち主の iPhone で 1 GB 級を開いてタブが落ちたら、Safari のための線を別に置く）。
+   - **iPhone の上限は未計測**（Safari は `deviceMemory` を言わず、警告も出ない。Page memory の節は iPhone で未確認: T.173）。線を 1.85 GB に上げると、iPhone で落ちる項目が「desktop only」なしになる恐れがある（覆す条件: 持ち主の iPhone で 1 GB 級を開いてタブが落ちたら、Safari のための線を別に置く）。
    - サイトの組の `stories42M`（int8 47 MB）と `stories42M-f32`（167 MB）にも「desktop only」が付いている。大きさでは当たらない。台帳に訳は見つからなかった。
-2. **選択欄の並び**: グループは「Models of this site」（6）→「Unquantized originals」（4）→「From Hugging Face …」（120）。Hugging Face の組の中は日本語の 81（軽い → 重い）の後に英語だけの 39。**スマホに入る英語だけの小さいモデル（Pythia 14M・SmolLM2・GPT-2 など 12）は、デスクトップだけの日本語 67 項目の後ろ**（82 番目から）。日本語の人には困らないが、スマホの英語の人は 67 個のデスクトップだけの項目を越えないと見つからない。T128 の並び（日本語の軽い → 重い、英語の軽い → 重い）は持ち主の決めなので変えていない。案（持ち主）: 「desktop only」の項目を各組の後ろに回す、または `deviceMemory` が小さい端末では optgroup を分ける（「This device may not have the memory」）。
+2. **選択欄の並び**: グループは「Models of this site」（6）→「Unquantized originals」（4）→「From Hugging Face …」（120）。Hugging Face の組の中は日本語の 81（軽い → 重い）の後に英語だけの 39。**スマホに入る英語だけの小さいモデル（Pythia 14M・SmolLM2・GPT-2 など 12）は、デスクトップだけの日本語 67 項目の後ろ**（82 番目から）。日本語の人には困らないが、スマホの英語の人は 67 個のデスクトップだけの項目を越えないと見つからない。T.128 の並び（日本語の軽い → 重い、英語の軽い → 重い）は持ち主の決めなので変えていない。案（持ち主）: 「desktop only」の項目を各組の後ろに回す、または `deviceMemory` が小さい端末では optgroup を分ける（「This device may not have the memory」）。
 3. **選択欄の長さ**: 130 項目、そのうち 97 がスマホで「desktop only」。英語だけで int8 3 GB 以上の大きいモデルが 14（Pythia 2.8B〜Llama 3.1 8B）。考える形とすぐ答える形の対で 2 項目になるものが 19 対。
 4. **イントロのボタン**（`src/pages/index.astro`）は llm-jp-3 150M（素の文の続きを書くモデル）を指す。チャットの形のページで、スマホの人が最初に問いを打つと、続きを書くモデルは答えにならない。問いに答える小さいモデル（llm-jp-3 150M instruct3、LFM2.5 230M）はボタンに無い。
 
@@ -125,15 +125,15 @@
 
 | モデル | 取得 | 準備完了（CI の Chromium、速い回線） | tok/s（CI の 4 論理コア、本番） | 日本の家の回線（7〜9 MB/s）の取得の見込み | 日本語の質（1 文字あたりの nats、低いほど良い） | 問いに答える |
 |---|---:|---:|---:|---:|---:|---|
-| tiny-lm 29M（既定） | 33 MB | 未計測 | 約 280（Chromium）、455（本番、2 本、T249） | 4〜5 秒 | 2.507 | いいえ（続きを書く） |
+| tiny-lm 29M（既定） | 33 MB | 未計測 | 約 280（Chromium）、455（本番、2 本、T.249） | 4〜5 秒 | 2.507 | いいえ（続きを書く） |
 | llm-jp-3 150M（ボタン） | 171 MB | 未計測（instruct3 は 13 秒） | 75〜79（256 トークン）、106（instruct3） | 19〜24 秒 | 1.950 | いいえ |
 | japanese-gpt2 xsmall | 156 MB → 42 MB | 未計測 | 237（本番、2 本） | 17〜22 秒 | 2.077 | いいえ（答えの 19% に `<unk>`） |
-| LFM2.5 230M | 247 MB | 11.6 秒（`?hf=` の GGUF、T505.3） | 93.5 | 27〜35 秒 | 未計測 | はい |
-| Gemma 3 270M | 292 MB | 15.0 秒 | 66.5（T510.1） | 32〜42 秒 | 未計測（書かせた 12 のうち日本語 10、崩れ 0/24: T261.3） | はい |
+| LFM2.5 230M | 247 MB | 11.6 秒（`?hf=` の GGUF、T.505.3） | 93.5 | 27〜35 秒 | 未計測 | はい |
+| Gemma 3 270M | 292 MB | 15.0 秒 | 66.5（T.510.1） | 32〜42 秒 | 未計測（書かせた 12 のうち日本語 10、崩れ 0/24: T.261.3） | はい |
 | LFM2.5 350M | 379 MB | 未計測 | 50〜57 | 42〜54 秒 | 未計測 | はい |
 | Qwen3.5 0.8B | 812 MB | 未計測 | 28.2〜28.7 | 90〜116 秒 | 未計測 | はい |
 
-- 日本語の質の数は T249 の物差し（日本語 Wikipedia の 3 記事、float32 の transformers。tiny-lm と llm-jp-3 150M はページのエンジンの int8）で、問いに答えるモデルには同じ物差しの数が無い。問いへの答えの質を比べる数（同じ 12 の問いを書かせて読む: `tests/answers.mjs`）も、この 7 つを並べたものは無い。**既定を替える前に要る測り**（案、T511.7）: 上の 7 つに同じ 12 の問いを greedy と既定の標本抽出で書かせて並べ、日本語の割合（かなで数える）・崩れ・繰り返しを数える（CI、1 本あたり数分）。
+- 日本語の質の数は T.249 の物差し（日本語 Wikipedia の 3 記事、float32 の transformers。tiny-lm と llm-jp-3 150M はページのエンジンの int8）で、問いに答えるモデルには同じ物差しの数が無い。問いへの答えの質を比べる数（同じ 12 の問いを書かせて読む: `tests/answers.mjs`）も、この 7 つを並べたものは無い。**既定を替える前に要る測り**（案、T.511.7）: 上の 7 つに同じ 12 の問いを greedy と既定の標本抽出で書かせて並べ、日本語の割合（かなで数える）・崩れ・繰り返しを数える（CI、1 本あたり数分）。
 - 方針 4 の訳（公開のページでスマホに無確認で大きく落とさせない、準備がいちばん速い）は今も tiny-lm に当てはまる。問いに答える最小は LFM2.5 230M の 247 MB で、tiny-lm の 7.5 倍。
 
 ## 4. 持ち主の Android（Xiaomi 13T Pro、Chrome、8 論理コア、`deviceMemory` 8）での見込み
@@ -162,5 +162,5 @@
 
 - **確かめた（API・カード・config の文字で）**: 上の表のリビジョン（40 桁は `.tmp/t511/info/` に、文書には頭 8 字）、作成日、ゲート、カードの `license` の欄、ファイルの大きさ（GGUF の Q8_0、safetensors）、config の `model_type`・層の並び・`conv_bias`・語彙・BOS と EOS、Takenoko v2.5 の `chat_template.jinja`・`tokenizer.json`・`tokenizer_config.json` が元の Qwen3.5-0.8B（`2fc06364`）と同じ blobId、ELYZA の 20 件。一覧の数（Node で `src/models.js` を読んだ）。
 - **読んだだけ（数は作り手のカードのまま、ここで測っていない）**: Shaberi・JA AVG・JCommonsenseQA などの日本語の数、CLTL の割合、Gemma 3 1B の刈った版の「同じように動く」。
-- **未確認**: どの候補も変換器に通していない（`gguf_check.py tensors`・書式・頭のトークン・書かせて読む は T511.1〜.4 で）。LFM Open License v1.0 の条文を派生が引き継ぐかの法的な読み（カードの `base_model` から読んだ）。持ち主の端末の tok/s（式の見込みだけ）。iPhone の Safari が開ける大きさ。
+- **未確認**: どの候補も変換器に通していない（`gguf_check.py tensors`・書式・頭のトークン・書かせて読む は T.511.1〜.4 で）。LFM Open License v1.0 の条文を派生が引き継ぐかの法的な読み（カードの `base_model` から読んだ）。持ち主の端末の tok/s（式の見込みだけ）。iPhone の Safari が開ける大きさ。
 - **見ていないもの**: `filter=ja` の付いていない GGUF だけのリポジトリの網羅（名前の検索 18 語で拾った分だけ）、2026-10-15 より後の公開、ゲート付きのリポジトリ（Gemma 3 の google の原本は API の読みだけ）、英語だけの小さいモデルの新しいもの（この回は日本語に絞った）。

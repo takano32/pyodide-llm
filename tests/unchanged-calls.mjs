@@ -1,4 +1,4 @@
-// unchanged-calls.mjs (T346)
+// unchanged-calls.mjs (T.346)
 // What forward.js asks of its kernels, as one hash a case: every call (the kernel's name and its arguments, the
 // addresses with them) of an engine made with kernels that do nothing, for made-up models of every kind, dtype, memory
 // and type of the keys and values, through single tokens and a prompt's blocks. A refactoring of forward.js, jobs.js or
@@ -35,8 +35,8 @@ const shapes = [
   ...of("llama, rotated", [256, 512, 4, 8, 2, 2000, 300], { rotated: ROTATED }, ["int8", "ternary"]),
   ...of("lfm2", [256, 512, 8, 8, 2, -2000, 300], { arch: "lfm2", convolution: CONVOLUTION }, ["int8", "int6", "float32"]),
 ];
-// T261: a Gemma 3 (the norms behind, a GELU in the gate, local layers with a window of 8 positions: tests/plans.mjs),
-// asked apart: a tree before T261 has no such architecture and says nothing of it, which the net reads as new here
+// T.261: a Gemma 3 (the norms behind, a GELU in the gate, local layers with a window of 8 positions: tests/plans.mjs),
+// asked apart: a tree before T.261 has no such architecture and says nothing of it, which the net reads as new here
 const gemma3 = of("gemma3", [256, 512, 6, 4, 1, 2000, 300], { arch: "gemma3", head_dim: 64 }, ["int8", "int6", "float32", "float16"]);
 const sha = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const found = {};
@@ -44,7 +44,7 @@ const asked = (list) => plansOf(list.map(({ name, ...shape }) => shape));
 const later = (() => { try { return asked(gemma3); } catch { return []; } })();
 for (const p of [...asked(shapes), ...later]) {
   const quantized = ["int8", "int6", "ternary"].includes(p.dtype);
-  // (what was hashed before T375.2: where the tensors are. The plan the engine is handed, p.plan, is Python's own from
+  // (what was hashed before T.375.2: where the tensors are. The plan the engine is handed, p.plan, is Python's own from
   // then on; the net's layouts writes it down for more models than these, and the calls below are what it does)
   const { plan: _, ...placed } = p;
   found[`plan: ${JSON.stringify([p.header, p.form, p.dtype])}`] = sha(JSON.stringify(placed));

@@ -1,0 +1,4 @@
+### T.188 [試験][遠隔試験] 試験を全部 CI で回す（`tests.yml`） — 状態: **入れた（2026-09-27、持ち主「いったん、テスト CI だけにしねぇか？」「バグったら最後にまとめてバグとればいいだろ」）**（規模 小）
+- 根拠: 開発機（ARM の 2 コア）で担当が並ぶと pytest・smoke・forward-check・build も取り合い、負荷 3〜5 で新しい担当を足せなかった。
+- 入れたもの: `.github/workflows/tests.yml`（デプロイと同じ試験と threads-check と build を、どのブランチでも。`extra=` で後にコマンドを足せる: 速さの前後比較など）。AGENTS.md の持ち主の指示に「試験は全部 CI で」。担当は編集と `node --check` まで、試験は push して `node tests/ci.mjs run tests.yml --ref <ブランチ>` を裏で。結果は待たずに次へ、落ちたら後でまとめて直す。
+- 確かめ: 本線で 1 回回す。

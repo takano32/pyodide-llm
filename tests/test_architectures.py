@@ -1,4 +1,4 @@
-"""T359.6: the table of architectures (engine/layout.py's LAYOUTS), a record at a time and with no model: the rows of
+"""T.359.6: the table of architectures (engine/layout.py's LAYOUTS), a record at a time and with no model: the rows of
 each for a header, how its form is read and refused, its facts (against a second copy of them, here); that a name the
 table has not is refused wherever a form comes in, in one sentence; that a form and its architecture are held together
 in one place, whose one sentence every entrance says; that a record made of another's and a new kind of layer are read
@@ -174,7 +174,7 @@ ENTRANCES = {
 
 @pytest.mark.parametrize("entrance", list(ENTRANCES))
 def test_a_name_that_is_no_architectures_is_refused_wherever_it_comes_in(entrance):
-    """It was read as a Llama until T359.6: a mistyped name ran another model's forward pass without a word."""
+    """It was read as a Llama until T.359.6: a mistyped name ran another model's forward pass without a word."""
     for arch in ("llama3", "LLAMA", "qwen3", "", "gpt-2"):
         assert refusal(ENTRANCES[entrance], arch) == f"There is no architecture called {arch!r}: llama, gpt2, neox, qwen35, lfm2, gemma3, gemma4, spark."
     for arch in FACTS:  # (and a name it has is not what is refused there)
@@ -298,7 +298,7 @@ def test_a_model_has_its_architectures_facts_from_the_time_it_is_made(arch):
     else:
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             model(arch, unturned=[2])
-    # T261: the activation of the FFN, and the local layers of the architectures that take them
+    # T.261: the activation of the FFN, and the local layers of the architectures that take them
     assert llama.activation is {GELU: engine.model.gelu, GELU_ERF: engine.model.gelu_erf}.get(facts["activation"], engine.model.silu)
     local = {"layers": [1], "window": 3, "rope_theta": 50.0}
     if facts["local"]:
@@ -363,7 +363,7 @@ def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts(monkeypatch):
 
 
 def test_the_activation_and_the_local_layers_are_facts_of_their_own(monkeypatch):
-    """T261: only a Gemma 3 has a gated FFN with a GELU, local layers and the norms behind, so nothing of the table
+    """T.261: only a Gemma 3 has a gated FFN with a GELU, local layers and the norms behind, so nothing of the table
     tells the three apart (and a GELU went with GPT-2's FFN alone before it): a made-up Llama with a GELU in its gate,
     a GPT-2 with a SiLU and a Llama with local layers do. The same file as the other's each (no row says any of it),
     other numbers, and each only where its fact reaches: the activation from the first token, the window once a text
@@ -456,7 +456,7 @@ def test_the_settings_of_a_plan_are_one_value_or_its_fields_by_name():
 
 
 def test_the_plan_refuses_the_layers_rope_leaves_alone_that_a_model_refuses():
-    """T359.5's review: forward_plan() alone let a layer the model has not through (it showed in no layer's facts)."""
+    """T.359.5's review: forward_plan() alone let a layer the model has not through (it showed in no layer's facts)."""
     read = lambda offset, length: np.ones(length // 4, dtype=np.float32).tobytes()
     settings = lambda **more: Settings(int8=True, kv_start=8, **more)
     for layers in ((4,), (-1,), (0, 9)):

@@ -1,21 +1,21 @@
-// tests/gpu-modules-check.mjs (T352): what the type check does not hold of the model's GPU worker (src/runtime/gpu.ts)
+// tests/gpu-modules-check.mjs (T.352): what the type check does not hold of the model's GPU worker (src/runtime/gpu.ts)
 // and its modules (src/runtime/gpu/*.ts). Nothing else reads their lines outside a browser with a GPU: the worker runs
 // only there (CI's gpu-check.mjs), and the checks of forward.ts's choices make a GPU's worker of their own. Node only,
 // under a second:
 //
 //   node tests/gpu-modules-check.mjs
 //
-// T368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// T.368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
 // used and declared nowhere, and model, stopping or lost assigned outside gpu/device.ts (an import cannot be
 // assigned: TS2632). (A field of the model's record that is misspelt is tsc's too, and still said below: the same
 // line holds a field that the type has as optional and no owner makes.)
 // What is left here is what tsc, the build and Node all let pass, each with why:
 //   - a module that takes names from elsewhere than the worker's modules and the shaders' parts: it links, and what
-//     the worker's file holds grows without a word (T367.5);
-//   - T378.4: a name model, stopping or lost bound in a file (a parameter or a local hides gpu/device.ts's variable
+//     the worker's file holds grows without a word (T.367.5);
+//   - T.378.4: a name model, stopping or lost bound in a file (a parameter or a local hides gpu/device.ts's variable
 //     from the function's lines, and types the same), one of them read as a module loads (a copy of what it was
 //     then), and `common`, the object the modules shared, back;
-//   - T378.4: the model's record has owners. m.weights, m.block, m.forms and m.tokens are each made in one place and
+//   - T.378.4: the model's record has owners. m.weights, m.block, m.forms and m.tokens are each made in one place and
 //     set in one module's file alone, device.ts's own fields in device.ts alone (to tsc any module may set a field of
 //     the right type); every field read is one its owner makes (to tsc one that the type has as optional is there);
 //     a record goes nowhere whole (this follows a record by its names: one handed on is set where this does not
@@ -38,7 +38,7 @@ import { treeOf } from "./tree.mjs";
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of gpu/ to be reached; the shaders' parts a module takes names of are read with them)
 const tree = treeOf();
-// (T368.6: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given)
+// (T.368.6: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given)
 const WINDOW = path.basename(tree.runtime("gpu.js")), END = path.extname(WINDOW);
 const linked = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
 const own = (name) => name === WINDOW || name.startsWith("gpu/");
@@ -49,14 +49,14 @@ const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaratio
 const ALSO = ["failure.ts", "forward/reasons.ts"];
 for (const [name] of programs) {
   for (const { from } of linked.files.get(name).takes) {
-    // (T380.1: and of failure.ts, how a failure is carried, and forward/reasons.ts, the words of why a model is not on the
+    // (T.380.1: and of failure.ts, how a failure is carried, and forward/reasons.ts, the words of why a model is not on the
     // GPU: modules that import nothing, bundled into this worker)
     assert.ok(own(from) || /^shaders\/\w+\.[jt]s$/.test(from) || ALSO.includes(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules, of the shaders' parts (shaders/<part>.js) and of ${ALSO.join(", ")}`);
   }
 }
 console.log(`gpu-modules-check: the GPU worker's ${programs.size} files take of one another and of the shaders' parts, and none waits for itself`);
 
-// ---- what device.js holds and the others read (T378.4): model, stopping, lost
+// ---- what device.js holds and the others read (T.378.4): model, stopping, lost
 const walk = (node, visit, parent = null, key = "") => {
   if (!node || typeof node.type !== "string") return;
   visit(node, parent, key);
@@ -69,7 +69,7 @@ const HELD = ["model", "stopping", "lost"], OWNER = `gpu/device${END}`;
 const lets = programs.get(OWNER).body.map(top).filter((node) => node.type === "VariableDeclaration" && node.kind === "let").flatMap((node) => node.declarations.map((d) => d.id.name));
 for (const name of HELD) assert.ok(lets.includes(name), `${OWNER} holds ${name} as a let of its own`);
 assert.ok(![...programs.values()].some((program) => program.body.map(top).some((node) => node.type === "VariableDeclaration" && node.declarations.some((d) => d.id.name === "common"))),
-  "no module declares common: what the modules read of one another is a name each, set where it is declared (T378.4)");
+  "no module declares common: what the modules read of one another is a name each, set where it is declared (T.378.4)");
 // a name bound: declared, a parameter, caught
 const bound = (node, parent, key) => (parent.type === "VariableDeclarator" && key === "id") || (/Function/.test(parent.type) && (key === "params" || key === "id")) ||
   (parent.type === "CatchClause" && key === "param") || (parent.type === "ClassDeclaration" && key === "id");
@@ -93,7 +93,7 @@ for (const [name, program] of programs) {
 }
 console.log(`gpu-modules-check: model, stopping and lost are gpu/device.js's, named ${read} times; no module hides them`);
 
-// ---- the model's record (T378.4): what device.js puts in it, and the four records, each one module's
+// ---- the model's record (T.378.4): what device.js puts in it, and the four records, each one module's
 // A record's fields are what its owner declares where it makes the record (m.<record> = { ... }: the literal's keys, and
 // the keys of what a builder of another module returns where the literal spreads it). Every field read is one of them
 // (tsc says a name that the record's type has not; one that the type has as optional and the owner never makes is
@@ -266,7 +266,7 @@ assert.deepEqual([...base].filter((field) => !reads.base.has(field)), [], `field
 console.log(`gpu-modules-check: the model's record: ${base.size} fields of gpu/device.js's and ${Object.entries(fieldsOf).map(([record, fields]) => `${fields.size} of m.${record}`).join(", ")}, ` +
   `each set by its owner alone and read by a name it declares (${uses} uses)`);
 
-// ---- T368.6: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
+// ---- T.368.6: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
 // postMessage({ … } satisfies FromGpu). The worker's own postMessage() takes anything, so a message without that is
 // held by nothing but its keys (tests/plan-keys-check.mjs): every one says it. (The sources as they are written here:
 // the types blanked, as everywhere else in this check, say nothing of it.)
@@ -312,7 +312,7 @@ assert.deepEqual(posted, [{ type: "unusable", reason: "no WebGPU in a worker her
   "the start and the stop that came as the receiver was set were answered once each, in their order");
 assert.equal(closed, 1, "the worker ended once");
 console.log(`gpu-modules-check: gpu.js links (${Object.keys(window_).length} export), and a start and its stop are answered once each, in order`);
-// ---- T568.2: the GPU's kinds in the CPU's order: the state of the layers that keep one is staged by the CPU in the order of
+// ---- T.568.2: the GPU's kinds in the CPU's order: the state of the layers that keep one is staged by the CPU in the order of
 // its table (forward/kinds.ts's LAYER_KINDS) and taken up by the GPU in the order of its own (gpu/kinds.ts's GPU_KINDS).
 // No model has two kinds that keep a state yet, so two orders would pass every other check
 {

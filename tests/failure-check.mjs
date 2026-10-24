@@ -1,4 +1,4 @@
-// tests/failure-check.mjs (T380.1): how a failure is carried and told apart (src/runtime/failure.ts), by itself: no
+// tests/failure-check.mjs (T.380.1): how a failure is carried and told apart (src/runtime/failure.ts), by itself: no
 // worker, no Pyodide, no GPU, no page. Node only, under a second:
 //
 //   node tests/failure-check.mjs
@@ -6,7 +6,7 @@
 // What is held:
 //   - a Failure is an Error by name, said by its sentence alone, and known by its kind, also one that another copy of
 //     the module made (each bundle has its own);
-//   - failureOf() reads whatever is thrown here into one: the stand-ins below are what T90, T133 and T242 met (Python's
+//   - failureOf() reads whatever is thrown here into one: the stand-ins below are what T.90, T.133 and T.242 met (Python's
 //     ValueError and MemoryError as Pyodide hands them over, an error of JavaScript's that crossed Python, the three
 //     engines' words for a memory that ran out, a stack overflow that is none, Emscripten's ExitStatus, a thing that is
 //     no error at all), each with the kind and the very sentence the worker's one catch said of it before;
@@ -63,7 +63,7 @@ const CASES = [
   // (an error of this site's own that was thrown inside a call from Python: said as itself)
   [python("JsException", traceback("pyodide.ffi.JsException: Error: This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit WebAssembly memory: Safari has none yet). Chrome and Firefox can.")),
     "refused", "This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit WebAssembly memory: Safari has none yet). Chrome and Firefox can."],
-  // T90: the memory, in its three shapes and through Python
+  // T.90: the memory, in its three shapes and through Python
   [python("MemoryError", traceback("MemoryError")), "memory", "MemoryError"],
   [new RangeError("Invalid array buffer length"), "memory", "Invalid array buffer length"],
   [new RangeError("WebAssembly.Memory.grow(): Maximum memory size exceeded"), "memory", "WebAssembly.Memory.grow(): Maximum memory size exceeded"],
@@ -78,7 +78,7 @@ const CASES = [
   [python("KeyError", traceback("KeyError: 'dim'")), "refused", `PythonError: ${traceback("KeyError: 'dim'")}`],
   // (a JsException whose last line is not the shape: as the PythonError it is)
   [python("JsException", "pyodide.ffi.JsException"), "refused", "PythonError: pyodide.ffi.JsException"],
-  // T242: what is thrown is not always an Error
+  // T.242: what is thrown is not always an Error
   [{ name: "ExitStatus", message: "Program terminated with exit(1)", status: 1 }, "refused", "ExitStatus: Program terminated with exit(1)"],
   [{ code: 7 }, "refused", 'something that is not an error was thrown: {"code":7}'],
   ["a string", "refused", "a string"],
@@ -112,7 +112,7 @@ console.log(`failure-check: failureOf() reads ${CASES.length} things that are th
     if (name !== "src/runtime/failure.ts") {
       assert.ok(!/JsException|MemoryError|\.type === "ValueError"|InternalError|call stack/.test(text), `${name} reads the words of what Pyodide or the browser throws: failureOf() is the one place (src/runtime/failure.ts)`);
     }
-    // (T380.2: nor takes the last line of a message itself, which is how a traceback is read: failure.ts's lastLine())
+    // (T.380.2: nor takes the last line of a message itself, which is how a traceback is read: failure.ts's lastLine())
     if (name !== "src/runtime/failure.ts") {
       assert.ok(!/\.split\(\s*["'`]\\n["'`]\s*\)\s*\.(?:pop\(\)|at\(-1\))/.test(text), `${name} takes the last line of a text itself: failure.ts reads what is thrown (failureOf(), or lastLine() for Python's own last line)`);
     }

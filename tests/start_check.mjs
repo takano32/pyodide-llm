@@ -1,8 +1,8 @@
-// start_check.mjs (T249's review): what the token in front of a text costs a model, on the page's engine (forward.js on
+// start_check.mjs (T.249's review): what the token in front of a text costs a model, on the page's engine (forward.js on
 // the int8 kernels with 7-bit activations, tests/engine.mjs): the same measure as tests/start_check.py, which does it
 // on the original in float32 with transformers and cannot take a model whose float32 weights do not fit a runner (an
 // 8B). Every window of W tokens is scored from its second token under each start, so that each is held to the same
-// targets (T131's measure); per start the perplexity and the nats per character, which a model of another
+// targets (T.131's measure); per start the perplexity and the nats per character, which a model of another
 // vocabulary can be set beside (tiny-lm: xsmall's place in the list is a question of how much better it is).
 //
 //   node tests/start_check.mjs <the <out> of tests/perplexity_prepare.py, or the id of a model of this site>
@@ -44,7 +44,7 @@ const page = pageFile?.endsWith(".json") ? JSON.parse(fs.readFileSync(pageFile, 
 const options = page?.options ?? model.options;
 const fromFile = !site;
 const local = (file) => (path.isAbsolute(file) ? file : root + file);
-// "bos": the page's BOS of this model, whatever its id (T511.5: one flag for models of many vocabularies)
+// "bos": the page's BOS of this model, whatever its id (T.511.5: one flag for models of many vocabularies)
 const starts = value("starts", "none").split(",").map((token) => (token === "none" ? null : token === "bos" ? "bos" : Number(token)));
 const text = value("text") ? fs.readFileSync(value("text"), "utf8") : await wikipediaText("ja", ARTICLES.ja);
 
@@ -115,5 +115,5 @@ result.labels.forEach((label, k) => {
     `${Number.isFinite(none) ? `${((Math.exp((total - none) / result.scored) - 1) * 100).toFixed(2)}%` : ""} | ${(total / perCharacter).toFixed(4)} |`);
 });
 console.log(`start_check ${name}: scored ${result.scored} targets in ${result.windows} windows`);
-// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+// (T.357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
 await leave(0);

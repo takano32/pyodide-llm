@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/reference_saluki.sh (T361): the reference for Underdog Saluki 27B, on a CI runner (never on the development
+# tests/reference_saluki.sh (T.361): the reference for Underdog Saluki 27B, on a CI runner (never on the development
 # machine: it fetches 7.9 GB and runs a 27B). Unlike Ternary Bonsai 2 27B (tests/reference_27b.sh) this model runs in
 # stock llama.cpp, so the reference is llama.cpp itself (MIT, a pinned commit of ggml-org/llama.cpp), built here for
 # the CPU, with tests/reference_27b_fork.cpp against its libraries (the driver uses llama.h's public API alone and
@@ -10,7 +10,7 @@
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=40 extra="bash tests/reference_saluki.sh" \
 #     --grep "^(llama|saluki|runner):" --minutes 50 --ref <branch>
 # Five to seven minutes on a runner of 4 logical cores and 16 GB, x86-64 or arm64 (runner=ubuntu-24.04-arm): the file
-# in 40 s, the build in 70 s, llama.cpp at 0.93 to 1.35 tokens a second (T361's runs).
+# in 40 s, the build in 70 s, llama.cpp at 0.93 to 1.35 tokens a second (T.361's runs).
 #
 # STAGES (default "head fetch llama agree keep"):
 #   dry    no model and no llama.cpp (a minute, 12 MiB of the file by a Range request): the head of the file held to
@@ -19,12 +19,12 @@
 #   head   the head of the fetched file (or, alone, of the file where it is) held to the notes
 #   fetch  the file, to its length and its sha256
 #   llama  llama.cpp built and run: SECONDS_FOR_LLAMA (3000) is when it stops writing; TEXTS: the first so many prompts
-#   f32    (T364.1, not in the default) llama.cpp with float32 activations (tests/reference_saluki_patch.py; float32
+#   f32    (T.364.1, not in the default) llama.cpp with float32 activations (tests/reference_saluki_patch.py; float32
 #          keys and values, the weights not repacked): the tokens of the llama stage again, one at a time, into
 #          f32/fork-<i>.single. It widens every row it multiplies by (20 s a token on 4 cores): SECONDS_FOR_F32 (1500)
 #          is when a text stops being written, and one that is not finished keeps the rows it has. F32_PICK: the texts
 #          ("0 1")
-#   numpy  (T364.1, not in the default) the engine's NumPy forward pass over the GGUF (tests/reference_saluki_numpy.py):
+#   numpy  (T.364.1, not in the default) the engine's NumPy forward pass over the GGUF (tests/reference_saluki_numpy.py):
 #          float32, with the activations rounded as the page's kernels round them and as llama.cpp rounds them, and
 #          broken on purpose; against llama.cpp as it is and with float32 activations (TIGHT_LINES holds it to that).
 #          SAVE_LOGITS is $work/saved unless said: what tests/page_saluki.sh compares the page's forward pass with.
@@ -34,7 +34,7 @@
 # REFERENCES=<a run's id>: the files that run kept, in place of everything else (then agree alone).
 # What llama.cpp computes here is not the model in float32: it rounds the activations of every matrix of a k- or
 # i-quantized type to 8 bits (Q8_K: 256 values to a scale). Its logits move by 0.3 to 0.8 (now and then by 10) from one
-# of its two paths to the other and from one CPU to another, and the text it writes differs between CPUs (T361's
+# of its two paths to the other and from one CPU to another, and the text it writes differs between CPUs (T.361's
 # runs): no narrow line holds anything to these logits (the notes' section on the reference).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -188,7 +188,7 @@ if has f32; then
 fi
 if has numpy; then
   began=$SECONDS
-  # (the lines against llama.cpp with float32 activations: T364's runs measured 0.0023 to 0.0036 of a logit on the bare texts
+  # (the lines against llama.cpp with float32 activations: T.364's runs measured 0.0023 to 0.0036 of a logit on the bare texts
   # and 0.085 after a mark of a chat's turn, a KL of 2.1e-7 at most; the weakest of the broken runs 1.4 and 1.9e-2)
   TIGHT_LINES="${TIGHT_LINES:-0.3,1e-5}" SAVE_LOGITS="${SAVE_LOGITS:-$work/saved}" python tests/reference_saluki_numpy.py "$work/$file" "$work" || status=1
   echo "reference: ran in $((SECONDS - began)) s"
@@ -203,7 +203,7 @@ if has keep; then
   mkdir -p "$keep"
   cp "$work"/fork-*.ids "$work"/fork-*.logits "$work"/fork-*.single "$work"/prompt-*.txt "$keep/"
   cp "$work/summary.json" "$work/llama.log" "$keep/" 2>/dev/null || true
-  # (T364.1: and what the page's comparison reads: llama.cpp with float32 activations, the engine's NumPy runs)
+  # (T.364.1: and what the page's comparison reads: llama.cpp with float32 activations, the engine's NumPy runs)
   for more in f32 saved; do
     if [ -d "$work/$more" ]; then mkdir -p "$keep/$more"; cp "$work/$more"/* "$keep/$more/" 2>/dev/null || true; fi
   done

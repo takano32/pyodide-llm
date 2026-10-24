@@ -1,4 +1,4 @@
-// .github/workflows: the rule of T262, held by a test (the review of T262: it was a sentence in AGENTS.md). A job that waits on a
+// .github/workflows: the rule of T.262, held by a test (the review of T.262: it was a sentence in AGENTS.md). A job that waits on a
 // stuck download holds a runner until GitHub's limit of 360 minutes (run 36902097346 of gpu-prompt.yml stayed in the apt of
 // `npx playwright-core install --with-deps` for 120 minutes and never began the tests), so
 //   - every job has a timeout-minutes of its own;
@@ -9,8 +9,8 @@
 // "- " six, its keys eight), which is how GitHub's own files are written. The checks are run on made-up files first, so that a
 // check that sees nothing cannot pass.
 //
-// T335's review: and every `run:` of the workflows is read by bash -n. A comment with an apostrophe ("the original's") inside the
-// single-quoted node script of gguf.yml's plan closed the shell's quote (T233), and every dispatch with candidates= or listed=
+// T.335's review: and every `run:` of the workflows is read by bash -n. A comment with an apostrophe ("the original's") inside the
+// single-quoted node script of gguf.yml's plan closed the shell's quote (T.233), and every dispatch with candidates= or listed=
 // failed in the plan job; nothing in the repository read the file as a shell script.
 //
 //   node tests/workflows-check.mjs
@@ -145,7 +145,7 @@ assert.equal(scripts("      - run: npm ci\n      - name: x\n        run: echo hi
 // ---- the real files
 const directory = new URL("../.github/workflows/", import.meta.url);
 const found = fs.readdirSync(directory).filter((file) => file.endsWith(".yml")).flatMap((file) => problems(file, fs.readFileSync(new URL(file, directory), "utf8")));
-assert.deepEqual(found, [], `the workflows break T262's rule:\n${found.join("\n")}`);
+assert.deepEqual(found, [], `the workflows break T.262's rule:\n${found.join("\n")}`);
 const refused = fs.readdirSync(directory).filter((file) => file.endsWith(".yml")).flatMap((file) => shellProblems(file, fs.readFileSync(new URL(file, directory), "utf8")));
 assert.deepEqual(refused, [], `bash -n refuses:\n${refused.join("\n")}`);
 console.log(`ok (${fs.readdirSync(directory).filter((file) => file.endsWith(".yml")).length} workflows)`);

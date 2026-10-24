@@ -1,5 +1,5 @@
 # make_ternary.py
-# T230, T231: made-up ternary models as files, for the checks of forward.js that take a model by its files
+# T.230, T.231: made-up ternary models as files, for the checks of forward.js that take a model by its files
 # (tests/forward-check.mjs, tests/threads-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). The real ternary models are far too large to be built with the site, so
 # these stand in: random Hugging Face tensors whose matrices are made ternary (every group of 128 along a row is -d, 0
@@ -10,16 +10,16 @@
 #
 # qwen3 (the default): the shape of Ternary Bonsai 1.7B in small, a Qwen3 (norms of the heads of q and k, heads that
 #   do not fill dim, grouped-query attention, the classifier shared with the embedding).
-# own: the same with a classifier of its own and a final norm with outlier channels (T92), which a ternary classifier
+# own: the same with a classifier of its own and a final norm with outlier channels (T.92), which a ternary classifier
 #   multiplies apart as an int8 one does.
-# hybrid: the shape of Ternary Bonsai 2 27B in small, a Qwen3.5 (T229: Gated DeltaNet layers, three value heads to a
+# hybrid: the shape of Ternary Bonsai 2 27B in small, a Qwen3.5 (T.229: Gated DeltaNet layers, three value heads to a
 #   key head) with a classifier of its own.
-# rotated: hybrid said to be in a rotated basis (T237: blocks of 128 with random signs), as the 27B's file is: the
+# rotated: hybrid said to be in a rotated basis (T.237: blocks of 128 with random signs), as the 27B's file is: the
 #   engine turns every matrix's input before it is quantized and laid out for the ternary kernels, and the
 #   embedding's rows back.
 # rotated-tied: the same with the embedding as the classifier too (no output matrix: what version 2 of Prism ML's
 #   rotated basis is for, `tied_output`, as the smaller models of a Qwen3.5 have it): one ternary table whose rows
-#   the engine turns back where it embeds and multiplies by the turned input where it classifies (T237's review).
+#   the engine turns back where it embeds and multiplies by the turned input where it classifies (T.237's review).
 import json
 import sys
 from pathlib import Path

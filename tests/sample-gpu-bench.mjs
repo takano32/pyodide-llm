@@ -1,13 +1,13 @@
-// T219: the GPU's sampling alone, the working tree's shaders against a git ref's (main), in turn in one process, in
-// Node on Dawn (the npm package webgpu: tests/bench-dawn.mjs) with Mesa's lavapipe: whether a change to SAMPLE (T151)
-// or to the sampling in chunks (T191's SAMPLER_STAGES) costs time, as /benchmark/'s "the sampling alone" measures
-// them (Llama 3's vocabulary, logits as a model's and flat ones, the penalty 1: T191's review), before and after. The
-// ms of one sampling is T168's difference of a submission of n and one of 2n (n from the working tree's shaders,
+// T.219: the GPU's sampling alone, the working tree's shaders against a git ref's (main), in turn in one process, in
+// Node on Dawn (the npm package webgpu: tests/bench-dawn.mjs) with Mesa's lavapipe: whether a change to SAMPLE (T.151)
+// or to the sampling in chunks (T.191's SAMPLER_STAGES) costs time, as /benchmark/'s "the sampling alone" measures
+// them (Llama 3's vocabulary, logits as a model's and flat ones, the penalty 1: T.191's review), before and after. The
+// ms of one sampling is T.168's difference of a submission of n and one of 2n (n from the working tree's shaders,
 // the same for both), the median of `rounds` rounds, the versions in a random order each round. On lavapipe the numbers
 // are a CPU's, not any GPU's.
-// T219's review: read a ratio against its noise. The versions were first timed in a fixed order, and lavapipe gave the
+// T.219's review: read a ratio against its noise. The versions were first timed in a fixed order, and lavapipe gave the
 // same shader one speed in one place of the round and another in the next (a store under a condition no thread meets
-// took 0.67 to 0.77 of the time of the shader it was made from; the flag of T219 read 1.59 on one EPYC 7763 and 0.73 on
+// took 0.67 to 0.77 of the time of the shader it was made from; the flag of T.219 read 1.59 on one EPYC 7763 and 0.73 on
 // another run's, the same shaders), so the order is random now, and the working tree's text is timed twice: its
 // ratio to itself is what the method cannot tell apart, and a ratio of the tree to the ref means something only far
 // from it.
@@ -39,7 +39,7 @@ if (!webgpu) {
   process.exit(2);
 }
 const root = new URL("../", import.meta.url).pathname;
-// the two versions of the shaders: the working tree's and the ref's. (T351: shaders.js is a window over src/runtime/shaders/, so
+// the two versions of the shaders: the working tree's and the ref's. (T.351: shaders.js is a window over src/runtime/shaders/, so
 // a version is a tree's src/runtime/shaders.js with what it imports beside it, never the one file: the ref's whole tree is
 // tests/other-tree.mjs's, which holds either form)
 const scratch = path.join(root, ".tmp", "sample-gpu-bench");
@@ -49,7 +49,7 @@ const old = treeOf(otherTree(against).folder).runtime("shaders.js");
 const again = path.join(scratch, "working-tree-again");
 fs.rmSync(again, { recursive: true, force: true });
 fs.mkdirSync(again, { recursive: true });
-// (T368.5: under the name the tree has, shaders.ts: Node reads the types of a file by its ending)
+// (T.368.5: under the name the tree has, shaders.ts: Node reads the types of a file by its ending)
 const window = path.basename(runtime("shaders.js"));
 fs.copyFileSync(runtime("shaders.js"), path.join(again, window));
 fs.cpSync(runtime("shaders"), path.join(again, "shaders"), { recursive: true });

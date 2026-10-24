@@ -1,6 +1,6 @@
-# The conduct of one conversion (T374.1): which files a model needs, in which order, how much of each head, which
+# The conduct of one conversion (T.374.1): which files a model needs, in which order, how much of each head, which
 # tokenizer is tried next and where the chat template comes from. It asks and is answered; it fetches nothing itself.
-# No I/O, no event loop and no JavaScript in here: whoever drives it (the worker's loop from T374.2 on, a test's
+# No I/O, no event loop and no JavaScript in here: whoever drives it (the worker's loop from T.374.2 on, a test's
 # dictionary, a tool's folder) gets a request from next() or send(answer) and sends the answer back.
 #
 #   steps = conduct(hf, dtype=..., sink=..., quantize_rows=..., readers=...)
@@ -9,7 +9,7 @@
 #       request = steps.send(answer_to(request))
 #
 # What is asked (where: "weights", the repository of the weights, or "vocabulary", the original's, which is asked
-# only of a model that names one; a folder of the visitor's disk is one place, asked by the same names, T374.2.2):
+# only of a model that names one; a folder of the visitor's disk is one place, asked by the same names, T.374.2.2):
 #
 #   ("text", where, name)                    the file's text, or None where the file is not there
 #   ("bytes", where, name)                   the file's bytes, or None
@@ -35,11 +35,11 @@
 # converter's, as it was.
 #
 # The large bytes pass as they did, and not through here: the answerer hands each part to the conversion's feed()
-# itself, and what comes out goes to the sink. Nothing of the conduct runs for a part (T374.2.1: a part costs what
+# itself, and what comes out goes to the sink. Nothing of the conduct runs for a part (T.374.2.1: a part costs what
 # it did before there was a conduct, by the same call), and nothing is known here of how the parts are cut, tried
 # again, kept or cancelled.
 #
-# No byte of the weights is asked for twice (T374.3): a head that is not all there is asked for from where the bytes in
+# No byte of the weights is asked for twice (T.374.3): a head that is not all there is asked for from where the bytes in
 # hand end, and joined here; and the tensors that came with a GGUF's head (its first request is 2 MiB, its head often
 # less) are fed to the conversion from here, in a few pieces, before the stream is asked for from where they end.
 import json
@@ -61,7 +61,7 @@ GGUF_PIECES = 16
 # worker's is 8 MiB): what converting a piece takes of the memory is what a part takes
 AHEAD = 16 * HEAD
 # The tokenizers of a model that names none, in the order they are tried: the first that is there and that the
-# converter can read. The one list of them (T374.2.3): a repository nobody has looked at (?hf=), a folder of the
+# converter can read. The one list of them (T.374.2.3): a repository nobody has looked at (?hf=), a folder of the
 # visitor's disk and the build's directories (convert_hf.py) all name none and get these. Only the page's look into a
 # folder, which comes before there is a Pyodide to ask, keeps the names as well (TOKENIZERS of src/page/folder.ts):
 # tests/worker-fetches-check.mjs holds that list to this one. A name that ends in .json is read as a tokenizer.json,
@@ -85,7 +85,7 @@ class Weights(NamedTuple):
     """What a row of SOURCES found: the safetensors-like header (text) and where its tensors begin, as Conversion()
     takes them; the streams to feed, one after another: (name, begin, end); before and total: see "stream" above.
     conversion: made already, where the head held the configuration and the vocabulary as well (a GGUF alone).
-    ahead: the bytes of the file from base on that are in hand already (T374.3: they came with the head), which the
+    ahead: the bytes of the file from base on that are in hand already (T.374.3: they came with the head), which the
     conversion is fed before any stream; the first stream begins where they end, and before counts them."""
     header: Any
     base: int
@@ -144,7 +144,7 @@ def safetensors_head(name):
         raise ValueError("This is not a safetensors file.")
     base = 8 + length
     if len(data) < min(base, size):
-        # T374.3: the rest of the header alone. (Nothing of a file that ended before the header it says it has: a
+        # T.374.3: the rest of the header alone. (Nothing of a file that ended before the header it says it has: a
         # range that begins past the end is no answer but a refusal, and what the converter says of the header is why)
         data = joined(data, (yield from needed(("range", "weights", name, len(data), base)))[0])
     return data[8:base].decode("utf-8", "replace"), base, size
@@ -153,7 +153,7 @@ def safetensors_head(name):
 def gguf_head(name, read):
     """(read(head) of a GGUF's beginning, that beginning, the size of the file): asked for in pieces that end ever
     further (2 MiB, 8, 32, ...) until read() has all of the head (Incomplete until then; and for good where a piece
-    ended at the file's end or past it). Each piece is asked for from where the bytes in hand end (T374.3), and the
+    ended at the file's end or past it). Each piece is asked for from where the bytes in hand end (T.374.3), and the
     beginning returned is all of them: the head, and what of the tensors came with it."""
     want = GGUF_HEAD
     data, size = yield from beginning("weights", name, want)
@@ -179,13 +179,13 @@ def after(name, header, base, data, size, conversion=None):
 
 
 def gguf_alone(hf, config, make):
-    """T74: a GGUF holds the configuration and the vocabulary before its tensors: no config.json and no tokenizer."""
+    """T.74: a GGUF holds the configuration and the vocabulary before its tensors: no config.json and no tokenizer."""
     conversion, data, size = yield from gguf_head(hf["weights"], lambda head: Conversion.from_gguf(head, **make))
     return after(hf["weights"], None, conversion.base, data, size, conversion)
 
 
 def gguf_with_vocabulary(hf, config, make):
-    """T136: the GGUF's header as a safetensors one, once the original's config.json agrees with it."""
+    """T.136: the GGUF's header as a safetensors one, once the original's config.json agrees with it."""
     (header, base), data, size = yield from gguf_head(hf["weights"], lambda head: gguf_weights(head, config))
     return after(hf["weights"], header, base, data, size)
 
@@ -200,7 +200,7 @@ def one_file(hf, config, make):
 
 def shards_of(index):
     """The files model.safetensors.index.json names, in the order of their names, which is the order they are fed in
-    (T105). None of them for an index that says none."""
+    (T.105). None of them for an index that says none."""
     try:
         names = json.loads(index)["weight_map"].values()
     except (ValueError, TypeError, KeyError, AttributeError):
@@ -210,7 +210,7 @@ def shards_of(index):
 
 
 def several(files):
-    """T105: the shards' headers joined into the header of one file made of their data one after another. Each shard
+    """T.105: the shards' headers joined into the header of one file made of their data one after another. Each shard
     is then fed from its own base, the next after it."""
     heads = []
     for name in files:
@@ -222,7 +222,7 @@ def several(files):
 
 def indexed(hf, config, make):
     """A model without its one file is split over several (model-00001-of-00002.safetensors, ...), or published under
-    the name of a shard though there is only one (T78): the index says which."""
+    the name of a shard though there is only one (T.78): the index says which."""
     index = yield ("text", "weights", f"{hf['weights']}.index.json")
     files = shards_of(index) if index else []
     if not files:
@@ -273,15 +273,15 @@ def candidates_of(hf):
 def tokenized(hf, weights, config, make):
     """Conversion() with the template of the model, where it publishes one, and the first tokenizer of the candidates
     that is there and that the converter can read (a tokenizer.json that writes out a sentencepiece model with its
-    dummy prefix after the others: T257)."""
+    dummy prefix after the others: T.257)."""
     place = place_of(hf)
-    # The format of one turn (T73). An optional file: a model without one keeps the format its item has
+    # The format of one turn (T.73). An optional file: a model without one keeps the format its item has
     tokenizer_config = (yield ("text", place, "tokenizer_config.json")) or ""
-    # T127: newer repositories keep the template in chat_template.jinja instead. Asked for only where
+    # T.127: newer repositories keep the template in chat_template.jinja instead. Asked for only where
     # tokenizer_config.json has none: most repositories have no such file, and WebKit reports each 404 as an error
     chat_template = None if says_a_template(tokenizer_config) else (yield ("text", place, "chat_template.jinja")) or None
     # Where no candidate will do, the converter's refusal of one that is there says why; a file that is not there is
-    # said only where no other was there either (T144)
+    # said only where no other was there either (T.144)
     refusal = missing = later = None
 
     def converted(tokenizer, candidate, last):
@@ -296,7 +296,7 @@ def tokenized(hf, weights, config, make):
         try:
             return converted(tokenizer, candidate, False)
         except Later:
-            # T257: a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix, which the
+            # T.257: a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix, which the
             # model's own file comes before (a Llama's, a Mistral's: read as it was). Read where no candidate after
             # it will do (CAT-Translate 7B: no such file)
             later = later or (tokenizer, candidate)
@@ -322,7 +322,7 @@ def opened(hf, make):
     else:
         raise reason
     conversion = weights.conversion or (yield from tokenized(hf, weights, config, make))
-    # T374.3: what came with the head, a few pieces at most (not a stream's parts: nothing here runs for those), and
+    # T.374.3: what came with the head, a few pieces at most (not a stream's parts: nothing here runs for those), and
     # then let go of
     for at in range(0, len(weights.ahead), AHEAD):
         conversion.feed(weights.ahead[at:at + AHEAD])
@@ -332,7 +332,7 @@ def opened(hf, make):
 def conduct(hf, **make):
     """The whole conversion of one model, as a generator of requests (see the top of the file).
     hf: {"weights": the name of the file, "config": config.json's name (or none), "tokenizer": a name or the names to
-    try (or none: TOKENIZERS), "vocabulary": {"tokenizer": ...} where the vocabulary is another repository's (T136)}.
+    try (or none: TOKENIZERS), "vocabulary": {"tokenizer": ...} where the vocabulary is another repository's (T.136)}.
     Names only: where the files are (a repository, a folder) is the answerer's to know.
     make: what Conversion() takes besides the files (dtype, max_seq_len, sink, quantize_rows, readers)."""
     try:

@@ -1,4 +1,4 @@
-// tests/imports.mjs (T367.1): how a file of the runtime takes its neighbours' names, read in either of the two forms.
+// tests/imports.mjs (T.367.1): how a file of the runtime takes its neighbours' names, read in either of the two forms.
 // The one reader of the checks that read the imports as text (worker-source.mjs, shaders-source.mjs and the
 // *-modules-check.mjs of forward, the two GPU workers and, through those two, the worker and the shaders): each asked
 // its own regular expressions before, and all of them knew one form only.
@@ -13,11 +13,11 @@
 //   const { a, b } = await modules.x;
 //   (the ?v= is `new URL(import.meta.url).search`, or `self.location.search` where the file is a worker's first)
 //
-// The form of a tree whose files a bundler links (src/runtime/, T367.3): plain static imports of a neighbour's file,
+// The form of a tree whose files a bundler links (src/runtime/, T.367.3): plain static imports of a neighbour's file,
 //
-//   import { a, b as c } from "./x.js";      (T368.1: or "./x.ts", a neighbour that is TypeScript)
+//   import { a, b as c } from "./x.js";      (T.368.1: or "./x.ts", a neighbour that is TypeScript)
 //
-// T368.1: a file that is TypeScript is read with its types blanked (tests/untyped.mjs: the same length, the same
+// T.368.1: a file that is TypeScript is read with its types blanked (tests/untyped.mjs: the same length, the same
 // lines), so every tool that reads through here reads JavaScript, and a node's place is its place in the source. An
 // `import type` is blanked with the rest: it links nothing.
 //
@@ -54,7 +54,7 @@ const beside = (file, specifier) => path.posix.normalize(path.posix.join(path.po
 
 export function importsOf(text, file, { bundled }) {
   if (typeof bundled !== "boolean") throw new Error("importsOf(): bundled, whether a bundler links the tree's files (tests/tree.mjs's tree.bundled)");
-  // (T368.1: a .ts file is parsed with its types blanked: a node's place is its place in the source, tests/untyped.mjs)
+  // (T.368.1: a .ts file is parsed with its types blanked: a node's place is its place in the source, tests/untyped.mjs)
   const program = parse(untyped(text, file), { sourceType: "module" }).program;
   const takes = [], left = [];
   let asked = null;
@@ -136,7 +136,7 @@ export function reached(from, neighbours, ended = []) {
 export function windowed(window, { read, list, bundled, more = [], outside = false }) {
   const folder = window.replace(/\.(js|ts)$/, "");
   const there = list(folder).filter((name) => name.endsWith(".js") || typed(name)).sort().map((name) => `${folder}/${name}`);
-  // (T368.1: each file's text is JavaScript here, a .ts file's with its types blanked)
+  // (T.368.1: each file's text is JavaScript here, a .ts file's with its types blanked)
   const files = new Map([window, ...more, ...there].map((name) => [name, { text: untyped(read(name), name) }]));
   for (const [name, entry] of files) Object.assign(entry, importsOf(entry.text, name, { bundled }));
   const { asked } = files.get(window);
@@ -149,7 +149,7 @@ export function windowed(window, { read, list, bundled, more = [], outside = fal
     if (new Set(listed).size !== listed.length) throw new Error(`${window} asks for a module twice`);
   }
   // outside: a file that is no module of the folder and that one of them takes names of is read too, and what it takes
-  // from in turn (T367.3: the table of the built files, which a worker's modules and the benchmark's read alike). Without
+  // from in turn (T.367.3: the table of the built files, which a worker's modules and the benchmark's read alike). Without
   // it such a file has to be named in `more`: a module that reaches out of its folder is said, not followed.
   const others = [];
   for (const [name, { takes }] of files) for (const { from } of takes) {

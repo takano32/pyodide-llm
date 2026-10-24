@@ -1,5 +1,5 @@
 # make_lfm2.py
-# T260: a made-up LFM2 (convolution layers among attention layers) as files, for the checks of forward.js that take a
+# T.260: a made-up LFM2 (convolution layers among attention layers) as files, for the checks of forward.js that take a
 # model by its files (tests/forward-check.mjs, tests/threads-check.mjs, tests/gpu-hybrid-check.mjs: <out>.bin,
 # <out>.tokenizer.bin and <out>.json, as tests/perplexity_prepare.py writes them). The real ones are too large to be
 # built with the site (the smallest is 0.26 GB as int8), so this one stands in: random Hugging Face tensors

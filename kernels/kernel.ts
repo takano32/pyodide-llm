@@ -2,7 +2,7 @@
 // Loaded into Pyodide with ctypes as an Emscripten side module, they work in place on NumPy-owned memory.
 // No static data and no std math on purpose: nothing relocates a data segment in this hand-made side module.
 //
-// T356: this file is the window. The kernels are in kernel/, by what they are, and every one of them is named here:
+// T.356: this file is the window. The kernels are in kernel/, by what they are, and every one of them is named here:
 // what this file exports is what the module exports, in this order (the order they had as one file, which is the
 // order of the binary's exports: the built files are the same to the byte as before the division). A new kernel is
 // written in the file of its kind and added to a line here; a new file of kernel/ is added to the Makefile's rule

@@ -1,4 +1,4 @@
-// tests/silent.mjs (T380.2): where a source catches a failure and tells nobody, read off the syntax tree. What
+// tests/silent.mjs (T.380.2): where a source catches a failure and tells nobody, read off the syntax tree. What
 // tests/silent-check.mjs holds to its table, and what lists them for a person:
 //
 //   node tests/silent.mjs [--root <tree>]      every one of the tree: file, function, the text of the catch

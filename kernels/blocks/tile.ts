@@ -1,11 +1,11 @@
-// blocks/tile.ts (T363.4): a prompt's tokens on rows of llama.cpp's blocks, four against one reading of a row:
-// matmul_sbr_tile (T363.1's "rb tile": on every CPU) and matmul_sbw_tile ("sw tile": where the engine's relaxed dot
+// blocks/tile.ts (T.363.4): a prompt's tokens on rows of llama.cpp's blocks, four against one reading of a row:
+// matmul_sbr_tile (T.363.1's "rb tile": on every CPU) and matmul_sbw_tile ("sw tile": where the engine's relaxed dot
 // product multiplies signed bytes by signed bytes, which signed_dots asks). Each number is matmul_sbr's to the bit.
 // blocks/types.ts has what a type is and the arithmetic.
 import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, vectorAt, groupSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
 import { matmul_sbr } from "./token";
 
-// ---- a prompt's tokens (T108), four at a time against one reading of a row: token t's activations and their scales
+// ---- a prompt's tokens (T.108), four at a time against one reading of a row: token t's activations and their scales
 // and sums at xq + t * frame and xs + t * frame, its outputs at xout + t * os. A unit's 16 weights stay in registers
 // for the four tokens. A lane a token; every (row, token) is the token's kernel's number to the bit (the arithmetic at
 // the head of this file). The tokens past the last four go through the token's kernel itself.
@@ -177,7 +177,7 @@ export function matmul_sbr_tile(xout: usize, xq: usize, xs: usize, w: usize, tab
   for (let t = count & ~3; t < count; t++) matmul_sbr(xout + <usize>t * <usize>os, xq + <usize>t * <usize>frame, xs + <usize>t * <usize>frame, w, tab, n, r0, r1, type);
 }
 
-// ---- the tile with the signs on the weights (T363.1's "sw"): a row is spread once into a scratch area for all the
+// ---- the tile with the signs on the weights (T.363.1's "sw"): a row is spread once into a scratch area for all the
 // tokens of the prompt, as W itself (int8) with S of each 16 weights and F of each block, and the dot products are of
 // the activations by W: signed bytes by signed bytes in all their 8 bits, which relaxed SIMD does not promise (its
 // second operand is 7 bits; arm64's SDOT multiplies signed by signed all the same, x86's PMADDUBSW takes the second as

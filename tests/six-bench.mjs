@@ -1,8 +1,8 @@
-// T166: the int6 matrix products (matmul_q6r with relaxed SIMD, matmul_q6 without) with main's kernels and this
+// T.166: the int6 matrix products (matmul_q6r with relaxed SIMD, matmul_q6 without) with main's kernels and this
 // tree's, in one process, taking turns (AGENTS.md: the old and the new side by side), with matmul_q8r (int8) for the
-// ratio T98 wrote down (0.45). The tree's output must be main's to the bit (matmul_q6r's only while the two make
-// the same corrections: T197 changed them). (The forms T166 measured and dropped are
-// in TASKS.md's T166: put another kernels/six.ts in the tree to compare one.) Compiles each form with AssemblyScript into .tmp/six-bench/ (needs `npm ci`; `make kernels` not).
+// ratio T.98 wrote down (0.45). The tree's output must be main's to the bit (matmul_q6r's only while the two make
+// the same corrections: T.197 changed them). (The forms T.166 measured and dropped are
+// in TASKS.md's T.166: put another kernels/six.ts in the tree to compare one.) Compiles each form with AssemblyScript into .tmp/six-bench/ (needs `npm ci`; `make kernels` not).
 //
 //   node tests/six-bench.mjs [--rounds 3] [--turns 7]
 //
@@ -21,7 +21,7 @@ const rounds = option("--rounds", 3), turns = option("--turns", 7);
 const work = root + ".tmp/six-bench/";
 
 // main's kernels (CI checks out one commit: kernelSources() fetches main's alone; the ref origin/main is never written)
-// (T356: each side's kernels/ whole, from its tree: kernel.ts alone is a window over kernel/*.ts now)
+// (T.356: each side's kernels/ whole, from its tree: kernel.ts alone is a window over kernel/*.ts now)
 const forms = { main: "origin/main", tree: "tree" };
 
 const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1"];
@@ -37,15 +37,15 @@ for (const [name, form] of Object.entries(forms)) {
 }
 
 const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
-// the corrections as a form makes them: before T197 int8_sums and six_sums took the scales (out, w, scales, groups),
-// from T197 not (out, w, groups)
+// the corrections as a form makes them: before T.197 int8_sums and six_sums took the scales (out, w, scales, groups),
+// from T.197 not (out, w, groups)
 const sums = (plain, kernel, out, w, ws, groups) => (plain[kernel].length === 4 ? plain[kernel](out, w, ws, groups) : plain[kernel](out, w, groups));
 for (const [rows, n, calls] of [[8192, 8192, 1], [256, 1024, 200]]) {
   const ng = n / 32;
   let top = 65536;
   const take = (bytes) => { const at = top; top += Math.ceil(bytes / 64) * 64; return at; };
   const w6 = take(rows * ng * 24), w8 = take(rows * n), ws = take(rows * ng * 4);
-  // each form's corrections in its own place (T197 changed them from float32 scale × sum to int32 −64 × sum)
+  // each form's corrections in its own place (T.197 changed them from float32 scale × sum to int32 −64 × sum)
   const wc6 = new Map(), wc8 = new Map();
   for (const k of Object.values(kernels)) { wc6.set(k, take(rows * ng * 4)); wc8.set(k, take(rows * ng * 4)); }
   const x = take(n), xs = take(ng * 4), out = take(rows * 4), expected = take(rows * 4);
@@ -70,7 +70,7 @@ for (const [rows, n, calls] of [[8192, 8192, 1], [256, 1024, 200]]) {
   };
   const bytes = { q6r: rows * ng * 32, q6: rows * ng * 28, q8r: rows * ng * 40 };
   // each form's output against main's, to the bit (matmul_q6r only where the two forms make the same corrections:
-  // T197 changed matmul_q6r's numbers, and each form's matmul_q6r is held to its own matmul_q8r below)
+  // T.197 changed matmul_q6r's numbers, and each form's matmul_q6r is held to its own matmul_q8r below)
   const sameSums = kernels.main.plain.six_sums.length === kernels.tree.plain.six_sums.length;
   for (const [kernel, run] of Object.entries(runs)) {
     if (kernel === "q6r" && !sameSums) continue;
@@ -87,7 +87,7 @@ for (const [rows, n, calls] of [[8192, 8192, 1], [256, 1024, 200]]) {
     k.relaxed.matmul_q6r(out, x, xs, w6, ws, wc6.get(k), n, 0, rows);
     for (let i = 0; i < rows; i++) if (F[out / 4 + i] !== F[expected / 4 + i]) throw new Error(`${name}'s matmul_q6r differs from its matmul_q8r at row ${i}`);
   }
-  console.log(`${rows} x ${n}: every form's output is main's to the bit${sameSums ? "" : " (matmul_q6 only: the corrections of matmul_q6r differ, T197)"}, and each matmul_q6r is its matmul_q8r's on the widened values`);
+  console.log(`${rows} x ${n}: every form's output is main's to the bit${sameSums ? "" : " (matmul_q6 only: the corrections of matmul_q6r differ, T.197)"}, and each matmul_q6r is its matmul_q8r's on the widened values`);
   runs.q8r = (k) => k.relaxed.matmul_q8r(out, x, xs, w8, ws, wc8.get(k), n, 0, rows);
   const time = (run, k) => { const t0 = performance.now(); for (let c = 0; c < calls; c++) run(k); return (performance.now() - t0) / calls; };
   for (let r = 0; r < rounds; r++) {

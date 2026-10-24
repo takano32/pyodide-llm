@@ -1,6 +1,6 @@
-# reference_saluki_numpy.py (T364.1): the engine's own NumPy forward pass (Llama.forward, as it is) over Underdog Saluki
+# reference_saluki_numpy.py (T.364.1): the engine's own NumPy forward pass (Llama.forward, as it is) over Underdog Saluki
 # 27B's GGUF, read by memory map the way tests/reference_27b.py reads Ternary Bonsai 2 27B's: a matrix is widened a few
-# hundred megabytes at a time by the converter's readers (T362: convert/superblocks.py, held to llama.cpp's C to the
+# hundred megabytes at a time by the converter's readers (T.362: convert/superblocks.py, held to llama.cpp's C to the
 # bit), multiplied by every vector that waits for it and let go. Its machinery is reference_27b.py's (the Conductor, a
 # stored matrix, the comparison); what is this file's is the model: a stock llama.cpp GGUF of a Qwen3.5 with no rotated
 # basis, whose linear-attention layers' output matrices have their columns in llama.cpp's order of the value heads.
@@ -13,7 +13,7 @@
 # Hugging Face's order, the output matrix's input put in the file's order of heads here, by a rule written a second
 # time: grouped()), so a mistake of the conversion that keeps the blocks (rows moved as bytes, the form's "tiled") or of
 # the kernels that multiply by them is not also in it. Stock llama.cpp cannot be that reference: its logits move by 0.3
-# to 11 between its own two paths and between CPUs (T361).
+# to 11 between its own two paths and between CPUs (T.361).
 #
 # The runs, for every text (ROUNDINGS): "float32"; "as 8 bits round" (the activations of every large matrix rounded as
 # the page's kernels of the blocks round them, quantize_x: a scale to 32 values, 8 bits: the run that stands for the
@@ -186,7 +186,7 @@ class Streamed(Llama):
 
         everything = range(self.n_layers)
         self.token_embedding_table = Rows(source.stored("token_embd.weight"))
-        # (llama.cpp wrote the norms with the 1 the model adds to them, and ssm_a as -exp(A_log): T236)
+        # (llama.cpp wrote the norms with the 1 the model adds to them, and ssm_a as -exp(A_log): T.236)
         self.rms_att_weight = vectors("attn_norm.weight", everything)
         self.wq, self.wg = stack("attn_q", full, q_order), stack("attn_q", full, gate_order)
         self.wk, self.wv, self.wo = stack("attn_k", full, k_order), stack("attn_v", full), stack("attn_output", full)

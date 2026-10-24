@@ -1,4 +1,4 @@
-# A Qwen3.5 and a Qwen3.8 (T359, from T229): a Qwen3 most of whose layers are linear-attention ones, with a gate beside
+# A Qwen3.5 and a Qwen3.8 (T.359, from T.229): a Qwen3 most of whose layers are linear-attention ones, with a gate beside
 # q, RoPE over part of each head and norms stored around zero.
 from engine.layout import linear_form
 from convert.families.family import Family, refuse, rotary_dim, same
@@ -11,7 +11,7 @@ LINEAR_DEFAULTS = {"linear_num_key_heads": 16, "linear_num_value_heads": 32, "li
 
 def linear(config):
     """FORM's "linear" from a Qwen3.5's (normalized) config.json: which layers attend over all positions, and the
-    heads and the convolution of the others (T229). layer_types is every full_attention_interval-th layer a
+    heads and the convolution of the others (T.229). layer_types is every full_attention_interval-th layer a
     full-attention one in every published model; any other order is refused, for the file is laid out by that one
     number."""
     kinds, layers = config.get("layer_types"), config.get("num_hidden_layers")
@@ -29,8 +29,8 @@ def linear(config):
 
 
 def language_model(config):
-    """T229: Qwen3.5 is a vision-language model, and the language model's config is one level down (the vision
-    model's is not read: text alone). It names no BOS: every text here begins with one (T131), and that is the
+    """T.229: Qwen3.5 is a vision-language model, and the language model's config is one level down (the vision
+    model's is not read: text alone). It names no BOS: every text here begins with one (T.131), and that is the
     end-of-text token, as the config.json of Qwen3.8-27B says (bos_token_id 248044, its eos_token_id) and as a
     Qwen2.5's and a Qwen3's do. A config without a text_config stays what it is, and is refused by its name."""
     text = config.get("text_config")
@@ -45,7 +45,7 @@ def language_model(config):
 
 
 def defaults(config):
-    """(the review of T229) what transformers' Qwen3_5TextConfig says where a config.json leaves it out: RoPE over a
+    """(the review of T.229) what transformers' Qwen3_5TextConfig says where a config.json leaves it out: RoPE over a
     quarter of a head (partial_rotary_factor, at the top where there is no rope_parameters: it is the config's
     own name for it) and heads of 256. Every published Qwen3.5 and Qwen3.8 config.json says both, but a config
     that did not would have run with whole heads turning (and sizes dim / heads), without a word."""
@@ -76,7 +76,7 @@ def qwen35_prefix(source):
 
 
 def qwen35_sources(d, prefix, rotary):
-    # T229: RoPE turns the first rotary rows of each head of q and k (and so of the norms of their heads); the
+    # T.229: RoPE turns the first rotary rows of each head of q and k (and so of the norms of their heads); the
     # gate's rows are taken as they are
     layer = prefix + "layers.{}."
     one, head_norm = ("one",), (("heads", 1, 0, 1, rotary), ("one",))
@@ -100,7 +100,7 @@ def qwen35_sources(d, prefix, rotary):
 
 
 # ---- a GGUF of a Qwen3.5
-# T245: the tensors of a Qwen3.5's linear-attention layer that have the value heads along an axis, as (whether q and k
+# T.245: the tensors of a Qwen3.5's linear-attention layer that have the value heads along an axis, as (whether q and k
 # stand before them, whether a head has value_dim entries there or one, the axis). llama.cpp's conversion/qwen.py at
 # dcd387a4, _LinearAttentionVReorderBase.modify_tensors (lines 584 to 633), reorders these and no other (the norm of a
 # value head, linear_attn.norm, is one for all the heads)
@@ -111,7 +111,7 @@ QWEN35_TILED = {"in_proj_qkv.weight": (True, True, 0), "in_proj_z.weight": (Fals
 
 
 def qwen35_gguf_config(key, tensors):
-    """T236: what config.json's text_config says of the linear-attention layers, by its names (llama.cpp's are a
+    """T.236: what config.json's text_config says of the linear-attention layers, by its names (llama.cpp's are a
     state-space model's: the state is a key head, the groups the key heads, the rank the value heads), and how much
     of a head turns, as GPT-NeoX's. One the GGUF leaves out is left out: linear() has transformers' defaults, and
     gguf_agrees() holds the whole to the original's."""
@@ -133,7 +133,7 @@ def qwen35_gguf_stored(config):
     heads = linear(config)
 
     def stored(entry, info, target, parts):
-        # T236: llama.cpp writes a Qwen3.5's norms with the 1 added that the model adds to them (all but the norm
+        # T.236: llama.cpp writes a Qwen3.5's norms with the 1 added that the model adds to them (all but the norm
         # of a linear-attention layer's value heads, which has none), A_log as -exp(A_log), and the convolution
         # (channels, 1, taps) without its axis of one. The first two are steps of the plan (transformed()'s "one"
         # and "decay") that are done already: no float32 comes back from them to the bit, so they are not undone
@@ -144,7 +144,7 @@ def qwen35_gguf_stored(config):
             entry["done"] = "decay"
         if target.endswith("linear_attn.conv1d.weight") and len(info["shape"]) == 2:
             entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
-        # T245: and where a key head has more value heads than one (the 4B and up: 2 or 3), it writes the value
+        # T.245: and where a key head has more value heads than one (the 4B and up: 2 or 3), it writes the value
         # heads in another order (untiled()) in every tensor that has them along an axis. Put back whole, as a
         # turned q is: it is a move of values, which comes back to the bit
         per, part = heads["value_heads"] // heads["key_heads"], target.rsplit("linear_attn.", 1)[-1]
@@ -156,13 +156,13 @@ def qwen35_gguf_stored(config):
 
 
 def qwen35_agrees(own, config):
-    # T236: how much of a head turns, and the linear-attention layers: which layers they are and their heads
+    # T.236: how much of a head turns, and the linear-attention layers: which layers they are and their heads
     # (the tensors show the products only: 16 key heads of 128 are 8 of 256 to them)
     return [("number of rotated values of a head", rotary_dim(own), rotary_dim(config)),
             ("linear-attention layers", linear(own), linear(config))]
 
 
-# T236: its GGUF by the names of the language model saved alone ("model." in front). llama.cpp calls the second norm
+# T.236: its GGUF by the names of the language model saved alone ("model." in front). llama.cpp calls the second norm
 # post_attention_norm here, the linear-attention layer's q, k and v attn_qkv, its z attn_gate, and the rest ssm_* after
 # the state-space models it shares code with. A name with a dot is all of a tensor's name after its layer (llama.cpp
 # writes dt_bias as ssm_dt.bias, and A_log as ssm_a without a ".weight")

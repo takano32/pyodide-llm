@@ -1,4 +1,4 @@
-// T367.4: a page left open across a deployment, in a real browser. The build in dist/ is served as GitHub Pages serves
+// T.367.4: a page left open across a deployment, in a real browser. The build in dist/ is served as GitHub Pages serves
 // it, and the server is told, while a page is open, which files of _astro/ are gone (404, as after a deployment),
 // which fail (500) and which drop the line; then the page is made to ask for a file it had not fetched yet.
 //
@@ -11,7 +11,7 @@
 //   a section's worker asks for;
 // - the same file failing in any other way keeps the words it had: a 500, a dropped line, a browser that is offline;
 // - a model that goes on without a file (the kernels, forward.js, a software thread, the GPU's worker: NumPy, fewer
-//   threads, the CPU) goes on and answers, and (T439) where the file is gone its status line ends with "the site was
+//   threads, the CPU) goes on and answers, and (T.439) where the file is gone its status line ends with "the site was
 //   updated: reload for full speed", after what it said before, and still does with the next model of the visit;
 //   where the file failed otherwise (a 500, a dropped line, gone alone with the module that names it there) the line
 //   is what it was; a visit where nothing fails says nothing and asks no HEAD.
@@ -38,7 +38,7 @@ const repository = new URL("../", import.meta.url).pathname;
 // a status, or "drop" (the connection ends without an answer)
 let rule = () => undefined;
 const requests = [];
-// (T391.6: the serving is tests/serving.mjs's, and the rule is this tool's say in it)
+// (T.391.6: the serving is tests/serving.mjs's, and the rule is this tool's say in it)
 const server = await serving(undefined, { instead: ({ name, method }) => {
   const verdict = rule(name, method);
   requests.push(`${method} ${name}${verdict === undefined ? "" : ` -> ${verdict}`}`);
@@ -57,7 +57,7 @@ const kind = playwright[channel ? "chromium" : engine];
 const browser = await kind.launch({ headless: true, channel });
 console.log(`${engine} ${browser.version()}`);
 
-// T93: the first visit reloads once under the service worker; a wait the reload interrupts starts again
+// T.93: the first visit reloads once under the service worker; a wait the reload interrupts starts again
 const acrossReload = async (wait) => {
   for (;;) {
     try {
@@ -113,7 +113,7 @@ const failures = [];
 const expect = (name, ok, what) => {
   if (!ok) failures.push(`${name}: ${what}`);
 };
-// T439: the status line of a model that goes on without a file: with the sentence as its last part, after the line it
+// T.439: the status line of a model that goes on without a file: with the sentence as its last part, after the line it
 // would have been (the model's name, how it runs, Pyodide's version), or without a word of it
 const shots = process.env.UPDATED_SHOTS;
 async function saysSlower(name, page, status) {
@@ -325,7 +325,7 @@ for (const [name, run] of Object.entries(CASES)) {
   console.log(`- ${name}`);
   const before = failures.length;
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  // (T380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
+  // (T.380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
   if (process.env.UPDATED_CONSOLE) context.on("console", (message) => { if (message.type() === "warning") console.log(`  console: ${message.text().slice(0, 300)}`); });
   const lines = [];
   context.on("console", (message) => lines.push(`[${message.type()}] ${message.text().slice(0, 300)}`));
@@ -348,7 +348,7 @@ for (const [name, run] of Object.entries(CASES)) {
 }
 fs.rmSync(fixture, { recursive: true, force: true });
 console.log(failures.length ? `FAILED\n${failures.map((line) => `- ${line}`).join("\n")}` : "updated-in-browser: ok");
-// (a browser's close() may never return, T141: the process ends by itself)
+// (a browser's close() may never return, T.141: the process ends by itself)
 await closed(() => browser.close());
 server.close();
 await leave(failures.length ? 1 : 0);

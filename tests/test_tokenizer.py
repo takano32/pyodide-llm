@@ -63,7 +63,7 @@ def test_scores_below_the_unmatchable_threshold_are_never_used():
 # --------------------------------------------------------------------------- the real vocabularies
 
 def real_tokenizer(name, vocab_size, kind="bpe"):
-    """A tokenizer.bin of `make models`: tiny-lm's has its sentencepiece model's map after the pieces (T216)"""
+    """A tokenizer.bin of `make models`: tiny-lm's has its sentencepiece model's map after the pieces (T.216)"""
     return Tokenizer(model_file(name).read_bytes(), vocab_size, kind=kind)
 
 
@@ -105,10 +105,10 @@ def test_special_tokens_inside_a_prompt_become_their_token():
     assert tokenizer.encode("hello", ("</s>",)) == tokenizer.encode("hello")
 
 
-# ---------------------------------------------------------- the definitions, on made-up vocabularies (T200)
-# encode_bpe() keeps the pairs in a heap from one merge to the next (T207), and encode_unigram() tries a piece at i only as far
+# ---------------------------------------------------------- the definitions, on made-up vocabularies (T.200)
+# encode_bpe() keeps the pairs in a heap from one merge to the next (T.207), and encode_unigram() tries a piece at i only as far
 # as the reach of text[i:i + 2]. Both must give what the plain definitions below give (the engine's own loops before
-# T200), with ties, a piece written twice, unmatchable scores, NaN and characters the vocabulary lacks. A roundtrip
+# T.200), with ties, a piece written twice, unmatchable scores, NaN and characters the vocabulary lacks. A roundtrip
 # does not see a wrong segmentation (any segmentation decodes to the text), and "Once upon a time" has four tokens.
 
 def bpe_by_definition(tokenizer, text):
@@ -187,7 +187,7 @@ def test_made_up_vocabularies_follow_the_definition(kind):
             assert encode(text) == by_definition(tokenizer, text), (seed, text)
 
 
-# ------------------------------------------------------------------ a sentencepiece model's normalizer (T126, T216)
+# ------------------------------------------------------------------ a sentencepiece model's normalizer (T.126, T.216)
 # a map as rinna's nmt_nfkc ones go (part of it): newlines, tabs, U+2581 and a few more a space, control characters
 # dropped, NFKC (a two-character key: the longest one wins)
 NMT_LIKE = {**{chr(code): " " for code in (0x09, 0x0A, 0x0C, 0x0D, 0x200B, 0x2581, 0x3000)},
@@ -216,8 +216,8 @@ def vocabulary(model, size):
 
 
 def test_an_nmt_normalizer_makes_newlines_and_tabs_spaces_and_one_space_of_many():
-    """The review of T126: rinna's three models are nmt_nfkc with remove_extra_whitespaces, and a newline was
-    written as token 13 (った in japanese-gpt-1b) where sentencepiece writes ▁. T216: the model's own map, in
+    """The review of T.126: rinna's three models are nmt_nfkc with remove_extra_whitespaces, and a newline was
+    written as token 13 (った in japanese-gpt-1b) where sentencepiece writes ▁. T.216: the model's own map, in
     tokenizer.bin, says which characters go and which become a space (rinna's gpt2 small keeps control characters)."""
     from make_hf_fixture import field
     from conftest import charsmap
@@ -245,7 +245,7 @@ def test_an_nmt_normalizer_makes_newlines_and_tabs_spaces_and_one_space_of_many(
 
 def test_an_identity_normalizer_without_collapsing_changes_nothing():
     """Llama's and Mistral's tokenizer.model: identity, no map, remove_extra_whitespaces off; tiny-lm's: nfkc, off.
-    T216: a model's name says nothing: its map (none with identity) is its normalizer."""
+    T.216: a model's name says nothing: its map (none with identity) is its normalizer."""
     from make_hf_fixture import field
     from conftest import charsmap
     from llama2_convert import sentencepiece_charsmap, sentencepiece_options
@@ -260,7 +260,7 @@ def test_an_identity_normalizer_without_collapsing_changes_nothing():
 
 
 def test_u2581_in_the_text_is_a_space():
-    """T216: sentencepiece writes a space as U+2581 before it looks the pieces up, so a U+2581 the text has is a space
+    """T.216: sentencepiece writes a space as U+2581 before it looks the pieces up, so a U+2581 the text has is a space
     to it (Llama 2, tiny-lm, llm-jp); the engine spelled it as a character the vocabulary lacks. remove_extra_whitespaces
     sees spaces only, so it does not collapse U+2581 unless the normalizer made it a space first (nmt: rinna's)."""
     from make_hf_fixture import field
@@ -287,8 +287,8 @@ def test_u2581_in_the_text_is_a_space():
 
 
 def test_the_conversion_hands_the_normalizer_to_the_engine():
-    """T72's lesson: what the file does not say reaches the engine through the conversion (the options, and the
-    model's map in tokenizer.bin: T216)"""
+    """T.72's lesson: what the file does not say reaches the engine through the conversion (the options, and the
+    model's map in tokenizer.bin: T.216)"""
     import json
     import struct
     from conftest import charsmap, synthetic_weights
@@ -321,7 +321,7 @@ def test_the_conversion_hands_the_normalizer_to_the_engine():
 
 
 def test_the_maps_of_real_models_normalize_as_sentencepiece_does():
-    """T216: a map sentencepiece's trainer writes (its nfkc and nmt_nfkc, the three maps of the list's models are of
+    """T.216: a map sentencepiece's trainer writes (its nfkc and nmt_nfkc, the three maps of the list's models are of
     these), at every character of the BMP between two letters: the engine's text is sentencepiece's own normalize()."""
     spm = pytest.importorskip("sentencepiece", reason="pip install sentencepiece to check against the real one")
     import io
@@ -348,7 +348,7 @@ def test_the_maps_of_real_models_normalize_as_sentencepiece_does():
 
 
 def test_a_map_whose_offsets_take_darts_clones_long_form():
-    """The review of T216: Darts-clone keeps an offset of 2^21 or more shifted right by 8, and says so with bit 9
+    """The review of T.216: Darts-clone keeps an offset of 2^21 or more shifted right by 8, and says so with bit 9
     (DoubleArrayBuilderUnit::set_offset). The list's maps are far smaller (under 60,000 units), so no test took that
     path: this map's root has its children past 2^21 (Z -> x and Q -> y). Where sentencepiece is installed, it reads
     the same map inside a model the same way."""
@@ -378,7 +378,7 @@ def test_a_map_whose_offsets_take_darts_clones_long_form():
 
 
 def walked(charsmap, text):
-    """Charsmap.replaced() before T222: the walk from every character, the reference of the skip"""
+    """Charsmap.replaced() before T.222: the walk from every character, the reference of the skip"""
     data, units, out, i = text.encode("utf-8"), charsmap.units, [], 0
     offset = lambda unit: (unit >> 10) << ((unit & 0x200) >> 6)
     root, size = offset(units[0]), len(units)
@@ -403,7 +403,7 @@ def walked(charsmap, text):
 
 
 def test_the_skip_to_where_a_key_may_begin_changes_no_text():
-    """T222: replaced() walks the array only from the bytes a key may begin with and keeps the text between as it is.
+    """T.222: replaced() walks the array only from the bytes a key may begin with and keeps the text between as it is.
     Its text is the walk's from every character, for the maps at hand: tiny-lm's (`make models`), sentencepiece's nfkc
     and nmt_nfkc (the kinds of the list's three maps: tiny-lm's and rinna's), two small ones and Darts-clone's long
     form; on every character of the BMP (and some beyond) between letters, the characters the map changes in random

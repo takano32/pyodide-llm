@@ -1,4 +1,4 @@
-// gpu/convolution.ts (T545, T568.2): an LFM2's convolution layers on the GPU, a kind of gpu/kinds.ts's table: in a block
+// gpu/convolution.ts (T.545, T.568.2): an LFM2's convolution layers on the GPU, a kind of gpu/kinds.ts's table: in a block
 // the matrix in (from the normed stream into mixed: B, C and z, 3 dim a token), SHORT_CONV (into xb: h = B × z over the
 // rows the layer goes on from, times C) and CONV_STATE (the rows moved on by the block's tokens), the matrix out; a
 // token's step the same on a token's vectors; the rows the layers go on from, taps rows of dim a layer, place after
@@ -34,7 +34,7 @@ export const convolution: GpuKind = {
           return false;
         };
       },
-      // T545.2: a token's: the matrix in from the normed stream into a token's mixed, SHORT_CONV and CONV_STATE on the
+      // T.545.2: a token's: the matrix in from the normed stream into a token's mixed, SHORT_CONV and CONV_STATE on the
       // place's taps and rows (as a prompt's block binds them: the rows a block left, its own after), the matrix out
       async tokens({ params, layers }) {
         const token = buffer(m, 3 * dim * 4), mix = layers.map((at) => params(3 * dim, dim, 0, at)), wout = params(dim, dim);
@@ -51,7 +51,7 @@ export const convolution: GpuKind = {
           },
         };
       },
-      // T545.2: a first layer of this kind goes on from rows of random numbers, ±1, whose last taps - 1 it reads and moves
+      // T.545.2: a first layer of this kind goes on from rows of random numbers, ±1, whose last taps - 1 it reads and moves
       // on by one, its own row last; and it keeps no keys and values. As the CPU has it (convolution.ts): mixed = win · xn,
       // of which B, C and z; h = B × z; C × (taps[0] × rows[1] + ... + taps[taps - 2] × rows[taps - 1] + taps[taps - 1] × h);
       // wout of that. Its rows after: rows[1] to rows[taps - 1], then h

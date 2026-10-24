@@ -1,4 +1,4 @@
-// tests/conducting-check.mjs (T374.4)
+// tests/conducting-check.mjs (T.374.4)
 // tests/conducting.mjs alone: what the Node tools that convert a model in Pyodide (profile-convert.mjs, page-27b.mjs)
 // answer the conduct of a conversion with. The conduct is a stand-in that plays a list of requests behind the face
 // Pyodide gives a Python generator (next(answer), each request a proxy to be destroyed), the files are a folder under
@@ -61,7 +61,7 @@ try {
     assert.ok(answers[2] instanceof Uint8Array && !(answers[2] instanceof Buffer), "Pyodide refuses a Buffer where it takes a Uint8Array");
     assert.equal(answers[3], undefined);
     same(answers[4][0], 0, 100); assert.equal(answers[4][1], 1000);
-    same(answers[5][0], 100, 300);  // T374.3: from where the bytes in hand end, not from the file's first byte
+    same(answers[5][0], 100, 300);  // T.374.3: from where the bytes in hand end, not from the file's first byte
     same(answers[6][0], 900, 1000); assert.equal(answers[6][1], 1000);  // fewer where the file ends first
     assert.equal(answers[7], undefined);
     assert.equal(answers[8], 1000);

@@ -1,6 +1,6 @@
-# Llama 3 (T106): the llama3 kind of RoPE scaling, its pre-tokenizer (digits up to three at a time), ignore_merges,
+# Llama 3 (T.106): the llama3 kind of RoPE scaling, its pre-tokenizer (digits up to three at a time), ignore_merges,
 # the BOS its chat template writes, and the special tokens of a chat template read from tokenizer.json.
-# T532: the yarn frequencies TRANSFORMERS_YARN and TRANSFORMERS_YARN_KEYS are from ssig33/pyodide-llm's bddde105
+# T.532: the yarn frequencies TRANSFORMERS_YARN and TRANSFORMERS_YARN_KEYS are from ssig33/pyodide-llm's bddde105
 # (MPL-2.0, ssig33 <mail@ssig33.com>), which took them from transformers 5.16.1.
 import json
 import math
@@ -24,9 +24,9 @@ SCALING = {"factor": 32.0, "high_freq_factor": 4.0, "low_freq_factor": 1.0, "ori
 # what llama.cpp's convert wrote as rope_freqs into bartowski/Llama-3.2-1B-Instruct-GGUF@067b946c (Q8_0): for
 # head_size 64 and rope_theta 500000, the plain frequency over the scaled one, pair by pair. An implementation of
 # the same formula independent of this one (transformers needs PyTorch, which this machine has not).
-# config.json of deepseek-ai/deepseek-coder-1.3b-instruct@e063262d (T126)
+# config.json of deepseek-ai/deepseek-coder-1.3b-instruct@e063262d (T.126)
 LINEAR = {"factor": 4.0, "type": "linear"}
-# config.json of prism-ml/Ternary-Bonsai-1.7B-unpacked@3aca8400 (T235)
+# config.json of prism-ml/Ternary-Bonsai-1.7B-unpacked@3aca8400 (T.235)
 YARN = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 8192}
 LLAMA_CPP_DIVISORS = [1.0] * 15 + [1.6513293, 3.2922628, 9.666731] + [32.0] * 14
 
@@ -43,12 +43,12 @@ def test_without_scaling_the_frequencies_are_what_they_were():
 
 
 def test_the_linear_frequencies_are_the_plain_ones_over_the_factor():
-    """T126 (deepseek-coder): positions divided by factor, which is every frequency divided by it"""
+    """T.126 (deepseek-coder): positions divided by factor, which is every frequency divided by it"""
     assert np.allclose(rope_frequencies(64, 100000.0) / rope_frequencies(64, 100000.0, LINEAR), 4.0, rtol=1e-12)
 
 
 def test_the_yarn_frequencies_are_transformers_and_llama_cpps():
-    """T235, for Ternary-Bonsai 1.7B's heads of 128 and theta of 1e6. By hand, the pair that makes 32 turns in the
+    """T.235, for Ternary-Bonsai 1.7B's heads of 128 and theta of 1e6. By hand, the pair that makes 32 turns in the
     original 8192 positions is 128 ln(8192 / (32 * 2 pi)) / (2 ln 1e6) = 17.17, rounded down, and the one that makes one
     turn 33.23, rounded up: the pairs up to 17 turn as before, from 34 on four times slower. Between them llama.cpp's
     rope_yarn() mixes the plain angle and the slowed one by 1 - (pair - 17) / (34 - 17), which is transformers'
@@ -69,8 +69,8 @@ def test_the_yarn_frequencies_are_transformers_and_llama_cpps():
 def transformers_yarn(head_dim, base, factor, original, attention_factor=None, mscale=None, mscale_all_dim=None,
                       beta_fast=None, beta_slow=None, truncate=True):
     """_compute_yarn_parameters of transformers 4.57.6 (modeling_rope_utils.py), transcribed line by line in float64:
-    the inverse frequencies and the attention factor. Written for the review of T235, from the file, not from
-    rope_frequencies(). T532: and the keys a config.json may add, as transformers 5.16.1 reads them (the same lines,
+    the inverse frequencies and the attention factor. Written for the review of T.235, from the file, not from
+    rope_frequencies(). T.532: and the keys a config.json may add, as transformers 5.16.1 reads them (the same lines,
     which 5.16.1 keeps; its one change, a factor of None made of max_position_embeddings, check_config() refuses)."""
     dim = head_dim
 
@@ -121,9 +121,9 @@ def llama_cpp_yarn(n_dims, base, factor, n_ctx_orig):
 
 
 def test_the_yarn_frequencies_and_magnitude_are_those_of_transformers_and_llama_cpp_on_a_grid():
-    """The review of T235: not one head of 128 and one of 8 (the test above) but 600 combinations of head size, theta,
+    """The review of T.235: not one head of 128 and one of 8 (the test above) but 600 combinations of head size, theta,
     factor and original context, against the two code bases' own formulas: the same range of pairs (low, high), the
-    same angle of every pair to 1e-12 (float64 against float64), and the same magnitude. (T246's review: 5e6 too, the
+    same angle of every pair to 1e-12 (float64 against float64), and the same magnitude. (T.246's review: 5e6 too, the
     Ternary Bonsai 4B's theta; its 8B's 1e6 with 16384 was in the grid.)"""
     for head, base, factor, original in ((h, b, f, o) for h in (8, 64, 96, 128, 256) for b in (1e4, 5e5, 1e6, 5e6, 1e7)
                                          for f in (1.5, 2.0, 4.0, 8.0, 32.0) for o in (64, 2048, 8192, 16384, 32768, 131072)):
@@ -137,7 +137,7 @@ def test_the_yarn_frequencies_and_magnitude_are_those_of_transformers_and_llama_
         assert rope_magnitude(scaling) == pytest.approx(scale, rel=1e-14)
 
 
-# T532: what else a yarn may say, each on a grid against the transcription of transformers (float64 against float64)
+# T.532: what else a yarn may say, each on a grid against the transcription of transformers (float64 against float64)
 YARN_SETTINGS = {"attention_factor": dict(attention_factor=1.2), "mscale": dict(mscale=0.707, mscale_all_dim=1.0),
                  "mscale_all_dim": dict(mscale=1.0, mscale_all_dim=0.707), "both mscales of 1": dict(mscale=1.0, mscale_all_dim=1.0),
                  "mscale alone": dict(mscale=0.707), "beta_fast": dict(beta_fast=16), "beta_slow": dict(beta_slow=2),
@@ -151,7 +151,7 @@ YARN_SETTINGS = {"attention_factor": dict(attention_factor=1.2), "mscale": dict(
 
 @pytest.mark.parametrize("settings", YARN_SETTINGS)
 def test_the_yarn_settings_are_those_of_transformers_on_a_grid(settings):
-    """T532: the bounds by beta_fast and beta_slow (where they are not 32 and 1), unrounded where truncate is false,
+    """T.532: the bounds by beta_fast and beta_slow (where they are not 32 and 1), unrounded where truncate is false,
     and the magnitude by attention_factor, or by the ratio of the two mscales where both are said."""
     said = YARN_SETTINGS[settings]
     for head, base, factor, original in ((h, b, f, o) for h in (8, 64, 128, 256) for b in (1e4, 1e6, 5e6)
@@ -162,7 +162,7 @@ def test_the_yarn_settings_are_those_of_transformers_on_a_grid(settings):
         assert rope_magnitude(scaling) == pytest.approx(magnitude, rel=1e-14)
 
 
-# T532: the values ssig33/pyodide-llm's bddde105 took from transformers 5.16.1's _compute_yarn_parameters (PyTorch 2.14,
+# T.532: the values ssig33/pyodide-llm's bddde105 took from transformers 5.16.1's _compute_yarn_parameters (PyTorch 2.14,
 # float32) for Ternary-Bonsai 1.7B's heads (128, theta 1e6): its own config.json, and the same with the other keys.
 # Another implementation's numbers than the transcription above, which a misreading of the file could share
 YARN_KEYS = {**YARN, "original_max_position_embeddings": 16384, "beta_fast": 16, "beta_slow": 2, "truncate": False}
@@ -185,7 +185,7 @@ TRANSFORMERS_YARN_KEYS = FAST + [0.0205352511, 0.0165481716, 0.0133352149, 0.010
 @pytest.mark.parametrize("scaling, expected", [(YARN, TRANSFORMERS_YARN), (YARN_KEYS, TRANSFORMERS_YARN_KEYS)],
                          ids=["bonsai", "keys"])
 def test_the_yarn_frequencies_are_what_transformers_printed(scaling, expected):
-    """T532: float32 against float64, so to 3e-7; and the magnitude 0.1 ln 4 + 1 for both, attention_factor where said."""
+    """T.532: float32 against float64, so to 3e-7; and the magnitude 0.1 ln 4 + 1 for both, attention_factor where said."""
     assert np.allclose(rope_frequencies(128, 1e6, scaling), expected, rtol=3e-7, atol=0)
     assert rope_magnitude(scaling) == pytest.approx(1.138629436111989, rel=1e-15)
     assert rope_magnitude({**scaling, "attention_factor": 1.5}) == 1.5
@@ -200,7 +200,7 @@ def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     for kind in ("dynamic", "longrope"):
         with pytest.raises(ValueError, match="RoPE scaling"):
             check_config({**published, "rope_scaling": {"rope_type": kind, "factor": 2.0}})
-    # T532: what else transformers reads of a yarn goes through; T235: the rest is refused rather than dropped without
+    # T.532: what else transformers reads of a yarn goes through; T.235: the rest is refused rather than dropped without
     # a word (attn_factor: DeepSeek-R1-0528-Qwen3-8B's, which transformers drops and vLLM and llama.cpp multiply by;
     # finetuned: NousResearch's Yarn-Llama-2's), and so is a setting of the wrong type
     for key, value in (("attention_factor", 1.2), ("mscale", 1.0), ("mscale_all_dim", 0.707), ("beta_fast", 16),
@@ -232,9 +232,9 @@ def llama3(max_seq_len=64, scaling=None):
                          ids=["llama3", "linear", "yarn", "yarn-settings"])
 def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     """float32 files hold the tables (the converter makes them), int8 files do not (the engine does): the two must
-    agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path).
-    yarn's tables are also longer by its magnitude (T235), in both: the cos of position 0 says it, and every row's cos
-    and sin together (the review of T235: the cos at 0 does not see a sin that was left out, in the file and in the engine
+    agree, and the engine needs rope_scaling from the options for that (T.72's lesson: test the options' path).
+    yarn's tables are also longer by its magnitude (T.235), in both: the cos of position 0 says it, and every row's cos
+    and sin together (the review of T.235: the cos at 0 does not see a sin that was left out, in the file and in the engine
     alike, as one shared helper written wrong would)."""
     config, tensors, published = llama3(scaling=scaling)
     file = safetensors_file(tensors)
@@ -320,7 +320,7 @@ CHATML = ("{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\
 
 
 def test_the_special_tokens_of_the_template_go_to_the_engine():
-    """T73's leftover: with ?hf= the template's <|im_start|> was spelled out letter by letter."""
+    """T.73's leftover: with ?hf= the template's <|im_start|> was spelled out letter by letter."""
     config, weights = synthetic_weights(vocab_size=300)
     tensors, published = hugging_face(config, weights, True)
     file = safetensors_file(tensors)

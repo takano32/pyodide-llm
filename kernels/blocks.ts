@@ -1,4 +1,4 @@
-// blocks.ts (T363.4): the window of the kernels for rows kept as a GGUF has them, llama.cpp's blocks of 256 weights
+// blocks.ts (T.363.4): the window of the kernels for rows kept as a GGUF has them, llama.cpp's blocks of 256 weights
 // (the ten types Underdog Saluki 27B is made of). A module of their own (blockkernel_*.wasm), not kernel.ts's: they
 // are several times the size of every other kernel together, and only a model with such rows needs them.
 // blocks_relaxed.ts is the window of those that need relaxed SIMD. What this file exports is what the module exports.

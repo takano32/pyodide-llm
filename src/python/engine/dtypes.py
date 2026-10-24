@@ -1,7 +1,7 @@
 # The dtypes of a checkpoint: how a file holds a tensor, one entry for each (DTYPES). What a kind takes in the file, the
 # group of a quantized row, whether a row suits it, how its values are packed and read back, the kernel that packs
-# them: everything that depends on the kind is asked here, by its name (T359). A new one is an entry here (and its
-# packing in engine/packing.py; a row's kind that is no file's dtype is an entry of BLOCKS, T363); what the forward pass
+# them: everything that depends on the kind is asked here, by its name (T.359). A new one is an entry here (and its
+# packing in engine/packing.py; a row's kind that is no file's dtype is an entry of BLOCKS, T.363); what the forward pass
 # multiplies it with is forward.js's (jobs.js) and not said here.
 # This file reads engine/packing.py alone: engine/layout.py and everything above read it.
 #
@@ -45,9 +45,9 @@ class Dtype(NamedTuple):
     it). rounds: any model's weights are rounded into it (False: only the weights that are its values already, and
     refusal are the words for the others; nobody is given this kind without asking). unsuited: the words for a model
     with rows that are no whole groups.
-    T363, llama.cpp's blocks (BLOCKS): block, the bytes of a group in place of bits; scale, the bytes of the scale
+    T.363, llama.cpp's blocks (BLOCKS): block, the bytes of a group in place of bits; scale, the bytes of the scale
     behind each group (0: it is inside); read(the bytes of whole groups) -> float32 values, in place of unpack.
-    T533: scale, the bytes of a group's scale, says its type (scale_type): 4 a float32, 2 a float16 (ternary's, as
+    T.533: scale, the bytes of a group's scale, says its type (scale_type): 4 a float32, 2 a float16 (ternary's, as
     PQ2_0 has it)."""
     name: str
     short: str
@@ -66,7 +66,7 @@ class Dtype(NamedTuple):
 
     @property
     def scale_type(self):
-        """The NumPy type of a group's scale in a checkpoint (T533: ternary's is a float16, PQ2_0's own)."""
+        """The NumPy type of a group's scale in a checkpoint (T.533: ternary's is a float16, PQ2_0's own)."""
         return np.float16 if self.scale == 2 else np.float32
 
     def stored_bytes(self, count, group):
@@ -106,9 +106,9 @@ def as_int8(raw):
 
 
 # int8: quantize.py's, groups of 32 or of the largest power of two below it that divides the row.
-# int6 (T98): six bits a value, 24 bytes a group of 32 (engine/packing.py's pack6).
-# ternary (T230): two bits a value, 32 bytes a group of 128 (pack_ternary); the weights of a ternary model as they are.
-# T533: its scale a float16, as PQ2_0 and PTQ1_0 have it (34 bytes a group of 128, not 36).
+# int6 (T.98): six bits a value, 24 bytes a group of 32 (engine/packing.py's pack6).
+# ternary (T.230): two bits a value, 32 bytes a group of 128 (pack_ternary); the weights of a ternary model as they are.
+# T.533: its scale a float16, as PQ2_0 and PTQ1_0 have it (34 bytes a group of 128, not 36).
 DTYPES = {dtype.name: dtype for dtype in (
     Dtype("float32", "f32", itemsize=4),
     Dtype("float16", "f16", itemsize=2),
@@ -119,7 +119,7 @@ DTYPES = {dtype.name: dtype for dtype in (
           packer="ternary_x", rounds=False, refusal=NOT_TERNARY,
           unsuited="Ternary weights need rows of whole groups of 128, and this model has other rows."),
 )}
-# ---- llama.cpp's blocks (T363)
+# ---- llama.cpp's blocks (T.363)
 # A GGUF's K- and i-quantized types, kept as the file has them: 256 weights to a block of the row, its scales inside
 # (docs/notes/t361-saluki-2026-10-13.md). A row's kinds alone (the form's "kinds"), never a file's dtype.
 # NumPy's readers are the converter's (convert/superblocks.py and its codebooks, 15 KB zipped that the engine's
@@ -152,7 +152,7 @@ KINDS = {**DTYPES, **BLOCKS, BYTES.name: BYTES}
 QUANTIZED = tuple(name for name, dtype in DTYPES.items() if dtype.bits)
 # those whose values are int8 in another packing: the engine widens them where it reads them, and is int8 from there on
 PACKED = tuple(name for name in QUANTIZED if DTYPES[name].bits < 8)
-# the ones a model converted with no dtype asked for may get (Stream's callable dtype, T115)
+# the ones a model converted with no dtype asked for may get (Stream's callable dtype, T.115)
 EITHER = tuple(name for name in QUANTIZED if DTYPES[name].rounds)
 
 

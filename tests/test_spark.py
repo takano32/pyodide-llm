@@ -1,4 +1,4 @@
-"""XHToken's Spark-X2.5 (T339 to T342): a Llama's layers, three of every four attending a window of the last positions
+"""XHToken's Spark-X2.5 (T.339 to T.342): a Llama's layers, three of every four attending a window of the last positions
 and turning their whole heads by a base of their own, the others a quarter of each head; q, k and v in one matrix; a gate
 of each head of the attention's output; and the exact GELU in the FFN's gate.
 
@@ -221,7 +221,7 @@ def test_a_local_layer_attends_its_window_and_nothing_before_it(window):
 
 
 def test_the_conversion_tells_the_engine_what_the_file_cannot():
-    """The lesson of T72: the engine built from exactly the options the conversion gives runs like the reference."""
+    """The lesson of T.72: the engine built from exactly the options the conversion gives runs like the reference."""
     for model in ("small", "a classifier of its own", "every layer attends all", "half of a head turned, the bases the other way round",
                   "heads that fill the width"):
         shape = MODELS[model]

@@ -1,4 +1,4 @@
-// tests/serving-check.mjs (T391.6)
+// tests/serving-check.mjs (T.391.6)
 // The two things every tool that drives a browser has in one place, alone and with no browser: the server of the
 // site (tests/serving.mjs) and the end of the tool (closed() and leave() of tests/leave.mjs). The site is a made-up
 // folder under .tmp/ whose path has a space and Japanese in it, the requests are Node's own (written as they are, so
@@ -298,10 +298,10 @@ await leave(3);
     if (/\bcreateServer\(/.test(text) && !OWN_SERVER[name]) wrong.push(`${name} has a server of its own: serve the site with serving() of tests/serving.mjs`);
     if (!/\bcreateServer\(/.test(text) && OWN_SERVER[name]) wrong.push(`${name} has no server of its own any more: take it out of OWN_SERVER`);
     if (/\/pyodide-llm\/["`]/.test(text.replace(/https:\/\/takano32\.github\.io\/pyodide-llm\//g, ""))) wrong.push(`${name} writes the site's base itself: it is serving()'s (the address is its url)`);
-    if (/os\.tmpdir\(\)/.test(text)) wrong.push(`${name} makes its folders in the system's temp folder: scratch() of tests/leave.mjs puts them under .tmp/ and takes them away (T512)`);
+    if (/os\.tmpdir\(\)/.test(text)) wrong.push(`${name} makes its folders in the system's temp folder: scratch() of tests/leave.mjs puts them under .tmp/ and takes them away (T.512)`);
     for (const [at, line] of text.split("\n").entries()) {
       const closes = !line.trimStart().startsWith("//") && /\b(browser|context|driver)\.(close|quit)\(\)/.exec(line);
-      if (closes && !line.includes(`closed(() => ${closes[0]})`)) wrong.push(`${name}:${at + 1} waits on ${closes[0]} itself: await closed(() => ${closes[0]}) of tests/leave.mjs (T141)`);
+      if (closes && !line.includes(`closed(() => ${closes[0]})`)) wrong.push(`${name}:${at + 1} waits on ${closes[0]} itself: await closed(() => ${closes[0]}) of tests/leave.mjs (T.141)`);
     }
     if (!/^import \{ closed, leave(, scratch)? \} from "\.\/leave\.mjs";$/m.test(text)) wrong.push(`${name} does not take closed and leave of tests/leave.mjs: a tool ends with await leave(code)`);
     const last = text.trimEnd().split("\n").at(-1);

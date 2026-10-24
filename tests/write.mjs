@@ -1,4 +1,4 @@
-// write.mjs (T249): what a Hugging Face model of the list writes for its own prompt on the page's engine
+// write.mjs (T.249): what a Hugging Face model of the list writes for its own prompt on the page's engine
 // (src/runtime/forward.js on the int8 kernels, tests/engine.mjs), greedy, for a person to read: whether a model added to
 // the list writes sensible text is not something a number says. The checkpoint is read from its file straight into
 // forward.js's memory (a 64-bit one where the model with its forward pass does not fit 4 GiB, as on the page).
@@ -52,5 +52,5 @@ console.log(`written by ${page.id}: answer ${shown(result.written)}`);
 for (const [seed, answer] of result.others) {
   console.log(`written by ${page.id}: answer with temperature ${temperature}, top-p ${topp}, penalty ${repetition_penalty} and seed ${seed} ${shown(answer)}`);
 }
-// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+// (T.357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
 await leave(0);

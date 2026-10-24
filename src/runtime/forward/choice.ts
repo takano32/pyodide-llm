@@ -1,19 +1,19 @@
-// forward/choice.ts (T349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
+// forward/choice.ts (T.349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
 // the sizes of what the GPU takes at once, the times of either side as they are measured (promptTimes, tokenTimes),
 // the margin one must be faster by (BETTER), and what the status line says of it (gpuLine).
 // A module of src/runtime/forward.ts, which exports its names as before.
 
-// T205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
+// T.205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
 // the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.ts
-// waits as long for the GPU's worker of a model on the GPU alone let go before its engine was built, T156)
+// waits as long for the GPU's worker of a model on the GPU alone let go before its engine was built, T.156)
 export const GPU_END_MS = 5000;
-// T147: the most tokens of a prompt the GPU takes at once: the tokens of the largest tile (T146's 64 × 64), whose
+// T.147: the most tokens of a prompt the GPU takes at once: the tokens of the largest tile (T.146's 64 × 64), whose
 // sixteen blocks left three quarters of it idle. Python hands a prompt over this many at a time where the GPU is on
-// (promptBlock), BATCH where it is not: the worker answers nothing while one call runs (T108)
+// (promptBlock), BATCH where it is not: the worker answers nothing while one call runs (T.108)
 export const GPU_BLOCK = 64;
-// T148: every this many generations after the first verdict, a part of a prompt goes to the side not chosen
+// T.148: every this many generations after the first verdict, a part of a prompt goes to the side not chosen
 const GPU_RECHECK = 8;
-// T152: the steps of a generation the GPU takes a submission (T151's review, (k): a step takes W + F / N, the work and
+// T.152: the steps of a generation the GPU takes a submission (T.151's review, (k): a step takes W + F / N, the work and
 // the submission's wait over the steps; with the owner's Android's F of about 8 ms and W of about 40 ms, 4 leaves 2 ms
 // of the wait a step, 16 would leave 0.5 but show the text in pieces of 16 and run up to 15 passes past a stop token);
 // the CPU's steps timed again, where the GPU is chosen, now and then; the most stop tokens the GPU's sampling holds
@@ -21,12 +21,12 @@ const GPU_RECHECK = 8;
 export const GPU_TOKENS = 4;
 const TOKEN_RECHECK = 4, STOPS_MOST = 8;
 
-// T148 (the review): the lower of the two middles. A block is slowed by what else runs (the first after a pause, a
+// T.148 (the review): the lower of the two middles. A block is slowed by what else runs (the first after a pause, a
 // page in the background), never sped up: of two, the faster says the device, and one slow first block does not
 // move a verdict
 const lowerMedian = (xs: number[]) => [...xs].sort((a, b) => a - b)[(xs.length - 1) >> 1];
 
-// T148: how long a block of a prompt takes on either side, from which forward.ts gives each block to the GPU or keeps
+// T.148: how long a block of a prompt takes on either side, from which forward.ts gives each block to the GPU or keeps
 // it on the CPU (AGENTS.md's policy 9: the GPU by default, the CPU where this device runs it faster). Measured, never
 // written down (the development machine's numbers are no visitor's):
 //   - the CPU: ms a token of the blocks of BATCH it runs of real prompts (no work only to time it), per number of
@@ -37,11 +37,11 @@ const lowerMedian = (xs: number[]) => [...xs].sort((a, b) => a - b)[(xs.length -
 //     as much as one of 64); every block it then runs for real scales that line by the lower median of the last KEEP
 //     ratios (what the page adds around a block, a device that heats up or is loaded).
 // A block of count tokens goes to the GPU where it takes less than BETTER of the CPU's time: a short prompt, whose
-// block is small, stays on the CPU (T147's estimate: the GPU wins from about 64 tokens on a 1B model, a tiny-lm
+// block is small, stays on the CPU (T.147's estimate: the GPU wins from about 64 tokens on a 1B model, a tiny-lm
 // never), and so does a device whose GPU is slower. The threshold is the smallest count the GPU is faster for.
 // (BETTER is also the margin of the threads' search: faster by more than the noise of a run)
 const KEEP = 5, TIMED = 2, BETTER = 0.95;
-// (T368.4) a block the GPU's worker timed as it started; and either side's ms with whether the GPU takes it
+// (T.368.4) a block the GPU's worker timed as it started; and either side's ms with whether the GPU takes it
 export type Block = { count: number; ms: number };
 export type Times = { cpu: number; gpu: number; faster: boolean };
 export function promptTimes() {
@@ -85,7 +85,7 @@ export function promptTimes() {
   };
 }
 
-// T152: how long a step of a generation (the forward pass of the token fed, and the sampling of the next) takes on
+// T.152: how long a step of a generation (the forward pass of the token fed, and the sampling of the next) takes on
 // either side, from which forward.ts gives the steps to the GPU or keeps them on the CPU, as promptTimes does a
 // prompt's blocks: measured, never written down.
 //   - the CPU: ms of the forward pass of a token with its logits, per number of threads, the lower median of the last
@@ -121,7 +121,7 @@ export function tokenTimes() {
   };
 }
 
-// T152: what the status line says of the GPU (the owner's words, 2026-09-27): prompts, the prompt's side as the prompts'
+// T.152: what the status line says of the GPU (the owner's words, 2026-09-27): prompts, the prompt's side as the prompts'
 // verdict has it (PROMPTS_* below, "prompts of N tokens and more on WebGPU", or on the CPU and why), and answers, the
 // generation's steps: "gpu", "cpu" (faster here), "why" (the GPU does not take them: why is in the console alone),
 // "untimed", or null where there is nothing to say of them (no GPU, or the prompts are on the CPU for a reason)
@@ -130,7 +130,7 @@ export const PROMPTS_GPU = "prompts on WebGPU";
 export const PROMPTS_CPU = "prompts on the CPU (faster here than WebGPU)";
 const ANSWERS = { gpu: "answers on WebGPU", cpu: "answers on the CPU (faster here)", why: "answers on the CPU",
   untimed: "answers on WebGPU where it is faster than the CPU" };
-// (T368.4) what the status line's two halves are: the prompts' line (null: nothing to say yet; undefined: no GPU for
+// (T.368.4) what the status line's two halves are: the prompts' line (null: nothing to say yet; undefined: no GPU for
 // this engine), and the answers' word
 export type Answers = keyof typeof ANSWERS;
 export function gpuLine(prompts: string | null | undefined, answers: Answers | null) {
@@ -141,5 +141,5 @@ export function gpuLine(prompts: string | null | undefined, answers: Answers | n
   return `${prompts}, ${ANSWERS[answers]}`;
 }
 
-// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
+// (T.349) what forward.ts and the other modules read besides, which was not exported where it was one file
 export { GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, lowerMedian, BETTER };

@@ -1,6 +1,6 @@
-# The conduct of a conversion (T374.1, src/python/convert/conduct.py): a generator that asks for a model's files in the
+# The conduct of a conversion (T.374.1, src/python/convert/conduct.py): a generator that asks for a model's files in the
 # order the worker asks for them, driven here by a dictionary (tests/conduct_hub.py's Hub): no browser, no worker, no
-# Pyodide. And (T374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
+# Pyodide. And (T.374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
 #
 # Held to four things. The requests of the worker itself, for the 20 repositories and the 10 folders of
 # tests/worker-fetches-check.mjs (tests/fixtures/conversion-cases.json is that check's record of them,
@@ -8,7 +8,7 @@
 # with no conduct at all (direct(): the files read whole, a Conversion fed in one piece), for the real converter on real
 # files of the same 30 kinds: the checkpoint, the options and the tokenizer.bin. What every conduct's requests must be
 # whatever the repository (sound()), for made-up repositories by the hundred: there is no second opinion on the order
-# of their requests since T374.2.3 (the worker's old ladder, written out in Python as today(), went with it). And what
+# of their requests since T.374.2.3 (the worker's old ladder, written out in Python as today(), went with it). And what
 # the requests are, one at a time, with a stand-in that converts nothing.
 import json
 import random
@@ -29,7 +29,7 @@ from convert.gguf import Incomplete
 FIXTURES = Path(__file__).parent / "fixtures"
 EVERY_CASE = json.loads((FIXTURES / "conversion-cases.json").read_text())
 FETCHES = json.loads((FIXTURES / "conversion-fetches.json").read_text())
-# the models of huggingface.co; the others are folders of the visitor's disk (T374.2.2), which name no repository
+# the models of huggingface.co; the others are folders of the visitor's disk (T.374.2.2), which name no repository
 CASES = [case for case in EVERY_CASE if "repo" in case["hf"]]
 FOLDERS = [case for case in EVERY_CASE if "repo" not in case["hf"]]
 NAMES = [case["name"] for case in CASES]
@@ -181,12 +181,12 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
     asked for in the order of the fixture, and the requests are sound(). Scaled to files of a few hundred kilobytes:
     the parts of the line are cut by 2 KiB where the worker's are cut by a MiB, and the first piece of a head is as
     short as the case needs (a header past it; a GGUF's head read with its second piece, and with its third).
-    T374.3: what a GGUF's head came with is fed by the conduct, so the checkpoint is direct()'s only where every byte
+    T.374.3: what a GGUF's head came with is fed by the conduct, so the checkpoint is direct()'s only where every byte
     of the tensors reached the conversion once, in the order of the file, from the two hands that feed it."""
     name, files = case["name"], real_files(case)
     hf, making = listed(case)
     making["dtype"] = making["dtype"] if isinstance(making["dtype"], str) else "int8"
-    # (the GGUF the model is opened by: T505.3's repository with safetensors has GGUFs beside them, which nobody asks for)
+    # (the GGUF the model is opened by: T.505.3's repository with safetensors has GGUFs beside them, which nobody asks for)
     weights = next((file for path, file in files.items() if path.endswith(".gguf") and path.endswith(f"/{hf['weights']}")), None)
     head = 128 if "past the first 512 KiB" in name else 512 * 1024 if not weights or "small head" in name \
         else gguf_base(weights) // 8 if "3 MiB" in name else gguf_base(weights) // 40
@@ -241,7 +241,7 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
 
 @pytest.mark.parametrize("name", ["a GGUF alone (a head of 3 MiB)", "a GGUF with the vocabulary of another repository"])
 def test_a_real_gguf_converts_the_same_wherever_the_pieces_of_its_head_end(name, monkeypatch):
-    """T374.3, the real converter: the first piece ends before the head does, at its end, a byte past it, in the
+    """T.374.3, the real converter: the first piece ends before the head does, at its end, a byte past it, in the
     tensors, at the file's end and past it; what came with the head is fed in one piece or in many; the server says
     the size of the file or does not. The checkpoint, the options and the tokenizer.bin are direct()'s every time,
     and no byte of the GGUF is asked for twice."""
@@ -274,7 +274,7 @@ def test_a_real_gguf_converts_the_same_wherever_the_pieces_of_its_head_end(name,
             assert told[-1][3] == max(hand, base) and (first != base - 1 or hand == base - 1)
 
 
-# ---- a folder of the visitor's disk (T374.2.2): the same conduct, answered from the folder's files by their names
+# ---- a folder of the visitor's disk (T.374.2.2): the same conduct, answered from the folder's files by their names
 FOLDER_NAMES = [case["name"] for case in FOLDERS]
 
 
@@ -286,7 +286,7 @@ def test_the_folders_are_the_ones_the_worker_was_handed():
 @pytest.mark.parametrize("case", FOLDERS, ids=FOLDER_NAMES)
 def test_a_conduct_reads_of_a_folder_what_the_worker_reads(case, monkeypatch):
     """The folders of worker-fetches-check.mjs, whose record began as what the worker's own steps for a folder read
-    (before T374.2.2 gave the folder to the conduct): the same files and ranges in the same order, the same things
+    (before T.374.2.2 gave the folder to the conduct): the same files and ranges in the same order, the same things
     handed to the converter, the same end. All the conduct is handed of a folder is the name of its weights."""
     stand_in = StandIn().into(monkeypatch)
     hf, making = listed(case)
@@ -405,7 +405,7 @@ def test_the_requests_of_made_up_repositories_are_sound(monkeypatch):
     """Files that are not there, heads that are no heads, indexes that say nothing, tokenizers the converter refuses,
     templates of every kind of JSON, a GGUF that ends before its head does: for 1500 of them, the requests are sound(),
     the converter's stand-in is fed every byte the streams name, and after its end the conduct asks for nothing.
-    (Until T374.2.3 each was compared, request for request, with the worker's old ladder written out in Python: that
+    (Until T.374.2.3 each was compared, request for request, with the worker's old ladder written out in Python: that
     second opinion on the order of the requests is gone with the ladder. The 29 cases of the fixture and the tests of
     one request at a time below are what holds the order now.)"""
     rng = random.Random(374)
@@ -433,7 +433,7 @@ def test_the_requests_of_made_up_repositories_are_sound(monkeypatch):
         streamed = sum(end - begin for _, _, _, begin, end, _, _ in streams)
         if conversion is not None:
             # every byte the streams name went to the converter, and before them what came with the head of a GGUF
-            # (T374.3: from where its tensors begin to where its one stream does): they are the bytes of its tensors
+            # (T.374.3: from where its tensors begin to where its one stream does): they are the bytes of its tensors
             ahead = streams[0][3] - conversion.base if hf["weights"].endswith(".gguf") else 0
             if hf["weights"].endswith(".gguf"):
                 # (the stand-in's head ends where its tensors begin: the stream begins where the last piece of the
@@ -588,7 +588,7 @@ def test_a_refused_tokenizer_is_followed_by_the_next_candidate(monkeypatch):
 
 def test_where_no_tokenizer_will_do_the_refusal_says_why_and_else_the_first_missing_one(monkeypatch):
     hf = {**HF, "tokenizer": ["tokenizer.model", "tokenizer.json", "spiece.model"]}
-    # a refusal of one that is there comes before a file that is not (T144), whichever came first
+    # a refusal of one that is there comes before a file that is not (T.144), whichever came first
     StandIn().into(monkeypatch)
     with pytest.raises(ValueError, match="tokenizer.json is of a kind the engine does not read"):
         answered(Hub(repository({"tokenizer.json": "unreadable", "spiece.model": "unreadable too"}), hf), conduct(hf))
@@ -643,7 +643,7 @@ def test_a_file_that_is_no_safetensors_file_is_looked_for_in_the_index_and_refus
 
 
 def test_the_header_of_a_safetensors_file_past_its_first_piece_is_asked_for_from_where_that_ended(monkeypatch):
-    """T374.3: the rest of the header alone, joined to what is in hand."""
+    """T.374.3: the rest of the header alone, joined to what is in hand."""
     told, last, stand_in = requests_of(repository(weights=safetensors(10, header=600_000)), monkeypatch=monkeypatch)
     assert told[1:3] == [("range", "weights", "model.safetensors", 0, 524288), ("range", "weights", "model.safetensors", 524288, 600_008)]
     assert "a header of 600000 characters, base 600008, start 600008" in stand_in.handed[0]
@@ -706,7 +706,7 @@ def test_the_size_is_asked_for_where_a_range_did_not_say_it_and_only_there(monke
         stream = steps.send(b"a tokenizer")
         assert stream[:7] == ("stream", "weights", "model.safetensors", 308, 318, 308, 318) and callable(stream[7])
         assert all(type(value) is int for value in stream[3:7])  # (and goes back as an integer: a place in a file)
-    # a GGUF's head: after its first piece alone (T374.3: after every piece until then)
+    # a GGUF's head: after its first piece alone (T.374.3: after every piece until then)
     hf = {**HF, "weights": "model.gguf"}
     for base, kinds in ((3 * MiB, ["range", "size", "range", "stream"]), (9 * MiB, ["range", "size", "range", "range", "stream"])):
         hub, told = Hub(repository({"model.gguf": gguf(base, 100)}), hf, unsaid=True), []
@@ -780,7 +780,7 @@ def marked(base, data):
 
 
 def test_a_ggufs_head_is_asked_for_in_pieces_that_end_ever_further_each_from_where_the_last_ended(monkeypatch):
-    """T374.3: 2 MiB, then what is missing of 8, of 32, of 128: no byte twice. The stream begins where the last piece
+    """T.374.3: 2 MiB, then what is missing of 8, of 32, of 128: no byte twice. The stream begins where the last piece
     ends (or the file, where that came first), and so does the count of what has arrived."""
     for base, ends in ((1000, [2]), (2 * MiB, [2]), (2 * MiB + 1, [2, 8]), (8 * MiB + 1, [2, 8, 32]), (32 * MiB + 1, [2, 8, 32, 128])):
         for data in (700, 200 * MiB):
@@ -813,7 +813,7 @@ def test_a_ggufs_head_is_asked_for_in_pieces_that_end_ever_further_each_from_whe
     (5000, 0, 4096),        # and after a second piece
 ])
 def test_the_tensors_that_came_with_a_ggufs_head_are_fed_and_not_asked_for_again(base, data, first, monkeypatch):
-    """T374.3: every byte of the tensors reaches the conversion once and in the order of the file: first what came
+    """T.374.3: every byte of the tensors reaches the conversion once and in the order of the file: first what came
     with the head, from the conduct, then the stream's parts, from whoever answers. No byte of the file is asked for
     twice, and none past what the pieces of the head and one stream cover."""
     monkeypatch.setattr(conducting, "GGUF_HEAD", first)

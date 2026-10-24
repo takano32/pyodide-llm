@@ -1,6 +1,6 @@
-// The check of the sampling and of the generated tokens (T151, T178, T195, T219): against the CPU's sampling in JavaScript,
+// The check of the sampling and of the generated tokens (T.151, T.178, T.195, T.219): against the CPU's sampling in JavaScript,
 // with the logits that are not finite, and a few tokens against the layer in JavaScript.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.ts";
 import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.ts";
 import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.ts";
@@ -11,10 +11,10 @@ import type { Dispatch, Owned, Shape, Thrown, Weights } from "./device.ts";
 import type { MatrixKey } from "./layerparts.ts";
 import type { GenerationData, Sampler } from "./generate.ts";
 import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
-// T368.7: a case of the sampling's check: a vocabulary, the logits it is of (a spread and its peaks, sparse, tied, and
+// T.368.7: a case of the sampling's check: a vocabulary, the logits it is of (a spread and its peaks, sparse, tied, and
 // what is not finite in them: unfinite, at where that kind has a place), the settings, and the random number ("fifth":
 // the middle of the fifth tied token's share); a run's settings are a case without its one random number
-// T546: and a top-k, min-p and the presence penalty (0 where none), and how many of the history's latest were sampled
+// T.546: and a top-k, min-p and the presence penalty (0 where none), and how many of the history's latest were sampled
 type Case = { vocab: number; spread?: number; peaks?: number; sparse?: boolean; ties?: boolean; short?: boolean; unfinite?: string; at?: number;
   topp: number; temperature: number; penalty: number; random: number | "fifth" | "eighth"; topK?: number; minP?: number; presence?: number; written?: number };
 type Running = Omit<Case, "random">;
@@ -25,7 +25,7 @@ type Recorded = { xq: Int8Array; xs: Float32Array }[][];
 type Caches = { keys: Uint16Array; values: Uint16Array }[];
 type Held = ReturnType<typeof heldHalves>;
 
-// The check of SAMPLE (T151) against the CPU's sampling in JavaScript (shaders.ts's sampleLikeCpu and
+// The check of SAMPLE (T.151) against the CPU's sampling in JavaScript (shaders.ts's sampleLikeCpu and
 // penalizeLikeCpu, which tests/smoke.mjs holds to the kernel): the same logits, history and random number must pick
 // the same token. Where a float32 sum in another order moves a border, a token next to it is as right: the token
 // passes when it is what the CPU picks, or where the CPU's walk (walkLikeCpu, with top-p as it is and moved by EDGE)
@@ -75,11 +75,11 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
       cases.push({ vocab, spread, topp: 0.9, temperature: 1.3, penalty: 1, random: Math.random() });
     }
   }
-  // T191: without a nucleus on flat logits of Llama 3's vocabulary (no peaks), so that the mass is spread over the
+  // T.191: without a nucleus on flat logits of Llama 3's vocabulary (no peaks), so that the mass is spread over the
   // chunks of the sampling in chunks and the draw passes in a chunk far from the first (a model's logits put nearly
   // all of it on one peak: the mass before that chunk is next to nothing, and forgetting it passed)
   for (const random of [0.3, 0.6, 0.9]) cases.push({ vocab: 128256, spread: 1, peaks: 0, topp: 1, temperature: 0.7, penalty: 1.3, random });
-  // T191 (Fable's check): chunks with nothing over the floor, the tokens over it on the chunks' borders (sparseLogits);
+  // T.191 (Fable's check): chunks with nothing over the floor, the tokens over it on the chunks' borders (sparseLogits);
   // the most likely token (temperature 0) is the last of the vocabulary (the fourth unpenalized peak: the window holds
   // the three most likely)
   for (const topp of [0.9, 0.5, 1]) {
@@ -90,13 +90,13 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
   for (const spread of [0.5, 2, 6]) for (let i = 0; i < 3; i++) cases.push({ vocab: 1003, spread, topp: 0.9, temperature: 0.7, penalty: 1.3, random: Math.random(), short: true });
   // equal logits (tiedLogits): the draw on the first of the two at the top, on the fifth of the run of 20, and the most
   // likely token (temperature 0)
-  // (and over Llama 3's vocabulary, where they cross the chunks of the sampling in chunks: T191)
+  // (and over Llama 3's vocabulary, where they cross the chunks of the sampling in chunks: T.191)
   for (const vocab of [1003, 128256]) {
     cases.push({ vocab, topp: 0.9, temperature: 0.7, penalty: 1, random: 0.05, ties: true });
     cases.push({ vocab, topp: 0.9, temperature: 0.7, penalty: 1, random: "fifth", ties: true });
     cases.push({ vocab, topp: 0.9, temperature: 0, penalty: 1, random: 0.3, ties: true });
   }
-  // T546: a top-k (1, 20, 64 and one past what is over the floor: all kept), min-p and the presence penalty, alone and
+  // T.546: a top-k (1, 20, 64 and one past what is over the floor: all kept), min-p and the presence penalty, alone and
   // together, with a nucleus and without (a top-k without one walks the tokens from the most probable, min-p alone in
   // the order of the index), greedy with the presence penalty; the history's latest 30 sampled (the presence
   // penalty's: the three most likely among them; likely ones before them in the window, the prompt's, penalized by
@@ -120,7 +120,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
       cases.push({ vocab, topp: 1, temperature: 0.7, penalty: 1, random: "eighth", ties: true, topK: 10 });
     }
   }
-  // T219: logits the sampler must refuse (T195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
+  // T.219: logits the sampler must refuse (T.195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
   // not_finite word set, stopped set, nothing sampled) and ones it must not (UNREFUSED: a few -inf, which the CPU never
   // draws either, and the review's: denormals and -0, one finite logit among -inf): a NaN or +inf at the first token,
   // the last (a thread's last, the vocabulary's last chunk's) and in the middle, with a nucleus and without, at
@@ -222,7 +222,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
           : [ranked[3], ranked[4], ...ranked.slice(-4), ranked[0], ...ranked.slice(5, 35), ranked[1], ...ranked.slice(-30, -10), ranked[0], ranked[2],
             ranked[1], ...ranked.slice(35, 43), ranked[2]];
         if (c.short) logits[0] = (logits[ranked[0]] + logits[ranked[1]]) / 2;
-        // (T219's review) the penalty's last token a NaN or +inf: the penalty multiplies or divides it, and it stays one
+        // (T.219's review) the penalty's last token a NaN or +inf: the penalty multiplies or divides it, and it stays one
         if (c.unfinite === "nan in the window") logits[history[history.length - 1]] = NaN;
         if (c.unfinite === "+inf in the window") logits[history[history.length - 1]] = Infinity;
         let random = c.random;
@@ -233,7 +233,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
           random = (walk.cumulative[k - 1] + walk.cumulative[k]) / 2 / walk.mass;
         }
         if (c.unfinite && !UNREFUSED.includes(c.unfinite)) {
-          // (T219) refused: the ids untouched (every one of the run's), the state's not_finite and stopped set, nothing
+          // (T.219) refused: the ids untouched (every one of the run's), the state's not_finite and stopped set, nothing
           // sampled, the position, the token and the history's length as they were; a run of 4 all refused too
           for (const draws of [[random], [random, 0.1, 0.9, 0.3]]) {
             const got = await sampled(c, logits, history, draws, draws.length), s = got.state;
@@ -252,7 +252,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
       }
       // runs: the i-th random number for the i-th token, and a stop token (the run's third token, taken again), second
       // of two and last of eight: the settings hold the stop tokens four to a vec4, and the list's models have up to
-      // five (sarashina2.2, CAT-Translate, llm-jp-4: T151's review)
+      // five (sarashina2.2, CAT-Translate, llm-jp-4: T.151's review)
       for (const vocab of [1003, 128256]) {
         const c = { vocab, spread: 1, topp: 0.9, temperature: 0.7, penalty: 1.3 }, logits = madeUpLogits(vocab, 1, 40);
         const history = [...Array(20)].map(() => (Math.random() * vocab) | 0), draws = [0.05, 0.95, 0.5, 0.25];
@@ -262,7 +262,7 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
         for (const stops of [[NOT_A_TOKEN, stop], [...Array(shared.WGSL.STOPS_MOST - 1)].map((_, i) => NOT_A_TOKEN + i).concat(stop)]) {
           judge(c, logits, history, draws, await sampled(c, logits, history, draws, 4, stops), stops);
         }
-        // T546: a run with a top-k, min-p and the presence penalty (each token sampled joins the presence penalty's
+        // T.546: a run with a top-k, min-p and the presence penalty (each token sampled joins the presence penalty's
         // window: the state's written goes up), its logits of few tokens, so that a token taken comes again
         if (kind === "one") {
           const narrowed = { ...c, topK: 20, minP: 0.05, presence: 1.5, written: 3 }, few = madeUpLogits(vocab, 1, 8);
@@ -280,18 +280,18 @@ async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
 const SENTINEL_ID = 0xdeadbeef;
 // stop tokens past any vocabulary: the list's before the one that stops the run
 const NOT_A_TOKEN = 200000;
-// The check of a run of tokens on the GPU (T151): the check's small model (two layers of 256, 4 heads of 64 and 2 of
+// The check of a run of tokens on the GPU (T.151): the check's small model (two layers of 256, 4 heads of 64 and 2 of
 // K and V, a vocabulary of 1003) generates 6 tokens in one submission from position 5, greedy and sampled (top-p 0.9,
 // the penalty), and each token is held to what the CPU's sampling picks from the logits of the same forward pass in
 // JavaScript (layerReference's layers, the embedding and the classifier in float64), fed the GPU's tokens before it:
 // the first index of the largest logit or one within 1e-4 of the logits' largest magnitude of it (the GPU's float32
 // forward pass is off by about 1e-6 of it), or a token acceptable() takes. Then the sampled run again with its fourth
 // token as a stop token: the same three tokens, the stop written, and the run stopped there.
-// T175: the layers are tokenForm()'s. On DP4A the reference takes the vectors the GPU quantized (each pass records
+// T.175: the layers are tokenForm()'s. On DP4A the reference takes the vectors the GPU quantized (each pass records
 // them: generationParts), as checkLayer does, and each is held to quantize_x of the reference's values where it was
 // made (quantizedOff): quantizing its own values instead, a value on a rounding's edge in float32 goes either way and
 // moved this model's logits by up to 6.5% of the largest (a JavaScript emulation, 360 tokens, .tmp/t175/band.mjs)
-// T225: and the reference takes the GPU's own keys and values of each position it wrote, where each is a float16 next
+// T.225: and the reference takes the GPU's own keys and values of each position it wrote, where each is a float16 next
 // to the reference's (heldHalves: a device that rounds them toward zero, as Direct3D does, is as right as one that
 // rounds to the nearest, and its logits were off by more than the band). The verdict says in `steps` how each step's
 // logits held (the GPU's, read back, against the reference's over the largest, and whether the most likely token is
@@ -320,7 +320,7 @@ async function checkGeneration(): Promise<Verdicts> {
     for (let k = 0; k < tokens.length; k++) {
       const p = pos + k;
       let h = embedded(tokens[k]);
-      // the GPU's quantized vector in place of x (T175), held to quantize_x of x
+      // the GPU's quantized vector in place of x (T.175), held to quantize_x of x
       const taken = (at: number, x: Float64Array, what: string) => {
         const { xq, xs } = vectors![k][at], { wrong } = quantizedOff(x, xq, xs, at === 4 * model.layers ? NORMED_SCALE_LINE : scaleLine(INPUTS[at % 4]));
         if (wrong) quantizing.push(`token ${k}, ${what}: ${wrong}`);
@@ -368,7 +368,7 @@ async function checkGeneration(): Promise<Verdicts> {
         const got = await runOnce();
         const sampled = Math.min(got.state[5], count), fed = [history[pos], ...got.ids.subarray(0, sampled - 1)];
         const { vectors, logits: gpuLogits } = parts.recorded!(await readBack(shared.device.createCommandEncoder(), parts.record!, parts.recording!), sampled);
-        // T225: the GPU's keys and values of the positions before the run and of those it wrote
+        // T.225: the GPU's keys and values of the positions before the run and of those it wrote
         const caches: Caches = [], cached = async (source: GPUBuffer) => new Uint16Array(await readBack(shared.device.createCommandEncoder(), source, (pos + sampled) * kvDim * 2));
         for (const { keys, values } of parts.caches) caches.push({ keys: await cached(keys), values: await cached(values) });
         const quantizing: string[] = [], rounded: Held[] = [];
@@ -381,7 +381,7 @@ async function checkGeneration(): Promise<Verdicts> {
           shared.WGSL.penalizeLikeCpu(cpu, seen, settings.penalty);
           let largest = 0;
           for (const value of cpu) largest = Math.max(largest, Math.abs(value));
-          // T225: the step's logits on the GPU (after the penalty, as the reference's) against the reference's
+          // T.225: the step's logits on the GPU (after the penalty, as the reference's) against the reference's
           held.push({ off: farthest(gpuLogits[k], cpu), most: most(gpuLogits[k]) === most(cpu) });
           seen.push(got.ids[k]);
           if (stopped) continue;

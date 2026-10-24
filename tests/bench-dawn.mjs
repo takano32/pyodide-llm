@@ -1,7 +1,7 @@
 // A step of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.ts) in Node on Dawn (the npm package webgpu, not a
 // dependency of this project: gpu-prompt.yml installs it under .tmp/dawn) with Mesa's lavapipe (shader-f16 and
 // subgroups, whose width LP_NATIVE_VECTOR_WIDTH sets: 128 → 4, 512 → 16), with no browser: the worker's answer as one
-// line "RESULT <seconds> <json>" (its result, or { error }). T219 (from T191's review's throwaway tool): the CI's
+// line "RESULT <seconds> <json>" (its result, or { error }). T.219 (from T.191's review's throwaway tool): the CI's
 // tests.yml runs it with extra= on a branch, e.g. the step "check" for the sampling's verdicts.
 //   VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1) \
 //   node tests/bench-dawn.mjs <the webgpu package's directory> [<the directory of the runtime's files: this tree's by default>] [<step>] [<counts>] [<keys>]
@@ -21,7 +21,7 @@ const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "ind
 Object.assign(globalThis, globals);
 globalThis.self = globalThis;
 globalThis.onmessage = null;
-// (T225's review: GPU_ROUNDING=toward-zero|away|everything gives the device's shaders another rounding of a float32 to a
+// (T.225's review: GPU_ROUNDING=toward-zero|away|everything gives the device's shaders another rounding of a float32 to a
 // float16 than lavapipe's own, the nearest: tests/rounding.mjs, tests/rounding-check.mjs)
 const { roundedGpu } = await import("./rounding.mjs");
 Object.defineProperty(globalThis, "navigator", { value: { gpu: roundedGpu(create([]), process.env.GPU_ROUNDING) }, configurable: true });
@@ -31,7 +31,7 @@ globalThis.postMessage = (message) => {
   // (the worker's progress: alive, lost and stage are no answer)
   if (!message.alive && !message.lost && !message.stage) answer?.(message);
 };
-// (T368.7: the worker's window is gpu.ts; a directory of an older tree given by hand has gpu.js. Node runs either)
+// (T.368.7: the worker's window is gpu.ts; a directory of an older tree given by hand has gpu.js. Node runs either)
 const window_ = ["benchmark/gpu.ts", "benchmark/gpu.js"].map((name) => path.resolve(dir, name)).find((file) => fs.existsSync(file));
 if (!window_) throw new Error(`${dir} holds no benchmark/gpu.ts (nor .js): is it the runtime's folder?`);
 await import(pathToFileURL(window_).href);

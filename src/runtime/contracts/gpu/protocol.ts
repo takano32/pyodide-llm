@@ -1,10 +1,10 @@
-// contracts/gpu/protocol.ts (T368.2): what forward.ts and the model's GPU worker say to one another. Types alone:
+// contracts/gpu/protocol.ts (T.368.2): what forward.ts and the model's GPU worker say to one another. Types alone:
 // nothing of this file is in what a browser gets (it is read with `import type`).
 //
 // The worker is src/runtime/gpu.ts (its head says what each message does), which forward.ts makes
 // (src/runtime/forward/gpuside.ts) and hands the model in a plan: Started, of { type: "start" }, a model whose layers are
 // in the shared memory too; Opened, of { type: "open" } (src/runtime/forward/alone.ts's gpuOnlyPlan(), posted by
-// src/runtime/worker/weights.ts), a model on the GPU alone (T156), whose bytes follow as { type: "weights" }.
+// src/runtime/worker/weights.ts), a model on the GPU alone (T.156), whose bytes follow as { type: "weights" }.
 // A prompt's block, a generation's steps and the keys and values are asked for by a message and answered in the control
 // area: the words of that answer are src/runtime/jobs.ts's constants (GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED), which
 // the plan carries as words. They are numbers there, and stay that.
@@ -14,18 +14,18 @@
 
 import type { Activation, LayerKind } from "../plan.ts";
 
-// a matrix of every layer: rows of n values, int6 (T155) or ternary (T232) where the values at a layer's address are
-// packed so, and for every layer [where its values are, where its scales are]. T545: of: the kind of the layers it is
+// a matrix of every layer: rows of n values, int6 (T.155) or ternary (T.232) where the values at a layer's address are
+// packed so, and for every layer [where its values are, where its scales are]. T.545: of: the kind of the layers it is
 // a matrix of (an LFM2's q is its attending layers', its matrix in its convolution layers'), whose places index layers;
 // none: every layer's
 export type Matrix = { rows: number; n: number; six?: boolean; ternary: boolean; layers: [number, number][]; of?: LayerKind };
 // a table (the classifier, the embedding): as a matrix, at [values, scales]
 export type Table = { rows: number; n: number; six?: boolean; ternary: boolean; at: [number, number] };
-// a vector of every layer: where it is, and its size a layer (T545: of, as a matrix's)
+// a vector of every layer: where it is, and its size a layer (T.545: of, as a matrix's)
 export type Vector = { at: number; size: number; of?: LayerKind };
 
-// The vectors a model has (gpuside.js's gpuVectors()): the norms' weights always; LayerNorm's biases (T154), Qwen2's
-// biases of q, k and v and Qwen3's norms of a head (T153), a GPT-2's biases after its matrices, where the model has them
+// The vectors a model has (gpuside.js's gpuVectors()): the norms' weights always; LayerNorm's biases (T.154), Qwen2's
+// biases of q, k and v and Qwen3's norms of a head (T.153), a GPT-2's biases after its matrices, where the model has them
 export type Vectors = {
   attention: Vector;
   ffn: Vector;
@@ -39,13 +39,13 @@ export type Vectors = {
   bo?: Vector;
   b1?: Vector;
   b2?: Vector;
-  // T261.4: a Gemma 3's norms behind the attention and behind the FFN
+  // T.261.4: a Gemma 3's norms behind the attention and behind the FFN
   attentionPost?: Vector;
   ffnPost?: Vector;
-  // T545: the taps of an LFM2's convolution layers (taps rows of dim a layer; T271.2: a Qwen3.5's linear-attention
+  // T.545: the taps of an LFM2's convolution layers (taps rows of dim a layer; T.271.2: a Qwen3.5's linear-attention
   // layers', taps rows of their mixed q, k and v)
   conv?: Vector;
-  // T271.2: a Qwen3.5's linear-attention layers' gates: their two small matrices (float32, a row of dim a value head),
+  // T.271.2: a Qwen3.5's linear-attention layers' gates: their two small matrices (float32, a row of dim a value head),
   // dt_bias and the decay (one a value head), and the norm of a value head
   wb?: Vector;
   wa?: Vector;
@@ -54,9 +54,9 @@ export type Vectors = {
   deltaNorm?: Vector;
 };
 
-// T152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
+// T.152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
 // another table, the embedding; the final norm (its bias and GPT-2's positions: 0 where the model has none); whether
-// the classifier has outlier channels (T92) and which; where the ids go; the most steps of a submission
+// the classifier has outlier channels (T.92) and which; where the ids go; the most steps of a submission
 export type Tokens = {
   classifier: Table;
   embedding: Table | null;
@@ -69,7 +69,7 @@ export type Tokens = {
   most: number;
 };
 
-// T210: the tables of a model on the GPU alone, which come with the checkpoint's bytes
+// T.210: the tables of a model on the GPU alone, which come with the checkpoint's bytes
 export type Tables = { classifier: Table; embedding: Table | null };
 
 // the words of the control area a request is answered in (jobs.ts's GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED)
@@ -90,10 +90,10 @@ export type Force = {
   tablePieceBytes?: number;
 };
 
-// what the page kept of an earlier visit on this device (T148, T152): the shaders chosen then, under the device's key
+// what the page kept of an earlier visit on this device (T.148, T.152): the shaders chosen then, under the device's key
 export type Remembered = { key?: string; matrices?: string; attention?: string; tokens?: string; alone?: unknown };
 
-// T568.4: the numbers of the kinds of layers that keep a state, each under its kind's name (forward/kinds.ts's gpu.plan()
+// T.568.4: the numbers of the kinds of layers that keep a state, each under its kind's name (forward/kinds.ts's gpu.plan()
 // says its own: forward/convolution.ts, linear.ts), null where the model has none of that kind. A new kind's numbers are
 // a key here
 export type KindNumbers = {
@@ -103,8 +103,8 @@ export type KindNumbers = {
 
 // The plan of { type: "start" }: the model's sizes, what RoPE turns, its norm and residual, and addresses in the
 // shared memory (the matrices, the vectors, rows: the rows forward.ts embeds, cos and sin: RoPE's tables, staging:
-// where a block's keys and values come back, and T545 the state of the layers that keep one after them: where it goes
-// up from too, T271.2)
+// where a block's keys and values come back, and T.545 the state of the layers that keep one after them: where it goes
+// up from too, T.271.2)
 export type Started = KindNumbers & {
   dim: number;
   hidden: number;
@@ -112,7 +112,7 @@ export type Started = KindNumbers & {
   heads: number;
   kvHeads: number;
   headSize: number;
-  // the values of a head RoPE turns (0: a GPT-2), and the layers it leaves alone (T255)
+  // the values of a head RoPE turns (0: a GPT-2), and the layers it leaves alone (T.255)
   turned: number;
   unturned: number[];
   seqLen: number;
@@ -120,22 +120,22 @@ export type Started = KindNumbers & {
   eps: number;
   layerNorm: boolean;
   parallel: boolean;
-  // T261.4: the activation of the FFN (its gate's, where it has one: a Gemma 3's GELU); every layer's window, the last
+  // T.261.4: the activation of the FFN (its gate's, where it has one: a Gemma 3's GELU); every layer's window, the last
   // positions it attends (0: every one); the layers RoPE turns by the local tables, and where those are (0: none)
   activation: Activation;
   windows: number[];
   local: number[];
   localCos: number;
   localSin: number;
-  // T545: every layer's kind ("attention", or "convolution": an LFM2's; T271.2 "linear": a Qwen3.5's) and its place
-  // among the layers of its kind; of the convolution layers, the taps; T271.2: of the linear-attention layers, their
+  // T.545: every layer's kind ("attention", or "convolution": an LFM2's; T.271.2 "linear": a Qwen3.5's) and its place
+  // among the layers of its kind; of the convolution layers, the taps; T.271.2: of the linear-attention layers, their
   // heads and their sizes and the taps of their convolution; null where the model has none. The state of those layers
   // is staged after the keys and values (staging), as the CPU's kinds put it there (forward/convolution.ts, linear.ts:
   // the convolution layers' rows; the linear-attention layers' states, then their rows). The GPU's own keys and values,
   // and the places a block's come back to, are the attending layers' alone
   kinds: LayerKind[];
   places: number[];
-  // T271.1: a rotated basis (T237): its block, and where the signs of each width a matrix reads are (float32, Python's,
+  // T.271.1: a rotated basis (T.237): its block, and where the signs of each width a matrix reads are (float32, Python's,
   // each times 1 / sqrt(block)); null: the model's own basis
   rotated: { block: number; signs: { width: number; at: number }[] } | null;
   // the most tokens of a block
@@ -155,16 +155,16 @@ export type Started = KindNumbers & {
 };
 
 // The plan of { type: "open" } (gpuOnlyPlan()): the layers and their matrices by where they are in the checkpoint
-// (T271.4: kinds and places, as Started's, where some layers are of another kind than attention: a Qwen3.5's)
+// (T.271.4: kinds and places, as Started's, where some layers are of another kind than attention: a Qwen3.5's)
 export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined; kinds?: LayerKind[];
   places?: number[] };
 
-// forward.ts's cache of the keys and values a generation's steps go up from: where each attending layer's are now (T261.4.2,
+// forward.ts's cache of the keys and values a generation's steps go up from: where each attending layer's are now (T.261.4.2,
 // places: the address of position 0's keys and values, position p's p rows after; or, where ring is not 0, a ring of so
-// many positions that holds position p at p mod ring, T510.1), the bytes of a position, and whether they are float16
+// many positions that holds position p at p mod ring, T.510.1), the bytes of a position, and whether they are float16
 export type CachePlace = { keys: number; values: number; ring: number };
 export type Cache = { places: CachePlace[]; row: number; half: boolean };
-// the sampling of the steps (the engine's settings; T546: topK, minP and presence too, 0 where none; stops: the stop
+// the sampling of the steps (the engine's settings; T.546: topK, minP and presence too, 0 where none; stops: the stop
 // tokens)
 export type Sampling = { temperature: number; topp: number; penalty: number; topK: number; minP: number; presence: number; stops: number[] };
 
@@ -172,7 +172,7 @@ export type ToGpu =
   | { type: "open"; plan: Opened; flow: SharedArrayBuffer }
   | { type: "weights"; offset: number; bytes: Uint8Array }
   | { type: "start"; memory: WebAssembly.Memory; plan: Started }
-  // T210: tokens, the ids of a model on the GPU alone, which embeds them there. T271.2: fresh, the request goes on from
+  // T.210: tokens, the ids of a model on the GPU alone, which embeds them there. T.271.2: fresh, the request goes on from
   // the GPU's own state of the layers that keep one (none, or false: from the CPU's, staged; position 0: none)
   | { type: "prompt"; serial: number; count: number; pos: number; fresh?: boolean; tokens?: number[] }
   | { type: "tokens"; serial: number; count: number; pos: number; fresh?: boolean; from: number; token: number; history: number[]; length: number;
@@ -183,7 +183,7 @@ export type ToGpu =
 // what a form (a shader's way with the matrices, the attention, a token's layer) came to where it was tried: its ms,
 // or that it was remembered, or why it is none
 export type Tried = { name: string; ms?: number; remembered?: boolean; none?: string };
-// T152, T224: the layer of a token chosen and its ms a step, the attention of a token, the pieces of the classifier
+// T.152, T.224: the layer of a token chosen and its ms a step, the attention of a token, the pieces of the classifier
 export type TokensChosen = { form: string; ms: number | undefined; forms: Tried[]; remembered: boolean; pieces: number; attention: string; attentions: Tried[] };
 
 export type FromGpu =

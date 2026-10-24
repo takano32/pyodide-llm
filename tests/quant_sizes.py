@@ -1,6 +1,6 @@
-# quant_sizes.py (T513): what a model of the list would weigh in the forms the page can hold it in, from the heads of
+# quant_sizes.py (T.513): what a model of the list would weigh in the forms the page can hold it in, from the heads of
 # its files alone (no weights fetched): int8 and 6 bits (the entry's own file, quantized in the browser), and llama.cpp's
-# blocks kept as they are (T363's Conversion(blocks=True)) for each GGUF named, a file of the same repository as the
+# blocks kept as they are (T.363's Conversion(blocks=True)) for each GGUF named, a file of the same repository as the
 # entry's GGUF (a Q4_K_M, an IQ4_XS ...). For each: the bytes fetched (the weights' file), the checkpoint the memory
 # holds, and for the blocks which rows stay in which type and which are widened to the dtype (a stack with one layer of
 # a type the page has no kernel for is widened whole: Q6_K, Q5_K, Q8_0 and the blocks of 32 are read, not kept).

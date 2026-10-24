@@ -1,4 +1,4 @@
-// tests/fakes/webgpu.mjs (T568.1)
+// tests/fakes/webgpu.mjs (T.568.1)
 // A stand-in for WebGPU as the model's GPU worker (src/runtime/gpu/) sees it: an adapter, and a device that writes
 // down what it is asked (calls: every buffer made, write (with a copy of its bytes), clear, copy, pipeline compiled, dispatch, submission, destroy, the
 // device gone) and keeps the bytes of every buffer. For the checks that run that worker's parts without a GPU:

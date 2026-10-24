@@ -1,9 +1,9 @@
-"""T331: Gemma 4's layers (Google's gemma-4-E2B-it and E4B-it, their language model), through the converter and the
+"""T.331: Gemma 4's layers (Google's gemma-4-E2B-it and E4B-it, their language model), through the converter and the
 engine's NumPy forward pass, against a reference written from the Hugging Face tensors the way transformers computes
 (conftest.naive_gemma4_logits): heads of their own size in the full-attention layers, the proportional RoPE of those,
 v normalized without a weight, the scores not scaled, every layer's number it multiplies the stream by, the norms of
-their weight, the cap of the logits. Layers that read another's keys and values (T330) and an embedding of every layer
-(T329) are not yet: the converter refuses a model that has them, which every published Gemma 4 has."""
+their weight, the cap of the logits. Layers that read another's keys and values (T.330) and an embedding of every layer
+(T.329) are not yet: the converter refuses a model that has them, which every published Gemma 4 has."""
 import json
 import struct
 
@@ -33,12 +33,12 @@ MODELS = {
     "no cap of the logits": dict(softcap=None),
     "a cap that bites": dict(softcap=0.5),
     "another epsilon, the bases the other way round": dict(eps=1e-5, theta=50.0, local_theta=1000000.0),
-    # T330: the last layers read the keys and values of the last of their kind before them
+    # T.330: the last layers read the keys and values of the last of their kind before them
     "the last four share": dict(kinds="ssllsssl", sharing=4),
     "the last four share, their FFN twice as wide": dict(kinds="ssllsssl", sharing=4, double=True),
     "all but the first two of a kind share": dict(kinds="slslssssl", sharing=5, double=True),
     "sharing, heads of one size": dict(kinds="ssllsl", sharing=2, wide_head=16, double=True),
-    # T329: every layer's input of its own
+    # T.329: every layer's input of its own
     "an embedding of every layer": dict(per_layer=8),
     "all of it, as E2B has it": dict(kinds="sslsslsslssl", sharing=5, double=True, per_layer=8, whole=True),
     "all of it, as E4B has it, a classifier of its own": dict(kinds="sslsslsslssl", sharing=5, per_layer=16, shared=False),
@@ -49,7 +49,7 @@ PASSED = ("dtype", "arch", "bias", "head_dim", "local", "rope_theta", "rms_norm_
 
 @pytest.fixture(autouse=True)
 def page_reads_embeddings(monkeypatch):
-    """(T329.2 is when the page's forward pass reads them: the converter refuses them until then, but here)"""
+    """(T.329.2 is when the page's forward pass reads them: the converter refuses them until then, but here)"""
     import convert.families.gemma4
     monkeypatch.setattr(convert.families.gemma4, "PAGE_READS_EMBEDDINGS", True)
 
@@ -178,7 +178,7 @@ def refusal(config):
 
 
 def test_what_the_engine_has_not_yet_is_refused_in_words(monkeypatch):
-    """Every published Gemma 4 has an embedding of every layer, which the page's forward pass reads from T329.2:
+    """Every published Gemma 4 has an embedding of every layer, which the page's forward pass reads from T.329.2:
     refused until then; and what a Gemma 4 of other sizes has (the 12B's keys that are its values, the 26B's
     experts), and a table of another vocabulary."""
     import convert.families.gemma4
@@ -199,7 +199,7 @@ def test_what_the_engine_has_not_yet_is_refused_in_words(monkeypatch):
     form = checkpoint_form(said, {})
     assert form["wide"] == {"layers": list(range(4, 35, 5)), "head_dim": 512} and form["double"] == list(range(15, 35))
     assert form["head_dim"] == 256
-    # T330: the last 20 read layer 13 (the local ones) and 14 (those that attend all), as transformers' layers do
+    # T.330: the last 20 read layer 13 (the local ones) and 14 (those that attend all), as transformers' layers do
     assert form["kv_shared"] == {"layers": list(range(15, 35)), "from": [14 if layer % 5 == 4 else 13 for layer in range(15, 35)]}
     # and E4B's: 18 of 42, from 22 and 23, an FFN of one width
     e4b = normalize({**E2B, "hidden_size": 2560, "intermediate_size": 10240, "num_hidden_layers": 42, "num_key_value_heads": 2,
@@ -328,7 +328,7 @@ def test_no_other_architecture_is_changed_by_the_layers_of_another_width():
 
 
 def test_the_pages_engine_is_handed_a_gemma4_with_all_of_its_layers():
-    """T331.2 has forward.js read what a Gemma 4's layers are; T330.2 and T329.2 its layers that share keys and values
+    """T.331.2 has forward.js read what a Gemma 4's layers are; T.330.2 and T.329.2 its layers that share keys and values
     and its embedding of every layer: a plan of each is made, and one with the embedding of every layer has its table,
     the projection, its norm and every layer's three among its tensors (forward.js reads them by their names)."""
     from engine.plan import Settings, forward_plan
@@ -343,7 +343,7 @@ def test_the_pages_engine_is_handed_a_gemma4_with_all_of_its_layers():
 
 
 ALL = dict(kinds="sslsslsslssl", sharing=5, double=True, per_layer=8)
-# T329: the tensors of every layer's input, of the model and of a layer (one that keeps its keys and values, one that
+# T.329: the tensors of every layer's input, of the model and of a layer (one that keeps its keys and values, one that
 # reads another's, the last)
 OWN = ["model.embed_tokens_per_layer.weight", "model.per_layer_model_projection.weight",
        "model.per_layer_projection_norm.weight"] + [f"model.layers.{layer}.{name}.weight" for layer in (0, 8, 11)
@@ -387,7 +387,7 @@ def test_the_table_of_every_layer_is_held_as_it_is_stored(dtype, width):
 def test_the_projection_is_scaled_before_its_norm_where_the_epsilon_shows_it():
     """The projection of the embedding's row is multiplied by 1 / sqrt(dim) before an RMSNorm, which only its epsilon
     lets see a scale: a projection small enough for the epsilon to matter shows whether the scale is where the
-    model has it (the made-up projections of the other tests are too large for that: the review of T329.1's breaks)."""
+    model has it (the made-up projections of the other tests are too large for that: the review of T.329.1's breaks)."""
     tensors, config = gemma4_model(**ALL)
     name = "model.per_layer_model_projection.weight"
     small = {**tensors, name: tensors[name] * np.float32(2e-3)}
@@ -397,7 +397,7 @@ def test_the_projection_is_scaled_before_its_norm_where_the_epsilon_shows_it():
         assert close(llama.forward(token, pos), want[pos]), pos
 
 
-# ---- a GGUF (T529)
+# ---- a GGUF (T.529)
 # llama.cpp's names by transformers' of the language model saved alone (conversion/gemma.py's Gemma4Model, gguf-py's
 # constants.py and tensor_mapping.py at b76b1337), written out here rather than taken from the converter's family
 GGUF_NAMES = {"embed_tokens.weight": "token_embd.weight", "norm.weight": "output_norm.weight",
@@ -510,8 +510,8 @@ GGUF_SHAPES = {"as E2B is": GGUF_E2B,
 @pytest.mark.parametrize("dtype", ["int8", "float32", "int6"])
 @pytest.mark.parametrize("shape", GGUF_SHAPES)
 def test_a_gemma4_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
-    """The list's way in (T529): the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the
-    byte, the table of every layer among them (the row the page reads from the keeper, T329.2.2's tableHole()). The
+    """The list's way in (T.529): the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the
+    byte, the table of every layer among them (the row the page reads from the keeper, T.329.2.2's tableHole()). The
     rope_freqs table passes as it streams by, held to the original's quarter."""
     monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = gemma4_gguf(**GGUF_SHAPES[shape])

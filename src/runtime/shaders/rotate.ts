@@ -1,4 +1,4 @@
-// shaders/rotate.ts (T271.1): a rotated basis on the GPU (T237: Ternary Bonsai 2 27B's matrices are stored as W R^-1,
+// shaders/rotate.ts (T.271.1): a rotated basis on the GPU (T.237: Ternary Bonsai 2 27B's matrices are stored as W R^-1,
 // R = H S, H the normalized Walsh-Hadamard transform of every block values, S a sign a value). A matrix then reads R x:
 // ROTATE_QUANTIZE turns its input and quantizes it for the packed matrices in one dispatch (in the place of QUANTIZE,
 // so that a token takes no more dispatches than it did); a row of the embedding is R^-1 of what the model reads, and
@@ -6,14 +6,14 @@
 // rotate and unrotate), the same float32 operations in the same order: the signs (whose magnitude is the transform's
 // 1 / sqrt(block), multiplied in first as NumPy does), then sums and differences of values 1, 2, 4, ... apart, so a
 // device whose float32 is IEEE's gives the CPU's numbers; and the 8 bits are QUANTIZE's (steps.ts: its packing and its
-// scale word, T241's NaN of a group's scale).
+// scale word, T.241's NaN of a group's scale).
 //
-// The form is the fork's Vulkan shader's for the transform as T232's spec of T271 reads it (https://github.com/PrismML-Eng/llama.cpp,
+// The form is the fork's Vulkan shader's for the transform as T.232's spec of T.271 reads it (https://github.com/PrismML-Eng/llama.cpp,
 // commit 88c4bc60, MIT, ggml/src/ggml-vulkan/vulkan-shaders/fwht.comp: a block a workgroup, its values in the
 // workgroup's memory (its FWHT_SHMEM way), a barrier a stage of butterflies). No line is taken: that shader keeps a block in registers and swaps them
 // over subgroups or shared memory by stages, where these keep it in the workgroup's memory throughout (a phone's
 // subgroups are 16 wide, the fork's are 32), and the quantizing of its groups after the last stage has no public form
-// (T232's spec of T271: QUANTIZE's lines and the transform's in one workgroup).
+// (T.232's spec of T.271: QUANTIZE's lines and the transform's in one workgroup).
 import { PACKED_WORD, SCALE_WORD } from "./steps.ts";
 
 // the largest block the workgroup holds (1024: the 27B's), and its threads

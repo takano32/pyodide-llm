@@ -1,5 +1,5 @@
-// worker/timing.ts (T350): what /benchmark/ has the worker time: a generation, and the model page's own path (T184).
-// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// worker/timing.ts (T.350): what /benchmark/ has the worker time: a generation, and the model page's own path (T.184).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T.367.3).
 
 import { forwardModule } from "./runtime.ts";
 import { threadsRequest, threadsFound } from "./request.ts";
@@ -7,11 +7,11 @@ import { llama, engineNow } from "./loaded.ts";
 import { memoryShared } from "./weights.ts";
 import type { Paths, PathThreads, Status, ToWorker } from "../contracts/messages.ts";
 
-// T368.3: a run of the writing: the ms of its tokens, and how many of them the GPU took
+// T.368.3: a run of the writing: the ms of its tokens, and how many of them the GPU took
 type Run = { ms: number; gpuTokens: number };
 
-// T45: a warm-up, then the measured run: the prompt, greedy, steps tokens (fewer where the model ends it first). The
-// warm-up runs its 8 steps (T184's review: return() on a generator that has not started runs none of it)
+// T.45: a warm-up, then the measured run: the prompt, greedy, steps tokens (fewer where the model ends it first). The
+// warm-up runs its 8 steps (T.184's review: return() on a generator that has not started runs none of it)
 export function timedGeneration(prompt: string, steps: number) {
   warmUp(prompt);
   const begin = performance.now();
@@ -33,13 +33,13 @@ function warmUp(prompt: string) {
   }
 }
 
-// T184: the model page's own path on the model loaded now (src/bench.js's pathTable() writes it). The GPU is waited for
+// T.184: the model page's own path on the model loaded now (src/bench.js's pathTable() writes it). The GPU is waited for
 // first, GPU_WAIT_S at most (the page does not wait: its first prompts go on the CPU meanwhile; a GPU not ready by then
-// is said as such), then the number of threads is the model page's (T190: the count the model page remembers, which
+// is said as such), then the number of threads is the model page's (T.190: the count the model page remembers, which
 // /benchmark/ passes as the model page does, or else the search run to its end: forward.ts's endSearch()), and every
 // side is timed on it (the CPU's times, and so the choice, are per number of threads). The prompts:
 // forward.ts's timePrompts(). The writing: sampled tokens after the prompt at the tok/s the page's status line says
-// (the engine's stats); T152: where the GPU takes a generation's steps, as the page chooses, on the CPU only and on the
+// (the engine's stats); T.152: where the GPU takes a generation's steps, as the page chooses, on the CPU only and on the
 // GPU only (engine.gpuSide), the sides in turn, a run each after the warm-up.
 const GPU_WAIT_S = 240, WRITING_RUNS = 3;
 export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, { type: "paths" }>): Promise<Omit<Paths, "type" | "load">> {
@@ -56,9 +56,9 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
     : { why: engine.gpuWhyNot ?? `not ready after ${GPU_WAIT_S} s` };
   postMessage({ type: "status", text: "the software threads" } satisfies Status);
   const { threads, found, ended } = await forwardModule!.endSearch(engine, () => timedGeneration(prompt, 64));
-  // how the count came about, for the table's head (T190): src/bench.js's pathTable() says it. A software thread that
-  // stopped (T120: the engine gave its helpers up and runs on one) is said first: found is 1 then, and the search's
-  // verdicts or the remembered count would name another count (T190's review)
+  // how the count came about, for the table's head (T.190): src/bench.js's pathTable() says it. A software thread that
+  // stopped (T.120: the engine gave its helpers up and runs on one) is said first: found is 1 then, and the search's
+  // verdicts or the remembered count would name another count (T.190's review)
   const remembered = threadsRequest?.remembered || 0;
   const how: PathThreads = !memoryShared() ? { alone: "no shared memory here" }
     : engine.lostThreads ? { alone: "a software thread stopped" }
@@ -76,7 +76,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   postMessage({ type: "status", text: `writing ${writes} tokens` } satisfies Status);
   warmUp(prompt);
   let fewest = writes;  // a stop token may end a run first: its tok/s stands, and the row says the fewest
-  // a run of the writing on side ("cpu", "gpu", or null: as the page chooses, T152); whether the GPU took every step
+  // a run of the writing on side ("cpu", "gpu", or null: as the page chooses, T.152); whether the GPU took every step
   const written = (side: string | null = null): Run => {
     engine.gpuSide = side;
     const before = engine.gpuSampled;
@@ -96,7 +96,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
       engine.gpuSide = null;
     }
   };
-  // T152: the sides, where the GPU takes a generation's steps (else the CPU's alone), in turn
+  // T.152: the sides, where the GPU takes a generation's steps (else the CPU's alone), in turn
   const tokens = Boolean(chosen?.tokens);
   const sides = tokens ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
   const runs = Object.fromEntries(Object.keys(sides).map((name) => [name, [] as Run[]]));
@@ -108,7 +108,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   // a GPU side the GPU did not take whole (it failed, or was lost, on the way: its time is the CPU's)
   if (tokens && runs.gpu.some((run) => run.gpuTokens < writes)) row.gpu = { skip: engine.gpuTokensWhyNot ?? "the GPU did not take every step" };
   rows.push(row);
-  // T190's review: the writing on each number of threads the search goes through (1, 2, 4, ... up to the logical cores,
+  // T.190's review: the writing on each number of threads the search goes through (1, 2, 4, ... up to the logical cores,
   // and the page's), in turn: the page's count against the others on this very model. A count the model page remembers
   // is not searched here, and the CPU section's made-up model (2 layers: 11 waits between phases a token) says little
   // of a model like llm-jp-3 150M (12 layers: 61 waits, most on a phase of about 1 MB)
@@ -125,7 +125,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
           continue;
         }
         warmUp(prompt);  // the helpers a switch wakes, out of the time
-        byCount.get(n)!.push(written("cpu"));  // (T152: the CPU's steps, whichever side the page chooses)
+        byCount.get(n)!.push(written("cpu"));  // (T.152: the CPU's steps, whichever side the page chooses)
       }
     }
     await engine.setThreads(threads);
@@ -133,7 +133,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   const perCount = engine.lostThreads ? [] : [...byCount].filter(([, list]) => list.length).map(([n, list]) => ({ threads: n, ...forwardModule!.timedCell(list, writes) }));
   // a software thread that stopped while the sides were timed: the times after it are one thread's
   if (engine.lostThreads && !how.alone) how.stopped = true;
-  // the rounds (T45) that follow load the model again: on this count too, not searching again while they are timed
+  // the rounds (T.45) that follow load the model again: on this count too, not searching again while they are timed
   if (memoryShared() && !engine.lostThreads) threadsFound(threads);
   // whatever stopped the GPU while the sides were timed (a failure, a lost device): its cells are empty (timePrompts)
   if (chosen && engine.gpuWhyNot) gpu.lost = engine.gpuWhyNot;

@@ -1,6 +1,6 @@
-// The step "check": the int8 shaders against JavaScript on small matrices (T134; T146: the tiled ones with their edges),
+// The step "check": the int8 shaders against JavaScript on small matrices (T.134; T.146: the tiled ones with their edges),
 // then the layer's check and the sampling's and the generation's (layercheck.ts, generatecheck.ts).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecShaders, kindOf, quantizer, matrix,
   vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.ts";
 import { checkLayer, checkTokenAttentions } from "./layercheck.ts";
@@ -59,7 +59,7 @@ async function check(): Promise<Verdicts> {
   Object.assign(verdicts, await checkGeneration());
   return verdicts;
 }
-// T149: every matrix × vector shader of its own (llama.cpp's and ONNX Runtime's) on 300 rows cut into chunks of 101 (a
+// T.149: every matrix × vector shader of its own (llama.cpp's and ONNX Runtime's) on 300 rows cut into chunks of 101 (a
 // workgroup's 4 or 8 rows and a part of them in each, and shape.first past 0), of widths 544 and 2080: 17 and 65 groups
 // of 32, a part of what llama.cpp's 64 groups a pass, ORT's 512 values a step and its DP4A's 32 groups a step take, and
 // 2080 more than one of them. x is 64 values longer than the width (a shader that takes the width from the buffer
@@ -113,13 +113,13 @@ async function checkMatVec() {
       verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
     } finally {
       // the page stops a section that says nothing for 5 minutes: SwiftShader compiles a shader for up to 90 s, and
-      // the checks before the layer's took 380 s together under load (T151)
+      // the checks before the layer's took 380 s together under load (T.151)
       postMessage({ alive: true } satisfies Alive);
     }
   }
   return verdicts;
 }
-// T146: every tiled shader on 300 rows of 544 (17 groups of 32), cut into chunks of 100 rows (tiles of 32 or 64 rows
+// T.146: every tiled shader on 300 rows of 544 (17 groups of 32), cut into chunks of 100 rows (tiles of 32 or 64 rows
 // and a part of one each, a subtile of 16 and a part, and shape.first past 0), with 11 and 70 tokens (a part of a tile
 // of 32 or 64; two or one and a part), and 11 tokens whose x and y are wider than the product (xStride 608 for 544 of
 // the width, yStride 320 for 300 rows: the prompt's model reads 2048 of 8192), twice into the same y (the second added
@@ -129,7 +129,7 @@ async function checkMatVec() {
 // row and token: what a float32 sum in another order may differ by is 544 × 2^-24 = 3.2e-5 of it at most, and a wrong
 // index, scale or group is off by about |value| / |sum of |products|| = 1 / sqrt(544) = 4e-2. The f16 tiles hold a
 // weight times its scale and an activation as halves, and WGSL leaves the direction of that rounding to the device
-// (round to nearest or toward zero, T146's review): each is then within 1 ulp, 2^-10 of it, or 2^-24 where it is
+// (round to nearest or toward zero, T.146's review): each is then within 1 ulp, 2^-10 of it, or 2^-24 where it is
 // subnormal, whatever the direction, so a product is within 2^-9 + 2^-20 of it and 2^-24 × (|weight| + |activation|),
 // and the float32 sum adds (n + 1) × 2^-24 of the sum of |products|: the f16 tiles are held to that bound, row by row
 // (about 2e-3 of the sum; still 1/20 of a wrong index's)
@@ -164,7 +164,7 @@ async function checkTiled() {
           owned.forEach((b) => b.destroy());
           destroyVectors(io);
         });
-        // T147: the comparison is shaders.ts's tiledOff, the model's GPU worker's too
+        // T.147: the comparison is shaders.ts's tiledOff, the model's GPU worker's too
         const off = shared.WGSL.tiledOff({ w: signed, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: shader.half! });
         worst = Math.max(worst, off.worst);
         over ||= Boolean(off.wrong);
@@ -179,7 +179,7 @@ async function checkTiled() {
       verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
     } finally {
       // the page stops a section that says nothing for 5 minutes: SwiftShader compiles a shader for up to 90 s, and
-      // the checks before the layer's took 380 s together under load (T151)
+      // the checks before the layer's took 380 s together under load (T.151)
       postMessage({ alive: true } satisfies Alive);
     }
   }

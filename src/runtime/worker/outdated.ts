@@ -1,6 +1,6 @@
-// worker/outdated.ts (T439): the one thing this visit's worker tells the page of the files it went on without. A page
+// worker/outdated.ts (T.439): the one thing this visit's worker tells the page of the files it went on without. A page
 // left open across a deployment asks for files of its own build that are gone (updated.ts's head). Where that ends
-// what was asked, the visitor is told so by an error (T367.4). Where the engine has a fallback (NumPy for the kernels
+// what was asked, the visitor is told so by an error (T.367.4). Where the engine has a fallback (NumPy for the kernels
 // and forward.ts, fewer threads for a software thread, the CPU for the GPU's worker) it takes it, as it always did,
 // and the model answers: slower than it would, and until this nothing said why. Now the page is told, once,
 // { type: "updated" }, and its status line says updated.ts's SLOWER after what it said before.

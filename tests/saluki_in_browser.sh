@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/saluki_in_browser.sh (T364.3): the list's entry of Underdog Saluki 27B opened by a real browser from the site of
+# tests/saluki_in_browser.sh (T.364.3): the list's entry of Underdog Saluki 27B opened by a real browser from the site of
 # this checkout, built and served on the runner: for a branch, which no deployed site has. On a CI runner only (it
 # fetches 7.9 GB, and the page takes 8 GiB of memory and keeps 7.96 GB in the browser's profile):
 #

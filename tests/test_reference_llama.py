@@ -1,4 +1,4 @@
-"""tests/reference_llama.py's helpers (the review of T253), which need no torch: the engine's keys and values in
+"""tests/reference_llama.py's helpers (the review of T.253), which need no torch: the engine's keys and values in
 transformers' order, the gap of the states of every layer, and the weak faults put into the engine's weights, each of which
 the check must see, with the weights put back after. The comparison with transformers itself runs in CI (the file's head)."""
 import math

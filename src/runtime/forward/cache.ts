@@ -1,9 +1,9 @@
-// forward/cache.ts (T375.3): the cache of the keys and values of one engine, and its state's owner. The layers that
+// forward/cache.ts (T.375.3): the cache of the keys and values of one engine, and its state's owner. The layers that
 // attend write and read it (attention.ts), the GPU's side reads where it is and has it grown (gpuside.ts's cpuSide),
 // and the tests read it back. A module of src/runtime/forward.ts.
 //
 // Per layer [positions][kvDim], one block for the keys and one for the values, last in the memory so that growing it
-// (from the plan's kv_start, doubling) takes only the room it adds (T130): every layer's block moves up to where it
+// (from the plan's kv_start, doubling) takes only the room it adds (T.130): every layer's block moves up to where it
 // starts at the larger size, the last first, so that none is written over before it has moved (a block starts no
 // lower than it did, and past the end of the ones below it). Before, the larger blocks were made after the smaller
 // and moved down onto them: 1.5 times the context at the step to the whole of it, which a 32-bit memory at the edge
@@ -11,7 +11,7 @@
 // So the engine makes it first and places it last: hold() is how a kind of layer says, as it is made, how many of its
 // layers keep keys and values here, and place() takes the room once everything else has its own.
 //
-// T510.1: a layer that attends only the last window positions (a Gemma 3's local layers) keeps no more than those, in a
+// T.510.1: a layer that attends only the last window positions (a Gemma 3's local layers) keeps no more than those, in a
 // ring of its own (ring()), where the context is long enough for that to save anything (memory.ts's ringPositions()).
 // Position p is at p mod C of the ring and once more at p mod C + C (C, the ring's period: the window and a prompt's
 // block, BATCH: the first token of a block still finds its window after the last has been written), so that every
@@ -19,7 +19,7 @@
 // read it as they read any other, and the numbers are the same. The rings are taken first and never grow; the blocks
 // of the layers that keep every position follow and grow as before (a layer's index among those is index()).
 //
-// T331: the keys and values of a place may be narrower than the widest (a Gemma 4's sliding layers have heads of 256
+// T.331: the keys and values of a place may be narrower than the widest (a Gemma 4's sliding layers have heads of 256
 // where its full ones have 512): hold() says each place's width, and a block or a ring is of its own place's. A layer's
 // block is offset(index) bytes a position after the start of the keys (and of the values): index times KV where every
 // place is as wide as the widest, which is every model before a Gemma 4's.
@@ -27,19 +27,19 @@ import { halfToFloat, ringPositions } from "./memory.ts";
 import type { Kernels } from "../jobs.ts";
 import type { Room } from "./kinds.ts";
 
-// T510.1: a layer's ring: its period, and where its keys and its values are (place() says, 2 * size positions each);
-// T331: and the bytes of a position of it (its place's own); T261.4: the last position written to it (-1: none), which
+// T.510.1: a layer's ring: its period, and where its keys and its values are (place() says, 2 * size positions each);
+// T.331: and the bytes of a position of it (its place's own); T.261.4: the last position written to it (-1: none), which
 // the layer and the GPU's blocks (engine.ts's fromStaging) both write
 export type Ring = { size: number; keys: number; values: number; row: number; latest: number };
 
-/** room, k: the engine's memory and kernels. kvDim: the values of one position's keys (T331: of the widest place's);
- * half: kept in float16 (T110);
- * start: the positions there is room for at first (0: no cache, T210: a model on the GPU alone); seqLen: the most. */
+/** room, k: the engine's memory and kernels. kvDim: the values of one position's keys (T.331: of the widest place's);
+ * half: kept in float16 (T.110);
+ * start: the positions there is room for at first (0: no cache, T.210: a model on the GPU alone); seqLen: the most. */
 export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: Room; k: Kernels; kvDim: number; half: boolean; start: number; seqLen: number }) {
   // KV: the bytes of one position's keys in the cache (of the widest place's)
   const KV = kvDim * (half ? 2 : 4);
   // held: the places taken; layers: of those, the ones that keep every position (the blocks that grow); for every
-  // place, its index among those (-1: a ring's), and the rings by place. T331: every place's width, and of the
+  // place, its index among those (-1: a ring's), and the rings by place. T.331: every place's width, and of the
   // blocks, the bytes a position of each and of those before it (before; total, of them all)
   let held = 0, layers = 0, capacity = 0, keys = 0, values = 0, placed = false, total = 0;
   const indices: number[] = [], rings: (Ring | null)[] = [], widths: number[] = [], rows: number[] = [], before: number[] = [];
@@ -47,9 +47,9 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
   const rowOf = (l: number) => (l + 1 < layers ? before[l + 1] : total) - before[l];
   return {
     KV, half,
-    /** count more layers keep their keys and values here: the first of their places (before place()). T510.1: windows,
-     * how many of the last positions each attends (0 or none: all of them): one that a ring holds keeps no more. T331:
-     * wide, the values of a position of each (none: kvDim; T330, 0: the place keeps none, its layer reads another's) */
+    /** count more layers keep their keys and values here: the first of their places (before place()). T.510.1: windows,
+     * how many of the last positions each attends (0 or none: all of them): one that a ring holds keeps no more. T.331:
+     * wide, the values of a position of each (none: kvDim; T.330, 0: the place keeps none, its layer reads another's) */
     hold(count: number, windows: number[] = [], wide: number[] = []) {
       if (placed) throw new Error("The cache of the keys and values has its room already: a kind of layer takes its places as it is made.");
       const first = held;
@@ -68,10 +68,10 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
       held += count;
       return first;
     },
-    /** T510.1: the ring of a place (null: the place keeps every position), and a place's index among the blocks */
+    /** T.510.1: the ring of a place (null: the place keeps every position), and a place's index among the blocks */
     ring: (place: number) => rings[place],
     index: (place: number) => indices[place],
-    /** T331: the values and the bytes of a position of a place, and of a block (by its index) the bytes a position of
+    /** T.331: the values and the bytes of a position of a place, and of a block (by its index) the bytes a position of
      * those before it: the block's keys are capacity times that after keys, and its values after values */
     width: (place: number) => widths[place],
     row: (place: number) => rows[place],
@@ -102,14 +102,14 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
       const larger = Math.min(Math.max(2 * capacity, pos + 1), seqLen);
       room.alloc(2 * total * (larger - capacity));
       const U = room.U, newValues = keys + larger * total;
-      // (T331: a block of each one's own bytes; where they are alike, before[l] is l * KV and these are the moves they
+      // (T.331: a block of each one's own bytes; where they are alike, before[l] is l * KV and these are the moves they
       // always were)
       for (let l = layers - 1; l >= 0; l--) U.copyWithin(newValues + larger * before[l], values + capacity * before[l], values + capacity * (before[l] + rowOf(l)));
       for (let l = layers - 1; l > 0; l--) U.copyWithin(keys + larger * before[l], keys + capacity * before[l], keys + capacity * (before[l] + rowOf(l)));
       values = newValues;
       capacity = larger;
     },
-    /** a token's key and value (float32, at key and value) into the cache at keyAt and valueAt (T331: width values
+    /** a token's key and value (float32, at key and value) into the cache at keyAt and valueAt (T.331: width values
      * of each, a place's own; kvDim where it is not said) */
     put(keyAt: number, valueAt: number, key: number, value: number, width = kvDim) {
       if (half) {
@@ -121,7 +121,7 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
         U.copyWithin(valueAt, value, value + width * 4);
       }
     },
-    /** T147: a token's key and value in float16 (the GPU's) into the cache at keyAt and valueAt. T160: a float32 cache
+    /** T.147: a token's key and value in float16 (the GPU's) into the cache at keyAt and valueAt. T.160: a float32 cache
      * (a grouped-query model's) widens them with a kernel, as attention_f16 reads them (halfToFloat one at a time took
      * 27 to 33 ns a value on CI's runners: 1.7 ms a token of Qwen3 0.6B's prompt) */
     putHalves(keyAt: number, valueAt: number, key: number, value: number) {
@@ -134,8 +134,8 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
         k.from_f16(valueAt, value, kvDim);
       }
     },
-    /** the keys and values at positions from .. from + count - 1, in float32, [layers][count][kvDim] each (tests; T510.1:
-     * every place in turn, and a ring's where its position is now, which is a later one's past its window). T331: a
+    /** the keys and values at positions from .. from + count - 1, in float32, [layers][count][kvDim] each (tests; T.510.1:
+     * every place in turn, and a ring's where its position is now, which is a later one's past its window). T.331: a
      * place's are its own width, one place's after another's */
     read(from: number, count: number) {
       const { F, H } = room;

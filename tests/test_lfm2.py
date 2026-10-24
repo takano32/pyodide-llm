@@ -1,4 +1,4 @@
-"""Liquid AI's LFM2 and LFM2.5 (T260): a Qwen3 some of whose layers are convolution layers, which look at this token
+"""Liquid AI's LFM2 and LFM2.5 (T.260): a Qwen3 some of whose layers are convolution layers, which look at this token
 and the two before it and keep those in place of keys and values.
 
 The reference (conftest.naive_lfm2_logits) is written from the Hugging Face tensors the way transformers computes
@@ -243,7 +243,7 @@ def test_the_taps_are_never_quantized():
 
 @pytest.mark.parametrize("model", ["small", "a classifier of its own", "four taps", "attention first and last"])
 def test_the_conversion_tells_the_engine_what_the_file_cannot(model):
-    """The lesson of T72: the engine built from exactly the options the conversion gives runs like the reference."""
+    """The lesson of T.72: the engine built from exactly the options the conversion gives runs like the reference."""
     shape = MODELS[model]
     tensors, config = lfm2_model(**shape)
     made = conversion(tensors, config)

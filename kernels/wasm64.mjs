@@ -1,4 +1,4 @@
-// wasm64.mjs (T101): an AssemblyScript transform that makes kernels for a 64-bit memory (Memory64), for models
+// wasm64.mjs (T.101): an AssemblyScript transform that makes kernels for a 64-bit memory (Memory64), for models
 // past the 4 GiB of a 32-bit one. asc itself always sets the 32-bit target, and the compiler's Wasm64 target is
 // not finished there, so this finishes it, in the two places it stops (measured with AssemblyScript 0.28.20):
 //   afterParse: the target, and the size type of the module the program made before any transform ran (the

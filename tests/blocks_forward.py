@@ -1,4 +1,4 @@
-# blocks_forward.py (T363.5)
+# blocks_forward.py (T.363.5)
 # Small made-up models whose matrices are kept as llama.cpp's blocks (the form's "kinds", a type for each layer of a
 # stack), each as what an engine outside Python is handed (the checkpoint and the plan, as Llama(external=) makes it)
 # and what the engine in NumPy answers for a few tokens, twice: as it is (float32 activations), and with the

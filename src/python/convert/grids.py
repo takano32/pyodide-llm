@@ -1,4 +1,4 @@
-# The codebooks of llama.cpp's i-quantized types (T362): what an index of a block stands for. A reader of a GGUF's IQ1,
+# The codebooks of llama.cpp's i-quantized types (T.362): what an index of a block stands for. A reader of a GGUF's IQ1,
 # IQ2, IQ3 and IQ4 tensors (convert/superblocks.py) looks its groups of 8 or 4 values up here.
 #
 # The tables are llama.cpp's, of ggml/src/ggml-common.h at the commit 4413a192410fad1f054e9216114087a3e01527a0
@@ -376,7 +376,7 @@ DIGITS = {"IQ2XXS": _IQ2XXS, "IQ2XS": _IQ2XS, "IQ2S": _IQ2S, "IQ3XXS": _IQ3XXS, 
 
 
 def codebooks():
-    """The codebooks as a checkpoint with rows of llama.cpp's blocks carries them (T363: the row "codebooks" of
+    """The codebooks as a checkpoint with rows of llama.cpp's blocks carries them (T.363: the row "codebooks" of
     engine/layout.py, engine/dtypes.py's CODEBOOKS bytes), where the kernels read them: the grids one after the other,
     in DIGITS' order, an entry after the other and a value a byte (int8), then IQ4NL's 16 values. -> (the bytes, {a
     grid's name, or "IQ4NL": where it begins})."""

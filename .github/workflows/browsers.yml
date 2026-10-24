@@ -51,7 +51,7 @@ jobs:
         run: npm ci
 
       # chrome and msedge are what the runner has installed; when it has not, Playwright installs them
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the browsers
         timeout-minutes: 20
         shell: bash
@@ -64,13 +64,13 @@ jobs:
             esac
           done
 
-      # T231's review: the kernels' arithmetic in each browser's own wasm engine, called often enough for it to compile them
+      # T.231's review: the kernels' arithmetic in each browser's own wasm engine, called often enough for it to compile them
       # again. JavaScriptCore on x86-64 got interleave() wrong only after about 2000 calls (a ternary model wrote nonsense in
       # WebKit), and nothing below sees that: a run of a model asks for an answer to appear, not for it to be right, and
       # the tests of the kernels in Node run them in V8. The kernels are those of the deployed site.
       - name: The kernels in every browser's engine
         shell: bash
-        timeout-minutes: 20  # five browsers of about a minute each; a stuck page must not hold the job (T262's rule)
+        timeout-minutes: 20  # five browsers of about a minute each; a stuck page must not hold the job (T.262's rule)
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
@@ -85,7 +85,7 @@ jobs:
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
-          # T82: every run has its own limit, is recorded as one JSON line, and leaves its screenshot, DOM and
+          # T.82: every run has its own limit, is recorded as one JSON line, and leaves its screenshot, DOM and
           # console behind when it fails, so that one stuck browser costs ten minutes and not the whole job
           E2E_TIMEOUT: 600
           E2E_RESULTS: results.jsonl
@@ -133,7 +133,7 @@ jobs:
   # The models that the page fetches from huggingface.co and converts itself, the two of more than a billion
   # parameters among them: the development machine has not the memory for those (and from 2026-09-21 the owner
   # would rather this job checked all of them, the 1.6 GB ones included). Chromium on Linux, and three of them in
-  # WebKit (T112: fetching from Hugging Face is where WebKit differed); the rest of how the browsers differ is what
+  # WebKit (T.112: fetching from Hugging Face is where WebKit differed); the rest of how the browsers differ is what
   # the jobs above are for.
   huggingface:
     name: models from Hugging Face (${{ matrix.size }})
@@ -158,73 +158,73 @@ jobs:
               hf-sarashina2.2-0.5b hf-sarashina2.2-0.5b-instruct hf-llm-jp-3-980m-instruct3
               hf-pythia-1b hf-tinyllama-1.1b-chat hf-llama-3.2-1b-instruct hf-pythia-1.4b hf-qwen2.5-1.5b-instruct
               hf-deepseek-r1-qwen-1.5b
-          # the models T81 added (2026-09-26), 17 GB of downloads more, and T126's rinna 1B (2.7 GB): a job of their own
+          # the models T.81 added (2026-09-26), 17 GB of downloads more, and T.126's rinna 1B (2.7 GB): a job of their own
           - size: added
             timeout: 1800
             models: >-
               hf-cat-translate-0.8b hf-sarashina2.2-1b-instruct hf-cat-translate-1.4b hf-tinyswallow-1.5b-instruct
               hf-llm-jp-3.1-1.8b-instruct4 hf-smollm2-1.7b-instruct hf-japanese-gpt-1b
-          # T132 (2026-09-26): 3B to 8B, 68 GB of downloads; the 7 to 8B ones on a 64-bit memory with a heap of 9.7 to
+          # T.132 (2026-09-26): 3B to 8B, 68 GB of downloads; the 7 to 8B ones on a 64-bit memory with a heap of 9.7 to
           # 11 GB (the runner has 16). In models.yml each took 2 to 4 minutes to be ready
           - size: huge
             timeout: 3000
             models: >-
               hf-qwen2.5-3b-instruct hf-sarashina2.2-3b-instruct hf-llama-3.2-3b-instruct hf-qwen2.5-7b-instruct
               hf-llama-3.1-swallow-8b-instruct hf-llm-jp-4-8b-instruct
-          # T125 (2026-09-26): the Mistrals, 76 GB of downloads (five of them 7B, on a 64-bit memory)
+          # T.125 (2026-09-26): the Mistrals, 76 GB of downloads (five of them 7B, on a 64-bit memory)
           - size: mistral
             timeout: 3000
             models: >-
               hf-rakutenai-2.0-mini-instruct hf-rakutenai-7b-chat hf-swallow-ms-7b-instruct hf-mistral-7b-instruct-v0.2
               hf-mistral-7b-instruct-v0.3 hf-zephyr-7b-beta
-          # T124 (2026-09-26): Qwen3, 33 GB of downloads (64 GB before T203's Q8_0 GGUFs). The two forms of a Qwen3
+          # T.124 (2026-09-26): Qwen3, 33 GB of downloads (64 GB before T.203's Q8_0 GGUFs). The two forms of a Qwen3
           # (thinking and not) share the weights and differ in the format alone, so both only for the 0.6B and one of
-          # each other pair. T236: and Qwen3.5 0.8B (0.8 GB more), the one model of hybrid attention
+          # each other pair. T.236: and Qwen3.5 0.8B (0.8 GB more), the one model of hybrid attention
           - size: qwen3
             timeout: 3000
             models: >-
               hf-qwen3-0.6b-thinking hf-qwen3-0.6b hf-qwen3-1.7b hf-qwen3-4b hf-qwen3-4b-instruct-2507
               hf-qwen3-4b-thinking-2507 hf-qwen3-8b hf-qwen3-swallow-8b-thinking hf-qwen3.5-0.8b
-          # T247: the other sizes of Qwen3.5, 16 GB of downloads: the 2B, and the two whose linear-attention layers
-          # have two value heads to a key head (T245) and which need a 64-bit memory, one of each form
+          # T.247: the other sizes of Qwen3.5, 16 GB of downloads: the 2B, and the two whose linear-attention layers
+          # have two value heads to a key head (T.245) and which need a 64-bit memory, one of each form
           - size: qwen35
             timeout: 3000
             models: >-
               hf-qwen3.5-2b hf-qwen3.5-4b hf-qwen3.5-9b-thinking
-          # T335: NeoHorse-1, the Qwen3.5 4B and 9B trained further, one of each form. T337: and Agents-A1-4B, answering
+          # T.335: NeoHorse-1, the Qwen3.5 4B and 9B trained further, one of each form. T.337: and Agents-A1-4B, answering
           # at once (18.5 GB of downloads)
           - size: neohorse
             timeout: 3000
             models: >-
               hf-neohorse-1-4b-thinking hf-neohorse-1-9b hf-agents-a1-4b
-          # T249 (2026-10-01): ten more Japanese ones, from 42 MB to 4.3 GB of int8, 26 GB of downloads
+          # T.249 (2026-10-01): ten more Japanese ones, from 42 MB to 4.3 GB of int8, 26 GB of downloads
           - size: japanese
             timeout: 3000
             models: >-
               hf-japanese-gpt2-xsmall hf-japanese-gpt2-medium hf-sarashina2.2-1b hf-gpt-neox-japanese-1.4b
               hf-japanese-large-lm-1.7b hf-eurollm-1.7b-instruct hf-llm-jp-3-1.8b-instruct3
               hf-shisa-v2.1-llama3.2-3b hf-cat-translate-3.3b hf-llm-jp-3-3.7b-instruct3
-          # T250 (2026-10-01): three more of 8B, 26 GB of downloads, each on a 64-bit memory
+          # T.250 (2026-10-01): three more of 8B, 26 GB of downloads, each on a 64-bit memory
           - size: japanese-8b
             timeout: 3000
             models: >-
               hf-llama-3-elyza-jp-8b hf-shisa-v2.1-qwen3-8b hf-cat-thinking-8b
-          # T253 and T254 (2026-10-01): Granite 4.2 (17 GB of downloads: the 3B twice, each model in a browser of its own;
+          # T.253 and T.254 (2026-10-01): Granite 4.2 (17 GB of downloads: the 3B twice, each model in a browser of its own;
           # the 8B on a 64-bit memory) and MiniCPM5 (5 GB). Both forms of the smallest of each, one of the others
           - size: granite
             timeout: 3000
             models: >-
               hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
               hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
-          # T251 (2026-10-02): the English classics, 13 GB of downloads: GPT-2's other sizes with DistilGPT2, and the
+          # T.251 (2026-10-02): the English classics, 13 GB of downloads: GPT-2's other sizes with DistilGPT2, and the
           # two ends of the Pythia ladder (tests/ladder.mjs reads this job's results with the small and the large one's);
           # Pythia 6.9B on a 64-bit memory
           - size: classics
             timeout: 3000
             models: >-
               hf-pythia-14m hf-distilgpt2 hf-gpt2-medium hf-gpt2-large hf-gpt2-xl hf-pythia-2.8b hf-pythia-6.9b
-          # T252 (2026-10-02): well-known ones, in two jobs. Up to 3B: SmolLM2's base models, Qwen2.5 Coder 1.5B and
-          # 3B and Hermes 3 (9 GB of downloads). T255: and SmolLM3 3B (some layers without RoPE), both forms (7 GB more)
+          # T.252 (2026-10-02): well-known ones, in two jobs. Up to 3B: SmolLM2's base models, Qwen2.5 Coder 1.5B and
+          # 3B and Hermes 3 (9 GB of downloads). T.255: and SmolLM3 3B (some layers without RoPE), both forms (7 GB more)
           - size: known
             timeout: 3000
             models: >-
@@ -235,17 +235,17 @@ jobs:
             timeout: 3000
             models: >-
               hf-qwen2.5-coder-7b-instruct hf-deepseek-r1-qwen-7b hf-deepseek-r1-llama-8b hf-llama-3.1-8b-instruct
-          # T260 (2026-10-02): Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers), 3.9 GB of downloads
+          # T.260 (2026-10-02): Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers), 3.9 GB of downloads
           - size: lfm2
             timeout: 1800
             models: >-
               hf-lfm2.5-230m hf-lfm2.5-350m hf-lfm2-700m hf-lfm2.5-1.2b-instruct hf-lfm2.5-1.2b-jp
-          # T261.3 (2026-10-14): Gemma 3 270M and 1B (norms behind the layers, a window of 512), 1.4 GB of downloads
+          # T.261.3 (2026-10-14): Gemma 3 270M and 1B (norms behind the layers, a window of 512), 1.4 GB of downloads
           - size: gemma3
             timeout: 1800
             models: >-
               hf-gemma-3-270m hf-gemma-3-1b
-          # T233's review (2026-10-02): Ternary Bonsai 2 27B, which nothing on a schedule ran on its real weights (gguf.yml
+          # T.233's review (2026-10-02): Ternary Bonsai 2 27B, which nothing on a schedule ran on its real weights (gguf.yml
           # skips it: its weights are not those of the repository its vocabulary comes from; tests/page_27b.sh is on demand).
           # 5.95 GB of download, 7.66 GB converted on a 64-bit memory of 7.7 GiB: ready in about 5 minutes and 1.2 tokens a
           # second, so a 256-token answer takes 4 minutes (production, run 36962265758)
@@ -253,7 +253,7 @@ jobs:
             timeout: 3000
             models: >-
               hf-ternary-bonsai-2-27b
-          # Underdog Saluki 27B (T364.3): a GGUF of K- and i-quantized blocks, kept as the file has them. 7.9 GB of
+          # Underdog Saluki 27B (T.364.3): a GGUF of K- and i-quantized blocks, kept as the file has them. 7.9 GB of
           # download, 7.96 GB on a 64-bit memory of 8.0 GiB: ready in about 100 s and 0.4 tokens a second on a runner of
           # this size, so a 256-token answer takes about 10 minutes (a branch's site on a runner, run 38424466399)
           - size: saluki-27b
@@ -270,7 +270,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
         timeout-minutes: 20
         run: |
@@ -296,10 +296,10 @@ jobs:
           done
           exit $failed
 
-      # T112: WebKit fetched and converted wrongly where Chromium did not (Content-Range behind an expose-headers
+      # T.112: WebKit fetched and converted wrongly where Chromium did not (Content-Range behind an expose-headers
       # wildcard, a range answered with the whole file): three of the small ones, a safetensors, a GGUF and a Qwen,
       # in WebKit as well
-      - name: Three of them in WebKit (T112)
+      - name: Three of them in WebKit (T.112)
         if: always() && matrix.size == 'small'
         shell: bash
         env:
@@ -317,7 +317,7 @@ jobs:
           done
           exit $failed
 
-      # T45: the benchmark a visitor can run and paste into an issue. Once is enough: it is the same code path
+      # T.45: the benchmark a visitor can run and paste into an issue. Once is enough: it is the same code path
       # for every model, and this runner's numbers mean nothing on their own.
       - name: The benchmark of ?bench=1
         if: matrix.size == 'small'
@@ -330,16 +330,16 @@ jobs:
           node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      # T86: real models (tests/fixed_outputs.py's MODELS: GPT-NeoX, GPT-2 from GGUFs and from a safetensors, Llamas, a
-      # Qwen3 from its GGUF and from its safetensors, T235: a ternary Qwen3 of PQ2_0 blocks and yarn, T236: a Qwen3.5
+      # T.86: real models (tests/fixed_outputs.py's MODELS: GPT-NeoX, GPT-2 from GGUFs and from a safetensors, Llamas, a
+      # Qwen3 from its GGUF and from its safetensors, T.235: a ternary Qwen3 of PQ2_0 blocks and yarn, T.236: a Qwen3.5
       # from its GGUF and from its safetensors) against the text a person read and found sound. Not the site: the converter and engine of this checkout, in native Python, so
-      # "it runs but writes nonsense" (T72) fails here. Once is enough, so only in the small half.
-      - name: Real models write what they wrote before (T86)
+      # "it runs but writes nonsense" (T.72) fails here. Once is enough, so only in the small half.
+      - name: Real models write what they wrote before (T.86)
         if: always() && matrix.size == 'small'
         shell: bash
         run: |
           python3 -m pip install --quiet numpy jinja2
-          echo "### Fixed outputs (T86)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Fixed outputs (T.86)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           python3 tests/fixed_outputs.py "$RUNNER_TEMP/fixed" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

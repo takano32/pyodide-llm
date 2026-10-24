@@ -1,4 +1,4 @@
-# unchanged_exports.py (T346 review)
+# unchanged_exports.py (T.346 review)
 # The public names of the two Python windows (llama2_convert, llama2_numpy), as one JSON object: for each name its kind and
 # its signature (functions, classes' __init__ and public methods, with whether it is a static or class method), or a hash
 # of a constant's repr. The tests reach only the names they use; a name a split leaves behind (or a method that falls off
@@ -23,13 +23,13 @@ def short(value):
 
 def signature(function):
     try:
-        # (a default that is a function prints its address, which differs from run to run: T388)
+        # (a default that is a function prints its address, which differs from run to run: T.388)
         return re.sub(r" at 0x[0-9a-f]+", "", str(inspect.signature(function)))
     except (TypeError, ValueError):
         return "(no signature)"
 
 
-# a window's own names are the ones defined in it or in the parts of its package (T347: llama2_convert is a window over
+# a window's own names are the ones defined in it or in the parts of its package (T.347: llama2_convert is a window over
 # convert/): a class moved to a part is the window's class as before, one imported from elsewhere is not
 PARTS = {"llama2_convert": "convert", "llama2_numpy": "engine"}
 
@@ -47,7 +47,7 @@ for module_name in ("llama2_convert", "llama2_numpy"):
         key = f"{module_name}.{name}"
         if inspect.isclass(value) and own(value, module_name):
             found[key] = "class" + signature(value)
-            # (T348: a class's methods may be in base classes of its own package; the nearest one wins, as Python's)
+            # (T.348: a class's methods may be in base classes of its own package; the nearest one wins, as Python's)
             members = {}
             for base in reversed([base for base in value.__mro__ if base is not object and own(base, module_name)]):
                 members.update(vars(base))

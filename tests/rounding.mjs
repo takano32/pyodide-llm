@@ -1,11 +1,11 @@
-// T225's review: a WebGPU (Dawn's in Node: the npm package webgpu, as tests/bench-dawn.mjs and tests/gpu-check.mjs use it)
+// T.225's review: a WebGPU (Dawn's in Node: the npm package webgpu, as tests/bench-dawn.mjs and tests/gpu-check.mjs use it)
 // whose device rounds a float32 to a float16 the way another implementation may, where CI's only implementations round
 // to the nearest (Mesa's lavapipe: LLVM's fptrunc; SwiftShader). WGSL leaves it to the device which of the two float16 next
 // to a float32 a conversion gives (§15.7.6 Floating Point Conversion: "WGSL does not specify whether the higher or lower
 // representable value is chosen, and different instances of such a conversion may choose differently"), and Direct3D,
 // where Chrome on Windows runs WebGPU, takes the one toward zero (D3D11.3 functional specification, 3.2.2: "Round-to-zero
 // must be used during conversion to another float format"; Dawn's HLSL writer makes pack2x16float of f32tof16): the
-// owner's NVIDIA PC did, and /benchmark/'s layer check, which rounded to the nearest in JavaScript, called it WRONG (T225).
+// owner's NVIDIA PC did, and /benchmark/'s layer check, which rounded to the nearest in JavaScript, called it WRONG (T.225).
 //
 //   import { roundedGpu } from "./rounding.mjs";   navigator.gpu = roundedGpu(create([]), how)
 //   how: "toward-zero" | "away" (every pack2x16float, which writes the keys and values of the cache, rounds so)
@@ -22,7 +22,7 @@
 // with the value does not come out right in lavapipe's compiled code. So the number that did round the other way is
 // counted, and rounding-check.mjs asks for half.)
 
-// (The T232 review: an infinity and a NaN convert to themselves, a NaN with a bit of its fraction kept and the first of the
+// (The T.232 review: an infinity and a NaN convert to themselves, a NaN with a bit of its fraction kept and the first of the
 // float16's set so that it is no infinity. They went to the largest finite float16, 65504, which is what an overflow of a
 // finite value does toward zero: a NaN written to the cache, or read into the tiles' workgroup memory, became a number,
 // and gpu-check's "logits made NaN ... refused" failed on the ternary models with "everything" for what was no fault of

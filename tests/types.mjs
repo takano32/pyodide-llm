@@ -1,4 +1,4 @@
-// tests/types.mjs (T368.1): the type check of what a browser runs, in the light suite and as `npm run types`.
+// tests/types.mjs (T.368.1): the type check of what a browser runs, in the light suite and as `npm run types`.
 //
 //   node tests/types.mjs            the three programs, then the rule and the count below; ends 1 on any error
 //
@@ -13,10 +13,10 @@
 // Two rules tsc does not hold:
 //   - a type's import is `import type { X } from …`, never `import { type X } from …` with nothing else in the braces.
 //     Node runs a .ts file by blanking its types, so the second form is left as an import of the module (it is loaded
-//     and run, for nothing: T378.5's note), where a bundler drops it. With `import type` the two read the same.
-//   - (T368.8) a name that a file of the runtime uses and neither declares nor imports is one of AMBIENT, the names of
+//     and run, for nothing: T.378.5's note), where a bundler drops it. With `import type` the two read the same.
+//   - (T.368.8) a name that a file of the runtime uses and neither declares nor imports is one of AMBIENT, the names of
 //     a worker that these files mean to use. tsc says a name that is nowhere (TS2304: a forgotten import, a misspelling;
-//     the six *-modules-check.mjs each said that with a list of their own until T368.8). It does not say one that
+//     the six *-modules-check.mjs each said that with a list of their own until T.368.8). It does not say one that
 //     its library declares: `name` is a string in every worker, so a line moved out of the loop that bound its `name`
 //     reads the worker's, and types the same. Nor one that a file without an import or an export declares at its top:
 //     such a file is a script to tsc, and its names are every file's (benchmark/reader.ts's COUNT and TOTAL, which
@@ -27,9 +27,9 @@
 //
 // The count: every `any` that is written (and every @ts-expect-error, @ts-ignore), by file. An `any` is counted where
 // it stands in a type (what blanking the types removes), so one in a comment or a string is not.
-// T473: no more of them than ANY_MOST (what T368 ended with). One more fails; where there are fewer, the line says to
+// T.473: no more of them than ANY_MOST (what T.368 ended with). One more fails; where there are fewer, the line says to
 // lower ANY_MOST to what is there, so that what was won is kept.
-// And what else tells tsc to look away from a value, counted and held to nothing (T476, T477 and T479 are to bring
+// And what else tells tsc to look away from a value, counted and held to nothing (T.476, T.477 and T.479 are to bring
 // them down): the `!`s (a value said to be there: x!, and a `let x!: T`) and the casts (x as T, but for `as const`).
 import fs from "node:fs";
 import path from "node:path";
@@ -41,7 +41,7 @@ import { typed, untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 export const PROGRAMS = ["tsconfig.page.json", "tsconfig.worker.json", "tsconfig.sw.json"];
-// T473: the most times `any` may be written in the TypeScript sources
+// T.473: the most times `any` may be written in the TypeScript sources
 export const ANY_MOST = 46;
 
 // what a worker (and the page's main thread, for the two modules it runs too: kept.ts, updated.ts) has without

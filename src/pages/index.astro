@@ -1,7 +1,7 @@
 ---
 // One chat-like screen. Pyodide runs in src/runtime/worker.js; this page only draws what the worker reports.
 import { sources } from "../models.js";
-// the licenses of the models, one line per source, written at build time from src/models.js (T87)
+// the licenses of the models, one line per source, written at build time from src/models.js (T.87)
 const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 ---
 <!doctype html>
@@ -120,7 +120,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           <label>Repetition penalty <output id="penalty-value"></output>
             <input id="penalty" type="range" min="1" max="2" step="0.05" /></label>
         </details>
-        <!-- T75: what the computation runs on, one switch each (T52's ?without=). The URL is the state: a change
+        <!-- T.75: what the computation runs on, one switch each (T.52's ?without=). The URL is the state: a change
              rewrites it and reloads the page, so a link says what ran. -->
         <details id="engine">
           <summary>Engine</summary>
@@ -129,7 +129,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           <label class="switch"><input type="checkbox" data-switch="int8" /> int8 weights kept as int8</label>
           <label class="switch"><input type="checkbox" data-switch="relaxed" /> relaxed SIMD, 7-bit activations</label>
           <label class="switch"><input type="checkbox" data-switch="sampler" /> sampling in the kernel</label>
-          <!-- T98: the weights of a model converted in this browser (?bits=), the URL again the state -->
+          <!-- T.98: the weights of a model converted in this browser (?bits=), the URL again the state -->
           <p class="hint">Weights of a model converted from Hugging Face: six bits take 7/9 of int8's memory and write about half as fast. Automatic keeps int8 unless it does not fit.</p>
           <label class="switch"><input type="radio" name="bits" value="" /> automatic</label>
           <label class="switch"><input type="radio" name="bits" value="8" /> int8</label>
@@ -137,7 +137,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         </details>
         <button id="settings-reset" type="button">Reset to defaults</button>
       </div>
-      <!-- T88: a repository that is in no list, from the last entry of the model list. It goes the way ?hf= goes,
+      <!-- T.88: a repository that is in no list, from the last entry of the model list. It goes the way ?hf= goes,
            and the URL then says so, to share. -->
       <div id="repository" class="sheet" popover>
         <form id="repository-form">
@@ -248,7 +248,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   .model .bubble:empty::before { content: "…"; color: var(--muted); }
   .meta { font-size: 0.72rem; color: var(--muted); padding-inline: 6px; }
   .error .bubble { color: #dc2626; }
-  /* T556: an answer drawn as Markdown, one element a block (src/page/draw.ts); its thinking before it stays plain text.
+  /* T.556: an answer drawn as Markdown, one element a block (src/page/draw.ts); its thinking before it stays plain text.
      A wide code block or table scrolls inside its block, never the page */
   .markdown { white-space: normal; }
   .markdown > div { overflow-x: auto; }
@@ -262,11 +262,11 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   .markdown pre code { background: none; padding: 0; }
   .markdown table { border-collapse: collapse; font-size: 0.9em; }
   .markdown :is(th, td) { border: 1px solid var(--line); padding: 3px 8px; }
-  /* T520: a thought, folded above its answer: one quiet line that opens into what the model thought */
+  /* T.520: a thought, folded above its answer: one quiet line that opens into what the model thought */
   .thought > summary { color: var(--muted); font-size: 0.8rem; }
   .thought > div { color: var(--muted); font-size: 0.85em; border-left: 2px solid var(--line); padding-left: 8px; margin-top: 4px; }
   .thought:has(+ .answer:not(:empty)) { margin-bottom: 0.6em; }
-  /* T76: the benchmark's table, in the model's bubble */
+  /* T.76: the benchmark's table, in the model's bubble */
   .bench .bubble { white-space: normal; }
   .bench-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
   .bench table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
@@ -344,13 +344,13 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   import { urlLooked } from "../page/choose.ts";
   import "../page/composer.ts";
 
-  // (A model chosen while this looks has started the worker itself, and wins: the review of T116)
+  // (A model chosen while this looks has started the worker itself, and wins: the review of T.116)
   (async () => {
     if (model === recalled && !(await stillKept(model)) && opensWith(DEFAULT_MODEL)) {
       remember(undefined);
       show(model);
     }
-    // (T505.3: a repository of ?hf= is looked at for the file that is its model, where the URL names none)
+    // (T.505.3: a repository of ?hf= is looked at for the file that is its model, where the URL names none)
     if (await urlLooked() && loads === 1) {
       worker.postMessage({ type: "init", root, search: location.search, model: weighed(model), load: loads, threads: threadsFor(model), gpu: gpuFor(model) });
     }

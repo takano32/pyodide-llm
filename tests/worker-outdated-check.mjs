@@ -1,4 +1,4 @@
-// T439: what the model's worker tells the page where it goes on, slower, without a file of its build that is gone
+// T.439: what the model's worker tells the page where it goes on, slower, without a file of its build that is gone
 // (src/runtime/worker/outdated.js), by itself and where weights.js hands it a worker's error.
 //
 //   node tests/worker-outdated-check.mjs        (Node only, under a second)

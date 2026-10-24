@@ -1,5 +1,5 @@
 # reference.py
-# T357.4: what the tools that hold the engine to transformers itself share (tests/reference_llama.py,
+# T.357.4: what the tools that hold the engine to transformers itself share (tests/reference_llama.py,
 # tests/reference_qwen35.py, tests/reference_lfm2.py: they run in CI, where torch is). What is the same in all of
 # them is here once: how far two sets of logits are apart and what line the engine is held to (ten times what
 # transformers' own two computations differ by, and no less than a least the tool says), the states of a model whose
@@ -231,7 +231,7 @@ def made_up_engine(tensors, published, vocabulary=320):
 
 
 def float32_file(answerer, hf, path):
-    """A real model converted the way the page converts (T374.4: by the conduct of a conversion, answered by `answerer`),
+    """A real model converted the way the page converts (T.374.4: by the conduct of a conversion, answered by `answerer`),
     float32, straight into the file at path: (the conversion, the seconds it took). The file is the caller's to unlink."""
     sink = Mapped(path)
     began = time.perf_counter()

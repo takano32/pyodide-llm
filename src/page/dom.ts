@@ -1,4 +1,4 @@
-// src/page/dom.ts (T355): the elements of the model page (src/pages/index.astro) that its script's parts share, and
+// src/page/dom.ts (T.355): the elements of the model page (src/pages/index.astro) that its script's parts share, and
 // what is decided once about the markup as the script starts.
 
 export const $ = (id: string) => document.getElementById(id)!;

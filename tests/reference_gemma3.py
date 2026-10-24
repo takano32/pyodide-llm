@@ -1,5 +1,5 @@
 # reference_gemma3.py
-# T261: the engine's Gemma 3 (Google's text model: a norm behind the attention and the FFN as well as in front, a GELU
+# T.261: the engine's Gemma 3 (Google's text model: a norm behind the attention and the FFN as well as in front, a GELU
 # in the FFN's gate, layers that attend a window of the last positions with a base of RoPE of their own) against
 # transformers itself. PyTorch is not on the development machine, so this runs in CI:
 #

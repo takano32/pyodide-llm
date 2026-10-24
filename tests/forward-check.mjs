@@ -1,5 +1,5 @@
 // The forward pass of src/runtime/forward.js (the page's) against the NumPy forward of llama2_numpy.py, on the models of
-// this directory (make models kernels) or converted ones. Since T93 there is no other forward to hold it to.
+// this directory (make models kernels) or converted ones. Since T.93 there is no other forward to hold it to.
 //   float32: the kernels add in another order than NumPy, so the last bits differ; the most likely token must be the
 //            same at every position, and no logit may differ by more than 1e-3 (measured 2026-09-25: 1.7e-5 to 3.7e-5).
 //   int8: forward.js quantizes the activations too (7 bits with relaxed SIMD), NumPy does not, so the numbers
@@ -8,12 +8,12 @@
 //         +3.42% (fewer positions, more spread). The line: 85% or more and within 5%, at 128 positions (the
 //         default). A real fault (a wrong order, a wrong scale) lands far outside: the agreement near nothing and
 //         the perplexity a multiple.
-// T108: the same text read by forward.js one token at a time and in blocks (forward_many), from a KV cache that
+// T.108: the same text read by forward.js one token at a time and in blocks (forward_many), from a KV cache that
 // starts small so that it grows within the blocks: the last logits must be the same to the bit.
-// T130: forward.js's KV cache starts at 16 positions against NumPy, so that it grows in place (16 -> 32 -> 64 -> 128)
+// T.130: forward.js's KV cache starts at 16 positions against NumPy, so that it grows in place (16 -> 32 -> 64 -> 128)
 // within the positions compared: a block moved to the wrong place, or written over before it moved, is read back.
 // Then the speeds, both in turn. Runs in the deployment.
-// T229: a model whose name begins with "made-up" (tests/make_qwen35.py's Qwen3.5, the only models of its architecture
+// T.229: a model whose name begins with "made-up" (tests/make_qwen35.py's Qwen3.5, the only models of its architecture
 // small enough to run here) has random weights, which have no most likely token to agree on once the activations are
 // quantized (a made-up Qwen3 of the same widths agreed at 84 to 87 of 96 positions, the made-up Qwen3.5 at 69 to 75,
 // measured 2026-10-01). Its int8 line is the logits' own distance from NumPy's, relative (the root of the sum of the
@@ -27,7 +27,7 @@
 //
 // The memory is shared, as the page's where it is cross-origin isolated; --plain: not shared, as the page's where it
 // is not, or where the page asked for a shared one and the browser refused it (the keys and values then float32
-// where that fits a 32-bit memory, T110, T130). --wide: a 64-bit memory and its kernels (T101), as the page
+// where that fits a 32-bit memory, T.110, T.130). --wide: a 64-bit memory and its kernels (T.101), as the page
 // has for a model past 4 GiB.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -47,7 +47,7 @@ const without = args.includes("--without") ? args[args.indexOf("--without") + 1]
 const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
   tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")),
   madeUp: path.basename(id).startsWith("made-up"), line: madeUpLine(path.basename(id)) };
-// T229: the relative distance of a made-up int8 model's logits from NumPy's. T233's review: a made-up ternary model in a
+// T.229: the relative distance of a made-up int8 model's logits from NumPy's. T.233's review: a made-up ternary model in a
 // rotated basis (tests/make_ternary.py) is 0.06 from NumPy's (0.058 to 0.066 on CI's x86-64 and arm64, whichever memory),
 // and forward.js alone reading one sign of a width wrong moves it to 0.18 to
 // 0.46 at a width of 256 or 384 (0.65 to 0.81 at 128, which the line of 0.5 sees): its line is 0.12, 1.9 times the right
@@ -58,8 +58,8 @@ function madeUpLine(name) {
 }
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
-// T98: six_sums (the corrections of int6 weights for matmul_q6r) against the sums of the int8 values the layout of
-// llama2_numpy.pack6 holds, taken apart byte by byte here. T197: a correction is the int32 −64 × the sum (before it
+// T.98: six_sums (the corrections of int6 weights for matmul_q6r) against the sums of the int8 values the layout of
+// llama2_numpy.pack6 holds, taken apart byte by byte here. T.197: a correction is the int32 −64 × the sum (before it
 // the float32 scale × the sum)
 {
   const memory = new WebAssembly.Memory({ initial: 4 });
@@ -77,7 +77,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
     }
     if (-64 * sum !== N[out / 4 + g]) throw new Error(`six_sums differs at group ${g}: ${N[out / 4 + g]} against ${-64 * sum}`);
   }
-  // T123: int8_sums, the same for int8 weights, 32 bytes a group, against the sums taken here; groups at the ends of
+  // T.123: int8_sums, the same for int8 weights, 32 bytes a group, against the sums taken here; groups at the ends of
   // int8 (all -128: 262144, all 127: -260096)
   const I = new Int8Array(memory.buffer);
   I.fill(-128, w, w + 32);
@@ -90,11 +90,11 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
 }
 
-// T165: matmul_q8 and matmul_q6 (the path without relaxed SIMD) to the bit against their sums taken here: each group's
+// T.165: matmul_q8 and matmul_q6 (the path without relaxed SIMD) to the bit against their sums taken here: each group's
 // 32 products are exact integers in four int32 lanes (lane k holds products 2k, 2k + 1, 2k + 8, 2k + 9 of each half of
 // 16), scaled and added lane by lane in float32, the four lanes added last. The weights take every int8 (-128 too) and
 // the activations every value quantize_x gives (-127..127), with groups at the ends: 127 × 127 and -128 × -127 on
-// every lane (sums of two products that int16 still holds). T196: at 1 to 8, 11 and 41 groups, as T167's check of
+// every lane (sums of two products that int16 still holds). T.196: at 1 to 8, 11 and 41 groups, as T.167's check of
 // matmul_q8r below: matmul_q8 takes four groups a turn and the rest one by one, and at 41 alone one group comes after
 // the fours (a kernel that scaled the groups after the fours with the scale of the four before them passed there)
 {
@@ -145,22 +145,22 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
       }
     }
   }
-  // T166: matmul_q6r (relaxed SIMD) to the bit against matmul_q8r on the int8 values six() takes apart here (the two
+  // T.166: matmul_q6r (relaxed SIMD) to the bit against matmul_q8r on the int8 values six() takes apart here (the two
   // add their products in the same order), the activations 0..127 as quantize_x(bias = 64) gives them, and the
-  // corrections from six_sums and int8_sums. T167: and matmul_q8r to the bit against its sums taken here: each
+  // corrections from six_sums and int8_sums. T.167: and matmul_q8r to the bit against its sums taken here: each
   // group's 32 products as one exact integer, times the group's scale (weight scale times activation scale) rounded
   // once, added into lane g % 4 for the groups in fours and the lanes added in order, the groups past the last four
-  // added one at a time (T197: the bias of 64 taken out of each group's integer before it is scaled). At 1 to 7 groups (no four at all, and one four with 0 to 3
-  // after it) and at 41: T167's review, at 41 alone one group comes after the fours, and a kernel that scaled every
+  // added one at a time (T.197: the bias of 64 taken out of each group's integer before it is scaled). At 1 to 7 groups (no four at all, and one four with 0 to 3
+  // after it) and at 41: T.167's review, at 41 alone one group comes after the fours, and a kernel that scaled every
   // group after the fours with the first one's scale passed
   const relaxed = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_relaxed_plain.wasm"))), { env: { memory } }).exports;
   const w8 = out + rows * 4, wc6 = w8 + rows * n, wc8 = wc6 + rows * ng * 4, out8 = wc8 + rows * ng * 4;
   for (let j = 0; j < n; j++) I[x + j] = next() % 128;
   const round = Math.fround;
-  // T159's tokens: a frame each (activations, then their scales), and the outputs of the tile and of one at a time
+  // T.159's tokens: a frame each (activations, then their scales), and the outputs of the tile and of one at a time
   const frame = 2048, frameScales = 1536, outFrame = 256;
   const frames = 1 << 18, tiles = frames + 9 * frame, singles = tiles + 9 * outFrame;
-  if (out8 + rows * 4 > frames || singles + 9 * outFrame > memory.buffer.byteLength) throw new Error("forward-check's memory does not hold T159's frames");
+  if (out8 + rows * 4 > frames || singles + 9 * outFrame > memory.buffer.byteLength) throw new Error("forward-check's memory does not hold T.159's frames");
   for (const groups of [1, 2, 3, 4, 5, 6, 7, 8, 11, ng]) {
     const m = groups * 32, fours = groups & ~3;
     for (let i = 0; i < rows; i++) for (let j = 0; j < m; j++) I[w8 + i * m + j] = six(i, j, groups);
@@ -170,7 +170,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
     relaxed.matmul_q8r(out8, x, xs, w8, ws, wc8, m, 0, rows);
     for (let i = 0; i < rows; i++) {
       if (F[out / 4 + i] !== F[out8 / 4 + i]) throw new Error(`matmul_q6r differs at row ${i} of ${groups} groups: ${F[out / 4 + i]} against matmul_q8r's ${F[out8 / 4 + i]}`);
-      const part = (g) => {  // T197: the group's exact dot(w, q - 64), scaled once
+      const part = (g) => {  // T.197: the group's exact dot(w, q - 64), scaled once
         let dot = 0;
         for (let j = 0; j < 32; j++) dot += I[w8 + i * m + g * 32 + j] * (I[x + g * 32 + j] - 64);
         return round(dot * round(F[ws / 4 + i * groups + g] * F[xs / 4 + g]));
@@ -182,7 +182,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
       const expected = sum;
       if (F[out8 / 4 + i] !== expected) throw new Error(`matmul_q8r differs at row ${i} of ${groups} groups: ${F[out8 / 4 + i]} against ${expected}`);
     }
-    // T159: matmul_q8r_tile (a prompt's count tokens, four rows by four tokens) to the bit against matmul_q8r token by
+    // T.159: matmul_q8r_tile (a prompt's count tokens, four rows by four tokens) to the bit against matmul_q8r token by
     // token, at every count of tokens 1 to 9 (no four, one four and 1 to 3 after it, two fours) and row ranges that
     // start and end off the fours (none, one tile, tiles with 1 to 3 rows after them), with every group count above;
     // the rows and tokens outside are left as they were
@@ -211,7 +211,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
 }
 
-// T197's review: the ends of the relaxed path's integers, which the check above (weights of int6, from -128 to 124)
+// T.197's review: the ends of the relaxed path's integers, which the check above (weights of int6, from -128 to 124)
 // does not reach: rows of -128 and 127 against activations of 127 and 1 (quantize_x's ends with its bias of 64), in
 // matmul_q8r and in the tile, with int8_sums' corrections. The scales are powers of 2, so every group's dot(w, q - 64)
 // times them and their sum over the 5 groups are exact in float32 (at most 5 × 32 × 128 × 63 < 2^24): the kernels
@@ -249,13 +249,13 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
 }
 
-// T101: jobs.js says which arguments of each kernel are addresses (BigInt on a 64-bit memory): the same as the
+// T.101: jobs.js says which arguments of each kernel are addresses (BigInt on a 64-bit memory): the same as the
 // usize parameters of the kernels' source, every exported one
 {
   const { ADDRESSES } = await import(runtimeUrl("jobs.ts"));
-  // (T356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
+  // (T.356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
   // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
-  // (T363.4: and blocks.ts and blocks_relaxed.ts are the windows over blocks/*.ts, two modules of their own.)
+  // (T.363.4: and blocks.ts and blocks_relaxed.ts are the windows over blocks/*.ts, two modules of their own.)
   const source = {}, makefile = fs.readFileSync(`${root}Makefile`, "utf8");
   for (const [folder, windows, more] of [["kernel", ["kernel.ts"], ["kernels/kernel_relaxed.ts"]], ["blocks", ["blocks.ts", "blocks_relaxed.ts"], []]]) {
     const parts = fs.readdirSync(`${root}kernels/${folder}`).filter((file) => file.endsWith(".ts")).sort(), written = [];
@@ -284,11 +284,11 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
 const shared = !args.includes("--plain");
 const { pyodide: py, kernels } = await pyodideWithEngine({ shared, wide: args.includes("--wide") });
-// (T130: the cache starts at 16 positions, so that it grows in place within every comparison below)
+// (T.130: the cache starts at 16 positions, so that it grows in place within every comparison below)
 py.runPython("import time, gc, math, numpy as np, llama2_numpy, engine.model\nfrom llama2_numpy import Llama\nengine.model.KV_START = 16");
 let failed = false;
-// T133: the bits of a model converted with none asked for. Llama-3.2-3B's int8 (3614847004 bytes, its header from
-// config.json) does not fit a 32-bit memory with its forward pass (T115: 4.41 GiB shared): int8 on a 64-bit memory
+// T.133: the bits of a model converted with none asked for. Llama-3.2-3B's int8 (3614847004 bytes, its header from
+// config.json) does not fit a 32-bit memory with its forward pass (T.115: 4.41 GiB shared): int8 on a 64-bit memory
 // where the browser has one, six bits where not; a model that fits stays int8 either way
 {
   const header = [3072, 8192, 28, 24, 8, 128256, 4096], int8 = 3614847004;
@@ -298,13 +298,13 @@ let failed = false;
   const small = [1536, 8960, 28, 12, 2, 151936, 4096], qwen = 1736865820;  // Qwen2.5 1.5B
   assert.equal(automaticDtype(qwen, footprint(small, qwen, { dtype: "int8", halfKV: true, shared: true }), false), "int8");
 }
-// T144: heads of another size than dim / heads, which none of the models below has. Qwen3 0.6B's int8 (670744604
+// T.144: heads of another size than dim / heads, which none of the models below has. Qwen3 0.6B's int8 (670744604
 // bytes, its header from config.json) with the options the converter gives it: forward.js put 755.3 MiB after it on
-// a shared memory and 1427.3 MiB on a plain one (measured in the review of T124). Without head_dim footprint() counts
+// a shared memory and 1427.3 MiB on a plain one (measured in the review of T.124). Without head_dim footprint() counts
 // its keys and values 45% short (419.1 and 755.1 MiB) and a memory chosen by that runs out near the end of the context.
-// T160: a grouped-query model (16 heads, 8 of keys and values) keeps float32 keys and values on a shared memory too:
+// T.160: a grouped-query model (16 heads, 8 of keys and values) keeps float32 keys and values on a shared memory too:
 // the 1427.3 MiB of the plain one either way (the two differ in nothing else footprint() counts).
-// T130: the cache grows in place, and holds the 2048 positions of its last step once where it held them twice:
+// T.130: the cache grows in place, and holds the 2048 positions of its last step once where it held them twice:
 // 1427.3 MiB less 2048 × 28 layers × 2 × 1024 × 4 bytes (448 MiB)
 {
   const header = [1024, 3072, 28, 16, 8, 151936, 4096], int8 = 670744604, MiB = 1 << 20;
@@ -314,15 +314,15 @@ let failed = false;
     assert.ok(bound >= placed && bound < placed + 4, `Qwen3 0.6B: ${bound.toFixed(1)} MiB counted, ${placed} placed`);
   }
 }
-// T160: keys and values in float16 on a shared memory for a model with a key of every head; for a grouped-query one
+// T.160: keys and values in float16 on a shared memory for a model with a key of every head; for a grouped-query one
 // float32, but where that does not fit a 32-bit memory (Llama 3.2 3B on a 64-bit memory either way, 4.20 GiB in
-// float16: the owner, 2026-09-27). T130: on a memory that is not shared (not cross-origin isolated, or a shared one
+// float16: the owner, 2026-09-27). T.130: on a memory that is not shared (not cross-origin isolated, or a shared one
 // refused) float32 for every model, but where that does not fit a 32-bit memory: Llama 3.2 3B's int8 without relaxed
-// SIMD (Safari's, T130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36).
+// SIMD (Safari's, T.130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36).
 // Not Llama 3.2 3B with relaxed SIMD, past 4 GiB either way: float32 on a plain memory (the owner, 2026-09-28), but where
 // float32 would not fit a 64-bit memory's 16 GiB (Pythia 12B of ?hf=: 15.2 GiB with float16, 16.6 with float32; the review).
 // Qwen2.5 3B is float32 now on either (3.89 GiB: 3.82 in float16 and 4.03 in float32 before the cache grew in place,
-// T130), and llm-jp-3.1 1.8B (a key for every head) float16 on a shared memory and float32 on a plain one (2.91 and
+// T.130), and llm-jp-3.1 1.8B (a key for every head) float16 on a shared memory and float32 on a plain one (2.91 and
 // 3.66 GiB). The sizes: llama2_convert.checkpoint_size(). Each: shared, not shared
 {
   const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true, false],
@@ -342,16 +342,16 @@ let failed = false;
       const [f16, f32] = [true, false].map((halfKV) => footprint(header, size, { ...options, halfKV, shared }));
       assert.equal(f16 < f32, half, `${where}: footprint() counts ${half ? "float32" : "float16"} keys and values`);
     }
-    // the worker chose a 32-bit or a 64-bit memory for the shared one: the plain one it got instead fits the same (T130)
+    // the worker chose a 32-bit or a 64-bit memory for the shared one: the plain one it got instead fits the same (T.130)
     const [onShared32, onPlain32] = [true, false].map((shared) => !needsWide(size, footprint(header, size, { ...options, halfKV: true, shared })));
     assert.ok(onPlain32 || !onShared32, `${name}: past a 32-bit memory where a shared one refused is not`);
   }
 }
-// T160: what forward.js allocates against footprint() (as for the models below), on made-up int8 models of 4096
+// T.160: what forward.js allocates against footprint() (as for the models below), on made-up int8 models of 4096
 // positions whose keys and values outweigh the rest: grouped-query (16 heads, 8 of keys and values: float32 on a
 // shared memory too) and not (8 and 8: float16 there). None of the models below has grouped-query attention. A
 // footprint() that counts the other type is 25 MiB off, past the line's 6 MiB and 5%.
-// T130, --plain --half-keys: a shared memory asked for and refused, for a model whose float32 keys and values would
+// T.130, --plain --half-keys: a shared memory asked for and refused, for a model whose float32 keys and values would
 // not fit a 32-bit memory. The worker hands the engine float16 then (keysInHalf on the plain memory;
 // tests/worker-sink-check.mjs sees it do so). No model here is that large, so every engine is handed float16: what
 // it puts after the checkpoint must be footprint()'s float16 count, and the models below must keep NumPy's line.
@@ -373,9 +373,9 @@ import made_up as made_up_models
 
 def to_the_end(llama):
     """forward() at every position where the KV cache doubles, then at the last one, so that the cache has grown step
-    by step as a generation grows it, to the whole context. T229: a model that keeps a state from token to token takes
+    by step as a generation grows it, to the whole context. T.229: a model that keeps a state from token to token takes
     its positions in turn: the whole context, in blocks."""
-    if any(stateful for stateful, _ in llama.slots):  # (T260: an LFM2 with its convolution layers the same)
+    if any(stateful for stateful, _ in llama.slots):  # (T.260: an LFM2 with its convolution layers the same)
         for at in range(0, llama.seq_len, 16):
             llama.forward_many([llama.bos] * min(16, llama.seq_len - at), at)
         return
@@ -386,7 +386,7 @@ def to_the_end(llama):
     llama.forward(llama.bos, llama.seq_len - 1, need_logits=False)
 
 def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096):
-    """an int8 checkpoint as quantize.py writes one (tests/made_up.py's quantized(), T357.2), and its bytes after the
+    """an int8 checkpoint as quantize.py writes one (tests/made_up.py's quantized(), T.357.2), and its bytes after the
     checkpoint at the end of the context"""
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
     data, tokenizer = made_up_models.quantized(*header)
@@ -413,7 +413,7 @@ for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "ll
   py.FS.writeFile("model.bin", fs.readFileSync(file(entry.checkpoint)));
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
   py.globals.set("OPTIONS", py.toPy({ ...entry.options, disable: without, ...(halfKeys ? { half_keys: true } : {}) }));
-  // T115: what the forward pass allocates after the checkpoint, at most, against footprint(), which decides a 32-bit
+  // T.115: what the forward pass allocates after the checkpoint, at most, against footprint(), which decides a 32-bit
   // or a 64-bit memory and whether a kept one has room: forward() at every position where the KV cache doubles, then
   // at the last one, so that it has grown step by step as a generation grows it, to the whole context
   // (first, before the NumPy engine widens the weights in Pyodide's memory, which never shrinks)
@@ -441,7 +441,7 @@ llama.release(); del llama; gc.collect()
   const verdict = py.runPython(`
 page = kernel_llama(data, vocabulary, **OPTIONS)
 numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k not in ("disable", "half_keys")})
-int8 = any(name in page.backend for name in ("int8", "int6", "ternary"))  # they all quantize the activations (T98, T231)
+int8 = any(name in page.backend for name in ("int8", "int6", "ternary"))  # they all quantize the activations (T.98, T.231)
 sequence, agree, largest, nll, apart, size = [page.bos], 0, 0.0, [0.0, 0.0], 0.0, 0.0
 for pos in range(${positions}):
     a, b = page.forward(sequence[pos], pos).astype(np.float64), numpy.forward(sequence[pos], pos).astype(np.float64)
@@ -468,11 +468,11 @@ if blocks:
 else:
     for pos, token in enumerate(fed[:-1]):
         many.forward(token, pos, need_logits=False)
-# T229's review: a model that keeps a state from token to token (a Qwen3.5) refuses a position out of turn in forward.js, and
+# T.229's review: a model that keeps a state from token to token (a Qwen3.5) refuses a position out of turn in forward.js, and
 # the refusal changes nothing (the unit tests have NumPy's own); and a second run from position 0 begins with no state: it
 # makes the logits the first run made (the unit tests cannot see forward.js's clearing, nor can the comparison above, which
 # runs each engine once)
-kept = any(stateful for stateful, _ in one.slots)  # (T260: or an LFM2)
+kept = any(stateful for stateful, _ in one.slots)  # (T.260: or an LFM2)
 refused = True
 if kept:
     try:

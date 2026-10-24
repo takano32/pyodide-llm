@@ -1,4 +1,4 @@
-// tests/said-texts.mjs (T380.1): every sentence the sources of what a browser runs may say, as one list, and whether
+// tests/said-texts.mjs (T.380.1): every sentence the sources of what a browser runs may say, as one list, and whether
 // two commits have the same ones.
 //
 //   node tests/said-texts.mjs                       the list of this tree (one JSON line a text: [count, text])

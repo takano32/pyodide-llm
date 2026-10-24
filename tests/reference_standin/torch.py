@@ -1,4 +1,4 @@
-# A stand-in for torch, for tests/reference_dry.py (T357.4): what the reference tools (tests/reference_llama.py,
+# A stand-in for torch, for tests/reference_dry.py (T.357.4): what the reference tools (tests/reference_llama.py,
 # tests/reference_qwen35.py, tests/reference_lfm2.py) ask of torch on the paths the dry run takes, on NumPy. Nothing
 # here computes a model: transformers.py beside it answers with the engine itself. Not on any path but the dry run's.
 import contextlib

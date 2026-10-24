@@ -1,4 +1,4 @@
-// blocks/types.ts (T363.4): what each of llama.cpp's blocks of 256 weights ("super-blocks") is to the kernels of
+// blocks/types.ts (T.363.4): what each of llama.cpp's blocks of 256 weights ("super-blocks") is to the kernels of
 // blocks.ts and blocks_relaxed.ts: Q2_K, Q4_K, IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S and IQ4_XS, the
 // ten types Underdog Saluki 27B is made of. The weights stay packed as the GGUF has them (2.3 bits each, on average);
 // what a dot product takes is made of them in registers as they are read. The kernels:
@@ -14,10 +14,10 @@
 // type: the type's number in a GGUF (ggml's: Q2_K 10, Q4_K 12, IQ2_XXS 16, IQ2_XS 17, IQ3_XXS 18, IQ1_S 19, IQ3_S 21,
 // IQ2_S 22, IQ4_XS 23, IQ1_M 29). A row is whole blocks: n is a multiple of 256. tab: sb_tables's area. Every address
 // may be above 4 GiB on a 64-bit memory (the 27B's weights are): the loads are v128.load, load64_zero, load32_zero and
-// load64_lane, which V8's Liftoff on arm64 reads right there (T233: it does not read load32_splat and load32_lane
+// load64_lane, which V8's Liftoff on arm64 reads right there (T.233: it does not read load32_splat and load32_lane
 // right; tests/blocks-check.mjs runs every kernel as Liftoff alone compiles it).
 //
-// No line of llama.cpp is here. The blocks are read as src/python/convert/superblocks.py reads them (T362), from the
+// No line of llama.cpp is here. The blocks are read as src/python/convert/superblocks.py reads them (T.362), from the
 // forms of ggml/src/ggml-common.h's block_* structs, and tests/blocks-check.mjs holds every type's reading here to
 // that reader's (to the bit, through tests/blocks-model.mjs). What is taken from llama.cpp's own kernels (ggml/src/ggml-cpu/arch/x86/quants.c at the commit
 // 4413a192410fad1f054e9216114087a3e01527a0 of https://github.com/ggml-org/llama.cpp, MIT, Copyright (c) 2023-2026
@@ -53,7 +53,7 @@
 // (with relaxed SIMD or without, a token or four, the signs on the activations or on the weights), and the float32
 // steps are written in this order everywhere: tests/blocks-check.mjs follows them with Math.fround.
 //
-// The token's kernel has T363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md): the magnitudes
+// The token's kernel has T.363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md): the magnitudes
 // |W| are the 7-bit side of the relaxed dot product and the activations its signed side in all their 8 bits, each
 // given its weight's sign as it is loaded ((a ^ m) - m, m a mask of 0xff where the weight is negative); the units'
 // integer sums are one lane each before they are multiplied by S. IQ1's grid of -1, 0, 1 is held as codes 0, 1, 2
@@ -64,7 +64,7 @@
 // each 8 (sums_x): n / 2 bytes in all.
 //
 // ---- The tables (sb_tables; 34992 bytes, TABLES). Nothing static can be in a module of kernels (nothing relocates a
-// data segment), and a vector written as a constant in a loop is made again at every use (T163):
+// data segment), and a vector written as a constant in a loop is made again at every use (T.163):
 //   0      IQ2_XXS's grid: 256 entries of 8 magnitudes        2048   IQ2_XS's: 512 of 8        6144  IQ2_S's: 1024 of 8
 //   14336  IQ3_XXS's grid: 256 entries of 4                   15360  IQ3_S's: 512 of 4
 //   17408  IQ1_S's grid (IQ1_M's too) plus one: 2048 entries of 8 codes 0, 1, 2
@@ -75,7 +75,7 @@
 // The first 33792 bytes are the checkpoint's row "codebooks" as it is (convert/grids.py's codebooks(): the row is the
 // codebooks and nothing of these kernels', so that a kernel written otherwise needs no other file), but for IQ1_S's
 // grid, which has one added. A type's entries are looked up twice to eight times for each 32 weights and stay in the
-// first caches (IQ1's 16 KB cost its kernel 2 to 10% with indices drawn evenly, the worst case: T363.1).
+// first caches (IQ1's 16 KB cost its kernel 2 to 10% with indices drawn evenly, the worst case: T.363.1).
 
 const T_IQ2XS: usize = 2048, T_IQ2S: usize = 6144, T_IQ3XXS: usize = 14336, T_IQ3S: usize = 15360, T_IQ1S: usize = 17408;
 const T_SIGNS: usize = 33792, T_IQ4: usize = 34816, T_VECTORS: usize = 34864;

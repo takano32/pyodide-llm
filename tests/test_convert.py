@@ -107,7 +107,7 @@ def test_a_model_the_engine_cannot_run_is_refused(change, reason):
 
 
 def test_a_head_dim_of_null_is_no_head_dim():
-    # cyberagent/CAT-Translate-7b writes "head_dim": null, and was refused as heads that do not divide (T124)
+    # cyberagent/CAT-Translate-7b writes "head_dim": null, and was refused as heads that do not divide (T.124)
     config, weights = synthetic_weights()
     _, published = hugging_face(config, weights, True)
     check_config({**published, "head_dim": None})
@@ -151,7 +151,7 @@ def test_tokenizer_json():
 
 
 def test_a_tokenizer_json_precompiled_map_goes_into_tokenizer_bin():
-    """T216: a tokenizer.json made from a sentencepiece model says its normalizer as "Precompiled", the model's map in
+    """T.216: a tokenizer.json made from a sentencepiece model says its normalizer as "Precompiled", the model's map in
     base64, alone or in a Sequence. It goes after the pieces as a tokenizer.model's does (the nfkc option was a guess)."""
     import base64
     from conftest import charsmap, vocabulary_conversion
@@ -171,14 +171,14 @@ def test_a_tokenizer_json_precompiled_map_goes_into_tokenizer_bin():
 
 
 def test_a_transform_nobody_wrote_is_refused():
-    """transformed() used to take any unknown name for a slice of rows (T77): a typo must fail loudly."""
+    """transformed() used to take any unknown name for a slice of rows (T.77): a typo must fail loudly."""
     import numpy as np
     from llama2_convert import transformed
     values = np.arange(12, dtype=np.float32).reshape(6, 2)
     assert transformed(values, ("row", 1, 3), 2).tolist() == values[2:4].tolist()
     with pytest.raises(ValueError, match="no transform called 'rowz'"):
         transformed(values, ("rowz", 1, 3), 2)
-    # (T342: rows of a tensor of a size said, which another size is not)
+    # (T.342: rows of a tensor of a size said, which another size is not)
     assert transformed(values, ("rows", 1, 4, 6), 2).tolist() == values[1:4].tolist()
     with pytest.raises(ValueError, match="6 rows are not the 7"):
         transformed(values, ("rows", 1, 4, 7), 2)
@@ -233,14 +233,14 @@ def test_a_stream_that_ends_early_or_lacks_a_tensor_is_refused():
 
 
 class Sink:
-    """What the worker passes for a checkpoint that goes straight into the WebAssembly memory of forward.js (T93)."""
+    """What the worker passes for a checkpoint that goes straight into the WebAssembly memory of forward.js (T.93)."""
 
     def __init__(self):
         self.data = self.opened = None
 
     def open(self, size, header, dtype, form):
         self.data = bytearray(size)
-        self.opened = (list(header), dtype, form)  # what the worker sizes the forward pass's memory from (T115)
+        self.opened = (list(header), dtype, form)  # what the worker sizes the forward pass's memory from (T.115)
 
     def write(self, offset, array):
         raw = bytes(np.asarray(array, dtype=np.uint8))
@@ -250,7 +250,7 @@ class Sink:
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8"])
 @pytest.mark.parametrize("head_size", [0, 16])
 def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
-    """And the form (T144: with heads of 16 in a dim of 32 and 4 heads, the worker sizes the keys and values of heads
+    """And the form (T.144: with heads of 16 in a dim of 32 and 4 heads, the worker sizes the keys and values of heads
     twice what the header says; with the size of dim / heads, footprint() counted them 45% short for Qwen3 0.6B)."""
     config, weights = synthetic_weights(head_size=head_size)
     tensors, published = hugging_face(config, weights, True)
@@ -270,7 +270,7 @@ def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
-    """T115: the worker gives the converter a function in place of a dtype (int8 where the forward pass fits a 32-bit
+    """T.115: the worker gives the converter a function in place of a dtype (int8 where the forward pass fits a 32-bit
     memory, else int6), which gets the header and the size of either; the checkpoint is then that dtype's."""
     config, weights = synthetic_weights()
     tensors, published = hugging_face(config, weights, True)
@@ -295,7 +295,7 @@ def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
 
 
 def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():
-    """T89: the converter hands int8 matrices to quantize_rows (the kernels' quantizer in the page) when their rows are
+    """T.89: the converter hands int8 matrices to quantize_rows (the kernels' quantizer in the page) when their rows are
     whole groups of 32, and keeps NumPy's quantize() for the rest; the bytes are the same either way."""
     config, weights = synthetic_weights(dim=48, hidden_dim=64)  # rows of 48: groups of 16, not the kernel's
     tensors, published = hugging_face(config, weights, True)
@@ -303,7 +303,7 @@ def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():
     size = struct.unpack("<Q", file[:8])[0]
     seen = []
 
-    def quantize_rows(values, dtype):  # (the Writer says which dtype's packing it asks for, T359)
+    def quantize_rows(values, dtype):  # (the Writer says which dtype's packing it asks for, T.359)
         assert dtype == "int8"
         seen.append(values.shape[-1])
         return llama2_convert.quantize(values)
@@ -317,7 +317,7 @@ def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():
 
 
 def test_a_mistral_is_a_llama_and_its_sliding_window_cuts_the_context():
-    """T125: model_type mistral converts as the Llama it is, the same bytes; a sliding window shorter than the
+    """T.125: model_type mistral converts as the Llama it is, the same bytes; a sliding window shorter than the
     context cuts the context to it (the window then covers every position), a longer one or none changes nothing"""
     config, weights = synthetic_weights()
     tensors, published = hugging_face(config, weights, True)
@@ -333,7 +333,7 @@ def test_a_mistral_is_a_llama_and_its_sliding_window_cuts_the_context():
 
 
 def test_the_bos_is_the_one_the_tokenizer_names():
-    """T143: config.json and the tokenizer may name two BOS tokens (DeepSeek-R1's Distill: 151643, its end of a
+    """T.143: config.json and the tokenizer may name two BOS tokens (DeepSeek-R1's Distill: 151643, its end of a
     sentence, and <｜begin▁of▁sentence｜> in tokenizer_config.json, which transformers begins a text with). The
     tokenizer's wins, and the answer stops at both."""
     from conftest import vocabulary_conversion

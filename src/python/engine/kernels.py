@@ -72,8 +72,8 @@ def load_kernels(path, without_relaxed=False):
 def kernel_quantizer(path):
     """The packing of every quantized dtype (DTYPES' pack) on the SIMD kernels, for the converter's Writer:
     quantize_rows(float32 rows, the dtype's name) -> (the bytes of their values in rows of a group's, their float32
-    scales), the same bytes as NumPy's and several times faster (T89: int8, six times; T98: int6, quantized and packed
-    in one pass; T230: ternary, with the same refusal of values that are not ternary). Whole groups of 32 or more
+    scales), the same bytes as NumPy's and several times faster (T.89: int8, six times; T.98: int6, quantized and packed
+    in one pass; T.230: ternary, with the same refusal of values that are not ternary). Whole groups of 32 or more
     only: an int8 row of smaller groups is NumPy's (the Writer sees to it). None where the kernels cannot be loaded.
     Which kernel packs a dtype is its entry's packer."""
     kernels = load_kernels(path) if path else None
@@ -98,7 +98,7 @@ def kernel_quantizer(path):
         packed, scales = np.empty(groups * (group * bits // 8), dtype=stored_as), np.empty(groups, dtype=np.float32)
         if packer(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, *more):
             raise ValueError(refusal)
-        # (T533: ternary's scales are float16s: the kernel's float32 ones, each the same number or a refusal)
+        # (T.533: ternary's scales are float16s: the kernel's float32 ones, each the same number or a refusal)
         return packed.reshape(groups, -1), halves_of(scales) if halved else scales
 
     return quantize_rows
@@ -107,7 +107,7 @@ def kernel_quantizer(path):
 def kernel_wideners(path, types):
     """The converter's readers of the stored types that have a kernel (convert/readers.py's SOURCES, which calls this
     with them), on the SIMD kernels: {the type's name: read(bytes) -> float32}, the same float32 as NumPy's readers
-    and several times faster (T123: bfloat16, a shift of every 16 bits; T136: GGUF's Q8_0; T273: Prism ML's two
+    and several times faster (T.123: bfloat16, a shift of every 16 bits; T.136: GGUF's Q8_0; T.273: Prism ML's two
     ternary types, most of the time of converting Ternary Bonsai 2 27B in the page).
     types: (the type's name, the kernel's export, the values of a block, the bytes of a block) of each. Every such
     kernel is export(float32 out, blocks in, how many blocks). A type whose export this build of the kernels has not

@@ -1,4 +1,4 @@
-"""engine/layout.py (T359): the rows of a checkpoint are written once, and what reads them agrees because it reads
+"""engine/layout.py (T.359): the rows of a checkpoint are written once, and what reads them agrees because it reads
 them. These hold the rows to what the readers need of them (the net's kind "layouts" compares the answers themselves
 between two trees)."""
 import sys
@@ -170,7 +170,7 @@ def test_the_file_is_in_the_order_it_always_was(name, header, form, more):
 
 
 def test_layout_refuses_a_key_that_is_no_part_of_the_form():
-    # (T359 review: layout() took keyword arguments, so a misspelt key was a TypeError; the form is a dict now, which
+    # (T.359 review: layout() took keyword arguments, so a misspelt key was a TypeError; the form is a dict now, which
     # form_of() reads by FORM's keys alone)
     with pytest.raises(TypeError, match="bais"):
         layout(64, 128, 2, 4, 4, 100, 16, bais=True)

@@ -2,16 +2,16 @@
 
 `kernel.ts` and `kernel_relaxed.ts` (AssemblyScript) are the numeric core of the site: float32 and int8 matmul,
 activation quantization, rmsnorm, RoPE, attention, SwiGLU, the residual add, LayerNorm and GELU (for GPT-2 models,
-T65), and sampling (repetition penalty, softmax,
+T.65), and sampling (repetition penalty, softmax,
 top-p). `src/python/llama2_numpy.py` loads
 them with `ctypes.CDLL` (`load_kernels`) and drives them from Python (`Llama.kernel_forward`): Python keeps
 sequencing the layers, NumPy keeps owning the memory, the kernels get addresses and work in place. Nothing is
 copied and there is no JavaScript glue. When they cannot be loaded, NumPy does the math as before.
 
-`kernel.ts` is a window (T356): the kernels are in `kernel/`, by what they are, and `kernel.ts` names every one of
+`kernel.ts` is a window (T.356): the kernels are in `kernel/`, by what they are, and `kernel.ts` names every one of
 them in the order of the module's exports. `kernel_relaxed.ts` is one file. `six.ts` and `ternary.ts` are what both
 import (the widening of an int6 group and of a ternary one). `blocks.ts` and `blocks_relaxed.ts` are the windows of
-two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
+two modules of their own, over `blocks/` (T.363.4: "llama.cpp's blocks" below).
 
 | file | what is in it |
 |---|---|
@@ -39,7 +39,7 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 
 ## Measured (2026-09-19, phone-class ARM CPU, one thread)
 
-## What each optimization is worth (T52)
+## What each optimization is worth (T.52)
 
 `?without=kernels,int8,relaxed,sampler` leaves any of them out, one at a time, so that the contributions come
 apart. Measured on the development machine (Node on Pyodide, 64 tokens, int8 models, the same seed):
@@ -65,8 +65,8 @@ worth nothing.
 | tiny-lm int8, greedy, Pyodide in Node | 56 | 422 |
 | llm-jp-3-150m int8, Pyodide in Node | 9.3 tok/s, 897 MB of WASM heap | 81 tok/s, 283 MB |
 | Chromium: stories15M float32 / int8 | 50 | 186 / 296 |
-| Chromium: tiny-lm int8, sampled with a repetition penalty | 43 | 271-296 (171 while NumPy still did the sampling, 252-274 before T54) |
-| Chromium: llm-jp-3-150m int8, sampled, 256 tokens | 8.5 | 75-79 (47 while NumPy still did the sampling, 61-66 before T54) |
+| Chromium: tiny-lm int8, sampled with a repetition penalty | 43 | 271-296 (171 while NumPy still did the sampling, 252-274 before T.54) |
+| Chromium: llm-jp-3-150m int8, sampled, 256 tokens | 8.5 | 75-79 (47 while NumPy still did the sampling, 61-66 before T.54) |
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
 For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox loads the
@@ -74,7 +74,7 @@ kernels too (what looked like a Firefox 5-7x slower on the test machine was Play
 other browser is tested on the runners of GitHub Actions (below). Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
 taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel calls.
 
-## Every browser the runners offer (2026-09-19, T44 and T58)
+## Every browser the runners offer (2026-09-19, T.44 and T.58)
 
 `.github/workflows/browsers.yml` runs `tests/e2e.mjs` against the deployed site on five systems, in Playwright's
 own Chromium, Firefox and WebKit and in the Chrome and Edge that the runner has installed: one job per system,
@@ -111,8 +111,8 @@ machines with different CPUs, some of them much faster than the machine of the o
 | macOS, Apple M1 | webkit 26.4 | Apple M1 (Virtual) | `matmul_q8` | 137 | 664 | 660 | 3938 |
 
 - **WebKit has no relaxed SIMD**, on any system: the int8 models fall back to `matmul_q8`, which had never met a
-  real browser before T44. It is Playwright's WebKit, close to Safari, not Safari itself.
-- **The Firefox rows of this table are not Firefox's speed** (T59). Playwright drives its patched Firefox through the
+  real browser before T.44. It is Playwright's WebKit, close to Safari, not Safari itself.
+- **The Firefox rows of this table are not Firefox's speed** (T.59). Playwright drives its patched Firefox through the
   debugger, and SpiderMonkey compiles the WebAssembly of a debugged page with the baseline compiler only. A bare
   SIMD loop with nothing of Pyodide runs at 0.43 G multiply-adds per second there against 5.7 in Chromium (scalar
   code 0.07 against 1.2); forcing the baseline compiler changes nothing, and with the optimizing compiler alone
@@ -136,7 +136,7 @@ machines with different CPUs, some of them much faster than the machine of the o
 - The first run found a bug of the page, not of a browser: the real Edge reports the 404 of `/favicon.ico` as a
   console error, which the test counts as a failure. The page now carries its icon as a data URI.
 
-## Where the time of one token goes (2026-09-19, T53)
+## Where the time of one token goes (2026-09-19, T.53)
 
 `node tests/profile.mjs [node|chromium|firefox] [model ...]` measures this inside Pyodide. A browser's clock is too
 coarse for single kernel calls, so every number is a difference of totals: the same model runs its forward pass
@@ -187,7 +187,7 @@ What this says:
 
 - **The matrix products are nine tenths of a token of llm-jp-3-150m** (layers 52%, the classifier over 99584
   tokens 38%). ctypes calls are 6%, Python and NumPy around them 1%, sampling 3%. One call per layer instead of 19
-  (T47) can win at most those 7%; for tiny-lm at most 12%; only a model as small as stories260K, which nobody
+  (T.47) can win at most those 7%; for tiny-lm at most 12%; only a model as small as stories260K, which nobody
   waits for, would double.
 - **The int8 product is not bound by memory bandwidth.** Its throughput does not fall when the matrix leaves the
   caches (10.7 G multiply-adds per second at 0.4 MB, 12.0 at 75 MB), and it moves 13 GB/s while the float32
@@ -196,9 +196,9 @@ What this says:
 - **Attention is slow for what it does.** A token of llm-jp-3-150m takes 12.6 ms at position 8 and 16.3 ms at
   position 248 (Node): 3.7 ms for some 3 million multiply-adds and 24000 exponentials, several times the cost
   per multiply-add of the matrix products. This is why a run of 256 tokens reached 70 tok/s in Node and 61-66 in
-  the page, not the 82 of the table above. (T54 has since rewritten attention, see below.)
+  the page, not the 82 of the table above. (T.54 has since rewritten attention, see below.)
 
-## What T54 made of that (2026-09-19)
+## What T.54 made of that (2026-09-19)
 
 The tables above are from before these changes. Old and new kernels were compared in one process, taking turns
 (a run of its own is noisier than the differences): a token of llm-jp-3-150m went from 13.3 to 12.1 ms at position
@@ -224,9 +224,9 @@ The tables above are from before these changes. Old and new kernels were compare
   llm-jp-3-150m differs by up to 1.0. The kernels have always been that far from the NumPy path, which does not
   quantize activations (old kernels 1.7, new ones 1.6, largest difference over 99584 logits). tiny-lm did not
   flip anywhere in the same test (7.6e-6), and the float32 models still write NumPy's text letter for letter.
-  What the 7-bit activations cost in perplexity: +0.4%, see the int8 section (T55).
+  What the 7-bit activations cost in perplexity: +0.4%, see the int8 section (T.55).
 
-## The whole context (2026-09-19, T56)
+## The whole context (2026-09-19, T.56)
 
 llm-jp-3-150m used to be cut from 4096 to 512 tokens when the site was built, for the sake of the KV cache
 (12 layers x positions x 512 x 4 bytes x 2: 200 MB at 4096). Now it keeps its context, and the cache starts with
@@ -251,12 +251,12 @@ Weights as `quantize.py` writes them: int8 values in groups of 32 with one float
 views into the downloaded buffer and are never widened. Per matmul the input is quantized once
 (`quantize_x`, shared by q/k/v and by w1/w3) and multiplied by `matmul_q8`. With relaxed SIMD, `matmul_q8r`
 multiplies int8 by 7-bit unsigned values: activations get a bias of 64, and `corrections = -64 * sum of the
-group` (an int32 a group, T197; before it the float32 `scale * sum`) takes it out again, added to the group's
+group` (an int32 a group, T.197; before it the float32 `scale * sum`) takes it out again, added to the group's
 integer sum before that is scaled. The relaxed module is loaded in `try/except`: a browser without relaxed SIMD
 (shipping Safari) refuses to compile it, which arrives in Python as `OSError` (verified by switching the
 feature off in Firefox), and int8 then runs on `matmul_q8`.
 
-What quantizing the activations costs (2026-09-19, T55; `node tests/perplexity.mjs [model]`, 1499 tokens from the
+What quantizing the activations costs (2026-09-19, T.55; `node tests/perplexity.mjs [model]`, 1499 tokens from the
 beginnings of three Japanese Wikipedia articles, contexts of 512 tokens, Pyodide in Node):
 
 | computation | llm-jp-3-150m | tiny-lm |
@@ -270,7 +270,7 @@ The percentages of llm-jp-3-150m are against its original. So the seventh bit co
 perplexity and buys a third more speed (11.2-12.5 against 7.6-8.3 G multiply-adds per second); the largest
 difference between two logits, 1.6 as noted above, sounds worse than it is. Nothing to fix.
 
-Except for GPT-2 (2026-09-24, T92). openai-community/gpt2 lost 17% of perplexity to the seventh bit (41.4 against
+Except for GPT-2 (2026-09-24, T.92). openai-community/gpt2 lost 17% of perplexity to the seventh bit (41.4 against
 36.1 with NumPy, 1500 tokens of English Wikipedia), and all of it in the classifier's input: its final LayerNorm
 has a weight that blows a few channels up 12 to 17 times (316 against a median of 0.3). One such channel sets
 the scale of its group of 32, and the other 31 round to nothing. The fix is `add_columns`: the 8 channels with the
@@ -281,10 +281,10 @@ next to vocab_size × dim). GPT-2 is back to 36.127 (+0.16% against NumPy); its 
 its median gets it (`OUTLIER_RATIO`; GPT-2 13.9, every other model of the list 1.1-1.9): tiny-lm gains nothing
 from it (+0.31% either way) and would pay about 3% of speed. `simdkernel.so` is 6307 → 6572 bytes.
 
-## Ternary weights (2026-10-01, T230 and T231)
+## Ternary weights (2026-10-01, T.230 and T.231)
 
 A ternary model's weights (-1, 0, +1 times one scale a group of 128) are held two bits each, in the order of Prism
-ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a scale a group (a float32 until T533, a float16 from it, below):
+ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a scale a group (a float32 until T.533, a float16 from it, below):
 `ternary.ts`. Nothing is widened: `matmul_t2r` loads sixteen bytes (64 weights), and a shift by 0, 2, 4 and 6 bits
 and a mask of 3 give four planes of codes, every fourth weight each. `interleave` lays the int8 activations of
 `quantize_x` (no bias) out the same way, once a token, and leaves minus the sum of every group of 32 after their
@@ -311,7 +311,7 @@ The mask of 3 is an argument of the kernels (`jobs.ts` passes it): V8 makes a co
 again at every use. The form that keeps int16 sums is as fast or faster on x86-64 and half as fast on arm64; the
 phones this is for are arm64.
 
-**The scales are float16s from T533 (2026-10-15)**, as PQ2_0 and PTQ1_0 hold them: 34 bytes a group of 128, not 36
+**The scales are float16s from T.533 (2026-10-15)**, as PQ2_0 and PTQ1_0 hold them: 34 bytes a group of 128, not 36
 (a ternary model 5.6% smaller: Ternary Bonsai 1.7B 457 MB, 2 27B 7.24 GB). The form is ssig33/pyodide-llm's
 (`7d7b776c`, MPL-2.0: PQ2_0's blocks as they are, a half widened once a block), written anew in this layout (the
 scales after all the codes, as before). A row's kernels widen four groups' scales at once (`halves4`) and broadcast a
@@ -330,7 +330,7 @@ geometric mean of the widths of 1.7B, 8B and 27B:
 The prompt's tile widens one half a group for its four tokens: 0.98 of the float32 tile on arm64 (28.1 against 28.8
 and 112.0 against 115.1 G weights/s), 0.99 on x86-64. The kernels as built against their float32 forms: `matmul_t2r`
 1.02 / 1.02 on arm64 (Neoverse-N2), 1.02 / 1.00 on an EPYC 7763 and 0.96 / 0.96 on an EPYC 9V45; `matmul_t2` 1.00 /
-1.00 on arm64 and 0.97 / 0.99 on the 7763 (TASKS.md's T533 has the runs).
+1.00 on arm64 and 0.97 / 0.99 on the 7763 (TASKS.md's T.533 has the runs).
 
 Two things the review of 2026-10-02 found, which no test in Node can see:
 
@@ -350,7 +350,7 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
   `tests/kernels-in-browser.mjs` runs every kernel above 4 GiB in each browser that has such a memory (the 27B model
   runs there).
 
-## llama.cpp's blocks (2026-10-13, T363.4)
+## llama.cpp's blocks (2026-10-13, T.363.4)
 
 `blocks.ts` and `blocks_relaxed.ts` are the windows of two more modules, `blockkernel_*.wasm`: the matrix products on
 rows kept as a GGUF has them, llama.cpp's blocks of 256 weights (Q2_K, Q4_K, IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S,
@@ -369,7 +369,7 @@ has, at its head, what each type is to the kernels, the one arithmetic every ker
 | `signed_dots(out, a, b)` | `blockkernel_relaxed` | the relaxed dot product of 16 bytes by 16, for the caller to ask that of every pair of bytes |
 | `sb_row(out, w, tab, n, type)` | `blockkernel` | a row as float32, each weight the converter's reader's value to the bit (a token's row of the embedding) |
 
-`type` is the type's number in a GGUF (ggml's: 10, 12, 16, 17, 18, 19, 21, 22, 23, 29). The form is T363.1's "rb3"
+`type` is the type's number in a GGUF (ggml's: 10, 12, 16, 17, 18, 19, 21, 22, 23, 29). The form is T.363.1's "rb3"
 (`docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md`): the magnitudes a grid holds are the 7-bit side of the relaxed
 dot product and the activations its signed side in all 8 bits, each given its weight's sign as it is loaded; a
 group's sum is an exact integer before it meets a float. So a row keeps no corrections, and the numbers do not depend
@@ -377,7 +377,7 @@ on relaxed SIMD, on how many tokens a kernel takes, or on which side the signs a
 
 - **Modules of their own.** Built, they are 30 KB and 105 KB (5.7 and 16.1 KB gzipped) beside `kernel.ts`'s 23 KB and
   `kernel_relaxed.ts`'s 7 KB (7.4 and 2.4): in those two, every visit would fetch them. `src/runtime/built.ts` names
-  the eight files; no page fetches them before a model with such rows does (T363.5).
+  the eight files; no page fetches them before a model with such rows does (T.363.5).
 - **A type is a type parameter** (`blockOf<XXS2, R>(…)`), and so is relaxed SIMD or not. AssemblyScript compiles every
   branch of an inlined function whatever constant it is called with (`if (kind == 16)` with `kind` the constant 16
   keeps all ten types' code at every use: the first version took three minutes to fail to compile, and a call of
@@ -418,14 +418,14 @@ calls them in each browser's engine up to 30000 times and above 4 GiB. Billions 
 | Q4_K | 10.90 / 41.66 | 28.48 / 57.94 |
 | `matmul_sb` (no relaxed SIMD), IQ2_XXS | 6.31 / 25.16 | 12.16 / 25.37 |
 | `matmul_sb`, IQ3_S | 3.96 / 15.83 | 6.11 / 14.00 |
-| T363.1's forms in the same runs: rb3 (IQ2_XXS), IQ3_S, Q2_K, IQ1_M | 7.40, 4.26, 10.37, 6.39 / 29.57, 17.03, 41.15, 25.48 | 15.83, 7.41, 28.62, 13.36 / 34.14, 17.46, 57.27, 27.31 |
+| T.363.1's forms in the same runs: rb3 (IQ2_XXS), IQ3_S, Q2_K, IQ1_M | 7.40, 4.26, 10.37, 6.39 / 29.57, 17.03, 41.15, 25.48 | 15.83, 7.41, 28.62, 13.36 / 34.14, 17.46, 57.27, 27.31 |
 | `matmul_t2r` (ternary: how Ternary Bonsai 2 27B runs) | 20.29 / 78.96 | 53.56 / 111.25 |
 | a prompt of 16 tokens, `matmul_sbr_tile`: IQ2_XXS, IQ3_S, IQ2_S, IQ1_M, Q2_K (times the token's kernel on each token) | 12.12 (1.65), 9.73 (2.17), 9.65 (1.74), 8.84 (1.44), 11.38 (1.18) / 48.15, 38.73, 38.46, 35.21, 45.35 | 31.82 (2.05), 20.93 (2.86), 23.42 (1.92), 18.15 (1.33), 31.01 (1.11) / 68.74, 45.34, 50.04, 38.10, 63.74 |
 | the same, `matmul_sbw_tile`: IQ2_XXS, IQ3_S, IQ2_S, IQ1_M | 16.17 (2.20), 15.31 (3.42), 13.30 (2.39), 13.57 (2.21) / 64.43, 60.69, 52.96, 53.89 | not called there |
 
 From those, the matrix products of one token of the 27B (25.6 billion weights, every type at its own speed, an
 estimate): 0.98 s on 4 threads of the Neoverse-N2 and 3.90 s on 1; 0.87 s and 1.91 s on the EPYC 9V45. Against
-T363.1's forms the kernels are the same within 2% but for Q2_K on arm64 (0.94) and IQ1_M on arm64 (0.97): a type's
+T.363.1's forms the kernels are the same within 2% but for Q2_K on arm64 (0.94) and IQ1_M on arm64 (0.97): a type's
 scales are read as a vector and the units' sums made one lane each, for every type alike.
 
 ## Rules that are easy to break
@@ -440,7 +440,7 @@ scales are read as a vector and the units' sums made one lane each, for every ty
 - `sample` sorts only as far as the nucleus reaches and gets its random number from Python, so a seed gives the
   same text again. With the same random number it picks the token that `NumpySampler` (the reference, in NumPy) draws.
 - The relaxed module must not be named `*.so` if it ever ships inside a wheel: Pyodide pre-loads every `.so`.
-- `attention` needs a scratch of `heads * (pos + 1)` floats (the engine allocates `heads * seq_len`), since T54.
+- `attention` needs a scratch of `heads * (pos + 1)` floats (the engine allocates `heads * seq_len`), since T.54.
 - `attention` expects the KV cache as `[seq][kv_heads * head_size]` per layer (the NumPy forward uses another
   layout) and handles grouped-query attention and any head size. int8 models whose row lengths are not
   multiples of 32 run on NumPy.

@@ -1,4 +1,4 @@
-# start_check.py (T249's review): what the token in front of a text costs a model. The page begins every text with the
+# start_check.py (T.249's review): what the token in front of a text costs a model. The page begins every text with the
 # BOS the converter says (src/models.js can set another), where the real tokenizer of a model may put another token in
 # front or none (a T5Tokenizer puts nothing in front and </s> after; Qwen's puts nothing). Not something a format
 # check says (tests/format_check.py compares what comes after) and not something to settle by reading what the model
@@ -9,9 +9,9 @@
 #
 # The ids are the page's (the converter's tokenizer.bin through llama2_numpy.Tokenizer, which tests/format_check.py and
 # its sentencepiece comparisons hold to the real one), the weights are the original's at the revision the list pins
-# (tests/hf_fetch.py). The text, if none is given, is the beginning of three Japanese Wikipedia articles (T85's, fetched
+# (tests/hf_fetch.py). The text, if none is given, is the beginning of three Japanese Wikipedia articles (T.85's, fetched
 # when this runs). Every window of W tokens is scored from its second token, so that each start is held to the same
-# targets: the first token is context (or, with a start, the second), as in T131's measure. The starts are: none, the
+# targets: the first token is context (or, with a start, the second), as in T.131's measure. The starts are: none, the
 # page's BOS, and every other token that config.json, tokenizer_config.json and special_tokens_map.json name (plus
 # --also). Per start: perplexity, and nats per character (so that a model of another vocabulary can be set beside it:
 # tests/start_check.mjs prints the same for the page's engine).
@@ -117,7 +117,7 @@ def main():
     parser.add_argument("--window", type=int, default=512)
     parser.add_argument("--text")
     parser.add_argument("--directory", default=str(HERE.parent / ".tmp" / "start-check"))
-    # T253's review: a model whose float32 is more than a runner has (Granite 4.2 3B: 14.6 GB) is held as the original
+    # T.253's review: a model whose float32 is more than a runner has (Granite 4.2 3B: 14.6 GB) is held as the original
     # stores it (bfloat16), every product in float32 (reference_llama.float32_arithmetic: the same float32 arithmetic)
     parser.add_argument("--stored", action="store_true")
     parser.add_argument("--by-layer", action="store_true")

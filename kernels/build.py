@@ -40,9 +40,9 @@ def side_module(source, out, features):
 
 
 def plain_module(source, out, features, shared=False, wasm64=False):
-    """T93: the same kernels as plain WebAssembly, instantiated by src/runtime/forward.js on the memory that holds the
+    """T.93: the same kernels as plain WebAssembly, instantiated by src/runtime/forward.js on the memory that holds the
     weights (not Pyodide's). No dylink.0. shared: on a shared memory, for threads that share the weights (stage 2,
-    and tests/threads-check.mjs). wasm64 (T101): on a 64-bit memory (kernels/wasm64.mjs), for models past 4 GiB."""
+    and tests/threads-check.mjs). wasm64 (T.101): on a 64-bit memory (kernels/wasm64.mjs), for models past 4 GiB."""
     flags = ["--sharedMemory", "--maximumMemory", "65536"] if shared else []
     if wasm64:
         flags += ["--transform", str(Path(__file__).parent / "wasm64.mjs")]
@@ -61,19 +61,19 @@ if __name__ == "__main__":
     plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_plain.wasm", "simd,relaxed-simd")
     plain_module(here / "kernel.ts", out / "simdkernel_shared.wasm", "simd,relaxed-simd", shared=True)
     plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_shared.wasm", "simd,relaxed-simd", shared=True)
-    # T101: the same on a 64-bit memory
+    # T.101: the same on a 64-bit memory
     for shared in (False, True):
         kind = "shared" if shared else "plain"
         plain_module(here / "kernel.ts", out / f"simdkernel_{kind}64.wasm", "simd,relaxed-simd", shared=shared, wasm64=True)
         plain_module(here / "kernel_relaxed.ts", out / f"simdkernel_relaxed_{kind}64.wasm", "simd,relaxed-simd", shared=shared, wasm64=True)
-    # T363.4: the kernels of llama.cpp's blocks (blocks.ts), in modules of their own: only a model with such rows
+    # T.363.4: the kernels of llama.cpp's blocks (blocks.ts), in modules of their own: only a model with such rows
     # fetches them
     for shared in (False, True):
         for wasm64 in (False, True):
             kind = ("shared" if shared else "plain") + ("64" if wasm64 else "")
             plain_module(here / "blocks.ts", out / f"blockkernel_{kind}.wasm", "simd", shared=shared, wasm64=wasm64)
             plain_module(here / "blocks_relaxed.ts", out / f"blockkernel_relaxed_{kind}.wasm", "simd,relaxed-simd", shared=shared, wasm64=wasm64)
-    # T163: the CPU section's ceilings of /benchmark/ (loops, not kernels), on the memory of its made-up model: plain,
+    # T.163: the CPU section's ceilings of /benchmark/ (loops, not kernels), on the memory of its made-up model: plain,
     # and shared where the page is cross-origin isolated (the reading threads)
     for shared in (False, True):
         kind = "shared" if shared else "plain"

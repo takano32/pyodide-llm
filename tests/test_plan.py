@@ -1,4 +1,4 @@
-"""engine/plan.py (T359.5): the plan Python hands forward.js, made from a header, a form, a dtype and how the model is
+"""engine/plan.py (T.359.5): the plan Python hands forward.js, made from a header, a form, a dtype and how the model is
 run, with no model and no weights: every test here but the last makes no Llama. The last holds Llama to handing
 ExternalForward what forward_plan() makes of the same facts. (That the plan's keys are the ones forward.js reads is
 tests/plan-keys-check.mjs's, and that their values are what they were is the net's kind "layouts".)"""
@@ -38,7 +38,7 @@ MODELS = [
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0] for model in MODELS])
-# the keys forward.ts is handed: the 24 of before T359.5, its two, the two facts of T375.2 and T261's third
+# the keys forward.ts is handed: the 24 of before T.359.5, its two, the two facts of T.375.2 and T.261's third
 KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_size", "vocab_size", "seq_len", "rotary",
         "parallel_residual", "kv_start", "rms_norm_eps", "shared_classifier", "int8", "relaxed", "tensors", "derived",
         "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn",
@@ -68,7 +68,7 @@ def test_a_plan_is_made_of_a_header_a_form_and_a_dtype(name, header, form, more,
     assert plan["arch"] == form.get("arch", "llama") and plan["head_size"] == head
     assert plan["shared_classifier"] is (vocab > 0)
     assert plan["linear"] == form.get("linear") and plan["convolution"] == form.get("convolution")
-    # where every tensor is: what the worker is told before the bytes are there (T156), the classifier under both names
+    # where every tensor is: what the worker is told before the bytes are there (T.156), the classifier under both names
     assert plan["tensors"] == external_tensors(header, dtype, form)
     assert list(plan["tensors"]) == list(external_tensors(header, dtype, form))
     assert (plan["tensors"]["wcls"] == plan["tensors"]["token_embedding_table"]) is (vocab > 0)
@@ -112,7 +112,7 @@ def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     turning = any(row.role == TABLE for row in rows)
     assert [layer["rope"] for layer in layers] == \
         [turning and layer["kind"] == ATTENTION and l not in more.get("unturned", ()) for l, layer in enumerate(layers)]
-    # T261: the local layers, as the options say them: their window, and that the local layers' tables turn them
+    # T.261: the local layers, as the options say them: their window, and that the local layers' tables turn them
     local = more.get("local") or {"layers": (), "window": 0}
     assert [(layer["window"], layer["local"]) for layer in layers] == \
         [(local["window"], True) if l in local["layers"] else (0, False) for l in range(len(layers))]
@@ -134,7 +134,7 @@ def test_which_layers_are_of_which_kind_and_which_rope_turns():
 
 
 def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts_of_a_plan(monkeypatch):
-    """T375.2: what an engine's layers differ by is said as facts (the names of engine/layout.py's Layout), written
+    """T.375.2: what an engine's layers differ by is said as facts (the names of engine/layout.py's Layout), written
     here a second time for every architecture; and a record whose two facts are not the pair every architecture has
     says each as it is (the engine outside Python reads the two apart)."""
     header = [256, 768, 4, 8, 8, 2048, 320]
@@ -148,7 +148,7 @@ def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts_of_a_plan(monkeypatc
     monkeypatch.setitem(LAYOUTS, "gated gpt2", LAYOUTS["gpt2"]._replace(gated_ffn=True))
     assert facts({"arch": "rms gpt2"}) == (False, False) and facts({"arch": "gated gpt2"}) == (True, True)
     assert all(type(fact) is bool for form in ({}, {"arch": "gpt2"}) for fact in facts(form))
-    # T261: and the FFN's activation is a third, which went with the second until a Gemma 3: its gated FFN has GPT-2's
+    # T.261: and the FFN's activation is a third, which went with the second until a Gemma 3: its gated FFN has GPT-2's
     activation = lambda form: forward_plan(Dims(header, form), "float32", no_bytes, int8=False, kv_start=64)["activation"]
     assert [activation(form) for form in ({}, {"arch": "gpt2"}, {"arch": "neox"}, {"arch": "gemma3"}, {"arch": "rms gpt2"}, {"arch": "gated gpt2"})] == \
         ["silu", "gelu", "gelu", "gelu", "gelu", "gelu"]
@@ -156,7 +156,7 @@ def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts_of_a_plan(monkeypatc
 
 
 def test_the_local_layers_of_a_plan_and_their_tables():
-    """T261: a layer's window and whether the local layers' tables turn it are two keys of its facts, and the tables
+    """T.261: a layer's window and whether the local layers' tables turn it are two keys of its facts, and the tables
     are among the derived arrays at every dtype (no file has them), beside the model's own where the file has none."""
     header, form = [64, 128, 6, 4, 1, 320, 48], {"arch": "gemma3", "head_dim": 32}
     dims = Dims(header, form)
@@ -220,7 +220,7 @@ def test_how_a_model_is_run_is_the_plans():
         return weight.tobytes()
 
     plan = forward_plan(dims, "int8", read, int8=True, kv_start=256)
-    # (T92) the outlier channels of the final norm, which is read where the plan says it is
+    # (T.92) the outlier channels of the final norm, which is read where the plan says it is
     assert asked == [(plan["tensors"]["rms_final_weight"]["offset"], 256 * 4)]
     weight = np.frombuffer(read(0, 256 * 4), dtype=np.float32)
     assert plan["outliers"] == [int(c) for c in outlier_channels(weight, OUTLIER_CHANNELS)]
@@ -228,7 +228,7 @@ def test_how_a_model_is_run_is_the_plans():
     assert all(type(c) is int for c in plan["outliers"])
     assert plan["int8"] is True and plan["half_kv"] is True and plan["relaxed"] is True and plan["kv_start"] == 256
     assert forward_plan(dims, "int8", flat, int8=True, kv_start=256)["outliers"] == []
-    # T52's switches
+    # T.52's switches
     without = forward_plan(dims, "int8", flat, int8=True, disable=("relaxed", "kv16", "sampler"), kv_start=256)
     assert without["relaxed"] is False and without["half_kv"] is False and without["int8"] is True
     # a model whose matrices are widened: no outliers are looked for, and its keys and values are float32
@@ -253,7 +253,7 @@ def test_the_tables_python_computes_are_the_plans_bytes():
     # (a table that is not float32, or not one piece of memory, is made so)
     wide = forward_plan(dims, "int8", flat, int8=True, kv_start=256, tables=(cos.astype(np.float64), sin[::-1][::-1]))
     assert wide["derived"] == plan["derived"]
-    # T237: a rotated basis: its block, the signs of every width with the transform's scale in them, and no outliers
+    # T.237: a rotated basis: its block, the signs of every width with the transform's scale in them, and no outliers
     signs = {width: np.where(np.arange(width) % 7 == 3, -1.0, 1.0) for width in plan["widths"]["rotated"]}
     rotated = rotated_form({"block": 16, "signs": {str(width): sign_bits(values) for width, values in signs.items()}},
                            plan["widths"]["rotated"])
@@ -267,7 +267,7 @@ def test_the_tables_python_computes_are_the_plans_bytes():
 
 def test_a_file_no_engine_outside_can_take_has_no_plan():
     header = [256, 768, 4, 8, 4, 2048, 320]
-    # (T363.5: a row with a kind of its own is said as that kind, a stack with one for each layer by its layers, and
+    # (T.363.5: a row with a kind of its own is said as that kind, a stack with one for each layer by its layers, and
     # every other tensor as in the file without: only what follows a row of another size has moved)
     plain = forward_plan(Dims(header), "int8", flat, int8=True, kv_start=256)
     said = forward_plan(Dims(header, {"kinds": {"wq": "float16", "w1": ["int8", "int6", "IQ2_XXS", "int8"]}}), "int8", flat, int8=True, kv_start=256)
@@ -316,7 +316,7 @@ def test_a_llama_hands_on_the_plan_of_its_file(name, header, form, more, dtype, 
                          lambda width: rope_frequencies(width, 10000.0, None))
     # (every width of these models is whole groups of 32: the int8 kernels take the matrices of a quantized file)
     int8 = dtype in QUANTIZED and "int8" not in disable
-    # (T261: and the tables of its local layers, which Llama makes at every dtype, where it has such layers)
+    # (T.261: and the tables of its local layers, which Llama makes at every dtype, where it has such layers)
     local = more.get("local") and local_tables(dims.seq_len, dims.head_size, more["local"]["rope_theta"], rope_frequencies)
     alone = forward_plan(dims, dtype, outside.read, int8=int8, disable=disable, kv_start=48, tables=tables, local_tables=local, **more)
     assert outside.plan == alone and list(outside.plan) == list(alone)
@@ -327,7 +327,7 @@ def test_a_llama_hands_on_the_plan_of_its_file(name, header, form, more, dtype, 
 
 @pytest.mark.parametrize("dtype", ["ternary", "int8", "int6"])
 def test_the_plan_of_a_model_whose_options_say_no_scaling_has_the_plain_tables(dtype):
-    """T235: forward.js (and the GPU after it) turns by the tables of the plan and makes none of its own. A Qwen3 whose
+    """T.235: forward.js (and the GPU after it) turns by the tables of the plan and makes none of its own. A Qwen3 whose
     options say rope_scaling: {} (the list's Ternary Bonsai, over their conversion's yarn) is handed the plain ones to
     the bit, as one with no scaling at all; one whose options say yarn is handed yarn's, slowed and 1.1386 times longer."""
     name, header, form, more = MODELS[3]

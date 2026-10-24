@@ -4,9 +4,9 @@
 //
 //   node tests/screenshots.mjs <directory> [url of a deployed site]
 //
-// The scenes: the page with the smallest model ready; the settings sheet open at its engine switches (T75); the
-// benchmark's bubble (T76); the sheet that opens any repository, and a repository the converter refuses (T88);
-// /benchmark/ before a run, while "Run all" runs the CPU section (T177: its progress) and after (T134, whole pages: it is
+// The scenes: the page with the smallest model ready; the settings sheet open at its engine switches (T.75); the
+// benchmark's bubble (T.76); the sheet that opens any repository, and a repository the converter refuses (T.88);
+// /benchmark/ before a run, while "Run all" runs the CPU section (T.177: its progress) and after (T.134, whole pages: it is
 // a page that scrolls).
 import fs from "node:fs";
 import path from "node:path";
@@ -17,14 +17,14 @@ import { serving } from "./serving.mjs";
 const [directory = "screenshots", deployed] = process.argv.slice(2);
 let server, site = deployed;
 if (!site) {
-  server = await serving();  // (T391.6: tests/serving.mjs)
+  server = await serving();  // (T.391.6: tests/serving.mjs)
   site = server.url;
 }
 fs.mkdirSync(directory, { recursive: true });
 
 const browser = await playwright.chromium.launch({ headless: true });
 const widths = { phone: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } };
-// a wait that the first visit's reload (coi.js, T93) interrupts starts again
+// a wait that the first visit's reload (coi.js, T.93) interrupts starts again
 const acrossReload = async (wait) => {
   for (;;) {
     try {
@@ -37,7 +37,7 @@ const acrossReload = async (wait) => {
 const shot = (page, name, width) => page.screenshot({ path: path.join(directory, `${name}-${width}.png`) });
 
 // Every scene in a context of its own: a second document in the same tab could not allocate its WebAssembly memory
-// (T96's failure, seen here first with the benchmark as the second document).
+// (T.96's failure, seen here first with the benchmark as the second document).
 const fresh = async (viewport) => {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
@@ -52,7 +52,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.goto(`${site}?model=stories260K`);
   await ready();
   await shot(page, "home", width);
-  // T128: the order of the list. A browser draws an open <select> outside the page, where a screenshot does not
+  // T.128: the order of the list. A browser draws an open <select> outside the page, where a screenshot does not
   // reach, so the select is shown as a list box of every entry (the order is the same; its look is not the phone's)
   await page.evaluate(() => {
     const select = document.getElementById("model");
@@ -62,23 +62,23 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.screenshot({ path: path.join(directory, `list-${width}.png`), fullPage: true });
   await page.evaluate(() => { document.getElementById("model").size = 0; });
 
-  // 2. the settings sheet, the engine's switches open (T75)
+  // 2. the settings sheet, the engine's switches open (T.75)
   await page.click("#settings-open");
   await page.evaluate(() => { document.getElementById("engine").open = true; });
   await page.waitForTimeout(300);
   await shot(page, "settings-engine", width);
-  // T119 (5): Engine and More both open: the sheet stays under the top of the screen and scrolls
+  // T.119 (5): Engine and More both open: the sheet stays under the top of the screen and scrolls
   await page.evaluate(() => { for (const part of document.querySelectorAll("#settings details")) part.open = true; });
   await page.waitForTimeout(300);
   await shot(page, "settings-both", width);
   await page.keyboard.press("Escape");
 
-  // 3. the sheet that opens any repository, with a name typed (T88)
+  // 3. the sheet that opens any repository, with a name typed (T.88)
   await page.selectOption("#model", "hf-other");
   await page.waitForTimeout(300);
   await page.fill("#repository-name", "Qwen/Qwen2.5-0.5B-Instruct");
   await shot(page, "repository", width);
-  // T119 (1): a wrong revision is marked on the revision's field, not the name's
+  // T.119 (1): a wrong revision is marked on the revision's field, not the name's
   await page.fill("#repository-revision", "not a revision!");
   await page.click("#repository-form button[type=submit]");
   await page.waitForTimeout(300);
@@ -87,10 +87,10 @@ for (const [width, viewport] of Object.entries(widths)) {
   console.log(`${width}: the name's field says "${marks[0]}", the revision's "${marks[1]}"`);
   await page.keyboard.press("Escape");
 
-  // 4. the benchmark's bubble (T76)
+  // 4. the benchmark's bubble (T.76)
   await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
-  // T214: at the phone's width the browser does not say its memory, as an iPhone's Safari does not: the round without
+  // T.214: at the phone's width the browser does not say its memory, as an iPhone's Safari does not: the round without
   // the kernels must be a row that says why (and nothing measured), where the desktop's runs both
   const unsaid = width === "phone";
   if (unsaid) await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true }));
@@ -106,7 +106,7 @@ for (const [width, viewport] of Object.entries(widths)) {
     throw new Error(`${width}: ?bench=1 did not ${unsaid ? "skip the round without the kernels, in words" : "run both rounds"}`);
   }
 
-  // 5. a repository the converter refuses, in words (T88)
+  // 5. a repository the converter refuses, in words (T.88)
   await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=microsoft/phi-1_5`);
@@ -114,7 +114,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.waitForTimeout(300);
   await shot(page, "refused", width);
 
-  // T119 (2): a gated repository, in words
+  // T.119 (2): a gated repository, in words
   await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=meta-llama/Llama-3.2-1B`);
@@ -122,14 +122,14 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.waitForTimeout(300);
   await shot(page, "gated", width);
 
-  // T134: /benchmark/, before a run and after every section ran (the smallest model, a small file for the storage)
+  // T.134: /benchmark/, before a run and after every section ran (the smallest model, a small file for the storage)
   await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}benchmark/`);
   await acrossReload(() => page.waitForFunction(() => document.querySelector("section .head button"), null, { timeout: 120000 }));
   await page.screenshot({ path: path.join(directory, `benchmark-${width}.png`), fullPage: true });
   await page.goto(`${site}benchmark/?run=all&model=stories260K&size=64`);
-  // T177: the CPU section under way, its stage counted and its seconds going (the window, not the whole page)
+  // T.177: the CPU section under way, its stage counted and its seconds going (the window, not the whole page)
   await acrossReload(() => page.waitForFunction(() => {
     const box = document.querySelector('section[data-section="cpu"] .progress');
     return box && !box.hidden && /\/ \d+ ·/.test(box.querySelector(".stage").textContent)
@@ -143,7 +143,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   console.log(`${width}: /benchmark/ ${await page.evaluate(() => Object.entries(window.__benchmark.results).map(([n, r]) => `${n} ${r.status}`).join(", "))}`);
   // the page itself never scrolls sideways at a phone's width: a wide table scrolls inside its section
   console.log(`${width}: /benchmark/ is ${await page.evaluate(() => document.documentElement.scrollWidth)} px wide in a window of ${viewport.width}`);
-  // T186: "This browser" at 360 px (a narrow Android): its table's values wrap instead of running out on the right
+  // T.186: "This browser" at 360 px (a narrow Android): its table's values wrap instead of running out on the right
   if (width === "phone") {
     await page.setViewportSize({ width: 360, height: viewport.height });
     await page.locator('section[data-section="device"]').scrollIntoViewIfNeeded();
@@ -155,7 +155,7 @@ for (const [width, viewport] of Object.entries(widths)) {
     await page.setViewportSize(viewport);
   }
 
-  // T119 (6): a conversion under way says what has arrived, how fast, and what is converted
+  // T.119 (6): a conversion under way says what has arrived, how fast, and what is converted
   await closed(() => context.close());
   ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=HuggingFaceTB/SmolLM2-360M-Instruct`);
@@ -167,5 +167,5 @@ for (const [width, viewport] of Object.entries(widths)) {
 await closed(() => browser.close());
 server?.close();
 console.log(fs.readdirSync(directory).join("\n"));
-// (T141, T391.6: the tool ends here, whatever a browser that did not close left behind)
+// (T.141, T.391.6: the tool ends here, whatever a browser that did not close left behind)
 await leave(0);

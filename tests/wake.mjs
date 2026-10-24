@@ -1,4 +1,4 @@
-// src/wake.js (T194): the wake lock of /benchmark/ and the seconds its page was hidden, with a made-up document,
+// src/wake.js (T.194): the wake lock of /benchmark/ and the seconds its page was hidden, with a made-up document,
 // navigator and clock. Node alone.
 //
 //   node tests/wake.mjs

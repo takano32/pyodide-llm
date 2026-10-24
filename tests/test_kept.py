@@ -1,4 +1,4 @@
-# T363.3: a GGUF whose matrices are in llama.cpp's blocks (the K- and i-quantized types), converted with the blocks left
+# T.363.3: a GGUF whose matrices are in llama.cpp's blocks (the K- and i-quantized types), converted with the blocks left
 # the bytes they are (Conversion(blocks=True), convert/stream.py's Kept): what the form then says ("kinds", a type to
 # each layer; "tiled"), where the bytes go (the rows llama.cpp and the plan move, moved as bytes; a linear-attention
 # layer's output matrix left as the file has it, its input put in the file's order by the engine), the codebooks, and
@@ -209,7 +209,7 @@ def test_a_float32_file_keeps_the_blocks_too(saluki):
 
 
 def test_forward_js_is_given_such_a_checkpoint_with_its_kinds_and_its_order(saluki):
-    """T363.5: the plan says every layer's type where it is and that the output matrix is tiled; one that says "tiled"
+    """T.363.5: the plan says every layer's type where it is and that the output matrix is tiled; one that says "tiled"
     alone says that too (forward.js would multiply the output matrix by an input in the other order without)."""
     from test_external import Outside
     for conversion, more in ((saluki.kept, {}), (saluki.wide, {"tiled": True})):
@@ -466,7 +466,7 @@ class Places:
 
 def test_saluki_27b_is_laid_out_with_its_blocks_kept_and_its_classifier_lands_past_4_gib():
     """The header the converter makes of the real file's head (tests/saluki_form.py's, the classifier first in the
-    file), without the 7.9 GB: the form it writes is the one T363.2 sized, the checkpoint 7,956,712,492 bytes, and the
+    file), without the 7.9 GB: the form it writes is the one T.363.2 sized, the checkpoint 7,956,712,492 bytes, and the
     first bytes fed, which end inside a block, are written where the classifier is. tests/smoke.mjs asks the same inside
     Pyodide, whose NumPy has integers of 32 bits."""
     sink = Places()

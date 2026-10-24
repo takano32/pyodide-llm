@@ -6,7 +6,7 @@
 #
 #   python3 quantize.py <in: float32 checkpoint> <out: int8 checkpoint> [int8 | int6]
 #
-# int6 (T98): six bits a value, 32 values packed into 24 bytes (llama2_numpy.pack6), the same float32 scales.
+# int6 (T.98): six bits a value, 32 values packed into 24 bytes (llama2_numpy.pack6), the same float32 scales.
 import struct
 import sys
 from pathlib import Path

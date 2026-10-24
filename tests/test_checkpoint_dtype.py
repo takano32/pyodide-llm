@@ -39,7 +39,7 @@ def test_the_sizes_follow_the_layout_of_quantize():
     assert checkpoint_dtype(list(header), 28 + 2 * floats) == "float16"
 
 
-# T229: a Qwen3.5's linear-attention layers (value heads of 32, so that six bits can hold its rows)
+# T.229: a Qwen3.5's linear-attention layers (value heads of 32, so that six bits can hold its rows)
 LINEAR = {"every": 3, "key_heads": 2, "value_heads": 4, "key_dim": 16, "value_dim": 32, "conv": 4}
 
 
@@ -51,7 +51,7 @@ LINEAR = {"every": 3, "key_heads": 2, "value_heads": 4, "key_dim": 16, "value_di
 @pytest.mark.parametrize("shared", [True, False])
 def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, head_dim, linear, shared):
     """A local Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know
-    (T77). So has a model with heads of another size than dim / heads (T124: 8 heads of 32 in a dim of 64)."""
+    (T.77). So has a model with heads of another size than dim / heads (T.124: 8 heads of 32 in a dim of 64)."""
     from llama2_convert import checkpoint_size
     form = dict(bias=bias, arch=arch, qk_norm=qk_norm, head_dim=head_dim, linear=linear)
     header = (64, 172, 3, 8, 8, 300 if shared else -300, 128)
@@ -59,7 +59,7 @@ def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, 
         assert checkpoint_dtype(header, checkpoint_size(header, dtype, form), form) == dtype
     # and told apart from the same header as a plain Llama
     assert checkpoint_size(header, "float32", form) != checkpoint_size(header, "float32")
-    # int6 (T98) needs rows of whole groups of 32: another hidden size
+    # int6 (T.98) needs rows of whole groups of 32: another hidden size
     header = (64, 192, 3, 8, 8, 300 if shared else -300, 128)
     for dtype in ("float32", "float16", "int8", "int6"):
         assert checkpoint_dtype(header, checkpoint_size(header, dtype, form), form) == dtype
