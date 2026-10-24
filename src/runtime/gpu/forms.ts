@@ -267,11 +267,13 @@ function checkWeights(rows: number, packing: "int8" | "ternary" | "Q4_K") {
   const s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
   return { n, stored, w: ternary ? ternaryValues(stored as Uint8Array) : stored, s, scaled, scales: s };
 }
+// (T.547.2.3's review: and Q4_K's on activations of one sign mostly, +0.5 on each: the sums of the groups that take the
+// blocks' dmin m are large then, as a stream after SiLU's are)
 async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, packing: "int8" | "ternary" | "Q4_K") {
   const { device } = m, { quantize } = m.block, rows = 300, { n, stored, w, s, scaled, scales } = checkWeights(rows, packing), perRow = n / GROUP;
-  for (const { tokens, wider } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }]) {
+  for (const { tokens, wider, shift = 0 } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }, ...(packing === "Q4_K" ? [{ tokens: 11, wider: 0, shift: 0.5 }] : [])]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned: GPUBuffer[] = [];
-    const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2);
+    const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2 + shift);
     const make = (data: GPUAllowSharedBufferSource, usage = STORAGE | COPY_DST | COPY_SRC) => {
       const made = buffer(m, data.byteLength, usage, owned);
       device.queue.writeBuffer(made, 0, data);
@@ -296,7 +298,7 @@ async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, pa
       const xq = form.packed ? new Int8Array(await readBack(m, io.xq, tokens * xStride)) : null;
       const xs = form.packed ? new Float32Array(await readBack(m, io.xs, tokens * (xStride / GROUP) * 4)) : null;
       const { wrong } = tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
-      if (wrong) return `${wrong} (${tokens} tokens${wider ? ", wider x and y" : ""})`;
+      if (wrong) return `${wrong} (${tokens} tokens${wider ? ", wider x and y" : ""}${shift ? ", x shifted" : ""})`;
     } finally {
       owned.forEach((b) => b.destroy());
     }
