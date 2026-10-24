@@ -4,14 +4,15 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
-import { ternaryValues, q4kWeights, tiledOff } from "../shaders/prompt.ts";
+import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { packingAt } from "./packings.ts";
+import { packingAt, isBlock, blocksOf } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
 import type { Model, Thrown } from "./device.ts";
 import type { Quantizing } from "./block.ts";
 import type { PromptForm } from "../shaders/prompt.ts";
+import type { BlockPacking } from "../shaders/common.ts";
 import type { FlashShape } from "../shaders/attention.ts";
 import type { Tried } from "../contracts/gpu/protocol.ts";
 
@@ -19,8 +20,9 @@ import type { Tried } from "../contracts/gpu/protocol.ts";
 // it), the tiled shader chosen (chooseMatrices(): null until then, read with a ! after it), and what each tried came to.
 // A tiled shader is one of shaders/prompt.ts's forms with its pipeline, and whether it is the one the page remembered
 type Attention = { name: string; pipeline: GPUComputePipeline; shape: FlashShape };
-// (T.547.2.3: blockPipeline, the pipeline of the form's text for Q4_K matrices, its blocks, where it has one)
-type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipeline?: GPUComputePipeline; remembered?: boolean };
+// (T.547.2.3: blockPipelines, the pipelines of the form's texts for matrices of llama.cpp's blocks, T.547.3.3: of each type
+// the model has)
+type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipelines: Partial<Record<BlockPacking, GPUComputePipeline>>; remembered?: boolean };
 type Forms = { attention: Attention; form: Tiled | null; tried: Tried[] };
 // timeForms(): a matrix of the layer, what it reads and writes (up is null where the FFN has no gate, and then no w3
 // is there to multiply), whether it adds, and the quantization of its input where it is the first to read it
@@ -150,9 +152,16 @@ function halfToFloat(h: number) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
-// a form's pipelines: its text's, and (T.547.2.3) its Q4_K text's where it has one
-const compiled = async (m: Model, form: PromptForm) => ({ ...form, pipeline: await within(validated(m, () => pipelineOf(m, form.code, form.constants)), `compiling ${form.name}`),
-  blockPipeline: form.blocks ? await within(validated(m, () => pipelineOf(m, form.blocks!)), `compiling ${form.name}'s Q4_K text`) : undefined });
+// a form's pipelines: its text's, and (T.547.2.3) its text's of each type of llama.cpp's blocks the model has (T.547.3.3:
+// none of another type: a text a type is compiled only where it is read)
+const compiled = async (m: Model, form: PromptForm): Promise<Tiled> => {
+  const pipeline = await within(validated(m, () => pipelineOf(m, form.code, form.constants)), `compiling ${form.name}`);
+  const blockPipelines: Tiled["blockPipelines"] = {};
+  for (const packing of form.blocks ? blocksOf(m.plan.matrices) : []) {
+    blockPipelines[packing] = await within(validated(m, () => pipelineOf(m, form.blocks![packing])), `compiling ${form.name}'s ${packing} text`);
+  }
+  return { ...form, pipeline, blockPipelines };
+};
 // ---- the matrices: the tiled shaders of T.146 that this device can make (shaders.ts's promptForms), each checked on a
 // small matrix against JavaScript (checkForm: subgroups, f16 rounding and drivers differ from device to device, and
 // only the device can say), the right ones timed on the model's own gate matrix by a whole block, and the fastest
@@ -216,10 +225,10 @@ const threadsOf = (device: GPUDevice) => Math.min(device.limits.maxComputeInvoca
 // T.547.3.1: the layer's, where each layer of the stack has a packing of its own)
 const productGroups = (m: Model, form: Tiled, name: string, l: number, from: GPUBuffer, to: GPUBuffer, add?: boolean, owned = m.owned) => {
   const matrix = m.weights.matrices[name], { rows, n, pieces } = matrix, { xq, xs, step } = m.block;
-  const pipeline = packingAt(matrix, l) === "Q4_K" ? form.blockPipeline! : form.pipeline;
+  const packing = packingAt(matrix, l), pipeline = isBlock(packing) ? form.blockPipelines[packing]! : form.pipeline;
   return pieces.map(({ first, rows: count, layers }) => {
     const out = first ? { buffer: to, offset: first * 4, size: to.size - first * 4 } : to;
-    return { rows: count, pipeline, group: bind(m, pipeline, [...layers[l], form.packed ? xq : from, out,
+    return { rows: count, pipeline, group: bind(m, pipeline, [layers[l][0], layers[l][1], form.packed ? xq : from, out,
       uniform(m, new Uint32Array([count, n / 4, n / GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), step, ...(form.packed ? [xs] : [])]) };
   });
 };
@@ -245,24 +254,30 @@ function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, pipeline: 
 // - dmin m, each times a scale of 1)
 async function checkForm(m: Model, form: Tiled) {
   const wrong = await checkWith(m, form, form.pipeline, form.ternary ? "ternary" : "int8");
-  if (wrong || !form.blockPipeline) return wrong;
-  const blocks = await checkWith(m, form, form.blockPipeline, "Q4_K");
-  return blocks && `its Q4_K text: ${blocks}`;
+  if (wrong) return wrong;
+  // (T.547.3.3: each type's text the model compiled)
+  for (const [packing, pipeline] of Object.entries(form.blockPipelines) as [BlockPacking, GPUComputePipeline][]) {
+    const blocks = await checkWith(m, form, pipeline, packing);
+    if (blocks) return `its ${packing} text: ${blocks}`;
+  }
+  return null;
 }
 // the weights of the check: their bytes as a matrix of the packing holds them, what they read as (w, by the scale of
 // each `scaled` of them: s), and the bytes of a row
-function checkWeights(rows: number, packing: "int8" | "ternary" | "Q4_K") {
+// (T.547.3.3: of a type of llama.cpp's blocks by its line of BLOCK_READS: its bytes, where its float16 scales are, and
+// JavaScript's reading)
+function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking) {
   const random = (bytes: number) => new Uint8Array(bytes).map(() => (Math.random() * 256) | 0);
-  if (packing === "Q4_K") {
-    const n = 768, stored = random((rows * n) / 256 * 144);
-    for (let at = 0; at < stored.length; at += 144) {
-      for (const half of [0, 2]) {
+  if (packing !== "int8" && packing !== "ternary") {
+    const { bytes } = BLOCK_READS[packing], { halves, weights } = BLOCK_WEIGHTS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
+    for (let at = 0; at < stored.length; at += bytes) {
+      for (const half of halves) {
         const bits = ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0);
         stored[at + half] = bits & 255;
         stored[at + half + 1] = bits >> 8;
       }
     }
-    return { n, stored, w: q4kWeights(stored), s: new Float32Array(rows).fill(1), scaled: n, scales: null };
+    return { n, stored, w: weights(stored), s: new Float32Array(rows).fill(1), scaled: n, scales: null };
   }
   const ternary = packing === "ternary", n = ternary ? 640 : 544, scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale
   const stored = ternary ? random((rows * n) / 4) : new Int8Array(random(rows * n).buffer);
@@ -271,9 +286,9 @@ function checkWeights(rows: number, packing: "int8" | "ternary" | "Q4_K") {
 }
 // (T.547.2.3's review: and Q4_K's on activations of one sign mostly, +0.5 on each: the sums of the groups that take the
 // blocks' dmin m are large then, as a stream after SiLU's are)
-async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, packing: "int8" | "ternary" | "Q4_K") {
+async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, packing: "int8" | "ternary" | BlockPacking) {
   const { device } = m, { quantize } = m.block, rows = 300, { n, stored, w, s, scaled, scales } = checkWeights(rows, packing), perRow = n / GROUP;
-  for (const { tokens, wider, shift = 0 } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }, ...(packing === "Q4_K" ? [{ tokens: 11, wider: 0, shift: 0.5 }] : [])]) {
+  for (const { tokens, wider, shift = 0 } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }, ...(packing !== "int8" && packing !== "ternary" ? [{ tokens: 11, wider: 0, shift: 0.5 }] : [])]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned: GPUBuffer[] = [];
     const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2 + shift);
     const make = (data: GPUAllowSharedBufferSource, usage = STORAGE | COPY_DST | COPY_SRC) => {

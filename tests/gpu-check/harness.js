@@ -135,8 +135,9 @@ try {
     const plan = c.plan, ternary = c.dtype === "ternary";
     // (T.547.2.3: a model with Q4_K blocks among its matrices: its own tiles; T.547.2.4: and the steps of DP4A alone)
     // (T.547.3.1: a stack's layers among them)
-    const shaders = ternary ? "ternary" : Object.values(c.options.kinds ?? {}).flat().includes("Q4_K") ? "Q4_K" : null;
-    const forms = formsOf(shaders), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated)).filter((name) => shaders !== "Q4_K" || name.startsWith("DP4A"));
+    // (T.547.3.3: of any type of llama.cpp's blocks the GPU reads)
+    const shaders = ternary ? "ternary" : Object.values(c.options.kinds ?? {}).flat().some((kind) => wgsl.BLOCK_PACKINGS.includes(kind)) ? "blocks" : null;
+    const forms = formsOf(shaders), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated)).filter((name) => shaders !== "blocks" || name.startsWith("DP4A"));
     // T.209: what a third of a table is in bytes on the GPU (T.232: a ternary weight is a quarter of a byte)
     const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / (ternary ? 4 : 1) / 3);
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
@@ -145,7 +146,7 @@ try {
     const high = c.wide ? 2 ** 32 : 0;
     const built = c.wide ? compileKernels(await fetched("/built/simdkernel_shared64.wasm"), await fetched("/built/simdkernel_relaxed_shared64.wasm"), true) : narrow;
     // (T.547.2.3: and the kernels of llama.cpp's blocks for a model with rows of them, which its CPU's side multiplies by)
-    const kernels = shaders === "Q4_K" ? { ...built, blocks: compileBlocks(await fetched("/built/blockkernel_shared.wasm"), await fetched("/built/blockkernel_relaxed_shared.wasm")) } : built;
+    const kernels = shaders === "blocks" ? { ...built, blocks: compileBlocks(await fetched("/built/blockkernel_shared.wasm"), await fetched("/built/blockkernel_relaxed_shared.wasm")) } : built;
     const after = footprint(c.reference.header, size, { dtype: c.dtype, halfKV: true, shared: true, gpu: true, head_dim: c.headDim, arch: c.arch });
     const { memory, base: low } = weightsMemory(size + high, { shared: true, wide: Boolean(c.wide), after });
     const base = low + high;

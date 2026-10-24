@@ -317,7 +317,7 @@ export const PACKED = packings({
     },
     group: 128, gpu: { as: "ternary", alone: true, dot: true },
   },
-  Q2_K: blocks(BLOCK_TYPES.Q2_K), Q4_K: { ...blocks(BLOCK_TYPES.Q4_K), gpu: { as: "Q4_K", alone: false, dot: true } }, IQ2_XXS: blocks(BLOCK_TYPES.IQ2_XXS), IQ2_XS: blocks(BLOCK_TYPES.IQ2_XS),
+  Q2_K: { ...blocks(BLOCK_TYPES.Q2_K), gpu: { as: "Q2_K", alone: false, dot: true } }, Q4_K: { ...blocks(BLOCK_TYPES.Q4_K), gpu: { as: "Q4_K", alone: false, dot: true } }, IQ2_XXS: blocks(BLOCK_TYPES.IQ2_XXS), IQ2_XS: blocks(BLOCK_TYPES.IQ2_XS),
   IQ3_XXS: blocks(BLOCK_TYPES.IQ3_XXS), IQ1_S: blocks(BLOCK_TYPES.IQ1_S), IQ3_S: blocks(BLOCK_TYPES.IQ3_S), IQ2_S: blocks(BLOCK_TYPES.IQ2_S),
   IQ4_XS: blocks(BLOCK_TYPES.IQ4_XS), IQ1_M: blocks(BLOCK_TYPES.IQ1_M),
 });

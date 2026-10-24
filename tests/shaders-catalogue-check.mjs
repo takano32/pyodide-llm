@@ -48,14 +48,14 @@ const ORDER = {
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
     "fusedDp4aMatVec(output=geglu, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "ROTATE_QUANTIZE", "UNROTATE"],
-  // T.547.2.4: a model's of Q4_K blocks besides int8
-  blocks: ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=Q4_K)`),
+  // T.547.2.4: a model's of llama.cpp's blocks besides int8 (T.547.3.3: a type after another)
+  blocks: ["Q4_K", "Q2_K"].flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
 };
 const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T.379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);
 assert.deepEqual(TERNARY_SHADERS.map(said), ORDER.ternary, `a ternary model's shaders: ${moved}`);
-assert.deepEqual(BLOCK_SHADERS.map(said), ORDER.blocks, `a Q4_K model's shaders: ${moved}`);
-console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone, ${BLOCK_SHADERS.length} of a Q4_K one alone)`);
+assert.deepEqual(BLOCK_SHADERS.map(said), ORDER.blocks, `a model of blocks' shaders: ${moved}`);
+console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone, ${BLOCK_SHADERS.length} of a model of blocks alone)`);
 
 // ---- a row
 const rows = [...ENGINE_SHADERS, ...TERNARY_SHADERS, ...BLOCK_SHADERS];
@@ -119,9 +119,9 @@ const LEFT = { "flashVec(subgroups=true)": ["lanes_add4"],
   "flashVecReduce(subgroups=false)": ["shuffle_down", "shuffle_down4", "shuffle"], "flashVecReduce(subgroups=true)": ["shuffle_down", "shuffle_down4", "shuffle"] };
 const given = [...rows.map((row) => [said(row), row.text()]),
   // (T.547.2.3: and a Q4_K model's, each with its Q4_K text)
-  ...[null, "ternary", "Q4_K"].flatMap((own) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own)
+  ...[null, "ternary", "blocks"].flatMap((own) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own)
     .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own))
-    .flatMap((form) => [[`the tile ${form.name}`, form.code], ...(form.blocks ? [[`the Q4_K text of ${form.name}`, form.blocks]] : [])]))];
+    .flatMap((form) => [[`the tile ${form.name}`, form.code], ...Object.entries(form.blocks ?? {}).map(([packing, code]) => [`the ${packing} text of ${form.name}`, code])]))];
 let declarations = 0;
 for (const [what, raw] of given) {
   const text = raw.replace(/\/\/.*$/gm, "");

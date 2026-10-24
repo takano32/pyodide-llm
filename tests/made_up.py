@@ -486,16 +486,43 @@ def q4k_blocks(values):
     return out.tobytes()
 
 
+def q2k_blocks(values):
+    """T.547.3.3: values (whole blocks of 256 along their last axis) quantized to Q2_K's blocks as llama.cpp lays them out
+    (convert/superblocks.py reads them): for each half-group of 16, a step d s over the range from its smallest value (or
+    0) up, and dmin m the smallest's distance below 0; d and dmin the largest of a block's steps and distances over 15,
+    float16. As q4k_blocks(): weights near the values, not llama.cpp's search."""
+    halves = np.asarray(values, dtype=np.float32).reshape(-1, 16, 16)
+    low = np.minimum(halves.min(axis=2), 0.0)
+    steps, below = (halves.max(axis=2) - low) / 3, -low
+    d = (steps.max(axis=1) / 15).astype(np.float16)
+    dmin = (below.max(axis=1) / 15).astype(np.float16)
+    d32, dmin32 = d.astype(np.float32)[:, None], dmin.astype(np.float32)[:, None]
+    s = np.clip(np.rint(np.divide(steps, d32, out=np.zeros_like(steps), where=d32 > 0)), 1, 15).astype(np.uint8)
+    m = np.clip(np.rint(np.divide(below, dmin32, out=np.zeros_like(below), where=dmin32 > 0)), 0, 15).astype(np.uint8)
+    q = np.clip(np.rint((halves + (dmin32 * m)[:, :, None]) / (d32 * s)[:, :, None]), 0, 3).astype(np.uint8).reshape(-1, 8, 32)
+    out = np.zeros((len(halves), 84), dtype=np.uint8)
+    out[:, 0:16] = s | (m << 4)
+    for g in range(8):
+        at = 16 + 32 * (g // 4)
+        out[:, at:at + 32] |= q[:, g] << (2 * (g % 4))
+    out[:, 80:82] = d.view(np.uint8).reshape(-1, 2)
+    out[:, 82:84] = dmin.view(np.uint8).reshape(-1, 2)
+    return out.tobytes()
+
+
+VALUED = {"Q4_K": q4k_blocks, "Q2_K": q2k_blocks}
+
+
 def valued_blocks(seed=0, scale=0.3):
     """T.547.2.3: blocks(name, count) -> count blocks of Q4_K of values scale N, quantized (q4k_blocks()): a model's
     matrices of blocks as drawn() draws an int8 one's, around 0 (drawn_blocks()'s random bytes are weights of one sign
-    mostly, which grow the stream layer after layer). Q4_K's alone."""
+    mostly, which grow the stream layer after layer). Q4_K's and (T.547.3.3) Q2_K's: VALUED."""
     rng = np.random.default_rng(seed)
 
     def blocks(name, count):
-        if name != "Q4_K":
-            raise ValueError(f"valued_blocks makes Q4_K's blocks, not {name}'s")
-        return q4k_blocks((rng.standard_normal((count, 256)) * scale).astype(np.float32))
+        if name not in VALUED:
+            raise ValueError(f"valued_blocks makes the blocks of {', '.join(VALUED)}, not {name}'s")
+        return VALUED[name]((rng.standard_normal((count, 256)) * scale).astype(np.float32))
     return blocks
 
 

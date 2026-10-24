@@ -5,6 +5,7 @@
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { promptForms } from "./prompt.ts";
+import { BLOCK_PACKINGS } from "./common.ts";
 import { ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS } from "./engine.ts";
 import type { Own, PromptForm } from "./prompt.ts";
 
@@ -49,11 +50,12 @@ export function deviceKey(adapter: Adapter, device: Made = adapter, own: Own = n
   const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;
   const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent,
     language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
-  const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code, ...(form.blocks ? [form.blocks] : [])]);
+  // (T.547.3.3: a form's texts of the blocks in BLOCK_PACKINGS' order)
+  const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code, ...(form.blocks ? BLOCK_PACKINGS.map((packing) => form.blocks![packing]) : [])]);
   let hash = 0x811c9dc5;
   const written = (rows: { text: () => string }[]) => rows.map((row) => row.text());
   for (const text of [...tiles(devicePromptForms(device)), ...written(ENGINE_SHADERS),
-    ...(own === "ternary" ? [...tiles(devicePromptForms(device, "ternary")), ...written(TERNARY_SHADERS)] : own === "Q4_K" ? [...tiles(devicePromptForms(device, "Q4_K")), ...written(BLOCK_SHADERS)] : [])]) {
+    ...(own === "ternary" ? [...tiles(devicePromptForms(device, "ternary")), ...written(TERNARY_SHADERS)] : own === "blocks" ? [...tiles(devicePromptForms(device, "blocks")), ...written(BLOCK_SHADERS)] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
     hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }

@@ -15,10 +15,10 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { GROUP, STEP } from "./common.ts";
-import { TERNARY_PACKED, Q4_K_BLOCK, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
+import { BLOCK_PACKINGS, GROUP, STEP } from "./common.ts";
+import { TERNARY_PACKED, BLOCK_COMMON, BLOCK_READS, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
-import type { Packing } from "./common.ts";
+import type { BlockPacking, Packing } from "./common.ts";
 
 // (T.368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
 // names a maker's text branches on. (T.379.1) Each a list of values, which the catalogue walks (engine.ts), and the
@@ -482,10 +482,31 @@ ${ROW_RMS}
 //              a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
 //              scale's group) in a row (b_global, or up's row)
 //   word       a vec4<u32> of 16 packed int8, of the word at an index of b
-//   own, reads (T.547.2.4, Q4_K's blocks: the others' "" and null) what a thread makes of its vector's group once
-//              (the group's sum, which a block's dmin m takes), and in the place of the lines above, a row's group read
-//              from its block and added to the row's sum: d s times the dot, less dmin m times the sum (prompt.ts's
-//              Q4_K_BLOCK, the tiles' own reading); of up's row too where the output has two matrices (swiglu, geglu)
+//   own, reads (T.547.2.4, llama.cpp's blocks: the others' "" and null) what a thread makes of its vector's group once
+//              (the sums of its halves, which a block's mins take), and in the place of the lines above, a row's group
+//              read from its block and added to the row's sum (prompt.ts's BLOCK_COMMON's BLK, the tiles' own reading);
+//              of up's row too where the output has two matrices (swiglu, geglu). T.547.3.3: a row a type of prompt.ts's
+//              BLOCK_READS, its reading of a block its own (blockRows)
+// (T.547.3.3: a type's row: its blocks' bytes the step from a block to the next)
+const blockRow = (packing: BlockPacking) => {
+  const { bytes, code } = BLOCK_READS[packing];
+  return {
+    bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' blocks, ${bytes} bytes each`,
+    unpacking: BLOCK_COMMON + code,
+    rowScales: "",
+    own: `
+        let own_sums = vec2<f32>(f32(blk_sum(own_a)), f32(blk_sum(own_a1)));`,
+    reads: (two: boolean) => `
+                // (the row's group of 32: k_offset along the row, of its K32 / 8 blocks)
+                let g = k_offset % 8u;
+                let block = (b_global * (K32 / 8u) + k_offset / 8u) * ${bytes}u;
+                inter_results[row_offset + local_row][local_col] += BLK(own_a, blk_values(block, g, 0u), own_a1, blk_values(block, g, 1u), blk_scales(block, g), own_sums) * own_scale_a;${two ? `
+                // up's row, params.second rows after gate's, with the same own_a
+                let up_block = ((b_global + params.second) * (K32 / 8u) + k_offset / 8u) * ${bytes}u;
+                inter_results[tile_size + row_offset + local_row][local_col] += BLK(own_a, blk_values(up_block, g, 0u), own_a1, blk_values(up_block, g, 1u), blk_scales(up_block, g), own_sums) * own_scale_a;` : ""}`,
+  };
+};
+const blockRows = () => Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blockRow(packing)])) as Record<BlockPacking, ReturnType<typeof blockRow>>;
 const DP4A_WEIGHTS = {
   int8: {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
@@ -509,23 +530,7 @@ const DP4A_WEIGHTS = {
     own: "",
     reads: null,
   },
-  Q4_K: {
-    bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' blocks, 36 words of 144 bytes each`,
-    unpacking: Q4_K_BLOCK,
-    rowScales: "",
-    own: `
-        let own_sum = f32(q4k_sum(own_a) + q4k_sum(own_a1));`,
-    reads: (two: boolean) => `
-                // (the row's group of 32: k_offset along the row, of its K32 / 8 blocks)
-                let g = k_offset % 8u;
-                let block = (b_global * (K32 / 8u) + k_offset / 8u) * 36u;
-                let dm = q4k_scale_min(block, g);
-                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, q4k_half(block, g, 0u), own_a1, q4k_half(block, g, 1u), own_scale_a * dm.x) - own_scale_a * dm.y * own_sum;${two ? `
-                // up's row, params.second rows after gate's, with the same own_a
-                let up_block = ((b_global + params.second) * (K32 / 8u) + k_offset / 8u) * 36u;
-                let up_dm = q4k_scale_min(up_block, g);
-                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, q4k_half(up_block, g, 0u), own_a1, q4k_half(up_block, g, 1u), own_scale_a * up_dm.x) - own_scale_a * up_dm.y * own_sum;` : ""}`,
-  },
+  ...blockRows(),
 } satisfies Record<Packing, object>;
 // (a row for every packing, and no other: common.ts's Packing)
 export type FusedWeights = keyof typeof DP4A_WEIGHTS;
@@ -561,7 +566,7 @@ ${packing.bindings}
 @group(0) @binding(3) var<uniform> params: Params;
 @group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
 ${fusedOutputs(output)}
-${sdp8ai}${packing.unpacking}
+${packing.reads ? "" : sdp8ai}${packing.unpacking}
 
 const workgroup_size_x = 128u;
 const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;

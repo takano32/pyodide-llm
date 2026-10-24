@@ -5,20 +5,21 @@
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
-import { GROUP, STEP } from "./common.ts";
-import type { Packing } from "./common.ts";
+import { BLOCK_PACKINGS, GROUP, STEP } from "./common.ts";
+import type { BlockPacking, Packing } from "./common.ts";
 
 // (T.368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
 // tiled shader a device may run (promptForms): its text, the overrides of its pipeline, whether it reads packed int8
 // and float16, and none: why this device cannot make it
 type RegTile = { m: number; n: number };
 export type Tile = { rows: number; tokens: number; threads: number };
-// (T.547.2.3: blocks, the form's text for a model's matrices of Q4_K beside the int8 ones code is for)
-export type PromptForm = { name: string; tile: Tile; packed: boolean; half: boolean; ternary?: boolean; code: string; blocks?: string;
+// (T.547.2.3: blocks, the form's texts for a model's matrices of llama.cpp's blocks beside the int8 ones code is for:
+// T.547.3.3, a text a type of BLOCK_READS)
+export type PromptForm = { name: string; tile: Tile; packed: boolean; half: boolean; ternary?: boolean; code: string; blocks?: Record<BlockPacking, string>;
   constants?: { WORKGROUP_SIZE_M: number; WORKGROUP_SIZE_N: number }; none: string | undefined };
 // T.547.2.3: the shaders a model has of its own, besides every model's: a model of ternary weights, or of int8 weights
-// and Q4_K blocks (none: the others)
-export type Own = "ternary" | "Q4_K" | null;
+// and llama.cpp's blocks (T.547.3.3: of every type the GPU reads; none: the others)
+export type Own = "ternary" | "blocks" | null;
 // what a device says that chooses the forms it can make
 export type DeviceForms = { half: boolean; subgroups: boolean; packed: boolean; memory: number; threads: number; own?: Own };
 // what tiledOff() is given: the matrix (w, s), the tokens (x), the GPU's products (got) and, of a packed form, what the
@@ -426,63 +427,134 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   bits = (bits | (bits << vec4<u32>(6u))) & vec4<u32>(0x03030303u);
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
-// ---- T.547.2.3: Q4_K's blocks (llama.cpp's, as src/python/convert/superblocks.py and tests/blocks-model.mjs read them):
-// 144 bytes of 256 weights, a block 36 u32. Bytes 0 to 3: d and dmin, float16; 4 to 15: the 6-bit s and m of the eight
-// groups of 32 (llama.cpp's get_scale_min_k4: group g < 4 has s = byte g & 63 and m = byte g + 4 & 63, the others have
-// their low four bits in byte g + 4 and their top two in bytes g - 4 and g); 16 on: the 4-bit q, of every 32 bytes the
-// low halves the weights of a group and the high halves the next group's. A weight is d s q - dmin m. Written from
-// that layout here (the arithmetic of ggml-vulkan's mul_mmq_funcs.glsl and of ggml-webgpu's Q4_K, a group's d s and
-// dmin m beside the integers' dot, without their lines)
-const Q4_K_BLOCK = /* wgsl */ `
-// a byte of the block whose first word is at block
-fn q4k_byte(block: u32, at: u32) -> u32 {
-  return (b[block + at / 4u] >> (8u * (at % 4u))) & 255u;
+// ---- T.547.2.3, T.547.3.3: llama.cpp's blocks of 256 weights (as src/python/convert/superblocks.py and
+// tests/blocks-model.mjs read them) on the GPU, as the checkpoint holds them: a type a row of BLOCK_READS. A block is
+// eight groups of 32 weights (the activations' groups), each two halves of 16; a weight is a half's scale times its
+// small integer q, less the half's min (Q4_K: d s q - dmin m; Q2_K: d (sc & 15) q - dmin (sc >> 4)). So a row's group
+// adds, for each half, the scale times the integers' dot (DP4A) less the min times the activations' sum of the half,
+// which a token takes once (the dot of its 16 int8 with ones, an integer: never a float16, as d s Σqx and dmin m Σx
+// cancel). Written from the layouts here (the arithmetic of ggml-vulkan's mul_mmq_funcs.glsl and of ggml-webgpu's
+// blocks, a group's scales beside the integers' dot, without their lines). What every type shares, BLOCK_COMMON (b, the
+// weights' words, whose blocks need not start at a word: Q2_K's 84 bytes do, others' do not), and each type's two
+// functions: blk_values(block, g, col), half col of group g as packed int8 (q, 0 up), and blk_scales(block, g), the
+// group's (scale, min) of each half, of the block whose first byte is block
+const BLOCK_COMMON = /* wgsl */ `
+// a byte of the weights
+fn blk_byte(at: u32) -> u32 {
+  return (b[at / 4u] >> (8u * (at % 4u))) & 255u;
 }
-// half (16) of group g's 32 weights as packed int8 (0 to 15): col 0 the first 16, col 1 the next
-fn q4k_half(block: u32, g: u32, col: u32) -> vec4<u32> {
-  let at = block + 4u + 8u * (g / 2u) + 4u * col;
-  let shift = 4u * (g % 2u);
-  return vec4<u32>((b[at] >> shift) & 0x0F0F0F0Fu, (b[at + 1u] >> shift) & 0x0F0F0F0Fu, (b[at + 2u] >> shift) & 0x0F0F0F0Fu, (b[at + 3u] >> shift) & 0x0F0F0F0Fu);
+// the four bytes from byte at
+fn blk_word(at: u32) -> u32 {
+  let shift = 8u * (at % 4u);
+  if (shift == 0u) {
+    return b[at / 4u];
+  }
+  return (b[at / 4u] >> shift) | (b[at / 4u + 1u] << (32u - shift));
 }
-// group g's d s and dmin m
-fn q4k_scale_min(block: u32, g: u32) -> vec2<f32> {
-  let dm = unpack2x16float(b[block]);
+// the float16 at byte at
+fn blk_f16(at: u32) -> f32 {
+  return unpack2x16float(blk_word(at)).x;
+}
+// the sum of 16 packed int8
+fn blk_sum(a: vec4<u32>) -> i32 {
+  return dot4I8Packed(a[0], 0x01010101u) + dot4I8Packed(a[1], 0x01010101u) + dot4I8Packed(a[2], 0x01010101u) + dot4I8Packed(a[3], 0x01010101u);
+}
+// the dot of 16 packed int8
+fn blk_dot(a: vec4<u32>, w: vec4<u32>) -> i32 {
+  return dot4I8Packed(a[0], w[0]) + dot4I8Packed(a[1], w[1]) + dot4I8Packed(a[2], w[2]) + dot4I8Packed(a[3], w[3]);
+}
+// a group of 32: the token's two halves (a0, a1) and their sums, the row's (w0, w1) and their scales and mins (s: the
+// first half's scale and min, then the second's), to be times the token's scale
+fn BLK(a0: vec4<u32>, w0: vec4<u32>, a1: vec4<u32>, w1: vec4<u32>, s: vec4<f32>, sums: vec2<f32>) -> f32 {
+  return f32(blk_dot(a0, w0)) * s.x + f32(blk_dot(a1, w1)) * s.z - s.y * sums.x - s.w * sums.y;
+}
+// 16 values of 2 or 4 bits from byte at on, each the bits at shift of its byte
+fn blk_bits(at: u32, shift: u32, mask: u32) -> vec4<u32> {
+  return vec4<u32>((blk_word(at) >> shift) & mask, (blk_word(at + 4u) >> shift) & mask, (blk_word(at + 8u) >> shift) & mask, (blk_word(at + 12u) >> shift) & mask);
+}`;
+// Each type: its bytes and its WGSL (JavaScript's reading is BLOCK_WEIGHTS', below: the key hashes the shaders' texts,
+// and no line of that is one).
+// Q4_K: 144 bytes. Bytes 0 to 3: d and dmin; 4 to 15: the 6-bit s and m of the eight groups (llama.cpp's
+// get_scale_min_k4: group g < 4 has s = byte g & 63 and m = byte g + 4 & 63, the others have their low four bits in byte
+// g + 4 and their top two in bytes g - 4 and g); 16 on: the 4-bit q, of every 32 bytes the low halves the weights of a
+// group and the high halves the next group's. Both halves of a group have its s and m.
+// Q2_K: 84 bytes. Bytes 0 to 15: a byte a half (16 weights), its scale the low four bits and its min the top four; 16
+// to 79: the 2-bit q, of every 32 bytes the bits at 0 the weights of a group, at 2 the next group's, at 4 and at 6 the
+// two after (128 weights); 80 to 83: d and dmin.
+export const BLOCK_READS = {
+  Q4_K: { bytes: 144, code: /* wgsl */ `
+fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
+  return blk_bits(block + 16u + 32u * (g / 2u) + 16u * col, 4u * (g % 2u), 0x0F0F0F0Fu);
+}
+fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   var s: u32;
   var m: u32;
   if (g < 4u) {
-    s = q4k_byte(block, 4u + g) & 63u;
-    m = q4k_byte(block, 8u + g) & 63u;
+    s = blk_byte(block + 4u + g) & 63u;
+    m = blk_byte(block + 8u + g) & 63u;
   } else {
-    s = (q4k_byte(block, 8u + g) & 15u) | ((q4k_byte(block, g) >> 6u) << 4u);
-    m = (q4k_byte(block, 8u + g) >> 4u) | ((q4k_byte(block, 4u + g) >> 6u) << 4u);
+    s = (blk_byte(block + 8u + g) & 15u) | ((blk_byte(block + g) >> 6u) << 4u);
+    m = (blk_byte(block + 8u + g) >> 4u) | ((blk_byte(block + 4u + g) >> 6u) << 4u);
   }
-  return vec2<f32>(dm.x * f32(s), dm.y * f32(m));
+  let scale = blk_f16(block) * f32(s);
+  let least = blk_f16(block + 2u) * f32(m);
+  return vec4<f32>(scale, least, scale, least);
+}` },
+  Q2_K: { bytes: 84, code: /* wgsl */ `
+fn blk_values(block: u32, g: u32, col: u32) -> vec4<u32> {
+  return blk_bits(block + 16u + 32u * (g / 4u) + 16u * col, 2u * (g % 4u), 0x03030303u);
 }
-// the sum of 16 packed int8
-fn q4k_sum(a: vec4<u32>) -> i32 {
-  return dot4I8Packed(a[0], 0x01010101u) + dot4I8Packed(a[1], 0x01010101u) + dot4I8Packed(a[2], 0x01010101u) + dot4I8Packed(a[3], 0x01010101u);
-}`;
-/** T.547.2.3, JavaScript's reading (the checks' answer): the weights of Q4_K blocks (144 bytes each, Q4_K_BLOCK's layout)
- * as tests/blocks-model.mjs's read() gives them: d s q - dmin m, float32 at each step */
-export function q4kWeights(blocks: Uint8Array) {
-  const f = Math.fround, out = new Float32Array((blocks.length / 144) * 256);
-  const half = (at: number) => {
-    const bits = blocks[at] | (blocks[at + 1] << 8), sign = bits & 0x8000 ? -1 : 1, e = (bits >> 10) & 31, m = bits & 1023;
-    return e === 31 ? (m ? NaN : sign * Infinity) : e === 0 ? sign * m * 2 ** -24 : sign * (1 + m / 1024) * 2 ** (e - 15);
-  };
-  for (let p = 0, t0 = 0; p < blocks.length; p += 144, t0 += 256) {
-    const d = half(p), dmin = half(p + 2), h = p + 4;
-    for (let g = 0; g < 8; g++) {
-      const s = g < 4 ? blocks[h + g] & 63 : (blocks[h + 4 + g] & 15) | ((blocks[h + g - 4] >> 6) << 4);
-      const m = g < 4 ? blocks[h + 4 + g] & 63 : (blocks[h + 4 + g] >> 4) | ((blocks[h + g] >> 6) << 4);
-      for (let j = 0; j < 32; j++) {
-        const q = (blocks[p + 16 + 32 * (g >> 1) + j] >> (4 * (g & 1))) & 15;
-        out[t0 + 32 * g + j] = f(f(f(d * s) * q) - f(dmin * m));
+fn blk_scales(block: u32, g: u32) -> vec4<f32> {
+  let d = blk_f16(block + 80u);
+  let dmin = blk_f16(block + 82u);
+  let first = blk_byte(block + 2u * g);
+  let second = blk_byte(block + 2u * g + 1u);
+  return vec4<f32>(d * f32(first & 15u), dmin * f32(first >> 4u), d * f32(second & 15u), dmin * f32(second >> 4u));
+}` },
+} satisfies Record<BlockPacking, { bytes: number; code: string }>;
+// T.547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.mjs's read(): the weights,
+// float32 at each step), and the bytes of its float16 scales (d and dmin: where a check draws them small)
+const halfAt = (bytes: Uint8Array, at: number) => {
+  const bits = bytes[at] | (bytes[at + 1] << 8), sign = bits & 0x8000 ? -1 : 1, e = (bits >> 10) & 31, m = bits & 1023;
+  return e === 31 ? (m ? NaN : sign * Infinity) : e === 0 ? sign * m * 2 ** -24 : sign * (1 + m / 1024) * 2 ** (e - 15);
+};
+export const BLOCK_WEIGHTS = {
+  Q4_K: {
+    halves: [0, 2],
+    weights(blocks: Uint8Array) {
+      const f = Math.fround, out = new Float32Array((blocks.length / 144) * 256);
+      for (let p = 0, t0 = 0; p < blocks.length; p += 144, t0 += 256) {
+        const d = halfAt(blocks, p), dmin = halfAt(blocks, p + 2), h = p + 4;
+        for (let g = 0; g < 8; g++) {
+          const s = g < 4 ? blocks[h + g] & 63 : (blocks[h + 4 + g] & 15) | ((blocks[h + g - 4] >> 6) << 4);
+          const m = g < 4 ? blocks[h + 4 + g] & 63 : (blocks[h + 4 + g] >> 4) | ((blocks[h + g] >> 6) << 4);
+          for (let j = 0; j < 32; j++) {
+            const q = (blocks[p + 16 + 32 * (g >> 1) + j] >> (4 * (g & 1))) & 15;
+            out[t0 + 32 * g + j] = f(f(f(d * s) * q) - f(dmin * m));
+          }
+        }
       }
-    }
-  }
-  return out;
-}
+      return out;
+    },
+  },
+  Q2_K: {
+    halves: [80, 82],
+    weights(blocks: Uint8Array) {
+      const f = Math.fround, out = new Float32Array((blocks.length / 84) * 256);
+      for (let p = 0, t0 = 0; p < blocks.length; p += 84, t0 += 256) {
+        const d = halfAt(blocks, p + 80), dmin = halfAt(blocks, p + 82);
+        for (let i = 0; i < 256; i++) {
+          const g = i >> 5, l = i & 31, sc = blocks[p + 2 * g + (l >> 4)];
+          const q = (blocks[p + 16 + 32 * (g >> 2) + l] >> (2 * (g & 3))) & 3;
+          out[t0 + i] = f(f(f(d * (sc & 15)) * q) - f(dmin * (sc >> 4)));
+        }
+      }
+      return out;
+    },
+  },
+} satisfies Record<BlockPacking, { halves: number[]; weights(blocks: Uint8Array): Float32Array }>;
+/** T.547.2.3, JavaScript's reading of Q4_K's blocks (the checks' answer; BLOCK_READS' Q4_K) */
+export const q4kWeights = (blocks: Uint8Array) => BLOCK_WEIGHTS.Q4_K.weights(blocks);
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
  * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.ts's weightAt read them */
 export function ternaryValues(packed: ArrayLike<number>) {
@@ -528,23 +600,23 @@ fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32
 const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
   : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
-// (T.547.2.3, Q4_K: a weight is d s q - dmin m, so a row's group adds the activations' sum times its min besides: the
-// same line, less own_scale_a times the row's dmin m times the token's sum of the group, sum_a)
+// (T.547.2.3, T.547.3.3, llama.cpp's blocks: a row's group by BLK, each half's scale times the dot less its min times the
+// token's sum of the half, own_sums, all times the token's scale)
 const blockLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
-  ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a) - subgroupShuffle(own_min_b, ${i}u) * own_min_a;`
-  : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]) - min_B[base_B + ${i}u] * own_min_a;`)).join("\n");
+  ? `BLK(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_s_b, ${i}u), own_sums) * own_scale_a;`
+  : `BLK(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], blocks_B[base_B + ${i}u], own_sums) * own_scale_a;`)).join("\n");
 // T.232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
 // is changed for them there). (T.379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
 // `ternary` until then.)
-// T.547.2.3, weights "Q4_K": llama.cpp's blocks of 256 as the checkpoint holds them (Q4_K_BLOCK below: the loader turns
-// a group of 32's nibbles into packed int8, 0 to 15, and keeps the row's d s and dmin m of the group; no scales apart)
+// T.547.2.3, T.547.3.3, weights of llama.cpp's blocks (a row of BLOCK_READS): the blocks of 256 as the checkpoint holds
+// them (the loader turns a group of 32 into packed int8 and keeps the row's scales and mins of its halves; no scales apart)
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
-  const ternary = weights === "ternary", blocks = weights === "Q4_K";
+  const ternary = weights === "ternary", blocks = Object.hasOwn(BLOCK_READS, weights) ? BLOCK_READS[weights as BlockPacking] : null;
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 ${TILE_SHAPE}
 ${STEP}
-${blocks ? "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' blocks, 36 words of 144 bytes each\n"
+${blocks ? `@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' blocks, ${blocks.bytes} bytes each\n`
     : `${ternary ? "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' codes, 16 of two bits to a u32"
     : "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>"}
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;
@@ -553,7 +625,7 @@ ${blocks ? "@group(0) @binding(0) var<storage, read> b: array<u32>;             
 @group(0) @binding(4) var<uniform> shape: Shape;
 @group(0) @binding(5) var<uniform> step: Step;
 @group(0) @binding(6) var<storage, read> scales_a: array<f32>;       // QUANTIZE's xs: a scale a token and group of 32
-${sdp8ai}${ternary ? TERNARY_PACKED : ""}${blocks ? Q4_K_BLOCK : ""}
+${blocks ? BLOCK_COMMON + blocks.code : sdp8ai}${ternary ? TERNARY_PACKED : ""}
 
 const tile_size = 64u;
 const subtile_size = 16u;
@@ -563,8 +635,8 @@ const tile_size_k_vec = 2u;
 var<workgroup> tile_A: array<array<vec4<u32>, tile_size>, tile_size_k_vec>;  // 64 x 32
 var<workgroup> scale_A: array<f32, tile_size>;                                // 64 x 1
 var<workgroup> tile_B: array<array<vec4<u32>, tile_size>, tile_size_k_vec>;  // 64 x 32
-var<workgroup> scale_B: array<f32, tile_size>;                                // 64 x 1
-${blocks ? "var<workgroup> min_B: array<f32, tile_size>;                                  // 64 x 1: the row's dmin m of the group\n" : ""}
+${blocks ? "var<workgroup> blocks_B: array<vec4<f32>, tile_size>;                         // 64 x 4: the row's scales and mins of the group's halves\n"
+    : "var<workgroup> scale_B: array<f32, tile_size>;                                // 64 x 1\n"}
 fn loadSHMA(a_global_base: u32, kidx_v: u32, row: u32, col: u32) {
   let a_global = a_global_base + row;
   if (a_global >= step.tokens) {
@@ -583,12 +655,10 @@ fn loadSHMB(b_global_base: u32, kidx_v: u32, row: u32, col: u32) {
   }
 ${blocks ? `  // (a group of 32 a step: kidx_v / 2 along the row, of the row's perRow / 8 blocks; col's half of its 32 weights)
   let group = kidx_v / 2u;
-  let block = (b_global * (shape.perRow / 8u) + group / 8u) * 36u;
-  tile_B[col][row] = q4k_half(block, group % 8u, col);
+  let block = (b_global * (shape.perRow / 8u) + group / 8u) * ${blocks.bytes}u;
+  tile_B[col][row] = blk_values(block, group % 8u, col);
   if (col == 0u) {
-    let dm = q4k_scale_min(block, group % 8u);
-    scale_B[row] = dm.x;
-    min_B[row] = dm.y;
+    blocks_B[row] = blk_scales(block, group % 8u);
   }` : ternary ? `  // (a row of n weights is n / 16 words of codes, as many as an int8 row's vec4s: the same index)
   tile_B[col][row] = ternary_packed(b[b_global * (shape.words / 4u) + kidx_v + col]);
   if (col == 0u) {
@@ -647,13 +717,12 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     let own_a0: vec4<u32> = tile_A[0][base_A + a_idx];
     let own_a1: vec4<u32> = tile_A[1][base_A + a_idx];
     let own_scale_a: f32 = scale_A[base_A + a_idx];
-${blocks ? `    // (the token's sum of the group, times its scale: what a row's dmin m is taken by)
-    let own_min_a: f32 = own_scale_a * f32(q4k_sum(own_a0) + q4k_sum(own_a1));
+${blocks ? `    // (the token's sums of the group's halves: what a row's mins are taken by)
+    let own_sums = vec2<f32>(f32(blk_sum(own_a0)), f32(blk_sum(own_a1)));
 ` : ""}${subgroups ? `    if (sg_size == 16u) {
       let own_b0: vec4<u32> = tile_B[0][base_B + sg_id];
       let own_b1: vec4<u32> = tile_B[1][base_B + sg_id];
-      let own_scale_b: f32 = scale_B[base_B + sg_id];
-${blocks ? "      let own_min_b: f32 = min_B[base_B + sg_id];\n" : ""}      // Step 2: Access registers across the subgroup using subgroupShuffle and perform the matmul.
+${blocks ? "      let own_s_b: vec4<f32> = blocks_B[base_B + sg_id];\n" : "      let own_scale_b: f32 = scale_B[base_B + sg_id];\n"}      // Step 2: Access registers across the subgroup using subgroupShuffle and perform the matmul.
 ${(blocks ? blockLines : dp4aLines)(true).replace(/^/gm, "  ")}
     } else {
       // Code for other subgroup sizes, simply doesn't use subgroups at all.
@@ -682,16 +751,18 @@ ${(blocks ? blockLines : dp4aLines)(false)}`}
 // is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.ts).
 // T.232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
-// T.547.2.3, Q4_K: the forms of a model of int8 matrices and Q4_K ones, ORT's DP4A alone, each with its Q4_K text beside
+// T.547.2.3, blocks: the forms of a model of int8 matrices and llama.cpp's blocks, ORT's DP4A alone, each with a text a
+// type of BLOCK_READS beside (T.547.3.3: Q4_K's alone until then)
 // (blocks: the other forms would widen every block to floats); none where there is no packed int8 dot
 export const promptForms = ({ half, subgroups, packed, memory, threads, own = null }: DeviceForms): PromptForm[] => {
   const past = ({ threads: wanted }: Tile, bytes: number) => (wanted > threads ? `${wanted} threads, the device ${threads}`
     : bytes > memory ? `${bytes} bytes of workgroup memory, the device ${memory}` : undefined);
-  if (own === "Q4_K") {
-    // (min_B beside scale_B: 256 bytes of workgroup memory more)
-    const none = packed ? past(DP4A_SHAPE, 4864) : "no packed int8 dot here";
-    return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, Q4_K`,
-      tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: lanes, weights: "int8" }), blocks: dp4a({ subgroups: lanes, weights: "Q4_K" }), none }));
+  if (own === "blocks") {
+    // (blocks_B, a vec4 a row, in scale_B's place: 768 bytes of workgroup memory more)
+    const none = packed ? past(DP4A_SHAPE, 5376) : "no packed int8 dot here";
+    return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, blocks`,
+      tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: lanes, weights: "int8" }),
+      blocks: Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, dp4a({ subgroups: lanes, weights: packing })])) as Record<BlockPacking, string>, none }));
   }
   if (own === "ternary") {
     const none = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
@@ -777,4 +848,4 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
   return { worst, wrong, far, apart, values };
 }
 
-export { TERNARY_PACKED, Q4_K_BLOCK, sdp8ai, GET_BYTE_I32 };
+export { TERNARY_PACKED, BLOCK_COMMON, sdp8ai, GET_BYTE_I32 };

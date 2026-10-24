@@ -52,7 +52,7 @@ const DEVICES = [false, true].flatMap((half) => [false, true].map((subgroups) =>
 Object.defineProperty(globalThis, "navigator", { configurable: true,
   value: { userAgent: "UA", gpu: { wgslLanguageFeatures: new Set(["packed_4x8_integer_dot_product"]) } } });
 // (T.547.2.3: the key takes a model's own shaders by name: none, a ternary model's or a Q4_K one's)
-const OWN = { plain: null, ternary: "ternary", q4k: "Q4_K" };
+const OWN = { plain: null, ternary: "ternary", q4k: "blocks" };
 const keysOf = (deviceKey, which) => DEVICES.map((device) => deviceKey(device, device, OWN[which]));
 
 // ---- the file's syntax tree: every node under one, and the top-level declarations by name
@@ -144,7 +144,8 @@ const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).include
 // TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row)
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
 // (T.547.2.3: and those for Q4_K blocks: dp4a's branch and (T.547.2.4) DP4A_WEIGHTS' row, and what only they write)
-const Q4K_BRANCHES = ["dp4a", "Q4_K_BLOCK", "blockLines", "DP4A_WEIGHTS", "fusedDp4aMatVec"];
+// (T.547.3.3: of every type of BLOCK_READS: what they share and each one's reading)
+const Q4K_BRANCHES = ["dp4a", "BLOCK_COMMON", "BLOCK_READS", "blockLines", "DP4A_WEIGHTS", "blockRow", "blockRows", "fusedDp4aMatVec"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
 // What gpu.js takes of the shaders (T.379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
@@ -207,7 +208,7 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "code",  // the small steps' (RMSNORM or LAYER_NORM, HEAD_NORM, ADD, ROPE, SWIGLU or GELU, QUANTIZE) and a token's layer, tokenCodes' (the fused matrices, NORM_QUANTIZE)
   "embedCode",  // EMBED or EMBED_TERNARY
   "form.code",  // a prompt's tile (devicePromptForms; the remembered one too: forms.ts's compiled())
-  "form.blocks",  // (T.547.2.3) the same form's Q4_K text, a tile of devicePromptForms too
+  "form.blocks [packing]",  // (T.547.2.3) the same form's text of a type of llama.cpp's blocks (T.547.3.3), a tile of devicePromptForms too
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
   "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
   "ENGINE.OUTPUT_GATE",  // (T.271.2: a Qwen3.5's gate of the attention's output)
@@ -228,7 +229,8 @@ const itself = new Set([...KEY_ITSELF, ...reached(FORMS)].filter((name) => !engi
 const moves = (deviceKey, which) => DEVICES.toReversed().some((device) => deviceKey(device, device, OWN[which]) !== KEYS[which][DEVICES.indexOf(device)]);
 const changedBy = (pieces) => run(withInserts(source, pieces.map((piece) => [piece.at, piece.insert])),
   exportWords.map((at) => at + pieces.filter((piece) => piece.at < at).reduce((sum, piece) => sum + piece.insert.length, 0)));
-const counted = { engine: 0, ternary: 0, branches: 0, q4k: 0, numbers: 0, apart: [] };
+const counted = { engine: 0, ternary: 0, branches: 0, q4k: 0, numbers: 0, looked: 0, apart: [] };
+const LOOKED_UP = ["BLOCK_PACKINGS"];
 for (const name of declared.keys()) {
   if (itself.has(name)) continue;  // (a reason a form is not made is no shader's text; a form's name is in the key)
   const ternaryOnly = !general.has(name);
@@ -239,7 +241,16 @@ for (const name of declared.keys()) {
       continue;
     }
     const said = `${name}, ${JSON.stringify(piece.says.slice(0, 60))} (at ${piece.at})`;
-    const deviceKey = changedBy([piece]);
+    // (T.547.3.3: the names of the types of llama.cpp's blocks, which the makers look their readings up by: one changed is
+    // no reading at all, and the shaders are not made: loud, as no piece of a text is)
+    let deviceKey;
+    try {
+      deviceKey = changedBy([piece]);
+    } catch (error) {
+      if (!LOOKED_UP.includes(name)) throw error;
+      counted.looked += 1;
+      continue;
+    }
     if (ternaryOnly) {
       assert.ok(moves(deviceKey, "ternary"), `${said}, of a ternary model's shaders, did not reach the hash of a ternary model's key`);
       assert.ok(!moves(deviceKey, "plain"), `${said}, of a ternary model's shaders, moved the key of the other models`);
