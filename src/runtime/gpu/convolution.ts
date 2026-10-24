@@ -10,7 +10,7 @@ import type { GpuKind } from "./kinds.ts";
 import type { Pass } from "./device.ts";
 
 export const convolution: GpuKind = {
-  writes: () => ["mix"],
+  matrices: () => ({ mix: ["win"], join: ["wout"] }),
   async block(m) {
     const { plan } = m, B = plan.batch, { dim } = plan, { taps } = plan.convolution!, groups = Math.ceil(dim / 64);
     const [short, state] = await within(Promise.all([ENGINE.SHORT_CONV, ENGINE.CONV_STATE].map((code) => pipelineOf(m, code))), "the convolution's shaders");
@@ -41,10 +41,10 @@ export const convolution: GpuKind = {
         const places = plan.kinds.filter((kind) => kind === "convolution").length;
         const conv = [...Array(places)].map((_, p) => uniform(m, new Uint32Array([dim, taps, p * taps * dim, 0])));
         return {
-          step({ l, place, form, matrix, plain, joining, normed }) {
+          step({ l, place, matrix, plain, joining, normed }) {
             const g = m.tokens, W = m.weights, V = W.vectors!, convolved = plain(g.xb, g.u.quantizeNormed, dim);
             return [...normed.norm, ...normed.quantize,
-              matrix(form.pipes.mix, W.matrices.win.pieces[0].layers[place], normed.input, mix[l], 3 * dim, [[5, token]]),
+              matrix("mix", W.matrices.win.pieces[0].layers[place], normed.input, mix[l], 3 * dim, [[5, token]]),
               [short, bind(m, short, [token, V.conv, rows, g.xb, conv[place], g.step]), groups, 1],
               [state, bind(m, state, [token, rows, conv[place], g.step]), groups, 1],
               ...convolved.quantize, ...joining(V.attentionPost, W.matrices.wout.pieces[0].layers[place], convolved.input, wout)] satisfies Pass[];
