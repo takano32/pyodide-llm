@@ -35,7 +35,10 @@ SHAPES = {"small": dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_di
           # heads of 256 as every real Qwen3.5 has (the others' heads are 32 and 64), a key and value head of 32: the
           # attention kernels on heads that wide, in float16 too (a 4B or a 9B keeps float16 keys and values past 4 GiB)
           "wide": dict(dim=256, hidden_dim=512, n_heads=2, n_kv_heads=1, head_dim=256, key_heads=2, value_heads=4,
-                       key_dim=32, value_dim=32, seq_len=1024)}
+                       key_dim=32, value_dim=32, seq_len=1024),
+          # T568.4: key heads wider than the GPU's delta rule takes (128: forward/linear.ts's DELTA_MOST), which stay on the CPU
+          "past": dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_dim=32, key_heads=1, value_heads=2,
+                       key_dim=160, value_dim=16, seq_len=1024)}
 
 
 def main():

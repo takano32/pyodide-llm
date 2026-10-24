@@ -52,7 +52,10 @@ const REASONS = { qwen35: ["a Qwen3.5", "linear", null],
   gemma3: ["a Gemma 3", "local", null],
   spark: ["a Spark-X2.5", "local", /this pair of norms and FFN is not on the GPU/] };
 assert.ok(options.arch in REASONS, `${prefix} is no Qwen3.5, no LFM2, no Gemma 3 and no Spark-X2.5`);
-const [model, layers, reason] = REASONS[options.arch];
+const [model, layers, reasonOfArch] = REASONS[options.arch];
+// (T568.4: a Qwen3.5 whose key heads are wider than the GPU's delta rule takes, which its kind says, forward/linear.ts's
+// gpu.unfit(), and createForward() hands on: on the CPU)
+const reason = options.arch === "qwen35" && options.linear.key_dim > 128 ? /^linear-attention layers are not on the GPU yet$|\(linear-attention layers are not on the GPU yet\)/ : reasonOfArch;
 assert.ok(options[layers], `${prefix} has no ${layers} layers`);
 const checkpoint = fs.readFileSync(`${prefix}.bin`);
 

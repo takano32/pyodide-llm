@@ -60,7 +60,8 @@ const onGpuAs = (m: Held) => {
 // T545: the kind of the layers a matrix or a vector of the GPU's is of, where it is not every layer's (its places index
 // those layers alone: an LFM2's attending layers are some of its layers). T568.4: the kind of the model's that names it
 // (forward/kinds.ts's gpu: an attending layer's q, k, v and o; T271.2 a Qwen3.5's linear-attention layers'; wout and conv
-// are those of the kind that keeps a state, whichever the model has)
+// are those of the kind that keeps a state, whichever the model has: no model has both, and one that did would be the
+// first of the table's)
 const kindOf = (name: string, { gpuKinds }: { gpuKinds: Shape["gpuKinds"] }) => gpuKinds.find(({ names }) => names.includes(name))?.kind;
 // where the model's tensors are in the memory: the matrices (null: the model has none of that name), and the addresses
 // of the vectors and the tables (0: none)
@@ -125,7 +126,7 @@ export function gpuFit({ shape, weights, device, direct }:
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
     sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own } = weights;
-  // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: KIND_OF)
+  // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
   const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
@@ -224,7 +225,7 @@ export function gpuFit({ shape, weights, device, direct }:
       // small matrices, their biases, decays and the norm of a value head)
       ...own.vectors };
   }
-  // T545: the same, each with the kind of the layers it is of where it is not every layer's (KIND_OF), for the plan
+  // T545: the same, each with the kind of the layers it is of where it is not every layer's (kindOf()), for the plan
   function gpuVectorsOf(): Vectors {
     return Object.fromEntries(Object.entries(gpuVectors()).map(([name, vector]) => [name, kindOf(name, shape) ? { ...vector, of: kindOf(name, shape) } : vector])) as Vectors;
   }
@@ -417,11 +418,12 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     listen();
     // T154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
+    // (T568.4: the kinds' numbers, forward/kinds.ts's gpu.plan(): null for a kind the model has none of, every one of
+    // KindNumbers's: the plan's literal stays typed whole)
+    const numbers = gpuKinds.reduce<KindNumbers>((all, { plan }) => ({ ...all, ...plan }), { convolution: null, linear: null });
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
-      // (T568.4: the kinds' numbers, forward/kinds.ts's gpu.plan(): null for a kind the model has none of; Started's
-      // KindNumbers asks for every one)
-      kinds, places, convolution: null, linear: null, ...Object.assign({}, ...gpuKinds.map(({ plan }) => plan)),
+      kinds, places, ...numbers,
       batch: GPU_BLOCK,
       matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,

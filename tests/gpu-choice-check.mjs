@@ -425,6 +425,24 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // T210: and the tables, where they start in the checkpoint (the embedding null where the classifier is it)
   const e = tensors.token_embedding_table;
   assert.deepEqual(plan.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] }, embedding: null });
+  // T271.4, T568.4: a Qwen3.5's (its layers linear, attending, linear, attending): a matrix of the layers of a kind (the
+  // kind's that names it, forward/kinds.ts's gpu.names) is theirs alone, its layers by their places; the FFN's every layer's
+  {
+    const linear = { every: 2, key_heads: 1, value_heads: 2, key_dim: 16, value_dim: 16, conv: 4 }, mixed = 2 * 16 + 32;
+    let next = 28;
+    const mixedTensors = Object.fromEntries([["token_embedding_table", [100, 64]], ["wq", [2, 64, 64]], ["wk", [2, 32, 64]], ["wv", [2, 32, 64]], ["wo", [2, 64, 64]],
+      ["wg", [2, 64, 64]], ["wqkv", [2, mixed, 64]], ["wz", [2, 32, 64]], ["wout", [2, 64, 32]], ["w1", [4, 96, 64]], ["w2", [4, 64, 96]], ["w3", [4, 96, 64]]].map(([name, shape]) => {
+      const made = tensor(next, shape, true);
+      next = made.scales + (shape.reduce((a, b) => a * b, 1) / 32) * 4;
+      return [name, made];
+    }));
+    const hybrid = gpuOnlyPlan([64, 96, 4, 4, 2, 100, 32], mixedTensors, {}, undefined, { arch: "qwen35", linear });
+    assert.deepEqual([hybrid.kinds, hybrid.places], [["linear", "attention", "linear", "attention"], [0, 0, 1, 1]]);
+    assert.deepEqual(Object.fromEntries(Object.entries(hybrid.matrices).map(([name, { of, layers }]) => [name, [of ?? null, layers.length]])),
+      { wq: ["attention", 2], wk: ["attention", 2], wv: ["attention", 2], wo: ["attention", 2], w1: [null, 4], w2: [null, 4], w3: [null, 4], wqkv: ["linear", 2],
+        wz: ["linear", 2], wout: ["linear", 2], wg: ["attention", 2] }, "each matrix of its kind's layers (or every layer's), as many layers as that");
+    assert.deepEqual(hybrid.matrices.wout.layers[1], [mixedTensors.wout.offset + 64 * 32, mixedTensors.wout.scales + (64 * 32 / 32) * 4], "a linear layer's second at its place");
+  }
   const apart = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], { ...tensors, wcls: tensor(end, [100, 64], true) });
   assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [end, end + 6400] }, embedding: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] } });
   assert.equal(gpuHoles({ ...tensors, wcls: tensor(end, [100, 64], true) }).length, 9, "a classifier of its own is a stretch of its own");

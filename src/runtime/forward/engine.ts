@@ -436,8 +436,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // T568.4: what the GPU's side reads of each kind of the model's layers that the GPU's worker has a step for (kinds.ts's
     // gpu: the names of its tensors, why the GPU would not take its layers, its numbers in the GPU's plan)
     gpuKinds: had.flatMap(({ kind }) => { const gpu = kinds[kind].gpu; return gpu ? [{ kind: kind as LayerKind, names: gpu.names, unfit: gpu.unfit?.(sizes) ?? null, plan: gpu.plan?.(sizes) ?? {} }] : []; }),
-    // (T545: a kind that keeps a state the GPU's worker has no step for)
-    stateful: keeping.some((part) => !part.staging), rotated, sharedClassifier: plan.shared_classifier,
+    // (T545: a kind that keeps a state the GPU's worker has no step for; T568.4: or that says nothing of the GPU's side)
+    stateful: had.some(({ kind }) => parts[kind].clear && (!parts[kind].staging || !kinds[kind].gpu)), rotated, sharedClassifier: plan.shared_classifier,
     // T545: every layer's kind and its place among the layers of its kind, the layers that keep keys and values in the
     // cache, and the state the GPU's worker goes on from
     kinds: facts.map(({ kind }) => kind), places: facts.map(({ place }) => place), attending, stateBytes,

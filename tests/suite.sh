@@ -240,6 +240,9 @@ qwen35_goes_to_the_gpu() {
   mkdir -p .tmp
   python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
   node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-int8
+  # (T568.4: and one whose key heads are wider than the GPU's delta rule takes stays on the CPU, as its kind says)
+  python tests/make_qwen35.py .tmp/made-up-qwen35-past int8 past
+  node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-past
 }
 part "a Qwen3.5 where a GPU adapter is" qwen35_goes_to_the_gpu
 # T260: nor was an LFM2, whose convolution layers had no shader; T545: its prompts are the GPU's now, its worker started with

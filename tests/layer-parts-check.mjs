@@ -528,4 +528,15 @@ const S = 100000;
 assert.deepEqual(Object.keys(LAYER_KINDS), ["attention", "linear", "convolution"], "the kinds, in the order they are made in (what they take of the memory is in that order)");
 assert.deepEqual([LAYER_KINDS.attention, LAYER_KINDS.linear, LAYER_KINDS.convolution], [attention, linear, convolution]);
 for (const [name, kind] of Object.entries(LAYER_KINDS)) assert.deepEqual([typeof kind.frame, typeof kind.make], ["function", "function"], name);
+// T568.4: what a kind says of the GPU's side: its matrices and the vectors it hands are among the names of its tensors (a
+// name it forgets there is a matrix or a vector of every layer to forward/gpuside.ts's kindOf(), counted and placed so)
+{
+  const linearForm = { every: 2, key_heads: 1, value_heads: 2, key_dim: 16, value_dim: 16, conv: 4 };
+  const sizes = { dim: 64, numbers: { linear: linearForm, convolution: { layers: "ca", taps: 3 } }, widths: { linear: LAYER_KINDS.linear.widths({ linear: linearForm }).linear } };
+  for (const [name, { gpu }] of Object.entries(LAYER_KINDS)) {
+    if (!gpu) continue;
+    for (const own of [...(gpu.matrices ?? []), ...Object.keys(gpu.vectors?.(sizes) ?? {})]) assert.ok(gpu.names.includes(own), `${name}'s gpu.names has ${own}, a matrix or a vector it hands the GPU`);
+  }
+  console.log("ok: every kind's matrices and vectors on the GPU are among the names of its tensors");
+}
 console.log("layer-parts-check: ok");

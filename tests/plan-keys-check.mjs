@@ -325,7 +325,16 @@ const returned = (fn) => {
   }
   assert.ok(start, "no { type: \"start\", plan: { ... } } in the files of forward/: tests/plan-keys-check.mjs reads the GPU's plan there");
   const open = returned(functionNamed(writers, "gpuOnlyPlan"));
-  const written = new Set([...literalKeys(start), ...literalKeys(open)]);
+  const startKeys = literalKeys(start);
+  // (T568.4: and what it spreads of a name, `...numbers`: the keys of the literal that name starts from, the kinds' numbers
+  // as `const numbers = gpuKinds.reduce<KindNumbers>(…, { convolution: null, linear: null })` has them, every one)
+  for (const property of start.properties.filter((p) => p.type === "SpreadElement" && p.argument.type === "Identifier")) {
+    let init;
+    for (const { program } of writers) walk(program, (node) => { if (node.type === "VariableDeclarator" && node.id.name === property.argument.name) init = node.init; });
+    assert.ok(init, `the GPU's plan spreads ${property.argument.name}, which tests/plan-keys-check.mjs finds no declaration of`);
+    literalKeys(init.type === "CallExpression" ? init.arguments.findLast((argument) => argument.type === "ObjectExpression") : init, startKeys);
+  }
+  const written = new Set([...startKeys, ...literalKeys(open)]);
   const inside = {
     tokens: literalKeys(returned(functionNamed(writers, "gpuTokensPlan"))),
     vectors: literalKeys(returned(functionNamed(writers, "gpuVectors"))),
@@ -381,7 +390,7 @@ const returned = (fn) => {
   // T368.2: and the types say the same (src/runtime/contracts/gpu/protocol.ts): the two plans, what they hold one level
   // down, and the messages either side posts, by their kinds and by the keys of each
   const typed = contract("gpu/protocol.ts");
-  typedAs("contracts/gpu/protocol.ts's Started, to the plan of { type: \"start\" }", typed.keysOf("Started"), literalKeys(start));
+  typedAs("contracts/gpu/protocol.ts's Started, to the plan of { type: \"start\" }", typed.keysOf("Started"), startKeys);
   typedAs("contracts/gpu/protocol.ts's Opened, to gpuOnlyPlan()'s plan", typed.keysOf("Opened"), literalKeys(open));
   for (const [name, type] of [["tokens", "Tokens"], ["vectors", "Vectors"], ["words", "Words"], ["tables", "Tables"]]) {
     typedAs(`contracts/gpu/protocol.ts's ${type}, to the GPU's plan's ${name}`, typed.keysOf(type), inside[name]);
