@@ -717,6 +717,9 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     const layers = [matrixOf(24, 256, 0, { kind: "Q4_K", group: 256 }), matrixOf(24, 256, 5000)];
     const stack = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers }) });
     assert.equal(stack.unfit(), null, "a stack of Q4_K's and int8's layers");
+    // (the review: but one of a kind the GPU does not take keeps the model on the CPU)
+    const one = fitOf({}, { w1: matrixOf(24, 256, 0, { kind: "layers", group: 256, layers: [layers[0], matrixOf(24, 256, 5000, { kind: "IQ2_XXS", group: 256 })] }) });
+    assert.match(one.unfit(), /^float32 weights are not on the GPU yet$/, "a stack with a layer the GPU does not take");
   }
   // T.545: an LFM2: its prompts go (the matrices in and out and the taps with the others, each of its own layers);
   // T.545.2: and its steps

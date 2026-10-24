@@ -355,6 +355,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
       const of = kindOf(name, shape), count = of ? kinds.filter((kind) => kind === of).length : layers;
       const at = (l: number) => (m.layers ? m.layers[l].layer(0) : m.layer(l)).slice(0, 2) as [number, number];
+      // (T.547.3.1's review: a packing a layer, said here where a short list would be an undefined packing on the GPU)
+      if (m.layers && m.layers.length !== count) throw new Error(`The matrix ${name} has ${m.layers.length} layers of their own kinds, and the GPU's plan ${count}.`);
       return [name, { rows: m.rows, n: m.n, ...(m.layers ? { packing: "layers", packings: m.layers.map((layer) => gpuPacking(layer.kind)) } : { packing: gpuPacking(m.kind) }),
         layers: Array.from({ length: count }, (_, l) => at(l)), ...(of ? { of } : {}) }];
     }));

@@ -74,7 +74,8 @@ const CHUNK = 8 << 20;
 const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKINGS[packing].row(n);
 // (whether the model's weights are ternary: a ternary checkpoint's matrices are all ternary, llama2_numpy's dtype, and no
 // other model has a ternary one)
-const ternaryPlan = (plan: { matrices: Record<string, Matrix> }) => Object.values(plan.matrices).some((matrix) => matrix.packing === "ternary");
+// (T.547.3.1's review: a layer's of a stack whose layers are each of a packing of their own too)
+const ternaryPlan = (plan: { matrices: Record<string, Matrix> }) => Object.values(plan.matrices).some((matrix) => packingsOf(matrix).includes("ternary"));
 // T.547.2.3: the shaders a model has of its own: ternary's, or (a matrix of llama.cpp's blocks among int8 ones) Q4_K's
 // (T.547.3.1: a layer's of a stack whose layers are each of a packing of their own too)
 const ownOf = (plan: { matrices: Record<string, Matrix> }): Own => (ternaryPlan(plan) ? "ternary"

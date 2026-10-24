@@ -200,6 +200,27 @@ const up = await upload(m);
   assert.ok(same(second[1].data.subarray(0, scales), new Uint8Array(layeredMemory.buffer, at + q4k + int8, scales)), "and its scales");
   assert.equal(layered.weights.unjoined, "wq's layers are each of a packing of their own", "a token's layer is not joined of such a stack (T.547.3.2)");
 }
+// (the review: such a stack past a buffer, in pieces of the rows its widest layer's fit: each layer's piece from its own
+// rows, as its packing holds them)
+{
+  standIn({ language: ["packed_4x8_integer_dot_product"] });
+  const n = 256, rows = 160, { plan: base, bytes } = planned({ force: { pieceBytes: 64 * n } });
+  const at = Math.ceil(bytes / 256) * 256, int8 = rows * n, scales = rows * (n / GROUP) * 4, q4k = rows * (n / 256) * 144;
+  const piecedMemory = { buffer: new SharedArrayBuffer(at + int8 + scales + q4k + 1024) };
+  new Uint8Array(piecedMemory.buffer).set(random(piecedMemory.buffer.byteLength));
+  const w1 = { rows, n, packing: "layers", packings: ["int8", "Q4_K"], layers: [[at, at + int8], [at + int8 + scales, 0]] };
+  const pieced = await openDevice({ ...base, matrices: { ...base.matrices, w1 } });
+  handed(piecedMemory, pieced.plan);
+  await uploadLayers(pieced);
+  const { pieces } = pieced.weights.matrices.w1;
+  assert.deepEqual(pieces.map((piece) => [piece.first, piece.rows]), [[0, 64], [64, 64], [128, 32]], "pieces of the int8 layer's rows");
+  for (const { first, rows: count, layers: [[values, own], [blocks, none]] } of pieces) {
+    assert.ok(same(values.data.subarray(0, count * n), new Uint8Array(piecedMemory.buffer, at + first * n, count * n)), `the int8 layer's piece from row ${first}`);
+    assert.ok(same(own.data.subarray(0, count * 32), new Uint8Array(piecedMemory.buffer, at + int8 + first * 32, count * 32)), "and its scales");
+    assert.ok(same(blocks.data.subarray(0, count * 144), new Uint8Array(piecedMemory.buffer, at + int8 + scales + first * 144, count * 144)), `the Q4_K layer's piece from row ${first}`);
+    assert.equal(none, null);
+  }
+}
 console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix and vector on the GPU as the shared memory holds it, and says why a token's layer is not joined");
 
 // ---- weights.js: a model on the GPU alone, its checkpoint coming in stretches
