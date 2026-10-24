@@ -65,9 +65,6 @@ type Weights = {
   localAngleTable: GPUBuffer | null;
   // T.271.1: a rotated basis's signs, by the width a matrix reads (null: the model's own basis)
   signs: Record<number, GPUBuffer> | null;
-  // T.547.3.4: the codebooks of llama.cpp's IQ types (the checkpoint's row as it is), which their matrices bind where an
-  // int8 one binds its scales (null: the model has none of those types)
-  grids: GPUBuffer | null;
 };
 // what tablesOf() reads of a plan: the tables of a model on the GPU alone as it opens, else a token's
 type Tabled = { tables?: Tables; tokens: Tables | null };
@@ -112,7 +109,7 @@ async function uploadLayers(m: Model, alone = false) {
   // that wait for the rest of it, routed())
   m.weights = { matrices, together: null, unjoined: null, joined: [], widen: null, routes: alone ? [] : null, partial: alone ? new Map() : null,
     vectors: null, tables: null, finalNorm: null, finalBias: null, positions: null, angleTable: null,
-    localAngleTable: null, signs: null, grids: null };
+    localAngleTable: null, signs: null };
   const together = plan.tokens ? tokensLayout(m) : null;
   m.weights.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T.156)
@@ -123,8 +120,9 @@ async function uploadLayers(m: Model, alone = false) {
   // (T.156: a model on the GPU alone reads its first layer back to check a token's layer against: firstLayer)
   const usage = STORAGE | COPY_DST | (alone ? COPY_SRC : 0);
   const { routes } = m.weights;
-  // (T.547.3.4: the codebooks, once, where a matrix of an IQ type reads them)
-  const grids = m.weights.grids = Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some((packing) => PACKINGS[packing].grid))
+  // (T.547.3.4: the codebooks of llama.cpp's IQ types, the checkpoint's row as it is, once, where a matrix of one reads
+  // them: bound where an int8 matrix binds its scales, its pieces' and joined buffers' second, which the model owns)
+  const grids = Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some((packing) => PACKINGS[packing].grid))
     ? buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST) : null;
   if (grids) {
     copyIn(m, grids, plan.codebooks, CODEBOOK_BYTES);
