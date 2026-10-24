@@ -6,8 +6,11 @@ import path from "node:path";
 // it (T.226), and answers.mjs's 12 answers stopped at the seventh and the run was a success (T.274). One place for it.
 //   await leave(failed ? 1 : 0);
 export const flushed = () => Promise.all([process.stdout, process.stderr].map((stream) => new Promise((resolve) => stream.write("", resolve))));
+// (T.580: and 200 ms after it, as T.575 has plan-facts-check end: Node now and then stands still in process.exit() right
+// after heavy work (T.384), as blocks-forward-check did once in the light suite after its "ok")
 export async function leave(code = 0) {
   await flushed();
+  await new Promise((resolve) => setTimeout(resolve, 200));
   process.exit(code);
 }
 
