@@ -235,7 +235,6 @@
 - T561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 - T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
-- T571 [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 反映済み
 - T565 [設計][Bonsai][WebGPU] 27B の linear の層の状態（144 MiB）を、束縛の上限 128 MiB の端末で — 未着手
 - T566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T567 [バグ][WebGPU] `gpuBytes()` が linear の層の畳み込みのタップ分を数えない — 未着手
@@ -1726,14 +1725,6 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T563 [整理][WebGPU] GPU に置く決まりの古いコメント — 状態: 未着手（2026-10-16、T261.4.2・T545.2 のレビューの気づき）
 - `src/runtime/forward/alone.ts:191` の「a token's fused layer does not take yet」は古くなった。`gpuside.ts` の `tokensUnfit()` の説明は Llama の流れだけを言う（窓・GELU・後ろの norm・畳み込みを足す）。
-
-### T571 [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 状態: 反映済み（2026-10-24、Opus medium。T568.2 の本番の確かめ（`models.yml`、run 40051864570、`query=gpuTest=on&steps=16`）で見つけた。T271.4 から）
-- **起きたこと**: `hf-qwen3.5-0.8b` が 10 秒で「Could not load Alibaba Qwen3.5 0.8B (no thinking)」。コンソールは Python の `ValueError: The architecture 'qwen35' and the layers of its form go together: it has linear that keep a state, and the form says none.`（`worker/weights.ts` の `gpuOnlyWeightsFor()` → `llama2_numpy.external_tensors()`）。
-- **訳**: `gpuOnlyWeightsFor()` は、GPU だけに置けると決めたモデルのテンソルの置き場を Python に聞くときに、form を 4 つの鍵（`arch`・`bias`・`qk_norm`・`head_dim`）だけで渡していた。T271.4 で Qwen3.5 が GPU だけに置けるようになり、linear の層の数（form の `linear`）が要るようになったのに渡っていなかった。同じ関数の `gpuOnlyUnfit()` と、ほかの `placesOf()` の呼び出しは options をまるごと渡している（Python の `form_of()` が FORM の鍵だけを取る）。
-- **誰に当たるか**: GPU だけに置かれる Qwen3.5 系（`deviceMemory` 8 の端末の 4B・9B と NeoHorse-1・Agents-A1 の 4B・9B: 持ち主の Android）と、`?gpuTest=on`・`only` の訪問。2 重に入るモデル（0.8B・2B を Android で）や GPU の無い訪問には当たらない。
-- **直し**: `placesOf(header, dtype, options)`（form をまるごと）。試験: `worker-sink-check` の GPU だけのモデルの節で、`external_tensors()` に渡る form が FORM の全部の鍵を持つことを見る（直す前に落ちることを確かめた）。素の Python で、作り物の Qwen3.5 の options（`bos`・`template` も入れて）は 24 のテンソルを返し、前の 4 つの鍵の form は同じ文で断られる。
-- CI を省いた。訳: 直した道は `worker-sink-check` が手元で踏み、Python の断りは素の Python で再現した。本番はデプロイの後に `models.yml` で。レビュー（Sonnet low、2026-10-24）: OK。Python の `form_of()` が FORM の鍵だけを取るので options の残りは置き場を変えず、CPU の読み込みと `gpuOnlyUnfit()` と同じ options を見る。部分の form を作る所はほかに無い（grep）。気づき: 試験は「options から鍵を落とす」壊れに効き、worker が options に鍵を足し忘れる壊れは見ない。持ち主の端末の一覧に Android の 1 行を足した。
-- **同じ run のもう 1 つの「落ち」は誤りではない**: 既定の Shisa は「prompts and answers on WebGPU (gpuTest)」まで進み、答えが 1800 秒に入らなかった。SwiftShader で GPU のステップを回すと tiny-lm でも 66 トークンに 467 秒（run 36866409090）で、350M の答えは入らない（AGENTS.md の落とし穴のとおり）。頼み方の誤り（取りまとめ役）: GPU の Worker の変更の後の本番は `gpuTest` なしで回す。
 
 ### T565 [設計][Bonsai][WebGPU] 27B の linear の層の状態（144 MiB）を、束縛の上限 128 MiB の端末で — 状態: 未着手（2026-10-16、T271 のレビューの気づき。T271.5 の回で決める）
 - `maxStorageBufferBindingSize` が 128 MiB の端末（Mali など）では 1 つの束縛に入らない。状態を層の束に割るか。

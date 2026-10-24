@@ -221,3 +221,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T568](T568.md) [整理][WebGPU] GPU の層の種類を表 1 つに（CPU の `LAYER_KINDS` の形） — 2026-10-24
 - [T569](T569.md) [文書][文書] AGENTS.md を蒸留する（4 回目） — 2026-10-24
 - [T570](T570.md) [運用][文書] TODO.md を TASKS.md に改名する — 2026-10-24
+- [T571](T571.md) [バグ][WebGPU] GPU だけに置く Qwen3.5 を、Python が「form に linear が無い」と断る — 2026-10-24
