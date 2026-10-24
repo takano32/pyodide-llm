@@ -239,6 +239,7 @@
 - T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 未着手
 - T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 反映済み
 - T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
+- T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 未着手
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T.567 [バグ][WebGPU] `gpuBytes()` が linear の層の畳み込みのタップ分を数えない — 未着手
 <!-- 目次ここまで -->
@@ -1691,6 +1692,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
     - 読み込みの検査: `PACKINGS` の `values` を全部の詰め方に（Q4_K は `q4kWeights()`）、尺度の無い行は尺度 1 で（`tokenforms.ts` の `ONE`）。
     - 試験: gpu-check の `synthetic-q4k` の答えのステップを DP4A の形で（T.547.2.3 の「CPU のまま」を通す判定は外し、`gpu-check-parts-check` はその訳を失敗と見る）。`gpu-worker-parts-check` が Q4_K のモデルの形の文（104 の形・512 の文）を目録の行と、Q4_K の鍵の文が `BLOCK_SHADERS` の行であることと見る。`shaders-catalogue-check` に `BLOCK_SHADERS` の順。`device-key-check` は Q4_K の文の切れ端 34 が Q4_K のモデルの鍵だけを動かすのを見る（`DP4A_WEIGHTS` の Q4_K の行の使われない欄は持たない: 切れ端が鍵に届かない）。
     - CI を回した。訳: WebGPU の道。**run 40086822046**（Dawn、`synthetic-q4k` と対照 int8・3 値・LFM2・Qwen3.5）: FAILED 0。Q4_K のモデルは「prompts and answers on WebGPU」、答えのステップは「4 and 3 greedy ids as NumPy's」・鍵と値は線の 0.23。手元: Dawn（lavapipe）で 3 つの詰め方 × 5 つの出力の文のコンパイル、型検査、GPU の側と gpu-check の道具の検査、網（`gpusteps` 277・`choices`・鍵 192 が同じ、窓口の `deviceKey` の文と新しい `BLOCK_SHADERS` が予定どおり違う）。
+  - **T.547.2.4 のレビュー（Sonnet high、2026-10-24）: must-fix なし**（答えのステップの Q4_K の読みを ggml-webgpu の `mul_mat_vec_q_acc.tmpl` の Q4_K と `superblocks.py` に照らして合う。分ける道・管の組・畳み込みと linear の Q4_K の行列・読み込みの検査も合う）。勧めから直したもの: v を分けるかと v の番地を `Together` の `vAt` の 1 か所に（attention.ts と tokens.ts が別々に出していた。使われない `write` の鍵も外した）、作り物 2 つ（`synthetic-q4k-wide`: 1 行 40・48 群で答えの行列が行を 2 周、`synthetic-lfm2-q4k`: 4-bit の Shisa の形）。
+    - **最初の版の `synthetic-q4k-wide` が落ちたもの**（run 40088736192）: 答えのステップの 3 つ目が NumPy と違い僅差でない。同じ幅の int8 は通り（捨てのブランチ、run 40089081202）、q・k だけ・FFN だけを Q4_K にしても落ち（run 40089518308）、狭いまま down だけ 2 周は通った。**GPU の誤りではなかった**: 手元の NumPy に GPU の算術（行列の入力を 8 ビット、キャッシュを float16）をさせると、同じ 3 つ目で GPU と同じ 251 を選ぶ（float32 の NumPy の 18 との差は対数確率で 0.14）。この幅の作り物は種の多くで 2 つの算術の道が分かれる（7 つの種のうち同じ 8 ステップは 2 つ）。種 3（同じ 8 ステップ、上位 2 つの差は最小 1.38）にした。**run 40090062330**（Dawn、Q4_K の 3 つと LFM2・int8）: FAILED 0、幅の広い Q4_K も「4 and 3 greedy ids as NumPy's」。
+    - **本番**（`models.yml` run 40088240436、`query=gpuTest=on&steps=40`、デプロイ run 40087682215 の後）: 本物の 4-bit の Shisa（LFM2 350M の Q4_K_M、畳み込みの層の行列も Q4_K）が「prompts and answers on WebGPU」で準備完了、プロンプトの 19 トークンと答えの 21 トークンを WebGPU で、読める日本語（SwiftShader なので 0.1 tok/s）。1 回目は `steps=16` がプロンプト（19）より短くて断られた（`steps` はプロンプトも数える: AGENTS.md に書いた）。
+    - 積んだもの: 答えのステップの Q4_K の速さ（T.579）、使わない Q4_K の管も作るコンパイルの数（T.579 と同じ回に）、分類器が Q4_K のときの訳の文が「float weights」と言う（`REASONS.floatClassifier`: 区切りのまとめで持ち主に）。
   - **T.547.2.2 以降の形（取りまとめ役の決め）**: Q4_K の塊（144 バイト: d・dmin の float16、12 バイトの 6 ビットの s と m、128 バイトの 4 ビット）は GPU にもそのまま置き、尺度のバッファを持たない詰め方として `PACKINGS` に書く（llama.cpp の WebGPU・Vulkan の形）。重みは F·S·W − Fm·M なので、活性値の 32 個ごとの和を DP4A で 1 のベクトルとの内積として取り、32 個の群に `xs × (d·s·Σqx − dmin·m·Σx)` を足す。答えのステップの DP4A（`fusedDp4aMatVec` の `weights: "Q4_K"`）とプロンプトのタイル、読み込みの検査の JavaScript の答え（`tests/blocks-model.mjs` の形）、1 つのモデルの中で行列ごとにシェーダを選ぶ所（今は `form.pipes` がモデルに 1 つの詰め方）。
   - **T.547.3**: Saluki の残りの 9 種類（Q2_K と IQ 系、符号表を GPU に 1 回）と、GPU だけ（実物はパソコン）。
 
@@ -1765,6 +1770,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 状態: 未着手（2026-10-24、T.547.2.3 のレビューの勧め。規模 小）
 - いまはスレッドごとに k の 1 ステップで群の和を DP4A 8 回で作り（内側のループの ALU が約 25% 増、同じトークンを 4 スレッドが重ねて作る）、int8 のタイルの 0.6〜0.8 倍の見込み（未計測）。案: `loadSHMA` でトークン × 群の和を workgroup のメモリ `sum_A` に 1 回書く（+256 バイト、Q4_K の文と鍵だけが動く）。先に CI の `bench.yml` か gpu-check の秒で int8 の形と Q4_K の形の ms / トークンを測る（覆す条件: 0.9 倍以上なら入れない）。
+
+### T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 状態: 未着手（2026-10-24、T.547.2.4 のレビューの勧め。規模 小〜中）
+- 帯域の理屈では Q4_K は int8 の半分の重みを読む（0.5625 と 1.125 バイト/重み）が、いまの形は 1 スレッドが群の尺度を 3〜6 回の 1 語の読みで取り、偶数と奇数の群のスレッドが同じ 32 バイトを読む（行あたりの読みの命令は int8 の約 4 倍の見積もり）。命令律速の端末（持ち主の Valhall）では int8 より遅いかもしれない（未計測）。先に同じ GPU で 4-bit と int8 の Shisa の答えの tok/s を測り、Q4_K の 1 ステップが int8 以上なら ggml-webgpu の形（1 スレッド 16 個、尺度は 3 語をそろえて 1 回）に組み直す。
+- `tokenCodes()` は Q4_K の管を役ごとに全部作る（その役の行列が全部 Q4_K なら int8 の管は使われない）。使う鍵だけを作る（`plan.matrices` の詰め方を役ごとに数える）。SwiftShader のコンパイルの期限（1 段 180 秒）にも効く。
 
 ### T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 未着手（2026-10-16、T.271 のレビューの気づき。持ち主の端末で費用を測ってから）
 - いまはブロックごとと 4 ステップごとに状態全体（Qwen3.5 0.8B で約 20 MiB）を読み戻して写す。見積もり（未計測）でブロックの 3〜5%、ステップの 10〜15%。
