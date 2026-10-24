@@ -87,7 +87,9 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     for (; same < count && ids[same] === greedy[at + same]; same++);
     if (keep) for (let i = 0; i <= Math.min(same, count - 1); i++) positions.push(at + i);
     if (same < count && !near(logitsOf(at + same), greedy[at + same], ids[same])) {
-      failures.push(`step ${at + same} is ${ids[same]}, NumPy's ${greedy[at + same]}, and not a near tie`);
+      // (T.547.3.6: and by how much, in NumPy's log-probabilities: a margin of NumPy's own or the GPU's error)
+      const p = logSoftmax(logitsOf(at + same));
+      failures.push(`step ${at + same} is ${ids[same]}, NumPy's ${greedy[at + same]}, and not a near tie (${(p[greedy[at + same]] - p[ids[same]]).toFixed(2)} below it in log-probability)`);
     }
     return same;
   };
