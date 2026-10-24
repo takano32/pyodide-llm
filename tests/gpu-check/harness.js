@@ -579,8 +579,8 @@ try {
     let alone;
     const tokenRun = gpu.find((r) => r.steps?.forced === tokenForms[0] && r.steps?.first);
     // (T.547.3.2: not a model of stacks whose layers are each of a packing of their own: the GPU alone places none until
-    // T.547.3.6, alone.ts's gpuHoles())
-    const layered = Object.values(c.options.kinds ?? {}).some(Array.isArray);
+    // T.547.3.6, alone.ts's gpuHoles(); T.547.3.4: nor of an IQ type, whose codebooks the GPU alone does not take yet)
+    const layered = Object.values(c.options.kinds ?? {}).some((kind) => Array.isArray(kind) || (wgsl.BLOCK_PACKINGS.includes(kind) && wgsl.readsGrid(kind)));
     if (c.places && tokenRun && !c.wide && !c.force?.pieceBytes && !layered) {
       const force = { ...TESTS, matrices: forms[0], quick: true, tokens: tokenForms[0], pieceBytes: Infinity, tablePieceBytes };
       const synthetic = c.id === "synthetic";
