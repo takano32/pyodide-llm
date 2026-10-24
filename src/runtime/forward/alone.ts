@@ -55,7 +55,11 @@ export type GpuOnlyWeights = ReturnType<typeof gpuOnlyWeights>;
 // to, T.155; ternary, T.230, as the checkpoint holds it, two bits and a scale a group of 128, 0.28125). The GPU holds
 // every scale as a float32 (T.533: ternary's float16 ones are widened as they go up, gpu/weights.ts). A model whose
 // weights the GPU does not take is counted as int8's, as it always was (it does not go there: gpuFit())
-export const gpuWeightBytes = (stored: string | undefined) => weightBytes({ ...PACKED[packingOf(stored)?.gpu?.as ?? "int8"], scale: 4 });
+// (T.547.2.3: a scale a group as a float32 there, but none apart from the blocks that hold their own: Q4_K's)
+export const gpuWeightBytes = (stored: string | undefined) => {
+  const held = PACKED[packingOf(stored)?.gpu?.as ?? "int8"];
+  return weightBytes({ ...held, scale: held.scale ? 4 : 0 });
+};
 /** the weights of the layers' matrices, all of them: an attending layer's q, k, v and output (and T.271.4 the gate of
  * its output, a Qwen3.5's), a linear-attention layer's (T.271.4: q, k and v as one, z, and its output), and every
  * layer's FFN (three where it is gated, else GPT-2's two); how many layers attend; and the bytes of what a Qwen3.5's

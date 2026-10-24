@@ -8,20 +8,27 @@ import { ternaryValues } from "../shaders/prompt.ts";
 import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
 // What a packing is to the GPU:
-//   row()     the bytes of a row of n weights on the GPU: a byte a weight (int8, and int6 widened), or two bits
-//             (ternary: the codes as the checkpoint holds them, 16 weights a u32). A float32 scale goes with every
-//             GROUP (32) of those bytes either way: an int8 group of 32 weights, a ternary group of 128
-//   scales()  the float32 scales of the row on the GPU (T.547.2.2): one with every GROUP bytes of row() (a group's,
-//             whatever its packing)
+//   row()     the bytes of a row of n weights on the GPU: a byte a weight (int8, and int6 widened), two bits (ternary:
+//             the codes as the checkpoint holds them, 16 weights a u32), or (T.547.2.3) Q4_K's blocks of 256 weights in
+//             144 bytes as the checkpoint holds them (n a multiple of 256: the CPU keeps a matrix as blocks only then)
+//   scales()  the float32 scales of the row on the GPU (T.547.2.2), in a buffer of their own: one with every GROUP bytes
+//             of row() (a group's, whatever its packing: an int8 group of 32 weights, a ternary group of 128), or none
+//             where a block holds its own (Q4_K)
 //   stored()  the bytes of the row in the checkpoint (int6: 24 a group of 32)
 //   scale     the bytes of a group's scale in the checkpoint: a float32, or (T.533: ternary's) a float16, which goes up
-//             widened to a float32
+//             widened to a float32; 0: none apart from the values (Q4_K)
 //   widened   whether its values are widened to int8 as they go up (int6, T.155: WIDEN_SIX)
-//   values()  the bytes of a row as the checkpoint holds them, as its int8 values (the checks' answer)
-export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 2 | 4; widened: boolean; values(bytes: Uint8Array): Int8Array };
+//   dot       whether its shaders need WGSL's packed int8 dot (PACKED's gpu.dot: a device without it keeps the model on
+//             the CPU)
+//   values()  the bytes of a row as the checkpoint holds them, as its int8 values (the checks' answer), which a group's
+//             scale times is the row's weights (none of Q4_K, whose weights are d s q - dmin m)
+export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
+  values?(bytes: Uint8Array): Int8Array };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
+const blocks = (n: number) => (n / 256) * 144;
 export const PACKINGS: Record<GpuPacking, HeldAs> = {
-  int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, values: asBytes },
-  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, values: sixValues },
-  ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, values: ternaryValues },
+  int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, values: asBytes },
+  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, values: sixValues },
+  ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, values: ternaryValues },
+  Q4_K: { row: blocks, scales: () => 0, stored: blocks, scale: 0, widened: false, dot: true },
 };

@@ -359,7 +359,7 @@ async function block(m: Model, count: number, pos: number, wanted: () => boolean
   // T.545: the rows the convolution layers go on from (T.271.2: and the linear-attention layers' states and rows)
   stateIn(m, encoder, pos, fresh);
   const pass = encoder.beginComputePass();
-  const multiplied = (pieces: Product) => pieces.forEach((piece) => multiply(m, pass, form, piece.group, piece.rows, count));
+  const multiplied = (pieces: Product) => pieces.forEach((piece) => multiply(m, pass, form, piece.pipeline, piece.group, piece.rows, count));
   // a packed form reads its input quantized: once for the matrices that read the same one
   const quantized = (input: Quantizing) => form.packed && dispatch(pass, input.pipeline, input.group, input.x, count);
   // a bias added to a matrix's output (T.153: Qwen2's q, k and v; T.154: GPT-2's and GPT-NeoX's every matrix's)

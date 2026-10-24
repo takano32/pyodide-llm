@@ -14,6 +14,7 @@ import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
 import { PACKINGS } from "./packings.ts";
 import type { FromGpu, GpuPacking, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";
+import type { Own } from "../shaders/prompt.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
 import type { Forms } from "./forms.ts";
@@ -48,6 +49,8 @@ type Base = {
   adapter: Adapter;
   key: string;
   ternary: boolean;
+  // T.547.2.3: the shaders the model has of its own (ternary's, or Q4_K's beside int8), which its key holds
+  own: Own;
 };
 type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens: Tokens };
 // (the record as openDevice() makes it: its literal is held to this, then taken as the Model it becomes)
@@ -72,6 +75,9 @@ const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKING
 // (whether the model's weights are ternary: a ternary checkpoint's matrices are all ternary, llama2_numpy's dtype, and no
 // other model has a ternary one)
 const ternaryPlan = (plan: { matrices: Record<string, Matrix> }) => Object.values(plan.matrices).some((matrix) => matrix.packing === "ternary");
+// T.547.2.3: the shaders a model has of its own: ternary's, or (a matrix of llama.cpp's blocks among int8 ones) Q4_K's
+const ownOf = (plan: { matrices: Record<string, Matrix> }): Own => (ternaryPlan(plan) ? "ternary"
+  : Object.values(plan.matrices).some((matrix) => matrix.packing === "Q4_K") ? "Q4_K" : null);
 // T.255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
 // and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
 const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (plan.unturned?.includes(l) ? 0 : plan.turned);
@@ -143,10 +149,12 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     const info: Info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
     if (fallback && !plan.force.fallback) return say(REASONS.fallback);
-    // T.232: ternary weights are multiplied as packed int8 alone (shaders.ts's TERNARY_PACKED): said before anything goes up
-    const ternary = ternaryPlan(plan);
-    if (ternary && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
-      return say(REASONS.packed("ternary"));
+    // T.232: ternary weights are multiplied as packed int8 alone (shaders.ts's TERNARY_PACKED; T.547.2.3: and Q4_K's
+    // blocks, packings.ts's dot): said before anything goes up
+    const ternary = ternaryPlan(plan), own = ownOf(plan);
+    const dotted = Object.values(plan.matrices).find((matrix) => PACKINGS[matrix.packing].dot);
+    if (dotted && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
+      return say(REASONS.packed(dotted.packing));
     }
     // the largest buffer the device binds (T.155: a matrix larger than it goes in pieces, piecesOf)
     const limit = Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize);
@@ -161,10 +169,10 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     device.lost.then((info) => { lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
     // T.148: what the page keeps of an earlier visit counts only for the same adapter and browser
     // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T.148)
-    // (T.232: a ternary model's key holds its own shaders too)
-    const key = deviceKey(adapter, device, ternary);
+    // (T.232: a ternary model's key holds its own shaders too; T.547.2.3: and a model of Q4_K blocks its own)
+    const key = deviceKey(adapter, device, own);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, ternary } satisfies Made as unknown as Model;
+    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, ternary, own } satisfies Made as unknown as Model;
     if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
@@ -286,8 +294,9 @@ function normShape(m: Model, size: number, at: number, eps: number, first = 0) {
   return uniform(m, shape);
 }
 // (a buffer, or { buffer, offset, size }: a part of one, T.155's pieces of a matrix writing into their rows of the output)
-const bind = (m: Model, pipeline: GPUComputePipeline, buffers: Bound[]) => m.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
-  entries: buffers.map((buffer, binding) => ({ binding, resource: buffer.buffer ? buffer : { buffer } })) });
+// (a buffer's binding is its place among them; T.547.2.3: null, none there: the scales of a matrix whose blocks hold them)
+const bind = (m: Model, pipeline: GPUComputePipeline, buffers: (Bound | null)[]) => m.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
+  entries: buffers.flatMap((buffer, binding) => (buffer ? [{ binding, resource: buffer.buffer ? buffer : { buffer } }] : [])) });
 function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, group: GPUBindGroup, x: number, y = 1, z = 1) {
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, group);

@@ -282,7 +282,8 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   }
   // T.375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
-  for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU)
+  for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU,
+  GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T.547.2.3's Q4_K, as it is, by the packed int8 dot)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
   // (T.547.1's review: the GPU plan's packing names, contracts/gpu/protocol.ts's GpuPacking, are the packings with a gpu:
   // a packing given one there and not the name, or the name and no gpu, is said here and by no type)
@@ -295,9 +296,9 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   for (const [name, held] of Object.entries(PACKINGS)) {
     for (const n of [256, 1024, 6656]) {
       const as = PACKED[PACKED[name].gpu.as];
-      assert.deepEqual([held.stored(n), held.row(n), held.scales(n)], [PACKED[name].rowBytes(n), as.rowBytes(n), as.rowBytes(n) / 32], `${name}: a row of ${n} in the checkpoint and on the GPU`);
+      assert.deepEqual([held.stored(n), held.row(n), held.scales(n)], [PACKED[name].rowBytes(n), as.rowBytes(n), as.scale ? as.rowBytes(n) / 32 : 0], `${name}: a row of ${n} in the checkpoint and on the GPU`);
     }
-    assert.equal(held.scale, PACKED[name].scale, `${name}: a group's scale in the checkpoint`);
+    assert.deepEqual([held.scale, held.dot], [PACKED[name].scale, PACKED[name].gpu.dot], `${name}: a group's scale in the checkpoint, and the packed int8 dot`);
   }
   assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)

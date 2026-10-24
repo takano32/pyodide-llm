@@ -6,7 +6,7 @@
 // a bundler links them).
 import { promptForms } from "./prompt.ts";
 import { ENGINE_SHADERS, TERNARY_SHADERS } from "./engine.ts";
-import type { PromptForm } from "./prompt.ts";
+import type { Own, PromptForm } from "./prompt.ts";
 
 // (T.368.5) what the key reads of a device, or of the adapter it is made of (a GPUDevice and a GPUAdapter both have
 // them): the features that choose its shaders and the limits that size its tiles. And of the adapter alone, its info
@@ -28,30 +28,32 @@ export type Adapter = Made & { info?: Info };
 // every piece of text of the shaders gpu.ts runs reaches the hash, and that the key does not move with the source.
 // T.379.1: which texts those are, each maker's choices and their order is the catalogue's (engine.ts: the rows of every
 // model's shaders, and those of a model of ternary weights alone), which the worker takes its shaders from as well.
-/** the tiled shaders of T.146 a device can make (promptForms; T.232, ternary: those of a model of ternary weights) */
-export const devicePromptForms = (device: Made, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
+/** the tiled shaders of T.146 a device can make (promptForms; T.232, T.547.2.3, own: those of a model of ternary weights,
+ * or of Q4_K blocks besides int8) */
+export const devicePromptForms = (device: Made, own: Own = null) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
   packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
   memory: device.limits.maxComputeWorkgroupStorageSize,
-  threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), ternary });
+  threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), own });
 // T.232, ternary: the key of a model of ternary weights, the same with the text of its own shaders hashed after the
 // others': the key of every other model does not hold them (a device keeps what it remembers of those), and a
-// deployment that changes a ternary shader has the ternary models choose anew.
+// deployment that changes a ternary shader has the ternary models choose anew. T.547.2.3: own, a model's own shaders
+// (ternary's, or a model of Q4_K blocks: its tiles, each with its Q4_K text), whose key is the others' and their text
 // T.366's review: the browser's two WGSL language features that choose which of the shaders a device makes (packed int8
 // dot: the DP4A forms; subgroup_id: the flash attention and the fused matrices with subgroups) are named in the key as the
 // user agent is (a flag turned on under the same user agent chooses anew), and the texts are hashed with a mark between
 // them, so that a character moved from the end of one text to the start of the next, or one shader cut in two, moves it.
 // The device's limits are not in it: they size the tiles (none) and nothing in the text, and the worker's key (the adapter's)
 // must be gpu.ts's (the device's)
-export function deviceKey(adapter: Adapter, device: Made = adapter, ternary = false): string {
+export function deviceKey(adapter: Adapter, device: Made = adapter, own: Own = null): string {
   const info: Partial<Info> = adapter.info ?? {};
   const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;
   const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent,
     language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
-  const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code]);
+  const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code, ...(form.blocks ? [form.blocks] : [])]);
   let hash = 0x811c9dc5;
   const written = (rows: { text: () => string }[]) => rows.map((row) => row.text());
   for (const text of [...tiles(devicePromptForms(device)), ...written(ENGINE_SHADERS),
-    ...(ternary ? [...tiles(devicePromptForms(device, true)), ...written(TERNARY_SHADERS)] : [])]) {
+    ...(own === "ternary" ? [...tiles(devicePromptForms(device, "ternary")), ...written(TERNARY_SHADERS)] : own === "Q4_K" ? tiles(devicePromptForms(device, "Q4_K")) : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
     hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }

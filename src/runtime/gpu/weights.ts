@@ -5,7 +5,6 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, widenIn, widenedHalves, readBack,
   validated, pipelineOf, bind, dispatch } from "./device.ts";
-import { GROUP } from "../shaders/common.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS } from "./packings.ts";
@@ -16,7 +15,8 @@ import type { GpuPacking, Table, Tables } from "../contracts/gpu/protocol.ts";
 // its part has gone up is read with a ! by the modules that come after).
 // a piece of a matrix: its first row, its rows, and for every layer its values and scales (buffers of its own, or its
 // ranges of the layer's joined ones)
-type Piece = { first: number; rows: number; layers: [Bound, Bound][] };
+// (T.547.2.3: no scales where its blocks hold them, Q4_K's)
+type Piece = { first: number; rows: number; layers: [Bound, Bound | null][] };
 type MatrixOn = { rows: number; n: number; packing: GpuPacking; pieces: Piece[] };
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
 type Home = { joined: string; at: [number, number] };
@@ -89,7 +89,7 @@ async function upload(m: Model) {
   }
 }
 async function uploadLayers(m: Model, alone = false) {
-  const { plan } = m, group = GROUP;
+  const { plan } = m;
   let bytes = 0;
   const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, packing }]): [string, MatrixOn] =>
     [name, { rows, n, packing, pieces: piecesOf(m, rows, rowBytes({ n, packing })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
@@ -123,20 +123,20 @@ async function uploadLayers(m: Model, alone = false) {
       const home = together?.homes[name], row = rowBytes(matrix), perRow = scalesOf(matrix);
       for (const piece of m.weights.matrices[name].pieces) {
         const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
-        // its own buffers, or its range of the layer's joined ones
-        const [values, scales]: Bound[] = home
-          ? joined![home.joined].map((b, i) => ({ buffer: b, offset: home.at[i], size: i ? scaleBytes : valueBytes }))
-          : [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)];
+        // its own buffers, or its range of the layer's joined ones (T.547.2.3: no scales where its blocks hold them)
+        const [values, scales]: [Bound, Bound | null] = home
+          ? [{ buffer: joined![home.joined][0], offset: home.at[0], size: valueBytes }, { buffer: joined![home.joined][1], offset: home.at[1], size: scaleBytes }]
+          : [buffer(m, valueBytes, usage), perRow ? buffer(m, scaleBytes, usage) : null];
         const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(matrix)];
         if (alone) {
           // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened)
-          routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
-            [from[1], from[1] + (scaleBytes / 4) * heldScale(matrix), scales.buffer ?? scales, scales.offset ?? 0, heldScale(matrix) === 2]);
+          routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0]);
+          if (scales) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(matrix), scales.buffer ?? scales, scales.offset ?? 0, heldScale(matrix) === 2]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
-          if (PACKINGS[matrix.packing].widened) widen!.into(values, valuesAt + PACKINGS[matrix.packing].stored(piece.first * matrix.n), valueBytes / group);
+          if (PACKINGS[matrix.packing].widened) widen!.into(values, valuesAt + PACKINGS[matrix.packing].stored(piece.first * matrix.n), piece.rows * perRow);
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
-          scalesIn(m, matrix, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
+          if (scales) scalesIn(m, matrix, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
         }
         piece.layers.push([values, scales]);
         bytes += valueBytes + scaleBytes;
@@ -307,6 +307,9 @@ function tokensLayout(m: Model): Together | null {
     m.weights.unjoined = reason;
     return null;
   };
+  // (T.547.2.3: a token's matrices read int8 values, which llama.cpp's blocks are not: Q4_K's steps come with T.547.2.4)
+  const blocks = Object.entries(m.weights.matrices).find(([, { packing }]) => !PACKINGS[packing].values);
+  if (blocks) return why(`${blocks[0]} is of llama.cpp's blocks (${blocks[1].packing}), which a token's step does not read yet`);
   // (T.226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
   // (T.545.2: and an LFM2's matrices in and out of its convolution layers; T.271.3: a Qwen3.5's of its linear-attention
@@ -339,11 +342,11 @@ function tokensLayout(m: Model): Together | null {
 // T.210: a model on the GPU alone makes them as it opens, their bytes routes of the checkpoint as the layers' are
 // (tablesOn), and only the final norm and RoPE's table come from the shared memory here
 async function uploadTokens(m: Model, widen: Widen | null) {
-  const { plan } = m, group = GROUP, half = plan.headSize / 2;
+  const { plan } = m, half = plan.headSize / 2;
   let bytes = 0;
   m.weights.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
-    if (PACKINGS[packing].widened) widen!.into(values, valuesAt + PACKINGS[packing].stored(first * n), valueBytes / group);
+    if (PACKINGS[packing].widened) widen!.into(values, valuesAt + PACKINGS[packing].stored(first * n), piece.rows * scalesOf(spec));
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
     scalesIn(m, spec, scales, scalesAt + first * scalesOf(spec) * heldScale(spec), scaleBytes);
     bytes += valueBytes + scaleBytes;

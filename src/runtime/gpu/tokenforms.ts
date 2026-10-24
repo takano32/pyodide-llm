@@ -173,7 +173,7 @@ async function firstLayer(m: Model) {
     for (const piece of matrix.pieces) {
       const [v, s] = piece.layers[0], valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
       values.set(new Uint8Array(await readBack(m, v.buffer ?? v, valueBytes, v.offset ?? 0)), piece.first * row);
-      scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), piece.first * perRow);
+      if (s) scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), piece.first * perRow);
     }
     out[name] = [values, scales];
   }
@@ -218,7 +218,12 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   // back from the GPU (firstLayer: [values, scales]); (T.210) of a table's rows read back (tableRows)
   const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => PACKINGS[spec.packing].scales(spec.n);
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
-  const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes);
+  // (T.547.2.3: a packing with no int8 values, Q4_K's, never has a token's check: tokensLayout keeps its tokens on the CPU)
+  const valuesOf = (spec: Spec, bytes: Uint8Array) => {
+    const { values } = PACKINGS[spec.packing];
+    if (!values) throw new Error(`a token's check reads no ${spec.packing} weights`);
+    return values(bytes);
+  };
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
     // (T.533: ternary's scales are float16s there, which went up widened)

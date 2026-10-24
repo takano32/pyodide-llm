@@ -198,8 +198,9 @@ export function gpuFit({ shape, weights, device, direct }:
     // (T.545: an LFM2's steps stayed on the CPU here until T.545.2, which gave a token's fused layer its convolution layers)
     // (T.271.2: a Qwen3.5's steps stayed on the CPU here until T.271.3, which gave a token's layer its linear-attention layers)
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
+    // (T.547.2.3: and a packing of a scale a group: no EMBED reads llama.cpp's blocks, Q4_K's)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
-    if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
+    if (!wcls || !held || !PACKED[held].scale || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
       return REASONS.floatClassifier;
     }
     // T.205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where

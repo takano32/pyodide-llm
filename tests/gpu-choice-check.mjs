@@ -569,8 +569,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(deviceKey(adapter, device), key, "the worker's key is gpu.js's");
   // T.232: a model of ternary weights has a key of its own (its shaders' text after the others'), the worker's and
   // gpu.js's the same
-  assert.notEqual(deviceKey(adapter, device, true), key, "a ternary model's key is not the others'");
-  assert.equal(deviceKey(adapter, adapter, true), deviceKey(adapter, device, true), "the worker's ternary key is gpu.js's");
+  assert.notEqual(deviceKey(adapter, device, "ternary"), key, "a ternary model's key is not the others'");
+  assert.equal(deviceKey(adapter, adapter, "ternary"), deviceKey(adapter, device, "ternary"), "the worker's ternary key is gpu.js's");
   assert.notEqual(deviceKey({ ...adapter, info: { ...adapter.info, description: "Mali-G715" } }), key, "another GPU");
   assert.notEqual(deviceKey({ ...adapter, features: new Set(["subgroups"]) }), key, "other shaders");
   const alone = { key, cpu };
