@@ -11,6 +11,7 @@ import { madeUpNetwork, status, failing, hang, HANG, abortError } from "./fakes/
 import { pyProxies } from "./fakes/pyodide.mjs";
 import { tokenClock } from "./fakes/token-clock.mjs";
 import { workers, ended, endedThen, READY } from "./fakes/worker.mjs";
+import { standIn } from "./fakes/webgpu.mjs";
 
 let passed = 0;
 const ok = (name) => { passed++; console.log(`ok: ${name}`); };
@@ -316,5 +317,39 @@ ok("a Worker's face: what it is posted is written down and answered on this thre
   assert.deepEqual([finallyRan, open.returned], [1, 1], "the conduct was closed, and the failure of its closing thrown");
 }
 ok("Pyodide's proxies: each counts how it was let go and refuses to be read afterwards; a generator's face sends answers with next(), hands each request as a proxy to read one level deep, and closes with return()");
+
+// ---- WebGPU (T568.1)
+{
+  const { calls, device, adapter } = standIn({ fallback: true, language: ["subgroup_id"] });
+  assert.equal(await navigator.gpu.requestAdapter(), adapter, "navigator.gpu is the stand-in's");
+  assert.equal(adapter.info.isFallbackAdapter, true);
+  assert.deepEqual([...navigator.gpu.wgslLanguageFeatures], ["subgroup_id"]);
+  assert.equal(await adapter.requestDevice(), device);
+  const a = device.createBuffer({ size: 32, usage: 0x80 }), b = device.createBuffer({ size: 16, usage: 0x1 });
+  device.queue.writeBuffer(a, 8, new Uint32Array([1, 2, 3, 4]), 1, 2);
+  assert.deepEqual([...new Uint32Array(a.data.buffer, 8, 2)], [2, 3], "a typed array's offset and size count its elements");
+  assert.throws(() => device.queue.writeBuffer(a, 2, new Uint8Array(4)), /whole words/);
+  assert.throws(() => device.queue.writeBuffer(a, 0, new Uint8Array(6)), /whole words/);
+  assert.throws(() => device.queue.writeBuffer(a, 24, new Uint32Array(4)), /past its buffer/);
+  const encoder = device.createCommandEncoder();
+  encoder.copyBufferToBuffer(a, 8, b, 4, 8);
+  assert.deepEqual([...new Uint32Array(b.data.buffer, 4, 2)], [2, 3], "a copy moves the bytes as it is encoded");
+  encoder.clearBuffer(a, 8, 4);
+  assert.deepEqual([...new Uint32Array(a.data.buffer, 8, 2)], [0, 3], "a clear zeroes its range");
+  const pipeline = await device.createComputePipelineAsync({ compute: { module: device.createShaderModule({ code: "WGSL" }) } }), group = device.createBindGroup({ entries: [{ binding: 0, resource: { buffer: a } }] });
+  const pass = encoder.beginComputePass();
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, group);
+  pass.dispatchWorkgroups(3, 2, 1);
+  device.queue.submit([encoder.finish()]);
+  const range = b.getMappedRange();
+  new Uint8Array(range)[4] = 99;
+  assert.equal(b.data[4], 2, "a mapped range is a copy");
+  b.destroy();
+  assert.deepEqual(calls.map(([what]) => what), ["buffer", "buffer", "write", "copy", "clear", "pipeline", "dispatch", "submit", "destroy"], "every call written down, in order");
+  const dispatched = calls.find(([what]) => what === "dispatch");
+  assert.deepEqual([dispatched[1].code, dispatched[2], dispatched.slice(3)], ["WGSL", group, [3, 2, 1]], "a dispatch with its pipeline's WGSL and its bind group");
+}
+ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within its buffer, counted in a typed array's elements; a copy, a clear, a pipeline, a dispatch and a submission written down");
 
 console.log(`fakes-check: ${passed} passed`);

@@ -2,7 +2,7 @@
 // The net under a refactoring: what the working tree does, held to what another commit does (main, by default).
 // Nothing here knows how the files are divided; it asks both trees the same questions and compares the answers.
 //
-//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls choices exports layouts python page bench gpuworker sizes]
+//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls choices exports layouts python page bench gpuworker gpusteps sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
 //   --built [<a dist>]: `shaders` with the working tree's side read from a build (T367.3.1: see where the flag is read)
@@ -43,6 +43,10 @@
 //            a device that is not a fallback and has the packed dot product tells them apart, one that is neither or both does not),
 //            a condition, a number or a name changed in a moved statement is a statement that differs. The worker runs nowhere but in CI's
 //            GPU jobs; this is the one check that reads every line of it, against the commit it was divided from
+//   gpusteps (T568.1) tests/unchanged-gpusteps.mjs: what the model's GPU worker asks of a device (tests/fakes/webgpu.mjs) for five
+//            made-up models (a Llama, a Qwen3, a Gemma 3, an LFM2, a Qwen3.5): the buffers and shaders it makes, a prompt's blocks and a
+//            token's steps in every form, dispatch by dispatch. gpuworker reads the statements; this runs them, so a statement moved
+//            to another file (a kind's) that binds or dispatches as before is the same here
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
 // The other tree is tests/other-tree.mjs's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
@@ -69,7 +73,7 @@ const before = flag("--before", "origin/main");
 // its source there and is counted, not compared.
 const builtAt = args.indexOf("--built");
 const built = builtAt < 0 ? undefined : { dist: args[builtAt + 1] && fs.existsSync(path.join(args[builtAt + 1], "_astro")) ? args.splice(builtAt, 2)[1] : (args.splice(builtAt, 1), undefined) };
-const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "layouts", "python", "page", "bench", "gpuworker", "sizes"];
+const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "layouts", "python", "page", "bench", "gpuworker", "gpusteps", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
@@ -393,6 +397,12 @@ function gpuworker(other) {
   return same;
 }
 
+// (T568.1) what both trees' GPU workers ask of a stand-in device
+function gpusteps(other) {
+  const run = (tree) => JSON.parse(execFileSync("node", [path.join(root, "tests/unchanged-gpusteps.mjs"), tree], { maxBuffer: 1 << 28 }));
+  return said("the GPU worker's blocks and steps", differences(run(other), run(root)));
+}
+
 function sizes() {
   // (public and src: wherever a tree keeps the runtime and the Python, it is under one of them)
   const files = git("ls-files", "public", "src", "kernels", "tests", "*.py", "*.mjs").toString().trim().split("\n")
@@ -407,7 +417,7 @@ function sizes() {
 
 const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree(before) : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
-const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), layouts: () => layouts(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), gpuworker: () => gpuworker(folder), sizes };
+const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), layouts: () => layouts(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), gpuworker: () => gpuworker(folder), gpusteps: () => gpusteps(folder), sizes };
 let ok = true;
 for (const kind of kinds) {
   if (!checks[kind]) throw new Error(`no check "${kind}": ${Object.keys(checks).join(", ")}`);

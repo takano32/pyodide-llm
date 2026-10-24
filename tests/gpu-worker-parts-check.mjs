@@ -23,71 +23,14 @@
 //   node tests/gpu-worker-parts-check.mjs
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
+import { standIn } from "./fakes/webgpu.mjs";
 
-// ---- the stand-in: a device that writes down what it is asked (calls) and keeps the bytes of every buffer
+// ---- the stand-in (tests/fakes/webgpu.mjs): a device that writes down what it is asked (calls) and keeps the bytes of every buffer
 const posted = [];
 let closed = 0;
 globalThis.self = globalThis;
 globalThis.postMessage = (message) => posted.push(message);
 globalThis.close = () => { closed += 1; };
-function standIn({ fallback = false, language = [] } = {}) {
-  const calls = [];
-  let losing;
-  const limits = { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28, maxComputeWorkgroupsPerDimension: 65535,
-    maxComputeWorkgroupStorageSize: 16384, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256, minStorageBufferOffsetAlignment: 256 };
-  const bytesOf = (data) => (data instanceof ArrayBuffer || data instanceof SharedArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-  const device = {
-    features: new Set(), limits, lost: new Promise((resolve) => { losing = resolve; }),
-    onSubmit: null,
-    createBuffer({ size, usage }) {
-      const made = { size, usage, data: new Uint8Array(size), destroyed: false, destroy() { made.destroyed = true; calls.push(["destroy", made]); },
-        async mapAsync() {}, getMappedRange: (from = 0, length = size - from) => made.data.slice(from, from + length).buffer, unmap() {} };
-      calls.push(["buffer", made]);
-      return made;
-    },
-    queue: {
-      // (as WebGPU has it: the offset and the size of a typed array's data count its elements)
-      writeBuffer(target, offset, data, from = 0, size) {
-        const each = ArrayBuffer.isView(data) ? data.BYTES_PER_ELEMENT : 1, bytes = bytesOf(data);
-        const length = size === undefined ? bytes.length - from * each : size * each;
-        assert.ok(offset % 4 === 0 && length % 4 === 0, `a write of ${length} bytes at ${offset}: WebGPU takes whole words`);
-        assert.ok(offset + length <= target.size, "a write past its buffer");
-        target.data.set(bytes.subarray(from * each, from * each + length), offset);
-        calls.push(["write", target, offset, length]);
-      },
-      submit() { calls.push(["submit"]); device.onSubmit?.(); },
-      onSubmittedWorkDone: async () => {},
-    },
-    createShaderModule: ({ code }) => ({ code }),
-    async createComputePipelineAsync({ compute }) {
-      const pipeline = { code: compute.module.code, getBindGroupLayout: () => ({}) };
-      calls.push(["pipeline", pipeline]);
-      return pipeline;
-    },
-    createBindGroup: ({ entries }) => ({ entries }),
-    createCommandEncoder() {
-      return {
-        beginComputePass() {
-          const pass = { setPipeline(pipeline) { pass.pipeline = pipeline; }, setBindGroup(index, group) { pass.group = group; },
-            dispatchWorkgroups(x, y, z) { calls.push(["dispatch", pass.pipeline, pass.group, x, y, z]); }, end() {} };
-          return pass;
-        },
-        // (done as it is encoded: nothing here runs between the encoding and the submission)
-        copyBufferToBuffer(source, from, target, to, length) {
-          target.data.set(source.data.subarray(from, from + length), to);
-          calls.push(["copy", source, from, target, to, length]);
-        },
-        finish: () => ({}),
-      };
-    },
-    pushErrorScope() {}, popErrorScope: async () => null, destroy() { calls.push(["device gone"]); },
-  };
-  const adapter = { info: { vendor: "stand-in", architecture: "", device: "", description: "writes down what it is asked", isFallbackAdapter: fallback,
-    subgroupMinSize: 4, subgroupMaxSize: 16 }, limits, features: new Set(), requestDevice: async () => device };
-  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { userAgent: "gpu-worker-parts-check",
-    gpu: { requestAdapter: async () => adapter, wgslLanguageFeatures: new Set(language) } } });
-  return { calls, device, adapter, lose: (info) => losing(info) };
-}
 
 // ---- a made-up model in a memory of its own: no two of its matrices the same size where one could stand for another
 const DIM = 32, HIDDEN = 64, HEADS = 2, KV_HEADS = 1, HEAD = 16, LAYERS = 2, BATCH = 8, CONTEXT = 64, GROUP = 32;
