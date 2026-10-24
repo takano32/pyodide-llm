@@ -1,6 +1,6 @@
 // tests/fakes/webgpu.mjs (T568.1)
 // A stand-in for WebGPU as the model's GPU worker (src/runtime/gpu/) sees it: an adapter, and a device that writes
-// down what it is asked (calls: every buffer made, write, clear, copy, pipeline compiled, dispatch, submission, destroy, the
+// down what it is asked (calls: every buffer made, write (with a copy of its bytes), clear, copy, pipeline compiled, dispatch, submission, destroy, the
 // device gone) and keeps the bytes of every buffer. For the checks that run that worker's parts without a GPU:
 // gpu-worker-parts-check.mjs, unchanged-gpusteps.mjs.
 //
@@ -39,7 +39,7 @@ export function standIn({ fallback = false, language = [] } = {}) {
         assert.ok(offset % 4 === 0 && length % 4 === 0, `a write of ${length} bytes at ${offset}: WebGPU takes whole words`);
         assert.ok(offset + length <= target.size, "a write past its buffer");
         target.data.set(bytes.subarray(from * each, from * each + length), offset);
-        calls.push(["write", target, offset, length]);
+        calls.push(["write", target, offset, length, bytes.slice(from * each, from * each + length)]);
       },
       submit() { calls.push(["submit"]); device.onSubmit?.(); },
       onSubmittedWorkDone: async () => {},

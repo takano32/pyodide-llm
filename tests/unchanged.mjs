@@ -43,9 +43,9 @@
 //            a device that is not a fallback and has the packed dot product tells them apart, one that is neither or both does not),
 //            a condition, a number or a name changed in a moved statement is a statement that differs. The worker runs nowhere but in CI's
 //            GPU jobs; this is the one check that reads every line of it, against the commit it was divided from
-//   gpusteps (T568.1) tests/unchanged-gpusteps.mjs: what the model's GPU worker asks of a device (tests/fakes/webgpu.mjs) for five
-//            made-up models (a Llama, a Qwen3, a Gemma 3, an LFM2, a Qwen3.5): the buffers and shaders it makes, a prompt's blocks and a
-//            token's steps in every form, dispatch by dispatch. gpuworker reads the statements; this runs them, so a statement moved
+//   gpusteps (T568.1) tests/unchanged-gpusteps.mjs: what the model's GPU worker asks of a device (tests/fakes/webgpu.mjs) for seven
+//            made-up models (a Llama, a Qwen3, a Gemma 3, an LFM2, a Qwen3.5, a GPT-2, a GPT-NeoX; two on the GPU alone too): the buffers
+//            and shaders it makes, a prompt's blocks, a step's keys and values going up, and a token's steps in every form, dispatch by dispatch. gpuworker reads the statements; this runs them, so a statement moved
 //            to another file (a kind's) that binds or dispatches as before is the same here
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //

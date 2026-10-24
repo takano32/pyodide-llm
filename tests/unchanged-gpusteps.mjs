@@ -1,7 +1,7 @@
 // unchanged-gpusteps.mjs (T568.1)
 // What the model's GPU worker (src/runtime/gpu/) asks of a device for a few made-up models, as one JSON object of
 // hashes: every buffer it makes (their sizes and usages, counted), the shaders it compiles (counted), a prompt's blocks
-// (the writes, the clears, the copies and the dispatches of two blocks, the second going on from the state the CPU
+// (the writes with their bytes, the clears, the copies and the dispatches of three blocks, the second going on from the state the CPU
 // staged), and a token's steps in every form a device with subgroups and the packed dot may take (the dispatches of a
 // run, of the first layer's check and of the head's, and what a run copies back). Each dispatch is its shader, the
 // buffers it binds and the workgroups; a buffer is named by where it first comes in what is written down (the order
@@ -14,7 +14,9 @@
 //
 // The models: a Llama; a Qwen3 (biases of q, k and v, norms of the heads); a Gemma 3 (GEGLU, the norms behind, a
 // window and a local layer); an LFM2 (convolution layers around an attending one); a Qwen3.5 (two linear-attention
-// layers and an attending one with the gate of its output). Each with a packed tiled form and a float one.
+// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate). Each
+// with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T156, T271.4). A step's keys and
+// values going up from the CPU's cache (keysIn) besides, float16 and float32, a ring where a layer has a window.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +29,7 @@ globalThis.self = globalThis;
 globalThis.postMessage = () => {};
 const at = (name) => treeOf(root).runtimeUrl(name);
 const device_ = await import(at("gpu/device.js"));
-const { upload } = await import(at("gpu/weights.js"));
+const { upload, uploadLayers, uploadRest, tablesOn, routed } = await import(at("gpu/weights.js"));
 const block_ = await import(at("gpu/block.js"));
 const tokens_ = await import(at("gpu/tokens.js"));
 
@@ -38,7 +40,7 @@ const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 
 /** A plan as forward/gpuside.ts hands one (a Started), over a memory it lays out: kinds, every layer's kind; more, the
  * model's own; matrices and vectors, [rows, n, of] and [size, of] by name. */
-function planned({ kinds, matrices, vectors, more = {} }) {
+function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }, direct = false) {
   let next = 4096;
   const take = (bytes) => { const here = next; next += Math.ceil(bytes / 256) * 256; return here; };
   const count = (of) => (of ? kinds.filter((kind) => kind === of).length : kinds.length);
@@ -56,11 +58,21 @@ function planned({ kinds, matrices, vectors, more = {} }) {
     staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, ...more,
   };
   if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (HEAD / 2) * 4), localSin: take(CONTEXT * (HEAD / 2) * 4) });
-  return { plan, bytes: next };
+  if (positions) plan.tokens.positions = take(CONTEXT * DIM * 4);
+  if (plan.layerNorm) plan.tokens.finalBias = take(DIM * 4);
+  // (T210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
+  if (direct) Object.assign(plan, { direct: true, tables: { classifier: plan.tokens.classifier, embedding: null } });
+  // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer)
+  const cache = kinds.filter((kind) => kind === "attention").map(() => [take(CONTEXT * KV_DIM * 4), take(CONTEXT * KV_DIM * 4)]);
+  return { plan, bytes: next, cache };
 }
 const ffn = { w1: [HIDDEN, DIM], w3: [HIDDEN, DIM], w2: [DIM, HIDDEN] };
 const attending = (of) => ({ wq: [Q_DIM, DIM, of], wk: [KV_DIM, DIM, of], wv: [KV_DIM, DIM, of], wo: [DIM, Q_DIM, of] });
 const norms = { attention: [DIM], ffn: [DIM] };
+// (GPT-2's: LayerNorms with their biases, biases of every matrix, no gate, learned positions, nothing turned; GPT-NeoX's:
+// a part of a head turned and the parallel residual)
+const gpt2 = { matrices: { ...attending(), w1: [HIDDEN, DIM], w2: [DIM, HIDDEN] },
+  vectors: { ...norms, attentionBias: [DIM], ffnBias: [DIM], bq: [Q_DIM], bk: [KV_DIM], bv: [KV_DIM], bo: [DIM], b1: [HIDDEN], b2: [DIM] } };
 const MODELS = {
   llama: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: norms },
   qwen3: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn },
@@ -74,7 +86,11 @@ const MODELS = {
     vectors: { ...norms, conv: [LINEAR.taps * MIXED, "linear"], wb: [LINEAR.valueHeads * DIM, "linear"], wa: [LINEAR.valueHeads * DIM, "linear"],
       dtBias: [LINEAR.valueHeads, "linear"], decay: [LINEAR.valueHeads, "linear"], deltaNorm: [LINEAR.valueDim, "linear"], qNorm: [HEAD, "attention"], kNorm: [HEAD, "attention"] },
     more: { linear: LINEAR } },
+  gpt2: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: 0, activation: "gelu", positions: true } },
+  neox: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: HEAD / 2, parallel: true, activation: "gelu" } },
 };
+// (T156, T271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
+const ALONE = ["llama", "qwen35"];
 
 const hash = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const random = (bytes) => Uint8Array.from({ length: bytes }, (_, i) => (i * 131 + 7 * (i >> 8) + 89) & 255);
@@ -84,19 +100,33 @@ const record = (name, lines) => {
   trace.push(`== ${name}`, ...lines);
 };
 
-for (const [model, made] of Object.entries(MODELS)) {
-  for (const packed of [true, false]) {
-    const name = `${model}${packed ? "" : " (floats)"}`;
+const runs = Object.entries(MODELS).flatMap(([model, made]) => [[model, made, true, false], [model, made, false, false],
+  ...(ALONE.includes(model) ? [[model, made, true, true]] : [])]);
+for (const [model, made, packed, direct] of runs) {
+  {
+    const name = `${model}${packed ? "" : " (floats)"}${direct ? " (on the GPU alone)" : ""}`;
     const { calls, device } = standIn({ language: ["packed_4x8_integer_dot_product", "subgroup_id"] });
     device.features.add("subgroups");
-    const { plan, bytes } = planned(made);
-    // (a memory of random bytes whose floats are small and finite: the scales and vectors are never read as NaN here, but
-    // the record is of the bytes all the same)
+    const { plan, bytes, cache } = planned(made, direct);
+    // (the memory's bytes, which nothing here computes with: the record is of what goes where)
     const memory = { buffer: new SharedArrayBuffer(bytes) };
     new Uint8Array(memory.buffer).set(random(bytes));
-    const m = await device_.openDevice(plan);
-    device_.handed(memory, plan);
-    await upload(m);
+    let m;
+    if (direct) {
+      // (start.ts's open() and start(): the layers' buffers and the tables' made first, the checkpoint routed into them,
+      // then the rest from the shared memory)
+      m = await device_.openDevice({ layers: plan.layers, matrices: plan.matrices, tables: plan.tables, force: {}, remembered: undefined, kinds: plan.kinds,
+        places: plan.places, tokens: true });
+      await uploadLayers(m, true);
+      tablesOn(m);
+      routed(m, 0, new Uint8Array(memory.buffer));
+      device_.handed(memory, plan);
+      await uploadRest(m);
+    } else {
+      m = await device_.openDevice(plan);
+      device_.handed(memory, plan);
+      await upload(m);
+    }
     // (the forms forms.ts would choose on a device that computes: stand-ins of the tiles and the prompt's attention)
     const attention = { name: "a stand-in attention", pipeline: { code: "the prompt's attention", getBindGroupLayout: () => ({}) } };
     const form = { name: "a stand-in form", pipeline: { code: "the tiles", getBindGroupLayout: () => ({}) }, packed, tile: { rows: 4, tokens: 4 } };
@@ -113,7 +143,7 @@ for (const [model, made] of Object.entries(MODELS)) {
     const said = (call) => {
       const [what, ...rest] = call;
       if (what === "dispatch") return `dispatch ${hash(rest[0].code)} [${group(rest[1])}] ${rest.slice(2).join(",")}`;
-      if (what === "write") return `write ${named(rest[0])} ${rest[1]} ${rest[2]}`;
+      if (what === "write") return `write ${named(rest[0])} ${rest[1]} ${rest[2]} ${hash(Buffer.from(rest[3]).toString("hex"))}`;
       if (what === "clear") return `clear ${named(rest[0])} ${rest[1]} ${rest[2]}`;
       if (what === "copy") return `copy ${named(rest[0])} ${rest[1]} ${named(rest[2])} ${rest[3]} ${rest[4]}`;
       return what;
@@ -124,14 +154,25 @@ for (const [model, made] of Object.entries(MODELS)) {
     block_.bindLayers(m);
     block_.grow(m, 16);
     let from = calls.length;
-    await block_.block(m, 5, 0, () => true);
+    const tokens = (count) => Array.from({ length: count }, (_, t) => (t * 37 + 5) % VOCAB);
+    await block_.block(m, 5, 0, () => true, false, tokens(5));
     record(`${name}: a block of 5 at 0`, since(from));
     from = calls.length;
-    await block_.block(m, 3, 5, () => true);
+    await block_.block(m, 3, 5, () => true, false, tokens(3));
     record(`${name}: a block of 3 at 5, from the CPU's state`, since(from));
     from = calls.length;
-    await block_.block(m, 2, 8, () => true, false, undefined, true);
+    await block_.block(m, 2, 8, () => true, false, tokens(2), true);
     record(`${name}: a block of 2 at 8, from the GPU's own state`, since(from));
+    // a step's keys and values up from the CPU's cache (requests.ts's generate()): float16 rows as they are, and float32 ones
+    // narrowed; a ring (T510.1) for the windowed layers, the others' whole
+    if (!direct) {
+      for (const half of [true, false]) {
+        const places = cache.map(([keys, values], p) => ({ keys, values, ring: plan.windows[plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : []))[p]] ? 6 : 0 }));
+        from = calls.length;
+        block_.keysIn(m, { places, row: KV_DIM * (half ? 2 : 4), half }, 3, 13);
+        record(`${name}: the keys and values of 3 to 12 up, ${half ? "float16" : "float32"}`, since(from));
+      }
+    }
     if (packed) {
       m.tokens = { ...(await tokens_.tokenBuffers(m)), attention: { name: "the prompt's attention tiles", tiles: true, pipeline: attention.pipeline }, attentions: [],
         parts: undefined, params: undefined, form: null, ms: undefined, forms: null };
@@ -145,8 +186,8 @@ for (const [model, made] of Object.entries(MODELS)) {
       const [first] = tokens_.tokenCandidates(m), token = { ...first, pipes: {} };
       for (const [key, code] of tokens_.tokenCodes(token, tokens_.tokenShape(m))) token.pipes[key] = await device_.pipelineOf(m, code);
       from = calls.length;
-      await tokens_.runTokens(m, tokens_.tokenStep(m, token, 12), { count: 2, pos: 10, state: new Uint32Array(64), keep: true });
-      record(`${name}: a run of 2 steps at 10, kept`, since(from));
+      await tokens_.runTokens(m, tokens_.tokenStep(m, token, 12), { count: 2, pos: 10, state: new Uint32Array(64), keep: !direct });
+      record(`${name}: a run of 2 steps at 10${direct ? "" : ", kept"}`, since(from));
     }
     const counted = (list) => [...list.reduce((map, key) => map.set(key, (map.get(key) ?? 0) + 1), new Map())].map(([key, n]) => `${key} ×${n}`).sort();
     record(`${name}: the buffers made`, counted(calls.filter(([what]) => what === "buffer").map(([, b]) => `${b.size}:${b.usage}`)));
