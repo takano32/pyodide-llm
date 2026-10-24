@@ -201,6 +201,29 @@ const up = await upload(m);
   // (T.547.3.2: q, k and v apart, k after q's 32 rows: 128 bytes, where this device binds at 256)
   assert.equal(layered.weights.unjoined, "k would not start where this GPU binds a buffer, after q", "such a stack's q and k are apart, k after q");
 }
+// (T.547.3.2's review: and where they start where the device binds: q, k and v apart, k after q's rows and v after
+// both, and gate and up apart, each its own buffer and none of them joined)
+{
+  standIn({ language: ["packed_4x8_integer_dot_product"] });
+  const n = 256, sizes = { ...SIZES, wq: [64, DIM], wk: [64, DIM], wv: [64, DIM] };
+  const { plan: base, bytes } = planned({ heads: 4, kvHeads: 4, tokens: { classifier: { rows: 96, n: DIM, packing: "int8", at: [0, 0] } } }, sizes);
+  const room = { buffer: new SharedArrayBuffer(bytes + 4 * 64 * 1024) };
+  let at = Math.ceil(bytes / 256) * 256;
+  const stack = (rows, packings) => ({ rows, n, packing: "layers", packings, layers: packings.map((packing) => {
+    const here = [at, packing === "Q4_K" ? 0 : at + rows * n];
+    at += rows * n + rows * (n / GROUP) * 4;
+    return here;
+  }) });
+  const wq = stack(64, ["Q4_K", "int8"]), w1 = stack(HIDDEN, ["int8", "Q4_K"]);
+  const apart = await openDevice({ ...base, dim: n, matrices: { ...base.matrices, wq, w1 } });
+  handed(room, apart.plan);
+  await uploadLayers(apart);
+  const { together, unjoined, joined } = apart.weights;
+  assert.equal(unjoined, null, "nothing keeps the steps off");
+  assert.deepEqual([together.kAt, together.vAt, together.up], [256, 512, true], "k after q's 64 rows, v after both, gate and up apart");
+  assert.deepEqual(together.homes, {}, "and none of them joined");
+  assert.ok(joined.every((layer) => Object.keys(layer).length === 0), "no joined buffers");
+}
 // (the review: such a stack past a buffer, in pieces of the rows its widest layer's fit: each layer's piece from its own
 // rows, as its packing holds them)
 {
