@@ -117,6 +117,8 @@ const IQ2_LAYERS = { wq: ["IQ2_XXS", "Q4_K", "IQ2_S"], wk: ["IQ2_XS", "IQ2_XXS",
 const IQ_REST_KINDS = { wq: "IQ3_XXS", wk: "IQ3_XXS", wv: "IQ3_XXS", wo: "IQ3_S", w1: "IQ4_XS", w2: "IQ1_S", w3: "IQ4_XS" };
 const SALUKI_LAYERS = { wq: ["IQ1_M", "IQ3_S", "Q2_K"], wk: ["IQ4_XS", "IQ1_S", "IQ3_XXS"], wv: ["IQ3_S", "Q4_K", "IQ2_S"], wo: ["IQ1_S", "IQ2_XS", "IQ1_M"],
   w1: ["IQ3_XXS", "IQ2_XXS", "IQ4_XS"], w2: ["IQ2_XXS", "IQ1_M", "IQ3_S"], w3: ["IQ2_S", "int8", "IQ1_S"] };
+// (T.547.3.6: and Saluki's tables, the embedding IQ1_M and the classifier apart IQ3_S, which a token's step reads)
+const SALUKI_TABLES = { ...SALUKI_LAYERS, token_embedding_table: "IQ1_M", wcls: "IQ3_S" };
 // (the review: and an LFM2's, whose stacks of a kind's layers are by their places among that kind's: two attending
 // layers' q and k, four convolution layers' matrices in and out)
 const LFM2_Q4K_LAYERS = { wq: ["int8", "Q4_K"], wk: ["Q4_K", "int8"], win: ["Q4_K", "int8", "int8", "Q4_K"], wout: ["int8", "Q4_K", "Q4_K", "int8"],
@@ -215,6 +217,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-iq2-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ2_LAYERS, valued: true }, { kinds: IQ2_LAYERS }],
   "synthetic-iq-rest": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: IQ_REST_KINDS, valued: true }, { kinds: IQ_REST_KINDS }],
   "synthetic-saluki-layers": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: SALUKI_LAYERS, valued: true }, { kinds: SALUKI_LAYERS }],
+  "synthetic-saluki-tables": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: SALUKI_TABLES, valued: true }, { kinds: SALUKI_TABLES }],
   "synthetic-q4k-qk-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_QK_APART, valued: true }, { kinds: Q4K_QK_APART }],
   "synthetic-q4k-up-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_UP_APART, valued: true }, { kinds: Q4K_UP_APART }],
   "synthetic-lfm2-q4k-layers": [{ dim: 256, hidden: 768, layers: 6, heads: 4, kv_heads: 2, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_LAYERS, valued: true },

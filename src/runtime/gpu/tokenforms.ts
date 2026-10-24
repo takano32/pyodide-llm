@@ -1,15 +1,17 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T.152), timed and chosen.
 // (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
-import { COPY_DST, MAP_READ, rowBytes, stopping, within, isLate, buffer, readBack, validated, pipelineOf, widenedHalves } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, widenedHalves, bind, dispatch } from "./device.ts";
 import { tablesOf } from "./weights.ts";
-import { PACKINGS, packingAt } from "./packings.ts";
+import { PACKINGS, packingAt, blocksOf } from "./packings.ts";
 import { halfToFloat } from "./forms.ts";
 import { roomFor, BLOCK_ROUNDS } from "./block.ts";
 import { chooseTokenAttention } from "./tokenattention.ts";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
 import { GROUP } from "../shaders/common.ts";
-import { quantizedLikeCpu, CODEBOOK_BYTES } from "../shaders/prompt.ts";
+import { quantizedLikeCpu, CODEBOOK_BYTES, BLOCK_READS, BLOCK_WEIGHTS } from "../shaders/prompt.ts";
+import { ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
+import { ENGINE } from "../shaders/engine.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
@@ -62,6 +64,10 @@ async function choose(m: Model) {
   // first layer stayed in this worker for the whole visit, 113 MB of Llama 3.2 3B, 245 MB of Llama 3.1 Swallow 8B)
   const back: Back = plan.direct ? { firstLayer: await within(firstLayer(m), "reading the first layer back"),
     tableRows: await within(tableRows(m), "reading the tables' rows back") } : {};
+  // (T.547.3.6, T.547.3.3's review: each type of llama.cpp's blocks of a token's matrices first, on random blocks: the
+  // first layer's check below reads the types of the first layer alone)
+  const blocksWrong = await within(checkTokenBlocks(m), "checking a token's matrices of llama.cpp's blocks");
+  if (blocksWrong) throw new Error(`no layer of a token is right on this GPU (${blocksWrong})`);
   let forms = tokenCandidates(m);
   if (plan.force.tokens) forms = forms.filter((form) => form.name === plan.force.tokens);
   const kept = !plan.force.tokens && forms.find((form) => form.name === m.remembered?.tokens);
@@ -208,7 +214,7 @@ async function tableRows(m: Model) {
       rows.forEach((r, j) => {
         const piece = pieces.find((p) => r >= p.first && r < p.first + p.rows)!;
         encoder.copyBufferToBuffer(piece.values, (r - piece.first) * n, target, j * n, n);
-        encoder.copyBufferToBuffer(piece.scales, (r - piece.first) * perRow, target, rows.length * n + j * perRow, perRow);
+        if (perRow) encoder.copyBufferToBuffer(piece.scales!, (r - piece.first) * perRow, target, rows.length * n + j * perRow, perRow);
       });
       m.device.queue.submit([encoder.finish()]);
       await target.mapAsync(MAP_READ);
@@ -220,6 +226,60 @@ async function tableRows(m: Model) {
   };
   return { embedding: await read(m.weights.tables!.embedding, specs.embedding, checkCandidates(vocab)),
     classifier: await read(m.weights.tables!.classifier, specs.classifier, checkRows(vocab)) };
+}
+// T.547.3.6 (T.547.3.3's review): a token's matrix of each type of llama.cpp's blocks the model has (its matrices' and its
+// classifier's), the type's "write" text (fusedDp4aMatVec: every output's reads the weights alike) against JavaScript's
+// on random blocks (each block's float16 scales drawn small, BLOCK_WEIGHTS' scale, an IQ type's of the model's
+// codebooks): 37 rows (a part of a workgroup's rows) of 768 weights (three blocks: every group of a block), a quantized
+// vector given as the CPU quantizes it (quantizedLikeCpu). Why one is wrong, or null; the first layer's check (checkTokens)
+// holds the rest of a layer
+async function checkTokenBlocks(m: Model) {
+  const types = m.plan.tokens ? blocksOf({ ...m.plan.matrices, classifier: m.plan.tokens.classifier }) : [];
+  const codebooks = m.plan.codebooks && m.memory ? new Uint8Array(new Uint8Array(m.memory.buffer, m.plan.codebooks, CODEBOOK_BYTES)) : null;
+  const rows = 37, n = 768, owned: GPUBuffer[] = [];
+  const make = (data: Uint8Array | Int8Array | Float32Array) => {
+    const made = buffer(m, Math.ceil(data.byteLength / 4) * 4, STORAGE | COPY_DST | COPY_SRC, owned);
+    m.device.queue.writeBuffer(made, 0, data.buffer, data.byteOffset, Math.floor(data.byteLength / 4) * 4);
+    const rest = data.byteLength % 4;
+    if (rest) m.device.queue.writeBuffer(made, data.byteLength - rest, Uint8Array.from([...new Uint8Array(data.buffer, data.byteOffset + data.byteLength - rest, rest), 0, 0, 0].slice(0, 4)));
+    return made;
+  };
+  try {
+    for (const type of types) {
+      const { bytes } = BLOCK_READS[type], { scale, weights } = BLOCK_WEIGHTS[type];
+      const blocks = new Uint8Array((rows * n) / 256 * bytes).map(() => (Math.random() * 256) | 0);
+      for (let at = 0; at < blocks.length; at += bytes) scale(blocks, at, ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0));
+      const w = weights(blocks, codebooks ?? undefined), x = Float32Array.from({ length: n }, () => Math.random() * 2 - 1), { xq, xs } = quantizedLikeCpu(x);
+      const pipeline = await validated(m, () => pipelineOf(m, ENGINE.fusedDp4aMatVec({ output: "write", weights: type })));
+      const params = new ArrayBuffer(48);
+      new Uint32Array(params).set([rows, n / 4, n / GROUP, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      const y = buffer(m, rows * 4, STORAGE | COPY_SRC, owned);
+      const group = await validated(m, () => bind(m, pipeline, [make(blocks), PACKINGS[type].grid ? make(codebooks!) : null, make(xq), uniform(m, params, owned), make(xs), y]));
+      const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
+      dispatch(pass, pipeline, group, Math.ceil(rows / ORT_DP4A_MATVEC_ROWS), 1);
+      pass.end();
+      m.device.queue.submit([encoder.finish()]);
+      const got = new Float32Array(await readBack(m, y, rows * 4));
+      let worst = 0, largest = 0;
+      for (let r = 0; r < rows; r++) {
+        let want = 0;
+        for (let g = 0; g < n / GROUP; g++) {
+          let part = 0;
+          for (let i = g * GROUP; i < (g + 1) * GROUP; i++) part += w[r * n + i] * xq[i];
+          want += part * xs[g];
+        }
+        largest = Math.max(largest, Math.abs(want));
+        // (NaN is no number within the line: counted as past it)
+        const off = Math.abs(got[r] - want);
+        worst = Math.max(worst, off <= Infinity ? off : Infinity);
+      }
+      if (!(worst <= 1e-3 * largest)) return `the ${type} text of a token's matrix is ${(worst / largest).toExponential(2)} of the largest value from JavaScript's (line 1e-3)`;
+      if (stopping) return null;
+    }
+    return null;
+  } finally {
+    owned.forEach((b) => b.destroy());
+  }
 }
 async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   const { plan, tokens: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;

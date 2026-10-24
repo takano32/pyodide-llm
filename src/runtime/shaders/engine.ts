@@ -22,7 +22,7 @@ import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU,
   DELTA_CONV_STATE, DELTA_NET, OUTPUT_GATE } from "./steps.ts";
 import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
 import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, FUSED_INPUTS, FUSED_OUTPUTS } from "./fused.ts";
-import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.ts";
+import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS, embedBlocks } from "./run.ts";
 import { SAMPLE } from "./sample.ts";
 import { ROTATE_QUANTIZE, UNROTATE } from "./rotate.ts";
 import { BLOCK_PACKINGS } from "./common.ts";
@@ -59,7 +59,9 @@ export const TERNARY_SHADERS = [
   ...texts({ ROTATE_QUANTIZE, UNROTATE })];
 /** T.547.2.4: and those of a model of int8 matrices and llama.cpp's blocks alone, after every model's (its tiles:
  * devicePromptForms' blocks, each with a text a type), T.547.3.3: a type after another, in BLOCK_PACKINGS' order */
-export const BLOCK_SHADERS = BLOCK_PACKINGS.flatMap((weights) => FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights })));
+export const BLOCK_SHADERS = [...BLOCK_PACKINGS.flatMap((weights) => FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights }))),
+  // T.547.3.6: the embedding's row of a table of each type
+  ...BLOCK_PACKINGS.map((weights) => made({ embedBlocks }, { weights }))];
 /** the shaders by name, for the worker: a text, or a maker to call with a model's own numbers */
 export const ENGINE = Object.fromEntries([...ENGINE_SHADERS, ...TERNARY_SHADERS, ...BLOCK_SHADERS].map(({ name, shader }) => [name, shader])) as
   Named<(typeof ENGINE_SHADERS)[number] | (typeof TERNARY_SHADERS)[number] | (typeof BLOCK_SHADERS)[number]>;
