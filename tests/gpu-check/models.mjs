@@ -92,7 +92,7 @@ const ROTATED_UNTIED = rotatedBasis(128, [256, 1152]);
 const ROTATED_1024 = rotatedBasis(1024, [1024, 2048]);
 const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
 // (T.547.2.3: the matrices kept as Q4_K blocks; the others are int8)
-const Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w3: "Q4_K" };
+const Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K", w3: "Q4_K" };
 // (a place's state: value heads × key dim × value dim floats)
 const QWEN35_STATE = 6 * 32 * 64 * 4;
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
@@ -162,9 +162,10 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // of 384), the gates' small matrices the stream as it is (T.271.1)
   "synthetic-qwen35-ternary-rotated": [{ ...TERNARY, layers: 4, qk_norm: false, arch: "qwen35", linear: QWEN35_LINEAR, rotated: ROTATED },
     { dtype: "ternary", arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR, rotated: ROTATED }],
-  // T.547.2.3: a model of int8 matrices and Q4_K blocks, as a 4-bit Q4_K_M is kept (the 4-bit Shisa: q, k and the
-  // FFN's gate and up Q4_K, v and down int8, widened from Q6_K): every row whole blocks of 256 (dim 256, hidden 512),
-  // three blocks to a row of o and down's input, so that a row's blocks and every group of a block are read. A
+  // T.547.2.3: a model of int8 matrices and Q4_K blocks, as a 4-bit Q4_K_M is kept (the 4-bit Shisa: q, k, o and the
+  // FFN's gate and up Q4_K, v int8, widened from Q6_K): every row whole blocks of 256 (dim 256, hidden 768), and down
+  // Q4_K too (the review: three blocks to its rows, so that a row's blocks after the first and every group of a block
+  // are read in the layers as well as in the forms' check). A
   // prompt's matrices go to the GPU by the DP4A tiles, the Q4_K ones by their Q4_K text; its steps stay on the CPU.
   // The blocks are values of 0.3 N quantized (made_up.valued_blocks(): random bytes are weights of one sign mostly)
   "synthetic-q4k": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_KINDS, valued: true }, { kinds: Q4K_KINDS }],
