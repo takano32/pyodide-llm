@@ -148,13 +148,13 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // rows keep the block before's for the tokens the block has none of
   "synthetic-qwen35-short": [{ layers: 4, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR },
     { count: 131 }],
-  // T.565: the same of six layers (three linear ones) with the states in bundles of two places at the most (as the 27B's
-  // 48 places go in bundles past what a phone's GPU binds): the third place is the second bundle's first, at 0 of it; a
-  // GPU that reads a place's state from the wrong bundle or at the wrong place in it is off from the fifth layer's on.
-  // Calm (see above): six layers of synthetic-qwen35's values leave the f16 tiles another most likely token than NumPy's
-  // with the states in one buffer or in bundles alike, the numbers the same (run 40071238751)
-  "synthetic-qwen35-bundles": [{ layers: 6, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR, calm: true }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR },
-    { force: { stateBytes: 2 * QWEN35_STATE } }],
+  // T.565: the same with the states in bundles of one place each (as the 27B's 48 places go in bundles past what a
+  // phone's GPU binds): the second linear layer's state is the second bundle's, at 0 of it (a place past the first of a
+  // bundle is the one-bundle way's, every other model's); a GPU that reads a place's state from the wrong bundle is off
+  // from the third layer's on. (Six layers of these values leave the f16 tiles past their line with the states in one
+  // buffer or in bundles alike, the numbers the same: run 40071238751; six calm ones too: run 40071452165)
+  "synthetic-qwen35-bundles": [{ layers: 4, arch: "qwen35", head_dim: 32, linear: QWEN35_LINEAR }, { arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR },
+    { force: { stateBytes: QWEN35_STATE } }],
   // T.271.5: Ternary Bonsai 2 27B's form (T.233), small: a Qwen3.5 of ternary weights in a rotated basis, three value
   // heads to a key head. Its linear layers' matrices read R of their input (wqkv and wz of the stream, wout of z's gate
   // of 384), the gates' small matrices the stream as it is (T.271.1)
