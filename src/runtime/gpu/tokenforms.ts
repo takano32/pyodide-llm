@@ -232,7 +232,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are (T.547.2.4: Q4_K's
   // blocks as their weights, whose one scale is 1: ONE)
   // (T.547.3.4: an IQ type's of the model's codebooks)
-  const codebooks = m.plan.codebooks ? new Uint8Array(m.memory.buffer, m.plan.codebooks, CODEBOOK_BYTES).slice() : undefined;
+  const codebooks = m.plan.codebooks && m.memory ? new Uint8Array(m.memory.buffer, m.plan.codebooks, CODEBOOK_BYTES).slice() : undefined;
   const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes, codebooks), ONE = Float32Array.of(1);
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),

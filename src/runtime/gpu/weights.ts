@@ -125,6 +125,8 @@ async function uploadLayers(m: Model, alone = false) {
   const grids = Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some((packing) => PACKINGS[packing].grid))
     ? buffer(m, CODEBOOK_BYTES, STORAGE | COPY_DST) : null;
   if (grids) {
+    // (T.547.3.4's review: a model of an IQ type without them is no model the CPU made)
+    if (!plan.codebooks) throw new Error("The model has matrices of llama.cpp's IQ types, and its plan no codebooks.");
     copyIn(m, grids, plan.codebooks, CODEBOOK_BYTES);
     bytes += CODEBOOK_BYTES;
   }
