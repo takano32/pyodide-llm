@@ -38,6 +38,7 @@ const Q_DIM = HEADS * HEAD, KV_DIM = KV_HEADS * HEAD, KV_ROW = KV_DIM * 2;
 const LINEAR = { keyHeads: 1, valueHeads: 2, keyDim: 16, valueDim: 16, taps: 4 }, KEYS = LINEAR.keyHeads * LINEAR.keyDim, READ = LINEAR.valueHeads * LINEAR.valueDim;
 const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 
+// (T.547.1: a matrix's and a table's packing by name; six and ternary besides, which the trees before it read)
 /** A plan as forward/gpuside.ts hands one (a Started), over a memory it lays out: kinds, every layer's kind; more, the
  * model's own; matrices and vectors, [rows, n, of] and [size, of] by name. */
 function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }, direct = false) {
@@ -50,10 +51,10 @@ function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }
     eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: kinds.map(() => 0), local: [], localCos: 0, localSin: 0, kinds, places,
     convolution: null, linear: null, batch: BATCH,
     matrices: Object.fromEntries(Object.entries(matrices).map(([name, [rows, n, of]]) =>
-      [name, { rows, n, six: false, ternary: false, layers: Array.from({ length: count(of) }, () => [take(rows * n), take((rows * n / GROUP) * 4)]), ...(of ? { of } : {}) }])),
+      [name, { rows, n, packing: "int8", six: false, ternary: false, layers: Array.from({ length: count(of) }, () => [take(rows * n), take((rows * n / GROUP) * 4)]), ...(of ? { of } : {}) }])),
     vectors: Object.fromEntries(Object.entries(vectors).map(([name, [size, of]]) => [name, { at: take(count(of) * size * 4), size, ...(of ? { of } : {}) }])),
     rows: take(BATCH * DIM * 4), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4),
-    tokens: { classifier: { rows: VOCAB, n: DIM, six: false, ternary: false, at: [take(VOCAB * DIM), take((VOCAB * DIM / GROUP) * 4)] }, embedding: null, final: take(DIM * 4),
+    tokens: { classifier: { rows: VOCAB, n: DIM, packing: "int8", six: false, ternary: false, at: [take(VOCAB * DIM), take((VOCAB * DIM / GROUP) * 4)] }, embedding: null, final: take(DIM * 4),
       finalBias: 0, positions: 0, outliers: false, channels: [], ids: take(4096), most: MOST },
     staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, rotated: null, ...more,
   };

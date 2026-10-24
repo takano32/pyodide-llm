@@ -222,7 +222,7 @@
 - T.544 [試験][CPU] `kernels-in-browser` の 3 値に、4 で割り切れないグループの通りを足す — 未着手
 - T.545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T.546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
-- T.547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 未着手
+- T.547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 進行中
 - T.548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えのステップを GPU に置くか — 未着手
 - T.549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
 - T.550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 候補
@@ -1655,7 +1655,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - **鍵**: 動く（網の `shaders`: deviceKey の 192 通りの全部が変わる。変わった export は SAMPLE と分けた標本抽出の 4 つ・State を持つ EMBED と EMBED_TERNARY（State の文）・目録 2 つ・`samplingSettings`・`samplingState`・`penalizeLikeCpu`。目録の行の数は同じ）。
   - **見ていないもの**: 本物の GPU（持ち主の端末）での速さと同じトークン（SwiftShader・lavapipe だけ）。Gemma 3 の答えのステップが GPU に乗るのは T.261.4.2 の後（標本抽出はもう妨げない）。Qwen3.5 系・Saluki・Bonsai 2 27B は層が GPU に載らないので、まだ当たらない。手元の軽い組は 1 回、memory-check の後で外から止められた（143）ので、残りの検査を 1 つずつ回して全部通した。
 
-### T.547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 状態: 未着手（2026-10-16、WebGPU の洗い出しから。勧めの順の 4 番目。規模 大。T.545・T.271 の後）
+### T.547 [性能][Saluki][WebGPU] llama.cpp の塊（K 量子化・i 量子化）を GPU に — 状態: 進行中（2026-10-24 に着手、Opus medium: 下の「子タスクの番号」）。前の状態: 未着手（2026-10-16、WebGPU の洗い出しから。勧めの順の 4 番目。規模 大。T.545・T.271 の後）
+- **子タスクの番号（取りまとめ役の決め、2026-10-24）**: GPU の Worker は詰め方をモデルに 1 つ（`m.ternary`: 答えのステップの形・プロンプトのタイル・表・端末の鍵が読む）と決めているので、先にそれを行列ごとにする。
+  - **T.547.1** [整理]: GPU の計画の行列が自分の詰め方を言い（今の `six`・`ternary` の真偽を 1 つの名前に）、GPU の Worker は行列ごとに読む形とシェーダを選ぶ。今あるモデルの動きは変えない（網の `gpusteps`・`shaders` が同じ）。
+  - **T.547.2**: Q4_K を GPU に（答えのステップの DP4A の形とプロンプトのタイル、`PACKED` の Q4_K の行の `gpu`）。int8 と Q4_K の行の混ざる 4-bit の Shisa が GPU で答える。端末の鍵が 1 回動く。
+  - **T.547.3**: Saluki の残りの 9 種類（Q2_K と IQ 系、符号表を GPU に 1 回）と、GPU だけ（実物はパソコン）。
+
 - **当たるモデル**: 塊を持つ一覧の 2 項目。Shisa V2.1c LFM2 350M (4-bit)（Q4_K の行列と、広げた int8 の行: T.545 の後）と Underdog Saluki 27B（10 種類の型: T.271 の DeltaNet の後、2 重には入らないのでパソコンの GPU だけに）。T.513 の勧めで 4-bit の項目が増えれば、それも。いまは `PACKED` の塊の行が `gpu: null`、GPU だけにも `gpuOnlyUnfit()` が断る。GPU に置かない訳の文は T.503 で持ち主が決めた「llama.cpp's blocks are not on the GPU yet」。
 - **作るもの**: 段に分ける。(1) Q4_K と Q6_K（4-bit の項目の 2 つ）を詰めたまま GPU に置き、ステップの行列とプロンプトのタイルで読む（DP4A の形: 塊の float16 × 2 のべきと単位の整数を、CPU のカーネルと同じ「重み = F·S·W − Fm·M」で）。`PACKED` の行の `gpu` の欄、`Packing`・`DP4A_WEIGHTS`（「物を足す手順」のステップの行列に詰め方を足す）。1 つのファイルに型の違う行があるので、GPU の側の「ファイルに 1 つの詰め方」（`gpuOnlyUnfit()` の T.363.5 の行）を、行ごとの詰め方に広げるのがいちばん大きい所。(2) Saluki の残りの 8 種類（IQ 系の符号表は 34,992 バイトの表を GPU にも 1 回）。
 - **元ネタ**: llama.cpp の ggml-vulkan の K 量子化・i 量子化の読み（`dequant_funcs`・`mul_mat_vec_*`）。ggml-webgpu の対応している型は未確認。

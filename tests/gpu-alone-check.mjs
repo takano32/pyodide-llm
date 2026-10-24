@@ -175,7 +175,7 @@ for (const dtype of ["int8", "ternary"]) {
   for (const [name, m] of Object.entries(said)) {
     const t = plan.tensors[name], [rows, n] = t.shape.slice(-2);
     assert.equal(t.kind, dtype);
-    assert.deepEqual(m, { rows, n, six: false, ternary, layers: [0, 1].map((l) => [t.offset + l * rows * (ternary ? n / 4 : n), t.scales + l * rows * (n / t.group) * (ternary ? 2 : 4)]),
+    assert.deepEqual(m, { rows, n, packing: dtype, layers: [0, 1].map((l) => [t.offset + l * rows * (ternary ? n / 4 : n), t.scales + l * rows * (n / t.group) * (ternary ? 2 : 4)]),
       ...(name.startsWith("w") && "qkvo".includes(name[1]) ? { of: "attention" } : {}) }, `${dtype}: ${name}`);  // (T.545: the attending layers' matrices say so)
   }
   assert.equal(await engine.release(), true);

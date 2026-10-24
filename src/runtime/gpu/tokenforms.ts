@@ -17,7 +17,7 @@ import type { Model, Thrown } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import type { Chosen } from "./tokenattention.ts";
 import type { TokenBuffers, TokenForm } from "./tokens.ts";
-import type { Table, TokensChosen, Tried, Vectors } from "../contracts/gpu/protocol.ts";
+import type { GpuPacking, Table, TokensChosen, Tried, Vectors } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: this module's record, m.tokens: what tokens.ts's tokenBuffers() made, what tokenattention.ts's
 // chooseTokenAttention() chose, and the form of a token's layer chosen here with its ms a step and what each form
@@ -27,7 +27,7 @@ type Tokens = TokenBuffers & Chosen & { form: TokenForm | null; ms: number | und
 type Back = { firstLayer?: Awaited<ReturnType<typeof firstLayer>>; tableRows?: Awaited<ReturnType<typeof tableRows>> };
 // the check's own: what says how a row is packed (a plan's matrix or table), a row as [its int8 values, its scales],
 // and a list of numbers as its sums read one (an array or a typed array)
-type Spec = { n: number; six?: boolean; ternary?: boolean };
+type Spec = { n: number; packing: GpuPacking };
 type Row = [ArrayLike<number>, Float32Array];
 type Numbers = ArrayLike<number> & { reduce(step: (sum: number, value: number) => number, from: number): number; map(each: (value: number, i: number) => number): Numbers };
 // (Math.f16round is newer than the lib this is checked against, and than some browsers: heldFloats() asks)
@@ -213,17 +213,17 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   const { plan, tokens: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
   const kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address: number, n: number) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
-  // row r of a matrix or a table ({ n, six, ternary }, its values and scales at [valuesAt, scalesAt] in the shared
+  // row r of a matrix or a table ({ n, packing }, its values and scales at [valuesAt, scalesAt] in the shared
   // memory): [its int8 values, its scales (one a group of 32 weights; T.232, ternary: of 128)]; (T.156) of a matrix read
   // back from the GPU (firstLayer: [values, scales]); (T.210) of a table's rows read back (tableRows)
-  const stored = (spec: Spec) => (spec.six ? (spec.n * 3) / 4 : rowBytes(spec)), scalesOf = (spec: Spec) => rowBytes(spec) / GROUP;
+  const stored = (spec: Spec) => (spec.packing === "int6" ? (spec.n * 3) / 4 : rowBytes(spec)), scalesOf = (spec: Spec) => rowBytes(spec) / GROUP;
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
-  const valuesOf = (spec: Spec, bytes: Uint8Array) => (spec.six ? sixValues(bytes) : spec.ternary ? ternaryValues(bytes)
+  const valuesOf = (spec: Spec, bytes: Uint8Array) => (spec.packing === "int6" ? sixValues(bytes) : spec.packing === "ternary" ? ternaryValues(bytes)
     : new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length));
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
     // (T.533: ternary's scales are float16s there, which went up widened)
-    spec.ternary ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
+    spec.packing === "ternary" ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
       : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
   const readBackRows = (spec: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
     scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec))];

@@ -8,7 +8,7 @@ import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTi
   STOPS_MOST } from "./choice.ts";
 import { gpuWeightBytes, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
 import { REASONS } from "./reasons.ts";
-import { rotatedBlockUnfit } from "./alone.ts";
+import { rotatedBlockUnfit, gpuPacking } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
 import type { Packed, Ready } from "../jobs.ts";
 import type { Answers } from "./choice.ts";
@@ -330,24 +330,24 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     else startGpu();
   });
   // T.152: what gpu.ts takes for a generation's steps: the classifier and (where it is another table) the embedding,
-  // { rows, n, six, ternary (T.232), at: [values, scales] }, the final norm's weights, where the ids go, and the steps a submission.
+  // { rows, n, packing (T.547.1), at: [values, scales] }, the final norm's weights, where the ids go, and the steps a submission.
   // T.226: the final LayerNorm's bias and GPT-2's positions (float32, a row a position), 0 where the model has none; and
   // whether its classifier has outlier channels (T.92), and (T.232) which they are
   function gpuTokensPlan(): Tokens {
-    return { classifier: { rows: wcls!.rows, n: wcls!.n, six: wcls!.kind === "int6", ternary: wcls!.kind === "ternary", at: wcls!.layer(0).slice(0, 2) as [number, number] },
+    return { classifier: { rows: wcls!.rows, n: wcls!.n, packing: gpuPacking(wcls!.kind), at: wcls!.layer(0).slice(0, 2) as [number, number] },
       embedding: sharedClassifier ? null
-        : { rows: vocab, n: dim, six: embedding.kind === "int6", ternary: embedding.kind === "ternary", at: [base + embedding.offset, base + embedding.scales] },
+        : { rows: vocab, n: dim, packing: gpuPacking(embedding.kind), at: [base + embedding.offset, base + embedding.scales] },
       final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, channels, ids: gpuIds, most: GPU_TOKENS };
   }
   function startGpu() {
     // the values of a head RoPE turns: all of them, GPT-NeoX's first rotary (T.154), none of GPT-2's
     const turned = !turning ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
-    // (six, T.155: the values at a layer's address are int6, packed as llama2_numpy.pack6 packs them; ternary, T.232:
-    // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
+    // (T.547.1: packing, the checkpoint's: int6, T.155, as llama2_numpy.pack6 packs them; ternary, T.232, two bits a
+    // weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     // (T.545: a matrix of some of the layers, an LFM2's attending or convolution layers', is theirs alone: of says whose)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] => {
       const of = kindOf(name, shape), count = of ? kinds.filter((kind) => kind === of).length : layers;
-      return [name, { rows: m.rows, n: m.n, six: m.kind === "int6", ternary: m.kind === "ternary",
+      return [name, { rows: m.rows, n: m.n, packing: gpuPacking(m.kind),
         layers: Array.from({ length: count }, (_, l) => m.layer(l).slice(0, 2) as [number, number]), ...(of ? { of } : {}) }];
     }));
     const listen = () => {

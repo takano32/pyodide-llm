@@ -13,7 +13,7 @@ import { REASONS } from "./reasons.ts";
 import type { Header } from "./memory.ts";
 import type { Formed } from "./sizes.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
-import type { Force, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
+import type { Force, GpuPacking, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
 import type { LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.ts";
 
@@ -247,6 +247,12 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
 /** T.375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker
  * asks before it opens a file to keep a conversion in as it comes */
 export const aloneTakes = (dtype: string) => Boolean(packingOf(dtype)?.gpu?.alone);
+/** T.547.1: the packing of a matrix or a table of the GPU's plan: a stored kind the GPU takes (what gpuFit() and
+ * gpuOnlyUnfit() have let through: one it does not take is a mistake of theirs) */
+export function gpuPacking(kind: string): GpuPacking {
+  if (kind === "int8" || kind === "int6" || kind === "ternary") return kind;
+  throw new Error(`the GPU takes no matrix of ${kind}`);
+}
 
 // T.156: the GPU's worker takes the layers' bytes as they come, and says in flow[0] how many it has put on the GPU: the
 // loops that write wait (room()) where they are more than FLOW_BYTES ahead (a kept model read from the disk comes
@@ -318,14 +324,14 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
 export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered, form: Formed = {}): Opened {
   const layers = header[2], kinds = sizesOfForm(header, form, LAYER_KINDS).kinds as LayerKind[], mixed = kinds.some((kind) => kind !== ATTENTION);
   const places = kinds.map((kind, l) => kinds.slice(0, l).filter((other) => other === kind).length);
-  // (T.232: the bytes of a layer's values are its packing's, jobs.ts's PACKED; ternary is what the GPU's worker is told)
+  // (T.232: the bytes of a layer's values are its packing's, jobs.ts's PACKED; T.547.1: its name is what the GPU's worker is told)
   const matrices = Object.fromEntries(LAYER_MATRICES.filter((name) => tensors[name]).map((name): [string, Matrix] => {
     const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, layerBytes = packingOf(t.kind)!.rowBytes(perLayer);
     const of = mixed ? kinds.find((kind) => LAYER_KINDS[kind].gpu?.names.includes(name)) : undefined, count = of ? kinds.filter((kind) => kind === of).length : layers;
-    return [name, { rows, n, ternary: t.kind === "ternary", layers: Array.from({ length: count }, (_, l) =>
+    return [name, { rows, n, packing: gpuPacking(t.kind), layers: Array.from({ length: count }, (_, l) =>
       [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]), ...(of ? { of } : {}) }];  // (T.533: ternary's scales float16s)
   }));
-  const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], ternary: t.kind === "ternary", at: [t.offset, t.scales] });
+  const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], packing: gpuPacking(t.kind), at: [t.offset, t.scales] });
   const embedding = tensors.token_embedding_table!, classifier = tensors.wcls ?? embedding;
   const tables = { classifier: table(classifier), embedding: classifier.offset === embedding.offset ? null : table(embedding) };
   return { layers, matrices, tables, force, remembered, ...(mixed ? { kinds, places } : {}) };

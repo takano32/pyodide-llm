@@ -188,7 +188,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const widest = Math.max(plan.dim, qDim, plan.hidden, ...present.map((kind) => GPU_KINDS[kind].widest?.(plan) ?? 0));
   // (one at a time: each in an error scope of its own)
   // (T.232: from a table of ternary weights, EMBED_TERNARY)
-  const embedCode = tablesOf(plan).embedding.ternary ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
+  const embedCode = tablesOf(plan).embedding.packing === "ternary" ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
   const embed = await within(validated(m, () => pipelineOf(m, embedCode)), "compiling the embedding's row");
   const sample = await within(validated(m, () => pipelineOf(m, ENGINE.SAMPLE)), "compiling the sampling");
   const out = STORAGE | COPY_SRC;
