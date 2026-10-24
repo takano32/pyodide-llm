@@ -166,14 +166,14 @@ export { heldFloats };  // (tests/gpu-choice-check.mjs)
 // T.156: the first layer's matrices, { name: [values, scales] } as the bytes of their rows (rowBytes: int8, or T.232
 // ternary codes) and a Float32Array each, read back from their buffers (a piece after another: the rows in order)
 async function firstLayer(m: Model) {
-  const group = GROUP, out: { [name: string]: [Uint8Array<ArrayBuffer>, Float32Array<ArrayBuffer>] } = {};
+  const out: { [name: string]: [Uint8Array<ArrayBuffer>, Float32Array<ArrayBuffer>] } = {};
   for (const [name, matrix] of Object.entries(m.weights.matrices)) {
-    const row = rowBytes(matrix), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
-    const values = new Uint8Array(rows * row), scales = new Float32Array((rows * row) / group);
+    const row = rowBytes(matrix), perRow = PACKINGS[matrix.packing].scales(matrix.n), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
+    const values = new Uint8Array(rows * row), scales = new Float32Array(rows * perRow);
     for (const piece of matrix.pieces) {
-      const [v, s] = piece.layers[0], valueBytes = piece.rows * row, scaleBytes = (valueBytes / group) * 4;
+      const [v, s] = piece.layers[0], valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
       values.set(new Uint8Array(await readBack(m, v.buffer ?? v, valueBytes, v.offset ?? 0)), piece.first * row);
-      scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), (piece.first * row) / group);
+      scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), piece.first * perRow);
     }
     out[name] = [values, scales];
   }
@@ -189,7 +189,7 @@ const checkRows = (vocab: number) => [...new Set([...[...Array(Math.ceil(vocab /
 async function tableRows(m: Model) {
   const vocab = m.plan.tokens!.classifier.rows, specs = tablesOf(m.plan);
   const read = async (pieces: TablePiece[], spec: Table, rows: number[]) => {
-    const n = rowBytes(spec), perRow = (n / GROUP) * 4;
+    const n = rowBytes(spec), perRow = PACKINGS[spec.packing].scales(spec.n) * 4;
     const target = m.device.createBuffer({ size: rows.length * (n + perRow), usage: MAP_READ | COPY_DST });
     try {
       const encoder = m.device.createCommandEncoder();
@@ -216,7 +216,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   // row r of a matrix or a table ({ n, packing }, its values and scales at [valuesAt, scalesAt] in the shared
   // memory): [its int8 values, its scales (one a group of 32 weights; T.232, ternary: of 128)]; (T.156) of a matrix read
   // back from the GPU (firstLayer: [values, scales]); (T.210) of a table's rows read back (tableRows)
-  const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => rowBytes(spec) / GROUP;
+  const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => PACKINGS[spec.packing].scales(spec.n);
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
   const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes);
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [

@@ -288,6 +288,17 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS}))`, p
   // a packing given one there and not the name, or the name and no gpu, is said here and by no type)
   assert.deepEqual([...contract("gpu/protocol.ts").literalsOf("GpuPacking")].sort(),
     Object.entries(PACKED).filter(([, { gpu }]) => gpu).map(([name]) => name).sort(), "GpuPacking's names are those of the packings the GPU holds");
+  // (T.547.2.2, T.547.2.1's review: and gpu/packings.ts's PACKINGS, how the GPU holds them, says PACKED's facts of the
+  // checkpoint as PACKED does: a row's bytes there and a group's scale; its row on the GPU is the packing's gpu.as's
+  // row, a float32 scale with every 32 of those bytes)
+  const { PACKINGS } = await import(runtimeUrl("gpu/packings.js"));
+  for (const [name, held] of Object.entries(PACKINGS)) {
+    for (const n of [256, 1024, 6656]) {
+      const as = PACKED[PACKED[name].gpu.as];
+      assert.deepEqual([held.stored(n), held.row(n), held.scales(n)], [PACKED[name].rowBytes(n), as.rowBytes(n), as.rowBytes(n) / 32], `${name}: a row of ${n} in the checkpoint and on the GPU`);
+    }
+    assert.equal(held.scale, PACKED[name].scale, `${name}: a group's scale in the checkpoint`);
+  }
   assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { takes }]) => [name, takes])),
