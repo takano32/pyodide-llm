@@ -65,3 +65,4 @@
 - **鍵**: 動く（行ごとにシェーダの組が増える）。
 - **手元で見られない所**: シェーダは CI。Saluki の GPU だけは CI のランナーで回せない（7.9 GB）: 持ち主の PC。
 - **完了の目安**: gpu-check に塊の作り物（`tests/blocks_forward.py` の形）を足して、CPU の塊のカーネルの模型（`tests/blocks-model.mjs`）と型ごとに比べる。4-bit の Shisa が GPU で答える。
+- **本番（T.547.3 の全部の後）**: `models.yml` run 40140288523（`query=gpuTest=on&steps=40`、デプロイ run 40139639355 の後）: 4-bit の Shisa は端末の鍵が動いた後も「prompts and answers on WebGPU」で準備完了、プロンプトの 19 トークンと答えの 21 トークンを WebGPU で（SwiftShader）。
