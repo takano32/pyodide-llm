@@ -372,6 +372,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // its rotated basis too: what keeps it off is no longer the basis)
   assert.doesNotMatch(String(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed)), /rotated basis/);
   assert.equal(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", { ...bonsai, rotated: { block: 1024, signs: {} } }, packed), null, "a Bonsai 1.7B's shape in a rotated basis");
+  // (T271.1's review: but not blocks the GPU's shader does not take: past 1024, under 32, or no power of two)
+  for (const block of [2048, 16, 96]) assert.equal(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", { ...bonsai, rotated: { block, signs: {} } }, packed), "a rotated basis of blocks of this size is not on the GPU", `blocks of ${block}`);
 }
 // T156: the checkpoint's stretches: the layers' matrices to the GPU's worker, the rest packed into memory, whatever the
 // stretches it comes in; each byte posted once, and the writer waits on flow

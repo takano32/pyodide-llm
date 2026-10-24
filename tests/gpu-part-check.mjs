@@ -738,6 +738,12 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
       { at: 49900, size: 8, of: "linear" }]);
     const { DELTA_MOST } = await import(runtimeUrl("forward/linear.js"));
     assert.equal(DELTA_MOST, DELTA_THREADS, "the widest heads the GPU's delta rule takes, forward/linear.ts's copy of shaders/steps.ts's");
+    // T271.1: and the blocks of a rotated basis its shaders take, forward/alone.ts's copy of shaders/rotate.ts's
+    const { ROTATE_MOST } = await import(runtimeUrl("forward/alone.js")), shaders = await import(runtimeUrl("shaders.js")), { REASONS } = await import(runtimeUrl("forward/reasons.js"));
+    assert.equal(ROTATE_MOST, shaders.ROTATE_MOST, "the largest block, forward/alone.ts's copy of shaders/rotate.ts's");
+    for (const [block, why] of [[0, null], [32, null], [64, null], [1024, null], [16, REASONS.rotatedBlock], [96, REASONS.rotatedBlock], [2048, REASONS.rotatedBlock]]) {
+      assert.equal(fitOf({ rotated: block }).unfit(), why, `a rotated basis of blocks of ${block}`);
+    }
   }
 
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");

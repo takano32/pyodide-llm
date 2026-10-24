@@ -26,6 +26,7 @@ const { gpuSkipped } = await import("../src/bench.js");
 // ---- the sentences, each whole: [the entry, what it is handed (a function's), the sentence]
 const SAID = [
   ["linear", "linear-attention layers are not on the GPU yet"],
+  ["rotatedBlock", "a rotated basis of blocks of this size is not on the GPU"],
   ["stateful", "layers that keep a state are not on the GPU yet"],
   ["pair", "this pair of norms and FFN is not on the GPU yet"],
   ["notIsolated", "the page is not cross-origin isolated"],

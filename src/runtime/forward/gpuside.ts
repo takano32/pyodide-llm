@@ -8,6 +8,7 @@ import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTi
   STOPS_MOST } from "./choice.ts";
 import { gpuWeightBytes, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
 import { REASONS } from "./reasons.ts";
+import { rotatedBlockUnfit } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
 import type { Packed, Ready } from "../jobs.ts";
 import type { Answers } from "./choice.ts";
@@ -125,7 +126,7 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful,
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
     sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own } = weights;
   // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
@@ -151,6 +152,8 @@ export function gpuFit({ shape, weights, device, direct }:
     // the state they go on from. T375.2: and a kind of layer that keeps a state which the engine comes to have, and the
     // GPU's worker has no step for: on the CPU until the GPU has it too)
     if (stateful) return REASONS.stateful;
+    // (T271.1: a rotated basis whose blocks the GPU's shader takes)
+    if (rotatedBlockUnfit(rotated)) return REASONS.rotatedBlock;
     // T375.5 (T484): the GPU's layers are of two pairs, RMSNorms with a gated FFN (a Llama's) and LayerNorms with
     // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
     // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there

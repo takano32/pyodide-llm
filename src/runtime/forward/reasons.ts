@@ -22,6 +22,8 @@
 export const REASONS = {
   // ---- what the model is: its prompts stay on the CPU (gpuFit()'s unfit())
   linear: "linear-attention layers are not on the GPU yet",  // T229
+  // T271.1: a rotated basis whose blocks the GPU's shader does not take (a multiple of 32, at most 1024)
+  rotatedBlock: "a rotated basis of blocks of this size is not on the GPU",
   // (T375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
   stateful: "layers that keep a state are not on the GPU yet",
   // (T375.5, T484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)

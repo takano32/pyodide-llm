@@ -87,6 +87,9 @@ const rotatedBasis = (block, widths) => ({ block, signs: Object.fromEntries(widt
 const ROTATED = rotatedBasis(64, [128, 256, 384]);
 // (the untied one's: dim 256, the attention's output 256, the FFN's 1152; blocks of 128, nine of the FFN's)
 const ROTATED_UNTIED = rotatedBasis(128, [256, 1152]);
+// (T271.1's review: blocks of 1024 as the 27B's, which the two above do not reach: a thread's second turn over a block's
+// values and over its pairs, and 32 threads quantizing. dim 1024, the attention's output 8 heads of 128, the FFN's 2048)
+const ROTATED_1024 = rotatedBasis(1024, [1024, 2048]);
 const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
@@ -173,7 +176,9 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // and an FFN of nine blocks
   "synthetic-ternary-rotated": [{ ...TERNARY, rotated: ROTATED }, { ...TERNARY_OPTIONS, rotated: ROTATED }],
   "synthetic-ternary-rotated-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, spread: 37, calm: true, rotated: ROTATED_UNTIED },
-    { ...TERNARY_OPTIONS, rotated: ROTATED_UNTIED }] };
+    { ...TERNARY_OPTIONS, rotated: ROTATED_UNTIED }],
+  "synthetic-ternary-rotated-1024": [{ ...TERNARY, dim: 1024, hidden: 2048, layers: 2, head_dim: 128, rotated: ROTATED_1024 },
+    { ...TERNARY_OPTIONS, head_dim: 128, rotated: ROTATED_1024 }] };
 // which made-up models an engine runs for "made-up"
 // T241's review (the full suite's time: Chrome 38 and Edge 42 minutes in main's run 36902097346, Edge 23 before T241): a run
 // of a model on SwiftShader costs 5 to 7 s of its shaders' compiling before anything is checked, a made-up model has 14
@@ -185,7 +190,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
-  "synthetic-ternary-rotated-untied"];
+  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };
