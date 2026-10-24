@@ -226,4 +226,20 @@ const KINDS = { attention: plain, echo };
   assert.equal(gpuOnlyUnfit([96, 200, 6, 4, 2, 500, 77], "int8", {}, adapter), "q, k and v or gate and up would not start where this GPU binds a buffer");
   console.log("ok: the GPU by the same lines: the matrices of a layer by the FFN's kind, a weight's bytes by how the GPU holds its packing, and a model on the GPU alone by its facts and its packing");
 }
+// ---- T.547.3.7's review: a form whose rows have kinds of their own, each row's and layer's bytes as its kind on the GPU, and
+// the stretch of the checkpoint a stack of layers of their own kinds is, from its first layer's values to its last's end
+{
+  const { gpuHoles } = await import(runtimeUrl("forward/alone.js"));
+  const header = [256, 768, 2, 8, 2, -320, 64], plain = { arch: "llama", head_dim: 32 }, dim = 256, hidden = 768, vocab = 320;
+  const kinds = { w1: ["Q4_K", "IQ2_XXS"], wcls: "IQ3_S" };
+  const more = hidden * dim * (gpuWeightBytes("Q4_K") - gpuWeightBytes("int8")) + hidden * dim * (gpuWeightBytes("IQ2_XXS") - gpuWeightBytes("int8")) +
+    vocab * dim * (gpuWeightBytes("IQ3_S") - gpuWeightBytes("int8"));
+  assert.ok(Math.abs(gpuBytes(header, { ...plain, dtype: "int8", kinds }) - gpuBytes(header, { ...plain, dtype: "int8" }) - more) < 1e-6, "each row and layer as its kind");
+  // (a stack of a Q4_K layer of 8 rows of 256 and an int8 one: the int8 layer's scales after its values, a float32 a group of 32)
+  const q4k = 8 * 144, int8 = 8 * 256, at = 4096;
+  const tensors = { wq: { kind: "layers", offset: at, shape: [2, 8, 256], group: 256, scales: at + q4k,
+    layers: [{ kind: "Q4_K", offset: at, group: 256, scales: at + q4k }, { kind: "int8", offset: at + q4k, group: 32, scales: at + q4k + int8 }] } };
+  assert.deepEqual(gpuHoles(tensors), [[at, at + q4k + int8 + (8 * 256 / 32) * 4]], "a stack of layers of their own kinds is one stretch, to its last layer's scales' end");
+  console.log("ok: the GPU's bytes of rows of kinds of their own by each row and layer, and a stack of them one stretch of the checkpoint");
+}
 console.log("sizes-check: ok");
