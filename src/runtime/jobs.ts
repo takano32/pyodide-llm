@@ -318,8 +318,8 @@ export const PACKED = packings({
     group: 128, gpu: { as: "ternary", alone: true, dot: true },
   },
   Q2_K: { ...blocks(BLOCK_TYPES.Q2_K), gpu: { as: "Q2_K", alone: false, dot: true } }, Q4_K: { ...blocks(BLOCK_TYPES.Q4_K), gpu: { as: "Q4_K", alone: false, dot: true } }, IQ2_XXS: { ...blocks(BLOCK_TYPES.IQ2_XXS), gpu: { as: "IQ2_XXS", alone: false, dot: true } }, IQ2_XS: { ...blocks(BLOCK_TYPES.IQ2_XS), gpu: { as: "IQ2_XS", alone: false, dot: true } },
-  IQ3_XXS: blocks(BLOCK_TYPES.IQ3_XXS), IQ1_S: blocks(BLOCK_TYPES.IQ1_S), IQ3_S: blocks(BLOCK_TYPES.IQ3_S), IQ2_S: { ...blocks(BLOCK_TYPES.IQ2_S), gpu: { as: "IQ2_S", alone: false, dot: true } },
-  IQ4_XS: blocks(BLOCK_TYPES.IQ4_XS), IQ1_M: blocks(BLOCK_TYPES.IQ1_M),
+  IQ3_XXS: { ...blocks(BLOCK_TYPES.IQ3_XXS), gpu: { as: "IQ3_XXS", alone: false, dot: true } }, IQ1_S: { ...blocks(BLOCK_TYPES.IQ1_S), gpu: { as: "IQ1_S", alone: false, dot: true } }, IQ3_S: { ...blocks(BLOCK_TYPES.IQ3_S), gpu: { as: "IQ3_S", alone: false, dot: true } }, IQ2_S: { ...blocks(BLOCK_TYPES.IQ2_S), gpu: { as: "IQ2_S", alone: false, dot: true } },
+  IQ4_XS: { ...blocks(BLOCK_TYPES.IQ4_XS), gpu: { as: "IQ4_XS", alone: false, dot: true } }, IQ1_M: { ...blocks(BLOCK_TYPES.IQ1_M), gpu: { as: "IQ1_M", alone: false, dot: true } },
 });
 export type Packed = keyof typeof PACKED;
 /** the packing of a tensor stored as stored, or null: float32 and float16 are not packed */

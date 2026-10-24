@@ -145,7 +145,7 @@ const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).include
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
 // (T.547.2.3: and those for Q4_K blocks: dp4a's branch and (T.547.2.4) DP4A_WEIGHTS' row, and what only they write)
 // (T.547.3.3: of every type of BLOCK_READS: what they share and each one's reading)
-const Q4K_BRANCHES = ["dp4a", "BLOCK_COMMON", "BLOCK_READS", "blockLines", "DP4A_WEIGHTS", "blockRow", "blockRows", "fusedDp4aMatVec", "K_BITS", "IQ_GRID", "IQ_SEVEN", "IQ_WORDS"];
+const Q4K_BRANCHES = ["dp4a", "BLOCK_COMMON", "BLOCK_READS", "blockLines", "DP4A_WEIGHTS", "blockRow", "blockRows", "fusedDp4aMatVec", "K_BITS", "IQ_GRID", "IQ_SEVEN", "IQ_WORDS", "IQ_BIND", "IQ_SIGNS", "IQ_EIGHT", "IQ_FOUR", "IQ_SHIFTED", "IQ_NL", "BLK_F16"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
 // What gpu.js takes of the shaders (T.379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
