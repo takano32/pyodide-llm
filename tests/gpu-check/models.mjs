@@ -225,6 +225,12 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // 40127682362, of two seeds)
   "synthetic-q4k-tied": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true, calm: true },
     { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
+  "synthetic-q4k-tied-s1": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true, calm: true, seed: 1 },
+    { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
+  "synthetic-q4k-tied-s2": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true, calm: true, seed: 2 },
+    { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
+  "synthetic-q4k-tied-s4": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true, seed: 4 },
+    { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
   "synthetic-q4k-tables": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K", wcls: "Q4_K" }, valued: true },
     { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K", wcls: "Q4_K" } }],
   "synthetic-q2k-classifier": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: { ...Q2K_KINDS, wcls: "Q2_K" }, valued: true },
