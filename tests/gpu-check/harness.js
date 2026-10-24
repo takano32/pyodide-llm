@@ -24,8 +24,10 @@ const formsOf = (ternary) => (!adapter ? [] : wgsl.promptForms({ half: adapter.f
   memory: adapter.limits.maxComputeWorkgroupStorageSize, threads: adapter.limits.maxComputeInvocationsPerWorkgroup, ternary })
   .filter((form) => !form.none).map((form) => form.name).filter((name) => ternary || !ONLY.length || ONLY.some((part) => name.includes(part))));
 // T152: the forms of a token's layer this adapter can make (gpu.js's TOKEN_FORMS), each forced in a run of its own
+// (T271.1: a model in a rotated basis takes those with the norms apart alone, gpu/tokens.ts's tokenCandidates())
 const features = navigator.gpu?.wgslLanguageFeatures;
-const tokenFormsOf = (ternary) => (!adapter ? [] : ternary
+const tokenFormsOf = (ternary, rotated) => tokenFormsAll(ternary).filter((name) => !rotated || name.endsWith("the norms apart"));
+const tokenFormsAll = (ternary) => (!adapter ? [] : ternary
   ? (features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175), ternary", "DP4A, fused (T175), ternary, the norms apart"] : [])
   : ["llama.cpp, fused (T150)",
     ...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp, fused (T150), subgroups"] : []),
@@ -130,7 +132,7 @@ try {
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
     const plan = c.plan, ternary = c.dtype === "ternary";
-    const forms = formsOf(ternary), tokenForms = tokenFormsOf(ternary);
+    const forms = formsOf(ternary), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated));
     // T209: what a third of a table is in bytes on the GPU (T232: a ternary weight is a quarter of a byte)
     const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / (ternary ? 4 : 1) / 3);
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
