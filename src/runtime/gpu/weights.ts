@@ -21,7 +21,8 @@ type MatrixOn = { rows: number; n: number; packing: GpuPacking; pieces: Piece[] 
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
 type Home = { joined: string; at: [number, number] };
 type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] } };
-type Joined = { [joined: string]: [GPUBuffer, GPUBuffer] };
+// (T.547.2.3: no scales where its matrices' blocks hold them)
+type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null] };
 type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
 // T.156: a stretch of the checkpoint, [start, end), the buffer it goes to and the offset in it
 // (halves, T.533: a stretch of ternary's float16 scales, which go up widened to float32: the buffer's offset of the
@@ -112,8 +113,8 @@ async function uploadLayers(m: Model, alone = false) {
     // a layer's matrices that are one (T.152): a buffer of values and one of scales for all of them (T.271.3: where the
     // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
     const has = (joinedName: string) => Object.entries(together!.homes).some(([name, home]) => home?.joined === joinedName && (!plan.matrices[name].of || plan.matrices[name].of === plan.kinds[l]));
-    const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, [GPUBuffer, GPUBuffer]] =>
-      [name, [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)]]));
+    const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, [GPUBuffer, GPUBuffer | null]] =>
+      [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : null]]));
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
       // (T.545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
@@ -125,7 +126,7 @@ async function uploadLayers(m: Model, alone = false) {
         const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
         // its own buffers, or its range of the layer's joined ones (T.547.2.3: no scales where its blocks hold them)
         const [values, scales]: [Bound, Bound | null] = home
-          ? [{ buffer: joined![home.joined][0], offset: home.at[0], size: valueBytes }, { buffer: joined![home.joined][1], offset: home.at[1], size: scaleBytes }]
+          ? [{ buffer: joined![home.joined][0], offset: home.at[0], size: valueBytes }, perRow ? { buffer: joined![home.joined][1]!, offset: home.at[1], size: scaleBytes } : null]
           : [buffer(m, valueBytes, usage), perRow ? buffer(m, scaleBytes, usage) : null];
         const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(matrix)];
         if (alone) {
@@ -307,16 +308,22 @@ function tokensLayout(m: Model): Together | null {
     m.weights.unjoined = reason;
     return null;
   };
-  // (T.547.2.3: a token's matrices read int8 values, which llama.cpp's blocks are not: Q4_K's steps come with T.547.2.4)
-  const blocks = Object.entries(m.weights.matrices).find(([, { packing }]) => !PACKINGS[packing].values);
-  if (blocks) return why(`${blocks[0]} is of llama.cpp's blocks (${blocks[1].packing}), which a token's step does not read yet`);
   // (T.226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
   // (T.545.2: and an LFM2's matrices in and out of its convolution layers; T.271.3: a Qwen3.5's of its linear-attention
   // layers and the gate of its output)
   for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout", "wqkv", "wz", "wg"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
-  const homes: Together["homes"] = {}, sizes: Together["sizes"] = {};
-  for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
+  const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, packing = (name: string) => m.weights.matrices[name]?.packing;
+  // T.547.2.4: matrices are one of a packing alone (a matrix's shader reads one): q, k and v one where they are; q and
+  // k where v is of another (a 4-bit Q4_K_M's q and k of Q4_K blocks, its v int8: a token's layer writes v apart into
+  // the buffer q and k are written to, attention.ts); gate and up one where they are, as a token's SwiGLU reads them
+  const kv = packing("wq") === packing("wv") ? { qkv: ["wq", "wk", "wv"] } : { qk: ["wq", "wk"] };
+  if (packing("wq") !== packing("wk")) return why(`wq and wk are of two packings (${packing("wq")}, ${packing("wk")})`);
+  if (gated && packing("w1") !== packing("w3")) return why(`w1 and w3 are of two packings (${packing("w1")}, ${packing("w3")})`);
+  // (v apart: one piece, as a matrix a token reads; and written after q's and k's rows where the device binds)
+  if (!kv.qkv && m.weights.matrices.wv.pieces.length > 1) return why("wv is past a buffer of this GPU");
+  if (!kv.qkv && ((m.weights.matrices.wq.rows + m.weights.matrices.wk.rows) * 4) % align) return why("v would not start where this GPU binds a buffer, after q and k");
+  for (const [joined, names] of Object.entries({ ...kv, ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;
     for (const name of names) {
       const matrix = m.weights.matrices[name];

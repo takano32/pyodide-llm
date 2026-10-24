@@ -8,7 +8,8 @@ export const GROUP = 32;
 // (T.379.2) how the weights of a matrix are packed, where a shader's text reads them packed: int8 (four to a u32, a
 // scale a group of 32; int6 is widened to it as it goes up, T.155) or ternary codes (sixteen to a u32, a scale a group
 // of 128, T.232). The name of the choice for every maker that has both: the prompt's DP4A tile and a token's DP4A matrix
-export type Packing = "int8" | "ternary";
+// (T.547.2.4: and Q4_K's blocks of 256, as they are: prompt.ts's Q4_K_BLOCK)
+export type Packing = "int8" | "ternary" | "Q4_K";
 
 // the tokens of a request and the position of the first, written once per request: every step of a layer reads it
 const STEP = /* wgsl */ `struct Step { tokens: u32, pos: u32, unused0: u32, unused1: u32 }`;

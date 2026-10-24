@@ -75,6 +75,9 @@ async function choose(m: Model) {
         if (!compiled.has(code)) compiled.set(code, await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`));
         form.pipes[key] = compiled.get(code)!;
       }
+      // (T.547.2.4: each pipeline's counterpart for a matrix of Q4_K blocks, by its key with ":Q4_K" after it)
+      const blocks = Object.keys(form.pipes).filter((key) => key.endsWith(":Q4_K"));
+      if (blocks.length) form.blocks = new Map(blocks.map((key) => [form.pipes[key.slice(0, -":Q4_K".length)], form.pipes[key]]));
       const wrong = await within(checkTokens(m, form, back), `checking ${form.name}`);
       if (wrong) tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(form);
@@ -217,20 +220,16 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   // memory): [its int8 values, its scales (one a group of 32 weights; T.232, ternary: of 128)]; (T.156) of a matrix read
   // back from the GPU (firstLayer: [values, scales]); (T.210) of a table's rows read back (tableRows)
   const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => PACKINGS[spec.packing].scales(spec.n);
-  // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
-  // (T.547.2.3: a packing with no int8 values, Q4_K's, never has a token's check: tokensLayout keeps its tokens on the CPU)
-  const valuesOf = (spec: Spec, bytes: Uint8Array) => {
-    const { values } = PACKINGS[spec.packing];
-    if (!values) throw new Error(`a token's check reads no ${spec.packing} weights`);
-    return values(bytes);
-  };
+  // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are (T.547.2.4: Q4_K's
+  // blocks as their weights, whose one scale is 1: ONE)
+  const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes), ONE = Float32Array.of(1);
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
     // (T.533: ternary's scales are float16s there, which went up widened)
-    PACKINGS[spec.packing].scale === 2 ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
+    !scalesOf(spec) ? ONE : PACKINGS[spec.packing].scale === 2 ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
       : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
   const readBackRows = (spec: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
-    scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec))];
+    scalesOf(spec) ? scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec)) : ONE];
   const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? plan.tokens!.embedding ?? plan.tokens!.classifier : plan.tokens!.classifier);
   const tableRow = (name: "embedding" | "classifier") => (back.tableRows ? (r: number): Row => {
     const [bytes, scales] = back.tableRows![name].get(r)!;

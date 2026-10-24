@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations under the License.
  */
 import { GROUP, STEP } from "./common.ts";
-import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
+import { TERNARY_PACKED, Q4_K_BLOCK, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
 import type { Packing } from "./common.ts";
 
@@ -482,6 +482,10 @@ ${ROW_RMS}
 //              a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
 //              scale's group) in a row (b_global, or up's row)
 //   word       a vec4<u32> of 16 packed int8, of the word at an index of b
+//   own, reads (T.547.2.4, Q4_K's blocks: the others' "" and null) what a thread makes of its vector's group once
+//              (the group's sum, which a block's dmin m takes), and in the place of the lines above, a row's group read
+//              from its block and added to the row's sum: d s times the dot, less dmin m times the sum (prompt.ts's
+//              Q4_K_BLOCK, the tiles' own reading); of up's row too where the output has two matrices (swiglu, geglu)
 const DP4A_WEIGHTS = {
   int8: {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
@@ -490,6 +494,8 @@ const DP4A_WEIGHTS = {
     rowScales: "",
     scale: (row: string) => `${row} * params.perRow + k_offset`,
     word: (at: string) => `b[${at}]`,
+    own: "",
+    reads: null,
   },
   ternary: {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
@@ -500,6 +506,25 @@ const DP4A_WEIGHTS = {
     let K128 = params.perRow / 4u;`,
     scale: (row: string) => `${row} * K128 + k_offset / 4u`,
     word: (at: string) => `ternary_packed(b[${at}])`,
+    own: "",
+    reads: null,
+  },
+  Q4_K: {
+    bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' blocks, 36 words of 144 bytes each`,
+    unpacking: Q4_K_BLOCK,
+    rowScales: "",
+    own: `
+        let own_sum = f32(q4k_sum(own_a) + q4k_sum(own_a1));`,
+    reads: (two: boolean) => `
+                // (the row's group of 32: k_offset along the row, of its K32 / 8 blocks)
+                let g = k_offset % 8u;
+                let block = (b_global * (K32 / 8u) + k_offset / 8u) * 36u;
+                let dm = q4k_scale_min(block, g);
+                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, q4k_half(block, g, 0u), own_a1, q4k_half(block, g, 1u), own_scale_a * dm.x) - own_scale_a * dm.y * own_sum;${two ? `
+                // up's row, params.second rows after gate's, with the same own_a
+                let up_block = ((b_global + params.second) * (K32 / 8u) + k_offset / 8u) * 36u;
+                let up_dm = q4k_scale_min(up_block, g);
+                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, q4k_half(up_block, g, 0u), own_a1, q4k_half(up_block, g, 1u), own_scale_a * up_dm.x) - own_scale_a * up_dm.y * own_sum;` : ""}`,
   },
 } satisfies Record<Packing, object>;
 // (a row for every packing, and no other: common.ts's Packing)
@@ -581,14 +606,14 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
         workgroupBarrier();
         var own_a: vec4<u32> = tile_A[local_col * 2];
         var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
-        var own_scale_a = scale_A[local_col];
+        var own_scale_a = scale_A[local_col];${packing.own}
         let k_offset = kidx_v + local_col;
         // k_offset - covers 32 values of k in input_b
         // calculate intermediate results into inter_results.
         for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
             let b_global = b_global_base + row_offset + local_row;
             if (b_global < params.rows && k_offset < K32)
-            {
+            {${packing.reads ? packing.reads(output === "swiglu" || output === "geglu") : `
                 let b_offset = b_global * K32 + k_offset;
                 let own_scale_b = scales_b[${packing.scale("b_global")}];
                 let own_b = ${packing.word("b_offset * 2")};
@@ -598,7 +623,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
                 let up_global = b_global + params.second;
                 let up_offset = up_global * K32 + k_offset;
                 let up_scale_b = scales_b[${packing.scale("up_global")}];
-                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ${packing.word("up_offset * 2")}, own_a1, ${packing.word("up_offset * 2 + 1")}, own_scale_a * up_scale_b);` : ""}
+                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ${packing.word("up_offset * 2")}, own_a1, ${packing.word("up_offset * 2 + 1")}, own_scale_a * up_scale_b);` : ""}`}
             }
         }
         workgroupBarrier();

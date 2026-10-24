@@ -46,7 +46,7 @@ import { ROTATE_MOST, ROTATE_QUANTIZE, UNROTATE, rotateLikeCpu, unrotateLikeCpu,
 import { SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM, SAMPLE_GATHER, SAMPLE_PICK,
   SAMPLER_STAGES } from "./shaders/stages.ts";
 import { penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu } from "./shaders/likecpu.ts";
-import { ENGINE_SHADERS, TERNARY_SHADERS, ENGINE } from "./shaders/engine.ts";
+import { ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, ENGINE } from "./shaders/engine.ts";
 import { devicePromptForms, deviceKey } from "./shaders/key.ts";
 export { GROUP, TILE, WIDEN, PACKED, BATCHED, REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE,
   tfjsTile, ternaryValues, q4kWeights, dp4a, QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, promptForms,
@@ -60,4 +60,4 @@ export { GROUP, TILE, WIDEN, PACKED, BATCHED, REG_TILES, regTileShape, regTileBy
   SAMPLING_BYTES, samplingSettings, EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS,
   TERNARY_COLUMNS, outliersOf, SAMPLE, SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM,
   SAMPLE_GATHER, SAMPLE_PICK, SAMPLER_STAGES, penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu,
-  ROTATE_MOST, ROTATE_QUANTIZE, UNROTATE, rotateLikeCpu, unrotateLikeCpu, rotateGroups, ENGINE_SHADERS, TERNARY_SHADERS, ENGINE, devicePromptForms, deviceKey };
+  ROTATE_MOST, ROTATE_QUANTIZE, UNROTATE, rotateLikeCpu, unrotateLikeCpu, rotateGroups, ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, ENGINE, devicePromptForms, deviceKey };

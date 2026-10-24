@@ -5,7 +5,7 @@
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { promptForms } from "./prompt.ts";
-import { ENGINE_SHADERS, TERNARY_SHADERS } from "./engine.ts";
+import { ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS } from "./engine.ts";
 import type { Own, PromptForm } from "./prompt.ts";
 
 // (T.368.5) what the key reads of a device, or of the adapter it is made of (a GPUDevice and a GPUAdapter both have
@@ -53,7 +53,7 @@ export function deviceKey(adapter: Adapter, device: Made = adapter, own: Own = n
   let hash = 0x811c9dc5;
   const written = (rows: { text: () => string }[]) => rows.map((row) => row.text());
   for (const text of [...tiles(devicePromptForms(device)), ...written(ENGINE_SHADERS),
-    ...(own === "ternary" ? [...tiles(devicePromptForms(device, "ternary")), ...written(TERNARY_SHADERS)] : own === "Q4_K" ? tiles(devicePromptForms(device, "Q4_K")) : [])]) {
+    ...(own === "ternary" ? [...tiles(devicePromptForms(device, "ternary")), ...written(TERNARY_SHADERS)] : own === "Q4_K" ? [...tiles(devicePromptForms(device, "Q4_K")), ...written(BLOCK_SHADERS)] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
     hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }

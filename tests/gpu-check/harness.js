@@ -133,9 +133,9 @@ try {
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
     const plan = c.plan, ternary = c.dtype === "ternary";
-    // (T.547.2.3: a model with Q4_K blocks among its matrices: its own tiles, and no step on the GPU yet)
+    // (T.547.2.3: a model with Q4_K blocks among its matrices: its own tiles; T.547.2.4: and the steps of DP4A alone)
     const shaders = ternary ? "ternary" : Object.values(c.options.kinds ?? {}).includes("Q4_K") ? "Q4_K" : null;
-    const forms = formsOf(shaders), tokenForms = shaders === "Q4_K" ? [] : tokenFormsOf(ternary, Boolean(plan.rotated));
+    const forms = formsOf(shaders), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated)).filter((name) => shaders !== "Q4_K" || name.startsWith("DP4A"));
     // T.209: what a third of a table is in bytes on the GPU (T.232: a ternary weight is a quarter of a byte)
     const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / (ternary ? 4 : 1) / 3);
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
