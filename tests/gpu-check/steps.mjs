@@ -97,7 +97,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   const cpuP = cpuLogits.length ? logSoftmax(cpuLogits) : [], gap = cpuP[cpuTop] - cpuP[uploaded];
   // (the CPU's logits carry its 7-bit activations at that token, the GPU's not: a quarter of the probability, not half.
   // synthetic-wide's GPU took a token 0.72 below the CPU's on every form, run 36326266335; the GPU without the CPU's
-  // keys and values, see TODO.md's T152)
+  // keys and values, see TASKS.md's T152)
   if (!cpuLogits.length || !(gap <= 2 * TIE)) failures.push(`after a prompt on the CPU the step is ${uploaded}, the CPU's ${cpuTop}, and not a near tie (${gap?.toFixed(2)} below it in log-probability)`);
   said.push(`${first}${first === 4 ? ` and ${second}` : ""} greedy ids as NumPy's${first === 4 && second === 3 ? "" : " (then a near tie)"}` +
     `, after a prompt on the CPU ${uploaded}${uploaded === cpuTop ? " as the CPU's" : ` (the CPU's ${cpuTop}, ${gap.toFixed(2)} below it)`}` +

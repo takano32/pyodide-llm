@@ -281,7 +281,7 @@ def test_the_other_models_keep_the_options_they_always_had():
 
 
 # the config.json of the published models, what the FFN's rule and the layers read of them (the files at the revisions
-# docs and TODO.md name: LFM2.5-350M 9e6c6ccf, LFM2.5-230M 40cb2ad3, LFM2.5-1.2B-JP-202606 52b8b447, LFM2-700M 86f49fc9,
+# docs and TASKS.md name: LFM2.5-350M 9e6c6ccf, LFM2.5-230M 40cb2ad3, LFM2.5-1.2B-JP-202606 52b8b447, LFM2-700M 86f49fc9,
 # LFM2.5-2.6B 654f9463), and the size of w1 in their safetensors (the 350M's and the 1.2B's: 4608 and 8192)
 PUBLISHED = {
     "LFM2.5-350M": (dict(hidden_size=1024, block_ff_dim=6656, intermediate_size=6656, block_auto_adjust_ff_dim=True,

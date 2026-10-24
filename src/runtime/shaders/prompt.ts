@@ -377,14 +377,14 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 //   same 4: 21, on four times the bytes). Kept unsigned with the sum taken off (the fork's and the CPU's form) it is 4
 //   vector instructions fewer and 2 reads of the workgroup's memory, an add and a subtraction more, with a sum made by
 //   each thread that loads the vector: fewer instructions where vectors are scalar, as many where they are not. Which
-//   is faster is a device's to say, and none has measured it (TODO.md's T232 has what would overturn this choice).
+//   is faster is a device's to say, and none has measured it (TASKS.md's T232 has what would overturn this choice).
 // (The T232 review.) ONNX Runtime has these weights too: the n_bits == 2 path of its templates unpacks a word by a table
 // of 256 words in the workgroup's memory (dp4a_matmul_common.wgsl.template's DequantizedFrom2BitsTo8Bits and
 // LoadDequantizationTable; the quarter of its table with zero point 1 is the code less one, this project's mapping): 4
 // reads of the table a word of 16 codes where this is 9 vector instructions (36 where vectors are scalar). Not taken: the
 // fork's is the form for these files, and a wave reading a table at random meets its banks (simulated: 2.3 cycles a read
 // for 16 lanes, 3.2 for 32, on 32 banks); where an instruction is what bounds a device the table may be faster. Nothing
-// is measured: a device's to say, as T146's forms are (TODO.md's T232 review proposes giving it both).
+// is measured: a device's to say, as T146's forms are (TASKS.md's T232 review proposes giving it both).
 // In the tiles the unpacking is in the load of the workgroup's memory, once a row for the tile's 64 tokens.
 // A device without the packed int8 dot (packed_4x8_integer_dot_product) keeps a ternary model on the CPU: the float
 // forms (llama.cpp's tiles, TensorFlow.js's) would unpack every weight to a float and multiply it, where the model's

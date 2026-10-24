@@ -90,7 +90,7 @@ KNOWN = {
 # T236 (its review): the families whose entries have the BOS be the format's own first token (<|im_start|>), so that the
 # page sends the real template's ids exactly, none before them. Everywhere else a BOS of the page's in front of the real
 # ids is let by (same_ids; the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front
-# of <|im_start|> (which costs a Qwen3.5 much, TODO.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
+# of <|im_start|> (which costs a Qwen3.5 much, TASKS.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
 # extra token is not the one the real ids begin with). T253's Granite 4.2 are made the same way, and T247's other sizes
 # of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one). T254's review: MiniCPM5's template
 # writes its BOS (<s>, bos_token) itself as its first token, and the page puts that one first and writes the format after it:

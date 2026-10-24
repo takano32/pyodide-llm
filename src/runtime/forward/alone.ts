@@ -109,7 +109,7 @@ export function gpuHoles(tensors: Tensors) {
 export const placer = (holes: Hole[]) => (offset: number) => holes.reduce((at, [start, end]) => (end <= offset ? at - (end - start) : at), offset);
 
 /** T156: whether a model goes on the GPU alone, from what is known before its bytes come (the owner's B, 2026-09-27;
- * TODO.md's T156 has the numbers): both, as before (T148: the layers in this memory and on the GPU, and each block and
+ * TASKS.md's T156 has the numbers): both, as before (T148: the layers in this memory and on the GPU, and each block and
  * step where it is faster), where both fit half of what the device says it has; else the GPU alone where the model can
  * be (eligible: a Llama the GPU's steps take, T152) and it fits; else the CPU (and the prompts on the GPU where the
  * layers alone fit, gpuRoom, as before). deviceMemory: navigator.deviceMemory, 4 where the browser does not say

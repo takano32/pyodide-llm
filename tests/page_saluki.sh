@@ -46,7 +46,7 @@
 # LINES: the lines of the comparison (logits,kl,kv,the KL on average), as tests/page-27b.mjs takes them, the logits' over
 # the tokens the reference gives a probability; QUIET: the texts whose logits, keys and values are held (the bare
 # texts: after the marks of a chat's turn this model's logits move by 13 with the last bit of an activation, in the
-# engine's own NumPy run too). What T364's runs measured (TODO.md): the page is 0.14 and 0.25 from llama.cpp with
+# engine's own NumPy run too). What T364's runs measured (TASKS.md): the page is 0.14 and 0.25 from llama.cpp with
 # float32 activations on the bare texts, a KL of 1.4e-3 at most there and 6.5e-2 at most (1.9e-3 on average) on a
 # chat's turn, the keys and values 0.046 of a layer's largest; the weakest plan broken on purpose (one layer of a
 # linear-attention matrix read as another type) 5.0, a KL of 0.48 at most and 0.08 on average, 0.48.

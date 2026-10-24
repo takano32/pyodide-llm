@@ -103,7 +103,7 @@ async function visit(ms, { remembered = 0, hint = 8, sigma = 0, slow = 0, by = 3
 }
 
 // ---- T239's table (--table): what this forward.js's search spends and where it ends, a shape of times and a number of
-// logical cores a row. No check: it is how the form of the search was chosen (TODO.md's T239), run on each form's copy of
+// logical cores a row. No check: it is how the form of the search was chosen (TASKS.md's T239), run on each form's copy of
 // forward.js through --forward. first: the comparisons of a first visit (from the logical cores), the count it ends on,
 // and the ms they take over as many tokens on the fastest count; later: the same of a visit that remembers the fastest
 // count; then, under each noise, 200 first visits and a chain of 200 visits (each from what the last one remembered): the

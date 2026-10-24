@@ -95,7 +95,7 @@ export function readMark(storage, now = Date.now) {
   }
 }
 
-// how a run ended (the owner chose the words that do not say more than the page knows, 2026-09-27: TODO.md T173)
+// how a run ended (the owner chose the words that do not say more than the page knows, 2026-09-27: TASKS.md T173)
 function ending(d) {
   switch (d.stop) {
     case "reloaded": return `the tab ended while it grew to ${mib(d.trying)} and the page was loaded again: the browser ended it, most likely for its memory`;

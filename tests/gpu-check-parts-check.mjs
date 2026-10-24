@@ -106,7 +106,7 @@ check("the made-up models an engine runs", () => {
 // ---- lines.mjs
 check("the numbers a run is held to are the ones decided", () => {
   // each is a decision with its derivation in lines.mjs (T187: the lines are the arithmetic's own distances): loosening one
-  // lets a wrong GPU through, so changing one is changing this too, and saying why in TODO.md
+  // lets a wrong GPU through, so changing one is changing this too, and saying why in TASKS.md
   assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4, f16: 8 }, K_PACKED: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
 

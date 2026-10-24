@@ -132,7 +132,7 @@ export const HF_FAMILIES = [
   // 30 GB), on a 64-bit memory (7.31 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
   // rotated model has no GPU path yet). The PTQ1_0 file, the smaller of the two that hold the same weights (5.95 GB
   // against PQ2_0's 7.21 GB; both convert to the same checkpoint, byte for byte): Pyodide converts it at 27 MB/s and
-  // PQ2_0 at 53, so on a line slower than 33 MB/s it is ready sooner, by the 1.26 GB less it fetches (TODO.md's T233).
+  // PQ2_0 at 53, so on a line slower than 33 MB/s it is ready sooner, by the 1.26 GB less it fetches (TASKS.md's T233).
   // The vocabulary and config.json are those of the model it is built from, Qwen/Qwen3.8-27B, whose weights are not
   // these (rebuilt: no check holds this GGUF's tensors to that repository's; tests/unfold_27b.py and
   // tests/page_27b.sh hold them, to the base model in the turned-back basis and to Prism ML's fork of llama.cpp).
@@ -222,7 +222,7 @@ export const HF_FAMILIES = [
   // 282 + 129 MB of memory where it takes 399 + 155, 0.79 to 0.88 times its speed on CI's CPUs, 1.2% more nats a
   // character of Japanese. What it takes once loaded is said (loaded: the checkpoint's bytes, tests/quant_sizes.py).
   // rebuilt: tests/gguf_check.py tensors holds a Q8_0 to its original within 1e-3, which 4 bits are not (gguf.yml skips
-  // it); what holds it is TODO.md's T528: that check read for its orders and errors, and T513's measures
+  // it); what holds it is TASKS.md's T528: that check read for its orders and errors, and T513's measures
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m-q4", "Shisa V2.1c LFM2 350M (4-bit)", "shisa-v2.1c-lfm2-350m",
     "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 229311104,
     "4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB", "Q4_K_M",

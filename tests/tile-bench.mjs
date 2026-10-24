@@ -1,7 +1,7 @@
 // T159: a prompt's int8 matrix product, matmul_q8r_tile (four rows by four tokens), of main and of this tree, in one
 // process, taking turns (AGENTS.md: the old and the new side by side), at 2 to 16 tokens, on 1 and 4 threads of one
 // shared memory, the rows in chunks taken in turn as forward/threads.js's phase() cuts them. (Before T197 it set the tile
-// against jobs.js's form before T159, blocks of 16 KB with matmul_q8r for each token: that is in TODO.md's T159.)
+// against jobs.js's form before T159, blocks of 16 KB with matmul_q8r for each token: that is in TASKS.md's T159.)
 //
 // Each side is held to the float64 sums of the same integers and scales (the largest error over the rows of 4 tokens,
 // relative to the largest |output|: over LINE, the bench fails before it times anything of that shape), and to itself on

@@ -30,7 +30,7 @@
 // activation grows from layer to layer (Q8 of the made-up GPT-2's keys and values, 1.1e-2, 5.1e-2 and 7.9e-2 at layers
 // 0 to 2), and the packed shaders' line, K_PACKED × Q8, lay above the distance of a GPU that reads another layer's
 // vector. NumPy's own answers (reference.mjs's answers, the layers' vectors taken from layer 0 in every layer, 149
-// positions; TODO.md's T226) put such a GPU at 0.4 to 3.8 of the DP4A line on the made-up GPT-2, 0.4 to 6.9 on
+// positions; TASKS.md's T226) put such a GPU at 0.4 to 3.8 of the DP4A line on the made-up GPT-2, 0.4 to 6.9 on
 // GPT-NeoX, 0.4 to 2.1 on Qwen2 and 0.3 to 1.2 on Qwen3 (a float form's 3.7 to 111), and on the calm ones at 4.8 and
 // more on GPT-2 and 9.2 and more on the Qwen, but for the vectors of q alone (q's bias and norm change the attention's
 // weights, and so the next layer's keys, which a calm model's flat attention hardly shows: 1.1 and 0.8 on the DP4A
@@ -159,7 +159,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // run); on Chromium all but the ones that only change the numbers a form is held to (DAWN_ONLY: yarn's tables, the calm
 // models' lines); on Chrome and Edge, which differ from Chromium by the build, the three whose shaders differ (NAN_MODELS:
 // Llama's fused layer, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU). A model named is run wherever it is named.
-// TODO.md's T241 has the minutes (the review of 2026-10-01)
+// TASKS.md's T241 has the minutes (the review of 2026-10-01)
 // (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];

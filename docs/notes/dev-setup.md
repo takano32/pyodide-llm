@@ -1,6 +1,6 @@
 # 開発機の用意
 
-新しい開発機でこのリポジトリの作業を始めるための手順（T139、2026-09-26）。AGENTS.md と TODO.md と、この文書だけで始められるように書いてある。エージェントの記憶（`~/.claude/…/memory/`）は機械ごとで、移ると無くなるので写さない。持ち主から受けた決まりは AGENTS.md の「持ち主の指示」にある。
+新しい開発機でこのリポジトリの作業を始めるための手順（T139、2026-09-26）。AGENTS.md と TASKS.md と、この文書だけで始められるように書いてある。エージェントの記憶（`~/.claude/…/memory/`）は機械ごとで、移ると無くなるので写さない。持ち主から受けた決まりは AGENTS.md の「持ち主の指示」にある。
 
 CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手順なので、迷ったらそちらを見る。
 
@@ -16,7 +16,7 @@ CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手
 
 **この手順で a1-free を用意した（2026-09-26、T139 の段 6）**。書いたとおりに入らなかったのは 3 つで、どれも直した: transformers の版と protobuf（下の venv）、Playwright のブラウザ（下の「ブラウザ」）。
 
-a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、持ち主が git・gh（ログイン済み）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-regex・python3-jinja2・python3-sentencepiece（0.2.1）・python3-venv・wget・curl・gcc・make・Google Chrome 154 を入れてあった。T139 の段 6 で足したのは python3-protobuf、参照の venv、Playwright の Chromium だけ。エージェントの記憶のフォルダは写さない（中身は 2026-09-26 に AGENTS.md と TODO.md に移した）。
+a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、持ち主が git・gh（ログイン済み）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-regex・python3-jinja2・python3-sentencepiece（0.2.1）・python3-venv・wget・curl・gcc・make・Google Chrome 154 を入れてあった。T139 の段 6 で足したのは python3-protobuf、参照の venv、Playwright の Chromium だけ。エージェントの記憶のフォルダは写さない（中身は 2026-09-26 に AGENTS.md と TASKS.md に移した）。
 
 ```sh
 sudo apt update

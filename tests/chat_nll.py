@@ -33,7 +33,7 @@
 # KL(A || B) 0.115 a token at once (standard error 0.010) and 0.178 thinking (0.017), the most likely token the same at
 # 87.0% and 91.0% of the positions, the answer likelier under A on 23 of 24 and 24 of 24 prompts. Ternary Bonsai 1.7B (a
 # Qwen3, 151643 and 151645; run 36936367926): 1. B 4.4% better than A (worse on 3 of 24; standard error 0.010); 2. KL 0.0080
-# (standard error 0.0010), the most likely token the same at 96.9%. TODO.md's T236 and T246 have the rest.
+# (standard error 0.0010), the most likely token the same at 96.9%. TASKS.md's T236 and T246 have the rest.
 import json
 import math
 import sys

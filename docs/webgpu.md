@@ -216,7 +216,7 @@ same path, but not across the CPU and the GPU, whose forward passes differ in th
 activations to 7 or 8 bits). Either side takes the same random number for the same token; but every 8 answers, the
 first tokens of one go to the side not chosen, so that answer may differ from an earlier one with the same seed. The
 tasks are in
-[TODO.md](../TODO.md) (T156, T191, T202 and T208, in Japanese).
+[TASKS.md](../TASKS.md) (T156, T191, T202 and T208, in Japanese).
 
 ## Try it yourself
 

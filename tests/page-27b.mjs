@@ -15,7 +15,7 @@
 // <out>.json (--wide: on a 64-bit memory whatever its size, as the 27B is). The engine gets the options the page's worker merges: the conversion's, then those of the list's entry
 // (--entry <id>, hf-ternary-bonsai-2-27b where the list has it; --entry none: the conversion's alone).
 //
-// compare: what the review of T238 listed (TODO.md, "T233 が比べること"). <references> is the work directory of
+// compare: what the review of T238 listed (TASKS.md, "T233 が比べること"). <references> is the work directory of
 //   tests/reference_27b.sh run with SAVE_LOGITS=<references>/saved: fork-<i>.ids (the fork's own ids of each text, and
 //   the 16 tokens it wrote), f32/fork-<i>.single (the logits of the fork with float32 activations, a token at a time),
 //   saved/engine-<i>-as-8-bits-round.{logits,keys,values} (the engine's NumPy forward pass with the activations rounded
@@ -75,7 +75,7 @@ const GiB = 2 ** 30, MiB = 2 ** 20;
 // are closer than twice the largest difference. This line does not see an error as small as one sign of the 17408
 // values (0.11), which is what the keys and values are for: against the engine's own run with the same rounding the
 // noise is float32's order of sums and the rounding steps it tips, not the step itself. kv: the largest difference of
-// a key or a value, as a part of the largest key or value of its layer (TODO.md's T233 has what was measured).
+// a key or a value, as a part of the largest key or value of its layer (TASKS.md's T233 has what was measured).
 const LINES = { logits: 0.35, kl: 2e-3, kv: 0.05 };
 // The lines of long (the review of T233): not the fork with float32 activations (it widens every row it multiplies by,
 // 9 seconds a token: 15 hours for 6,000) but the fork as it is, whose own batch and one-token paths are 0.1 apart: so the

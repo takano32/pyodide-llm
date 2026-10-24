@@ -2,7 +2,7 @@
 // tree's, in one process, taking turns (AGENTS.md: the old and the new side by side), with matmul_q8r (int8) for the
 // ratio T98 wrote down (0.45). The tree's output must be main's to the bit (matmul_q6r's only while the two make
 // the same corrections: T197 changed them). (The forms T166 measured and dropped are
-// in TODO.md's T166: put another kernels/six.ts in the tree to compare one.) Compiles each form with AssemblyScript into .tmp/six-bench/ (needs `npm ci`; `make kernels` not).
+// in TASKS.md's T166: put another kernels/six.ts in the tree to compare one.) Compiles each form with AssemblyScript into .tmp/six-bench/ (needs `npm ci`; `make kernels` not).
 //
 //   node tests/six-bench.mjs [--rounds 3] [--turns 7]
 //

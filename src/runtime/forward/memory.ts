@@ -213,7 +213,7 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
-  // times as fast on one thread at position 2000, 1.15 to 1.26 on four, CI's x86-64 and arm64; TODO.md's T160), and
+  // times as fast on one thread at position 2000, 1.15 to 1.26 on four, CI's x86-64 and arm64; TASKS.md's T160), and
   // one thread waits on the arithmetic of the widening (T110): float32 there. But float16 on a shared memory wherever
   // float32 would not fit a 32-bit one (the owner, 2026-09-27: Llama 3.2 3B and the 7B models, on a 64-bit memory,
   // keep their memory), and T130, on a memory that is not shared (a page not cross-origin isolated, or a shared one

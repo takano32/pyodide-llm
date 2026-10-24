@@ -159,7 +159,7 @@ function tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, wc: usize
 // lane passes, each every fourth group: every other 64-byte line, 128 bytes apart, and a pass over a row of 2 KB is
 // 16 steps long. From memory (a model's weights, read once a block) the x86 prefetchers did not keep up with passes
 // that short: on the EPYC 9V74 and 9V45 (Zen 4 and 5) the tile took up to 1.6 times as long as the blocks before it,
-// at 4 to 8 tokens (the numbers are in TODO.md's T159). Past rows of 2560 bytes the passes are long enough, and a read
+// at 4 to 8 tokens (the numbers are in TASKS.md's T159). Past rows of 2560 bytes the passes are long enough, and a read
 // ahead of 12 KB and more fell out of the first cache before the tile got to it (slower than none on the 9V45). The
 // sum is there only so that the reads stay (a load whose value is not used goes away): it is stored where the tile
 // writes next.

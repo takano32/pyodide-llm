@@ -52,7 +52,7 @@ export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes
  * weights with the vocabulary, config.json and chat template of Shisa's original. Its template calls no macro (the
  * LFM2's of Liquid AI do), so the BOS (<|startoftext|>), the format and the specials are the converter's, as the
  * LFM2.5 1.2B JP's are. The cards name no sampling and generation_config.json says do_sample and nothing more: the
- * LFM2 700M's (temperature 0.3, Liquid AI's LFM2 cards; a choice of the coordinator, TODO.md's T511).
+ * LFM2 700M's (temperature 0.3, Liquid AI's LFM2 cards; a choice of the coordinator, TASKS.md's T511).
  * T528: another GGUF of the same repository (quantization: the name's word, Q4_K_M) with what it takes besides (more:
  * conversion.blocks and loaded) */
 export const shisaLfm2 = (id, name, repo, revision, ggufRevision, download, sizes, quantization = "Q8_0", more = {}) => ({
@@ -68,7 +68,7 @@ export const shisaLfm2 = (id, name, repo, revision, ggufRevision, download, size
  * eos_token_id (1 and 106) has the real generate() stop. The sampling is generation_config.json's: do_sample with a
  * top-k of 64 and a top-p of 0.95, and transformers' temperature of 1.0 where it names none.
  * The notice the Gemma Terms of Use ask for is not in the note: at a phone's width the select never shows it (the
- * owner chooses where it goes, TODO.md's T261.3) */
+ * owner chooses where it goes, TASKS.md's T261.3) */
 export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
   group: "hf", id: `hf-gemma-3-${size.toLowerCase()}`, name: `Google Gemma 3 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`,

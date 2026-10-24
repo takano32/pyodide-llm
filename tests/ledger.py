@@ -1,12 +1,12 @@
-"""The ledger: TODO.md holds the tasks still moving, docs/tasks/ the ones done.
+"""The ledger: TASKS.md holds the tasks still moving, docs/tasks/ the ones done.
 
-TODO.md is read by people and agents alike, and at 4.5 MB nobody could read it
+TASKS.md is read by people and agents alike, and at 4.5 MB nobody could read it
 any more (2026-10-15, the owner: split it, keep a table of contents). So a task
-that is done leaves TODO.md for a file of its own, docs/tasks/T<number>.md (a
+that is done leaves TASKS.md for a file of its own, docs/tasks/T<number>.md (a
 subtask stays in its parent's file: T329.2 goes to T329.md), and two tables of
 contents are made from the headings, never written by hand:
 
-  - the head of TODO.md: every task still in it, in the order of the file,
+  - the head of TASKS.md: every task still in it, in the order of the file,
     with its state;
   - docs/tasks/README.md: every task in docs/tasks/, by number.
 
@@ -19,7 +19,7 @@ contents are made from the headings, never written by hand:
 A task's heading is a line "### T<number> …" with "状態: …" in it. It is done
 when its state begins with 完了, or for the few older ones that said it
 otherwise, when its number is in OLDER_DONE. Nothing is rewritten: a block of
-lines moves as it is, and split checks that every line of TODO.md before is in
+lines moves as it is, and split checks that every line of TASKS.md before is in
 exactly one place after.
 """
 
@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TODO = ROOT / "TODO.md"
+LEDGER = ROOT / "TASKS.md"
 TASKS = ROOT / "docs" / "tasks"
 INDEX = TASKS / "README.md"
 
@@ -131,9 +131,9 @@ def index_text():
     return "\n".join([
         "# 済んだタスク",
         "",
-        "TODO.md から移した、済んだタスクの本文（1 つに 1 ファイル、子タスクは親のファイルに）。"
+        "TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル、子タスクは親のファイルに）。"
         "この目次は `python tests/ledger.py index` が見出しから作る（手で書かない）。"
-        "記録やコメントが「TODO.md の T○○」と指していたら、済んだものはここの `T○○.md` を読む。",
+        "記録やコメントが「TASKS.md の T○○」と指していたら、済んだものはここの `T○○.md` を読む。",
         "",
         "もっと古い済んだタスク（T1〜、1 行ずつの一覧）は [done-list.md](done-list.md)。",
         "",
@@ -143,7 +143,7 @@ def index_text():
 
 
 def split():
-    before = TODO.read_text().split("\n")
+    before = LEDGER.read_text().split("\n")
     lines = without_toc(before)
     kept, moved = [], {}
     section = ""
@@ -164,10 +164,10 @@ def split():
         path = TASKS / f"{name}.md"
         old = path.read_text().rstrip("\n").split("\n") + [""] if path.exists() else []
         path.write_text("\n".join(old + body).rstrip("\n") + "\n")
-    TODO.write_text("\n".join(with_toc(kept)))
+    LEDGER.write_text("\n".join(with_toc(kept)))
     INDEX.write_text(index_text())
-    # every line of TODO.md before (without its toc) is in exactly one place now
-    after = without_toc(TODO.read_text().split("\n"))
+    # every line of TASKS.md before (without its toc) is in exactly one place now
+    after = without_toc(LEDGER.read_text().split("\n"))
     spread = list(after)
     for name in moved:
         spread += (TASKS / f"{name}.md").read_text().split("\n")
@@ -176,25 +176,25 @@ def split():
     missing = want - have
     if missing:
         sys.exit(f"ledger: {sum(missing.values())} lines went missing, e.g. {next(iter(missing))[:80]!r}")
-    print(f"ledger: moved {len(moved)} files' worth of done tasks; TODO.md is "
-          f"{len(TODO.read_text().encode())} bytes (was {len(chr(10).join(before).encode())})")
+    print(f"ledger: moved {len(moved)} files' worth of done tasks; TASKS.md is "
+          f"{len(LEDGER.read_text().encode())} bytes (was {len(chr(10).join(before).encode())})")
 
 
 def index():
-    TODO.write_text("\n".join(with_toc(TODO.read_text().split("\n"))))
+    LEDGER.write_text("\n".join(with_toc(LEDGER.read_text().split("\n"))))
     INDEX.write_text(index_text())
 
 
 def check():
-    lines = TODO.read_text().split("\n")
+    lines = LEDGER.read_text().split("\n")
     wrong = []
     if lines != with_toc(lines):
-        wrong.append("TODO.md's table of contents")
+        wrong.append("TASKS.md's table of contents")
     if INDEX.exists() and INDEX.read_text() != index_text():
         wrong.append("docs/tasks/README.md")
     still = [HEADING.match(l).group(1) for l in lines if done(l)]
     if still:
-        wrong.append(f"done tasks still in TODO.md ({', '.join(still[:5])})")
+        wrong.append(f"done tasks still in TASKS.md ({', '.join(still[:5])})")
     if wrong:
         sys.exit("ledger: not as `python tests/ledger.py split` would leave it: " + "; ".join(wrong))
     print("ledger: ok")

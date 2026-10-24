@@ -42,7 +42,7 @@ EDGES = ["", " ", "  ", "   ", " " * 40, "\n" * 40, "\t" * 40, "a" + " " * 33 + 
          "<unused0><unused12> <unused6241>x", "[multimodal]", "<mask>", "https://example.com/a/b?c=1&d=2#frag",
          "def f(x):\n    return x  # 日本語のコメント\n", "<div class=\"a\"><p>hello</p></div>\n", "１２３４５６７８９０", "3.14159 1,234,567",
          "ｶﾞｷﾞｸﾞ", "㍻㋿", "ǅ ǆ ß ẞ ſ", "ﬁﬂ", "…—–‐", "　全角の空白　", "ゟ", "𠮷野家", "\U0001f600\U00029E3D"]
-DEFAULT_TEXTS = ["TODO.md", "AGENTS.md", "README.md", "docs/performance.md", "src/python/engine/tokenizer.py",
+DEFAULT_TEXTS = ["TASKS.md", "AGENTS.md", "README.md", "docs/performance.md", "src/python/engine/tokenizer.py",
                  "src/runtime/forward/engine.ts", "src/pages/index.astro"]
 
 

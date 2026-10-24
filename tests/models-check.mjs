@@ -101,7 +101,7 @@ assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int6" } }), 457e6 * 1
 // T233: Ternary Bonsai 2 27B, ternary on any device (as int8 it is past every browser's memory). A device that says
 // less than 8 GB is warned; one at the cap (8 GB or more) is not, by the page's rule (T133: the note's 7.2 GB and the
 // page's 0.3 are under 8 GiB), although the checkpoint with its forward pass and the page is about 8.6 GB, which a
-// device of exactly 8 GB does not hold: what to tell such a device is the owner's to word (TODO.md's T233).
+// device of exactly 8 GB does not hold: what to tell such a device is the owner's to word (TASKS.md's T233).
 // Its original is the model it is built from, whose weights are other ones (rebuilt: gguf.yml skips it)
 const largest = byId("hf-ternary-bonsai-2-27b");
 for (const deviceMemory of [undefined, 4, 8]) assert.equal(weightsFor(largest, undefined, deviceMemory), "ternary");
@@ -297,7 +297,7 @@ for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
   for (const entry of [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]) {
     assert.ok(!/desktop only|Chrome and Firefox/.test(entry.note), `${entry.id}'s note says "desktop only" or "Chrome and Firefox" by hand: devicesOf() adds them`);
   }
-  // the lines a second time, by the entries on either side of each (TODO.md's T511.4): the largest without and the
+  // the lines a second time, by the entries on either side of each (TASKS.md's T511.4): the largest without and the
   // smallest with, at the sizes the notes say
   const said = (id) => DEVICES.exec(byId(id).note).slice(1).map(Boolean);
   assert.deepEqual(said("hf-gpt2-xl"), [false, false], "1.8 GB: a 4 GB phone is not warned");

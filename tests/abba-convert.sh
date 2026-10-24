@@ -18,7 +18,7 @@ fi
 # T374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs): where the buffers lie is the
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
 # (before T374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
-# this job; between jobs the same comparison moved by more than that (TODO.md's T374.2.1): one job is not a verdict.
+# this job; between jobs the same comparison moved by more than that (TASKS.md's T374.2.1): one job is not a verdict.
 if ! grep -q LAYOUT .tmp/base/tests/profile-convert.mjs; then
   sed -i -e 's|^const convert = py.pyimport("llama2_convert");$|py.runPython(`layout_before = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[0])})`);\n&|' \
     -e 's|^py.globals.set("conversion", conversion);$|py.runPython(`layout_beside = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[1])})`);\n&|' .tmp/base/tests/profile-convert.mjs

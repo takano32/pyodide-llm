@@ -1,6 +1,6 @@
 # T511 スマホのユーザ向けに一覧を見直す（小さい ELYZA を含む）（2026-10-15）
 
-調べと表だけ。製品のコードは変えていない。Hugging Face の API（一覧と検索 約 45 回）、カードの README、config.json を読んだ。重みは取っていない。数字は API・カード・config・一覧（`src/models.js` を Node で読んだもの）と台帳（TODO.md・AGENTS.md・docs/performance.md）から取った。書いていない数は未計測。
+調べと表だけ。製品のコードは変えていない。Hugging Face の API（一覧と検索 約 45 回）、カードの README、config.json を読んだ。重みは取っていない。数字は API・カード・config・一覧（`src/models.js` を Node で読んだもの）と台帳（TASKS.md・AGENTS.md・docs/performance.md）から取った。書いていない数は未計測。
 
 ## まとめ
 
@@ -114,7 +114,7 @@
 
 1. **「desktop only」は手書きで、線は約 0.8 GB**。付いていない最大は Qwen3 0.6B の 671 MB、付いている最小は（Hugging Face の組で）LFM2 700M の 836 MB。台帳の記録も割れている（T249 の (h) は「int8 が 1.4 GiB 以上」と書き、T251 は「0.8 GB 以上」と書く。今の一覧は後者）。
    - ページ自身の決まりとずれる: `memoryWarning()` が `deviceMemory` 4 の端末に警告を出すのは int8 + 0.3 GB が 2 GiB を超えるとき（約 1.85 GB から）。1.85 GB 以下の 31 項目（Hugging Face の組の 28 とサイトの組の 3）は、4 の端末でも警告が出ないのに「desktop only」と書いてある。
-   - 持ち主の Android（8 と言う）は「desktop only」の Llama 3.2 3B Instruct（3.6 GB）を 6.0 tok/s で動かした（TODO.md、2026-09-28）。8 と言う端末には「desktop only」の 3B 級まで実際は開く。
+   - 持ち主の Android（8 と言う）は「desktop only」の Llama 3.2 3B Instruct（3.6 GB）を 6.0 tok/s で動かした（TASKS.md、2026-09-28）。8 と言う端末には「desktop only」の 3B 級まで実際は開く。
    - **iPhone の上限は未計測**（Safari は `deviceMemory` を言わず、警告も出ない。Page memory の節は iPhone で未確認: T173）。線を 1.85 GB に上げると、iPhone で落ちる項目が「desktop only」なしになる恐れがある（覆す条件: 持ち主の iPhone で 1 GB 級を開いてタブが落ちたら、Safari のための線を別に置く）。
    - サイトの組の `stories42M`（int8 47 MB）と `stories42M-f32`（167 MB）にも「desktop only」が付いている。大きさでは当たらない。台帳に訳は見つからなかった。
 2. **選択欄の並び**: グループは「Models of this site」（6）→「Unquantized originals」（4）→「From Hugging Face …」（120）。Hugging Face の組の中は日本語の 81（軽い → 重い）の後に英語だけの 39。**スマホに入る英語だけの小さいモデル（Pythia 14M・SmolLM2・GPT-2 など 12）は、デスクトップだけの日本語 67 項目の後ろ**（82 番目から）。日本語の人には困らないが、スマホの英語の人は 67 個のデスクトップだけの項目を越えないと見つからない。T128 の並び（日本語の軽い → 重い、英語の軽い → 重い）は持ち主の決めなので変えていない。案（持ち主）: 「desktop only」の項目を各組の後ろに回す、または `deviceMemory` が小さい端末では optgroup を分ける（「This device may not have the memory」）。

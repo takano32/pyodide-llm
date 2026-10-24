@@ -140,7 +140,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // count that half did not beat is compared with a quarter of it too (far), and the way down goes on by halves from a
   // quarter that is faster. A comparison more (20 tokens) where the best count is 4 or more and nothing below it is
   // faster; none more where it is 1 or 2. Not on the way up: a visit that remembers 2 would time 8 threads every time
-  // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TODO.md's T239 has the table).
+  // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TASKS.md's T239 has the table).
   // T240: the search the count in use is owed (unchecked) does not wait for the next generation where the GPU is ready
   // inside one: it begins at the first token after that (engine.ts's forward()), so that a long first answer is not written
   // to its end on a count timed beside the GPU's getting ready. Only where the page began a generation: /benchmark/

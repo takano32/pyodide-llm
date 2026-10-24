@@ -1,7 +1,7 @@
 // T231: the matrix product of a token on ternary weights: the kernels of kernels/ (t2r: matmul_t2r, t2: matmul_t2 without
 // relaxed SIMD; q8r and q8: the int8 kernels on the same weights widened to int8, which is how T235 ran a ternary
 // model) and the forms of tests/ternary-forms.ts that were set against them (bc, bs, bx, c, a), in one process, taking turns, on 1 and 4 threads of one shared memory, the rows in chunks taken in turn as forward.js's
-// phase() cuts them (TODO.md's T231 has what each form is and the table).
+// phase() cuts them (TASKS.md's T231 has what each form is and the table).
 //
 // The matrices are read from memory, as a model's are (each read once a token): copies of each past every cache
 // (--megabytes a form, default 256), a call on each in turn (T159's review: one matrix timed again and again stays in

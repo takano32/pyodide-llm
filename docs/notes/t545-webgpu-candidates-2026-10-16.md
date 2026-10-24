@@ -8,7 +8,7 @@
 
 - `src/runtime/forward/gpuside.ts` の `gpuFit()`（`gpuUnfit()`・`tokensUnfit()`）、`forward/alone.ts` の `aloneFactsUnfit()`・`gpuOnlyUnfit()`、`forward/reasons.ts` の `REASONS`、`jobs.ts` の `PACKED` の `gpu` の欄（int8・int6・3 値だけが行を持ち、塊は `gpu: null`）、`shaders/engine.ts` の目録、`forward/choice.ts`（`GPU_BLOCK = 64`・`GPU_TOKENS = 4`）。
 - 一覧（`src/models/`）の標本抽出: top-k を持つのは Gemma 3（64）・Gemma 4（64）・Qwen3.5 系（20）・Saluki（20）、presence penalty は Qwen3.5 系と Agents-A1、min-p は Bonsai 2 27B の考える形。
-- TODO.md の WebGPU の動いているタスク（T171・T263・T270・T271・T293〜T297・T313・T325・T334・T344・T443〜T499 の整理）と docs/tasks の済んだもの（T146〜T241、T255、T351〜T382）。
+- TASKS.md の WebGPU の動いているタスク（T171・T263・T270・T271・T293〜T297・T313・T325・T334・T344・T443〜T499 の整理）と docs/tasks の済んだもの（T146〜T241、T255、T351〜T382）。
 
 ## GPU に置けない訳と、当たる一覧の項目
 

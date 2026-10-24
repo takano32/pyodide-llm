@@ -1,7 +1,7 @@
 // T164: what a token costs outside forward.js, in Node's Pyodide, as the page runs it: the forward pass in
 // src/runtime/forward.js, the sampling kernels of simdkernel.so through ctypes, and generate() in Python, driven from
 // JavaScript as src/runtime/worker.js drives it. One thread: tests/engine.mjs starts no software threads (the page's
-// threads shorten the forward pass and leave the outside as it is, see T164 in TODO.md).
+// threads shorten the forward pass and leave the outside as it is, see T164 in TASKS.md).
 //
 // A generated token, at the positions 0..N-1, with the model's temperature, top-p and repetition penalty:
 //   JS forward     engine.forward() in a loop of JavaScript: the forward pass, and the copy of the logits into

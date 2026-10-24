@@ -2,7 +2,7 @@
 // the model has no table of it: a token's path then compares null twice). Made of what the engine hands a kind of layer
 // (kinds.ts's Core), and of rows: what reads a token's row of the table (createForward()'s, the comments say). Python's
 // side is engine/model.py's Llama.forward() (where it says T329), and the converter folded the model's scales into the
-// table, the projection and its norm (TODO.md's T329). A module of src/runtime/forward.ts.
+// table, the projection and its norm (TASKS.md's T329). A module of src/runtime/forward.ts.
 import { packingOf } from "../jobs.ts";
 import { align, halfToFloat, perLayerBytes } from "./memory.ts";
 import type { Core } from "./kinds.ts";

@@ -13,7 +13,7 @@ export const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalt
 // a top-k of 20 and a presence penalty with all of them. QWEN35_SAMPLING: the 4B's and the 9B's for general tasks, and
 // NeoHorse-1's (its card measured with the thinking set). The 0.8B's and the 2B's cards name the same set with
 // thinking; without, 1.0, top-p 1.0 and a presence penalty of 2.0 "for text" and these 0.7 and 0.8 "for VL tasks":
-// the 0.8B wrote worse with the former (TODO.md's T274: a French sentence that means nothing, where it translated
+// the 0.8B wrote worse with the former (TASKS.md's T274: a French sentence that means nothing, where it translated
 // rightly with 0.7 and 0.8), so the latter. Agents-A1's card has one set, Bonsai 2's a min-p where it thinks
 const sampling35 = (temperature, topp, more) => ({ steps: 0, temperature, topp, repetition_penalty: 1.0, top_k: 20, ...more });
 export const QWEN35_SAMPLING = { thinking: sampling35(1.0, 0.95, { presence_penalty: 1.5 }), atOnce: sampling35(0.7, 0.8, { presence_penalty: 1.5 }) };
@@ -23,7 +23,7 @@ export const BONSAI_2_SAMPLING = { thinking: sampling35(1.0, 0.95, { min_p: 0.05
 // penalty), and for chat without thinking 1.0, top-p 1.0, the top-k and a presence penalty of 2.0
 export const QWEN35_JA_SFT_SAMPLING = { thinking: sampling35(1.0, 0.95), atOnce: sampling35(1.0, 1.0, { presence_penalty: 2.0 }) };
 // T364.3: Underdog Saluki 27B's card: 0.6, 0.95 and the top-k where it thinks, greedy where it answers at once. Not a
-// Qwen3.5's set: with its presence penalty one answer of four fell to doubting itself over and over (TODO.md's T364)
+// Qwen3.5's set: with its presence penalty one answer of four fell to doubting itself over and over (TASKS.md's T364)
 export const SALUKI_SAMPLING = { thinking: sampling35(0.6, 0.95), atOnce: greedy };
 // its card: "Use temperature=1.0 and top_p=0.95 across all tasks", thinking or not
 export const graniteSampling = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };

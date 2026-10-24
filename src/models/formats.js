@@ -24,7 +24,7 @@ export const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [
 // those made from one) keep sending what they sent: a Qwen2.5 is within 3% either way and a Qwen3 of 4B or less 8 to 10%
 // worse on plain text with <|im_start|> first (T131, T250's review), and what they write was read with that BOS. So
 // they say it now: the BOS (QWEN3_OWN_BOS, below) and the whole format, as the converter read it before. Whether they
-// should begin as the real template does is a measurement to make (TODO.md's T369, its findings)
+// should begin as the real template does is a measurement to make (TASKS.md's T369, its findings)
 export const QWEN25 = `<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n${CHATML}`;
 export const TINYSWALLOW = "<|im_start|>system\nあなたは、Sakana AI株式会社が開発したTinySwallowです。小型ながら、誠実で優秀なアシスタントです。" +
   `<|im_end|>\n${CHATML}`;

@@ -178,7 +178,7 @@ Checks:
 - `npm run build && node tests/e2e.mjs [model] [chromium|firefox]`: the page in a real browser (Playwright).
 
 Pushing to `main` deploys to GitHub Pages. [AGENTS.md](AGENTS.md) (in Japanese) holds the decisions, measurements
-and pitfalls, and [TODO.md](TODO.md) the tasks.
+and pitfalls, and [TASKS.md](TASKS.md) the tasks.
 
 ## Acknowledgments
 

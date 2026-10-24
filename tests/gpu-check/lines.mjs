@@ -13,7 +13,7 @@ const NOT_FINITE_KV_STATUS = /^prompts on the CPU \(the GPU computed keys or val
 // Dawn's lavapipe and this machine's SwiftShader, 149 tokens: two blocks of 64 and a part). The CPU's forward.js: 4.1e-2
 // to 3.2e-1 (its 7-bit activations; the made-up model's random weights the most). A GPU that is wrong lands far past
 // the lines (broken on purpose: RoPE at the next position 1.13 to 1.16, no causal mask 1.86 to 6.97, the keys written
-// back in the order [token][layer] 2.50 to 4.62, T135; T147's six in TODO.md).
+// back in the order [token][layer] 2.50 to 4.62, T135; T147's six in TASKS.md).
 //   float32 (TF.js's tiles, llama.cpp's f32): 8.1e-4 to 2.4e-3 for the models here, 3.90e-3 for the made-up one: the
 //     float16 of the cache (2^-11 = 4.9e-4 of a value) and the attention on float16 keys and values from the first
 //     layer on, as the CPU's (T135's GPU read its own float32 ones: 4.5e-4 to 4.7e-4 at 39 tokens), growing with the
@@ -43,7 +43,7 @@ const K = { float32: 4, f16: 8 };
 // passed at 0.55, and GPT-2's logits went past 1.5 on keys and values that were NumPy's own; they moved wherever the
 // CPU's arithmetic did). Each is held to a yardstick of its own. The numbers are CI's Dawn on lavapipe (runs
 // 36314674862 and 36314674849, 149 tokens, the made-up models, Qwen2.5 0.5B, Qwen3 0.6B, llm-jp-3 150M, SmolLM2 360M,
-// and with T154 GPT-2 124M and Pythia 160M; TODO.md's T187):
+// and with T154 GPT-2 124M and Pythia 160M; TASKS.md's T187):
 //   - the packed shaders (8-bit activations) to Q8: NumPy's answer with the inputs of the layers' matrices quantized
 //     as quantize_x does it (8 bits, 32 a group, half to even) and its cache in float16, which is ORT's DP4A's
 //     arithmetic. Their first layer against Q8's: 8.1e-5 to 2.9e-3 (Qwen3 0.6B the most), the line GPU_LINE (a
