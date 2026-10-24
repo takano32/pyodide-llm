@@ -277,6 +277,14 @@ async function validated<T>(m: Model, fn: () => T): Promise<Awaited<T>> {
 }
 const pipelineOf = (m: Model, code: string, constants?: Record<string, number>) => m.device.createComputePipelineAsync({ layout: "auto",
   compute: { module: m.device.createShaderModule({ code }), entryPoint: "main", constants } });
+// RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm: the size of what it norms, at (of its weights), eps, and first (HEAD_NORM's:
+// the rows before its first)
+function normShape(m: Model, size: number, at: number, eps: number, first = 0) {
+  const shape = new ArrayBuffer(16);
+  new Uint32Array(shape).set([size, at, 0, first]);
+  new Float32Array(shape, 8, 1)[0] = eps;
+  return uniform(m, shape);
+}
 // (a buffer, or { buffer, offset, size }: a part of one, T155's pieces of a matrix writing into their rows of the output)
 const bind = (m: Model, pipeline: GPUComputePipeline, buffers: Bound[]) => m.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
   entries: buffers.map((buffer, binding) => ({ binding, resource: buffer.buffer ? buffer : { buffer } })) });
@@ -287,5 +295,5 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
 }
 
 export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
-  describe, unusable, end, buffer, uniform, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
+  describe, unusable, end, buffer, uniform, normShape, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Bound, Whole, Pass, Thrown, Opening };

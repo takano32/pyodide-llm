@@ -5,25 +5,17 @@
 // layer. What they keep is the keys and values, which go back and forth with the CPU's as they are (block.ts's keysIn,
 // keysOut; tokens.ts's runTokens): no state is staged.
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
-import { COPY_DST, STORAGE, turnedAt, within, buffer, uniform, copyIn, validated, pipelineOf, bind, dispatch } from "./device.ts";
+import { COPY_DST, STORAGE, turnedAt, within, buffer, uniform, normShape, copyIn, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { attentionPasses } from "./tokenattention.ts";
 import { FLASH_Q_TILE } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Added } from "./kinds.ts";
 import type { Entry } from "./tokens.ts";
-import type { Model, Pass } from "./device.ts";
+import type { Pass } from "./device.ts";
 import type { Vectors } from "../contracts/gpu/protocol.ts";
 
 // (the norm of every head of q or of k, HEAD_NORM's bind group and the heads)
 type HeadNorm = { group: GPUBindGroup; heads: number };
-// the Norm of HEAD_NORM: the head's size, at (of the weights: a layer's place among the attending ones, or the layer),
-// eps, and the rows before its first
-function headShape(m: Model, at: number, first = 0) {
-  const shape = new ArrayBuffer(16);
-  new Uint32Array(shape).set([m.plan.headSize, at, 0, first]);
-  new Float32Array(shape, 8, 1)[0] = m.plan.eps;
-  return uniform(m, shape);
-}
 
 export const attention: GpuKind = {
   cached: true,
@@ -40,7 +32,7 @@ export const attention: GpuKind = {
       layer({ l, place, product, out, added }) {
         const b = m.block, V = m.weights.vectors!;
         const headNorm = (of: GPUBuffer, name: keyof Vectors, heads: number) =>
-          (V[name] ? { group: bind(m, b.headNorm, [of, V[name], headShape(m, (plan.vectors[name]!.of ? place : l) * plan.headSize), b.step]), heads } : null);
+          (V[name] ? { group: bind(m, b.headNorm, [of, V[name], normShape(m, plan.headSize, (plan.vectors[name]!.of ? place : l) * plan.headSize, plan.eps), b.step]), heads } : null);
         const q = product("wq", b.xb, b.q), k = product("wk", b.xb, b.k), v = product("wv", b.xb, b.v);
         const biases = [added(b.q, "bq"), added(b.k, "bk"), added(b.v, "bv")].filter(Boolean) as Added[];
         const headNorms = [headNorm(b.q, "qNorm", plan.heads), headNorm(b.k, "kNorm", plan.kvHeads)].filter(Boolean) as HeadNorm[];

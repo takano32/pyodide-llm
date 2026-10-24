@@ -5,19 +5,11 @@
 // step the same on a token's vectors (a block of one); the states and the rows they go on from, place after place, as the
 // CPU keeps them (forward/linear.ts), and the check of a first layer of this kind.
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
-import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, within, buffer, uniform, pipelineOf, bind, dispatch } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, within, buffer, uniform, normShape as headNorm, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Quantizing } from "./kinds.ts";
-import type { Model, Pass } from "./device.ts";
-
-// HEAD_NORM's Norm: size, at (of the weights), eps, first (the rows before its first)
-function headNorm(m: Model, size: number, at: number, eps: number, first: number) {
-  const shape = new ArrayBuffer(16);
-  new Uint32Array(shape).set([size, at, 0, first]);
-  new Float32Array(shape, 8, 1)[0] = eps;
-  return uniform(m, shape);
-}
+import type { Pass } from "./device.ts";
 
 export const linear: GpuKind = {
   // (the read, which z's gate leaves for the matrix out to quantize)

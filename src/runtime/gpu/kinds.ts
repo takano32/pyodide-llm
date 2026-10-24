@@ -68,10 +68,11 @@ export type Stepping = {
   bindAt(pipeline: GPUComputePipeline, entries: Entry[]): GPUBindGroup;
 };
 // What a kind makes a token's uniforms with (tokens.ts's): fusedMatVec's Params (rows, n, second, normAt, turned) and
-// the norms' Norm (at, size, first, eps: the model's where none is given), and every layer's offset of its norm
+// the norms' Norm with the model's epsilon (at, size, first), and every layer's offset of its norm (device.ts's normShape
+// makes a Norm of another epsilon)
 export type Making = {
   params(rows: number, n: number, second?: number, normAt?: number, turned?: number): GPUBuffer;
-  norm(at: number, size?: number, first?: number, eps?: number): GPUBuffer;
+  norm(at: number, size?: number, first?: number): GPUBuffer;
   layers: number[];
 };
 // a kind's own of a token, made once (tokens.ts's tokenBuffers()): its layer l's dispatches of a step

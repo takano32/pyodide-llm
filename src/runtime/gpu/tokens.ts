@@ -2,7 +2,7 @@
 // dispatches of a step, and a run of steps as one submission with its ids, state, keys and values read back.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, within, buffer, uniform, validated,
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, within, buffer, uniform, normShape, validated,
   pipelineOf, bind, dispatch } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { GROUP } from "../shaders/common.ts";
@@ -205,13 +205,8 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     new Float32Array(bytes, 16, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
-  // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm: size, at, eps, first (HEAD_NORM's: the rows before its first)
-  const norm = (at: number, size = plan.dim, first = 0, eps = plan.eps) => {
-    const bytes = new ArrayBuffer(16);
-    new Uint32Array(bytes).set([size, at, 0, first]);
-    new Float32Array(bytes, 8, 1)[0] = eps;
-    return uniform(m, bytes);
-  };
+  // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm with the model's epsilon (device.ts's normShape)
+  const norm = (at: number, size = plan.dim, first = 0) => normShape(m, size, at, plan.eps, first);
   const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim);
   g.u = { embed: m.weights.tables!.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))),
     down: params(plan.dim, plan.hidden), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),

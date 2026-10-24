@@ -312,5 +312,14 @@ assert.deepEqual(posted, [{ type: "unusable", reason: "no WebGPU in a worker her
   "the start and the stop that came as the receiver was set were answered once each, in their order");
 assert.equal(closed, 1, "the worker ended once");
 console.log(`gpu-modules-check: gpu.js links (${Object.keys(window_).length} export), and a start and its stop are answered once each, in order`);
+// ---- T568.2: the GPU's kinds in the CPU's order: the state of the layers that keep one is staged by the CPU in the order of
+// its table (forward/kinds.ts's LAYER_KINDS) and taken up by the GPU in the order of its own (gpu/kinds.ts's GPU_KINDS).
+// No model has two kinds that keep a state yet, so two orders would pass every other check
+{
+  const { GPU_KINDS } = await import(tree.runtimeUrl("gpu/kinds.js"));
+  const { LAYER_KINDS } = await import(tree.runtimeUrl("forward/kinds.js"));
+  assert.deepEqual(Object.keys(GPU_KINDS), Object.keys(LAYER_KINDS), "the GPU's table of the kinds of layers has the CPU's kinds in the CPU's order");
+  console.log(`gpu-modules-check: the GPU's ${Object.keys(GPU_KINDS).length} kinds of layers are the CPU's, in its order`);
+}
 console.log("gpu-modules-check: ok");
 process.exit(0);
