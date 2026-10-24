@@ -198,7 +198,8 @@ const up = await upload(m);
   assert.ok(same(first[0].data.subarray(0, q4k), new Uint8Array(layeredMemory.buffer, at, q4k)), "and its blocks as the memory holds them");
   assert.ok(same(second[0].data.subarray(0, int8), new Uint8Array(layeredMemory.buffer, at + q4k, int8)), "the int8 layer its values");
   assert.ok(same(second[1].data.subarray(0, scales), new Uint8Array(layeredMemory.buffer, at + q4k + int8, scales)), "and its scales");
-  assert.equal(layered.weights.unjoined, "wq's layers are each of a packing of their own", "a token's layer is not joined of such a stack (T.547.3.2)");
+  // (T.547.3.2: q, k and v apart, k after q's 32 rows: 128 bytes, where this device binds at 256)
+  assert.equal(layered.weights.unjoined, "k would not start where this GPU binds a buffer, after q", "such a stack's q and k are apart, k after q");
 }
 // (the review: such a stack past a buffer, in pieces of the rows its widest layer's fit: each layer's piece from its own
 // rows, as its packing holds them)

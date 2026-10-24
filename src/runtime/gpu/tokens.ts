@@ -63,6 +63,8 @@ type TokenBuffers = {
   q: GPUBuffer;
   att: GPUBuffer;
   gate: GPUBuffer;
+  // (T.547.3.2: up's rows where gate and up are apart, which the activation joins into gate's; null where they are one)
+  up: GPUBuffer | null;
   logits: GPUBuffer;
   probs: GPUBuffer;
   order: GPUBuffer;
@@ -156,8 +158,10 @@ const tokenShape = (m: Model) => {
   const writes = new Set(kindsOf(m.plan).flatMap((kind) => GPU_KINDS[kind].writes?.(m.plan) ?? []));
   // (T.547.2.4: split, v apart from q and k (of two packings, weights.ts's tokensLayout), written as they are, as apart's;
   // blocks, matrices of Q4_K's among the int8 ones, whose shaders are the same forms' of Q4_K)
+  // (T.547.3.2: up, gate and up apart, each written as it is and joined by the activation's dispatch)
   const split = Boolean(m.weights.together?.vAt);
-  return { apart: Boolean(m.plan.vectors.bq || m.plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
+  return { apart: Boolean(m.plan.vectors.bq || m.plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), up: Boolean(m.weights.together?.up),
+    geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
     floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost), mix: writes.has("mix"), write: writes.has("write"),
     blocks: m.own === "Q4_K" };
 };
@@ -166,15 +170,17 @@ const tokenShape = (m: Model) => {
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
 // (T.547.2.4: blocks, and each of the matrices' keys again with ":Q4_K" after it, fusedDp4aMatVec's text for Q4_K's blocks:
 // a matrix of them dispatches its key's counterpart; the classifier is no such matrix, tokensUnfit())
-const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, geglu, layerNorm, floatHead, posts, mix, write, blocks }: ReturnType<typeof tokenShape>): [string, string][] => {
+const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, up, geglu, layerNorm, floatHead, posts, mix, write, blocks }: ReturnType<typeof tokenShape>): [string, string][] => {
   const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
   const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: ternary ? "ternary" : "int8" }) : floats;
   // (a matrix whose input is no norm of the stream: the attention's output, the activation's)
   const plain = (output: FusedOutput) => (dp4a ? matrix(output) : ENGINE.fusedMatVec({ input: "plain", output, subgroups }));
-  const outputs: [string, FusedOutput][] = [["qkv", apart ? "write" : "rope"], ["add", "add"], ["glu", !gated ? "write" : geglu ? "geglu" : "swiglu"],
+  // (T.547.3.2: gate and up apart are each written as they are)
+  const glu: FusedOutput = !gated || up ? "write" : geglu ? "geglu" : "swiglu";
+  const outputs: [string, FusedOutput][] = [["qkv", apart ? "write" : "rope"], ["add", "add"], ["glu", glu],
     ...(posts || write ? [["write", "write"]] satisfies [string, FusedOutput][] : []), ...(mix ? [["mix", "write"]] satisfies [string, FusedOutput][] : [])];
   return [...(dp4a && !normApart ? [["normQuantize", ENGINE.NORM_QUANTIZE]] satisfies [string, string][] : []), ["qkv", matrix(apart ? "write" : "rope")],
-    ["add", plain("add")], ["glu", matrix(!gated ? "write" : geglu ? "geglu" : "swiglu")],
+    ["add", plain("add")], ["glu", matrix(glu)],
     ["classifier", (floatHead ? floats : matrix)("write")], ...(posts || write ? [["write", plain("write")]] satisfies [string, string][] : []),
     ...(mix ? [["mix", matrix("write")]] satisfies [string, string][] : []),
     ...(blocks && dp4a ? outputs.map(([key, output]): [string, string] => [`${key}:Q4_K`, ENGINE.fusedDp4aMatVec({ output, weights: "Q4_K" })]) : [])];
@@ -207,7 +213,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const out = STORAGE | COPY_SRC;
   // (u is null until the uniforms are made, below: what this returns has them)
   const g: Omit<TokenBuffers, "u"> & { u: Uniforms | null } = { embed, sample, most, vocab, h: buffer(m, plan.dim * 4, out | COPY_DST), q: buffer(m, qDim * 4), att: buffer(m, qDim * 4),
-    gate: buffer(m, plan.hidden * 4), logits: buffer(m, vocab * 4, out), probs: buffer(m, vocab * 4), order: buffer(m, vocab * 4),
+    gate: buffer(m, plan.hidden * 4), up: m.weights.together?.up ? buffer(m, plan.hidden * 4) : null, logits: buffer(m, vocab * 4, out), probs: buffer(m, vocab * 4), order: buffer(m, vocab * 4),
     state: buffer(m, STATE_BYTES, out | COPY_DST), chosen: buffer(m, most * 4, out), randoms: buffer(m, most * 4, STORAGE | COPY_DST),
     step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, SAMPLING_BYTES, UNIFORM | COPY_DST),
     xq: buffer(m, widest), xs: buffer(m, (widest / GROUP) * 4), xb: buffer(m, plan.dim * 4),
@@ -324,8 +330,12 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
       bindAt: (pipeline, entries) => bindAt(m, pipeline, entries) }));
     list.push(
       ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
-      // gate and up as one matrix with SwiGLU on its write; or (T.154: no gate) w1, its bias and GELU
-      ...(gated ? [matrix(P.glu, W.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
+      // gate and up as one matrix with SwiGLU on its write; or (T.154: no gate) w1, its bias and GELU; or (T.547.3.2) gate
+      // and up apart, of two packings, each written as it is and joined by the prompt's SWIGLU (GEGLU)
+      ...(g.up ? [matrix(P.glu, W.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
+        matrix(P.glu, W.matrices.w3.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.up]]),
+        [b.activation, bind(m, b.activation, [g.gate, g.up, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]
+      : gated ? [matrix(P.glu, W.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
         : [matrix(P.glu, W.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
           [b.activation, bind(m, b.activation, [g.gate, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]),
       ...activated.quantize, ...joining(V.ffnPost, down.layers[l], activated.input, g.u.down), ...biased(g.h, "b2", l));

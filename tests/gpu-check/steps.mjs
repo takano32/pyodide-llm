@@ -65,10 +65,9 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
       (/^the (classifier|embedding) is past a buffer/.test(steps.why ?? "") && table > steps.binds) ||
       // (T.261.4.2, T.545.2: a Gemma 3's and an LFM2's steps are the GPU's now: its GEGLU, norms behind, window and local
       // tables, and its convolution layers, are a token's fused layer's, and their steps on the CPU are a failure)
-      steps.why === `${unbound(c)} would not start where this GPU binds a buffer`
-      // (T.547.3.1: and a model of a stack whose layers are each of a packing of their own, until T.547.3.2 gives a
-      // token's layer matrices apart)
-      || (/^\w+'s layers are each of a packing of their own$/.test(steps.why) && Object.values(c.options?.kinds ?? {}).some(Array.isArray));
+      steps.why === `${unbound(c)} would not start where this GPU binds a buffer`;
+    // (T.547.3.1 took a model of a stack whose layers are each of a packing of their own's steps on the CPU, until
+    // T.547.3.2 gave a token's layer its matrices apart)
     // (T.547.2.3 took a model of Q4_K blocks' steps on the CPU, until T.547.2.4 gave a token's layer their reading)
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);
     return right;
