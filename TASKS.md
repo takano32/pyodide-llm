@@ -247,7 +247,8 @@
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
 
 - **止めた所（2026-10-24 の再開で済んだ）**: T.271.1 は 2 回目の CI（run 40062442351）が通り、本線に入れた。以下はそのときの記録。T.271.1（回した基底を GPU に）の実装・レビュー（Sonnet high、must-fix なし）・レビューの直しが済み、ブランチ `t271.1-rotated-basis`（push 済み、本線には未）。CI の 1 回目（run 40061581668）は、シェーダが実機で正しいこと（回した基底の作り物でプロンプトの層は線の 0.37、答えのステップの「the norms apart」も通る）を示し、落ちたのは gpu-check が回した基底の取らない答えの形を名指したことだけ（`tests/gpu-check/harness.js` を直した）。**2 回目の CI**（`gpu-prompt.yml models="synthetic-ternary-rotated synthetic-ternary-rotated-untied synthetic-ternary-rotated-1024 synthetic-ternary synthetic" --ref t271.1-rotated-basis`）を 2026-10-24 に起動した: `gh run list --workflow gpu-prompt.yml --limit 3` で ID を見て、`node tests/ci.mjs wait <ID>` で読む。
-- **2026-10-24 の続き**: T.271.1 → T.572（番号を `T.番号.子` の形に）→ T.271.5（状態を層の束に割る T.565 と 27B の形の作り物、レビューの直しまで）が済み、T.271 は完了。次は T.547。
+- **2026-10-24 の続き**: T.271.1 → T.572（番号を `T.番号.子` の形に）→ T.271.5（状態を層の束に割る T.565 と 27B の形の作り物、レビューの直しまで）が済み、T.271 は完了。T.547 は T.547.1（詰め方を名前で）・T.547.2.1〜T.547.2.4（Q4_K をプロンプトと答えのステップで GPU に: 本物の 4-bit の Shisa が本番で「prompts and answers on WebGPU」）まで、どれもレビューの直しまで本線に。途中で T.575（`plan-facts-check` の止まり）・T.577（e2e の `steps=`）を直した。次は T.547.3（Saluki の残りの 9 種類と層ごとの型、GPU だけ: 実物はパソコン）。
+- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: (1) `REASONS.packed("Q4_K")`「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」（今ある文の形に名前を入れたもの）。(2) 分類器が Q4_K のモデルの答えのステップの訳が `REASONS.floatClassifier`（float weights と言う: 事実と合わない）のまま。
 - **（前の版）次にすること**: 2 回目の CI で FAILED と wrong が 0 なら、T.271.1 の状態を台帳に書いて本線に入れ（`. ~/.keychain/*-sh` を読んでから SSH で push）、デプロイを待つ（記録だけの直しはデプロイしない: AGENTS.md の落とし穴）。シェーダの目録に 2 行足したので端末の鍵が 1 回変わる（ternary の端末だけ）。その後 T.271.5（27B そのもの、T.565 は「状態を層の束に割る」で取りまとめ役が決める）→ T.547。
 - 区切りのまとめで持ち主に出すもの（文面・選択・端末）は、各タスクの「持ち主の端末で見るもの」と「取りまとめ役の決め」に積んである。T.571 の Android の確かめが端末の一覧にある。
 
