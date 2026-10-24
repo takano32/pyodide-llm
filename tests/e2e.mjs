@@ -383,7 +383,9 @@ const unexplained = errors.filter((text) => !recovered.includes(text) || (recove
 if (unexplained.length) failures.push(`console errors: ${unexplained.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
 if (result.pageScrolls) failures.push("the page itself scrolls");
-if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
+// (T.577: an answer the query cut short with steps= is the start of the expected text, which it does not reach)
+const begins = (text, want) => text.startsWith(want) || (stepsSaid && want.startsWith(text.trim()) && text.trim().length > 0);
+if (expected[model] && !begins(result.text, expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
 // T.231's review: no check above says an answer is a real one. JavaScriptCore on x86-64 wrote "edListedlyedlyedList..." with a
 // ternary model and the run passed: an answer, a speed line, no error. 160 characters of any language have a dozen different
 // ones at the least (that one has 8); where fewer, the engine has gone wrong, or the model has fallen into a loop
