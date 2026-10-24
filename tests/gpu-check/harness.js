@@ -139,7 +139,10 @@ try {
     const shaders = ternary ? "ternary" : Object.values(c.options.kinds ?? {}).flat().some((kind) => wgsl.BLOCK_PACKINGS.includes(kind)) ? "blocks" : null;
     const forms = formsOf(shaders), tokenForms = tokenFormsOf(ternary, Boolean(plan.rotated)).filter((name) => shaders !== "blocks" || name.startsWith("DP4A"));
     // T.209: what a third of a table is in bytes on the GPU (T.232: a ternary weight is a quarter of a byte)
-    const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / (ternary ? 4 : 1) / 3);
+    // (T.547.3.6: of a classifier of llama.cpp's blocks, its blocks' bytes)
+    const classifierKind = c.options.kinds?.wcls ?? c.options.kinds?.token_embedding_table;
+    const tablePieceBytes = Math.ceil((wgsl.BLOCK_PACKINGS.includes(classifierKind) ? (plan.vocab_size * plan.dim) / 256 * wgsl.BLOCK_READS[classifierKind].bytes
+      : (plan.vocab_size * plan.dim) / (ternary ? 4 : 1)) / 3);
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
     const checkpoint = await fetched(c.checkpoint), size = checkpoint.length, tokens = c.reference.tokens, n = tokens.length - 1;
     // T.155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
@@ -580,7 +583,8 @@ try {
     const tokenRun = gpu.find((r) => r.steps?.forced === tokenForms[0] && r.steps?.first);
     // (T.547.3.2: not a model of stacks whose layers are each of a packing of their own: the GPU alone places none until
     // T.547.3.6, alone.ts's gpuHoles(); T.547.3.4: nor of an IQ type, whose codebooks the GPU alone does not take yet)
-    const layered = Object.values(c.options.kinds ?? {}).some((kind) => Array.isArray(kind) || (wgsl.BLOCK_PACKINGS.includes(kind) && wgsl.readsGrid(kind)));
+    // (T.547.3.6: nor of tables of llama.cpp's blocks, which the GPU alone does not embed yet: T.547.3.7)
+    const layered = Object.entries(c.options.kinds ?? {}).some(([row, kind]) => Array.isArray(kind) || (wgsl.BLOCK_PACKINGS.includes(kind) && (wgsl.readsGrid(kind) || ["wcls", "token_embedding_table"].includes(row))));
     if (c.places && tokenRun && !c.wide && !c.force?.pieceBytes && !layered) {
       const force = { ...TESTS, matrices: forms[0], quick: true, tokens: tokenForms[0], pieceBytes: Infinity, tablePieceBytes };
       const synthetic = c.id === "synthetic";
