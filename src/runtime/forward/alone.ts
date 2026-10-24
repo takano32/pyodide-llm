@@ -86,11 +86,9 @@ export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & 
 }
 
 // the layers' matrices of a Llama, which the GPU alone holds (T156); T271.4: and a Qwen3.5's (its linear-attention
-// layers' and the gate of its attending layers' output), each of the layers of its kind (KINDS) where some layers are of
-// another kind than attention
+// layers' and the gate of its attending layers' output), each of the layers of its kind where some layers are of
+// another kind than attention (T568.4: the kind of the model's whose tensors it is, kinds.ts's gpu.names)
 const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wqkv", "wz", "wout", "wg"];
-const KINDS: Partial<Record<TensorName, LayerKind>> = { wq: "attention", wk: "attention", wv: "attention", wo: "attention", wg: "attention", wqkv: "linear",
-  wz: "linear", wout: "linear" };
 // T210: and its tables, the embedding and a classifier of its own (wcls is the embedding's tensor where it is shared):
 // the GPU embeds a prompt's rows too (shaders.ts's EMBED_ROWS), and nothing of them is here
 const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
@@ -217,7 +215,7 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // layers, whose state the GPU keeps itself, and the gate of its attending layers' output, which a token's layer has
   const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim, linear } = sizes.widths;
   // (T382: the architecture's line as it is, so that no fact of it is handed on by hand, and the one the sizes say)
-  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => kind !== ATTENTION && kind !== "linear") });
+  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => kind !== ATTENTION && !LAYER_KINDS[kind as LayerKind].gpu?.alone) });
   if (facts) return facts;
   if (form.rotated) return REASONS.rotated;  // T237
   // T363.5: nor a model whose rows have kinds of their own (llama.cpp's blocks are the CPU's kernels' alone: gpu.ts
@@ -315,7 +313,7 @@ export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {},
   // (T232: the bytes of a layer's values are its packing's, jobs.ts's PACKED; ternary is what the GPU's worker is told)
   const matrices = Object.fromEntries(LAYER_MATRICES.filter((name) => tensors[name]).map((name): [string, Matrix] => {
     const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, layerBytes = packingOf(t.kind)!.rowBytes(perLayer);
-    const of = mixed ? KINDS[name] : undefined, count = of ? kinds.filter((kind) => kind === of).length : layers;
+    const of = mixed ? kinds.find((kind) => LAYER_KINDS[kind].gpu?.names.includes(name)) : undefined, count = of ? kinds.filter((kind) => kind === of).length : layers;
     return [name, { rows, n, ternary: t.kind === "ternary", layers: Array.from({ length: count }, (_, l) =>
       [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * packingOf(t.kind)!.scale]), ...(of ? { of } : {}) }];  // (T533: ternary's scales float16s)
   }));

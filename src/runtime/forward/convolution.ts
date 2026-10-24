@@ -17,6 +17,9 @@ const rowsBytes = (sizes: Sizes) => convolutionNumbers(sizes).taps * sizes.dim *
 const kept = (sizes: Sizes, count: number) => [count * rowsBytes(sizes)];
 
 export const convolution: Kind = {
+  // T568.4: on the GPU (gpu/convolution.ts, T545): its matrices in and out, and its taps, taps rows of dim a layer
+  gpu: { names: ["win", "wout", "conv"], matrices: ["win", "wout"], vectors: (sizes) => ({ conv: ["conv", convolutionNumbers(sizes).taps * sizes.dim] }),
+    plan: (sizes) => ({ convolution: { taps: convolutionNumbers(sizes).taps } }) },
   // an LFM2's form has a letter a layer: "c" for one of these, "a" for one that attends
   layers: ({ convolution }, count) => (convolution ? Array.from({ length: count }, (_, l) => convolution.layers[l] === "c") : null),
   // what the matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)

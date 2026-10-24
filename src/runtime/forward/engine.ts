@@ -24,7 +24,7 @@ import type { Spawn } from "./threads.ts";
 import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
 import type { Core, Kinds, Product, Room } from "./kinds.ts";
-import type { Derived, Part, Plan, Tensor, TensorName } from "../contracts/plan.ts";
+import type { Derived, LayerKind, Part, Plan, Tensor, TensorName } from "../contracts/plan.ts";
 
 // ---- (T368.4, the types)
 // The kernels of one build as modules (forward.ts's compileKernels()): relaxed: null where the browser has no relaxed
@@ -432,7 +432,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
     turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, activation: plan.activation,
-    local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null,
+    local: facts.some(({ window, local }) => window > 0 || local), parallel, unturned,
+    // T568.4: what the GPU's side reads of each kind of the model's layers that the GPU's worker has a step for (kinds.ts's
+    // gpu: the names of its tensors, why the GPU would not take its layers, its numbers in the GPU's plan)
+    gpuKinds: had.flatMap(({ kind }) => { const gpu = kinds[kind].gpu; return gpu ? [{ kind: kind as LayerKind, names: gpu.names, unfit: gpu.unfit?.(sizes) ?? null, plan: gpu.plan?.(sizes) ?? {} }] : []; }),
     // (T545: a kind that keeps a state the GPU's worker has no step for)
     stateful: keeping.some((part) => !part.staging), rotated, sharedClassifier: plan.shared_classifier,
     // T545: every layer's kind and its place among the layers of its kind, the layers that keep keys and values in the
@@ -445,12 +448,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       facts.some(({ wide, double, kept, reads, place }) => wide || double || kept !== place || reads !== place) };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
     cosTable, sinTable, positions, channels, attPost, ffnPost, localCos: floats("local_cis_real"), localSin: floats("local_cis_imag"),
-    // (T545: an LFM2's matrices in and out and its taps, which its kind made: null and 0 where there are none. T271.2: a
-    // Qwen3.5's linear-attention layers have a wout and taps of their own (the stateful kind's, whichever the model has),
-    // their matrices of q, k and v and of z, their gates' two small matrices of float32 and their vectors; and its
-    // full-attention layers a gate of their output)
-    win: matrix("win"), wout: matrix("wout"), conv: floats("conv"), wqkv: matrix("wqkv"), wz: matrix("wz"), wg: matrix("wg"),
-    wb: floats("wb"), wa: floats("wa"), dtBias: floats("dt_bias"), decay: floats("decay"), deltaNorm: floats("delta_norm") };
+    // T568.4: the matrices and vectors the kinds of its layers have of their own on the GPU (kinds.ts's gpu, in the
+    // table's order: T545 an LFM2's matrices in and out and its taps; T271.2 a Qwen3.5's linear-attention layers' matrices
+    // and their gates' vectors, and its attending layers' gate of the output), where the model has them
+    own: {
+      matrices: Object.fromEntries(had.flatMap(({ kind }) => kinds[kind].gpu?.matrices ?? []).flatMap((name) => (matrix(name) ? [[name, matrix(name)!]] : []))),
+      vectors: Object.fromEntries(had.flatMap(({ kind }) => Object.entries(kinds[kind].gpu?.vectors?.(sizes) ?? {}))
+        .flatMap(([name, [tensor, size]]) => (floats(tensor) ? [[name, { at: floats(tensor), size }]] : []))),
+    } };
   // T349: what the GPU would hold of this model, and why it would not take it
   const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory }, direct });
 

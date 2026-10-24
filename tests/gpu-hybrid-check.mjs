@@ -102,8 +102,9 @@ if (!reason && options.arch === "lfm2") {
     const mixed = 2 * linear.key_heads * linear.key_dim + linear.value_heads * linear.value_dim;
     const wanted = { kinds, places, linear: { keyHeads: linear.key_heads, valueHeads: linear.value_heads, keyDim: linear.key_dim, valueDim: linear.value_dim, taps: linear.conv },
       matrices: { wq: ["attention", of("attention")], wk: ["attention", of("attention")], wv: ["attention", of("attention")], wo: ["attention", of("attention")],
-        w1: [null, count], w2: [null, count], w3: [null, count], wout: ["linear", of("linear")], wqkv: ["linear", of("linear")], wz: ["linear", of("linear")],
-        wg: ["attention", of("attention")] },
+        // (T568.4: the kinds' own after every model's, in the table's order: the attending layers' gate, then the linear layers')
+        w1: [null, count], w2: [null, count], w3: [null, count], wg: ["attention", of("attention")], wqkv: ["linear", of("linear")], wz: ["linear", of("linear")],
+        wout: ["linear", of("linear")] },
       vectors: { conv: ["linear", linear.conv * mixed], wb: ["linear", linear.value_heads * plan.dim], wa: ["linear", linear.value_heads * plan.dim],
         dtBias: ["linear", linear.value_heads], decay: ["linear", linear.value_heads], deltaNorm: ["linear", linear.value_dim] }, tokens: true };
     const got = { kinds: plan.kinds, places: plan.places, linear: plan.linear,

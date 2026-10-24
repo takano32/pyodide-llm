@@ -194,6 +194,9 @@ const returned = (fn) => {
     walk(program, (node) => {
       if (member(node) && node.object.type === "Identifier" && node.object.name === "plan" && !NOT_KEYS.has(node.property.name)) readKeys.add(node.property.name);
       if (node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init?.type === "Identifier" && node.init.name === "plan") taken(node.id).forEach((key) => readKeys.add(key));
+      // (T568.4: and the numbers of the kinds that keep a state as a kind takes them out of the sizes, `{ numbers: { linear } }`:
+      // sizes.ts's sizesOfPlan() hands the plan itself as the numbers)
+      if (node.type === "ObjectProperty" && node.key?.name === "numbers" && node.value.type === "ObjectPattern") taken(node.value).forEach((key) => readKeys.add(key));
       // the tensors' names: matrix("wq"), floats("bq"), T.wo, tensors.wcls, and the lists a model on the GPU alone is cut by
       if (node.type === "CallExpression" && node.callee.type === "Identifier" && ["matrix", "floats"].includes(node.callee.name) && node.arguments[0]?.type === "StringLiteral") {
         readTensors.add(node.arguments[0].value);
@@ -329,6 +332,16 @@ const returned = (fn) => {
     words: literalKeys(start.properties.find((p) => p.key?.name === "words").value),
     tables: new Set(),
   };
+  // (T568.4: and the vectors of the kinds' own, which gpuVectors() spreads: what each kind's gpu.vectors() returns,
+  // forward/kinds.ts's, a method or an arrow of a literal)
+  for (const { program } of writers) {
+    walk(program, (node) => {
+      const fn = node.type === "ObjectMethod" && node.key.name === "vectors" ? node : node.type === "ObjectProperty" && node.key?.name === "vectors" && node.value.type === "ArrowFunctionExpression" ? node.value : null;
+      if (!fn) return;
+      if (fn.body.type === "ObjectExpression") literalKeys(fn.body, inside.vectors);
+      else walk(fn.body, (inner) => { if (inner.type === "ReturnStatement") literalKeys(inner.argument, inside.vectors); });
+    });
+  }
   // (gpuOnlyPlan()'s tables: `const tables = { classifier, embedding }`)
   walk(functionNamed(writers, "gpuOnlyPlan").body, (node) => { if (node.type === "VariableDeclarator" && node.id.name === "tables") literalKeys(node.init, inside.tables); });
   for (const [name, keys] of Object.entries(inside)) assert.ok(keys.size, `nothing found of what the GPU's plan holds in ${name}`);

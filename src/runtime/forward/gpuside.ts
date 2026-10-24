@@ -13,8 +13,7 @@ import type { Packed, Ready } from "../jobs.ts";
 import type { Answers } from "./choice.ts";
 import type { Control } from "./control.ts";
 import type { Direct } from "./alone.ts";
-import type { Convolution, Linear } from "../contracts/form.ts";
-import type { CachePlace, Force, FromGpu, Matrix, Remembered, ToGpu, Tokens, Vectors } from "../contracts/gpu/protocol.ts";
+import type { CachePlace, Force, FromGpu, KindNumbers, Matrix, Remembered, ToGpu, Tokens, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { GpuChose } from "../contracts/messages.ts";
 import type { Activation, LayerKind, Tensor } from "../contracts/plan.ts";
 
@@ -29,7 +28,10 @@ export type Shape = {
   // every layer's window (0: every position) and the layers turned by those tables; extras: what a Gemma 4 has besides
   // (a norm of v's heads, a cap of the logits, a scale of a layer, layers of other widths, keys and values shared)
   activation: Activation; local: boolean; windows: number[]; locals: number[]; extras: boolean;
-  linear: Linear | null; convolution: Convolution | null;
+  // T568.4: what the GPU's side reads of each kind of the model's layers that the GPU's worker has a step for, in the table's
+  // order (forward/kinds.ts's gpu): the names of the tensors of its layers alone, why the GPU would not take them (null:
+  // it would), its numbers in the GPU's plan
+  gpuKinds: { kind: LayerKind; names: string[]; unfit: string | null; plan: Partial<KindNumbers> }[];
   // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
   stateful: boolean;
   // the block of a rotated basis (0: the model's own basis)
@@ -56,20 +58,10 @@ const onGpuAs = (m: Held) => {
   return Boolean(packing?.gpu) && m.group === packing!.group;
 };
 // T545: the kind of the layers a matrix or a vector of the GPU's is of, where it is not every layer's (its places index
-// those layers alone: an LFM2's attending layers are some of its layers). T271.2: a Qwen3.5's linear-attention layers'
-// and the gate of its full-attention layers' output; wout and conv are the kind's that keeps a state, whichever the
-// model has (an LFM2's convolution layers, a Qwen3.5's linear-attention layers: no model has both)
-const KIND_OF: Partial<Record<string, LayerKind>> = { wq: "attention", wk: "attention", wv: "attention", wo: "attention", wg: "attention", bq: "attention",
-  bk: "attention", bv: "attention", qNorm: "attention", kNorm: "attention", win: "convolution", wqkv: "linear", wz: "linear", wb: "linear", wa: "linear",
-  dtBias: "linear", decay: "linear", deltaNorm: "linear" };
-const kindOf = (name: string, { convolution, linear }: { convolution: Convolution | null; linear: Linear | null }): LayerKind | undefined =>
-  KIND_OF[name] ?? (name === "wout" || name === "conv" ? (convolution ? "convolution" : linear ? "linear" : undefined) : undefined);
-// T271.2: the widest key dim and value dim of a Qwen3.5's linear-attention layers the GPU's delta rule takes (a thread a
-// value of a head, its state's column in the thread's own memory): shaders/steps.ts's DELTA_THREADS, a second copy
-// here (no shader's text comes into this module's chunk), which tests/gpu-part-check.mjs holds to it
-export const DELTA_MOST = 128;
-// (T271.2: what a linear-attention layer's convolution runs over, q and k of the key heads and v of the value heads)
-const mixedOf = (linear: Linear) => 2 * linear.key_heads * linear.key_dim + linear.value_heads * linear.value_dim;
+// those layers alone: an LFM2's attending layers are some of its layers). T568.4: the kind of the model's that names it
+// (forward/kinds.ts's gpu: an attending layer's q, k, v and o; T271.2 a Qwen3.5's linear-attention layers'; wout and conv
+// are those of the kind that keeps a state, whichever the model has)
+const kindOf = (name: string, { gpuKinds }: { gpuKinds: Shape["gpuKinds"] }) => gpuKinds.find(({ names }) => names.includes(name))?.kind;
 // where the model's tensors are in the memory: the matrices (null: the model has none of that name), and the addresses
 // of the vectors and the tables (0: none)
 export type Placed = {
@@ -80,11 +72,10 @@ export type Placed = {
   // T261: the norms behind the attention and behind the FFN (0: the model has none); T261.4: RoPE's tables of the
   // local layers (0: none)
   attPost: number; ffnPost: number; localCos: number; localSin: number;
-  // T545: an LFM2's matrices in and out of its convolution layers, and their taps (null, 0: none). T271.2: a Qwen3.5's
-  // linear-attention layers' matrices of q, k and v and of z, its matrix out and taps (wout, conv), their gates' small
-  // matrices and vectors (float32), and the gate of its full-attention layers' output
-  win: Held | null; wout: Held | null; conv: number; wqkv: Held | null; wz: Held | null; wg: Held | null;
-  wb: number; wa: number; dtBias: number; decay: number; deltaNorm: number;
+  // T568.4: the matrices and vectors the kinds of its layers have of their own on the GPU, by the GPU's names (forward/kinds.ts's
+  // gpu: T545 an LFM2's matrices in and out of its convolution layers and their taps; T271.2 a Qwen3.5's linear-attention
+  // layers' matrices and their gates' vectors, and the gate of its full-attention layers' output), where the model has them
+  own: { matrices: Record<string, Held>; vectors: Record<string, Vector> };
 };
 // what the GPU is to take of the model (gpuFit()'s matrices and vectors), why it would take none or no steps, and the
 // places in the memory it answers into (0: none)
@@ -131,10 +122,9 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, linear, convolution, stateful, rotated,
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
     sharedClassifier, kinds, attending, stateBytes } = shape;
-  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, win, wout,
-    conv, wqkv, wz, wg, wb, wa, dtBias, decay, deltaNorm } = weights;
+  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own } = weights;
   // T545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: KIND_OF)
   const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
@@ -143,16 +133,17 @@ export function gpuFit({ shape, weights, device, direct }:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T155: int6 weights and 64-bit memories too)
   // (a function, not a const: gpuUnfit runs before this line, AGENTS.md)
   function gpuMatrices() {
-    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, win, wout, wqkv, wz, wg }).filter(([, m]) => m)) as Record<string, Held>;
+    // (T568.4: and the kinds' own, after every model's)
+    return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3, ...own.matrices }).filter(([, m]) => m)) as Record<string, Held>;
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers:
   // either of the first two lines keeps it on the CPU)
   function gpuUnfit() {
-    // (T229: a Qwen3.5's linear-attention layers were kept off here until T271.2, which gave the GPU's worker a block's
-    // step for them; a key dim or a value dim wider than its delta rule takes, or value heads that are no whole multiple
-    // of the key heads, stays on the CPU)
-    if (linear && (linear.key_dim > DELTA_MOST || linear.value_dim > DELTA_MOST || linear.value_heads % linear.key_heads)) return REASONS.linear;
+    // (T568.4: why the GPU would not take the layers of a kind, the kind's to say: T229, a Qwen3.5's linear-attention
+    // layers were kept off here until T271.2, and those of heads wider than the delta rule takes still are)
+    const kindUnfit = gpuKinds.find(({ unfit }) => unfit)?.unfit;
+    if (kindUnfit) return kindUnfit;
     // (T260: an LFM2's convolution layers were kept off here until T545, which gave the GPU's worker a step for them and
     // the state they go on from. T375.2: and a kind of layer that keeps a state which the engine comes to have, and the
     // GPU's worker has no step for: on the CPU until the GPU has it too)
@@ -229,12 +220,9 @@ export function gpuFit({ shape, weights, device, direct }:
       ...(qNorm ? { qNorm: { at: qNorm, size: headSize }, kNorm: { at: kNorm, size: headSize } } : {}),
       ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}),
       ...(attPost ? { attentionPost: { at: attPost, size: dim } } : {}), ...(ffnPost ? { ffnPost: { at: ffnPost, size: dim } } : {}),
-      // T545: an LFM2's taps, taps rows of dim a convolution layer (T271.2: a Qwen3.5's, taps rows of the mixed q, k and v
-      // a linear-attention layer), and T271.2 a Qwen3.5's gates' two small matrices (a row of dim a value head), their
-      // biases, decays and the norm of a value head
-      ...(conv ? { conv: { at: conv, size: convolution ? convolution.taps * dim : linear!.conv * mixedOf(linear!) } } : {}),
-      ...(wb ? { wb: { at: wb, size: linear!.value_heads * dim }, wa: { at: wa, size: linear!.value_heads * dim }, dtBias: { at: dtBias, size: linear!.value_heads },
-        decay: { at: decay, size: linear!.value_heads }, deltaNorm: { at: deltaNorm, size: linear!.value_dim } } : {}) };
+      // T568.4: the kinds' own (forward/kinds.ts's gpu: T545 an LFM2's taps; T271.2 a Qwen3.5's taps, its gates' two
+      // small matrices, their biases, decays and the norm of a value head)
+      ...own.vectors };
   }
   // T545: the same, each with the kind of the layers it is of where it is not every layer's (KIND_OF), for the plan
   function gpuVectorsOf(): Vectors {
@@ -263,7 +251,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
-    unturned, sharedClassifier, activation, windows, locals, convolution, linear, kinds, places, attending, stateBytes } = shape;
+    unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
   const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateToStaging, stateFromStaging } = cpuSide;
@@ -431,8 +419,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
-      kinds, places, convolution: convolution ? { taps: convolution.taps } : null,
-      linear: linear ? { keyHeads: linear.key_heads, valueHeads: linear.value_heads, keyDim: linear.key_dim, valueDim: linear.value_dim, taps: linear.conv } : null,
+      // (T568.4: the kinds' numbers, forward/kinds.ts's gpu.plan(): null for a kind the model has none of; Started's
+      // KindNumbers asks for every one)
+      kinds, places, convolution: null, linear: null, ...Object.assign({}, ...gpuKinds.map(({ plan }) => plan)),
       batch: GPU_BLOCK,
       matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,

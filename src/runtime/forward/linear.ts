@@ -11,6 +11,7 @@
 // with: x / sqrt(sum(x * x) + 1e-6) is rmsnorm's w * x / sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and
 // eps = 1e-6 / n; q is divided by sqrt(n) more.
 import { KIND } from "../jobs.ts";
+import { REASONS } from "./reasons.ts";
 import type { Kind, Layers } from "./kinds.ts";
 import type { Framed } from "./memory.ts";
 import type { Sizes } from "./sizes.ts";
@@ -28,7 +29,33 @@ const kept = (sizes: Sizes, count: number) => {
   return { stateBytes, convBytes, blocks: [2 * count * stateBytes, count * convBytes, keyDim * 4, keyDim * 4] };
 };
 
+// T271.2: the widest key dim and value dim the GPU's delta rule takes (a thread a value of a head, its state's column in
+// the thread's own memory): shaders/steps.ts's DELTA_THREADS, a second copy here (no shader's text comes into this
+// module's chunk), which tests/gpu-part-check.mjs holds to it
+export const DELTA_MOST = 128;
+
 export const linear: Kind = {
+  // T568.4: on the GPU (gpu/linear.ts, T271.2): its matrices of q, k and v, of z and out; the taps (taps rows of the
+  // mixed q, k and v), the gates' two small matrices (a row of dim a value head), dt_bias and the decay, and the norm of a
+  // value head. A key dim or a value dim wider than the delta rule takes, or value heads that are no whole multiple of
+  // the key heads, stay on the CPU. The GPU alone holds their state too (T271.4)
+  gpu: {
+    names: ["wqkv", "wz", "wout", "conv", "wb", "wa", "dtBias", "decay", "deltaNorm"], matrices: ["wqkv", "wz", "wout"],
+    vectors(sizes) {
+      const { value_heads: valueHeads, value_dim: valueDim, conv: taps, mixed } = linearNumbers(sizes);
+      return { conv: ["conv", taps * mixed], wb: ["wb", valueHeads * sizes.dim], wa: ["wa", valueHeads * sizes.dim], dtBias: ["dt_bias", valueHeads],
+        decay: ["decay", valueHeads], deltaNorm: ["delta_norm", valueDim] };
+    },
+    unfit(sizes) {
+      const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim } = linearNumbers(sizes);
+      return keyDim > DELTA_MOST || valueDim > DELTA_MOST || valueHeads % keyHeads ? REASONS.linear : null;
+    },
+    plan(sizes) {
+      const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: taps } = linearNumbers(sizes);
+      return { linear: { keyHeads, valueHeads, keyDim, valueDim, taps } };
+    },
+    alone: true,
+  },
   // every every-th layer of a Qwen3.5 attends over all the positions, the others are these (layout.py's linear_layers())
   layers: ({ linear }, count) => (linear ? Array.from({ length: count }, (_, l) => (l + 1) % linear.every !== 0) : null),
   // (layout.py's linear_widths(): q and k of the key heads, v of the value heads)

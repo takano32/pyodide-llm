@@ -104,7 +104,7 @@ console.log(`reasons-check: the table's ${Object.keys(REASONS).length} reasons, 
   // chunk, fetched later, would import the worker's file for it; /benchmark/'s sections' worker the same)
   const entries = (name) => /^src\/runtime\/(?:worker\.ts|worker\/|benchmark\/sections\.ts|updated\.ts|built\.ts|failure\.ts|kept\.ts)/.test(name);
   for (const name of readers) assert.ok(!entries(name), `${name} reads the table of the reasons: it is of forward.ts's chunk, and the worker asks the engine (engine.gpuWhyNot)`);
-  assert.deepEqual(readers, ["src/bench/path.js", "src/benchmark/gpu.ts", "src/runtime/forward/alone.ts", "src/runtime/forward/gpuside.ts", "src/runtime/forward/paths.ts", "src/runtime/gpu/device.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)),
+  assert.deepEqual(readers, ["src/bench/path.js", "src/benchmark/gpu.ts", "src/runtime/forward/alone.ts", "src/runtime/forward/gpuside.ts", "src/runtime/forward/linear.ts", "src/runtime/forward/paths.ts", "src/runtime/gpu/device.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)),
     "who reads the table (a new reader: named here, and never one of the model's worker)");
   for (const name of sources.filter((one) => one.startsWith("src/runtime/forward"))) {
     assert.ok(!reads(name, "/failure.ts") && !reads(name, "/updated.ts"), `${name} reads failure.ts or updated.ts: a module of forward.ts's chunk reads nothing the worker's entry reads too`);

@@ -18,6 +18,7 @@ import type { Framed, KindFrame } from "./memory.ts";
 import type { Sizes } from "./sizes.ts";
 import type { Stateful } from "../contracts/form.ts";
 import type { Derived, Layer, LayerKind, Plan, TensorName, Widths } from "../contracts/plan.ts";
+import type { KindNumbers } from "../contracts/gpu/protocol.ts";
 
 // a matmul of one input: [the matrix (one the model has: matmuls() reads it as there), its output, the output's stride, the layer]
 export type Product = [Held | null, number, number, number];
@@ -75,10 +76,23 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void; 
 // layers is not on the GPU, whatever the kind, unless it hands that state over (staging: T545, a convolution layer's;
 // T271.2, a linear-attention layer's: the GPU's worker has a step for them). One that keeps none there and is not
 // attention's would be taken there.)
+// T568.4: what the GPU's side (gpuside.ts, alone.ts) reads of a kind whose layers the GPU's worker has a step for (its
+// table is gpu/kinds.ts's GPU_KINDS, which a module of this chunk does not import):
+//   names     the tensors of its layers alone, whose places index those layers (a matrix's or a vector's `of`)
+//   matrices  its matrices the GPU takes besides every model's (q, k, v, o and the FFN's)
+//   vectors() its vectors the GPU reads, by the GPU's name: the plan's tensor and its floats a layer
+//   unfit()   why the GPU does not take its layers (null: it does)
+//   plan()    its numbers in the GPU's plan (Started's)
+//   alone     the GPU alone holds its state too, and a model of its layers may be on the GPU alone (T271.4)
+export type OnGpu = {
+  names: string[]; matrices?: TensorName[]; vectors?(sizes: Sizes): Record<string, [TensorName, number]>; unfit?(sizes: Sizes): string | null;
+  plan?(sizes: Sizes): Partial<KindNumbers>; alone?: boolean;
+};
 export type Kind = {
   frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean; staged?(sizes: Sizes, count: number): number;
   layers?(form: Stateful, count: number): boolean[] | null; widths?(form: Stateful): Partial<Widths>;
   make(core: Core, count: number, facts?: Layer[]): Layers;
+  gpu?: OnGpu;
 };
 export type Kinds = Record<string, Kind>;
 

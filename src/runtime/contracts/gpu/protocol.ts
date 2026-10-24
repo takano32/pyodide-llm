@@ -93,11 +93,19 @@ export type Force = {
 // what the page kept of an earlier visit on this device (T148, T152): the shaders chosen then, under the device's key
 export type Remembered = { key?: string; matrices?: string; attention?: string; tokens?: string; alone?: unknown };
 
+// T568.4: the numbers of the kinds of layers that keep a state, each under its kind's name (forward/kinds.ts's gpu.plan()
+// says its own: forward/convolution.ts, linear.ts), null where the model has none of that kind. A new kind's numbers are
+// a key here
+export type KindNumbers = {
+  convolution: { taps: number } | null;
+  linear: { keyHeads: number; valueHeads: number; keyDim: number; valueDim: number; taps: number } | null;
+};
+
 // The plan of { type: "start" }: the model's sizes, what RoPE turns, its norm and residual, and addresses in the
 // shared memory (the matrices, the vectors, rows: the rows forward.ts embeds, cos and sin: RoPE's tables, staging:
 // where a block's keys and values come back, and T545 the state of the layers that keep one after them: where it goes
 // up from too, T271.2)
-export type Started = {
+export type Started = KindNumbers & {
   dim: number;
   hidden: number;
   layers: number;
@@ -127,8 +135,6 @@ export type Started = {
   // and the places a block's come back to, are the attending layers' alone
   kinds: LayerKind[];
   places: number[];
-  convolution: { taps: number } | null;
-  linear: { keyHeads: number; valueHeads: number; keyDim: number; valueDim: number; taps: number } | null;
   // the most tokens of a block
   batch: number;
   matrices: Record<string, Matrix>;
