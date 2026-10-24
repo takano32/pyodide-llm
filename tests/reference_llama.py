@@ -1,12 +1,12 @@
 # reference_llama.py
-# T253 and T254: a model of the list that is a Llama to the engine, against transformers itself, on the original's
+# T.253 and T.254: a model of the list that is a Llama to the engine, against transformers itself, on the original's
 # safetensors. PyTorch is not on the development machine, so this runs in CI:
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_llama.sh hf-granite-4.2-3b" --ref <branch> --grep "reference:"
 #   python tests/reference_llama.py <directory for the downloads> [--only=made-up] [<id of the list> ...] [--positions=96]
 #                                   [--weak] [--layers=N] [--gguf]
 #
-# --weak (the review of T253): after the right engine has been held to transformers, weak faults are put into its weights
+# --weak (the review of T.253): after the right engine has been held to transformers, weak faults are put into its weights
 # (q of every layer 0.1%, 0.01% and 0.001% off, one head's 1% and 10%, one layer's q left unmultiplied, one key head's 1%)
 # and each is held the same way, to say what the check sees: by the logits (the line below) and by the states of every layer
 # (the keys and values each layer wrote, relative to the layer's largest: the right engine is a few 1e-6 from transformers',
@@ -18,7 +18,7 @@
 #
 # Two parts, every line of the log beginning with "reference:".
 #   made-up: tiny random Granites of transformers' own class (GraniteForCausalLM), whose attention multiplies its
-#     scores by attention_multiplier (T253: the converter puts it into q, llama2_convert.query_scale). transformers'
+#     scores by attention_multiplier (T.253: the converter puts it into q, llama2_convert.query_scale). transformers'
 #     logits, over the whole text at once and token by token with its cache, against the engine converted the way the
 #     page converts. And the same tensors converted as a Llama's, which must be another model: the comparison sees the
 #     multiplier. A Granite 4.1's other multipliers are refused.
@@ -52,7 +52,7 @@ from convert.conduct import candidates_of  # noqa: E402
 from reference import (differences, ended, engine_logits, fetch, float32_file, line_of, logits_failed,  # noqa: E402
                        logits_said, made_up_engine, option, options_shown, within)
 
-# more than 64 tokens, English and Japanese, with numbers after one space and after several (T254: where MiniCPM5's
+# more than 64 tokens, English and Japanese, with numbers after one space and after several (T.254: where MiniCPM5's
 # two-stage split is not Llama 3's), a number of more than three digits and a contraction
 TEXT = ("Mount Fuji is the highest mountain in Japan, standing 3,776 metres above sea level on the island of Honshu. "
         "It's an active stratovolcano that last erupted from 1707 to  1708, about   100 kilometres from Tokyo; in 2013 "
@@ -69,7 +69,7 @@ WEAK = "--weak" in sys.argv
 # of another kind than the float32 ones: a fault that changes the model (q scaled twice or not at all, q left turned) is a logit or
 # several, the rounding some hundredths (a logit of 36 at most here), and the keys and values of a layer differ by about a percent
 GGUF = "--gguf" in sys.argv
-# (the logits' line was 1.0 until T255: SmolLM3 3B, 36 layers, is 1.37 at most and 9.4e-2 on average from a GGUF whose every
+# (the logits' line was 1.0 until T.255: SmolLM3 3B, 36 layers, is 1.37 at most and 9.4e-2 on average from a GGUF whose every
 # tensor is the original's Q8_0 to the bit, where its float32 is 1.2e-4. What the line is to see is in unturned_faults())
 GGUF_LINE, GGUF_STATE_LINE = 2.0, 0.1
 
@@ -117,7 +117,7 @@ def logits_of(model, ids, stepped=0, states=False):
 class ByLayer:
     """transformers' model of the original in a directory, a layer at a time: for a model whose weights a runner has not
     room for even as stored (Granite 4.2 8B is 16.8 GB in bfloat16 and a runner of 16 GB cannot load it), as the review of
-    T246 held a Ternary Bonsai 8B to transformers. A model of the same config with ONE layer, into which the weights of
+    T.246 held a Ternary Bonsai 8B to transformers. A model of the same config with ONE layer, into which the weights of
     each layer of the original are read from the safetensors in turn (bfloat16 to float32 is exact: the arithmetic is the
     float32 model's); the embedding, the rotary embedding, the layer, the last norm and the classifier are transformers'
     own modules, and the loop over the layers, the causal mask and what a Granite's model does outside its layers (the
@@ -190,7 +190,7 @@ class ByLayer:
 # The logits are the end of 24 to 42 layers' work, and a fault of one head of one layer is a few ten-thousandths of
 # them (a 1% fault of one head's scale of Granite 4.2 3B: 3e-4 of a logit, the line is 1e-3). The keys and values every
 # layer writes are what the next layer saw: a fault shows in them a layer sooner and not diluted by what comes after
-# (the review of T253; T229's review found the same of the states of a Qwen3.5's layers).
+# (the review of T.253; T.229's review found the same of the states of a Qwen3.5's layers).
 def engine_cache(llama, count):
     """The engine's keys and values of the first `count` positions as transformers holds them: for each layer, (key heads,
     count, head size). The engine turns RoPE's pairs adjacent (the first of a pair is the first half of a head in
@@ -263,7 +263,7 @@ def faults_seen(label, llama, tokens, whole, theirs, line, lined, faults):
 
 
 def weak_errors(label, llama, tokens, whole, theirs, line, lined, scale):
-    """The faults a conversion of a Granite could have that are weak (T253's review): what q was multiplied by 0.1%, 0.01%
+    """The faults a conversion of a Granite could have that are weak (T.253's review): what q was multiplied by 0.1%, 0.01%
     and 0.001% off, one head's, one layer's q left as it was, one key head's scale 1% off. Returns the faults the check did
     not see among those it must (the first, one head 10%, a layer unscaled, a key head 1% off)."""
     layers, size = llama.wq.shape[0], llama.head_size
@@ -283,7 +283,7 @@ def weak_errors(label, llama, tokens, whole, theirs, line, lined, scale):
 
 
 def unturned_faults(label, llama, tokens, whole, theirs, line, lined):
-    """The faults of a model with layers RoPE leaves alone (T255, SmolLM3): every layer turned (the model read as a
+    """The faults of a model with layers RoPE leaves alone (T.255, SmolLM3): every layer turned (the model read as a
     Llama), one of its layers turned, one layer more left alone. All three are another model, so the check must see each.
     Returns those it did not see."""
     held, middle = llama.unturned, llama.unturned[len(llama.unturned) // 2]
@@ -433,10 +433,10 @@ def real(entry, directory, positions, layers=0):
         config = json.dumps({**json.loads(config), "num_hidden_layers": layers})
         say(f"{id}: only the first {layers} of the layers, on both sides")
 
-    # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
+    # the conversion, the way the page does it (T.374.4: by the conduct of a conversion, answered from the files fetched
     # here; what it asks for besides them is fetched as it asks), float32
     if GGUF:
-        # the route the list's entries take (T136's second stage): the entry's own GGUF (Q8_0) as the weights, the original's
+        # the route the list's entries take (T.136's second stage): the entry's own GGUF (Q8_0) as the weights, the original's
         # vocabulary and config.json. transformers still has the original's weights, so the two differ by what Q8_0 rounds
         # (about 0.5% of a weight): a line of a different kind, below
         hf = entry["hf"]
@@ -519,7 +519,7 @@ def real(entry, directory, positions, layers=0):
     say(f"{id}: transformers token by token against transformers at once ({len(stepped)} positions): largest difference "
         f"{floor:.2e} (what float32 leaves between two right computations)")
     # the line: ten times what transformers' own two computations differ by (which changes with the CPU), and no less
-    # than 1e-3 (tests/reference_qwen35.py's, after the review of T229 found 2e-2 let a fault by: the right computation
+    # than 1e-3 (tests/reference_qwen35.py's, after the review of T.229 found 2e-2 let a fault by: the right computation
     # is 7e-5 off here); the most likely token the same wherever the reference's best two are further apart than twice
     # the difference. A NaN is past the line (largest <= line is false)
     line = line_of(floor, 1e-3)

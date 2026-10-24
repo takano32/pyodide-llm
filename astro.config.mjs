@@ -5,7 +5,7 @@ export default defineConfig({
   site: "https://takano32.github.io",
   base: "/pyodide-llm/",
   vite: {
-    // T367.3: the runtime (src/runtime/) is bundled, a graph for each worker. A built file is always a file of its own
+    // T.367.3: the runtime (src/runtime/) is bundled, a graph for each worker. A built file is always a file of its own
     // (never a data: URL in a worker's text), and a worker's files are named as Astro names the page's,
     // _astro/<name>.<hash>.<ext>: the shape public/coi.js's family() knows, so that the Service Worker drops the old
     // copy of a file when it keeps the new one (Vite's own <name>-<hash> matched nothing: tests/dist-check.mjs).
@@ -32,7 +32,7 @@ export default defineConfig({
     define: {
       // The commit of the deployment: the ?v= of the Service Worker's registration (src/page/isolation.ts), so that a
       // new deployment installs its own, and the build a report names. The workers and what they read carry a hash
-      // of their own text in their names instead (T367.3).
+      // of their own text in their names instead (T.367.3).
       __BUILD__: JSON.stringify((process.env.GITHUB_SHA ?? "dev").slice(0, 7)),
     },
   },

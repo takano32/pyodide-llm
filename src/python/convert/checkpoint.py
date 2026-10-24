@@ -42,8 +42,8 @@ class Writer:
 
     def __init__(self, out, header, dtype, form=None, sink=None, quantize_rows=None):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,
-        form) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
-        memory of public/forward.js, which the header and the rest size, T115). Pyodide's own memory never shrinks,
+        form) and write(offset, array of bytes), for a checkpoint that lives outside Python (T.93: the WebAssembly
+        memory of public/forward.js, which the header and the rest size, T.115). Pyodide's own memory never shrinks,
         so a converted model that went through a Python buffer on its way there would keep taking its size twice.
         form (llama2_numpy.FORM, see checkpoint_form()): what the file does not say, which lays out its tensors and
         sizes the forward pass besides the header; the sink gets it whole."""
@@ -81,7 +81,7 @@ class Writer:
         if place.kind is None:
             return
         if place.layers:
-            # a stack whose layers are each of a kind (T363): every layer's rows to the layer's own place
+            # a stack whose layers are each of a kind (T.363): every layer's rows to the layer's own place
             values, each, done = np.asarray(values).reshape(-1), math.prod(place.row.shape[1:]), 0
             while done < values.size:
                 layer, inside = divmod(first + done, each)
@@ -100,7 +100,7 @@ class Writer:
         return place.layers[layer], inside
 
     def copy(self, index, first, raw, at=0):
-        """T363.3: raw, bytes of a tensor as its row's kind stores it (llama.cpp's blocks, whose scales are inside),
+        """T.363.3: raw, bytes of a tensor as its row's kind stores it (llama.cpp's blocks, whose scales are inside),
         to where they belong: the tensor begins at element number first of tensor number index (a layer of a stack),
         and raw at its byte number at (any number: a piece may end inside a block)."""
         place, first = self.part(index, first)
@@ -113,7 +113,7 @@ class Writer:
             self.put(place.offset + first * kind.itemsize, np.asarray(values).astype(kind.name, copy=False))
             return
         rows = np.asarray(values, dtype=np.float32).reshape(-1, place.row.shape[-1])
-        # (the kernels pack whole groups of 32 or more: an int8 row of smaller groups is NumPy's. T230: nothing of a
+        # (the kernels pack whole groups of 32 or more: an int8 row of smaller groups is NumPy's. T.230: nothing of a
         # ternary row is rounded, the values are ternary already or this raises, on the kernel as in NumPy)
         fast = self.quantize_rows is not None and place.group % 32 == 0
         packed, scales = self.quantize_rows(rows, kind.name) if fast else kind.pack(rows)

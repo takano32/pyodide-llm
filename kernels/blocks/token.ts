@@ -1,6 +1,6 @@
-// blocks/token.ts (T363.4): one token's rows of llama.cpp's blocks, matmul_sb and matmul_sbr (the same numbers, with
+// blocks/token.ts (T.363.4): one token's rows of llama.cpp's blocks, matmul_sb and matmul_sbr (the same numbers, with
 // relaxed SIMD and without), and sums_x, what its activations need. blocks/types.ts has what a type is and the
-// arithmetic; T363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md).
+// arithmetic; T.363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md).
 import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, V_POWERS3, V_POWERS4, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Plain, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, bySixteen, hasSigns, hasMinimums, hsum, vectorAt, groupSums, pairSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
 
 // ---- one token. S of the four units from 16 weights h on, a lane each (h a multiple of 4 where a unit is 16 weights,

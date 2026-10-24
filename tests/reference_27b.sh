@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/reference_27b.sh (T238): a reference for Ternary Bonsai 2 27B, on a CI runner (never on the development machine:
+# tests/reference_27b.sh (T.238): a reference for Ternary Bonsai 2 27B, on a CI runner (never on the development machine:
 # it fetches 5.95 GB). Widened to float32 the model is 107 GB, so the usual NumPy reference cannot hold it. Two
 # references, and the comparison of the two:
 #   (1) Prism ML's fork of llama.cpp (MIT, a pinned commit), built here for the CPU, with tests/reference_27b_fork.cpp
@@ -8,7 +8,7 @@
 #   (2) tests/reference_27b.py: the engine's own NumPy forward pass (src/python/llama2_numpy.py) over the GGUF read by
 #       memory map, a matrix widened at a time.
 #
-# And, since the review of T237, a third, between the two: the fork again, patched (tests/reference_27b_patch.py) to
+# And, since the review of T.237, a third, between the two: the fork again, patched (tests/reference_27b_patch.py) to
 # multiply its ternary matrices by float32 activations where it rounds them to Q8_0, over the very tokens of the first run
 # (a replay) and with float32 keys and values, so that what stands between it and the engine's float32 forward pass is
 # float32's rounding and not the rounding of the activations (a few tenths of a logit: the fork's own paths differ by that).
@@ -19,8 +19,8 @@
 # STAGES (default "fork f32 numpy"): which of the three run; SECONDS_FOR_FORK, SECONDS_FOR_F32: after how long the fork
 # stops writing (the float32 one is slower: it widens every row it multiplies by); BATCH_F32=1: and the replayed tokens as
 # one batch too (the fork's other path, for how far it is from itself in float32). TEXTS: how many of the four texts.
-# STAGES=none fetches the file and writes the texts, no more (T233: tests/page_27b.sh works in the same directory).
-# STAGES=long (T233's review): a text of 5,987 tokens through the fork, past the 4096 positions of the list's context:
+# STAGES=none fetches the file and writes the texts, no more (T.233: tests/page_27b.sh works in the same directory).
+# STAGES=long (T.233's review): a text of 5,987 tokens through the fork, past the 4096 positions of the list's context:
 # the first of its own, see the comment at its stage (LONG_ROWS, LONG_CTX, LONG_TOKENS, SECONDS_FOR_LONG).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -65,19 +65,19 @@ got=$(sha256sum "$work/$file" | cut -d' ' -f1)
 echo "runner: the sha256 of $file is the revision's ($((SECONDS - began)) s)"
 
 # the prompts: two bare texts, a turn of a chat in the form that answers at once (no system turn), and one in the form that
-# thinks, which has a system turn the template adds by itself ("Reasoning effort is set to xhigh": T228, what jinja2 renders
+# thinks, which has a system turn the template adds by itself ("Reasoning effort is set to xhigh": T.228, what jinja2 renders
 # from the GGUF's chat_template with nothing said), a longer text than the others (60 tokens or so)
 prompts=("The capital of Japan is"
          "日本でいちばん高い山は"
          $'<|im_start|>user\nWhat is 17 times 24?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n'
          $'<|im_start|>system\nReasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.<|im_end|>\n<|im_start|>user\nWhat is 17 times 24?<|im_end|>\n<|im_start|>assistant\n<think>\n')
 
-# TEXTS (T233): the first so many of them alone (a run that needs the first text only: 20 positions instead of 155)
+# TEXTS (T.233): the first so many of them alone (a run that needs the first text only: 20 positions instead of 155)
 prompts=("${prompts[@]:0:${TEXTS:-${#prompts[@]}}}")
 rm -f "$work"/prompt-*.txt
 for index in "${!prompts[@]}"; do printf '%s' "${prompts[$index]}" > "$work/prompt-$index.txt"; done
 
-# the fork, built here, for the stages that run it (T233: the long one too)
+# the fork, built here, for the stages that run it (T.233: the long one too)
 case " $stages " in *" fork "*|*" long "*)
   began=$SECONDS
   if [ ! -d "$work/fork/.git" ]; then
@@ -114,7 +114,7 @@ case " $stages " in *" fork "*)
   ls -la "$work"/fork-* | sed 's/^/fork: /'
 ;; esac
 
-# T233's review: a text of about 6,000 tokens (tests/fixtures/long-27b.txt: English and Japanese prose of this repository's
+# T.233's review: a text of about 6,000 tokens (tests/fixtures/long-27b.txt: English and Japanese prose of this repository's
 # documents, 5,987 tokens), past the 4096 positions the list's context has, through the fork in batches of 256 with a
 # context of LONG_CTX (8192): the logits of some positions only (LONG_ROWS: the first ones are the floor, a few are around
 # 4096, the last ones are the longest context) and the 16 tokens it writes after it. At the fork's speed on a CPU of the

@@ -1,15 +1,15 @@
-# conduct_hub.py (T374.1): what tests/test_conduct.py drives the conduct of a conversion (src/python/convert/conduct.py)
+# conduct_hub.py (T.374.1): what tests/test_conduct.py drives the conduct of a conversion (src/python/convert/conduct.py)
 # with, and what it holds it to.
 #
 #   Hub        a dictionary for huggingface.co: {"<repository>/<file>": a text, bytes, or a File}, which answers what is
 #              asked and writes each request down as tests/worker-fetches-check.mjs writes the worker's
 #              ("GET owner/model@0123456 model.safetensors bytes=0-524287"). What only the answerer decides is the
 #              hub's: how a stream is cut into parts (see parts()), and whether a range's answer says the file's size
-#   Folder     the same for a folder of the visitor's disk (T374.2.2): {"<name>": ...}, found by its name whatever the
+#   Folder     the same for a folder of the visitor's disk (T.374.2.2): {"<name>": ...}, found by its name whatever the
 #              case of its letters, which writes down what is read of each file as worker-fetches-check.mjs's Files do
 #              ("range model.safetensors bytes=0-524287"). The disk's is how a stream is cut: a MiB at a time
 #   answered   the loop that answers a conduct from a hub or a folder: the worker's side (src/runtime/worker/conduct.js)
-#   direct     a conversion with no conduct in it (T374.2.3): the files read whole, a Conversion made of them and fed
+#   direct     a conversion with no conduct in it (T.374.2.3): the files read whole, a Conversion made of them and fed
 #              in one piece. What a conduct's conversion is compared with on real files, since the worker's old ladder
 #              (and today(), its copy in Python, which this took the place of) is gone
 #   sound      what the requests of any conduct must be, whatever the repository: what needs no second opinion to say
@@ -140,7 +140,7 @@ class Folder:
         return file
 
     def refusal(self, where, name):
-        """What the worker says of a file a folder's conduct ends for want of (conduct.js's fromFolder(), T427)."""
+        """What the worker says of a file a folder's conduct ends for want of (conduct.js's fromFolder(), T.427)."""
         return f"The folder has no {name}, which the model needs."
 
     def text(self, where, name):
@@ -195,7 +195,7 @@ class Absent(Exception):
 
 
 def direct(whole, hf, candidates, **making):
-    """The conversion of a model with no conduct in it (T374.2.3): every file read whole and at once by whole(where,
+    """The conversion of a model with no conduct in it (T.374.2.3): every file read whole and at once by whole(where,
     name) (its bytes, or None), a Conversion made of them straight away, and all the bytes of the tensors fed in one
     piece. What a conduct's conversion is compared with on real files: nothing is asked for here, no head is grown and
     no part is cut, so what the two agree on (the checkpoint, the options, the tokenizer.bin) is neither's habit.
@@ -313,7 +313,7 @@ def sound(told, conversion, ended, hf, hub):
     assert late[:1] in ([], ["tokenizer_config.json"]) and late.count("chat_template.jinja") <= 1
     assert "chat_template.jinja" not in late or late.index("chat_template.jinja") == 1
     # a head is asked for from the first byte of its file, and each further piece of it from where the bytes in hand
-    # end (T374.3: the end of the piece before, or the file's where that came first): no byte twice, no piece that
+    # end (T.374.3: the end of the piece before, or the file's where that came first): no byte twice, no piece that
     # begins at the file's end or past it (a server refuses that one), and nothing of the weights elsewhere
     heads = {}
     for at, request in enumerate(told):
@@ -337,7 +337,7 @@ def sound(told, conversion, ended, hf, hub):
         # one file: everything after its head, to its last byte; the head counts as arrived
         _, _, name, begin, end, was, total = streams[0]
         assert was == begin and end == total == len(hub.whole("weights", name))
-        # T374.3. A GGUF: from where the pieces of its head end, which with the stream are the file, once (or from
+        # T.374.3. A GGUF: from where the pieces of its head end, which with the stream are the file, once (or from
         # where its tensors begin, where the head was read whole before the padding after it was: less than 32 bytes
         # by default, and no tensor's). A safetensors file: from the end of its header, within what was read of it
         assert heads[name] <= begin if vocabulary or hf["weights"].endswith(".gguf") else begin <= heads[name]
@@ -356,7 +356,7 @@ def sound(told, conversion, ended, hf, hub):
 class StandIn:
     """llama2_convert as the conduct calls it, for the made-up files: handed is what it was given, in the words of
     worker-fetches-check.mjs's stand-in (the fixture's "converter", but for the lines of what the worker keeps).
-    T257: a tokenizer that begins "written out" is put off as the converter puts off a tokenizer.json that writes out
+    T.257: a tokenizer that begins "written out" is put off as the converter puts off a tokenizer.json that writes out
     a sentencepiece model with its dummy prefix, while others are left to try (last false)."""
 
     def __init__(self):

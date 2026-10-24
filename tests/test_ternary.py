@@ -1,4 +1,4 @@
-# ternary (T230): the weights of a ternary model as they are, two bits each, groups of 128 with a float32 scale each
+# ternary (T.230): the weights of a ternary model as they are, two bits each, groups of 128 with a float32 scale each
 # (llama2_numpy.pack_ternary), and the two GGUF types that hold such weights (PQ2_0, PTQ1_0). Nothing is rounded on the
 # way: the NumPy engine widens a ternary checkpoint to exactly what a float32 checkpoint of the same values holds, so
 # the logits of the two are the same to the bit. The kernels (forward.js) are held to NumPy by tests/forward-check.mjs
@@ -60,7 +60,7 @@ def test_packing_is_lossless_and_32_bytes_a_group():
 def test_ternary_takes_the_values_as_they_are_and_refuses_any_other():
     rng = np.random.default_rng(2)
     signs = rng.integers(-1, 2, size=(6, 256)).astype(np.float32)
-    # (T533: the scales are float16s, PQ2_0's: the smallest subnormal one and a subnormal one among them)
+    # (T.533: the scales are float16s, PQ2_0's: the smallest subnormal one and a subnormal one among them)
     scales = np.array([0.0078125, 3.0, 2.0 ** -24, 0.0, 65504.0, np.float16(1.5e-5)] * 2, dtype=np.float32)
     values = (signs.reshape(-1, 128) * scales[:, None]).reshape(6, 256)
     packed, got = ternary(values)
@@ -73,7 +73,7 @@ def test_ternary_takes_the_values_as_they_are_and_refuses_any_other():
         bad[0, 200] = spoil  # the second group, whose scale is 3
         with pytest.raises(ValueError, match="not ternary"):
             ternary(bad)
-    # T533: ternary values of a scale a float16 does not hold (more digits, too small, too large)
+    # T.533: ternary values of a scale a float16 does not hold (more digits, too small, too large)
     for scale in (3.0000002, 1e-30, 65536.0):
         with pytest.raises(ValueError, match="not ternary"):
             ternary((signs[:1, :128] * np.float32(scale)).astype(np.float32))
@@ -167,7 +167,7 @@ def test_the_engine_reads_ternary_as_the_float32_of_the_same_values():
     packed = with_original(file, published, vocabulary, "tokenizer.json", "ternary")
     wide = with_original(file, published, vocabulary, "tokenizer.json", "float32")
     # the float32 file holds the RoPE tables the converter made; the ternary one leaves them to the engine: the same
-    # tables (T235), so the logits are the same to the bit
+    # tables (T.235), so the logits are the same to the bit
     a = Llama(bytes(packed.checkpoint), packed.tokenizer, **packed.options)
     b = Llama(bytes(wide.checkpoint), wide.tokenizer, **wide.options)
     for pos, token in enumerate([1, 5, 9, 3]):

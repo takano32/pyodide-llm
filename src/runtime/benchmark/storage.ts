@@ -1,4 +1,4 @@
-// The storage section of /benchmark/ (T134; T137's stage 0 until then, at /opfs-test/): how fast this browser's origin
+// The storage section of /benchmark/ (T.134; T.137's stage 0 until then, at /opfs-test/): how fast this browser's origin
 // private file system (OPFS) takes the writes a resumable conversion would make, measured in a worker with a
 // synchronous access handle (the only kind that writes at an offset). The page (src/pages/benchmark.astro) asks for one
 // step at a time; nothing here touches the model page or what it keeps.
@@ -9,10 +9,10 @@
 //                                 the time to open a handle, whether a second handle on the same file is refused, and
 //                                 whether the file opens again once the first is closed. The file is removed at the end.
 
-// T368.7: what the page asks and is answered (contracts/benchmark.ts)
+// T.368.7: what the page asks and is answered (contracts/benchmark.ts)
 import type { Answer, Staged, StorageInfo, StorageResults, StorageRun, ToStorage } from "../contracts/benchmark.ts";
 const PIECE = 8 << 20;
-// T177: the stage a run is at, for the page to show ({stage, at, of}; it answers none of the page's questions)
+// T.177: the stage a run is at, for the page to show ({stage, at, of}; it answers none of the page's questions)
 const STAGES = 4;
 const stage = (name: string, at: number) => postMessage({ stage: name, at, of: STAGES } satisfies Staged);
 const FOLDER = "benchmark", FILE = "pieces.bin", PROGRESS = "progress.json";
@@ -59,7 +59,7 @@ async function run(mib: number): Promise<StorageRun> {
   const handle = await file.createSyncAccessHandle();
   out.openSeconds = seconds(began);
   try {
-    // T137 (7): a second tab opening the same model.bin must be refused, not share the file
+    // T.137 (7): a second tab opening the same model.bin must be refused, not share the file
     try {
       const second = await file.createSyncAccessHandle();
       second.close();
@@ -75,7 +75,7 @@ async function run(mib: number): Promise<StorageRun> {
     const put = (i: number) => {
       fill(bytes, i);
       const written = handle.write(bytes, { at: i * PIECE });
-      // T180: Chromium hands back a file error as a negative count read unsigned (4294967288 is -8, no space)
+      // T.180: Chromium hands back a file error as a negative count read unsigned (4294967288 is -8, no space)
       if (written !== PIECE) {
         const code = written > 0x7fffffff ? written - 0x100000000 : written;
         throw new Error(code < 0 ? `piece ${i}: the browser could not write it (error ${code}${code === -8 ? ": no space left" : ""})`
@@ -96,7 +96,7 @@ async function run(mib: number): Promise<StorageRun> {
     stage("writing far apart", 2);
     out.scattered = once(apart);
     // (c) far apart with a flush after every piece and the small record rewritten, as a resumable conversion would
-    // at every boundary of a tensor (T137, 2: the record comes after the flush of the output)
+    // at every boundary of a tensor (T.137, 2: the record comes after the flush of the output)
     const progressFile = await dir.getFileHandle(PROGRESS, { create: true });
     const progress = await progressFile.createSyncAccessHandle();
     const encoder = new TextEncoder();
@@ -130,7 +130,7 @@ async function run(mib: number): Promise<StorageRun> {
   } finally {
     handle.close();
   }
-  // the review of T137 (5): once closed, the file opens again (a handle left open would look like another tab)
+  // the review of T.137 (5): once closed, the file opens again (a handle left open would look like another tab)
   try {
     const again = await file.createSyncAccessHandle();
     again.close();

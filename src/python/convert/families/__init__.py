@@ -1,4 +1,4 @@
-# The families of models the converter takes (T359), by config.json's model_type: the one table the shared flow
+# The families of models the converter takes (T.359), by config.json's model_type: the one table the shared flow
 # (convert/config.py, plan.py, gguf.py, conversion.py) looks a model up in. A new family is a record here (Family, in
 # family.py) and nothing in those files: one that is a Llama but for a number or two is LLAMA._replace(...) in
 # llama.py, as a Granite and a SmolLM3 are.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_gemma3.sh (T261): a Gemma 3 on the page's forward pass (src/runtime/forward.js on the int8 kernels), for
+# tests/page_gemma3.sh (T.261): a Gemma 3 on the page's forward pass (src/runtime/forward.js on the int8 kernels), for
 # CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide) and, for the 270M, the development machine:
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/page_gemma3.sh" --ref <branch> --grep "gemma3:|perplexity|thread"
@@ -7,7 +7,7 @@
 #
 # The model as ?hf= opens it (tests/hf_fetch.py: the repository's safetensors, config.json and tokenizer; an id of the
 # list once the list has one), converted the way the page converts it (tests/perplexity_prepare.py), then
-#   - its perplexity on 1500 tokens of English Wikipedia and of Japanese Wikipedia (T85's articles; three times the
+#   - its perplexity on 1500 tokens of English Wikipedia and of Japanese Wikipedia (T.85's articles; three times the
 #     window of 512 positions its local layers attend): the float32 and the int8 weights in native NumPy, and the int8
 #     weights on the kernels with 7-bit and 8-bit activations (tests/perplexity.mjs --file);
 #   - the software threads: the logits of a greedy run and of a prompt in blocks the same to the bit with 1, 2, 4 and

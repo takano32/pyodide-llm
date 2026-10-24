@@ -1,4 +1,4 @@
-// T367.4: what says "the site was updated while this page was open" (src/runtime/updated.js and built.js's built()),
+// T.367.4: what says "the site was updated while this page was open" (src/runtime/updated.js and built.js's built()),
 // alone and with stand-ins: a fetch that answers 404, one of the 500s, drops, is offline, never answers.
 //
 //   node tests/updated-check.mjs
@@ -18,9 +18,9 @@ import { madeUpNetwork, status as answersWith, failing as failsWith, hang } from
 import { workerHarness } from "./worker-harness.mjs";
 import { UPDATED, SLOWER, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.ts";
 
-// ---- the sentence, whole (the owner's: T367's decision 4)
+// ---- the sentence, whole (the owner's: T.367's decision 4)
 assert.equal(UPDATED, "The site was updated while this page was open. Reload the page to go on.");
-// ... and the one a status line ends with where the model goes on, slower (T439: the owner's, 2026-10-11, as it is)
+// ... and the one a status line ends with where the model goes on, slower (T.439: the owner's, 2026-10-11, as it is)
 assert.equal(SLOWER, "the site was updated: reload for full speed");
 {
   const cause = new TypeError("Failed to fetch dynamically imported module");
@@ -240,7 +240,7 @@ console.log("updated-check: the model's worker tells the page the sentence alone
 
 // ---- the sources: every file that is asked for later, and what becomes of its failure.
 // said: the visitor is told the site was updated (the failure ends what was asked: a load, a conversion, a section).
-// slower (T439): the engine goes on without the file, as it always did, on a slower path, and a model that answers is
+// slower (T.439): the engine goes on without the file, as it always did, on a slower path, and a model that answers is
 // not interrupted (the sentence, "Reload the page to go on", would not be true of it). Where the file is gone, and
 // only there, the worker tells the page once (worker/outdated.js: wentWithout(error[, import.meta.url]) where a fetch
 // or an import is caught, workerWentWithout(event, import.meta.url) at a worker's error), and the status line ends
@@ -258,7 +258,7 @@ const LATER = {
     ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
-    // (T363.5: the kernels of llama.cpp's blocks, for a model with such rows: it does not run without them)
+    // (T.363.5: the kernels of llama.cpp's blocks, for a model with such rows: it does not run without them)
     ["built(name).then((res) => res.arrayBuffer()))));", "said"],
   ],
   "src/runtime/worker/convert.ts": [
@@ -334,7 +334,7 @@ for (const name of sources) {
     if (why.startsWith("quiet")) assert.ok(!/ithout\(/.test(what), `${name}: ${what} is quiet`);
     if (why.startsWith("slower") && what.startsWith("built(")) assert.ok(/\.catch\(\(error\) => (void wentWithout\(error\)\);|\{)$/.test(what), `${name}: ${what} hands its failure to wentWithout(error)`);
     if (why.startsWith("slower") && what.startsWith("import(")) {
-      // (T368.3: the module may be cast to a type after it, which is no part of what runs)
+      // (T.368.3: the module may be cast to a type after it, which is no part of what runs)
       const handing = `${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    })`;
       assert.ok(text.includes(`${handing};`) || /^ as [\w ]+;/.test(text.slice(text.indexOf(handing) + handing.length)) && text.includes(handing), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
     }
@@ -375,7 +375,7 @@ for (const name of sources) {
   assert.ok(!/\bthrow\b|\bnew Error\b|\breject\b/.test(text), "outdated.js throws nothing");
   assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" } satisfies Updated)'], "outdated.js posts the one word, and nothing else");
 }
-// (T368.7: the file by either ending: it was looked for as updated.js alone, which no import says any more)
+// (T.368.7: the file by either ending: it was looked for as updated.js alone, which no import says any more)
 const knows = (name) => /updated\.(js|ts)|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
 for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.ts", "src/runtime/gpu/device.ts"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
@@ -393,7 +393,7 @@ assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerF
 // that catch a failure of their own (the ceilings, a loop's attempt) let an update through to it
 {
   const text = code("src/runtime/benchmark/sections.ts");
-  // (T368.7: the lines as TypeScript has them: a caught value is read through a type, a message says which it is)
+  // (T.368.7: the lines as TypeScript has them: a caught value is read through a type, a message says which it is)
   assert.ok(text.includes("const failed = (error: unknown) => saidOf(error, `${(error as Thrown)?.name ?? \"Error\"}: ${(error as Thrown)?.message ?? error}`);"), "sections.ts's failed() says an update alone");
   assert.ok(text.includes("postMessage({ step: data.step, error: failed(error) } satisfies Failed);"), "a step that failed is said by failed()");
   assert.equal((text.match(/\n {4}unlessUpdated\(error\);\n/g) ?? []).length, 2, "the ceilings' and an attempt's catch let an update through");

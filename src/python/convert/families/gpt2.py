@@ -1,4 +1,4 @@
-# A GPT-2 and a GPT-NeoX (T359, from T65 and T72): LayerNorm, a bias after every projection, an FFN of two matrices
+# A GPT-2 and a GPT-NeoX (T.359, from T.65 and T.72): LayerNorm, a bias after every projection, an FFN of two matrices
 # and GELU. A GPT-2 has a learned table of positions and stores its matrices the other way round (Conv1D), q, k and v
 # in one; a GPT-NeoX rotates part of each head, holds q, k and v of every head in turn, and may run its two branches
 # in parallel.
@@ -62,7 +62,7 @@ def neox_names(config):
 
 def gpt2_check(config):
     # GPT-2 has one kind of everything; only the activation could be something the GELU kernel is not
-    # gelu_fast (T126: rinna/japanese-gpt-1b) is gelu_new's tanh approximation written another way
+    # gelu_fast (T.126: rinna/japanese-gpt-1b) is gelu_new's tanh approximation written another way
     if config.get("activation_function", "gelu_new") not in ("gelu_new", "gelu", "gelu_pytorch_tanh", "gelu_fast"):
         refuse(f"its activation is {config['activation_function']}, and only GELU is supported")
     if config.get("num_key_value_heads", config["num_attention_heads"]) != config["num_attention_heads"]:
@@ -78,7 +78,7 @@ def neox_check(config):
         refuse("it rotates none of each head")
 
 
-# ---- their GGUFs (T136's third stage), by the names of their own safetensors (openai-community/gpt2's, without
+# ---- their GGUFs (T.136's third stage), by the names of their own safetensors (openai-community/gpt2's, without
 # "transformer.")
 def gpt2_gguf_config(key, tensors):
     # config.json's own spelling, which normalize() reads. GPT-2 always shares its classifier with the embedding:

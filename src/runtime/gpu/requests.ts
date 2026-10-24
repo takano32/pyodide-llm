@@ -1,6 +1,6 @@
 // The requests forward.ts waits for in the control area: a block of a prompt, the steps of a generation, the GPU's own
-// keys and values (T210), each answered by serve().
-// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
+// keys and values (T.210), each answered by serve().
+// (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
 import { model, lost } from "./device.ts";
 import { roomFor, keysIn, block, keysOut, keysBack, stateIn } from "./block.ts";
@@ -10,21 +10,21 @@ import { samplingState, samplingSettings } from "../shaders/run.ts";
 import type { Thrown } from "./device.ts";
 import type { FromGpu, ToGpu } from "../contracts/gpu/protocol.ts";
 
-// T368.6: a request by its kind (gpu.ts hands each on as it came)
+// T.368.6: a request by its kind (gpu.ts hands each on as it came)
 type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 
 // A request for count steps from token at pos (src/runtime/forward/gpuside.ts's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.ts's cache first (cache: its addresses of the keys and the values, its capacity and the
-// bytes of a position; half: float16 as here, else float32, narrowed on the way up: T160, a grouped-query model's),
-// the state (token, pos, the end of the history, its length and how many of its latest were sampled: T546), the settings and a random number a step; the ids into
-// plan.tokens.ids ([sampled, id, id, ...] and, after plan.tokens.most ids, the State's not_finite word: T219, the step
+// bytes of a position; half: float16 as here, else float32, narrowed on the way up: T.160, a grouped-query model's),
+// the state (token, pos, the end of the history, its length and how many of its latest were sampled: T.546), the settings and a random number a step; the ids into
+// plan.tokens.ids ([sampled, id, id, ...] and, after plan.tokens.most ids, the State's not_finite word: T.219, the step
 // after the sampled ones was refused, its logits not finite; a stop token last where one came), and the keys and values of the positions
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
-// forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
+// forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T.210: a model on the
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back.
-// T545.2: an LFM2's convolution layers go on from the CPU's rows (none at position 0, as a block), which the CPU holds
+// T.545.2: an LFM2's convolution layers go on from the CPU's rows (none at position 0, as a block), which the CPU holds
 // while it waits; after the attending layers' keys and values (by their places) come the rows as the last step left
-// them, as a block's come back (cpuSide.stateFromStaging takes them). T271.2: and a Qwen3.5's linear-attention layers'
+// them, as a block's come back (cpuSide.stateFromStaging takes them). T.271.2: and a Qwen3.5's linear-attention layers'
 // states and rows; fresh, from the GPU's own (block.ts's stateIn). On the GPU alone (cache null) the state is its own
 function generate({ serial, count, pos, fresh = false, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
@@ -53,13 +53,13 @@ function generate({ serial, count, pos, fresh = false, from, token, history, len
   });
 }
 
-// ---- a block of a prompt (T210: tokens, the ids of a model on the GPU alone, which embeds them here)
+// ---- a block of a prompt (T.210: tokens, the ids of a model on the GPU alone, which embeds them here)
 function prompt({ serial, count, pos, fresh = false, tokens }: Asked<"prompt">) {
   serve(serial, (wanted) => block(model!, count, pos, wanted, false, tokens, fresh || Boolean(model!.plan.direct)));
 }
-// The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
+// The answer to a request (a block of a prompt, T.152: the steps of a generation), in the control area: work(wanted)
 // runs while words.beat counts up, then words.failed and words.done = serial, where forward.ts still waits for this
-// request (wanted: T147, it gave up, and the memory may soon be another model's)
+// request (wanted: T.147, it gave up, and the memory may soon be another model's)
 async function serve(serial: number, work: (wanted: () => boolean) => Promise<void>) {
   const { memory, plan } = model!;
   const words = new Int32Array(memory.buffer, 0, Math.max(...Object.values(plan.words)) + 1);
@@ -84,7 +84,7 @@ async function serve(serial: number, work: (wanted: () => boolean) => Promise<vo
   }
 }
 
-// T210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
+// T.210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
 // writes them back: a model on the GPU alone keeps none in the shared memory, and the tests read them so
 // (src/runtime/forward/engine.ts's keysAndValues)
 function keysOf({ serial, count, pos }: Asked<"keys">) {

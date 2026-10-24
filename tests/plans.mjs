@@ -2,10 +2,10 @@
 // What createForward() is handed for a made-up header, without Pyodide and without built kernels: the plan Python
 // makes (by the native Python: where every tensor is, llama2_numpy's external_tensors(), and the plan itself,
 // engine/plan.py's forward_plan()) and kernels that do nothing. For the checks that run forward.js on its own:
-// tests/memory-check.mjs (T130), tests/unchanged-calls.mjs (T346) and tests/gpu-alone-check.mjs (T450).
+// tests/memory-check.mjs (T.130), tests/unchanged-calls.mjs (T.346) and tests/gpu-alone-check.mjs (T.450).
 //   const { plansOf, planOf, FORM, empty, nothing } = plans(<the repository's root, a URL or a path>)
-// T375.2: planOf() writes no plan by hand any more. The engine reads the facts of a model's layers from the plan, and
-// a second writer of them here would be the copy T375 takes away: the plan is Python's own, with the few things a
+// T.375.2: planOf() writes no plan by hand any more. The engine reads the facts of a model's layers from the plan, and
+// a second writer of them here would be the copy T.375 takes away: the plan is Python's own, with the few things a
 // check sets for itself laid over it (planOf() says which).
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ sys.path.insert(0, sys.argv[1])
 import llama2_convert, llama2_numpy as L
 
 def keeps_int8(header, form, dtype):
-    # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only (T229: and the rows of a
+    # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only (T.229: and the rows of a
     # linear-attention layer's output matrix, its value heads together)
     dim, hidden, _, heads, kv_heads = header[:5]
     head = form["head_dim"] or dim // heads
@@ -29,15 +29,15 @@ def keeps_int8(header, form, dtype):
         and (linear is None or L.linear_widths(linear)[2] % 32 == 0)
 
 def plan_of(header, form, dtype):
-    # where every tensor is: external_tensors(), the rows of engine/layout.py placed (T359)
+    # where every tensor is: external_tensors(), the rows of engine/layout.py placed (T.359)
     tensors = L.external_tensors(header, dtype, form)
     head_size = form["head_dim"] or header[0] // header[3]
-    # (T331.2: the model's tables are of its widest heads: a Gemma 4's full-attention layers')
+    # (T.331.2: the model's tables are of its widest heads: a Gemma 4's full-attention layers')
     wide = form.get("wide") or {}
     table = header[6] * (max(head_size, wide.get("head_dim", 0)) // 2) * 4
     derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or dtype != "float32" else {}
     if local_of(header, form):
-        # (T261: the tables of the local layers, which no file has)
+        # (T.261: the tables of the local layers, which no file has)
         local = header[6] * (head_size // 2) * 4
         derived.update({"local_cis_real": local, "local_cis_imag": local})
     # (the tensors by name: the order of a dict is not what the plan says, and tests/unchanged-calls.mjs hashes this whole)
@@ -45,14 +45,14 @@ def plan_of(header, form, dtype):
             "tensors": dict(sorted(tensors.items())), "derived": derived, "keep_int8": bool(keeps_int8(header, form, dtype)), "head_size": head_size}
 
 def local_of(header, form):
-    # T261: a made-up model's local layers, where its architecture may have such (a tree before T261 has none that may):
+    # T.261: a made-up model's local layers, where its architecture may have such (a tree before T.261 has none that may):
     # all but every third layer, a window of 8 positions
     if not getattr(L.layout_of(form["arch"]), "local", False):
         return None
     return {"layers": [layer for layer in range(header[2]) if (layer + 1) % 3], "window": 8, "rope_theta": 100.0}
 
 def engines_plan(header, form, dtype):
-    # T375.2: the plan the engine is handed, as Python makes it for a model (engine/plan.py's forward_plan(), from the
+    # T.375.2: the plan the engine is handed, as Python makes it for a model (engine/plan.py's forward_plan(), from the
     # header, the form and the dtype alone): a made-up model's options are a Qwen3.5's RoPE over a quarter of a head and a
     # GPT-NeoX's parallel residual. Its rotated basis and its RoPE tables are planOf()'s (the bytes of neither matter
     # to a kernel that does nothing), and its final norm has no outlier channels (planOf() says how many there are)
@@ -64,7 +64,7 @@ def engines_plan(header, form, dtype):
                           **({"local": local} if local else {}))
 
 def both(header, form, dtype):
-    # (T510.1: and the local layers among the options footprint() is asked with, as a model's options carry them)
+    # (T.510.1: and the local layers among the options footprint() is asked with, as a model's options carry them)
     local = local_of(header, form)
     return {**plan_of(header, form, dtype), "plan": engines_plan(header, form, dtype),
             **({"form": {**form, "local": {"layers": local["layers"], "window": local["window"]}}} if local else {})}
@@ -81,7 +81,7 @@ export const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, l
 // what createForward is handed: Python's plan of the model (p.plan), and over it what a check sets for itself: whether the
 // kernels are the relaxed ones, kv_start where the cache starts, the outlier channels of the final norm there are
 // (footprint() counts the most there can be for every int8 model: the second part asks for them), the block of a rotated
-// basis (the form's) and the bytes Python computes, as many zeros: the RoPE tables (p.derived) and, T237's review, of a
+// basis (the form's) and the bytes Python computes, as many zeros: the RoPE tables (p.derived) and, T.237's review, of a
 // rotated basis a float32 for every value of every width a matrix reads (the plan's widths say which)
 export const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
 export function planOf(p, { relaxed = true, kvStart = p.header[6], outliers = 0 } = {}) {

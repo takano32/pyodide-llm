@@ -1,4 +1,4 @@
-# T362: llama.cpp's K- and i-quantized types (src/python/convert/superblocks.py and its tables, convert/grids.py), the
+# T.362: llama.cpp's K- and i-quantized types (src/python/convert/superblocks.py and its tables, convert/grids.py), the
 # ten a GGUF of Underdog Saluki 27B is made of. Each reader against a reference written here one weight at a time, from
 # the form of the block (docs/notes/t361-saluki-2026-10-13.md), on blocks that go through every entry of the type's
 # codebook, every scale and every sign; the tables against what they are known to be; and a small Qwen3.5 whose

@@ -1,4 +1,4 @@
-// The JSON lines tests/e2e.mjs appends (E2E_RESULTS) as one Markdown table, for the summary of a CI job (T82).
+// The JSON lines tests/e2e.mjs appends (E2E_RESULTS) as one Markdown table, for the summary of a CI job (T.82).
 // Every row says under which conditions its number was measured: the browser and its version, and the backend
 // line of the page (which kernels ran). A number whose conditions are unclear is worth nothing.
 //
@@ -19,7 +19,7 @@ export function readResults(text) {
   });
 }
 
-/** T172: the reports of the thread search during each answer (the first, then E2E_THEN's, then the offline one): 0
+/** T.172: the reports of the thread search during each answer (the first, then E2E_THEN's, then the offline one): 0
  *  means the watch of the run button had nothing to catch in that answer. */
 export function threadReports(r) {
   const counts = [r.threadReports, ...(r.then ?? []).map((t) => t.threadReports), r.offline?.threadReports];

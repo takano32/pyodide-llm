@@ -1,11 +1,11 @@
-// The GPU section's table of where a layer's time goes (T202, T208), and its attention by the cache's length.
-// (T353: a part of src/bench.js, which is the window that exports every name of these)
+// The GPU section's table of where a layer's time goes (T.202, T.208), and its attention by the cache's length.
+// (T.353: a part of src/bench.js, which is the window that exports every name of these)
 import { number, times, noRatios, tableCell, unmeasured } from "./cells.js";
 
-// T202: a time of layerSteps() in ms (undefined where it failed or is not a positive number)
+// T.202: a time of layerSteps() in ms (undefined where it failed or is not a positive number)
 const stepMs = (one) => (one && !one.error && Number.isFinite(one.ms) && one.ms > 0 ? one.ms : undefined);
 const less = (a, b) => (a === undefined || b === undefined ? undefined : a - b);
-// T202: a form's layer (r: layerSteps()'s result) and its parts in ms: the steps one by one (steps) as the matrices
+// T.202: a form's layer (r: layerSteps()'s result) and its parts in ms: the steps one by one (steps) as the matrices
 // with what they write (matrices), the attention and the norms and quantizing (small); the four matrices alone
 // (alone); the chain (the layer less its steps). undefined where a part was not timed.
 function layerSplit(r, form) {
@@ -19,18 +19,18 @@ function layerSplit(r, form) {
 }
 
 /**
- * T202: the GPU section's table of where a layer's time goes (src/runtime/benchmark/gpu.js's layerSteps()): each step of
+ * T.202: the GPU section's table of where a layer's time goes (src/runtime/benchmark/gpu.js's layerSteps()): each step of
  * the fused forms a token would run on this device alone, the four matrices alone, a dispatch of one workgroup, and
  * the whole layer, timed in turn. step: {name, result: {model, pos, layers, GB, dp4a, forms: [{form, check, normApart,
  * dispatches, steps: [{step, count}], ms, unsteady} or {form, check, error}], steps: [{step, kind ("matrix",
  * "attention", "small", "alone", "floor"), matrix, ms, unsteady} or {step, kind, error}]}} or {name, error}; check:
- * the shaders against JavaScript (a form's verdict under its check); ceilings: T168's (the share of the buffer's reads
+ * the shaders against JavaScript (a form's verdict under its check); ceilings: T.168's (the share of the buffer's reads
  * the matrices alone read the weights at); gpu: {fallback, lost}. Under the table, for each form: the layer, its
  * steps' sum and what the chain costs beyond it, the matrices alone and the layer less them split into what fusing adds
  * to the matrices (their writes; the norm on the read and gate with up in one workgroup where so), the attention, the
- * norms and quantizing, and the chain. cycleMB: the fewest MB of weights read before the same ones again. T208: chosen,
+ * norms and quantizing, and the chain. cycleMB: the fewest MB of weights read before the same ones again. T.208: chosen,
  * how the forms were chosen ({by: "layer", fastest}: the layer table's fastest fused form the check found right, and
- * beside it the same with the norms folded or apart; {by: "packed", why}: as T202, by the packed int8 dot); caches,
+ * beside it the same with the norms folded or apart; {by: "packed", why}: as T.202, by the packed int8 dot); caches,
  * the attention's ({count, MB}: the step alone reads them in turn); timestamps, the whole layer by the GPU's own clock
  * ({layers, rounds, forms: [{form, ms}]}, {none} or {error}), one line under the forms'.
  */
@@ -46,11 +46,11 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
   const GBps = (took) => (took === undefined ? "?" : `${number(r.GB / (took / 1000))} GB/s${reads ? `, ${number((100 * r.GB) / (took / 1000) / reads)}% of the buffer's reads (${number(reads)} GB/s)` : ""}`);
   const named = forms.map((form) => `"${tableCell(form.form)}"`).join(" and ");
   const which = r.chosen?.by === "layer"
-    ? `the layer a token would run here: the fastest fused layer of the table above that the check found right, "${tableCell(r.chosen.fastest)}", as the engine chooses it (T152)` +
+    ? `the layer a token would run here: the fastest fused layer of the table above that the check found right, "${tableCell(r.chosen.fastest)}", as the engine chooses it (T.152)` +
       `${forms.length > 1 ? `, and beside it the same with its norms ${forms.find((form) => form.form !== r.chosen.fastest)?.normApart ? "apart" : "folded in"}` : ""}`
     : `the layers a token would run here by the packed int8 dot alone (${r.chosen?.why ? `${tableCell(r.chosen.why)}: ` : ""}` +
       `${r.dp4a ? "ONNX Runtime's DP4A, the packed int8 dot is here" : "llama.cpp's matrix × vector, no packed int8 dot here"})`;
-  const lines = [`${title} (T202, T208; ${r.model}'s width at position ${r.pos}, ${number(r.GB * 1000, 1)} MB of weights a layer, ${which}${named ? `: ${named}` : ""}). ` +
+  const lines = [`${title} (T.202, T.208; ${r.model}'s width at position ${r.pos}, ${number(r.GB * 1000, 1)} MB of weights a layer, ${which}${named ? `: ${named}` : ""}). ` +
     "Each step of a layer alone, as a submission of 2n of its one dispatch less one of n; the four matrices alone (the plain matrix × vector over all of a matrix's rows, " +
     "nothing folded into what it writes: what the matrices themselves take); a dispatch of one workgroup that does next to nothing (what a step costs for being a dispatch in a chain); " +
     "and the whole layer: all timed in turn, the residual stream written back before every submission. " +
@@ -86,7 +86,7 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
       `what fusing adds to the matrices ${signed(less(matrices, aloneMs))} + the attention ${signed(attention)} + the norms and quantizing ${signed(small)} + the chain ${signed(chain)}. ` +
       `A dispatch of one workgroup takes ${microseconds(floor)} µs: ${form.dispatches} of them ${stepMs(floor) === undefined ? "?" : number(form.dispatches * floor.ms, 2)} ms.`);
   }
-  // T202's review: how far this run's times move. Two forms of the same matrices and attention (DP4A's) differ only in
+  // T.202's review: how far this run's times move. Two forms of the same matrices and attention (DP4A's) differ only in
   // their norms and quantizing, so their layers less those should come out the same; on lavapipe in CI (steady by the
   // pairs) they came out 0.4 and 4.2 ms apart in 48, where the chain was −2.4 to 2.7
   const bigSteps = (form) => form.steps.filter(({ step }) => ["matrix", "attention"].includes(r.steps.find((one) => one.step === step)?.kind))
@@ -99,7 +99,7 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
     }
   }
   if (r.steps.some((one) => one.unsteady) || r.forms.some((form) => form.unsteady)) lines.push("", "Unsteady: the pairs of a submission of n and of 2n were not about twice each other, so those times are rough.");
-  // T208: the whole layer once more by the GPU's own clock
+  // T.208: the whole layer once more by the GPU's own clock
   const t = r.timestamps;
   if (t) {
     const head = "The whole layer by the GPU's own clock (timestamp-query), a check of the times above";
@@ -124,20 +124,20 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
 }
 
 /**
- * T224: under the steps' table, a token's attention alone at 128, 1024 and 4096 positions (src/runtime/benchmark/gpu.js's
+ * T.224: under the steps' table, a token's attention alone at 128, 1024 and 4096 positions (src/runtime/benchmark/gpu.js's
  * attentionLengths()): the prompt's tiles, and llama.cpp's flash_attn_vec with subgroups and with the lanes of the
  * workgroup standing for one. lengths: { positions, rows: [{ attention, tiles, times: [{ ms, n, ratio, unsteady } or
  * { error } or { none } a length] }], base, MB } or { error }; none: noRatios()'s (no "faster than the tiles" then). The
- * vec rows say how many times faster they are than the tiles at the same length (neither unsteady): T224's review, the
+ * vec rows say how many times faster they are than the tiles at the same length (neither unsteady): T.224's review, the
  * tiles of row base, the engine's here where there are two (f32 without subgroups as the layer rows, and f16 and
  * subgroups as the engine makes them where the device has them). bytes (a result of the review's, optional): the bytes
  * of the keys and values of each length read once; every cell then says GB/s of them, and with reads (the GB/s of a loop
- * that only reads a buffer: T168's, the layer steps' `reads`) their share: a head of q reads its keys and values
+ * that only reads a buffer: T.168's, the layer steps' `reads`) their share: a head of q reads its keys and values
  * again for every head of q that shares them (4 on Llama 3.2 1B's), so past 100% the caches serve the rereads.
  */
 function attentionLengthsLines(lengths, none, reads) {
   if (!lengths) return [];
-  const head = "**A token's attention alone, by the positions it reads** (T224)";
+  const head = "**A token's attention alone, by the positions it reads** (T.224)";
   if (lengths.error) return ["", `${head}: failed: ${tableCell(lengths.error)}`];
   const tiles = lengths.rows[lengths.base ?? 0], two = lengths.rows.filter((row) => row.tiles).length > 1;
   const cell = (one, i, row) => {

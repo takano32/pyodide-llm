@@ -1,5 +1,5 @@
 # reference_qwen35.py
-# T229: the engine's Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones) against
+# T.229: the engine's Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones) against
 # transformers itself. PyTorch is not on the development machine, so this runs in CI:
 #
 #   pip install numpy tokenizers torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
@@ -7,7 +7,7 @@
 #   python tests/reference_qwen35.py <directory for the download> [--only=made-up|real|fetch] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more, for tests/page_qwen35.sh)
 #   python tests/reference_qwen35.py <directory> --only=fixture [--out=tests/fixtures/qwen35-logits.json]
-#   (T534: transformers' logits of test_qwen35.py's made-up models, for the unit tests: fixture() below)
+#   (T.534: transformers' logits of test_qwen35.py's made-up models, for the unit tests: fixture() below)
 #   python tests/reference_qwen35.py <directory> --model=4B [--from=gguf] [--text=<file>] [--minutes=40]
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
@@ -19,16 +19,16 @@
 #     transformers' logits, over the whole text at once (its chunked delta rule) and token by token with its cache
 #     (its recurrent rule), against the naive reference of the unit tests (conftest.naive_qwen35_logits) and against
 #     the engine, converted the way the page converts (llama2_convert.Conversion). And what each holds after the text (the
-#     review of T229): the recurrent state and the convolution's rows of every linear-attention layer, the keys and
+#     review of T.229): the recurrent state and the convolution's rows of every linear-attention layer, the keys and
 #     values of every full-attention one, which a fault shows in long before the logits do.
 #   real: Qwen/Qwen3.5-0.8B at a fixed revision, float32. The same token ids through transformers and through the
 #     engine (NumPy): the largest difference of the logits, how often the most likely token is the same, the states
 #     after them, 16 greedy tokens of each for the chat prompt, and then 1024 positions of a longer text (the cache of
 #     the full-attention layers doubling twice, a thousand tokens for the state to drift in).
-#   --model=2B (T247): the real part on Qwen/Qwen3.5-2B (7.5 GB as float32, which a runner holds), before its greedy
+#   --model=2B (T.247): the real part on Qwen/Qwen3.5-2B (7.5 GB as float32, which a runner holds), before its greedy
 #     text is fixed in tests/fixed_outputs.py: the same lines, and what transformers writes for that prompt in the
 #     list's format, from the format's own first token.
-#   --model=4B (T245): Qwen/Qwen3.5-4B, the smallest real model with more value heads than key heads (two to one), and
+#   --model=4B (T.245): Qwen/Qwen3.5-4B, the smallest real model with more value heads than key heads (two to one), and
 #     17 GB as float32, more than a runner's 16 GB of memory holds: see large(). The engine (NumPy, float32, the
 #     original's safetensors converted the way the page converts) against transformers over the whole text at once.
 #     --from=gguf: the engine on the list's GGUF instead (unsloth's Q8_0, whose value heads llama.cpp tiled), its
@@ -64,18 +64,18 @@ REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
 WEIGHTS = "model.safetensors-00001-of-00001.safetensors"
 FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json", WEIGHTS]
 # <|endoftext|>: what the converter begins a text with where it reads no template (llama2_convert.normalize). NOT what the
-# list's entries begin with: <|im_start|>, 248045 (T236), and not what ?hf= begins with since T369 where the converter reads
-# the model's template (with jinja2, T397: its BOS is then the template's first token, <|im_start|>). The comparisons here
+# list's entries begin with: <|im_start|>, 248045 (T.236), and not what ?hf= begins with since T.369 where the converter reads
+# the model's template (with jinja2, T.397: its BOS is then the template's first token, <|im_start|>). The comparisons here
 # are of the engine and transformers on the same ids, so the engine is handed this token as its BOS whatever the conversion
-# says (T374.4: without that, the engine's greedy text began after <|im_start|> and transformers' after <|endoftext|>, and
+# says (T.374.4: without that, the engine's greedy text began after <|im_start|> and transformers' after <|endoftext|>, and
 # "the two wrote OTHER TEXTS" wherever jinja2 was installed: CI's run 38102111965). The engine agrees with transformers on
 # the same ids whichever the first token is, but a perplexity read here is of this other way: a Qwen3.5 reads a text 18%
 # (2B) to 45% (4B) worse after it, and its perplexity then moves by about +-3% under a rounding of its weights, so a Q8_0
-# GGUF's can read LOWER than the original's (the review of T245: 7.574 against 7.873 on 192 tokens, 4B; with <|im_start|>
+# GGUF's can read LOWER than the original's (the review of T.245: 7.574 against 7.873 on 192 tokens, 4B; with <|im_start|>
 # it is 4.215 against 4.217). tests/perplexity_prepare.py --entry <id> measures the list's way.
 BOS = 248044
 # the chat format of one turn without thinking, as chat_template.jinja writes it (the template calls a macro, which
-# the converter's reader does not read: T236 writes it into the list by hand)
+# the converter's reader does not read: T.236 writes it into the list by hand)
 CHAT = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 PROMPT = "What is the capital of Japan? Answer in one sentence."
 SPECIALS = ["<|im_start|>", "<|im_end|>", "<think>", "</think>"]
@@ -220,7 +220,7 @@ def made_up(name, settings, positions=80):
 
 
 # ----------------------------------------------------------------------------------------------------- the fixture
-# T534 (the form of ssig33/pyodide-llm's 3a038d25): transformers' logits of tests/made_up.py's own Qwen3.5s, written to
+# T.534 (the form of ssig33/pyodide-llm's 3a038d25): transformers' logits of tests/made_up.py's own Qwen3.5s, written to
 # tests/fixtures/qwen35-logits.json, which tests/test_qwen35.py holds the engine to without PyTorch. The models are
 # test_qwen35.py's (made_up.qwen35_model() with these settings, under the names transformers' Qwen3_5ForCausalLM
 # reads), and the tokens are its TOKENS: the test makes the same tensors of the same seed and reads the settings and
@@ -297,7 +297,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
         fetch(name, directory, repo, revision)
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
 
-    # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
+    # the conversion, the way the page does it (T.374.4: by the conduct of a conversion, answered from the files fetched
     # above and no others), float32
     path = directory / "float32.bin"
     conversion, seconds = float32_file(Directory(directory), {"weights": WEIGHTS, "tokenizer": "tokenizer.json"}, path)
@@ -343,7 +343,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
         f"(its two forms of the delta rule: what float32 leaves between two right computations)")
     # the line: ten times what transformers' own two computations differ by, and no less than 1e-3 (the engine's 1.6e-4 to
     # 2.0e-4 and transformers' 1.2e-4 to 1.3e-4 in CI's runs); the most likely token the same wherever the reference's best
-    # two are further apart than twice the difference. The review of T229 held the engine to it with 34 faults one at a time
+    # two are further apart than twice the difference. The review of T.229 held the engine to it with 34 faults one at a time
     # (tests/probe_qwen35.py, a throwaway branch): the weakest, RoPE over 32 values of a head and not 64, is 4.6e-2 away
     # (a line of 2e-2 let it by 2.3 times), and the states (below) are 3e-6 away from transformers' where the weakest
     # fault's are 8e-3. The line was 2e-2 before.
@@ -368,7 +368,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     return failed
 
 
-# ------------------------------------------------------------------------- a model past the runner's memory (T245)
+# ------------------------------------------------------------------------- a model past the runner's memory (T.245)
 LARGE = {"4B": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
                 "gguf": ("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf")}}
 WINDOW, TOKENS = 512, 1500  # tests/perplexity.mjs's
@@ -474,7 +474,7 @@ def tensors_apart(ours, other, options):
 
 
 def large(directory, positions, name, source, text_file, minutes, first=0):
-    """A real model whose float32 is more than the runner's memory (T245: the 4B, 16.8 GB). What the 0.8B's part does
+    """A real model whose float32 is more than the runner's memory (T.245: the 4B, 16.8 GB). What the 0.8B's part does
     not do here: transformers token by token and its generate() (each a pass over all the weights, through the swap),
     so the line is the 0.8B's 2e-2 with no floor measured, and the greedy text is left to tests/fixed_outputs.py's
     smaller models. The engine's checkpoint is a memory map with most of it pinned (pinned()), and stops after
@@ -504,7 +504,7 @@ def large(directory, positions, name, source, text_file, minutes, first=0):
         say(f"large: the options of the GGUF's conversion are {'the same' if not failed else 'OTHER OPTIONS — FAILED'}")
         apart, wrong = tensors_apart(directory / "gguf-float32.bin", directory / "float32.bin", options)
         failed |= wrong
-        # the line: Q8_0's rounding is 6e-3 of a matrix (T236: 5.7e-3 to 6.7e-3); value heads at other places are 1.4
+        # the line: Q8_0's rounding is 6e-3 of a matrix (T.236: 5.7e-3 to 6.7e-3); value heads at other places are 1.4
         worst = max(apart, key=lambda entry: entry[2])
         for index, shape, relative, same in apart:
             say(f"large: tensor {index} {list(shape)}: {'the same to the bit' if same else f'{relative:.2e} apart'}"

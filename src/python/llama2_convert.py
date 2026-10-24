@@ -5,9 +5,9 @@
 # lets the same code run when the site is built (convert_hf.py, quantize.py) and inside the browser, where the
 # WebAssembly memory has 32 bits and never shrinks.
 #
-# This file is the window (T347): the converter is the package convert/ beside it, and the names that something
+# This file is the window (T.347): the converter is the package convert/ beside it, and the names that something
 # outside src/python/ reads (the worker, the build's scripts, the tests, the tools) are imported here, so that
-# `import llama2_convert` gives them what it gave. (T391.5: the names nothing outside read are the parts' own now; to
+# `import llama2_convert` gives them what it gave. (T.391.5: the names nothing outside read are the parts' own now; to
 # give one out, import it here.) A name set here is not the one the parts read: to change what the converter does
 # (a test's PIECE), set it in the part that reads it.
 

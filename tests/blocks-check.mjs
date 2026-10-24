@@ -1,7 +1,7 @@
-// blocks-check.mjs (T363.4): the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: the weights of
+// blocks-check.mjs (T.363.4): the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: the weights of
 // Underdog Saluki 27B as its GGUF holds them) against the same arithmetic written out value by value
 // (tests/blocks-model.mjs), to the bit. Node, the compiled kernels and one call of Python (the converter's own reader
-// of the blocks, T362: tests/saluki_blocks.py), a few seconds: the light suite runs it. All eight builds: with and
+// of the blocks, T.362: tests/saluki_blocks.py), a few seconds: the light suite runs it. All eight builds: with and
 // without relaxed SIMD, on a 32-bit and a 64-bit memory, plain and shared, and the 64-bit ones above 4 GiB too; and
 // each of them as V8's Liftoff alone compiles it and as TurboFan alone does (the check runs itself again with the flags).
 //
@@ -15,7 +15,7 @@
 //     rows that begin and end anywhere, with nothing written outside the range; rows of 1 to 3 blocks (a kernel that
 //     took a block's scale or its activations' sums from the neighbour fails at two). And beside the float64 sum of the
 //     reader's values times the activations, within 1e-5 of the largest output (float32's own rounding of 8 to 24
-//     terms was 2.1e-6 at most here; T363.1's line for rows of 5120 was 2e-6. One weight of 256 read wrongly is
+//     terms was 2.1e-6 at most here; T.363.1's line for rows of 5120 was 2e-6. One weight of 256 read wrongly is
 //     percents).
 //   matmul_sbr_tile: a prompt of 1 to 9, 12 and 16 tokens (every remainder of four, and more than one four), each
 //     token its own activations, a frame and an output stride that are not the vectors' lengths: every (row, token)
@@ -98,7 +98,7 @@ const scales = (n) => Float32Array.from({ length: n / 32 }, () => Math.fround(1e
 // where the weights of a model past 4 GiB lie (the 27B's do): every address a kernel takes is above it there
 const HIGH = 4 * 2 ** 30 + 2 * 65536;
 // Which of V8's compilers runs a kernel changes as it is called (Liftoff first, TurboFan milliseconds later), and the two
-// have differed above 4 GiB (T233: Liftoff on arm64 reads v128.load32_splat and load32_lane there at the low 32 bits of
+// have differed above 4 GiB (T.233: Liftoff on arm64 reads v128.load32_splat and load32_lane there at the low 32 bits of
 // the address; these kernels use neither, but load64_zero, load32_zero and load64_lane). So the whole check runs three
 // times: as V8 pleases, with Liftoff alone, and without it.
 const tier = process.env.BLOCKS_TIER ?? "";

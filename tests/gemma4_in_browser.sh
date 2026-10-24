@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/gemma4_in_browser.sh (T329.3): a real Gemma 4 (E2B, 10.2 GB of safetensors) opened by ?hf= in a real browser,
+# tests/gemma4_in_browser.sh (T.329.3): a real Gemma 4 (E2B, 10.2 GB of safetensors) opened by ?hf= in a real browser,
 # from the site of this checkout, built and served on the runner: for a branch, which no deployed site has. On a CI
 # runner only:
 #

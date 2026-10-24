@@ -1,24 +1,24 @@
-# T136, stage 1: the Q8_0 GGUFs the list would take instead of the originals' safetensors (half the download), each
-# held to its original by tests/gguf_check.py tensors first (T74's rule: a GGUF that does not pass is not switched to).
+# T.136, stage 1: the Q8_0 GGUFs the list would take instead of the originals' safetensors (half the download), each
+# held to its original by tests/gguf_check.py tensors first (T.74's rule: a GGUF that does not pass is not switched to).
 # The development machine checks the ones under 2 GB; the 3B and 7B need a runner's memory and disk (the 7B's
 # originals are 15 GB and its GGUF 8 GB). By hand only; each check's table goes to the summary.
 #
 #   gh workflow run gguf.yml -f only=hf-qwen2.5-3b-instruct,hf-qwen2.5-7b-instruct
 #
-# T136, stage 2: candidate GGUFs not in the list yet, each against the original src/models.js pins for that item.
+# T.136, stage 2: candidate GGUFs not in the list yet, each against the original src/models.js pins for that item.
 # The page will take the vocabulary and config.json from the original, so a difference in the GGUF's vocabulary is
 # shown and not counted (gguf_check.py --original-vocabulary). One job per candidate; the eight above do not run.
 #
 #   gh workflow run gguf.yml -f candidates="hf-tinyllama-1.1b-chat=TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF@<commit>/tinyllama-1.1b-chat-v1.0.Q8_0.gguf"
 #
-# T145: every GGUF the list takes, again (the nine above with only=all, and the 19 of stage 2 with listed, each against
+# T.145: every GGUF the list takes, again (the nine above with only=all, and the 19 of stage 2 with listed, each against
 # the original of its vocabulary), for the tighter line of gguf_check.py (a GGUF past it: the old line stays):
 #
 #   gh workflow run gguf.yml -f only=all -f listed=true
 #
-# (T192: an empty only is not "all": the dispatch left empty takes the default, and only the 3B and the 7B ran)
+# (T.192: an empty only is not "all": the dispatch left empty takes the default, and only the 3B and the 7B ran)
 #
-# What comes from an input or the matrix reaches the shell through env, never written into run: (T145: a candidate
+# What comes from an input or the matrix reaches the shell through env, never written into run: (T.145: a candidate
 # of "$(...)" in its file name would have run).
 name: GGUF against the originals
 
@@ -32,7 +32,7 @@ on:
         description: 'stage 2: <id>=<repo>@<revision>/<file> of GGUFs not in the list yet, separated by spaces or commas'
         default: ''
       listed:
-        description: 'stage 2 again: every GGUF of the list that takes the vocabulary of its original (T145)'
+        description: 'stage 2 again: every GGUF of the list that takes the vocabulary of its original (T.145)'
         type: boolean
         default: false
 
@@ -55,7 +55,7 @@ jobs:
           - { id: hf-smollm2-1.7b-instruct, original: HuggingFaceTB/SmolLM2-1.7B-Instruct@31b70e2e869a7173562077fd711b654946d38674, gguf: bartowski/SmolLM2-1.7B-Instruct-GGUF@1f03464768bfcc0319fc50da8ff5fb20b6417ba2/SmolLM2-1.7B-Instruct-Q8_0.gguf }
           - { id: hf-qwen2.5-3b-instruct, original: Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1, gguf: bartowski/Qwen2.5-3B-Instruct-GGUF@f302c64a2269a69fb27b2f9473b362f5bb8e78d8/Qwen2.5-3B-Instruct-Q8_0.gguf }
           - { id: hf-qwen2.5-7b-instruct, original: Qwen/Qwen2.5-7B-Instruct@a09a35458c702b33eeacc393d103063234e8bc28, gguf: bartowski/Qwen2.5-7B-Instruct-GGUF@8911e8a47f92bac19d6f5c64a2e2095bd2f7d031/Qwen2.5-7B-Instruct-Q8_0.gguf }
-          # T74's, before stage 1 (the original at the revision tests/format_check.py's ORIGINALS names)
+          # T.74's, before stage 1 (the original at the revision tests/format_check.py's ORIGINALS names)
           - { id: hf-smollm2-135m-instruct, original: HuggingFaceTB/SmolLM2-135M-Instruct@12fd25f77366fa6b3b4b768ec3050bf629380bac, gguf: bartowski/SmolLM2-135M-Instruct-GGUF@09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf }
     steps:
       - name: Checkout
@@ -74,7 +74,7 @@ jobs:
         run: |
           python3 -m pip install --quiet numpy
           sudo mkdir -p /mnt/gguf && sudo chown "$USER" /mnt/gguf
-          # (T357.6: tests/gguf_fetch.py, by tests/fetching.py: each file held to its length and asked for again, T307)
+          # (T.357.6: tests/gguf_fetch.py, by tests/fetching.py: each file held to its length and asked for again, T.307)
           python3 tests/gguf_fetch.py "$ORIGINAL" "$GGUF" /mnt/gguf
           echo "### $ID: $GGUF" >> "$GITHUB_STEP_SUMMARY"
           status=0
@@ -109,19 +109,19 @@ jobs:
               const entry = MODELS.find((model) => model.id === id);
               if (!entry?.hf) throw new Error(`${id}: no item from Hugging Face by that id in src/models.js`);
               if (!form.test(gguf ?? "")) throw new Error(`${pair}: not <id>=<repo>@<revision>/<file>`);
-              // an item that takes a GGUF already (T136) has its original where its vocabulary comes from; one of
+              // an item that takes a GGUF already (T.136) has its original where its vocabulary comes from; one of
               // stage 1 (a GGUF with its own vocabulary) has no original revision in the list
               const source = entry.hf.vocabulary ?? entry.hf;
               if (source.weights?.endsWith(".gguf")) throw new Error(`${id}: takes a GGUF of its own vocabulary, and the list has no revision of its original`);
               return { id, original: `${source.repo}@${source.revision}`, gguf };
             });
-            // T145: the list itself, each GGUF against the original its vocabulary comes from
+            // T.145: the list itself, each GGUF against the original its vocabulary comes from
             if (process.env.LISTED === "true") {
-              // (not a GGUF whose weights are not those of its original, T233: Ternary Bonsai 2 27B takes the vocabulary of the
+              // (not a GGUF whose weights are not those of its original, T.233: Ternary Bonsai 2 27B takes the vocabulary of the
               // model it is built from; tests/unfold_27b.py and tests/page_27b.sh hold its tensors)
               for (const { id, hf } of MODELS.filter((model) => model.hf?.vocabulary && model.hf.weights?.endsWith(".gguf") && !model.rebuilt)) {
                 const gguf = `${hf.repo}@${hf.revision}/${hf.weights}`;
-                // a Qwen3 is in the list twice (thinking and not, T124) with one GGUF: checked once (the review of T203)
+                // a Qwen3 is in the list twice (thinking and not, T.124) with one GGUF: checked once (the review of T.203)
                 if (jobs.some((job) => job.id === id || job.gguf === gguf)) continue;
                 jobs.push({ id, original: `${hf.vocabulary.repo}@${hf.vocabulary.revision}`, gguf });
               }
@@ -157,7 +157,7 @@ jobs:
         run: |
           python3 -m pip install --quiet numpy
           sudo mkdir -p /mnt/gguf && sudo chown "$USER" /mnt/gguf
-          # (T357.6: tests/gguf_fetch.py, by tests/fetching.py; tokenizer.json or tokenizer.model, whichever the original has)
+          # (T.357.6: tests/gguf_fetch.py, by tests/fetching.py; tokenizer.json or tokenizer.model, whichever the original has)
           python3 tests/gguf_fetch.py "$ORIGINAL" "$GGUF" /mnt/gguf --either-tokenizer
           df -h /mnt
           echo "### $ID: $GGUF" >> "$GITHUB_STEP_SUMMARY"

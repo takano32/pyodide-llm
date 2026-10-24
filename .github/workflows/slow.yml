@@ -1,4 +1,4 @@
-# T118: the page on a slow line and on one that stops (tests/slow-check.mjs, a throttling proxy of its own), in
+# T.118: the page on a slow line and on one that stops (tests/slow-check.mjs, a throttling proxy of its own), in
 # Chromium, against the deployed site. By hand only.
 name: Slow line
 
@@ -15,7 +15,7 @@ on:
         description: 'the model the page is opened with (stories260K: 1 MB; stories3_5M: 15 MB; tiny-lm: 33 MB)'
         default: 'stories260K'
       queue:
-        description: 'how the line is shared: lane (the oldest connection first, T118), fair, or fifo (one queue: a deep buffer)'
+        description: 'how the line is shared: lane (the oldest connection first, T.118), fair, or fifo (one queue: a deep buffer)'
         default: 'lane'
       buffer:
         description: 'fifo: the queue in bytes'
@@ -38,7 +38,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
         timeout-minutes: 20
         run: |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/rope_compare.sh (T235): a model of the list whose entry says another RoPE scaling than its conversion does (the
+# tests/rope_compare.sh (T.235): a model of the list whose entry says another RoPE scaling than its conversion does (the
 # three Ternary Bonsai: rope_scaling: {}, a plain RoPE, over config.json's yarn), both ways on the page's forward pass
 # (src/runtime/forward.js on the kernels, the dtype the page keeps the model in): the perplexity on Wikipedia with each,
 # and what each writes for the entry's own prompt. One conversion, as the page makes it; the two differ in the options
@@ -9,7 +9,7 @@
 #   node tests/ci.mjs run tests.yml extra="bash tests/rope_compare.sh hf-ternary-bonsai-1.7b" --ref <branch> --grep "^rope|written by|kernels, "
 #   bash tests/rope_compare.sh [<id of the list> = hf-ternary-bonsai-1.7b] [tokens = 1500] [languages = "ja en"]
 #
-# The perplexity is tests/perplexity.mjs's first row (the page's own path) on the first <tokens> tokens of T85's
+# The perplexity is tests/perplexity.mjs's first row (the page's own path) on the first <tokens> tokens of T.85's
 # articles (the beginning of the first: Mount Fuji, 富士山), a context of 512 begun anew from the entry's BOS. The
 # writing is tests/write.mjs's: greedy, then as the page samples with seeds 1 and 2 (WRITE_TOKENS tokens, 48).
 set -euo pipefail

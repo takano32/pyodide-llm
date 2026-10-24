@@ -1,4 +1,4 @@
-// T273: how fast the converter reads a GGUF's two ternary types (PQ2_0, PTQ1_0) in Pyodide, by NumPy and on the
+// T.273: how fast the converter reads a GGUF's two ternary types (PQ2_0, PTQ1_0) in Pyodide, by NumPy and on the
 // kernels, in turns in one process, after seeing that the two give the same float32. MB/s of the file's bytes.
 //   node tests/ternary-read-bench.mjs [megabytes of blocks, default 32] [rounds, default 5]
 import os from "node:os";

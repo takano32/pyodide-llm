@@ -36,7 +36,7 @@ def partial_rope(heads, cos, sin, rotary):
     return np.concatenate([turned, heads[:, rotary:]], axis=1) if rotary < heads.shape[1] else turned
 
 
-# the epsilon of RMSNorm where config.json does not say another (T124: Qwen3's 1e-6 moved perplexity by 0.12%)
+# the epsilon of RMSNorm where config.json does not say another (T.124: Qwen3's 1e-6 moved perplexity by 0.12%)
 RMS_EPS = 1e-5
 
 
@@ -58,7 +58,7 @@ def layernorm(x, weight, bias):
 
 def gelu(x):
     """GPT-2's gelu_new: the tanh approximation, written with exp so that the kernel can do the same.
-    (T261: a Gemma's activations go past where float32's exp overflows, to an infinity that makes the 0 it should be:
+    (T.261: a Gemma's activations go past where float32's exp overflows, to an infinity that makes the 0 it should be:
     the same numbers as ever, without NumPy's warning of it.)"""
     inner = 0.7978845608028654 * (x + 0.044715 * x * x * x)
     with np.errstate(over="ignore"):
@@ -66,7 +66,7 @@ def gelu(x):
 
 
 def gelu_erf(x):
-    """T342: the exact GELU, x * (1 + erf(x / sqrt(2))) / 2 (transformers' "gelu", a Spark-X2.5's), written as the
+    """T.342: the exact GELU, x * (1 + erf(x / sqrt(2))) / 2 (transformers' "gelu", a Spark-X2.5's), written as the
     kernel computes it: erf by Abramowitz and Stegun's 7.1.26 (Handbook of Mathematical Functions, 1964: within 1.5e-7
     of erf everywhere), a polynomial in t = 1 / (1 + p z) times exp(-z * z), z = |x| / sqrt(2). For x of either sign
     the polynomial is 1 - erf(z) (none of erf's 1 is subtracted where x is negative and the GELU small), so
@@ -216,7 +216,7 @@ def delta_rule(state, q, k, v, beta, decay):
 # gives the same logits (convert/families/gemma3.py).
 
 
-# XHToken's Spark-X2.5 (config.json's model_type spark2_5; arch="spark" here, T339 to T342): a Llama's attention and
+# XHToken's Spark-X2.5 (config.json's model_type spark2_5; arch="spark" here, T.339 to T.342): a Llama's attention and
 # FFN with layers of two kinds that config.json lists (layer_types: three "sliding_attention" layers of every four).
 # The computation is taken from the model's own modeling code (Apache-2.0; the formulas, no line of it):
 # https://huggingface.co/XHToken/Spark-X2.5-1.7B/blob/14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8/modeling_spark.py
@@ -337,15 +337,15 @@ def rope(x, cos, sin):
 def rope_frequencies(width, theta, scaling=None):
     """The angle per position of each pair of a head's first width values (float64), for the RoPE tables.
 
-    scaling: config.json's rope_scaling, of three kinds. "linear" (T126: deepseek-coder): every pair turns factor times
+    scaling: config.json's rope_scaling, of three kinds. "linear" (T.126: deepseek-coder): every pair turns factor times
     slower, as if the positions were divided by factor. "llama3": the pairs that turn slowly (a wavelength past
     original_max_position_embeddings / low_freq_factor) turn factor times slower, the fast ones (shorter than
     original / high_freq_factor) as before, and the ones between are a blend of the two (transformers'
-    _compute_llama3_parameters). "yarn" (T235: Ternary-Bonsai): the pairs that turn 32 times or more within
+    _compute_llama3_parameters). "yarn" (T.235: Ternary-Bonsai): the pairs that turn 32 times or more within
     original_max_position_embeddings positions turn as before, the ones that turn once or less factor times slower,
     and the pairs between (counted by their number, each bound rounded outward) go from the one to the other in even
     steps: transformers' _compute_yarn_parameters and llama.cpp's rope_yarn(), which are the same table at every
-    position, whatever the context. yarn also scales the turned values: rope_magnitude(). T532 (the form of
+    position, whatever the context. yarn also scales the turned values: rope_magnitude(). T.532 (the form of
     ssig33/pyodide-llm's bddde105, as transformers 5.16.1 reads it): beta_fast and beta_slow, where config.json says
     them, are the numbers of turns in place of 32 and 1, and truncate false leaves the two bounds unrounded.
     """
@@ -378,10 +378,10 @@ def rope_frequencies(width, theta, scaling=None):
 
 
 def rope_magnitude(scaling=None):
-    """What the cos and sin of the RoPE tables are multiplied by: 1, but 0.1 ln(factor) + 1 under yarn (T235), which so
+    """What the cos and sin of the RoPE tables are multiplied by: 1, but 0.1 ln(factor) + 1 under yarn (T.235), which so
     makes q and k that much longer and the attention's scores sharper by its square (yarn's temperature: transformers'
     attention_factor, which scales cos and sin, and llama.cpp's mscale in rope_yarn(), where it comes to the same).
-    Left out, a yarn model's attention is 1.30 times too flat at factor 4 and nothing says so. T532 (as transformers
+    Left out, a yarn model's attention is 1.30 times too flat at factor 4 and nothing says so. T.532 (as transformers
     5.16.1's _compute_yarn_parameters, the form of ssig33/pyodide-llm's bddde105): config.json's attention_factor is
     the magnitude itself, and mscale with mscale_all_dim (both, and neither 0) make it the ratio
     (0.1 mscale ln(factor) + 1) / (0.1 mscale_all_dim ln(factor) + 1)."""

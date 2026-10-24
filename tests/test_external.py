@@ -1,4 +1,4 @@
-# The engine with its weights outside Python (T93): Llama(external=...) must describe every tensor exactly where
+# The engine with its weights outside Python (T.93): Llama(external=...) must describe every tensor exactly where
 # the NumPy engine reads it, for every architecture and dtype, so that src/runtime/forward.js computes on the same numbers.
 # The forward pass itself runs in JavaScript: tests/smoke.mjs checks it against the NumPy one.
 import numpy as np
@@ -49,7 +49,7 @@ def models():
     tensors, published = neox_model(0.25, True)
     yield "neox", tensors, published, NEOX_VOCAB, {"arch": "neox", "rotary": rotary_dim(normalize(published)),
                                                    "parallel_residual": True}
-    # T229: a Qwen3.5, with rows of whole groups of 32 (value heads that make 32 values) and without
+    # T.229: a Qwen3.5, with rows of whole groups of 32 (value heads that make 32 values) and without
     from test_qwen35 import options_of
     for name, shape in (("qwen35", dict(value_dim=8)), ("qwen35, rows of 24", dict(shared=False))):
         tensors, published = qwen35_model(**shape)
@@ -77,7 +77,7 @@ def test_the_plan_points_at_what_the_numpy_engine_reads(name, tensors, published
     engine = Llama(None, tokenizer, dtype=dtype, external=outside, **options)
     plan = outside.plan
     # int8 stays int8 only where every row is whole groups of 32 (the kernels' groups); else forward.js widens it
-    # (T229: and a Qwen3.5's value heads together, the rows of a linear-attention layer's output matrix)
+    # (T.229: and a Qwen3.5's value heads together, the rows of a linear-attention layer's output matrix)
     whole = all(n % 32 == 0 for n in (reference.dim, reference.hidden_dim, reference.n_kv_heads * reference.head_size,
                                       reference.q_dim, linear_widths(reference.linear)[2] if reference.linear else 32))
     assert plan["arch"] == options.get("arch", "llama") and plan["int8"] is (dtype == "int8" and whole)
@@ -104,7 +104,7 @@ def test_the_plan_points_at_what_the_numpy_engine_reads(name, tensors, published
 @pytest.mark.parametrize("dtype", ["float32", "int8", "int6"])
 @pytest.mark.parametrize("name, tensors, published, vocab, options", list(models())[:2], ids=[m[0] for m in models()][:2])
 def test_the_tensors_are_placed_before_the_model_is_built(name, tensors, published, vocab, options, dtype):
-    """T156: the worker places a Llama's tensors from the header alone (to send the layers to the GPU as they come),
+    """T.156: the worker places a Llama's tensors from the header alone (to send the layers to the GPU as they come),
     where Llama(external=) places them once every byte is there"""
     checkpoint = converted(Safetensors(reader(safetensors_file(tensors))), published, dtype)
     outside = Outside(checkpoint)
@@ -125,7 +125,7 @@ def test_a_file_of_the_wrong_size_is_refused():
 
 
 def test_a_prompt_goes_through_forward_many_and_writes_the_same():
-    """T108: with forward_many, generate() hands the prompt's tokens over in blocks, each at its positions, and the
+    """T.108: with forward_many, generate() hands the prompt's tokens over in blocks, each at its positions, and the
     text, the counts and what follows are what they are one token at a time. forward_many here is the NumPy forward
     token by token, so any difference is generate()'s bookkeeping."""
     config, weights = synthetic_weights()
@@ -145,7 +145,7 @@ def test_a_prompt_goes_through_forward_many_and_writes_the_same():
             batched.forward(token, pos + i, need_logits=False)
 
     batched.forward_many = many
-    # T147: the block is what the engine says now (forward.js's promptBlock: more where the GPU takes the prompt)
+    # T.147: the block is what the engine says now (forward.js's promptBlock: more where the GPU takes the prompt)
     batched.prompt_block = lambda: 5
     assert "".join(batched.generate(prompt, steps=40, temperature=0.0)) == expected
     assert "".join(batched.generate(prompt, steps=40, temperature=0.0, echo=False)) == \
@@ -159,7 +159,7 @@ def test_a_prompt_goes_through_forward_many_and_writes_the_same():
 
 
 def test_steps_on_the_gpu_write_what_the_cpu_writes():
-    """T152: with gpu_steps, generate() hands token_block() steps at a time over (the forward pass and the
+    """T.152: with gpu_steps, generate() hands token_block() steps at a time over (the forward pass and the
     sampling, with the random numbers drawn in the CPU's order), and the text, the counts and what follows are what
     they are one step at a time; a stop token in the middle of a block ends the run there, and a block the GPU gives
     back (None) goes to the CPU (tried greedy: a sampled one would have drawn its numbers already, and the seed's text

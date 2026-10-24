@@ -1,4 +1,4 @@
-"""tests/tree.py (T367.1): where in a tree what is, for the Python tools: tests/tree.mjs's way in Python (the kinds,
+"""tests/tree.py (T.367.1): where in a tree what is, for the Python tools: tests/tree.mjs's way in Python (the kinds,
 the search and what stops it from taking the wrong file are said there). No place is written down: a kind's folder is
 where its anchor (tests/tree.json, which tests/tree.mjs reads too) is found in the tree that is asked about;
 tests/tree-check.mjs holds the two to the same answers.
@@ -28,7 +28,7 @@ def _files(root):
         found = []
         for folder, folders, files in os.walk(root, followlinks=False):
             under = os.path.relpath(folder, root).replace(os.sep, "/")
-            # (T429) "skip": names of the root's own folders; "anywhere": at any depth
+            # (T.429) "skip": names of the root's own folders; "anywhere": at any depth
             passed = RULE.get("anywhere", []) + (RULE["skip"] if under == "." else [])
             folders[:] = [name for name in folders if name not in passed and not os.path.islink(os.path.join(folder, name))]
             found += [name if under == "." else f"{under}/{name}" for name in files if os.path.isfile(os.path.join(folder, name)) and not os.path.islink(os.path.join(folder, name))]
@@ -41,7 +41,7 @@ def _ending(root, *names):
 
 
 def _spelled(kind, name):
-    """A name as a kind may spell it (T368.1, tree.json's "either"): itself, then the same with the kind's other endings."""
+    """A name as a kind may spell it (T.368.1, tree.json's "either"): itself, then the same with the kind's other endings."""
     endings = RULE.get("either", {}).get(kind, [])
     has = next((end for end in endings if name.endswith(end) and not name.endswith(".d" + end)), None)
     return [name] + [name[:-len(has)] + end for end in endings if end != has] if has else [name]

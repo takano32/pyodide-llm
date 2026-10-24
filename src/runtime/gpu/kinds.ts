@@ -1,4 +1,4 @@
-// gpu/kinds.ts (T568.2): the kinds of layers the model's GPU worker has a step for, as one table, and what a kind is to
+// gpu/kinds.ts (T.568.2): the kinds of layers the model's GPU worker has a step for, as one table, and what a kind is to
 // the worker. (forward/kinds.ts's LAYER_KINDS is the CPU's table of the same kinds.)
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 //
@@ -21,7 +21,7 @@ import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 // a matrix's product (a bind group and its rows for each piece, forms.ts's productGroups()), an input's quantization
 // (QUANTIZE's bind group and workgroups), a bias added (ADD's)
 export type Product = { rows: number; group: GPUBindGroup }[];
-// (T271.1: its own pipeline: QUANTIZE, or ROTATE_QUANTIZE in a rotated basis, which block.ts's quantizing() picks)
+// (T.271.1: its own pipeline: QUANTIZE, or ROTATE_QUANTIZE in a rotated basis, which block.ts's quantizing() picks)
 export type Quantizing = { pipeline: GPUComputePipeline; group: GPUBindGroup; x: number };
 export type Added = { group: GPUBindGroup; x: number };
 // What a kind's layer l is handed as block.ts binds it: its place among the layers of its kind, and

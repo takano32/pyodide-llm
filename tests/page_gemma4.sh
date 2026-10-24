@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_gemma4.sh (T329.3): a Gemma 4 on the page's forward pass (src/runtime/forward.js on the int8 kernels, a
+# tests/page_gemma4.sh (T.329.3): a Gemma 4 on the page's forward pass (src/runtime/forward.js on the int8 kernels, a
 # 64-bit memory: the E2B's int8 is 5.2 GB), for CI (tests.yml's extra=, after `make kernels` and with the suite's
 # pyodide). The development machine runs none of it (10.2 GB of safetensors):
 #
@@ -13,7 +13,7 @@
 # template; no entry of the list has it yet), converted the way the page converts it (tests/perplexity_prepare.py, the
 # converter's options alone), then the parts the second word names ("perplexity speed answers float32" when left out):
 #   perplexity  the int8 weights on the kernels with 7-bit and 8-bit activations, 1500 tokens of English and of Japanese
-#               Wikipedia (T85's articles: past the window of 512 of its local layers), read from the file into
+#               Wikipedia (T.85's articles: past the window of 512 of its local layers), read from the file into
 #               forward.js's memory (tests/perplexity.mjs --file: the table of every layer's input in that memory too)
 #   speed       tokens a second with 1, 2 and 4 threads, the logits the same to the bit with each, a prompt in blocks,
 #               what forward.js placed against footprint(), and that no GPU is started (tests/page-27b.mjs speed)
@@ -22,13 +22,13 @@
 #               (tests/answers.mjs): what it writes, whether it stops, the language of the answer
 #   float32     the float32 conversion in native NumPy (tests/perplexity_native.py, 18.6 GB mapped): the original's
 #               perplexity, which transformers computes (tests/reference_gemma4.py holds the two together)
-#   against     (T529, not of the default parts) the model against the original's safetensors (AGAINST, hf:<repository>@
+#   against     (T.529, not of the default parts) the model against the original's safetensors (AGAINST, hf:<repository>@
 #               <revision>; E2B's where none is said), both converted to int8: the page's engine's logits at the same
 #               ids (tests/logits.mjs, AGAINST_TOKENS of each language, 96), the largest difference, the most likely token,
 #               the KL and the perplexity of each; the two checkpoints row by row; and the control, the safetensors' with its
 #               scales rounded to float16 as a Q8_0 holds them (what that rounding alone moves)
 # The first word is the model (hf:<repository>@<revision>, or an entry of the list: hf-gemma-4-e2b takes a GGUF's
-# weights from T529), the third the languages ("en ja").
+# weights from T.529), the third the languages ("en ja").
 #
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=170 extra="bash tests/page_gemma4.sh hf-gemma-4-e2b 'against perplexity answers'" --ref <branch> --grep "gemma4:|Perplexity|kernels,|page:|answers"
 set -euo pipefail
@@ -56,7 +56,7 @@ model=$(python tests/hf_fetch.py "$id" "$dir" | tail -1)
 echo "gemma4: fetched in $((SECONDS - began)) s: $(du -shL "$model" | cut -f1)"
 for language in $languages; do node tests/wikipedia.mjs "$language" "$dir/$language.txt"; done
 began=$SECONDS
-# (an entry of the list: its options under the converter's, as the worker merges them; T529)
+# (an entry of the list: its options under the converter's, as the worker merges them; T.529)
 entry=(); case "$id" in hf:*) ;; *) entry=(--entry "$id") ;; esac
 python tests/perplexity_prepare.py "$model" "$dir/int8" int8 "${entry[@]}" 2>&1 | tail -1 | cut -c1-400
 echo "gemma4: converted to int8 in $((SECONDS - began)) s (native Python); the checkpoint is $(stat -c %s "$dir/int8.bin") bytes"
@@ -90,7 +90,7 @@ EOF
   GREEDY=1 SEEDS="1 2" said node $liftoff tests/answers.mjs "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
 fi
 if has against; then
-  # T529: the model of the first word (an entry that takes a GGUF's weights) against the original's safetensors
+  # T.529: the model of the first word (an entry that takes a GGUF's weights) against the original's safetensors
   # converted the same way (AGAINST: the original, hf:<repository>@<revision>): the page's engine's logits at the same
   # ids, one token at a time (tests/logits.mjs, 7-bit activations), the largest difference, how often the most likely
   # token agrees and the mean KL. Two int8 of the same model differ by the rounding of Q8_0's scales (float16) alone

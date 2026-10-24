@@ -1,4 +1,4 @@
-// src/page/choose.ts (T355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
+// src/page/choose.ts (T.355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
 import { DEFAULT_MODEL, MODELS, memoryWarning } from "../models.js";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
@@ -83,7 +83,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(".intro .choos
 }
 
 // The URL names the model the page has, however it was chosen (the list, the sheet, the folder), so that a reload
-// (every switch of the panel reloads) or a shared link opens that model and no other (the review of T75 and T88:
+// (every switch of the panel reloads) or a shared link opens that model and no other (the review of T.75 and T.88:
 // after ?hf=, choosing a model of the list and then a switch reloaded the Hugging Face model). A file of the disk
 // has no address: its URL names nothing, and a reload opens the model remembered before it.
 function nameInUrl(current: Model) {
@@ -100,7 +100,7 @@ function nameInUrl(current: Model) {
       if (hf.revision !== "main") {
         url.searchParams.set("revision", hf.revision);
       }
-      // T505.3: and the file, where it is not the model.safetensors a repository is opened by: the one the visitor
+      // T.505.3: and the file, where it is not the model.safetensors a repository is opened by: the one the visitor
       // named, or the GGUF that was the best there when the repository was looked at
       if (!unnamed(unlisted(current)!)) {
         url.searchParams.set("file", hf.weights);
@@ -118,7 +118,7 @@ function nameInUrl(current: Model) {
   history.replaceState(null, "", url);
 }
 
-// T88: the last entry of the Hugging Face group asks which repository, in a sheet like the settings'
+// T.88: the last entry of the Hugging Face group asks which repository, in a sheet like the settings'
 const repositorySheet = $("repository");
 repositorySheet.addEventListener("beforetoggle", (event) => {
   if ((event as ToggleEvent).newState !== "open") {
@@ -134,7 +134,7 @@ repositorySheet.addEventListener("toggle", (event) => {
     ($("repository-name") as HTMLInputElement).focus();
   }
 });
-// T505.3: the third field names the file that is the model, a GGUF; empty, the repository is looked at for one. What
+// T.505.3: the third field names the file that is the model, a GGUF; empty, the repository is looked at for one. What
 // the field takes is what an address takes (the browser says so of anything else, in its own words)
 const fileField = $("repository-file") as HTMLInputElement;
 fileField.pattern = FILE.source;
@@ -145,7 +145,7 @@ fileField.pattern = FILE.source;
   // the address of the model's page is what people copy: owner/name is what is needed of it
   const repository = field.value.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/(tree|blob)\/.*$/, "").replace(/\/+$/, "");
   const revision = revisionField.value.trim() || "main";
-  // T119: the message goes on the field that is wrong, and goes away as that field is edited (on the name alone,
+  // T.119: the message goes on the field that is wrong, and goes away as that field is edited (on the name alone,
   // a wrong revision put right left the name marked, and the form would not open)
   const wrong: [HTMLInputElement, string] | undefined = !REPOSITORY.test(repository) ? [field, "owner/name, as huggingface.co spells it"]
     : !REVISION.test(revision) ? [revisionField, "a branch, a tag or a commit"] : undefined;
@@ -172,7 +172,7 @@ fileField.pattern = FILE.source;
   showLocal();  // the change of model writes the URL (nameInUrl), so that the link can be shared
 };
 
-/** T505.3: the repository the URL names (?hf=) with no file of it is looked at before its load: one without
+/** T.505.3: the repository the URL names (?hf=) with no file of it is looked at before its load: one without
  * safetensors is opened by the best GGUF it has, and the URL says which from then on. Whether the page may go on to
  * load its model: not where the repository has nothing this page opens, which is said. (A model chosen while this
  * looked has started its own load, and wins.) */
@@ -206,7 +206,7 @@ select.onchange = () => {
   const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
   // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
   const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : ((chosen as any).download ?? 0);
-  // T90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
+  // T.90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
   const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
                 memoryWarning(weighed(chosen), (navigator as any).deviceMemory)].filter(Boolean);
   if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
@@ -221,6 +221,6 @@ select.onchange = () => {
   // the timings of the previous load
   $("load").classList.remove("measured");
   ($("load") as HTMLDetailsElement).open = false;
-  // search: this may reach the worker before init does, while the page looks at what is kept (T116)
+  // search: this may reach the worker before init does, while the page looks at what is kept (T.116)
   worker.postMessage({ type: "load", root, search: location.search, model: weighed(model), load, threads: threadsFor(model), gpu: gpuFor(model) });
 };

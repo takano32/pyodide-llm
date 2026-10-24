@@ -1,4 +1,4 @@
-// tests/markdown-in-browser.mjs (T554, T556): how the built model page draws an answer, in a real browser, with a
+// tests/markdown-in-browser.mjs (T.554, T.556): how the built model page draws an answer, in a real browser, with a
 // made-up model worker in place of the page's (no Pyodide, no model): the worker says it is ready with a format that
 // leaves the answer in <think>, and answers with tokens of Markdown that holds what must not be drawn.
 //
@@ -6,11 +6,11 @@
 //
 // Visits: the page as a visitor opens it (under the service worker: the libraries come from jsDelivr through it), the
 // same with ?coi=off (no service worker), and one where jsDelivr's packages do not answer (with ?coi=off). It sees: the thinking stays
-// plain text (its ** too), T520: in a fold above the answer that is open while it goes on and closed once the answer
+// plain text (its ** too), T.520: in a fold above the answer that is open while it goes on and closed once the answer
 // begins, whose line says how long the thought was (the made-up worker's stats); headings, lists, bold, italic, code and a table are drawn; the model's HTML, links, images
 // and an onerror are not (no such element, no attribute but align and start, nothing ran) and are said as the text it
-// wrote; a block drawn earlier is the same element at the end (only the blocks that changed are made again: T556); the
-// answer is drawn far fewer times than it has tokens (T554), and whole at its end; without the libraries the answer is
+// wrote; a block drawn earlier is the same element at the end (only the blocks that changed are made again: T.556); the
+// answer is drawn far fewer times than it has tokens (T.554), and whole at its end; without the libraries the answer is
 // plain text, whole, with one line in the console that says so; no console error on any visit.
 // (Without the libraries the answer is plain text below the same fold.)
 // It does not see: a real model, offline (the service worker's copies: e2e's E2E_OFFLINE with a model that answers in a
@@ -52,7 +52,7 @@ function madeUpWorker(text) {
         let i = 0;
         const next = () => {
           if (i === 6) {
-            // T520: in the thought: its fold is open and says the model is thinking
+            // T.520: in the thought: its fold is open and says the model is thinking
             const fold = document.querySelector(".model .bubble > details.thought");
             window.__thinking = fold ? { open: fold.open, line: fold.querySelector("summary").textContent } : null;
           }

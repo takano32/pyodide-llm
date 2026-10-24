@@ -1,8 +1,8 @@
-# The Llamas (T359): a Llama, and the families that are one but for a little. A Mistral is a Llama by another name
-# (T125). A Qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
-# adds them after the projections (T64); everything else about it is the same. A Qwen3 is a Llama that normalizes every
-# head of q and k (T124): two vectors per layer, the same way. A Granite (T253) is a Llama whose scores are scaled
-# otherwise, which the conversion puts into q. A SmolLM3 (T255) is a Llama some of whose layers RoPE leaves alone.
+# The Llamas (T.359): a Llama, and the families that are one but for a little. A Mistral is a Llama by another name
+# (T.125). A Qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
+# adds them after the projections (T.64); everything else about it is the same. A Qwen3 is a Llama that normalizes every
+# head of q and k (T.124): two vectors per layer, the same way. A Granite (T.253) is a Llama whose scores are scaled
+# otherwise, which the conversion puts into q. A SmolLM3 (T.255) is a Llama some of whose layers RoPE leaves alone.
 # Whether a file has the biases or the norms is the source's to say, not config.json's (has_bias() and has_qk_norm()
 # here, the record's "found"), so a Qwen2 and a Qwen3 differ from a Llama here by what is checked and how a GGUF holds
 # them.
@@ -39,13 +39,13 @@ def has_bias(source):
 
 
 def has_qk_norm(source):
-    """Whether this checkpoint normalizes every head of q and k before RoPE (Qwen3, T124)."""
+    """Whether this checkpoint normalizes every head of q and k before RoPE (Qwen3, T.124)."""
     return "model.layers.0.self_attn.q_norm.weight" in source
 
 
 def found(source):
     """The rows a Llama's layout has only where the file has their tensors (engine/layout.py's llama()): FORM's "bias"
-    and "qk_norm". T369: asked of the Llamas alone. A Qwen3.5 saved as a language model has a tensor of the second
+    and "qk_norm". T.369: asked of the Llamas alone. A Qwen3.5 saved as a language model has a tensor of the second
     name too, and its options said qk_norm for that where those of one saved with its vision model did not; its layout
     has the norms either way and reads no such key."""
     return {"bias": has_bias(source), "qk_norm": has_qk_norm(source)}
@@ -63,7 +63,7 @@ def check(config, biased=False):
 
 
 def windowed(config):
-    """T125: a Mistral is a Llama by another name (the same tensors, names and forward). v0.1 and some of its
+    """T.125: a Mistral is a Llama by another name (the same tensors, names and forward). v0.1 and some of its
     descendants attend a sliding window of the last sliding_window positions: a context no longer than the
     window attends the very same positions, so the context is cut to it."""
     window, context = config.get("sliding_window"), config.get("max_position_embeddings")
@@ -90,19 +90,19 @@ def gguf_config(key, tensors):
               "num_key_value_heads": key("attention.head_count_kv", heads),
               "max_position_embeddings": key("context_length"), "rope_theta": float(key("rope.freq_base", 10000.0)),
               "tie_word_embeddings": "output.weight" not in tensors, "hidden_act": "silu",
-              # a head of another size than dim / heads (T124): llama.cpp says it as the length of a key
+              # a head of another size than dim / heads (T.124): llama.cpp says it as the length of a key
               "head_dim": key("attention.key_length"), "rms_norm_eps": key("attention.layer_norm_rms_epsilon")}
     if key("rope.scaling.type", "none") not in ("none", None):
         config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
         if key("rope.scaling.type") == "yarn":
-            # T235: yarn's other numbers, by config.json's names. llama.cpp takes the trained context where the
+            # T.235: yarn's other numbers, by config.json's names. llama.cpp takes the trained context where the
             # GGUF names no original one; what else a GGUF may say of yarn, check_config() refuses by these names
             # and gguf_agrees() where the original's config.json has it not. The keys are llama.cpp's own (the
             # fork's src/llama-arch.cpp: yarn_log_multiplier, which only a DeepSeek-V2 GGUF has; the review of
-            # T235 found "yarn_log_mul" here, a name no GGUF has)
+            # T.235 found "yarn_log_mul" here, a name no GGUF has)
             config["rope_scaling"]["original_max_position_embeddings"] = \
                 key("rope.scaling.original_context_length", key("context_length"))
-            # T532: the two bounds mean in llama.cpp (ggml_rope_yarn_corr_dims(), which always rounds them outward)
+            # T.532: the two bounds mean in llama.cpp (ggml_rope_yarn_corr_dims(), which always rounds them outward)
             # what beta_fast and beta_slow mean in transformers, and are read as those. The rest keep llama.cpp's
             # names, which check_config() refuses: llama.cpp multiplies the magnitude by attn_factor (config.json's
             # attn_factor of DeepSeek-R1-0528-Qwen3-8B, which transformers drops), makes it of yarn_log_multiplier
@@ -118,8 +118,8 @@ def gguf_config(key, tensors):
 
 def gguf_turned(config):
     """llama.cpp turns q and k of a Llama (and their biases) into llama2.c's order; a Qwen2 it leaves alone (it
-    rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned. A Granite's as a Llama's (T253:
-    its converter is the Llama's), and a SmolLM3's (T255)."""
+    rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned. A Granite's as a Llama's (T.253:
+    its converter is the Llama's), and a SmolLM3's (T.255)."""
     turns = {"attn_q": config["num_attention_heads"], "attn_k": config.get("num_key_value_heads")}
 
     def stored(entry, info, target, parts):
@@ -134,14 +134,14 @@ LLAMA = Family("Llama", "llama", llama_sources, check, found=found, free_heads=T
 # (a Mistral's GGUF says "llama")
 MISTRAL = LLAMA._replace(title="Mistral", renamed=True, after=windowed, gguf=None)
 QWEN2 = LLAMA._replace(title="Qwen2", check=lambda config: check(config, biased=True), gguf="qwen2", gguf_stored=as_stored)
-# T203 (T136's fourth stage): a Qwen3 is a Qwen2 without the biases that normalizes each head of q and k (T124).
+# T.203 (T.136's fourth stage): a Qwen3 is a Qwen2 without the biases that normalizes each head of q and k (T.124).
 # llama.cpp leaves q, k and the two norms in Hugging Face's order, as a Qwen2's; the head's size is key_length
 QWEN3 = QWEN2._replace(title="Qwen3", check=check, gguf="qwen3", gguf_names=(
     GGUF_NAMES, "model.layers.{}.", {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm"}))
 
 
 # ---- a Granite
-# T253: a Granite (IBM's, transformers' model_type "granite") is a Llama but for four numbers of its config.json. Its
+# T.253: a Granite (IBM's, transformers' model_type "granite") is a Llama but for four numbers of its config.json. Its
 # attention multiplies the scores by attention_multiplier where a Llama divides them by the root of the head's size
 # (transformers' GraniteAttention: matmul(query, key^T) * config.attention_multiplier), its embedding is multiplied by
 # embedding_multiplier, each branch by residual_multiplier before it joins the stream, and its logits are divided by
@@ -152,7 +152,7 @@ GRANITE_ONES = ("embedding_multiplier", "residual_multiplier", "logits_scaling")
 
 
 def granite_scale(config):
-    """What the conversion multiplies a Granite's q by (T253). The engine's score is q·k / sqrt(head), a Granite's
+    """What the conversion multiplies a Granite's q by (T.253). The engine's score is q·k / sqrt(head), a Granite's
     q·k * attention_multiplier: with q multiplied by attention_multiplier * sqrt(head) the engine computes the
     Granite's. Nothing stands between the matrix and the score that is not linear in q (RoPE turns it; a norm of the
     heads, which would undo the scale, a Granite has not and conversion_plan() refuses with it), so it is the same
@@ -162,7 +162,7 @@ def granite_scale(config):
 
 
 def granite_check(config):
-    """T253: what the engine has not (see GRANITE_ONES), and a multiplier of the scores that is no number to scale
+    """T.253: what the engine has not (see GRANITE_ONES), and a multiplier of the scores that is no number to scale
     q by. transformers' Granite has heads of dim / heads only (its config has no head_dim)."""
     check(config)
     number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
@@ -177,7 +177,7 @@ def granite_check(config):
 
 
 def granite_gguf_config(key, tensors):
-    """T253: a Granite's four multipliers by config.json's names. llama.cpp keeps the scores' in the metadata
+    """T.253: a Granite's four multipliers by config.json's names. llama.cpp keeps the scores' in the metadata
     (attention.scale) and multiplies at run time: q is not scaled in the file, and the conversion scales it once, as it
     does a safetensors' (granite_scale()). Where a GGUF names none llama.cpp divides by the root of the head's size, a
     Llama's score; the other three it leaves out of the computation where they are missing or 0 (logit_scale it
@@ -192,14 +192,14 @@ def granite_gguf_config(key, tensors):
 
 
 def granite_agrees(own, config):
-    """T253: a Granite's multipliers, which are no tensor: the scores' goes into q from config.json's (a GGUF that
+    """T.253: a Granite's multipliers, which are no tensor: the scores' goes into q from config.json's (a GGUF that
     says another would be scaled by the wrong one), and the three the engine has not must be 1 in both."""
     multipliers = lambda c: {key: f32(c.get(key, 1.0)) for key in ("attention_multiplier", *GRANITE_ONES)
                              if isinstance(c.get(key, 1.0), (int, float))}
     return [("Granite's multipliers", multipliers(own), multipliers(config))]
 
 
-# T253: a Granite, a Llama to the name of every tensor (llama.cpp's GraniteModel is its LlamaModel with four numbers
+# T.253: a Granite, a Llama to the name of every tensor (llama.cpp's GraniteModel is its LlamaModel with four numbers
 # more in the metadata, and turns q and k as that does)
 GRANITE = LLAMA._replace(title="Granite", check=granite_check, scale=granite_scale, gguf="granite",
                          gguf_config=granite_gguf_config, agrees=granite_agrees)
@@ -207,7 +207,7 @@ GRANITE = LLAMA._replace(title="Granite", check=granite_check, scale=granite_sca
 
 # ---- a SmolLM3
 def smollm3_unturned(config):
-    """T255: the layers of a SmolLM3 (transformers' model_type "smollm3", a Llama otherwise) whose q and k RoPE does not
+    """T.255: the layers of a SmolLM3 (transformers' model_type "smollm3", a Llama otherwise) whose q and k RoPE does not
     turn, in order: where config.json's no_rope_layers has a 0 (the name is transformers': a 1 is a layer that has
     RoPE), and where it has no such list every no_rope_layer_interval-th layer, as transformers' SmolLM3Config makes
     the list (and llama.cpp, whose interval is always 4). The file is a Llama's and the same either way (turning the
@@ -226,7 +226,7 @@ def smollm3_options(config):
 
 
 def smollm3_check(config):
-    """T255: a list of another length than the layers, or an interval that is no number, names no layers."""
+    """T.255: a list of another length than the layers, or an interval that is no number, names no layers."""
     check(config)
     said, interval = config.get("no_rope_layers"), config.get("no_rope_layer_interval", 4)
     if said is None and (not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0):
@@ -236,13 +236,13 @@ def smollm3_check(config):
 
 
 def smollm3_gguf_config(key, tensors):
-    # T255: llama.cpp leaves every fourth layer's q and k unturned, whatever the GGUF says (it says nothing:
+    # T.255: llama.cpp leaves every fourth layer's q and k unturned, whatever the GGUF says (it says nothing:
     # src/models/smollm3.cpp at 71ad0590 sets n_no_rope_layer_step to 4), which is what config.json's
     # interval of 4 says. gguf_agrees() compares the layers with the original's
     return {**gguf_config(key, tensors), "no_rope_layer_interval": 4}
 
 
-# T255: a SmolLM3, a Llama to the name of every tensor (llama.cpp's SmolLM3Model is its LlamaModel by another name,
+# T.255: a SmolLM3, a Llama to the name of every tensor (llama.cpp's SmolLM3Model is its LlamaModel by another name,
 # and turns q and k as that does; conversion/llama.py at 71ad0590). What a GGUF and the original must agree on: the
 # layers RoPE leaves alone, which are no tensor (llama.cpp's are every fourth, always)
 SMOLLM3 = LLAMA._replace(title="SmolLM3", check=smollm3_check, options=smollm3_options, gguf="smollm3",

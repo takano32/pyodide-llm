@@ -1,4 +1,4 @@
-// src/page/draw.ts (T355): what the page draws: the bubbles, the lines under an answer, the benchmark's table, the
+// src/page/draw.ts (T.355): what the page draws: the bubbles, the lines under an answer, the benchmark's table, the
 // status line, the round button.
 import { reportUrl } from "../bench.js";
 import { chat, run, statusText } from "./dom.ts";
@@ -31,8 +31,8 @@ export function message(kind: string, text = "") {
   chat.scrollTop = chat.scrollHeight;
   return element;
 }
-/** T554: the answer's bubble says `text`, all that was written so far, and the chat follows it only while the reader is
- * at its bottom. As plain text, the new part is added to its text node (the text before it is not made again). T556: as
+/** T.554: the answer's bubble says `text`, all that was written so far, and the chat follows it only while the reader is
+ * at its bottom. As plain text, the new part is added to its text node (the text before it is not made again). T.556: as
  * Markdown where the answer is drawn so and the libraries came: the thinking stays plain text, and of the rest only
  * the blocks that changed are made again (the last one as it grows). */
 export function drawAnswer(bubble: Element, text: string, shape?: { markdown: boolean; thinking: boolean }, markdown?: Markdown) {
@@ -52,9 +52,9 @@ function plainly(element: Element, text: string) {
   if (text.startsWith(node!.data)) node!.appendData(text.slice(node!.length));
   else node!.data = text;
 }
-// T520: the folds of thoughts that have closed, and those a reader opened or closed: the page leaves those as they are
+// T.520: the folds of thoughts that have closed, and those a reader opened or closed: the page leaves those as they are
 const folded = new WeakSet<Element>(), touched = new WeakSet<Element>();
-/** An answer in a format: T520, its thought (if any) in a fold above it, open while the model thinks and closed once
+/** An answer in a format: T.520, its thought (if any) in a fold above it, open while the model thinks and closed once
  * it answers (unless the reader opened or closed it), and the answer itself, as Markdown where the libraries came. */
 function drawShaped(bubble: Element, text: string, opened: boolean, markdown?: Markdown) {
   const { thought, closed, answer } = thoughtOf(text, opened);
@@ -97,7 +97,7 @@ function drawShaped(bubble: Element, text: string, opened: boolean, markdown?: M
     plainly(said, answer);
   }
 }
-/** T520: the line of an answer's fold, at its end: how long the thought was, by the engine's count. */
+/** T.520: the line of an answer's fold, at its end: how long the thought was, by the engine's count. */
 export function thoughtSaid(bubble: Element, stats: { thought: number | null; thought_cut: boolean }) {
   const line = bubble.querySelector(":scope > details.thought > summary");
   if (line) line.textContent = thoughtLine(folded.has(line.parentElement!), stats);
@@ -131,7 +131,7 @@ export function rows(element: Element, lines: string[]) {
     element.append(row);
   }
 }
-// T76: the benchmark's bubble. The table is the Markdown's; the buttons under it are the way to send it on.
+// T.76: the benchmark's bubble. The table is the Markdown's; the buttons under it are the way to send it on.
 export function showBench(benchRows: BenchRow[], environment: any, markdown: string) {
   const element = message("model bench");
   const bubble = element.firstElementChild!;
@@ -150,7 +150,7 @@ export function showBench(benchRows: BenchRow[], environment: any, markdown: str
   const body = table.createTBody();
   for (const row of benchRows) {
     const line = body.insertRow();
-    const skipped = row.skip !== undefined;  // T214: its speed is "skipped", and the last column says why
+    const skipped = row.skip !== undefined;  // T.214: its speed is "skipped", and the last column says why
     for (const text of [row.name, skipped ? "skipped" : Number.isFinite(row.speed) ? row.speed.toFixed(1) : "?", skipped ? row.skip : row.backend ?? ""]) {
       line.insertCell().textContent = text;
     }
@@ -171,7 +171,7 @@ export function showBench(benchRows: BenchRow[], environment: any, markdown: str
     }
     setTimeout(() => { copy.textContent = "copy as Markdown"; }, 1500);
   };
-  // T91: the issue template's questions (device, OS, browser) above the Markdown
+  // T.91: the issue template's questions (device, OS, browser) above the Markdown
   const report = document.createElement("a");
   report.href = reportUrl(markdown, environment);
   report.target = "_blank";
@@ -211,13 +211,13 @@ export function showStatus(note?: string) {
   const { backend, threads, pyodide } = readyLine;
   // (?gpuTest=on, the tests' flag, says so as ?without= does)
   const tested = gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
-  // (T439: and, last, that a reload would make it faster, where it runs slower for a file of this build that is gone)
+  // (T.439: and, last, that a reload would make it faster, where it runs slower for a file of this build that is gone)
   statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${gpuNote ? `, ${gpuNote}${tested}` : ""} · Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : ""}`;
 }
-// T135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
+// T.135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
 // makes the first logits, on the CPU)
 export const onGpu = (data: Done) => (!data.gpuTokens ? "" : data.gpuTokens >= data.prompt_tokens ? " on WebGPU"
   : ` (${data.gpuTokens} on WebGPU)`);
-// T152: how many of the tokens it wrote the GPU sampled (the sampled steps: a stop token among them)
+// T.152: how many of the tokens it wrote the GPU sampled (the sampled steps: a stop token among them)
 export const onGpuSampled = (data: Done) => (!data.gpuSampled ? "" : data.gpuSampled >= data.sampled ? " on WebGPU"
   : ` (${data.gpuSampled} on WebGPU)`);

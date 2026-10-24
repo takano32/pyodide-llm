@@ -1,4 +1,4 @@
-// tests/fakes/pyodide.mjs (T357.5; out of tests/worker-conduct-check.mjs, where T374.2.1 wrote it)
+// tests/fakes/pyodide.mjs (T.357.5; out of tests/worker-conduct-check.mjs, where T.374.2.1 wrote it)
 // A stand-in for what Pyodide hands JavaScript of Python's objects: proxies, which live until they are destroyed, and
 // the face it gives a Python generator. For the checks of what answers a conversion's conduct (a generator of
 // src/python/convert/conduct.py) without Pyodide: the worker's loop (worker-conduct-check.mjs) and the tools'

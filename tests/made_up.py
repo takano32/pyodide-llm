@@ -1,4 +1,4 @@
-# Made-up models for the tests and their tools, in one place (T357.2). Nothing here reads pytest or conftest.py, so that a
+# Made-up models for the tests and their tools, in one place (T.357.2). Nothing here reads pytest or conftest.py, so that a
 # tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.mjs, tests/forward-check.mjs) import it as
 # it is: whoever imports it has put the engine's Python on sys.path first (tests/tree.py's python_folder()).
 #
@@ -30,7 +30,7 @@ def rope_tables(seq_len, head_size, rope_theta=10000.0):
 def synthetic_weights(dim=32, hidden_dim=64, n_layers=2, n_heads=4, n_kv_heads=4,
                       vocab_size=320, seq_len=24, shared=True, seed=0, head_size=0):
     """Random weights for a tiny model, plus its configuration. Small enough for a naive reference.
-    head_size: where a head is not dim / n_heads (T124), q and the attention's output are n_heads * head_size wide."""
+    head_size: where a head is not dim / n_heads (T.124), q and the attention's output are n_heads * head_size wide."""
     rng = np.random.default_rng(seed)
     head_size = head_size or dim // n_heads
     q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
@@ -84,7 +84,7 @@ def hugging_face(config, weights, shared):
 
 
 def safetensors_file(tensors, stored="F32", metadata=None):
-    """metadata: more of the header's __metadata__ (T237: a rotated basis, as gguf_model() says one)."""
+    """metadata: more of the header's __metadata__ (T.237: a rotated basis, as gguf_model() says one)."""
     header, data = {"__metadata__": {"format": "pt", **(metadata or {})}}, b""
     for name, tensor in tensors.items():
         if stored == "BF16":  # the upper half of the float32: what bfloat16 is
@@ -130,7 +130,7 @@ def qwen3(config, weights, shared, seed=11):
     return tensors, {**published, "model_type": "qwen3"}
 
 
-# ------------------------------------------------------------------------------------- Qwen3.5 (T229)
+# ------------------------------------------------------------------------------------- Qwen3.5 (T.229)
 def qwen35_model(dim=32, hidden_dim=64, n_layers=4, every=2, n_heads=4, n_kv_heads=2, head_dim=16, rotary=0.25,
                  key_heads=2, value_heads=4, key_dim=8, value_dim=6, conv=4, vocab_size=320, seq_len=24, shared=True,
                  prefix="model.language_model.", seed=0, eps=1e-6):
@@ -182,7 +182,7 @@ def qwen35_model(dim=32, hidden_dim=64, n_layers=4, every=2, n_heads=4, n_kv_hea
     return tensors, dict(model_type="qwen3_5", text_config=text, tie_word_embeddings=shared)
 
 
-# T237: a model folded into a rotated basis (tests/test_rotated.py, tests/make_qwen35.py)
+# T.237: a model folded into a rotated basis (tests/test_rotated.py, tests/make_qwen35.py)
 # the matrices of a Hugging Face checkpoint that the forward pass multiplies an activation by, and the embedding
 FOLDED = ("embed_tokens.weight", "lm_head.weight", "self_attn.q_proj.weight", "self_attn.k_proj.weight",
           "self_attn.v_proj.weight", "self_attn.o_proj.weight", "mlp.gate_proj.weight", "mlp.up_proj.weight",
@@ -204,7 +204,7 @@ def folded(tensors, block, signs):
             for name, tensor in tensors.items()}
 
 
-# ------------------------------------------------------------------------------------- LFM2 (T260)
+# ------------------------------------------------------------------------------------- LFM2 (T.260)
 def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=2, taps=3, vocab_size=320, seq_len=24,
                shared=True, seed=0, eps=1e-5, adjust=True):
     """Random Hugging Face tensors of a tiny LFM2 (convolution layers among attention layers), with the names and
@@ -249,7 +249,7 @@ def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=
     return tensors, config
 
 
-# ------------------------------------------------------------------------------------- Gemma 3 (T261)
+# ------------------------------------------------------------------------------------- Gemma 3 (T.261)
 def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, window=4, vocab_size=320,
                  seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0, listed=True, pattern=None,
                  parameters=False):
@@ -296,7 +296,7 @@ def gemma3_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
     return tensors, config
 
 
-# ------------------------------------------------------------------------------------- Spark-X2.5 (T342)
+# ------------------------------------------------------------------------------------- Spark-X2.5 (T.342)
 def spark_model(dim=32, hidden_dim=64, kinds="sssl", n_heads=4, n_kv_heads=2, head_dim=16, window=4, vocab_size=320,
                 seq_len=24, shared=True, seed=0, eps=1e-6, theta=5000000.0, local_theta=100.0, part=0.25, local_part=1.0,
                 spread=0.3):
@@ -332,7 +332,7 @@ def spark_model(dim=32, hidden_dim=64, kinds="sssl", n_heads=4, n_kv_heads=2, he
     return tensors, config
 
 
-# ------------------------------------------------------------------------------------- Gemma 4 (T331)
+# ------------------------------------------------------------------------------------- Gemma 4 (T.331)
 def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, wide_head=32, window=4,
                  vocab_size=320, seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0,
                  proportion=0.25, softcap=30.0, whole=False, sharing=0, double=False, per_layer=0):
@@ -340,9 +340,9 @@ def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1,
     google/gemma-4-E2B-it's model.safetensors at 3e22461f (whole: "model.language_model." in front, as there; else
     "model.", the language model saved alone), and its config.json (whole: the whole model's, whose text_config it
     is). kinds: a letter a layer, s for a sliding-attention layer and l for a full-attention one, whose heads are
-    wide_head (head_dim the others'). T330: the last sharing layers read another's keys and values (their own k, v and
+    wide_head (head_dim the others'). T.330: the last sharing layers read another's keys and values (their own k, v and
     norms are in the file all the same, as the published ones' are), and where double their FFN is twice as wide. There
-    is an embedding of every layer of per_layer values (T329: hidden_size_per_layer_input; 0, none). The norms are around
+    is an embedding of every layer of per_layer values (T.329: hidden_size_per_layer_input; 0, none). The norms are around
     1 (the model multiplies by the weight itself), and every layer's layer_scalar a number of its own."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
@@ -398,7 +398,7 @@ def checkpoint(header, form=None, dtype="float32", *, tensor, blocks=None):
     row or of each layer of a stack) by the registry of dtypes.
     tensor(row) -> the values of the row (its name, role, shape and layers: layout.py's Row), an array of the row's
     shape; it is asked for the rows the file holds, in file order, and for no other.
-    T363: a tensor of one of llama.cpp's blocks is not made of values (there is no packing them: the values are what
+    T.363: a tensor of one of llama.cpp's blocks is not made of values (there is no packing them: the values are what
     its bytes read as, and any bytes are blocks). blocks(the kind's name, how many blocks) -> their bytes (drawn_blocks()
     where none is given); tensor is not asked for a row that is blocks throughout, and what it says of a layer that is
     blocks is left unread. The codebooks such a file carries are the converter's (convert/grids.py's codebooks()).
@@ -488,13 +488,13 @@ BIASES = ("bq", "bk", "bv", "bo", "b1", "b2", "ln_att_bias", "ln_ffn_bias", "ln_
 
 def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
     """The values of the made-up models the GPU is checked on (tests/gpu-check.mjs), of one stream in file order: a
-    matrix is 0.3 N; the weight of a norm is 1 + 0.03 N, a bias 0.3 N (T154, T187: around 0 as the matrices are, or
+    matrix is 0.3 N; the weight of a norm is 1 + 0.03 N, a bias 0.3 N (T.154, T.187: around 0 as the matrices are, or
     the biases of every layer are nearly the same and 8 bits hide a GPU that reads layer 0's in every layer).
-    outliers (T226): that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that
+    outliers (T.226): that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T.92), so that
     the engine takes their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread,
-    2 spread, ... (mod dim: the T232 review's spread of 37 puts some in every group of 128 of a dim of 256).
-    calm (T226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check/models.mjs.
-    ternary (T232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
+    2 spread, ... (mod dim: the T.232 review's spread of 37 puts some in every group of 128 of a dim of 256).
+    calm (T.226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check/models.mjs.
+    ternary (T.232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
     times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are."""
     rng = np.random.default_rng(seed)
 
@@ -504,7 +504,7 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
             values = values if row.name in BIASES else 1.0 + values * (1.0 if calm else 0.1)
             if outliers and row.name == "rms_final_weight":
                 values[np.arange(outliers) * spread % row.shape[-1]] = 12.0
-            # (T271.2: a Qwen3.5's decay is -exp(A_log), below 0: one over 1 grows the state token after token, and
+            # (T.271.2: a Qwen3.5's decay is -exp(A_log), below 0: one over 1 grows the state token after token, and
             # 149 tokens make it an infinity. The same numbers, below 0: no other value is drawn otherwise)
             if row.name == "decay":
                 values = -values
@@ -514,7 +514,7 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
         if ternary:
             groups = values.reshape(-1, 128)
             cut = np.quantile(np.abs(groups), 1 / 3, axis=1, keepdims=True)
-            # (T533: a float16, as PQ2_0 holds it: the ternary dtype keeps its scales so)
+            # (T.533: a float16, as PQ2_0 holds it: the ternary dtype keeps its scales so)
             d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float16).astype(np.float32)
             values = (np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32).reshape(row.shape)
         return values
@@ -523,8 +523,8 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
 
 def quantized(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, dtype="int8", outliers=0,
               calm=False, spread=7, **form):
-    """A made-up checkpoint of drawn()'s values in a quantized dtype (int8 as quantize.py writes one, int6 of T98,
-    ternary of T230) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
+    """A made-up checkpoint of drawn()'s values in a quantized dtype (int8 as quantize.py writes one, int6 of T.98,
+    ternary of T.230) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
     llama2_numpy.FORM's keys (arch, bias, qk_norm, head_dim ...). A negative vocab (the header's own way of saying so):
     a classifier apart from the embedding."""
     tensor = drawn(seed, outliers, spread, calm, ternary=dtype == "ternary")
@@ -594,7 +594,7 @@ def files(out, tensors, config, dtype, seq_len, vocab, metadata=None):
     """<out>.bin, <out>.tokenizer.bin and <out>.json (as tests/perplexity_prepare.py writes them) of the model Hugging
     Face would publish as these tensors and this config.json, converted the way the page converts them
     (llama2_convert.Conversion), for the checks of forward.js that take a model by its files. vocab: the pieces of its
-    vocabulary. metadata: more of the safetensors header's __metadata__ (T237: a rotated basis)."""
+    vocabulary. metadata: more of the safetensors header's __metadata__ (T.237: a rotated basis)."""
     import llama2_convert  # (here and not above: everything else of this file needs the engine alone)
     file = safetensors_file(tensors, metadata=metadata)
     size = struct.unpack("<Q", file[:8])[0]

@@ -1,4 +1,4 @@
-// tests/blocks-in-browser.mjs (T364.3, T502): a small model of llama.cpp's blocks opened by the built page in a real
+// tests/blocks-in-browser.mjs (T.364.3, T.502): a small model of llama.cpp's blocks opened by the built page in a real
 // browser, as an entry of the list that keeps its GGUF's blocks is opened (Underdog Saluki 27B's, which is 7.9 GB and
 // runs in CI alone): the bundled worker converts the GGUF with its blocks kept, fetches the kernels of the blocks from
 // _astro/, answers, says "llama.cpp's blocks" in the status line, and (a second visit) loads what it kept.
@@ -27,7 +27,7 @@
 //   no-relaxed   ?without=relaxed: the kernels without relaxed SIMD (what Safari runs)
 //   widened      ?without=int8: the load does not run on the int8 kernels, so the blocks are widened, no kernel of
 //                theirs is fetched, and the line says float32
-//   gone         the kernels of the blocks answered 404 (T502: the page was open while the site was deployed anew, and
+//   gone         the kernels of the blocks answered 404 (T.502: the page was open while the site was deployed anew, and
 //                its build's files are gone): the load ends with the sentence of a site that was updated, before
 //                anything of the model is fetched
 //   refused      the same answered 500: the load ends with the server's word, as any built file's

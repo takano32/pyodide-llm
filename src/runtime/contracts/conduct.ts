@@ -1,4 +1,4 @@
-// contracts/conduct.ts (T368.2): what the conduct of a conversion asks, and what answers it. Types alone: nothing of
+// contracts/conduct.ts (T.368.2): what the conduct of a conversion asks, and what answers it. Types alone: nothing of
 // this file is in what a browser gets (it is read with `import type`).
 //
 // The conduct is Python's (src/python/convert/conduct.py: a generator that asks for a file, a part of one, a stream,
@@ -7,7 +7,7 @@
 // A request comes as a tuple, its kind first. tests/contracts-check.mjs holds the kinds and their lengths here to
 // the tuples conduct.py yields and to the answers of both answerers.
 
-// which repository a file is asked of: the model's, or the one it names for its vocabulary (T136)
+// which repository a file is asked of: the model's, or the one it names for its vocabulary (T.136)
 export type Where = "weights" | "vocabulary";
 
 // a part of the weights handed to the conversion (Python's Conversion.feed, a proxy): the share converted so far

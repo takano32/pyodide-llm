@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tests/quant_combos.sh (T513): one model of the list in the forms the page can hold it in, side by side by one measure,
+# tests/quant_combos.sh (T.513): one model of the list in the forms the page can hold it in, side by side by one measure,
 # for the owner's choice of lighter models for phones. The forms:
 #   int8, int6: the entry's own file converted as the page converts it (6 bits: what ?bits=6 asks for);
 #   <a GGUF of the entry's repository> (a Q4_K_M, an IQ4_XS ...): that file with llama.cpp's blocks kept as they are
 #     where the page has kernels for them (Conversion(blocks=True), as an entry with conversion.blocks), the rest int8.
-# For each form, on the same runner (tests/small_models.sh's measures, T511.5):
+# For each form, on the same runner (tests/small_models.sh's measures, T.511.5):
 #   1. the checkpoint's bytes;
 #   2. the nats per character of the beginning of Wikipedia's 富士山 and of its Mount Fuji (CHARACTERS characters each,
 #      3000; tests/start_check.mjs from the page's BOS, windows of 512; the perplexity beside them);

@@ -1,4 +1,4 @@
-// tests/fetching-check.mjs (T357.6): the Node tools' one place for fetching (tests/fetching.mjs), by itself, and the
+// tests/fetching-check.mjs (T.357.6): the Node tools' one place for fetching (tests/fetching.mjs), by itself, and the
 // tools that go through it or through Python's (tests/fetching.py) and that no other light check runs: the text of
 // Wikipedia (tests/wikipedia.mjs) and the files gguf.yml compares (tests/gguf_fetch.py). Nothing leaves this machine:
 // the server is one of node:http on 127.0.0.1, which can do what a stand-in of fetch cannot (close a connection
@@ -75,7 +75,7 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   ok("a file that is there is not fetched again");
 }
 {
-  // (what huggingface.co did to six of 80 GGUFs in one run, T307: Node's fetch fails here by itself)
+  // (what huggingface.co did to six of 80 GGUFs in one run, T.307: Node's fetch fails here by itself)
   serving({ "/file": [{ body: WHOLE, cut: 40 }, { body: WHOLE, cut: 99 }, { body: WHOLE }] });
   const told = [];
   const target = placed("short/file.bin");
@@ -245,7 +245,7 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   assert.equal(text, ARTICLES.ja.map((title) => `${title}: ${"文".repeat(7000)}`.slice(0, 6000) + "\n").join(""), "the beginning of each article, a line after each");
   assert.deepEqual(lines, ["wikipedia.mjs: attempt 1 failed (ETIMEDOUT); trying again",
                            `wikipedia.mjs: attempt 2 failed (${network.requests[2].url}: the server answered 503); trying again`]);
-  assert.deepEqual(waits, [10000, 20000], "10 s more before each next try (the review of T236)");
+  assert.deepEqual(waits, [10000, 20000], "10 s more before each next try (the review of T.236)");
   // five tries, and a refusal is not asked again
   network.requests.length = 0;
   network.answers(() => new Response("", { status: 500 }));
@@ -320,7 +320,7 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   serving({ ...answers, [at("other/model-GGUF", "def", "model.gguf")]: [{ body: GGUF, cut: 1000 }] });
   ran = await run("owner/model@abc", "other/model-GGUF@def/model.gguf", placed("gguf-four"), "--either-tokenizer");
   assert.notEqual(ran.code, 0);
-  assert.equal(asked.filter((one) => one.path.endsWith("model.gguf")).length, 4, "four tries (T307)");
+  assert.equal(asked.filter((one) => one.path.endsWith("model.gguf")).length, 4, "four tries (T.307)");
   assert.ok(!fs.existsSync(placed("gguf-four/model.gguf")), "and no model.gguf for the check to read");
   assert.match(ran.err, /1,000 of 3,000 bytes came/);
   ran = await run("owner/model@abc");
@@ -328,7 +328,7 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   assert.match(ran.err, /^usage: gguf_fetch\.py /);
   ok("gguf_fetch.py fails where a file that must be there is not, and where one never comes whole");
 
-  // T517: an original with PyTorch's pickle alone (LINE's 1.7B instruction-sft): read without PyTorch and written as
+  // T.517: an original with PyTorch's pickle alone (LINE's 1.7B instruction-sft): read without PyTorch and written as
   // model.safetensors. The pickle is made here by its opcodes: an OrderedDict of two float16 tensors on one storage,
   // with the attribute _metadata that torch.save gives it, as LINE's has them
   const made = placed("pickle.bin");

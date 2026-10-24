@@ -9,11 +9,11 @@ UNMATCHABLE = -1e9  # control, unknown and byte pieces must never match user tex
 
 
 class Later(ValueError):
-    """T257: what a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix (a Llama
+    """T.257: what a tokenizer.json that writes out a sentencepiece BPE model with its dummy prefix (a Llama
     tokenizer's: a Mistral's, CAT-Translate 7B's) is put off with while the model's other tokenizers are still to be
     tried (Conversion(last=False), which is how convert.conduct asks for each candidate). Before which stretches of
     text the prefix stands is not the file's alone to say: transformers reads it off tokenizer_config.json's legacy
-    (T308), a tokenizer.json written by an older transformers prepends to all of them whatever that says, and the
+    (T.308), a tokenizer.json written by an older transformers prepends to all of them whatever that says, and the
     model's own file, with its scores, is what the list's models of this kind were held to the real tokenizers with.
     Read where no other tokenizer is there, or none that can be read. One without the prefix (a Gemma's) has no such
     question, and is read at once: the model's own file read here would get a prefix it has not."""
@@ -22,8 +22,8 @@ class Later(ValueError):
 def tokenizer_bin(pieces, vocab_size, spaces=True, charsmap=b""):
     """llama2.c's tokenizer.bin from (text, score, matchable) pieces. spaces: a sentencepiece vocabulary writes a space
     as U+2581, which the engine's pieces spell " ". A byte-level one writes it as its byte's character (Ġ), and a
-    U+2581 there is an added token's own (DeepSeek's <｜begin▁of▁sentence｜>), kept as it is (T143). charsmap: a
-    sentencepiece model's precompiled_charsmap, its normalizer, which goes after the pieces (T216; llama2_numpy's
+    U+2581 there is an added token's own (DeepSeek's <｜begin▁of▁sentence｜>), kept as it is (T.143). charsmap: a
+    sentencepiece model's precompiled_charsmap, its normalizer, which goes after the pieces (T.216; llama2_numpy's
     Charsmap reads it, and llama2.c's reader stops at the last piece)."""
     rows = [(score if matchable else UNMATCHABLE, (text.replace("▁", " ") if spaces else text).encode("utf-8"))
             for text, score, matchable in pieces]
@@ -66,7 +66,7 @@ def tokenizer_json_pieces(tokenizer):
 
 
 def with_a_row(pieces, tokenizer, vocab_size):
-    """T257: the pieces of a tokenizer.json (tokenizer_json_pieces()'s) that the model has a row for. An added token
+    """T.257: the pieces of a tokenizer.json (tokenizer_json_pieces()'s) that the model has a row for. An added token
     past the model's last row is no token of this model: a text-only Gemma 3 names <image_soft_token> one past its
     vocabulary of 262,144, the token of the models that see. Only where the tokenizer's own vocabulary fits: a model
     with fewer rows than that is another's (tokenizer_bin() refuses it)."""
@@ -80,7 +80,7 @@ def tokenizer_json_bpe_pieces(tokenizer):
     table, and the score is minus the rank of the merge that makes the piece: the engine merges the best-scoring
     pair, which is then the same as applying the merge with the lowest rank. A piece no merge makes (a single
     character, an added token) never starts a merge, so it is not matchable.
-    T257: and a sentencepiece BPE model written out (written_out()), whose pieces are sentencepiece's own text and
+    T.257: and a sentencepiece BPE model written out (written_out()), whose pieces are sentencepiece's own text and
     get the same scores, once its merges are known to be ones the engine follows (merged_by_text())."""
     model = tokenizer["model"]
     ranks, merges = {}, [merge if isinstance(merge, list) else merge.split(" ") for merge in model["merges"]]
@@ -104,8 +104,8 @@ def tokenizer_json_options(tokenizer):
     "Precompiled" normalizer is sentencepiece's own map, which goes into tokenizer.bin (tokenizer_json_charsmap)."""
     normalizers = json.dumps(tokenizer.get("normalizer") or {})
     nfkc = '"NFKC"' in normalizers
-    # T400: a Lowercase normalizer lowers the text before the model reads it (the engine lowers it before anything
-    # else, as T265's do_lower_case of a sentencepiece model)
+    # T.400: a Lowercase normalizer lowers the text before the model reads it (the engine lowers it before anything
+    # else, as T.265's do_lower_case of a sentencepiece model)
     lowered = {"lowercase": True} if '"Lowercase"' in normalizers else {}
     if tokenizer_kind_of(tokenizer) != "BPE":
         prefixed = prefixed_texts(tokenizer)
@@ -117,7 +117,7 @@ def tokenizer_json_options(tokenizer):
             "ignore_merges": bool(tokenizer["model"].get("ignore_merges")), **lowered}
 
 
-# T257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, CAT-Translate 7B's, a Llama 2's): a "BPE"
+# T.257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, CAT-Translate 7B's, a Llama 2's): a "BPE"
 # whose pieces are sentencepiece's, with U+2581 for the space, and whose merges are every way to join two pieces into a
 # third, in the order of the model's scores. Nothing splits the text: the normalizer makes each space a U+2581 and the
 # merges run over the whole of it, as sentencepiece's do.
@@ -153,7 +153,7 @@ def written_out_options(tokenizer):
 
 
 def merged_by_text(pieces, merges):
-    """T257: refuses the merges that the engine's BPE would not follow. The engine joins two pieces wherever what they
+    """T.257: refuses the merges that the engine's BPE would not follow. The engine joins two pieces wherever what they
     spell together is a piece, the one with the best score first (llama2.c's, which is sentencepiece's); a
     tokenizer.json joins the pairs its merges name, the first-named first. The two are one where every way to spell
     a piece with two pieces is a merge, which is how a sentencepiece model is written out (transformers'
@@ -168,7 +168,7 @@ def merged_by_text(pieces, merges):
 
 
 def prefixed_texts(tokenizer):
-    """T308: which stretches of text this tokenizer.json puts sentencepiece's "▁" before, besides the first: the text
+    """T.308: which stretches of text this tokenizer.json puts sentencepiece's "▁" before, besides the first: the text
     after a special token too (the tokenizers library normalizes and pre-tokenizes each stretch between two added
     tokens on its own). "every": a normalizer that prepends it (Prepend) or replaces the start of the text with it (a
     Replace of a pattern that ends in ^: llm-jp's "(?<!\n)^"). "wanting": a Metaspace pre-tokenizer that always
@@ -191,9 +191,9 @@ def prefixed_texts(tokenizer):
 def described_options(config):
     """What a sentencepiece model's tokenizer_config.json says of how its text is read, which the model's own file does
     not (config: read, a dict), as Llama()'s options and only where it is so.
-    lowercase (T265): do_lower_case, which transformers' slow tokenizers apply before sentencepiece sees the text
+    lowercase (T.265): do_lower_case, which transformers' slow tokenizers apply before sentencepiece sees the text
     (rinna's japanese-gpt2: a vocabulary without capital Latin letters).
-    prefixed (T308): a Llama tokenizer that is legacy (said, or not said: transformers' default) puts the dummy prefix
+    prefixed (T.308): a Llama tokenizer that is legacy (said, or not said: transformers' default) puts the dummy prefix
     before the text after a special token as well, unless that text begins with a space ("wanting": transformers
     makes a Metaspace that always prepends of it, and tests/format_check.py holds the list's two to that); with legacy
     false, before the first text only."""
@@ -213,7 +213,7 @@ def piece_ids(tokenizer, vocab_size):
 
 
 def tokenizer_json_charsmap(tokenizer):
-    """The precompiled_charsmap of a tokenizer.json's "Precompiled" normalizer (sentencepiece's, T216), or b""."""
+    """The precompiled_charsmap of a tokenizer.json's "Precompiled" normalizer (sentencepiece's, T.216), or b""."""
     import base64
     steps = [tokenizer.get("normalizer") or {}]
     while steps:
@@ -228,14 +228,14 @@ def tokenizer_json_charsmap(tokenizer):
 PRETOKENIZERS = {
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "llama3",
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "qwen",
-    # T229: Qwen3.5's takes the combining marks into the word
+    # T.229: Qwen3.5's takes the combining marks into the word
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "qwen35",
 }
 
 
-# T254: MiniCPM5's two Splits (openbmb/MiniCPM5-1B's tokenizer.json): the numbers cut off three at a time, then Llama
+# T.254: MiniCPM5's two Splits (openbmb/MiniCPM5-1B's tokenizer.json): the numbers cut off three at a time, then Llama
 # 3's pattern with \p{N}+ on each piece, and a ByteLevel that splits no more. llama2_numpy.pretokenize's "minicpm5"
-# T340: Spark-X2.5's three (XHToken/Spark-X2.5-1.7B's tokenizer.json): the numbers three at a time, the ideographs and
+# T.340: Spark-X2.5's three (XHToken/Spark-X2.5-1.7B's tokenizer.json): the numbers three at a time, the ideographs and
 # the kana, and a pattern of letters, punctuation and symbols; then Digits(individual_digits) and the ByteLevel.
 # llama2_numpy.pretokenize's "spark2_5". Each with the steps that follow its Splits, by their types
 STAGED_PRETOKENIZERS = {
@@ -254,7 +254,7 @@ def pretokenizer_name(spec):
     patterns = [step["pattern"].get("Regex") for step in steps if step["type"] == "Split"]
     if tuple(patterns) in STAGED_PRETOKENIZERS:
         # every Split keeps what it matches as a piece of its own (Isolated) and matches what its pattern says (no
-        # invert), the steps after them are those of the name (T340: a Digits splits every digit off), and the ByteLevel
+        # invert), the steps after them are those of the name (T.340: a Digits splits every digit off), and the ByteLevel
         # last does not split again or put a space in front
         name, after = STAGED_PRETOKENIZERS[tuple(patterns)]
         plain = all(step.get("behavior") == "Isolated" and not step.get("invert") for step in steps if step["type"] == "Split")
@@ -328,7 +328,7 @@ def sentencepiece_pieces(model):
 def sentencepiece_specials(model):
     """The control pieces of a sentencepiece model (<s>, </s>, sarashina's <|user|>): the special tokens a chat
     template writes between the turns. The engine's search of the vocabulary never finds them, so a template read
-    from the model (T127) needs them named; without, "</s>" became four tokens of text."""
+    from the model (T.127) needs them named; without, "</s>" became four tokens of text."""
     CONTROL = 3
     specials = []
     for field, value in protobuf_fields(model):
@@ -340,7 +340,7 @@ def sentencepiece_specials(model):
 
 
 def sentencepiece_charsmap(model):
-    """A sentencepiece model's normalizer: its normalizer_spec's precompiled_charsmap (T216), b"" for none (identity:
+    """A sentencepiece model's normalizer: its normalizer_spec's precompiled_charsmap (T.216), b"" for none (identity:
     Llama's, Mistral's)."""
     for field, value in protobuf_fields(model):
         if field == 3:  # normalizer_spec
@@ -350,13 +350,13 @@ def sentencepiece_charsmap(model):
 
 def sentencepiece_options(model):
     """Llama(tokenizer_kind=, collapse=, unknown=) from the pieces and the trainer and normalizer specs of a
-    sentencepiece model. Its normalizer is its own map, in tokenizer.bin (sentencepiece_charsmap, T216).
+    sentencepiece model. Its normalizer is its own map, in tokenizer.bin (sentencepiece_charsmap, T.216).
 
-    prefixed (T400): "never" where the normalizer adds no dummy prefix (add_dummy_prefix false: sarashina2.2's and
-    CAT-Translate's), as T257 says it of a Gemma's: no "▁" before the first text either.
+    prefixed (T.400): "never" where the normalizer adds no dummy prefix (add_dummy_prefix false: sarashina2.2's and
+    CAT-Translate's), as T.257 says it of a Gemma's: no "▁" before the first text either.
     collapse: remove_extra_whitespaces, runs of spaces made one and the ends trimmed. Said only where on: rinna's
     models are nmt_nfkc with it (and no byte pieces to spell a newline with), Llama's and Mistral's identity without
-    it, tiny-lm's nfkc without it (the review of T126). unknown: the id of the unknown piece, for a model without byte
+    it, tiny-lm's nfkc without it (the review of T.126). unknown: the id of the unknown piece, for a model without byte
     pieces (rinna's): a character the vocabulary lacks is that piece, as in sentencepiece, and not bytes spelled with
     whatever pieces happen to be at byte + 3."""
     UNIGRAM, BPE = 1, 2

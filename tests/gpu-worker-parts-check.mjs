@@ -1,4 +1,4 @@
-// tests/gpu-worker-parts-check.mjs (T378.4): the parts of the model's GPU worker (src/runtime/gpu/) that hold its state,
+// tests/gpu-worker-parts-check.mjs (T.378.4): the parts of the model's GPU worker (src/runtime/gpu/) that hold its state,
 // each by itself on a stand-in for WebGPU that writes down what it is asked and keeps every buffer's bytes. It computes
 // nothing: no shader runs here, and nothing here says that a shader is right (CI's gpu-check does, on a device).
 // What is held is who holds what, and what each owner does when it is told that something happened:
@@ -14,7 +14,7 @@
 //     dispatches and its keys and values into the staging, or nowhere where the request was given up; keysIn();
 //   - requests.js: a prompt's block answered in the control area (done, failed, the beat), a request given up
 //     answered nowhere, and a device lost before or during the work read as it is then: failed, and said.
-//   - tokens.js (T379.1), of what makes no pipeline: the WGSL of every form of a token's layer is the catalogue's
+//   - tokens.js (T.379.1), of what makes no pipeline: the WGSL of every form of a token's layer is the catalogue's
 //     (shaders/engine.ts), and the matrices are those of the model's own packing of the weights.
 // Not here, because their work is checked against JavaScript by a device that computes: forms.js, the rest of tokens.js,
 // tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass) and start.js.
@@ -70,7 +70,7 @@ const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.js"));
   assert.equal(refused.calls.length, 0, "nothing is made on an adapter that is refused");
   assert.equal(device_.model, null, "and there is no record of a model");
 }
-// ---- device.js: a step past its time is told as late (T380.1), which the checks of the forms throw on (it ends the whole
+// ---- device.js: a step past its time is told as late (T.380.1), which the checks of the forms throw on (it ends the whole
 // attempt) where they note any other failure and go on to the next form: nothing here runs those 180 s, so the timer is a
 // stand-in that is fired by hand
 {
@@ -221,7 +221,7 @@ console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix an
 }
 console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a checkpoint that comes in stretches of any size as whole words, and unwritten() says a word that waits");
 
-// ---- weights.js, ternary (T533): the checkpoint holds a group's scale as a float16, the GPU as a float32 (the shaders
+// ---- weights.js, ternary (T.533): the checkpoint holds a group's scale as a float16, the GPU as a float32 (the shaders
 // read float32s: their text and the device's key are what they were). Widened as they go up from the shared memory,
 // and as a model on the GPU alone's checkpoint comes, in stretches of any size: a half that a stretch cuts waits
 // for its other byte, as a word does
@@ -329,7 +329,7 @@ for (const layer of m.block.layers) {
   assert.equal(layer.gate[0].group.entries[2].resource.buffer, m.block.xq, "a packed form reads the quantized input");
   assert.equal(layer.gate[0].group.entries.length, 7, "and its scales");
   assert.deepEqual([layer.gateBias, layer.downBias], [undefined, undefined], "no bias where the model has no such vector");
-  assert.equal(typeof layer.step, "function", "the layer's kind's step (T568.2: gpu/kinds.js)");
+  assert.equal(typeof layer.step, "function", "the layer's kind's step (T.568.2: gpu/kinds.js)");
 }
 assert.equal(m.held, null, "nothing is held for end() before the cache is made");
 grow(m, 8);
@@ -338,7 +338,7 @@ assert.equal(firstCache.capacity, 8);
 assert.equal(firstCache.keys.length, LAYERS);
 assert.equal(firstCache.keys[0].size, 8 * KV_ROW);
 assert.equal(m.held, firstCache.owned, "grow() tells device.js which buffers the cache has now");
-// (T568.2: an attending layer's step, what it asks block.js to dispatch for it: its products in order, q's reading the
+// (T.568.2: an attending layer's step, what it asks block.js to dispatch for it: its products in order, q's reading the
 // quantized input; no bias and no norm of a head where the model has no such vector)
 {
   const products = [], biases = [], dispatched = [], quantized = [];
@@ -424,7 +424,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
 {
   const { cache: now } = m.block, row = KV_ROW, capacity = 16, from = 2, pos = 7;
   const address = plan.rows;  // (any place of the memory: [keys, values] of LAYERS × capacity rows)
-  // (T261.4.2: where each layer's are: here the blocks of a cache of LAYERS × capacity rows each)
+  // (T.261.4.2: where each layer's are: here the blocks of a cache of LAYERS × capacity rows each)
   const placesOf = (bytes) => Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * capacity * bytes, values: address + (LAYERS + l) * capacity * bytes, ring: 0 }));
   const halves = { places: placesOf(row), row, half: true };
   new Uint8Array(memory.buffer, address, 2 * LAYERS * capacity * row).set(random(2 * LAYERS * capacity * row));
@@ -435,7 +435,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(same(now.values[l].data.subarray(from * KV_ROW, pos * KV_ROW), new Uint8Array(memory.buffer, address + ((LAYERS + l) * capacity + from) * row, (pos - from) * KV_ROW)), `and its values`);
     assert.ok(now.keys[l].data.subarray(0, from * KV_ROW).every((byte) => byte === 0) && now.keys[l].data.subarray(pos * KV_ROW).every((byte) => byte === 0), "no other position is written");
   }
-  // a float32 cache (a grouped-query model's, T160): narrowed to float16 on the way up
+  // a float32 cache (a grouped-query model's, T.160): narrowed to float16 on the way up
   const floats = { places: placesOf(KV_DIM * 4), row: KV_DIM * 4, half: false };
   new Float32Array(memory.buffer, address, 2 * LAYERS * capacity * KV_DIM).forEach((_, i, all) => { all[i] = (i % 17) - 8; });
   keysIn(m, floats, from, pos);
@@ -445,7 +445,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     const want = new Float32Array(memory.buffer, floats.places[1].values + from * KV_DIM * 4, (pos - from) * KV_DIM);
     assert.ok(got.every((bits, i) => bits === half(want[i])), "a float32 cache's values go up as float16");
   }
-  // T261.4.2: a layer whose window a ring of 3 positions holds (T510.1: position p at p mod 3 and at p mod 3 + 3): the
+  // T.261.4.2: a layer whose window a ring of 3 positions holds (T.510.1: position p at p mod 3 and at p mod 3 + 3): the
   // last three positions before pos and no more, from where the oldest of them is, wrapped or not
   for (const late of [7, 8]) {
     const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
@@ -544,7 +544,7 @@ console.log("gpu-worker-parts-check: requests.js answers a block in the control 
 }
 console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, the ones held and the device, in that order; a stop asked and a device lost are read by all as device.js holds them");
 
-// ---- T379.1: tokens.js's forms of a token's layer compile the catalogue's texts, and the ones of the model's weights.
+// ---- T.379.1: tokens.js's forms of a token's layer compile the catalogue's texts, and the ones of the model's weights.
 // (tokenCandidates() and tokenCodes() make no pipeline: which forms a device and a model may take, and each form's WGSL.)
 // Every text is a row's of shaders/engine.ts (what the device's key hashes), a ternary model's matrices are the rows of
 // the ternary packing and no other model's are: the worker gives the maker the packing, and a packing given the wrong

@@ -1,5 +1,5 @@
 # make_ptq1_0.py
-# T230: a PQ2_0 GGUF written again with its ternary tensors as PTQ1_0 (Prism ML's other ternary type: five values a
+# T.230: a PQ2_0 GGUF written again with its ternary tensors as PTQ1_0 (Prism ML's other ternary type: five values a
 # byte in base 3, 28 bytes a block of 128 where PQ2_0 takes 34). The only model published as PTQ1_0 is Ternary Bonsai 2
 # 27B (5.9 GB), so this makes one of a model that is small enough to convert whole in CI (Ternary Bonsai 1.7B): the
 # page's conversion of it must write the very checkpoint it writes of the PQ2_0 file, and its time is PTQ1_0's.

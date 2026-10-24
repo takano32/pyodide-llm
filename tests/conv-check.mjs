@@ -1,4 +1,4 @@
-// conv-check.mjs (T260): the kernel of an LFM2's convolution layer (kernels/kernel.ts: short_conv) against the same
+// conv-check.mjs (T.260): the kernel of an LFM2's convolution layer (kernels/kernel.ts: short_conv) against the same
 // arithmetic written out here and against llama2_numpy.py's own, to the bit. Node and the compiled kernels alone, under
 // a second: the light suite runs it.
 //   short_conv(out, taps, rows, b, n, count): the newest row is written B * z, and out is C times the sum of taps *

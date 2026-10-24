@@ -1,4 +1,4 @@
-// T93 stage 2: the forward pass of forward.js with helper threads on a shared memory. The forward pass runs in a
+// T.93 stage 2: the forward pass of forward.js with helper threads on a shared memory. The forward pass runs in a
 // worker, as on the page (the model's worker coordinates); run from the main thread next to Pyodide it waited on
 // its helpers several times longer. Python in the main thread only makes the plan.
 //   1. Every row is computed whole by one thread with the same kernel, so the logits of a greedy run must be the
@@ -6,23 +6,23 @@
 //   2. The speeds, the counts in turn, several rounds, the median.
 //   3. The search (stage 2b): which count it chooses from navigator.hardwareConcurrency, within a few generations,
 //      against the fastest of 2.
-//   4. T108: the same text as a prompt in blocks (forwardMany): the last logits the same to the bit with every
+//   4. T.108: the same text as a prompt in blocks (forwardMany): the last logits the same to the bit with every
 //      count, and what a token of a prompt costs in blocks of 1, 2, 4, 8 and 16, with each count.
 //
 //   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64] [--kv-start 16]
 //        [--from 0] [--without kv16] [--versus-half]
 //
-// --from: the speeds of step 2 are measured from this position on, the KV cache filled up to it first (T109: the
+// --from: the speeds of step 2 are measured from this position on, the KV cache filled up to it first (T.109: the
 // attention of a long context).
 //
-// --without: the optimizations to leave out (the engine's disable, T52), e.g. kv16 for a float32 cache (T160).
+// --without: the optimizations to leave out (the engine's disable, T.52), e.g. kv16 for a float32 cache (T.160).
 //
-// --versus-half (T160): the speeds of step 2 again, the keys and values as chosen (float32 for a grouped-query model,
+// --versus-half (T.160): the speeds of step 2 again, the keys and values as chosen (float32 for a grouped-query model,
 // keysInHalf) and in float16 (what every int8 model on a shared memory had before), engine and engine in turn in
 // this process: the one difference between this branch and main.
 //
 // --kv-start: the KV cache starts this small (the page's KV_START is 256), so that it has to grow, and move, under
-// the helper threads within the positions of a run (Fable's review of T93).
+// the helper threads within the positions of a run (Fable's review of T.93).
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
@@ -50,7 +50,7 @@ if (isMainThread) {
   const from = Number(option("--from", 0));
   const without = option("--without", "").split(",").filter(Boolean);
   const wide = args.includes("--wide"), versusHalf = args.includes("--versus-half");
-  // T101: --high (with --wide) puts the checkpoint 4 GiB up a 64-bit memory, so that every address the forward pass
+  // T.101: --high (with --wide) puts the checkpoint 4 GiB up a 64-bit memory, so that every address the forward pass
   // uses is past 2^32 (the pages below are never touched, so they cost no memory)
   const high = wide && args.includes("--high") ? 2 ** 32 : 0;
   const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
@@ -61,7 +61,7 @@ if (isMainThread) {
     const entry = MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
       tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
     const file = (f) => (path.isAbsolute(f) ? f : root + f);
-    // the file in pieces straight into the memory: fs.readFileSync takes no file past 2 GiB (T247: Qwen3.5 4B and 9B)
+    // the file in pieces straight into the memory: fs.readFileSync takes no file past 2 GiB (T.247: Qwen3.5 4B and 9B)
     const size = fs.statSync(file(entry.checkpoint)).size;
     const { memory, base: low } = weightsMemory(size + high, { shared: true, wide });
     const base = low + high;
@@ -88,7 +88,7 @@ if (isMainThread) {
   process.exit(failed ? 1 : 0);
 } else {
   const { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf } = workerData;
-  const suffix = wide ? "64" : "";  // T101: a 64-bit memory and its kernels
+  const suffix = wide ? "64" : "";  // T.101: a 64-bit memory and its kernels
   const kernels = compileKernels(fs.readFileSync(built(`simdkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_shared${suffix}.wasm`)), wide);
   const engine = createForward({ memory, base, size, kernels, plan, spawn });
   const greedy = () => {
@@ -109,7 +109,7 @@ if (isMainThread) {
     if (!reference) reference = seen;
     else if (!seen.every((row, i) => row.every((v, j) => Object.is(v, reference[i][j])))) differ.push(n);
   }
-  // T108: the greedy text fed back as a prompt, in blocks
+  // T.108: the greedy text fed back as a prompt, in blocks
   const text = [plan.bos ?? 1, ...reference.slice(0, -1).map((logits) => logits.indexOf(Math.max(...logits)))];
   const blocksDiffer = [];
   for (const n of counts) {
@@ -145,7 +145,7 @@ if (isMainThread) {
   // the search, as the page runs it: from the hint, over generations of `positions` tokens
   const hint = globalThis.navigator?.hardwareConcurrency ?? 4;
   let found = 0, generationsUsed = 0;
-  const verdicts = [];  // T114: what the page writes to the console, one per comparison
+  const verdicts = [];  // T.114: what the page writes to the console, one per comparison
   await engine.findThreads({ from: hint, chose: (n) => { found = n; }, compared: (verdict) => verdicts.push(verdict) });
   for (; !found && generationsUsed < 8; generationsUsed++) {
     engine.newGeneration();
@@ -163,7 +163,7 @@ if (isMainThread) {
     (found && times[found] ? ` (${found} runs at ${(median(times[found]) / median(times[fastest]) * 100).toFixed(0)}% of it)` : "");
   const promptLine = "a prompt in blocks of " + blockSizes.join(", ") + ": " + counts.map((n) =>
     `${n} thread(s) ${blockSizes.map((k) => median(prompt[n][k]).toFixed(0)).join(" / ")} tok/s (${(median(prompt[n][16]) / median(prompt[n][1])).toFixed(2)}×)`).join(", ");
-  // T96: the page keeps one memory for model after model. A second engine on this memory, after the first has
+  // T.96: the page keeps one memory for model after model. A second engine on this memory, after the first has
   // ended its threads, must run as the first did (the control area holds what the first left there).
   engine.stopThreads();
   const again = createForward({ memory, base, size, kernels, plan, spawn });
@@ -176,7 +176,7 @@ if (isMainThread) {
     token = logits.indexOf(Math.max(...logits));
   }
   again.stopThreads();
-  // The review of T120: helpers that come up after their engine let its helpers go (a visitor choosing another model
+  // The review of T.120: helpers that come up after their engine let its helpers go (a visitor choosing another model
   // while the search starts more) are ended at once, not left for the next engine on this memory to wake
   let alive = 0;
   const counted = (data) => spawn(data).then((helper) => {
@@ -187,7 +187,7 @@ if (isMainThread) {
   const starting = released.setThreads(4);  // three helpers, one after another
   released.release();
   const late = (await starting) === 1 && alive === 0;
-  // T120: a software thread that the browser stops in the middle of its chunk (iOS may end a worker for memory):
+  // T.120: a software thread that the browser stops in the middle of its chunk (iOS may end a worker for memory):
   // this one takes a chunk and ends without counting it. The coordinator must give its helpers up, run the phase
   // again on its own, and go on with one thread, to the same logits
   const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
@@ -220,7 +220,7 @@ if (isMainThread) {
   console.warn = warned;
   went &&= stopped.lostThreads && stopped.threads === 1 && (await stopped.setThreads(4)) === 1;
   stopped.stopThreads();
-  // T229's review: a hybrid model's delta rule reads a state and writes it (the new state beside the old, forward.js's
+  // T.229's review: a hybrid model's delta rule reads a state and writes it (the new state beside the old, forward.js's
   // flips), so a phase that is run again must compute the same. A thread that stops after it has written the first value
   // head of its chunk of a delta rule's phase, never counting the chunk (threads-late-helper.mjs), leaves the new state
   // half written; the coordinator gives it up and runs the whole phase again, to the logits the first count computed. A
@@ -250,7 +250,7 @@ if (isMainThread) {
       : same ? "a thread that stops after writing a head of a delta rule is given up and the text is the same; "
         : "a thread that stops after writing a head of a delta rule DIFFERS; ";
   }
-  // T260's review: an LFM2's convolution layer is two matrix phases with a step of this thread's between them, which writes
+  // T.260's review: an LFM2's convolution layer is two matrix phases with a step of this thread's between them, which writes
   // the layer's state (outside every phase: forward.js's short_conv). The first helper above stops in the very first
   // phase, the matrix in of layer 0, before any state was written. A helper that stops in a later phase (after `skip` of
   // them came and went with no chunk taken for it: skip 1 is the matrix out of layer 0, after the state of position 0 was
@@ -299,7 +299,7 @@ if (isMainThread) {
       : untested.length === outcomes.length ? "no thread stopped in a later phase of a convolution model (nothing tested); "
         : `a thread that stops in a later phase of a convolution model (after ${outcomes.filter((o) => o.stopped).map((o) => o.skip).join(", ")} phases) is given up and the text is the same; `;
   }
-  // T160: as chosen against float16, an engine of each in turn every round (each fills its cache up to from)
+  // T.160: as chosen against float16, an engine of each in turn every round (each fills its cache up to from)
   let versusLine = "";
   if (versusHalf) {
     const sides = { chosen: undefined, half: true }, speeds = { chosen: {}, half: {} };

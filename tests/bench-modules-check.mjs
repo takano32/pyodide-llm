@@ -1,11 +1,11 @@
-// tests/bench-modules-check.mjs (T353): what the type check does not hold of /benchmark/'s GPU worker
+// tests/bench-modules-check.mjs (T.353): what the type check does not hold of /benchmark/'s GPU worker
 // (src/runtime/benchmark/gpu.ts) and its modules (src/runtime/benchmark/gpu/*.ts), and the names the modules of
 // src/bench/ use. Nothing else reads the worker's lines outside a browser with a GPU: its steps run only there (CI's
 // bench-check.mjs and bench-dawn.mjs). Node only, under a second:
 //
 //   node tests/bench-modules-check.mjs
 //
-// T368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// T.368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
 // used and declared nowhere. (A shared.<name> that is misspelt is tsc's too, and still said below: the same line holds
 // a field that the type has as optional and the object is made without.)
 // What is left here is what tsc, the build and Node all let pass, each with why:
@@ -13,14 +13,14 @@
 //     word), and a field of it that no step reads or sets (a correct object to tsc);
 //   - a ring of imports, and a file of the folder that the window does not reach (tests/imports.mjs's windowed(): the
 //     build links a ring without a word);
-//   - (T368.7) a message a section's worker posts to the page without `satisfies` a type of contracts/benchmark.ts: a
+//   - (T.368.7) a message a section's worker posts to the page without `satisfies` a type of contracts/benchmark.ts: a
 //     worker's own postMessage() takes anything, and tsc holds only a message that says so;
 //   - that the window links in Node with every export defined, and that a message given to the steps' onmessage as it
 //     is set is answered once;
-//   - a name that a module of src/bench/ uses and neither declares nor imports: those are JavaScript (T480), which tsc
+//   - a name that a module of src/bench/ uses and neither declares nor imports: those are JavaScript (T.480), which tsc
 //     reads for its shapes and does not check, and the tables are functions (a name that is nowhere is a
 //     ReferenceError only when that table is written).
-//   - (T379.2, of T379.1's review) the packing a step of this worker asks fusedDp4aMatVec for: "int8", written out.
+//   - (T.379.2, of T.379.1's review) the packing a step of this worker asks fusedDp4aMatVec for: "int8", written out.
 //     The benchmark's matrices are int8, and "ternary" is as good a packing to tsc: the worker would bind int8 weights
 //     to a text that reads ternary codes, and its steps run only where there is a GPU;
 // What it does not see: an await before the steps' onmessage is set (the import below waits for the module whole).
@@ -39,11 +39,11 @@ import { namesOf } from "./names.mjs";
 // says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
 const at = (name) => `benchmark/${name}`;  // (a file of this worker, by its name under the runtime's folder)
-// (T368.7: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given,
+// (T.368.7: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given,
 // and the modules are then named by their own endings)
 const WINDOW = path.basename(tree.runtime(at("gpu.js"))), END = path.extname(WINDOW);
 const linked = windowed(at(WINDOW), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
-// (a file by its name under the worker's folder; one outside it that a module takes names of, T367.3's table of the
+// (a file by its name under the worker's folder; one outside it that a module takes names of, T.367.3's table of the
 // built files, by its way from there: "../built.js")
 const short = (name) => (name.startsWith(at("")) ? name.slice(at("").length) : `../${name}`);
 const programs = new Map([...linked.files].map(([name, { program }]) => [short(name), program]));
@@ -77,7 +77,7 @@ for (const [name, program] of programs) {
   });
 }
 assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of shared that nothing reads or sets");
-// (T379.2) the benchmark's DP4A matrix of a token is the int8 one, said at every call
+// (T.379.2) the benchmark's DP4A matrix of a token is the int8 one, said at every call
 let asked = 0, named = 0;
 for (const [name, program] of programs) {
   walk(program, (node) => {
@@ -95,7 +95,7 @@ assert.ok(asked >= 4, `the calls of fusedDp4aMatVec in /benchmark/'s worker: ${a
 console.log(`bench-modules-check: the ${fields.length} fields of shared are the ones the steps use (${said} times)`);
 console.log(`bench-modules-check: ${asked} calls of fusedDp4aMatVec, each for int8 weights`);
 
-// ---- T368.7: the workers are TypeScript, and tsc holds a message one posts to the page to the type the message says
+// ---- T.368.7: the workers are TypeScript, and tsc holds a message one posts to the page to the type the message says
 // it is: postMessage({ … } satisfies Alive). Every message of the section's workers says one of contracts/benchmark.ts
 // (the sources as they are written: with the types blanked, as above, nothing of it is left). reader.ts is no
 // section's worker: it answers the CPU section's worker, with one word.
@@ -134,7 +134,7 @@ console.log(`bench-modules-check: ${WINDOW} links (${Object.keys(window_).length
 // ---- src/bench/: the tables' modules use what they declare or import
 const TABLES = new URL("../src/bench/", import.meta.url);
 const TABLE_GLOBALS = new Set("Boolean Map Math NaN Number Object Set String URLSearchParams encodeURIComponent globalThis undefined".split(" "));
-// (T368.7: either ending, a .ts file with its types blanked: a module made TypeScript is still read here)
+// (T.368.7: either ending, a .ts file with its types blanked: a module made TypeScript is still read here)
 const tables = fs.readdirSync(TABLES).filter((name) => name.endsWith(".js") || typed(name));
 for (const name of tables) {
   const unknown = [...namesOf(untyped(fs.readFileSync(new URL(name, TABLES), "utf8"), name)).free].filter((used_) => !TABLE_GLOBALS.has(used_));

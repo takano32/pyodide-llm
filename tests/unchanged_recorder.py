@@ -1,4 +1,4 @@
-# unchanged_recorder.py (T346)
+# unchanged_recorder.py (T.346)
 # A pytest plugin that writes down what the unit tests make the converter and the engine do, so that a refactoring can
 # be held to "nothing changed" on every made-up model the tests already build: every architecture, every dtype, GGUF
 # and safetensors, every tokenizer.
@@ -86,7 +86,7 @@ def pytest_collection_finish(session):
             raise
 
     llama2_numpy.Llama.generate = generating
-    # T359.7: the reference sampler draws by its settings as one value, the penalties and the token in one call
+    # T.359.7: the reference sampler draws by its settings as one value, the penalties and the token in one call
     # (NumpySampler.drawing()'s draw). What is written down: the token of every draw, and the logits after the
     # penalties of a draw that has any (once for each penalty the draw has)
     drawing = llama2_numpy.NumpySampler.drawing

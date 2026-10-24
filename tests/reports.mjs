@@ -1,4 +1,4 @@
-// The visitors' benchmark reports (T91) as one table, for T83's 30-measurements.md: every issue labelled benchmark,
+// The visitors' benchmark reports (T.91) as one table, for T.83's 30-measurements.md: every issue labelled benchmark,
 // read the way src/bench.js reads one. Needs the gh CLI.
 //
 //   node tests/reports.mjs

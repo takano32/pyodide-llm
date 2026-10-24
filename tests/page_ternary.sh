@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# tests/page_ternary.sh (T230, T231): a real ternary model of the list on the page's forward pass (src/runtime/forward.js),
+# tests/page_ternary.sh (T.230, T.231): a real ternary model of the list on the page's forward pass (src/runtime/forward.js),
 # as the ternary dtype (its weights as they are, on the ternary kernels) and as int8 (the same weights widened, on the
-# int8 kernels: how T235 ran it), for CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide: the
+# int8 kernels: how T.235 ran it), for CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide: the
 # development machine runs no model of gigabytes):
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/page_ternary.sh" --ref <branch> --grep "ternary|perplexity|thread|converted"
@@ -10,8 +10,8 @@
 # The parts (all of them by default):
 #   convert     the page's conversion of the GGUF to either dtype in Pyodide, under cProfile (tests/profile-convert.mjs)
 #   ptq1_0      the same of a PTQ1_0 file of the same weights, made here, and the checkpoint the same byte for byte
-#   perplexity  on 1500 tokens of Wikipedia (T85's articles, English or Japanese: the first 1500 tokens of the three
-#               joined, which is the beginning of the first article, Mount Fuji or 富士山: the review of T230 ran them
+#   perplexity  on 1500 tokens of Wikipedia (T.85's articles, English or Japanese: the first 1500 tokens of the three
+#               joined, which is the beginning of the first article, Mount Fuji or 富士山: the review of T.230 ran them
 #               one by one and got this run's numbers for the first): the float32 of the file's values and
 #               the int8 weights in native NumPy (widened to float32 they are past Pyodide), then both dtypes on the
 #               kernels (tests/perplexity.mjs --file). The ternary dtype in NumPy is the float32 row: its first logits

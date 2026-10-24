@@ -1,4 +1,4 @@
-// kernel/attention.ts (T356): the rotation of q and k (rope) and the attention of one token over the layer's cache,
+// kernel/attention.ts (T.356): the rotation of q and k (rope) and the attention of one token over the layer's cache,
 // of float32 keys and values or of float16 ones (kernel/halves.ts widens them).
 
 import { hsum, fexp, vexp, largest } from "./math";
@@ -23,12 +23,12 @@ export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32, rot: i3
 // att: scratch of at least nh * (pos + 1) floats. Grouped-query attention: nh / nkv query heads share one kv head.
 // The cache is walked position by position, all heads of a row at once: a head at a time meant nh strided passes
 // over a cache that does not fit the caches of the CPU (12 layers of it), which cost more than the arithmetic.
-// heads h0..h1 of nh (T109: the software threads take heads as they take rows of a matmul). Every head is computed
+// heads h0..h1 of nh (T.109: the software threads take heads as they take rows of a matmul). Every head is computed
 // alone, the same whatever the range, so the numbers do not depend on how the heads are shared out.
 export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
   attentionOf<f32>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1);
 }
-// T110: the same over a cache of float16 keys and values (half the bytes to read, the longer the context the more
+// T.110: the same over a cache of float16 keys and values (half the bytes to read, the longer the context the more
 // that is). Each is widened to the float32 it stands for, exactly, and then everything is as above: the numbers are
 // those of attention() on the widened cache.
 export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
@@ -45,7 +45,7 @@ export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: u
   return sizeof<T>() == 2 ? half(p) : load<f32>(p);
 }
 
-// T161: the sums of four accumulators, lane by lane: [sum a0, sum a1, sum a2, sum a3], each as (l0 + l2) + (l1 + l3),
+// T.161: the sums of four accumulators, lane by lane: [sum a0, sum a1, sum a2, sum a3], each as (l0 + l2) + (l1 + l3),
 // the order of sum4 below (a transpose by shuffles, then two adds: six instructions for four sums)
 // @ts-ignore: decorator
 @inline function sums4(a0: v128, a1: v128, a2: v128, a3: v128): v128 {
@@ -67,7 +67,7 @@ export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: u
   const count = pos + 1, count4 = count & ~3;
   const isq: f32 = <f32>1.0 / sqrt<f32>(<f32>hs);
   const stride = <usize>kvDim * E;
-  // 1. the scores of every head against every position. T161: four positions of a head at a time, each with its own
+  // 1. the scores of every head against every position. T.161: four positions of a head at a time, each with its own
   // accumulator, so that the query's four floats are loaded once for four keys and one transposing reduction turns
   // the four accumulators into the four scores, stored at once (the scores of a head are side by side in att). The
   // form of several rows against one shared vector is llama.cpp's ggml_vec_dot_f16_unroll (ggml/src/ggml-cpu/vec.h,

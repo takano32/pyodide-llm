@@ -1,4 +1,4 @@
-// forward/ffn.ts (T375.3): the two FFNs a layer ends with, one of which the engine takes as it is made (the plan's
+// forward/ffn.ts (T.375.3): the two FFNs a layer ends with, one of which the engine takes as it is made (the plan's
 // gated_ffn, as engine/layout.py's Layout names the fact). Neither keeps a state: each is made of what the engine
 // hands a kind of layer (kinds.ts's Core) and is the function a token's path calls for layer l: count tokens from
 // at.xb (the norm of the stream) through the FFN, added to the stream (at.x). A module of src/runtime/forward.ts.
@@ -7,8 +7,8 @@ import type { Core } from "./kinds.ts";
 export type Ffn = (l: number, count: number) => void;
 
 /** w2(act(w1 x) * w3 x): every architecture but GPT-2's two. The activation of the gate is the plan's (a SiLU, or
- * T261 a Gemma's GELU, or T342 a Spark-X2.5's exact GELU), and what the FFN gives is normalized before it joins the stream where the model has the norm
- * for that (rms_ffn_post_weight: a Gemma's). T331: a layer's FFN may be twice as wide, its matrices in stacks of their
+ * T.261 a Gemma's GELU, or T.342 a Spark-X2.5's exact GELU), and what the FFN gives is normalized before it joins the stream where the model has the norm
+ * for that (rms_ffn_post_weight: a Gemma's). T.331: a layer's FFN may be twice as wide, its matrices in stacks of their
  * own (the plan's facts of the layer: double, and its place among those, ffn) */
 export function gatedFfn({ plan, eps, k, floats, matrix, at, S, matmuls }: Core): Ffn {
   const { dim, hidden_dim: inside } = plan, { x, xb, xb2, hb, hb2 } = at, D = dim * 4;

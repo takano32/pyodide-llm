@@ -1,4 +1,4 @@
-// finite-check.mjs (T243's review): finite_f16 (kernels/kernel.ts), the look forward.js takes at the float16 keys and
+// finite-check.mjs (T.243's review): finite_f16 (kernels/kernel.ts), the look forward.js takes at the float16 keys and
 // values a GPU wrote back before any of them goes into the cache (stagingFinite): 1 where all n halves are finite
 // numbers, 0 where one has every bit of its exponent set (a NaN or an infinity, of either sign), which the kernels'
 // halves4 and half would read as a finite number (65536 and more). Node and the compiled kernels alone, a few seconds:

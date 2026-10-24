@@ -1,9 +1,9 @@
-// blocks-model.mjs (T363.4): what the kernels of kernels/blocks.ts must give, written out value by value. One function
+// blocks-model.mjs (T.363.4): what the kernels of kernels/blocks.ts must give, written out value by value. One function
 // with nothing outside it, so that tests/kernels-in-browser.mjs can hand its text to a page: tests/blocks-check.mjs
 // and that check call the same model.
 //
 // The blocks are read here a second time, weight by weight, from the forms src/python/convert/superblocks.py
-// documents (T362), and not as the kernels read them (16 weights a vector, the signs as masks): blocks-check holds
+// documents (T.362), and not as the kernels read them (16 weights a vector, the signs as masks): blocks-check holds
 // read()'s float32 values to that reader's, to the bit, for every weight it checks. What a kernel returns is then the
 // arithmetic at the head of kernels/blocks/types.ts, followed with Math.fround: a weight is F S W - Fm M, the integers
 // G and M of a group of 32 are exact, and the float32 steps have one order.

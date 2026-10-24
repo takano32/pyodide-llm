@@ -1,4 +1,4 @@
-// contracts/python.ts (T368.3): what the model's worker has of Pyodide and of the site's Python. Types alone: nothing
+// contracts/python.ts (T.368.3): what the model's worker has of Pyodide and of the site's Python. Types alone: nothing
 // of this file is in what a browser gets (it is read with `import type`).
 //
 // Pyodide is loaded at run time, the latest release (policy 2: src/runtime/worker/pyodide.ts resolves the version), so
@@ -56,15 +56,15 @@ export type Llama = Proxy & {
 
 // src/python/llama2_numpy.py, the engine's window
 export type EngineWindow = Proxy & {
-  // T92: how many channels of the classifier's input go as float32 at most
+  // T.92: how many channels of the classifier's input go as float32 at most
   OUTLIER_CHANNELS: number;
   // Llama(checkpoint, tokenizer, **options): checkpoint is None where the weights are outside Python (external=)
   Llama: { callKwargs(checkpoint: Bytes | null, tokenizer: Bytes, options: Options & { external?: unknown; kernels?: string; disable?: string[] }): Llama };
-  // T89: the quantizer on the SIMD kernels (a callable the converter takes as quantize_rows)
+  // T.89: the quantizer on the SIMD kernels (a callable the converter takes as quantize_rows)
   kernel_quantizer(kernels: string): Proxy;
-  // where every tensor of a checkpoint is, from its header (the 7 ints), dtype and form alone (T156)
+  // where every tensor of a checkpoint is, from its header (the 7 ints), dtype and form alone (T.156)
   external_tensors(header: number[], dtype: Dtype, form: Partial<Form>): Dict<Partial<Record<TensorName, Tensor>>>;
-  // T363.5: how many weights of a checkpoint's matrices its dtype itself packs, where its form gives rows kinds of their own
+  // T.363.5: how many weights of a checkpoint's matrices its dtype itself packs, where its form gives rows kinds of their own
   dtype_weights(header: number[], dtype: Dtype, form: Partial<Form>): number;
   // the dtype of a legacy file of so many bytes, by its header and its form; ValueError where it is none
   checkpoint_dtype(header: Proxy, bytes: number, options: Options): Dtype;
@@ -74,7 +74,7 @@ export type EngineWindow = Proxy & {
 
 // src/python/llama2_convert.py, the converter's window
 export type ConverterWindow = Proxy & {
-  // T273: the readers of the stored types that have a kernel, by the type's name
+  // T.273: the readers of the stored types that have a kernel, by the type's name
   kernel_readers(kernels: string): Proxy;
 };
 

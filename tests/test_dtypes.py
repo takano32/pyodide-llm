@@ -1,4 +1,4 @@
-# The two registries of T359's second step: the dtypes a checkpoint holds a tensor in (engine/dtypes.py's DTYPES) and
+# The two registries of T.359's second step: the dtypes a checkpoint holds a tensor in (engine/dtypes.py's DTYPES) and
 # the types a file stores one in (convert/readers.py's SOURCES), and what they are for: how a row is stored is decided
 # for the row, not for the file. A checkpoint whose rows are of several kinds (the form's "kinds") is written by the
 # Writer and read by the engine in NumPy; forward.js takes one dtype for a file and such a file is refused there.
@@ -43,7 +43,7 @@ def ternary_rows(shape, seed=3):
     rng = np.random.default_rng(seed)
     signs = rng.integers(-1, 2, shape).astype(np.float32)
     signs[..., ::128] = 1.0  # (the largest of every group is its scale)
-    scales = (0.05 + rng.random((*shape[:-1], shape[-1] // 128, 1))).astype(np.float16).astype(np.float32)  # (T533: float16s)
+    scales = (0.05 + rng.random((*shape[:-1], shape[-1] // 128, 1))).astype(np.float16).astype(np.float32)  # (T.533: float16s)
     return (signs.reshape(*shape[:-1], -1, 128) * scales).reshape(shape)
 
 
@@ -99,7 +99,7 @@ def test_a_quantized_dtype_packs_what_it_says_it_stores_and_reads_it_back(name):
 
 
 def test_the_bytes_of_a_row_are_its_kinds():
-    """placed() asks the registry: the values in groups and a scale for each (a float32; T533: ternary's a float16), or
+    """placed() asks the registry: the values in groups and a scale for each (a float32; T.533: ternary's a float16), or
     the values alone."""
     rows = tensor_rows([128, 256, 2, 4, 4, 320, 24])
     wq = next(row for row in rows if row.name == "wq")
@@ -179,7 +179,7 @@ def test_a_file_of_several_kinds_is_written_and_read(name, dtype, kinds, shared)
 
 
 def test_the_writer_goes_by_the_rows_kind_and_not_by_the_files():
-    """The inherited flaw (T359's first step): a matrix the form says is six bits was written as int8 into the room of
+    """The inherited flaw (T.359's first step): a matrix the form says is six bits was written as int8 into the room of
     six bits. Its bytes are the six-bit file's bytes of that matrix, wherever the other rows put it."""
     config, weights = synthetic_weights(dim=128, hidden_dim=256)
     header, kinds = header_of(config), {"wq": "int6"}
@@ -209,7 +209,7 @@ def test_a_kind_is_given_to_a_row_of_the_model_and_is_a_dtype_and_suits_the_row(
 
 
 def test_forward_js_is_given_a_file_of_several_kinds_row_by_row():
-    """T363.5: forward.js chooses its kernels by the tensor: with the weights outside Python a row of a kind of its own
+    """T.363.5: forward.js chooses its kernels by the tensor: with the weights outside Python a row of a kind of its own
     is said as that kind where it is, as the file is placed and as the model is built, and the others as ever."""
     config, weights = synthetic_weights(dim=128, hidden_dim=256)
     kinds = {"wq": "int6"}
@@ -264,10 +264,10 @@ def test_the_options_of_a_conversion_carry_the_kinds_only_where_there_are_any(mo
 
 # ---- the types a file stores a tensor in
 def test_the_stored_types_and_what_comes_from_their_table():
-    # (T362: and llama.cpp's ten of blocks of 256, which have no kernel and which a refusal does not name)
+    # (T.362: and llama.cpp's ten of blocks of 256, which have no kernel and which a refusal does not name)
     blocks_of_256 = {"Q2_K": (10, 84), "Q4_K": (12, 144), "IQ2_XXS": (16, 66), "IQ2_XS": (17, 74), "IQ3_XXS": (18, 98),
                      "IQ1_S": (19, 50), "IQ3_S": (21, 110), "IQ2_S": (22, 82), "IQ4_XS": (23, 136), "IQ1_M": (29, 56)}
-    # (T505.1: and eight more that are read and never kept, blocks of 256 and of 32: name -> (ggml's id, values, bytes))
+    # (T.505.1: and eight more that are read and never kept, blocks of 256 and of 32: name -> (ggml's id, values, bytes))
     widened = {"Q3_K": (11, 256, 110), "Q5_K": (13, 256, 176), "Q6_K": (14, 256, 210), "Q4_0": (2, 32, 18),
                "Q4_1": (3, 32, 20), "Q5_0": (6, 32, 22), "Q5_1": (7, 32, 24), "IQ4_NL": (20, 32, 18)}
     assert list(SOURCES) == ["F32", "F16", "BF16", "Q8_0", "PQ2_0", "PTQ1_0", *blocks_of_256, *widened]

@@ -17,13 +17,13 @@ tokenizers = pytest.importorskip("tokenizers", reason="pip install tokenizers to
 GPT2_PATTERN = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 QWEN_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*"
                 r"|\s*[\r\n]+|\s+(?!\S)|\s+")
-# T229: Qwen3.5's (Qwen/Qwen3.5-0.8B's tokenizer.json), Qwen's with the combining marks taken into a word
+# T.229: Qwen3.5's (Qwen/Qwen3.5-0.8B's tokenizer.json), Qwen's with the combining marks taken into a word
 QWEN35_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*"
                   r"|\s*[\r\n]+|\s+(?!\S)|\s+")
-# T254: MiniCPM5's (openbmb/MiniCPM5-1B's tokenizer.json), two Splits: the numbers cut off three at a time, then Llama
+# T.254: MiniCPM5's (openbmb/MiniCPM5-1B's tokenizer.json), two Splits: the numbers cut off three at a time, then Llama
 # 3's pattern with \p{N}+ on each piece
 MINICPM5_PATTERNS = (r"\p{N}{1,3}", QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}+|"))
-# T340: Spark-X2.5's (XHToken/Spark-X2.5-1.7B's tokenizer.json), three Splits and then Digits(individual_digits)
+# T.340: Spark-X2.5's (XHToken/Spark-X2.5-1.7B's tokenizer.json), three Splits and then Digits(individual_digits)
 SPARK_PATTERNS = (r"\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+",
                   r"""[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^""" + "\r\n" + r"""\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+"""
                   + r"""| ?[\p{P}\p{S}]+|[""" + "\r\n" + r"""]|\s+(?!\S)|\s+""")
@@ -42,8 +42,8 @@ MARKED = ["e\u0301te\u0301", "\u304b\u3099\u304d", "\u0915\u093e\u092e", "\u0e01
 
 
 def trained(pattern, digits):
-    """A small byte-level BPE, and the tokenizer.json it saves. pattern: a Split's, or those of several (T254).
-    digits: a Digits(individual_digits) in front, or "after" the Splits (T340)."""
+    """A small byte-level BPE, and the tokenizer.json it saves. pattern: a Split's, or those of several (T.254).
+    digits: a Digits(individual_digits) in front, or "after" the Splits (T.340)."""
     from tokenizers import Tokenizer as Real, decoders, models, pre_tokenizers, trainers
     real = Real(models.BPE())
     steps = ([pre_tokenizers.Digits(individual_digits=True)] if digits is True else [])
@@ -87,7 +87,7 @@ def test_decodes_every_piece(name, pattern, digits):
 
 @pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED)
 def test_pretokenizers_follow_the_patterns(text):
-    """The engine runs the patterns on the characters' classes, because re has no \\p{L} (T200)."""
+    """The engine runs the patterns on the characters' classes, because re has no \\p{L} (T.200)."""
     regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
     assert pretokenize(text, "gpt2") == regex.findall(GPT2_PATTERN, text)
     assert pretokenize(text, "qwen") == regex.findall(QWEN_PATTERN, text)
@@ -103,7 +103,7 @@ def test_spark_follows_its_patterns(text):
 
 
 def sparked(regex, text):
-    """Spark-X2.5's pre_tokenizer (T340) by the regex module's patterns themselves: each Split (Isolated) keeps every
+    """Spark-X2.5's pre_tokenizer (T.340) by the regex module's patterns themselves: each Split (Isolated) keeps every
     match and every stretch between two matches of each piece of the one before, and then Digits(individual_digits)
     cuts every number off a piece (\\p{N}, as Rust's char::is_numeric)."""
     def isolated(pattern, piece):
@@ -120,7 +120,7 @@ def sparked(regex, text):
 
 
 def threes_then_the_rest(regex, text):
-    """MiniCPM5's pre_tokenizer (T254): Split(\\p{N}{1,3}, Isolated) keeps every match and every stretch between
+    """MiniCPM5's pre_tokenizer (T.254): Split(\\p{N}{1,3}, Isolated) keeps every match and every stretch between
     two matches as a piece, and the second Split's pattern runs on each piece as if it were the whole text."""
     first, second = MINICPM5_PATTERNS
     return [part for chunk in regex.findall(rf"{first}|\P{{N}}+", text) for part in regex.findall(second, chunk)]
@@ -128,20 +128,20 @@ def threes_then_the_rest(regex, text):
 
 def digits_then_gpt2(regex, text):
     """SmolLM2's pre_tokenizer: Digits(individual_digits) splits off every character Rust's char::is_numeric calls a
-    number (\\p{N}: ², Ⅱ and ① too, not only \\d), and GPT-2's pattern runs on each piece (T206)."""
+    number (\\p{N}: ², Ⅱ and ① too, not only \\d), and GPT-2's pattern runs on each piece (T.206)."""
     return [part for chunk in regex.findall(r"\p{N}|\P{N}+", text) for part in regex.findall(GPT2_PATTERN, chunk)]
 
 
-# T200's review: a class of CharClasses or a translated pattern that is wrong shows only next to the characters it
+# T.200's review: a class of CharClasses or a translated pattern that is wrong shows only next to the characters it
 # concerns, which TEXTS has few of. Characters of every class and every kind the patterns name, each next to each.
 # (Not the letters new in the regex module's Unicode, where Python's unicodedata and the regex module disagree.)
-# T206: \x1c to \x1f (spaces to str.isspace, not to \s) and ſ (which (?i:'s) folds to s) are in, as the real one has them.
+# T.206: \x1c to \x1f (spaces to str.isspace, not to \s) and ſ (which (?i:'s) folds to s) are in, as the real one has them.
 PIECES = ["a", "b", "s", "t", "d", "m", "l", "r", "e", "v", "S", "T", "L", "D", "x", "'", "'s", "'LL", "'ve", "'T",
           " ", "  ", "\t", "\n", "\r", "\r\n", "\x0b", "\x0c", "\x85", "\xa0", " ", "　", "0", "7", "123",
           ".", ",", "!", "-", "_", "(", '"', "@", "é", "ß", "Ω", "я", "あ", "カ", "漢", "한", "ｱ", "Ａ", "１", "٣", "²", "Ⅻ",
           "①", "́", "‍", "、", "。", "\U0001f600", "\U00020bb7", "\U0001d7ce", "\U00010140", "’",
           "\x1c", "\x1f", "ſ", "'ſ", "'ſt",
-          # T229: combining marks of the three kinds (Mn, Mc, Me), which Qwen3.5's pattern takes into a word
+          # T.229: combining marks of the three kinds (Mn, Mc, Me), which Qwen3.5's pattern takes into a word
           "\u3099", "\u093e", "\u0e31", "\u20dd"]
 
 
@@ -158,7 +158,7 @@ def test_pretokenizers_follow_the_patterns_on_random_texts():
         assert pretokenize(text, "minicpm5") == threes_then_the_rest(regex, text), text
 
 
-# T340: and the characters Spark-X2.5's pattern tells apart besides: punctuation and symbols of every kind, the edges of
+# T.340: and the characters Spark-X2.5's pattern tells apart besides: punctuation and symbols of every kind, the edges of
 # its block of ideographs and kana (and what of it is no letter), a format character
 SPARK_PIECES = PIECES + ["゠", "・", "ー", "゛", "゙", "〇", "龥", "龦", "぀", "ヿ", "ゟ", "$", "+", "€", "→", "©",
                          "«", "¡", "​", "\x00", "\x7f", "", ".a", "-A", "\r\n "]
@@ -173,7 +173,7 @@ def test_spark_follows_its_patterns_on_random_texts():
 
 
 def test_minicpm5_is_not_llama3_before_a_number():
-    """T254: what one pattern cannot say. Llama 3's \\s+(?!\\S) leaves the last space of a run before a number to
+    """T.254: what one pattern cannot say. Llama 3's \\s+(?!\\S) leaves the last space of a run before a number to
     stand alone; cut off from the number first, the run is one piece. Elsewhere the two are the same pieces."""
     assert pretokenize("a  1", "llama3") == ["a", " ", " ", "1"]
     assert pretokenize("a  1", "minicpm5") == ["a", "  ", "1"]
@@ -192,17 +192,17 @@ def test_minicpm5_is_not_llama3_before_a_number():
     assert differ > 20
 
 
-# T206: the classes against the real pre_tokenizers themselves (Oniguruma's \s, \p{L}, \p{N} and (?i), and Rust's
+# T.206: the classes against the real pre_tokenizers themselves (Oniguruma's \s, \p{L}, \p{N} and (?i), and Rust's
 # char::is_numeric for Digits), at every code point but the surrogates. Each code point c goes into a few places that
 # tell its class apart: next to letters, to punctuation, to digits, after a space, and after an apostrophe (for (?i)'s
 # folds, of s, t, m, d and of the r, e, l of 're, 've, 'll).
-# T254: and twice and after a space before a digit, where MiniCPM5's two stages are not one pattern (a run of white
+# T.254: and twice and after a space before a digit, where MiniCPM5's two stages are not one pattern (a run of white
 # space before a number)
 def around(c):
     return f"a{c}a!{c}!1{c}1 {c}'{c}'{c}e'r{c}'{c}l\n{c}{c}1 {c}1{c}{c}\n"
 
 
-# T340: and for Spark-X2.5's, next to its block of ideographs and kana, before an ASCII letter after ASCII punctuation
+# T.340: and for Spark-X2.5's, next to its block of ideographs and kana, before an ASCII letter after ASCII punctuation
 # and after other punctuation, a symbol, a mark, and a character of none of its classes
 def sparked_around(c):
     return around(c) + f"漢{c}カ.{c}b{c}x€{c}é́{c}\x00{c}​{c}y"
@@ -223,7 +223,7 @@ def real_pretokenizer(name):
     return pre_tokenizers.Split(Regex(pattern), behavior="isolated")
 
 
-# 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T193)
+# 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T.193)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
 @pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5", "spark2_5"])
 def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
@@ -250,7 +250,7 @@ def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
         if theirs != mine:  # which of them
             culprits = [code for code in chunk if differs(code)]
             wrong += culprits
-            # T206's review: a chunk that splits otherwise where no one of its code points does (the places of two
+            # T.206's review: a chunk that splits otherwise where no one of its code points does (the places of two
             # next to each other) fails too, not pass for want of a code point to name
             alone += [] if culprits else [f"U+{chunk[0]:04X} to U+{chunk[-1]:04X}"]
     assert not alone, f"{name}: these chunks split otherwise than the real one, no code point of them alone: {alone}"
@@ -265,7 +265,7 @@ def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
     assert not wrong, f"{name}: {len(wrong)} code points split otherwise than the real one: {shown}"
 
 
-# T215: SmolLM2's vocabulary has no piece for 21 bytes (0x04, 0x06, 0x13, 0x14, 0x16, 0x1D, 0xC0, 0xC1, 0xF1, 0xF2,
+# T.215: SmolLM2's vocabulary has no piece for 21 bytes (0x04, 0x06, 0x13, 0x14, 0x16, 0x1D, 0xC0, 0xC1, 0xF1, 0xF2,
 # 0xF5 to 0xFF). Hugging Face's BPE, without byte_fallback or an unk_token, leaves such a byte out and merges its
 # neighbours as if it were not there; the engine stopped on a KeyError. These are some of SmolLM2's, and 'z', which the
 # corpus has: every piece and merge with one of them goes.
@@ -312,7 +312,7 @@ def test_leaves_out_the_bytes_the_vocabulary_lacks(name, pattern, digits, ignore
 def test_refuses_what_the_engine_cannot_split():
     with pytest.raises(ValueError, match="does not know"):
         tokenizer_json_options({"model": {"type": "BPE"}, "pre_tokenizer": {"type": "Whitespace"}})
-    # T254: MiniCPM5's two Splits as its tokenizer.json has them, and nothing that is those two patterns otherwise
+    # T.254: MiniCPM5's two Splits as its tokenizer.json has them, and nothing that is those two patterns otherwise
     split = lambda pattern, **more: {"type": "Split", "pattern": {"Regex": pattern}, "behavior": "Isolated", "invert": False, **more}
     byte_level = {"type": "ByteLevel", "add_prefix_space": False, "trim_offsets": True, "use_regex": False}
     first, second = MINICPM5_PATTERNS
@@ -322,7 +322,7 @@ def test_refuses_what_the_engine_cannot_split():
                   [split(first, behavior="Removed"), split(second), byte_level],
                   [split(first), split(second, invert=True), byte_level],
                   [split(first), split(second), {**byte_level, "use_regex": True}],
-                  # (the review of T254: use_regex left out is the tokenizers' default, True, and the ByteLevel would split once
+                  # (the review of T.254: use_regex left out is the tokenizers' default, True, and the ByteLevel would split once
                   # more: the line `is False` says so, and no test did until a mutant that read it as `not` went through)
                   [split(first), split(second), {key: value for key, value in byte_level.items() if key != "use_regex"}],
                   [split(first), split(second), {**byte_level, "add_prefix_space": True}],
@@ -333,7 +333,7 @@ def test_refuses_what_the_engine_cannot_split():
                   [split(first), split(QWEN_PATTERN), byte_level]):
         with pytest.raises(ValueError, match="does not know"):
             named(*steps)
-    # T340: Spark-X2.5's three Splits with the Digits behind them, and nothing that is those otherwise
+    # T.340: Spark-X2.5's three Splits with the Digits behind them, and nothing that is those otherwise
     digits = {"type": "Digits", "individual_digits": True}
     one, two, three = (split(pattern) for pattern in SPARK_PATTERNS)
     assert named(one, two, three, digits, byte_level)["pretokenizer"] == "spark2_5"
@@ -351,8 +351,8 @@ def test_refuses_what_the_engine_cannot_split():
 
 
 def test_added_tokens_that_are_not_special_are_one_token_wherever_they_are():
-    """T143: the real tokenizers read an added token that is not special as one token wherever it is written, before
-    it splits the text: Pythia's runs of 2 to 24 spaces (T215's finding: "    x " is [50274, 89, 209] there) and
+    """T.143: the real tokenizers read an added token that is not special as one token wherever it is written, before
+    it splits the text: Pythia's runs of 2 to 24 spaces (T.215's finding: "    x " is [50274, 89, 209] there) and
     Qwen3's <think>. The converter names them all as specials; a special token only where the template writes it."""
     from tokenizers import AddedToken
     from conftest import vocabulary_conversion

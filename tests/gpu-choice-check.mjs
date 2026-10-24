@@ -1,4 +1,4 @@
-// T148: how forward.js weighs a block of a prompt on the GPU against the CPU (promptTimes), in Node, without a GPU:
+// T.148: how forward.js weighs a block of a prompt on the GPU against the CPU (promptTimes), in Node, without a GPU:
 //   node tests/gpu-choice-check.mjs
 // Made-up times: the CPU's ms a token of its blocks, gpu.js's two blocks timed as it starts, the blocks the GPU then ran.
 import assert from "node:assert/strict";
@@ -74,7 +74,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(times.of(64, 4).gpu, 80);
 }
 
-// T152: a generation's steps (tokenTimes): nothing before the GPU has a time and the CPU TIMED ones on the threads in
+// T.152: a generation's steps (tokenTimes): nothing before the GPU has a time and the CPU TIMED ones on the threads in
 // use; the GPU where a step takes less than 0.95 of the CPU's; the lower medians of the last five
 {
   const steps = tokenTimes();
@@ -93,7 +93,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(steps.of(4).gpu, 5, "12, 5, 5, 50, 5");
   assert.equal(steps.of(4).faster, true);
 }
-// T152's review (T160): halvesOf, a float32 cache's keys and values narrowed on the way up to the GPU. Every float16
+// T.152's review (T.160): halvesOf, a float32 cache's keys and values narrowed on the way up to the GPU. Every float16
 // back to itself (NaN to a NaN), the float32 half way between two neighbours to the even one, and a step of float32
 // either side of it to the nearer one; past the largest to the infinity, and below half the least subnormal to 0
 {
@@ -123,7 +123,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(one(2 ** -25), 0, "half the least subnormal: 0 (the even one)");
   assert.equal(one(-(2 ** -26)), 0x8000, "below it: -0");
 }
-// T225's review: heldHalves, with which /benchmark/'s layer check holds a key or a value of the cache to a float16 next
+// T.225's review: heldHalves, with which /benchmark/'s layer check holds a key or a value of the cache to a float16 next
 // to its own (WGSL leaves to the device which of the two neighbours a conversion gives, §15.7.6, and Direct3D takes the
 // one toward zero, D3D11.3 3.2.2: the owner's NVIDIA PC on Windows rounded every key and value that way). A device that
 // rounds to the nearest, toward zero or away from zero is right, and the reference goes on with its bits; one that is
@@ -223,7 +223,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     assert.deepEqual([...heldFloats(Float64Array.of(8, 2.5), Float64Array.of(8, Infinity))], [8, 2.5], "an infinity: the nearest");
   }
 }
-// T225's review: tests/rounding.mjs's rewriting of a shader's text for a device that rounds a float32 to a float16 another
+// T.225's review: tests/rounding.mjs's rewriting of a shader's text for a device that rounds a float32 to a float16 another
 // way (the arithmetic is held by tests/rounding-check.mjs on Dawn: every key and value must come out as the rounding asked)
 {
   const { rounded } = await import("./rounding.mjs");
@@ -242,7 +242,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.ok(rounded(tiles("f16"), "everything").includes("array<vec4<shmem_t>, 4>"), "a type is not a conversion");
   assert.throws(() => rounded("", "sideways"), /unknown rounding/);
 }
-// T152: the status line's words (the owner's, 2026-09-27): both on the GPU, before either is timed, the answers alone on
+// T.152: the status line's words (the owner's, 2026-09-27): both on the GPU, before either is timed, the answers alone on
 // the CPU (faster here), and a reason for the answers (in the console alone)
 {
   assert.equal(gpuLine(PROMPTS_GPU, "gpu"), "prompts and answers on WebGPU");
@@ -257,15 +257,15 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuLine("prompts on the CPU (no GPU adapter here)", null), "prompts on the CPU (no GPU adapter here)");
   assert.equal(gpuLine(undefined, null), undefined);
 }
-// T156: where a model goes (the owner's B, 2026-09-27): both where both fit half of the device (8: 8 GB, 4 GB for
+// T.156: where a model goes (the owner's B, 2026-09-27): both where both fit half of the device (8: 8 GB, 4 GB for
 // both), else the GPU alone where the model can be and fits (8: no limit, as the CPU alone has none), else the CPU
 {
   const GB = 2 ** 30;
   // (the owner, 2026-09-27: both up to 6.5 GiB on a device that says 8, so that the list's models up to 2B stay as they
-  // were and 3B and larger go on the GPU alone. The second review of T156, the list's configs with footprint() and
+  // were and 3B and larger go on the GPU alone. The second review of T.156, the list's configs with footprint() and
   // gpuBytes(), 4096 positions: sarashina2.2 1B 2.81 + 1.94 GB (4.42 GiB) and llm-jp-3.1 1.8B 3.543 + 2.910 GB (6.010
   // GiB, no GQA: its keys and values are 0.8 GB on either side; 11 MB past the first line of 6 GiB) both as before;
-  // Qwen2.5 3B 4.10 + 3.63 GB (7.20 GiB; until T226 not eligible for its biases: the CPU with its layers past the
+  // Qwen2.5 3B 4.10 + 3.63 GB (7.20 GiB; until T.226 not eligible for its biases: the CPU with its layers past the
   // room left; with its steps on the GPU, the GPU alone); Llama 3.2 3B 8.83 GB the GPU alone)
   assert.equal(BOTH_ON_8, 6.5 * GB, "the line of both on a device that says 8");
   assert.deepEqual(weightsPlace({ cpu: 1.5 * GB, gpu: 1.4 * GB, deviceMemory: 8 }), { mode: "both", gpuRoom: 5 * GB }, "Llama 3.2 1B on 8: both");
@@ -275,7 +275,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(weightsPlace({ cpu: 3.3 * GB, gpuOnly: 0.6 * GB, gpu: 3.3 * GB, deviceMemory: 8, eligible: true }).mode, "gpu", "6.6 GiB: the GPU alone");
   const qwen3B = weightsPlace({ cpu: 4.103e9, gpu: 3.627e9, deviceMemory: 8 });
   assert.ok(qwen3B.mode === "cpu" && qwen3B.gpuRoom < 3.273e9, "Qwen2.5 3B on 8 where it is not eligible: the CPU, its layers (3.27 GB) past the room left");
-  assert.equal(weightsPlace({ cpu: 4.103e9, gpuOnly: 1.2e9, gpu: 3.627e9, deviceMemory: 8, eligible: true }).mode, "gpu", "T226: Qwen2.5 3B on 8, eligible: the GPU alone");
+  assert.equal(weightsPlace({ cpu: 4.103e9, gpuOnly: 1.2e9, gpu: 3.627e9, deviceMemory: 8, eligible: true }).mode, "gpu", "T.226: Qwen2.5 3B on 8, eligible: the GPU alone");
   assert.equal(weightsPlace({ cpu: 4.9e9, gpuOnly: 1.3e9, gpu: 3.93e9, deviceMemory: 8, eligible: true }).mode, "gpu", "Llama 3.2 3B on 8: the GPU alone");
   assert.equal(weightsPlace({ cpu: 4.4 * GB, gpuOnly: 1.2 * GB, gpu: 4.1 * GB, deviceMemory: 8, eligible: true }).mode, "gpu", "3B on 8: the GPU alone");
   assert.equal(weightsPlace({ cpu: 9.2 * GB, gpuOnly: 1.5 * GB, gpu: 8 * GB, deviceMemory: 8, eligible: true }).mode, "gpu", "7B on 8: no limit");
@@ -291,7 +291,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     128256 * 2048 * 1.125 + 4096 * 64 * 4 + 3 * 128256 * 4;
   assert.ok(Math.abs(oneB - want) < 1, `gpuBytes ${oneB} against ${want}`);
   assert.ok(gpuBytes([64, 128, 2, 4, 2, 320, 256], { arch: "gpt2" }) < gpuBytes([64, 128, 2, 4, 2, 320, 256]), "no gate on GPT-2");
-  // T232: ternary weights go up as they are, two bits a weight and a float32 scale a group of 128 (0.28125 bytes a
+  // T.232: ternary weights go up as they are, two bits a weight and a float32 scale a group of 128 (0.28125 bytes a
   // weight). Ternary Bonsai 1.7B (a Qwen3: dim 2048, hidden 6144, 28 layers, 16 heads of 128 on 8 of keys and values)
   const bonsai = [2048, 6144, 28, 16, 8, 151936, 4096], form = { qk_norm: true, head_dim: 128 };
   const ternary = 28 * (2 * 2048 * 2048 + 2 * 1024 * 2048 + 3 * 6144 * 2048) * 0.28125 + 28 * 2 * 2048 * 4 + 2 * 28 * 4096 * 1024 * 2 +
@@ -301,7 +301,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // where the three listed models go (their checkpoints' bytes; the worker's options; 4096 positions), by what the
   // device says it has: 8, both and measured (2.24, 3.83 and 6.01 GiB of 6.5); 4, the 1.7B and the 4B on the GPU alone
   // (0.91 and 1.64 GiB of 2) and the 8B on the CPU (2.74); a browser that does not say (4, and never on the GPU alone,
-  // T205): the CPU, and not even the prompts on the GPU (the layers with their keys and values past the room left)
+  // T.205): the CPU, and not even the prompts on the GPU (the layers with their keys and values past the room left)
   const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 128 * 2 ** 20, maxBufferSize: 256 * 2 ** 20 } };
   const listed = [["1.7B", bonsai, 457490460, form, "both", "gpu"], ["4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1069200412, form, "both", "gpu"],
     ["8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2176815132, { qk_norm: true }, "both", "cpu"]];
@@ -309,7 +309,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     const options = { ...shape, dtype: "ternary", int8: true, relaxed: true, halfKV: true, shared: true, outliers: 8, gpu: true };
     const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header, headSize = shape.head_dim || dim / heads;
     const layerWeights = layers * (2 * heads * headSize * dim + 2 * kvHeads * headSize * dim + 3 * hidden * dim);
-    const stored = size - (layerWeights + Math.abs(signedVocab) * dim * (signedVocab > 0 ? 1 : 2)) * 0.265625;  // (T533: the float16 scales)
+    const stored = size - (layerWeights + Math.abs(signedVocab) * dim * (signedVocab > 0 ? 1 : 2)) * 0.265625;  // (T.533: the float16 scales)
     const cpu = size + footprint(header, size, options), gpu = gpuBytes(header, { ...shape, dtype: "ternary" });
     const gpuOnly = stored + footprint(header, stored, { ...options, direct: true });
     assert.equal(gpuOnlyUnfit(header, "ternary", shape, adapter), null, `Ternary Bonsai ${name} may go on the GPU alone`);
@@ -321,7 +321,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     assert.ok(unsaid.mode === "cpu" && onGpu > unsaid.gpuRoom, `Ternary Bonsai ${name} where the browser does not say: the CPU, the layers past the room left`);
   }
 }
-// T156: why a model cannot go on the GPU alone
+// T.156: why a model cannot go on the GPU alone
 {
   const adapter = { fallback: false, limits: { maxStorageBufferBindingSize: 128 * 2 ** 20, maxBufferSize: 256 * 2 ** 20, minStorageBufferOffsetAlignment: 256 } };
   const oneB = [2048, 8192, 16, 32, 8, 128256, 4096];
@@ -329,32 +329,32 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(gpuOnlyUnfit(oneB, "int8", {}, undefined), /no GPU adapter/);
   assert.match(gpuOnlyUnfit(oneB, "int8", {}, { ...adapter, fallback: true }), /fallback/);
   assert.equal(gpuOnlyUnfit(oneB, "int8", {}, { ...adapter, fallback: true }, { fallback: true }), null, "the tests' leave");
-  // T226: Qwen2 (biases) and Qwen3 (norms of the heads, heads of another size) as well: Qwen2.5 3B's and Qwen3 4B's
+  // T.226: Qwen2 (biases) and Qwen3 (norms of the heads, heads of another size) as well: Qwen2.5 3B's and Qwen3 4B's
   // shapes (the owner's NVIDIA PC: "Qwen3 4B ですら GPU 使われないんだが？"); not GPT-2 or GPT-NeoX
   assert.equal(gpuOnlyUnfit(oneB, "int8", { bias: true }, adapter), null);
   assert.equal(gpuOnlyUnfit([2048, 11008, 36, 16, 2, 151936, 4096], "int8", { bias: true }, adapter), null, "Qwen2.5 3B");
   assert.equal(gpuOnlyUnfit([2560, 9728, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 4B");
   assert.equal(gpuOnlyUnfit([4096, 12288, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 8B");
   assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), "a table of positions is not on the GPU alone yet");
-  // T237: a model in a rotated basis, whose inputs the GPU did not turn; T271.1: it does (ROTATE_QUANTIZE, its packed forms)
+  // T.237: a model in a rotated basis, whose inputs the GPU did not turn; T.271.1: it does (ROTATE_QUANTIZE, its packed forms)
   assert.equal(gpuOnlyUnfit(oneB, "int8", { rotated: { block: 1024, signs: {} } }, adapter), null, "a rotated basis on the GPU alone");
   assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "neox" }, adapter), "an FFN without a gate is not on the GPU alone yet");
-  // (T229: a hybrid model was not placed on the GPU alone either; T271.4: a Qwen3.5 is, its gate of the output and its
+  // (T.229: a hybrid model was not placed on the GPU alone either; T.271.4: a Qwen3.5 is, its gate of the output and its
   // linear-attention layers a token's layer's now)
-  assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35" }, adapter), null, "T271.4: a Qwen3.5 on the GPU alone");
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35" }, adapter), null, "T.271.4: a Qwen3.5 on the GPU alone");
   assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35", linear: { every: 4, key_heads: 16, value_heads: 32, key_dim: 128, value_dim: 128, conv: 4 } }, adapter), null,
-    "T271.4: and with its linear-attention layers");
+    "T.271.4: and with its linear-attention layers");
   assert.match(gpuOnlyUnfit(oneB, "int6", {}, adapter), /int6/);
-  // stories15M (dim 288, 6 heads): k starts at 288 × 288 weights, no multiple of 2048 (T152)
+  // stories15M (dim 288, 6 heads): k starts at 288 × 288 weights, no multiple of 2048 (T.152)
   assert.match(gpuOnlyUnfit([288, 768, 6, 6, 6, 32000, 256], "int8", {}, adapter), /would not start/);
-  // T220: by the device's 256, not by what the adapter could give: stories15M's k starts on 64 (82944 values, 10368
+  // T.220: by the device's 256, not by what the adapter could give: stories15M's k starts on 64 (82944 values, 10368
   // bytes of scales), and gpu.js's device, which asks for no alignment, binds on 256 and would refuse it
   const loose = { ...adapter, limits: { ...adapter.limits, minStorageBufferOffsetAlignment: 64 } };
   assert.match(gpuOnlyUnfit([288, 768, 6, 6, 6, 32000, 256], "int8", {}, loose), /would not start/);
   assert.equal(gpuOnlyUnfit(oneB, "int8", {}, loose), null);
-  // Qwen2.5 7B's shape (no biases here): gate and up are 135.8 MB (T152's (d)), past 128 MiB
+  // Qwen2.5 7B's shape (no biases here): gate and up are 135.8 MB (T.152's (d)), past 128 MiB
   assert.match(gpuOnlyUnfit([3584, 18944, 28, 28, 4, 152064, 4096], "int8", {}, adapter), /past a buffer/);
-  // T232: ternary weights too, where the browser's WGSL has the packed int8 dot (the worker's adapter.packed); a
+  // T.232: ternary weights too, where the browser's WGSL has the packed int8 dot (the worker's adapter.packed); a
   // quarter of the bytes, so the same shape's gate and up are within a buffer, and a matrix starts where the device
   // binds where its weights are a multiple of 8192 (a byte of scales to 32 weights)
   const packed = { ...adapter, packed: true }, bonsai = { qk_norm: true, head_dim: 128 };
@@ -367,18 +367,18 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // (the review) and the untied one: a dim of 256 (two groups of 128 a row), a hidden size of 1152 (a second pass of a
   // token's matrix), its classifier apart (a negative vocabulary)
   assert.equal(gpuOnlyUnfit([256, 1152, 3, 8, 4, -320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up untied ternary model");
-  // (the review of T237) with the refusal of ternary weights gone, the others still stand, each with its own reason:
-  // the 27B is ternary, in a rotated basis, with linear-attention layers (a Qwen3.5: T271.4, the GPU's alone now; T271.1,
+  // (the review of T.237) with the refusal of ternary weights gone, the others still stand, each with its own reason:
+  // the 27B is ternary, in a rotated basis, with linear-attention layers (a Qwen3.5: T.271.4, the GPU's alone now; T.271.1,
   // its rotated basis too: what keeps it off is no longer the basis)
   assert.doesNotMatch(String(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed)), /rotated basis/);
   assert.equal(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", { ...bonsai, rotated: { block: 1024, signs: {} } }, packed), null, "a Bonsai 1.7B's shape in a rotated basis");
-  // (T271.1's review: but not blocks the GPU's shader does not take: past 1024, under 32, or no power of two)
+  // (T.271.1's review: but not blocks the GPU's shader does not take: past 1024, under 32, or no power of two)
   for (const block of [2048, 16, 96]) assert.equal(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", { ...bonsai, rotated: { block, signs: {} } }, packed), "a rotated basis of blocks of this size is not on the GPU", `blocks of ${block}`);
 }
-// T156: the checkpoint's stretches: the layers' matrices to the GPU's worker, the rest packed into memory, whatever the
+// T.156: the checkpoint's stretches: the layers' matrices to the GPU's worker, the rest packed into memory, whatever the
 // stretches it comes in; each byte posted once, and the writer waits on flow
 {
-  // (T232, ternary: the matrices two bits a weight, a scale a group of 128)
+  // (T.232, ternary: the matrices two bits a weight, a scale a group of 128)
   const tensor = (offset, shape, int8, ternary = false) => ({ kind: !int8 ? "f32" : ternary ? "ternary" : "int8", offset, shape, group: !int8 ? 0 : ternary ? 128 : 32,
     scales: int8 ? offset + shape.reduce((a, b) => a * b, 1) / (ternary ? 4 : 1) : 0 });
   // a made-up Llama: 2 layers, dim 64, hidden 96, the tensors in file order
@@ -392,7 +392,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     end += int8 ? count + count / 8 : count * 4;
   }
   const size = end, holes = gpuHoles(tensors), place = placer(holes);
-  // (T210: the embedding too, which is the classifier here: one stretch)
+  // (T.210: the embedding too, which is the classifier here: one stretch)
   assert.equal(holes.length, 8);
   assert.equal(gpuHoles({ ...tensors, wcls: tensors.token_embedding_table }).length, 8, "a shared classifier is one stretch");
   assert.equal(place(tensors.rms_att_weight.offset), 28, "the first norm goes where the embedding began");
@@ -424,10 +424,10 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // what gpu.js opens with: each layer's values and scales where they start in the checkpoint
   const plan = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], tensors);
   assert.deepEqual(plan.matrices.w2.layers[1], [tensors.w2.offset + 64 * 96, tensors.w2.scales + (64 * 96 / 32) * 4]);
-  // T210: and the tables, where they start in the checkpoint (the embedding null where the classifier is it)
+  // T.210: and the tables, where they start in the checkpoint (the embedding null where the classifier is it)
   const e = tensors.token_embedding_table;
   assert.deepEqual(plan.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] }, embedding: null });
-  // T271.4, T568.4: a Qwen3.5's (its layers linear, attending, linear, attending): a matrix of the layers of a kind (the
+  // T.271.4, T.568.4: a Qwen3.5's (its layers linear, attending, linear, attending): a matrix of the layers of a kind (the
   // kind's that names it, forward/kinds.ts's gpu.names) is theirs alone, its layers by their places; the FFN's every layer's
   {
     const linear = { every: 2, key_heads: 1, value_heads: 2, key_dim: 16, value_dim: 16, conv: 4 }, mixed = 2 * 16 + 32;
@@ -448,7 +448,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const apart = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], { ...tensors, wcls: tensor(end, [100, 64], true) });
   assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [end, end + 6400] }, embedding: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] } });
   assert.equal(gpuHoles({ ...tensors, wcls: tensor(end, [100, 64], true) }).length, 9, "a classifier of its own is a stretch of its own");
-  // T232: a ternary model's: a layer of a matrix is a quarter of a byte a weight on, and its scales one a group of 128 (T533: float16s)
+  // T.232: a ternary model's: a layer of a matrix is a quarter of a byte a weight on, and its scales one a group of 128 (T.533: float16s)
   let at = 28;
   const codes = {};
   for (const [name, shape, matrix] of [["token_embedding_table", [100, 128], true], ["rms_att_weight", [2, 128], false], ["wq", [2, 128, 128], true],
@@ -464,7 +464,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.deepEqual(ternary.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] }, embedding: null });
   // (its stretches: every matrix's codes and then its scales, to where the next tensor begins)
   assert.deepEqual(gpuHoles(codes).find(([start]) => start === codes.w1.offset), [codes.w1.offset, codes.w2.offset]);
-  // (the review of T232: a ternary classifier apart from the embedding, as the 8B's: two tables, each its own codes and
+  // (the review of T.232: a ternary classifier apart from the embedding, as the 8B's: two tables, each its own codes and
   // scales, and a stretch of its own, its codes and then its scales; no gpu-check model was untied before)
   const wcls = tensor(at, [100, 128], true, true);
   const untied = gpuOnlyPlan([128, 256, 2, 4, 2, -100, 32], { ...codes, wcls });
@@ -473,7 +473,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuHoles({ ...codes, wcls }).length, gpuHoles(codes).length + 1, "a ternary classifier of its own is a stretch of its own");
   assert.deepEqual(gpuHoles({ ...codes, wcls }).at(-1), [wcls.offset, wcls.scales + ((100 * 128) / 128) * 2], "its codes, then its scales");
 
-  // T377: a worker that counts nothing. The loops that write wait for it, a second at a time, and give up after 60 s
+  // T.377: a worker that counts nothing. The loops that write wait for it, a second at a time, and give up after 60 s
   // of nothing; a worker said to be gone (it did not start, or threw: whoever made it heard its "error") is waited for
   // no longer, and is posted nothing more. The clock is this check's: every wait takes as long as it asked for, at once
   {
@@ -536,7 +536,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   }
 }
 
-// T156 (the owner, 2026-09-27): a model on the GPU alone weighed on the prompts too, by the page's use, and the verdict
+// T.156 (the owner, 2026-09-27): a model on the GPU alone weighed on the prompts too, by the page's use, and the verdict
 // kept for the device and /benchmark/'s CPU reading
 {
   // Llama 3.2 3B (dim 3072, hidden 8192, 28 layers, 24 heads, 8 of keys and values): 2.8 G multiply-adds a token
@@ -554,8 +554,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(aloneVerdict({ size, layerWeights: weights, cpu, gpu: slowStep, usage: { prompt: 1, written: 10 } }).cpuFaster, true, "writing: the CPU");
   // nothing known of the CPU: the GPU stays
   assert.equal(aloneVerdict({ size, layerWeights: weights, cpu: {}, gpu: slowStep }).cpuFaster, false, "no /benchmark/: the GPU");
-  // T232: the CPU's token of a ternary model is read as the same weights of int8 (144 / 34 times the checkpoint's bytes, T533:
-  // its kernel is bound by its arithmetic, at about the int8 kernel's weights a second, T231)
+  // T.232: the CPU's token of a ternary model is read as the same weights of int8 (144 / 34 times the checkpoint's bytes, T.533:
+  // its kernel is bound by its arithmetic, at about the int8 kernel's weights a second, T.231)
   assert.equal(cpuReadBytes(1e9, "ternary"), 1e9 * 1.125 / 0.265625);
   assert.equal(cpuReadBytes(1e9, "int8"), 1e9);
   // the use kept: each generation's added to four fifths of what was there
@@ -567,7 +567,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const device = { features: new Set(adapter.features), limits: { ...adapter.limits } };
   const key = deviceKey(adapter);
   assert.equal(deviceKey(adapter, device), key, "the worker's key is gpu.js's");
-  // T232: a model of ternary weights has a key of its own (its shaders' text after the others'), the worker's and
+  // T.232: a model of ternary weights has a key of its own (its shaders' text after the others'), the worker's and
   // gpu.js's the same
   assert.notEqual(deviceKey(adapter, device, true), key, "a ternary model's key is not the others'");
   assert.equal(deviceKey(adapter, adapter, true), deviceKey(adapter, device, true), "the worker's ternary key is gpu.js's");
@@ -580,7 +580,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(aloneHolds(alone, key, undefined), false, "no /benchmark/ now");
   assert.equal(aloneHolds(undefined, key, cpu), false);
 }
-// T224's review: shaders.js's tokenAttentionOff (how far a token's attention from the GPU is from JavaScript's, the check
+// T.224's review: shaders.js's tokenAttentionOff (how far a token's attention from the GPU is from JavaScript's, the check
 // of the engine and of /benchmark/) keeps a NaN. `if (!(off <= worst)) worst = off` let the next value take its place,
 // and a NaN in one head, or in the first values of the last, was a pass (a reduce that wrote NaN for head 0 only: 4e-8)
 {
@@ -611,7 +611,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     assert.ok(Number.isNaN(tokenAttentionOff(got, data, dims)), `a NaN in ${where} stays`);
   }
 }
-// T232: the check of a tiled shader against JavaScript (shaders.js's tiledOff, gpu.js's checkForm) on ternary weights:
+// T.232: the check of a tiled shader against JavaScript (shaders.js's tiledOff, gpu.js's checkForm) on ternary weights:
 // their values are the codes less one, a scale covers 128 of them (four of the vector's groups of 32); and a product
 // that is no number is wrong (a NaN is neither over a line nor under it: the check passed every form, the int8 ones
 // too, while gpu.js handed it a group that was no number; CI's mutants of the ternary tiles found it)
@@ -647,7 +647,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(off(product(1, right).fill(NaN, 5, 6)), /products/, "one product that is no number");
   assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
 }
-// T232's review, T379.1: fusedDp4aMatVec's text for ternary weights is its int8 text with the lines that read the weights
+// T.232's review, T.379.1: fusedDp4aMatVec's text for ternary weights is its int8 text with the lines that read the weights
 // and their scales changed (and ternary_packed after SDP8AI). One maker makes both, and its table of the packings
 // (shaders/fused.ts's DP4A_WEIGHTS) holds what differs. That it holds nothing else is held here: every line but those
 // that differ by design is the same in the two texts, for every output a layer writes
@@ -660,7 +660,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const different = (text) => lines(text).length - kept(text).length;
   const of = (weights, output) => fusedDp4aMatVec({ output, weights });
   // (what differs by design: 5 lines of the int8 text, 7 of the ternary one (the scales' K128 and its comment are two
-  // lines more), and where SwiGLU reads up's rows 2 more in each. T379.2: until then the int8 text named its scale's
+  // lines more), and where SwiGLU reads up's rows 2 more in each. T.379.2: until then the int8 text named its scale's
   // index block_idx, a line of its own)
   for (const [output, int8, ternary] of [["write", 5, 7], ["rope", 5, 7], ["add", 5, 7], ["swiglu", 7, 9]]) {
     assert.equal(different(of("int8", output)), int8, `${output}: the lines of fusedDp4aMatVec's int8 text that read the weights`);
@@ -675,7 +675,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // a packing the table has no row of is no text (the type says so before it runs)
   assert.throws(() => of("no such packing", "add"), TypeError, "a packing without a row of DP4A_WEIGHTS");
 }
-// T232's review: the outlier channels' two shaders take as many as OUTLIERS_MOST, and Python's OUTLIER_CHANNELS is that
+// T.232's review: the outlier channels' two shaders take as many as OUTLIERS_MOST, and Python's OUTLIER_CHANNELS is that
 // many (a ninth channel past the Outliers' room would throw as the plan is made: the GPU then lost for a model that
 // has them): one number in two languages
 {
@@ -686,7 +686,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(outliersOf([1, 2]).length, 4 + OUTLIERS_MOST);
   assert.throws(() => outliersOf(Array.from({ length: OUTLIERS_MOST + 1 }, (_, i) => i)), RangeError, "a ninth channel has no room");
 }
-// T232's review: the check of a tiled shader sees a quantized scale that is no number and a form that writes nothing but NaN
+// T.232's review: the check of a tiled shader sees a quantized scale that is no number and a form that writes nothing but NaN
 {
   const rows = 4, n = 256, tokens = 2, group = 128, s = new Float32Array((rows * n) / group).fill(0.01), w = new Int8Array(rows * n).map((_, i) => (i % 3) - 1);
   const x = new Float32Array(tokens * n).map((_, i) => Math.sin(i)), xq = new Int8Array(tokens * n), xs = new Float32Array(tokens * (n / 32));

@@ -1,4 +1,4 @@
-// tests/dist-rules-check.mjs (T367.3.1): tests/dist-check.mjs and tests/bundle.mjs held to made-up builds: what each
+// tests/dist-rules-check.mjs (T.367.3.1): tests/dist-check.mjs and tests/bundle.mjs held to made-up builds: what each
 // must say of a build that is wrong in one way, and of one that is right. No build is needed (dist-check.mjs itself is
 // run on the real one after `npm run build`).
 import assert from "node:assert/strict";
@@ -81,7 +81,7 @@ const family = familyOf(coi);
     assert.match(said[0], /^src\/runtime\/jobs\.js: a copyright line in a comment that a bundler drops/);
   }
   {
-    // (T368.1: a source that is TypeScript is a source all the same)
+    // (T.368.1: a source that is TypeScript is a source all the same)
     const { "src/runtime/jobs.js": gone, ...rest } = sources;
     const tree = written("a copyright line in a TypeScript source", { ...rest, "src/runtime/forward.js": 'import { J } from "./jobs.ts";\nexport const F = J;\n', "src/runtime/jobs.ts": "// Copyright (c) 2021 Someone\nexport const J: number = 1;\n",
       ...Object.fromEntries(Object.entries(good).map(([file, text]) => [`dist/${file}`, text])) });

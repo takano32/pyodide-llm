@@ -1,4 +1,4 @@
-// T148 (the review's must-fix 2): the page's default choice of the GPU or the CPU for the blocks of a prompt (not the
+// T.148 (the review's must-fix 2): the page's default choice of the GPU or the CPU for the blocks of a prompt (not the
 // tests' gpuForce.always), on forward.js's real CPU forward pass of llm-jp-3 150M, with a made-up GPU's worker that only
 // sleeps for as long as its block would take and answers in the control area (no WebGPU: Node alone). Its times are
 // set as multiples of the CPU's own ms a prompt token, measured first, so that the verdicts do not hang on this
@@ -8,22 +8,22 @@
 //     stays on the CPU; another number of threads is timed on the CPU again;
 //   - a GPU far slower: every prompt on the CPU, but the eighth after the first verdict, whose first block of 64 goes to
 //     the GPU once;
-//   - a GPU faster from 36 tokens on (the band of 17 to 64 where the first version of T148 put the prompt on blocks of
+//   - a GPU faster from 36 tokens on (the band of 17 to 64 where the first version of T.148 put the prompt on blocks of
 //     16 on the GPU in its check, 1.47 times as long): the generation that checks again takes no longer than the others.
-// T184 (the review's must-fix): /benchmark/'s page path (forward.js's timePrompts, src/bench.js's pathTable) on the same
+// T.184 (the review's must-fix): /benchmark/'s page path (forward.js's timePrompts, src/bench.js's pathTable) on the same
 // made-up GPU: far faster, every block of the GPU's side on it and a ratio; failing on its sixth block, the GPU's cells
 // empty with why and no ratio anywhere (its time was the CPU's: 0.90× before); no GPU, the CPU's side alone.
-// T190: the page path's number of threads: a search run to its end (forward.js's endSearch) and timed on the count it
+// T.190: the page path's number of threads: a search run to its end (forward.js's endSearch) and timed on the count it
 // chose; a count the model page remembers taken with no search.
-// T199: the search's verdict on a made-up clock (forward.js's clock), with one block of every comparison slowed 3 times:
+// T.199: the search's verdict on a made-up clock (forward.js's clock), with one block of every comparison slowed 3 times:
 // the count that is fastest still chosen (4 of the owner's Android's 8 logical cores, 2 of CI's runner's 4).
-// T223: on the same clock, the owner's Android's llm-jp-3 150M (2 threads fastest, 4 a third of 1's speed) chooses 2;
+// T.223: on the same clock, the owner's Android's llm-jp-3 150M (2 threads fastest, 4 a third of 1's speed) chooses 2;
 // a search timed while the GPU gets ready is not remembered, and is searched again once the GPU is ready (the times
 // beside the GPU say 4, those after it 2: 2 is remembered); a count remembered from an earlier visit is searched again
 // on the first generation (not only on the eighth); and the page's key of the count is one a model.
-// T240: the GPU ready inside a generation: the search owed begins at that generation's next token and ends in it.
-// T239: the owner's PC's times (8 remembered, 4 no faster, 2 fastest): 2, by the quarter the search compares after half.
-// T152: the steps of a generation (forward.js's tokenBlock and generateMany, tokenTimes) on the same made-up GPU, whose
+// T.240: the GPU ready inside a generation: the search owed begins at that generation's next token and ends in it.
+// T.239: the owner's PC's times (8 remembered, 4 no faster, 2 fastest): 2, by the quarter the search compares after half.
+// T.152: the steps of a generation (forward.js's tokenBlock and generateMany, tokenTimes) on the same made-up GPU, whose
 // step sleeps a multiple of the CPU's own ms of a token and writes made-up ids: generations of STEPS steps after a short
 // prompt, as Python takes them (tokenBlock at a time on the GPU, else one on the CPU). Far faster: the first steps on the
 // CPU (timed first), then every one on the GPU, and the eighth generation after the first verdict its first 4 on the
@@ -31,15 +31,15 @@
 // there on, the step it gave back taken by the CPU. And Python's generate() through external(), as the page's worker
 // runs it, on the far faster one: sampled and greedy, the steps on the GPU and the counts right (the made-up GPU fails a
 // request whose random numbers, history or settings are not what Python should hand over); and through Python on one
-// that fails on its second request: the generation goes on whole on the CPU (T152's review: JavaScript's null is jsnull).
-// T219: a GPU that samples -1 (SAMPLE's NONE) or an id past the vocabulary: that request refused whole, the CPU from
+// that fails on its second request: the generation goes on whole on the CPU (T.152's review: JavaScript's null is jsnull).
+// T.219: a GPU that samples -1 (SAMPLE's NONE) or an id past the vocabulary: that request refused whole, the CPU from
 // there on, and the status line says why; a model on the GPU alone stops with words and is not loaded again.
-// T243: a GPU that writes back a key or a value that is no finite number (a float16 with every bit of its exponent set: a
+// T.243: a GPU that writes back a key or a value that is no finite number (a float16 with every bit of its exponent set: a
 // NaN, an infinity of either sign), which the CPU's kernels would read as a finite one: the block of the prompt, or the
 // request for steps, refused whole (nothing of it in the cache, to the bit), the GPU stopped and the status line says
 // why, the CPU on from its own keys and values; in a cache kept in float16 and in a float32 one; a finite block taken
 // as the GPU wrote it, the largest halves and the subnormals among them.
-// T205: release() waits for the GPU's worker to say "ended" (a slow one; one that never does, terminated after 5 s; one
+// T.205: release() waits for the GPU's worker to say "ended" (a slow one; one that never does, terminated after 5 s; one
 // stopped while it got ready), and so does Llama.release() called from JavaScript through Python, as the page's worker
 // calls it (the review); a browser that does not say the device's memory keeps the steps on the CPU.
 //   node tests/gpu-default-check.mjs [--forward <another forward.js, to see a broken one fail>]
@@ -54,7 +54,7 @@ const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 
-// T243: the keys and values the made-up GPU writes back where it is asked to (line.kv), as float16 bits: of part (the
+// T.243: the keys and values the made-up GPU writes back where it is asked to (line.kv), as float16 bits: of part (the
 // keys of every layer, then the values), of the t-th position of the request, the i-th of a position. Finite numbers
 // all: of a size a key has, and every so often the largest half, of either sign, zeros, subnormals and the smallest
 // normal (none of which is to be taken for a NaN or an infinity)
@@ -68,7 +68,7 @@ const madeUpHalf = (part, t, i) => {
 const FAKE = `
 const { parentPort, workerData: line } = require("node:worker_threads");
 let ctl, words, ids, most, blocks = 0, requests = 0, asked = 0, held = null, memory, plan;
-// T243: the keys and values of count positions into the staging place ([keys, values][layer][plan.batch positions], in
+// T.243: the keys and values of count positions into the staging place ([keys, values][layer][plan.batch positions], in
 // float16, as gpu.js writes them back), where line.kv asks for them (zeros where it does not); and in the kv.at-th request of kv.request (a
 // "prompt"'s block, or "tokens"), kv.bad: its bits in one of them (side 0 a key, 1 a value; layer, token, column: 0 the
 // first, 1 the last). kv.stale: bad halves (this one, and -inf) in the positions after those of the request; kv.stopAfter:
@@ -83,7 +83,7 @@ const writeBack = (request, count) => {
     for (let t = 0; t < count; t++) for (let i = 0; i < row; i++) H[(part * plan.batch + t) * row + i] = line.kv ? madeUpHalf(part, t, i) : 0;
   }
   if (!line.kv) return;
-  // (T243's review: the positions after the request's, which the GPU's read-back buffer still holds from before, hold bad
+  // (T.243's review: the positions after the request's, which the GPU's read-back buffer still holds from before, hold bad
   // halves where line.kv.stale says so: a look at them is none of forward.js's business, the request did not write them)
   if (line.kv.stale !== undefined) {
     for (let part = 0; part < 2 * plan.layers; part++) {
@@ -100,12 +100,12 @@ parentPort.on("message", (data) => {
     ({ memory, plan } = data);
     words = data.plan.words;
     most = data.plan.tokens?.most;
-    // T152: where forward.js asked for the steps and the line has a cost of a step
+    // T.152: where forward.js asked for the steps and the line has a cost of a step
     ids = data.plan.tokens && line.step !== undefined ? new Int32Array(data.memory.buffer, data.plan.tokens.ids, 2 + data.plan.tokens.most) : null;
     const ready = { type: "ready", adapter: "made up", key: "k", bytes: 1, seconds: 0, form: "made up", attention: "made up",
       forms: [], remembered: false, blocks: [{ count: 16, ms: ms(16) }, { count: 64, ms: ms(64) }],
       ...(ids ? { tokens: { form: "made up", ms: line.step, forms: [] } } : {}) };
-    // T223: a GPU that gets ready only when the test says so ({ type: "go" }, sent to this worker alone)
+    // T.223: a GPU that gets ready only when the test says so ({ type: "go" }, sent to this worker alone)
     if (line.readyOnGo) held = ready;
     else parentPort.postMessage(ready);
   } else if (data.type === "go") {
@@ -113,31 +113,31 @@ parentPort.on("message", (data) => {
   } else if (data.type === "prompt") {
     Atomics.wait(nap, 0, 0, ms(data.count));
     if (Atomics.load(ctl, words.wanted) !== data.serial) return;
-    const fail = Boolean(line.failAt) && ++blocks >= line.failAt;  // T184: a GPU that fails on its failAt-th block
+    const fail = Boolean(line.failAt) && ++blocks >= line.failAt;  // T.184: a GPU that fails on its failAt-th block
     writeBack("prompt", data.count);
     Atomics.store(ctl, words.failed, fail ? 1 : 0);
     Atomics.store(ctl, words.done, data.serial);
     Atomics.notify(ctl, words.done);
   } else if (data.type === "tokens") {
-    // T152: count steps of a made-up generation: each id the one after the token fed
+    // T.152: count steps of a made-up generation: each id the one after the token fed
     Atomics.wait(nap, 0, 0, line.step * data.count);
     if (Atomics.load(ctl, words.wanted) !== data.serial) return;
-    // (T152: what Python hands over, as a step on the GPU takes it: a random number a step where sampled, the end of
+    // (T.152: what Python hands over, as a step on the GPU takes it: a random number a step where sampled, the end of
     // the history and its length, the settings)
     const odd = data.randoms.length !== (data.settings.temperature ? data.count : 0) || data.history.length > 64 ||
       data.length < data.history.length || data.history.at(-1) !== data.token || !Array.isArray(data.settings.stops);
     const fail = odd || (Boolean(line.failTokensAt) && ++requests >= line.failTokensAt);
     asked++;
-    // T219: a GPU whose outsideAt-th request samples outsideId (-1, SAMPLE's NONE, or one past the vocabulary) last
+    // T.219: a GPU whose outsideAt-th request samples outsideId (-1, SAMPLE's NONE, or one past the vocabulary) last
     const outside = Boolean(line.outsideAt) && asked === line.outsideAt;
-    // T219 (2): a GPU whose refuseAt-th request's sampler refused the step after refuseAfter sampled ones (its logits
+    // T.219 (2): a GPU whose refuseAt-th request's sampler refused the step after refuseAfter sampled ones (its logits
     // not finite): the State's not_finite word after the ids
     const refuse = Boolean(line.refuseAt) && asked === line.refuseAt, sampled = refuse ? line.refuseAfter : Math.min(data.count, line.kv?.stopAfter ?? data.count);
     ids[0] = sampled;
     for (let i = 0; i < sampled; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
     ids[1 + most] = refuse ? 1 : 0;
     writeBack("tokens", sampled);
-    // T349's review: where the request says the engine's cache is (T261.4.2: each layer's place, forward/gpuside.js
+    // T.349's review: where the request says the engine's cache is (T.261.4.2: each layer's place, forward/gpuside.js
     // reads them off forward/engine.js's held at the moment), and whether the halves the earlier blocks wrote back are
     // there: a cache that grew moves its values and changes its capacity, and an old address would read the wrong ones
     if (line.kv?.probe && data.cache) {
@@ -152,7 +152,7 @@ parentPort.on("message", (data) => {
     Atomics.store(ctl, words.done, data.serial);
     Atomics.notify(ctl, words.done);
   } else if (data.type === "stop") {
-    // T205: as gpu.js's end(): { type: "ended" } once its device is let go (endAfter ms: a slow let-go; never: a worker
+    // T.205: as gpu.js's end(): { type: "ended" } once its device is let go (endAfter ms: a slow let-go; never: a worker
     // that hangs in a compilation), then the worker ends
     if (line.endAfter === Infinity) return;
     setTimeout(() => {
@@ -264,14 +264,14 @@ if (isMainThread) {
     expect("every prompt on the CPU but the GPU's check, its first block", tokens, [0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0]);
   }
   // a GPU faster from 36 tokens on (30 fixed, a tenth of the CPU's a token): whole blocks on the GPU, the last block of
-  // 38 either way; the check must cost little (the first version of T148: about three times here)
+  // 38 either way; the check must cost little (the first version of T.148: about three times here)
   {
     const { seen } = await run("a GPU faster from 36 tokens", 30, 0.1, 12);
     const normal = seen.slice(1, 8).map(([ms]) => ms).sort((a, b) => a - b)[3], check = seen[8][0];
     expect("the check: the last 32 tokens on the CPU", seen[8][1], PROMPT - 38);
     if (!(check <= 1.5 * normal)) failures.push(`the check took ${check.toFixed(0)} ms, the others ${normal.toFixed(0)} (more than 1.5 times)`);
   }
-  // T184: the page path of /benchmark/, as worker/timing.js's timedPaths times it (2 rounds here), and its table
+  // T.184: the page path of /benchmark/, as worker/timing.js's timedPaths times it (2 rounds here), and its table
   const paths = (engine) => {
     const ready = engine.gpuReady;  // as timedPaths: what the GPU was before the sides were timed
     const rows = timePrompts(engine, { words: [100, 101, 102, 103, 104], counts: [64, 256], rounds: 2 });
@@ -302,9 +302,9 @@ if (isMainThread) {
     say(table);
     expect("no GPU: the CPU's side alone", rows.map((row) => [row.chosen.same, row.gpu.skip]), [["cpu", "no WebGPU in a worker here"], ["cpu", "no WebGPU in a worker here"]]);
   }
-  // T190: the page path is timed on the model page's number of threads. A search from the logical cores runs to its end
+  // T.190: the page path is timed on the model page's number of threads. A search from the logical cores runs to its end
   // (endSearch), on generations of few logits each (the owner's Android timed it on 1 thread where the page runs 4:
-  // T184 stopped the search after 8 generations); a count the model page remembers is taken as is, with no search
+  // T.184 stopped the search after 8 generations); a count the model page remembers is taken as is, with no search
   {
     const engine = createForward({ memory, base, size, kernels, plan, spawn });
     let chose = 0, tokens = 0;
@@ -327,11 +327,11 @@ if (isMainThread) {
     engine.release();
     expect("a count the model page remembers: no search, that count", [ended.threads, ended.generations, tokens], [3, 0, 0]);
   }
-  // T199: the search's verdict stands where one block of 4 timed tokens is slowed whole (a collection of the garbage,
+  // T.199: the search's verdict stands where one block of 4 timed tokens is slowed whole (a collection of the garbage,
   // another tab). On a made-up clock (forward.js's clock) a token of n threads takes ms[n], and in every comparison the
   // tokens of one block (0 and 3 are the best count's, 1 and 2 the candidate's) take 3 times as long: the owner's
   // Android (4 threads fastest, from its 8 logical cores) and CI's runner where 2 threads were 1.3 times as fast as 1
-  // (the upper median chose 1 twice, T190's review)
+  // (the upper median chose 1 twice, T.190's review)
   for (const [name, ms, from, want] of [["the owner's Android", { 1: 16.4, 2: 10.5, 4: 8.8, 8: 12 }, 8, 4],
                                         ["CI's runner", { 1: 13, 2: 10, 4: 11 }, 4, 2]]) {
     const chosen = [];
@@ -356,7 +356,7 @@ if (isMainThread) {
     }
     say(`the search on a made-up clock, ${name}: ${chosen.join("; ")}`);
   }
-  // T223: the owner's Android's writing of llm-jp-3 150M on the CPU alone (/benchmark/, site d531cd5): 1 thread 110,
+  // T.223: the owner's Android's writing of llm-jp-3 150M on the CPU alone (/benchmark/, site d531cd5): 1 thread 110,
   // 2 123, 4 38.6, 8 32.3 tok/s; as ms a token
   const LLM_JP = { 1: 1000 / 110, 2: 1000 / 123, 4: 1000 / 38.6, 8: 1000 / 32.3 };
   const generation = (engine) => {
@@ -370,9 +370,9 @@ if (isMainThread) {
     const told = [];
     await engine.findThreads({ from: 8, chose: (count) => told.push(count) });
     const ended = await endSearch(engine, () => generation(engine));
-    say(`T223, llm-jp-3 150M of the owner's Android on a made-up clock: ${ended.threads} (${verdicts(engine).join(", ")})`);
+    say(`T.223, llm-jp-3 150M of the owner's Android on a made-up clock: ${ended.threads} (${verdicts(engine).join(", ")})`);
     engine.release();
-    expect("T223: llm-jp-3 150M of the owner's Android from its 8 logical cores: 2 threads, remembered", [ended.threads, told], [2, [2]]);
+    expect("T.223: llm-jp-3 150M of the owner's Android from its 8 logical cores: 2 threads, remembered", [ended.threads, told], [2, [2]]);
   }
   {
     // the GPU gets ready when told; until then a token's times are those beside it (4 fastest), then llm-jp's
@@ -401,17 +401,17 @@ if (isMainThread) {
       generation(engine);
       await turn();
     }
-    say(`T223, a search while the GPU gets ready: ${beforeReady.threads} then ${engine.threads}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
+    say(`T.223, a search while the GPU gets ready: ${beforeReady.threads} then ${engine.threads}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
     const log = engine.searchLog, after = engine.threads;
     engine.release();  // (one thread from here on)
-    expect("T223: while the GPU gets ready, the search's 4 used and not remembered", [beforeReady.threads, beforeReady.told], [4, []]);
-    expect("T223: no search begins while the GPU gets ready", idle, false);
-    expect("T223: the verdicts beside the GPU marked, those after it not", log.map((v) => v.whileGpu),
+    expect("T.223: while the GPU gets ready, the search's 4 used and not remembered", [beforeReady.threads, beforeReady.told], [4, []]);
+    expect("T.223: no search begins while the GPU gets ready", idle, false);
+    expect("T.223: the verdicts beside the GPU marked, those after it not", log.map((v) => v.whileGpu),
       log.map((_, i) => i < beforeReady.searched));
-    expect("T223: searched again once the GPU is ready: 2, remembered", [after, told], [2, [2]]);
+    expect("T.223: searched again once the GPU is ready: 2, remembered", [after, told], [2, [2]]);
   }
   {
-    // T240: the GPU ready inside a generation. The first search ends beside the GPU's getting ready (4, not remembered);
+    // T.240: the GPU ready inside a generation. The first search ends beside the GPU's getting ready (4, not remembered);
     // the next generation writes 3 tokens, the GPU is ready, and the same generation goes on: the search begins at its
     // next token (not at the next generation's head) and ends in it, 2 remembered
     let engine = null, gpuReady = false, fake = null;
@@ -442,16 +442,16 @@ if (isMainThread) {
       engine.forward(100 + (t % 6), t % 6, true);
       if (t % 6 === 5) await turn();
     }
-    say(`T240, the GPU ready inside a generation: ${before.threads} then ${engine.threads}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
+    say(`T.240, the GPU ready inside a generation: ${before.threads} then ${engine.threads}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
     const log = engine.searchLog, after = engine.threads;
     engine.release();
-    expect("T240: beside the GPU's getting ready, the search's 4 used and not remembered", [before.threads, before.told], [4, []]);
-    expect("T240: no search begins inside a generation while the GPU gets ready", idle, false);
-    expect("T240: the search begins at the token after the GPU is ready, inside the generation", began, true);
-    expect("T240: ...and ends in it: 2, remembered, its verdicts not marked", [after, told, log.slice(before.searched).map((v) => v.whileGpu)], [2, [2], [false, false]]);
+    expect("T.240: beside the GPU's getting ready, the search's 4 used and not remembered", [before.threads, before.told], [4, []]);
+    expect("T.240: no search begins inside a generation while the GPU gets ready", idle, false);
+    expect("T.240: the search begins at the token after the GPU is ready, inside the generation", began, true);
+    expect("T.240: ...and ends in it: 2, remembered, its verdicts not marked", [after, told, log.slice(before.searched).map((v) => v.whileGpu)], [2, [2], [false, false]]);
   }
   {
-    // T239: the owner's PC's llm-jp-3 150M (2 threads 171 tok/s, 8 threads 158; 1, 4 and 16 made up to agree with its
+    // T.239: the owner's PC's llm-jp-3 150M (2 threads 171 tok/s, 8 threads 158; 1, 4 and 16 made up to agree with its
     // verdicts "16 or 8: 8, 8 or 4: 8"): the 8 the page remembers there is left for 2, by the quarter (8 or 2)
     const PC = { 1: 1000 / 100, 2: 1000 / 171, 4: 1000 / 150, 8: 1000 / 158, 16: 1000 / 120 };
     let engine = null;
@@ -464,9 +464,9 @@ if (isMainThread) {
       await turn();
     }
     const after = engine.threads, log = verdicts(engine);
-    say(`T239, a remembered 8 on the owner's PC's times: ${after}, remembered ${JSON.stringify(told)} (${log.join(", ")})`);
+    say(`T.239, a remembered 8 on the owner's PC's times: ${after}, remembered ${JSON.stringify(told)} (${log.join(", ")})`);
     engine.release();
-    expect("T239: a remembered 8 on the owner's PC: 8 or 2 after 8 or 4, then 2 remembered", [log, after, told], [["8 or 4: 8", "8 or 2: 2", "2 or 1: 2"], 2, [2]]);
+    expect("T.239: a remembered 8 on the owner's PC: 8 or 2 after 8 or 4, then 2 remembered", [log, after, told], [["8 or 4: 8", "8 or 2: 2", "2 or 1: 2"], 2, [2]]);
   }
   {
     // a count remembered from an earlier visit (4, the owner's Android's) is searched again on the first generation
@@ -483,16 +483,16 @@ if (isMainThread) {
       await turn();
     }
     const after = engine.threads;
-    say(`T223, a remembered 4 on its first generation: ${after}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
+    say(`T.223, a remembered 4 on its first generation: ${after}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
     engine.release();
-    expect("T223: a remembered count: no search as it loads, one on the first generation, 2 remembered", [idle, began, after, told], [false, true, 2, [2]]);
+    expect("T.223: a remembered count: no search as it loads, one on the first generation, 2 remembered", [idle, began, after, told], [false, true, 2, [2]]);
   }
   {
     const { threadsKey } = await import(path.join(root, "src/bench.js"));
     const device = { hardwareConcurrency: 8, deviceMemory: 8, userAgent: "made up" };
-    expect("T223: the page remembers the count one a model", threadsKey("llm-jp-3-150m", device) !== threadsKey("tiny-lm", device), true);
+    expect("T.223: the page remembers the count one a model", threadsKey("llm-jp-3-150m", device) !== threadsKey("tiny-lm", device), true);
   }
-  // T190's review: a software thread that stops in the search (T120: the engine gives its helpers up and goes on with
+  // T.190's review: a software thread that stops in the search (T.120: the engine gives its helpers up and goes on with
   // one) leaves found at 1 as well, so "fewer than found" never says it: the page path's head reads lostThreads. This
   // helper takes a chunk and ends without counting it (threads-check's)
   {
@@ -521,7 +521,7 @@ if (isMainThread) {
     engine.release();
     expect("a software thread that stops in the search: one thread, found 1 too, lostThreads", [ended.threads, ended.found, lost], [1, 1, true]);
   }
-  // T152: the steps of a generation. The CPU's ms of a token here (the median of five of a GPU-less engine); a prompt of
+  // T.152: the steps of a generation. The CPU's ms of a token here (the median of five of a GPU-less engine); a prompt of
   // 16 (on the CPU: the made-up GPU's prompt is slow here), then STEPS steps as Python takes them: [on the GPU, on the CPU]
   const STEPS = 20;
   const cpuStep = (() => {
@@ -595,16 +595,16 @@ if (isMainThread) {
     expect(`the status line says why the prompts are on the CPU, and nothing of the answers (${seen.status})`,
       /^prompts on the CPU \(.*failed on a token/.test(seen.status) && !/answers/.test(seen.status), true);
   }
-  // T219: a GPU whose second request samples an id outside the vocabulary last (what SAMPLE gives for logits that are
+  // T.219: a GPU whose second request samples an id outside the vocabulary last (what SAMPLE gives for logits that are
   // not finite: -1, or one past the end): the whole request refused, the CPU takes the steps from there (and would stop
-  // with T195's NOT_FINITE where its own logits were not finite either; here they are), the GPU stopped
+  // with T.195's NOT_FINITE where its own logits were not finite either; here they are), the GPU stopped
   for (const outsideId of [-1, plan.vocab_size]) {
     const seen = await steps(`the steps, a GPU that samples ${outsideId} on its second request`, 0.2, 2, { outsideAt: 2, outsideId });
     expect(`${outsideId}: the CPU from that request on, none of its ids taken`, [...seen], [[4, STEPS - 4], [0, STEPS]]);
     expect(`${outsideId}: the status line says the GPU sampled outside the vocabulary (${seen.status})`,
       new RegExp(`^prompts on the CPU \\(the GPU sampled ${outsideId}, outside the vocabulary`).test(seen.status), true);
   }
-  // T219 (2): a GPU whose sampler refused a step (its logits not finite: the State's not_finite word after the ids) on
+  // T.219 (2): a GPU whose sampler refused a step (its logits not finite: the State's not_finite word after the ids) on
   // its second request, after one sampled token: the whole request refused (that token not taken either), the CPU from
   // there on, the GPU stopped and the status line says why (as an id outside the vocabulary above)
   {
@@ -613,7 +613,7 @@ if (isMainThread) {
     expect(`refused: the status line says the GPU computed logits that are not finite (${seen.status})`,
       /^prompts on the CPU \(the GPU computed logits that are not finite numbers/.test(seen.status), true);
   }
-  // T219: a model on the GPU alone (T156's direct) cannot take the step on the CPU: generateMany stops with words (the
+  // T.219: a model on the GPU alone (T.156's direct) cannot take the step on the CPU: generateMany stops with words (the
   // page says them), and does not load the model again on the CPU (onLost: the CPU's logits would be those of the same
   // weights); a request of good ids after it is taken on the GPU as before. (2): the same where the sampler refused the
   // first request's first step
@@ -635,12 +635,12 @@ if (isMainThread) {
       thrown = error.message;
     }
     const second = thrown ? engine.generateMany(100, fed.length, [...fed, 100].slice(-64), fed.length + 1, 4, 0, 0.9, 1, [], []) : undefined;
-    say(`T219: on the GPU alone, ${outsideId} sampled: ${thrown ?? `no error (${JSON.stringify(first)})`}; lost ${lost}; then ${JSON.stringify(second)}`);
+    say(`T.219: on the GPU alone, ${outsideId} sampled: ${thrown ?? `no error (${JSON.stringify(first)})`}; lost ${lost}; then ${JSON.stringify(second)}`);
     expect(`${outsideId} on the GPU alone: stopped with words, not loaded again on the CPU, the GPU still taking the steps`,
       [thrown === OUTSIDE_VOCABULARY, lost, second], [true, null, [101, 102, 103, 104]]);
     await engine.release();
   }
-  // T349's review: a cache that has grown (a prompt past the 256 positions it starts with), and the steps asked of the GPU
+  // T.349's review: a cache that has grown (a prompt past the 256 positions it starts with), and the steps asked of the GPU
   // after it: the request names the cache's keys, values and capacity as they are now, and the halves the blocks wrote are
   // at them. (forward/engine.js hands forward/gpuside.js `held`, whose getters read the engine's variables each time: a
   // copy made once would name the cache as it was, and nothing else here grows the cache and then asks for steps)
@@ -659,11 +659,11 @@ if (isMainThread) {
     const [, onGpu] = feed(engine, FED);
     const ids = engine.generateMany(100, FED, [...prompt(FED), 100].slice(-64), FED + 1, 4, 0, 0.9, 1, [], []) ?? null;
     await engine.release();
-    expect("T349: a prompt of 300 on the GPU, then steps asked after the cache grew: taken, with the cache's keys, values and capacity as they are",
+    expect("T.349: a prompt of 300 on the GPU, then steps asked after the cache grew: taken, with the cache's keys, values and capacity as they are",
       [onGpu, ids, probes.map((p) => p.right), probes.map((p) => p.capacity >= FED + 4)], [FED, [101, 102, 103, 104], [true], [true]]);
   }
-  // T243: a made-up GPU that writes keys and values back (madeUpHalf), one of them no finite number. In a cache kept in
-  // float16 (this model's on a shared memory) and in a float32 one (halfKeys false: a grouped-query model's, T160, into
+  // T.243: a made-up GPU that writes keys and values back (madeUpHalf), one of them no finite number. In a cache kept in
+  // float16 (this model's on a shared memory) and in a float32 one (halfKeys false: a grouped-query model's, T.160, into
   // which the GPU's are widened); every block and step is put to the GPU (gpuSide), on one thread
   {
     const fast = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep };
@@ -713,14 +713,14 @@ if (isMainThread) {
       feed(cpu, FED);
       const cpuKv = cpu.keysAndValues(0, FED);
       cpu.release();
-      expect(`T243, ${cache}: the CPU's own keys are ${halfKeys ? "" : "not all "}float16 numbers`, cpuKv.keys.every((x) => Math.f16round(x) === x), halfKeys);
+      expect(`T.243, ${cache}: the CPU's own keys are ${halfKeys ? "" : "not all "}float16 numbers`, cpuKv.keys.every((x) => Math.f16round(x) === x), halfKeys);
       // every block finite: all taken, and the cache holds what the GPU wrote, to the bit
       {
         const engine = await ready({ stale: NAN });
         const tokens = feed(engine, FED)[1], got = engine.keysAndValues(0, FED), status = engine.gpuStatus;
         await engine.release();
-        // (T243's review: and the positions after the last block's 22, bad ones in the read-back buffer's, are left alone)
-        expect(`T243, ${cache}: a prompt of finite keys and values is taken whole, as the GPU wrote it (${status})`,
+        // (T.243's review: and the positions after the last block's 22, bad ones in the read-back buffer's, are left alone)
+        expect(`T.243, ${cache}: a prompt of finite keys and values is taken whole, as the GPU wrote it (${status})`,
           [tokens, sameKv(got, madeUp(FED, (p) => p % 64)), /not finite/.test(status ?? "")], [FED, true, false]);
       }
       // the first block refused: nothing on the GPU, the cache the CPU's own, and the next prompt on the CPU too
@@ -730,7 +730,7 @@ if (isMainThread) {
         const tokens = feed(engine, FED)[1], got = engine.keysAndValues(0, FED), status = engine.gpuStatus, next = feed(engine, FED)[1];
         await engine.release();
         outcomes.push(`${names[bad.bits]}: ${tokens}`);
-        expect(`T243, ${cache}, a block of the prompt with ${said(bad)}: refused, the cache the CPU's own, the next prompt on the CPU (${status})`,
+        expect(`T.243, ${cache}, a block of the prompt with ${said(bad)}: refused, the cache the CPU's own, the next prompt on the CPU (${status})`,
           [tokens, sameKv(got, cpuKv), notFinite("in a block of the prompt at position 0").test(status ?? ""), next], [0, true, true, 0]);
       }
       // the second block refused: the first stays as the GPU wrote it, and the CPU goes on from it as it would have
@@ -747,10 +747,10 @@ if (isMainThread) {
         const tokens = feed(refused, FED)[1], got = refused.keysAndValues(0, FED), status = refused.gpuStatus;
         await refused.release();
         outcomes.push(`the second block: ${tokens}`);
-        expect(`T243, ${cache}, the second block with ${said(bad)}: refused, the first block the GPU's, the rest the CPU's from it (${status})`,
+        expect(`T.243, ${cache}, the second block with ${said(bad)}: refused, the first block the GPU's, the rest the CPU's from it (${status})`,
           [tokens, sameKv(got, want), notFinite("in a block of the prompt at position 64").test(status ?? "")], [64, true, true]);
       }
-      say(`T243, ${cache}: tokens on a GPU of a prompt of ${FED} whose keys or values hold ${outcomes.join(", ")}`);
+      say(`T.243, ${cache}: tokens on a GPU of a prompt of ${FED} whose keys or values hold ${outcomes.join(", ")}`);
       // the steps: a prompt of 16 and a request of 4 on the GPU (taken: the cache holds them), then a request refused:
       // nothing of it written (the cache at its positions as it was, and not the GPU's), the GPU stopped, and the CPU's
       // step from there what it is after a GPU that only stopped taking steps
@@ -768,14 +768,14 @@ if (isMainThread) {
       good.forward(104, 20);
       const want = good.keysAndValues(0, 21);
       await good.release();
-      expect(`T243, ${cache}: steps of finite keys and values are taken as the GPU wrote them`, [first, sameKv(taken, madeUp(4, (p) => p))], [[101, 102, 103, 104], true]);
-      // (T243's review) a request that stops early, at a stop token: 2 of the 4 steps, the positions after them bad ones in the
+      expect(`T.243, ${cache}: steps of finite keys and values are taken as the GPU wrote them`, [first, sameKv(taken, madeUp(4, (p) => p))], [[101, 102, 103, 104], true]);
+      // (T.243's review) a request that stops early, at a stop token: 2 of the 4 steps, the positions after them bad ones in the
       // read-back buffer: only the 2 are looked at and taken
       {
         const [engine, early] = await begin({ stale: NAN, stopAfter: 2 });
         const got = engine.keysAndValues(16, 2), status = engine.gpuStatus, sampled = engine.gpuSampled;
         await engine.release();
-        expect(`T243, ${cache}: a request that stops after 2 of 4 steps takes the 2 (${status})`,
+        expect(`T.243, ${cache}: a request that stops after 2 of 4 steps takes the 2 (${status})`,
           [early, sameKv(got, madeUp(2, (p) => p)), sampled, /not finite/.test(status ?? "")], [[101, 102], true, 2, false]);
       }
       const steps = [];
@@ -787,14 +787,14 @@ if (isMainThread) {
         const got = engine.keysAndValues(0, 21), finite = engine.logits().every((x) => Number.isFinite(x));
         await engine.release();
         steps.push(`${names[bad.bits]}: ${JSON.stringify(second)}`);
-        expect(`T243, ${cache}, steps with ${said(bad)}: the request refused whole, nothing of it written, the GPU stopped, the CPU's step from its own cache (${status})`,
+        expect(`T.243, ${cache}, steps with ${said(bad)}: the request refused whole, nothing of it written, the GPU stopped, the CPU's step from its own cache (${status})`,
           [before, second, sameKv(was, now), sameKv(now, madeUp(4, (p) => p)), notFinite("in a step at position 20").test(status ?? ""), third, sampled, sameKv(got, want), finite],
           [[101, 102, 103, 104], null, true, false, true, null, 4, true, true]);
       }
-      say(`T243, ${cache}: the second request for steps of a GPU whose keys or values hold ${steps.join(", ")}`);
+      say(`T.243, ${cache}: the second request for steps of a GPU whose keys or values hold ${steps.join(", ")}`);
     }
   }
-  // T205: the next model is read after the GPU's worker let go of its device (an iPhone's tab went down in
+  // T.205: the next model is read after the GPU's worker let go of its device (an iPhone's tab went down in
   // /benchmark/'s rounds where the one before still held it). release() waits for its "ended": a slow let-go of 400 ms
   // is waited for; one that never comes is given up after 5 s and the worker terminated; a model let go while its GPU
   // is getting ready waits the same (the late "ready" after the stop changes nothing)
@@ -815,7 +815,7 @@ if (isMainThread) {
       const began = performance.now(), ended = await engine.release(), ms = performance.now() - began;
       console.warn = warned;
       await new Promise((resolve) => setTimeout(resolve, 300));
-      say(`T205: a GPU's worker ${more.endAfter === Infinity ? "that never ends" : `ending ${more.endAfter} ms after the stop`}` +
+      say(`T.205: a GPU's worker ${more.endAfter === Infinity ? "that never ends" : `ending ${more.endAfter} ms after the stop`}` +
         `${ready ? "" : ", stopped while it got ready"}: release() ${ended ? "saw it end" : "gave it up"} in ${ms.toFixed(0)} ms` +
         `, the worker ${exited ? "gone" : "still there"}; status ${engine.gpuStatus}`);
       return { ended, ms, exited, status: engine.gpuStatus };
@@ -829,7 +829,7 @@ if (isMainThread) {
     expect("a model let go while its GPU gets ready: waited for, and the late ready ignored",
       [early.ended, early.ms >= 180 && early.ms < 2500, early.exited, /WebGPU/.test(early.status ?? "") && !/CPU/.test(early.status ?? "")], [true, true, true, false]);
   }
-  // T205: a browser that does not say the device's memory (Safari, Firefox: no navigator.deviceMemory) keeps a
+  // T.205: a browser that does not say the device's memory (Safari, Firefox: no navigator.deviceMemory) keeps a
   // generation's steps on the CPU (no classifier and embedding on the GPU), and the prompts' blocks on the GPU
   {
     const fast = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep };
@@ -846,7 +846,7 @@ if (isMainThread) {
       const written = [1, 2, 3].map(() => write(engine));
       const got = { planned: engine.gpuTokensPlanned, why: engine.gpuTokensWhyNot, prompts, written, status: engine.gpuStatus };
       await engine.release();
-      say(`T205: memoryUnsaid ${memoryUnsaid}: ${JSON.stringify(got)}`);
+      say(`T.205: memoryUnsaid ${memoryUnsaid}: ${JSON.stringify(got)}`);
       return got;
     };
     const unsaid = await outcome(true), said = await outcome(false);
@@ -856,7 +856,7 @@ if (isMainThread) {
     expect("no deviceMemory: the status line says no reason (the console does)", /memory/.test(unsaid.status ?? ""), false);
     expect("with deviceMemory: the steps asked of the GPU, and taken there", [said.planned, said.written.at(-1)[0] > 0], [true, true]);
   }
-  // T152: Python's generate() through forward.js's external() (as the page's worker has it) on the made-up GPU far
+  // T.152: Python's generate() through forward.js's external() (as the page's worker has it) on the made-up GPU far
   // faster: the steps go to it (Python draws the random numbers and hands the history over as the made-up GPU expects),
   // and the text and the counts are those of the steps
   {
@@ -872,7 +872,7 @@ if (isMainThread) {
       return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
         set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
     };
-    // (T205's review: its worker says ended 300 ms after the stop, for the release through Python below)
+    // (T.205's review: its worker says ended 300 ms after the stop, for the release through Python below)
     const outside = external({ memory, base, size, kernels, gpu: gpuOf({ ...line, endAfter: 300 }) });
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(options));
@@ -885,7 +885,7 @@ if (isMainThread) {
       const stats = py.runPython("llama.stats").toJs({ dict_converter: Object.fromEntries });
       written.push({ sampled: stats.sampled, gpu: outside.engine.gpuSampled, prompt: stats.prompt_tokens, text: py.globals.get("text").length });
     }
-    // T205's review: the release as the page's worker makes it (worker/load.js's load()): Llama.release() called from
+    // T.205's review: the release as the page's worker makes it (worker/load.js's load()): Llama.release() called from
     // JavaScript hands forward.js's promise back through Python, and the next model is read once it settles. An await
     // of anything else (None, a PyProxy) waits for nothing, and every other test here would still pass
     const pythonLlama = py.globals.get("llama");
@@ -893,7 +893,7 @@ if (isMainThread) {
     const promised = typeof released?.then === "function";
     const endedThrough = promised ? await released : undefined, releaseMs = performance.now() - releasedAt;
     pythonLlama.destroy();
-    say(`T205: Llama.release() through Python: ${promised ? `a promise, ${endedThrough ? "its worker ended" : "not ended"} after ${releaseMs.toFixed(0)} ms` : `${released} (no promise)`}`);
+    say(`T.205: Llama.release() through Python: ${promised ? `a promise, ${endedThrough ? "its worker ended" : "not ended"} after ${releaseMs.toFixed(0)} ms` : `${released} (no promise)`}`);
     if (!(promised && endedThrough === true && releaseMs >= 280)) {
       failures.push(`Llama.release() through Python: ${promised ? `${endedThrough} after ${releaseMs.toFixed(0)} ms (its worker ends 300 ms after the stop)` : "no promise to wait for"}`);
     }
@@ -903,7 +903,7 @@ if (isMainThread) {
         failures.push(`Python's generate() ${i ? "greedy" : "sampled"}: ${sampled} sampled, ${gpu} on the GPU, ${text} characters`);
       }
     });
-    // T152's review: the same through Python on a GPU that fails on its second request. generateMany gives the steps
+    // T.152's review: the same through Python on a GPU that fails on its second request. generateMany gives the steps
     // back (null), and Python takes them on the CPU: the generation goes on whole (Pyodide makes JavaScript's null
     // jsnull, not None, unless asked: generateMany says undefined, which is None)
     const failing = external({ memory, base, size, kernels, gpu: gpuOf({ ...line, failTokensAt: 2 }) });

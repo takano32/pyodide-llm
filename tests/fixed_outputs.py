@@ -1,6 +1,6 @@
 # fixed_outputs.py
-# Real models against the text they wrote when a person read it and found it sound (T86). Twice last week every
-# test passed while the page wrote broken text (T72: v permuted as well, rotary never passed on), because the
+# Real models against the text they wrote when a person read it and found it sound (T.86). Twice last week every
+# test passed while the page wrote broken text (T.72: v permuted as well, rotary never passed on), because the
 # synthetic models of the unit tests cannot tell a sensible sentence from a wrong one. These can.
 #
 # One small model per architecture and source, converted the way the page converts it (the conduct of a conversion,
@@ -12,7 +12,7 @@
 #   python3 tests/fixed_outputs.py <directory for the downloads> [--write] [--only=<id>,<id>]
 #
 # --write records what the models write now, into tests/fixtures/fixed-outputs.json: do that only after reading it.
-# --only runs those models alone (a broken converter tried on the one model it should break, T204).
+# --only runs those models alone (a broken converter tried on the one model it should break, T.204).
 import json
 import subprocess
 import sys
@@ -30,37 +30,37 @@ from conducting import Fetched, Mapped, converted as conducted  # noqa: E402
 
 FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
 NEW_TOKENS = 16
-# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a Unigram tokenizer.json,
-# and a Qwen3 (T124: the norms of q and k, heads of 128 in a dim of 1024), from its GGUF and from its safetensors
-# (T212). Pythia and GPT-2 come from GGUFs since
-# T136's third stage, so a GPT-2 from a safetensors file too (T204): rinna's, whose names begin with "transformer.",
+# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T.74), a Llama with a Unigram tokenizer.json,
+# and a Qwen3 (T.124: the norms of q and k, heads of 128 in a dim of 1024), from its GGUF and from its safetensors
+# (T.212). Pythia and GPT-2 come from GGUFs since
+# T.136's third stage, so a GPT-2 from a safetensors file too (T.204): rinna's, whose names begin with "transformer.",
 # whose Conv1D matrices the plan transposes as they come, and whose sentencepiece model normalizes as nmt_nfkc.
-# The list takes Qwen3 from a GGUF since T203, so its safetensors, the way ?hf= opens a Qwen3 (the norms of q and k and
-# the size of the heads read from config.json and the tensors' names), gets a fixed output of its own too (T212): the
+# The list takes Qwen3 from a GGUF since T.203, so its safetensors, the way ?hf= opens a Qwen3 (the norms of q and k and
+# the size of the heads read from config.json and the tensors' names), gets a fixed output of its own too (T.212): the
 # same entry with the weights of the original repository its vocabulary comes from, named as the page's hfEntry()
-# names them (no tokenizer: the conduct's candidates, as for any repository nobody looked at). T235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
+# names them (no tokenizer: the conduct's candidates, as for any repository nobody looked at). T.235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
 # cos and sin), and the one whose template comes from chat_template.jinja. Its float32 checkpoint is 6.9 GB. Since the
 # owner's choice of 2026-10-11 its entry says a plain RoPE, which this tool gives the float32 engine as the page's
 # engine has it (with_the_entrys_rope(), below): the conversion's yarn is still read and checked on the way (the GGUF's
 # against config.json's), and the text is the plain RoPE's.
-# T229 and T236: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), the 0.8B, the same
+# T.229 and T.236: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), the 0.8B, the same
 # two ways: from the list's GGUF (llama.cpp's names for the linear-attention layers, the norms that come with their 1,
 # -exp(A_log), the two small matrices of the gates as Q8_0 rounds them) and from the safetensors of the original (the
 # revision tests/reference_qwen35.py holds the engine to transformers on, whose weights are one file under a shard's
 # name). The format is the list's: the model's own calls a macro, which the converter does not read.
-# T247: Qwen3.5 2B, the smallest of the sizes added then (heads that fill dim, where the 0.8B's do not), the same two
+# T.247: Qwen3.5 2B, the smallest of the sizes added then (heads that fill dim, where the 0.8B's do not), the same two
 # ways. The text of the safetensors is what transformers' generate() writes for the same ids on the float32 original
 # (tests/reference_qwen35.py --model=2B); the GGUF's, Q8_0's rounding of those weights, leaves it at the fourth token.
 # Each float32 checkpoint is 7.5 GB.
-# T253: Granite 4.2 3B, the smallest of the models whose q the converter scales (a Granite's attention multiplies its
+# T.253: Granite 4.2 3B, the smallest of the models whose q the converter scales (a Granite's attention multiplies its
 # scores by config.json's attention_multiplier), from the list's GGUF, where the multiplier is metadata and q is turned
-# as a Llama's. Its float32 checkpoint is 14.6 GB. T254: MiniCPM5 1B, the model of the two-stage pre-tokenizer and the
+# as a Llama's. Its float32 checkpoint is 14.6 GB. T.254: MiniCPM5 1B, the model of the two-stage pre-tokenizer and the
 # first Llama from a GGUF whose heads are not dim / heads (128 in 1536).
-# T260: an LFM2 (convolution layers among attention layers), LFM2.5 350M, the same two ways: from the list's GGUF
+# T.260: an LFM2 (convolution layers among attention layers), LFM2.5 350M, the same two ways: from the list's GGUF
 # (llama.cpp's names, the convolution without its axis of one, the layers said by their key-value heads) and from the
 # safetensors of the original (the revision tests/reference_lfm2.py holds the engine to transformers on, which writes
 # the same text for the same ids there). Each float32 checkpoint is 1.4 GB.
-# T261.3: a Gemma 3 (norms behind the layers, a GELU in the gate, layers that attend a window of 512 with a RoPE of
+# T.261.3: a Gemma 3 (norms behind the layers, a GELU in the gate, layers that attend a window of 512 with a RoPE of
 # their own, an embedding scaled by sqrt(dim) folded into the table and the last norm), the 270M, from the list's GGUF
 # (llama.cpp's names, its norms with their 1, the layers said by llama.cpp's defaults) with the vocabulary of unsloth's
 # copy (a BPE written out as tokenizer.json). Its float32 checkpoint is 1.1 GB. 16 tokens stay inside one window
@@ -88,10 +88,10 @@ def entries():
 
 
 def converted(entry, directory):
-    """(the conversion of the entry to float32, the file of its checkpoint), by the conduct of a conversion (T374.4):
+    """(the conversion of the entry to float32, the file of its checkpoint), by the conduct of a conversion (T.374.4):
     the files it asks for are fetched as it asks for them (tests/fetching.py through conducting.Fetched: three tries,
     a download that stopped short asked for again, a 404 "not there"), each repository's into its own folder. The
-    checkpoint goes into a file beside the weights, a memory map (Qwen3 0.6B's is 2.4 GB, T124)."""
+    checkpoint goes into a file beside the weights, a memory map (Qwen3 0.6B's is 2.4 GB, T.124)."""
     hf = entry["hf"]
     answerer = Fetched.of(hf, directory)
     sink = Mapped(answerer.folder("weights") / "float32.bin")
@@ -101,7 +101,7 @@ def converted(entry, directory):
 
 
 def with_the_entrys_rope(llama, options):
-    """The engine with the RoPE tables its options say, where an entry says the scaling itself (T235: rope_scaling: {}
+    """The engine with the RoPE tables its options say, where an entry says the scaling itself (T.235: rope_scaling: {}
     of the list's Ternary Bonsai). The page's engine makes its tables from the options, for its files have none (int8,
     6-bit, ternary), and so follows the entry; a float32 checkpoint, which this tool writes, has the tables in the file,
     made by the converter from config.json, and the engine reads them and never looks at the options. Left so, the
@@ -121,7 +121,7 @@ def written(entry, conversion, checkpoint):
     options = {**conversion.options, **entry.get("options", {})}
     template = entry.get("template") or options.pop("template", None)
     options.pop("template", None)
-    # filled() of src/models.js: {prompt:trim} trims (T138); the prompts here have no spaces to trim
+    # filled() of src/models.js: {prompt:trim} trims (T.138); the prompts here have no spaces to trim
     prompt = template.replace("{prompt:trim}", "{prompt}").replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
     llama = Llama(np.memmap(checkpoint, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
     if "rope_scaling" in entry.get("options", {}):

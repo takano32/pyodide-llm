@@ -1,4 +1,4 @@
-// tests/ladder.mjs: the table of the Pythia ladder (T84). Node alone.
+// tests/ladder.mjs: the table of the Pythia ladder (T.84). Node alone.
 //
 //   node tests/ladder-check.mjs
 import assert from "node:assert/strict";

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T225's review: tests/rounding-check.mjs where only the repository is (tests.yml's extra=, on a branch): installs Mesa's
+# T.225's review: tests/rounding-check.mjs where only the repository is (tests.yml's extra=, on a branch): installs Mesa's
 # lavapipe and Dawn (the npm package webgpu, under .tmp/dawn, as gpu-prompt.yml's Dawn job does) first, then runs it:
 #   node tests/ci.mjs run tests.yml extra="bash tests/rounding-check.sh toward-zero away everything nearest" --ref <branch>
 set -euo pipefail

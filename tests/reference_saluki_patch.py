@@ -1,8 +1,8 @@
-# reference_saluki_patch.py (T364.1): adds one thing to a checkout of stock llama.cpp (the pinned commit of
+# reference_saluki_patch.py (T.364.1): adds one thing to a checkout of stock llama.cpp (the pinned commit of
 # tests/reference_saluki.sh, MIT): a way to multiply the matrices of Underdog Saluki 27B by float32 activations. The CPU
 # of llama.cpp rounds the activation of a k- or i-quantized matrix to Q8_K first (blocks of 256, one float scale, int8
 # values) and that of a Q8_0 matrix to Q8_0, so what it computes is 0.3 to 11 of a logit from its own other path and
-# from another CPU's (T361), and nothing can be held to it narrowly. With the activations left as they are, what stands
+# from another CPU's (T.361), and nothing can be held to it narrowly. With the activations left as they are, what stands
 # between llama.cpp and the engine's NumPy forward pass (tests/reference_saluki_numpy.py) is float32's order of sums:
 # the reading of the blocks, the order of the value heads, the attention, the delta rule and the norms are llama.cpp's
 # own. It is tests/reference_27b_patch.py's idea for a stock llama.cpp; a switch of the environment,
@@ -32,7 +32,7 @@ SIGNATURE = ("(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_REST
              "const void * GGML_RESTRICT vy, size_t by, int nrc)")
 
 DOT = r'''
-// T364.1 (tests/reference_saluki_patch.py): a row of llama.cpp's blocks against float32 activations, for the switch
+// T.364.1 (tests/reference_saluki_patch.py): a row of llama.cpp's blocks against float32 activations, for the switch
 // BLOCKS_F32_ACTIVATIONS of ggml_cpu_init()
 static float ggml_blocks_f32_dot(int n, const float * GGML_RESTRICT w, const float * GGML_RESTRICT y) {
     double total = 0.0;
@@ -68,7 +68,7 @@ void ggml_vec_dot_##name##_f32''' + SIGNATURE.replace("\n", "") + r''' { \
 
 '''
 
-SWITCH = '''        // T364.1 (tests/reference_saluki_patch.py): the matrices of llama.cpp's blocks take float32 activations where the environment says so
+SWITCH = '''        // T.364.1 (tests/reference_saluki_patch.py): the matrices of llama.cpp's blocks take float32 activations where the environment says so
         if (getenv("BLOCKS_F32_ACTIVATIONS") != NULL) {
 %s        }
 '''

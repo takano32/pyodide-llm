@@ -1,8 +1,8 @@
-// tests/helper-node.mjs (T367.5): a software thread (src/runtime/helper.js) in Node. helper.js is a browser's module
+// tests/helper-node.mjs (T.367.5): a software thread (src/runtime/helper.js) in Node. helper.js is a browser's module
 // worker and nothing else: it claims its one message through self.onmessage, says "ready" with self.postMessage and
 // ends with self.close(). Node's worker_threads has no `self`, so this file is the worker Node starts: it makes one
 // of the thread's port and then imports the helper it was given, which runs as it is, to its last line. That is the
-// sources' helper.js, or a build's _astro/helper.<hash>.js (its jobs.js linked into it: T367.5, what a browser runs).
+// sources' helper.js, or a build's _astro/helper.<hash>.js (its jobs.js linked into it: T.367.5, what a browser runs).
 //
 //   softwareThread()                  a Worker of the helper the environment says: the sources', or with
 //                                     ENGINE_FROM=dist [ENGINE_DIST=<a dist>] a build's (as tests/bundle.mjs's forwardUrl())

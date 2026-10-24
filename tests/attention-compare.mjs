@@ -1,11 +1,11 @@
-// T161: the attention kernels of another commit (the old) against this tree's (the new), in one process, taking
+// T.161: the attention kernels of another commit (the old) against this tree's (the new), in one process, taking
 // turns: what each writes (the same to a few float32 roundings; the heads shared in two ranges the same to the bit
 // as all at once) and how long each takes, float32 and float16 caches, at short and long contexts.
 //   git fetch --depth=1 origin main && node tests/attention-compare.mjs FETCH_HEAD [rounds]
 // The old kernels are compiled here from that commit's kernels/*.ts (as kernels/build.py's plain module), the new
 // ones are src/runtime/built/simdkernel_plain.wasm (make kernels). Exit 1 if the outputs differ.
-// T160: at the end, the float16 cache against the float32 one, old and new (above 1: the float16 cache is slower).
-// T201: --exact, for a change that must write the old's bits (the softmax's maximum): any bit that differs fails, and
+// T.160: at the end, the float16 cache against the float32 one, old and new (above 1: the float16 cache is slower).
+// T.201: --exact, for a change that must write the old's bits (the softmax's maximum): any bit that differs fails, and
 // before the timing each position of short heads (1 to 72 positions, around the 4 and 32 of the maximum's steps)
 // takes a turn as the one far largest score (its key ten times the query), so that a maximum that skips a position
 // (a lane, an accumulator, the tail) moves every weight of that head (exp(0) is 1 only against the true maximum).
@@ -19,7 +19,7 @@ const root = new URL("../", import.meta.url).pathname;
 const exact = process.argv.includes("--exact");
 const [ref = "origin/main", rounds = "3"] = process.argv.slice(2).filter((a) => a !== "--exact");
 const dir = `${root}.tmp/attention-compare/`;
-kernelSources(ref, dir);  // (T356: that commit's kernels/ whole, from its tree: one file before T356, a window and kernel/ after)
+kernelSources(ref, dir);  // (T.356: that commit's kernels/ whole, from its tree: one file before T.356, a window and kernel/ after)
 execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
   `${dir}kernel.ts`, "-o", `${dir}old.wasm`, "--enable", "simd"], { cwd: root, stdio: "inherit" });
 
@@ -30,7 +30,7 @@ const F = new Float32Array(memory.buffer);
 
 let failed = false;
 if (exact) {
-  // T201: each position the one largest score in turn, both caches, old and new to the bit
+  // T.201: each position the one largest score in turn, both caches, old and new to the bit
   const nh = 2, hs = 8, kvDim = nh * hs, seq = 72;
   const q = 1 << 20, att = q + 4096, out = att + 4096, other = out + 4096, kc = other + 4096;
   const vc = kc + seq * kvDim * 4, kh = vc + seq * kvDim * 4, vh = kh + seq * kvDim * 2;
@@ -61,7 +61,7 @@ if (exact) {
   if (differ) failed = true;
   console.log(`attention-compare --exact: the largest score at each position, ${checked} calls, ${differ} differ from the old`);
 }
-const times = {};  // T160: "shape, position" -> {attention: {old, new}, attention_f16: {old, new}}
+const times = {};  // T.160: "shape, position" -> {attention: {old, new}, attention_f16: {old, new}}
 console.log(`| kernel | heads / kv heads / head size, position | old µs | new µs | old ÷ new | G MAC/s old → new |\n|---|---|---:|---:|---:|---|`);
 for (const [nh, nkv, hs, positions] of [[8, 8, 64, [16, 256, 1000, 2000, 4000]], [32, 8, 64, [256, 4000]], [4, 2, 6, [0, 1, 2, 3, 4, 5, 6, 7]], [3, 3, 10, [9]]]) {
   const seq = 4096, kvDim = nkv * hs;

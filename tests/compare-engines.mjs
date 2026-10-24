@@ -15,10 +15,10 @@
 //   node tests/compare-engines.mjs [model ids of src/models.js = tiny-lm llm-jp-3-150m] [--ref origin/main]
 //                                  [--rounds 5] [--tokens 128] [--greedy] [--bundle [<dist>]] [--bundle-old <dist>]
 // --greedy: temperature 0 (the forward pass and the least of a sampler), not the entry's own sampling.
-// T510.1: a model may also be a converted one's <out> of tests/perplexity_prepare.py (<out>.bin, <out>.tokenizer.bin,
+// T.510.1: a model may also be a converted one's <out> of tests/perplexity_prepare.py (<out>.bin, <out>.tokenizer.bin,
 //   <out>.json: a model of ?hf= after tests/page_gemma3.sh's conversion, a made-up one of tests/make_*.py), written
 //   with its options' sampling and no stop token (a run writes the whole length asked for, past a window's positions).
-// --bundle (T367.3.1): no other commit: both sides are the working tree's Python, old with the sources' forward.js and
+// --bundle (T.367.3.1): no other commit: both sides are the working tree's Python, old with the sources' forward.js and
 //   new with the one a build wrote (dist/_astro/forward.<hash>.js, tests/bundle.mjs; <dist>: another build's folder).
 //   What a bundler did to the forward pass, and nothing else. --bundle-old <dist>: old's forward.js is that build's
 //   too: two builds side by side (minified or not), or the same one twice, which is the control (the same code on both
@@ -75,7 +75,7 @@ import gc, statistics, sys, time
 
 def loaded(folder):
     """llama2_numpy of the tree in folder. Each tree is imported with none of the other's modules loaded and taken out
-    again: a second would else get the first one's parts and be compared with itself (AGENTS.md, T347). The modules go
+    again: a second would else get the first one's parts and be compared with itself (AGENTS.md, T.347). The modules go
     on working: nothing in them imports a part later."""
     ours = lambda: [key for key in sys.modules if key.split(".")[0] in ("llama2_numpy", "engine")]
     aside = {key: sys.modules.pop(key) for key in ours()}
@@ -144,7 +144,7 @@ console.log(`compare-engines: ${tokens} sampled tokens a run, ${rounds} rounds a
   `${greedy ? "greedy" : "each entry's own sampling"}; tok/s of the sampled tokens, as the page says them`);
 const median = (values) => { const s = [...values].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 const range = (values, digits = 1) => `${Math.min(...values).toFixed(digits)}–${Math.max(...values).toFixed(digits)}`;
-// T510.1: a converted model's files as an entry of the list (its paths whole; no stop tokens)
+// T.510.1: a converted model's files as an entry of the list (its paths whole; no stop tokens)
 const file = (path) => (path.startsWith("/") ? path : root + path);
 function fileModel(out) {
   const at = out.startsWith("/") ? out : `${process.cwd()}/${out}`;

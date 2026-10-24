@@ -1,5 +1,5 @@
-// tests/worker-source.mjs (T350): src/runtime/worker.ts and its modules (src/runtime/worker/*.ts) as scripts of one vm context
-// (T368.3: TypeScript, read with its types blanked, tests/untyped.mjs: the same lines, so a vm's error names the source's line).
+// tests/worker-source.mjs (T.350): src/runtime/worker.ts and its modules (src/runtime/worker/*.ts) as scripts of one vm context
+// (T.368.3: TypeScript, read with its types blanked, tests/untyped.mjs: the same lines, so a vm's error names the source's line).
 //
 // The checks that run the worker in Node (worker-check.mjs, worker-sink-check.mjs) reach its functions and variables as
 // globals of a context: they call download() and set forwardModule. The worker's text was one script for that; it is a
@@ -25,7 +25,7 @@ import { treeOf } from "./tree.mjs";
 /** [{ name, url, source, reads: [module names] }], the modules first, each after what it reads, the window last.
  * tree: tests/tree.mjs's (this tree's by default): where the runtime is, and which form its imports have. */
 export function workerScripts(tree = treeOf()) {
-  // (T368.3: the window by the name the tree has it under, worker.ts or worker.js: windowed() blanks a .ts file's types
+  // (T.368.3: the window by the name the tree has it under, worker.ts or worker.js: windowed() blanks a .ts file's types
   // by its name, and lists the folder's files of either ending)
   const WINDOW = path.basename(tree.runtime("worker.js"));
   const { files, there, others } = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
@@ -33,7 +33,7 @@ export function workerScripts(tree = treeOf()) {
   const exported = (name, file) => new RegExp(`^export ((async )?(function\\*?|const|let|class) |(const|let) [^;\\n]*, )${name}\\b`, "m").test(files.get(file).text);
   // (a module by its name without the folder and the ending, as the checks that read these scripts know it; the
   // window by its file's name)
-  // (a file outside worker/ that a module takes names of, T367.3's built.js: by its own name without the ending)
+  // (a file outside worker/ that a module takes names of, T.367.3's built.js: by its own name without the ending)
   const short = (file) => (file === WINDOW ? file : file.replace(/^worker\//, "").replace(/\.(js|ts)$/, ""));
   const scripts = new Map();
   for (const file of [...others, ...there, WINDOW]) {

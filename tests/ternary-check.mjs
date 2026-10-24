@@ -1,4 +1,4 @@
-// ternary-check.mjs (T230, T231): the kernels of the ternary weights (kernels/ternary.ts; kernel.ts's interleave,
+// ternary-check.mjs (T.230, T.231): the kernels of the ternary weights (kernels/ternary.ts; kernel.ts's interleave,
 // matmul_t2 and ternary_x; kernel_relaxed.ts's matmul_t2r) against the same arithmetic written out here, value by
 // value. Node and the compiled kernels alone, under a second: the light suite runs it. On a 32-bit memory and on a
 // 64-bit one (the addresses through jobs.js's table).
@@ -11,7 +11,7 @@
 //     (the weights of a row are 32 bytes a group, so a kernel that read a row at the wrong stride or took a group's
 //     scale from its neighbour fails at more than one group), ranges of rows that begin and end anywhere, and groups
 //     of all +1 against activations of 127 and of -128 (the largest sums: 2 x 128 a product before the sums are taken).
-//   the largest sums (T230's review): every row of one code against activations all at one end of int8 or alternating
+//   the largest sums (T.230's review): every row of one code against activations all at one end of int8 or alternating
 //     between the two, for every code (0, 1, 2 and PQ2_0's fourth, 3), the most a lane or a group can reach (16 products of
 //     128 x 3 a lane, 32 of them a group, and minus the group's sum): the relaxed dot product's pairs (x86's pmaddubsw adds
 //     two products with saturation to int16: 2 x 128 x 3 = 768, nowhere near 32767), the sums in int32, and float32 hold
@@ -32,9 +32,9 @@ let checked = 0;
 const HIGH = 4 * 2 ** 30 + 2 * 65536;
 // A canary for the engine, not the kernels: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat (and v128.load32_lane) of
 // an address above 4 GiB at its low 32 bits, so that every kernel that takes a scale so (the ternary ones' weights' scales, the
-// int8 tile's) reads the wrong number there (Chromium 148's V8 on arm64 reads them right: T230's review). A module of its own
+// int8 tile's) reads the wrong number there (Chromium 148's V8 on arm64 reads them right: T.230's review). A module of its own
 // (written out here: a 64-bit memory it imports, splat(address) = v128.load32_splat of it, lane 0) says whether this engine
-// does. T233's review found that it is V8's Liftoff alone (arm64; fixed in V8 14.3, Chrome 143: ff9dbb26c2), whose code a
+// does. T.233's review found that it is V8's Liftoff alone (arm64; fixed in V8 14.3, Chrome 143: ff9dbb26c2), whose code a
 // function leaves for TurboFan's within milliseconds of its first call, and whose first call the canary is: so where it
 // fails, Liftoff is turned off for what is compiled from here (the kernels below) and the canary asked again, and the
 // kernels above 4 GiB are checked as TurboFan has them. Where it still fails, the config is left out, saying why.
@@ -75,7 +75,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
   const load = (name) => addressed(new WebAssembly.Instance(new WebAssembly.Module(bytesOf(name)), { env: { memory } }).exports, wide);
   const k = load("simdkernel_plain"), r = load("simdkernel_relaxed_plain");
   const I = new Int8Array(memory.buffer), U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer), N = new Int32Array(memory.buffer);
-  // (T533: the weights' scales are float16s)
+  // (T.533: the weights' scales are float16s)
   const HF = new Float16Array(memory.buffer);
   let seed = 231;
   const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
@@ -117,7 +117,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     if (groups > 1) codes.fill(0, n + 128, n + 256);  // row 1's second: all -1
     U.fill(0, w, w + rows * groups * 32);
     codes.forEach((code, j) => { U[w + (j >> 2)] |= code << (2 * (j & 3)); });
-    // (T533: float16 scales, a subnormal one and a zero among them: the kernels widen every finite half exactly)
+    // (T.533: float16 scales, a subnormal one and a zero among them: the kernels widen every finite half exactly)
     for (let g = 0; g < rows * groups; g++) HF[ws / 2 + g] = g % 11 === 7 ? 2 ** -20 * (1 + (next() % 1000)) : g % 13 === 5 ? 0 : 1e-3 * (1 + (next() % 1000));
     const a = Int8Array.from({ length: n }, () => (next() & 255) - 128);
     a.fill(127, 0, 64);
@@ -181,7 +181,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     }
   }
 
-  // ---- the largest sums (T230's review): the rows of one code each (0, 1, 2, and 3, which a PQ2_0 file does not have but
+  // ---- the largest sums (T.230's review): the rows of one code each (0, 1, 2, and 3, which a PQ2_0 file does not have but
   // the mask lets through) against activations at one end of int8, at the other and alternating, so that every product of
   // every lane is the largest it can be (|a| x code: 128 x 3 = 384, 16 a lane, 32 a group of 32 activations, and minus
   // their sum, 4096): the relaxed dot product's pairs (pmaddubsw on x86 adds two products with saturation to int16: 768 of

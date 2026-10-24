@@ -1,4 +1,4 @@
-# tests/gguf_check.py tensors, held to what T136's stage 2 asks of it (the review of 2026-09-26): the embedding and
+# tests/gguf_check.py tensors, held to what T.136's stage 2 asks of it (the review of 2026-09-26): the embedding and
 # the classifier row by row, Llama 3's rope_freqs.weight against the engine's table, the vocabulary of a
 # sentencepiece original, the config after normalize(), and the vocabulary shown but not counted when the page takes
 # it from the original. Each test fails when its check is taken out.
@@ -24,8 +24,8 @@ def model(tmp_path, vocab_size=320, dim=32, theta=10000.0, extra=None, change=No
           n_kv_heads=4, turned=None, **config):
     """A GGUF and the directory of its original (config.json and model.safetensors); change(tensors) alters what
     the GGUF is written from, as a GGUF of other weights would be, and original_change(tensors) the original.
-    shared=False: a classifier of its own (output.weight, held row by row); n_kv_heads under 4: GQA (T145);
-    turned=False: q and k left as Hugging Face has them (T250's review)."""
+    shared=False: a classifier of its own (output.weight, held row by row); n_kv_heads under 4: GQA (T.145);
+    turned=False: q and k left as Hugging Face has them (T.250's review)."""
     shape, weights = synthetic_weights(dim=dim, hidden_dim=2 * dim, vocab_size=vocab_size, seq_len=128,
                                        n_kv_heads=n_kv_heads, shared=shared)
     tensors, published = hugging_face(shape, weights, shared)
@@ -57,7 +57,7 @@ def test_the_same_weights_pass(tmp_path, capsys):
 @pytest.mark.parametrize("block", [gguf_check.BLOCK, 4096])  # the whole tensor at once, and a block of rows at a time
 def test_eight_swapped_rows_of_the_embedding_are_caught(tmp_path, capsys, monkeypatch, block):
     """Qwen2.5 0.5B's embedding with 8 rows swapped was 0.0122 off as a whole, under the line of 0.02 (the review of
-    T136). Here 100000 rows of 32: the whole is about as far off, and every one of the 8 rows is past 0.05."""
+    T.136). Here 100000 rows of 32: the whole is about as far off, and every one of the 8 rows is past 0.05."""
     monkeypatch.setattr(gguf_check, "BLOCK", block)
 
     def swap(tensors):
@@ -68,7 +68,7 @@ def test_eight_swapped_rows_of_the_embedding_are_caught(tmp_path, capsys, monkey
     assert not gguf_check.check_tensors(*model(tmp_path, vocab_size=100000, change=swap))
     result = summary(capsys)
     assert result["worst"] < 0.02, "the error of the whole tensor alone would have let this through"
-    # the 8 rows, and the embedding as a whole past TIGHT (T145)
+    # the 8 rows, and the embedding as a whole past TIGHT (T.145)
     assert result["rows"]["token_embd.weight"] == 8 and result["mismatches"] == 9
     assert list(result["past_tight"]) == ["token_embd.weight"]
 
@@ -177,7 +177,7 @@ def test_rows_only_the_float16_scale_rounds_pass_and_a_swapped_row_does_not():
     gguf = llama_cpp_q8_0(original)
     checked = gguf_check.row_check(gguf_check.row_parts(gguf, original, True))
     assert checked[0] == 0 and checked[4] >= 1
-    assert {row for row, *_ in checked[5]} <= {5, 6} and len(checked[5]) == checked[4], "T145: the rows are listed"
+    assert {row for row, *_ in checked[5]} <= {5, 6} and len(checked[5]) == checked[4], "T.145: the rows are listed"
     assert gguf_check.row_check(gguf_check.row_parts(gguf, original, False))[0] >= 1, \
         "against the original alone the rounded rows read as other weights"
     gguf[[10, 20]] = gguf[[20, 10]]
@@ -212,10 +212,10 @@ def test_a_row_whose_q8_0_reference_overflows_is_still_compared():
     assert gguf_check.row_check(gguf_check.row_parts(gguf, original, True))[0] == 1
 
 
-# ------------------------------------------------------------------------------------------- T145
+# ------------------------------------------------------------------------------------------- T.145
 @pytest.mark.parametrize("tensor", ["model.layers.1.post_attention_layernorm.weight", "model.layers.0.mlp.up_proj.weight"])
 def test_a_tensor_a_little_off_is_past_the_tight_line(tmp_path, capsys, tensor):
-    """The review of T136's second stage: the whole tensor's 0.02 lets a scale of 1.05 or 4% of noise through, while
+    """The review of T.136's second stage: the whole tensor's 0.02 lets a scale of 1.05 or 4% of noise through, while
     a GGUF made from the original is 0 off its nearest reference (TIGHT). Here 0.4%: an F32 norm, and a Q8_0 matrix."""
     def scale(tensors):
         tensors[tensor] = tensors[tensor] * np.float32(1.004)
@@ -261,7 +261,7 @@ def test_gqa_is_read_turned_by_its_own_heads(tmp_path, capsys, monkeypatch, bloc
 
 
 def test_rows_that_pass_only_against_a_q8_0_are_listed_with_their_piece(tmp_path, capsys):
-    """T145 (2): the rows the float16 scale of Q8_0 rounds (llm-jp-3 980M's 8, T136) pass, and are listed with their
+    """T.145 (2): the rows the float16 scale of Q8_0 rounds (llm-jp-3 980M's 8, T.136) pass, and are listed with their
     id, piece and norm, to be read."""
     def small(tensors):
         # an embedding of 0.01 (with 0.3, no row can be both over 1e-3 of the median and of a d near float16's steps),
@@ -283,8 +283,8 @@ def test_rows_that_pass_only_against_a_q8_0_are_listed_with_their_piece(tmp_path
 
 
 def other_model(tmp_path, model, change=None, **order):
-    """T136's third stage: a GPT-2 or GPT-NeoX GGUF as llama.cpp writes one (test_gguf.other_gguf) and its original;
-    change(tensors) alters what the GGUF is written from. order: split=False or transposed=False (T250's review)."""
+    """T.136's third stage: a GPT-2 or GPT-NeoX GGUF as llama.cpp writes one (test_gguf.other_gguf) and its original;
+    change(tensors) alters what the GGUF is written from. order: split=False or transposed=False (T.250's review)."""
     tensors, config = the_other(model)
     written = {name: tensor.copy() for name, tensor in tensors.items()}
     if change:
@@ -334,7 +334,7 @@ def test_a_gpt2_or_neox_gguf_of_other_weights_does_not(tmp_path, capsys, monkeyp
     ("neox-serial", dict(split=False), ".attn_qkv."),
     ("gpt2", dict(transposed=False), ".weight")])
 def test_a_gguf_in_an_order_the_reader_does_not_read_is_refused(tmp_path, capsys, monkeypatch, block, model, order, unread):
-    """T250's review: mmnga's 2023 GGUF of stockmark's GPT-NeoX holds the original's very values with query_key_value
+    """T.250's review: mmnga's 2023 GGUF of stockmark's GPT-NeoX holds the original's very values with query_key_value
     as Hugging Face has it (q, k and v of each head in turn: llama.cpp split it later), so every line of the table
     passed ("as Hugging Face", 0 off the nearest reference) and the reader, which puts llama.cpp's split back, wrote
     "ののの…". The order is a line of the check: refused, with the tensors named."""
@@ -349,7 +349,7 @@ def test_a_gguf_in_an_order_the_reader_does_not_read_is_refused(tmp_path, capsys
 
 @pytest.mark.parametrize("block", [gguf_check.BLOCK, 128])
 def test_a_llama_gguf_whose_q_and_k_are_not_turned_is_refused(tmp_path, capsys, monkeypatch, block):
-    """The same for a Llama: the reader un-turns q and k, which llama.cpp turned (T74), so a Llama GGUF of the original's
+    """The same for a Llama: the reader un-turns q and k, which llama.cpp turned (T.74), so a Llama GGUF of the original's
     order is read into other weights. Whole, and in blocks of one head."""
     monkeypatch.setattr(gguf_check, "BLOCK", block)
     assert not gguf_check.check_tensors(*model(tmp_path, turned=False))
@@ -375,7 +375,7 @@ def test_a_qwen3_gguf_with_q_and_k_turned_is_refused(tmp_path, capsys):
 
 @pytest.mark.parametrize("norm", [None, "model.layers.1.self_attn.q_norm.weight", "model.layers.0.self_attn.k_norm.weight"])
 def test_a_qwen3_gguf_is_held_to_its_norms_of_q_and_k(tmp_path, capsys, norm):
-    """T203: a Qwen3's GGUF (llama.cpp's attn_q_norm and attn_k_norm, heads of another size than dim / heads) passes
+    """T.203: a Qwen3's GGUF (llama.cpp's attn_q_norm and attn_k_norm, heads of another size than dim / heads) passes
     against its original, and a norm of other values does not (unread, the norms went unchecked: no counterpart)."""
     from test_gguf import qwen3_gguf
     config, published, file, same = qwen3_gguf(16)
@@ -392,7 +392,7 @@ def test_a_qwen3_gguf_is_held_to_its_norms_of_q_and_k(tmp_path, capsys, norm):
 
 @pytest.mark.parametrize("wrong", [None, "a value", "the factor", "no yarn"])
 def test_a_pq2_0_gguf_is_held_to_its_ternary_original_and_its_yarn(tmp_path, capsys, wrong):
-    """T235: Ternary-Bonsai's PQ2_0 blocks against the safetensors of the same ternary weights (0 off: a block holds
+    """T.235: Ternary-Bonsai's PQ2_0 blocks against the safetensors of the same ternary weights (0 off: a block holds
     them as they are), read by this file's own reader. One value that is another of the three is past the line (a
     reader that took the bits in another order would move them all), and so is a yarn that is not config.json's."""
     from test_gguf import bonsai_gguf
@@ -434,7 +434,7 @@ QWEN35_WRONG = {
 
 @pytest.mark.parametrize("wrong", [None, *QWEN35_WRONG, "another interval"])
 def test_a_qwen35_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, capsys, wrong):
-    """T236: a Qwen3.5's GGUF as llama.cpp writes one (test_gguf.qwen35_gguf) passes against its original, 0 off: the
+    """T.236: a Qwen3.5's GGUF as llama.cpp writes one (test_gguf.qwen35_gguf) passes against its original, 0 off: the
     norms with their 1, -exp(A_log), the convolution without its axis of one, dt_bias and A_log under their other
     names, the original's names with "model.language_model." in front. An original that is not what the GGUF was made
     of is past the line at that tensor, and a config.json of another interval a mismatch."""
@@ -480,7 +480,7 @@ def test_a_qwen35_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path,
         assert result["mismatches"] >= 1 and result["past_tight"] == {}
 
 
-# T245: the tensors of a linear-attention layer that have the value heads along an axis, by the GGUF's name
+# T.245: the tensors of a linear-attention layer that have the value heads along an axis, by the GGUF's name
 TILED_TENSORS = ("attn_qkv.weight", "attn_gate.weight", "ssm_alpha.weight", "ssm_beta.weight", "ssm_dt.bias", "ssm_a",
                  "ssm_conv1d.weight", "ssm_out.weight")
 TILED_MODELS = {"two to one": dict(key_heads=4, value_heads=8, key_dim=8, value_dim=32),
@@ -498,7 +498,7 @@ def qwen35_directory(tmp_path, config, file, original):
 @pytest.mark.parametrize("block", [gguf_check.BLOCK, 512])  # the whole tensor at once, and a block of rows at a time
 @pytest.mark.parametrize("shape", TILED_MODELS)
 def test_a_qwen35_gguf_of_more_value_heads_than_key_heads_passes_tiled(tmp_path, capsys, monkeypatch, block, shape):
-    """T245: llama.cpp writes the value heads of such a model tiled (every key head's first value head, then every key
+    """T.245: llama.cpp writes the value heads of such a model tiled (every key head's first value head, then every key
     head's second), in the rows, entries or columns of eight tensors of each linear-attention layer. As it writes
     them, the GGUF is 0 off its original, and the order is said. In blocks of rows too (the real 4B's matrices are
     past BLOCK)."""
@@ -567,7 +567,7 @@ def test_a_tiled_gguf_with_two_value_heads_of_its_original_swapped_is_caught(tmp
 
 def test_the_three_tables_of_the_eight_tensors_say_the_same():
     """Which tensors of a linear-attention layer llama.cpp reorders, how much of an axis stands before the heads, how wide
-    a head is there and along which axis are written in three places (T245: apart, so that each holds the others): the
+    a head is there and along which axis are written in three places (T.245: apart, so that each holds the others): the
     converter's, in Hugging Face's names; this check's, in llama.cpp's; and test_gguf's, which writes the GGUFs. One that
     differs is a mistake in it."""
     import llama2_convert
@@ -597,7 +597,7 @@ def test_tiled_is_llama_cpps_order():
     assert gguf_check.value_heads("blk.0.attn_qkv.weight", {**text, "linear_num_value_heads": 16}) is None
 
 
-# ---- T260: an LFM2 (convolution layers among attention layers; the layers of the made-up one are ccaccaca)
+# ---- T.260: an LFM2 (convolution layers among attention layers; the layers of the made-up one are ccaccaca)
 LFM2 = "model.layers."
 LFM2_WRONG = {
     # what the original holds that is not what the GGUF was made of: {the name: the GGUF's tensors past the line}
@@ -614,7 +614,7 @@ LFM2_WRONG = {
 @pytest.mark.parametrize("block", [gguf_check.BLOCK, 512])  # the whole tensor at once, and a block of rows at a time
 @pytest.mark.parametrize("wrong", [None, *LFM2_WRONG, "other layers", "other taps", "another FFN", "q turned"])
 def test_an_lfm2_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, capsys, monkeypatch, block, wrong):
-    """T260: an LFM2's GGUF as llama.cpp writes one (test_lfm2.lfm2_gguf) passes against its original, 0 off: the
+    """T.260: an LFM2's GGUF as llama.cpp writes one (test_lfm2.lfm2_gguf) passes against its original, 0 off: the
     convolution without its axis of one, the last norm as token_embd_norm, the convolution layer's tensors as
     shortconv.*, the FFN's w1, w3 and w2 as gate, up and down, q and k as Hugging Face has them, the key-value heads a
     number a layer. An original that is not what the GGUF was made of is past the line at that tensor; a config.json of
@@ -669,7 +669,7 @@ def test_an_lfm2_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, 
         assert result["mismatches"] >= 1 and result["past_tight"] == {}
 
 
-# ------------------------------------------------------------------------------------------- T307
+# ------------------------------------------------------------------------------------------- T.307
 def wider_model(tmp_path, change=None, **gguf):
     """A GGUF made from float32 weights and an original that is those weights rounded to bfloat16 (LFM2.5 230M's);
     change(tensors) alters what the GGUF is written from; gguf: more for gguf_file()"""
@@ -796,7 +796,7 @@ def test_what_is_outside_a_bfloat16s_rounding():
 @pytest.mark.parametrize("width", [0.03, 0.001, 0.0001])
 def test_wider_weights_of_any_width_are_not_outside(width):
     """llama.cpp's Q8_0 of float32 weights against the bfloat16 original, with a scale under float16's normal range
-    for the narrow ones (T307's review: a matrix 0.001 wide had values outside from float16's smallest step alone)"""
+    for the narrow ones (T.307's review: a matrix 0.001 wide had values outside from float16's smallest step alone)"""
     wide = (np.random.default_rng(3).standard_normal((64, 128)) * width).astype(np.float32)
     groups = wide.reshape(-1, 32)
     d = np.abs(groups).max(axis=1) / 127
@@ -856,7 +856,7 @@ def test_what_shows_a_gguf_was_made_from_wider_weights(tmp_path, capsys):
     assert summary(capsys)["wider_source"] is False
 
 
-# T343: the wrongs a Spark-X2.5's GGUF must not pass with, and the GGUF tensors each shows at
+# T.343: the wrongs a Spark-X2.5's GGUF must not pass with, and the GGUF tensors each shows at
 SPARK_WRONG = {"the gates of two layers swapped": ["blk.0.attn_gate.weight", "blk.1.attn_gate.weight"],
                "k before q": ["blk.2.attn_qkv.weight"],
                "q turned as a Llama's GGUF has it": ["blk.3.attn_qkv.weight"]}
@@ -864,9 +864,9 @@ SPARK_WRONG = {"the gates of two layers swapped": ["blk.0.attn_gate.weight", "bl
 
 @pytest.mark.parametrize("wrong", [None, *SPARK_WRONG])
 def test_a_spark_gguf_is_held_to_its_original(tmp_path, capsys, wrong):
-    """T343: a Spark-X2.5's GGUF as XHToken's are (test_spark.spark_gguf: q, k and v one matrix in Hugging Face's
+    """T.343: a Spark-X2.5's GGUF as XHToken's are (test_spark.spark_gguf: q, k and v one matrix in Hugging Face's
     order, the gate of the heads, the embedding under the model's own name) passes against its original, 0 off; an
-    original that is not what the GGUF was made of is past the line at that tensor. Before T343 every attn_qkv,
+    original that is not what the GGUF was made of is past the line at that tensor. Before T.343 every attn_qkv,
     attn_gate and attn_output and the embedding were mismatches here (no names of the family)."""
     from test_spark import spark_gguf
     config, file, same = spark_gguf()

@@ -1,6 +1,6 @@
 // What every section runs on: its elements' record, Markdown as the page shows it, the stage it is at and its seconds
-// (T177), a worker asked once, the watch for a section that says nothing, and the words the sections share.
-// (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
+// (T.177), a worker asked once, the watch for a section that says nothing, and the words the sections share.
+// (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import "./isolation.ts";
 import { MODELS } from "../models.js";
 import { $, type Name, type Result } from "./dom.ts";
@@ -9,7 +9,7 @@ import { unstarted } from "../runtime/updated.ts";
 import type { Answer, Asked, Said } from "../runtime/contracts/benchmark.ts";
 import type { ModelWorker } from "../runtime/contracts/messages.ts";
 
-// ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
+// ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T.177), and what
 // the section found
 type Progress = { box: HTMLElement; bar: HTMLElement; fill: HTMLElement; stage: HTMLElement; elapsed: HTMLElement };
 export const parts: Record<string, { run: HTMLButtonElement; state: HTMLElement; progress: Progress; out: HTMLElement }> = {};
@@ -23,7 +23,7 @@ export function rendered(markdown: string) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.startsWith("|")) {
-      // a \| in a cell is a | of its words, as GitHub reads it (T157's review: an error's words)
+      // a \| in a cell is a | of its words, as GitHub reads it (T.157's review: an error's words)
       const cells = (row: string) => row.split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim().replace(/\\\|/g, "|"));
       const head = cells(line);
       const rows: string[][] = [];
@@ -39,7 +39,7 @@ export function rendered(markdown: string) {
   return html.join("");
 }
 
-// ---- T177: the stage the running section is at. at / of where the section knows how many stages it has (the bar
+// ---- T.177: the stage the running section is at. at / of where the section knows how many stages it has (the bar
 // then fills stage by stage, and within a stage by part, 0 to 1, where that is known), else the stage's name only
 export type Stage = { stage: string; at?: number; of?: number; part?: number };
 export const clock = (ms: number) => {
@@ -65,14 +65,14 @@ export function ticked() {
   }
 }
 
-// What a section's worker that failed is said as. T367.4: one that did not load because the site was updated since
+// What a section's worker that failed is said as. T.367.4: one that did not load because the site was updated since
 // this page was opened (its file is of the page's build, and gone) says that, and that alone. This module is the one
 // that names the workers' files (WORKERS, below), so it is the one whose own address is asked for.
 export const workerFailed = async (event: ErrorEvent) =>
   (await unstarted(event, import.meta.url, `the worker failed: ${event.message ?? "error"}`)).message;
 
 // one worker, one question, one answer (the section workers answer every message once)
-// (T368.7: a section's worker is known by the file it was made of (worker(), below): what it may be asked and what each
+// (T.368.7: a section's worker is known by the file it was made of (worker(), below): what it may be asked and what each
 // of its steps answers are contracts/benchmark.ts's, by that file. The mark is a type's alone: a Worker has no such field)
 export type Asking<File extends keyof Asked> = Worker & { readonly made?: File };
 type Answers<File extends keyof Asked, Message> = Asked[File]["results"] extends infer Results ? Message extends { step: infer Step extends keyof Results } ? Results[Step] : never : never;
@@ -80,7 +80,7 @@ export function ask<File extends keyof Asked, Message extends Asked[File]["to"]>
   return new Promise((resolve) => {
     worker.onmessage = ({ data }: MessageEvent<Said<Answers<File, Message>>>) => {
       // the GPU section's device-lost notice comes on its own, and so do the line's "still reading", the GPU
-      // prompt's "still at it" and a section's stages (T177)
+      // prompt's "still at it" and a section's stages (T.177)
       if (data.lost || data.alive || data.stage !== undefined) return;
       resolve(data);
     };
@@ -89,9 +89,9 @@ export function ask<File extends keyof Asked, Message extends Asked[File]["to"]>
   });
 }
 // the workers of the running section, and when one of them last said anything: a section that says nothing for
-// STALL_MS is stopped, its workers ended, and the run goes on (T134's review: a GPU without Atomics.waitAsync in its
+// STALL_MS is stopped, its workers ended, and the run goes on (T.134's review: a GPU without Atomics.waitAsync in its
 // worker never ended the bridge, and the storage and the line never ran)
-// (T367.3: each by its literal URL, which is how the bundler is told of a worker)
+// (T.367.3: each by its literal URL, which is how the bundler is told of a worker)
 const WORKERS = {
   "worker.js": () => new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" }),
   "benchmark/gpu.js": () => new Worker(new URL("../runtime/benchmark/gpu.ts", import.meta.url), { type: "module" }),

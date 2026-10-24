@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""python_archive.py (T367.2): the site's Python as two archives, which the worker fetches whole and unpacks in Pyodide
+"""python_archive.py (T.367.2): the site's Python as two archives, which the worker fetches whole and unpacks in Pyodide
 (src/runtime/worker/pyodide.ts): one request where there were fifteen, and nineteen for a conversion.
 
     python3 python_archive.py [<the folder of the sources> [<the folder to write into>]]     (src/python, src/runtime/built)

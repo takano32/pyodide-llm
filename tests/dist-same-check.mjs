@@ -1,4 +1,4 @@
-// tests/dist-same-check.mjs (T368.1): tests/dist-same.mjs on made-up builds, and the two small tools the types stand on
+// tests/dist-same-check.mjs (T.368.1): tests/dist-same.mjs on made-up builds, and the two small tools the types stand on
 // (tests/untyped.mjs, tests/types.mjs's rule and count), on made-up texts. Node alone, under a second.
 //
 // dist-same: two builds of one code are "the same code" whatever their hashes and region lines, and anything else is
@@ -143,11 +143,11 @@ console.log("dist-same-check: two builds of one code are the same code; 11 diffe
     ['import { type A } from "./a.ts";', 'import { type E, type F, } from "./e.ts";']);
   assert.deepEqual(anys('// any comment\nconst words = "any";\nconst a: any = 1, b = a as any;\nfunction f(x: any[], y: Record<string, any>): Promise<any> { return x as never; }\n// @ts-expect-error\nconst company = 1;\n', "x.ts"), { any: 5, off: 1 });
   assert.deepEqual(anys("const many = 1;\n", "x.ts"), { any: 0, off: 0 });
-  // T368.8: the names a text uses and neither declares nor imports: a type's name is none, a name bound further in is none
+  // T.368.8: the names a text uses and neither declares nor imports: a type's name is none, a name bound further in is none
   assert.deepEqual(ambient('import { a } from "./a.ts";\nimport type { T } from "./t.ts";\nlet own: T | Uint8Array;\nexport function f(given: T) {\n  for (const name of a) own = given;\n  return name + nowhere + fetch.length;\n}\n', "x.ts"),
     ["name", "nowhere", "fetch"]);
   assert.ok(AMBIENT.has("fetch") && !AMBIENT.has("name") && !AMBIENT.has("document"), "a worker's own names that the runtime means to use: not `name`, and nothing of a page");
-  // T473: the most anys there may be, and what else looks away (counted)
+  // T.473: the most anys there may be, and what else looks away (counted)
   assert.deepEqual([capped(47, 46).failed, capped(46, 46), capped(40, 46).failed], [true, { failed: false, line: "" }, false]);
   assert.match(capped(47, 46).line, /47 times, and 46 is the most/);
   assert.match(capped(40, 46).line, /lower tests\/types\.mjs's ANY_MOST to 40/);

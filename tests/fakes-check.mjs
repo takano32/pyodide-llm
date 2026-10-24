@@ -1,4 +1,4 @@
-// tests/fakes-check.mjs (T357.5): the stand-ins of tests/fakes/, each by itself. A check that runs the product on a
+// tests/fakes-check.mjs (T.357.5): the stand-ins of tests/fakes/, each by itself. A check that runs the product on a
 // stand-in sees what the stand-in lets it see: a Cache that stored half a part, a fetch that answered a request that
 // was cancelled, a clock that moved between tokens, a worker that heard nothing would each let a broken product pass,
 // and the checks that use them would not say so. What each does as the thing it stands for is held here; where each
@@ -318,7 +318,7 @@ ok("a Worker's face: what it is posted is written down and answered on this thre
 }
 ok("Pyodide's proxies: each counts how it was let go and refuses to be read afterwards; a generator's face sends answers with next(), hands each request as a proxy to read one level deep, and closes with return()");
 
-// ---- WebGPU (T568.1)
+// ---- WebGPU (T.568.1)
 {
   const { calls, device, adapter } = standIn({ fallback: true, language: ["subgroup_id"] });
   assert.equal(await navigator.gpu.requestAdapter(), adapter, "navigator.gpu is the stand-in's");

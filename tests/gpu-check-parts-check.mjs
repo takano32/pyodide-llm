@@ -1,4 +1,4 @@
-// T357.3: the parts of tests/gpu-check.mjs that need no GPU, no browser and no Pyodide, each by itself on made-up
+// T.357.3: the parts of tests/gpu-check.mjs that need no GPU, no browser and no Pyodide, each by itself on made-up
 // numbers. gpu-check itself runs in CI alone (gpu-prompt.yml: WebGPU is not run on the development machine), so until
 // this check nothing of it ran anywhere else: a verdict that passed a wrong GPU, or a line of the log that lost a
 // column, showed in a run of twenty minutes or not at all.
@@ -67,7 +67,7 @@ check("the measures", () => {
   assert.ok(Number.isNaN(worstRow([NaN, 0], [1, 0], 2)));
   assert.equal(argmax([1, 3, 3, 2]), 1);
   // the worst layer: the largest ratio (the first of equals), and a NaN wherever it is (the first NaN; a comparison with
-  // it is false, which let the layer after a NaN take its place: T357.3's review)
+  // it is false, which let the layer after a NaN take its place: T.357.3's review)
   assert.equal(worstAt([0.5, 0.9, 0.3]), 1);
   assert.equal(worstAt([0.5, 0.5, 0.3]), 0);
   assert.equal(worstAt([0.5, NaN, 0.3]), 1);
@@ -105,7 +105,7 @@ check("the made-up models an engine runs", () => {
 
 // ---- lines.mjs
 check("the numbers a run is held to are the ones decided", () => {
-  // each is a decision with its derivation in lines.mjs (T187: the lines are the arithmetic's own distances): loosening one
+  // each is a decision with its derivation in lines.mjs (T.187: the lines are the arithmetic's own distances): loosening one
   // lets a wrong GPU through, so changing one is changing this too, and saying why in TASKS.md
   assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4, f16: 8 }, K_PACKED: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
@@ -136,7 +136,7 @@ const REFERENCE = { tokens: [1, 2, 3, 4], header: HEADER, keys: b64(KEYS), value
   keys16: b64(moved(KEYS, E16)), values16: b64(moved(VALUES, E16)), keys8: b64(moved(KEYS, Q8)), values8: b64(moved(VALUES, Q8)),
   logits: b64(LOGITS), logits16: b64(LOGITS.map((x) => x + 1e-3)), logits8: b64(LOGITS.map((x, i) => x + 0.01 * i)),
   greedy: GREEDY, greedyLogits: b64(greedyRows()), greedyKeys: b64(GREEDY_KEYS), greedyValues: b64(GREEDY_VALUES) };
-// (T545: plan.layers[0].kind, the kind of the first layer, which verdicts.mjs reads: a Llama's attends)
+// (T.545: plan.layers[0].kind, the kind of the first layer, which verdicts.mjs reads: a Llama's attends)
 const CASE = { id: "made-up", reference: REFERENCE, plan: { layers: [{ kind: "attention" }, { kind: "attention" }] }, headDim: 0, arch: "llama", dtype: "int8", numpySeconds: 1.25, planSeconds: 0.5 };
 const CPU = { keys: b64(moved(KEYS, 0.1)), values: b64(moved(VALUES, 0.1)), logits: b64(LOGITS.map((x, i) => x + 0.05 * i)), promptMs: 6, seconds: 2 };
 // a run of the GPU: its keys and values `off` from `from` (NumPy's by default), block by block and all at once
@@ -178,7 +178,7 @@ check("a run as it should be passes, by its form's arithmetic", () => {
   assert.ok(Q8 > HALF_LINE);
   assert.equal(model([runOf({ form: "TF.js's tiles", keys: packed.keys, values: packed.values, off: 1e-3 })]).value, true);
 });
-check("a packed run of a model whose first layer is no attending layer's is held by every layer's line, not by the first keys' against Q8 and their scale (T545)", () => {
+check("a packed run of a model whose first layer is no attending layer's is held by every layer's line, not by the first keys' against Q8 and their scale (T.545)", () => {
   // an LFM2's first keys and values are of a layer after convolution layers (the real 230M's and 350M's were 1.2e-2 and 2.0e-2
   // from Q8 where Q8 itself was 2.6e-2 to 3.6e-2 from NumPy's, run 38859332497): one layer's arithmetic no longer
   const convolved = { ...CASE, plan: { layers: [{ kind: "convolution" }, { kind: "attention" }] } };
@@ -249,7 +249,7 @@ check("a run wrong in one thing fails, and says which", () => {
   failed(runOf({ note: "prompts on the CPU (no GPU adapter here)" }), /- the GPU did not take it: prompts on the CPU \(no GPU adapter here\)/);
   failed(runOf({ gpuTokens: N - 1 }), /- the GPU took 2 and 3 of 3 tokens/);
   failed(runOf({ past: { gpuTokens: 2 } }), /- a block past the GPU's keys and values went to the GPU \(2 tokens\)/);
-  failed(runOf({ ended: false }), /- the GPU's worker did not say it ended within 5 s of the release \(T205\)/);
+  failed(runOf({ ended: false }), /- the GPU's worker did not say it ended within 5 s of the release \(T.205\)/);
   // the status line of a run whose steps were asked for: with the steps, or without them
   failed(runOf({ steps: { why: "wk would not start where this GPU binds a buffer" }, note: "prompts and answers on WebGPU" }),
     /- the status line is "prompts and answers on WebGPU", not "prompts on WebGPU, answers on the CPU"/);
@@ -436,11 +436,11 @@ check("a generation's steps wrong in one thing", () => {
   assert.ok(GPU_LINE * 1.5 < K_PACKED * Q8);
   assert.equal(steps(stepsOf({ form: "ORT's DP4A", keys: b64(off) })).value, true);
   const nan = floats(b64(GREEDY_KEYS)).slice();
-  // (a NaN in the last layer; in the first, below. Before the review of T357.3 a NaN in a layer before the last one was
+  // (a NaN in the last layer; in the first, below. Before the review of T.357.3 a NaN in a layer before the last one was
   // passed over, here and in the prompt's verdict: ratios.reduce() left a NaN for whatever came after it)
   nan[(LAYERS - 1) * GEN * KV] = NaN;
   wrong({ keys: b64(nan) }, /- the keys and values of the steps' layer 1 are NaN from NumPy's/);
-  // (and in the first layer: it is the worst layer as well, not the one after it: T357.3's review)
+  // (and in the first layer: it is the worst layer as well, not the one after it: T.357.3's review)
   const first = floats(b64(GREEDY_KEYS)).slice();
   first[0] = NaN;
   wrong({ keys: b64(first) }, /- the keys and values of the steps' layer 0 are NaN from NumPy's/);
@@ -454,7 +454,7 @@ check("a generation's steps wrong in one thing", () => {
   wrong({ penalized: [2] }, /- with a penalty of 100 the step is 2, NumPy's 3, and not a near tie/);
   wrong({ sampled: [[2], [2]] }, /- sampled at 0\.02 and 0\.98: 2 and 2, of NumPy's nucleus of \d+, which are to differ/);
   wrong({ cut: true }, /- the tables in 1 piece, not cut/);
-  // T546: a top-k that kept a 4th, the same token at both ends, the presence penalty on the prompt's tokens too (the
+  // T.546: a top-k that kept a 4th, the same token at both ends, the presence penalty on the prompt's tokens too (the
   // latest 1 as the latest 2), the steps of one submission not those one at a time, and none asked
   const narrowed = stepsOf().narrowed;
   wrong({ narrowed: { ...narrowed, topK: [[2], [5]] } }, /- a top-k of 3 sampled at 0\.02 and 0\.98: 2 and 5, of NumPy's \[2,3,4\]/);
@@ -488,7 +488,7 @@ check("the tables of a model, a line a run, the seconds", () => {
   assert.ok(first > 0, lines.join("\n"));
   assert.deepEqual(lines.slice(first + 1, first + 6), ["| layer | E16 | Q8 | CPU | A | B |", "|---:|---:|---:|---:|---:|---:|",
     "| 0 | 1.0e-3 | 2.0e-2 | 1.0e-1 | 2.0e-3 | 4.0e-3 |", "| 1 | 1.0e-3 | 2.0e-2 | 1.0e-1 | 2.0e-3 | 4.0e-3 |", "| all | 1.0e-3 | 2.0e-2 | 1.0e-1 | 2.0e-3 | 4.0e-3 |"]);
-  for (const title of ["against NumPy's with its cache in float16", "against Q8 (T187: what the packed shaders are held to)"]) {
+  for (const title of ["against NumPy's with its cache in float16", "against Q8 (T.187: what the packed shaders are held to)"]) {
     const table = at(`\nkeys and values of made-up by layer, ${title}: `);
     assert.equal(lines[table + 1], "| layer | CPU | A | B |");
     assert.equal(lines.slice(table + 3, table + 6).length, 3);

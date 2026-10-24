@@ -1,14 +1,14 @@
-// shaders/prompt.ts (T351): a matrix times the tokens of a prompt by tiles (T146): llama.cpp's register tiles,
+// shaders/prompt.ts (T.351): a matrix times the tokens of a prompt by tiles (T.146): llama.cpp's register tiles,
 // TensorFlow.js's packed vec4 and ONNX Runtime's DP4A (each under its notice below), ternary weights unpacked for the last
-// (T232), the forms a device can make of them (T147's promptForms) and the check of one against JavaScript (tiledOff).
+// (T.232), the forms a device can make of them (T.147's promptForms) and the check of one against JavaScript (tiledOff).
 // SDP8AI and ternary_packed() are also what the DP4A forms of one vector (matvec.ts, fused.ts) are made of.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { GROUP, STEP } from "./common.ts";
 import type { Packing } from "./common.ts";
 
-// (T368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
+// (T.368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
 // tiled shader a device may run (promptForms): its text, the overrides of its pipeline, whether it reads packed int8
 // and float16, and none: why this device cannot make it
 type RegTile = { m: number; n: number };
@@ -22,8 +22,8 @@ export type DeviceForms = { half: boolean; subgroups: boolean; packed: boolean; 
 type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got: ArrayLike<number>; xq?: ArrayLike<number> | null; xs?: ArrayLike<number> | null;
   rows: number; n: number; tokens: number; xStride: number; yStride: number; half: boolean; group?: number };
 
-// ---- T146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
-// take the fastest on each device, T147). BATCHED reads each weight once for TILE tokens but loads an activation for
+// ---- T.146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
+// take the fastest on each device, T.147). BATCHED reads each weight once for TILE tokens but loads an activation for
 // every multiply-add, and 64 threads add up every sum. These three take their form from public implementations
 // instead (the owner, 2026-09-26: take the best public one rather than invent one):
 //   regTile(half): llama.cpp's WebGPU register tiling (mul_mat_reg_tile.wgsl with mul_mat_decls.tmpl's Q8_0 and float
@@ -34,7 +34,7 @@ type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got:
 //     llama.cpp's register tiling is f16 only. The sums are f32 either way.
 //   tfjsTile: TensorFlow.js's WebGPU makeMatMulPackedVec4Source (matmul_packed_webgpu.ts): the same classic tiles
 //     (32 × 32, 8 × 8 threads, 4 × 4 a thread, 32 of the width a step), but the workgroup's memory is read as vec4 and
-//     a thread's 4 tokens are one vec4 of sums (fma), where llama.cpp reads scalars (T146's review: a Mali GPU is
+//     a thread's 4 tokens are one vec4 of sums (fma), where llama.cpp reads scalars (T.146's review: a Mali GPU is
 //     likely bound by the workgroup memory's reads, and on Apple llama.cpp's src0 rows 512 bytes apart share a bank).
 //   dp4a(subgroups): ONNX Runtime Web's DP4A MatMulNBits (dp4a_matmul.wgsl.template, 8 bits, no zero points): a tile
 //     of 64 tokens × 64 rows, 256 threads, 32 of the width a step as packed int8 in the workgroup's memory; each thread
@@ -53,7 +53,7 @@ type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got:
 
 // llama.cpp's defaults (ggml-webgpu-shader-lib.hpp: WEBGPU_MUL_MAT_WG_SIZE_M/N 8, TILE_M/N 4, REG_TILE_K_QUANT 32)
 // and a workgroup of 256 threads for a tile of 64 tokens (the benchmark measures both; the overrides are the pipeline's)
-// (T379.2) the Shape every tile reads, written once: a matrix, where its rows go in y, and how far apart the tokens are
+// (T.379.2) the Shape every tile reads, written once: a matrix, where its rows go in y, and how far apart the tokens are
 const TILE_SHAPE = /* wgsl */ `struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }`;
 export const REG_TILES = [{ m: 8, n: 8 }, { m: 16, n: 16 }];
 export const regTileShape = ({ m, n }: RegTile): Tile => ({ rows: 4 * m, tokens: 4 * n, threads: m * n });
@@ -79,10 +79,10 @@ export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-// (T379.2) byte index of a word as a signed int8: llama.cpp's get_byte_i32 as its shaders have it (mul_mat_decls.tmpl,
+// (T.379.2) byte index of a word as a signed int8: llama.cpp's get_byte_i32 as its shaders have it (mul_mat_decls.tmpl,
 // mul_mat_vec.wgsl, get_rows.wgsl: the notice above), one piece of text for every shader that widens int8 weights to
 // floats: the tiles here, a token's float matrix (fused.ts, matvec.ts) and the rows of the embedding (run.ts). Until
-// T379.2 each wrote it out, and the tiles' copy had the numbers marked unsigned (8u, 0xFFu, 24u: the same u32
+// T.379.2 each wrote it out, and the tiles' copy had the numbers marked unsigned (8u, 0xFFu, 24u: the same u32
 // arithmetic, another text)
 const GET_BYTE_I32 = /* wgsl */ `fn get_byte_i32(value: u32, index: u32) -> i32 {
     return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
@@ -351,7 +351,7 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
   }
 }`;
 
-// ---- T232: ternary weights (T230: Prism ML's Ternary Bonsai) on the GPU, as the checkpoint holds them: PQ2_0's
+// ---- T.232: ternary weights (T.230: Prism ML's Ternary Bonsai) on the GPU, as the checkpoint holds them: PQ2_0's
 // codes, two bits a weight (weight j of a row at bits 2 (j % 4) of byte j / 4: 0, 1, 2 for -1, 0, +1 times the scale
 // of its group of 128 along the row; 3, which no ternary file has, is +2, as src/runtime/forward/engine.ts's weightAt and
 // llama2_numpy.unpack_ternary read it), 16 weights a u32, and a float32 scale a group of 128 in a buffer of its own.
@@ -366,10 +366,10 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 // ML ships the models with (unpack_pq2_0 of its Vulkan backend: a byte's four pairs of bits to the low bits of the four
 // bytes of a word), on the four bytes of the word at once. Then a code less one in every byte: the fork keeps the codes
 // as they are and takes the activations' sum off afterwards (its q8_1 blocks carry that sum: mul_q8_1), as this
-// project's CPU kernel does (kernels/ternary.ts, T231); here the activations have no sum beside them (QUANTIZE and
+// project's CPU kernel does (kernels/ternary.ts, T.231); here the activations have no sum beside them (QUANTIZE and
 // NORM_QUANTIZE are the int8 models' too, and their text is not to change: deviceKey()), so the codes are made signed,
 // two instructions a word of 16 weights more (an add and an xor of constants; see the count below), and every line
-// after the load is ORT's as it was, the scales' NaN of T241 with it (a group's dot times scale_a × scale_b).
+// after the load is ORT's as it was, the scales' NaN of T.241 with it (a group's dot times scale_a × scale_b).
 // The inner loop of a generated token, a thread's 32 weights of a row against a group of 32 of the vector:
 //   2 loads of codes; twice unpack4xU8, 2 shifts, 2 ors, 2 ands, an add and an xor on a vec4<u32> (18 instructions where
 //   a vec4 is one, 72 where it is four); 8 dot4I8Packed and 7 adds; a conversion, the two scales' product and the
@@ -377,14 +377,14 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 //   same 4: 21, on four times the bytes). Kept unsigned with the sum taken off (the fork's and the CPU's form) it is 4
 //   vector instructions fewer and 2 reads of the workgroup's memory, an add and a subtraction more, with a sum made by
 //   each thread that loads the vector: fewer instructions where vectors are scalar, as many where they are not. Which
-//   is faster is a device's to say, and none has measured it (TASKS.md's T232 has what would overturn this choice).
-// (The T232 review.) ONNX Runtime has these weights too: the n_bits == 2 path of its templates unpacks a word by a table
+//   is faster is a device's to say, and none has measured it (TASKS.md's T.232 has what would overturn this choice).
+// (The T.232 review.) ONNX Runtime has these weights too: the n_bits == 2 path of its templates unpacks a word by a table
 // of 256 words in the workgroup's memory (dp4a_matmul_common.wgsl.template's DequantizedFrom2BitsTo8Bits and
 // LoadDequantizationTable; the quarter of its table with zero point 1 is the code less one, this project's mapping): 4
 // reads of the table a word of 16 codes where this is 9 vector instructions (36 where vectors are scalar). Not taken: the
 // fork's is the form for these files, and a wave reading a table at random meets its banks (simulated: 2.3 cycles a read
 // for 16 lanes, 3.2 for 32, on 32 banks); where an instruction is what bounds a device the table may be faster. Nothing
-// is measured: a device's to say, as T146's forms are (TASKS.md's T232 review proposes giving it both).
+// is measured: a device's to say, as T.146's forms are (TASKS.md's T.232 review proposes giving it both).
 // In the tiles the unpacking is in the load of the workgroup's memory, once a row for the tile's 64 tokens.
 // A device without the packed int8 dot (packed_4x8_integer_dot_product) keeps a ternary model on the CPU: the float
 // forms (llama.cpp's tiles, TensorFlow.js's) would unpack every weight to a float and multiply it, where the model's
@@ -467,8 +467,8 @@ fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32
 const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
   : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
-// T232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
-// is changed for them there). (T379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
+// T.232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
+// is changed for them there). (T.379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
 // `ternary` until then.)
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
   const ternary = weights === "ternary";
@@ -597,11 +597,11 @@ ${dp4aLines(false)}`}
 }`;
 };
 
-// ---- T147: the tiled shaders a device may run a prompt's matrices with (T146's), for the model's GPU worker, which
+// ---- T.147: the tiled shaders a device may run a prompt's matrices with (T.146's), for the model's GPU worker, which
 // checks each against JavaScript on a small matrix (tiledOff) and times the right ones on the model's own weights, and
-// takes the fastest: which is fastest differs from GPU to GPU (T146), and only the device can say. none: why a shape
+// takes the fastest: which is fastest differs from GPU to GPU (T.146), and only the device can say. none: why a shape
 // is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.ts).
-// T232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
+// T.232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
 export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }: DeviceForms): PromptForm[] => {
   const past = ({ threads: wanted }: Tile, bytes: number) => (wanted > threads ? `${wanted} threads, the device ${threads}`
@@ -640,7 +640,7 @@ export function quantizedLikeCpu(x: ArrayLike<number>) {
 }
 
 // How far a tiled shader's products (got: y after the product twice, the second added: 2 × W·x) are from
-// JavaScript's, the check of T146's review (src/runtime/benchmark/gpu/check.ts's checkTiled): w, int8 [rows][n] with the float32
+// JavaScript's, the check of T.146's review (src/runtime/benchmark/gpu/check.ts's checkTiled): w, int8 [rows][n] with the float32
 // scales s [rows][n / 32]; x, the tokens xStride apart; got, yStride apart. A packed form multiplies what the GPU
 // quantized (xq, xs, xStride apart), held to JavaScript's quantize_x first: a scale may differ in its last bits (WGSL's
 // division is not rounded exactly) and a value then by 1, a wrong index by far more. f32 forms: no more than 1e-4 of
@@ -651,7 +651,7 @@ export function quantizedLikeCpu(x: ArrayLike<number>) {
 // Returns { worst, wrong, far, apart, values }: the worst difference over the sum of |products|, why it is wrong or
 // null, and of a packed form whether a quantized value is far from quantize_x's and how many of values differ by 1.
 // the f32 forms' line of tiledOff, a share of the sum of |products| (the matrix × vector checks of the benchmark hold theirs to it too)
-// T232: group, the weights a scale of s (32; 128 for ternary weights, w then their values of -1 to 2: ternaryValues)
+// T.232: group, the weights a scale of s (32; 128 for ternary weights, w then their values of -1 to 2: ternaryValues)
 export const TILED_LINE = 1e-4;
 export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half, group = GROUP }: Tiled) {
   const perRow = n / GROUP, scaleOf = (r: number, g: number) => s[r * (n / group) + Math.floor((g * GROUP) / group)];
@@ -681,7 +681,7 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
       }
       const off = Math.abs(got[t * yStride + r] / 2 - want);
       worst = Math.max(worst, off / size);
-      // (T232: a difference that is no number is wrong too: a NaN is neither over a line nor under it, and passed)
+      // (T.232: a difference that is no number is wrong too: a NaN is neither over a line nor under it, and passed)
       over ||= !(half ? off <= size * (2 ** -9 + 2 ** -20 + (n + 1) * 2 ** -24) + small * 2 ** -24 : off < TILED_LINE * size);
     }
   }

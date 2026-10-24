@@ -1,4 +1,4 @@
-// logits.mjs (the review of T253): the page's engine's logits at the positions of a text, saved for
+// logits.mjs (the review of T.253): the page's engine's logits at the positions of a text, saved for
 // tests/by_layer_logits.py to hold to transformers' own (a layer at a time): the whole depth of a model that no runner
 // can hold in float32 (Granite 4.2 8B), at the very ids the page's engine was given, as perplexity (tests/start_check.*)
 // cannot say whether the two agree where they differ by a percent.
@@ -45,5 +45,5 @@ fs.writeFileSync(`${saveTo}.logits.f32`, Buffer.from(pyodide.globals.get("LOGITS
 fs.writeFileSync(`${saveTo}.ids.json`, pyodide.globals.get("IDS"));
 console.log(`logits ${page.id}: ${JSON.parse(pyodide.globals.get("IDS")).length} positions of the page's engine (${wide ? "a 64-bit" : "a 32-bit"} memory, int8 ${(size / 1e9).toFixed(2)} GB) ` +
   `in ${pyodide.globals.get("SECONDS").toFixed(0)} s, saved as ${saveTo}.logits.f32 (float32, a row of the vocabulary for each position) and ${saveTo}.ids.json`);
-// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+// (T.357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
 await leave(0);

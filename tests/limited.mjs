@@ -1,4 +1,4 @@
-// limited.mjs (T384)
+// limited.mjs (T.384)
 // Runs a Node script with a limit, so that no test of the suite waits forever: one run of the full suite stood still for
 // 88 minutes after a test's last line, with nothing in the log to say where (run 38024999470).
 //   node tests/limited.mjs <seconds> <script> [arguments ...]

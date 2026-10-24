@@ -10,14 +10,14 @@ import { pyodideWithEngine } from "./engine.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
-// kernel_llama(): the engine with the forward pass of src/runtime/forward.js, as the page runs it (T93)
+// kernel_llama(): the engine with the forward pass of src/runtime/forward.js, as the page runs it (T.93)
 const { pyodide } = await pyodideWithEngine();
 for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
                     "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
-// T362: blocks that are the same on every machine, and what a 64-bit NumPy reads of them
-// (and T257: a sentencepiece BPE model written out as a tokenizer.json, with the ids a 64-bit Python reads with it)
+// T.362: blocks that are the same on every machine, and what a 64-bit NumPy reads of them
+// (and T.257: a sentencepiece BPE model written out as a tokenizer.json, with the ids a 64-bit Python reads with it)
 for (const file of ["tests/superblock_cases.py", "tests/fixtures/superblocks.json", "tests/saluki_form.py", "tests/spelled_bpe_cases.py"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
@@ -40,7 +40,7 @@ assert text.startswith(expected), f"stories260K wrote: {text!r}"
 # the default model: converted from Hugging Face, quantized to int8, unigram tokenizer, sampled
 tiny = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8",
                           tokenizer_kind="unigram", stop_tokens=(1, 2))
-assert tiny.tokenizer.encode("ＡＢＣ") == tiny.tokenizer.encode("ABC"), "NFKC normalization is off (the map of its sentencepiece model, in tokenizer.bin: T216)"
+assert tiny.tokenizer.encode("ＡＢＣ") == tiny.tokenizer.encode("ABC"), "NFKC normalization is off (the map of its sentencepiece model, in tokenizer.bin: T.216)"
 japanese = "".join(tiny.generate("これからの流行りは", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1))
 assert japanese.startswith("これからの流行りは") and len(japanese) > len("これからの流行りは"), f"tiny-lm wrote: {japanese!r}"
 assert japanese == "".join(tiny.generate("これからの流行りは", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1)), "a seed must reproduce"
@@ -53,7 +53,7 @@ assert simd15.backend.startswith("SIMD"), f"the kernels did not load: {simd15.ba
 reference = "".join(numpy15.generate("Once upon a time", steps=60))
 assert reference.startswith(story), f"stories15M wrote: {reference!r}"
 assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the kernels and NumPy disagree"
-# T520: a thought's budget on the page's forward pass, in Pyodide: the closing mark is written in place of draws once the
+# T.520: a thought's budget on the page's forward pass, in Pyodide: the closing mark is written in place of draws once the
 # thought (the format opened it) is 5 tokens long, and the page's engine writes what NumPy writes. stories260K has no
 # marks of a thought: two words of its vocabulary (one piece each) stand for them
 from engine import generation as thought_generation
@@ -69,12 +69,12 @@ assert "".join(stories.generate("Once upon a time", steps=40)) == text and stori
 fast = kernel_llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8",
                           tokenizer_kind="unigram", stop_tokens=(1, 2))
 assert "int8" in fast.backend and len("".join(fast.generate("これからの流行りは", steps=12, temperature=0.7, seed=1))) > 3
-# GPT-2 on the kernels (T65): LayerNorm, GELU and the learned positions must write what NumPy writes
+# GPT-2 on the kernels (T.65): LayerNorm, GELU and the learned positions must write what NumPy writes
 import numpy as np
 import llama2_convert
-# T129's review: NumPy's integers are 32 bits in Pyodide (wasm32): np.prod((64, 27648, 5120)) wrapped to 469762048, so the
+# T.129's review: NumPy's integers are 32 bits in Pyodide (wasm32): np.prod((64, 27648, 5120)) wrapped to 469762048, so the
 # converter sized a Qwen2.5 32B as 7.87 GB instead of 36.86 GB, the page began a 65 GB download and stopped at 7.8 GB,
-# and the refusal of a model past a 64-bit memory (T129 (7)) was never given the size. Sizes and places are Python ints
+# and the refusal of a model past a 64-bit memory (T.129 (7)) was never given the size. Sizes and places are Python ints
 import math
 class Sized:
     def open(self, size, header, dtype, form):
@@ -92,7 +92,7 @@ for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
         f"a 32B model in {big_dtype} is {sized.size} bytes, not {big_bytes} (NumPy's 32-bit integers?)"
     last_offset, last_shape, last_is_matrix = tensors_placed(writer)[-1]
     assert last_offset + llama2_convert.tensor_bytes(last_shape, last_is_matrix, big_dtype) == big_bytes, f"its tensors do not end at its size in {big_dtype}"
-    # (T233's review: and where the last row of its largest matrix, 9.06e9 values, is written, values and scales: the places the
+    # (T.233's review: and where the last row of its largest matrix, 9.06e9 values, is written, values and scales: the places the
     # converter's writer computes from the shape, which np.prod put back wrapped and the sizes above did not see)
     largest = max((i for i, (_, _, is_matrix) in enumerate(tensors_placed(writer)) if is_matrix), key=lambda i: math.prod(tensors_placed(writer)[i][1]))
     at, shape, _ = tensors_placed(writer)[largest]
@@ -104,7 +104,7 @@ for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
     wanted = ([(at + (count - width) * 3 // 4, width * 3 // 4), (at + count * 3 // 4 + 4 * ((count - width) // 32), 4 * (width // 32))] if big_dtype == "int6"
               else [(at + count - width, width), (at + count + 4 * ((count - width) // group), 4 * (width // group))])
     assert sized.writes == wanted, f"the last row of the 32B's largest matrix in {big_dtype} is written at {sized.writes}, not {wanted}"
-# T233: Ternary Bonsai 2 27B as the ternary checkpoint the page makes of it, 7.66 GB on a 64-bit memory: its size, where
+# T.233: Ternary Bonsai 2 27B as the ternary checkpoint the page makes of it, 7.66 GB on a 64-bit memory: its size, where
 # its tensors begin, and where the rows of the matrix that lies last in it are written (its values and its scales), all
 # past 2^32 and all Python's integers. The header and the form are the real model's (the rotated basis lays out nothing)
 import math
@@ -125,7 +125,7 @@ ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for of
 assert all(type(offset) is int for offset, _, _ in tensors_placed(writer)), "a tensor's place is no Python integer"
 assert [offset for offset, _, _ in tensors_placed(writer)][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
 # two matrices: the one that lies last (the classifier: 1.27e9 values, below 2^31) and the one with the most values (a stack of the
-# FFN's matrices of the 64 layers: 5.7e9, past 2^31, which is where NumPy's 32-bit integers in Pyodide wrapped: T233's review put
+# FFN's matrices of the 64 layers: 5.7e9, past 2^31, which is where NumPy's 32-bit integers in Pyodide wrapped: T.233's review put
 # np.prod back into the place of a ternary matrix's scales and the classifier alone passed, so this matrix is the check of that line)
 matrices = [i for i, (_, _, is_matrix) in enumerate(tensors_placed(writer)) if is_matrix]
 last_matrix = max(matrices, key=lambda i: tensors_placed(writer)[i][0])
@@ -137,12 +137,12 @@ for which, index in (("last", last_matrix), ("largest", largest)):
     assert at > 2 ** 32 or which == "largest", f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
     row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
     placed.writes.clear()
-    writer.write(index, count - width, row)  # (T533: the scales float16s, 2 bytes a group)
+    writer.write(index, count - width, row)  # (T.533: the scales float16s, 2 bytes a group)
     assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 2 * ((count - width) // 128), 2 * (width // 128))], \\
         f"the last row of the 27B's {which} matrix is written at {placed.writes}"
     assert placed.writes[1][0] + placed.writes[1][1] == ends[index], f"the scales of its {which} matrix do not end where the matrix ends"
     assert placed.writes[1][0] > 2 ** 32, f"the scales of its {which} matrix are written at {placed.writes[1][0]}: not past 2^32"
-# T363.2: Underdog Saluki 27B as the page will hold it, its matrices in the blocks of its GGUF, a type to a layer (the
+# T.363.2: Underdog Saluki 27B as the page will hold it, its matrices in the blocks of its GGUF, a type to a layer (the
 # form's "kinds"; tests/saluki_form.py has the real file's counts): 7.96 GB whose stacks are laid out a layer at a time.
 # The size the note counted, every place a Python integer, the layers of the stacks one after the other past 2^32, and
 # the last layer of a stack of more than 2^31 values where plain arithmetic puts it.
@@ -169,7 +169,7 @@ assert saluki_w3.size == sum(saluki_blocks * saluki_sizes[kind] for kind in salu
 # (a stack that is one type throughout is sized from all its values at once, 5.7e9 of them)
 saluki_one = llama2_numpy.placed([row._replace(kind="IQ3_S") for row in saluki_rows if row.name == "w3"], "int8")[0]
 assert saluki_one.size == 64 * saluki_blocks * 110 > 2 ** 31 and saluki_one.scales == 28 + saluki_one.size and not saluki_one.layers
-# T363.3: and the conversion that keeps the blocks, over the header the converter makes of the real file's head
+# T.363.3: and the conversion that keeps the blocks, over the header the converter makes of the real file's head
 # (saluki_form.header(), its classifier first in the file) and no weights: the form it writes is the one sized above,
 # the checkpoint the same bytes, and the file's first bytes, which end inside a block, go where the classifier is, past
 # 2^32 (a place NumPy's 32-bit integers would wrap)
@@ -223,7 +223,7 @@ for pos, token in enumerate([1, 5, 9, 13]):
     wanted, got = plain.forward(token, pos), quick.forward(token, pos)
     assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), f"GPT-2 kernels differ at {pos}: {np.abs(wanted - got).max()}"
 
-# GPT-NeoX on the kernels (T72): part of every head rotates, and both branches may read the same x
+# GPT-NeoX on the kernels (T.72): part of every head rotates, and both branches may read the same x
 neox_tensors = {"gpt_neox.embed_in.weight": normal(vocab, dim), "embed_out.weight": normal(vocab, dim),
                 "gpt_neox.final_layer_norm.weight": (1.0 + normal(dim) * 0.1).astype(np.float32),
                 "gpt_neox.final_layer_norm.bias": normal(dim)}
@@ -256,7 +256,7 @@ for rotary_pct, parallel in ((0.25, True), (1.0, False)):
         assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), \
             f"GPT-NeoX kernels differ (rotary_pct {rotary_pct}, parallel {parallel}) at {pos}: {np.abs(wanted - got).max()}"
 
-# Qwen3 on the kernels (T124): the norms of every head of q and k must write what NumPy writes, in float32; int8
+# Qwen3 on the kernels (T.124): the norms of every head of q and k must write what NumPy writes, in float32; int8
 # computes on its own numbers (the activations are quantized too) and must pick mostly the same tokens
 def qwen3_model(dim, heads, kv_heads, head_dim, hidden=96, layers=2, vocab=320, positions=24):
     rng = np.random.default_rng(5)
@@ -287,12 +287,12 @@ for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16), (64, 4, 2, 32), (96, 2, 1
     for dtype in ("float32", "int8"):
         qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, {"qk_norm": True, "head_dim": head_dim}))
         llama2_convert.convert_weights(source, qwen3_config, dtype, 24, qwen3_file)
-        # an epsilon far from 1e-5, so that a kernel that did not take it would differ (T124)
+        # an epsilon far from 1e-5, so that a kernel that did not take it would differ (T.124)
         shape = dict(dtype=dtype, qk_norm=True, head_dim=head_dim, rms_norm_eps=0.25)
         plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, **shape)
         quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, **shape)
         assert quick.backend.startswith("SIMD"), f"the kernels did not load for Qwen3: {quick.backend}"
-        # T144: int8 on the int8 kernels, not widened to float32 on the way (which the tokens alone would not show)
+        # T.144: int8 on the int8 kernels, not widened to float32 on the way (which the tokens alone would not show)
         assert (dtype == "int8") == ("int8" in quick.backend), f"Qwen3 {dtype} runs as {quick.backend}"
         same = 0
         for pos, token in enumerate([1, 5, 9, 13, 17, 21, 25, 29]):
@@ -302,7 +302,7 @@ for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16), (64, 4, 2, 32), (96, 2, 1
                 assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), f"Qwen3 kernels differ ({head_dim}) at {pos}: {np.abs(wanted - got).max()}"
         assert same >= 6, f"Qwen3 int8 on the kernels picks other tokens ({same} of 8 the same)"
 
-# the switches of T52: every one of them must leave a path that still works, and float32 must not change
+# the switches of T.52: every one of them must leave a path that still works, and float32 must not change
 for disable in ((), ("relaxed",), ("sampler",), ("int8", "relaxed", "sampler"), ("kernels",)):
     switched = kernel_llama(read("stories15M.f32"), read("tokenizer.bin"), disable=disable)
     assert "".join(switched.generate("Once upon a time", steps=40)) == reference[:len("".join(switched.generate("Once upon a time", steps=40)))], \
@@ -321,7 +321,7 @@ generator = np.random.default_rng(0)
 class Fixed:
     def __init__(self, value): self.value = value
     def random(self): return self.value
-# (T359.7) a sampler draws by a Sampling, for a generation at a time: one token of the kernels' and of NumPy's by these
+# (T.359.7) a sampler draws by a Sampling, for a generation at a time: one token of the kernels' and of NumPy's by these
 # settings, and their penalties alone (greedy after them, which draws no number)
 def sample_with(sampler):
     def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
@@ -343,7 +343,7 @@ for spread in (0.5, 2.0, 6.0, 12.0):
 lonely = np.full(fast.vocab_size, -100.0, dtype=np.float32)
 lonely[123] = 50.0
 assert kernel_sample(lonely, 0.7, 0.9, generator) == 123 and 0 <= kernel_sample(np.zeros_like(lonely), 0.7, 0.9, generator) < lonely.size
-# T189: the kernel takes the logits four at a time; a vocabulary that is no multiple of 4 ends on the tail, where the
+# T.189: the kernel takes the logits four at a time; a vocabulary that is no multiple of 4 ends on the tail, where the
 # best token is put
 for size in (fast.vocab_size - 1, fast.vocab_size - 3):
     for spread in (2.0, 12.0):
@@ -362,8 +362,8 @@ for size in (fast.vocab_size, fast.vocab_size - 3):
 # a maximum left out shows only where exp() overflows (softmax does not care what is taken away from all the logits):
 # two tokens far above the rest, drawn with two random numbers that both land on the more probable one (its share is
 # 1 / (1 + 1/e) = 0.73). Left out, the two are as probable and 0.6 lands on the second. They are put in every part of
-# the maximum that could be left out whole: the first four, the same lane of one of the eight maxima (32 apart, T201:
-# positions 4 to 35 are each lane of each once), the fours after the thirty-twos and the tail one at a time (T189's
+# the maximum that could be left out whole: the first four, the same lane of one of the eight maxima (32 apart, T.201:
+# positions 4 to 35 are each lane of each once), the fours after the thirty-twos and the tail one at a time (T.189's
 # review: the pairs only 16 apart from 4 to 35 let the fours after the sixteens and the tail be left out)
 for size in (fast.vocab_size, fast.vocab_size - 1, fast.vocab_size - 3):
     for first in list(range(36)) + list(range(size - 40, size - 1)):
@@ -374,7 +374,7 @@ for size in (fast.vocab_size, fast.vocab_size - 1, fast.vocab_size - 3):
             pair[first], pair[first + gap] = 300.0, 299.0
             for value in (0.3, 0.6):
                 assert kernel_sample(pair, 1.0, 0.9, Fixed(value)) == first, (size, first, gap, value)
-# T178: a few tokens above the floor and a low top-p (count * topp < 1): llama2.c's cutoff (1 - topp) / (count - 1)
+# T.178: a few tokens above the floor and a low top-p (count * topp < 1): llama2.c's cutoff (1 - topp) / (count - 1)
 # was above all of them, and the kernel drew a word from outside the vocabulary, NumPy an IndexError. The nucleus is
 # the most probable token alone (the others add up to less than 1 - topp)
 def few(above):
@@ -388,7 +388,7 @@ for above in (2, 3, 5):
                 picks = (kernel_sample(few(above), temperature, topp, Fixed(value)),
                          numpy_sample(few(above), temperature, topp, Fixed(value)))
                 assert picks == (above - 1, above - 1), (above, topp, temperature, value, picks)
-# T195: logits whose largest is no finite number (a NaN anywhere, +inf anywhere, all -inf): the kernel drew index[-1]
+# T.195: logits whose largest is no finite number (a NaN anywhere, +inf anywhere, all -inf): the kernel drew index[-1]
 # (a word outside the vocabulary, or the last one), NumPy raised an error of its own or drew a token. Both stop with the
 # same ValueError now, greedy too, with the NaN or the infinity in each part of the kernel's maximum (the first four,
 # the sixteens, the fours after them, the tail one at a time). Some -inf among finite logits is no fault: those tokens
@@ -422,7 +422,7 @@ ours, theirs = logits.copy(), logits.copy()
 kernel_penalize(ours, history, 1.3)
 numpy_penalize(theirs, history, 1.3)
 assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), "the penalty of the kernels is off"
-# T359: the two samplers as the parts they are. The model with the kernels has theirs in the reference's places, and
+# T.359: the two samplers as the parts they are. The model with the kernels has theirs in the reference's places, and
 # the kernels' sampler follows a history that grows by a token a step past its window (its ring of the latest tokens,
 # written one number a step) as NumPy's does, which reads the history's end every time
 assert isinstance(vars(fast)["sampler"], llama2_numpy.KernelSampler) and isinstance(llama2_numpy.Llama.sampler, llama2_numpy.NumpySampler)
@@ -438,7 +438,7 @@ for settings in (llama2_numpy.Sampling(repetition_penalty=1.3), llama2_numpy.Sam
         assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), f"the kernels' sampler lost the history at step {step}"
         grown.append(int(generator.integers(0, fast.vocab_size)))
         written.append(grown[-1])
-# T274: a top-k, a min-p and a presence penalty on the kernels are NumPy's: the same token for the same random number
+# T.274: a top-k, a min-p and a presence penalty on the kernels are NumPy's: the same token for the same random number
 # (or a neighbour of about the same logit where rounding moves a border), over a vocabulary that ends on the tail too
 for size in (fast.vocab_size, fast.vocab_size - 3):
     for spread in (2.0, 6.0):
@@ -478,7 +478,7 @@ for checkpoint, vocabulary in [("stories260K.bin", "tok512.bin"), ("stories3_5M-
     grouped = kernel_llama(read(checkpoint), read(vocabulary))
     assert grouped.backend.startswith("SIMD") and grouped.n_kv_heads < grouped.n_heads
     assert "".join(grouped.generate("Once upon a time", steps=60)) == "".join(plain.generate("Once upon a time", steps=60)), checkpoint
-# T89: the converter's quantize() on the kernels gives the very bytes of NumPy's, for a whole conversion too
+# T.89: the converter's quantize() on the kernels gives the very bytes of NumPy's, for a whole conversion too
 quantize_rows = llama2_numpy.kernel_quantizer("simdkernel.so")
 values = (np.random.default_rng(7).standard_normal((96, 256)) * 0.1).astype(np.float32)
 values[0, :32] = 0.0
@@ -491,9 +491,9 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, numpy_int8)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, kernel_int8, quantize_rows=quantize_rows)
     assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
-# T123: bfloat16 widened on the kernels is NumPy's widening to the bit, every 16-bit pattern (NaNs, infinities,
+# T.123: bfloat16 widened on the kernels is NumPy's widening to the bit, every 16-bit pattern (NaNs, infinities,
 # subnormals, both zeros), in a length that leaves a tail after the groups of 8
-# (T359: the readers of every stored type that has a kernel come from one call, by the type's name)
+# (T.359: the readers of every stored type that has a kernel come from one call, by the type's name)
 kernel_readers = llama2_convert.kernel_readers("simdkernel.so")
 assert set(kernel_readers) == {name for name, source in llama2_convert.SOURCES.items() if source.kernel} == {"BF16", "Q8_0", "PQ2_0", "PTQ1_0"}, \
     f"the kernels read {sorted(kernel_readers)}, which are not the stored types that name a kernel"
@@ -515,13 +515,13 @@ for name, source in llama2_convert.SOURCES.items():
                 raise AssertionError(f"{name}: a block cut short was read")
             except ValueError:
                 pass
-# T362: the ten readers of llama.cpp's K- and i-quantized types are NumPy's alone (no kernel), and NumPy's integers are
+# T.362: the ten readers of llama.cpp's K- and i-quantized types are NumPy's alone (no kernel), and NumPy's integers are
 # 32 bits here: of blocks that are the same bytes everywhere they read what a 64-bit NumPy reads (the fixture, which
 # pytest holds to a reference of one weight at a time), and a GGUF says each by its number
 import json, superblock_cases
 from convert.superblocks import SUPERBLOCKS
 with open("superblocks.json") as f:
-    # (T505.1: "widened", the eight that are read and never kept, blocks of 256 and of 32)
+    # (T.505.1: "widened", the eight that are read and never kept, blocks of 256 and of 32)
     read_natively, widened_natively = (lambda fixture: (fixture["read"], fixture["widened"]))(json.load(f))
 assert set(read_natively) == set(SUPERBLOCKS) and not set(read_natively) & set(widened_natively), \
     f"the fixture has {sorted(read_natively)}, the readers are {sorted(SUPERBLOCKS)}"
@@ -535,7 +535,7 @@ for name, natively in {**read_natively, **widened_natively}.items():
         read_here = source.read(superblock_cases.blocks(name, source.size))
     assert read_here.shape == (superblock_cases.BLOCKS * source.values,) and superblock_cases.digest(read_here) == natively, \
         f"{name}: Pyodide's NumPy reads other values than a 64-bit NumPy's"
-# T505.2: a Llama 3's rope_freqs table read back into its rope_scaling here too (a line fitted by NumPy's least squares,
+# T.505.2: a Llama 3's rope_freqs table read back into its rope_scaling here too (a line fitted by NumPy's least squares,
 # and whole numbers made of what it gives): a Llama 3.1 8B's and a Llama 3.2 1B's, as their real GGUFs have them
 from convert.gguf import llama3_scaling
 for width, factor in ((128, 8.0), (64, 32.0)):
@@ -546,7 +546,7 @@ for width, factor in ((128, 8.0), (64, 32.0)):
 widen = kernel_readers["BF16"]
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"
-# T162: swiglu and gelu four at a time (vexp) are their scalar tails (fexp) to the bit, over both sides of exp's clamps
+# T.162: swiglu and gelu four at a time (vexp) are their scalar tails (fexp) to the bit, over both sides of exp's clamps
 # (-87 and 88), large and small numbers, zeros and infinities: each value alone (n = 1) takes the tail
 simd = llama2_numpy.load_kernels("simdkernel.so", without_relaxed=True)
 edges = np.array([0.0, -0.0, 1e-30, -1e-30, 43.4, 43.6, 44.0, -43.6, -44.0, 86.9, 87.0, 87.1, 88.0, 88.1, 89.0, 200.0,
@@ -555,7 +555,7 @@ inputs = np.concatenate([edges, np.linspace(-120, 120, 4001, dtype=np.float32),
                          (rng.standard_normal(4000) * 4).astype(np.float32)])
 inputs = inputs[:inputs.size & ~3]
 others = rng.standard_normal(inputs.size).astype(np.float32)
-# (T261: and geglu, a Gemma 3's gate, which is gelu's numbers times the other input: gelu with a bias of -0, which
+# (T.261: and geglu, a Gemma 3's gate, which is gelu's numbers times the other input: gelu with a bias of -0, which
 # changes no value, then the product in float32, to the bit; and NumPy's gelu() times it, within float32's last digits)
 for name, first, other in (("swiglu", inputs, others), ("gelu", others, inputs), ("geglu", inputs, others)):
     four, single = np.empty_like(inputs), np.empty_like(inputs)
@@ -570,7 +570,7 @@ with np.errstate(over="ignore", invalid="ignore"):
     assert np.array_equal(gated.view(np.uint32), (plain * others).view(np.uint32)), "geglu is not gelu times the other input"
     finite = np.isfinite(inputs) & (np.abs(inputs) < 1e6)
     assert np.allclose(gated[finite], (llama2_numpy.gelu(inputs[finite].astype(np.float64)) * others[finite]), rtol=1e-5, atol=1e-6), "geglu is not NumPy's gelu() times the other input"
-# T342: and geglu_erf, a Spark-X2.5's gate, the exact GELU: four at a time is one at a time to the bit (the loop above's
+# T.342: and geglu_erf, a Spark-X2.5's gate, the exact GELU: four at a time is one at a time to the bit (the loop above's
 # check, over the same values), NumPy's gelu_erf() of the same steps times the other input within float32's last digits
 # (their exps are not the same: the kernels' and NumPy's), and erf itself within 5e-7 times the other input
 exact_gated, exact_single = np.empty_like(inputs), np.empty_like(inputs)
@@ -586,7 +586,7 @@ with np.errstate(over="ignore", invalid="ignore"):
     assert np.all(np.abs(exact_gated[exact_finite] - erf_said * others[exact_finite]) <= 5e-7 * np.maximum(np.abs(others[exact_finite]), 1) * np.maximum(1, np.abs(inputs[exact_finite]) / 4)), \
         "geglu_erf is not the exact GELU times the other input"
     assert np.array_equal(np.signbit(exact_gated[inputs == 0]), np.signbit(inputs[inputs == 0] * others[inputs == 0])), "geglu_erf's zeros"
-# T237: the rotated basis's kernels are NumPy's rotate() and unrotate() to the bit: every block from 1 to 4096, one to
+# T.237: the rotated basis's kernels are NumPy's rotate() and unrotate() to the bit: every block from 1 to 4096, one to
 # five blocks of it (lengths that are no multiple of four too, for blocks of 1 and 2), large and small numbers and
 # both zeros, into another place and in place, and nothing written past n
 # (in a function, with random numbers of its own: the test's values, blocks and draws further down stay what they were)
@@ -609,7 +609,7 @@ def rotated_kernels():
                 simd[name](there.ctypes.data, there.ctypes.data, scaled.ctypes.data, n, block)
                 assert np.array_equal(there.view(np.uint32), want.view(np.uint32)), f"{name} in place is not NumPy's (block {block}, {n} values)"
 rotated_kernels()
-# T136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
+# T.136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
 # subnormals, both zeros) once, with every int8 (-128 and 127 included) across the blocks, in odd numbers of blocks
 q8_0 = kernel_readers["Q8_0"]
 rng = np.random.default_rng(11)
@@ -643,7 +643,7 @@ for dtype in ("int8", "float32"):
         stream.finish()
         outs.append(bytes(stream.out))
     assert outs[0] == outs[1], f"widen_q8_0 changed the {dtype} checkpoint"
-# T273: the two ternary types widened on the kernels are NumPy's pq2_0() and ptq1_0() to the bit: every float16 scale
+# T.273: the two ternary types widened on the kernels are NumPy's pq2_0() and ptq1_0() to the bit: every float16 scale
 # once, every byte in every place of a block (the code 3 of PQ2_0 and the bytes past 242 of PTQ1_0, which no file
 # holds, included), in odd numbers of blocks
 ternary_readers = kernel_readers
@@ -694,7 +694,7 @@ for kind, size in (("PQ2_0", 34), ("PTQ1_0", 28)):
             stream.finish()
             outs.append(bytes(stream.out))
         assert outs[0] == outs[1] and len(outs[0]) > 100000, f"the kernels' {kind} changed the {dtype} checkpoint"
-# T98: the six bits too: quantize6_x is quantize6() and pack6() to the byte (a group of zeros, ties that round to
+# T.98: the six bits too: quantize6_x is quantize6() and pack6() to the byte (a group of zeros, ties that round to
 # even, the largest value, and a whole conversion)
 ties = values.copy()
 ties[5, :32] = np.arange(32, dtype=np.float32) - 15.5  # halves: with the largest 31 the scale is 1, and they all tie
@@ -712,7 +712,7 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, numpy_six)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, kernel_six, quantize_rows=quantize_rows)
     assert numpy_six == kernel_six, f"the kernels' quantizer changed the int6 {arch} checkpoint"
-# T230: and the ternary dtype: ternary_x is ternary() to the byte (a group of zeros, scales of every size), refuses
+# T.230: and the ternary dtype: ternary_x is ternary() to the byte (a group of zeros, scales of every size), refuses
 # what ternary() refuses, and a whole conversion of PQ2_0 tensors is the same bytes with it as without
 signs = np.random.default_rng(13).integers(-1, 2, (96, 256)).astype(np.float32)
 trits = (signs.reshape(-1, 128) * (np.abs(np.random.default_rng(14).standard_normal((192, 1))) * 0.02).astype(np.float16).astype(np.float32)).reshape(96, 256)
@@ -750,7 +750,7 @@ for quantizer in (None, quantize_rows):
     stream.finish()
     outs.append(bytes(stream.out))
 assert outs[0] == outs[1], "ternary_x changed the ternary checkpoint"
-# T110: float32 to float16 as NumPy rounds it, and attention over a float16 cache the same to the bit as over the
+# T.110: float32 to float16 as NumPy rounds it, and attention over a float16 cache the same to the bit as over the
 # float32 values it stands for (every head alone, and heads in two ranges)
 kernel = llama2_numpy.load_kernels("simdkernel.so")
 rng = np.random.default_rng(11)
@@ -776,7 +776,7 @@ kernel["attention_f16"](out16.ctypes.data, q.ctypes.data, keys.ctypes.data, valu
 kernel["attention_f16"](out16.ctypes.data, q.ctypes.data, keys.ctypes.data, values.ctypes.data, scores.ctypes.data,
                         count - 1, heads, kv_heads, head_size, 3, heads)
 assert np.array_equal(out32, out16), "attention_f16 is not attention over the widened cache"
-# T160: every one of the 65536 halves widened, four at a time (one head of 65536) and one at a time (65536 heads of
+# T.160: every one of the 65536 halves widened, four at a time (one head of 65536) and one at a time (65536 heads of
 # one): an infinity reads 65536 and a NaN 65536 times (1 + mantissa / 1024), as the kernel says. What shows is the
 # values' path: with one position a key's score does not reach the output (its weight is 1 whatever it is, NaN and
 # infinity aside), and neither does -0 (the output is summed from +0); the keys go through the same halves4 and half
@@ -793,7 +793,7 @@ for heads, head_size in ((1, 65536), (65536, 1)):
     kernel["attention_f16"](out16.ctypes.data, query.ctypes.data, every.ctypes.data, every.ctypes.data, scores.ctypes.data,
                             0, heads, heads, head_size, 0, heads)
     assert np.array_equal(out32.view(np.uint32), out16.view(np.uint32)), f"attention_f16 widens a half wrong ({heads} heads of {head_size})"
-# T160 (the review of (4)): from_f16, the GPU's float16 keys and values into a float32 cache, widens every half as
+# T.160 (the review of (4)): from_f16, the GPU's float16 keys and values into a float32 cache, widens every half as
 # attention_f16 does (to the bit, -0 included), four at a time and the remainders, and writes nothing past n
 widened = np.empty(65536 + 3, dtype=np.float32)
 for count in (65536, 65535, 65534, 65533, 3, 0):
@@ -801,7 +801,7 @@ for count in (65536, 65535, 65534, 65533, 3, 0):
     kernel["from_f16"](widened.ctypes.data, every.ctypes.data, count)
     assert np.array_equal(widened[:count].view(np.uint32), stand[:count].view(np.uint32)), f"from_f16 widens a half wrong (n {count})"
     assert np.isnan(widened[count:]).all(), f"from_f16 wrote past n {count}"
-# T243: finite_f16, the look at the GPU's float16 keys and values before they go into the cache: every one of the 65536
+# T.243: finite_f16, the look at the GPU's float16 keys and values before they go into the cache: every one of the 65536
 # halves alone (0 for the 2048 whose exponent's bits are all set, the NaNs and the two infinities, which the widening
 # above makes finite numbers; 1 for the rest: NumPy's isfinite), one at every place of a run of 19 (the eights and the
 # rest), and no half outside its n looked at
@@ -819,7 +819,7 @@ assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels
 
 f"Python {sys.version.split()[0]}: kernels {simd15.stats['tokens_per_second']:.0f} against NumPy {numpy15.stats['tokens_per_second']:.0f} tok/s, {fast.backend} {fast.stats['tokens_per_second']:.0f} tok/s, stories260K {stories.stats['tokens_per_second']:.0f} tok/s, tiny-lm {tiny.stats['tokens_per_second']:.0f} tok/s, {japanese!r}"
 `);
-// T144: a file opened from a folder: the worker hands checkpoint_dtype() the model's options as they are, a JavaScript
+// T.144: a file opened from a folder: the worker hands checkpoint_dtype() the model's options as they are, a JavaScript
 // object, and it reads the form out of them (a Qwen3 with heads twice as wide as dim / heads)
 {
   const header = [64, 96, 2, 4, 2, 320, 24];
@@ -837,7 +837,7 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
   if (!refused) throw new Error("checkpoint_dtype() took the file without its head_dim");
   engine.destroy();
 }
-// T151: the CPU's sampling in JavaScript (src/runtime/shaders.js's penalizeLikeCpu and sampleLikeCpu: what /benchmark/ holds
+// T.151: the CPU's sampling in JavaScript (src/runtime/shaders.js's penalizeLikeCpu and sampleLikeCpu: what /benchmark/ holds
 // the GPU's SAMPLE to) is the kernel's: the same logits, history and random number, the same penalized logits and the
 // same token (or, as above, a neighbour of about the same logit where rounding moves a border: the kernel's exp() is a
 // polynomial, JavaScript's is not)
@@ -848,7 +848,7 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
     logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()
     if penalty != 1.0 or presence != 0.0:
         tokens = [int(token) for token in history]
-        # (T546: the latest written of the history sampled, the presence penalty's: generate()'s written)
+        # (T.546: the latest written of the history sampled, the presence penalty's: generate()'s written)
         kernel_penalize(logits, tokens, penalty, presence, None if written is None else tokens[len(tokens) - written:])
     return kernel_sample(logits, temperature, topp, Fixed(value), top_k, min_p), logits.tobytes()
 `);
@@ -882,7 +882,7 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
       }
     }
   }
-  // T274: with a top-k, a min-p and a presence penalty too
+  // T.274: with a top-k, a min-p and a presence penalty too
   let narrowedCases = 0, narrowedSame = 0;
   for (const spread of [2, 6]) {
     for (const topk of [0, 20, 64]) {
@@ -890,7 +890,7 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
         // (a min-p of 1 keeps the most probable alone: a comparison that leaves out the equal fails there; a repetition
         // penalty of 1 with a presence penalty is a penalty still)
         for (const minp of [0, 0.05, 1]) {
-          // (T546: and the presence penalty's on the latest 10 of the history alone, the sampled ones, which hold the 4th
+          // (T.546: and the presence penalty's on the latest 10 of the history alone, the sampled ones, which hold the 4th
           // most likely again; the 3rd, 5th and the rest of the 40 before are the prompt's)
           for (const [presence, repetition, written] of [[0, 1.1], [1.5, 1.1], [1.5, 1], [1.5, 1.1, 10], [1.5, 1, 0]]) {
             for (const value of [0, Math.random(), 1 - 1e-12]) {
@@ -903,11 +903,11 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
               const ours = Float32Array.from(logits);
               penalizeLikeCpu(ours, history, repetition, presence, written);
               if (!ours.every((v, i) => v === new Float32Array(penalized.buffer, penalized.byteOffset, vocab)[i])) {
-                throw new Error(`T274: penalizeLikeCpu is not the kernel's penalize (presence ${presence}, written ${written})`);
+                throw new Error(`T.274: penalizeLikeCpu is not the kernel's penalize (presence ${presence}, written ${written})`);
               }
               const token = sampleLikeCpu(ours, 0.7, topp, value, topk, minp);
               if (token !== theirs && !(Math.abs(ours[token] - ours[theirs]) < 1e-3)) {
-                throw new Error(`T274: sampleLikeCpu picked ${token}, the kernel ${theirs} (spread ${spread}, top-k ${topk}, top-p ${topp}, min-p ${minp}, r ${value})`);
+                throw new Error(`T.274: sampleLikeCpu picked ${token}, the kernel ${theirs} (spread ${spread}, top-k ${topk}, top-p ${topp}, min-p ${minp}, r ${value})`);
               }
               narrowedCases++;
               narrowedSame += token === theirs;
@@ -917,9 +917,9 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
       }
     }
   }
-  if (narrowedSame < 0.95 * narrowedCases) throw new Error(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases only`);
-  console.log(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases with a top-k, a min-p and a presence penalty`);
-  // T178: the few tokens above the floor under a low top-p, as the kernel's check above: the most probable one alone
+  if (narrowedSame < 0.95 * narrowedCases) throw new Error(`T.274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases only`);
+  console.log(`T.274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases with a top-k, a min-p and a presence penalty`);
+  // T.178: the few tokens above the floor under a low top-p, as the kernel's check above: the most probable one alone
   for (const above of [2, 3, 5]) {
     const logits = new Float32Array(vocab).fill(-100);
     for (let k = 0; k < above; k++) logits[k] = 5 + 0.1 * k;
@@ -931,13 +931,13 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
           result.destroy();
           const token = sampleLikeCpu(logits, temperature, topp, value);
           if (token !== above - 1 || theirs !== above - 1) {
-            throw new Error(`T178: sampleLikeCpu picked ${token}, the kernel ${theirs} of ${above} (top-p ${topp}, T ${temperature}, r ${value})`);
+            throw new Error(`T.178: sampleLikeCpu picked ${token}, the kernel ${theirs} of ${above} (top-p ${topp}, T ${temperature}, r ${value})`);
           }
         }
       }
     }
   }
-  // T195: the logits the kernel and NumPy stop on (a NaN or +inf anywhere, all -inf), sampleLikeCpu stops on too; some
+  // T.195: the logits the kernel and NumPy stop on (a NaN or +inf anywhere, all -inf), sampleLikeCpu stops on too; some
   // -inf among finite logits it draws from as the kernel does
   const spoilt = [];
   for (const bad of [NaN, Infinity]) {
@@ -956,7 +956,7 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
       } catch {
         threw = true;
       }
-      if (!threw) throw new Error(`T195: sampleLikeCpu drew a token from logits with ${name} (T ${temperature}, top-p ${topp})`);
+      if (!threw) throw new Error(`T.195: sampleLikeCpu drew a token from logits with ${name} (T ${temperature}, top-p ${topp})`);
     }
   }
   const masked = new Float32Array(vocab).map((_, i) => (i % 7 === 0 ? -Infinity : 4 * Math.random()));
@@ -967,15 +967,15 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
       result.destroy();
       const token = sampleLikeCpu(masked, 0.7, topp, value);
       if (!Number.isFinite(masked[token]) || (token !== theirs && !(Math.abs(masked[token] - masked[theirs]) < 1e-3))) {
-        throw new Error(`T195: sampleLikeCpu picked ${token}, the kernel ${theirs}, among -inf logits (top-p ${topp}, r ${value})`);
+        throw new Error(`T.195: sampleLikeCpu picked ${token}, the kernel ${theirs}, among -inf logits (top-p ${topp}, r ${value})`);
       }
     }
   }
   pick.destroy();
   if (same < 0.95 * cases) throw new Error(`sampleLikeCpu picked the kernel's token in ${same} of ${cases} cases only`);
-  console.log(`T151: sampleLikeCpu picked the kernel's token in ${same} of ${cases} cases (the rest a neighbour of the same logit)`);
+  console.log(`T.151: sampleLikeCpu picked the kernel's token in ${same} of ${cases} cases (the rest a neighbour of the same logit)`);
 }
-// T178: llm-jp-3 150M under a low temperature and top-p, as a visitor may set them (the page takes top-p from 0.05):
+// T.178: llm-jp-3 150M under a low temperature and top-p, as a visitor may set them (the page takes top-p from 0.05):
 // before, all 8 runs of 160 tokens here ended in an IndexError (the kernel drew a word outside the vocabulary; none
 // did in 64 tokens: it comes when the penalty has flattened the few likely tokens of a loop)
 if (fs.existsSync(root + "llm-jp-3-150m.bin")) {
@@ -993,10 +993,10 @@ for temperature, topp in ((0.1, 0.1), (0.1, 0.05)):
         written.append("".join(llmjp.generate(${JSON.stringify(entry.prompt)}, steps=160, temperature=temperature, topp=topp,
                                               repetition_penalty=${entry.generation.repetition_penalty}, seed=seed)))
 llmjp.release(); del llmjp; gc.collect()
-f"T178: llm-jp-3 150M wrote {len(written)} texts at a low temperature and top-p, the first: {written[0]!r}"
+f"T.178: llm-jp-3 150M wrote {len(written)} texts at a low temperature and top-p, the first: {written[0]!r}"
 `));
 }
-// T257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, without the dummy prefix, and a Llama
+// T.257: a sentencepiece BPE model written out as a tokenizer.json (a Gemma's, without the dummy prefix, and a Llama
 // tokenizer's, with it), through the converter and the engine inside Pyodide: the ids are the definition's, and the
 // ones pytest holds a 64-bit Python and the tokenizers library to (tests/spelled_bpe_cases.py's number)
 console.log(pyodide.runPython(`
@@ -1009,18 +1009,18 @@ for dummy in (False, True):
     assert options == {"tokenizer_kind": "bpe", "prefixed": "every" if dummy else "never"}, options
     written = llama2_numpy.Tokenizer(llama2_convert.tokenizer_bin(pieces, len(pieces)), len(pieces), kind="bpe", prefixed=options["prefixed"])
     ids = [written.encode(text, spelled.SPECIALS) for text in spelled.TEXTS]
-    assert ids == [spelled.by_the_definition(file, text, spelled.SPECIALS) for text in spelled.TEXTS], "T257: the engine's ids are not the definition's"
-    assert spelled.digest(ids) == spelled.IDS[dummy], "T257: Pyodide's ids are not a 64-bit Python's"
+    assert ids == [spelled.by_the_definition(file, text, spelled.SPECIALS) for text in spelled.TEXTS], "T.257: the engine's ids are not the definition's"
+    assert spelled.digest(ids) == spelled.IDS[dummy], "T.257: Pyodide's ids are not a 64-bit Python's"
     read_ids += ids
     lacking = {**file, "model": {**file["model"], "merges": file["model"]["merges"][1:]}}
     try:
         list(llama2_convert.tokenizer_json_pieces(lacking))
-        raise AssertionError("T257: merges the engine would not follow were taken")
+        raise AssertionError("T.257: merges the engine would not follow were taken")
     except ValueError as error:
         assert "merges its pieces" in str(error)
-f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} texts read as natively, {sum(map(len, read_ids))} tokens"
+f"T.257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} texts read as natively, {sum(map(len, read_ids))} tokens"
 `));
-// T235: an entry's rope_scaling: {} (src/models/formats.js's PLAIN_ROPE) as the worker hands it to the engine: a
+// T.235: an entry's rope_scaling: {} (src/models/formats.js's PLAIN_ROPE) as the worker hands it to the engine: a
 // JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
 // plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them
 {
@@ -1041,7 +1041,7 @@ f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} tex
   assert.equal(plain[0], 1);
   assert.ok(Math.abs(scaled[0] - (0.1 * Math.log(4) + 1)) < 1e-12 && scaled[1] !== plain[1], "yarn in the options did not scale the tables");
 }
-// T397: the converter reads a chat template with jinja2 where Pyodide has the package loaded, as the worker loads it
+// T.397: the converter reads a chat template with jinja2 where Pyodide has the package loaded, as the worker loads it
 // before a conversion (worker/pyodide.js's templatePackage()), and with its own reader where it has not. A template
 // that calls a macro (Qwen3.5's, LFM2's) is one only jinja2 reads
 {
@@ -1063,7 +1063,7 @@ seconds
   await pyodide.loadPackage("jinja2", { messageCallback: () => {} });
   report += `, jinja2's environment in ${(check(true) * 1000).toFixed(0)} ms`;
 }
-// T363.5: a model kept as llama.cpp's blocks, built as the worker builds one: its options a JavaScript object (the
+// T.363.5: a model kept as llama.cpp's blocks, built as the worker builds one: its options a JavaScript object (the
 // form's kinds with a list for a stack, tiled), the plan Python's dict made an object of on the way to forward.ts, the
 // blocks' kernels beside the others. Its logits are the engine in NumPy's (which reads the blocks by the converter's
 // readers) but for the 8 bits the kernels round the activations to (tests/blocks-forward-check.mjs has the lines)

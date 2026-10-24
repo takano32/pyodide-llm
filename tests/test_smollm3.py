@@ -1,4 +1,4 @@
-"""A SmolLM3 (T255: Hugging Face's, transformers' model_type "smollm3") is a Llama some of whose layers RoPE leaves
+"""A SmolLM3 (T.255: Hugging Face's, transformers' model_type "smollm3") is a Llama some of whose layers RoPE leaves
 alone: every fourth of the published 3B, the layers where config.json's no_rope_layers has a 0. The file is a Llama's
 to the byte; the conversion's options name the layers (unturned), and the engine, forward.js and the GPU turn nothing
 of q and k there. The real model against transformers: tests/reference_llama.py, in CI."""
@@ -113,14 +113,14 @@ def test_the_engine_refuses_layers_it_has_not_and_other_architectures():
     for layers in ([4], [-1], [0, 9]):
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             Llama(checkpoint, tokenizer, unturned=layers)
-    # (T255 review: no other architecture takes the layers, which it would otherwise read without turning anything)
+    # (T.255 review: no other architecture takes the layers, which it would otherwise read without turning anything)
     for arch in ("gpt2", "neox", "qwen35", "lfm2"):
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             Llama(checkpoint, tokenizer, arch=arch, unturned=[3])
 
 
 def test_the_plan_forward_js_gets_names_the_layers_and_a_llamas_names_none():
-    """T255 review: forward.js (and through it the GPU) learns the layers from the plan Python hands over; a plan without
+    """T.255 review: forward.js (and through it the GPU) learns the layers from the plan Python hands over; a plan without
     them is a Llama's, which turns every layer: no error, worse text. Only forward-check (CI's full set) saw it before."""
     settings, weights = synthetic_weights(n_layers=8)
     for said, want in ((dict(no_rope_layer_interval=4), [3, 7]), (dict(no_rope_layers=[1] * 8), [])):

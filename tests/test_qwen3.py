@@ -1,4 +1,4 @@
-"""Qwen3 is a Llama that normalizes every head of q and k before RoPE (T124): the converter writes the two RMSNorm
+"""Qwen3 is a Llama that normalizes every head of q and k before RoPE (T.124): the converter writes the two RMSNorm
 weights (one head's size) per layer after everything else, and the engine applies them. The file keeps the 7 int
 header, so the caller passes qk_norm=True, as it passes bias=True for a Qwen2. Some Qwen3 (0.6B, 4B) and some
 Llamas (MiniCPM5 1B) have heads of another size than dim / n_heads: head_dim, which the caller passes too."""
@@ -86,7 +86,7 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, head_size):
 
 @pytest.mark.parametrize("head_size", [0, 16])
 def test_the_conversion_tells_the_engine_about_the_norms_and_the_heads(head_size):
-    """The file cannot say it has them, nor the size of a head: the options must (the lesson of T72). And the engine
+    """The file cannot say it has them, nor the size of a head: the options must (the lesson of T.72). And the engine
     built from exactly those options runs like the reference."""
     settings, weights = synthetic_weights(head_size=head_size)
     tensors, published = qwen3(settings, weights, True)
@@ -101,7 +101,7 @@ def test_the_conversion_tells_the_engine_about_the_norms_and_the_heads(head_size
 
 
 def test_a_model_without_them_keeps_the_options_it_always_had():
-    """No qk_norm key where there are no norms: what a conversion of every model before T124 gives stays the same
+    """No qk_norm key where there are no norms: what a conversion of every model before T.124 gives stays the same
     (a saved conversion is used again only while its options are what the converter gives, kept.js's CONVERTER)."""
     settings, weights = synthetic_weights()
     tensors, published = hugging_face(settings, weights, True)
@@ -121,7 +121,7 @@ def test_a_llama_with_heads_of_another_size_needs_no_norms():
 
 
 def test_heads_that_do_not_fill_dim_are_said_where_dim_over_heads_rounds_to_them():
-    """T144: head_dim goes into the options where heads * head_dim is not dim, not only where dim // heads is not
+    """T.144: head_dim goes into the options where heads * head_dim is not dim, not only where dim // heads is not
     head_dim. 4 heads of 8 in a dim of 34 round to 8: without head_dim, checkpoint_dtype() took such a file for no
     checkpoint at all and footprint() counted heads of 8.5 (no real model of the kind is known)."""
     settings, weights = synthetic_weights(dim=34, n_kv_heads=2, head_size=8)
@@ -138,21 +138,21 @@ def test_heads_that_do_not_fill_dim_are_said_where_dim_over_heads_rounds_to_them
 
 
 def test_the_form_has_one_set_of_defaults():
-    """T144: FORM is what the file cannot say, with the value of a form that says nothing. Everything that takes it by
+    """T.144: FORM is what the file cannot say, with the value of a form that says nothing. Everything that takes it by
     its names must mean the same by nothing, or a model whose options leave one out is laid out two ways."""
-    # (T359: layout() takes the form as it comes and reads it as everything else does, by form_of(); Llama names the keys)
+    # (T.359: layout() takes the form as it comes and reads it as everything else does, by form_of(); Llama names the keys)
     parameters = inspect.signature(Llama.__init__).parameters
     assert {key: parameters[key].default for key in FORM} == FORM
     header = (64, 128, 2, 4, 2, 100, 32)
     assert llama2_convert.layout(*header) == llama2_convert.layout(*header, **FORM)
     assert form_of(None) == form_of({"tokenizer_kind": "bpe"}) == FORM
-    # a key given as None (JSON's null, JavaScript's undefined) says nothing either (the review of T144)
+    # a key given as None (JSON's null, JavaScript's undefined) says nothing either (the review of T.144)
     assert form_of({key: None for key in FORM}) == FORM
 
 
 def test_heads_of_the_wrong_size_are_never_interleaved():
     """permute_heads() reshaped rows of another head size without a word and moved rows across heads (the review of
-    T124: half the rows of a Qwen3 0.6B's wq). Now it refuses."""
+    T.124: half the rows of a Qwen3 0.6B's wq). Now it refuses."""
     rows = np.arange(64 * 3, dtype=np.float32).reshape(64, 3)
     permute_heads(rows, 4, 16)
     with pytest.raises(ValueError, match="not 4 heads of 8"):
@@ -185,7 +185,7 @@ def test_gpt2_and_neox_keep_heads_of_dim_over_heads():
 
 
 def test_the_epsilon_of_the_config_reaches_the_engine():
-    """rms_norm_eps goes from config.json through the options to every RMSNorm (T124: Qwen3's 1e-6 against the 1e-5
+    """rms_norm_eps goes from config.json through the options to every RMSNorm (T.124: Qwen3's 1e-6 against the 1e-5
     the engine always had moved its perplexity by 0.12%). A large one, so that the reference sees it."""
     settings, weights = synthetic_weights(n_kv_heads=2, head_size=16)
     tensors, published = qwen3(settings, weights, True)

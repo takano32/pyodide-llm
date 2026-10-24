@@ -1,10 +1,10 @@
 # The reader of chat templates: a part of Jinja, enough to render one user turn of a model's own template and give it
-# back as the format the page fills (T73, T127, T269).
+# back as the format the page fills (T.73, T.127, T.269).
 import json
 import re
 import time
 
-# T397: where jinja2 can be imported (the page's worker loads Pyodide's package before it converts; the build and the
+# T.397: where jinja2 can be imported (the page's worker loads Pyodide's package before it converts; the build and the
 # tests have it installed) it renders the template, in the environment transformers' apply_chat_template makes
 # (rendered(), jinja_environment()). The reader below is what renders where it cannot: a browser whose fetch of the
 # package failed. What is made of the rendered turn (one_turn(): {prompt}, {prompt:trim}, {date:format}) is the same
@@ -12,9 +12,9 @@ import time
 #
 # A chat_template is Jinja. This reads the part of Jinja those templates actually use: a loop over the
 # messages, if / elif / else with the usual comparisons, set, string concatenation, the trim filter, and the
-# whitespace control of {%- -%}; since T127 also the filters length, list and selectattr, namespace() and the
+# whitespace control of {%- -%}; since T.127 also the filters length, list and selectattr, namespace() and the
 # setting of its attributes, integer arithmetic, the tests of "is", slices and string methods with arguments,
-# which Qwen3's, Mistral v0.3's and sarashina2.2's templates use; since T269 also a if c else b and a list written
+# which Qwen3's, Mistral v0.3's and sarashina2.2's templates use; since T.269 also a if c else b and a list written
 # out ([a, b]), which Granite 4.2's uses. A macro is skipped where it is defined (the
 # templates define them for tools, which one turn has none of); calling one is Unsupported. Anything else raises
 # Unsupported, and then the caller keeps whatever format src/models.js has for that model. Chosen over a real
@@ -74,7 +74,7 @@ def evaluate(expression, scope):
     expression = expression.strip()
     while expression.startswith("(") and expression.endswith(")") and balanced(expression[1:-1]):
         expression = expression[1:-1].strip()
-    # T269: a if condition else b, which binds loosest of all and reads only the side the condition picks (Granite 4.2's
+    # T.269: a if condition else b, which binds loosest of all and reads only the side the condition picks (Granite 4.2's
     # "enable_thinking if enable_thinking is defined else True"). The first " if " ends a, the first " else " after it
     # the condition, and b may be another of the kind; without an else the other side is undefined, as in Jinja
     parts = split_outside_quotes(expression, " if ")
@@ -85,14 +85,14 @@ def evaluate(expression, scope):
         if not chosen.strip() or not condition.strip() or (len(condition) < len(rest) and not otherwise.strip()):
             raise Unsupported(f"the expression {expression!r}")
         if len(split_outside_quotes(condition, " if ")) > 1:
-            # (the review of T269) a if b if c else d is (a if b) if c else d in Jinja, not a if (b if c) else d
+            # (the review of T.269) a if b if c else d is (a if b) if c else d in Jinja, not a if (b if c) else d
             raise Unsupported(f"the expression {expression!r}")
         if truthy(evaluate(condition, scope)):
             return evaluate(chosen, scope)
         return evaluate(otherwise, scope) if otherwise else MISSING
     for joiner, decided in ((" or ", truthy), (" and ", lambda value: not truthy(value))):
         # as in Jinja, the operand that decides, not True or False ('x' or 'default' is 'x'), and what follows it
-        # unread (the review of T127: (system_message or 'You are ...') wrote "True")
+        # unread (the review of T.127: (system_message or 'You are ...') wrote "True")
         parts = split_outside_quotes(expression, joiner)
         if len(parts) > 1:
             for part in parts:
@@ -139,7 +139,7 @@ def evaluate(expression, scope):
 def is_test(value, test):
     """value is test: defined, none, string, number, mapping, iterable, sequence, true, false. None counts as not
     defined: one_turn() gives tools and documents as None where transformers leaves them out or passes None, and
-    the templates test them with "is defined" (T73 matched transformers on 23 templates so)."""
+    the templates test them with "is defined" (T.73 matched transformers on 23 templates so)."""
     tests = {"defined": lambda v: v is not MISSING and v is not None, "undefined": lambda v: v is MISSING or v is None,
              "none": lambda v: v is None or v is MISSING,
              "string": lambda v: isinstance(v, str), "number": lambda v: isinstance(v, (int, float)),  # (a bool is a number, as in Jinja)
@@ -163,7 +163,7 @@ def arithmetic(left, operator, right):
     """+ joins text (Jinja's templates add strings far more than numbers) and adds numbers; the others are integers'."""
     numbers = all(isinstance(v, int) and not isinstance(v, bool) for v in (left, right))
     if any(isinstance(v, (list, tuple)) for v in (left, right)):
-        # (the review of T269) lists, now that [] can be written: [] + x is the lists joined, not their texts; a list and a
+        # (the review of T.269) lists, now that [] can be written: [] + x is the lists joined, not their texts; a list and a
         # text is a TypeError in Jinja, and the other operators on a list are not read
         if operator == "+" and isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
             return [*left, *right]
@@ -189,7 +189,7 @@ def apply_filter(value, spec, scope):
     arguments = [evaluate(argument, scope) for argument in split_outside_quotes(rest[:-1], ",") if argument.strip()] if rest else []
     if name == "trim" and not arguments:
         return as_text(value).strip()
-    if name == "string" and not arguments:  # (T269) Jinja's: an undefined is "", anything else Python's str()
+    if name == "string" and not arguments:  # (T.269) Jinja's: an undefined is "", anything else Python's str()
         return "" if value is MISSING else str(value)
     if name in ("length", "count") and not arguments and isinstance(value, (str, list, tuple, dict)):
         return len(value)
@@ -215,7 +215,7 @@ DAY = "\x00day"  # in the scope: the day strftime_now() writes, instead of {date
 # two days that differ in every field strftime_now() may write, the first and the last of a year
 CHECK_DAYS = [time.strptime(day, "%Y-%m-%d %H:%M:%S") for day in ("2025-01-01 00:00:00", "2026-12-31 23:59:59")]
 class Undefined:
-    """What a name nothing set is. Printed inside a list, Jinja writes Undefined (the review of T269)."""
+    """What a name nothing set is. Printed inside a list, Jinja writes Undefined (the review of T.269)."""
 
     def __repr__(self):
         return "Undefined"
@@ -299,7 +299,7 @@ class Namespace:
     def __init__(self, **values):
         self.__dict__.update(values)
 
-    def __repr__(self):  # as Jinja prints one, for {{ ns }} and ns | string (the review of T269)
+    def __repr__(self):  # as Jinja prints one, for {{ ns }} and ns | string (the review of T.269)
         return f"<Namespace {self.__dict__!r}>"
 
 
@@ -384,7 +384,7 @@ def value_of(expression, scope):
     if expression.lstrip("-").isdigit():
         return int(expression)
     if expression[0] == "[" and closing_bracket(expression, 0) == len(expression) - 1:
-        # T269: a list written out, as in {% set tools = [] %}
+        # T.269: a list written out, as in {% set tools = [] %}
         return [evaluate(item, scope) for item in split_outside_quotes(expression[1:-1], ",") if item.strip()]
     if expression.startswith("namespace(") and closing_bracket(expression, len("namespace")) == len(expression) - 1:
         positional, keyword = call_arguments(expression[len("namespace("):-1], scope)
@@ -400,7 +400,7 @@ def value_of(expression, scope):
     if expression.startswith("strftime_now(") and expression.endswith(")"):
         # the one function these templates call: the date of today, for a system prompt. Written as {date:format},
         # which filled() in src/models.js makes the visitor's day when the prompt is sent: the format is kept with
-        # the conversion, and a date written now went stale from the next day on (the review of T127)
+        # the conversion, and a date written now went stale from the next day on (the review of T.127)
         argument = expression[len("strftime_now("):-1].strip()
         if not argument or argument[0] not in "'\"" or string_end(argument) != len(argument) - 1:
             raise Unsupported(f"strftime_now of {argument!r}")
@@ -455,7 +455,7 @@ def value_of(expression, scope):
 
 def unescape(text):
     """A string literal's escapes, as Jinja's lexer reads them: Python's unicode-escape, left to right (the review of
-    T127: "\\\\n" was a backslash and a newline, and \\x41 and \\u2581 stayed as they were)."""
+    T.127: "\\\\n" was a backslash and a newline, and \\x41 and \\u2581 stayed as they were)."""
     return text.replace("\r\n", "\n").encode("ascii", "backslashreplace").decode("unicode-escape")
 
 
@@ -521,7 +521,7 @@ def jinja_environment():
 
 
 def rendered(template, scope):
-    """The template with the names of scope, by jinja2 where it is there (T397) and by render() where it is not.
+    """The template with the names of scope, by jinja2 where it is there (T.397) and by render() where it is not.
     scope is one_turn()'s: the tokens the tokenizer does not name are left out for jinja2, as transformers passes
     only those it has (special_tokens_map), and strftime_now() writes {date:format} or the day under DAY."""
     environment = jinja_environment()
@@ -560,13 +560,13 @@ def run(pieces, start, stop, scope, out):
             if "," in name:
                 raise Unsupported("a for over pairs")
             if len(split_outside_quotes(source, " if ")) > 1:
-                # (T269) {% for x in xs if test %} keeps the xs that pass, which is not xs if test: not read
+                # (T.269) {% for x in xs if test %} keeps the xs that pass, which is not xs if test: not read
                 raise Unsupported("a for with a test")
             values = evaluate(source, scope)
             if not isinstance(values, (list, tuple)):
                 raise Unsupported(f"a for over {source.strip()!r}")
             # {% for %} ... {% else %} ... {% endfor %}: the else is written when there was nothing to loop over
-            # (the review of T269: [] can be written now, and messages[1:] of one message was always empty)
+            # (the review of T.269: [] can be written now, and messages[1:] of one message was always empty)
             at = next_branch(pieces, i, end)
             body_end, otherwise = (at, at + 1) if pieces[at][1] == "else" else (end, end)
             for index, value in enumerate(values):
@@ -652,7 +652,7 @@ def config_token(config, name):
 
 def one_turn_template(tokenizer_config, chat_template=None):
     """The template of one user turn from a tokenizer_config.json, or None when there is none this can read.
-    chat_template: the text of chat_template.jinja, where the repository has one (T127: transformers now saves the
+    chat_template: the text of chat_template.jinja, where the repository has one (T.127: transformers now saves the
     template there rather than in tokenizer_config.json, and reads it first); the tokens it names are still the
     tokenizer_config's."""
     try:
@@ -679,7 +679,7 @@ def model_turn(config, chat_template=None):
 
 
 def model_answer_end(config, chat_template=None):
-    """T524: what a model's own template writes right after an answer (answer_end()), or None where there is no
+    """T.524: what a model's own template writes right after an answer (answer_end()), or None where there is no
     template this can read. config, chat_template: as model_turn() takes them."""
     config = config if isinstance(config, dict) else {}
     template = template_of(config, chat_template)
@@ -710,7 +710,7 @@ def scope_of(specials, messages, generation):
 
 
 def answer_end(template, specials, mark="\x00prompt\x00", answer="\x00answer\x00"):
-    """T524: the text a template writes right after an assistant's message that ends a conversation, rendered as
+    """T.524: the text a template writes right after an assistant's message that ends a conversation, rendered as
     transformers renders one to train on (no generation prompt): where a turn of the model's ends, the token the
     model writes when its answer is done (a Gemma 4's <turn|>, a ChatML's <|im_end|>, a harmony template's <|return|>,
     which is not the <|end|> after its analysis). "" where the answer ends the text; None where the template uses
@@ -745,7 +745,7 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
         return None
     if text.count(mark) != 1:
         return None
-    # T138: a template that trims what was typed ({{ message['content'] | trim }}) says so as {prompt:trim}, which the
+    # T.138: a template that trims what was typed ({{ message['content'] | trim }}) says so as {prompt:trim}, which the
     # page's filled() trims: rendered once more with spaces around the mark, it either keeps them or drops both.
     # (Whether the spaces are there is no test: RakutenAI's writes "USER: " and " ASSISTANT:" around a trimmed one)
     try:

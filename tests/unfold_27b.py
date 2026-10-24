@@ -1,5 +1,5 @@
 # unfold_27b.py
-# T237's review: Ternary Bonsai 2 27B's rotated basis, and the small tensors llama.cpp changed on the way to the GGUF, against
+# T.237's review: Ternary Bonsai 2 27B's rotated basis, and the small tensors llama.cpp changed on the way to the GGUF, against
 # the model it was made from (Qwen/Qwen3.8-27B, 55.6 GB of bfloat16, neither ternary nor rotated), without the fork and without
 # the 5.95 GB: a few hundred rows of each kind of tensor by Range requests (about 30 MB all told, 90 s).
 #
@@ -50,7 +50,7 @@ KEY_HEADS, VALUE_HEADS, VALUE_DIM = 16, 48, 128
 def fetch(url, start, length, tries=5):
     """length bytes of a file from start, by a Range request (the redirect to the CDN is followed)."""
     try:
-        return ranged(url, start, length, tries=tries, wait=2)  # (tests/fetching.py, T357)
+        return ranged(url, start, length, tries=tries, wait=2)  # (tests/fetching.py, T.357)
     except OSError as error:
         raise SystemExit(f"unfold: {url} from {start}: {error}")
 
@@ -138,7 +138,7 @@ def evidence(unfolded, original):
 
 
 def small_tensors(stored, original):
-    """The tensors that are no matrix of the rotated basis, and that llama.cpp changed on the way to the GGUF (T236): the norms
+    """The tensors that are no matrix of the rotated basis, and that llama.cpp changed on the way to the GGUF (T.236): the norms
     with the 1 the model adds to them (not a linear layer's own), A_log as -exp(A_log), and every tensor over the value heads
     in llama.cpp's order of them (conversion/qwen.py's _reorder_v_heads), against the original, whole, for one linear layer and
     one full one and the model's last norm. They are not the original's to the bit: Prism's training went on over every

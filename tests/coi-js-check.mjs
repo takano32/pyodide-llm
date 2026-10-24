@@ -1,12 +1,12 @@
-// T117: public/coi.js (the service worker) in Node, on a stand-in Cache API and fetch, the way a browser calls it:
+// T.117: public/coi.js (the service worker) in Node, on a stand-in Cache API and fetch, the way a browser calls it:
 // its fetch listener gets a request and answers through respondWith. What a browser does with it is for CI and the
-// owner's devices (preview.yml's offline run); this holds the three things T117 fixed:
+// owner's devices (preview.yml's offline run); this holds the three things T.117 fixed:
 //   1. offline, the page (a navigation) is answered by a copy whatever its query, a script of another build is not
 //      (worker.js?v=<another> in a page of this build would mix two deployments)
 //   2. a Cache API that fails to open leaves the network to answer, even for a file whose copy would answer first
 //   3. a new wheel or a new file of /_astro/ puts the old one out of the copies
-// and T367.6's, what an activation does with the copies:
-//   4. it drops this site's copies with another build's ?v= (the runtime's files of before T367.3, which nobody asks
+// and T.367.6's, what an activation does with the copies:
+//   4. it drops this site's copies with another build's ?v= (the runtime's files of before T.367.3, which nobody asks
 //      for again) and nothing else: not this build's, not /_astro/'s, not the page's, not another site's whatever
 //      its address says; a second activation finds nothing to drop; without a network the page still answers
 //   5. nothing in it stops the activation or the claim: a copy that cannot be deleted, a list that cannot be read,
@@ -25,7 +25,7 @@ import { failing, madeUpNetwork } from "./fakes/fetch.mjs";
 import { served } from "./tree.mjs";
 
 const SITE = "https://takano32.github.io/pyodide-llm/";
-// 7's: the SHA-256 of the held parts of coi.js (as of T367.6, the same text as before it)
+// 7's: the SHA-256 of the held parts of coi.js (as of T.367.6, the same text as before it)
 const HELD = "88ad804c36acbbf740121bb54e654b22d9c0a1361655bf79e7409b5dc2eac9f5";
 const source = fs.readFileSync(served("coi.js"), "utf8");
 
@@ -105,7 +105,7 @@ function worker({ caches, online, registered = "?v=new", said = [] }) {
   assert.deepEqual([...map.keys()].sort(), [`${SITE}_astro/hoisted.ab12cd34.js`, `${SITE}_astro/index.Zz9x8y7w.css`, wheel("314.0.8", "2.3.0")].sort());
 }
 
-// T367.6. What a browser that visited before T367.3 holds, and what one of today holds
+// T.367.6. What a browser that visited before T.367.3 holds, and what one of today holds
 const JSDELIVR = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 const FORGOTTEN = [`${SITE}worker.js?v=old`, `${SITE}worker/state.js?v=old`, `${SITE}simdkernel_plain.wasm?v=old`, `${SITE}simdkernel.so?v=older`,
   `${SITE}engine/model.py?v=old`, `${SITE}python.js?v=old`, `${SITE}engine.zip?v=old`, `${SITE}benchmark/gpu.js?v=old&x=1`, `${SITE}?v=1&model=tiny-lm`];
@@ -142,7 +142,7 @@ const sorted = (list) => [...list].sort();
   assert.equal(await ask.activate(), undefined);
   assert.deepEqual(deleted(said), [], "a second activation deletes nothing");
   assert.deepEqual(said.filter((line) => line !== "claim"), ["open", "keys"], "and costs one list of the copies");
-  // T111: without a network, the page, its files and Pyodide still answer from the copies
+  // T.111: without a network, the page, its files and Pyodide still answer from the copies
   const offline = worker({ caches, online: false });
   assert.equal(await offline(`${SITE}?model=stories260K`, "navigate"), `copy: ${SITE}?model=tiny-lm`, "offline after it: the page");
   assert.equal(await offline(`${SITE}_astro/index.DQp1k2f3.js`), `copy: ${SITE}_astro/index.DQp1k2f3.js`, "offline after it: a file of /_astro/");

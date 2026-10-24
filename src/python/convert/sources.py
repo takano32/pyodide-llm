@@ -6,11 +6,11 @@ import struct
 
 from convert.readers import source_of
 
-ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T237)
+ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T.237)
 
 
 def header_rotated(header):
-    """T237: the rotated basis a safetensors-like header says its matrices are in (FORM's "rotated": the block and
+    """T.237: the rotated basis a safetensors-like header says its matrices are in (FORM's "rotated": the block and
     the signs of every width, llama2_numpy.rotated_form), None where it says none. gguf_model() writes it there from
     a GGUF's prism.hadamard.* (gguf_rotated); a file's own __metadata__ holds texts, so it is JSON's text."""
     said = (header.get("__metadata__") or {}).get(ROTATED)
@@ -79,7 +79,7 @@ class Shards:
 
 
 def joined_shards(headers):
-    """The page's way in for a model split over several files (T105): the JSON headers of the shards, in the order
+    """The page's way in for a model split over several files (T.105): the JSON headers of the shards, in the order
     their data will be fed, as the header of one file made of their tensor data one after another (base 0). Returns
     that header (text) and, for every shard, how many bytes of data it has: feed each shard from its own base (8 +
     the length of its header) for that many bytes, and Stream sees one file. Nothing of Stream changes."""

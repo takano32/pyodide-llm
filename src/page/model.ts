@@ -1,14 +1,14 @@
-// src/page/model.ts (T378.5): the model the page has, and how far its load has come. The owner of that: the other
+// src/page/model.ts (T.378.5): the model the page has, and how far its load has come. The owner of that: the other
 // parts of the page's script read these by the names they import (a static import of src/ is a live binding), and say
 // what happened to the functions below; none of them sets one. Nothing of a page is read here (no element, no address,
 // no storage): Node imports this file as it is (tests/page-parts-check.mjs).
 import { DEFAULT_MODEL, MODELS } from "../models.js";
 
 export type Model = typeof MODELS[number];
-/** T553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,
+/** T.553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,
  * when the bytes last grew (ms of the page's clock), and the speed in bytes a second (none before two reports). */
 export type Arriving = { began: number; first: number; at: number; bytes: number; moved: number; speed?: number };
-// A first visit starts with the default (T511.6); opening.ts says what this visit opens with instead.
+// A first visit starts with the default (T.511.6); opening.ts says what this visit opens with instead.
 export let model: Model = DEFAULT_MODEL;
 // The model can be changed while one is loading: the worker cancels that download and starts the new one.
 // loads numbers them, and the worker's reports carry the number.
@@ -17,14 +17,14 @@ export let ready = false;
 export let longest = 256; // the context of the model, known once it is ready
 // the format of one turn the conversion read from the model's own chat_template, when there was one
 export let fromTemplate: string | undefined = undefined;
-// the status line of a ready model: how it runs, and (T148) what the GPU takes of its prompts now
+// the status line of a ready model: how it runs, and (T.148) what the GPU takes of its prompts now
 export let readyLine: { backend: string; threads: number; pyodide: string } | undefined = undefined;
 export let gpuNote: string | undefined = undefined;
 export let benchmarking = false;  // the rounds are running: the run button stays off (the worker is busy loading)
-// T439: the worker runs on a slower path because a file of this page's build is gone from the site (it was deployed
+// T.439: the worker runs on a slower path because a file of this page's build is gone from the site (it was deployed
 // again while the page was open). Of the page and not of a model: it holds for the rest of the visit
 export let outdated = false;
-// T553: what the worker's reports of this load say of its fetch so far, for the time it has left (remaining.ts)
+// T.553: what the worker's reports of this load say of its fetch so far, for the time it has left (remaining.ts)
 export let arriving: Arriving | undefined = undefined;
 
 /** The model the page opens with (the URL's, the one remembered). Once a model was chosen that one stays: false. */
@@ -38,7 +38,7 @@ export function chose(entry: Model) {
   model = entry;
   ready = false;
   benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
-  readyLine = gpuNote = undefined;  // T148: the status line waits for the new model's
+  readyLine = gpuNote = undefined;  // T.148: the status line waits for the new model's
   arriving = undefined;
   loads += 1;
   return loads;
@@ -51,8 +51,8 @@ export function becameReady({ seq_len, template, backend, threads, pyodide }: { 
   readyLine = { backend, threads, pyodide };
   arriving = undefined;
 }
-/** The worker's error: a round that failed ends the benchmark (the run button must not stay off: the review of T76),
- * and a model the worker loads again on the CPU (T156: its GPU stopped while it was on the GPU alone) is not ready. */
+/** The worker's error: a round that failed ends the benchmark (the run button must not stay off: the review of T.76),
+ * and a model the worker loads again on the CPU (T.156: its GPU stopped while it was on the GPU alone) is not ready. */
 export function failed(reloading: boolean) {
   benchmarking = false;
   arriving = undefined;
@@ -74,11 +74,11 @@ export function gpuSaid(note?: string) {
   gpuNote = note ?? gpuNote;
   return news;
 }
-/** The threads in use, as an answer's end says (T223's review: the search may change the count remembered). */
+/** The threads in use, as an answer's end says (T.223's review: the search may change the count remembered). */
 export function threadsNow(count: number) {
   if (readyLine) readyLine.threads = count;
 }
-/** The worker's word that it went on without a file of its build that is gone (T439). No choice of model undoes it. */
+/** The worker's word that it went on without a file of its build that is gone (T.439). No choice of model undoes it. */
 export function siteUpdated() {
   outdated = true;
 }

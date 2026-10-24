@@ -1,4 +1,4 @@
-# tests/spelled_bpe_cases.py (T257): a small sentencepiece BPE model written out as a tokenizer.json, made by hand of
+# tests/spelled_bpe_cases.py (T.257): a small sentencepiece BPE model written out as a tokenizer.json, made by hand of
 # a few words, the texts to read with it, the definition of what their ids are, and one number for all of them.
 # pytest holds the engine, the tokenizers library and the definition to each other and to the number
 # (tests/test_spelled_bpe.py); tests/smoke.mjs asks the same of the engine inside Pyodide. Neither pytest nor the

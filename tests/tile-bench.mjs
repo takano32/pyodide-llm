@@ -1,18 +1,18 @@
-// T159: a prompt's int8 matrix product, matmul_q8r_tile (four rows by four tokens), of main and of this tree, in one
+// T.159: a prompt's int8 matrix product, matmul_q8r_tile (four rows by four tokens), of main and of this tree, in one
 // process, taking turns (AGENTS.md: the old and the new side by side), at 2 to 16 tokens, on 1 and 4 threads of one
-// shared memory, the rows in chunks taken in turn as forward/threads.js's phase() cuts them. (Before T197 it set the tile
-// against jobs.js's form before T159, blocks of 16 KB with matmul_q8r for each token: that is in TASKS.md's T159.)
+// shared memory, the rows in chunks taken in turn as forward/threads.js's phase() cuts them. (Before T.197 it set the tile
+// against jobs.js's form before T.159, blocks of 16 KB with matmul_q8r for each token: that is in TASKS.md's T.159.)
 //
 // Each side is held to the float64 sums of the same integers and scales (the largest error over the rows of 4 tokens,
 // relative to the largest |output|: over LINE, the bench fails before it times anything of that shape), and to itself on
 // 1 and 4 threads, to the bit.
-// T357: both sides read the corrections the kernel has taken since T197 (int32 −64 × sum, added to each group's integer
-// sum). While main was the form before T197 its side read float32 corrections (scale × sum) from a second table; main
-// took T197's form and the bench went on handing it the old table, so "main: against float64" said 2e+4 where the tree
+// T.357: both sides read the corrections the kernel has taken since T.197 (int32 −64 × sum, added to each group's integer
+// sum). While main was the form before T.197 its side read float32 corrections (scale × sum) from a second table; main
+// took T.197's form and the bench went on handing it the old table, so "main: against float64" said 2e+4 where the tree
 // said 9e-8 (the kernel read floats as integers; the times were of the same instructions). A change of what the kernel
 // is handed has to be made here for the side that has it, and this check says when it was not.
 //
-// T159's review: the matrices are read from memory, as a model's are (each read once a block): copies of each past
+// T.159's review: the matrices are read from memory, as a model's are (each read once a block): copies of each past
 // every cache (--megabytes, default 512), a call on each in turn. One matrix timed again and again stays in the caches
 // and hid that the tile was up to 1.6 times as slow on the EPYC 9V74 and 9V45 at 4 to 8 tokens (--megabytes 0 times
 // that way). Compiles main's and this tree's kernel_relaxed.ts with AssemblyScript into .tmp/tile-bench/ (needs `npm ci`).
@@ -43,7 +43,7 @@ const tiles = (k, c, w, r0, r1) => {
   const n = c[N], rows = c[ROWS], ng = n / 32;
   k.matmul_q8r_tile(c[OUT], c[FRAMES], c[FRAMES] + n, w, w + rows * n, w + rows * n + rows * ng * 4, n, r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]);
 };
-// forward/threads.js's phase(): chunks of a quarter of a thread's share (T93), in fours of rows for a prompt (T159), taken in
+// forward/threads.js's phase(): chunks of a quarter of a thread's share (T.93), in fours of rows for a prompt (T.159), taken in
 // turn; one thread runs the whole matrix in one call
 const chunkOf = (rows, threads) => (threads === 1 ? rows : 4 * Math.ceil(rows / (threads * 16)));
 function runCalls(k, c, index) {
@@ -85,7 +85,7 @@ const rounds = option("--rounds", 2), turns = option("--turns", 5), megabytes = 
 // main's kernels (CI checks out one commit: kernelSources() fetches main's alone; the ref origin/main is never written)
 for (const form of FORMS) {
   const dir = `${work}${form}/`;
-  kernelSources(form === "main" ? "origin/main" : "tree", dir);  // (T356: the side's kernels/ whole, from its tree)
+  kernelSources(form === "main" ? "origin/main" : "tree", dir);  // (T.356: the side's kernels/ whole, from its tree)
   execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     "--sharedMemory", "--maximumMemory", "32768", dir + "kernel_relaxed.ts", "-o", dir + "relaxed-shared.wasm",
     "--enable", "simd,relaxed-simd,threads"], { cwd: root, stdio: "inherit" });
@@ -132,7 +132,7 @@ for (const [rows, n] of shapes) {
     F[scales / 4 + i] = Math.fround(1e-3 * (1 + (next() % 1000)));
     let sum = 0;
     for (let j = 0; j < 32; j++) sum += I[first + i * 32 + j];
-    N32[sums / 4 + i] = -64 * sum;  // (T197: int32 −64 × sum)
+    N32[sums / 4 + i] = -64 * sum;  // (T.197: int32 −64 × sum)
   }
   for (let copy = 1; copy < copies && first + (copy + 1) * stride <= memory.buffer.byteLength; copy++) U.copyWithin(first + copy * stride, first, first + stride);
   for (let t = 0; t < 16; t++) {

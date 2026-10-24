@@ -1,4 +1,4 @@
-"""The settings of a generation's sampling as one value (T359.7): Sampling alone, with no model and no sampler; each
+"""The settings of a generation's sampling as one value (T.359.7): Sampling alone, with no model and no sampler; each
 sampler with that value and logits and nothing else (the kernels' with stand-ins for its two kernels); the GPU's steps
 with the value and a stand-in for forward.js's engine."""
 import dataclasses
@@ -59,7 +59,7 @@ def test_a_setting_nobody_has_is_refused():
         Sampling(typical_p=0.9)
 
 
-# (T546: ON_GPU has all six now; beyond() itself is held to a sampler that knows the first three)
+# (T.546: ON_GPU has all six now; beyond() itself is held to a sampler that knows the first three)
 THREE = ("temperature", "topp", "repetition_penalty")
 
 
@@ -124,7 +124,7 @@ def samplers(calls=None):
 
 @pytest.mark.parametrize("which", ["NumPy", "the kernels"])
 def test_a_sampler_reads_the_settings_once_a_generation(which):
-    """Not at every token (T359.7): drawing() takes what it needs of the value, and the draws read none of it."""
+    """Not at every token (T.359.7): drawing() takes what it needs of the value, and the draws read none of it."""
     if which == "NumPy" and NumpySampler.drawing.__module__ != "engine.sampler":
         pytest.skip("NumpySampler.drawing is wrapped, and the wrapper reads two settings itself (the recorder of tests/unchanged.mjs)")
     sampling = Counted(temperature=0.8, topp=0.9, repetition_penalty=1.2, top_k=20, min_p=0.05, presence_penalty=0.5)
@@ -269,7 +269,7 @@ def part_with_steps():
     (dict(temperature=0.8, presence_penalty=1.5), True),
     (dict(temperature=0.0, top_k=20, min_p=0.05), True), (dict(temperature=0.0, presence_penalty=1.5), True)])
 def test_the_gpu_is_offered_a_generation_its_sampler_can_draw(settings, takes):
-    """T274: the GPU's SAMPLE has a temperature, a nucleus and a repetition penalty (T546: a top-k, min-p and the
+    """T.274: the GPU's SAMPLE has a temperature, a nucleus and a repetition penalty (T.546: a top-k, min-p and the
     presence penalty too). A generation with anything more gets no steps of it (it would draw without, and nothing
     would say so): test_a_generation_with_a_rule_the_gpu_was_never_told_of_gets_no_steps."""
     part, engine = part_with_steps()

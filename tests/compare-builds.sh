@@ -1,15 +1,15 @@
 #!/bin/bash
-# tests/compare-builds.sh (T367.5): what a change did to the forward pass as a visitor's browser runs it, with the
+# tests/compare-builds.sh (T.367.5): what a change did to the forward pass as a visitor's browser runs it, with the
 # measure of no change beside it every time. Three builds: another commit's (main by default), this tree's (dist/, which
 # `npm run build` wrote), and this tree's built once more. Then tests/compare-engines.mjs through the bundles, `times`
 # times over:
 #   the other commit's build against this tree's          what is asked
 #   this tree's second build against this tree's          the control: the same code on both sides
-# A ratio of the first that is inside what the control says of no difference is no difference (T367.3.2: two builds of
-# one code were 1.4% apart on arm64 with 7 rounds; T437: 15 rounds or more, and the control every time).
+# A ratio of the first that is inside what the control says of no difference is no difference (T.367.3.2: two builds of
+# one code were 1.4% apart on arm64 with 7 rounds; T.437: 15 rounds or more, and the control every time).
 #
 #   bash tests/compare-builds.sh [<commit> = origin/main] [<rounds> = 21] [<times> = 2] [model ids = tiny-lm llm-jp-3-150m]
-#   THREADS=2,4 bash tests/compare-builds.sh …    T378.1, T447: after each of those, the same two pairs WITH software threads
+#   THREADS=2,4 bash tests/compare-builds.sh …    T.378.1, T.447: after each of those, the same two pairs WITH software threads
 #                                                 (tests/threads-compare.mjs: each build's forward and its own helper, that
 #                                                 many threads). compare-engines runs no software thread: a change of
 #                                                 forward/threads.js, helper.js or jobs.js is measured only here.

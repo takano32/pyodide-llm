@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/reference_spark.sh (T342): what tests/reference_spark.py needs, and the run itself, for CI (tests.yml's extra=;
+# tests/reference_spark.sh (T.342): what tests/reference_spark.py needs, and the run itself, for CI (tests.yml's extra=;
 # the development machine has no PyTorch):
 #
 #   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_spark.sh" --ref <branch> --grep "spark:"

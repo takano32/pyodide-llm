@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))  # quantize.py
 os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", str(ROOT / ".tmp"))
 
 import llama2_numpy  # noqa: E402
-# the made-up models are tests/made_up.py's (T357.2): the tests take them from here as they always did
+# the made-up models are tests/made_up.py's (T.357.2): the tests take them from here as they always did
 from made_up import (FOLDED, basis, folded, gemma3_model, lfm2_model, pack_checkpoint, pack_tokenizer, qwen35_model, rope_tables,  # noqa: E402, F401
                      synthetic_weights, tiny_vocab)
 
@@ -43,7 +43,7 @@ def checkpoint_vocab_size(name):
 # ------------------------------------------------------------------------------------------- texts to split
 # The texts the pre-tokenizers are checked on (test_bytebpe.py against the real tokenizers, test_llama3.py against
 # the patterns). Here and not in test_bytebpe.py, which skips as a whole without tokenizers and took test_llama3.py's
-# own tests along when it imported them from there (T144).
+# own tests along when it imported them from there (T.144).
 CORPUS = (
     "The quick brown fox jumps over the lazy dog. 日本語の文章も混ぜる。"
     "Don't stop; it's theirs, they'll go. I'D LIKE 'IT'.\n"
@@ -57,14 +57,14 @@ CORPUS = (
 # every kind of boundary the patterns care about
 TEXTS = [CORPUS, " ", "  ", "\n", "\r\n", " \n ", "0123", " 42 ", "a", " a", "  a", "\ta", "(abc", "、あ",
          "a 1b", " 1,234", "1a2", "v1.2.3", "第1章 2節", "it's a dog's life", "IT'S", "end.  ", "x\n\n\ny",
-         # a line of spaces between line breaks, as pasted code has (the review of T106: Qwen's \s*[\r\n]+ takes the
+         # a line of spaces between line breaks, as pasted code has (the review of T.106: Qwen's \s*[\r\n]+ takes the
          # whole run up to its last line break, this took it up to the first)
          "a\n  \nb", "\n \n \n", "def f(x):\n    a = 1\n    \n    return a\n", " \t\n \r\n x"]
 
 
 # ------------------------------------------------------------------------------------------- sentencepiece
 def charsmap(mapping):
-    """A sentencepiece precompiled_charsmap for {text: its normalized text} (T216): the length of a Darts-clone double
+    """A sentencepiece precompiled_charsmap for {text: its normalized text} (T.216): the length of a Darts-clone double
     array, the array, and the normalized texts, each ended by a NUL. Built here the simple way (each node takes the
     first base no other node has and whose children's places are free; a unit: bit 31 a value, bits 0-7 its label,
     bit 8 a leaf below, bits 10 up the offset to its base), which llama2_numpy.Charsmap walks as Darts-clone does."""
@@ -111,7 +111,7 @@ class NoWeights:
 
 def vocabulary_conversion(tokenizer, name, vocab_size, tokenizer_config=None, **config):
     """llama2_convert.Conversion of a small model with this tokenizer (bytes, as the file name says) and vocabulary,
-    and these keys of config.json besides (bos_token_id ...): its options and tokenizer, with no weights fed (T143)."""
+    and these keys of config.json besides (bos_token_id ...): its options and tokenizer, with no weights fed (T.143)."""
     import json
     import llama2_convert
     from test_convert import hugging_face, safetensors_file
@@ -149,15 +149,15 @@ def naive_logits(config, weights, tokens):
     kv_mul = n_heads // n_kv_heads
     cos, sin = weights["freq_cis_real"], weights["freq_cis_imag"]
 
-    eps = config.get("eps", 1e-5)  # config.json's rms_norm_eps (T124)
-    # what the scores are multiplied by: a Granite's attention_multiplier (T253), else one over the root of a head
+    eps = config.get("eps", 1e-5)  # config.json's rms_norm_eps (T.124)
+    # what the scores are multiplied by: a Granite's attention_multiplier (T.253), else one over the root of a head
     score_scale = config.get("attention_multiplier", 1.0 / math.sqrt(head_size))
 
     def rmsnorm(vector, weight):
         return weight * vector / math.sqrt(sum(float(v) * float(v) for v in vector) / len(vector) + eps)
 
     def head_norm(vector, name, l):
-        # Qwen3 (T124): every head of q and k normalized on its own, with one weight of a head's size
+        # Qwen3 (T.124): every head of q and k normalized on its own, with one weight of a head's size
         if name not in weights:
             return vector
         return np.concatenate([rmsnorm(vector[h:h + head_size], weights[name][l]) for h in range(0, len(vector), head_size)])
@@ -178,7 +178,7 @@ def naive_logits(config, weights, tokens):
             xb = rmsnorm(x[pos], weights["rms_att_weight"][l])
             # Qwen2 adds a bias to q, k and v before the rotation
             bias = lambda name: weights[name][l] if name in weights else 0.0
-            # (T255: a SmolLM3 turns the q and k of some layers only)
+            # (T.255: a SmolLM3 turns the q and k of some layers only)
             turn = (lambda vector, pos, heads: vector) if l in config.get("unturned", ()) else rope
             queries.append(turn(head_norm(weights["wq"][l] @ xb + bias("bq"), "q_norm", l), pos, n_heads))
             keys.append(turn(head_norm(weights["wk"][l] @ xb + bias("bk"), "k_norm", l), pos, n_kv_heads))
@@ -203,7 +203,7 @@ def naive_logits(config, weights, tokens):
     return [weights["wcls"] @ rmsnorm(vector, weights["rms_final_weight"]) for vector in x]
 
 
-# ------------------------------------------------------------------------------------- Qwen3.5 (T229)
+# ------------------------------------------------------------------------------------- Qwen3.5 (T.229)
 
 def naive_qwen35_logits(tensors, config, tokens):
     """transformers' Qwen3_5 (modeling_qwen3_5.py at 7fb5bcd1: Qwen3_5DecoderLayer, Qwen3_5Attention,
@@ -296,7 +296,7 @@ def naive_qwen35_logits(tensors, config, tokens):
     return [classifier @ norm(v, wide[prefix + "norm.weight"]) for v in x]
 
 
-# ------------------------------------------------------------------------------------- LFM2 (T260)
+# ------------------------------------------------------------------------------------- LFM2 (T.260)
 
 def naive_lfm2_logits(tensors, config, tokens, states=None):
     """transformers' Lfm2 (modeling_lfm2.py at 7cd73d9d: Lfm2DecoderLayer, Lfm2ShortConv with causal_conv1d_fn,
@@ -367,7 +367,7 @@ def naive_lfm2_logits(tensors, config, tokens, states=None):
     return [classifier @ norm(v, wide["model.embedding_norm.weight"]) for v in x]
 
 
-# ------------------------------------------------------------------------------------- Gemma 3 (T261)
+# ------------------------------------------------------------------------------------- Gemma 3 (T.261)
 
 def naive_gemma3_logits(tensors, config, tokens, states=None):
     """transformers' Gemma3 text model (modeling_gemma3.py at 28034545: Gemma3TextScaledWordEmbedding, Gemma3DecoderLayer,
@@ -427,7 +427,7 @@ def naive_gemma3_logits(tensors, config, tokens, states=None):
     return [classifier @ norm(v, wide["model.norm.weight"]) for v in x]
 
 
-# ------------------------------------------------------------------------------------- Gemma 4 (T331)
+# ------------------------------------------------------------------------------------- Gemma 4 (T.331)
 
 def naive_gemma4_logits(tensors, config, tokens, states=None):
     """transformers' Gemma 4 language model (modeling_gemma4.py at 2126f65b: Gemma4TextScaledWordEmbedding,
@@ -435,8 +435,8 @@ def naive_gemma4_logits(tensors, config, tokens, states=None):
     Gemma4TextRotaryEmbedding with modeling_rope_utils.py's proportional RoPE, Gemma4ForCausalLM's cap of the logits),
     written out from the Hugging Face tensors in float64, the whole sequence at once as its forward of a prompt
     computes, independently of the converter and the engine. config: the text config.json as it is published (its
-    rope_parameters a dict for each kind of layer). T330: the last num_kv_shared_layers layers take the keys and values
-    the last layer of their kind before them made (shared_kv_states), and make none. T329: every layer's input of its own
+    rope_parameters a dict for each kind of layer). T.330: the last num_kv_shared_layers layers take the keys and values
+    the last layer of their kind before them made (shared_kv_states), and make none. T.329: every layer's input of its own
     (get_per_layer_inputs(), project_per_layer_inputs()), and what the layer makes of it. states: a list that gets, for
     every layer, what its attention gave at every position (before the norm behind it)."""
     wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}

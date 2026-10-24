@@ -1,4 +1,4 @@
-# GGUF as a source (T74): a GGUF written here the way llama.cpp writes one (Q8_0 matrices, F32 vectors, q and k of
+# GGUF as a source (T.74): a GGUF written here the way llama.cpp writes one (Q8_0 matrices, F32 vectors, q and k of
 # a Llama turned into llama2.c's order, a Qwen2's left alone) must give the very checkpoint that the safetensors of
 # the same values gives. The real file is checked by tests/gguf_check.py.
 import json
@@ -20,16 +20,16 @@ NAMES = {"model.embed_tokens.weight": "token_embd.weight", "model.norm.weight": 
 LAYER = {"input_layernorm": "attn_norm", "post_attention_layernorm": "ffn_norm", "self_attn.q_proj": "attn_q",
          "self_attn.k_proj": "attn_k", "self_attn.v_proj": "attn_v", "self_attn.o_proj": "attn_output",
          "mlp.gate_proj": "ffn_gate", "mlp.up_proj": "ffn_up", "mlp.down_proj": "ffn_down",
-         "self_attn.q_norm": "attn_q_norm", "self_attn.k_norm": "attn_k_norm"}  # a Qwen3's (T203)
+         "self_attn.q_norm": "attn_q_norm", "self_attn.k_norm": "attn_k_norm"}  # a Qwen3's (T.203)
 
 
-TURNED = ("llama", "granite", "smollm3")  # (T255: a SmolLM3's as well) the architectures whose q and k llama.cpp's convert turns (T253: a Granite's too)
+TURNED = ("llama", "granite", "smollm3")  # (T.255: a SmolLM3's as well) the architectures whose q and k llama.cpp's convert turns (T.253: a Granite's too)
 
 
 def q8_0_blocks(values):
     """llama.cpp's Q8_0 (ggml-quants.c's quantize_row_q8_0_ref): per 32 values d = largest / 127 in float32, the
     values times 1 / d rounded half away from zero, and d kept as float16; a d under float16's smallest half step
-    is kept as 0, and its values read back 0. T145: as llama.cpp rounds, to the bit (it rounded by the float16 d
+    is kept as 0, and its values read back 0. T.145: as llama.cpp rounds, to the bit (it rounded by the float16 d
     before), so that tests/gguf_check.py's nearest reference is 0 off for a GGUF of the original's values."""
     groups = values.reshape(-1, 32).astype(np.float32)
     d = np.abs(groups).max(axis=1) / np.float32(127)
@@ -43,7 +43,7 @@ def q8_0_blocks(values):
 
 
 def pq2_0_blocks(values):
-    """Prism ML's PQ2_0 (T235) as its fork of llama.cpp writes it (ggml-quants.c's quantize_row_pq2_0_ref): per 128
+    """Prism ML's PQ2_0 (T.235) as its fork of llama.cpp writes it (ggml-quants.c's quantize_row_pq2_0_ref): per 128
     values d = the largest, the values over d rounded to -1, 0 or 1 and kept as that plus 1 in two bits, the first value
     in the lowest bits of a byte, after d as float16. And what the block then stands for: (code - 1) * d."""
     groups = values.reshape(-1, 128).astype(np.float32)
@@ -84,9 +84,9 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds).
     more: further metadata (key, GGUF type, value); extra: {GGUF name: float32 values} written as they are
     (rope_freqs.weight). bos, eos: None leaves the token out (unsloth's Qwen3 GGUFs name no BOS). matrices: what makes
-    the blocks of a matrix and their ggml type (T235: pq2_0_blocks and 142). turned: whether q and k are turned, as
-    llama.cpp turns a Llama's (and a Granite's) and leaves a Qwen2's (the default: arch in TURNED; T250's review: the
-    other way round is a GGUF the reader does not read). vocabulary (T505.2): {"model", "tokens", "kinds", "scores"} in
+    the blocks of a matrix and their ggml type (T.235: pq2_0_blocks and 142). turned: whether q and k are turned, as
+    llama.cpp turns a Llama's (and a Granite's) and leaves a Qwen2's (the default: arch in TURNED; T.250's review: the
+    other way round is a GGUF the reader does not read). vocabulary (T.505.2): {"model", "tokens", "kinds", "scores"} in
     the place of the byte-level BPE one of pieces w0, w1 ... that are all normal (scores: None for none). pre: None
     leaves the name out. first: {GGUF name: float32 values} written before every other tensor, as llama.cpp's
     converter writes a rope_freqs."""
@@ -181,7 +181,7 @@ def test_a_gguf_converts_to_the_checkpoint_of_the_same_values(model, dtype):
 
 @pytest.mark.parametrize("head_size", [0, 16])
 def test_a_gguf_says_the_epsilon_and_the_size_of_a_head(head_size):
-    """T144 (the review of T124): llama.cpp writes rms_norm_eps as attention.layer_norm_rms_epsilon and head_dim as
+    """T.144 (the review of T.124): llama.cpp writes rms_norm_eps as attention.layer_norm_rms_epsilon and head_dim as
     attention.key_length. Unread, the GGUFs of the list (Qwen2.5, TinySwallow: 1e-6) would go back to 1e-5 without a
     word, and heads of another size than dim / heads would be laid out as dim / heads. A key_length of dim / heads
     (every GGUF of the list) is no head_dim in the options: they stay what they were."""
@@ -213,10 +213,10 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
     with pytest.raises(ValueError, match="not a GGUF"):
         gguf_read(b"PK\x03\x04" + file[4:])
     metadata, found, base = gguf_read(file)
-    # make the first matrix a TQ1_0 (type 34, llama.cpp's own ternary type, which is not read: T505.1 reads the K types
+    # make the first matrix a TQ1_0 (type 34, llama.cpp's own ternary type, which is not read: T.505.1 reads the K types
     # and the older ones of blocks of 32), or a
     # type 42 (the Q2_0 of Prism's earlier Bonsai files: 2 bits, 64 or 128 to a block): the type is the u32 before its
-    # u64 offset in the tensor infos. T230's review: a type 42 file must be refused with the types that are read, not
+    # u64 offset in the tensor infos. T.230's review: a type 42 file must be refused with the types that are read, not
     # read as a type 8 or 142 of the same block size
     at = file.index(b"token_embd.weight") + len(b"token_embd.weight") + 4 + 16
     for kind in (34, 42):
@@ -227,7 +227,7 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
 
 
 def test_a_q8_0_tensor_whose_rows_are_not_groups_of_32_is_refused():
-    """Fable's review of T74: the Q8_0 reader counts 34 bytes per 32 values, so a row that is not a multiple of 32
+    """Fable's review of T.74: the Q8_0 reader counts 34 bytes per 32 values, so a row that is not a multiple of 32
     would be read at the wrong offsets and write nonsense instead of failing."""
     config, weights = synthetic_weights(dim=48, hidden_dim=64, n_heads=2, n_kv_heads=2)
     tensors, published = hugging_face(config, weights, True)
@@ -236,7 +236,7 @@ def test_a_q8_0_tensor_whose_rows_are_not_groups_of_32_is_refused():
         Conversion.from_gguf(file)
 
 
-# ---- T136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository
+# ---- T.136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository
 def with_original(file, published, vocabulary, name, dtype, chunk=4096):
     """What worker.js does for such an item: the GGUF's header made a safetensors one, then the original's files."""
     header, base = llama2_convert.gguf_weights(file, json.dumps(published))
@@ -306,7 +306,7 @@ def test_a_gguf_with_the_originals_vocabulary_is_the_safetensors_conversion(mode
     (dict(num_hidden_layers=1), "number of layers"),
 ])
 def test_a_gguf_that_is_not_the_originals_is_refused(change, what):
-    """What the sizes of the tensors do not show (T136's review, point 5): heads and key-value heads of the same
+    """What the sizes of the tensors do not show (T.136's review, point 5): heads and key-value heads of the same
     product, fewer layers than the GGUF has (it went through, cut to them), a classifier that would silently be the
     embedding, and the numbers that are no tensor."""
     config, weights = synthetic_weights(n_kv_heads=2)
@@ -335,7 +335,7 @@ def test_a_rope_freqs_table_that_is_not_the_originals_scaling_is_refused():
         Conversion.from_gguf(file)
 
 
-# ---- T203 (T136's fourth stage): a Qwen3, whose GGUF holds q, k and the norms of their heads in Hugging Face's order
+# ---- T.203 (T.136's fourth stage): a Qwen3, whose GGUF holds q, k and the norms of their heads in Hugging Face's order
 def qwen3_gguf(head_size, eps=1e-6, bos=1, eos=2, turned=None):
     from test_qwen3 import qwen3
     config, weights = synthetic_weights(n_kv_heads=2, head_size=head_size)
@@ -382,7 +382,7 @@ def test_a_qwen3_gguf_alone_converts_to_the_checkpoint_of_the_same_values(head_s
 
 @pytest.mark.parametrize("token", ["bos", "eos"])
 def test_a_gguf_alone_that_names_no_bos_or_eos_is_refused(token):
-    """The review of T203: unsloth's Qwen3 GGUFs name no BOS (add_bos_token false, no bos_token_id). Alone, the
+    """The review of T.203: unsloth's Qwen3 GGUFs name no BOS (add_bos_token false, no bos_token_id). Alone, the
     conversion took token 1 for it and stopped at it: '"' of a byte-level BPE vocabulary, every answer cut at its first
     lone one. The list takes them with their original's config.json, whose BOS and EOS it has, as before."""
     config, published, file, same = qwen3_gguf(16, **{token: None})
@@ -405,7 +405,7 @@ def test_a_qwen3_gguf_that_is_not_the_originals_is_refused(change, what):
         llama2_convert.gguf_weights(file, json.dumps({**published, **change}))
 
 
-# ---- T235: Prism ML's PQ2_0 (Ternary-Bonsai), ternary blocks of 128 that the engine's int8 holds as they are, and yarn
+# ---- T.235: Prism ML's PQ2_0 (Ternary-Bonsai), ternary blocks of 128 that the engine's int8 holds as they are, and yarn
 YARN = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 8192}
 
 
@@ -450,14 +450,14 @@ def test_int8_holds_a_ternary_block_under_every_scale():
     stands_for = 127.0 * scales.reshape(-1, 4)[some].astype(np.float64)
     worst = np.max(np.abs(stands_for - np.abs(wide[some]).astype(np.float64)[:, None]) / np.abs(wide[some])[:, None])
     assert 0 < worst < 6e-8, worst
-    # six bits (T98, where int8 does not fit): the same, 31 times the ternary values (held as multiples of 4)
+    # six bits (T.98, where int8 does not fit): the same, 31 times the ternary values (held as multiples of 4)
     sixes, _ = llama2_convert.quantize6(values[some])
     assert np.array_equal(sixes.reshape(-1, 128), 4 * 31 * ternary * sign[some])
 
 
 def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=(), matrices=(pq2_0_blocks, 142), shared=True, theta=1000000.0):
     """A small Qwen3 as Ternary-Bonsai's GGUF has one: PQ2_0 matrices (rows of 128 and 256), F32 norms, and yarn.
-    also: further metadata. matrices: the blocks and ggml type of the matrices (T230: tests/test_ternary.py's PTQ1_0).
+    also: further metadata. matrices: the blocks and ggml type of the matrices (T.230: tests/test_ternary.py's PTQ1_0).
     shared: the classifier is the embedding (the 1.7B and the 4B), or a matrix of its own (the 8B)."""
     from test_qwen3 import qwen3
     config, weights = synthetic_weights(dim=128, hidden_dim=256, n_kv_heads=2, vocab_size=40, head_size=head_size, shared=shared)
@@ -474,7 +474,7 @@ def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=(), matrices=(pq2_0_b
     return config, published, file, same
 
 
-# the three sizes of the list, by what differs between them (the review of T246: only the 1.7B's shape was tried; the 4B's
+# the three sizes of the list, by what differs between them (the review of T.246: only the 1.7B's shape was tried; the 4B's
 # heads are wider than dim / heads and its theta is 5e6, the 8B has a classifier of its own and a yarn from 16384)
 BONSAI_SIZES = {"the 1.7B's": dict(),
                 "the 4B's: heads wider than dim / heads, theta 5e6": dict(head_size=64, theta=5e6),
@@ -507,7 +507,7 @@ def test_a_pq2_0_gguf_with_the_originals_files_is_the_safetensors_conversion(dty
     assert got.options["rope_theta"] == published["rope_theta"] and got.options.get("head_dim") == (64 if "heads wider" in shape else None)
 
 
-# T235 (the owner, 2026-10-11): the list's three Ternary Bonsai turn by a plain RoPE, which their entries say
+# T.235 (the owner, 2026-10-11): the list's three Ternary Bonsai turn by a plain RoPE, which their entries say
 # (src/models/formats.js's PLAIN_ROPE); the converter, config.json and the GGUF go on saying yarn
 BONSAI_ENTRIES = {"the 1.7B's": "hf-ternary-bonsai-1.7b", "the 4B's: heads wider than dim / heads, theta 5e6": "hf-ternary-bonsai-4b",
                   "the 8B's: a classifier of its own, yarn from 16384": "hf-ternary-bonsai-8b"}
@@ -590,7 +590,7 @@ def test_the_fixed_outputs_float32_engine_is_given_the_entrys_rope(shape):
 
 
 def test_a_pq2_0_gguf_alone_converts_to_the_checkpoint_of_the_same_values():
-    """?hf= of such a GGUF alone, were it to name a BOS (Ternary-Bonsai's names none and is refused, as T203 has it):
+    """?hf= of such a GGUF alone, were it to name a BOS (Ternary-Bonsai's names none and is refused, as T.203 has it):
     yarn's numbers come from the GGUF's own metadata, by config.json's names."""
     config, published, file, same = bonsai_gguf(head_size=64)  # heads of another size than dim / heads: o's rows are 256
     conversion = fed(file, "int8")
@@ -619,10 +619,10 @@ def test_a_gguf_whose_yarn_is_not_the_originals_is_refused(theirs):
 @pytest.mark.parametrize("key", ["attn_factor", "yarn_attn_factor", "yarn_log_multiplier", "yarn_ext_factor"])
 def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key):
     """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_multiplier's: neither is
-    transformers' attention_factor or mscale_all_dim (T532: llama.cpp multiplies by the one, and makes a ratio of the
+    transformers' attention_factor or mscale_all_dim (T.532: llama.cpp multiplies by the one, and makes a ratio of the
     other with an mscale of 1 it assumes), so each is kept by its own name and refused, not dropped without a word,
     alone or with an original that does not say it. The keys are spelled as the fork's src/llama-arch.cpp spells them
-    (the review of T235: the first version of this test and of the converter said yarn_log_mul, which no GGUF has, and
+    (the review of T.235: the first version of this test and of the converter said yarn_log_mul, which no GGUF has, and
     so tested nothing real)."""
     config, published, file, _ = bonsai_gguf(also=[(f"qwen3.rope.scaling.{key}", 6, 0.5)])
     with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}"):
@@ -632,7 +632,7 @@ def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key):
 
 
 def test_a_gguf_reads_yarns_bounds_by_transformers_names():
-    """T532: llama.cpp's yarn_beta_fast and yarn_beta_slow are transformers' beta_fast and beta_slow (llama.cpp rounds
+    """T.532: llama.cpp's yarn_beta_fast and yarn_beta_slow are transformers' beta_fast and beta_slow (llama.cpp rounds
     the bounds outward, as transformers does by default): a GGUF alone that says them makes the table of a config.json
     that says them, and against an original whose config.json does not, it is another model."""
     theirs = {**YARN, "beta_fast": 16.0, "beta_slow": 2.0}
@@ -657,7 +657,7 @@ def test_a_pq2_0_tensor_whose_rows_are_not_blocks_of_128_is_refused():
         Conversion.from_gguf(bytes(wrong))
 
 
-# ---- T136's third stage: GPT-2 and GPT-NeoX, as llama.cpp's convert_hf_to_gguf.py writes them
+# ---- T.136's third stage: GPT-2 and GPT-NeoX, as llama.cpp's convert_hf_to_gguf.py writes them
 GPT2_NAMES = {"wte.weight": "token_embd.weight", "wpe.weight": "position_embd.weight", "ln_f.weight": "output_norm.weight",
               "ln_f.bias": "output_norm.bias", "ln_1": "attn_norm", "attn.c_attn": "attn_qkv", "attn.c_proj": "attn_output",
               "ln_2": "ffn_norm", "mlp.c_fc": "ffn_up", "mlp.c_proj": "ffn_down"}
@@ -670,11 +670,11 @@ CONV1D = ("attn_qkv", "attn_output", "ffn_up", "ffn_down")  # GPT-2's matrices, 
 
 def other_gguf(tensors, config, split=True, transposed=True):
     """A GGUF v3 of a GPT-2's or GPT-NeoX's Hugging Face tensors the way llama.cpp writes one (checked on the real
-    files by Range, T136's third stage): GPT-2's Conv1D matrices turned to (out, in) and a copy of the embedding as
+    files by Range, T.136's third stage): GPT-2's Conv1D matrices turned to (out, in) and a copy of the embedding as
     output.weight, GPT-NeoX's query_key_value (and its bias) as all of q, then k, then v; Q8_0 matrices (GPT-2's
     positions F32), F32 vectors. Returns the file and, under the Hugging Face names, the values it stands for.
     split=False, transposed=False: those two left as Hugging Face has them, as a GGUF of 2023 has GPT-NeoX's
-    query_key_value (stockmark's, T250's review): the same values in an order the reader does not read."""
+    query_key_value (stockmark's, T.250's review): the same values in an order the reader does not read."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     neox = config["model_type"] == "gpt_neox"
     arch = "gptneox" if neox else "gpt2"
@@ -753,7 +753,7 @@ def the_other(model):
 @pytest.mark.parametrize("dtype", ["int8", "float32"])
 @pytest.mark.parametrize("model", ["gpt2", "neox", "neox-serial"])
 def test_a_gpt2_or_neox_gguf_with_the_originals_files_is_the_safetensors_conversion(model, dtype):
-    """T136's third stage: GPT-2's matrices turned back to Conv1D and GPT-NeoX's q, k and v put back per head give
+    """T.136's third stage: GPT-2's matrices turned back to Conv1D and GPT-NeoX's q, k and v put back per head give
     the checkpoint, tokenizer.bin and options of the safetensors of the same values. Leaving either out of the reader
     (the transposed entries, llama2_convert.unsplit) makes the checkpoint differ."""
     tensors, config = the_other(model)
@@ -784,7 +784,7 @@ def test_a_gpt2_or_neox_gguf_with_the_originals_files_is_the_safetensors_convers
 ])
 def test_a_gpt2_or_neox_gguf_that_is_not_the_originals_is_refused(model, change, what):
     """What the tensors do not say: GPT-NeoX's rotated part and parallel branches (the options carry them, and the
-    wrong ones write nonsense without a word, T72), heads of the same product, the layers."""
+    wrong ones write nonsense without a word, T.72), heads of the same product, the layers."""
     tensors, config = the_other(model)
     file, _ = other_gguf(tensors, config)
     llama2_convert.gguf_weights(file, json.dumps(config))  # its own config goes through
@@ -793,7 +793,7 @@ def test_a_gpt2_or_neox_gguf_that_is_not_the_originals_is_refused(model, change,
 
 
 def test_the_padding_of_a_gguf_vocabulary_is_empty_as_the_safetensors_path_pads():
-    """T143 (T136's review): llama.cpp pads a vocabulary up to its size with unused pieces ([PAD151665] ..., type 5),
+    """T.143 (T.136's review): llama.cpp pads a vocabulary up to its size with unused pieces ([PAD151665] ..., type 5),
     which the safetensors path writes as empty text: the same tokenizer.bin now, which was spelling them out when
     chosen. Its control tokens (type 3) are the special ones, its user-defined ones (type 4) the added ones."""
     from llama2_numpy import Tokenizer
@@ -810,14 +810,14 @@ def test_the_padding_of_a_gguf_vocabulary_is_empty_as_the_safetensors_path_pads(
     assert vocabulary.vocab[20:] == [b"", b""] and vocabulary.vocab[19] == b"<think>"
 
 
-# ---- T236: a Qwen3.5 (T229's hybrid attention), as llama.cpp's conversion/qwen.py writes one
+# ---- T.236: a Qwen3.5 (T.229's hybrid attention), as llama.cpp's conversion/qwen.py writes one
 QWEN35_NAMES = {"embed_tokens.weight": "token_embd.weight", "norm.weight": "output_norm.weight"}
 QWEN35_LAYER = {**LAYER, "post_attention_layernorm": "post_attention_norm",
                 "linear_attn.in_proj_qkv": "attn_qkv", "linear_attn.in_proj_z": "attn_gate",
                 "linear_attn.in_proj_a": "ssm_alpha", "linear_attn.in_proj_b": "ssm_beta",
                 "linear_attn.conv1d": "ssm_conv1d", "linear_attn.norm": "ssm_norm", "linear_attn.out_proj": "ssm_out"}
 QWEN35_WHOLE = {"linear_attn.A_log": "ssm_a", "linear_attn.dt_bias": "ssm_dt.bias"}
-# T245: where the value heads of a linear-attention layer stand in a tensor, as (after q and k, entries to a head: all
+# T.245: where the value heads of a linear-attention layer stand in a tensor, as (after q and k, entries to a head: all
 # of value_dim or one, the axis): what llama.cpp's _LinearAttentionVReorderBase.modify_tensors reorders
 QWEN35_VALUE_HEADS = {"linear_attn.in_proj_qkv.weight": (True, True, 0), "linear_attn.in_proj_z.weight": (False, True, 0),
                       "linear_attn.in_proj_a.weight": (False, False, 0), "linear_attn.in_proj_b.weight": (False, False, 0),
@@ -830,7 +830,7 @@ QWEN35 = dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_dim=32, key_
 
 def tiled_places(what, text):
     """(the axis, for each place along it the place Hugging Face has that entry at) where llama.cpp writes a tensor of
-    a linear-attention layer with its value heads tiled (T245: more value heads than key heads), else None. Hugging
+    a linear-attention layer with its value heads tiled (T.245: more value heads than key heads), else None. Hugging
     Face holds the value heads of key head 0, then those of key head 1; llama.cpp every key head's first, then every
     key head's second (conversion/qwen.py's _reorder_v_heads builds the same index for a LoRA's tensors)."""
     keys, values = text["linear_num_key_heads"], text["linear_num_value_heads"]
@@ -844,17 +844,17 @@ def tiled_places(what, text):
 
 
 def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, tile=True, **shape):
-    """A GGUF v3 of a small Qwen3.5 the way llama.cpp writes one (as unsloth's Qwen3.5-0.8B Q8_0 is, T236): the
+    """A GGUF v3 of a small Qwen3.5 the way llama.cpp writes one (as unsloth's Qwen3.5-0.8B Q8_0 is, T.236): the
     language model's tensors alone, the norms with the 1 the model adds to them (not a linear-attention layer's own),
     A_log as -exp(A_log) and named ssm_a, dt_bias named ssm_dt.bias, the convolution without its axis of one, q with
-    its gate and k as Hugging Face holds them, and where a key head has more value heads than one (the 4B and up, T245)
+    its gate and k as Hugging Face holds them, and where a key head has more value heads than one (the 4B and up, T.245)
     the value heads tiled (tiled_places(); tile: False leaves them as Hugging Face has them, which llama.cpp does not);
     Q8_0 matrices (the two small ones of the gates too), F32 vectors and convolution. Returns the config.json, the file, and under the Hugging Face names the values it stands for: the
     matrices as Q8_0 rounds them, everything else as the original has it.
     more: further metadata; change(stored): alters what is written, {GGUF name: [bytes, ggml type, shape]}.
-    fold(tensors): the Hugging Face tensors as the file is to hold them (T237: in a rotated basis); matrices: what
+    fold(tensors): the Hugging Face tensors as the file is to hold them (T.237: in a rotated basis); matrices: what
     makes a matrix's blocks and their ggml type, where not Q8_0 (as gguf_file's), or what says so for each GGUF name
-    (T362: a file whose matrices are of several types)."""
+    (T.362: a file whose matrices are of several types)."""
     from conftest import qwen35_model
     tensors, config = qwen35_model(**{**QWEN35, **shape})
     if fold:
@@ -948,12 +948,12 @@ def safetensors_conversion(same, config, vocabulary, dtype):
 
 QWEN35_SHAPES = {"every second": dict(), "every fourth, the language model alone": dict(n_layers=8, every=4, prefix="model."),
                  "a classifier of its own, whole heads turn": dict(shared=False, rotary=1.0, n_kv_heads=4, conv=2),
-                 # T245: more value heads than key heads, which llama.cpp tiles. A value head of whole groups of 32, so
+                 # T.245: more value heads than key heads, which llama.cpp tiles. A value head of whole groups of 32, so
                  # that the columns of the output's matrix move as whole Q8_0 blocks and the int8 is the same too
                  "two value heads to a key head": dict(key_heads=4, value_heads=8, key_dim=8, value_dim=32, n_layers=4),
                  "three value heads to a key head (the 27B)": dict(value_heads=6, value_dim=32, key_dim=16),
                  "three to one, every fourth": dict(value_heads=6, value_dim=32, n_layers=8, every=4, conv=3, prefix="model."),
-                 # T245's review: the heads of the real models, the rest small. The 4B and the 9B have 16 key heads of 128 and 32
+                 # T.245's review: the heads of the real models, the rest small. The 4B and the 9B have 16 key heads of 128 and 32
                  # value heads of 128 (two to one), the 27B 48 (three to one): offsets of 4096 rows, heads of four Q8_0 blocks, a
                  # convolution of 8192 and 10240 channels. (The two sizes of a head that differ in the other shapes are the same
                  # here, as in every real model: 128 and 128.)
@@ -967,7 +967,7 @@ TILED_SHAPES = [name for name in QWEN35_SHAPES if "to a key head" in name or "to
 def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
     The norms come with their 1 and A_log as -exp(A_log), which the conversion must not do to them again (and could not
-    undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. T245:
+    undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. T.245:
     and the value heads tiled where a key head has two or three, put back whole. Fed 4096 bytes at a time, in pieces
     of a few rows (a matrix whose heads are to be put back must not go piece by piece)."""
     monkeypatch.setattr("convert.stream.PIECE", 700)
@@ -982,7 +982,7 @@ def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(sh
 
 
 def test_a_qwen35_gguf_alone_converts_to_the_checkpoint_of_the_same_values():
-    """Such a GGUF alone, were it to name a BOS (unsloth's names none and is refused, as T203 has it): the layers, the
+    """Such a GGUF alone, were it to name a BOS (unsloth's names none and is refused, as T.203 has it): the layers, the
     heads and the turned part of a head come from its own metadata, by config.json's names, and its pre-tokenizer is
     the one of a Qwen3.5's tokenizer.json, which normalizes to NFC."""
     config, file, same = qwen35_gguf()
@@ -1020,7 +1020,7 @@ def test_a_qwen35_gguf_that_is_not_the_originals_is_refused(change, what):
 
 @pytest.mark.parametrize("dtype", ["float32", "float16"])
 def test_value_heads_that_split_a_q8_0_block_come_back_to_their_places(dtype):
-    """T245: value heads of 16, two to a Q8_0 block of the output's matrix, whose columns llama.cpp tiles before it
+    """T.245: value heads of 16, two to a Q8_0 block of the output's matrix, whose columns llama.cpp tiles before it
     quantizes: the values are the same as the safetensors', at Hugging Face's places (an int8 made of them has other
     groups of 32 than the GGUF's blocks, and is not asked to be the same)."""
     config, file, same = qwen35_gguf(value_heads=6, value_dim=16, key_dim=8)
@@ -1072,7 +1072,7 @@ def test_untiled_is_the_inverse_of_llama_cpps_order():
 
 
 def test_a_step_done_that_the_plan_has_not_is_refused():
-    """A GGUF's tensor that comes with a step of the plan done (T236) is taken without it, and one said to come with a
+    """A GGUF's tensor that comes with a step of the plan done (T.236) is taken without it, and one said to come with a
     step its plan has not is refused: the 1 would be added to, or left off, a tensor the name table got wrong."""
     assert llama2_convert.left_to_do(("one",), None) == ("one",) and llama2_convert.left_to_do(None, None) is None
     assert llama2_convert.left_to_do(("one",), "one") is None

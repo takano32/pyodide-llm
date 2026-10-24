@@ -1,6 +1,6 @@
-// updated.ts (T367.4; updated.js until T368.7): the one place that says "the site was updated while this page was open".
+// updated.ts (T.367.4; updated.js until T.368.7): the one place that says "the site was updated while this page was open".
 // The site's runtime is served under names that carry a hash of each file's bytes (_astro/<name>.<hash>.js, .wasm,
-// .zip: T367.3). A deployment replaces them all, so a page left open across one still runs its own build, and a file
+// .zip: T.367.3). A deployment replaces them all, so a page left open across one still runs its own build, and a file
 // of that build which it had not fetched yet (the converter's archive at a first conversion, a module asked for
 // later, a section's worker of /benchmark/) is no longer there: the server answers 404. That, and nothing else, is
 // what the sentence is for. A line that dropped, an answer of the 500s, a request something blocked, a page that is
@@ -20,20 +20,20 @@
 
 import { Failure, kindOf } from "./failure.ts";
 
-// (T368.7: the types, each said by a // line: a /** */ above a declaration that is erased would be left in the bundle)
+// (T.368.7: the types, each said by a // line: a /** */ above a declaration that is erased would be left in the bundle)
 // What is asked instead of the browser's own fetch and address: the tests', and nothing of the site hands one
 type Probe = { fetch?: (address: string, init: RequestInit) => Promise<{ status: number }>; here?: { origin?: string } | undefined; seconds?: number };
 // Of a worker's `error` event, what is read: a script that threw says its message
 type Failed = { message?: string } | null | undefined;
 
-/** The sentence, as the owner wrote it (T367's decision 4). Nothing is put before or after it. */
+/** The sentence, as the owner wrote it (T.367's decision 4). Nothing is put before or after it. */
 export const UPDATED = "The site was updated while this page was open. Reload the page to go on.";
 
-/** T439: what the status line of a model says where it goes on without a file of its build that is gone, on a slower
+/** T.439: what the status line of a model says where it goes on without a file of its build that is gone, on a slower
  * path (worker/outdated.js): the owner's too, as it is, small letters and no full stop. */
 export const SLOWER = "the site was updated: reload for full speed";
 
-/** The error that says so: a Failure of the kind "updated" (T380.1), an Error by name, so that whatever reports an error
+/** The error that says so: a Failure of the kind "updated" (T.380.1), an Error by name, so that whatever reports an error
  * by its message says the sentence alone. */
 export const updated = (cause?: unknown): Failure => new Failure("updated", UPDATED, { cause });
 export const isUpdated = (error: unknown): boolean => kindOf(error) === "updated";

@@ -1,4 +1,4 @@
-// T130 (the review of 2026-10-01): three things of the KV cache and of what createForward puts after the checkpoint that no
+// T.130 (the review of 2026-10-01): three things of the KV cache and of what createForward puts after the checkpoint that no
 // other test holds to the byte, on forward.js's own createForward() with kernels that do nothing (no Pyodide, no built
 // kernels: Node alone, with the native Python for the engine's own placing of the tensors, as worker-sink-check.mjs has it):
 //   (1) the cache grows in place and loses no byte it holds. Every position of every layer's keys and values is written
@@ -11,18 +11,18 @@
 //       context, and a close one (the megabyte it adds for alignment, and the page the memory grows by): for every kind
 //       of model (a key for every head and grouped-query, biases, heads of another size than dim / heads, GPT-2, GPT-NeoX),
 //       int8, six bits, float16 and float32, with and without relaxed SIMD, on a shared memory (its base, and the type of
-//       the keys and values keysInHalf says) and on a plain one. T229's review: and a Qwen3.5's hybrid attention, whose
+//       the keys and values keysInHalf says) and on a plain one. T.229's review: and a Qwen3.5's hybrid attention, whose
 //       linear layers keep a state (twice) and no keys and values (a small one with a state that outweighs the rest, the
 //       0.8B whole, four layers of the 27B's shape). The worker sizes the memory by footprint(); an engine
 //       that put more after the checkpoint than it counted runs out of memory near the end of its context.
 //   (3) the memory of a cache that doubles never holds more than the whole context's: it has the size footprint() counts
 //       when the last doubling is done (a memory does not shrink, so what it held at its largest is what it holds). The cache
-//       before T130 held 1.5 times the context at the last doubling, and a model at the edge of a 32-bit memory (Qwen2.5 3B:
+//       before T.130 held 1.5 times the context at the last doubling, and a model at the edge of a 32-bit memory (Qwen2.5 3B:
 //       3.89 GiB) ran out of memory there.
 //   (4) a shared memory that the browser refuses leaves a plain one that holds what the worker sized the shared one for: of
 //       the models of the list that are near an edge and two a visitor can open with ?hf=, the plain engine fits a 32-bit
 //       memory wherever the shared one did, and a 64-bit memory (16 GiB) wherever pastWide(), asked with the shared size, let
-//       it pass (T130: the type of the keys and values on the plain memory, in footprint()).
+//       it pass (T.130: the type of the keys and values on the plain memory, in footprint()).
 //   node tests/memory-check.mjs [--forward <another forward.js, to see a broken one fail>]     (PYTHON=.venv/bin/python)
 // A forward.js of another place needs jobs.js and its modules (forward/) beside it (it imports them by its own address).
 import assert from "node:assert/strict";
@@ -43,16 +43,16 @@ let began = performance.now();
 const seconds = () => { const was = began; began = performance.now(); return `${((began - was) / 1000).toFixed(1)} s`; };
 
 const { plansOf, planOf, FORM, empty, nothing } = plans(root);
-// T260: the convolution layers of the LFM2 shapes below (llama2_numpy.convolution_form()): the 350M's 16 layers (the 700M's and
+// T.260: the convolution layers of the LFM2 shapes below (llama2_numpy.convolution_form()): the 350M's 16 layers (the 700M's and
 // the 1.2Bs' too), the 230M's 14, and eight layers of four taps
 const CONVOLUTION_350M = { layers: "ccaccaccacacacac", taps: 3 };
 const CONVOLUTION_230M = { layers: "ccacacacacacac", taps: 3 };
 const CONVOLUTION_SMALL = { layers: "ccaccaca", taps: 4 };
-// T229: the linear-attention layers of the Qwen3.5 shapes below (llama2_numpy.linear_form())
+// T.229: the linear-attention layers of the Qwen3.5 shapes below (llama2_numpy.linear_form())
 const LINEAR_SMALL = { every: 4, key_heads: 8, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
 const LINEAR_08B = { every: 4, key_heads: 16, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
 const LINEAR_27B = { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 };
-// T237: a rotated basis is a block and the signs of every width (footprint() counts them by their widths; what they are is no
+// T.237: a rotated basis is a block and the signs of every width (footprint() counts them by their widths; what they are is no
 // matter here)
 const ROTATED = { block: 1024, signs: { 5120: "", 6144: "", 17408: "" } };
 const ROTATED_SMALL = { block: 64, signs: { 256: "", 512: "" } };
@@ -146,7 +146,7 @@ function halfToFloat(h) {
     ...big("llama, grouped-query, the classifier the embedding", [256, 512, 8, 8, 2, 20000, 4096]),
     ...big("qwen2, biases and grouped-query", [256, 512, 8, 8, 2, 20000, 4096], { bias: true }),
     ...big("qwen3, normalized heads of 64 in a dim of 256", [256, 512, 8, 8, 4, 20000, 4096], { qk_norm: true, head_dim: 64 }),
-    // T230: ternary weights (rows of whole groups of 128): no corrections, and the activations' sums after their scales
+    // T.230: ternary weights (rows of whole groups of 128): no corrections, and the activations' sums after their scales
     ...big("ternary qwen3, grouped-query", [256, 512, 8, 8, 4, 20000, 4096], { qk_norm: true, head_dim: 64 }, ["ternary"]),
     ...big("ternary, a key for every head, a classifier of its own", [256, 768, 8, 8, 8, -20000, 4096], {}, ["ternary"]),
     ...big("gpt2", [256, 1024, 4, 8, 8, 20000, 1024], { arch: "gpt2" }, ["int8", "int6", "float32"]),
@@ -156,7 +156,7 @@ function halfToFloat(h) {
     // groups are of 8, which footprint() takes for 32 (the scales then cost a quarter, not an eighth): more counted, never
     // less, so only the bound is held
     ...big("int8 kernels cannot run (dim 200)", [200, 400, 8, 4, 4, 1000, 4096], {}, ["int8"], true),
-    // T229, the review: Qwen3.5's hybrid attention. A linear-attention layer keeps a state of a size the context does not
+    // T.229, the review: Qwen3.5's hybrid attention. A linear-attention layer keeps a state of a size the context does not
     // change (twice: the delta rule reads one and writes the other), and no keys and values; only the full-attention layers do.
     // One whose state (12.6 MB) and keys and values (2 of 8 layers) outweigh the rest, in every dtype:
     ...big("qwen3.5, a state of 12.6 MB", [256, 512, 8, 4, 2, 20000, 4096], { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL },
@@ -168,14 +168,14 @@ function halfToFloat(h) {
     // than the megabyte (hybridOver()), 0.5 MiB for the 0.8B, 12 MiB of the 27B's 28 GB, never under
     ...big("qwen3.5 0.8B", [1024, 3584, 24, 8, 2, 248320, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_08B }, ["int8"]),
     ...big("qwen3.5 27B's layers, 4 of 64", [5120, 17408, 4, 24, 4, 1000, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_27B }, ["int8"]),
-    // T237's review: and in a rotated basis, as Ternary Bonsai 2 27B is (its signs of three widths, and a place in every
+    // T.237's review: and in a rotated basis, as Ternary Bonsai 2 27B is (its signs of three widths, and a place in every
     // frame for the rotated input of a matrix: 27B's widest input is 17408 wide, 16 frames of it)
     ...big("qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
       { arch: "qwen35", head_dim: 256, linear: LINEAR_27B, rotated: ROTATED }, ["int8"]),
     ...big("qwen3.5, a state of 12.6 MB, in a rotated basis", [256, 512, 8, 4, 2, 20000, 4096],
       { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL, rotated: ROTATED_SMALL }, ["int8", "float32"]),
     ...big("llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["int8", "int6"]),
-    // T260: an LFM2. A convolution layer keeps its last taps tokens' values (taps rows of dim floats) and no keys and
+    // T.260: an LFM2. A convolution layer keeps its last taps tokens' values (taps rows of dim floats) and no keys and
     // values; only the attention layers do. A small one in every dtype (three attention layers of eight), with a
     // classifier of its own, and the real 350M whole (6 attention layers of 16, a vocabulary of 65536)
     ...big("lfm2, eight layers of four taps", [256, 512, 8, 8, 2, -20000, 4096], { arch: "lfm2", convolution: CONVOLUTION_SMALL },
@@ -187,20 +187,20 @@ function halfToFloat(h) {
     ...big("lfm2 230M", [1024, 2560, 14, 16, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_230M }, ["int8", "int6"]),
     ...big("lfm2 700M", [1536, 6912, 16, 24, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
     ...big("lfm2 1.2B", [2048, 8192, 16, 32, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
-    // T261: a Gemma 3, whose keys and values are every layer's and of every position (a local layer reads the last of
+    // T.261: a Gemma 3, whose keys and values are every layer's and of every position (a local layer reads the last of
     // them): a small one in every dtype, and the real 270M and 1B whole (a vocabulary of 262144, heads of 256 that do
     // not fill the width, one head of keys and values)
     ...big("gemma3, six layers", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma3", head_dim: 128 }, ["int8", "int6", "float32", "float16"]),
     ...big("gemma3 270M", [640, 2048, 18, 4, 1, 262144, 4096], { arch: "gemma3", head_dim: 256 }, ["int8", "int6"]),
     ...big("gemma3 1B", [1152, 6912, 26, 4, 1, 262144, 4096], { arch: "gemma3", head_dim: 256 }, ["int8", "int6"]),
-    // T331.2: a Gemma 4, whose full-attention layers have heads twice as wide (and so keys and values), and some an FFN
+    // T.331.2: a Gemma 4, whose full-attention layers have heads twice as wide (and so keys and values), and some an FFN
     // twice as wide: a small one in every dtype
     ...big("gemma4, six layers", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5] },
       ["int8", "int6", "float32", "float16"]),
-    // T330.2: and one whose last layers read the keys and values of others, and keep none
+    // T.330.2: and one whose last layers read the keys and values of others, and keep none
     ...big("gemma4, sharing keys and values", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 },
       double: [4, 5], kv_shared: { layers: [4, 5], from: [3, 2] } }, ["int8", "float32"]),
-    // T329.2: and one with an embedding of every layer: a table no matrix multiplies (no corrections of relaxed SIMD of
+    // T.329.2: and one with an embedding of every layer: a table no matrix multiplies (no corrections of relaxed SIMD of
     // it), the inputs of every layer of a prompt's block, and what a token's row of the table is read into
     ...big("gemma4, an embedding of every layer", [256, 512, 6, 4, 1, 20000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 },
       double: [4, 5], kv_shared: { layers: [4, 5], from: [3, 2] }, per_layer: 64 }, ["int8", "int6", "float32", "float16"]),
@@ -208,11 +208,11 @@ function halfToFloat(h) {
     // megabyte allowed for alignment is wide: footprint() leaving them out falls under it; a vocabulary of 2000)
     ...big("gemma4, wide inputs of every layer", [256, 512, 12, 4, 1, 2000, 4096], { arch: "gemma4", head_dim: 64, wide: { layers: [5, 11], head_dim: 128 },
       per_layer: 512 }, ["int8", "float32"]),
-    // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
+    // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T.231's frame: the activations' scales and their sums, and T.237's:
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
       { arch: "qwen35", head_dim: 256, linear: LINEAR_27B, rotated: ROTATED }, ["ternary"]),
-    // T232: and a ternary Llama in a rotated basis, which no model of the list is: what the GPU still refuses once it takes
+    // T.232: and a ternary Llama in a rotated basis, which no model of the list is: what the GPU still refuses once it takes
     // ternary weights, without the linear-attention layers that come first
     ...big("ternary llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["ternary"]),
   ];
@@ -250,13 +250,13 @@ function halfToFloat(h) {
       }
     }
   });
-  // and where the page asks for the GPU (the prompt's blocks on it, T135: the engine puts aside the place the keys and values
+  // and where the page asks for the GPU (the prompt's blocks on it, T.135: the engine puts aside the place the keys and values
   // of a block come back through, and its rows), for every model the GPU takes: int8 and six bits of whole groups
   let withGpu = 0, rotatedTaken = 0, convolutional = 0;
   plans.forEach((p, n) => {
     if (p.dtype === "ternary" && p.form.rotated) {
-      // T232 (the review of T237): the GPU takes ternary weights (the ternary Qwen3s below go on as the int8 models do);
-      // T271.1: and a model in a rotated basis now (the 27B, T233, a hybrid one too: T271.2 took its linear-attention
+      // T.232 (the review of T.237): the GPU takes ternary weights (the ternary Qwen3s below go on as the int8 models do);
+      // T.271.1: and a model in a rotated basis now (the 27B, T.233, a hybrid one too: T.271.2 took its linear-attention
       // layers), its worker started, and what is put aside for it footprint()'s with a GPU
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: true, outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
@@ -269,7 +269,7 @@ function halfToFloat(h) {
       return;
     }
     if (p.form.convolution) {
-      // T545: an LFM2's prompts are the GPU's: its worker is started, and what is put aside for it (the attending layers'
+      // T.545: an LFM2's prompts are the GPU's: its worker is started, and what is put aside for it (the attending layers'
       // keys and values of a block, the convolution layers' rows that come back with them) is footprint()'s
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
@@ -287,8 +287,8 @@ function halfToFloat(h) {
       return;
     }
     if (p.form.arch === "gemma4") {
-      // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
-      // (T331.2: and so does a Gemma 4, for what its layers have that the GPU's have not; T261.4: a Gemma 3, which did
+      // T.260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
+      // (T.331.2: and so does a Gemma 4, for what its layers have that the GPU's have not; T.261.4: a Gemma 3, which did
       // until then, is the GPU's below)
       const [model, why] = ["a Gemma 4", "this pair of norms and FFN is not on the GPU yet"];
 
@@ -305,17 +305,17 @@ function halfToFloat(h) {
       convolutional++;
       return;
     }
-    // (T271.2: a Qwen3.5's prompts are the GPU's too: what is put aside for it, its linear-attention layers' states and
+    // (T.271.2: a Qwen3.5's prompts are the GPU's too: what is put aside for it, its linear-attention layers' states and
     // rows besides the attending layers' keys and values of a block, is footprint()'s)
     if (!p.keep_int8 || shapes[n].loose) return;
     for (const relaxed of [true, false]) {
-      // (T271.1: a model in a rotated basis too: the GPU takes it, and what is put aside for it is footprint()'s with a GPU)
+      // (T.271.1: a model in a rotated basis too: the GPU takes it, and what is put aside for it is footprint()'s with a GPU)
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       const engine = engineOn(p, planOf(p, { relaxed, outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
       assert.ok(engine.gpu, "no GPU's worker was asked for");
-      // T232: and the model was taken, a ternary one as an int8 one (T271.1: one in a rotated basis too)
+      // T.232: and the model was taken, a ternary one as an int8 one (T.271.1: one in a rotated basis too)
       assert.equal(engine.gpuWhyNot, null, `${shapes[n].name}, ${p.dtype}: the GPU's refusal is "${engine.gpuWhyNot}"`);
       engine.release();
       const where = `${shapes[n].name}, ${p.dtype}, ${relaxed ? "relaxed SIMD" : "no relaxed SIMD"}, a GPU asked for`;
@@ -327,7 +327,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for, ${rotatedTaken} ternary models in a rotated basis (T271.1: taken), ${convolutional} of an LFM2 (T545: taken, but a float one) or a Gemma 4 (refused); ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${rotatedTaken} ternary models in a rotated basis (T.271.1: taken), ${convolutional} of an LFM2 (T.545: taken, but a float one) or a Gemma 4 (refused); ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's
@@ -377,7 +377,7 @@ function halfToFloat(h) {
     ["japanese-gpt-neox small", [768, 3072, 12, 12, 12, -44416, 2048], 172787740, { arch: "neox" }, "int8"],
     ["Pythia 12B (?hf=)", [5120, 20480, 36, 40, 40, -50688, 2048], 13333749788, { arch: "neox" }, "int8"],
     ["Llama 2 13B (?hf=)", [5120, 13824, 40, 40, 40, -32000, 4096], 11390177308, {}, "int6"],
-    // T230: the ternary models there are, as ternary (Ternary Bonsai 1.7B, 4B, 8B: Qwen3s; Ternary Bonsai 2 27B: a Qwen3.5)
+    // T.230: the ternary models there are, as ternary (Ternary Bonsai 1.7B, 4B, 8B: Qwen3s; Ternary Bonsai 2 27B: a Qwen3.5)
     ["Ternary Bonsai 1.7B", [2048, 6144, 28, 16, 8, 151936, 4096], 457490460, { qk_norm: true, head_dim: 128 }, "ternary"],
     ["Ternary Bonsai 4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1069200412, { qk_norm: true, head_dim: 128 }, "ternary"],
     ["Ternary Bonsai 8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2176815132, { qk_norm: true }, "ternary"],

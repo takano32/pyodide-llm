@@ -1,5 +1,5 @@
 """The readers of Prism ML's two GGUF types (llama2_convert.pq2_0 and ptq1_0) against the fork's own C, at the commit the
-repository pins (T230's review). Nothing is copied here: the fork's ggml-quants.c is fetched (MIT, ggml authors) and its
+repository pins (T.230's review). Nothing is copied here: the fork's ggml-quants.c is fetched (MIT, ggml authors) and its
 four functions, dequantize_row_pq2_0, dequantize_row_ptq1_0 and the two quantizers, are cut out of it by name and compiled
 with a harness of a few lines of this file's own (the block structs, a float16 by _Float16), then run on
 
@@ -10,8 +10,8 @@ with a harness of a few lines of this file's own (the block structs, a float16 b
   - the fork's own quantizers' bytes of 24,000 ternary groups (a third of them with a zero or two): read back they must be
     the values, and ternary() of them must take back the scale.
 
-T362: and the readers of llama.cpp's own K- and i-quantized types (convert/superblocks.py: Q2_K, Q4_K, IQ1_S, IQ1_M,
-IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS; T505.1: Q3_K, Q5_K, Q6_K and convert/readers.py's Q4_0, Q4_1, Q5_0, Q5_1
+T.362: and the readers of llama.cpp's own K- and i-quantized types (convert/superblocks.py: Q2_K, Q4_K, IQ1_S, IQ1_M,
+IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS; T.505.1: Q3_K, Q5_K, Q6_K and convert/readers.py's Q4_0, Q4_1, Q5_0, Q5_1
 and IQ4_NL, blocks of 32) against llama.cpp's C at the commit their tables were taken at. Its ggml-quants.c and
 ggml-common.h are fetched (MIT, ggml authors), the dequantize_row_* are cut out by name and compiled with the fetched
 header, and
@@ -103,14 +103,14 @@ def cut(text, start):
         k += 1
 
 
-# T362: llama.cpp itself, at the commit convert/grids.py's tables are of
+# T.362: llama.cpp itself, at the commit convert/grids.py's tables are of
 UPSTREAM = "4413a192410fad1f054e9216114087a3e01527a0"
 UPSTREAM_FILES = f"https://raw.githubusercontent.com/ggml-org/llama.cpp/{UPSTREAM}/ggml/src/"
 # the type's name -> (llama.cpp's name of it, where its float16 scales are in a block)
 SUPERBLOCKS = {"Q2_K": ("q2_K", (80, 82)), "Q4_K": ("q4_K", (0, 2)), "IQ2_XXS": ("iq2_xxs", (0,)), "IQ2_XS": ("iq2_xs", (0,)),
                "IQ2_S": ("iq2_s", (0,)), "IQ3_XXS": ("iq3_xxs", (0,)), "IQ3_S": ("iq3_s", (0,)), "IQ1_S": ("iq1_s", (0,)),
                "IQ1_M": ("iq1_m", ()), "IQ4_XS": ("iq4_xs", (0,)),
-               # T505.1: the K types that are read and never kept, and the types of blocks of 32
+               # T.505.1: the K types that are read and never kept, and the types of blocks of 32
                "Q3_K": ("q3_K", (108,)), "Q5_K": ("q5_K", (0, 2)), "Q6_K": ("q6_K", (208,)), "Q4_0": ("q4_0", (0,)),
                "Q4_1": ("q4_1", (0, 2)), "Q5_0": ("q5_0", (0,)), "Q5_1": ("q5_1", (0, 2)), "IQ4_NL": ("iq4_nl", (0,))}
 # convert/grids.py's name of a grid -> (the header's, the bytes of an entry, the values as)
@@ -164,7 +164,7 @@ def finite(blocks, place):
 
 
 def upstream(work, check, rng):
-    """T362, T505.1: the readers of llama.cpp's quantized types and their tables against llama.cpp's own."""
+    """T.362, T.505.1: the readers of llama.cpp's quantized types and their tables against llama.cpp's own."""
     from fetching import download
     for name in ("ggml-quants.c", "ggml-common.h"):
         download(UPSTREAM_FILES + name, work / UPSTREAM / name)

@@ -1,4 +1,4 @@
-// kernel/sample.ts (T356): from the logits to a token: the greedy choice, the penalties, and the sampling
+// kernel/sample.ts (T.356): from the logits to a token: the greedy choice, the penalties, and the sampling
 // (temperature, top-k, min-p, top-p) as NumpySampler (engine/sampler.py) does it in NumPy.
 
 import { fexp, vexp, largest } from "./math";
@@ -12,7 +12,7 @@ export function argmax(x: usize, n: i32): i32 {
 // ---------------------------------------------------------------------------------------------- sampling
 // What NumpySampler does in NumPy, without walking a vocabulary of 50000 or 100000 tokens several times.
 
-// tokens: the recently generated ones; each is made less likely once, however often it occurs. T274: presence is taken
+// tokens: the recently generated ones; each is made less likely once, however often it occurs. T.274: presence is taken
 // off the logit of each after that (a presence penalty: llama.cpp's and OpenAI's, the same for one occurrence and for
 // ten); 0 or less takes nothing off
 export function penalize(logits: usize, tokens: usize, count: i32, penalty: f32, presence: f32): void {
@@ -87,7 +87,7 @@ function sortNucleus(probs: usize, index: usize, lo: i32, hi: i32): void {
 }
 
 // Writes value and token at probs[count] and index[count], and counts them when past is 1: a list that keeps some of
-// a sequence in its order without a branch on each (T189: whether a token stays is not predictable). count must be
+// a sequence in its order without a branch on each (T.189: whether a token stays is not predictable). count must be
 // at most the position read from, so that nothing not yet read is written over
 // @ts-ignore: decorator
 @inline function kept(probs: usize, index: usize, count: i32, value: f32, token: i32, past: i32): i32 {
@@ -96,7 +96,7 @@ function sortNucleus(probs: usize, index: usize, lo: i32, hi: i32): void {
   return count + past;
 }
 
-// kept() for the four of d, the bits of past telling which of them are past the floor (T189)
+// kept() for the four of d, the bits of past telling which of them are past the floor (T.189)
 // @ts-ignore: decorator
 @inline function keptFour(probs: usize, index: usize, count: i32, d: v128, i: i32, past: i32): i32 {
   count = kept(probs, index, count, f32x4.extract_lane(d, 0), i, past & 1);
@@ -105,7 +105,7 @@ function sortNucleus(probs: usize, index: usize, lo: i32, hi: i32): void {
   return kept(probs, index, count, f32x4.extract_lane(d, 3), i + 3, past >> 3);
 }
 
-// T274: moves the k largest of probs[lo..hi] to its first k places (index[] along with them), in no set order: the
+// T.274: moves the k largest of probs[lo..hi] to its first k places (index[] along with them), in no set order: the
 // partition of sortNucleus() without the sorting. Equal ones at the border: either
 function selectTop(probs: usize, index: usize, lo: i32, hi: i32, k: i32): void {
   const until = lo + k;  // the first place that is not among the k
@@ -135,12 +135,12 @@ function selectTop(probs: usize, index: usize, lo: i32, hi: i32, k: i32): void {
 }
 
 // Draws a token from softmax(logits / temperature), restricted to the nucleus when 0 < topp < 1.
-// T274: topk > 0 keeps the topk most probable first, and the nucleus is then of those (their probabilities add up to
+// T.274: topk > 0 keeps the topk most probable first, and the nucleus is then of those (their probabilities add up to
 // one again); minp > 0 then leaves out what is less than minp times as probable as the most probable. The order of
 // llama.cpp's samplers and of transformers' (top-k, top-p, min-p). With a top-k the tokens are walked from the most
 // probable, as a nucleus's are.
 // random: one number in [0, 1) from Python's generator, so that a seed reproduces. probs and index: scratch of n each.
-// -1 when the largest logit is no finite number (T195): a NaN anywhere makes it NaN (f32x4.max and max keep a NaN),
+// -1 when the largest logit is no finite number (T.195): a NaN anywhere makes it NaN (f32x4.max and max keep a NaN),
 // +inf makes it +inf, and all -inf make it -inf. Logits like these come of a broken model or an overflow; the engine
 // stops with an error on -1 (NumPy's sample() and shaders.js's sampleLikeCpu() stop on the same logits)
 export function sample(logits: usize, n: i32, temperature: f32, topp: f32, random: f64, probs: usize, index: usize, topk: i32, minp: f32): i32 {
@@ -150,7 +150,7 @@ export function sample(logits: usize, n: i32, temperature: f32, topp: f32, rando
   // With a nucleus, tokens less than a ten millionth as probable as the best one cannot matter (ln 1e-7 = -16.118):
   // they are left out before exp(), which is the expensive part
   const floor: f32 = nucleus ? best - temperature * <f32>16.118095 : -f32.MAX_VALUE;
-  // T189: eight at a time. Eight that all stay below the floor (most of the vocabulary) cost two comparisons and one
+  // T.189: eight at a time. Eight that all stay below the floor (most of the vocabulary) cost two comparisons and one
   // branch; of the others each is written and only those past the floor are counted, in their order, without a
   // branch each (whether a token passes is not predictable). A branch for each four was slower (on the arm64 runner
   // the walk 1.23 times main's where this is 2.1), and none at all slower still (0.45 times)
@@ -199,7 +199,7 @@ export function sample(logits: usize, n: i32, temperature: f32, topp: f32, rando
   if (nucleus || narrowed) {
     // Tokens below (1 - topp) / (n - 1) cannot be part of the nucleus (llama2.c), so they need not be sorted. That
     // holds while one token at least stays: when all are below it (n * topp < 1, which the floor above makes possible,
-    // T178), the others add up to less than (1 - topp), so the nucleus is the most probable token alone. It always stays
+    // T.178), the others add up to less than (1 - topp), so the nucleus is the most probable token alone. It always stays
     const cutoff: f64 = nucleus ? min((1.0 - <f64>topp) / <f64>(count > 1 ? count - 1 : 1) * total, <f64>top) : 0;
     let likely = 0;
     for (let k = 0; k < count; k++) {

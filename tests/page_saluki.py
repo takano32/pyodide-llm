@@ -1,8 +1,8 @@
-# page_saluki.py (T364.2): Underdog Saluki 27B converted as the page will convert it, its blocks kept as they are
-# (Conversion(..., blocks=True) by the conduct of a conversion, T363.3), by the native Python of a CI runner, into a
+# page_saluki.py (T.364.2): Underdog Saluki 27B converted as the page will convert it, its blocks kept as they are
+# (Conversion(..., blocks=True) by the conduct of a conversion, T.363.3), by the native Python of a CI runner, into a
 # file: the checkpoint (7.96 GB) that tests/page-27b.mjs runs on the page's forward pass. tests/page_saluki.sh runs it;
 # the development machine does not (the GGUF is 7.9 GB). What is converted and how it is asked are the list's two
-# entries' (T364.3: listed_entries()), which tests/page-27b.mjs takes with --as (a form more beside them, and the dry
+# entries' (T.364.3: listed_entries()), which tests/page-27b.mjs takes with --as (a form more beside them, and the dry
 # stage's without their options).
 #
 #   python tests/page_saluki.py folder <the directory with the GGUF> <a directory for the original's files>
@@ -14,8 +14,8 @@
 #   beside them; prints the folder.
 # convert: <out>.bin (a memory map), <out>.tokenizer.bin and <out>.json (the options the page would hand the engine:
 #   the form's "kinds", a type to every matrix and to every layer of a stack, and "tiled"), with the seconds and the
-#   peak of the process's own memory (a tensor whose rows move waits whole for its last byte: T363.3).
-#   --broken tiled: the value heads of every tensor left in the file's order (llama.cpp tiles them, T245), for the
+#   peak of the process's own memory (a tensor whose rows move waits whole for its last byte: T.363.3).
+#   --broken tiled: the value heads of every tensor left in the file's order (llama.cpp tiles them, T.245), for the
 #   comparison to fail on: an error only a model with more value heads than key heads shows.
 # entries: the entries the comparison and the writing take the page's options from, as JSON: the list's two ("at-once",
 #   "thinking") and "sampled" (--made-up: with no options of their own, for the dry stage's small model, whose
@@ -34,7 +34,7 @@ import convert.stream  # noqa: E402
 from conducting import Fetched, Mapped, Nothing, converted, listed  # noqa: E402
 from reference_saluki import FILE, REPOSITORY, REVISION  # noqa: E402
 
-# T364.3: the list's two entries of the model (src/models/hf-families.js): what they fetch and convert (hf, conversion)
+# T.364.3: the list's two entries of the model (src/models/hf-families.js): what they fetch and convert (hf, conversion)
 # and what they hand the engine and the page (the options, the two formats, each form's sampling). The file the
 # references are made of (tests/reference_saluki.py's) must be the one the list names
 IDS = {"at-once": "hf-underdog-saluki-27b", "thinking": "hf-underdog-saluki-27b-thinking"}
@@ -49,7 +49,7 @@ def listed_entries():
         assert (hf["repo"], hf["revision"], hf["weights"]) == (REPOSITORY, REVISION, FILE), f"{entry['id']} names another file than the references' ({hf})"
         assert entry["conversion"] == {"dtype": "int8", "blocks": True}, entry["conversion"]
     # "sampled": the form that answers at once with the list's set for a Qwen3.5 that does (no entry: the owner chose the
-    # card's greedy, T364: with this set one answer of four fell apart), to write with beside it
+    # card's greedy, T.364: with this set one answer of four fell apart), to write with beside it
     sampled = {"steps": 0, "temperature": 0.7, "topp": 0.8, "repetition_penalty": 1, "top_k": 20, "presence_penalty": 1.5}
     return {**entries, "sampled": {**entries["at-once"], "id": f"{IDS['at-once']} (a Qwen3.5's sampling)", "generation": sampled}}
 

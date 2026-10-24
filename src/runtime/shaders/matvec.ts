@@ -1,18 +1,18 @@
-// shaders/matvec.ts (T351): T149's matrix times one vector in the forms of public implementations (llama.cpp's
+// shaders/matvec.ts (T.351): T.149's matrix times one vector in the forms of public implementations (llama.cpp's
 // mul_mat_vec, ONNX Runtime's MatMulNBits and its DP4A for small M, each under its notice below). /benchmark/'s GPU
 // section alone runs these three; the fused layer of a generated token (fused.ts) is made from the first and the third,
-// and this part takes from it the lines the two have alike and the rows a workgroup has (T391.4: the engine's part reads
+// and this part takes from it the lines the two have alike and the rows a workgroup has (T.391.4: the engine's part reads
 // nothing of this one).
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVecMain, dp4aLoadVector } from "./fused.ts";
 
-// ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
+// ---- T.149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED (the model's GPU worker is to take the fastest on each
-// device, T152). WIDEN and PACKED give a row a workgroup of 64 threads that read one u32 each at a time; on the owner's
-// Android they read Llama 3.2 1B's classifier at 27 to 36 GB/s but its w1 (16.8 MB) at 3.3 to 15.7 (T134). These read
+// device, T.152). WIDEN and PACKED give a row a workgroup of 64 threads that read one u32 each at a time; on the owner's
+// Android they read Llama 3.2 1B's classifier at 27 to 36 GB/s but its w1 (16.8 MB) at 3.3 to 15.7 (T.134). These read
 // more at once and give a workgroup several rows:
 //   mulMatVec({ packed, subgroups }): llama.cpp's WebGPU mul_mat_vec (mul_mat_vec.wgsl with mul_mat_vec_acc.tmpl's
 //     MUL_ACC_Q8_0, or with mul_mat_vec_q_acc.tmpl's MMVQ path for Q8_0 where packed): 256 threads for OUTPUTS_PER_WG

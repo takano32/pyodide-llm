@@ -1,6 +1,6 @@
-// The check of a layer (T175, T187, T225): the layer in JavaScript, what a form's keys, values and stream are held to, and
-// the attention of a token at several sizes and positions (T224).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// The check of a layer (T.175, T.187, T.225): the layer in JavaScript, what a form's keys, values and stream are held to, and
+// the attention of a token at several sizes and positions (T.224).
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.ts";
 import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.ts";
 import { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, attentionSteps, layerCheck, compiled,
@@ -8,7 +8,7 @@ import { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, atten
 import type { Shape, Thrown, Weights } from "./device.ts";
 import type { AttentionPipes, Form, Grouping, LayerShape, LayerState, MatrixKey, Tried } from "./layerparts.ts";
 import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
-// T368.7: where a matrix takes its input (INPUTS); a vector of numbers as the reference has them; the check's data (a
+// T.368.7: where a matrix takes its input (INPUTS); a vector of numbers as the reference has them; the check's data (a
 // layer's state, its weights, the angles and eps); what the GPU left of a form (checkLayer() reads it back, judgeLayer()
 // judges it); a stage of the verdict's line: its name, what to say, whether it departed
 type Point = "qkv" | "o" | "ffn" | "down";
@@ -19,7 +19,7 @@ export type Referenced = Record<MatrixKey, Weights> & { h: Numbers; norms: Float
 export type Left = { h: Float32Array; keys: Uint16Array; values: Uint16Array; quantized: { xq: Int8Array; xs: Float32Array }[]; q: Float32Array; att: Float32Array; g: Float32Array };
 type Stage = [name: string, said: string, departed: boolean];
 
-// T175: where a matrix of a layer takes its input (layerReference's inputs), in the order of the DP4A forms' quantized
+// T.175: where a matrix of a layer takes its input (layerReference's inputs), in the order of the DP4A forms' quantized
 // vectors: the normed stream before q, k and v; the attention's output before o; the normed stream before gate and up;
 // silu(gate) × up before down
 const INPUTS: Point[] = ["qkv", "o", "ffn", "down"];
@@ -27,17 +27,17 @@ const INPUTS: Point[] = ["qkv", "o", "ffn", "down"];
 function dequantized(xq: Int8Array, xs: Float32Array) {
   return Float64Array.from(xq, (value, i) => value * xs[(i / shared.GROUP) | 0]);
 }
-// T175: how a vector the GPU quantized (xq, xs) holds to quantize_x of x, the reference's values where it was made
+// T.175: how a vector the GPU quantized (xq, xs) holds to quantize_x of x, the reference's values where it was made
 // (from the GPU's own inputs before it: they differ as float32 and float64 sums in another order, about 1e-6, and a
 // key or value of the position rounded the other way in float16 moves the attention's output by up to about 1e-4 of
 // itself): each scale within `line` of the reference's (a scale of another group, a norm left out or read from the
 // wrong weights is off by far more), each value within 1, and no more than 1% of them off by 1 (a value on a
-// rounding's edge goes either way: about 1e-4 of them). The lines (T175's review): where a norm made the vector (q, k
+// rounding's edge goes either way: about 1e-4 of them). The lines (T.175's review): where a norm made the vector (q, k
 // and v's; gate and up's) NORMED_SCALE_LINE, for the reference's float64 norm and the GPU's float32 differ by a few ulp
 // (1.1e-7 to 4.1e-7 on lavapipe, 2026-09-27) and a mean over n - 1 in place of n moves the scales by 2.4e-4 (the
 // stream stays within 3e-7: the quantized integers do not depend on the norm's scale, only the group's scale does);
 // elsewhere (o's, down's) QUANTIZED_SCALE_LINE, for the attention's output moves by up to about 1e-4 with a key or value
-// rounded the other way in float16 (T225: the reference now takes the GPU's own keys and values of the position where
+// rounded the other way in float16 (T.225: the reference now takes the GPU's own keys and values of the position where
 // each is a float16 next to its own, heldHalves: which of the two a device rounds to is its own choice, and the line
 // stays). Returns { wrong: why or null, scale: the worst relative difference of a scale, apart: the values off by 1 or
 // more, more: those off by more than 1, of: how many }
@@ -61,10 +61,10 @@ function quantizedOff(x: Numbers, xq: Int8Array, xs: Float32Array, line: number)
 }
 // The layer in JavaScript (float64 sums), as the CPU's forward pass runs it: what every form is held to. d: the
 // check's weights ({w, s} of each matrix), h, norms, keys, values (float16 bits), angles and eps. inputs(point, x): the
-// vector a matrix takes where x comes in, at the points INPUTS names (T175: the DP4A forms' x quantized; else x itself).
-// halves(which, x): the float16 bits of the position's "keys" or "values" x (T225: the GPU's own where they are a
+// vector a matrix takes where x comes in, at the points INPUTS names (T.175: the DP4A forms' x quantized; else x itself).
+// halves(which, x): the float16 bits of the position's "keys" or "values" x (T.225: the GPU's own where they are a
 // float16 next to x, heldHalves; else rounded to the nearest).
-// Returns the residual stream after the layer, the float16 bits of the keys and values of the position, and (T225)
+// Returns the residual stream after the layer, the float16 bits of the keys and values of the position, and (T.225)
 // stages: q after RoPE, the attention's output and silu(gate) × up, for a check to say where a form first departs
 function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }: Omit<LayerShape, "matrices">, pos: number, d: Referenced, inputs: (point: Point, x: Float64Array) => Float64Array = (point, x) => x, halves: (which: "keys" | "values", x: Float64Array) => Uint16Array = (which, x) => Uint16Array.from(x, toHalf)) {
   const product = ({ w, s }: Weights, n: number, first: number, rows: number, x: Float64Array) => {
@@ -111,10 +111,10 @@ function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }: Omit<L
   const g = gate.map((value, i) => (value / (1 + Math.exp(-value))) * up[i]), down = product(d.down, hidden, 0, dim, inputs("down", g));
   return { h: h1.map((value, i) => value + down[i]), keys, values, stages: { q, att, g } };
 }
-// The check (T150; T175: the DP4A forms held to the reference fed their own quantized vectors, each held to
+// The check (T.150; T.175: the DP4A forms held to the reference fed their own quantized vectors, each held to
 // quantize_x, quantizedOff): every form of the layer (Llama's shape: GQA, 33 heads of 64 and 3 of K and V; a width of 2112 = 66
 // groups and a hidden width of 2080 = 65, each past one pass of mul_mat_vec's 64 groups a workgroup, so that the x²
-// and the rows' sums of the second pass are seen: T150's review, whose three breakings of them the width of 256 let
+// and the rows' sums of the second pass are seen: T.150's review, whose three breakings of them the width of 256 let
 // through), at position 70 (71 positions, two tiles of the attention), against layerReference. The weights' scales
 // go as 1 / sqrt(width) and the stream's large channels as the width (3 in 256), so that the activations, the
 // attention's scores and the norm's scale are as they were at a width of 256. The residual stream after it is held to LAYER_LINE of what the layer added to
@@ -122,19 +122,19 @@ function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }: Omit<L
 // residual left out or gate taken for up by a tenth or more), the key and value of the position to 2e-3 of the largest
 // (a float16 rounded the other way is 2^-11 of itself), and the cache's other positions must stay as they were.
 // The norm folded into the matrices' read (fusedMatVec) is held by the stream and the eps the check starts from: the
-// stream is about ±2 with three channels at ±30 (a real stream has such channels: T92's GPT-2 at 1000× the median),
+// stream is about ±2 with three channels at ±30 (a real stream has such channels: T.92's GPT-2 at 1000× the median),
 // so the norm's scale is far from 1 (about 0.28: a scale left out shows, and the sum of x² has a few large terms among
 // many small), and the check's eps is about a twelfth of the mean of x² (a model's 1e-5 would hide a wrong or missing
 // eps under LAYER_LINE; the timing keeps EPS). Larger channels (±60) make the attention's softmax steep enough that a
 // key or value of the position rounded the other way in float16 moves the stream by up to 2e-4 (lavapipe, 2026-09-27);
 // at ±30 both forms stay within 1e-6 over 45 draws
-// T175 (Fable): the stream's first group of 32 is all zeros, so that the first quantized vector (the normed stream
+// T.175 (Fable): the stream's first group of 32 is all zeros, so that the first quantized vector (the normed stream
 // before q, k and v) has a group whose scale is 0 (NORM_QUANTIZE's and QUANTIZE's select of 1 / scale: a division by
 // 0 there makes NaN, which quantizedOff holds to quantize_x's 0). And the two DP4A fused forms, which differ only in
 // NORM_QUANTIZE against RMSNORM then QUANTIZE (the same expressions weight × (s × x), the largest / 127 and the
 // rounding, in one dispatch or two), must agree within a few ulp (sameAsNormsApart): the scales of their quantized
 // vectors within NORMS_APART_ULPS, the values within 1 (no more than 1% of them off by 1), and where every value is the
-// same, the stream within 1e-6 of what the layer added. Not to the bit (T175's review): WGSL lets an implementation
+// same, the stream within 1e-6 of what the layer added. Not to the bit (T.175's review): WGSL lets an implementation
 // reassociate operations and fuse them where the result is at least as accurate, and a division is within 2.5 ulp
 // (§15.7.5), so a device that compiles the two shaders differently (Metal's fast math, gpuweb #2076) may round a scale
 // by an ulp or two and a value on an edge the other way, and still be right. Whether they agreed to the bit goes into
@@ -184,13 +184,13 @@ const sameAs = (got: Left, other: Left, added: number) => {
 // What the check says of a form from what the GPU left of it (got: the stream h, the cache's keys and values as float16 bits,
 // on DP4A the quantized vectors, and the stages' q, att and g), in plain JavaScript: the reference, the lines and the
 // words (tests/layer-check.mjs gives it a device that is JavaScript too). normsApart: what the DP4A fused form with the
-// norms apart left, for the fused form to be held to (within a few ulp), by the attention (T224: the prompt's tiles or
+// norms apart left, for the fused form to be held to (within a few ulp), by the attention (T.224: the prompt's tiles or
 // flash_attn_vec, whose sums go in another order): the one with them apart puts what it left (got) there. Returns the verdict
 function judgeLayer(shape: LayerShape, pos: number, data: CheckData, form: Pick<Form, "dp4a" | "fused" | "normApart" | "attention">, got: Left, normsApart: Record<string, Left>): Verdict {
-  // T175: on DP4A the reference takes the GPU's own quantized vectors (a value on a rounding's edge may go either
+  // T.175: on DP4A the reference takes the GPU's own quantized vectors (a value on a rounding's edge may go either
   // way, and moves a layer's output by more than LAYER_LINE), and each of them is held to quantize_x of the
   // reference's values where it was made (quantizedOff)
-  // T225: and the GPU's own keys and values of the position, where each is a float16 next to the reference's
+  // T.225: and the GPU's own keys and values of the position, where each is a float16 next to the reference's
   // (heldHalves: which of the two is the device's choice); the cache's line stays against the reference's nearest
   const made: Float64Array[] = [], rounded = {} as Record<"keys" | "values", ReturnType<typeof heldHalves>>;
   const row = (cache: Uint16Array) => cache.subarray(pos * shape.kvDim, (pos + 1) * shape.kvDim);
@@ -225,7 +225,7 @@ function judgeLayer(shape: LayerShape, pos: number, data: CheckData, form: Pick<
     else if (normsApart[key]) agreed = sameAs(got, normsApart[key], added);
   }
   const ok = off < LAYER_LINE && cache < CACHE_LINE && !touched && !wrongly.length && agreed?.ok !== false;
-  // T225: the stages in the order the layer runs them, [name, what to say, whether it departed] (a float vector
+  // T.225: the stages in the order the layer runs them, [name, what to say, whether it departed] (a float vector
   // against the reference's, over its largest, departs past LAYER_LINE: no verdict, only where to look), in one
   // line for the report: short where the form is ok, every stage and the first that departed where it is not
   const quantizedAt = (point: Point) => quantizing.filter(([at]) => at === point).map(([, q]): Stage =>
@@ -262,7 +262,7 @@ async function checkLayer() {
         const h = new Float32Array(await readBack(encoder, parts.vectors.h, shape.dim * 4));
         const cacheBytes = (pos + 1) * shape.kvDim * 2;
         const back = async (source: GPUBuffer, bytes: number) => readBack(shared.device.createCommandEncoder(), source, bytes);
-        // T175: the four vectors the DP4A form quantized, each as the matrix after it took it
+        // T.175: the four vectors the DP4A form quantized, each as the matrix after it took it
         const quantized: Left["quantized"] = [];
         if (form.dp4a) {
           for (const [i, n] of [shape.dim, shape.dim, shape.dim, shape.hidden].entries()) {
@@ -270,7 +270,7 @@ async function checkLayer() {
               xs: new Float32Array(await back(parts.vectors.quantized[i].xs, (n / shared.GROUP) * 4)) });
           }
         }
-        // T225: what the stages left behind (q after RoPE, the attention's output, silu(gate) × up), to say where a
+        // T.225: what the stages left behind (q after RoPE, the attention's output, silu(gate) × up), to say where a
         // form first departs
         const left = async (source: GPUBuffer, n: number) => new Float32Array(await back(source, n * 4));
         return { h, keys: new Uint16Array(await back(parts.vectors.keys, cacheBytes)), values: new Uint16Array(await back(parts.vectors.values, cacheBytes)), quantized,
@@ -287,14 +287,14 @@ async function checkLayer() {
   shared.layerVerdicts = verdicts;
   return verdicts;
 }
-// T224: a token's attention, every form the layer rows and the engine may run (the prompt's tiles, flash_attn_vec with
+// T.224: a token's attention, every form the layer rows and the engine may run (the prompt's tiles, flash_attn_vec with
 // subgroups where there are and with the lanes of the workgroup standing for a subgroup), on made-up numbers against
 // JavaScript's (shaders.ts's tokenAttentionData and tokenAttentionOff, as the engine checks them, gpu.js): heads of 64,
 // 128 and 256 values (the list's models'), 4 heads of q on 2 of keys and values, a token that reads 40, 70, 300 and 1100
 // positions (flash_attn_vec's one part, two, and as many as it takes, of more than one tile each), positions past the
 // token's that it must not read, and a steep head of q (a largest taken wrong shows only there). Each head's output no
 // farther than TOKEN_ATTENTION_LINE of the largest |value| of its head (the tiles hold the weights in float16 where
-// there is shader-f16: in float32 as the layer rows, and (T224's review) as the engine makes them here where that is
+// there is shader-f16: in float32 as the layer rows, and (T.224's review) as the engine makes them here where that is
 // another form). { "a token's attention, <form>": { ok, worstRelative, at } }
 const TOKEN_ATTENTION_SIZES = [64, 128, 256], TOKEN_ATTENTION_POSITIONS = [40, 70, 300, 1100], TOKEN_ATTENTION_LINE = 4e-3;
 async function checkTokenAttentions() {
@@ -351,7 +351,7 @@ async function checkTokenAttentions() {
             return new Float32Array(await readBack(encoder, v.att, heads * size * 4));
           });
           const off = shared.WGSL.tokenAttentionOff(got, data, { heads, kvHeads, size, positions });
-          // (a NaN stays the worst: `!(off <= NaN)` is true, and the next size's number would take its place: T224's review)
+          // (a NaN stays the worst: `!(off <= NaN)` is true, and the next size's number would take its place: T.224's review)
           if (!Number.isNaN(verdict.worstRelative) && !(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } } satisfies Partial<Verdict>);
         }
         postMessage({ alive: true } satisfies Alive);

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# tests/page_27b.sh (T233): Ternary Bonsai 2 27B on the page's forward pass, held to its references, on a CI runner
+# tests/page_27b.sh (T.233): Ternary Bonsai 2 27B on the page's forward pass, held to its references, on a CI runner
 # (never on the development machine: it fetches 5.95 GB and makes a checkpoint of 7.66 GB). On demand, not nightly:
 #
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=180 extra="bash tests/page_27b.sh" \
 #     --grep "^(fork|f32|reference|runner|page|pyodide):" --minutes 190 --ref <branch>
 #   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" ...
 # On x86-64 or arm64 (runner=ubuntu-24.04-arm: twice as fast for the fork and the page). Liftoff, the first compiler of the
-# V8 of Node 24 (13.6) on arm64, reads v128.load32_splat above 4 GiB at the address's low 32 bits (the review of T230 and
-# T231; fixed in V8 14.3, Chrome 143): where tests/page-27b.mjs's canary says so it sets --no-liftoff, and what it then
-# computes is the model's (the numbers equal x86-64's to four digits: the review of T233); where the canary says so even
+# V8 of Node 24 (13.6) on arm64, reads v128.load32_splat above 4 GiB at the address's low 32 bits (the review of T.230 and
+# T.231; fixed in V8 14.3, Chrome 143): where tests/page-27b.mjs's canary says so it sets --no-liftoff, and what it then
+# computes is the model's (the numbers equal x86-64's to four digits: the review of T.233); where the canary says so even
 # then, it refuses, and ANYWAY=1 runs page and speed all the same: the comparison then says whether that engine computed
 # the model. LONG_TOKENS=600 (with LONG_ROWS below 600) makes a short pass through the whole of a stage, a check of the
 # tool and not of the model.
@@ -17,7 +17,7 @@
 # of a GGUF or the list's entry change in a way that could move what this model computes.
 #
 # STAGES (the default: "reference convert page breaks", an hour and a half on 4 logical cores):
-#   dry        a made-up model of the 27B's kind through compare, speed and memory, and (T374.4) a small ternary GGUF of
+#   dry        a made-up model of the 27B's kind through compare, speed and memory, and (T.374.4) a small ternary GGUF of
 #              each type through both conversions (a minute, no download): the tool itself, before an hour is spent on
 #              the real model
 #   reference  tests/reference_27b.sh: the fork, the fork with float32 activations and the engine's NumPy forward pass
@@ -38,7 +38,7 @@
 #   memory     the whole context: what is placed after the checkpoint against footprint()
 #   write      the page's generate() for QUESTIONS (lines of a file, or the three here), with THINKING=1 the entry that
 #              thinks, at most TOKENS positions each, PICK="0,1" only these of them (from 0)
-#   long       (the review of T233: nothing in the default; a context past 4096, never computed on the real model) a text
+#   long       (the review of T.233: nothing in the default; a context past 4096, never computed on the real model) a text
 #              of 5,987 tokens (tests/fixtures/long-27b.txt) through the fork (reference_27b.sh's long stage: 1.5 to 2.7
 #              hours at its speed) and through the page's forward pass with a context of LONG_CONTEXT (8192: the header's
 #              4 bytes), the logits of some 40 positions held to the fork's and the growth over the floor of the first ones
@@ -84,7 +84,7 @@ if has dry; then
   node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --context 2048 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
   node tests/page-27b.mjs "$dry/page" speed --entry none --wide
   node tests/page-27b.mjs "$dry/page" memory --entry none --wide
-  # T374.4: the two conversions (by the conduct of a conversion: tests/conducting.py and tests/conducting.mjs), which only
+  # T.374.4: the two conversions (by the conduct of a conversion: tests/conducting.py and tests/conducting.mjs), which only
   # the stages on the real model reached: a small ternary GGUF of each type with its original's files, natively and in
   # Pyodide, to the same checkpoint, tokenizer.bin and options, as the stages convert, pq2 and pyodide hold the 27B's
   python tests/page_27b.py convert "$dry/gguf-PTQ1_0" "$dry/native" --context 512
@@ -139,7 +139,7 @@ if [ -n "${REFERENCES:-}" ] || [ -n "${LONG_REFERENCES:-}" ]; then
   # the references earlier runs kept, in place of the reference stage and the long one: REFERENCES is the run that kept the
   # ordinary ones (reference-27b), LONG_REFERENCES the run that kept the long text's (reference-27b-long); one is enough
   # where a run kept both, and each directory is taken only where the run has it (a run of the long stage alone keeps no
-  # ordinary ones: the review of T233's short pass found cp failing on the missing directory)
+  # ordinary ones: the review of T.233's short pass found cp failing on the missing directory)
   regular_run=${REFERENCES:-$LONG_REFERENCES}
   long_run=${LONG_REFERENCES:-$REFERENCES}
   for run in $(printf '%s\n' "$regular_run" "$long_run" | sort -u); do
@@ -232,7 +232,7 @@ fi
 status=0
 if has page; then
   # (the widths the 27B's matrices read: 5120, 6144 and 17408. One sign of the 17408 or of the 6144 moves a logit by 0.11
-  # to 0.17, T238's review: less than the rounding of the activations moves the page's forward pass from the reference
+  # to 0.17, T.238's review: less than the rounding of the activations moves the page's forward pass from the reference
   # it is compared with, 0.13 to 0.24, so this comparison does not see them (run 36952311034); the engine's NumPy forward
   # pass against the float32 fork does, tests/reference_27b.py, and the signs it reads are the ones the plan hands on)
   node tests/page-27b.mjs "$work/page" compare "$work" ${ANYWAY:+--anyway} \
@@ -261,7 +261,7 @@ if has write; then
     questions="$work/questions.txt"
     printf '%s\n' "これからの流行りを3つ挙げてください。" "What is 17 times 24?" "日本でいちばん高い山と、その高さを教えてください。" > "$questions"
   fi
-  # PICK="0,1,2": only these (from 0) of the questions, so that the dozen of tests/fixtures/questions-12.txt (the review of T233: the
+  # PICK="0,1,2": only these (from 0) of the questions, so that the dozen of tests/fixtures/questions-12.txt (the review of T.233: the
   # six Japanese and six English of tests/answers.mjs) may be split over runs of a runner each; lines that begin with # are no questions
   index=-1
   while IFS= read -r question; do

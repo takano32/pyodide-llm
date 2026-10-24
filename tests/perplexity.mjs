@@ -6,9 +6,9 @@
 // The model id may instead be the <out> of tests/perplexity_prepare.py (a Hugging Face model converted here, with
 // <out>.bin, <out>.tokenizer.bin and the options in <out>.json).
 //
-// --file (T229): the checkpoint is read from its file straight into forward.js's memory, never into Pyodide's, and
+// --file (T.229): the checkpoint is read from its file straight into forward.js's memory, never into Pyodide's, and
 // the NumPy row is left out (a model whose weights widened to float32 pass Pyodide's 4 GiB: tests/perplexity_native.py
-// has that row). --numpy=<its perplexity>: what the rows are held against then. --wide (T247): a 64-bit memory and its
+// has that row). --numpy=<its perplexity>: what the rows are held against then. --wide (T.247): a 64-bit memory and its
 // kernels, for a checkpoint that with what forward.js puts after it passes 4 GiB (Qwen3.5 4B and 9B). --rows=0,2: only
 // those rows, counted from 0 in the order of tests/perplexity.py (a model of 10 GB takes a process for each row: the
 // memory of one row is not given back before the next row's is made).
@@ -27,7 +27,7 @@ const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
 const [id = "llm-jp-3-150m", count = "1500", ...sources] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const fromFile = flags.includes("--file"), numpy = Number(flags.find((flag) => flag.startsWith("--numpy="))?.split("=")[1]);
 const rows = flags.find((flag) => flag.startsWith("--rows="))?.split("=")[1].split(",").map(Number);
-// --max-change=<percent> (T229's review): exit 1 if a row's perplexity is further than this from NumPy's, up or down; without it
+// --max-change=<percent> (T.229's review): exit 1 if a row's perplexity is further than this from NumPy's, up or down; without it
 // the table is only to be read (a Qwen3.5's int8 path whose gate was left out read as such for nobody: 25.5 on the table
 // is +1.9%, 28 or 700 is a fault, and no line said so)
 const maxChange = Number(flags.find((flag) => flag.startsWith("--max-change="))?.split("=")[1]);

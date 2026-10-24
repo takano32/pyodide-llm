@@ -1,9 +1,9 @@
-// ternary-compare.mjs (T231): the same ternary model as the ternary dtype and as int8 (its weights widened, which is
-// how T235 ran it), both on the page's forward pass (src/runtime/forward.js), on the same tokens of a text: how far apart
+// ternary-compare.mjs (T.231): the same ternary model as the ternary dtype and as int8 (its weights widened, which is
+// how T.235 ran it), both on the page's forward pass (src/runtime/forward.js), on the same tokens of a text: how far apart
 // their logits are, how often their most likely token is the same, and the perplexity of each.
 //
 // What the two share and what they do not. The weights are the same values: ternary holds d, int8 127 times
-// float32(d / 127), within 6e-8 of d (T235). Against int8 without relaxed SIMD (matmul_q8) the activations are the
+// float32(d / 127), within 6e-8 of d (T.235). Against int8 without relaxed SIMD (matmul_q8) the activations are the
 // same int8 too (quantize_x with no bias), so every row's integer sums are the same integers, and a row differs only
 // by float32's rounding of its scales and of its sum (a few times 1e-7 of the largest term, each of the two is within
 // 2e-6 of the exact sum: tests/ternary-bench.mjs). That is one matrix: over the layers a difference of an ulp moves an

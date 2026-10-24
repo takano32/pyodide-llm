@@ -1,4 +1,4 @@
-// forward/reasons.ts (T380.1): why a model's prompts or answers are not on the GPU, or no longer: the one place each of
+// forward/reasons.ts (T.380.1): why a model's prompts or answers are not on the GPU, or no longer: the one place each of
 // these reasons is written. One cause, one sentence (or one function that fills in its numbers).
 //
 // A reason is a value, not an error: nothing is thrown, the model runs on the CPU, and the reason is what the status
@@ -21,40 +21,40 @@
 // heads of a size that is no multiple of 4.
 export const REASONS = {
   // ---- what the model is: its prompts stay on the CPU (gpuFit()'s unfit())
-  linear: "linear-attention layers are not on the GPU yet",  // T229
-  // T271.1: a rotated basis whose blocks the GPU's shader does not take (a multiple of 32, at most 1024)
+  linear: "linear-attention layers are not on the GPU yet",  // T.229
+  // T.271.1: a rotated basis whose blocks the GPU's shader does not take (a multiple of 32, at most 1024)
   rotatedBlock: "a rotated basis of blocks of this size is not on the GPU",
-  // (T375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
+  // (T.375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
   stateful: "layers that keep a state are not on the GPU yet",
-  // (T375.5, T484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)
+  // (T.375.5, T.484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)
   pair: "this pair of norms and FFN is not on the GPU yet",
-  // (said wherever the memory is not a shared one: T371, ?threads=1 on an isolated page reads this too)
+  // (said wherever the memory is not a shared one: T.371, ?threads=1 on an isolated page reads this too)
   notIsolated: "the page is not cross-origin isolated",
   heads: "heads of a size that is no multiple of 4 are not on the GPU",
   floats: "float32 weights are not on the GPU yet",
   layersRoom: (bytes: number) => `the layers on the GPU as well (${Math.round(bytes / 1e6)} MB) would not leave this device enough memory`,
   // ---- what the model is: its answers' steps stay on the CPU (gpuFit()'s tokensUnfit(), and a generation's stops)
   floatClassifier: "a classifier of float weights is not on the GPU's tokens",
-  memoryUnsaid: "this browser does not say how much memory the device has",  // T205
+  memoryUnsaid: "this browser does not say how much memory the device has",  // T.205
   classifierRoom: (bytes: number) => `the classifier on the GPU as well (${Math.round(bytes / 1e6)} MB with the layers) would not leave this device enough memory`,
   stops: (most: number) => `more than ${most} stop tokens`,
   // ---- what the device is (the engine's side without a GPU; gpu/device.ts as it opens one; alone.ts)
   noWebGpu: "no WebGPU in a worker here",
   noAdapter: "no GPU adapter here",
-  // T148: the CPU doing the GPU's work (SwiftShader, lavapipe)
+  // T.148: the CPU doing the GPU's work (SwiftShader, lavapipe)
   fallback: "a fallback adapter: the CPU in the GPU's place",
-  // T232: ternary weights are multiplied as packed int8 alone
+  // T.232: ternary weights are multiplied as packed int8 alone
   packed: (weights: string) => `${weights} weights need the packed int8 dot product of WGSL, which this browser lacks`,
   // ---- a model on the GPU alone (alone.ts's gpuOnlyUnfit(): read as yes or no, and by the tests)
   aloneFallback: "a fallback adapter",
-  // (T382: a fact of the model each, in aloneFactsUnfit()'s order; layers that keep a state are "stateful" above. A
+  // (T.382: a fact of the model each, in aloneFactsUnfit()'s order; layers that keep a state are "stateful" above. A
   // model with one of these that is too large to hold twice (Pythia 6.9B, Qwen3.5 4B and 9B of the list) goes on the CPU
   // alone: the GPU alone has no steps made for them. The reasons are read as yes or no, and by the tests)
   alonePositions: "a table of positions is not on the GPU alone yet",
   aloneFfn: "an FFN without a gate is not on the GPU alone yet",
   aloneNorms: "LayerNorms are not on the GPU alone yet",
-  aloneActivation: "a gate of the FFN that is no SiLU's is not on the GPU alone yet",  // T261
-  aloneLocal: "layers that attend a window are not on the GPU alone yet",  // T261
+  aloneActivation: "a gate of the FFN that is no SiLU's is not on the GPU alone yet",  // T.261
+  aloneLocal: "layers that attend a window are not on the GPU alone yet",  // T.261
   aloneDtype: (dtype: string) => `${dtype} weights stay on the CPU`,
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",
@@ -68,14 +68,14 @@ export const REASONS = {
   notTaken: "the GPU did not take a block or a step",
   blockFailed: "the GPU failed on a block of the prompt",  // (the GPU's worker said why in the console)
   tokenFailed: "the GPU failed on a token",  // (the same)
-  // T243: a key or a value that is no finite number
+  // T.243: a key or a value that is no finite number
   keysInBlock: (position: number) => notFiniteKV(`in a block of the prompt at position ${position}`),
   keysInStep: (position: number) => notFiniteKV(`in a step at position ${position}`),
-  // T219
+  // T.219
   logits: (position: number) => `the GPU computed logits that are not finite numbers (NaN or infinity) at position ${position}`,
   sampledFew: (sampled: number, count: number) => `the GPU sampled ${sampled} of ${count} tokens`,
   sampledOutside: (id: number, vocab: number) => `the GPU sampled ${id}, outside the vocabulary of ${vocab}`,
-  // T156: /benchmark/'s CPU against a model on the GPU alone (GBps: its reading, undefined where it measured none;
+  // T.156: /benchmark/'s CPU against a model on the GPU alone (GBps: its reading, undefined where it measured none;
   // the two times in ms, the usage in tokens)
   cpuFaster: (GBps: number | undefined, cpu: number, gpu: number, prompt: unknown, written: unknown) =>
     `the CPU as /benchmark/ measured it (${GBps?.toFixed(1)} GB/s): ${cpu.toFixed(0)} ms ` +

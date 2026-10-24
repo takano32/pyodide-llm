@@ -1,5 +1,5 @@
-// The step "prompt": the tokens of a prompt through the matrices all at once (T135's batched shader and T146's tiled ones).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// The step "prompt": the tokens of a prompt through the matrices all at once (T.135's batched shader and T.146's tiled ones).
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { shared, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, buffer, pipelinesFor, promptShaders,
   kindOf, quantizer, matrix, vectors, destroyVectors, run, median, validated } from "./device.ts";
 import type { Kind, Own, Owned, Thrown } from "./device.ts";
@@ -7,7 +7,7 @@ import type { Alive, PromptFound, PromptRow } from "../../contracts/benchmark.ts
 
 // ---- a prompt: its tokens through the matrices of the CPU section's made-up model (two layers of Llama 3.2 1B's
 // width, no classifier: a prompt's tokens make no logits) all at once, count tokens at a time, with the small steps
-// once a layer as for one token. ms per token, for every shader of promptShaders() (T146: the tiled ones, whose rows
+// once a layer as for one token. ms per token, for every shader of promptShaders() (T.146: the tiled ones, whose rows
 // say none or error on their own where they cannot run), and the GFLOPS of it: a multiply and an add for each weight
 // and token. A packed shader's input is quantized first where a matrix reads an input of its own (q: the norm's; o:
 // the attention's; gate: the norm's; down: SwiGLU's), as the model's layers would
@@ -15,7 +15,7 @@ const NEW_INPUT = new Set([0, 3, 4, 6]);
 async function prompt(counts = [1, 16, 64]): Promise<PromptFound> {
   await gpu();
   // a fallback adapter measures one count, the block of 16 the CPU also takes: each shader and count takes 10 to 100 s
-  // there (SwiftShader on the development machine, T146: 580 s for all three), and its times are no GPU's anyway
+  // there (SwiftShader on the development machine, T.146: 580 s for all three), and its times are no GPU's anyway
   if (shared.fallback) counts = counts.filter((tokens) => tokens === 16).slice(0, 1);
   const model = PROMPT_MODEL, perLayer = layerMatrices(model), shapes = [...Array(model.layers)].flatMap(() => perLayer);
   const weights = shapes.reduce((sum, [rows, n]) => sum + rows * n, 0);
@@ -60,14 +60,14 @@ async function prompt(counts = [1, 16, 64]): Promise<PromptFound> {
     }
     try {
       const kind = await kindOf(shader);
-      // what the row's GFLOPS are held against (T168): the dot4I8Packed ceiling, the f16 or the f32 one
+      // what the row's GFLOPS are held against (T.168): the dot4I8Packed ceiling, the f16 or the f32 one
       for (const tokens of counts) rows.push({ shader: shader.name, packed: shader.packed, half: shader.half, ...await measure(kind, tokens) });
     } catch (error) {
       rows.push({ shader: shader.name, error: String((error as Thrown)?.message ?? error) });
     }
   }
   // the batched shader once more at the most tokens, last: a device that has warmed up and slowed down since shows it
-  // here, beside the same shader's row at the start (T146's review)
+  // here, beside the same shader's row at the start (T.146's review)
   const last = counts[counts.length - 1];
   if (last) rows.push({ shader: "batched (T135), again at the end", again: true, ...await measure("batched", last) });
   [a, b].forEach((x) => x.destroy());

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/reference_lfm2.sh (T260): what tests/reference_lfm2.py needs, and the run itself, for CI (tests.yml's extra=;
+# tests/reference_lfm2.sh (T.260): what tests/reference_lfm2.py needs, and the run itself, for CI (tests.yml's extra=;
 # the development machine has no PyTorch):
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_lfm2.sh" --ref <branch> --grep "lfm2:"

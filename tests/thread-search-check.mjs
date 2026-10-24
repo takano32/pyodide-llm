@@ -1,24 +1,24 @@
-// T223 (the review of 2026-10-01): forward.js's real search for the number of software threads, on a made-up clock with
+// T.223 (the review of 2026-10-01): forward.js's real search for the number of software threads, on a made-up clock with
 // noise, over visits that remember what the last one found as the page does (localStorage's threads:<model>:...). The
 // engine is createForward() on a shared memory with kernels that do nothing and no helper started (spawn answers at once),
 // so that Node alone runs it in a few seconds; what the search reads is the clock, and the clock here says how long a
 // token of n threads takes. gpu-default-check.mjs holds the search to Pyodide's engine with the deterministic times and a
 // made-up GPU; this holds it to a device whose times are noisy:
-//   - the owner's Android's llm-jp-3 150M on the CPU alone (T223: 1 thread 110 tok/s, 2 123, 4 38.6, 8 32.3): from the
-//     logical cores, from a remembered 4 (what the page kept before T223), 2 and 1, the count remembered is 2, in the
+//   - the owner's Android's llm-jp-3 150M on the CPU alone (T.223: 1 thread 110 tok/s, 2 123, 4 38.6, 8 32.3): from the
+//     logical cores, from a remembered 4 (what the page kept before T.223), 2 and 1, the count remembered is 2, in the
 //     same comparisons as gpu-default-check.mjs's, and each visit that remembers a count costs two comparisons (40 tokens)
 //     where the count is right;
 //   - the same with the noise of a phone (a token's time spread by 10%, and a block of 5 tokens now and then 3 times as
 //     long): the count settles on 2, a visit never leaves 4 or 8 remembered, and a remembered count changes between
-//     visits seldom (the lower median of 8 times a count, T199, and the order best, candidate, candidate, best);
+//     visits seldom (the lower median of 8 times a count, T.199, and the order best, candidate, candidate, best);
 //   - CI's runner (1 thread 13 ms, 2 10, 4 11): 2 from every start;
-//   - T239: the owner's PC (16 logical cores: 2 threads 171 tok/s, 8 threads 158, and 4 no faster than 8) ends on 2, from
+//   - T.239: the owner's PC (16 logical cores: 2 threads 171 tok/s, 8 threads 158, and 4 no faster than 8) ends on 2, from
 //     its logical cores and from the 8 the page remembered, by the quarter the search compares where half was not faster;
 //     the Android's visits cost what they did, and a device whose logical cores are its best count one comparison more.
-//   - T240: the search a count is owed (one found beside the GPU's getting ready, or remembered from an earlier visit)
+//   - T.240: the search a count is owed (one found beside the GPU's getting ready, or remembered from an earlier visit)
 //     begins at the token after the GPU is ready, inside the generation, on an int8 model with a made-up GPU's worker;
 //     never while the GPU gets ready, and never where the page began no generation (/benchmark/).
-//   node tests/thread-search-check.mjs [--forward <another forward.js, to see a broken one fail>] [--table: T239's table]
+//   node tests/thread-search-check.mjs [--forward <another forward.js, to see a broken one fail>] [--table: T.239's table]
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +34,7 @@ const { createForward, footprint } = await import(forwardFile);
 const { CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
 const { threadsKey } = await import(new URL("src/bench.js", root));
 
-// a float32 Llama of 2 layers (the engine reads none of its tensors with kernels that do nothing). T375.2: its plan is
+// a float32 Llama of 2 layers (the engine reads none of its tensors with kernels that do nothing). T.375.2: its plan is
 // Python's own (tests/plans.mjs, the native Python), as every plan a test hands the engine
 const [dim, hidden, layers, heads, vocab, seqLen] = [32, 64, 2, 2, 64, 64];
 const { plansOf, planOf, FORM } = plansFor(root);
@@ -58,7 +58,7 @@ const normal = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.
 
 const ANDROID = { 1: 1000 / 110, 2: 1000 / 123, 4: 1000 / 38.6, 8: 1000 / 32.3 };
 const RUNNER = { 1: 13, 2: 10, 4: 11 };
-// T239: the owner's PC's llm-jp-3 150M (16 logical cores, T225's report): 2 threads write 171 tok/s, the 8 the page chose
+// T.239: the owner's PC's llm-jp-3 150M (16 logical cores, T.225's report): 2 threads write 171 tok/s, the 8 the page chose
 // 158, and the page's verdicts were "16 or 8: 8, 8 or 4: 8". The times of 1, 4 and 16 threads are not in the report: made
 // up here, to agree with those verdicts
 const PC = { 1: 1000 / 100, 2: 1000 / 171, 4: 1000 / 150, 8: 1000 / 158, 16: 1000 / 120 };
@@ -102,8 +102,8 @@ async function visit(ms, { remembered = 0, hint = 8, sigma = 0, slow = 0, by = 3
   return { told, log, atLoad, startedAt, generations, extra };
 }
 
-// ---- T239's table (--table): what this forward.js's search spends and where it ends, a shape of times and a number of
-// logical cores a row. No check: it is how the form of the search was chosen (TASKS.md's T239), run on each form's copy of
+// ---- T.239's table (--table): what this forward.js's search spends and where it ends, a shape of times and a number of
+// logical cores a row. No check: it is how the form of the search was chosen (TASKS.md's T.239), run on each form's copy of
 // forward.js through --forward. first: the comparisons of a first visit (from the logical cores), the count it ends on,
 // and the ms they take over as many tokens on the fastest count; later: the same of a visit that remembers the fastest
 // count; then, under each noise, 200 first visits and a chain of 200 visits (each from what the last one remembered): the
@@ -143,10 +143,10 @@ if (args.includes("--table")) {
   const fromCores = await visit(ANDROID, { remembered: 0 });
   assert.deepEqual(fromCores.log, ["8 or 4: 4", "4 or 2: 2", "2 or 1: 2"], "the owner's Android from its 8 logical cores");
   assert.deepEqual(fromCores.told, [2], "...remembers 2");
-  // what the page kept before T223 (4) is searched again on the first generation of the visit, not at its load
+  // what the page kept before T.223 (4) is searched again on the first generation of the visit, not at its load
   const stale = await visit(ANDROID, { remembered: 4 });
   assert.equal(stale.atLoad, false, "a remembered count is not searched while the model loads");
-  assert.equal(stale.startedAt, 0, "a remembered count is checked on the first generation of the visit, not the eighth (T223: a visit seldom writes 8 answers)");
+  assert.equal(stale.startedAt, 0, "a remembered count is checked on the first generation of the visit, not the eighth (T.223: a visit seldom writes 8 answers)");
   assert.deepEqual(stale.log, ["4 or 2: 2", "2 or 1: 2"], "a remembered 4 on the owner's Android");
   assert.deepEqual(stale.told, [2], "...is told 2 to remember");
   // a right count is checked against both its neighbours: two comparisons, 20 tokens each
@@ -200,12 +200,12 @@ if (args.includes("--table")) {
   console.log(`ok: the search with noise, ${lines.join("; ")}`);
 }
 
-// ---- T239: a count that half does not beat may have a faster one below the dip: a quarter is compared too
+// ---- T.239: a count that half does not beat may have a faster one below the dip: a quarter is compared too
 {
   const pc = await visit(PC, { hint: 16 });
   assert.deepEqual(pc.log, ["16 or 8: 8", "8 or 4: 8", "8 or 2: 2", "2 or 1: 2"], "the owner's PC from its 16 logical cores: 8 or 2 after 8 or 4");
   assert.deepEqual(pc.told, [2], "...remembers 2");
-  // the 8 the page remembers there today: a later visit's search (T223) leaves it
+  // the 8 the page remembers there today: a later visit's search (T.223) leaves it
   const kept = await visit(PC, { hint: 16, remembered: 8 });
   assert.deepEqual([kept.log, kept.told, kept.startedAt], [["8 or 4: 8", "8 or 2: 2", "2 or 1: 2"], [2], 0], "a remembered 8 on the owner's PC: 2, on the first generation");
   const right = await visit(PC, { hint: 16, remembered: 2 });
@@ -244,10 +244,10 @@ if (args.includes("--table")) {
     assert.ok((kept[2] ?? 0) >= 0.8 * visits, `the owner's PC, ${name}: 2 remembered by ${kept[2] ?? 0} of ${visits} visits`);
     lines.push(`${name}: ${Object.entries(kept).map(([count, n]) => `${count} by ${n}`).join(", ")} of ${visits} visits`);
   }
-  console.log(`ok: T239, the owner's PC: from 16 ${JSON.stringify(pc.log)}, from a remembered 8 ${JSON.stringify(kept.log)}; ${lines.join("; ")}`);
+  console.log(`ok: T.239, the owner's PC: from 16 ${JSON.stringify(pc.log)}, from a remembered 8 ${JSON.stringify(kept.log)}; ${lines.join("; ")}`);
 }
 
-// ---- T240: the GPU ready inside a generation. An int8 model (the GPU takes no other) of the same size, and a GPU's worker
+// ---- T.240: the GPU ready inside a generation. An int8 model (the GPU takes no other) of the same size, and a GPU's worker
 // that is this test: ready when ready() is called, "ended" at once when stopped. A token's times are 4 threads' best
 // while the GPU gets ready (as gpu-default-check.mjs's) and the owner's Android's after it
 {
@@ -299,7 +299,7 @@ if (args.includes("--table")) {
     assert.deepEqual([engine.searching, log().length, engine.threads], [false, first.length, 4], "no search begins while the GPU gets ready, inside a generation either");
     ready();
     await write(1);
-    assert.equal(engine.searching, true, "T240: the GPU ready inside a generation: the search begins at the next token, not at the next generation");
+    assert.equal(engine.searching, true, "T.240: the GPU ready inside a generation: the search begins at the next token, not at the next generation");
     await write(60);
     assert.deepEqual([engine.searching, engine.threads, told, log().slice(first.length)], [false, 2, [2], ["4 or 2: 2", "2 or 1: 2"]],
       "...and ends in that generation: 2 threads, remembered");
@@ -316,7 +316,7 @@ if (args.includes("--table")) {
     await write(200);
     assert.deepEqual([engine.searching, engine.threads, told, log()], [false, 2, [2],
       ["8 or 4: 4 (GPU getting ready)", "4 or 2: 2 (GPU getting ready)", "2 or 1: 2 (GPU getting ready)", "2 or 1: 2", "2 or 4: 2"]],
-      "T240: a search that ends after the GPU is ready is run again from the next token on");
+      "T.240: a search that ends after the GPU is ready is run again from the next token on");
     await engine.release();
   }
   // (3) a count remembered from an earlier visit, its first generation begun while the GPU gets ready
@@ -327,10 +327,10 @@ if (args.includes("--table")) {
     assert.deepEqual([engine.searching, log()], [false, []], "a remembered count is not searched while the GPU gets ready");
     ready();
     await write(60);
-    assert.deepEqual([engine.searching, engine.threads, told, log()], [false, 2, [2], ["4 or 2: 2", "2 or 1: 2"]], "T240: a remembered 4, the GPU ready inside its first generation: 2");
+    assert.deepEqual([engine.searching, engine.threads, told, log()], [false, 2, [2], ["4 or 2: 2", "2 or 1: 2"]], "T.240: a remembered 4, the GPU ready inside its first generation: 2");
     await engine.release();
   }
-  // (4) /benchmark/ begins no generation: the count the model page remembers is taken as it is (T190), GPU ready or not
+  // (4) /benchmark/ begins no generation: the count the model page remembers is taken as it is (T.190), GPU ready or not
   {
     const { engine, told, ready, write, log } = await withGpu({ remembered: 4 });
     await write(30);
@@ -340,7 +340,7 @@ if (args.includes("--table")) {
     await engine.release();
   }
   console.info = info;
-  console.log("ok: T240, the GPU ready inside a generation: the search owed begins at the next token (after a first search beside the GPU, under one, of a remembered count), none where no generation began");
+  console.log("ok: T.240, the GPU ready inside a generation: the search owed begins at the next token (after a first search beside the GPU, under one, of a remembered count), none where no generation began");
 }
 
 // ---- the page's key of the count: one a model, a device and a browser (the page and /benchmark/ read the same one)

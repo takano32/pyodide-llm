@@ -1,4 +1,4 @@
-# write_options.py (T249): what the page gives the engine for a Hugging Face model of the list, as JSON: the converter's
+# write_options.py (T.249): what the page gives the engine for a Hugging Face model of the list, as JSON: the converter's
 # options (read with tokenizer_config.json and the chat template, so with the special tokens of the format) under the
 # entry's own, as the worker merges them, the format of one turn (the entry's, else the converter's) and the entry's
 # prompt. Only the small files and the heads of the weights are fetched (tests/format_check.py's converted()).

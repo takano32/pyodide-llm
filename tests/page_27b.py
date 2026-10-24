@@ -1,6 +1,6 @@
 # page_27b.py
-# T233: Ternary Bonsai 2 27B converted as the page converts it (the conduct of a conversion answered from the folder,
-# tests/conducting.py: T374.4), by the native Python of a CI runner, into a file: the ternary checkpoint (7.66 GB) that tests/page-27b.mjs runs on the
+# T.233: Ternary Bonsai 2 27B converted as the page converts it (the conduct of a conversion answered from the folder,
+# tests/conducting.py: T.374.4), by the native Python of a CI runner, into a file: the ternary checkpoint (7.66 GB) that tests/page-27b.mjs runs on the
 # page's forward pass. tests/page_27b.sh runs it; the development machine does not (the GGUF is 5.95 GB).
 #
 #   python tests/page_27b.py convert <folder> <out> [--context 4096] [--broken tiled | order]
@@ -13,14 +13,14 @@
 #   part of the stream fed; the checkpoint's memory map is the file system's pages).
 #   --broken: a conversion wrong on purpose in a way only this model's files show, for the comparison to fail on:
 #     tiled  the columns of a linear-attention layer's output matrix read in llama.cpp's order of the value heads, as
-#            the other tensors of the value heads are stored (T245). A rotated GGUF holds these columns in Hugging
-#            Face's order, and gguf_model() takes the mark off them (T237);
+#            the other tensors of the value heads are stored (T.245). A rotated GGUF holds these columns in Hugging
+#            Face's order, and gguf_model() takes the mark off them (T.237);
 #     order  a PTQ1_0 block's values read in the order of its bytes (five digits of the first byte, then of the second),
-#            where the file holds the first digit of every byte, then the second (T230's reader).
+#            where the file holds the first digit of every byte, then the second (T.230's reader).
 # made-up: a small model of the 27B's kind (tests/make_ternary.py's `rotated`: ternary, hybrid, three value heads to a
 #   key head, a rotated basis) with references made by the engine's NumPy forward pass, in the files and layouts
 #   tests/reference_27b.sh leaves, for a dry run of tests/page-27b.mjs's comparison in a minute (its numbers are not
-#   held to lines: the reference here does not round the activations). And (T374.4) two folders as tests/hf_fetch.py
+#   held to lines: the reference here does not round the activations). And (T.374.4) two folders as tests/hf_fetch.py
 #   makes one for the 27B, each with a small ternary GGUF (PTQ1_0, PQ2_0): what `convert` and page-27b.mjs's convert
 #   take, for a dry run of both.
 import json
@@ -135,7 +135,7 @@ def made_up(directory):
         np.asarray(rows, dtype=np.float32).tofile(directory / "f32" / f"fork-{index}.single")
         save_run(directory / "saved", index, "as 8 bits round", model, rows)
         print(f"page: made-up text {index}: {len(prompt)} tokens of a prompt, {len(wrote)} written, {len(rows)} positions")
-    # a long text for page-27b.mjs's long mode (the review of T233), in the files the fork's long run leaves: the ids (the
+    # a long text for page-27b.mjs's long mode (the review of T.233), in the files the fork's long run leaves: the ids (the
     # prompt's, the tokens written), the positions whose rows are kept, the rows of those and then of each token written
     # but the last. The made-up model's own context is 1024 positions: 700 of them are the prompt
     long_prompt = np.random.default_rng(7).integers(1, 380, 700).tolist()
@@ -152,7 +152,7 @@ def made_up(directory):
     (directory / "fork-long.rows").write_text(" ".join(map(str, wanted)) + "\n")
     np.asarray(kept, dtype=np.float32).tofile(directory / "fork-long.logits")
     print(f"page: made-up long text: {len(long_prompt)} tokens, rows of {len(wanted)} positions of it and of {len(wrote) - 1} written after it")
-    # T374.4: and a small ternary model as the 27B is published, for a dry run of the two conversions (`convert` here and
+    # T.374.4: and a small ternary model as the 27B is published, for a dry run of the two conversions (`convert` here and
     # of tests/page-27b.mjs), which no other stage of the dry run reaches: a folder with the original's config.json and
     # tokenizer and a GGUF of each ternary type beside them (tests/test_ternary.py's made-up Qwen3: the same values
     # in both files, as the 27B's two files hold the same model)

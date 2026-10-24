@@ -36,7 +36,7 @@ from engine.layout import (CLASSIFIER, EMBEDDING, MATRIX, TABLE, Dims, check_sui
 # The classifier's input has a few channels that the final norm's weight blows up (openai-community/gpt2: 12 to 17
 # times, 316 against a median of 0.3). With the int8 kernels the activations are quantized in groups of 32, so one
 # such channel sets the scale of its group and the other 31 round to nothing: GPT-2 lost 17% of perplexity to
-# that (T92). These many channels, the largest of the norm's weight, are taken out of the vector before it is
+# that (T.92). These many channels, the largest of the norm's weight, are taken out of the vector before it is
 # quantized and multiplied in float32 by their own columns of the classifier (vocab_size * 8 multiply-adds next to
 # vocab_size * dim). With them GPT-2 is back to +0.35%. Only a norm whose largest weight is OUTLIER_RATIO times
 # its median gets this (GPT-2: 13.9; tiny-lm 1.1, llm-jp-3 150M 1.3, Pythia 160M 1.3, rinna GPT-2 1.4, SmolLM2 135M
@@ -46,12 +46,12 @@ OUTLIER_RATIO = 4.0
 
 
 class Tensor:
-    """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
+    """Where a tensor of the checkpoint is, when the weights live outside Python (T.93: the forward pass runs in
     public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
-    the last dimension at scales), "int6" (the same with the values packed, see pack6), "ternary" (T230: two bits a
-    value and a scale per group of 128, see pack_ternary), "f32" or "f16", one of llama.cpp's blocks by its name (T363:
+    the last dimension at scales), "int6" (the same with the values packed, see pack6), "ternary" (T.230: two bits a
+    value and a scale per group of 128, see pack_ternary), "f32" or "f16", one of llama.cpp's blocks by its name (T.363:
     256 values a group, the scales inside) or "u8" (the codebooks). Offsets count from the start of the checkpoint file.
-    layers (T363.5): of a stack whose layers are each of a kind of their own (kind is then LAYERS), every layer's
+    layers (T.363.5): of a stack whose layers are each of a kind of their own (kind is then LAYERS), every layer's
     Tensor, one after the other: forward.js chooses its kernels by the layer."""
 
     __slots__ = ("kind", "offset", "shape", "group", "scales", "layers")
@@ -93,9 +93,9 @@ def outside(rows, dtype):
 
 def external_tensors(header, dtype, form=None):
     """Where every tensor of a checkpoint with this header, dtype and form (FORM) is, {name: Tensor.plan()}, as
-    Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
+    Llama(external=) hands them to public/forward.js, before any of its bytes are there (T.156: the worker sends the
     layers' matrices to the GPU as they come, and keeps the rest). A model whose embedding is its classifier has it
-    under both names. T363.5: of a file whose rows have kinds of their own too (a stack with a kind for each layer
+    under both names. T.363.5: of a file whose rows have kinds of their own too (a stack with a kind for each layer
     says its layers)."""
     tensors = outside(tensor_rows(header, form), dtype_of(dtype))
     tensors.setdefault("wcls", tensors["token_embedding_table"])
@@ -105,7 +105,7 @@ def external_tensors(header, dtype, form=None):
 def dtype_weights(header, dtype, form=None):
     """How many weights of the matrices an engine multiplies by (every matrix, and the classifier or the embedding that
     is it) a checkpoint of this header, dtype and form stores in the dtype itself: all of them, but for the rows and
-    layers its form gives kinds of their own (T363.5). forward.js's footprint() counts what the dtype's kernels put
+    layers its form gives kinds of their own (T.363.5). forward.js's footprint() counts what the dtype's kernels put
     beside them (relaxed SIMD's corrections) by this, where there is a form with kinds: it has no rows to ask."""
     dims, dtype = Dims(header, form), dtype_of(dtype)
     multiplied = (MATRIX, CLASSIFIER, *((EMBEDDING,) if dims.shared else ()))
@@ -138,7 +138,7 @@ def checkpoint_dtype(header, size, form=None):
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
     form: what the file cannot say either (FORM, taken out of a model's options): the tensors differ with it.
-    T363: one of the five whatever kinds the form gives the rows: how the others are stored. Where every matrix has
+    T.363: one of the five whatever kinds the form gives the rows: how the others are stored. Where every matrix has
     a kind of its own, int8, int6 and ternary are one size (float32 vectors, no tables), and the answer is "int8".
     """
     form = form_of(form)
@@ -159,8 +159,8 @@ def checkpoint_dtype(header, size, form=None):
     # quantize.py: int8 values and a float32 scale per group; the vectors stay float32, the RoPE tables are left out
     sizes = {file_size(rows, name): name for name in DTYPES if name not in PACKED}
     for name in PACKED:
-        # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6).
-        # T230: 32 bytes and a scale per group of 128 (only rows of whole groups can be ternary; T533: the scale a
+        # T.98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6).
+        # T.230: 32 bytes and a scale per group of 128 (only rows of whole groups can be ternary; T.533: the scale a
         # float16, PQ2_0's). No other dtype of the same header has this size: with M values in the matrices and V in
         # the vectors it is 0.265625 M + 4 V, int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and
         # float16 (2 M + 2 V and the RoPE tables) would need 2 V > 1.7 M, vectors as large as the matrices
@@ -183,7 +183,7 @@ def check_tokenizer(tokenizer, header):
     offset, pieces = 4, 0
     while offset + 8 <= len(tokenizer):
         if pieces == vocab_size and bytes(tokenizer[offset:offset + len(CHARSMAP)]) == CHARSMAP:
-            # T216: a sentencepiece model's normalizer after the pieces, to the end
+            # T.216: a sentencepiece model's normalizer after the pieces, to the end
             (size,) = struct.unpack_from("<I", tokenizer, offset + len(CHARSMAP))
             offset += len(CHARSMAP) + 4 + size
             break

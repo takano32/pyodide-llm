@@ -1,5 +1,5 @@
-// T84: the Pythia ladder, one design at eight sizes, from the JSON lines of the huggingface jobs of browsers.yml
-// (tests/e2e.mjs writes them; the small job has 70M to 410M, the large one 1B and 1.4B, and the classics one T251's
+// T.84: the Pythia ladder, one design at eight sizes, from the JSON lines of the huggingface jobs of browsers.yml
+// (tests/e2e.mjs writes them; the small job has 70M to 410M, the large one 1B and 1.4B, and the classics one T.251's
 // 14M, 2.8B and 6.9B, so give the three files).
 // If tok/s is bound by memory, int8 megabytes × tok/s (the weights read per second) stays about the same up the
 // ladder; if it is bound by computing, it does too, since int8 is one multiply-add per byte (AGENTS.md). Where it

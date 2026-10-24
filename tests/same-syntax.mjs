@@ -1,4 +1,4 @@
-// tests/same-syntax.mjs (T481): whether the sources of two commits are the same code, by their syntax trees.
+// tests/same-syntax.mjs (T.481): whether the sources of two commits are the same code, by their syntax trees.
 //
 //   node tests/same-syntax.mjs [--before <commit>] [file …]      (--before: origin/main; the files: every .js and .ts
 //                                                                 source git knows under src/, and public/coi.js)

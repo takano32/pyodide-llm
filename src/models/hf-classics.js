@@ -7,17 +7,17 @@ import { sampled, thinking } from "./sampling.js";
 import { ggufOf, thinkingAndNot } from "./builders.js";
 
 export const HF_CLASSICS = [
-  // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
+  // English. Pythia is the same design at five sizes: a ladder for measuring (T.80)
   { group: "hf", id: "hf-pythia-70m", name: "EleutherAI Pythia 70M", note: "English · fetches 77 MB (GGUF) → int8 96 MB",
     original: "EleutherAI/pythia-70m-deduped",
     hf: { repo: "mradermacher/pythia-70m-deduped-GGUF", revision: "de94e2866e79534ca28e66593069e941988ac217", weights: "pythia-70m-deduped.Q8_0.gguf",
           vocabulary: { repo: "EleutherAI/pythia-70m-deduped", revision: "e93a9faa9c77e5d09219f6c868bfc7a1bd65593c", tokenizer: "tokenizer.json" } },
     download: 76722400,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
-  // T74: from a GGUF (Q8_0): 145 MB instead of the 269 MB of model.safetensors, and the same int8 in the end (99.7%
+  // T.74: from a GGUF (Q8_0): 145 MB instead of the 269 MB of model.safetensors, and the same int8 in the end (99.7%
   // of the most likely tokens and 0.13% of perplexity, tests/gguf_check.py). The GGUF is a redistribution; the
   // model and its license are HuggingFaceTB's (`original`). Its BOS is <|im_start|> itself (bos_token_id 1), which the page
-  // begins every text with: the format begins after it, where CHATML here made two (T250's review, tests/format_check.py's
+  // begins every text with: the format begins after it, where CHATML here made two (T.250's review, tests/format_check.py's
   // same_ids(): its own answers to five questions were 5.5% higher in perplexity, the likeliest next token differed at 9 in 100)
   { group: "hf", id: "hf-smollm2-135m-instruct", name: "Hugging Face SmolLM2 135M Instruct", note: "answers instructions · English · fetches 145 MB (GGUF) → int8 145 MB",
     original: "HuggingFaceTB/SmolLM2-135M-Instruct",
@@ -66,8 +66,8 @@ export const HF_CLASSICS = [
           vocabulary: { repo: "TinyLlama/TinyLlama-1.1B-Chat-v1.0", revision: "fe8a4ea1ffedaf415f4da2f062534de366a451e6", tokenizer: "tokenizer.model" } }, download: 1170781568,
     conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: "<|user|>\n{prompt}</s>\n<|assistant|>\n",
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  // T106: Llama 3. The original (meta-llama) is gated, so the same weights come from unsloth's copy (`original`
-  // names whose they are). The chat template and its special tokens are read from the model (T73)
+  // T.106: Llama 3. The original (meta-llama) is gated, so the same weights come from unsloth's copy (`original`
+  // names whose they are). The chat template and its special tokens are read from the model (T.73)
   { group: "hf", id: "hf-llama-3.2-1b-instruct", name: "Meta Llama 3.2 1B Instruct", note: "answers instructions · English · fetches 1.3 GB (GGUF) → int8 1.4 GB",
     original: "meta-llama/Llama-3.2-1B-Instruct",
     hf: { repo: "bartowski/Llama-3.2-1B-Instruct-GGUF", revision: "067b946cf014b7c697f3654f621d577a3e3afd1c", weights: "Llama-3.2-1B-Instruct-Q8_0.gguf",
@@ -91,19 +91,19 @@ export const HF_CLASSICS = [
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-deepseek-r1-qwen-1.5b", name: "DeepSeek-R1 Distill Qwen 1.5B", note: "thinks before it answers · English · fetches 1.9 GB (GGUF) → int8 2.0 GB",
-    // T203: mradermacher's Q8_0 (its card names the original as its base model, and MIT)
+    // T.203: mradermacher's Q8_0 (its card names the original as its base model, and MIT)
     ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-GGUF", "dcc15b1cfd0973faf5dc043fd405661fe061e7aa",
       "DeepSeek-R1-Distill-Qwen-1.5B.Q8_0.gguf", "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562"),
     download: 1894532384,
     // the BOS is the tokenizer's <｜begin▁of▁sentence｜> (151646): config.json says 151643, the end of a sentence, and
     // with it perplexity was 2.5 to 2.7 times higher and four answers of five fell apart; the real format opens the
-    // thought with <think> (T138's review). The list's options go over what the kept conversion says: no new CONVERTER
+    // thought with <think> (T.138's review). The list's options go over what the kept conversion says: no new CONVERTER
     conversion: {}, options: { bos: 151646, specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>", "<think>"], stop_tokens: [151643] },
-    // its model card's sampling: temperature 0.6 and top-p 0.95, and no penalty (it names none): Qwen3's thinking (T144)
+    // its model card's sampling: temperature 0.6 and top-p 0.95, and no penalty (it names none): Qwen3's thinking (T.144)
     generation: thinking, template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
-  // T251: the English classics, each a ladder of one design. GPT-2 below and above the 124M one (DistilGPT2 is its
-  // six-layer student), and Pythia's two ends (14M to 6.9B with the five above: T84's size against speed). Q8_0 GGUFs
+  // T.251: the English classics, each a ladder of one design. GPT-2 below and above the 124M one (DistilGPT2 is its
+  // six-layer student), and Pythia's two ends (14M to 6.9B with the five above: T.84's size against speed). Q8_0 GGUFs
   // which tests/gguf_check.py tensors held to the originals (gguf.yml's candidates), with the originals' vocabulary.
   // GPT-2's table of positions holds 1024, which is its context; Pythia's context is 2048. The 14M is the deduped one,
   // as the 70M is (mradermacher's GGUF of that name is of pythia-14m-deduped, its card says)
@@ -135,7 +135,7 @@ export const HF_CLASSICS = [
     ...ggufOf("mradermacher/pythia-6.9b-GGUF", "d8e5050a875b7bfd5de881d30b33abc3d492cb60", "pythia-6.9b.Q8_0.gguf",
       "EleutherAI/pythia-6.9b", "c0e3eee36dc47af0c49f361c74cfe459c09f7f23"), download: 7292706720,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
-  // T125: Mistral 7B, and zephyr made from it
+  // T.125: Mistral 7B, and zephyr made from it
   { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB",
     original: "mistralai/Mistral-7B-Instruct-v0.2",
     hf: { repo: "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", revision: "3a6fbf4a41a1d52e415a4958cde6856d34b2db93", weights: "mistral-7b-instruct-v0.2.Q8_0.gguf",
@@ -160,10 +160,10 @@ export const HF_CLASSICS = [
           vocabulary: { repo: "unsloth/Llama-3.2-3B-Instruct", revision: "006f5dcd1393c3add266de40994ba96225e9689d", tokenizer: "tokenizer.json" } }, download: 3421899296,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  // T252: well-known ones the engine opens as it is, each from a Q8_0 GGUF that tests/gguf_check.py tensors held to its
+  // T.252: well-known ones the engine opens as it is, each from a Q8_0 GGUF that tests/gguf_check.py tensors held to its
   // original (gguf.yml's candidates), with the original's vocabulary, config.json and chat template: the formats and
   // the special tokens are the converter's reading, the same IDs as the real template's for tests/format_check.py's
-  // prompts. What the page puts in front was measured for each (tests/start_check.mjs, tests/answer_check.mjs: T250's
+  // prompts. What the page puts in front was measured for each (tests/start_check.mjs, tests/answer_check.mjs: T.250's
   // review found a Qwen3 8B 178% worse for it).
   // SmolLM2's base models (the Instruct ones are above): <|endoftext|> in front is 1 to 1.5% better than nothing
   { group: "hf", id: "hf-smollm2-135m", name: "Hugging Face SmolLM2 135M", note: "English · fetches 145 MB (GGUF) → int8 151 MB",
@@ -197,24 +197,24 @@ export const HF_CLASSICS = [
   // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF. The real template (apply_chat_template, which
   // the chat servers use) puts nothing in front and begins with <|im_start|>; its card's example code tokenizes a ChatML
   // string, which puts <|begin_of_text|> in front (tokenizer.json's post-processor, and llama.cpp does the same), and the
-  // page began with that until T252's review measured what it does to a chat: on 24 answers written by hand it is 6 to 7%
+  // page began with that until T.252's review measured what it does to a chat: on 24 answers written by hand it is 6 to 7%
   // higher in perplexity, 13 to 15% for the 13 English ones (four standard errors, with transformers' float32 products and
   // with this engine alike; tests/chat_nll.py, tests/chat_fluency.mjs), and the model's own answers move (KL 0.05 nats a
   // token, the likeliest token the same at 94%), where plain text is 5% better with it. So the BOS is the format's own first
   // token, <|im_start|> (128040), and the format begins after it: the ids are the real template's (a Qwen3 8B's
-  // QWEN3_FROM_IM_START, T250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark
-  // of a new turn. T369: the BOS and the format are what the converter says of it now (T264: a model whose template it read
+  // QWEN3_FROM_IM_START, T.250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark
+  // of a new turn. T.369: the BOS and the format are what the converter says of it now (T.264: a model whose template it read
   // begins with the template's own first token), so the entry says neither. The stop tokens it says: the converter's
-  // are the BOS and the EOS the model's files name, and not the mark of a new turn (the review of T369)
+  // are the BOS and the EOS the model's files name, and not the mark of a new turn (the review of T.369)
   { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Nous Research Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB",
     ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
     conversion: {}, options: { stop_tokens: [128000, 128039, 128040] }, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  // T255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
+  // T.255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
   // name the layers: unturned). ggml-org's Q8_0 GGUF, which tests/gguf_check.py tensors held to the original
   // (gguf.yml's candidates), with the original's vocabulary and config.json. Six languages, Japanese not among them;
-  // it answered five Japanese questions of six in Japanese, in either form, so the note says 日本語 too (T539).
+  // it answered five Japanese questions of six in Japanese, in either form, so the note says 日本語 too (T.539).
   // Twice, as a Qwen3 is: the two share their weights and a kept conversion. Its card's sampling for either form
   ...[["hf-smollm3-3b-thinking", "Hugging Face SmolLM3 3B (thinking)", "thinks before it answers", SMOLLM3_THINKING],
     ["hf-smollm3-3b", "Hugging Face SmolLM3 3B (no thinking)", "answers at once", SMOLLM3_AT_ONCE]].map(([id, name, what, template]) => ({
@@ -225,7 +225,7 @@ export const HF_CLASSICS = [
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" })),
   // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS, <｜begin▁of▁sentence｜> (which the
-  // real template writes first), and the thought opened by the format. The converter reads both itself now (T143: the
+  // real template writes first), and the thought opened by the format. The converter reads both itself now (T.143: the
   // BOS tokenizer_config.json names, the template and its special tokens), so these have no options of their own. On
   // plain text the Qwen 7B is 6% worse with that BOS than with nothing in front and 26% worse with config.json's
   // (151643, the end of a sentence); the Llama 8B, a Llama 3.1 with DeepSeek's names for its tokens, 4% better
@@ -247,7 +247,7 @@ export const HF_CLASSICS = [
           vocabulary: { repo: "unsloth/Meta-Llama-3.1-8B-Instruct", revision: "a2856192dd7c25b842431f39c179a6c2c2f627d1", tokenizer: "tokenizer.json" } }, download: 8540775840,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  // T124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form. T203: from Q8_0 GGUFs (Qwen's
+  // T.124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form. T.203: from Q8_0 GGUFs (Qwen's
   // own 0.6B and 1.7B are not the original's weights: tests/gguf_check.py tensors found every matrix 0.9 to 2.2% off
   // its Q8_0, so unsloth's)
   ...thinkingAndNot("hf-qwen3-0.6b", "Alibaba Qwen3 0.6B",

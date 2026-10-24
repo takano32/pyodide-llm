@@ -1,14 +1,14 @@
-// T225's review: what /benchmark/'s layer check says (src/runtime/benchmark/gpu.js's judgeLayer) of a device that is JavaScript
+// T.225's review: what /benchmark/'s layer check says (src/runtime/benchmark/gpu.js's judgeLayer) of a device that is JavaScript
 // too, in Node, without a GPU:   node tests/layer-check.mjs
 // The check's own data (layerCheckData: 33 heads of 64 and 3 of K and V at 2112 wide, 71 positions), the layer run in
 // float64 by the check's own reference (layerReference) as a device would leave it, its keys and values rounded to
 // float16 the way a device may choose: WGSL leaves to it which of the two neighbours a conversion gives (§15.7.6) and
 // Direct3D takes the one toward zero (D3D11.3 3.2.2: the owner's NVIDIA PC on Windows did), where lavapipe and
 // SwiftShader, the only devices CI has, round to the nearest. So CI cannot see a layer check that holds a device that
-// rounds toward zero wrong again (T225's), nor the keys and values the reference takes from the device where they are
+// rounds toward zero wrong again (T.225's), nor the keys and values the reference takes from the device where they are
 // a neighbour of its own: this does. The same numbers show what the check still catches (the lines of the check:
 // LAYER_LINE 1e-3 of what the layer added, CACHE_LINE 2e-3 of the largest, the quantized scales 1e-3 and 3e-5).
-//   The numbers of T225's review (300 draws of the check's data, a device that rounds toward zero, the check before it
+//   The numbers of T.225's review (300 draws of the check's data, a device that rounds toward zero, the check before it
 // took the device's bits): the stream of a float form 3.4e-4 to 2.5e-3 (45% past its line), the scale of the DP4A
 // form's quantized attention output 5.7e-4 to 1.2e-2 (97% past its line), the cache 4.5e-4 to 9.7e-4.
 import assert from "node:assert/strict";
@@ -93,8 +93,8 @@ for (const form of [FLOAT, DP4A]) {
     assert.ok(v.stream < 1e-5 && v.cache === 0, label("the stream and the cache"));
     assert.deepEqual(counted(v), { same: 2 * shape.kvDim, inward: 0, outward: 0, far: 0 });
   }
-  // toward zero (Direct3D's, T225): right, and the line says how it rounded: about half of the values toward zero, none away
-  // from it or farther. (Before T225 the reference rounded to the nearest: the DP4A form's attention output was quantized
+  // toward zero (Direct3D's, T.225): right, and the line says how it rounded: about half of the values toward zero, none away
+  // from it or farther. (Before T.225 the reference rounded to the nearest: the DP4A form's attention output was quantized
   // to a scale 5.7e-4 to 1.2e-2 off, and the stream of a float form 3.4e-4 to 2.5e-3: past their lines in 97% and 45% of draws)
   {
     const v = judged(form, leave(form, { keys: "zero", values: "zero" }));
@@ -111,7 +111,7 @@ for (const form of [FLOAT, DP4A]) {
     assert.ok(v.ok && counted(v).inward === 0 && counted(v).outward > 0, label(`away from zero: ${v.stages}`));
   }
   assert.ok(judged(form, leave(form, { keys: "even", values: "even" })).ok, label("toward zero in the even lanes"));
-  // errors the check has caught since T150: the keys and the values larger by 0.4% (4 float16 ulp at the most), one
+  // errors the check has caught since T.150: the keys and the values larger by 0.4% (4 float16 ulp at the most), one
   // float16 lower than a device that rounds toward zero (1 to 2 ulp off the value)
   for (const [what, modes, first] of [["the keys 0.4% larger", { keyScale: 1.004 }, "K and V"], ["the values 0.4% larger", { valueScale: 1.004 }, "K and V"],
     ["toward zero and one float16 lower still", { keys: "twice", values: "twice" }, "K and V"]]) {

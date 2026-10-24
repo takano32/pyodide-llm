@@ -1,11 +1,11 @@
-// T192: one line a section for the short report and the page's head.
-// (T353: a part of src/bench.js, which is the window that exports every name of these)
+// T.192: one line a section for the short report and the page's head.
+// (T.353: a part of src/bench.js, which is the window that exports every name of these)
 import { number, threadsOf, times, timesFaster, noRatios } from "./cells.js";
 import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.js";
 import { tokenWrong, fastestMatVec } from "./gpu.js";
 import { stepMs, less, layerSplit } from "./layersteps.js";
 
-// ---- T185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
+// ---- T.185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
 // Each says the fastest and the ceilings; the tables with every row are in the whole report.
 
 const yesNo = (value) => (value ? "yes" : "no");
@@ -81,7 +81,7 @@ export function gpuSummary(steps, baseline = {}, gpu = {}) {
     one && most && `generated ${number(one.msPerToken, 2)} ms a token one a submission, ${number(most.msPerToken, 2)} with ${most.perSubmission}` +
       (none || samplingWrong ? "" : ` (${times(one.msPerToken / most.msPerToken)})`)].filter(Boolean);
   if (layerParts.length) lines.push(`GPU, ${layerParts.join("; ")}`);
-  // T202: where the time of the fastest layer the steps' table broke down goes
+  // T.202: where the time of the fastest layer the steps' table broke down goes
   const split = find("the steps of a layer")?.result;
   const splitForm = (split?.forms ?? []).filter((form) => stepMs(form) !== undefined && !form.unsteady && !(check?.[form.check] && !check[form.check].ok))
     .sort((x, y) => x.ms - y.ms)[0];

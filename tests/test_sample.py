@@ -100,7 +100,7 @@ def test_penalize_looks_only_at_the_last_tokens(llama):
 @pytest.mark.parametrize("topp", [0.05, 0.1, 0.2, 0.45])
 @pytest.mark.parametrize("above", [1, 2, 3, 5])
 def test_a_low_top_p_over_few_likely_tokens(llama, topp, above):
-    """T178: with a few tokens above the floor and n * topp < 1, llama2.c's cutoff (1 - topp) / (n - 1) was above all
+    """T.178: with a few tokens above the floor and n * topp < 1, llama2.c's cutoff (1 - topp) / (n - 1) was above all
     of them, nothing was left and the draw read past the end (IndexError). The nucleus is still the top-p set."""
     rng = np.random.default_rng(above)
     for spread in (0.0, 0.05, 0.5):
@@ -117,7 +117,7 @@ def test_a_low_top_p_over_few_likely_tokens(llama, topp, above):
 @pytest.mark.parametrize("bad", [np.nan, np.inf])
 @pytest.mark.parametrize("temperature, topp", [(1.0, 0.9), (0.7, 1.0), (0.0, 0.9)])
 def test_logits_that_are_not_finite_stop(llama, where, bad, temperature, topp):
-    """T195: a NaN or +inf anywhere (and all -inf) leaves no distribution to draw from: a broken model or an overflow.
+    """T.195: a NaN or +inf anywhere (and all -inf) leaves no distribution to draw from: a broken model or an overflow.
     The sampler says so, as the kernels' does (tests/smoke.mjs), rather than draw a token."""
     logits = np.random.default_rng(where).standard_normal(200).astype(np.float32)
     logits[where] = bad
@@ -128,7 +128,7 @@ def test_logits_that_are_not_finite_stop(llama, where, bad, temperature, topp):
 
 
 def test_some_minus_infinity_is_no_fault(llama):
-    """T195: tokens at -inf cannot be drawn; the others are drawn as before."""
+    """T.195: tokens at -inf cannot be drawn; the others are drawn as before."""
     logits = np.random.default_rng(3).standard_normal(200).astype(np.float32)
     logits[::3] = -np.inf
     for topp in (0.9, 1.0):
@@ -138,7 +138,7 @@ def test_some_minus_infinity_is_no_fault(llama):
 
 
 def reference_narrowed(logits, temperature, topp, top_k, min_p):
-    """T274: the tokens left by a top-k, then a nucleus of those, then a min-p: each step on the probabilities the one
+    """T.274: the tokens left by a top-k, then a nucleus of those, then a min-p: each step on the probabilities the one
     before left, adding up to one again (llama.cpp's sampler chain, transformers' logits warpers), written plainly."""
     probabilities = softmax(logits.astype(np.float64), temperature)
     order = np.argsort(-probabilities, kind="stable")
@@ -199,7 +199,7 @@ def test_generate_refuses_settings_out_of_range(llama, settings):
 
 
 def test_generate_with_the_three_reproduces_and_differs(llama):
-    """T274: a seed reproduces with them, a top-k of 1 is greedy's text, and a presence penalty changes a greedy one."""
+    """T.274: a seed reproduces with them, a top-k of 1 is greedy's text, and a presence penalty changes a greedy one."""
     def text(**settings):
         return "".join(llama.generate("a", steps=24, seed=7, **settings))
     narrowed = dict(temperature=1.0, topp=0.95, top_k=20, min_p=0.05, presence_penalty=1.5)
@@ -221,11 +221,11 @@ def test_generate_with_the_three_reproduces_and_differs(llama):
     (dict(temperature=0.0, presence_penalty=1.5), True),
 ])
 def test_a_step_with_the_three_may_go_to_the_gpu(llama, monkeypatch, settings, on_the_gpu):
-    """T274 (the review): a step with a setting the GPU's SAMPLE has not must not be offered to it (it would draw
+    """T.274 (the review): a step with a setting the GPU's SAMPLE has not must not be offered to it (it would draw
     without it, and nothing says so). Nothing else caught that: the GPU's steps are forward.js's, and pytest has no
-    GPU (a presence penalty alone passed both pytest and smoke with on_cpu left out of it). T359.7: who says so is the
+    GPU (a presence penalty alone passed both pytest and smoke with on_cpu left out of it). T.359.7: who says so is the
     part that hands the steps over (ExternalForward's gpu_steps(), by Sampling.beyond()): here it is that part's,
-    around a stand-in for forward.js's engine. T546: SAMPLE has a top-k, min-p and the presence penalty too (a rule it
+    around a stand-in for forward.js's engine. T.546: SAMPLE has a top-k, min-p and the presence penalty too (a rule it
     has not: tests/test_sampling.py's WithARuleMore)."""
     asked = []
 
@@ -248,7 +248,7 @@ def test_a_step_with_the_three_may_go_to_the_gpu(llama, monkeypatch, settings, o
 
 
 def test_the_presence_penalty_counts_the_sampled_tokens_alone(llama, monkeypatch):
-    """T274 (the review): the prompt's tokens are not penalized for being there (a chat format ends its turn with the
+    """T.274 (the review): the prompt's tokens are not penalized for being there (a chat format ends its turn with the
     token that stops the answer, and that one would lose the penalty for the first 64 steps), and the repetition
     penalty still sees the prompt."""
     calls, sampler = [], llama.sampler

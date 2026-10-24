@@ -1,4 +1,4 @@
-// unchanged-bench.mjs (T353 review): a preload for `node --import`, that writes down every call tests/bench.mjs makes to a
+// unchanged-bench.mjs (T.353 review): a preload for `node --import`, that writes down every call tests/bench.mjs makes to a
 // name src/bench.js exports (the arguments and what came back, a function as its text), into the file UNCHANGED_RECORD.
 // tests/unchanged.mjs runs it in two trees and compares the records: a table's header word, a cell's rounding, a
 // warning's condition or a summary line that a division of src/bench.js moved (and mistyped) is a call that answers

@@ -1,4 +1,4 @@
-// tests/layer-parts-check.mjs (T375.3): the parts the engine chooses as it is made, each by itself with stand-ins for
+// tests/layer-parts-check.mjs (T.375.3): the parts the engine chooses as it is made, each by itself with stand-ins for
 // its neighbours: the three kinds of layers (src/runtime/forward/attention.ts, linear.ts, convolution.ts), the two
 // FFNs (ffn.ts) and the cache of the keys and values (cache.ts). No engine, no model, no kernels, no Pyodide: a few
 // bytes of memory, kernels that write down what they are asked, and the phases and matmuls written down the same.
@@ -7,7 +7,7 @@
 //   node tests/layer-parts-check.mjs
 //
 // What it sees of each kind: what it puts in a token's frame and says it keeps besides, of what sizes the model
-// (T375.5: sizes.ts's Sizes, the plan's or the form's), and what it says of a form (which layers are its own, its
+// (T.375.5: sizes.ts's Sizes, the plan's or the form's), and what it says of a form (which layers are its own, its
 // widths); that it takes its tensors by their names and of the memory what it said it keeps; a step of several tokens (what goes out as matmuls and phases, in what order, at what
 // addresses); that position 0's clear() empties its state and nothing else; that a kind which keeps keys and values
 // has no clear(); and that a plan without a kind's numbers is refused as the kind is asked.
@@ -120,7 +120,7 @@ const S = 100000;
   none.hold(4);
   none.place();
   assert.deepEqual([none.capacity, room.taken[0][1]], [0, 0]);
-  // T510.1: a layer that attends the last 5 positions of a context of 60 keeps a ring of 2 × (5 + 16) = 42 positions
+  // T.510.1: a layer that attends the last 5 positions of a context of 60 keeps a ring of 2 × (5 + 16) = 42 positions
   // (its period 21: the window and a prompt's block), taken first and never grown; the others keep every position, in
   // blocks after the rings that grow as before. A window whose ring would not be shorter than the context (22: 76 of
   // 60) keeps every position, and so does every layer of a model on the GPU alone (start 0)
@@ -144,7 +144,7 @@ const S = 100000;
     all.hold(2, [5, 0]);
     assert.deepEqual([all.ring(0), all.index(0), all.index(1)], [null, 0, 1], "no ring on the GPU alone");
   }
-  // T331.2: places of their own widths (a Gemma 4's: its full-attention layers' keys and values twice as wide): a block
+  // T.331.2: places of their own widths (a Gemma 4's: its full-attention layers' keys and values twice as wide): a block
   // is its own width, the next after it, and they move as wide as they are when the cache grows
   {
     const room = memoryOf(), cache = keyValueCache({ room, k: {}, kvDim: 16, half: false, start: 4, seqLen: 60 });
@@ -167,12 +167,12 @@ const S = 100000;
 // ---- the layers that attend
 {
   const plan = { dim: 64, n_heads: 4, n_kv_heads: 2, head_size: 16, seq_len: 48, rotary: 16, widths: { q: 64, kv: 32 }, tensors: {} };
-  // (T331.2: a layer's facts of its heads and stacks: the model's heads, its place)
+  // (T.331.2: a layer's facts of its heads and stacks: the model's heads, its place)
   const att = (fact) => ({ window: 0, local: false, head: 16, rotary: 16, wide: false, stack: fact.place, double: false, ffn: fact.place, kept: fact.place, reads: fact.place, ...fact });
   const sizes = { dim: 64, heads: 4, seqLen: 48, widths: { q: 64, kv: 32 }, gate: false, numbers: {} };
   assert.deepEqual(attention.frame(sizes), { arrays: [], apart: [["att", 48 * 4 * 4]] }, "the scores of a token, apart from its frame");
   assert.deepEqual(attention.frame({ ...sizes, gate: true }).arrays, [["gate", 64 * 4]], "and a gate where the layers gate their output");
-  // (T375.5) what footprint() reads of the kind: its layers keep keys and values, and nothing besides; and it says no
+  // (T.375.5) what footprint() reads of the kind: its layers keep keys and values, and nothing besides; and it says no
   // layer of a form is its own (a layer that no kind claims attends)
   assert.deepEqual([attention.cached, attention.state, attention.layers, attention.widths], [true, undefined, undefined, undefined]);
   const stand = (has, half = false) => {
@@ -212,7 +212,7 @@ const S = 100000;
   assert.deepEqual(all.said[1], ["add_inplace", all.at.q, all.vector("bq") + 2 * 64 * 4, 64]);
   assert.deepEqual(all.said[2], ["add_inplace", all.at.kNow, all.vector("bk") + 2 * 32 * 4, 32]);
   assert.deepEqual(all.said[5], ["rmsnorm", all.at.q + 16 * 4, all.at.q + 16 * 4, all.vector("q_norm") + 2 * 16 * 4, 16, 1e-5], "the second head of q");
-  // T261: a local layer (a Gemma 3's): RoPE by the local layers' tables, and the cache handed over from the first
+  // T.261: a local layer (a Gemma 3's): RoPE by the local layers' tables, and the cache handed over from the first
   // position of each token's window on, with the token's position counted from there. Four tokens at positions 5 to 8
   // and a window of 7: the first two attend from position 0, the third from 1, the fourth from 2
   {
@@ -248,7 +248,7 @@ const S = 100000;
       /^Error: The plan has a local layer and no RoPE tables of the local layers\.$/);
   }
   assert.deepEqual(all.said[13], ["gate", all.at.xb, all.at.xb, all.at.gate, 64]);
-  // T342: a Spark-X2.5's gate of every head (head_gate): one more matrix of the same input, into the frame's gate, a value
+  // T.342: a Spark-X2.5's gate of every head (head_gate): one more matrix of the same input, into the frame's gate, a value
   // a head; each token's values spread over their heads (the last head's first, so that none is written over before it
   // is read), and the output gated by them by the kernel that gates a Qwen3.5's value by value
   {
@@ -266,7 +266,7 @@ const S = 100000;
     // (and no gate of the heads where the model has none: a Llama's layer above)
     assert.ok(!said.some(([name]) => name === "gate"));
   }
-  // T510.1: the layers of a kind whose facts give windows: those whose ring is shorter than the context (5 of 48: 42
+  // T.510.1: the layers of a kind whose facts give windows: those whose ring is shorter than the context (5 of 48: 42
   // positions) write each token's key and value twice into it, at p mod 21 and 21 after, and hand the kernels the run
   // of the ring from where each token's window begins. Four tokens at 19 to 22: slots 19, 20, 0 and 1; their windows
   // from 15 to 18
@@ -310,7 +310,7 @@ const S = 100000;
   assert.deepEqual(linear.frame(sizes), { arrays: [["mixed", 256], ["conv", 256], ["z", 128], ["work", (8 + 32) * 4]], widest: 32 });
   assert.throws(() => linear.frame({ ...sizes, numbers: { linear: null } }), /not the numbers of the layers of its kind/);
   assert.throws(() => linear.make(coreOf(plan, { sizes: { ...sizes, widths: { linear: null } } }).core, 1), /not the numbers of the layers of its kind/);
-  // (T375.5) what it says of a form, where there is no plan: every every-th layer attends, the others are its own; and
+  // (T.375.5) what it says of a form, where there is no plan: every every-th layer attends, the others are its own; and
   // its widths, as Python's plan has them (tests/plan-keys-check.mjs holds both to Python's)
   assert.deepEqual(linear.layers({ linear: numbers }, 5), [true, false, true, false, true]);
   assert.deepEqual(linear.layers({ linear: { ...numbers, every: 4 } }, 8), [true, true, true, false, true, true, true, false]);
@@ -333,7 +333,7 @@ const S = 100000;
   assert.equal(rules.length, 3, "a phase a token");
   const mine = states + 2 * stateBytes;
   assert.deepEqual(rules.map(([kind, , now, next]) => [kind, now, next]), [[7, mine, mine + stateBytes], [7, mine + stateBytes, mine], [7, mine, mine + stateBytes]],
-    "what a token wrote is what the next one reads, and never the state it reads itself (T120)");
+    "what a token wrote is what the next one reads, and never the state it reads itself (T.120)");
   assert.deepEqual(rules[1].slice(4), [at.conv + S, at.work + S, 2, 8, 8, 4, 1, 0, 0, 0]);
   assert.deepEqual(said[0], ["matmuls", at.xb, 3, ["wqkv", at.mixed, S, 1], ["wz", at.z, S, 1]]);
   assert.deepEqual(said.at(-1), ["matmuls", at.xb, 3, ["wout", at.xb2, S, 1]]);
@@ -355,7 +355,7 @@ const S = 100000;
   assert.deepEqual([F[states / 4 - 1], F[qUnit / 4], F[kUnit / 4 + 8]], [5, 5, 5], "and nothing else");
   console.log("ok: linear attention: its frame and its numbers; two states a layer, read and written turn about; the convolution's rows; what position 0 clears");
 
-  // T363.5: a model whose output matrix has its columns in llama.cpp's order of the value heads (the plan's tiled, the
+  // T.363.5: a model whose output matrix has its columns in llama.cpp's order of the value heads (the plan's tiled, the
   // form's): what the matrix reads is the value heads put in that order, every key head's first one, then every key
   // head's second (Hugging Face's head h * per + j at place j * key heads + h: here 0, 2, 1, 3), in an array of its
   // own in the token's frame; a model without it reads xb as it is, and has no such array
@@ -379,7 +379,7 @@ const S = 100000;
   const plan = { dim: 16 }, form = { convolution: { layers: "cac", taps: 3 } }, sizes = { dim: 16, numbers: form };
   assert.deepEqual(convolution.frame(sizes), { arrays: [["mixed", 3 * 16 * 4]] });
   assert.throws(() => convolution.frame({ dim: 16, numbers: { convolution: null } }), /not the numbers of the layers of its kind/);
-  // (T375.5) what it says of a form: a letter a layer; no widths of its own, no keys and values
+  // (T.375.5) what it says of a form: a letter a layer; no widths of its own, no keys and values
   assert.deepEqual([convolution.layers(form, 3), convolution.layers({}, 3)], [[true, false, true], null]);
   assert.deepEqual([convolution.widths, convolution.cached], [undefined, undefined]);
   const { core, said, room, at, vector } = coreOf(plan, { sizes, has: ["win", "wout", "conv"] });
@@ -400,7 +400,7 @@ const S = 100000;
   console.log("ok: a short convolution: its frame and its numbers; a step's two matmuls and the kernel between them, a token at a time; the rows; what position 0 clears");
 }
 
-// ---- T331.2: a layer of wide heads (a Gemma 4's full-attention layer) takes its own stacks at its place among them,
+// ---- T.331.2: a layer of wide heads (a Gemma 4's full-attention layer) takes its own stacks at its place among them,
 // its heads' size and how much RoPE turns; the heads of v are normalized by a weight of ones where the plan says so
 {
   const plan = { dim: 64, n_heads: 4, n_kv_heads: 1, head_size: 16, seq_len: 48, rotary: 8, widths: { q: 128, kv: 32 }, tensors: {}, value_norm: true };
@@ -432,7 +432,7 @@ const S = 100000;
 
 // ---- the two FFNs
 {
-  // (T331.2: every layer's FFN of the model's width, at its place in the stacks)
+  // (T.331.2: every layer's FFN of the model's width, at its place in the stacks)
   const plan = { dim: 16, hidden_dim: 48, activation: "silu", layers: Array.from({ length: 4 }, (_, l) => ({ double: false, ffn: l })) };
   const gated = coreOf(plan, { has: ["w1", "w2", "w3"] });
   gatedFfn(gated.core)(3, 2);
@@ -440,7 +440,7 @@ const S = 100000;
   assert.deepEqual(gated.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 3], ["w3", at.hb2, S, 3]],
     ["swiglu", at.hb, at.hb, at.hb2, 48], ["swiglu", at.hb + S, at.hb + S, at.hb2 + S, 48],
     ["matmuls", at.hb, 2, ["w2", at.xb2, S, 3]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x + S, at.xb2 + S, 16]]);
-  // T261: a Gemma's: the gate's activation is a GELU's, by its own kernel, and what the FFN gives is normalized (the
+  // T.261: a Gemma's: the gate's activation is a GELU's, by its own kernel, and what the FFN gives is normalized (the
   // layer's weights of the norm behind it) before it joins the stream
   const gemma = coreOf({ ...plan, activation: "gelu" }, { has: ["w1", "w2", "w3", "rms_ffn_post_weight"] });
   gatedFfn(gemma.core)(3, 2);
@@ -454,7 +454,7 @@ const S = 100000;
   const gelu = coreOf({ ...plan, activation: "gelu" }, { has: ["w1", "w2", "w3"] });
   gatedFfn(gelu.core)(0, 1);
   assert.deepEqual(names(gelu.said), ["matmuls", "geglu", "matmuls", "add_inplace"]);
-  // T342: a Spark-X2.5's: the exact GELU, by its own kernel
+  // T.342: a Spark-X2.5's: the exact GELU, by its own kernel
   const exact = coreOf({ ...plan, activation: "gelu_erf" }, { has: ["w1", "w2", "w3"] });
   gatedFfn(exact.core)(1, 2);
   assert.deepEqual(exact.said, [["matmuls", at.xb, 2, ["w1", at.hb, S, 1], ["w3", at.hb2, S, 1]],
@@ -471,7 +471,7 @@ const S = 100000;
   plainFfn(plain.core)(3, 1);
   assert.deepEqual(plain.said, [["matmuls", at.xb, 1, ["w1", at.hb, S, 3]], ["gelu", at.hb, at.hb, plain.vector("b1") + 3 * 48 * 4, 48],
     ["matmuls", at.hb, 1, ["w2", at.xb2, S, 3]], ["add_inplace", at.x, at.xb2, 16], ["add_inplace", at.x, plain.vector("b2") + 3 * 16 * 4, 16]]);
-  // T331.2: an FFN twice as wide (a Gemma 4's): its own stacks, at its place among them, its width
+  // T.331.2: an FFN twice as wide (a Gemma 4's): its own stacks, at its place among them, its width
   const doubled = coreOf({ ...plan, activation: "gelu", layers: [{ double: false, ffn: 0 }, { double: true, ffn: 0 }, { double: false, ffn: 1 }, { double: true, ffn: 1 }] },
     { has: ["w1", "w2", "w3", "w1_double", "w2_double", "w3_double"] });
   const ffn = gatedFfn(doubled.core);
@@ -484,7 +484,7 @@ const S = 100000;
   console.log("ok: the FFNs: a gated one (two matrices, swiglu or a Gemma's geglu, one more, the norm behind where the model has one, into the stream) and GPT-2's (a matrix, gelu with its bias, one more, into the stream with its bias)");
 }
 
-// ---- T329.2: a Gemma 4's embedding of every layer (perlayer.ts), its rows read by a stand-in of what reads the file
+// ---- T.329.2: a Gemma 4's embedding of every layer (perlayer.ts), its rows read by a stand-in of what reads the file
 {
   // three layers of inputs of 8 values; a table of 10 rows stored as int8 in groups of 8 (three scales a row)
   const plan = { dim: 16, n_layers: 3, activation: "gelu",
@@ -528,7 +528,7 @@ const S = 100000;
 assert.deepEqual(Object.keys(LAYER_KINDS), ["attention", "linear", "convolution"], "the kinds, in the order they are made in (what they take of the memory is in that order)");
 assert.deepEqual([LAYER_KINDS.attention, LAYER_KINDS.linear, LAYER_KINDS.convolution], [attention, linear, convolution]);
 for (const [name, kind] of Object.entries(LAYER_KINDS)) assert.deepEqual([typeof kind.frame, typeof kind.make], ["function", "function"], name);
-// T568.4: what a kind says of the GPU's side: its matrices and the vectors it hands are among the names of its tensors (a
+// T.568.4: what a kind says of the GPU's side: its matrices and the vectors it hands are among the names of its tensors (a
 // name it forgets there is a matrix or a vector of every layer to forward/gpuside.ts's kindOf(), counted and placed so)
 {
   const linearForm = { every: 2, key_heads: 1, value_heads: 2, key_dim: 16, value_dim: 16, conv: 4 };

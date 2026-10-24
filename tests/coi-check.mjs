@@ -1,4 +1,4 @@
-// T93, part 2: does public/coi-test/ become cross-origin isolated in each browser, with each COEP, and do Pyodide
+// T.93, part 2: does public/coi-test/ become cross-origin isolated in each browser, with each COEP, and do Pyodide
 // from the CDN and a range of a Hugging Face file still load under it? Prints one Markdown table.
 //
 //   node tests/coi-check.mjs <site URL> [engine ...]      engines: chromium firefox webkit chrome msedge
@@ -29,7 +29,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     }
     const cell = (v) => String(v ?? "").replace(/\|/g, "\\|").slice(0, 80);
     rows.push(`| ${engine} ${browser.version()} | ${coep} | ${cell(result.error ?? result.crossOriginIsolated)} | ${cell(result.atomics === true && result.sharedValue === 42 ? "yes" : result.atomics)} | ${cell(result.pyodide)} | ${cell(result.huggingface)} | ${result.reloads ?? ""} |`);
-    await closed(() => context.close());  // (T141, T391.6: WebKit on Windows may never return from it)
+    await closed(() => context.close());  // (T.141, T.391.6: WebKit on Windows may never return from it)
   }
   await closed(() => browser.close());
 }

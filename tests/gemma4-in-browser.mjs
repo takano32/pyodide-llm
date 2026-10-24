@@ -1,4 +1,4 @@
-// tests/gemma4-in-browser.mjs (T329.2.2): a small made-up Gemma 4 with an embedding of every layer, opened by the built
+// tests/gemma4-in-browser.mjs (T.329.2.2): a small made-up Gemma 4 with an embedding of every layer, opened by the built
 // page in a real browser by ?hf= (E2B's is 10 GB and runs in CI alone): the worker converts it, keeps it in the origin
 // private file system as it comes and reads the table of every layer's inputs from there, not from its memory; a second
 // visit loads what was kept and reads the table from the kept file; a second tab of the same model, whose kept file the

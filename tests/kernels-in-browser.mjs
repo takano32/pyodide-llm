@@ -1,4 +1,4 @@
-// kernels-in-browser.mjs (T230's review): the kernels' arithmetic in the engine of each browser, called often enough that
+// kernels-in-browser.mjs (T.230's review): the kernels' arithmetic in the engine of each browser, called often enough that
 // the engine compiles them again. tests/ternary-check.mjs and tests/smoke.mjs run the kernels in V8 (Node) alone, and a
 // browser's wasm engine is another compiler: JavaScriptCore on x86-64 (Playwright's WebKit on Linux, on AMD EPYCs and an Intel Xeon
 // alike; Safari on an Intel Mac has the same compiler and was not tried) wrote nonsense with a ternary model because its
@@ -10,13 +10,13 @@
 // with --site) in a blank page, and each kernel is called in batches (1, 400, 4000 and 30000 calls, a pause after each for
 // the background compile to land) with its result held to the same arithmetic written out in JavaScript after every batch.
 // The relaxed kernels are checked where the engine has relaxed SIMD (the others are not run there, as in the page).
-// T233's review: and rotate and unrotate (the rotated basis of Ternary Bonsai 2 27B, T237: a token turns 2,122 blocks of
+// T.233's review: and rotate and unrotate (the rotated basis of Ternary Bonsai 2 27B, T.237: a token turns 2,122 blocks of
 // 1024 with them, thousands of calls an answer), which only V8 had seen, a few calls at a time (tests/rotate-check.mjs):
 // Chrome and Firefox, the engines this model runs in, tier them up too.
 // Then the 64-bit builds on a memory of more than 4 GiB (what a 27B model runs on, in Chrome and Firefox): every address
 // argument low or high in every combination, the result held to the all-low one. The V8 of Node 24 on arm64 fails this
 // (it reads v128.load32_splat above 4 GiB at the low 32 bits); WebKit has no such memory and is skipped.
-// T363.4: and the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: Underdog Saluki's weights), every
+// T.363.4: and the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: Underdog Saluki's weights), every
 // type of the ten through every kernel, each held after every batch to tests/blocks-model.mjs, to the bit (the model's
 // text goes to the page; the codebooks are made up there, which the kernels do not mind: blocks-check.mjs is where the
 // reading is held to the converter's). matmul_sbw_tile where the engine's relaxed dot product multiplies signed bytes by
@@ -40,9 +40,9 @@ const site = siteAt >= 0 ? args[siteAt + 1].replace(/\/?$/, "/") : null;
 const engines = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--site");
 const channels = { chrome: "chrome", msedge: "msedge" };
 
-// T367.3.2: a deployed site names a built file by a hash of its bytes (_astro/simdkernel_plain.<hash>.wasm), and the
+// T.367.3.2: a deployed site names a built file by a hash of its bytes (_astro/simdkernel_plain.<hash>.wasm), and the
 // name is written nowhere but in the worker's text: the page names its script, the script the worker, the worker the
-// kernels. So the site is read as a browser reads it. (A site of before T367.3 served <name>.wasm at its root.)
+// kernels. So the site is read as a browser reads it. (A site of before T.367.3 served <name>.wasm at its root.)
 let workerText;
 const textOf = async (url) => (await fetched(url)).toString();
 async function siteWorker() {
@@ -61,7 +61,7 @@ async function wasm(name) {
 }
 const modules = { plain: await wasm("simdkernel_plain"), relaxed: await wasm("simdkernel_relaxed_plain") };
 const wideModules = { plain: await wasm("simdkernel_plain64"), relaxed: await wasm("simdkernel_relaxed_plain64"), addresses: ADDRESSES };
-// (T363.4. A site of before T363.5 serves no kernels of the blocks: they are then not checked there, and that is said)
+// (T.363.4. A site of before T.363.5 serves no kernels of the blocks: they are then not checked there, and that is said)
 const blocks = await (async () => {
   try {
     return { plain: await wasm("blockkernel_plain"), relaxed: await wasm("blockkernel_relaxed_plain"), plain64: await wasm("blockkernel_plain64"),
@@ -72,7 +72,7 @@ const blocks = await (async () => {
   }
 })();
 
-// runs in the page (T363.4): the kernels of llama.cpp's blocks. { relaxed, signed, results, high }
+// runs in the page (T.363.4): the kernels of llama.cpp's blocks. { relaxed, signed, results, high }
 async function inPageBlocks({ plain, relaxed, plain64, relaxed64, model, addresses }) {
   const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const m = (0, eval)(`(${model})`)(), NAMES = Object.keys(m.TYPES);
@@ -263,7 +263,7 @@ async function inPage({ plain, relaxed }) {
   const codes = Uint8Array.from({ length: rows * n }, () => next() % 3);  // -1, 0, 1
   U.fill(0, w, w + rows * n / 4);
   codes.forEach((code, j) => { U[w + (j >> 2)] |= code << (2 * (j & 3)); });
-  // (T533: the weights' scales are float16s: k / 1024, which a float16 holds, written as its bits)
+  // (T.533: the weights' scales are float16s: k / 1024, which a float16 holds, written as its bits)
   const sw = Float32Array.from({ length: rows * groups }, () => (1 + (next() % 1000)) / 1024);
   const halfOf = (x) => { const e = Math.floor(Math.log2(x)); return ((e + 15) << 10) | Math.round((x / 2 ** e - 1) * 1024); };
   new Uint16Array(memory.buffer).set(Array.from(sw, halfOf), ws / 2);
@@ -295,7 +295,7 @@ async function inPage({ plain, relaxed }) {
     return bad ? `${bad} of ${n} bytes and ${ng} sums wrong` : null;
   });
 
-  // ---- T273: the converter's readers of the two ternary types of a GGUF (24 blocks each, high in the memory)
+  // ---- T.273: the converter's readers of the two ternary types of a GGUF (24 blocks each, high in the memory)
   const blocksOf = 24, raw = 7 << 20, wide = raw + 4096;
   const scaleBits = Array.from({ length: blocksOf }, () => ((1 + next() % 29) << 10) | (next() % 1024));  // normal, positive
   const scaleOf = (bits) => f(2 ** ((bits >> 10) - 15) * (1 + (bits & 1023) / 1024));
@@ -374,7 +374,7 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
-  // ---- rotate and unrotate (T237; the review of T233): the same float32 arithmetic written out here, to the bit, with the signs
+  // ---- rotate and unrotate (T.237; the review of T.233): the same float32 arithmetic written out here, to the bit, with the signs
   // as forward.js hands them over (a sign times 1 / sqrt(block): rotate multiplies by them, unrotate by their size and
   // flips the result's sign bit by theirs)
   {
@@ -419,7 +419,7 @@ async function inPage({ plain, relaxed }) {
     }
   }
 
-  // ---- geglu (T261: the gate of a Gemma 3's FFN, gelu(h1) * h3). Its exp is the kernels' own (vexp, four at a time),
+  // ---- geglu (T.261: the gate of a Gemma 3's FFN, gelu(h1) * h3). Its exp is the kernels' own (vexp, four at a time),
   // which is not written out here: it is held to the engine's gelu of the same values (a bias of -0, which changes no
   // value and no zero's sign) times h3 in float32, to the bit, and to the formula in float64 within a millionth (where
   // the kernels' exp is not clamped). 259
@@ -449,7 +449,7 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
-  // ---- geglu_erf (T342: the gate of a Spark-X2.5's FFN, the exact GELU of h1 times h3). Four at a time is held to the
+  // ---- geglu_erf (T.342: the gate of a Spark-X2.5's FFN, the exact GELU of h1 times h3). Four at a time is held to the
   // kernel one value at a time (its scalar tail) to the bit, and to the same formula (erf by Abramowitz and Stegun's
   // 7.1.26, llama2_numpy's gelu_erf()) in float64 within a millionth. The same 259 values as geglu's
   {
@@ -642,7 +642,7 @@ async function inPageHigh({ plain, relaxed, addresses }) {
   const ternary = (p, tokens) => {
     U.fill(0, p.w, p.w + 32);
     for (let j = 0; j < 128; j++) U[p.w + (j >> 2)] |= 2 << (2 * (j & 3));  // 128 weights of +1
-    new Uint16Array(memory.buffer)[p.ws / 2] = 0x3c00;  // (T533: a float16 scale of 1)
+    new Uint16Array(memory.buffer)[p.ws / 2] = 0x3c00;  // (T.533: a float16 scale of 1)
     for (let t = 0; t < tokens; t++) {
       for (let j = 0; j < 128; j++) I[p.xq + t * 1024 + j] = 3;
       for (let g = 0; g < 4; g++) F[(p.xs + t * 1024) / 4 + g] = 1;
@@ -657,7 +657,7 @@ async function inPageHigh({ plain, relaxed, addresses }) {
       for (let g = 0; g < 4; g++) F[(p.xs + t * 1024) / 4 + g] = 1;
     }
   };
-  // rotate and unrotate (T237; the review of T233): 128 values of a block of 128, x and signs up or down, the result of the
+  // rotate and unrotate (T.237; the review of T.233): 128 values of a block of 128, x and signs up or down, the result of the
   // first value (a sum of all of them) the all-low one
   const turn = (p) => {
     for (let j = 0; j < 128; j++) { F[p.x / 4 + j] = (j % 7) - 3.25; F[p.signs / 4 + j] = (j % 3 ? 1 : -1) * 0.08838835; }
@@ -724,7 +724,7 @@ for (const engine of engines.length ? engines : ["chromium"]) {
       console.log(`kernels-in-browser:   ${wrong ? "WRONG" : "ok"}: above 4 GiB, ${name}${wrong ? ` ${wrong}` : ` (${calls} placements)`}`);
       if (wrong) failed = true;
     }
-    // T363.4: the kernels of llama.cpp's blocks. A line a kernel: its ten types are named where one is wrong
+    // T.363.4: the kernels of llama.cpp's blocks. A line a kernel: its ten types are named where one is wrong
     if (!blocks) {
       console.log("kernels-in-browser:   skipped: the kernels of llama.cpp's blocks: this site serves none");
     } else {
@@ -742,7 +742,7 @@ for (const engine of engines.length ? engines : ["chromium"]) {
       if (of.high.skipped) console.log(`kernels-in-browser:   skipped: above 4 GiB, the blocks' kernels: ${of.high.skipped}`);
     }
   } finally {
-    await closed(() => browser.close());  // (T141, T391.6: Windows' WebKit may never return from it)
+    await closed(() => browser.close());  // (T.141, T.391.6: Windows' WebKit may never return from it)
   }
 }
 await leave(failed ? 1 : 0);

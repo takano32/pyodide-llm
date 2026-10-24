@@ -1,4 +1,4 @@
-// T357.3: tests/gpu-check.mjs itself, run from its arguments to its exit where no WebGPU runs. The tool's GPU is CI's
+// T.357.3: tests/gpu-check.mjs itself, run from its arguments to its exit where no WebGPU runs. The tool's GPU is CI's
 // (gpu-prompt.yml), and until this check a slip in what is not the GPU's (the arguments, NumPy's answers and the plan,
 // the server, Dawn's worker threads, the harness's runs on the CPU, the verdicts and the tables) showed there alone,
 // twenty minutes into a run. Here the tool runs as CI's Dawn job runs it, with a stand-in for the npm package webgpu

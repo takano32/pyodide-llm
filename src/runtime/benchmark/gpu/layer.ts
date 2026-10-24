@@ -1,6 +1,6 @@
-// The steps "layer" and "layer steps": ms a layer by every form (T150, T175), where the time of a layer goes (T202, T208),
+// The steps "layer" and "layer steps": ms a layer by every form (T.150, T.175), where the time of a layer goes (T.202, T.208),
 // its attention by the cache's length, and the whole layer by timestamps.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 import { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC, buffer, floats, pipelinesFor, run,
   readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.ts";
 import { toHalf } from "./halves.ts";
@@ -10,7 +10,7 @@ import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.ts";
 import type { Dispatch, Submission, Thrown, Timed } from "./device.ts";
 import type { AttentionPipes, Form, Grouping, LayerShape, MatrixKey, Step, Tried } from "./layerparts.ts";
 import type { Alive, AttentionLengths, AttentionRow, LayerFound, LayerRow, LayerStepsFound, StepsForm, StepTimed, Timestamps, Timing } from "../../contracts/benchmark.ts";
-// T368.7: what the steps' table times in turn: a form's whole layer, or a step alone
+// T.368.7: what the steps' table times in turn: a form's whole layer, or a step alone
 type Item = { form?: string; step?: string; kind?: string; matrix?: MatrixKey; submission: Submission };
 // a form's layers on the copies, a layer's dispatches each
 type Layers = { form: string; each: Step[][] };
@@ -71,10 +71,10 @@ async function layer(): Promise<LayerFound> {
   return { model: "Llama 3.2 1B", pos: LAYER_POS, layers: MODELS["Llama 3.2 1B"].layers, copies, GB: bytes / 1e9, rows };
 }
 
-// ---- T202: where the time of a layer goes (T152's review: on the owner's Android the fastest layer took 3.36 ms, its
+// ---- T.202: where the time of a layer goes (T.152's review: on the owner's Android the fastest layer took 3.36 ms, its
 // matrices read at the matrix × vector's 38.6 GB/s would take 1.77, and what the other 1.59 ms is was not measured).
-// The fused forms a token would run here (stepForms(), T208: the layer table's fastest fused form the check found
-// right, as the engine chooses, T152, and beside it the same with the norms folded or apart), and for each:
+// The fused forms a token would run here (stepForms(), T.208: the layer table's fastest fused form the check found
+// right, as the engine chooses, T.152, and beside it the same with the norms folded or apart), and for each:
 //   - every step of it alone (one of its dispatches, the same name counted where two cost the same),
 //   - its four matrices alone (the plain matrix × vector over all of a matrix's rows, nothing folded into the write:
 //     the "1.77 ms"),
@@ -82,8 +82,8 @@ async function layer(): Promise<LayerFound> {
 //   - the whole layer,
 // all timed in turn (interleaved(): n of each a submission, 2n less n, the rounds taken of every item alike). The
 // layer on the next copy of the weights each time, as layer() times it; a step or a matrix alone on the next range of
-// its size of all the copies' weights and the spares (layerParts' ranges(): T202's review, T149's, T208), the
-// attention alone on the next of its caches (caches(), T208), so that none is read again before MATVEC_BYTES of others
+// its size of all the copies' weights and the spares (layerParts' ranges(): T.202's review, T.149's, T.208), the
+// attention alone on the next of its caches (caches(), T.208), so that none is read again before MATVEC_BYTES of others
 // (not from the GPU's caches).
 // Why each step alone and not the layer less one step: a step of 20 to 60 µs is 1 or 2% of a layer, about what a
 // layer's time moves from one pair to the next, so a difference of two layers could not tell it; alone it is repeated
@@ -93,7 +93,7 @@ async function layer(): Promise<LayerFound> {
 // in the layer. The residual stream is written back before every submission (the adds write over it), so that every
 // submission starts alike; the whole layer's attention reads the one cache of positions up to LAYER_POS (256 KB of
 // keys and values), as in layer(): between two reads of it, a copy's weights (68 MB).
-// T208: then the whole layer once more by the GPU's own clock where the device gives timestamp-query (timestamps()).
+// T.208: then the whole layer once more by the GPU's own clock where the device gives timestamp-query (timestamps()).
 async function layerSteps(): Promise<LayerStepsFound> {
   await gpu();
   const shape = layerShape(MODELS["Llama 3.2 1B"]);
@@ -184,13 +184,13 @@ async function layerSteps(): Promise<LayerStepsFound> {
   });
   return { ...out, lengths: await attentionLengths(shape) };
 }
-// T224: a token's attention alone at ATTENTION_LENGTHS positions (the owner asked for long contexts too: the prompt's
+// T.224: a token's attention alone at ATTENTION_LENGTHS positions (the owner asked for long contexts too: the prompt's
 // tiles run a workgroup a head at any length, flash_attn_vec splits the positions over more of them as they grow), each
 // attention the steps' table could meet (the prompt's tiles, flash_attn_vec with subgroups where there are, and with
 // the lanes of the workgroup standing for a subgroup), all in turn at a length (interleaved()), each on the next of
 // copies of a cache of that length (the same random float16 keys and values in each, MATVEC_BYTES of them: not from the GPU's
-// caches, as T208's attention alone), one length at a time (4096 positions of Llama 3.2 1B's keys and values are 8.4 MB
-// a copy). T224's review: the prompt's tiles twice where the engine makes them otherwise here (engineTiles(): f16 and
+// caches, as T.208's attention alone), one length at a time (4096 positions of Llama 3.2 1B's keys and values are 8.4 MB
+// a copy). T.224's review: the prompt's tiles twice where the engine makes them otherwise here (engineTiles(): f16 and
 // subgroups), the f32 tiles without subgroups of the layer rows and the engine's, which a token's attention is chosen
 // against and the vec rows are read against (base). { positions, rows: [{ attention, tiles, times: [{ ms, n, ratio,
 // unsteady }, { error } or { none } a length] }], base, MB } or { error }
@@ -288,15 +288,15 @@ async function attentionLengths(shape: LayerShape): Promise<AttentionLengths> {
     return { error: String((error as Thrown)?.message ?? error) };
   }
 }
-// T208: the fused forms the steps' table breaks down. The engine runs the fastest fused layer the check found right
-// (T152: T150's fusedMatVec, with subgroupAdd where subgroups are, and T175's fusedDp4aMatVec where the packed int8
+// T.208: the fused forms the steps' table breaks down. The engine runs the fastest fused layer the check found right
+// (T.152: T.150's fusedMatVec, with subgroupAdd where subgroups are, and T.175's fusedDp4aMatVec where the packed int8
 // dot is), so: the layer table's fastest fused row (layer(), which the page runs just before in this worker) that the
 // check found right, and beside it the same form with the norms folded or apart where there is one (the two differ
-// only in their norms, and how far their layers less those come apart is how far the run's times move). T202 took
+// only in their norms, and how far their layers less those come apart is how far the run's times move). T.202 took
 // DP4A's two where the packed int8 dot is and llama.cpp's elsewhere, which on a device whose fastest layer is another
 // (Apple, where ONNX Runtime does not use DP4A, or llama.cpp's with subgroups) broke down a layer no token runs. Where
-// the layer table gave no time (it failed, or ran in no worker before), as T202.
-// The fastest only of the forms the engine has (src/runtime/gpu.js's TOKEN_FORMS; T208's review): not llama.cpp's with the
+// the layer table gave no time (it failed, or ran in no worker before), as T.202.
+// The fastest only of the forms the engine has (src/runtime/gpu.js's TOKEN_FORMS; T.208's review): not llama.cpp's with the
 // norms apart (withoutDp4a), which the layer table times where there is no packed int8 dot but no token runs; it can
 // still be the partner.
 function stepForms(): { forms: Form[]; chosen: LayerStepsFound["chosen"] } {
@@ -312,13 +312,13 @@ function stepForms(): { forms: Form[]; chosen: LayerStepsFound["chosen"] } {
   // in the layer table's order (the norms apart first)
   return { forms: fused.filter((form) => form === fastest || form === partner), chosen: { by: "layer", fastest: fastest.name } };
 }
-// T208 (T202's review's (d)): the whole layer by the GPU's own clock, each form's: a submission of TIMESTAMP_LAYERS
+// T.208 (T.202's review's (d)): the whole layer by the GPU's own clock, each form's: a submission of TIMESTAMP_LAYERS
 // layers (on the copies in turn, as layer() times them), each layer a compute pass of its own that writes a timestamp
 // as it begins and as it ends (llama.cpp's GGML_WEBGPU_GPU_PROFILE writes them a dispatch a pass). The forms in turn,
 // PAIRS rounds, a form's ms a layer the median of its rounds' means. A check of the whole layer only, one line of the
 // table: Chrome's Dawn cuts every timestamp down to a multiple of 65.5 µs (2^16 ns; Chrome's own words say 100 µs;
 // unless its developer features are on), too coarse for a step of 20 to 60 µs, and each layer's time is off by up to
-// that much. T208's review: the mean of the passes is off by 65.5 µs / (2 √32) = 6 µs or less (its spread) where the
+// that much. T.208's review: the mean of the passes is off by 65.5 µs / (2 √32) = 6 µs or less (its spread) where the
 // passes start anywhere on that clock's steps (their times are not a multiple of it), and span (the first pass's
 // beginning to the last one's end, over the layers) by 65.5 µs / 32 = 2 µs or less whatever they do, the cuts of the
 // passes between cancelling. span also holds what comes between two passes; a mean above it says the passes overlapped

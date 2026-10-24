@@ -1,4 +1,4 @@
-# The parts a Llama writes with (T359): the two samplers against each other, the forward pass outside Python and what
+# The parts a Llama writes with (T.359): the two samplers against each other, the forward pass outside Python and what
 # it refuses, how a model is given its parts (once, with no call between generate() and a part), and that a model lets
 # go of everything when it is dropped.
 import ctypes
@@ -179,7 +179,7 @@ class Steps:
 
 
 class LateSteps(Steps):
-    """T546: steps the GPU takes from the third step a generation asks on (the CPU takes the first two: a GPU timed
+    """T.546: steps the GPU takes from the third step a generation asks on (the CPU takes the first two: a GPU timed
     again, or a search of the threads), and never answers: what the presence penalty is handed is recorded"""
     asks = 0
 
@@ -254,7 +254,7 @@ def test_a_model_outside_runs_by_what_its_engine_offers():
 
 
 def test_a_step_the_gpu_gives_back_is_none_and_the_cpu_takes_it():
-    """T152: generateMany() answers nothing where the GPU did not take the steps; generate() then runs that step by
+    """T.152: generateMany() answers nothing where the GPU did not take the steps; generate() then runs that step by
     forward() and the sampler."""
     checkpoint, tokenizer = files()
     outside = Outside(checkpoint, ("steps",))
@@ -269,7 +269,7 @@ def test_a_step_the_gpu_gives_back_is_none_and_the_cpu_takes_it():
 
 @pytest.mark.parametrize("prompt", ["a b c", "a", ""])
 def test_the_gpus_steps_are_told_how_many_of_the_history_were_sampled(prompt):
-    """T546: the presence penalty counts the sampled tokens alone (generate()'s written, not the prompt's): the GPU's
+    """T.546: the presence penalty counts the sampled tokens alone (generate()'s written, not the prompt's): the GPU's
     steps are told how many of the history's latest those are, from the first step of the generation on, whether the
     GPU or the CPU took it (the CPU's first steps here), with a prompt of one token too (fed as a step without logits,
     after gpu_steps() is made), and again from 0 in the next generation"""
@@ -294,7 +294,7 @@ def test_what_cannot_run_outside_is_refused():
         Llama(None, tokenizer, external=Outside(checkpoint), disable=("kernels",))
     with pytest.raises(ValueError, match="asks for"):
         Llama(None, tokenizer, external=Outside(checkpoint + b"\0\0\0\0"))
-    # (T363.5: a row in a kind of its own is another file, of another size)
+    # (T.363.5: a row in a kind of its own is another file, of another size)
     with pytest.raises(ValueError, match="asks for"):
         Llama(None, tokenizer, external=Outside(checkpoint), kinds={"wq": "float16"})
     # (and the plan was asked of none of them)
@@ -309,7 +309,7 @@ def test_release_lets_go_of_the_engine_once():
     outside = Outside(checkpoint)
     llama = Llama(None, tokenizer, external=outside)
     assert llama._external[0] is outside.engine and llama._external[1] is llama.external_forward.logits
-    assert llama.release() == "released 1"  # (forward.js's answer: a promise to wait on, T205)
+    assert llama.release() == "released 1"  # (forward.js's answer: a promise to wait on, T.205)
     assert llama._external is None and llama.external_forward.engine is None and llama.external_forward.logits is None
     assert llama.release() is None and outside.engine.released == 1
     assert Llama(checkpoint, tokenizer).release() is None  # nothing outside: nothing to let go of
@@ -344,7 +344,7 @@ def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeyp
 
 @pytest.mark.parametrize("outside, kernels", [(False, False), (False, True), (True, False), (True, True)])
 def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, kernels):
-    """T359: nothing is called between generate() and a part (the forward pass, the sampler's draw), nor between a
+    """T.359: nothing is called between generate() and a part (the forward pass, the sampler's draw), nor between a
     part and what it runs (forward.js's engine, a kernel): the page runs these once a token, and a call that only hands
     on to another is a cost for every token it writes. Each part is called by generate()'s own frame, and the engine
     and the kernels by a frame that generate() called."""
@@ -385,7 +385,7 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
         through = [(caller, further) for called, caller, further in calls if called is code]
         assert through and all(further is written for _, further in through), code.co_qualname
     # and generate() calls nothing of the engine's but those, the tokenizer, and the sampler once for how it draws
-    # (T520: and mark_of(), for the two marks of a thought, once a generation too)
+    # (T.520: and mark_of(), for the two marks of a thought, once a generation too)
     ours = {code.co_qualname for code, caller, _ in calls if caller is written and "/engine/" in code.co_filename}
     assert ours == {parts["forward"].__qualname__, parts["draw"].__qualname__, llama.sampler.drawing.__qualname__,
                     "Tokenizer.decode", "mark_of"}, ours
@@ -535,7 +535,7 @@ def test_generate_hands_blocks_and_steps_to_stand_ins():
 
 @pytest.mark.parametrize("nothing", [[], (), None])
 def test_steps_that_answer_no_tokens_are_the_cpus(nothing):
-    """T390: an empty answer of the GPU's steps is no token to go on from, and generate() asked for the same step
+    """T.390: an empty answer of the GPU's steps is no token to go on from, and generate() asked for the same step
     again, for ever. It is "not taken", as None is: the CPU takes the step."""
     log = []
 

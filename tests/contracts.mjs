@@ -1,4 +1,4 @@
-// tests/contracts.mjs (T368.2): what the types of src/runtime/contracts/ say, read for the checks.
+// tests/contracts.mjs (T.368.2): what the types of src/runtime/contracts/ say, read for the checks.
 //
 // A contract is a shape that crosses a line as a plain object: the plan Python hands forward.js, the messages of a
 // page and its worker, of forward.js and the GPU's worker, the form of a checkpoint, the requests of a conversion's
@@ -116,7 +116,7 @@ export function contractOf(text, name = "a contract") {
 }
 
 // ---- the syntax trees of the runtime's files (a .ts file with its types blanked)
-// (T368.3: by the name the tree has the file under: one asked for as x.js may be x.ts, and its types are blanked then)
+// (T.368.3: by the name the tree has the file under: one asked for as x.js may be x.ts, and its types are blanked then)
 export const treeOf = (file, find = runtime) => ({ file, program: parse(untyped(fs.readFileSync(find(file), "utf8"), find(file)), { sourceType: "module" }).program });
 export function walk(node, visit, parent = null) {
   if (!node || typeof node !== "object") return;

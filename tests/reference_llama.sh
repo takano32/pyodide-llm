@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# tests/reference_llama.sh (T253, T254): what tests/reference_llama.py needs, and the run itself, for CI (tests.yml's
+# tests/reference_llama.sh (T.253, T.254): what tests/reference_llama.py needs, and the run itself, for CI (tests.yml's
 # extra=; the development machine has no PyTorch):
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_llama.sh hf-granite-4.2-3b" --ref <branch> --grep "reference:"
 #   (no id: the made-up Granites alone; the options of reference_llama.py follow the ids: --weak, --layers=4)
 #   bash tests/reference_llama.sh --run tests/chat_nll.py <arguments>
-#   (the review of T253: another tool that needs torch and this transformers, with what they need, as python gets it)
+#   (the review of T.253: another tool that needs torch and this transformers, with what they need, as python gets it)
 #
 # transformers at the commit the Granite's attention was read from (llama2_convert.py, above query_scale()); numpy,
 # tokenizers and pytest (the unit tests' helpers) are the workflow's own. The downloads and the float32 checkpoint go

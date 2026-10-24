@@ -1,8 +1,8 @@
-// shaders/bench.ts (T351): the shaders that /benchmark/'s GPU section alone runs, but for T149's matrix × vector
-// (matvec.ts) and the sampling in chunks (stages.ts): T135's first matrix products (WIDEN, PACKED, BATCHED), the argmax,
-// the empty and the small dispatch, and T168's ceilings of the device (clpeak's method; no line of it is copied).
+// shaders/bench.ts (T.351): the shaders that /benchmark/'s GPU section alone runs, but for T.149's matrix × vector
+// (matvec.ts) and the sampling in chunks (stages.ts): T.135's first matrix products (WIDEN, PACKED, BATCHED), the argmax,
+// the empty and the small dispatch, and T.168's ceilings of the device (clpeak's method; no line of it is copied).
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { STEP } from "./common.ts";
 
@@ -13,7 +13,7 @@ export const TILE = 8;
 //   WIDEN   the weights widened to float32 on the way
 //   PACKED  the same with the activations quantized to int8 as the CPU's matmul_q8 takes them (a float32 scale per
 //           group of 32), and WGSL's packed dot product: where the language feature is there
-// (T391.4: one maker of the two, which differ in what they read of the vector and in a thread's sum)
+// (T.391.4: one maker of the two, which differ in what they read of the vector and in a thread's sum)
 const rowAWorkgroup = (packed: boolean): string => /* wgsl */ `
 ${packed ? "requires packed_4x8_integer_dot_product;\n" : ""}struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }
 @group(0) @binding(0) var<storage, read> w: array<u32>;
@@ -137,7 +137,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   for (var i = id.x; i < n; i += 64u) { y[i] = y[i] + x[i]; }
 }`;
 
-// ---- T168: the device's ceilings, for the GPU section of /benchmark/ to say what share of them the prompt's shaders
+// ---- T.168: the device's ceilings, for the GPU section of /benchmark/ to say what share of them the prompt's shaders
 // reach: the multiply-adds of f32 and f16 (GFLOPS), WGSL's dot4I8Packed (GOPS: a device that emulates it shows it
 // here), and reading the workgroup's memory and a storage buffer (GB/s). The shapes are clpeak's
 // (https://github.com/krrishnarraj/clpeak, src/opencl/kernels/: compute_sp, compute_int8_dp, global_bandwidth), taken
@@ -169,7 +169,7 @@ const CEILING_HEAD = /* wgsl */ `
 struct Plan { loops: u32, seed: u32, a: f32, b: f32 }
 @group(0) @binding(0) var<storage, read_write> out: array<u32>;
 @group(0) @binding(1) var<uniform> plan: Plan;`;
-// (T368.5: the two shapes of the multiply-adds, by name)
+// (T.368.5: the two shapes of the multiply-adds, by name)
 type FmaShape = "square" | "affine";
 export const FMA_SHAPES: FmaShape[] = ["square", "affine"];
 export const fmaCeiling = (half: boolean, shape: FmaShape): string => {

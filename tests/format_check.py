@@ -1,22 +1,22 @@
 # format_check.py
-# The format of every Hugging Face model of the list against the real one (T124, T127, T138): the IDs the page
+# The format of every Hugging Face model of the list against the real one (T.124, T.127, T.138): the IDs the page
 # sends ([bos] + llama2_numpy.Tokenizer on the converter's tokenizer.bin, with the options the worker merges and
 # filled()'s rules) against transformers' apply_chat_template on the files of the pinned revision. Only config.json,
 # the tokenizer files and the heads of the weights (by Range) are fetched; no weights. The conversion is the page's:
-# the conduct of a conversion (src/python/convert/conduct.py) answered until it asks for the weights (T374.4,
+# the conduct of a conversion (src/python/convert/conduct.py) answered until it asks for the weights (T.374.4,
 # tests/conducting.py's Heads).
 #
 #   python3 tests/format_check.py [--hf] [--prompt <text> ...] <directory for the downloads> [model id ...]
 #
-# --prompt: one more prompt after PROMPTS (T221: what a visitor types, such as Qwen3's <tool_call>), as often as given.
-# --hf: as ?hf= opens the repository, with what the converter makes alone (T143): the list's options and format are
+# --prompt: one more prompt after PROMPTS (T.221: what a visitor types, such as Qwen3's <tool_call>), as often as given.
+# --hf: as ?hf= opens the repository, with what the converter makes alone (T.143): the list's options and format are
 # left out. A difference known for the list's format is then no error when it is gone. Each line then says for how many
-# prompts the ids are the real ones exactly, with no BOS of the page's in front (T264).
+# prompts the ids are the real ones exactly, with no BOS of the page's in front (T.264).
 #
 # Needs the reference tools, which the page never uses: a venv with tests/requirements-reference.txt (docs/notes/dev-setup.md).
-# The first BOS may differ (the page always starts with it, T131), unless it is the token the real IDs begin with
+# The first BOS may differ (the page always starts with it, T.131), unless it is the token the real IDs begin with
 # (same_ids). The other differences known are in KNOWN, each
-# taking out only its own difference, and anything else makes the exit status 1 (T145). What a card always passes besides the prompt
+# taking out only its own difference, and anything else makes the exit status 1 (T.145). What a card always passes besides the prompt
 # (Swallow-MS's and llm-jp's system message) is in SYSTEM. Models with a sentencepiece tokenizer.model are compared
 # through transformers' slow tokenizer, which is not the real one for every model: for those of SENTENCEPIECE the
 # reference is the real template's text through the real sentencepiece instead.
@@ -42,85 +42,85 @@ PROMPTS = ["これからの流行りを3つ挙げてください。", "What will
            "  leading and trailing spaces  ", "trailing only \n", "改行\nを含む\n\n文", "A", "ＡＢＣ１２３ｶﾀｶﾅ①",
            "Hello  world\ttab", "<think> and <|im_end|> typed"]
 # the system message a model card always passes with the prompt. llm-jp's instruct models: the page's format is the one
-# their template writes with it (T144; without it the real one leaves out the first sentence of LLM_JP_INSTRUCT)
+# their template writes with it (T.144; without it the real one leaves out the first sentence of LLM_JP_INSTRUCT)
 LLM_JP_SYSTEM = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。"
 SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人のアシスタントです。",
-          # T250: the system message of ELYZA's card
+          # T.250: the system message of ELYZA's card
           "hf-llama-3-elyza-jp-8b": "あなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、常に日本語で回答してください。",
           **{id: LLM_JP_SYSTEM for id in ("hf-llm-jp-3-150m-instruct3", "hf-llm-jp-3-440m-instruct3",
                                           "hf-llm-jp-3-980m-instruct3", "hf-llm-jp-3.1-1.8b-instruct4",
                                           "hf-llm-jp-3-1.8b-instruct3", "hf-llm-jp-3-3.7b-instruct3")}}
 # where transformers builds a slow tokenizer out of the tokenizer.model that is not the real one (2026-09-26,
 # transformers 5.16.1: sarashina's split "挙げてください" and "next", CAT-Translate's spell everything a character at a time
-# although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T144)
+# although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T.144)
 SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct", "hf-sarashina2.2-3b-instruct",
                  "hf-cat-translate-0.8b", "hf-cat-translate-1.4b", "hf-cat-translate-3.3b"}
-# T252: where transformers (5.16.1) builds a tokenizer of sentencepiece's kind (a Metaspace pre-tokenizer: "Hello world" is
+# T.252: where transformers (5.16.1) builds a tokenizer of sentencepiece's kind (a Metaspace pre-tokenizer: "Hello world" is
 # "H", "elloworld", Japanese is dropped) for a tokenizer_class LlamaTokenizerFast whose tokenizer.json is byte-level
 # (Llama 3's vocabulary under DeepSeek's names): the real template's text through the tokenizers library on
 # tokenizer.json itself, which is what a LlamaTokenizerFast was when the model came out
 TOKENIZERS = {"hf-deepseek-r1-llama-8b"}
-# T145: the differences known, each with what it takes out of the comparison (the rest still counts, so a new break
+# T.145: the differences known, each with what it takes out of the comparison (the rest still counts, so a new break
 # in these models shows: two of them were 0/9 whatever else went wrong). One that no prompt needs any more is an error
 # too, to be taken out of here.
 KNOWN = {
-    # the real tokenizer.json puts no dummy space before the first piece ("A"), the page does ("▁A"): T131, refused
-    "hf-rakutenai-2.0-mini-instruct": {"why": "no dummy space before the first piece (T131)", "first_piece": True},
-    # the page asks for the answer's channel at the end of the format (T132): the real text with it is the page's
-    "hf-llm-jp-4-8b-instruct": {"why": "the page ends with <|channel|>final<|message|> (T132)",
+    # the real tokenizer.json puts no dummy space before the first piece ("A"), the page does ("▁A"): T.131, refused
+    "hf-rakutenai-2.0-mini-instruct": {"why": "no dummy space before the first piece (T.131)", "first_piece": True},
+    # the page asks for the answer's channel at the end of the format (T.132): the real text with it is the page's
+    "hf-llm-jp-4-8b-instruct": {"why": "the page ends with <|channel|>final<|message|> (T.132)",
                                 "text": lambda text, prompt: text + "<|channel|>final<|message|>"},
     # the list's own ChatML has no system turn; the real template writes its default one
     "hf-smollm2-135m-instruct": {"why": "the list's ChatML, without the default system turn",
                                  "text": lambda text, prompt: re.sub(r"^<\|im_start\|>system\n.*?<\|im_end\|>\n", "", text, flags=re.S)},
     # tokenizer.model's NFKC where the real tokenizer.json has none (the page follows the former), and the template
-    # strips the whole turn, which trims only the end of what was typed where the page trims both ends (T138). T192:
+    # strips the whole turn, which trims only the end of what was typed where the page trims both ends (T.138). T.192:
     # the real text with those two done to it must be the page's, so that another break in those prompts still shows
     # (the two prompts were taken out whole before)
-    "hf-swallow-ms-7b-instruct": {"why": "NFKC of tokenizer.model, and the turn stripped as a whole (T138)",
+    "hf-swallow-ms-7b-instruct": {"why": "NFKC of tokenizer.model, and the turn stripped as a whole (T.138)",
                                   "text": lambda text, prompt: unicodedata.normalize("NFKC", trimmed(text, prompt))},
-    # T249: the same of EuroLLM. Its vocabulary has no full-width letters: the real tokenizer.json spells them as
+    # T.249: the same of EuroLLM. Its vocabulary has no full-width letters: the real tokenizer.json spells them as
     # bytes, the page (tokenizer.model's NFKC) writes the half-width ones. The page is the real sentencepiece's (the
     # review: tokenizer.model's normalizer_spec is nfkc with a charsmap of 237,562 bytes, and its ids are the page's for
     # 71,648 sentences "a" + one character + "b" and 3,000 random ones of mixed scripts, 0 apart), the conversion to
     # tokenizer.json keeps only a Prepend and a Replace of " " by "▁": which of the two the model was trained on is the
     # sentencepiece model's, the one its authors trained
-    "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T249)",
+    "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T.249)",
                                  "text": lambda text, prompt: unicodedata.normalize("NFKC", text)},
 }
-# T236 (its review): the families whose entries have the BOS be the format's own first token (<|im_start|>), so that the
+# T.236 (its review): the families whose entries have the BOS be the format's own first token (<|im_start|>), so that the
 # page sends the real template's ids exactly, none before them. Everywhere else a BOS of the page's in front of the real
-# ids is let by (same_ids; the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front
-# of <|im_start|> (which costs a Qwen3.5 much, TASKS.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
-# extra token is not the one the real ids begin with). T253's Granite 4.2 are made the same way, and T247's other sizes
-# of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one). T254's review: MiniCPM5's template
+# ids is let by (same_ids; the first BOS may differ, T.131): that let the design of before T.236, <|endoftext|> in front
+# of <|im_start|> (which costs a Qwen3.5 much, TASKS.md's T.236), pass for a Qwen3.5 as well, and same_ids still does (the
+# extra token is not the one the real ids begin with). T.253's Granite 4.2 are made the same way, and T.247's other sizes
+# of Qwen3.5 (a family, not a list of entries: the six of T.247 were not in the first one). T.254's review: MiniCPM5's template
 # writes its BOS (<s>, bos_token) itself as its first token, and the page puts that one first and writes the format after it:
 # the same relation, so the same exactness (the lenient rule let a token of another kind in front of the real <s> pass).
-# T233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format. T252's review: and Hermes 3, whose real template puts
+# T.233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format. T.252's review: and Hermes 3, whose real template puts
 # nothing in front where the converter's BOS (<|begin_of_text|>, which its card's example code puts there) cost its English
 # answers 13 to 15% (tests/chat_nll.py, tests/chat_fluency.mjs): the lenient rule let the page's one more token pass for it
-# T335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
-# T337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
-# T255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's
-# T364.3: and Underdog Saluki 27B, the same base model as Ternary Bonsai 2 27B's with the same template and options
-# T261.3: and Gemma 3, whose template writes its <bos> first, the BOS the converter takes off and the page sends
-# T333: and Gemma 4, the same: <bos>, then the turn
-# T343: and Spark-X2.5: its template writes <｜start▁of▁sentence｜> first, the BOS the converter takes off
-# T400: and sarashina2.2 and CAT-Translate, whose tokenizer puts no <s> in front and no dummy prefix: <|user|> first
+# T.335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
+# T.337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
+# T.255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's
+# T.364.3: and Underdog Saluki 27B, the same base model as Ternary Bonsai 2 27B's with the same template and options
+# T.261.3: and Gemma 3, whose template writes its <bos> first, the BOS the converter takes off and the page sends
+# T.333: and Gemma 4, the same: <bos>, then the turn
+# T.343: and Spark-X2.5: its template writes <｜start▁of▁sentence｜> first, the BOS the converter takes off
+# T.400: and sarashina2.2 and CAT-Translate, whose tokenizer puts no <s> in front and no dummy prefix: <|user|> first
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
           "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
           "hf-gemma-4-", "hf-spark-x2.5-", "hf-sarashina2.2-", "hf-cat-translate-")
-# T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
-# thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
-# (T364.3: and Underdog Saluki 27B's, whose template is the same one)
+# T.233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
+# thinks is its reasoning_effort "medium" (no system turn: T.236's format of a Qwen3.5), not its default, "xhigh"
+# (T.364.3: and Underdog Saluki 27B's, whose template is the same one)
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"},
                  "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"}}
-# T517: the format a model card writes where the repository has no chat template (LINE's japanese-large-lm
+# T.517: the format a model card writes where the repository has no chat template (LINE's japanese-large-lm
 # instruction-sft: the card's pipeline is given f"ユーザー: {input_text}\nシステム: " and adds nothing to it, through the
 # slow T5Tokenizer, which is the real sentencepiece of spiece.model). A second copy of the list's LINE_SFT, on purpose
 LINE_CARD = "ユーザー: {prompt}\nシステム: "
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
-# (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
+# (T.136's first stage; T.144). A GGUF with the original's vocabulary (hf.vocabulary, T.136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
              "Qwen/Qwen2.5-1.5B-Instruct": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
              "Qwen/Qwen2.5-3B-Instruct": "aa8e72537993ba99e69dfaafa59ed015b17504d1",
@@ -194,7 +194,7 @@ def main():
     from transformers import AutoTokenizer
 
     arguments = sys.argv[1:]
-    alone = "--hf" in arguments  # T143: the converter's options and format only, as ?hf= has them
+    alone = "--hf" in arguments  # T.143: the converter's options and format only, as ?hf= has them
     arguments = [argument for argument in arguments if argument != "--hf"]
     prompts = list(PROMPTS)
     while "--prompt" in arguments:
@@ -216,8 +216,8 @@ def main():
         tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
                                            **{key: value for key, value in options.items() if key in accepted})
         reference = AutoTokenizer.from_pretrained(folder)
-        # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
-        # (--hf, T253's review: what ?hf= gets is the template with nothing said of thinking, so the real one is asked with
+        # T.236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
+        # (--hf, T.253's review: what ?hf= gets is the template with nothing said of thinking, so the real one is asked with
         # nothing said either: a "(no thinking)" entry was held to enable_thinking=False in this mode, a form of the list's
         # own that the converter alone cannot know, and MiniCPM5's two sizes were 0/9 for that and nothing else)
         thinking = {} if alone else {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
@@ -229,7 +229,7 @@ def main():
             page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())))
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
                 + [{"role": "user", "content": prompt}]
-            # (T517: no template to render where the card writes the format: the card's text, through the real sentencepiece)
+            # (T.517: no template to render where the card writes the format: the card's text, through the real sentencepiece)
             text = filled(CARDS[entry["id"]], prompt) if entry["id"] in CARDS else \
                 reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
             if entry["id"] in SENTENCEPIECE or entry["id"] in CARDS:
@@ -259,7 +259,7 @@ def main():
         where = "the list" if entry.get("template") and not alone else "the converter"
         verdict = "DIFF" if diffs else "known" if explained else "ok  "
         note = f", {explained} as known: {known['why']}" if explained else ""
-        # T264 (T369): what ?hf= sends for a template the converter read is the real ids, none in front, where the
+        # T.264 (T.369): what ?hf= sends for a template the converter read is the real ids, none in front, where the
         # template begins with a token (said, not required: one that begins with text keeps the BOS in front)
         note += f", {exact} of them the real ids exactly" if alone else ""
         print(f"{verdict} {entry['id']}: {same}/{len(prompts)}{note} (format of {where})", flush=True)
@@ -276,7 +276,7 @@ def main():
 
 
 def trimmed(text, prompt):
-    """The real text with what was typed trimmed at both ends, as the page's {prompt:trim} writes it (T192): the real
+    """The real text with what was typed trimmed at both ends, as the page's {prompt:trim} writes it (T.192): the real
     template strips the whole turn, which leaves the start of what was typed as it was."""
     for typed in (prompt, prompt.rstrip(), prompt.lstrip()):
         if typed and typed in text:
@@ -286,15 +286,15 @@ def trimmed(text, prompt):
 
 def same_ids(page, real):
     """Whether the page's IDs are the real ones: the same, or with one more token in front, the BOS the page always
-    starts with (T131). Not when that token is the one the real IDs begin with: then the format writes the BOS it was
-    given again, as Llama 3's <|begin_of_text|> was written twice before T106, and a BOS set to the format's own first
-    token (T236's <|im_start|>) with the format left beginning with it (T250's review: the lenient rule passed it)."""
+    starts with (T.131). Not when that token is the one the real IDs begin with: then the format writes the BOS it was
+    given again, as Llama 3's <|begin_of_text|> was written twice before T.106, and a BOS set to the format's own first
+    token (T.236's <|im_start|>) with the format left beginning with it (T.250's review: the lenient rule passed it)."""
     return page == real or (page[1:] == real and page[:1] != real[:1])
 
 
 def ids_match(model_id, page, real, alone=False):
     """Whether the page's IDs are the real ones for this entry: exactly for the families of STRICT (their BOS is the
-    format's own first token: nothing may stand in front), else as same_ids() says. alone (--hf, T269): what ?hf=
+    format's own first token: nothing may stand in front), else as same_ids() says. alone (--hf, T.269): what ?hf=
     sends has the converter's BOS in front, never the entry's, so there same_ids() is all that can be asked (a Granite
     4.2 opened so sends <s> and then the real IDs)."""
     return page == real if model_id.startswith(STRICT) and not alone else same_ids(page, real)

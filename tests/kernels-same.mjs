@@ -1,4 +1,4 @@
-// kernels-same.mjs (T356)
+// kernels-same.mjs (T.356)
 // Are the kernels this tree builds the ones another commit builds? For a change that only moves the kernels' sources
 // (kernels/kernel.ts divided into kernel/*.ts): both trees' kernels/build.py is run (with this tree's node_modules)
 // and every built file is compared, first byte for byte, then function by function.

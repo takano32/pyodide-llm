@@ -1,4 +1,4 @@
-"""The chat_template reader (T73): the part of Jinja that a tokenizer_config.json actually uses.
+"""The chat_template reader (T.73): the part of Jinja that a tokenizer_config.json actually uses.
 
 The templates here are the real ones of the models this site lists, and the expected text is what transformers
 produces for a single user turn (checked against jinja2 on the development machine, where transformers is
@@ -13,7 +13,7 @@ from llama2_convert import Unsupported, one_turn, one_turn_template, render
 
 @pytest.fixture(params=["jinja2", "the reader"])
 def reads(request, monkeypatch):
-    """T397: what renders a template for one_turn(): jinja2 where it can be imported, else this project's own reader
+    """T.397: what renders a template for one_turn(): jinja2 where it can be imported, else this project's own reader
     (a browser whose fetch of the package failed). What both must do is tested with both. render() is the reader
     itself, whichever of the two one_turn() takes."""
     if request.param == "jinja2":
@@ -62,7 +62,7 @@ def test_a_template_it_cannot_read_is_refused_quietly(reads):
     assert one_turn("{{ raise_exception('only system and user') }}{{ messages[0].content }}", {}) is None
     assert one_turn("{% for message in messages %}{{ message['content'] }}", {}) is None  # never closed
     assert one_turn("{{ 'nothing about the prompt' }}", {}) is None  # no {prompt} in the result
-    # T138: trimmed, on its own and between words of the template's (RakutenAI's), or cut on one side only
+    # T.138: trimmed, on its own and between words of the template's (RakutenAI's), or cut on one side only
     assert one_turn("[{{ messages[0].content | trim }}]", {}) == "[{prompt:trim}]"
     assert one_turn("USER: {{ messages[0].content | trim }} ASSISTANT:", {}) == "USER: {prompt:trim} ASSISTANT:"
     assert one_turn("USER: {{ messages[0].content }} ASSISTANT:", {}) == "USER: {prompt} ASSISTANT:"
@@ -70,7 +70,7 @@ def test_a_template_it_cannot_read_is_refused_quietly(reads):
 
 
 def test_jinja2_renders_where_it_is_there_and_the_reader_where_it_is_not(monkeypatch):
-    """T397: what only jinja2 reads has a format with it and none without (the page then keeps what the list has, or
+    """T.397: what only jinja2 reads has a format with it and none without (the page then keeps what the list has, or
     sends what was typed as it is): a macro called (Qwen3.5's, LFM2's), tojson, a for with a test, loop controls,
     {% generation %}, which transformers adds."""
     pytest.importorskip("jinja2")
@@ -96,7 +96,7 @@ def test_jinja2_renders_where_it_is_there_and_the_reader_where_it_is_not(monkeyp
 
 
 def test_jinja2_is_imported_once_and_not_before_a_template_is_read():
-    """T397: importing the converter does not import jinja2 (a third of a second in Pyodide), and the environment
+    """T.397: importing the converter does not import jinja2 (a third of a second in Pyodide), and the environment
     is transformers': sandboxed and immutable, so a template cannot reach into Python or change what it is given."""
     import subprocess
     import sys
@@ -252,7 +252,7 @@ FIXTURES = json.load(open(__import__("pathlib").Path(__file__).parent / "fixture
 
 @pytest.mark.parametrize("fixture", FIXTURES, ids=[fixture["repo"] for fixture in FIXTURES])
 def test_real_templates_read_as_jinja_writes_them(fixture, reads):
-    """T127: real templates of the families this site takes (tokenizers/fixtures: the template of the pinned
+    """T.127: real templates of the families this site takes (tokenizers/fixtures: the template of the pinned
     revision, and one turn of it rendered by jinja2 with transformers' settings, the BOS the template writes first
     left out). Two of them are in chat_template.jinja, which the converter is handed on its own."""
     config = {"bos_token": fixture["bos_token"], "eos_token": fixture["eos_token"]}
@@ -260,7 +260,7 @@ def test_real_templates_read_as_jinja_writes_them(fixture, reads):
         got = one_turn_template(json.dumps(config), fixture["template"])
     else:
         got = one_turn_template(json.dumps({**config, "chat_template": fixture["template"]}))
-    # T138: trims: whether jinja2 drops the spaces around what was typed, which the converter says as {prompt:trim}
+    # T.138: trims: whether jinja2 drops the spaces around what was typed, which the converter says as {prompt:trim}
     assert got == fixture["one_turn"].replace("{prompt}", "{prompt:trim}" if fixture["trims"] else "{prompt}")
 
 
@@ -269,7 +269,7 @@ def test_it_reads_a_tokenizer_config(reads):
     assert one_turn_template(json.dumps(config)).endswith("<|im_start|>assistant\n")
     assert one_turn_template(json.dumps({"chat_template": [{"name": "default", "template": LLM_JP}],
                                          "bos_token": "<s>"})) == "\n\n### 指示:\n{prompt}\n\n### 応答:\n"
-    # the BOS the template writes first is left out: generate() starts with one already (T106)
+    # the BOS the template writes first is left out: generate() starts with one already (T.106)
     assert one_turn_template(json.dumps({"chat_template": "{{ bos_token }}{{ messages[0].content }}",
                                          "bos_token": "<|begin_of_text|>"})) == "{prompt}"
     assert one_turn_template("{}") is None
@@ -307,7 +307,7 @@ def test_the_conversion_hands_the_template_to_the_page():
 
 
 def test_a_sentencepiece_model_names_its_control_pieces_for_the_template():
-    """T127: with a tokenizer.model, the template read from the model writes <|user|> and </s>, which are control
+    """T.127: with a tokenizer.model, the template read from the model writes <|user|> and </s>, which are control
     pieces: the conversion names them as specials (without, each was spelled out as text through ?hf=)."""
     import struct
     from conftest import synthetic_weights

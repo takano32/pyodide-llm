@@ -13,7 +13,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-llm-jp-3-150m-instruct3", name: "llm-jp-3 150M instruct3", note: "answers instructions · 日本語 / English · fetches 305 MB → int8 171 MB",
     hf: hf("llm-jp/llm-jp-3-150m-instruct3", "5be263e1a3613cd5c163f41ad828c8de6a2aa6ec"), download: 304649360, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T249: rinna's GPT-2 below and above the small one. No GGUF of either was found: the safetensors
+  // T.249: rinna's GPT-2 below and above the small one. No GGUF of either was found: the safetensors
   { group: "hf", id: "hf-japanese-gpt2-xsmall", name: "rinna japanese-gpt2 xsmall", note: "日本語 · fetches 156 MB → int8 42 MB",
     hf: hf("rinna/japanese-gpt2-xsmall", "8e91527b3276e0565154935e84a08bf0137ed99f", "spiece.model"), download: 155892312,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
@@ -37,7 +37,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-llm-jp-3-440m-instruct3", name: "llm-jp-3 440M instruct3", note: "answers instructions · 日本語 / English · fetches 0.9 GB → int8 503 MB",
     hf: hf("llm-jp/llm-jp-3-440m-instruct3", "a308f143bd5824c4033b3a2efaa1c00afbb3aa9e"), download: 894519624, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // sarashina2.2 (T79): the instruct one is published as a single shard with an index (T78)
+  // sarashina2.2 (T.79): the instruct one is published as a single shard with an index (T.78)
   { group: "hf", id: "hf-sarashina2.2-0.5b", name: "SB Intuitions sarashina2.2 0.5B", note: "日本語 / English · fetches 845 MB (GGUF) → int8 0.9 GB",
     original: "sbintuitions/sarashina2.2-0.5b",
     hf: { repo: "mradermacher/sarashina2.2-0.5b-GGUF", revision: "2aed15b94f8c25b7582369f62d9801f3524e4721", weights: "sarashina2.2-0.5b.Q8_0.gguf",
@@ -50,7 +50,7 @@ export const HF_JAPANESE = [
           vocabulary: { repo: "sbintuitions/sarashina2.2-0.5b-instruct-v0.1", revision: "e4b9aacc3f644893d0179847946ef6c58d868f29", tokenizer: "tokenizer.model" } },
     download: 845363072, conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
+  // T.81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
   // model card runs it (no generation_config: transformers' defaults; a repetition penalty bends a translation)
   { group: "hf", id: "hf-cat-translate-0.8b", name: "CyberAgent CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 845 MB (GGUF) → int8 0.9 GB",
     original: "cyberagent/CAT-Translate-0.8b",
@@ -63,13 +63,13 @@ export const HF_JAPANESE = [
     hf: { repo: "mmnga/llm-jp-3-980m-instruct3-gguf", revision: "5966bc9958a7d313da9b8cb4679cfdf6814b6d42", weights: "llm-jp-3-980m-instruct3-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-3-980m-instruct3", revision: "c079dbf3f88aa2ab702b9696231fc3336c46b1be", tokenizer: "tokenizer.json" } }, download: 1054638240, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T126: a GPT-2 of 1.3B, whose activation is written gelu_fast (the same tanh approximation as gelu_new). Its
+  // T.126: a GPT-2 of 1.3B, whose activation is written gelu_fast (the same tanh approximation as gelu_new). Its
   // table of positions holds 1024, which is its context
   { group: "hf", id: "hf-japanese-gpt-1b", name: "rinna japanese-gpt 1B", note: "日本語 · fetches 2.7 GB → int8 1.5 GB",
     hf: hf("rinna/japanese-gpt-1b", "33fc2e4b4e97e229d24a2973073a1361157ecef6", "spiece.model"), download: 2655791788,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
-  // itself (T73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
+  // T.81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
+  // itself (T.73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
   // template alone leaves it out)
   { group: "hf", id: "hf-sarashina2.2-1b-instruct", name: "SB Intuitions sarashina2.2 1B Instruct", note: "answers instructions · 日本語 · fetches 1.5 GB (GGUF) → int8 1.6 GB",
     original: "sbintuitions/sarashina2.2-1b-instruct-v0.1",
@@ -83,10 +83,10 @@ export const HF_JAPANESE = [
           vocabulary: { repo: "cyberagent/CAT-Translate-1.4b", revision: "254120945fd9a61278ac2171ab07c831d56838fa", tokenizer: "tokenizer.model" } }, download: 1498333088,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
-  // T249: the base model of sarashina2.2 1B, and two Japanese base models of 2023. stockmark's GPT-NeoX rotates a
+  // T.249: the base model of sarashina2.2 1B, and two Japanese base models of 2023. stockmark's GPT-NeoX rotates a
   // quarter of each head and has no parallel residual; mmnga's Q8_0 GGUF of it (2023) holds the very values, but with
   // q, k and v of a head in turns as Hugging Face has them, where today's llama.cpp writes all of q, then k, then v,
-  // which is what the converter undoes (T136): read so, it wrote "のののの", so the safetensors. LINE's GPT-2, whose
+  // which is what the converter undoes (T.136): read so, it wrote "のののの", so the safetensors. LINE's GPT-2, whose
   // table of positions holds 2048: its tokenizer puts nothing in front of a text, and the model writes nonsense after
   // <s> (1), the converter's BOS, and after nothing; after </s> (2) it writes Japanese (transformers on the original
   // says the same of all three), so that is the BOS here
@@ -101,13 +101,13 @@ export const HF_JAPANESE = [
     ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-gguf", "d49108e627b7b6b7b6977184a6b81045b60a8582", "line-corp-japanese-large-lm-1.7b-q8_0.gguf",
       "line-corporation/japanese-large-lm-1.7b", "4288da0a536789f0615c730af0c6cbd9e475a7db", "spiece.model"), download: 1888727168,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T517: LINE's instruction-sft of the same 1.7B (mmnga's Q8_0 GGUF, as the base model's), in the card's format and
+  // T.517: LINE's instruction-sft of the same 1.7B (mmnga's Q8_0 GGUF, as the base model's), in the card's format and
   // with the card's sampling (0.7, 0.9, a repetition penalty of 1.1)
   { group: "hf", id: "hf-japanese-large-lm-1.7b-instruction-sft", name: "LINE japanese-large-lm 1.7B instruction-sft", note: "answers instructions · 日本語 · fetches 1.9 GB (GGUF) → int8 1.9 GB",
     ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-instruction-sft-gguf", "40b58a8229aee24065e22ba290994ee8066dcbe6", "line-corp-japanese-large-lm-1.7b-instruction-sft-q8_0.gguf",
       "line-corporation/japanese-large-lm-1.7b-instruction-sft", "6817da05bfe027aa82149fb32e1fc5bc2aa97398", "spiece.model"), download: 1888727232,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T249: EuroLLM, of 35 languages with Japanese among them. Its tokenizer.json is a BPE of sentencepiece's kind, so
+  // T.249: EuroLLM, of 35 languages with Japanese among them. Its tokenizer.json is a BPE of sentencepiece's kind, so
   // the tokenizer.model; the special tokens of its format are the converter's (it reads the template too)
   { group: "hf", id: "hf-eurollm-1.7b-instruct", name: "EuroLLM 1.7B Instruct", note: "answers instructions · 日本語 / English and 33 more languages · fetches 1.8 GB (GGUF) → int8 1.9 GB",
     ...ggufOf("mradermacher/EuroLLM-1.7B-Instruct-GGUF", "2951f08f66429c934c8b01a94347161362430808", "EuroLLM-1.7B-Instruct.Q8_0.gguf",
@@ -121,7 +121,7 @@ export const HF_JAPANESE = [
     original: "SakanaAI/TinySwallow-1.5B-Instruct",
     hf: { repo: "SakanaAI/TinySwallow-1.5B-Instruct-GGUF", revision: "38c003aaf8be9d17af11dece1fbabeb873c567fa", weights: "tinyswallow-1.5b-instruct-q8_0.gguf" }, download: 1646573920,
     conversion: {}, options: QWEN3_OWN_BOS, template: TINYSWALLOW, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
+  // T.125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
   // context of 4096 the page gives it
   { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB",
     original: "Rakuten/RakutenAI-2.0-mini-instruct",
@@ -134,8 +134,8 @@ export const HF_JAPANESE = [
     hf: { repo: "mmnga/llm-jp-3.1-1.8b-instruct4-gguf", revision: "14ddbab20c68d8befdced79bd9daa3d7a1a29376", weights: "llm-jp-3.1-1.8b-instruct4-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-3.1-1.8b-instruct4", revision: "f19510db409090bb1737f24f868d17c4bdc86c8e", tokenizer: "tokenizer.json" } }, download: 1987023136,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T132: the large ones, in shards (T105). Past 4 GiB with their forward pass they need a 64-bit memory (T101),
-  // where the browser has one int8 (T133), else six bits (T98); the 7 to 8B ones do not fit a 32-bit memory even so
+  // T.132: the large ones, in shards (T.105). Past 4 GiB with their forward pass they need a 64-bit memory (T.101),
+  // where the browser has one int8 (T.133), else six bits (T.98); the 7 to 8B ones do not fit a 32-bit memory even so
   { group: "hf", id: "hf-qwen2.5-3b-instruct", name: "Alibaba Qwen2.5 3B Instruct", note: "answers instructions · 日本語 / English · fetches 3.3 GB (GGUF) → int8 3.5 GB",
     original: "Qwen/Qwen2.5-3B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-3B-Instruct-GGUF", revision: "f302c64a2269a69fb27b2f9473b362f5bb8e78d8", weights: "Qwen2.5-3B-Instruct-Q8_0.gguf" }, download: 3285476512,
@@ -147,7 +147,7 @@ export const HF_JAPANESE = [
           vocabulary: { repo: "sbintuitions/sarashina2.2-3b-instruct-v0.1", revision: "4f3626fb1b64b3e97c908e67f27b2d627ba2a999", tokenizer: "tokenizer.model" } }, download: 3568393312,
     conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T249: the middle ones. Shisa V2.1's Llama 3.2 3B reads its chat template itself, as Llama 3.2 does (today's date
+  // T.249: the middle ones. Shisa V2.1's Llama 3.2 3B reads its chat template itself, as Llama 3.2 does (today's date
   // in the system turn); its card gives the model this name (the Llama license asks for it). CAT-Translate 3.3B is
   // the 0.8B's and 1.4B's larger sibling, from sarashina2.2 3B: no Q8_0 GGUF of it was found (only of its beta), so
   // the safetensors, in two shards
@@ -163,10 +163,10 @@ export const HF_JAPANESE = [
     ...ggufOf("mmnga/llm-jp-3-3.7b-instruct3-gguf", "7edef5a4f094ec8c1aed1e196c6a544675efbc2f", "llm-jp-3-3.7b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-3.7b-instruct3", "f5d5466a3316e0c898b4347ece6557a756921220"), download: 4022249856,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
+  // T.517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
   // embedding), and its instruction-sft. The safetensors: mmnga's Q8_0 GGUFs of both (2023-09) hold the very values,
   // but q, k and v of a head in turns as Hugging Face has them (gguf_check.py tensors, run 38731171773), stockmark's
-  // case of T249. Their BOS is <s> (1), not the 1.7B's </s>: on the page's engine the first 1500 tokens of three Japanese
+  // case of T.249. Their BOS is <s> (1), not the 1.7B's </s>: on the page's engine the first 1500 tokens of three Japanese
   // articles cost 3.0 to 3.2% more after <s> than after nothing, and 8.2 to 8.6% more after </s> (start_check.mjs,
   // run 38736521555; nothing in front is no choice of the page's)
   { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "LINE japanese-large-lm 3.6B", note: "日本語 · fetches 7.2 GB → int8 4.0 GB",
@@ -180,7 +180,7 @@ export const HF_JAPANESE = [
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
+  // T.125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
   { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
     original: "Rakuten/RakutenAI-7B-chat",
     hf: { repo: "mradermacher/RakutenAI-7B-chat-GGUF", revision: "d118d842e84cd542a48c6a89464d95b98d37e4e7", weights: "RakutenAI-7B-chat.Q8_0.gguf",
@@ -193,8 +193,8 @@ export const HF_JAPANESE = [
           vocabulary: { repo: "tokyotech-llm/Swallow-MS-7b-instruct-v0.1", revision: "008d006f9065e37e39e31bf117ae8689390953e8", tokenizer: "tokenizer.model" } }, download: 7790109536,
     conversion: {}, options: {}, generation: sampled(1.1), template: SWALLOW_MS,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // Swallow's own chat_template is read (T73): a Japanese system message, and a second BOS before the user's turn,
-  // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T132)
+  // Swallow's own chat_template is read (T.73): a Japanese system message, and a second BOS before the user's turn,
+  // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T.132)
   { group: "hf", id: "hf-llama-3.1-swallow-8b-instruct", name: "Science Tokyo Llama 3.1 Swallow 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB",
     original: "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5",
     hf: { repo: "mmnga/Llama-3.1-Swallow-8B-Instruct-v0.5-gguf", revision: "dc00f584312c641eb7af415f7f44bcc4487350cb", weights: "Llama-3.1-Swallow-8B-Instruct-v0.5-Q8_0.gguf",
@@ -206,7 +206,7 @@ export const HF_JAPANESE = [
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-instruct", revision: "098f2b2cf33021eba19a6d3582aa3d071ccc0aff", tokenizer: "tokenizer.json" } }, download: 9132708384,
     conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
+  // T.250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
   // answers at once unless told to think (the other way round from Qwen3's); CAT-Thinking, from Qwen3 Swallow, which
   // thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS. CAT-Thinking's options are
   // QWEN3_OWN_BOS and its format the converter's reading of the template. Shisa's sampling is its generation_config.json's;

@@ -1,5 +1,5 @@
 # make_gemma4.py
-# T331.2: a made-up Gemma 4 (its language model: a Gemma 3's layers, the full-attention ones with heads of a size of
+# T.331.2: a made-up Gemma 4 (its language model: a Gemma 3's layers, the full-attention ones with heads of a size of
 # their own turned in part by the angles of the whole head, the heads of v normalized, a number every layer ends by
 # multiplying the stream by, the logits capped) as files, for the checks of forward.js that take a model by its files
 # (tests/forward-check.mjs, tests/threads-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
@@ -16,9 +16,9 @@
 # is left of them), a window of 5 (shorter than a prompt's block).
 # long: a window of 300 positions, past the 256 the keys and values begin with room for, in a context of 4096: the
 # cache has grown before a layer first leaves a position out.
-# shared (T330.2): small's widths in 14 layers (two full ones before the shared), its last five layers read the keys and values of the last of their kind before them, and
+# shared (T.330.2): small's widths in 14 layers (two full ones before the shared), its last five layers read the keys and values of the last of their kind before them, and
 # have an FFN twice as wide (E2B's).
-# embedded (T329.2): shared's, with an embedding of every layer of 32 values (E2B's 256 as the int8 kernels take it:
+# embedded (T.329.2): shared's, with an embedding of every layer of 32 values (E2B's 256 as the int8 kernels take it:
 # whole groups of 32), and E2B's names of the whole model.
 import json
 import sys
@@ -48,7 +48,7 @@ def main():
     shape = SHAPES[sys.argv[3] if len(sys.argv) > 3 else "small"]
     tensors, config = gemma4_model(vocab_size=VOCAB, **shape)
     if dtype == "hub":
-        # T329.2.2: the files of a Hugging Face repository of it (<out>/config.json, model.safetensors, tokenizer.json),
+        # T.329.2.2: the files of a Hugging Face repository of it (<out>/config.json, model.safetensors, tokenizer.json),
         # for a page to fetch and convert (tests/gemma4-in-browser.mjs)
         folder = Path(out)
         folder.mkdir(parents=True, exist_ok=True)

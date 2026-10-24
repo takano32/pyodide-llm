@@ -1,6 +1,6 @@
-// draft_check.mjs (T100, stage 1): would a small model's drafts be accepted by a large one? Both read the same
+// draft_check.mjs (T.100, stage 1): would a small model's drafts be accepted by a large one? Both read the same
 // tokens (they must share a vocabulary) through the engine as the page runs it (tests/engine.mjs), and at every
-// position their most likely next tokens are compared. Two texts: a real one (T85's), and the large model's own
+// position their most likely next tokens are compared. Two texts: a real one (T.85's), and the large model's own
 // greedy continuation of its first tokens, which is closer to what speculative decoding would have to guess.
 //
 // A draft of k tokens is accepted up to the first one the large model would not have chosen, and the large model's

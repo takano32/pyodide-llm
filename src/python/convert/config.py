@@ -1,5 +1,5 @@
 # config.json as the converter reads it: the flow every family shares. What a family reads and refuses of its own is
-# in convert/families/ (T359), looked up here by the config's model_type.
+# in convert/families/ (T.359), looked up here by the config's model_type.
 from convert.families import FAMILIES, family_of, named
 from convert.families.family import head_size, refuse, rotary_dim, yarn  # noqa: F401
 
@@ -7,7 +7,7 @@ from convert.families.family import head_size, refuse, rotary_dim, yarn  # noqa:
 def architecture(config):
     """Which set of tensors and which forward: "llama" (Qwen2 is a Llama with biases), "gpt2", or "neox"
     (GPT-NeoX: a GPT-2 with RoPE over part of each head, and optionally the two branches in parallel), or "qwen35"
-    (T229: Qwen3.5 and Qwen3.8, a Qwen3 most of whose layers are linear-attention ones), or "lfm2" (T260: Liquid AI's
+    (T.229: Qwen3.5 and Qwen3.8, a Qwen3 most of whose layers are linear-attention ones), or "lfm2" (T.260: Liquid AI's
     LFM2 and LFM2.5, a Qwen3 some of whose layers are convolution layers)."""
     return family_of(config).arch
 
@@ -15,12 +15,12 @@ def architecture(config):
 # What a family says of a config.json, asked by the names these had as functions of every config: each is the
 # family's answer, and nothing of another family's.
 def query_scale(config):
-    """What the conversion multiplies q by (T253), 1.0 for every model but a Granite (families/llama.py)."""
+    """What the conversion multiplies q by (T.253), 1.0 for every model but a Granite (families/llama.py)."""
     return family_of(config).scale(config)
 
 
 def unturned_layers(config):
-    """T255: the layers of a SmolLM3 whose q and k RoPE does not turn, in order (families/llama.py). None of another
+    """T.255: the layers of a SmolLM3 whose q and k RoPE does not turn, in order (families/llama.py). None of another
     model's."""
     return family_of(config).options(config).get("unturned", [])
 
@@ -50,7 +50,7 @@ def normalize(config):
     if isinstance(rope, dict):
         # transformers 5 writes rope_theta, rope_scaling and GPT-NeoX's rotary_pct as one rope_parameters. Unread,
         # such a config.json ran at theta 10000, unscaled and rotating whole heads, and wrote nonsense (the review
-        # of T106): the old names are what this file reads
+        # of T.106): the old names are what this file reads
         scaling = {key: value for key, value in rope.items() if key not in ("rope_theta", "partial_rotary_factor")}
         config = {**config, "rope_theta": rope.get("rope_theta", config.get("rope_theta", 10000.0))}
         if scaling.get("rope_type", scaling.get("type", "default")) != "default":
@@ -75,7 +75,7 @@ def check_config(config):
     dim, n_heads = config["hidden_size"], config["num_attention_heads"]
     n_kv_heads = config.get("num_key_value_heads", n_heads)
     size = head_size(config)
-    # a head of another size than dim / n_heads (T124) only where q and o are matrices of their own: a Llama's.
+    # a head of another size than dim / n_heads (T.124) only where q and o are matrices of their own: a Llama's.
     # GPT-2's c_attn and GPT-NeoX's query_key_value are cut into heads of dim / n_heads
     divides = not dim % n_heads and size == dim // n_heads
     if not isinstance(size, int) or size <= 0 or size % 2 or n_heads % n_kv_heads \
@@ -87,7 +87,7 @@ def check_config(config):
         refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
     said = yarn(config)
     if said is not None:
-        # T235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context; T532: and what else
+        # T.235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context; T.532: and what else
         # transformers 5.16.1 reads of a yarn (rope_frequencies(), rope_magnitude()). Any other key is refused rather
         # than dropped without a word: transformers drops attn_factor (DeepSeek-R1-0528-Qwen3-8B's), which vLLM and
         # llama.cpp multiply by, and a GGUF's own (llama.cpp's names, families/llama.py) mean what llama.cpp makes of them
@@ -103,7 +103,7 @@ def check_config(config):
     family.check(config)
 
 
-# T532: the keys of a yarn RoPE scaling the tables read (llama2_numpy.rope_frequencies(), rope_magnitude()), and the
+# T.532: the keys of a yarn RoPE scaling the tables read (llama2_numpy.rope_frequencies(), rope_magnitude()), and the
 # type of each (transformers 5.16.1's _compute_yarn_parameters reads the same ones)
 YARN_KEYS = {"factor": (int, float), "original_max_position_embeddings": (int, float), "attention_factor": (int, float),
              "mscale": (int, float), "mscale_all_dim": (int, float), "beta_fast": (int, float), "beta_slow": (int, float),

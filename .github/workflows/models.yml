@@ -1,10 +1,10 @@
-# The models named here, and only those, in one browser against the deployed site (T105): to try a model before it
+# The models named here, and only those, in one browser against the deployed site (T.105): to try a model before it
 # goes into the list (hf:<owner>/<repository>[@<revision>] opens it by ?hf=), or to run one model of the list again
 # without the whole of browsers.yml. By hand only; the table of the runs goes to the summary, as in browsers.yml.
 #
 #   gh workflow run models.yml -f models="hf:Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1"
 name: Models by name
-# what the run tried, so that runs can be told apart in the list of runs and in tests/ci.mjs (T142)
+# what the run tried, so that runs can be told apart in the list of runs and in tests/ci.mjs (T.142)
 run-name: "Models: ${{ inputs.models }} · ${{ inputs.browser }} · ${{ inputs.os }}"
 
 on:
@@ -23,18 +23,18 @@ on:
         description: 'seconds one run may take'
         default: '1800'
       twice:
-        description: 'load the page again after the answer (T99: the second visit reads what the browser kept)'
+        description: 'load the page again after the answer (T.99: the second visit reads what the browser kept)'
         type: boolean
         default: false
       offline:
-        description: 'T111: after the answer go offline, load again and answer again'
+        description: 'T.111: after the answer go offline, load again and answer again'
         type: boolean
         default: false
       query:
-        description: 'more of the page URL for every run, such as bench=1 or hfParts=16&hfConnections=8 (gpuTest=on: the prompt on SwiftShader, T148)'
+        description: 'more of the page URL for every run, such as bench=1 or hfParts=16&hfConnections=8 (gpuTest=on: the prompt on SwiftShader, T.148)'
         required: false
       swiftshader:
-        description: 'T148: SwiftShader as the WebGPU of Chromium without gpuTest=on: the page must refuse it and answer on the CPU'
+        description: 'T.148: SwiftShader as the WebGPU of Chromium without gpuTest=on: the page must refuse it and answer on the CPU'
         type: boolean
         default: false
       then:
@@ -45,7 +45,7 @@ on:
         type: boolean
         default: false
       long:
-        description: 'T115: a prompt of the numbers 1 to this, so that the keys and values grow to a long context'
+        description: 'T.115: a prompt of the numbers 1 to this, so that the keys and values grow to a long context'
         required: false
       url:
         description: 'the site to test (default: the deployed one)'
@@ -66,7 +66,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and the browser
         timeout-minutes: 20
         shell: bash

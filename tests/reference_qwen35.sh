@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/reference_qwen35.sh (T229): what tests/reference_qwen35.py needs, and the run itself, for CI (tests.yml's
+# tests/reference_qwen35.sh (T.229): what tests/reference_qwen35.py needs, and the run itself, for CI (tests.yml's
 # extra=; the development machine has no PyTorch):
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
@@ -7,7 +7,7 @@
 # transformers at the commit the engine's formulas were read from (llama2_numpy.py, above linear_form()); numpy,
 # tokenizers and pytest (the unit tests' helpers) are the workflow's own.
 #
-# T245: with --model=4B [--from=gguf], a model of 17 GB as float32 on a runner of 16 GB of memory: the files go to
+# T.245: with --model=4B [--from=gguf], a model of 17 GB as float32 on a runner of 16 GB of memory: the files go to
 # /mnt (the original's 9 GB, a float32 checkpoint of 17 GB or two, the GGUF's 4.5 GB), transformers' float32 gets 16 GB
 # more of swap, and the engine may pin what it maps (reference_qwen35.py's pinned()).
 set -euo pipefail

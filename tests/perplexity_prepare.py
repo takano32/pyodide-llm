@@ -1,19 +1,19 @@
 # perplexity_prepare.py
 # A Hugging Face model converted the way the page converts it (the conduct of a conversion, fed the file in order),
-# for tests/perplexity.mjs and tests/perplexity_native.py (T85): <out>.bin, <out>.tokenizer.bin and <out>.json,
+# for tests/perplexity.mjs and tests/perplexity_native.py (T.85): <out>.bin, <out>.tokenizer.bin and <out>.json,
 # the options the page would give Llama(). convert_hf.py does not say those options; the page's path does.
 #
 #   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|int6|float32] [--entry <id>] [--blocks]
 #
-# --entry <id> (the review of T247): the options of that entry of src/models.js under the converter's, as the worker merges them
+# --entry <id> (the review of T.247): the options of that entry of src/models.js under the converter's, as the worker merges them
 # ({...engineOptions, ...model.options}), as tests/write_options.py makes them. Without it the options are the converter's alone,
-# which is what ?hf= opens: of the files the folder has (T374.4: tokenizer_config.json and chat_template.jinja are read where
+# which is what ?hf= opens: of the files the folder has (T.374.4: tokenizer_config.json and chat_template.jinja are read where
 # they are there, as the page asks for them, so the BOS and the stops are those the converter takes from the model's template,
-# T369; without them, or without jinja2, a Qwen3.5 has a BOS of <|endoftext|>, where the list's entries begin with <|im_start|>,
-# T236, and a text 18% to 45% likelier to read with it, 2B and 4B). A measurement of a model of the list is of the page's way
+# T.369; without them, or without jinja2, a Qwen3.5 has a BOS of <|endoftext|>, where the list's entries begin with <|im_start|>,
+# T.236, and a text 18% to 45% likelier to read with it, 2B and 4B). A measurement of a model of the list is of the page's way
 # with --entry.
 #
-# A directory with config.json, the tokenizer and a .gguf (tests/hf_fetch.py makes it for T136's second stage): the
+# A directory with config.json, the tokenizer and a .gguf (tests/hf_fetch.py makes it for T.136's second stage): the
 # GGUF's weights with the original's vocabulary and configuration, as the page reads them. What a path stands for is
 # tests/conducting.py's listed().
 import json
@@ -30,8 +30,8 @@ if "--entry" in arguments:
     at = arguments.index("--entry")
     entry_id = arguments[at + 1]
     del arguments[at:at + 2]
-# --blocks (T513): the GGUF's tensors in llama.cpp's blocks kept as they are where the page has kernels for them
-# (Conversion(blocks=True), T363.3), as an entry with conversion.blocks has them converted; the rest as dtype says
+# --blocks (T.513): the GGUF's tensors in llama.cpp's blocks kept as they are where the page has kernels for them
+# (Conversion(blocks=True), T.363.3), as an entry with conversion.blocks has them converted; the rest as dtype says
 blocks = "--blocks" in arguments
 if blocks:
     arguments.remove("--blocks")
@@ -49,7 +49,7 @@ def entry_options(entry_id):
     return options
 
 
-# T374.4: by the conduct of a conversion (src/python/convert/conduct.py), answered from the folder as the page's worker
+# T.374.4: by the conduct of a conversion (src/python/convert/conduct.py), answered from the folder as the page's worker
 # answers it from huggingface.co: which files are read, the tokenizer (the conduct's candidates, the first the converter
 # reads) and the template (tokenizer_config.json, or chat_template.jinja where that has none) are the page's, of whatever
 # of them the folder has. The checkpoint goes straight into <out>.bin

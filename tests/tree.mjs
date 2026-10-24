@@ -1,4 +1,4 @@
-// tests/tree.mjs (T367.1): where in a tree what is. The one place the tools ask, and it holds no table of places: a
+// tests/tree.mjs (T.367.1): where in a tree what is. The one place the tools ask, and it holds no table of places: a
 // file is found by looking at the tree that is asked about, when it is asked for. (The owner, 2026-10-11:
 // 「ファイルの場所はあらかじめ書くんじゃなくて、そのときに探すようにしたほうがいいんじゃないの？」) So a tool reads a tree with
 // everything in public/, one with the Python in src/python/ and one with the runtime in src/runtime/ alike, and a move
@@ -19,13 +19,13 @@
 //     anchor must be one file, and a name is asked under its kind);
 //   - found nowhere: an error that says where it was looked for;
 //   - never looked into: the folders of the tree's root that are no part of what is built and served (tree.json's
-//     "skip": node_modules, dist, .tmp, .git, .claude, and the tests' and the documents' own, T429: a fixture or a note
+//     "skip": node_modules, dist, .tmp, .git, .claude, and the tests' and the documents' own, T.429: a fixture or a note
 //     with an anchor's name is nobody's runtime), __pycache__ at any depth (tree.json's "anywhere"), and links: another
 //     tree's copy under .tmp/ is searched only when it is the tree asked about. A "skip" name is skipped at the root
-//     alone: a folder called dist or docs deeper in the tree is looked into like any other (T429: it was passed over
+//     alone: a folder called dist or docs deeper in the tree is looked into like any other (T.429: it was passed over
 //     without a word);
 //   - a tree is walked once a process, and what is found is remembered.
-// T368.1, one name in two spellings: a file of the runtime is asked for as x.js or as x.ts, and what is found is the one
+// T.368.1, one name in two spellings: a file of the runtime is asked for as x.js or as x.ts, and what is found is the one
 // the tree has (tree.json's "either"; the anchor too). The runtime's files become TypeScript one at a time, the tools
 // read two trees (this one and another commit's, where the same file may be spelled the other way), and no tool is to
 // be touched each time a file's ending changes. Both spellings in one tree: an error that names both.
@@ -88,7 +88,7 @@ export function treeOf(root = HERE, rule = RULE) {
   };
   /** the files whose path ends with name (a whole name, or the last names of a path) */
   const ending = (...names) => all().filter((file) => names.some((name) => file === name || file.endsWith(`/${name}`))).sort();
-  /** a name as a kind may spell it (T368.1): itself, then the same with the kind's other endings */
+  /** a name as a kind may spell it (T.368.1): itself, then the same with the kind's other endings */
   const spelled = (kind, name) => {
     const endings = rule.either?.[kind] ?? [], has = endings.find((end) => name.endsWith(end) && !name.endsWith(`.d${end}`));
     return has ? [name, ...endings.filter((end) => end !== has).map((end) => name.slice(0, -has.length) + end)] : [name];

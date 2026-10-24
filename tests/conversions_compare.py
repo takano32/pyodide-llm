@@ -1,5 +1,5 @@
 # conversions_compare.py
-# What a change of the converter changes for the list (T143's rule, T369): for every Hugging Face entry, the options
+# What a change of the converter changes for the list (T.143's rule, T.369): for every Hugging Face entry, the options
 # and the tokenizer.bin the converter makes, and the ids the page sends for format_check.py's prompts, as the list has
 # the entry (its own options and format over the converter's) and as ?hf= has the repository (the converter's alone),
 # in two trees. Only config.json, the tokenizer files and the heads of the weights are fetched (format_check.py's

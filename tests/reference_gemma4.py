@@ -1,8 +1,8 @@
 # reference_gemma4.py
-# T329.3: the engine's Gemma 4 (Google's E2B and E4B language models: a Gemma 3's layers, with full-attention layers of
+# T.329.3: the engine's Gemma 4 (Google's E2B and E4B language models: a Gemma 3's layers, with full-attention layers of
 # heads twice as wide that turn their first quarter by the angles of the whole head (proportional RoPE), v normalized
 # head by head, a scale at the end of every layer, the logits capped, the last layers reading the keys and values of a
-# layer before them (T330), and an input of every layer's own from a table of every token (T329)) against transformers
+# layer before them (T.330), and an input of every layer's own from a table of every token (T.329)) against transformers
 # itself. PyTorch is not on the development machine, so this runs in CI:
 #
 #   pip install numpy tokenizers torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
@@ -71,7 +71,7 @@ say = lambda *parts: print("gemma4:", *parts, flush=True)
 
 
 # What the engine and transformers hold after the same positions: the keys (as Hugging Face has them: the pairs of a
-# head not interleaved) and values of every layer that makes its own (the shared layers read another's: T330).
+# head not interleaved) and values of every layer that makes its own (the shared layers read another's: T.330).
 # transformers' cache keeps the last window - 1 positions of a sliding-attention layer; the engine keeps them all, and
 # its last window - 1 are what is compared for a local layer.
 def engine_states(llama, count):
@@ -545,7 +545,7 @@ FAULTS = {
 }
 # What is measured without being held to the line, to know how far it is: another epsilon of the norms; the projection of
 # every layer's input without its factor (the root of the width over it), which the RMSNorm right after it takes away
-# but for its epsilon (T329.1: no comparison of a model whose projection is far larger than the epsilon sees it, the
+# but for its epsilon (T.329.1: no comparison of a model whose projection is far larger than the epsilon sees it, the
 # unit tests hold it on a made-up one whose projection is small); and what is no fault of the engine's: the embedding
 # multiplied by the root of the width as bfloat16 rounds it (transformers in bfloat16: 39.25 for the E2B's 39.19)
 NOTED = {

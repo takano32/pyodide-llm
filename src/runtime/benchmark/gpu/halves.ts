@@ -1,10 +1,10 @@
 // The float16 of the cache: a float32 to a half and back in JavaScript, and what a device may round a key or a value to
-// (WGSL leaves the direction to it, T225): pure, and tested in Node (tests/gpu-choice-check.mjs, tests/layer-check.mjs).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+// (WGSL leaves the direction to it, T.225): pure, and tested in Node (tests/gpu-choice-check.mjs, tests/layer-check.mjs).
+// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 
 // float32 to float16's bits, rounded to the nearest (ties to even), as a cache holds its keys and values
 const f32 = new Float32Array(1), bits32 = new Uint32Array(f32.buffer);
-// T368.7: a vector of numbers as these take one (a typed array or a plain one), and heldHalves' counts
+// T.368.7: a vector of numbers as these take one (a typed array or a plain one), and heldHalves' counts
 type Numbers = Float64Array | Float32Array | number[];
 type Counts = { same: number; inward: number; outward: number; far: number };
 function toHalf(value: number): number {
@@ -25,7 +25,7 @@ function fromHalf(h: number): number {
   const exponent = (h >> 10) & 31, mantissa = h & 1023, sign = h & 0x8000 ? -1 : 1;
   return sign * (exponent ? 2 ** (exponent - 15) * (1 + mantissa / 1024) : 2 ** -14 * (mantissa / 1024));
 }
-// T225: the keys or values of a position as the GPU wrote them (got: float16 bits), against the reference's own (x,
+// T.225: the keys or values of a position as the GPU wrote them (got: float16 bits), against the reference's own (x,
 // float64). WGSL leaves to the implementation which of the two float16 next to a float32 a conversion gives (§15.7.6
 // Floating Point Conversion: "WGSL does not specify whether the higher or lower representable value is chosen, and
 // different instances of such a conversion may choose differently"; §17.9.9: pack2x16float converts so), and Direct3D
@@ -39,7 +39,7 @@ function fromHalf(h: number): number {
 // and values rounded toward zero move the scales of the attention's quantized output by 5.7e-4 to 1.2e-2, in 97% of
 // 300 draws past QUANTIZED_SCALE_LINE (1e-3), and the stream by 3.4e-4 to 2.5e-3 of what the layer added, in 45% past
 // LAYER_LINE (1e-3), with the cache at 4.5e-4 to 9.7e-4 of its largest: what the owner's NVIDIA PC on Windows reported
-// twice (T225; the T225 review's 300 draws, 2026-10-01). So the reference takes the GPU's bits wherever they are a
+// twice (T.225; the T.225 review's 300 draws, 2026-10-01). So the reference takes the GPU's bits wherever they are a
 // float16 next to its own value: no farther from x than a float16's ulp at x and HALF_SLACK of the row's largest, for
 // the GPU's float32 value
 // is not x itself (a float32 sum of n products in another order is off by about sqrt(n) × 2^-24 of the terms' spread,
@@ -63,13 +63,13 @@ function heldHalves(x: Numbers, got: Uint16Array): Counts & { bits: Uint16Array;
   });
   return { bits, nearest, ...counts };
 }
-// T225: how the GPU rounded its keys and values (heldHalves' counts, summed), in a few words
+// T.225: how the GPU rounded its keys and values (heldHalves' counts, summed), in a few words
 const halvesSaid = (counts: Counts[]): string => {
   const sum = (key: keyof Counts) => counts.reduce((total, c) => total + c[key], 0), [same, inward, outward, far] = (["same", "inward", "outward", "far"] satisfies (keyof Counts)[]).map(sum);
   return inward + outward + far === 0 ? `K and V ${same} to the nearest float16`
     : `K and V ${same} to the nearest float16, ${inward} toward zero, ${outward} away from it, ${far} farther`;
 };
-// T225: the largest difference of two vectors over the largest magnitude of the second
+// T.225: the largest difference of two vectors over the largest magnitude of the second
 const farthest = (got: ArrayLike<number>, want: Numbers): number => {
   let off = 0, largest = 0;
   want.forEach((value, i) => {

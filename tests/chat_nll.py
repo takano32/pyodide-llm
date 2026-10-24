@@ -1,13 +1,13 @@
-# chat_nll.py (the review of T236): what the first token of the page's text does to a model in chat form. Torch and
+# chat_nll.py (the review of T.236): what the first token of the page's text does to a model in chat form. Torch and
 # transformers are needed, which the page and the deploy never use: for CI (tests.yml's extra=), never on the development
 # machine.
 #
 # The page begins every text with a BOS, the converter's, in front of the ids the model's own template makes (the real
-# tokenizers of most models begin a chat with none, or with the very token the template writes). T131 measured plain
-# text and found +-3%; T236 found a Qwen3.5 0.8B (linear-attention layers) 46% and 95% worse on 299 tokens of Wikipedia
+# tokenizers of most models begin a chat with none, or with the very token the template writes). T.131 measured plain
+# text and found +-3%; T.236 found a Qwen3.5 0.8B (linear-attention layers) 46% and 95% worse on 299 tokens of Wikipedia
 # with <|endoftext|> in front, and begins its entries with the template's own first token instead, so that the page
 # sends the ids the real template writes. A is that, B the BOS in front of them (what the page sent a Qwen3.5 before
-# T236 and sends the others). Two readings, which answer two questions:
+# T.236 and sends the others). Two readings, which answer two questions:
 #
 #   1. Fluency, on text no model wrote: 24 chat turns written by hand (tests/fixtures/chat-answers.jsonl: 12 Japanese,
 #      12 English, a prompt and a short answer each), the mean negative log likelihood of the answer's tokens and of
@@ -22,7 +22,7 @@
 #   python3 tests/chat_nll.py <the original's directory | owner/repository@revision> [<BOS> <end of a turn>] [--stored]
 #                             [--thinking-arg] [--fidelity=N]
 #   (the defaults are Qwen3.5's: 248044 and 248046; a Qwen3: 151643 and 151645; Granite 4.2's <s> and <|im_end|>: 100283 and 100257)
-# --stored (T253's review): the weights are held as the original stores them (bfloat16) and every product is float32
+# --stored (T.253's review): the weights are held as the original stores them (bfloat16) and every product is float32
 # (reference_llama.float32_arithmetic, the embeddings widened before they go in): Granite 4.2 3B is 14.6 GB as float32,
 # more than a runner of 16 GB has. --thinking-arg: the template is given enable_thinking (Qwen3.5 always is): False for the
 # answers written by hand and for the form that answers at once, True for the thinking form (Granite 4.2, MiniCPM5).
@@ -33,7 +33,7 @@
 # KL(A || B) 0.115 a token at once (standard error 0.010) and 0.178 thinking (0.017), the most likely token the same at
 # 87.0% and 91.0% of the positions, the answer likelier under A on 23 of 24 and 24 of 24 prompts. Ternary Bonsai 1.7B (a
 # Qwen3, 151643 and 151645; run 36936367926): 1. B 4.4% better than A (worse on 3 of 24; standard error 0.010); 2. KL 0.0080
-# (standard error 0.0010), the most likely token the same at 96.9%. TASKS.md's T236 and T246 have the rest.
+# (standard error 0.0010), the most likely token the same at 96.9%. TASKS.md's T.236 and T.246 have the rest.
 import json
 import math
 import sys
@@ -52,14 +52,14 @@ target = arguments[0]
 bos, end = (int(arguments[1]), int(arguments[2])) if len(arguments) > 2 else (248044, 248046)
 stored = "--stored" in flags
 fidelity = int(next((flag.split("=", 1)[1] for flag in flags if flag.startswith("--fidelity=")), 1 << 30))
-# --format=<the turn, with {prompt} and \n> (T517): a model with no chat template, whose card writes its format as a text
+# --format=<the turn, with {prompt} and \n> (T.517): a model with no chat template, whose card writes its format as a text
 # (LINE's japanese-large-lm instruction-sft: "ユーザー: {prompt}\nシステム: "), encoded with nothing added by the real
 # sentencepiece of its spiece.model, as the card's slow T5Tokenizer does; the answers written by hand too
 written_format = next((flag.split("=", 1)[1].replace("\\n", "\n") for flag in flags if flag.startswith("--format=")), None)
 if "@" in target:
     from huggingface_hub import HfApi, snapshot_download
     repo, revision = target.split("@")
-    # (T517: the weights once, the safetensors where there are both: LINE's 3.6B has 7.2 GB of each)
+    # (T.517: the weights once, the safetensors where there are both: LINE's 3.6B has 7.2 GB of each)
     files = HfApi().list_repo_files(repo, revision=revision)
     unwanted = ["*.bin"] if any(name.endswith(".safetensors") for name in files) else []
     directory = Path(snapshot_download(repo, revision=revision, ignore_patterns=unwanted))

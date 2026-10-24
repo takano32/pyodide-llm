@@ -1,6 +1,6 @@
-// tests/bundle.mjs (T367.3.1): a module of the runtime as a build wrote it, for the tools that measure or check what a
+// tests/bundle.mjs (T.367.3.1): a module of the runtime as a build wrote it, for the tools that measure or check what a
 // visitor's browser really runs and not the sources: a bundler rewrites constant expressions and prints every function
-// anew even where it does not minify (T365: `if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || …)` came out as
+// anew even where it does not minify (T.365: `if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || …)` came out as
 // `if (2056 % 8 || false)`), so "the bundle is the sources' text" is nothing a tool may assume.
 //
 //   builtModule("forward")            the file: URL of dist/_astro/forward.<hash>.js of this tree's build: the chunk a
@@ -13,7 +13,7 @@
 // Only what a worker imports dynamically is a chunk with its own exports (forward, shaders, key, kept): a module that
 // is linked statically is inside its importer's file, under whatever names the bundler gave it. A worker's entry is a
 // file too (helper, gpu, worker), with its entry's exports: helper.<hash>.js is the software thread as a browser runs
-// it, jobs.js linked into it, and tests/helper-node.mjs starts it in Node beside a bundled forward (T367.5).
+// it, jobs.js linked into it, and tests/helper-node.mjs starts it in Node beside a bundled forward (T.367.5).
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";

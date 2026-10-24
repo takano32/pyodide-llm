@@ -1,4 +1,4 @@
-// T200: the tokenizer's encode() of another commit (main by default) and of the working copy, in one Pyodide, turn by
+// T.200: the tokenizer's encode() of another commit (main by default) and of the working copy, in one Pyodide, turn by
 // turn (AGENTS.md: the same process, alternating), for every kind of tokenizer the engine has:
 //   bpe       llama2.c's merges of sentencepiece BPE: the Llama 2 vocabulary (tokenizer.bin of the site)
 //   unigram   Viterbi: tiny-lm and llm-jp-3 150M (the site), rinna's spiece.model (nmt, unknown piece)
@@ -7,7 +7,7 @@
 // Before timing, the two must give the same IDs for every text: the timed ones, the prompts and templates of
 // src/models.js, and random texts of letters, digits, spaces, line breaks, CJK, emoji and control characters, with
 // and without specials. Any difference fails (exit 1). Each side is what a visitor gets from its commit: the old engine
-// with the old converter's tokenizer.bin and options and the old list's options for the site's files (T216 put the
+// with the old converter's tokenizer.bin and options and the old list's options for the site's files (T.216 put the
 // sentencepiece model's map into tokenizer.bin and took the nfkc and nmt options out, so the new options and file
 // would leave the old engine without its normalizer). A text the two normalize differently (the map against Python's
 // NFKC and the nmt table) is not compared, and counted.
@@ -31,16 +31,16 @@ const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const ref = option("--ref", "origin/main"), rounds = Number(option("--rounds", 7));
-// T357: the other commit's whole tree (tests/other-tree.mjs), not single files of it: the engine and the converter are
-// windows over packages since T347 and T348, and a commit before them is one file each. (And no `git fetch --depth=1
-// origin +main:...` here any more: in a shallow clone that several worktrees share it cut the history behind main, T356.)
+// T.357: the other commit's whole tree (tests/other-tree.mjs), not single files of it: the engine and the converter are
+// windows over packages since T.347 and T.348, and a commit before them is one file each. (And no `git fetch --depth=1
+// origin +main:...` here any more: in a shallow clone that several worktrees share it cut the history behind main, T.356.)
 const other = otherTree(ref).folder;
-// the old list's options for the site's tokenizer.bin files (tiny-lm's nfkc, before T216)
-// (from the other commit's whole tree: the list is a window over src/models/ since T354)
+// the old list's options for the site's tokenizer.bin files (tiny-lm's nfkc, before T.216)
+// (from the other commit's whole tree: the list is a window over src/models/ since T.354)
 fs.mkdirSync(`${root}.tmp/t200/`, { recursive: true });
 const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(other, "src/models.js")));
 
-// tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/ (T357.6: each held to its
+// tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/ (T.357.6: each held to its
 // length and asked for again by tests/fetching.mjs; a file that is there is a whole one)
 const cache = `${root}.tmp/t200/hf/`;
 async function hfFile(id) {
@@ -82,7 +82,7 @@ import cProfile, inspect, pstats, io, json, random, statistics, struct, sys, tim
 def loaded(folder):
     """(llama2_numpy, llama2_convert) of the tree in folder. Each tree is imported with none of the other's modules
     loaded and taken out again: a second would else get the first one's parts and be compared with itself (AGENTS.md,
-    T347). The modules go on working: nothing in them imports later."""
+    T.347). The modules go on working: nothing in them imports later."""
     ours = lambda: [key for key in sys.modules if key.split(".")[0] in ("llama2_numpy", "llama2_convert", "engine", "convert")]
     aside = {key: sys.modules.pop(key) for key in ours()}
     sys.path.insert(0, folder)
@@ -129,7 +129,7 @@ def made(convert, name, data, options):
         specials = [t["content"] for t in added if t.get("special")]
         options = convert.tokenizer_json_options(parsed)
         extra = dict(charsmap=convert.tokenizer_json_charsmap(parsed), spaces=options["tokenizer_kind"] != "bytebpe") if maps else {}
-        # T143: the converter names the added tokens that are not special as specials, wherever they are written
+        # T.143: the converter names the added tokens that are not special as specials, wherever they are written
         named = sorted({t["content"] for t in added if not t.get("special") and t["content"]}, key=lambda t: (-len(t), t)) if maps else []
         return convert.tokenizer_bin(pieces, len(pieces), **extra), options, specials, named
     if name.endswith(".model"):
@@ -140,11 +140,11 @@ def made(convert, name, data, options):
     return data, options, ["</s>", "<s>"], []
 
 def build(module, data, options):
-    count, offset = 0, 4  # the pieces, counted, up to a sentencepiece model's map (T216)
+    count, offset = 0, 4  # the pieces, counted, up to a sentencepiece model's map (T.216)
     while offset < len(data) and bytes(data[offset:offset + 8]) != b"charsmap":
         offset += 8 + struct.unpack_from("<i", data, offset + 4)[0]
         count += 1
-    # what each engine takes (T216 took nmt out: the map is in tokenizer.bin, which an engine before it does not read)
+    # what each engine takes (T.216 took nmt out: the map is in tokenizer.bin, which an engine before it does not read)
     keys = set(inspect.signature(module.Tokenizer.__init__).parameters) - {"self", "data", "vocab_size", "kind"}
     return module.Tokenizer(data, count, kind=options.get("tokenizer_kind", "bpe"), **{k: options[k] for k in keys if k in options})
 
@@ -170,7 +170,7 @@ def bench(label, name, data, options, old_options):
     checked, differently = 0, []
     for text in texts + with_specials:
         if old.normalized(text) != new.normalized(text):
-            differently.append(text)  # T216: the model's map against Python's NFKC and the nmt table
+            differently.append(text)  # T.216: the model's map against Python's NFKC and the nmt table
             continue
         for these in ((), tuple(specials)):
             a, b = old.encode(text, these), new.encode(text, these)
@@ -199,10 +199,10 @@ def bench(label, name, data, options, old_options):
         lines.append(f"  where the {which} encode() of the long text spends its time (tottime ms a call; cProfile slows it): "
                      + ", ".join(f"{name} {ms:.2f}" for ms, name in top))
     if differently:
-        lines.append(f"  {len(differently)} texts normalized differently, not compared (T216), as "
+        lines.append(f"  {len(differently)} texts normalized differently, not compared (T.216), as "
                      + ", ".join(repr(text[:24]) for text in differently[:4]))
     if named:
-        # T143: what the new converter names besides (the list's entry may name its own specials over them)
+        # T.143: what the new converter names besides (the list's entry may name its own specials over them)
         times = {"without": [], "with": []}
         for r in range(ROUNDS + 1):
             for which, these in (("without", ()), ("with", tuple(named))):

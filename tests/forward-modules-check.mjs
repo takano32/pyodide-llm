@@ -1,13 +1,13 @@
-// tests/forward-modules-check.mjs (T349): what the type check does not hold of what src/runtime/forward.ts and its
+// tests/forward-modules-check.mjs (T.349): what the type check does not hold of what src/runtime/forward.ts and its
 // modules (src/runtime/forward/*.ts) hand one another. Node only, under a second:
 //
 //   node tests/forward-modules-check.mjs
 //
-// T368.8: forward is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// T.368.8: forward is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
 // used and declared nowhere, and a name misspelt where createForward() hands a part its things or where the part
 // takes them. And that a model on the GPU
 // alone is handed no spawn (the syntax of one line here) is tests/gpu-alone-check.mjs's, which makes such an engine
-// (T450); that threads.count and onGpu.chosen cannot be assigned, the two parts' own checks'.
+// (T.450); that threads.count and onGpu.chosen cannot be assigned, the two parts' own checks'.
 // What is left here is what tsc, the build and Node all let pass, each with why:
 //   - a ring of imports, and a file of forward/ that the window does not reach (tests/imports.mjs's windowed(): the
 //     build links a ring without a word, and Node only where a module uses the other's name as it loads);
@@ -19,7 +19,7 @@
 //     a member set that has no setter: tsc says the plain mistake, and not one made through a cast, which this reads
 //     with the types blanked;
 //   - what is read of the two parts' state: threads has three getters and onGpu seven, and one more is state shown
-//     that was the part's own (T378.1, T378.2);
+//     that was the part's own (T.378.1, T.378.2);
 //   - that the window links in Node with no export undefined.
 // The parser is @babel/parser, which Astro's packages bring.
 import assert from "node:assert/strict";
@@ -63,7 +63,7 @@ const PARTS = { controlArea: "forward/control.ts", softwareThreads: "forward/thr
 const objects = new Map();  // the name a part's object has in the engine -> its members
 const create = functionOf("forward/engine.ts", "createForward");
 let handed = 0;
-const calls = [], literals = new Map();  // T378.2: each part's call, and the objects createForward() makes by name
+const calls = [], literals = new Map();  // T.378.2: each part's call, and the objects createForward() makes by name
 walk(create, (node) => {
   if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.init?.type === "ObjectExpression") literals.set(node.id.name, node.init);
 });
@@ -89,7 +89,7 @@ walk(create, (node) => {
   }
 });
 assert.deepEqual([...objects.keys()].sort(), ["control", "cpuSide", "fit", "onGpu", "threads"], "the parts' objects in createForward()");
-// T378.2: a part is handed a few things, each an object it takes apart at its top (const { a, b } = shape): every name
+// T.378.2: a part is handed a few things, each an object it takes apart at its top (const { a, b } = shape): every name
 // taken out of one is a key createForward() made (a misspelt one is tsc's to say; one that is optional in the type and
 // never made is undefined without a word), and every key made is taken by some part (one that no part takes is a fact
 // carried for nothing). NOT_HANDED: what a part takes with a default and only a test hands it
@@ -125,21 +125,21 @@ for (const [part, declared, call] of calls) {
   }
 }
 // (cpuSide's two getters are read as cpuSide.<name> each time, not taken out once: the places below hold those)
-// (T261.4.2: and places(), where each attending layer's keys and values are, called as cpuSide.places())
+// (T.261.4.2: and places(), where each attending layer's keys and values are, called as cpuSide.places())
 const READ_THROUGH = { cpuSide: ["H", "capacity", "places"] };
 for (const [where, keys] of made) {
   const unread = keys.filter((name) => !taken.get(where).has(name) && !READ_THROUGH[where]?.includes(name));
   assert.deepEqual(unread, [], `createForward() makes ${where} with ${unread}, which no part takes out of it`);
 }
 assert.deepEqual([...made.keys()].sort(), ["cpuSide", "gpuFit.device", "gpuSide.options", "shape", "taken", "weights"], "the things createForward() hands its parts");
-// T378.1, T378.2: the state of the software threads and of the GPU's side has one owner each: what happens is told the
+// T.378.1, T.378.2: the state of the software threads and of the GPU's side has one owner each: what happens is told the
 // part by functions named for that, and what is read of it is these getters and no other (that none can be assigned is
 // tests/threads-part-check.mjs's and tests/gpu-part-check.mjs's to see, and that each is a member where it is read, tsc's)
 const getters = (part) => [...objects.get(part)].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort();
 assert.deepEqual(getters("threads"), ["count", "lost", "searching"], "what is read of the software threads' state");
 assert.deepEqual(getters("onGpu"), ["chosen", "promptTokens", "ready", "sampled", "status", "stepsWhyNot", "whyNot"], "what is read of the GPU's side's state");
 // every threads.<name>, onGpu.<name>, fit.<name> and cpuSide.<name> is a member of that object, with a setter where it
-// is set. tsc says one that is misspelt, and one set that has no setter (T368.8); these lines are kept for what it
+// is set. tsc says one that is misspelt, and one set that has no setter (T.368.8); these lines are kept for what it
 // lets pass: a name said through a cast (the types are blanked here: `(threads as T).cuont` is threads.cuont)
 let through = 0;
 for (const [name, program] of programs) {
@@ -158,7 +158,7 @@ for (const [name, program] of programs) {
 console.log(`forward-modules-check: createForward() hands its parts the ${handed} things they take (${grouped} names taken out of ${made.size} of them), ` +
   `and the ${through} places that go through threads, onGpu, fit and cpuSide name members of them; what is read of threads and of onGpu is their getters`);
 
-// ---- T375.3: what the engine hands a kind of layer and the FFN (core), and the arrays of a token's frame
+// ---- T.375.3: what the engine hands a kind of layer and the FFN (core), and the arrays of a token's frame
 // The kinds (attention.ts, linear.ts, convolution.ts: their make()) and the FFNs (ffn.ts) take core apart where they
 // are declared. tsc says a name core has not. What it lets pass: a key of core that none of them takes (a thing
 // carried for nothing), and a name taken out of `at` that nobody put in a frame (at is a record of numbers by any

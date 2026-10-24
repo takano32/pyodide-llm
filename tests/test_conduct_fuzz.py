@@ -1,4 +1,4 @@
-# T374.3 review: a GGUF's head and tensors through an answerer that answers short (mid-file), long, or a file with bytes
+# T.374.3 review: a GGUF's head and tensors through an answerer that answers short (mid-file), long, or a file with bytes
 # after its tensors, over random first pieces and ahead sizes: always direct()'s checkpoint, options and tokenizer.bin.
 import random
 

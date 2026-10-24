@@ -1,8 +1,8 @@
-// shaders/sample.ts (T351): the sampling of a generated token on the GPU (T151's SAMPLE: the repetition penalty,
-// the softmax, top-p by pivots and the draw, T219's refusal of logits that are not finite), and what it shares with the
+// shaders/sample.ts (T.351): the sampling of a generated token on the GPU (T.151's SAMPLE: the repetition penalty,
+// the softmax, top-p by pivots and the draw, T.219's refusal of logits that are not finite), and what it shares with the
 // sampling in chunks (stages.ts).
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 //
 // The notices of what SAMPLER_COMMON, SAMPLER_DRAW and SAMPLE are adapted from (the forms and what was changed are described at the head of
@@ -28,7 +28,7 @@
  */
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T.191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -46,11 +46,11 @@
  */
 import { REPETITION_WINDOW, STATE, SAMPLING } from "./run.ts";
 
-// What SAMPLE and the stages of the sampling in chunks (T191, stages.ts) share: the constants, the workgroup's memory of
+// What SAMPLE and the stages of the sampling in chunks (T.191, stages.ts) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.
-// T219: is_nan_magnitude() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
+// T.219: is_nan_magnitude() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
 // (https://github.com/tensorflow/tfjs, master of 2026-09-28, the file's last commit d45c6af3 of 2023-07-17, which has
-// no NOTICE file: `(floatToUint & 0x7fffffffu) > 0x7f800000u` of the bitcast<u32> of the value; the review of T219
+// no NOTICE file: `(floatToUint & 0x7fffffffu) > 0x7f800000u` of the bitcast<u32> of the value; the review of T.219
 // read it there, and its header is this one's).
 /*! Copyright 2022 Google LLC. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -350,10 +350,10 @@ fn draw_nucleus(count: u32, total: f32, r: f32, argmax: u32, t: u32) {
 }
 `;
 
-// (T391.4) Two loops over a thread's own run of the vocabulary, from index `from` to before `to` (the names the text
+// (T.391.4) Two loops over a thread's own run of the vocabulary, from index `from` to before `to` (the names the text
 // around has for them), which SAMPLE below and the sampling in chunks (stages.ts's SAMPLE_MAX and SAMPLE_SUM) have
 // alike: what one finds or sums, the other must, token for token.
-// The largest logit of the run and its first index (argmax.wgsl's pairs), into value and at, and (T219) the largest
+// The largest logit of the run and its first index (argmax.wgsl's pairs), into value and at, and (T.219) the largest
 // of the logits' bits without their signs into magnitude, by which a NaN among them is seen
 const largestLogit = (from: string, to: string): string => /* wgsl */ `    var value = -3.4e38;
     var at = NONE;
@@ -388,7 +388,7 @@ const softmaxTerms = (from: string, to: string): string => /* wgsl */ `    var s
 // The penalty, softmax, top-p and the draw of one token, in one workgroup: see the head of run.ts. Bindings: 0 the logits (the
 // penalty is applied to them in place, as the CPU does), 1 and 2 scratch of the vocabulary's size (probabilities and
 // the indices of those gathered), 3 the state, 4 chosen, 5 the random numbers, 6 the settings.
-// T546: the presence penalty, a top-k and min-p too (the CPU's: kernels/kernel/sample.ts): see draw_nucleus above and
+// T.546: the presence penalty, a top-k and min-p too (the CPU's: kernels/kernel/sample.ts): see draw_nucleus above and
 // the penalty and the draw without a nucleus below
 export const SAMPLE = /* wgsl */ `
 ${SAMPLER_COMMON}

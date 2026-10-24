@@ -1,8 +1,8 @@
-// T145, (7) and (8) of the review of T144 (2026-09-26): what lays out a checkpoint besides its header (its form,
+// T.145, (7) and (8) of the review of T.144 (2026-09-26): what lays out a checkpoint besides its header (its form,
 // llama2_numpy.FORM: bias, arch, qk_norm, head_dim) goes from the converter's sink.open() through worker/weights.js's
 // weightsBuffer() to forward.js's footprint(), under the same names and with the same defaults. A name changed on
 // one side only (head_dim, headDim) raises nothing: footprint() counts dim / heads, and a Qwen3 0.6B's keys and values
-// come out 45% short (T124). Node only, with the native Python for FORM (numpy):
+// come out 45% short (T.124). Node only, with the native Python for FORM (numpy):
 //
 //   node tests/worker-sink-check.mjs          (PYTHON=.venv/bin/python to take another Python)
 //
@@ -23,20 +23,20 @@ const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
   "import json, sys; sys.path.insert(0, sys.argv[1]); import llama2_numpy; print(json.dumps(llama2_numpy.FORM))", python()],
 { cwd: fileURLToPath(root) }).toString());
-// T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T237: "rotated", the basis the
-// matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T260: "convolution",
-// the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values; T359:
-// "kinds", the rows a file holds in a kind of their own (null where there are none; T363.5: of llama.cpp's blocks where
+// T.229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T.237: "rotated", the basis the
+// matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T.260: "convolution",
+// the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values; T.359:
+// "kinds", the rows a file holds in a kind of their own (null where there are none; T.363.5: of llama.cpp's blocks where
 // a conversion kept a GGUF's, whose kernels' tables and activations footprint() counts, with Python's count of the
-// weights that are still the dtype's: dtype_weights()); T363: "tiled", the order of the columns of a linear-attention
-// layer's output matrix (null but in such a file: an array of a token's frame more, T363.5); T331: "wide" and "double", a
+// weights that are still the dtype's: dtype_weights()); T.363: "tiled", the order of the columns of a linear-attention
+// layer's output matrix (null but in such a file: an array of a token's frame more, T.363.5); T.331: "wide" and "double", a
 // Gemma 4's layers of wider heads and of an FFN twice as wide (null where there are none; footprint() reads them from
-// T331.2, and until then no plan of a Gemma 4 is made: engine/plan.py); T330: "kv_shared", the layers that read another's
-// keys and values (the same); T329: "per_layer", the width of every layer's input of its own table (0 where there is none)
+// T.331.2, and until then no plan of a Gemma 4 is made: engine/plan.py); T.330: "kv_shared", the layers that read another's
+// keys and values (the same); T.329: "per_layer", the width of every layer's input of its own table (0 where there is none)
 assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "double", "head_dim", "kinds", "kv_shared", "linear", "per_layer", "qk_norm", "rotated", "tiled", "wide"],
   "FORM has other keys now: say here which of them footprint() reads");
 
-// T368.2: the type whatever is TypeScript reads a form by (src/runtime/contracts/form.ts) says the same keys, and the
+// T.368.2: the type whatever is TypeScript reads a form by (src/runtime/contracts/form.ts) says the same keys, and the
 // same architectures as Python's table of them (engine/layout.py's LAYOUTS); its two kinds of layers have the keys of
 // Python's (plan-keys-check.mjs holds those to the plan's)
 {
@@ -52,7 +52,7 @@ assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "doub
 }
 
 // (7) footprint()'s defaults are FORM's: a form without arch or head_dim (the options of a model converted before
-// T124, a manifest) is counted as the engine reads it
+// T.124, a manifest) is counted as the engine reads it
 const defaults = forward.footprint.toString();
 assert.equal(/\barch = "(\w+)"/.exec(defaults)?.[1], FORM.arch, "footprint()'s default arch is not FORM's");
 assert.equal(Number(/\bhead_dim = (\d+)/.exec(defaults)?.[1]), FORM.head_dim, "footprint()'s default head_dim is not FORM's");
@@ -83,8 +83,8 @@ context.stand = {
       counted.push(args);
       return forward.footprint(...args);
     },
-    // a shared memory where one is asked for, unless the test refuses it (T130), or gives it at a lowered maximum (in pages: as
-    // weightsMemory() marks a memory it made at its second or third try, the review of T130); what was made is written down
+    // a shared memory where one is asked for, unless the test refuses it (T.130), or gives it at a lowered maximum (in pages: as
+    // weightsMemory() marks a memory it made at its second or third try, the review of T.130); what was made is written down
     weightsMemory: (size, { shared } = {}) => {
       (context.made ??= []).push(shared ? "shared" : "plain");
       if (shared && context.refuseShared) throw new Error("no shared memory here");
@@ -115,7 +115,7 @@ const opened = (header, form, dtype = "int8") => {
 };
 const qwen3 = { ...FORM, qk_norm: true, head_dim: 128 };
 opened(QWEN3, qwen3);
-// T363.5: a form with kinds: Python is asked how many weights the dtype itself still packs (with the header, the dtype
+// T.363.5: a form with kinds: Python is asked how many weights the dtype itself still packs (with the header, the dtype
 // and the whole form), and footprint() is handed its answer; a form without is not asked
 {
   const asked = [];
@@ -136,32 +136,32 @@ opened(QWEN3, qwen3);
   assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8", kinds }) > plain + 34992 && said < plain - 600e6 / 9.5, "footprint() does not count a form's kinds");
   assert.ok(forward.takesBlocks(kinds) && !forward.takesBlocks(null) && !forward.takesBlocks({ wq: "int6", w1: ["int8", "float16"] }), "takesBlocks()");
 }
-// what the test stands on: the head's size changes what footprint() counts (a Qwen3 0.6B, T124)
+// what the test stands on: the head's size changes what footprint() counts (a Qwen3 0.6B, T.124)
 assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" }) > 1.5 * forward.footprint(QWEN3, 600e6, { ...FORM, dtype: "int8" }));
-// T237: a rotated basis reaches footprint() as the options carry it (its block and the signs' texts by the width), and
+// T.237: a rotated basis reaches footprint() as the options carry it (its block and the signs' texts by the width), and
 // is counted: the signs of the three widths and a rotated input in each of the 16 frames
 const rotated = { block: 1024, signs: { 1024: "00".repeat(128), 2048: "00".repeat(256), 3072: "00".repeat(384) } };
 assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, rotated, dtype: "int8" }) - forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" })
   >= (1024 + 2048 + 3072) * 4 + 16 * 3072 * 4, "footprint() does not count a rotated basis");
-// T260: an LFM2's convolution layers reach footprint() as the options carry them, and are counted: no keys and values
+// T.260: an LFM2's convolution layers reach footprint() as the options carry them, and are counted: no keys and values
 // for the 10 convolution layers of the 350M's 16 (2 kv dim floats a position a layer less), and their rows
 const LFM2 = [1024, 4608, 16, 16, 8, 65536, 4096], lfm2 = { ...FORM, arch: "lfm2", convolution: { layers: "ccaccaccacacacac", taps: 3 } };
 opened(LFM2, lfm2);
 {
   const some = forward.footprint(LFM2, 600e6, { ...lfm2, dtype: "int8" });
   const all = forward.footprint(LFM2, 600e6, { ...lfm2, convolution: { layers: "a".repeat(16), taps: 3 }, dtype: "int8" });
-  // (the keys and values of 10 layers more; the rows of 10 layers less, and, T375.5, the 16 frames' place for what a
+  // (the keys and values of 10 layers more; the rows of 10 layers less, and, T.375.5, the 16 frames' place for what a
   // convolution layer's matrix in gives, 3 dim floats, which a model with no such layer has not: nor has the engine)
   assert.equal(all - some, 10 * 4096 * 2 * 512 * 4 - 10 * 3 * 1024 * 4 - 16 * 3 * 1024 * 4, "footprint() does not count an LFM2's convolution layers");
 }
 opened(GPT2, { ...FORM, bias: true, arch: "gpt2" });
 assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "int8" }), forward.footprint(GPT2, 600e6, { ...FORM, dtype: "int8" }));
 
-// T160 (the review): the type of the keys and values the worker sized the memory for (keysInHalf) is what it hands the
+// T.160 (the review): the type of the keys and values the worker sized the memory for (keysInHalf) is what it hands the
 // engine (external's halfKeys). Without it createForward takes float32 for every grouped-query model: the same answer
 // where float32 fits a 32-bit memory, and not for Llama 3.2 3B (64-bit either way: 0.46 GB more). No other test runs
 // this path: forward-check and gpu-check make their engines themselves.
-// T130: a shared memory asked for and refused. The plain one keeps float32 but where only float16 fits a 32-bit
+// T.130: a shared memory asked for and refused. The plain one keeps float32 but where only float16 fits a 32-bit
 // memory: llm-jp-3.1 1.8B float32 (3.66 GiB; the float16 of a shared memory would have left it 1.1 GiB short of
 // counting it), sarashina2.2 3B in six bits float16 (4.36 GiB in float32). Before, the worker handed the engine the
 // shared memory's answer and the engine took float32 on any plain memory: out of memory near the end of the context.
@@ -179,7 +179,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true],
     ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true],
     ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, {}, true, "int6"],
-    // T230: the ternary dtype is sized as int8 is but for its bytes: a grouped-query model's keys and values float32
+    // T.230: the ternary dtype is sized as int8 is but for its bytes: a grouped-query model's keys and values float32
     // (Ternary Bonsai 1.7B, 0.46 GB), float16 on a shared memory where the model is past 4 GiB (Ternary Bonsai 2 27B, 7.2 GB)
     ["Ternary Bonsai 1.7B, ternary", [2048, 6144, 28, 16, 8, 151936, 4096], 457490460, { qk_norm: true, head_dim: 128 }, false, "ternary"],
     ["Ternary Bonsai 2 27B, ternary", [5120, 17408, 64, 24, 4, -248320, 4096], 7242233884, { arch: "qwen35", head_dim: 256,
@@ -196,7 +196,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     assert.equal(handed.length, 1, "the engine was not made through external()");
     return handed[0];
   };
-  // (T380.2: a shared memory that was refused is said on the console, once a memory that is made; nothing where none was)
+  // (T.380.2: a shared memory that was refused is said on the console, once a memory that is made; nothing where none was)
   const warned = [];
   context.console = { ...console, warn: (line) => warned.push(line) };
   for (const [isolated, refused] of [[true, false], [false, false], [true, true]]) {
@@ -209,7 +209,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
       const where = `${name}${isolated ? refused ? " (a shared memory refused)" : "" : " (not isolated)"}`;
       assert.equal(handedFor(header, size, form, dtype), want,
         `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
-      // (T378.3: what timing.js asks of the memory: software threads can be had on a shared one alone)
+      // (T.378.3: what timing.js asks of the memory: software threads can be had on a shared one alone)
       assert.equal(vm.runInContext(strictly("memoryShared()"), context), isolated && !refused, `${where}: whether the memory is shared`);
       vm.runInContext(strictly("weightsPool = undefined"), context);
       assert.equal(vm.runInContext(strictly("memoryShared()"), context), false, "no memory, and a shared one");
@@ -218,7 +218,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
       `the console of ${isolated ? refused ? "a shared memory refused" : "a shared memory" : "a page that is not isolated"}`);
   }
   context.console = console;
-  // (the review of T130) a shared memory the browser gave at a lowered maximum: where the forward pass does not fit it, the
+  // (the review of T.130) a shared memory the browser gave at a lowered maximum: where the forward pass does not fit it, the
   // worker makes a plain one instead (and hands the engine what a plain memory keeps); where it does, it keeps the shared one
   context.self.crossOriginIsolated = true;
   context.refuseShared = false;
@@ -249,7 +249,7 @@ vm.runInContext(strictly('roundBegan(["kernels"]);'), context);
 const into = vm.runInContext(strictly("checkpointSink()"), context);
 assert.ok(vm.runInContext(strictly("weightsBytes()"), context) > 0, "the last model's memory of forward.js");
 into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
-// (T378.3: Python holds these weights: no memory of forward.js is the model's, which the page's heap would count twice)
+// (T.378.3: Python holds these weights: no memory of forward.js is the model's, which the page's heap would count twice)
 assert.equal(vm.runInContext(strictly("weightsBytes()"), context), 0, "a model in a Python buffer still counts the last model's memory of forward.js");
 assert.equal(destroyed, 0);
 into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
@@ -259,7 +259,7 @@ into.release();
 assert.equal(destroyed, 2, "release() let go of the buffer not once");
 console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
 
-// T329.2.2: a Gemma 4's table of every layer's inputs stays in the file the checkpoint is kept in. On the first visit
+// T.329.2.2: a Gemma 4's table of every layer's inputs stays in the file the checkpoint is kept in. On the first visit
 // sink.open() makes the memory without it (the bytes after it as much lower), every byte goes to the file as it comes,
 // and the engine reads the table's rows from that file (the keeper); on the next, a kept one's file read from once it is
 // opened (attach()). The model is let go of with its file; where the table was not all written, it is loaded again
@@ -347,11 +347,11 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     "its rows are read from there, the file let go of with the model; where the table was not all written it is loaded again with the table in the memory");
 }
 
-// The review of T156: a model on the GPU alone. Its GPU's worker opens before a byte comes, and makes the device and a
+// The review of T.156: a model on the GPU alone. Its GPU's worker opens before a byte comes, and makes the device and a
 // buffer for every layer's matrices then (4.1 GB of Llama 3.2 3B). A load let go before its engine was built (cancelled,
 // failed, another try of the converter) must stop that worker, and the next load wait for its "ended": on the branch
 // before the review nothing stopped it, and it held them for the rest of the visit. A built one whose GPU failed
-// (gpuOnlyReady) is let go before its load on the CPU begins, whether forward.js had started its GPU or not (T205).
+// (gpuOnlyReady) is let go before its load on the CPU begins, whether forward.js had started its GPU or not (T.205).
 // worker.js runs in a context of its own here, with a WebGPU adapter as the owner's Android has (8 GB said, 256 MiB bound).
 {
   const LLAMA3B = [3072, 8192, 28, 24, 8, 128256, 4096];
@@ -369,7 +369,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   }
   const size = end;
   // the GPU's worker (gpu.js; tests/fakes/worker.mjs): what it was told, and "ended" a moment after a stop, as its end()
-  // says it. (T377) worker.fail({ message }): the browser says the worker's script did not arrive, or that it threw
+  // says it. (T.377) worker.fail({ message }): the browser says the worker's script did not arrive, or that it threw
   const { Worker, made: workers } = workersStandIn({ answer(data, worker) {
     if (data.type === "stop") setTimeout(() => worker.say({ type: "ended" }), 5);
   } });
@@ -391,7 +391,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       growMemory() {},
       external: () => ({ engine: { gpu: engineGpu } }),
     },
-    // (T571: the form it is asked with is written down: where the tensors are depends on all of it)
+    // (T.571: the form it is asked with is written down: where the tensors are depends on all of it)
     llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: (header, dtype, form) => { placedForms.push(form); return { toJs: () => tensors, destroy() {} }; },
       Llama: { callKwargs: () => ({}) } },
   };
@@ -402,7 +402,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     const into = vm.runInContext(strictly("checkpointSink()"), gpuContext);
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.ok(into.weights.direct, "Llama 3.2 3B on a device that says 8 GB did not go on the GPU alone");
-    // T571: where its tensors are is asked of the whole form (FORM's every key, as the options carry it: a Qwen3.5's linear
+    // T.571: where its tensors are is asked of the whole form (FORM's every key, as the options carry it: a Qwen3.5's linear
     // too). Before, four keys of it went, and Python refused a Qwen3.5 on the GPU alone: "it has linear that keep a state,
     // and the form says none" (models.yml run 40051864570)
     const asked = placedForms.at(-1);
@@ -418,7 +418,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.release();
     assert.deepEqual(typesPosted(worker), ["open", "stop"], "a model on the GPU alone let go before it was built kept its GPU's worker");
     assert.ok(!worker.terminated);
-    await vm.runInContext(strictly("loadBegan({ id: 'the next load' })"), gpuContext);  // (T378.3: what load() says first)
+    await vm.runInContext(strictly("loadBegan({ id: 'the next load' })"), gpuContext);  // (T.378.3: what load() says first)
     assert.ok(worker.terminated, "the next load did not wait for the GPU's worker to end");
   }
   // (2) another try of the converter (sink.open() again) lets go of the first one's worker
@@ -444,7 +444,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     assert.deepEqual(typesPosted(worker), lost ? ["open", "stop"] : ["open"]);
     assert.equal(worker.terminated, Boolean(lost), "the load on the CPU began before the GPU's worker ended");
   }
-  // (4) the second review of T156: the verdict that the CPU is faster goes to the page with its load's id (the page
+  // (4) the second review of T.156: the verdict that the CPU is faster goes to the page with its load's id (the page
   // reads no word of a load another choice cancelled: without it a late verdict was kept for the model chosen since),
   // and a verdict the page kept for this device and /benchmark/'s reading keeps the model off the GPU alone, and says so
   {
@@ -475,7 +475,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
     gpuContext.console = console;
   }
-  // (5) T378.3: what weights.js holds of a model on the GPU alone is its own; the others say what happened and ask.
+  // (5) T.378.3: what weights.js holds of a model on the GPU alone is its own; the others say what happened and ask.
   // The GPU is lost under the model (forward.js says so to the place's onLost): gpuOnlyLost() says why, to worker.js;
   // the next load begins with no model on the GPU alone (the reason does not outlive the model); a model said to be on
   // the CPU from now on (worker.js, where a run failed under it) goes there by its key, and another model does not
@@ -510,7 +510,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     assert.equal(direct(), false);
     await ask("loadBegan({ name: 'A file of mine' })");
     assert.equal(direct(), true, "a model with a name alone (a file of the visitor's)");
-    // T375.5: by the model's facts, which the worker hands on as the whole form: the same header with layers that keep
+    // T.375.5: by the model's facts, which the worker hands on as the whole form: the same header with layers that keep
     // a state (an LFM2's, whose architecture's line is a Llama's but for them) stays in this memory
     const formed = (form) => {
       const sunk = ask("checkpointSink()");
@@ -524,7 +524,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       [true, false, true], "an LFM2 with convolution layers went on the GPU alone (the worker hands gpuOnlyUnfit() the form with its layers)");
     await ask("loadBegan({ id: 'the next load' })");
   }
-  // (6) T377: the GPU's worker says "error" while the weights are written, before there is an engine to hear it (its
+  // (6) T.377: the GPU's worker says "error" while the weights are written, before there is an engine to hear it (its
   // script did not arrive, or it threw). It takes nothing and counts nothing from then on: the loops that write do not
   // wait for it (they waited 60 s, and the load then failed with "the GPU took no weights for 60 s"), nothing more is
   // posted to it, and the engine, built on what there is, is handed the error it missed: it says why in its own words
@@ -594,6 +594,6 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     ask("forwardModule = stand.forward");
     await ask("loadBegan({ id: 'the next load' })");
   }
-  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review); what weights.js holds of it is told and asked (T378.3); " +
-    "a GPU's worker that fails before the engine is built is waited for no longer, and the model goes on to the CPU (T377)");
+  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T.156's review); what weights.js holds of it is told and asked (T.378.3); " +
+    "a GPU's worker that fails before the engine is built is waited for no longer, and the model goes on to the CPU (T.377)");
 }

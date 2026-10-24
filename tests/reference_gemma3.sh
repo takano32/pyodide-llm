@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/reference_gemma3.sh (T261): what tests/reference_gemma3.py needs, and the run itself, for CI (tests.yml's extra=;
+# tests/reference_gemma3.sh (T.261): what tests/reference_gemma3.py needs, and the run itself, for CI (tests.yml's extra=;
 # the development machine has no PyTorch):
 #
 #   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh" --ref <branch> --grep "gemma3:"

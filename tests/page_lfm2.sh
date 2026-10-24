@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_lfm2.sh (T260): an LFM2 of the list on the page's forward pass (src/runtime/forward.js on the int8 kernels),
+# tests/page_lfm2.sh (T.260): an LFM2 of the list on the page's forward pass (src/runtime/forward.js on the int8 kernels),
 # for CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide: the development machine runs no model
 # of gigabytes):
 #
@@ -8,7 +8,7 @@
 #
 # The entry as the page takes it (tests/hf_fetch.py: the GGUF's weights with the original's vocabulary and
 # config.json), converted the way the page converts it (tests/perplexity_prepare.py), then
-#   - its perplexity on 1500 tokens of English Wikipedia and of Japanese Wikipedia (T85's articles): the float32 (the
+#   - its perplexity on 1500 tokens of English Wikipedia and of Japanese Wikipedia (T.85's articles): the float32 (the
 #     GGUF's values, as Q8_0 rounded them) and the int8 weights in native NumPy, and the int8 weights on the kernels
 #     with 7-bit and 8-bit activations (tests/perplexity.mjs --file);
 #   - the software threads: the logits of a greedy run and of a prompt in blocks the same to the bit with 1, 2, 4 and

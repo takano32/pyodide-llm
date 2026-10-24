@@ -1,4 +1,4 @@
-"""The dummy prefix before the text after a special token (T308, T369): what the converter reads of it in a
+"""The dummy prefix before the text after a special token (T.308, T.369): what the converter reads of it in a
 tokenizer.json and in a sentencepiece model's tokenizer_config.json, against the tokenizers library itself.
 
 A sentencepiece tokenizer puts "▁" before the first text. Some put it before the text after a special token too:
@@ -70,7 +70,7 @@ def test_a_tokenizer_json_says_which_texts_are_prefixed(said, prefixed):
 @pytest.mark.parametrize("said, prefixed", DESCRIBED[:5])
 def test_the_prefix_after_a_special_token_is_the_real_tokenizers(said, prefixed):
     """The same descriptions through the tokenizers library itself: from the first special token on (what stands before
-    the first text is not T308's), the engine's ids with what the converter says are the real ones, also where the
+    the first text is not T.308's), the engine's ids with what the converter says are the real ones, also where the
     text after the token begins with a space or two, or with a newline."""
     tokenizers = pytest.importorskip("tokenizers")
     real = tokenizers.Tokenizer.from_str(json.dumps({"version": "1.0", "truncation": None, "padding": None, "normalizer": None,

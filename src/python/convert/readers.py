@@ -1,6 +1,6 @@
 # How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0, the
-# two ternary types, llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T362, and its older types of
-# blocks of 32, T505.1), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T359): the GGUF's type id, the size of its
+# two ternary types, llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T.362, and its older types of
+# blocks of 32, T.505.1), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T.359): the GGUF's type id, the size of its
 # blocks, the refusal that lists what is read, and its reader on the kernels come from the entry.
 from typing import Callable, NamedTuple
 
@@ -20,7 +20,7 @@ def bfloat16(raw):
 
 
 def q8_0(raw):
-    """GGUF's Q8_0 (T74): blocks of 32 values, each a float16 scale and 32 int8. The same groups of 32 as this
+    """GGUF's Q8_0 (T.74): blocks of 32 values, each a float16 scale and 32 int8. The same groups of 32 as this
     project's int8, so quantize() gets the very same int8 back: the scale of a block is its largest value / 127."""
     blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 34)
     scales = np.ascontiguousarray(blocks[:, :2]).view(np.float16).astype(np.float32)
@@ -33,7 +33,7 @@ PQ2_0_CODES = TERNARY_VALUES.view("<u4").reshape(256)
 
 
 def pq2_0(raw):
-    """Prism ML's PQ2_0 (T235: Ternary-Bonsai's GGUFs, ggml type 142): blocks of 128 values, each a float16 scale d
+    """Prism ML's PQ2_0 (T.235: Ternary-Bonsai's GGUFs, ggml type 142): blocks of 128 values, each a float16 scale d
     and 32 bytes of two bits a value, the first value in the lowest bits of the first byte. A value is (code - 1) * d:
     -d, 0 or +d in a ternary model, whose files leave the code 3 (+2 d) unused. The form is that of block_pq2_0 and
     dequantize_row_pq2_0() of the fork of llama.cpp that reads these files (MIT; no line of it is copied):
@@ -63,7 +63,7 @@ def base3(packed, digits):
 
 
 def ptq1_0(raw):
-    """Prism ML's PTQ1_0 (T230: Ternary Bonsai 2's smaller GGUF, ggml type 143): blocks of 128 ternary values in 28
+    """Prism ML's PTQ1_0 (T.230: Ternary Bonsai 2's smaller GGUF, ggml type 143): blocks of 128 ternary values in 28
     bytes, 1.75 bits a value. 24 bytes of five values each in base 3, 2 bytes of four, and a float16 scale d at the end;
     a value is (digit - 1) * d. The values are not in the order of the bytes: the first 16 bytes hold values 16 n + m
     (digit n of byte m), the next 8 bytes values 80 + 8 n + m, the 2 bytes values 120 + 2 n + m. The form is that of
@@ -78,7 +78,7 @@ def ptq1_0(raw):
     return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
 
 
-# ---- T505.1: llama.cpp's types of blocks of 32 other than Q8_0, the older ones (a file of Q4_0 ...) and the ones it
+# ---- T.505.1: llama.cpp's types of blocks of 32 other than Q8_0, the older ones (a file of Q4_0 ...) and the ones it
 # stores a matrix in whose rows are no whole blocks of 256 (src/llama-quant.cpp's tensor_type_fallback(): Q5_0 for
 # Q4_K, Q5_1 for Q5_K, Q4_0 for Q2_K and Q3_K, IQ4_NL for the i-quantized types). The forms are those of the block_q*
 # structs of ggml/src/ggml-common.h and of the dequantize_row_* functions of ggml/src/ggml-quants.c of llama.cpp (MIT,
@@ -164,9 +164,9 @@ class Source(NamedTuple):
 
 
 # (30 is BF16: Ternary Bonsai 2's two small matrices of the gates. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork
-# of llama.cpp. T362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. T505.1: its other three K
+# of llama.cpp. T.362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. T.505.1: its other three K
 # types, which are read and never kept (WIDENED), and the five of blocks of 32 above. A refusal names none of the
-# eighteen yet (said): its words are the owner's, and they are as they were before any of them was read (T501). ggml's
+# eighteen yet (said): its words are the owner's, and they are as they were before any of them was read (T.501). ggml's
 # other types are refused: docs/notes/t505-gguf-alone-2026-10-13.md says which and why)
 SOURCES = {source.name: source for source in (
     Source("F32", 0, 1, 4, float32),

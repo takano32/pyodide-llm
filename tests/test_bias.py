@@ -1,4 +1,4 @@
-"""Qwen2 is a Llama with a bias on q, k and v (T64): the converter writes three vectors per layer, and the engine
+"""Qwen2 is a Llama with a bias on q, k and v (T.64): the converter writes three vectors per layer, and the engine
 adds them after those projections. The file keeps the 7 int header, so the caller passes bias=True."""
 import struct
 
@@ -49,7 +49,7 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint():
 
 
 def test_the_conversion_tells_the_engine_about_the_biases():
-    """The file cannot say it has biases: the options must (the lesson of T72, applied here in T77)."""
+    """The file cannot say it has biases: the options must (the lesson of T.72, applied here in T.77)."""
     import json
 
     import llama2_convert

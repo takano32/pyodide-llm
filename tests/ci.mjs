@@ -1,4 +1,4 @@
-// ci.mjs (T142): start workflows and wait for their runs, or wait for runs, always by the runs' IDs and with a
+// ci.mjs (T.142): start workflows and wait for their runs, or wait for runs, always by the runs' IDs and with a
 // deadline, printing a line whenever a run or one of its jobs changes state, and at the end one table of them all.
 // Never by searching the latest runs (a new run pushes the one waited for out of the list) and never by pgrep -f or
 // pkill -f (they match the loop that runs them: a wait of the 2026-09-26 review round went on 52 minutes after what
@@ -6,7 +6,7 @@
 //
 //   node tests/ci.mjs run <workflow file> [input=value ...] [+ <workflow file> [input=value ...] ...]
 //   node tests/ci.mjs wait <run id> [<run id> ...]
-//   node tests/ci.mjs nightly                      T193: the latest nightly (scheduled) runs of the full suites,
+//   node tests/ci.mjs nightly                      T.193: the latest nightly (scheduled) runs of the full suites,
 //                                                  tests.yml and gpu-prompt.yml, waited for or read by their IDs
 //   node tests/ci.mjs deploy [--sha <commit>]      the deploy of a commit (HEAD); if a newer push cancelled it while
 //                                                  it waited for its turn, the newer deploy (which has the commit too)
@@ -108,16 +108,16 @@ const LINES = {
   "bench.yml": "^### (chromium|firefox|webkit|chrome|msedge)$|^sections:|^model path:|WRONG|^failed:|^page errors:|^heard:|^=== |site [0-9a-f]{7} ",
   "browsers.yml": "ready in|FAILED|timed out",
   "preview.yml": "^sections:|^model path:|FAILED|timed out",
-  // T193: which suite ran, and the seconds of each of its parts (tests/suite.sh)
+  // T.193: which suite ran, and the seconds of each of its parts (tests/suite.sh)
   "tests.yml": "^suite: |^--- .*: \\d+ s$",
   "deploy.yml": "^suite: |^--- .*: \\d+ s$",
-  // T183: gpu-check's lines of each model and run, its tables by layer (against NumPy's and E16), each run's line and
+  // T.183: gpu-check's lines of each model and run, its tables by layer (against NumPy's and E16), each run's line and
   // ratio, and the seconds of each step
-  // T241's review: and the line of the quantizers alone (every group's scale word as it is to be)
+  // T.241's review: and the line of the quantizers alone (every group's scale word as it is to be)
   "gpu-prompt.yml": "^suite: |^## |^the quantizers alone|layers, .* heads|^  .*: keys and values |^  a token|^  on the GPU alone|^keys and values of |^\\| (layer|all|\\d)|^\\|---|^ *- |^seconds of |FAILED",
 };
 
-// T193: the workflows whose full suites run every night
+// T.193: the workflows whose full suites run every night
 const NIGHTLY = ["tests.yml", "gpu-prompt.yml"];
 
 async function start([workflow, ...pairs]) {
@@ -228,7 +228,7 @@ try {
   } else if (command === "wait" && rest.length && rest.every((word) => /^\d+$/.test(word))) {
     targets.push(...rest.map((word) => ({ id: Number(word) })));
   } else if (command === "nightly") {
-    // T193: the full suites run every night on main; the latest scheduled run of each, then by its ID as always
+    // T.193: the full suites run every night on main; the latest scheduled run of each, then by its ID as always
     for (const workflow of NIGHTLY) {
       const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/${workflow}/runs?event=schedule&per_page=1`);
       if (!runs.length) say(`no nightly run of ${workflow} yet`);

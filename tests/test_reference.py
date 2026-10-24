@@ -1,4 +1,4 @@
-"""tests/reference.py (T357.4): what the three tools that hold the engine to transformers share, a part at a time and
+"""tests/reference.py (T.357.4): what the three tools that hold the engine to transformers share, a part at a time and
 with no torch: how far logits are apart, the line and the verdict, the states of layers of several kinds, the long
 text, the conversions, and the lines each says. And what the tools hand it: their kinds of states, read from a made-up
 engine. The tools themselves run from end to end in tests/reference_dry.py, and against transformers in CI."""

@@ -1,17 +1,17 @@
-// tests/threads-part-check.mjs (T378.1): the software threads' part of the engine (src/runtime/forward/threads.js's
+// tests/threads-part-check.mjs (T.378.1): the software threads' part of the engine (src/runtime/forward/threads.js's
 // softwareThreads()) by itself, with stand-ins for everything beside it: a small shared memory of its own, "threads"
 // that are started at once and do nothing (the coordinator then takes every chunk itself), a runRows that writes down
 // what it was asked for, a GPU that is getting ready when the test says so, and times the test makes up (the part reads
 // no clock: it is told a token's milliseconds). No engine, no kernels, no model, no Pyodide. What the part is still
 // bound to: jobs.js (where the words of the control area are) and choice.js's lowerMedian and BETTER.
 //
-// The state has one owner (T378.1): the rest of the engine tells it what happened (use, find, generationBegan,
+// The state has one owner (T.378.1): the rest of the engine tells it what happened (use, find, generationBegan,
 // tokenBegan and tokenEnded, stop) and reads count, lost and searching. Held here:
 //   - each of those changes what it says it changes, and nothing else that can be read;
 //   - a phase's rows are each run once, whole by one caller, with any count, and alone where there are no threads;
 //   - the search's turns: best, candidate, candidate, best in blocks of 5, the count in use the best one between tokens;
 //   - what is told in a wrong order is harmless (said one by one below), and nothing is told the page after a give-up;
-//   - T120: a thread that took a chunk and never did it is given up, the phase is run again here, one thread from then on;
+//   - T.120: a thread that took a chunk and never did it is given up, the phase is run again here, one thread from then on;
 //   - no threads at all where none can be started (no spawn: a model on the GPU alone, or a memory that is not shared).
 //
 //   node tests/threads-part-check.mjs        (Node only, under two seconds)
@@ -45,7 +45,7 @@ function made({ spawn = true, sharedMemory = true, stalledMs = 40, late = false,
     assert.deepEqual([data.plain, data.relaxed, data.wide], ["plain", null, false], "a thread is started with the two kernels the part was handed");
     return late ? new Promise((resolve) => beside.waiting.push(() => resolve(helper()))) : Promise.resolve(helper());
   };
-  // (the control area is the real one, on this test's page of memory: T378.2, it is handed to the part)
+  // (the control area is the real one, on this test's page of memory: T.378.2, it is handed to the part)
   const control = controlArea({ memory, sharedMemory, stalledMs });
   beside.ctl = control.ctl;
   const part = softwareThreads({ memory, wide: false, kernels: { plain: "plain", relaxed: null }, spawn: spawn ? start : null, control,
@@ -165,9 +165,9 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   const told = [];
   assert.equal(await part.find({ from: 8, remembered: 4, recheck: 3, chose: (count) => told.push(count) }), 4);
   assert.deepEqual(read(part), { threads: 4, lost: false, searching: false, log: 0 }, "a remembered count is used as it is, with no search yet");
-  assert.equal(part.tokenBegan(true), false, "T240: no search inside a text before the page began a generation (/benchmark/)");
+  assert.equal(part.tokenBegan(true), false, "T.240: no search inside a text before the page began a generation (/benchmark/)");
   part.generationBegan();
-  assert.equal(part.searching, true, "T223: the first generation searches again from a remembered count");
+  assert.equal(part.searching, true, "T.223: the first generation searches again from a remembered count");
   until(part, ANDROID);
   assert.deepEqual([part.count, told], [2, [2]]);
   const began = [];
@@ -179,7 +179,7 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   assert.deepEqual(began, [3, 6], "recheck: 3 is every third generation");
 }
 {
-  // T223, T240: nothing is searched beside a GPU that is getting ready; what was timed beside it is not remembered
+  // T.223, T.240: nothing is searched beside a GPU that is getting ready; what was timed beside it is not remembered
   const { part, beside } = made();
   const told = [];
   beside.gpuGettingReady = true;
@@ -189,7 +189,7 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   assert.equal(part.tokenBegan(true), false);
   beside.gpuGettingReady = false;
   assert.equal(part.tokenBegan(false), false, "a token that makes no logits is never the search's");
-  assert.equal(part.searching, true, "T240: the search owed begins at the first token after the GPU is ready");
+  assert.equal(part.searching, true, "T.240: the search owed begins at the first token after the GPU is ready");
   const before = read(part);
   for (let i = 0; i < 30; i++) assert.equal(part.tokenBegan(false), false);
   assert.deepEqual(read(part), before, "a prompt's tokens leave the search where it was");
@@ -209,7 +209,7 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
 }
 console.log("ok: find() searches from a hint at once and from a remembered count with the first generation; generationBegan() again every recheck; never beside a GPU getting ready");
 
-// ---- T451: a token's time is counted for the count it ran on, and for no other. Every token is told a time of its
+// ---- T.451: a token's time is counted for the count it ran on, and for no other. Every token is told a time of its
 // own (its count's hundreds and its turn), so a time put with another count of the comparison, which is there to take
 // it, shows as that: before this, such a break ended in a TypeError or in another search's verdict
 {
@@ -229,7 +229,7 @@ console.log("ok: find() searches from a hint at once and from a remembered count
   assert.deepEqual(times[4], ran[4], "the times of the tokens that ran on 4 threads are 4's, each once, in order");
   assert.deepEqual(times[2], ran[2], "the times of the tokens that ran on 2 threads are 2's, each once, in order");
 }
-console.log("ok: T451, a token's time is counted for the count it ran on");
+console.log("ok: T.451, a token's time is counted for the count it ran on");
 
 // ---- a count that needs more threads: untimed on the best count until they are there
 {
@@ -252,7 +252,7 @@ console.log("ok: T451, a token's time is counted for the count it ran on");
     part.tokenEnded(5);
   }
   assert.deepEqual([turns.slice(0, 10).join(""), part.searchLog.length], ["1111122222", 1], "timed from the token after the thread is there");
-  // T120's review: a thread that comes up after the part let its threads go is ended at once
+  // T.120's review: a thread that comes up after the part let its threads go is ended at once
   const using = part.use(4);
   part.stop();
   beside.waiting.splice(0).forEach((release) => release());
@@ -261,7 +261,7 @@ console.log("ok: T451, a token's time is counted for the count it ran on");
 }
 console.log("ok: a candidate's threads are waited for on the best count, untimed; a thread that comes up after stop() is ended");
 
-// ---- T380.2: a candidate whose thread does not start ends the search at the best count, and the console is told why
+// ---- T.380.2: a candidate whose thread does not start ends the search at the best count, and the console is told why
 {
   const { part, beside } = made({ refused: 1 });
   const told = [];
@@ -284,7 +284,7 @@ console.log("ok: a candidate's threads are waited for on the best count, untimed
     await new Promise((resolve) => setTimeout(resolve, 0));
   }), []);
 }
-console.log("ok: T380.2, a search whose next thread does not start ends at its best count and says why on the console; one whose threads start says nothing");
+console.log("ok: T.380.2, a search whose next thread does not start ends at its best count and says why on the console; one whose threads start says nothing");
 
 // ---- what is told in a wrong order
 {
@@ -331,7 +331,7 @@ console.log("ok: T380.2, a search whose next thread does not start ends at its b
 }
 console.log("ok: a generation, a token or its end told out of turn change nothing; stop() twice, use() after stop(), find() twice are what they say");
 
-// ---- T120: a thread that took a chunk and never did it
+// ---- T.120: a thread that took a chunk and never did it
 {
   const { part, beside } = made({ stalledMs: 40 });
   const told = [];
@@ -360,7 +360,7 @@ console.log("ok: a generation, a token or its end told out of turn change nothin
   part.phase(jobs);
   assert.equal(beside.ran.length, 2, "its phases run here");
 }
-console.log("ok: T120, a thread that never does its chunk is given up, the phase run again here, and the engine keeps to one thread");
+console.log("ok: T.120, a thread that never does its chunk is given up, the phase run again here, and the engine keeps to one thread");
 
 // ---- no threads where none can be started
 for (const [title, options] of [["no spawn (a model on the GPU alone)", { spawn: false }], ["a memory that is not shared", { sharedMemory: false }]]) {

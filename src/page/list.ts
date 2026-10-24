@@ -1,4 +1,4 @@
-// src/page/list.ts (T355): the list of models in the select, and what this browser kept of them.
+// src/page/list.ts (T.355): the list of models in the select, and what this browser kept of them.
 import { GROUPS, MODELS } from "../models.js";
 import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
@@ -8,15 +8,15 @@ import { forget, keptModels, outdated, serves } from "../runtime/kept.ts";
 
 // What the worker kept of its conversions (src/runtime/kept.ts: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
-// (T367.3: linked into the page's own script. A store that cannot be listed is one that kept nothing.)
-// (T380.2: one that cannot be listed says so on the console, and shows as before)
+// (T.367.3: linked into the page's own script. A store that cannot be listed is one that kept nothing.)
+// (T.380.2: one that cannot be listed says so on the console, and shows as before)
 const listed = () => keptModels().catch((error): Awaited<ReturnType<typeof keptModels>> => {
   console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);
   return [];
 });
 export async function showKept() {
   let models = await listed();
-  // T116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
+  // T.116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
   for (const one of models.filter((one) => outdated(one))) await forget(one);
   models = models.filter((one) => !outdated(one));
   for (const option of select.querySelectorAll("option")) {
@@ -45,7 +45,7 @@ export async function showKept() {
     $("kept-list").append(item);
   }
 }
-// T116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
+// T.116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
 // must still be kept as it would be loaded now (its bits, this converter), or the default starts instead
 export async function stillKept(entry: any) {
   if ((entry.download ?? 0) <= 500e6) return true;
@@ -61,7 +61,7 @@ for (const [group, label] of Object.entries(GROUPS)) {
     options.append(new Option(`${name} — ${note}`, id));
   }
   if (group === "hf") {
-    options.append(new Option("Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX", "hf-other"));  // T88
+    options.append(new Option("Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX", "hf-other"));  // T.88
   }
   select.append(options);
 }

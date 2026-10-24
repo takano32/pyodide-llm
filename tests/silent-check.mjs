@@ -1,4 +1,4 @@
-// tests/silent-check.mjs (T380.2): every place of the sources that catches a failure and tells nobody, held to a table
+// tests/silent-check.mjs (T.380.2): every place of the sources that catches a failure and tells nobody, held to a table
 // of why it may. Node only, the syntax trees alone (nothing of the site runs), under a second:
 //
 //   node tests/silent-check.mjs
@@ -77,7 +77,7 @@ const STORAGE = "no storage here (a private window, a policy): ";
 const SILENT = {
   "public/coi.js": [
     // (the owner's devices come first with this file: it is counted here and never changed for this table)
-    ["quietly", "promise.catch(() => undefined)", "T117: a Cache API that will not open or read leaves the network to answer, as before there was a copy; a Service Worker has no page to tell"],
+    ["quietly", "promise.catch(() => undefined)", "T.117: a Cache API that will not open or read leaves the network to answer, as before there was a copy; a Service Worker has no page to tell"],
   ],
   "src/benchmark/isolation.ts": [
     ["isolating", "catch {}", `${STORAGE}the copies are kept, as by default`],
@@ -103,7 +103,7 @@ const SILENT = {
   ],
   "src/page/isolation.ts": [
     ["isolating", "catch {}", `${STORAGE}the address alone says whether the copies are kept`],
-    ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T371 is to say why there is one thread)"],
+    ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T.371 is to say why there is one thread)"],
   ],
   "src/page/receiver.ts": [
     ["worker.onmessage", "catch {}", `${STORAGE}the next visit weighs the GPU and the CPU again`],
@@ -149,14 +149,14 @@ const SILENT = {
     ["keep", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "the cleaning after a write that failed: that failure is what keep() returns, and the page shows it"],
     ["keeper", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "nothing kept under the name before is the ordinary case: NotFoundError"],
     ["drop", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "letting go of a file that is not kept: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
-    ["finish", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T329.2.2: a conversion not kept whose table is read on from its file: the folder, open still, may refuse to go now; close() removes it once the file is let go of, and what is left has no manifest meanwhile"],
-    ["close", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T329.2.2: the file of a conversion that was not kept, let go of: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
-    ["openRows", "catch { return undefined; }", "T329.2.2: no handle of the kept file here (another tab of this site holds it, or it is gone): the worker says so and reads the table into the memory"],
+    ["finish", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T.329.2.2: a conversion not kept whose table is read on from its file: the folder, open still, may refuse to go now; close() removes it once the file is let go of, and what is left has no manifest meanwhile"],
+    ["close", "directory.removeEntry(name, { recursive: true }).catch(() => {})", "T.329.2.2: the file of a conversion that was not kept, let go of: what is left has no manifest and is none of the kept models, and the next keeper() removes it"],
+    ["openRows", "catch { return undefined; }", "T.329.2.2: no handle of the kept file here (another tab of this site holds it, or it is gone): the worker says so and reads the table into the memory"],
     ["forget", "(await folders())?.removeEntry(name, { recursive: true }).catch(() => {})", "a kept model that is already gone, or held open by a load: the list is read again after it and shows what is there"],
   ],
   "src/runtime/updated.ts": [
     ["ofThisBuild", "catch { return false; }", "the question itself: what is no address is no file of this build"],
-    ["gone", "catch { return false; }", "T367.4's line: a HEAD that fails (offline, a dropped line, blocked) does not say the file is gone, and the failure that asked is told as it was"],
+    ["gone", "catch { return false; }", "T.367.4's line: a HEAD that fails (offline, a dropped line, blocked) does not say the file is gone, and the failure that asked is told as it was"],
   ],
   "src/runtime/worker.ts": [
     ["self.onmessage", "generating?.catch(() => {})", "only waited for here: the generation's own failure is posted by the message that started it"],
@@ -165,34 +165,34 @@ const SILENT = {
     ["self.onmessage", "current.catch(() => {})", "unloaded is what the next load waits for: this load's failure is thrown by `await current` on the next line"],
   ],
   "src/runtime/worker/convert.ts": [
-    ["keepConverted", "keptModule.replaced(model).catch(() => [])", "T136: what was kept of the model's old source could not be listed: it stays and takes room, and the new one is kept or keep() says why not"],
-    ["keepConverted", "keptModule.forget(old).catch(() => {})", "T136: an old copy that could not be deleted stays and takes room: keep() says so if the new one then does not fit"],
+    ["keepConverted", "keptModule.replaced(model).catch(() => [])", "T.136: what was kept of the model's old source could not be listed: it stays and takes room, and the new one is kept or keep() says why not"],
+    ["keepConverted", "keptModule.forget(old).catch(() => {})", "T.136: an old copy that could not be deleted stays and takes room: keep() says so if the new one then does not fit"],
   ],
   "src/runtime/worker/load.ts": [
     ["load", "tokenizerBytes.catch(() => {})", "awaited below: a load that ends before that (cancelled, the runtime never came) leaves no unhandled rejection"],
   ],
   "src/runtime/worker/pyodide.ts": [
     ["prefetchNumpy", "catch {}", "a head start only: Pyodide's own loadPackage fetches the wheel next, and its failure is told"],
-    ["watchArrivals", "catch { return false; }", "the question itself (T129): a browser that makes no Response of a piped stream gets its responses as they came"],
+    ["watchArrivals", "catch { return false; }", "the question itself (T.129): a browser that makes no Response of a piped stream gets its responses as they came"],
     ["watchArrivals", "catch { observer = undefined; }", "no PerformanceObserver here: the fetches alone are counted"],
   ],
   "src/runtime/worker/ranges.ts": [
-    ["bodyBetween", "reader.cancel().catch(() => {})", "a body that is read no further (T112: the whole file came for a range): whether the cancel took is nothing the load reads"],
+    ["bodyBetween", "reader.cancel().catch(() => {})", "a body that is read no further (T.112: the whole file came for a range): whether the cancel took is nothing the load reads"],
   ],
   "src/runtime/worker/runtime.ts": [
     ["init", "engine.catch(() => {})", "awaited below (placePython): a load that ends before that leaves no unhandled rejection"],
-    ["init", "catch { wideKernels = undefined; }", "T101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
+    ["init", "catch { wideKernels = undefined; }", "T.101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
       "keeps the 32-bit ones; a model past 4 GB is then refused with its own sentence"],
   ],
   "src/runtime/worker/sources.ts": [
     ["(the module)", "globalThis.caches?.delete(\"models-v1\").catch(() => {})", "what an earlier version of the page stored: if it cannot be deleted it stays, and nothing reads it"],
-    ["fetchPart", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T117: a Cache API that will not open (some private modes) leaves a plain fetch"],
-    ["fetchPart", "cache?.match(key).catch(() => undefined)", "T117: a copy that cannot be read leaves the network to answer"],
+    ["fetchPart", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T.117: a Cache API that will not open (some private modes) leaves a plain fetch"],
+    ["fetchPart", "cache?.match(key).catch(() => undefined)", "T.117: a copy that cannot be read leaves the network to answer"],
     ["fetchPart", "cache.put(key, new Response(res.clone().body.pipeThrough(whole))).catch(() => {})", "a copy that is not stored (no room, a part that broke off or was cancelled: " +
       "put() rejects for each, by design for the last two): the next visit fetches the part again"],
-    ["forgetPart", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T117: no Cache API, so there is no copy to forget"],
+    ["forgetPart", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T.117: no Cache API, so there is no copy to forget"],
     ["forgetPart", "cache?.delete(partKey(url, model)).catch(() => {})", "a broken part's copy that cannot be deleted is read by the next try, which counts its bytes again: three tries, and then the failure is told"],
-    ["dropStaleParts", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T117: no Cache API, so there are no stale parts"],
+    ["dropStaleParts", "globalThis.caches?.open(MODEL_CACHE).catch(() => undefined)", "T.117: no Cache API, so there are no stale parts"],
     ["dropStaleParts", "cache?.keys().catch(() => undefined)", "the copies cannot be listed: the stale ones stay and take room, and none is read (the size is in the key)"],
     ["dropStaleParts", "cache.delete(request).catch(() => {})", "a stale copy that cannot be deleted stays and takes room, and is never read (the size is in the key)"],
     ["fetchOnce", "reader.cancel().catch(() => {})", "after the read itself failed, which is thrown on the next line: the cancel's own failure adds nothing"],

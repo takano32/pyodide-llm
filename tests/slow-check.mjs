@@ -1,4 +1,4 @@
-// T118: the page on a slow line and on one that stops, in Chromium, through a proxy of this script's own that
+// T.118: the page on a slow line and on one that stops, in Chromium, through a proxy of this script's own that
 // passes every connection on at a shared rate (a token bucket: rate bytes a second for all of them together, the
 // way one line is shared). For CI (slow.yml): the development machine runs no browser.
 //
@@ -6,17 +6,17 @@
 //                             [--queue <lane|fair|fifo>] [--buffer <bytes>] [--dist <folder>]
 //
 //   --dist  a site built on this machine (npm run build: dist), served by tests/serving.mjs as plain HTTP through the
-//           same paced line, in place of the deployed one: a branch's (T538: tests/slow_in_browser.sh builds two)
+//           same paced line, in place of the deployed one: a branch's (T.538: tests/slow_in_browser.sh builds two)
 //
 //   slow   the whole line at --rate (default 50000: 0.4 Mbps). Pyodide's 9 MB take minutes; the load must end
-//          ready, without falling back to no service worker (before T118 a step was given up after 60 to 90
+//          ready, without falling back to no service worker (before T.118 a step was given up after 60 to 90
 //          seconds however much was still arriving, and the page fell back, then failed again)
 //   stall  cdn.jsdelivr.net stops sending after 200 kB. The load must end in an error that says so, after one
 //          fallback, and not hang
 //
-// How the one line is shared by the connections (--queue; T129's review, 2026-10-01: the version of Pyodide is asked
+// How the one line is shared by the connections (--queue; T.129's review, 2026-10-01: the version of Pyodide is asked
 // for while the model's parts fill the line, and how long its answer waits depends on this):
-//   lane   the oldest connection is served first, a newer one gets what is left (T118's. A newer connection, such as
+//   lane   the oldest connection is served first, a newer one gets what is left (T.118's. A newer connection, such as
 //          the one of data.jsdelivr.com, waits until every older one has nothing queued: the model of this site comes
 //          over the connection the page itself came by, which is the oldest)
 //   fair   every connection a share of the second, a packet each in turn
@@ -34,7 +34,7 @@ import { serving } from "./serving.mjs";
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const [scenario = "slow", deployed = "https://takano32.github.io/pyodide-llm/"] = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
-// T538: --dist <folder> serves a site built on this machine (a branch's: tests/slow_in_browser.sh) instead of the deployed one
+// T.538: --dist <folder> serves a site built on this machine (a branch's: tests/slow_in_browser.sh) instead of the deployed one
 const served = option("--dist") ? await serving(option("--dist")) : undefined;
 const site = served?.url ?? deployed;
 const rate = Number(option("--rate", 50000)), model = option("--model", "stories260K");
@@ -106,7 +106,7 @@ setInterval(() => {
 }, 50).unref();
 const proxy = http.createServer();
 // a lane: what comes back on upstream is queued, and passed on to client at the line's pace. An upstream that closes
-// (a server's answer of Connection: close) ends the lane once what it queued has gone through (T538: before, the
+// (a server's answer of Connection: close) ends the lane once what it queued has gone through (T.538: before, the
 // client was closed at once, and what was still queued lost: the tunnels' servers seldom closed first)
 const laneOf = (host, client, upstream) => {
   const lane = { host, client, upstream, queue: [], size: 0, opened: Date.now(), first: undefined, last: undefined, bytes: 0 };
@@ -147,7 +147,7 @@ proxy.on("connect", (req, client, head) => {
   });
   laneOf(host, client, upstream);
 });
-// T538: a site of this machine (--dist) is plain HTTP, which the browser sends to the proxy as requests, not tunnels
+// T.538: a site of this machine (--dist) is plain HTTP, which the browser sends to the proxy as requests, not tunnels
 // (Playwright's Chromium proxies the loopback too). Each goes to the server on a connection of its own (Connection:
 // close), and what it answers comes back paced on a lane, raw, on the browser's socket, which then closes
 proxy.on("request", (req) => {
@@ -201,11 +201,11 @@ console.log(`the line was shared as ${queueMode}${queueMode === "fifo" ? ` (a qu
   `the worker began ${workerAt ? ((workerAt - began) / 1000).toFixed(1) : "never"} s after the page was asked for`);
 for (const lane of everyLane.filter((one) => one.host === "data.jsdelivr.com")) {
   console.log(`the version's line, from the worker's start: opened ${since(lane.opened)}, first byte ${since(lane.first)}, ` +
-    `last byte ${since(lane.last)}, ${lane.bytes} bytes (T129: the worker gives the answer up after 30 s)`);
+    `last byte ${since(lane.last)}, ${lane.bytes} bytes (T.129: the worker gives the answer up after 30 s)`);
 }
 const pyodideLines = console_.filter((line) => /pyodide|quiet|nothing/i.test(line)).slice(-5);
 if (pyodideLines.length) console.log(`console: ${pyodideLines.join(" / ")}`);
-await closed(() => browser.close());  // (T141, T391.6: never waited on for long)
+await closed(() => browser.close());  // (T.141, T.391.6: never waited on for long)
 proxy.close();
 await served?.close();
 const ok = scenario === "slow" ? outcome.ready && !state.fellBack : Boolean(outcome.error) && state.fellBack && !/the test:/.test(outcome.error);

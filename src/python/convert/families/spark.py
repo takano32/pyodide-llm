@@ -1,4 +1,4 @@
-# A Spark-X2.5 (T342: XHToken's, transformers' model_type "spark2_5", by the model's own modeling_spark.py): a Llama's
+# A Spark-X2.5 (T.342: XHToken's, transformers' model_type "spark2_5", by the model's own modeling_spark.py): a Llama's
 # layers, three of every four of which attend a window of the last positions and turn their whole heads by a base of
 # their own while the others turn a quarter of each head; q, k and v in one matrix; a gate of each head of the
 # attention's output; and the exact GELU in the gate of its FFN (engine/layers.py has the rule,
@@ -54,7 +54,7 @@ def turns(config):
 
 
 def spark_check(config):
-    """T342: what Spark2_5 computes and the engine has not: an activation other than the exact GELU, a gate of the
+    """T.342: what Spark2_5 computes and the engine has not: an activation other than the exact GELU, a gate of the
     heads other than a sigmoid's or none, biases, a local layer that turns part of its heads, a config.json that does
     not say its layers."""
     number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
@@ -78,7 +78,7 @@ def spark_check(config):
 
 
 def spark_sources(d, prefix, rotary):
-    """T342: by the model's names. q, k and v are one matrix (q_k_v_proj: q's rows, then k's, then v's), which is cut;
+    """T.342: by the model's names. q, k and v are one matrix (q_k_v_proj: q's rows, then k's, then v's), which is cut;
     q and k are interleaved as a Llama's are, over the values RoPE turns of that layer's heads (rotary: a number for
     each layer, Family.turns(); one number for all, or 0 for the whole head, where nothing says which layer is which:
     a plan that only sizes a model)."""
@@ -99,7 +99,7 @@ def spark_sources(d, prefix, rotary):
 
 # ---- a GGUF of a Spark-X2.5
 def spark_gguf_config(key, tensors):
-    """T342: what llama.cpp says of a Spark-X2.5 (XHToken's Q8_0 GGUF of the 1.7B: docs/notes/t339-spark-x-2026-10-15.md),
+    """T.342: what llama.cpp says of a Spark-X2.5 (XHToken's Q8_0 GGUF of the 1.7B: docs/notes/t339-spark-x-2026-10-15.md),
     by config.json's names: which layers have the window as attention.sliding_window_pattern (a yes for each
     sliding-attention layer), the window, the full-attention layers' base and part of a head as rope.freq_base and
     rope.dimension_count, the others' as rope.freq_base_swa and rope.dimension_count_swa."""
@@ -115,14 +115,14 @@ def spark_gguf_config(key, tensors):
 
 
 def spark_agrees(own, config):
-    # T342: which layers are local ones, their window and their base, and how much of a full-attention layer's heads
+    # T.342: which layers are local ones, their window and their base, and how much of a full-attention layer's heads
     # RoPE turns: no tensor shows them
     said = lambda c: local(c) and {**local(c), "rope_theta": f32(local(c)["rope_theta"])}
     return [("sliding-attention layers", said(own), said(config)),
             ("part of a head RoPE turns", turns(own), turns(config))]
 
 
-# T342: llama.cpp's names of it (as XHToken's GGUF has them: q, k and v one matrix as the original's, in Hugging Face's
+# T.342: llama.cpp's names of it (as XHToken's GGUF has them: q, k and v one matrix as the original's, in Hugging Face's
 # order, and the gate of the heads, attn_gate). Nothing is stored otherwise than the original has it
 SPARK = Family("Spark-X2.5", "spark", spark_sources, spark_check, before=spark_config, options=spark_options,
                free_heads=True, rms_norm=True, partly=True, turns=turns,

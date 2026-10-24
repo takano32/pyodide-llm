@@ -1,7 +1,7 @@
-// plan-keys-check.mjs (T357)
+// plan-keys-check.mjs (T.357)
 // The two plans that cross a line as plain objects, held to both of their ends: a key one side writes and the other
 // never reads, or reads and is never written, is said. Nothing else holds them: a key that is not there is undefined
-// without a word (`plan.rotary` spelled otherwise turns whole heads). T375.2: the tests that run forward.js alone are
+// without a word (`plan.rotary` spelled otherwise turns whole heads). T.375.2: the tests that run forward.js alone are
 // handed Python's own plan (tests/plans.mjs's planOf(), with a check's few settings over it: held to Python's keys
 // here), and the one plan that is written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts,
 // which runs without Pyodide), is held here to the plan Python makes for the same header, value by value.
@@ -51,7 +51,7 @@ function held(what, written, read, unread = {}) {
   if (!neverWritten.length && !neverRead.length && !stale.length) ok(`${what}: ${written.size} written, ${read.size} read, each at both ends${Object.keys(unread).length ? ` but ${Object.keys(unread).join(", ")}` : ""}`);
 }
 
-// T368.2: a type of src/runtime/contracts/ against what is written across the line it is the contract of: the same names
+// T.368.2: a type of src/runtime/contracts/ against what is written across the line it is the contract of: the same names
 // (more: { name: why the type has it and this writer does not })
 function typedAs(what, declared, written, more = {}) {
   const lines = differing(what, declared, written, more);
@@ -60,9 +60,9 @@ function typedAs(what, declared, written, more = {}) {
 }
 
 // ---- the syntax trees
-// (T368.3: a file that is TypeScript is parsed with its types blanked, by the name the tree has it under)
+// (T.368.3: a file that is TypeScript is parsed with its types blanked, by the name the tree has it under)
 const treesOf = (files) => files.map((file) => ({ file, program: parse(untyped(fs.readFileSync(runtime(file), "utf8"), runtime(file)), { sourceType: "module" }).program }));
-// (T368.4: a folder's files in either spelling: counting those that end in .js alone read none of forward/ once it was TypeScript)
+// (T.368.4: a folder's files in either spelling: counting those that end in .js alone read none of forward/ once it was TypeScript)
 const folder = (window) => [window, ...fs.readdirSync(runtime(window.replace(/\.js$/, ""))).filter((file) => file.endsWith(".js") || typed(file)).sort()
   .map((file) => `${window.replace(/\.js$/, "")}/${file}`)];
 function walk(node, visit, parent = null) {
@@ -114,16 +114,16 @@ const returned = (fn) => {
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
     { name: "gemma3", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma3", head_dim: 128 },
       more: { local: { layers: [0, 1, 2, 3, 4], window: 96, rope_theta: 10000 } } },
-    // T331: a Gemma 4: heads of 128 in two of its layers (the full-attention ones), an FFN twice as wide in its last three
-    // (T330.2: which read others' keys and values; T329.2: and an embedding of every layer of 128 values: ternary rows are whole groups of 128)
+    // T.331: a Gemma 4: heads of 128 in two of its layers (the full-attention ones), an FFN twice as wide in its last three
+    // (T.330.2: which read others' keys and values; T.329.2: and an embedding of every layer of 128 values: ternary rows are whole groups of 128)
     { name: "gemma4", header: [256, 768, 6, 4, 1, 2048, 320], form: { arch: "gemma4", head_dim: 64, wide: { layers: [2, 5], head_dim: 128 }, double: [3, 4, 5],
       kv_shared: { layers: [4, 5], from: [3, 2] }, per_layer: 128 },
       more: { local: { layers: [0, 1, 3, 4], window: 96, rope_theta: 10000 }, rotary: 32, softcap: 30 } },
-    // T342: a Spark-X2.5: three local layers that turn their whole heads, one that turns a quarter of its own, a gate of
+    // T.342: a Spark-X2.5: three local layers that turn their whole heads, one that turns a quarter of its own, a gate of
     // every head's output and the exact GELU
     { name: "spark", header: [256, 768, 4, 4, 2, 2048, 320], form: { arch: "spark", head_dim: 128 },
       more: { local: { layers: [0, 1, 2], window: 96, rope_theta: 10000 }, rotary: 32 } },
-    // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
+    // T.363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
       form: { arch: "qwen35", head_dim: 128, linear: LINEAR, tiled: true,
@@ -148,7 +148,7 @@ const returned = (fn) => {
     for (const [name, entry] of Object.entries(plan.tensors)) {
       tensors.add(name);
       Object.keys(entry).forEach((key) => entryKeys.add(key));
-      // (T363.5: "layers" is the key of a stack with a kind for each layer alone, which says "layers" for its kind)
+      // (T.363.5: "layers" is the key of a stack with a kind for each layer alone, which says "layers" for its kind)
       assert.deepEqual(sorted(Object.keys(entry).filter((key) => key !== "layers")), sorted(Object.keys(Object.values(plans[0].tensors)[0])), `the tensor ${name} of ${which} has other keys than the others`);
       assert.equal(entry.kind === "layers", "layers" in entry, `the tensor ${name} of ${which} says its layers where its kind is "layers", and only there`);
       for (const part of entry.layers ?? [entry]) stored.add(part.kind);
@@ -159,7 +159,7 @@ const returned = (fn) => {
   });
   ok(`Python's plan has the same ${keys.size} keys for ${plans.length} made-up models (${families.length} of the layouts' families in five dtypes), ${tensors.size} tensors among them`);
 
-  // T368.2: and the types say the same (src/runtime/contracts/plan.ts, which whatever is TypeScript reads the plan by; the
+  // T.368.2: and the types say the same (src/runtime/contracts/plan.ts, which whatever is TypeScript reads the plan by; the
   // form's two kinds of layers are form.ts's): the keys, the tensors' names, a tensor's keys and the ways it is stored,
   // the derived tables, a layer's facts and its kinds, the widths
   {
@@ -194,7 +194,7 @@ const returned = (fn) => {
     walk(program, (node) => {
       if (member(node) && node.object.type === "Identifier" && node.object.name === "plan" && !NOT_KEYS.has(node.property.name)) readKeys.add(node.property.name);
       if (node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init?.type === "Identifier" && node.init.name === "plan") taken(node.id).forEach((key) => readKeys.add(key));
-      // (T568.4: and the numbers of the kinds that keep a state as a kind takes them out of the sizes, `{ numbers: { linear } }`:
+      // (T.568.4: and the numbers of the kinds that keep a state as a kind takes them out of the sizes, `{ numbers: { linear } }`:
       // sizes.ts's sizesOfPlan() hands the plan itself as the numbers)
       if (node.type === "ObjectProperty" && node.key?.name === "numbers" && node.value.type === "ObjectPattern") taken(node.value).forEach((key) => readKeys.add(key));
       // the tensors' names: matrix("wq"), floats("bq"), T.wo, tensors.wcls, and the lists a model on the GPU alone is cut by
@@ -210,13 +210,13 @@ const returned = (fn) => {
       if (node.type === "TemplateLiteral" && node.quasis[0].value.cooked === "signs.") readDerived.add("signs.<width>");
     });
   }
-  // T375.2: forward.ts reads every layer's facts and the widths (T359.5's keys) and the two facts of the architecture
+  // T.375.2: forward.ts reads every layer's facts and the widths (T.359.5's keys) and the two facts of the architecture
   // from the plan. The architecture's name is read by nothing of the engine from then on: it stays in the plan for a
   // person who looks at one
-  const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
+  const unread = { arch: "no engine reads an architecture's name (T.375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
   held("the plan's keys, Python to forward.js", keys, readKeys, unread);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
-  // (T261: and one it asks floats() for that is a derived table alone, as the local layers' RoPE tables are, is held
+  // (T.261: and one it asks floats() for that is a derived table alone, as the local layers' RoPE tables are, is held
   // with the derived tables below)
   held("the tensors' names, Python to forward.js", tensors, new Set([...readTensors].filter((name) => tensors.has(name) || !derived.has(name))));
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
@@ -224,7 +224,7 @@ const returned = (fn) => {
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
   held("the derived tables' names, Python to forward.js", derived, new Set([...readDerived].filter((name) => derived.has(name) || !tensors.has(name))));
 
-  // T359.5, T375.2, T375.5: the engine reads the layers' facts and the widths from the plan; what sizes a model before
+  // T.359.5, T.375.2, T.375.5: the engine reads the layers' facts and the widths from the plan; what sizes a model before
   // there is a plan (footprint(), gpuBytes(), gpuOnlyUnfit(): the worker as a conversion begins, /benchmark/, the tools)
   // has only its header and its form, and works the same out there: which layer is of which kind and a kind's widths
   // by the kinds of forward/kinds.ts (layers(), widths()), and what the architecture's name says by its line of
@@ -251,20 +251,20 @@ const returned = (fn) => {
     }
     // a layer's place is its place among the layers of its kind
     const places = {};
-    // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
-    // (T261: the FFN's activation, and local layers, which the architecture's line says a model may have: every family
+    // T.375.5: the architecture's line of the copy, against what this plan says of each of its facts
+    // (T.261: the FFN's activation, and local layers, which the architecture's line says a model may have: every family
     // of this check whose architecture may have them has some)
     const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors || "head_gate" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
       gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm, activation: plan.activation, local: plan.layers.some(({ local }) => local) };
     plan.layers.forEach((layer, l) => {
       assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);
       assert.equal(layer.rope, layer.kind === "attention" && said.rope && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
-      // T261: a window and the local tables are a local layer's, both or neither in every model Python makes a plan
+      // T.261: a window and the local tables are a local layer's, both or neither in every model Python makes a plan
       // of, and only a layer that attends is one; the tables are there where a layer is turned by them
       assert.equal(layer.window > 0, layer.local, `${which}: layer ${l} has a window and the local layers' tables, or neither`);
       assert.ok(!layer.local || (layer.kind === "attention" && "local_cis_real" in plan.derived && "local_cis_imag" in plan.derived), `${which}: layer ${l} is a local one`);
     });
-    // (T375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
+    // (T.375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
     // GPT-2's and a GPT-NeoX's)
     if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN`);
     assert.deepEqual(ARCHITECTURES[plan.arch], said, `${which}: src/runtime/forward/architectures.ts's line of ${JSON.stringify(plan.arch)} is not what Python's plan of that architecture says ` +
@@ -277,13 +277,13 @@ const returned = (fn) => {
   assert.deepEqual(sorted(lines), sorted(Object.keys(ARCHITECTURES)), "every line of forward/architectures.ts is held to a plan of Python's (a new architecture is a family of this check's too)");
   ok(`what sizes ${plans.length} models is the same of the form (sizes.ts, the kinds' layers() and widths()) as of Python's plan, and the ${lines.size} lines of forward/architectures.ts are what Python's plans say of each architecture`);
 
-  // tests/plans.mjs's planOf(): the plan memory-check, gpu-alone-check and the net's calls hand createForward(). T375.2:
+  // tests/plans.mjs's planOf(): the plan memory-check, gpu-alone-check and the net's calls hand createForward(). T.375.2:
   // Python's own (forward_plan(), by the native Python) with a check's settings over it, so its keys are Python's
   const { plansOf, planOf, FORM } = plansFor(root);
   const [placed] = plansOf([{ header: cases[0].header, form: FORM, dtype: "int8" }]);
   held("the plan's keys, Python to tests/plans.mjs's planOf()", keys, new Set(Object.keys(planOf(placed))));
 
-  // T375.2 (T482): the one plan written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts: the CPU
+  // T.375.2 (T.482): the one plan written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts: the CPU
   // section runs without Pyodide), against the plan Python makes for its header as an int8 Llama: every key, and every
   // value but what the section chooses for itself (kv_start), the bytes of the tables (their names are compared) and
   // the classifier under its second name (Python has the shared table under "wcls" too)
@@ -326,7 +326,7 @@ const returned = (fn) => {
   assert.ok(start, "no { type: \"start\", plan: { ... } } in the files of forward/: tests/plan-keys-check.mjs reads the GPU's plan there");
   const open = returned(functionNamed(writers, "gpuOnlyPlan"));
   const startKeys = literalKeys(start);
-  // (T568.4: and what it spreads of a name, `...numbers`: the keys of the literal that name starts from, the kinds' numbers
+  // (T.568.4: and what it spreads of a name, `...numbers`: the keys of the literal that name starts from, the kinds' numbers
   // as `const numbers = gpuKinds.reduce<KindNumbers>(…, { convolution: null, linear: null })` has them, every one)
   for (const property of start.properties.filter((p) => p.type === "SpreadElement" && p.argument.type === "Identifier")) {
     let init;
@@ -341,7 +341,7 @@ const returned = (fn) => {
     words: literalKeys(start.properties.find((p) => p.key?.name === "words").value),
     tables: new Set(),
   };
-  // (T568.4: and the vectors of the kinds' own, which gpuVectors() spreads: what each kind's gpu.vectors() returns,
+  // (T.568.4: and the vectors of the kinds' own, which gpuVectors() spreads: what each kind's gpu.vectors() returns,
   // forward/kinds.ts's, a method or an arrow of a literal)
   for (const { program } of writers) {
     walk(program, (node) => {
@@ -387,7 +387,7 @@ const returned = (fn) => {
   // (what is read off a vector itself, { at, size }, is no name of one)
   held("the GPU's plan's vectors", inside.vectors, new Set([...readInside.vectors].filter((key) => !["at", "size"].includes(key))));
 
-  // T368.2: and the types say the same (src/runtime/contracts/gpu/protocol.ts): the two plans, what they hold one level
+  // T.368.2: and the types say the same (src/runtime/contracts/gpu/protocol.ts): the two plans, what they hold one level
   // down, and the messages either side posts, by their kinds and by the keys of each
   const typed = contract("gpu/protocol.ts");
   typedAs("contracts/gpu/protocol.ts's Started, to the plan of { type: \"start\" }", typed.keysOf("Started"), startKeys);

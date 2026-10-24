@@ -1,13 +1,13 @@
-// tests/device-key-check.mjs (T366): what src/runtime/shaders.js's deviceKey() is made of.
+// tests/device-key-check.mjs (T.366): what src/runtime/shaders.js's deviceKey() is made of.
 //
-// The key says whether what a device measured (the forms it chose, T148; that the CPU was faster than a model on the GPU
-// alone, T156) still holds. It is to change when a shader the engine runs changes by a character, and not otherwise:
+// The key says whether what a device measured (the forms it chose, T.148; that the CPU was faster than a model on the GPU
+// alone, T.156) still holds. It is to change when a shader the engine runs changes by a character, and not otherwise:
 // not when the file is formatted, minified or bundled, a local or a maker renamed, a parameter or a comment added.
-// (Until T366 the key hashed String(maker) of four makers, and four shaders gpu.js runs were not in it.) Node only:
+// (Until T.366 the key hashed String(maker) of four makers, and four shaders gpu.js runs were not in it.) Node only:
 //
 //   node tests/device-key-check.mjs
 //
-// T351: shaders.js is a window over the modules of src/runtime/shaders/ now. What is read, changed and run here is those
+// T.351: shaders.js is a window over the modules of src/runtime/shaders/ now. What is read, changed and run here is those
 // modules as the one module they were (tests/shaders-source.mjs's oneSource(): their statements in the window's order,
 // without the lines that hand names from one to another), and "the file" below is that text. That it is the modules'
 // own behaviour is held where the check starts: run as it is, it gives the keys of the window imported for real.
@@ -18,12 +18,12 @@
 //     src/runtime/gpu.js's modules import from the parts of shaders/ and the prompt's tiles, with all they are made of (the names their source
 //     reaches). Each piece is changed by one character, one at a time, the changed file run, and the key of one of
 //     eight made-up devices must differ: so every branch of every maker is walked by what deviceKey() makes of it.
-//     A piece of a ternary model's shaders must leave the key of every other model alone (T232); a piece of anything
+//     A piece of a ternary model's shaders must leave the key of every other model alone (T.232); a piece of anything
 //     else in the file (the benchmark's shaders, the JavaScript the checks compare with) must leave every key alone.
 //     (The review: every place gpu.js compiles a shader is listed, so that a new one is looked at; and what a maker's
 //     numbers may do is held by its syntax tree: a number is written into the text and nothing else, since the key
 //     walks one set of them.)
-//     T379.1: what gpu.js runs is the catalogue's (shaders/engine.ts): its modules take a shader as ENGINE.<name> and
+//     T.379.1: what gpu.js runs is the catalogue's (shaders/engine.ts): its modules take a shader as ENGINE.<name> and
 //     import none of a part, and the key hashes the catalogue's rows. So the shaders here are the catalogue's names,
 //     those of a ternary model alone are its second list's, and the arguments the key gives a maker are its rows'.
 // (2) The key is the same when the source is not: esbuild's reprint, its minifier (white space, names, syntax), its
@@ -129,31 +129,31 @@ assert.equal(new Set([...KEYS.plain, ...KEYS.ternary]).size, 2 * DEVICES.length,
 const TILES = ["regTile", "tfjsTile", "dp4a"];
 // the key's own lines (their strings choose what is made: no text of a shader), and what names the prompt's forms and
 // says why one is not made (a form's name is hashed with its text: the tiles' sizes are in it)
-// (T379.1: and the catalogue's own: its rows, what makes a row, and the lists of the choices they walk)
+// (T.379.1: and the catalogue's own: its rows, what makes a row, and the lists of the choices they walk)
 const KEY_ITSELF = ["deviceKey", "ENGINE_SHADERS", "TERNARY_SHADERS", "ENGINE", "EITHER", "texts", "made", "FUSED_INPUTS", "FUSED_OUTPUTS"], FORMS = ["devicePromptForms"];
 for (const name of KEY_ITSELF) assert.ok(declared.has(name), `${name} is no declaration of the shaders' modules any more: this check's list of the key's own lines`);
-// the catalogue (T379.1): the rows the key hashes, [name, the arguments of a maker's row] each
+// the catalogue (T.379.1): the rows the key hashes, [name, the arguments of a maker's row] each
 const rowsOf = (rows) => rows.map(({ name, given }) => ({ name, given }));
 const ROWS = { engine: rowsOf(real.ENGINE_SHADERS), ternary: rowsOf(real.TERNARY_SHADERS) };
 const named = (rows) => [...new Set(rows.map(({ name }) => name))];
-// the shaders of a model of ternary weights alone (T232): no other model's key holds them
+// the shaders of a model of ternary weights alone (T.232): no other model's key holds them
 const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).includes(name));
 // (and the makers of every model's shaders that have branches for ternary weights, and what only those branches write:
 // TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row)
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
-// What gpu.js takes of the shaders (T379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
+// What gpu.js takes of the shaders (T.379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
 // modules import from the parts of shaders/ is by name, each line read: a namespace (`import * as`), the window
 // (shaders.js: every name, /benchmark/'s too) or a part imported when it is used (`import("…")`) would hand names round
 // that no line names, and is refused here; and a name imported so is no shader (a text with @compute, or a maker of
 // one): that is the catalogue's to give. ENGINE itself is read by its properties alone (ENGINE.SAMPLE): handed on,
-// taken apart or subscripted, a shader would be taken that no line names. (T367.5 to T379.1: the import lines were
-// the list of the worker's shaders. Until T367.5 the worker handed the window's module round as m.wgsl.)
-// T352: gpu.js is a window over the modules of src/runtime/gpu/ now, and the worker is all of those files: each is read, and
+// taken apart or subscripted, a shader would be taken that no line names. (T.367.5 to T.379.1: the import lines were
+// the list of the worker's shaders. Until T.367.5 the worker handed the window's module round as m.wgsl.)
+// T.352: gpu.js is a window over the modules of src/runtime/gpu/ now, and the worker is all of those files: each is read, and
 // what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
 // folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
-// (T368.6: the worker is TypeScript: its files in either spelling, each parsed with its types blanked, so that a type's
+// (T.368.6: the worker is TypeScript: its files in either spelling, each parsed with its types blanked, so that a type's
 // import of a part is no name taken and a place in the text is its place in the source)
 const gpuFiles = ["gpu.js", ...fs.readdirSync(runtime("gpu")).filter((name) => name.endsWith(".js") || typed(name)).sort().map((name) => `gpu/${name}`)];
 assert.ok(gpuFiles.length > 1, "gpu/ holds the worker's modules");
@@ -188,13 +188,13 @@ for (const file of gpuFiles) {
 }
 const used = [...taking].sort();
 // every row is a shader the worker runs: a row no module takes is in every device's key for nothing (TERNARY_PACKED,
-// a piece of text, was one from T232 until T379.2 moved the keys anyway)
+// a piece of text, was one from T.232 until T.379.2 moved the keys anyway)
 assert.deepEqual(Object.keys(real.ENGINE).filter((name) => !taking.has(name)), [], "the catalogue's rows that no module of gpu.js takes");
 // gpu.js compiles a shader in one place (pipelineOf) and hands it the code at the calls below. A new call, or one whose code
 // comes from somewhere else, is looked at here: every shader it can compile must be one of those the key hashes
 const compiled = gpuNodes.filter(({ n }) => n.type === "CallExpression" && n.callee.name === "pipelineOf").map(({ n, text }) => text.slice(n.arguments[1].start, n.arguments[1].end));
 assert.equal(gpuNodes.filter(({ n }) => n.type === "Identifier" && n.name === "createShaderModule").length, 1, "gpu.js makes shader modules in one place");
-// (T352: and under that one name: a module that took pipelineOf as another name, or made a pipeline itself, would compile unseen)
+// (T.352: and under that one name: a module that took pipelineOf as another name, or made a pipeline itself, would compile unseen)
 assert.equal(gpuNodes.filter(({ n }) => n.type === "Identifier" && /^createComputePipeline(Async)?$/.test(n.name)).length, 1, "gpu.js makes pipelines in one place");
 for (const { n, file } of gpuNodes) {
   if (n.type === "ObjectProperty" && !n.computed && (n.key.name ?? n.key.value) === "pipelineOf") assert.ok(n.shorthand, `${file} takes pipelineOf under another name`);
@@ -206,7 +206,7 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "kept.code",  // the same, the remembered one
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
   "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
-  "ENGINE.OUTPUT_GATE",  // (T271.2: a Qwen3.5's gate of the attention's output)
+  "ENGINE.OUTPUT_GATE",  // (T.271.2: a Qwen3.5's gate of the attention's output)
   "ENGINE.flashTile(shape)", "ENGINE.flashVec(a.shape)", "ENGINE.flashVecReduce(a.shape)",
 ].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile of the catalogue (ENGINE.<name>) or a tile (devicePromptForms)?");
 for (const { n, file } of gpuNodes) {
@@ -298,7 +298,7 @@ function onlyWritten(fn, param, seen = new Set()) {
   return true;
 }
 const walked = new Map();  // maker -> the properties of the object the key gives it
-// (T379.1: what the key gives a maker is the catalogue's rows of it: every row of a maker gives it all the maker reads,
+// (T.379.1: what the key gives a maker is the catalogue's rows of it: every row of a maker gives it all the maker reads,
 // and what is a number in one row is the same number in all of them: one set of numbers)
 for (const { name, given } of [...ROWS.engine, ...ROWS.ternary]) {
   if (!given) { assert.equal(typeof real.ENGINE[name], "string", `${name}: a row without arguments is a text`); continue; }
@@ -359,7 +359,7 @@ function runAny(text) {
   const key = lists[0].specifiers.find((specifier) => specifier.exported.name === "deviceKey").local.name;
   return new Function(`${text.slice(0, lists[0].start)}\nreturn ${key};${text.slice(lists[0].end)}`)();
 }
-// the control: the same file with one maker's own source hashed too, as every maker's was until T366
+// the control: the same file with one maker's own source hashed too, as every maker's was until T.366
 const hashed = "...written(ENGINE_SHADERS),";
 assert.equal(source.split(hashed).length, 2, "deviceKey() names the catalogue's rows of every model once");
 const control = source.replace(hashed, `${hashed} String(fusedMatVec),`);

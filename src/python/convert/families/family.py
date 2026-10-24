@@ -1,4 +1,4 @@
-# What a family of models is to the converter (T359): one record of all that differs between one model_type of
+# What a family of models is to the converter (T.359): one record of all that differs between one model_type of
 # config.json and another, which convert/config.py, plan.py, gguf.py and conversion.py look up and ask, instead of
 # comparing names themselves. And what of a config.json every family reads the same way.
 from types import MappingProxyType
@@ -14,18 +14,18 @@ def refuse(reason):
 
 def head_size(config):
     """The size of an attention head: config.json's head_dim where it says one (Qwen3 0.6B: 128 in a dim of 1024,
-    T124), else dim / heads. "head_dim": null says as much as no head_dim at all (cyberagent/CAT-Translate-7b)."""
+    T.124), else dim / heads. "head_dim": null says as much as no head_dim at all (cyberagent/CAT-Translate-7b)."""
     return config.get("head_dim") or config["hidden_size"] // config["num_attention_heads"]
 
 
 def rotary_dim(config):
-    """How many of each head's values GPT-NeoX rotates (rotary_pct of them, an even number), and Qwen3.5 (T229: its
+    """How many of each head's values GPT-NeoX rotates (rotary_pct of them, an even number), and Qwen3.5 (T.229: its
     partial_rotary_factor, which normalize() gives the same name)."""
     return int(head_size(config) * float(config.get("rotary_pct", 1.0))) // 2 * 2
 
 
 def yarn(config):
-    """What a config.json whose RoPE scaling is yarn says of it besides its kind (T235), else None."""
+    """What a config.json whose RoPE scaling is yarn says of it besides its kind (T.235), else None."""
     scaling = config.get("rope_scaling") or {}
     if scaling.get("rope_type", scaling.get("type")) != "yarn":
         return None
@@ -59,7 +59,7 @@ class Family(NamedTuple):
     # the layout of its file and its forward pass (engine/layout.py's FORM: "arch")
     arch: str
     # (d, prefix, rotary) -> what each row of the layout is made of, by the row's name: (the Hugging Face tensor's
-    # name, with {} for the layer where the row is a stack; the transform, convert/plan.py's transformed(), or (T341)
+    # name, with {} for the layer where the row is a stack; the transform, convert/plan.py's transformed(), or (T.341)
     # of a stack a function of the layer's number that gives that layer's). d: the layout's Dims, prefix: what prefix()
     # said, rotary: how many values of a head RoPE turns (0 unless partly)
     sources: Callable
@@ -75,7 +75,7 @@ class Family(NamedTuple):
     # the keys of the checkpoint's form that only this family says (FORM's "linear", "convolution"), each with the
     # function of the config that makes it
     form: Any = MappingProxyType({})
-    # (source) -> the keys of the checkpoint's form that this family's file says by the tensors it has (T369: a Llama's
+    # (source) -> the keys of the checkpoint's form that this family's file says by the tensors it has (T.369: a Llama's
     # "bias" and "qk_norm", rows its layout has or has not). A family whose layout always has them, or never, says
     # nothing: its form keeps FORM's value, whatever names its source happens to hold
     found: Callable = nothing
@@ -83,24 +83,24 @@ class Family(NamedTuple):
     options: Callable = nothing
     # (source) -> what stands in front of its tensors' names, where that depends on the file
     prefix: Callable = lambda source: ""
-    # (config) -> what the conversion multiplies q by (T253: a Granite's scores)
+    # (config) -> what the conversion multiplies q by (T.253: a Granite's scores)
     scale: Callable = lambda config: 1.0
     # the classifier's name in a source, where it has one of its own
     classifier: str = "lm_head.weight"
     # the context is the config's whatever is asked for (a table of learned positions has exactly that many rows)
     fixed_context: bool = False
-    # a head may be of another size than dim / heads (q and o are matrices of their own, T124)
+    # a head may be of another size than dim / heads (q and o are matrices of their own, T.124)
     free_heads: bool = False
     # its RoPE may be scaled (the kinds the tables know: Llama 3's, linear, yarn)
     scaled: bool = False
-    # its matrices may be in a rotated basis (T237)
+    # its matrices may be in a rotated basis (T.237)
     rotatable: bool = False
-    # its norms are RMSNorms, whose epsilon the options say where it is not the engine's (T124)
+    # its norms are RMSNorms, whose epsilon the options say where it is not the engine's (T.124)
     rms_norm: bool = False
     # RoPE turns part of each head only: the options say how much ("rotary")
     partly: bool = False
     # (config) -> how many values of each layer's heads RoPE turns, a number for every layer (a tuple), where the layers
-    # differ in it: what sources() is handed as its rotary in place of the one number (T341: a Spark-X2.5's local
+    # differ in it: what sources() is handed as its rotary in place of the one number (T.341: a Spark-X2.5's local
     # layers turn the whole head, the others a quarter of it). None: every layer the same
     turns: Optional[Callable] = None
     # ---- a GGUF of it (None: llama.cpp has no architecture of this name; a Mistral's says "llama")
@@ -115,11 +115,11 @@ class Family(NamedTuple):
     # own entry, target: Hugging Face's name, parts: the GGUF's name cut at its dots
     gguf_stored: Callable = as_stored
     # (config) -> the rope_freqs table llama.cpp writes of this family's RoPE, where it writes one that is not a Llama
-    # 3's scaling (T529: a Gemma 4's proportional RoPE, the pairs that do not turn divided by 1e30). The table is then
+    # 3's scaling (T.529: a Gemma 4's proportional RoPE, the pairs that do not turn divided by 1e30). The table is then
     # held to this as it streams past, whether or not the GGUF has the original's config.json beside it
     gguf_rope_freqs: Optional[Callable] = None
     # (config, header, which) -> the cos (which 0) or sin (1) RoPE table of a float32 or float16 file, where the
-    # family's is not the one convert/plan.py's rope_table() makes (T331: a Gemma 4's, of its wide heads)
+    # family's is not the one convert/plan.py's rope_table() makes (T.331: a Gemma 4's, of its wide heads)
     table: Optional[Callable] = None
     # (own, config) -> what a GGUF and the original's config.json must agree on besides what every family's must
     # (gguf_agrees()), as (what, the GGUF's, the original's): the numbers of this family that no tensor shows

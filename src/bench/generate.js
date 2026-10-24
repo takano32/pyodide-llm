@@ -1,15 +1,15 @@
-// The GPU section's table of generated tokens and of the sampling (T151, T191).
-// (T353: a part of src/bench.js, which is the window that exports every name of these)
+// The GPU section's table of generated tokens and of the sampling (T.151, T.191).
+// (T.353: a part of src/bench.js, which is the window that exports every name of these)
 import { number, times, noRatios, tableCell, unmeasured } from "./cells.js";
 
 /**
- * T151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.js's EMBED, fusedMatVec and SAMPLE: the
+ * T.151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.js's EMBED, fusedMatVec and SAMPLE: the
  * sampling on the GPU too, the state carried from token to token there). step: {name, result: {model, layers, vocab,
  * GB, dispatches, chunkDispatches, tokens, settings, work: {ms, unsteady}, chunkWork, rows: [{perSubmission, msPerToken,
  * fixedMs, chunks}], sampling: {vocab, msEach, over, unsteady, chunks: {msEach, unsteady, pick} (pick: its last stage
  * alone, the same form), flat: {msEach, over, unsteady, chunks}}}} or {name, error} (a time {error} where it failed);
  * check: the shaders against JavaScript ("sampling", "sampling in chunks"
- * and "tokens on the GPU"); gpu: { fallback, lost }. T191: each row also the ms a token with the sampling in chunks
+ * and "tokens on the GPU"); gpu: { fallback, lost }. T.191: each row also the ms a token with the sampling in chunks
  * (shaders.js's SAMPLER_STAGES, many workgroups) where the rest is SAMPLE's one workgroup. A row a way of submitting: one token a submission, each read back as it comes, and
  * several in one submission, read back once. "A submission besides its tokens" (F) is what a submission costs past its
  * tokens' work (the wait and the reading back: a row's ms a token times its tokens, less a token's work, the
@@ -31,11 +31,11 @@ export function generateTable(step, check, gpu = {}) {
   const fixed = (row, ms) => (derived && Number.isFinite(ms) ? (ms < 0 ? "under the noise" : number(ms, 2)) : "");
   const s = r.settings ?? {};
   return [`**Tokens generated on the GPU** (${tableCell(r.model)}: ${r.layers} layers, a vocabulary of ${r.vocab}, ${number(r.GB, 2)} GB of weights a token; ` +
-    `a token is ${r.dispatches} dispatches: its row of the embedding, the layers as ${r.layer ? `the layer table's "${tableCell(r.layer)}"` : "T150's fused"}, the classifier, and the sampling on the GPU in one workgroup (T151), ` +
+    `a token is ${r.dispatches} dispatches: its row of the embedding, the layers as ${r.layer ? `the layer table's "${tableCell(r.layer)}"` : "T.150's fused"}, the classifier, and the sampling on the GPU in one workgroup (T.151), ` +
     `penalty ${s.penalty}, temperature ${s.temperature}, top-p ${s.topp}). The same ${r.tokens} tokens each way, the ways in turn; ` +
     "a token's work alone is a submission of 2n tokens less one of n. A submission besides its tokens: what it costs past their work (submitting, waiting, reading the ids back)." +
     " With the sampling in chunks: the same tokens sampled by a workgroup a chunk of the vocabulary" +
-    `${r.chunkDispatches ? ` (${r.chunkDispatches} dispatches a token)` : ""}, the ways and the samplers in turn (T191).` +
+    `${r.chunkDispatches ? ` (${r.chunkDispatches} dispatches a token)` : ""}, the ways and the samplers in turn (T.191).` +
     `${wrong ? " The check found the sampling on the GPU WRONG." : ""}${chunksWrong ? " The check found the sampling in chunks WRONG." : ""}`,
     ...(none ? [`Besides its tokens and faster: ${none}.`] : []), "",
     "| tokens a submission | GPU ms a token | with the sampling in chunks, ms | a submission besides its tokens, ms | of it a token, ms | faster than one a submission |",
@@ -51,7 +51,7 @@ export function generateTable(step, check, gpu = {}) {
     `${r.sampling?.flat ? `; on flat logits, ${samplingCell(r.sampling.flat)}` : ""}.`];
 }
 // the ms of the sampling alone, with how many tokens were over the nucleus's floor (what SAMPLE gathers and reads each
-// round of its searches: T151), in one workgroup and (T191) in chunks, and of those the last stage alone (T191's
+// round of its searches: T.151), in one workgroup and (T.191) in chunks, and of those the last stage alone (T.191's
 // review: one workgroup's nucleus and draw, SAMPLE's search; the rest of SAMPLE is its reading of the vocabulary)
 const samplingTime = (s) => (s.error ? `failed: ${tableCell(s.error)}` : `${s.unsteady ? "unsteady: " : ""}${number(s.msEach, 3)} ms`);
 const samplingCell = (s) => `${s.chunks ? "one workgroup " : ""}${samplingTime(s)}` +

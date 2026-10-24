@@ -1,4 +1,4 @@
-"""GPT-NeoX (T72): a GPT-2 that rotates part of every head, and may run its two branches in parallel.
+"""GPT-NeoX (T.72): a GPT-2 that rotates part of every head, and may run its two branches in parallel.
 
 The reference is written from the Hugging Face tensors, the way transformers computes them, so it checks the
 converter (query_key_value holds q, k and v interleaved per head) and the engine together.

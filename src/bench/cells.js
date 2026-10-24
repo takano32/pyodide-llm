@@ -1,5 +1,5 @@
 // What the tables of /benchmark/ share: a number, a ratio, a cell's words, why there are no ratios, the threads' words.
-// (T353: a part of src/bench.js, which is the window that exports every name of these)
+// (T.353: a part of src/bench.js, which is the window that exports every name of these)
 
 const number = (value, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
 
@@ -32,7 +32,7 @@ export function noRatios({ fallback, lost } = {}) {
  * \| as a | in a cell). */
 export const tableCell = (text) => String(text).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 
-/** Why a step of the GPU section has no table: it failed (T227: in that word, as the rows say it, so that warnings()
+/** Why a step of the GPU section has no table: it failed (T.227: in that word, as the rows say it, so that warnings()
  * lists it), or it was not run. */
 export const unmeasured = (error) => (error ? `failed: ${error}` : "not measured");
 

@@ -1,6 +1,6 @@
 # reference_dry.py
-# T357.4: the tools that hold the engine to transformers in CI (tests/reference_llama.py, tests/reference_qwen35.py,
-# tests/reference_lfm2.py, tests/reference_gemma3.py, T329.3's tests/reference_gemma4.py, T342's tests/reference_spark.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
+# T.357.4: the tools that hold the engine to transformers in CI (tests/reference_llama.py, tests/reference_qwen35.py,
+# tests/reference_lfm2.py, tests/reference_gemma3.py, T.329.3's tests/reference_gemma4.py, T.342's tests/reference_spark.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
 # transformers (tests/reference_standin/) answer with the engine itself, on made-up models and made-up directories of
 # what Hugging Face publishes. Nothing is held to transformers here (CI does that, 10 to 50 minutes a tool); what this
 # shows in a quarter of a minute is that the tools still run: the made-up models, the conversions, the tokenizers'
@@ -105,20 +105,20 @@ def directories(work):
                                 "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
                                 "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
                                 "model.safetensors": made_up.safetensors_file(tensors)})
-    # (T261) a Gemma 3 whose window the long text here is past four times
+    # (T.261) a Gemma 3 whose window the long text here is past four times
     tensors, config = made_up.gemma3_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="ssssslssl")
     put(work / "gemma3" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
                                   "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
                                   "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
                                   "model.safetensors": made_up.safetensors_file(tensors)})
-    # (T329.3) a Gemma 4 of the E2B's kinds in small, its names the whole model's (model.language_model.)
+    # (T.329.3) a Gemma 4 of the E2B's kinds in small, its names the whole model's (model.language_model.)
     tensors, config = made_up.gemma4_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="sslsslssl", sharing=3,
                                            double=True, per_layer=8, whole=True)
     put(work / "gemma4" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
                                   "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
                                   "generation_config.json": "{}", "chat_template.jinja": "{{ bos_token }}" + CHATML,
                                   "model.safetensors": made_up.safetensors_file(tensors)})
-    # (T342) a Spark-X2.5 whose window the long text here is past four times; its own code is the stand-in's (the files
+    # (T.342) a Spark-X2.5 whose window the long text here is past four times; its own code is the stand-in's (the files
     # are there to be fetched, and nobody reads them)
     tensors, config = made_up.spark_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, kinds="ssslsssls", spread=0.1)
     put(work / "spark" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
@@ -320,7 +320,7 @@ def main():
     work = Path(arguments[arguments.index("--work") + 1]) if "--work" in arguments else HERE.parent / ".tmp" / "reference-dry"
     only = [arg for at, arg in enumerate(arguments) if not arg.startswith("--") and (at == 0 or arguments[at - 1] != "--work")]
     work = work.resolve()
-    # T515: the mark says which directories were made, so that one this file has since grown (gemma3, T261) is made
+    # T.515: the mark says which directories were made, so that one this file has since grown (gemma3, T.261) is made
     # in a checkout whose .tmp/ was made before it: the mark alone left it out, and the dry run asked the network
     made = "the made-up directories of tests/reference_dry.py: " + " ".join(MADE) + "\n"
     if not (work / "made").exists() or (work / "made").read_text() != made:
@@ -329,17 +329,17 @@ def main():
     reference_qwen35.BOS = 2  # (the real one, 248044, is past the made-up vocabulary)
     reference.LONG = LONG
     reference_lfm2.MODELS["dry"] = ("made/lfm2", REVISION)
-    # (T261: the made-up directory's tokenizer and template are the LFM2's here, a text beginning with token 1)
+    # (T.261: the made-up directory's tokenizer and template are the LFM2's here, a text beginning with token 1)
     reference_gemma3.MODELS["dry"] = ("made/gemma3", REVISION)
     reference_gemma3.BOS, reference_gemma3.BEGINS, reference_gemma3.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
     reference_gemma3.SPECIALS, reference_gemma3.STOPS = reference_lfm2.SPECIALS, (1, 7)
-    # (T329.3: the same for the Gemma 4, whose transformers is loaded and fed by the stand-in's own ways)
+    # (T.329.3: the same for the Gemma 4, whose transformers is loaded and fed by the stand-in's own ways)
     reference_gemma4.MODELS["dry"] = ("made/gemma4", REVISION)
     reference_gemma4.BOS, reference_gemma4.BEGINS, reference_gemma4.CHAT = 1, "<|startoftext|>", reference_lfm2.CHAT
     reference_gemma4.SPECIALS, reference_gemma4.STOPS = reference_lfm2.SPECIALS, (1, 7)
     reference_gemma4.text_model = lambda directory: transformers.Model.from_pretrained(directory)
     reference_gemma4.embedded = lambda model, ids: (model.get_input_embeddings()([ids]), None)
-    # (T342: the Spark-X2.5's own code is the stand-in's classes, and its made-up models fetch nothing)
+    # (T.342: the Spark-X2.5's own code is the stand-in's classes, and its made-up models fetch nothing)
     reference_spark.MODELS["dry"] = ("made/spark", REVISION, None)
     reference_spark.BOS, reference_spark.SPECIALS = 1, [*reference_lfm2.SPECIALS, "<|startoftext|>"]
     reference_spark.code = lambda directory: (transformers.Spark2_5Config, transformers.Spark2_5ForCausalLM)

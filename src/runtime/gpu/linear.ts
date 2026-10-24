@@ -1,4 +1,4 @@
-// gpu/linear.ts (T271.2, T271.3, T568.2): a Qwen3.5's linear-attention layers on the GPU, a kind of gpu/kinds.ts's
+// gpu/linear.ts (T.271.2, T.271.3, T.568.2): a Qwen3.5's linear-attention layers on the GPU, a kind of gpu/kinds.ts's
 // table: its matrices of q, k and v (into mixed) and of z, its gates (DELTA_GATES), its convolution (DELTA_CONV into
 // convolved) and its rows moved on (DELTA_CONV_STATE), the l2 norms of q and of k (HEAD_NORM), the delta rule over the
 // place's state (DELTA_NET into out), the norm of a value head, z's gate (SWIGLU: into z), its matrix out; a token's
@@ -63,7 +63,7 @@ export const linear: GpuKind = {
           return false;
         };
       },
-      // T271.3: a token's: the block's shaders on a token's vectors, the states and rows the block's (a token is a block
+      // T.271.3: a token's: the block's shaders on a token's vectors, the states and rows the block's (a token is a block
       // of one: its q, k and v apart in a room of one token each), and the matrices of the normed stream written as they are
       async tokens({ params }) {
         const t = { mixed: buffer(m, mixed * 4), convolved: buffer(m, mixed * 4), z: buffer(m, read * 4), work: buffer(m, 2 * valueHeads * 4), out: buffer(m, read * 4) };
@@ -96,7 +96,7 @@ export const linear: GpuKind = {
           },
         };
       },
-      // T271.3: a first layer of this kind goes on from rows of random numbers, ±1, and a state of random numbers, ±0.1,
+      // T.271.3: a first layer of this kind goes on from rows of random numbers, ±1, and a state of random numbers, ±0.1,
       // both of its place 0; and it keeps no keys and values. As the CPU has it (linear.ts): mixed = wqkv · xn and z =
       // wz · xn; the gates beta = sigmoid(wb · xn) and decay = exp(decay × softplus(wa · xn + dt_bias)) of every value
       // head; the convolution of mixed over the rows (rows[1] to rows[taps - 1], then mixed) with SiLU; q and k each head

@@ -8,51 +8,51 @@ export const unigram = { tokenizer_kind: "unigram" };
 // wraps what the visitor typed ({prompt}), for one turn and no more. The forms are the chat_template of each model.
 export const LLM_JP_INSTRUCT = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。\n\n### 指示:\n{prompt}\n\n### 応答:\n";
 export const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
-// T517: LINE's japanese-large-lm instruction-sft (1.7B and 3.6B) have no chat template; their cards write this, and
+// T.517: LINE's japanese-large-lm instruction-sft (1.7B and 3.6B) have no chat template; their cards write this, and
 // the space at its end too, which the model answers after
 export const LINE_SFT = "ユーザー: {prompt}\nシステム: ";
 // ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
 export const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 // the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, a Qwen3's
-// QWEN3_FROM_IM_START and Hermes 3's, T252's review): the format begins after it (T250's review)
+// QWEN3_FROM_IM_START and Hermes 3's, T.252's review): the format begins after it (T.250's review)
 export const CHATML_AFTER_START = "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 export const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
-// T369 (T264): the converter gives a model whose chat template it read the template's own first token as its BOS, and
+// T.369 (T.264): the converter gives a model whose chat template it read the template's own first token as its BOS, and
 // the format from the next token on, so that the page sends the ids of transformers' apply_chat_template: a Qwen opened
 // with ?hf= begins with <|im_start|> and no <|endoftext|> in front. The entries of the list that had the converter's BOS
 // until then (<|endoftext|> in front of the template's <|im_start|>: Qwen2.5, TinySwallow, a Qwen3 of 4B or less and
 // those made from one) keep sending what they sent: a Qwen2.5 is within 3% either way and a Qwen3 of 4B or less 8 to 10%
-// worse on plain text with <|im_start|> first (T131, T250's review), and what they write was read with that BOS. So
+// worse on plain text with <|im_start|> first (T.131, T.250's review), and what they write was read with that BOS. So
 // they say it now: the BOS (QWEN3_OWN_BOS, below) and the whole format, as the converter read it before. Whether they
-// should begin as the real template does is a measurement to make (TASKS.md's T369, its findings)
+// should begin as the real template does is a measurement to make (TASKS.md's T.369, its findings)
 export const QWEN25 = `<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n${CHATML}`;
 export const TINYSWALLOW = "<|im_start|>system\nあなたは、Sakana AI株式会社が開発したTinySwallowです。小型ながら、誠実で優秀なアシスタントです。" +
   `<|im_end|>\n${CHATML}`;
 // Qwen3 4B Thinking 2507's chat_template begins the answer with <think> itself
 export const QWEN3_THINKING_2507 = `${CHATML}<think>\n`;
 // sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
-// reader does not take (T73): one turn of it, as the real Jinja renders it, is this (T81; the 0.5B Instruct had
+// reader does not take (T.73): one turn of it, as the real Jinja renders it, is this (T.81; the 0.5B Instruct had
 // ChatML here until 2026-09-26, whose <|im_start|> its vocabulary does not have). <|user|> (9), <|assistant|> (8)
 // and </s> (2) are tokens of their own, and a model that writes the mark of a turn (7 to 9) has ended its answer.
-// T400: their tokenizer.model adds no dummy prefix (add_dummy_prefix false) and their tokenizer puts no <s> in front,
-// so the real ids begin with <|user|>: that is the BOS here and the format is what follows it (T264's form; the
-// converter says the same of them since T400: an entry says both or neither, the bos and the format)
+// T.400: their tokenizer.model adds no dummy prefix (add_dummy_prefix false) and their tokenizer puts no <s> in front,
+// so the real ids begin with <|user|>: that is the BOS here and the format is what follows it (T.264's form; the
+// converter says the same of them since T.400: an entry says both or neither, the bos and the format)
 export const SARASHINA = "{prompt}</s><|assistant|>";
 export const sarashina = { bos: 9, specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] };
 export const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
-// llm-jp-4's chat_template is OpenAI's harmony (T132), with a system message of the model's name, its knowledge cutoff
+// llm-jp-4's chat_template is OpenAI's harmony (T.132), with a system message of the model's name, its knowledge cutoff
 // and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to
 // the model; this one asks for the final channel, the answer, and so skips the analysis a harmony model may write
 // first. Its tokenizer.json puts a "▁" before the text after each special token (a normalizer that replaces the start
-// of every piece with it): the converter says so to the engine (prefixed, T308; until T369 a space after each special
-// token here made the same tokens: the same IDs as the real Jinja and tokenizers for four prompts, T132). A turn ends
+// of every piece with it): the converter says so to the engine (prefixed, T.308; until T.369 a space after each special
+// token here made the same tokens: the same IDs as the real Jinja and tokenizers for four prompts, T.132). A turn ends
 // with <|return|> (2), <|end|> (11) or <|call|> (13), and a new message would start with <|start|> (10). The BOS is
 // <|startoftext|> (1), which the real tokenizer begins a text with and the template does not write: said here (harmony)
-// since T369, for the converter alone begins with the template's <|start|> now (T264)
+// since T.369, for the converter alone begins with the template's <|start|> now (T.264)
 export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
   "message.<|end|><|start|>user<|message|>{prompt}<|end|><|start|>assistant<|channel|>final<|message|>";
-// T125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
+// T.125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
 // four prompts, where the prompt has no space at either end: some templates trim it, the page does not). These
 // models come with a sentencepiece tokenizer.model, which the engine reads (their tokenizer.json is a BPE of
 // sentencepiece's kind, which it does not). v0.2 writes "<s> [INST]": after the BOS, the engine's dummy prefix is
@@ -60,56 +60,56 @@ export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large lang
 export const MISTRAL = "[INST] {prompt} [/INST]";
 export const MISTRAL_V3 = "[INST] {prompt}[/INST]";
 // RakutenAI's (2.0 mini and 7B chat): no special tokens, a system sentence and USER / ASSISTANT; the template trims
-// what was typed (T138)
+// what was typed (T.138)
 export const RAKUTEN = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, " +
   "detailed, and polite answers to the user's questions. USER: {prompt:trim} ASSISTANT:";
-// T138: Swallow-MS's card always passes this system message, which its template puts in the user's turn; the template
+// T.138: Swallow-MS's card always passes this system message, which its template puts in the user's turn; the template
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)
 export const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
 // zephyr's tokenizer puts a "▁" before the text after </s> (a legacy Llama tokenizer): the converter says so to the
-// engine (prefixed, T308; until T369 a space after </s> here made the same tokens)
+// engine (prefixed, T.308; until T.369 a space after </s> here made the same tokens)
 export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";
-// T249: EuroLLM's chat_template is ChatML with a system turn that is empty unless one is given. Its tokenizer (a legacy
+// T.249: EuroLLM's chat_template is ChatML with a system turn that is empty unless one is given. Its tokenizer (a legacy
 // Llama tokenizer, as zephyr's) puts a "▁" before the text after <|im_start|> and <|im_end|>: the converter says so to
-// the engine (prefixed, T308; until T369 a space after each here made the same tokens: the same IDs as the real Jinja
+// the engine (prefixed, T.308; until T.369 a space after each here made the same tokens: the same IDs as the real Jinja
 // and tokenizers for tests/format_check.py's prompts). The BOS is <s> (1), in front of the template's <|im_start|> as
-// the list has had it, and the answer stops at it and at <|im_end|> (4): said here since T369, for the converter alone
-// begins with <|im_start|> now (T264)
+// the list has had it, and the answer stops at it and at <|im_end|> (4): said here since T.369, for the converter alone
+// begins with <|im_start|> now (T.264)
 export const EUROLLM = "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 export const eurollm = { bos: 1, stop_tokens: [1, 4] };
-// T250: Llama-3-ELYZA-JP's template is Llama 3's (no date, the turns trimmed), and its card always passes this system
+// T.250: Llama-3-ELYZA-JP's template is Llama 3's (no date, the turns trimmed), and its card always passes this system
 // message, as Swallow-MS's does: one turn of it as the real Jinja writes it with that message
 export const ELYZA = "<|start_header_id|>system<|end_header_id|>\n\nあなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、" +
   "常に日本語で回答してください。<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt:trim}<|eot_id|>" +
   "<|start_header_id|>assistant<|end_header_id|>\n\n";
-// T124: Qwen3 thinks before it answers (<think>…</think>, then the answer), which is the form its chat_template writes
+// T.124: Qwen3 thinks before it answers (<think>…</think>, then the answer), which is the form its chat_template writes
 // and the converter reads. The same weights answer at once when the answer begins with an empty thought: the form of
 // enable_thinking=false. <think> and </think> are tokens of the vocabulary that tokenizer.json does not call special:
-// the converter names those as specials with the rest (T143: <tool_call>, <|fim_prefix|> ...), so the list names none
-// for Qwen3. A list of its own would go over the converter's and spell the others out where a visitor types them (T221)
+// the converter names those as specials with the rest (T.143: <tool_call>, <|fim_prefix|> ...), so the list names none
+// for Qwen3. A list of its own would go over the converter's and spell the others out where a visitor types them (T.221)
 export const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
-// T250's review: the real Qwen3 tokenizer puts nothing in front of a text and its format begins with <|im_start|>, but
+// T.250's review: the real Qwen3 tokenizer puts nothing in front of a text and its format begins with <|im_start|>, but
 // the converter's BOS is <|endoftext|> (QWEN3_OWN_BOS below, and what config.json names). A Qwen3 of 8 billion
 // parameters is much worse with it in front: its own answers to five questions are 178% higher in perplexity (Qwen3 8B,
 // plain text 144%; Shisa V2.1's fine-tune of it 67% and 54%), where Qwen's 0.6B and 1.7B are 1 to 4% off and CAT-Thinking
 // 8B (Qwen3 Swallow's, continued on Japanese text) 0.4% (tests/answer_check.mjs, tests/start_check.mjs). For those the BOS
-// is the format's own first token, <|im_start|> (151644), and the formats begin after it (as Qwen3.5's, T236): the page
+// is the format's own first token, <|im_start|> (151644), and the formats begin after it (as Qwen3.5's, T.236): the page
 // sends the very IDs the real template makes. The answer stops at <|im_end|>, at <|endoftext|> and at the mark of a new turn
 export const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] };
 export const QWEN3_THINKING_AFTER_START = CHATML_AFTER_START;
 export const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</think>\n\n`;
-// T236: Qwen3.5's chat_template calls a macro (render_content, for the pictures of a message), which the converter's
+// T.236: Qwen3.5's chat_template calls a macro (render_content, for the pictures of a message), which the converter's
 // reader refuses: one turn of text by hand, as the real Jinja writes it with enable_thinking true and without (the
 // same IDs as transformers' apply_chat_template for tests/format_check.py's prompts). The template trims what was
 // typed. Without a template the converter read, its special tokens are not in the converter's specials, and a list of
-// the entry's replaces the converter's (T221): so all of the converter's are here (the added tokens tokenizer.json
-// does not call special, T143) with <|im_start|> and <|im_end|>, in the converter's order (the longest first).
+// the entry's replaces the converter's (T.221): so all of the converter's are here (the added tokens tokenizer.json
+// does not call special, T.143) with <|im_start|> and <|im_end|>, in the converter's order (the longest first).
 // The BOS: the real tokenizer begins a text with none (bos_token null), and the page begins every text with one, the
-// converter's being <|endoftext|> (248044, T229). That one costs this model much on plain text (on 299 tokens of
+// converter's being <|endoftext|> (248044, T.229). That one costs this model much on plain text (on 299 tokens of
 // Wikipedia the perplexity is 46% higher in English and 95% in Japanese with it in front, and 20% to 65% on four texts
 // of 512 tokens in the review, lasting to the end: its linear-attention layers keep what they read in a state, where a
-// Qwen3's attention looks past it, T131's ±3%). In chat form it does not change how likely an answer written by hand
+// Qwen3's attention looks past it, T.131's ±3%). In chat form it does not change how likely an answer written by hand
 // is (tests/chat_nll.py: -0.8%, worse on 12 of 24) but it changes what the model writes: along its own answers the
 // next-token distributions move by 0.12 nats a token (0.18 thinking), the most likely token at 13% (9%) of the
 // positions. So the BOS here is the format's own first token, <|im_start|> (248045), and the formats begin after it:
@@ -122,7 +122,7 @@ export const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 export const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
-// T255: SmolLM3's chat_template is past the converter's reader (it asks whether a text is in a variable it may not have
+// T.255: SmolLM3's chat_template is past the converter's reader (it asks whether a text is in a variable it may not have
 // set), so one turn by hand, as the real Jinja writes it with enable_thinking true and with false and no system turn
 // (tests/format_check.py, strict). It writes a system turn of its own first: the day (strftime_now: {date:…}, the
 // visitor's own), the mode, and one of two instructions, the long one where it thinks. That turn has no <|im_end|>
@@ -130,8 +130,8 @@ export const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
 // The real tokenizer begins a text with nothing (bos_token null) and the template with <|im_start|> (128011): that is
 // the BOS, and the formats begin after it (as Hermes 3's). It stops at <|im_end|> (config.json's EOS), at
 // <|begin_of_text|>, <|end_of_text|> and at the mark of a new turn. Without a template the converter read,
-// <|im_start|> and <|im_end|> are not in its specials, and a list of the entry's replaces the converter's (T221): all
-// of the converter's are here (the added tokens tokenizer.json does not call special, T143), in its order
+// <|im_start|> and <|im_end|> are not in its specials, and a list of the entry's replaces the converter's (T.221): all
+// of the converter's are here (the added tokens tokenizer.json does not call special, T.143), in its order
 const SMOLLM3_THINKS =
   "You are a helpful AI assistant named SmolLM, trained by Hugging Face. Your role as an assistant involves " +
   "thoroughly exploring questions through a systematic thinking process before providing the final precise and " +
@@ -153,7 +153,7 @@ export const SMOLLM3_AT_ONCE = smollm3Format("/no_think", "You are a helpful AI 
 export const smollm3 = { bos: 128011, stop_tokens: [128000, 128001, 128011, 128012],
   specials: ["</tool_response>", "<tool_response>", "</tool_call>", "<|im_start|>", "<tool_call>", "<|im_end|>", "</think>",
     "</code>", "<think>", "<code>"] };
-// T337: Agents-A1-4B's chat_template is Qwen3.5's with one thing more: where the messages have no system turn it writes
+// T.337: Agents-A1-4B's chat_template is Qwen3.5's with one thing more: where the messages have no system turn it writes
 // this one (the template's own default: the card's recommended one is the same but names tavily_search and is dated
 // 2026-07-13. The date is fixed in the template). So the page sends it too,
 // and its IDs are the real template's (tests/format_check.py, strict). It speaks of tools, which the page has none of:
@@ -175,14 +175,14 @@ const AGENTS_A1_SYSTEM =
   "Current date: 2026-07-14";
 export const AGENTS_A1_THINKING = `system\n${AGENTS_A1_SYSTEM}<|im_end|>\n<|im_start|>${QWEN35_THINKING}`;
 export const AGENTS_A1_AT_ONCE = `${AGENTS_A1_THINKING}\n</think>\n\n`;
-// T253: IBM's Granite 4.2. Since T269 the converter's reader reads its chat_template (until then it stopped at the inline
+// T.253: IBM's Granite 4.2. Since T.269 the converter's reader reads its chat_template (until then it stopped at the inline
 // `a if b else c` and at the empty list `[]`), which gives ?hf= the thinking form; the list has both forms and its own
 // BOS, so they stay by hand: one turn as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
 // system turn it always writes (the same IDs as transformers' apply_chat_template for tests/format_check.py's
-// prompts). As for a Qwen3.5 (T236): the real tokenizer begins a text with no BOS (its post-processor adds none, and
+// prompts). As for a Qwen3.5 (T.236): the real tokenizer begins a text with no BOS (its post-processor adds none, and
 // the template does not write the <s> config.json names), so the BOS here is the format's own first token,
 // <|im_start|> (100256), and the formats begin after it: the page sends the very IDs the real template makes. The
-// specials are the converter's (the added tokens tokenizer.json does not call special, T143) with <|im_start|> and
+// specials are the converter's (the added tokens tokenizer.json does not call special, T.143) with <|im_start|> and
 // <|im_end|>, in the converter's order. The answer stops at <|im_end|> (100257, the EOS), at the mark of a new turn
 // and at <s> (100283)
 export const GRANITE_THINKING = "system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n";
@@ -190,14 +190,14 @@ export const GRANITE_AT_ONCE = "system\n<|im_end|>\n<|im_start|>user\n{prompt}<|
 export const granite = { bos: 100256, stop_tokens: [100256, 100257, 100283],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "</tool_call>",
     "<|filename|>", "<|im_start|>", "<|reponame|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
-// T260: Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers; the engine's arch "lfm2"). The real
+// T.260: Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers; the engine's arch "lfm2"). The real
 // tokenizer begins every text with <|startoftext|> (1), the converter's BOS, and the chat_template writes it first:
 // the page sends the very ids the real template makes. The templates of the 230M, the 350M and the 1.2B Instruct call
 // macros (parse_content, for the pictures and the tools of a message), which the converter's reader refuses, and the
 // 700M's is past it too: one turn by hand, ChatML, as the real Jinja writes it (tests/format_check.py). Without a
 // template the converter read, <|im_start|> and <|im_end|> are not in its specials, and a list of the entry's replaces
-// the converter's (T221): so all of the converter's are here (the added tokens tokenizer.json does not call special,
-// T143: "Mathias" and "python" are among them) with those two, in the converter's order (the longest first). The
+// the converter's (T.221): so all of the converter's are here (the added tokens tokenizer.json does not call special,
+// T.143: "Mathias" and "python" are among them) with those two, in the converter's order (the longest first). The
 // 1.2B JP's template the converter reads, and its entry says nothing. The answer stops at <|im_end|> (7, the EOS) and
 // at the BOS. The cards: temperature 0.1 and a repetition penalty of 1.05 (and a top-k of 50, which the page's sampler
 // has not; no top-p), the 700M's 0.3 (and a min-p it has not either)
@@ -206,14 +206,14 @@ export const lfm25 = { specials: ["<|tool_call_start|>", "<|tool_call_end|>", "<
 export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "python"] };
 // A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, CAT-Thinking 8B; a Qwen3 of Qwen's own has
 // bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own, <|endoftext|>
-// (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the answer stops at
-// it and at <|im_end|> (151645). Since T369 it is also what keeps <|endoftext|> in front of the entries that had the
+// (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T.131), and the answer stops at
+// it and at <|im_end|> (151645). Since T.369 it is also what keeps <|endoftext|> in front of the entries that had the
 // converter's BOS until then (the note on QWEN25, above): the converter alone begins a Qwen with the template's
 // <|im_start|> now, as QWEN3_FROM_IM_START does by hand. What it costs is the
 // model's: QWEN3_FROM_IM_START (above) says which are worse for it. Where a model of this family is added,
 // tests/start_check.mjs and tests/answer_check.mjs say whether this BOS is one it can bear
 export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
-// T235 (the owner, 2026-10-11): a plain RoPE, whatever config.json's rope_scaling says. The engine makes the RoPE tables
+// T.235 (the owner, 2026-10-11): a plain RoPE, whatever config.json's rope_scaling says. The engine makes the RoPE tables
 // of a file that has none (every dtype of the page: int8, 6-bit, ternary) from the options, and an entry's options win
 // over the converter's and over those of a conversion kept before (worker/convert.ts), so this takes the converter's
 // rope_scaling out of them: an empty object is "no scaling" to the engine's rope_frequencies() and rope_magnitude()
@@ -221,14 +221,14 @@ export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 // not None. The conversion is the same bytes and the same options either way (CONVERTER stays), and ?hf= of the same
 // repository, which has no entry, keeps config.json's scaling
 export const PLAIN_ROPE = { rope_scaling: {} };
-// T343: XHToken's Spark-X2.5. Its chat_template calls a macro (render_content), which the converter's own reader
+// T.343: XHToken's Spark-X2.5. Its chat_template calls a macro (render_content), which the converter's own reader
 // refuses, and jinja2 reads (where a browser could not fetch jinja2, there would be no format): so one turn by hand, as
 // the real Jinja writes it with enable_thinking true (the default: "<think>" after the answer's mark) and with false
 // ("</think>"), and no system turn of the visitor's. Every turn begins with <｜start▁of▁sentence｜> (0, the BOS of
 // config.json and the tokenizer) and ends with <｜end▁of▁sentence｜> (1, the EOS); the template writes its own system
 // turn first ("you are a helpful assistant."). The BOS is that first token and the formats begin after it: the page
 // sends the very IDs the real template makes (tests/format_check.py, strict). The specials are the converter's (the
-// template's special tokens and the added tokens tokenizer.json does not call special, T143), in its order: written
+// template's special tokens and the added tokens tokenizer.json does not call special, T.143), in its order: written
 // here, for without a template the converter read the two of the turns (tokenizer.json's only special ones) would not
 // be there. The answer stops at the EOS and at the BOS (the converter's)
 export const SPARK_THINKING = "<|System|>\nyou are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜>" +

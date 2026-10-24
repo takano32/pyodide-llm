@@ -1,4 +1,4 @@
-// tests/python-archive-check.mjs (T367.2, in tests/python-files-check.mjs's place)
+// tests/python-archive-check.mjs (T.367.2, in tests/python-files-check.mjs's place)
 // The site's Python goes to a visitor as two archives (python_archive.py: engine.zip, converter.zip), which the worker
 // fetches whole and unpacks in Pyodide. Three things are held here, each alone:
 //
@@ -194,7 +194,7 @@ const made = build(tree.python(), path.join(work, "tree"));
 
   // what is asked for: the archive beside the worker, with the worker's ?v=<build>, once; its bytes whole
   fresh(answers(made["engine.zip"]));
-  // (T367.4: an archive is fetched as every built file is, by built.js's built(); its body is the caller's to read)
+  // (T.367.4: an archive is fetched as every built file is, by built.js's built(); its body is the caller's to read)
   const archive = (name, signal) => run("built")(name, signal).then((res) => res.arrayBuffer());
   const came = await archive("engine.zip");
   assert.deepEqual(requests.map(({ url, method }) => `${method} ${url}`), [`GET ${asked("engine.zip")}`]);
@@ -219,7 +219,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.deepEqual([unpacked[0][0] === came, ...unpacked[0].slice(1)], [true, "zip"], "placePython() unpacks the bytes it was given as a zip, where Pyodide is");
   await assert.rejects(run("placePython")(standIn, Promise.reject(new Error("Could not fetch engine.zip: 404"))), { message: "Could not fetch engine.zip: 404" });
   assert.equal(unpacked.length, 1, "something was unpacked of an archive that did not come");
-  // an archive that came and cannot be read: said by its name, with what Pyodide said kept as the cause (T432)
+  // an archive that came and cannot be read: said by its name, with what Pyodide said kept as the cause (T.432)
   const unreadable = { unpackArchive: () => { throw new Error("ReadError: /tmp/tmpx is not a zip file"); } };
   const said = await run("placePython")(unreadable, Promise.resolve(came), "converter.zip").catch((error) => error);
   assert.equal(said.message, "Could not read converter.zip: the file did not arrive whole. Reload the page to try again.");
@@ -257,10 +257,10 @@ const made = build(tree.python(), path.join(work, "tree"));
   // who names the archives: init() the engine's, converter() the converter's, and convert() alone calls converter().
   // (init() runs in no check in Node: it loads Pyodide from the CDN. What it asks for and when is seen in a browser,
   // tests/e2e.mjs; here its text says that the one archive it names is the engine's.)
-  // (the worker's window and its modules: not the table of the built files, which names every one of them, T367.3)
+  // (the worker's window and its modules: not the table of the built files, which names every one of them, T.367.3)
   const sources = Object.fromEntries(workerScripts(tree).filter(({ url }) => /\/worker(\.(js|ts)$|\/)/.test(url.pathname)).map(({ name, source }) => [name, source]));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
-  // (T368.3: head, a function's first line as a pattern: the scripts are the sources with their types blanked, which
+  // (T.368.3: head, a function's first line as a pattern: the scripts are the sources with their types blanked, which
   // leaves spaces where a parameter's type was)
   const body = (source, head) => { const from = source.search(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
   // (the names as the code says them, in quotes: the comments name them too)
@@ -271,7 +271,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, /^async function converter\(signal *\) \{$/m), /"converter\.zip"/);
   assert.deepEqual(Object.entries(sources).flatMap(([name, source]) => [...source.matchAll(/\bconverter\(/g)].map(() => name)).sort(), ["convert", "convert", "load"],
-    "converter() is called in two places: a conversion, and (T363.5) a checkpoint of llama.cpp's blocks where NumPy computes, whose readers are the converter's");
+    "converter() is called in two places: a conversion, and (T.363.5) a checkpoint of llama.cpp's blocks where NumPy computes, whose readers are the converter's");
   assert.match(body(sources.convert, /^async function convert\(model *, signal *, id *\) \{$/m), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal\);/,
     "convert() asks for the converter only once the model is not among the kept ones");
   assert.ok(!/\.py\b[^"'`\n]*\$\{self\.location\.search\}|python\.js/.test(Object.values(sources).join("\n")), "the worker still fetches a .py or python.js");
@@ -295,7 +295,7 @@ const made = build(tree.python(), path.join(work, "tree"));
     }
   }
   assert.deepEqual(requests.map(({ url }) => url.slice(url.lastIndexOf("/") + 1)), [last(asked("engine.zip")), last(asked("converter.zip"))]);
-  // T432: what the real Pyodide refuses (half an archive, a page of HTML in its place) is said in the worker's sentence
+  // T.432: what the real Pyodide refuses (half an archive, a page of HTML in its place) is said in the worker's sentence
   const whole = new Uint8Array(made["engine.zip"]);
   for (const [what, bytes] of [["half an archive", whole.slice(0, whole.length >> 1)], ["a page", new TextEncoder().encode("<!doctype html><title>404</title>")]]) {
     await assert.rejects(run("placePython")(real, Promise.resolve(bytes), "engine.zip"),
@@ -306,5 +306,5 @@ const made = build(tree.python(), path.join(work, "tree"));
 
 fs.rmSync(work, { recursive: true, force: true });
 console.log("python-archive-check: ok");
-// (T384: Node may stand still in process.exit() right after heavy work; a moment first)
+// (T.384: Node may stand still in process.exit() right after heavy work; a moment first)
 setTimeout(() => process.stdout.write("", () => process.exit(0)), 200);

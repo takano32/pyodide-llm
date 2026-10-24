@@ -1,9 +1,9 @@
-// answers.mjs (the review of T253 and T254): what a model of the list writes for a dozen questions, whole, as the page
+// answers.mjs (the review of T.253 and T.254): what a model of the list writes for a dozen questions, whole, as the page
 // samples it, for a person to read and for the few things a person counts: does an answer stop (a stop token of the
 // model, not the end of the budget), is the language the question's, is anything come apart. tests/write.mjs shows
 // one prompt's start and tests/degenerate.mjs counts breaks over many seeds; neither prints a whole answer to a list of
 // questions, and a model that thinks first (<think> … </think>) needs the room to finish its thought, which
-// the answers of 32 tokens never showed (T253 and T254 were read at one sentence).
+// the answers of 32 tokens never showed (T.253 and T.254 were read at one sentence).
 //
 //   SEEDS="1 2" PROMPTS='["…", "…"]' TOKENS=600 WRITER=answers.mjs bash tests/write.sh hf-granite-4.2-3b
 //   (or node tests/answers.mjs <out of tests/perplexity_prepare.py> <JSON of tests/write_options.py> [tokens = 400])
@@ -12,7 +12,7 @@
 // the sampled answers, as the entry's own sampling writes them (else "1"). GREEDY=1: and the greedy answer of each question first.
 // TEMPERATURE=<number>: instead of the entry's. BOS=<token id>: begin every text with that token, and NOFORMAT=1: and no format, the bare question (what ?hf=<repository> gives a
 // model whose chat template this converter cannot read: Granite 4.2's, which has an inline if and an empty list in it).
-// THINKING=<tokens>: a budget of the thought (T520: generate()'s thinking; else the entry's own, THINKING=0: none). Every
+// THINKING=<tokens>: a budget of the thought (T.520: generate()'s thinking; else the entry's own, THINKING=0: none). Every
 // row says how many tokens its thought had (the engine's count, to its closing mark) and whether the budget closed it,
 // and the last line the lengths of the thoughts that closed by themselves, sorted (what a budget is to stay above).
 // The lines are `answers <id>: …` (ci.mjs's --grep answers).
@@ -52,7 +52,7 @@ pyodide.globals.set("SEEDS", pyodide.toPy(seeds));
 pyodide.globals.set("GREEDY", Boolean(process.env.GREEDY));
 const thinking = process.env.THINKING !== undefined ? Number(process.env.THINKING) : page.generation.thinking ?? 0;
 pyodide.globals.set("THINKING", thinking);
-// SAMPLING=temperature=0.6,topp=0.95,top_k=0,presence_penalty=0: settings over the entry's (T274: the same
+// SAMPLING=temperature=0.6,topp=0.95,top_k=0,presence_penalty=0: settings over the entry's (T.274: the same
 // questions and seeds with another sampler)
 const sampling = { ...Object.fromEntries(Object.entries({ temperature, topp, repetition_penalty, top_k, min_p, presence_penalty }).filter(([, v]) => v !== undefined)),
   ...Object.fromEntries((process.env.SAMPLING ?? "").split(",").filter(Boolean).map((pair) => [pair.split("=")[0], Number(pair.split("=")[1])])) };
@@ -69,7 +69,7 @@ def judge(answer, text):
     windows = [answer[i:i + 5] for i in range(max(0, len(answer) - 4))]
     return {"loop": len(windows) >= 20 and 1 - len(set(windows)) / len(windows) > 0.5,
             # the share of kana, not of kanji: a Chinese answer to a Japanese question is all kanji and counts as Japanese by them
-            # (MiniCPM5's, in the review of T254), and a Japanese one is half kana
+            # (MiniCPM5's, in the review of T.254), and a Japanese one is half kana
             "japanese": sum(1 for c in letters if KANA.match(c)) / len(letters) if letters else 0.0,
             # asked in Japanese: four letters of kana or kanji in what was typed (the format's own words are English)
             "asked_in_japanese": sum(1 for c in text if JAPANESE.match(c)) >= 4, "unk": "<unk>" in answer,
@@ -108,12 +108,12 @@ const share = (key) => `${sampled.filter((row) => row[key]).length}/${sampled.le
 console.log(`answers ${id}: all: stopped ${share("stopped")}, thought finished ${share("thought")}, loops ${share("loop")}, <unk> ${share("unk")}, ` +
   `a Japanese question answered in Japanese (a fifth of its letters kana) ${sampled.filter((row) => row.asked_in_japanese && row.japanese >= 0.2).length}/${sampled.filter((row) => row.asked_in_japanese).length}, ` +
   `${(sampled.reduce((sum, row) => sum + row.tokens, 0) / Math.max(1, sampled.length)).toFixed(0)} tokens written on average`);
-// T520: the thoughts that closed by themselves, by their length, and those that did not (cut by the steps, or by the budget)
+// T.520: the thoughts that closed by themselves, by their length, and those that did not (cut by the steps, or by the budget)
 const closed = sampled.filter((row) => row.thought_tokens !== null && row.thought && !row.thought_cut).map((row) => row.thought_tokens).sort((a, b) => a - b);
 const open = sampled.filter((row) => row.thought_tokens !== null && (!row.thought || row.thought_cut));
 const at = (share) => (closed.length ? closed[Math.min(closed.length - 1, Math.ceil(share * closed.length) - 1)] : "-");
 console.log(`answers ${id}: thoughts: ${closed.length} closed by themselves, of ${JSON.stringify(closed)} tokens (median ${at(0.5)}, 90% ${at(0.9)}, ` +
   `the longest ${at(1)}); ${open.length} not (${open.map((row) => `${row.thought_tokens}${row.thought_cut ? " closed by the budget" : ""}`).join(", ") || "none"})`);
-// T274's review: 4096-token answers of 12 questions are far more than the 64 KiB of a pipe, and exit() throws away what
+// T.274's review: 4096-token answers of 12 questions are far more than the 64 KiB of a pipe, and exit() throws away what
 // the pipe has not taken (run 37866973619 printed 7 rows of 12 and no summary, and still ended well): leave when it has
 await leave(0);  // (tests/leave.mjs)

@@ -1,4 +1,4 @@
-# tests/conducting.py (T374.4): what the tools that convert a model answer the conduct of a conversion with. Alone
+# tests/conducting.py (T.374.4): what the tools that convert a model answer the conduct of a conversion with. Alone
 # first: each answerer with files of a temporary folder (and stand-ins for tests/fetching.py: no network), the loop
 # with a stand-in for the conduct that plays a list of requests. Then with the real conduct and the real converter, on
 # real files of every kind of source, against a conversion with no conduct in it (tests/conduct_hub.py's direct()).
@@ -42,7 +42,7 @@ def test_a_range_is_the_bytes_asked_for_wherever_it_begins_and_fewer_at_the_file
     data = bytes(range(200))
     answerer = Directory(folder_of(tmp_path, {"model.gguf": data}))
     assert answerer.range("weights", "model.gguf", 0, 50) == (data[:50], 200)
-    # T374.3: a further piece of a head begins where the bytes in hand end, not at the file's first byte
+    # T.374.3: a further piece of a head begins where the bytes in hand end, not at the file's first byte
     assert answerer.range("weights", "model.gguf", 50, 120) == (data[50:120], 200)
     assert answerer.range("weights", "model.gguf", 120, 1 << 20) == (data[120:], 200)
     assert answerer.range("weights", "model.gguf", 200, 300) == (b"", 200)

@@ -1,6 +1,6 @@
 // Running sections: the sections' elements and their Run buttons, the run of one or all, the clipboard, a tab that was
 // loaded again by the page-memory section, and ?run=.
-// (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
+// (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { forgetMark, readMark, memoryResult } from "../page-memory.js";
 import { cpuBaseline, CPU_SPEED_KEY } from "../bench.js";
 import { $, parameters, SECTIONS, type Name, ALL, type Result, results } from "./dom.ts";
@@ -70,12 +70,12 @@ async function runSections(names: readonly Name[]) {
       stall.stop();
       live.forEach((w) => w.terminate());  // the section's own finally has done it, unless it was stopped
       live.clear();
-      // T173's review: a page-memory run stopped for its silence never reaches its own finally: its mark would
+      // T.173's review: a page-memory run stopped for its silence never reaches its own finally: its mark would
       // later read as a tab the browser ended
       if (name === "memory") forgetMark(tabStorage);
     }
     results[name] = result;
-    // T156: the CPU's reading of the weights here, for the model page (a model on the GPU alone is held against it)
+    // T.156: the CPU's reading of the weights here, for the model page (a model on the GPU alone is held against it)
     const speed = name === "cpu" ? (cpuBaseline(result) as Baseline).token : undefined;
     if (speed?.isolated) {
       try {
@@ -91,7 +91,7 @@ async function runSections(names: readonly Name[]) {
     state.className = `state ${result.status}`;
     state.textContent = `${STATE[result.status]} · ${clock(performance.now() - sectionAt)}`;
     out.innerHTML = rendered(result.markdown);
-    // T157: the GPU section's tables hold the GPU against the CPU section; a CPU section run after it (on its own
+    // T.157: the GPU section's tables hold the GPU against the CPU section; a CPU section run after it (on its own
     // button) writes them again, and the report with them
     const g = results.gpu;
     if (name === "cpu" && g?.data?.steps) {
@@ -108,7 +108,7 @@ async function runSections(names: readonly Name[]) {
   (window as any).__benchmark.done = true;
 }
 $("run-all").onclick = () => runSections(ALL);
-// T192: where the clipboard refuses (or there is none), say so and select the whole for copying by hand: on a
+// T.192: where the clipboard refuses (or there is none), say so and select the whole for copying by hand: on a
 // device with a GPU the report is mostly too long for the link, and the issue then asks for it to be pasted
 function toClipboard() {
   const said = $("clipboard");
@@ -132,7 +132,7 @@ $("copy").onclick = toClipboard;
 $("issue").addEventListener("click", () => {
   if (!$("long").hidden || !$("longer").hidden) toClipboard();
 });
-// T173: a mark of the page-memory section is a tab ended (or left) while it grew: what it held is shown, and the
+// T.173: a mark of the page-memory section is a tab ended (or left) while it grew: what it held is shown, and the
 // section is not run again by the ?run= below (a ?run=memory would end the tab over and over)
 const ended = readMark(tabStorage);
 if (ended) {

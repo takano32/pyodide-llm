@@ -1,4 +1,4 @@
-# by_layer_logits.py (the review of T253): the page's engine against transformers over the whole depth of a model that no
+# by_layer_logits.py (the review of T.253): the page's engine against transformers over the whole depth of a model that no
 # runner holds in float32 (Granite 4.2 8B: 35 GB). tests/logits.mjs saves the page's engine's logits (int8, 7-bit
 # activations, a token at a time) at the positions of a text; this computes transformers' for the very same ids a layer at
 # a time (reference_llama.ByLayer, in float32) and holds the two to each other: the largest and the mean difference of a

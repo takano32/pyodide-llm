@@ -1,11 +1,11 @@
-// tests/saluki-forms.ts (T363.1): the forms that were set against one another for the matrix product on the weights
+// tests/saluki-forms.ts (T.363.1): the forms that were set against one another for the matrix product on the weights
 // of Underdog Saluki 27B as its GGUF holds them: llama.cpp's blocks of 256 weights ("super-blocks": IQ2_XXS, IQ3_S,
 // Q2_K, IQ1_M here; convert/superblocks.py has what each is, docs/notes/t361-saluki-2026-10-13.md the table).
 // tests/saluki-kernel-bench.mjs compiles this file and times each form beside the kernels of kernels/ (matmul_t2r on
 // ternary weights, matmul_q8r on int8); docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md has the table and the
 // choice. Not a kernel of the page: nothing here is shipped, and kernels/kernel.ts names none of it.
 //
-// No line of llama.cpp is here: the blocks are read as convert/superblocks.py reads them (T362), from the forms of
+// No line of llama.cpp is here: the blocks are read as convert/superblocks.py reads them (T.362), from the forms of
 // ggml-common.h's structs. What is taken from llama.cpp's own kernels (ggml/src/ggml-cpu/arch/x86/quants.c at
 // 4413a192410fad1f054e9216114087a3e01527a0, MIT, Copyright (c) 2023-2026 The ggml authors) is one idea: a weight's
 // sign goes onto its activation, and the grid's magnitudes are the unsigned side of the dot product.
@@ -50,7 +50,7 @@
 //          the number of minus signs even)
 //   3072   IQ3_S's grid: 512 entries of 4 magnitudes
 //   5120   IQ1_S's grid plus one: 2048 entries of 8 codes 0, 1, 2
-//   21504  the vectors a loop needs, loaded once a call (written as constants V8 makes them again at every use: T163):
+//   21504  the vectors a loop needs, loaded once a call (written as constants V8 makes them again at every use: T.163):
 //          +0 bytes 1, 2, 4, .. 128 twice; +16 bytes 0 x 8, 1 x 8; +32 bytes 2 x 8, 3 x 8; +48 sixteen 3s; +64 sixteen
 //          15s; +80 bytes 0, 0, 0, 0, 1, 1, 1, 1, ..; +96 the int16s 0x08, 0x80 four times; +112 eight int16s of -7;
 //          +128 the int32s 512, 64, 8, 1; +144 four int32s of 7
@@ -413,7 +413,7 @@ export function matmul_iq2xxs_sa(xout: usize, xq: usize, xs: usize, w: usize, ta
     matmul_q8r(xout + (<usize>i << 2), xq, xs, scratch, ws, wc, n, 0, 1);
   }
 }
-// sa tile: four rows widened, then int8's tile (T159) on them. scratch: 4 (n + n / 4) bytes
+// sa tile: four rows widened, then int8's tile (T.159) on them. scratch: 4 (n + n / 4) bytes
 export function matmul_iq2xxs_sa_tile(xout: usize, xq: usize, xs: usize, w: usize, tab: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, scratch: usize): void {
   const rowBytes = <usize>(n >> 8) * 66, groups = <usize>n >> 3, ws = scratch + 4 * <usize>n, wc = ws + 4 * groups;
   for (let i = r0; i < r1; i += 4) {

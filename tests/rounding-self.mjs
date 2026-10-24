@@ -1,4 +1,4 @@
-// T232's review: tests/rounding.mjs's rounding of a float32 to a float16 (toward zero, away from zero), checked alone, on a
+// T.232's review: tests/rounding.mjs's rounding of a float32 to a float16 (toward zero, away from zero), checked alone, on a
 // device of Dawn + lavapipe in Node, against a JavaScript reference: every value goes through pack2x16float in a shader of
 // its own (the wrapper rewrites the call as it does the repository's shaders) and comes back as float16 bits. Nobody
 // had looked at what the emulation does to a NaN and an infinity: both went to the largest finite float16 (65504), and a

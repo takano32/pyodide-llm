@@ -1,4 +1,4 @@
-# T107: how fast the page fetches a model from Hugging Face with parts of 4, 8 and 16 MiB over 4 to 12 connections
+# T.107: how fast the page fetches a model from Hugging Face with parts of 4, 8 and 16 MiB over 4 to 12 connections
 # at once, against the deployed site. Every setting runs several times, the order turned around from one round to
 # the next, so that a slow minute of huggingface.co falls on all of them alike. By hand only; the table goes to the
 # summary.
@@ -33,7 +33,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
         timeout-minutes: 20
         run: |

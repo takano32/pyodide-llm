@@ -1,4 +1,4 @@
-"""T524: an answer stops at the token the model's own template writes right after an answer. A Gemma 4 opened with
+"""T.524: an answer stops at the token the model's own template writes right after an answer. A Gemma 4 opened with
 ?hf= wrote two to five <turn|> after each answer: neither its config.json nor its tokenizer names that token (its
 generation_config.json does, which the converter does not fetch)."""
 import pytest

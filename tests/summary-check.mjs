@@ -1,4 +1,4 @@
-// tests/summary.mjs: the table a CI job writes into its summary (T82). Node alone.
+// tests/summary.mjs: the table a CI job writes into its summary (T.82). Node alone.
 //
 //   node tests/summary-check.mjs
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ const table = summaryMarkdown(results);
 const rows = table.split("\n").filter((line) => line.startsWith("|"));
 assert.equal(rows.length, 2 + 3, "a header, the separator GitHub needs, and a row per run");
 assert.ok(table.includes("| tiny-lm | chromium 148.0 | 8.4 | 307.2 | 1, 0, 2 | tiny-lm 29M · SIMD kernels, int8, relaxed SIMD | ok |  |"), table);
-// T172: a record from before the count (or a run that never answered) leaves the cell empty, not "undefined"
+// T.172: a record from before the count (or a run that never answered) leaves the cell empty, not "undefined"
 assert.ok(table.includes("| webkit 26.4 |  |  |  |  | **timed out** |"), table);
 assert.ok(table.includes("**timed out**") && table.includes("timed out after 900s"), "a timeout says so, and why");
 assert.ok(table.includes("a \\| pipe"), "a | in a cell must not break the table");

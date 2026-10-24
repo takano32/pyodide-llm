@@ -1,7 +1,7 @@
-// The GPU section of /benchmark/ (T134; T94's stage 0): the model's worker as a GPU forward pass would have it: it cannot return to its event loop while Python calls
+// The GPU section of /benchmark/ (T.134; T.94's stage 0): the model's worker as a GPU forward pass would have it: it cannot return to its event loop while Python calls
 // forward(), so it hands the token to the GPU's worker and blocks in Atomics.wait until the answer is there. Here the
 // answer is nothing but a counter: this measures the round trip alone. words[0]: the requests, words[1]: the answers.
-// (T368.7: what it is told and what it answers: contracts/benchmark.ts)
+// (T.368.7: what it is told and what it answers: contracts/benchmark.ts)
 import type { ToWaiter, Waited } from "../contracts/benchmark.ts";
 onmessage = ({ data: { memory, rounds } }: MessageEvent<ToWaiter>) => {
   const words = new Int32Array(memory);

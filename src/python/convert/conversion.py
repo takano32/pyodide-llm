@@ -31,9 +31,9 @@ class Conversion:
     header: the JSON at the beginning of model.safetensors (text), base: where its tensors begin, config: the text of
     config.json, tokenizer: the bytes of tokenizer.json or of a sentencepiece model. Then feed() the bytes of the
     file in order, beginning at start, and finish(). checkpoint, tokenizer and options are what Llama() takes.
-    blocks (T363.3): the tensors a GGUF holds in llama.cpp's blocks stay the bytes they are (convert/stream.py's Kept),
+    blocks (T.363.3): the tensors a GGUF holds in llama.cpp's blocks stay the bytes they are (convert/stream.py's Kept),
     and dtype is how the others are stored.
-    last (T257): no other tokenizer of the model is left to try. Without it a tokenizer.json that writes out a
+    last (T.257): no other tokenizer of the model is left to try. Without it a tokenizer.json that writes out a
     sentencepiece model with its dummy prefix is put off (convert.tokenizer's Later), for the model's own file to be
     read where there is one.
     """
@@ -71,20 +71,20 @@ class Conversion:
                                            charsmap=tokenizer_json_charsmap(parsed))
             added = [token for token in parsed.get("added_tokens", []) if token.get("id", 0) < vocab_size]
             specials = [token["content"] for token in added if token.get("special")]
-            # T143: the added tokens it does not call special are read as one token wherever they are too, by the real
-            # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T215's finding)
+            # T.143: the added tokens it does not call special are read as one token wherever they are too, by the real
+            # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T.215's finding)
             added = [token["content"] for token in added if not token.get("special")]
         else:
             pieces = list(sentencepiece_pieces(tokenizer))
             self.tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(tokenizer))
-            # (T265, T308) and what only tokenizer_config.json says of a sentencepiece model. A model with no dummy
-            # prefix has none after a special token either (T400: its "never" over a legacy tokenizer's "wanting")
+            # (T.265, T.308) and what only tokenizer_config.json says of a sentencepiece model. A model with no dummy
+            # prefix has none after a special token either (T.400: its "never" over a legacy tokenizer's "wanting")
             own = sentencepiece_options(tokenizer)
             options = {**own, **described_options(described(tokenizer_config)), **({"prefixed": "never"} if own.get("prefixed") else {})}
             specials, added = sentencepiece_specials(tokenizer), []
-        # T143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
+        # T.143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
         # another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
-        # in tokenizer_config.json (T138's review: perplexity 2.5 to 2.7 times higher with the former)
+        # in tokenizer_config.json (T.138's review: perplexity 2.5 to 2.7 times higher with the former)
         named = config_token(described(tokenizer_config), "bos_token")
         bos = next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials,
@@ -92,25 +92,25 @@ class Conversion:
 
     @classmethod
     def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None, blocks=False):
-        """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
+        """The same from a GGUF file (T.74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
-        # (T505.2: llama.cpp's table of a Llama 3's RoPE scaling, which a GGUF alone has in the place of the scaling)
+        # (T.505.2: llama.cpp's table of a Llama 3's RoPE scaling, which a GGUF alone has in the place of the scaling)
         header, config = gguf_model(metadata, tensors, base, table=rope_freqs_values(head, tensors, base, metadata))
         self = cls.__new__(cls)
         self.config = config
-        check_config(normalize(config))  # a GPT-2's is in config.json's own spelling (T136's third stage)
-        # the review of T203: every text begins with the BOS, and the answer stops at it and at the EOS (start()).
+        check_config(normalize(config))  # a GPT-2's is in config.json's own spelling (T.136's third stage)
+        # the review of T.203: every text begins with the BOS, and the answer stops at it and at the EOS (start()).
         # A GGUF that names none would have tokens 1 and 2 there, '"' and '#' of a byte-level BPE vocabulary:
         # unsloth's Qwen3 GGUFs name no BOS, and every answer ended at its first lone '"'. The list takes those
         # with their original's config.json (gguf_weights), whose BOS is the original's
         nameless = "This GGUF names no {} token, which the engine needs: open it with its original's vocabulary and config.json."
         if not isinstance(metadata.get("tokenizer.ggml.eos_token_id"), int):
             raise ValueError(nameless.format("EOS"))
-        # T505.2: a GGUF that names no BOS is one whose texts llama.cpp begins with none (unsloth's Qwen3.5: no
+        # T.505.2: a GGUF that names no BOS is one whose texts llama.cpp begins with none (unsloth's Qwen3.5: no
         # bos_token_id, no add_bos_token), and every text of its chat template begins with the template's own token.
         # Where the template is read and begins with a token, that token is what the engine begins with (start()'s
-        # head, T264) and the BOS nobody named is neither written nor stopped at; anywhere else it is refused as it was
+        # head, T.264) and the BOS nobody named is neither written nor stopped at; anywhere else it is refused as it was
         named = isinstance(metadata.get("tokenizer.ggml.bos_token_id"), int)
         if not named:
             del config["bos_token_id"]
@@ -126,34 +126,34 @@ class Conversion:
               specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False, headless=None):
         """sink and quantize_rows: see Writer, readers: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
         tokenizer's special tokens, the ones a chat template writes between the turns. chat_template: the text of
-        chat_template.jinja, where there is one (T127). added: the added tokens that are not special, one token
-        wherever they are written (T143). bos: the id of the BOS the tokenizer names, where it names one (T143).
-        headless (T505.2): what to refuse a model with whose template begins with no token of its own (a GGUF that
+        chat_template.jinja, where there is one (T.127). added: the added tokens that are not special, one token
+        wherever they are written (T.143). bos: the id of the BOS the tokenizer names, where it names one (T.143).
+        headless (T.505.2): what to refuse a model with whose template begins with no token of its own (a GGUF that
         names no BOS: nothing else says what its texts begin with)."""
         own = self.config.get("bos_token_id", 1)
         # (the BOS the tokenizer names and config.json's, where each says one: the 1 of a config.json that has no such
-        # key is a guess, T264)
+        # key is a guess, T.264)
         said = [*([bos] if isinstance(bos, int) else []), *([own] if "bos_token_id" in self.config and own != bos else [])]
         bos = bos if isinstance(bos, int) else own
         eos = self.config.get("eos_token_id", 2)
-        # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
+        # the format of one turn, from the model's own chat_template (T.73). src/models.js wins when it has one
         ids = piece_ids(self.tokenizer, self.config["vocab_size"])
         template, head, mark = self.beginning(*model_turn(described(tokenizer_config), chat_template), [*specials, *added],
                                               options, ids)
         if headless and head is None:
             raise ValueError(headless)
-        # the answer stops at the BOS, and at config.json's where that is another (T143). Not at the token the template
-        # begins with (T264's head), though it is the engine's BOS then: it says where a message begins, not where the
+        # the answer stops at the BOS, and at config.json's where that is another (T.143). Not at the token the template
+        # begins with (T.264's head), though it is the engine's BOS then: it says where a message begins, not where the
         # answer ends. A harmony model (llm-jp-4) writes <|end|><|start|>assistant<|channel|>final<|message|> after its
-        # analysis, and stopped there before its answer (the review of T369); what ends an answer is what the model's own
+        # analysis, and stopped there before its answer (the review of T.369); what ends an answer is what the model's own
         # files name, the EOSes.
         # A BOS that nothing names and the template does not begin with is no token of this model's to stop at: token 1
         # of a byte-level vocabulary is '"' (NeoHorse-1's config.json has no bos_token_id, and its answers ended at
         # their first quotation mark through ?hf=)
-        # (T400: also where the template does not begin with a token of its own: a guessed 1 that nothing names was a
+        # (T.400: also where the template does not begin with a token of its own: a guessed 1 that nothing names was a
         # stop token there, which a model with no template read stopped at too)
         stop = [token for token in [*said, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
-        # And at the EOS the tokenizer names, where that is a token of its own and another than config.json's (T369): a
+        # And at the EOS the tokenizer names, where that is a token of its own and another than config.json's (T.369): a
         # Qwen3.5's config.json says <|endoftext|> and its tokenizer <|im_end|>, which is what ends a turn of its chat
         # template; transformers' generate() stops at either. Without it an answer went on past <|im_end|> to the mark
         # of the next turn
@@ -161,10 +161,10 @@ class Conversion:
         ending = ids.get(ending.encode("utf-8")) if ending else None  # (no name is no piece: the padding's are empty)
         if ending is not None and ending not in stop:
             stop.append(ending)
-        # T524: and at the token the model's own template writes right after an answer, where that is one of the
+        # T.524: and at the token the model's own template writes right after an answer, where that is one of the
         # tokens the engine reads as one: what ends a turn of the model's (a Gemma 4's <turn|>, which neither its
         # config.json nor its tokenizer names: ?hf= wrote two to five of them after each answer). Not where it is the
-        # token every text begins with (T264's head: it says where a message begins)
+        # token every text begins with (T.264's head: it says where a message begins)
         end = model_answer_end(described(tokenizer_config), chat_template)
         marks = [token for token in [*specials, *added] if token and end and end.startswith(token) and token.encode("utf-8") in ids]
         closing = ids[max(marks, key=len).encode("utf-8")] if marks else None
@@ -177,16 +177,16 @@ class Conversion:
                                                    readers=readers)
         self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
-        # the form: bias and arch always (as since T64 and T65), the rest only where it is not the default, so that
-        # the options of every model before T124 stay what they were (kept.js's CONVERTER)
+        # the form: bias and arch always (as since T.64 and T.65), the rest only where it is not the default, so that
+        # the options of every model before T.124 stay what they were (kept.js's CONVERTER)
         self.options.update({key: value for key, value in self.stream.form.items()
                              if key in ("bias", "arch") or value != FORM[key]})
         if template:
             self.options["template"] = template
         # the special tokens the template writes stand for their token; spelled out they would be a dozen tokens each.
-        # The added tokens that are not special, wherever they are written (T143). The longest first, so that one that
+        # The added tokens that are not special, wherever they are written (T.143). The longest first, so that one that
         # begins another never cuts it short
-        # (and the one the format began with, T264: it is the BOS now, and still one token where a visitor types it)
+        # (and the one the format began with, T.264: it is the BOS now, and still one token where a visitor types it)
         written = {special for special in specials if special and template and (special in template or special == mark)}
         written = sorted(written | {token for token in added if token}, key=lambda token: (-len(token), token))
         if written:
@@ -196,7 +196,7 @@ class Conversion:
         eps = float(f"{eps:.6g}") if isinstance(eps, (int, float)) and eps > 0 else RMS_EPS
         family = family_of(self.config)
         if family.rms_norm and eps != RMS_EPS:
-            # T124: the epsilon of RMSNorm, where it is not the engine's 1e-5 (Qwen2.5 and Qwen3: 1e-6, which moved
+            # T.124: the epsilon of RMSNorm, where it is not the engine's 1e-5 (Qwen2.5 and Qwen3: 1e-6, which moved
             # Qwen3 0.6B's perplexity by 0.12%). Only where it differs, like qk_norm and head_dim
             self.options["rms_norm_eps"] = float(eps)
         if self.config.get("rope_scaling"):
@@ -205,16 +205,16 @@ class Conversion:
         if family.partly:
             # GPT-NeoX and Qwen3.5 turn part of every head: the file does not say how much
             self.options["rotary"] = rotary_dim(self.config)
-        # and what only its family says (T255: a SmolLM3's layers that RoPE leaves alone; a GPT-NeoX's branches)
+        # and what only its family says (T.255: a SmolLM3's layers that RoPE leaves alone; a GPT-NeoX's branches)
         self.options.update(family.options(self.config))
         self.checkpoint = self.stream.out
 
     def beginning(self, turn, named, tokens, options, ids):
-        """T264: (the format of one turn as the engine takes it, the id of the token every text then begins with, or
+        """T.264: (the format of one turn as the engine takes it, the id of the token every text then begins with, or
         None where that stays the BOS, and that token's text) of a model's own turn (model_turn()'s), so that the page
         sends the ids of transformers' apply_chat_template for it, which puts nothing in front of what the template
         writes. generate() begins every text with the engine's BOS, so where the turn begins with the BOS the
-        tokenizer names, the format is what follows it (as before T264). Where it begins with another of the tokens
+        tokenizer names, the format is what follows it (as before T.264). Where it begins with another of the tokens
         the engine reads as one (tokens: the special ones and the added ones; a Qwen's or a Hermes 3's <|im_start|>),
         that token is the engine's BOS for this model and the format is what follows it: none of the tokenizer's own
         stands in front (a Qwen3 of 8 billion parameters was 178% worse with its <|endoftext|> there, a Hermes 3 13
@@ -224,7 +224,7 @@ class Conversion:
         tokenizer puts its dummy prefix before the first text and not before the text after a special token, so text
         that followed the token would be read as the first. Unless that is no other reading: every stretch is
         prefixed ("every"), or every one that does not begin with a space ("wanting") and what follows the token is
-        the template's own text, which does not; or no stretch is ("never": T400's sarashina2.2 and CAT-Translate).
+        the template's own text, which does not; or no stretch is ("never": T.400's sarashina2.2 and CAT-Translate).
         options: the tokenizer's, as the engine gets them. ids: piece_ids() of
         the tokenizer.bin."""
         if not turn:

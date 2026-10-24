@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/write.sh (T249): what Hugging Face models of the list write for their own prompts on the page's engine, greedy,
+# tests/write.sh (T.249): what Hugging Face models of the list write for their own prompts on the page's engine, greedy,
 # for a person to read. For CI (tests.yml's extra=, after `make kernels`: the development machine runs no model of
 # gigabytes):
 #
@@ -10,7 +10,7 @@
 # tests/write.mjs writes TOKENS tokens (32), and with SEEDS="1 2" also as the page samples. What was fetched and converted goes before the next model (an 8B's GGUF
 # and its int8 are 18 GB, so on /mnt where a runner has one). A model that fails says so and the next one runs; the
 # exit status is the number that failed. WRITER=degenerate.mjs runs tests/degenerate.mjs in its place (how often it comes apart, over
-# many SEEDS and a few PROMPTS: T249's review).
+# many SEEDS and a few PROMPTS: T.249's review).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 room=".tmp/write"

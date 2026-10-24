@@ -1,4 +1,4 @@
-// tests/names.mjs (T350; a file of its own from T368.8): the names of a module, read off its syntax tree.
+// tests/names.mjs (T.350; a file of its own from T.368.8): the names of a module, read off its syntax tree.
 //
 //   namesOf(source)   source: JavaScript (a .ts file with its types blanked: tests/untyped.mjs)
 //
@@ -124,7 +124,7 @@ export function namesOf(source) {
       case "BreakStatement": case "ContinueStatement": case "MetaProperty": case "ImportDeclaration":
         return;
       case "ExportNamedDeclaration":
-        // (T349: `export { a, b };` uses the file's own a and b, tests/forward-modules-check.mjs)
+        // (T.349: `export { a, b };` uses the file's own a and b, tests/forward-modules-check.mjs)
         if (!node.declaration && !node.source) return node.specifiers.forEach((specifier) => walk(specifier.local));
         assert.ok(node.declaration, "an export from another file: this check knows `export const`, `export function` and `export { a }`");
         return walk(node.declaration);

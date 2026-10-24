@@ -1,12 +1,12 @@
-// The sections "Storage" (T137) and "Line" (T118).
-// (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
+// The sections "Storage" (T.137) and "Line" (T.118).
+// (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { MODELS } from "../models.js";
 import { tableCell, unmeasured } from "../bench.js";
 import { BASE, $, type Result } from "./dom.ts";
 import { ask, worker, fixed, model } from "./section.ts";
 import type { LineFetched, LinePaced } from "../runtime/contracts/benchmark.ts";
 
-// the storage section of T137's stage 0 (the download it is compared with: huggingface.co from Japan, T123, T136)
+// the storage section of T.137's stage 0 (the download it is compared with: huggingface.co from Japan, T.123, T.136)
 const DOWNLOAD_MBPS = 8.3;
 export async function storage(): Promise<Result> {
   const w = worker("benchmark/storage.js");

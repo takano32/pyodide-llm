@@ -1,11 +1,11 @@
-// tests/page-parts-check.mjs (T378.5): the parts of the two pages' scripts that hold something, each by itself.
+// tests/page-parts-check.mjs (T.378.5): the parts of the two pages' scripts that hold something, each by itself.
 //
 // What the model page's script keeps has two owners, and /benchmark/'s one. The other parts say what happened, to a
 // function of the owner, and read what it holds by the names they import. The owners read nothing of a page (no
 // element, no address, no storage, no clock), so Node imports them as the modules they are (Node 24 takes the types
 // off a .ts file), with no browser, no worker and no model:
 //
-//   src/page/model.ts         the model the page has and how far its load has come (T553: and the time its fetch has
+//   src/page/model.ts         the model the page has and how far its load has come (T.553: and the time its fetch has
 //                             left, from the bytes said and the clock the caller hands over): each event changes what it says
 //                             and nothing else (the others are compared whole, before and after); events out of their
 //                             order do no harm; nothing of it can be assigned from outside
@@ -15,7 +15,7 @@
 //   src/benchmark/running.ts  the run of /benchmark/ that is going on: one at a time, its sections and the times it is told
 //   src/page/opening.ts       the model a visit opens with, in a process of its own for each address and storage (it
 //                             reads both as it loads, through address.ts and remembered.ts): the URL's first, then the
-//                             one remembered, then the default (T511.6)
+//                             one remembered, then the default (T.511.6)
 //
 // What these are still bound to: model.ts to src/models.js (its DEFAULT_MODEL is what a visit starts with);
 // opening.ts to `location` and `localStorage` (stand-ins here). What the page draws of all this is the browsers' to
@@ -43,7 +43,7 @@ const unassignable = (module, what) => {
   for (const name of Object.keys(module)) assert.throws(() => { module[name] = 1; }, { name: "TypeError" }, `${what}: ${name} can be assigned from outside its module`);
   cases += 1;
 };
-// (T511.6: the default is not the first of the list; second and third are two others)
+// (T.511.6: the default is not the first of the list; second and third are two others)
 const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !== first);
 
 // ---- src/page/model.ts
@@ -86,9 +86,9 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   // the worker's error
   m.benchBegan();
   only(m, () => m.failed(false), { benchmarking: false }, "an error ends the benchmark, and a model that was ready still is");
-  assert.equal(m.takesPrompts(), true, "after a failed round the run button must not stay off (the review of T76)");
+  assert.equal(m.takesPrompts(), true, "after a failed round the run button must not stay off (the review of T.76)");
   only(m, () => m.failed(false), {}, "an error with nothing going on changes nothing");
-  only(m, () => m.failed(true), { ready: false }, "a model the worker loads again on the CPU is not ready (T156)");
+  only(m, () => m.failed(true), { ready: false }, "a model the worker loads again on the CPU is not ready (T.156)");
   assert.equal(m.takesPrompts(), false);
   only(m, () => m.becameReady({ ...ready, template: undefined, threads: 1, seq_len: 512 }), { ready: true, longest: 512, fromTemplate: undefined, readyLine: { backend: "SIMD kernels, int8", threads: 1, pyodide: "314.0.7" } },
     "ready again: a model that says no format has none (the one before it is gone)");
@@ -104,7 +104,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
     "a choice: the model, its load's number, and nothing ready, measured or said of the one before"), 2, "chose() answers the load's number");
   assert.equal(m.takesPrompts(), false);
   assert.equal(only(m, () => m.chose(first), { loads: 3 }, "the same model chosen again is another load"), 3);
-  // ... and from then on the visit does not open with anything else (the review of T116: a model chosen while the page
+  // ... and from then on the visit does not open with anything else (the review of T.116: a model chosen while the page
   // looked at what is kept wins)
   assert.equal(only(m, () => m.opensWith(second), {}, "opening with a model after one was chosen changes nothing"), false, "and says so");
 
@@ -125,7 +125,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   }
 }
 {
-  // T439: the worker's word that it runs slower for a file of this page's build that is gone. It is of the page, and of
+  // T.439: the worker's word that it runs slower for a file of this page's build that is gone. It is of the page, and of
   // no model: whenever it comes (before a model is ready, during a benchmark, twice), and whatever comes after it
   // (another model, its ready, an error, a model loaded again on the CPU), it holds for the rest of the visit
   const m = await fresh("page/model.ts");
@@ -155,7 +155,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   cases += 2;
 }
 {
-  // T553: the reports of a load's fetch, and the time it has left (remaining.ts: the clock is the caller's)
+  // T.553: the reports of a load's fetch, and the time it has left (remaining.ts: the clock is the caller's)
   const m = await fresh("page/model.ts");
   const { secondsLeft, leftSaid, advanced } = await fresh("page/remaining.ts");
   // (receiver.ts says each report so)
@@ -224,7 +224,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
     assert.equal(a.answerBegan(bubble, { ...settings, steps }, longest, seed).steps, sent, `${steps} steps asked of a context of ${longest}`);
     cases += 1;
   }
-  // settings the page has no field for go to the worker as they are (T274)
+  // settings the page has no field for go to the worker as they are (T.274)
   how = a.answerBegan(bubble, { ...settings, top_k: 20, min_p: 0.05, presence_penalty: 1.5 }, 4096, seed);
   assert.deepEqual([how.top_k, how.min_p, how.presence_penalty], [20, 0.05, 1.5]);
   // the next answer's bubble replaces the last one's
@@ -234,7 +234,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   cases += 4;
 }
 {
-  // T554: the tokens of an answer, drawn at once, then every 8 tokens or 32 ms; a new answer begins with nothing written
+  // T.554: the tokens of an answer, drawn at once, then every 8 tokens or 32 ms; a new answer begins with nothing written
   const a = await fresh("page/answer.ts");
   a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
   assert.equal(only(a, () => a.wrote("A", 1000), { written: "A", undrawn: 1 }, "the first token"), true, "is drawn at once");
@@ -253,7 +253,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   cases += 2;
 }
 {
-  // T556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
+  // T.556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
   const a = await fresh("page/answer.ts");
   const drawn = { markdown: true, thinking: true }, bubble = {};
   only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1, drawn), { generating: true, answer: bubble, used: { steps: 0, temperature: 0 }, shape: { markdown: true, thinking: true } }, "an answer drawn as Markdown, in a thought");
@@ -303,7 +303,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   };
   const kept = (id, was = false) => JSON.stringify({ id, kept: was });
   assert.deepEqual((({ id, name, loads, recalled }) => ({ id, name, loads, recalled }))(opens("", null)), { id: first.id, name: first.name, loads: 1, recalled: null }, "a first visit (and a browser without storage) opens the default");
-  assert.equal(opens("", kept("tiny-lm")).id, "tiny-lm", "a visitor who chose tiny-lm before the default changed keeps it (T511.6)");
+  assert.equal(opens("", kept("tiny-lm")).id, "tiny-lm", "a visitor who chose tiny-lm before the default changed keeps it (T.511.6)");
   assert.deepEqual(opens("", kept(third.id)), { id: third.id, name: third.name, loads: 1, recalled: third.id }, "the model chosen on an earlier visit");
   assert.deepEqual(opens(`?model=${second.id}`, kept(third.id)), { id: second.id, name: second.name, loads: 1, recalled: null }, "the URL's model of the list before the one remembered");
   assert.deepEqual(opens("?model=no-such-model", kept(third.id)), { id: third.id, name: third.name, loads: 1, recalled: third.id }, "a name of no model: the one remembered");
@@ -311,7 +311,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   const fromLink = opens(`?hf=owner/name&model=${second.id}`, kept(third.id));
   assert.deepEqual([fromLink.id, fromLink.name, fromLink.repo, fromLink.recalled], ["local", "owner/name", "owner/name", null], "?hf= before everything");
   assert.deepEqual([fromLink.weights, fromLink.note], ["model.safetensors", "Hugging Face"], "?hf= with no file named is not opened by model.safetensors (until the page has looked at the repository)");
-  // T505.3: &file= names the file that is the model, and &revision= the revision, both as names an address may hold
+  // T.505.3: &file= names the file that is the model, and &revision= the revision, both as names an address may hold
   const named = opens("?hf=owner/name-GGUF&file=name-Q4_K_M.gguf&revision=v1.0", null);
   assert.deepEqual([named.id, named.repo, named.weights, named.note], ["local", "owner/name-GGUF", "name-Q4_K_M.gguf", "Hugging Face · v1.0 · name-Q4_K_M.gguf"], "?hf=&file= does not open the file it names");
   assert.equal(opens("?hf=owner/name&file=", null).weights, "model.safetensors", "an empty &file= names a file");
@@ -323,7 +323,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the default");
 }
 {
-  // T520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line
+  // T.520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line
   const { thoughtOf, thoughtLine } = await fresh("page/thought.ts");
   const none = { thought: null, closed: false };
   assert.deepEqual(thoughtOf("Hello <think>", false), { ...none, answer: "Hello <think>" }, "an answer that does not begin with a thought is all answer");

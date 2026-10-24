@@ -1,4 +1,4 @@
-# engine_plans.py (T357)
+# engine_plans.py (T.357)
 # The plan Llama(external=) hands src/runtime/forward.js, as Python builds it today (the dict of engine/external.py's
 # ExternalForward), for made-up headers: nothing of a model is there but its header and a final norm's weight, and
 # start(plan) keeps the plan and ends before the engine is built (and before the tokenizer is read).
@@ -21,7 +21,7 @@ class Handed(Exception):
 
 class External:
     """forward.js as far as the plan, for Llama(external=): size and read(offset, length) of the checkpoint, and
-    start(plan), which keeps the plan and ends (Handed) before any engine is built. The one stand-in of it (T357.5):
+    start(plan), which keeps the plan and ends (Handed) before any engine is built. The one stand-in of it (T.357.5):
     tests/plan_facts.py hands it a real checkpoint's bytes to read, the others nowhere()'s."""
 
     def __init__(self, size, read):

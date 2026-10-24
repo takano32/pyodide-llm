@@ -1,4 +1,4 @@
-"""The switches of T52: every optimization that has a fallback can be left out, to measure what it is worth."""
+"""The switches of T.52: every optimization that has a fallback can be left out, to measure what it is worth."""
 import pytest
 from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
 

@@ -1,13 +1,13 @@
-// kernel/halves.ts (T356): float16. The cache's keys and values are written as halves (to_f16), read back by
+// kernel/halves.ts (T.356): float16. The cache's keys and values are written as halves (to_f16), read back by
 // attention_f16 four at a time (halves4, which kernel/attention.ts imports) and by from_f16, and looked at before
 // they are trusted (finite_f16). The converter's float16 (the scale of a GGUF block, halfToFloat) is not this one:
 // it keeps infinities and NaNs, and is in kernel/quantize.ts.
 
-// float16 to float32 without the FP16 proposal (T104 is on hold): the bits of the magnitude, moved to where float32
+// float16 to float32 without the FP16 proposal (T.104 is on hold): the bits of the magnitude, moved to where float32
 // keeps them, are the number times 2^-112, which one multiplication by 2^112 puts right (exactly, subnormals and
 // zero included). An infinity (what to_f16 writes past 65520) reads back as 65536, and NaN is not kept: neither is
 // expected of a key or value.
-// T160: in four instructions, not seven. The half is loaded sign-extended, so that the shift by 13 puts its sign in
+// T.160: in four instructions, not seven. The half is loaded sign-extended, so that the shift by 13 puts its sign in
 // bit 31 as well as in bits 30..28 (the copies the extension made); one AND clears those three, and the sign rides
 // through the multiplication (-a times 2^112 is -(a times 2^112) to the bit, -0 included). The same bits as the
 // seven-instruction form (magnitude, multiply, then OR the sign back in) for every one of the 65536 halves.
@@ -22,7 +22,7 @@ const HALF_SCALE: f32 = 5.192296858534828e33;  // 2^112 (0x77800000)
   return reinterpret<f32>((<i32>load<i16>(p) << 13) & HALF_BITS) * HALF_SCALE;
 }
 
-// T110: float32 to float16, rounded to the nearest (ties to even), as NumPy's astype(float16) does: the keys and
+// T.110: float32 to float16, rounded to the nearest (ties to even), as NumPy's astype(float16) does: the keys and
 // values of a token, into the cache. Too large a number becomes infinity (a key never is one).
 export function to_f16(out: usize, x: usize, n: i32): void {
   for (let i = 0; i < n; i++) {
@@ -55,7 +55,7 @@ export function to_f16(out: usize, x: usize, n: i32): void {
   }
 }
 
-// T160 (the review of (4)): float16 to float32, n values: the keys and values the GPU writes back (float16) into a
+// T.160 (the review of (4)): float16 to float32, n values: the keys and values the GPU writes back (float16) into a
 // float32 cache (a grouped-query model's), widened as attention_f16 widens them. In JavaScript one at a time this took
 // 27 to 33 ns a value on CI's runners, 1.7 ms a token of Qwen3 0.6B's prompt.
 export function from_f16(out: usize, x: usize, n: i32): void {
@@ -64,7 +64,7 @@ export function from_f16(out: usize, x: usize, n: i32): void {
   for (; i < n; i++) store<f32>(out + (<usize>i << 2), half(x + (<usize>i << 1)));
 }
 
-// T243: whether n float16 values are all finite numbers: 1, or 0 where one has every bit of its exponent set (a NaN or
+// T.243: whether n float16 values are all finite numbers: 1, or 0 where one has every bit of its exponent set (a NaN or
 // an infinity, which halves4 above reads as a finite number: 65536 and more). The keys and values a GPU wrote back,
 // looked at once before they go into the cache (stagingFinite of public/forward/engine.js), eight a step: the attention's loops, which
 // read the cache at every token, stay as they are

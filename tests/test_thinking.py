@@ -1,4 +1,4 @@
-# T520: the budget of a thought in generate(), with the stand-ins of test_parts.py (no Llama, no weights).
+# T.520: the budget of a thought in generate(), with the stand-ins of test_parts.py (no Llama, no weights).
 import pytest
 
 from engine import generation
@@ -6,7 +6,7 @@ from test_parts import Letters, stand_in_model
 
 
 class Marked(Letters):
-    """Letters, with the marks of a thought as one token each where they are specials (as T143 makes them)."""
+    """Letters, with the marks of a thought as one token each where they are specials (as T.143 makes them)."""
     MARKS = {"<think>": 200, "</think>": 201}
 
     def encode(self, text, specials=()):

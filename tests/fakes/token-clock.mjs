@@ -1,4 +1,4 @@
-// tests/fakes/token-clock.mjs (T357.5)
+// tests/fakes/token-clock.mjs (T.357.5)
 // A stand-in for the clock the engine times a token by (createForward()'s `clock`, which is performance.now in a
 // page), for the checks of the search for the number of software threads (thread-search-check.mjs, gpu-default-check.mjs).
 //

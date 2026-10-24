@@ -2,8 +2,8 @@
 
 TASKS.md is read by people and agents alike, and at 4.5 MB nobody could read it
 any more (2026-10-15, the owner: split it, keep a table of contents). So a task
-that is done leaves TASKS.md for a file of its own, docs/tasks/T<number>.md (a
-subtask stays in its parent's file: T329.2 goes to T329.md), and two tables of
+that is done leaves TASKS.md for a file of its own, docs/tasks/T.<number>.md (a
+subtask stays in its parent's file: T.329.2 goes to T.329.md), and two tables of
 contents are made from the headings, never written by hand:
 
   - the head of TASKS.md: every task still in it, in the order of the file,
@@ -16,7 +16,7 @@ contents are made from the headings, never written by hand:
     python tests/ledger.py --check    fail if either table is not what index
                                       would write (the light suite runs this)
 
-A task's heading is a line "### T<number> …" with "状態: …" in it. It is done
+A task's heading is a line "### T.<number> …" with "状態: …" in it. It is done
 when its state begins with 完了, or for the few older ones that said it
 otherwise, when its number is in OLDER_DONE. Nothing is rewritten: a block of
 lines moves as it is, and split checks that every line of TASKS.md before is in
@@ -32,16 +32,16 @@ LEDGER = ROOT / "TASKS.md"
 TASKS = ROOT / "docs" / "tasks"
 INDEX = TASKS / "README.md"
 
-HEADING = re.compile(r"^### (T\d+(?:\.\d+)*)\b")
+HEADING = re.compile(r"^### (T\.\d+(?:\.\d+)*)\b")
 STATE = re.compile(r"状態: (.*)")
 DATE = re.compile(r"20\d\d-\d\d-\d\d")
 
 # Done tasks whose state was written before "完了" was the one word for it
-# (read one by one on 2026-10-15). T397, T136 and T137 are only partly done
+# (read one by one on 2026-10-15). T.397, T.136 and T.137 are only partly done
 # and stay.
 OLDER_DONE = {
-    "T95", "T134", "T173", "T174", "T176", "T179", "T180", "T181", "T182",
-    "T188", "T192", "T210", "T217", "T272",
+    "T.95", "T.134", "T.173", "T.174", "T.176", "T.179", "T.180", "T.181", "T.182",
+    "T.188", "T.192", "T.210", "T.217", "T.272",
 }
 
 TOC_BEGIN = "<!-- 目次: tests/ledger.py index が見出しから作る。手で書かない -->"
@@ -73,7 +73,8 @@ def done(heading):
 
 
 def parent(number):
-    return number.split(".")[0]
+    # (T.572: "T.329.2" is a subtask of "T.329")
+    return ".".join(number.split(".")[:2])
 
 
 def title(heading):
@@ -121,8 +122,8 @@ def with_toc(lines):
 def index_text():
     rows = []
     def key(p):
-        return int(p.stem[1:])
-    for p in sorted(TASKS.glob("T*.md"), key=key):
+        return int(p.stem[2:])
+    for p in sorted(TASKS.glob("T.*.md"), key=key):
         heads = [l for l in p.read_text().split("\n") if HEADING.match(l)]
         first = heads[0] if heads else ""
         dates = DATE.findall(state_of(first))
@@ -133,9 +134,9 @@ def index_text():
         "",
         "TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル、子タスクは親のファイルに）。"
         "この目次は `python tests/ledger.py index` が見出しから作る（手で書かない）。"
-        "記録やコメントが「TASKS.md の T○○」と指していたら、済んだものはここの `T○○.md` を読む。",
+        "記録やコメントが「TASKS.md の T.○○」（前の形は T○○）と指していたら、済んだものはここの `T.○○.md` を読む。",
         "",
-        "もっと古い済んだタスク（T1〜、1 行ずつの一覧）は [done-list.md](done-list.md)。",
+        "もっと古い済んだタスク（T.1〜、1 行ずつの一覧）は [done-list.md](done-list.md)。",
         "",
         *rows,
         "",

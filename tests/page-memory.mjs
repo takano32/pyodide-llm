@@ -1,4 +1,4 @@
-// src/page-memory.js (T173): the page-memory section's steps and its mark, with a made-up worker and storage. Node alone.
+// src/page-memory.js (T.173): the page-memory section's steps and its mark, with a made-up worker and storage. Node alone.
 //
 //   node tests/page-memory.mjs
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ function storage() {
   return { log, items, getItem: (k) => items.get(k) ?? null, setItem: (k, v) => { items.set(k, String(v)); log.push(JSON.parse(v)); }, removeItem: (k) => items.delete(k) };
 }
 // a worker that holds what it is asked to, and refuses past `most` bytes (as a RangeError of Memory.grow); maximum is
-// what memory.js says of the room its memory was made with (undefined: says nothing, as before T173's review)
+// what memory.js says of the room its memory was made with (undefined: says nothing, as before T.173's review)
 function worker(most = Infinity, error, maximum) {
   let held = 0;
   const asked = [];
@@ -117,7 +117,7 @@ assert.equal(memoryLimit("99999"), MEMORY_MOST, "no more than one 32-bit memory"
   assert.deepEqual(memorySummary(d), ["Page memory: held 128 MiB; the tab ended while it grew to 192 MiB and the page was loaded again: the browser ended it, most likely for its memory"]);
 }
 
-// T173's review: the page hidden or left while a step grows: the run stops at once, holds no more, and removes its
+// T.173's review: the page hidden or left while a step grows: the run stops at once, holds no more, and removes its
 // mark (a phone ends a hidden page far sooner, so a tab ended then is no limit)
 {
   const s = storage(), w = worker();

@@ -1,5 +1,5 @@
 # reference_spark.py
-# T342: the engine's Spark-X2.5 (XHToken's: three local layers of every four that turn their whole heads by a base of
+# T.342: the engine's Spark-X2.5 (XHToken's: three local layers of every four that turn their whole heads by a base of
 # their own, the others a quarter of each head; a gate of each head's output; the exact GELU in the FFN's gate) against
 # transformers running the model's own code (modeling_spark.py: transformers has no class of it). PyTorch is not on the
 # development machine, so this runs in CI:

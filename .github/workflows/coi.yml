@@ -1,4 +1,4 @@
-# T93, part 2: can the site be cross-origin isolated on GitHub Pages with a service worker (public/coi-test/)?
+# T.93, part 2: can the site be cross-origin isolated on GitHub Pages with a service worker (public/coi-test/)?
 # Every browser the runners offer, with both kinds of COEP; the table goes to the summary. By hand only.
 name: Cross-origin isolation
 
@@ -31,7 +31,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
+      # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and the browsers
         timeout-minutes: 20
         shell: bash

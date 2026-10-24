@@ -1,4 +1,4 @@
-// The page-memory section of /benchmark/ (T173): how much memory this page can hold before the browser refuses it or
+// The page-memory section of /benchmark/ (T.173): how much memory this page can hold before the browser refuses it or
 // ends the tab. iOS ends a tab past about 2 to 3 GB of its own (jetsam) and throws nothing, so this cannot find the
 // limit by catching an error: the page (src/page-memory.js) asks for one step at a time and writes in sessionStorage,
 // before each step, how much was held; a tab ended and loaded again finds that mark and reports it.
@@ -14,8 +14,8 @@
 // the tab runs out. The bytes are random so that a device that compresses its memory (iOS does) counts them all; a
 // page of zeros, or of one byte a page, would compress to nothing and the tab would seem to hold far more. The memory
 // is freed when the page ends this worker. The section runs alone: no other WebAssembly memory is alive in the page
-// (T96: Chromium refused a page its third).
-// T368.7: what the page asks and is answered (contracts/benchmark.ts); a caught value, where its words are read
+// (T.96: Chromium refused a page its third).
+// T.368.7: what the page asks and is answered (contracts/benchmark.ts); a caught value, where its words are read
 import type { Answer, MemoryGrown, ToMemory } from "../contracts/benchmark.ts";
 type Thrown = { name?: string; message?: string } | null | undefined;
 const PAGE = 65536;

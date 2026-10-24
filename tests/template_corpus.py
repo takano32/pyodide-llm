@@ -1,12 +1,12 @@
 # template_corpus.py
-# The converter's reader of chat templates (llama2_convert.one_turn_template, T73 / T127 / T269) against Jinja itself
+# The converter's reader of chat templates (llama2_convert.one_turn_template, T.73 / T.127 / T.269) against Jinja itself
 # on real templates: those of the most downloaded text-generation models of the Hub that are not gated, and of any
 # repository named. Only tokenizer_config.json and chat_template.jinja are fetched (kept in the directory, so a second
 # run asks the Hub for nothing).
 #
 #   python3 tests/template_corpus.py <directory> [--top 500] [--before <another llama2_convert.py>] [owner/repo[@revision] ...]
 #
-# T397: the converter renders with jinja2 itself where it can import it, so here "the converter" is its wrapping of
+# T.397: the converter renders with jinja2 itself where it can import it, so here "the converter" is its wrapping of
 # jinja2 (the date, the prompt written once, what it trims) against the plain rendering below, and "its own reader" is
 # what a browser without the package gets: both are judged, and neither may write another text than Jinja.
 #
@@ -40,7 +40,7 @@ def converter(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.path.insert(0, str(Path(path).resolve().parent))  # (its own llama2_numpy, where it imports one)
-    # T347: the converter is a window over the package convert/ beside it. Two converters have two packages of that
+    # T.347: the converter is a window over the package convert/ beside it. Two converters have two packages of that
     # name, so each is imported with none loaded and taken out again: a second would else get the first one's parts
     # and be compared with itself. (The file given is the window: src/python/llama2_convert.py of a tree.)
     parts = lambda: [key for key in sys.modules if key == "convert" or key.startswith("convert.")]
@@ -156,7 +156,7 @@ def real_turn(template, config):
 
 def by_reader(module, template, config, in_file, own=False):
     """The converter's one turn with its {date:format} filled with DAY, or None where it refuses. own: by its own
-    reader, as where jinja2 is not there (a converter of before T397 has no other)"""
+    reader, as where jinja2 is not there (a converter of before T.397 has no other)"""
     import re
     tokens = {name: config[name] for name in TOKENS if name in config}
     parts = module.one_turn.__globals__  # convert/template.py's names

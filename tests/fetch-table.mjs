@@ -1,4 +1,4 @@
-// fetch-table.mjs (T107): the JSON lines of tests/e2e.mjs runs with E2E_QUERY=hfParts=..&hfConnections=.., as one
+// fetch-table.mjs (T.107): the JSON lines of tests/e2e.mjs runs with E2E_QUERY=hfParts=..&hfConnections=.., as one
 // table per model: for each setting the median of its runs, the fastest first. "fetch" is the download less the
 // conversion (the worker converts each part as it arrives, so the download's seconds hold both).
 //

@@ -1,5 +1,5 @@
 # make_qwen35.py
-# T229: a made-up Qwen3.5 (hybrid attention) as files, for the checks of forward.js that take a model by its files
+# T.229: a made-up Qwen3.5 (hybrid attention) as files, for the checks of forward.js that take a model by its files
 # (tests/forward-check.mjs, tests/threads-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). No real model of the kind is small enough to be built with the site, so
 # this one stands in: random Hugging Face tensors (tests/made_up.py's qwen35_model) converted the way the page
@@ -12,8 +12,8 @@
 # state: a context of 4096 and value heads as large as the real models' (16 of 128 by 128), so that the state of the
 # linear-attention layers (6.3 MB, held twice) and the keys and values of the two attending layers (8.4 MB in
 # float32) outweigh the rest: for what forward.js puts after the checkpoint against footprint().
-# wide (the review of T229): heads of 256, as every real Qwen3.5 has.
-# rotated (T237): the same model folded into a rotated basis (blocks of 16 with random signs: 4 blocks of the residual
+# wide (the review of T.229): heads of 256, as every real Qwen3.5 has.
+# rotated (T.237): the same model folded into a rotated basis (blocks of 16 with random signs: 4 blocks of the residual
 # stream, 8 of an attention's output and of the FFN's inside, 4 of a linear-attention layer's output), as Ternary
 # Bonsai 2 27B's file is: its numbers are those of the model without it, and forward.js has to turn every input.
 import json
@@ -36,7 +36,7 @@ SHAPES = {"small": dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_di
           # attention kernels on heads that wide, in float16 too (a 4B or a 9B keeps float16 keys and values past 4 GiB)
           "wide": dict(dim=256, hidden_dim=512, n_heads=2, n_kv_heads=1, head_dim=256, key_heads=2, value_heads=4,
                        key_dim=32, value_dim=32, seq_len=1024),
-          # T568.4: key heads wider than the GPU's delta rule takes (128: forward/linear.ts's DELTA_MOST), which stay on the CPU
+          # T.568.4: key heads wider than the GPU's delta rule takes (128: forward/linear.ts's DELTA_MOST), which stay on the CPU
           "past": dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_dim=32, key_heads=1, value_heads=2,
                        key_dim=160, value_dim=16, seq_len=1024)}
 

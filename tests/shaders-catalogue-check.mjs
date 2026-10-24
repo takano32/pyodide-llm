@@ -1,4 +1,4 @@
-// tests/shaders-catalogue-check.mjs (T379.1): the catalogue of the engine's shaders (src/runtime/shaders/engine.ts) by
+// tests/shaders-catalogue-check.mjs (T.379.1): the catalogue of the engine's shaders (src/runtime/shaders/engine.ts) by
 // itself: no GPU, no worker, no model. Node only, under a second:
 //
 //   node tests/shaders-catalogue-check.mjs
@@ -18,9 +18,9 @@
 //     function itself (called with a model's numbers), and it cannot be written to by a name the rows do not have;
 //   - the key is the fold of these rows and of nothing else of the catalogue: computed here a second time from the
 //     rows (FNV-1a, the unit separator after each text) for eight made-up devices and their ternary models.
-//   - (T379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.mjs (the
+//   - (T.379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.mjs (the
 //     tiles', the benchmark's), each set of which makes a text of its own.
-//   - (T379.2) a text declares nothing it does not use, and declares the struct of what it binds.
+//   - (T.379.2) a text declares nothing it does not use, and declares the struct of what it binds.
 // What a maker's text branches on that no row walks (a new parameter) is tests/device-key-check.mjs's, which changes
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
@@ -34,10 +34,10 @@ const said = ({ name, given }) => (given ? `${name}(${Object.entries(given).filt
 const EITHER = [false, true];
 const ORDER = {
   engine: ["RMSNORM", "HEAD_NORM", "ADD", "ROPE", "SWIGLU", "QUANTIZE", "LAYER_NORM", "GELU", "EMBED", "EMBED_ROWS", "SAMPLE", "NORM_QUANTIZE", "TOKEN_ROPE", "WIDEN_SIX",
-    "RMSNORM_ADD", "GEGLU",  // (T261.4: a Gemma 3's norms behind and its gate)
-    "SHORT_CONV", "CONV_STATE",  // (T545: an LFM2's convolution layers)
-    "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T271.2: a Qwen3.5's linear-attention layers and its output gate)
-    // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
+    "RMSNORM_ADD", "GEGLU",  // (T.261.4: a Gemma 3's norms behind and its gate)
+    "SHORT_CONV", "CONV_STATE",  // (T.545: an LFM2's convolution layers)
+    "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T.271.2: a Qwen3.5's linear-attention layers and its output gate)
+    // (T.379.2: each maker's rows together; within a maker subgroups is the outer choice)
     ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
     ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),
     ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
@@ -49,7 +49,7 @@ const ORDER = {
     "fusedDp4aMatVec(output=geglu, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "ROTATE_QUANTIZE", "UNROTATE"],
 };
-const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T379.2 was). If that is meant, this list is to say the same";
+const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T.379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);
 assert.deepEqual(TERNARY_SHADERS.map(said), ORDER.ternary, `a ternary model's shaders: ${moved}`);
 console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone)`);
@@ -68,7 +68,7 @@ for (const row of rows) {
   assert.equal(window[row.name], row.shader, `${what}: the row's shader is the one of that name (the window's)`);
   assert.equal(text, row.text(), `${what}: the same text twice`);
   assert.ok(typeof text === "string" && text.length > 100, `${what}: a text`);
-  // (T379.2: a piece of text shaders share is no row: it is in the key by the texts that hold it)
+  // (T.379.2: a piece of text shaders share is no row: it is in the key by the texts that hold it)
   assert.ok(/@compute/.test(text), `${what}: a row is a shader, with an entry point`);
   assert.ok(!seen.has(text), `${what} gives the text ${seen.get(text)} gives: an argument the maker does not take, or a row twice (and a text a device runs that the key does not hold?)`);
   seen.set(text, what);
@@ -91,7 +91,7 @@ for (const [name, givens] of makers) {
 }
 console.log(`shaders-catalogue-check: ${[...makers].map(([name, givens]) => `${name} × ${givens.length}`).join(", ")}: every combination of each maker's choices, one set of numbers`);
 
-// ---- (T379.2) every maker of WGSL the window exports is walked by someone: the catalogue's rows (above), or the list
+// ---- (T.379.2) every maker of WGSL the window exports is walked by someone: the catalogue's rows (above), or the list
 // of the makers apart (tests/shader-makers.mjs: the prompt's tiles and the benchmark's own, which the net compares
 // with another commit's by the texts those arguments make). A maker in neither would be compared by its syntax tree
 // alone, and a branch of it by nothing; a maker in both is the catalogue's
@@ -106,8 +106,8 @@ for (const [name, givens] of Object.entries(MAKERS_APART)) {
 }
 console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} makers of WGSL, each the catalogue's (${makers.size}) or of the list apart (${Object.keys(MAKERS_APART).join(", ")})`);
 
-// ---- (T379.2) what a text declares, it uses, and the type of what it binds is declared: every text a device is given
-// (the rows' and the tiles'), read as text (no WGSL compiler here: that a text compiles is CI's gpu-check). Until T379.2
+// ---- (T.379.2) what a text declares, it uses, and the type of what it binds is declared: every text a device is given
+// (the rows' and the tiles'), read as text (no WGSL compiler here: that a text compiles is CI's gpu-check). Until T.379.2
 // a token's matrices declared the Step struct where no step was bound, and a constant only the norm's form read; a
 // declaration that comes back unused, or a struct dropped where it is bound, is said here. Names a piece of text
 // shared by two shaders gives both, of which one uses fewer, are listed (LEFT): taking them out is another text, and
@@ -135,7 +135,7 @@ for (const [what, raw] of given) {
 }
 console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the tiles'): each of their ${declarations} declarations is used, and each struct that is bound is declared`);
 
-// ---- (T379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
+// ---- (T.379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
 // its name is the one of the form's own name (read backwards, a ternary model was handed the int8 text under the
 // ternary name, and no local check said so)
 {

@@ -1,24 +1,24 @@
-// shaders/attention.ts (T351): the attention: llama.cpp's flash attention by tiles for the tokens of a prompt
-// (T147) and its flash_attn_vec for one generated token (T224), each under its notice below, and the made-up numbers and
+// shaders/attention.ts (T.351): the attention: llama.cpp's flash attention by tiles for the tokens of a prompt
+// (T.147) and its flash_attn_vec for one generated token (T.224), each under its notice below, and the made-up numbers and
 // the JavaScript the checks hold a token's attention to.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
 import { STEP } from "./common.ts";
 
-// (T368.5) the shapes the makers below are given, each what its shape function returns: a number is written into the
+// (T.368.5) the shapes the makers below are given, each what its shape function returns: a number is written into the
 // text, half and subgroups choose its lines. none: why a device cannot run it (and then nothing is made of it)
 export type FlashShape = { headSize: number; half: boolean; subgroups: boolean; wgSize: number; kvTile: number; minSubgroup: number; none?: string };
 export type FlashVecShape = { headSize: number; subgroups: boolean; wgSize: number; kvTile: number; dSplit: number; splits: number; reduceSize: number; none?: string };
 // the sizes of a subgroup a device says (the adapter's info), where it has subgroups
 type Subgroups = { subgroupMin?: number; subgroupMax?: number };
 // the made-up numbers of a token's attention (tokenAttentionData's) and the sizes they are of
-// (T261.4.2: window, the last positions a layer attends: 0 or none, every one)
+// (T.261.4.2: window, the last positions a layer attends: 0 or none, every one)
 type AttentionSizes = { heads: number; kvHeads: number; size: number; positions: number; window?: number };
 type AttentionData = { q: ArrayLike<number>; keys: ArrayLike<number>; values: ArrayLike<number> };
 
-// T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
-// T135's (one workgroup a head and token) wrote every score to memory and read it three times, and read the same keys
+// T.147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
+// T.135's (one workgroup a head and token) wrote every score to memory and read it three times, and read the same keys
 // and values again for every head of q that shares them. A workgroup takes Q_TILE (4) tokens of one head: their q
 // (scaled) in its memory, then KV_TILE positions of the head's keys at a time in its memory as f16 (or f32 where there
 // is no shader-f16), one row of q a subgroup, a position a lane; the softmax online (the largest so far and the sum
@@ -32,11 +32,11 @@ type AttentionData = { q: ArrayLike<number>; keys: ArrayLike<number>; values: Ar
 // (this project's: llama.cpp's tile path needs subgroups). The shape is llama.cpp's choice
 // (ggml-webgpu-shader-lib.hpp): Q_TILE 4, KV_TILE at most 64 and what the workgroup's memory holds, WG_SIZE the larger
 // of 128 and 4 subgroups; MIN_SUBGROUP_SIZE sizes the registers.
-// T261.4: a layer that attends a window (a Gemma 3's local ones: the last params.window positions, its own among them;
+// T.261.4: a layer that attends a window (a Gemma 3's local ones: the last params.window positions, its own among them;
 // 0, every position) has the positions before a row's window masked as the ones after it are, and the tiles begin
 // where the window of the workgroup's first token does (llama.cpp gives such a layer a mask of -inf there, the
 // sliding window's KQ mask, and runs every tile: here the tiles before a window are not read). The GPU's own keys and
-// values keep every position, so a window is a range of them (the CPU's ring, T510.1, is the CPU's).
+// values keep every position, so a window is a range of them (the CPU's ring, T.510.1, is the CPU's).
 export const FLASH_Q_TILE = 4;
 export const flashShape = ({ headSize, half, subgroups, memory, threads, subgroupMin = 4, subgroupMax = 128 }: Pick<FlashShape, "headSize" | "half" | "subgroups"> & { memory: number; threads: number } & Subgroups): FlashShape => {
   const bytes = half ? 2 : 4;
@@ -68,7 +68,7 @@ export const flashShape = ({ headSize, half, subgroups, memory, threads, subgrou
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-// (T379.2) the keys' and values' pair of u32 as its four float16 (the cache holds them so: pack2x16float), written
+// (T.379.2) the keys' and values' pair of u32 as its four float16 (the cache holds them so: pack2x16float), written
 // once for flashTile and flashVec
 const HALVES = /* wgsl */ `fn halves(pair: vec2<u32>) -> vec4<f32> {
   return vec4<f32>(unpack2x16float(pair.x), unpack2x16float(pair.y));
@@ -332,7 +332,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
     }
 }`;
 
-// T224: the attention of one generated token, llama.cpp's decode form (flash_attn_vec_split.wgsl and
+// T.224: the attention of one generated token, llama.cpp's decode form (flash_attn_vec_split.wgsl and
 // flash_attn_vec_reduce.wgsl, chosen by ggml-webgpu.cpp's ggml_webgpu_flash_attn_vec where a query has fewer than 20
 // rows): where the prompt's tiles (flashTile) leave three of their four rows of q empty for one token and run a
 // workgroup a head, this runs nwg workgroups a head, each over every nwg-th KV_TILE of the positions (one subgroup:
@@ -357,7 +357,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
 // subgroup, 4 and the lowest bit of headSize / 4; the reduce's workgroup the larger of the largest subgroup and nwg of
 // them (at most the device's threads), where llama.cpp makes a reduce pipeline for the nwg of the call and this makes
 // one for the most nwg a head can have (splits: the least subgroup), which every nwg runs: for two parts a head on a
-// Mali (16..16) a workgroup of 256 threads where llama.cpp's is 32 (T224's review: the same sums, more subgroups to
+// Mali (16..16) a workgroup of 256 threads where llama.cpp's is 32 (T.224's review: the same sums, more subgroups to
 // share the output's vec4s).
 // Where there are no subgroups (or no subgroup_id), FLASH_VEC_LANES threads stand for one subgroup, its shuffles, largest
 // and sum through the workgroup's memory (a butterfly: each pair of lanes adds the same two values, so every lane holds
@@ -380,7 +380,7 @@ export function flashVecSplits({ splits, kvTile }: Pick<FlashVecShape, "splits" 
 }
 // the bytes of the parts a dispatch of heads writes (nwg of the most a head, headSize values and two numbers each)
 export const flashVecPartsBytes = ({ splits, headSize }: Pick<FlashVecShape, "splits" | "headSize">, heads: number) => heads * splits * (headSize + 2) * 4;
-// the Params both dispatches read: heads, kvHeads, the scale of a score, nwg, where the sums and largests start; T261.4.2:
+// the Params both dispatches read: heads, kvHeads, the scale of a score, nwg, where the sums and largests start; T.261.4.2:
 // the window the layer attends (0: every position)
 export function flashVecParams({ headSize, splits }: Pick<FlashVecShape, "headSize"> & { splits?: number }, heads: number, kvHeads: number, nwg: number, window = 0) {
   const bytes = new ArrayBuffer(32);
@@ -444,7 +444,7 @@ const flashVecHead = (subgroups: boolean) => (subgroups ? "diagnostic(off, subgr
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 //
-// The first dispatch: heads × nwg workgroups (the head wg_id.x / nwg, its part wg_id.x % nwg). T261.4.2: a layer that
+// The first dispatch: heads × nwg workgroups (the head wg_id.x / nwg, its part wg_id.x % nwg). T.261.4.2: a layer that
 // attends a window (Params.window, a Gemma 3's local layers; 0: every position) reads its last window positions: the
 // parts' tiles begin at the first of them (kv_first), as flashTile's begin at its workgroup's (llama.cpp gives such a
 // layer the sliding window's mask of -inf and reads every tile)
@@ -744,14 +744,14 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
         }
     }
 }`;
-/** T224: the made-up numbers of a check of a token's attention (the engine's, gpu.js, and /benchmark/'s): q of heads
+/** T.224: the made-up numbers of a check of a token's attention (the engine's, gpu.js, and /benchmark/'s): q of heads
  * × size (±1; the heads in steep TOKEN_ATTENTION_STEEP times that, whose scores then spread over hundreds: a largest of
  * a softmax or of the reduce that is not the largest of all makes exp() go past float32 there, where a largest taken
  * wrong cancels out of any softmax whose scores are within 88 of each other), and the keys and values of positions
  * and TOKEN_ATTENTION_PAST more ([position][kvHeads × size], float16 of random bits between 2^-3 and 4 in size: those
  * past the token's must not be read). A steep head's key at TOKEN_ATTENTION_PEAK (in the second KV_TILE: flash_attn_vec's
  * second part where there are two or more) is 4 in the sign of its q, so that its score is hundreds above every other:
- * random keys alone leave every part's largest within 88 of the largest of all (the CI's mutations, T224: the reduce
+ * random keys alone leave every part's largest within 88 of the largest of all (the CI's mutations, T.224: the reduce
  * taking part 0's largest passed), and a part's largest must be that far from another's to be seen. */
 export const TOKEN_ATTENTION_PAST = 8, TOKEN_ATTENTION_STEEP = 40, TOKEN_ATTENTION_PEAK = 33;
 export function tokenAttentionData({ heads, kvHeads, size, positions, steep = [] }: AttentionSizes & { steep?: number[] }) {
@@ -766,9 +766,9 @@ export function tokenAttentionData({ heads, kvHeads, size, positions, steep = []
   return { q, keys, values: new Uint16Array(rows).map(halfBits) };
 }
 const fromHalf = (h: number) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
-/** T224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
+/** T.224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
  * (tokenAttentionData's, heads of q on kvHeads, each head of q to kvHeads' own, the token reading positions) in float64:
- * the largest difference of a head's output over the largest |value| of its head. NaN where got holds one. T261.4.2: of
+ * the largest difference of a head's output over the largest |value| of its head. NaN where got holds one. T.261.4.2: of
  * a layer that attends a window, of the last window positions alone. */
 export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: AttentionData, { heads, kvHeads, size, positions, window = 0 }: AttentionSizes) {
   const kvDim = kvHeads * size, scale = 1 / Math.sqrt(size), first = window ? Math.max(0, positions - window) : 0;
@@ -787,7 +787,7 @@ export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: A
       let want = 0;
       for (let p = first; p < positions; p++) want += weights[p] * fromHalf(values[p * kvDim + kv + d]);
       // (Math.max keeps a NaN, as the comment above says: `if (!(off <= worst)) worst = off` let the next value take its
-      // place, and a NaN in one head, or in the first values of the last, passed: T224's review)
+      // place, and a NaN in one head, or in the first values of the last, passed: T.224's review)
       worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);
     }
   }

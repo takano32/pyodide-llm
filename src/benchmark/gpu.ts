@@ -1,5 +1,5 @@
 // The section "GPU": the steps asked of src/runtime/benchmark/gpu.ts one at a time, and the Markdown of what came back.
-// (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
+// (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { checkVerdict, matVecTable, cpuBaseline, tokenTable, layerTable, layerStepsTable, generateTable, unmeasured,
   tableCell, noRatios, threadsOf, timesFaster } from "../bench.js";
 import { $, type Result, results } from "./dom.ts";
@@ -7,21 +7,21 @@ import { staged, ask, worker, fixed, yes } from "./section.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
 import type { Asking } from "./section.ts";
 import type { GpuCeiling, GpuCeilings, GpuInfo, GpuModel, Overhead, PromptFound, PromptRow, ToBenchGpu, ToWaiter, Verdict, Verdicts, Waited } from "../runtime/contracts/benchmark.ts";
-// T368.7: a step as the section keeps it, by the name the page gives it: its result (contracts/benchmark.ts's, by the
+// T.368.7: a step as the section keeps it, by the name the page gives it: its result (contracts/benchmark.ts's, by the
 // step asked) or what failed. The list of them is read by name, which no type follows: each reader says what it takes
 type Stepped<Result> = { name: string; result?: Result; error?: string };
 
-// the GPU section of T94's stage 0, step by step as /gpu-test/ ran it
+// the GPU section of T.94's stage 0, step by step as /gpu-test/ ran it
 const SHAPES: Record<string, [rows: number, n: number]> = { "llm-jp-3 150M w1": [2048, 512], "Llama 3.2 1B w1": [8192, 2048], "Llama 3.2 1B classifier": [128256, 2048] };
 const BRIDGE_ROUNDS = 2000;
-// T135's candidate for a token (T134): the next token chosen on the GPU (the fewer dispatches are T150's layer)
+// T.135's candidate for a token (T.134): the next token chosen on the GPU (the fewer dispatches are T.150's layer)
 const GPU_WAYS: [string, { sample: boolean }][] = [["chosen on the GPU", { sample: true }]];
 const PROMPT_COUNTS = [1, 16, 64];
 export async function gpu(): Promise<Result> {
   const w = worker("benchmark/gpu.js");
   const steps: any[] = [];
   let lost: string | undefined;
-  // T177: the steps are this page's, counted once the adapter says whether it has the packed int8 dot
+  // T.177: the steps are this page's, counted once the adapter says whether it has the packed int8 dot
   const models: GpuModel[] = ["llm-jp-3 150M", "Llama 3.2 1B", ...(($("large") as HTMLInputElement).checked ? ["Llama 3.2 3B"] satisfies GpuModel[] : [])];
   let of: number | undefined;
   const step = async <Message extends ToBenchGpu>(name: string, message: Message) => {
@@ -37,10 +37,10 @@ export async function gpu(): Promise<Result> {
       const why = steps[0].error ?? (info?.worker ? "navigator.gpu gave no adapter" : REASONS.noWebGpu);
       return { status: "none", markdown: why };
     }
-    // the adapter, the check, the shapes, the tokens, the ways, a layer, its steps (T202), the tokens generated, besides the weights,
-    // the ceilings, a prompt, the bridge (T192: the tokens generated were left out, and the last two read "N / N")
+    // the adapter, the check, the shapes, the tokens, the ways, a layer, its steps (T.202), the tokens generated, besides the weights,
+    // the ceilings, a prompt, the bridge (T.192: the tokens generated were left out, and the last two read "N / N")
     of = 2 + Object.keys(SHAPES).length + models.length * (info.packed ? 2 : 1) + GPU_WAYS.length + 7;
-    // T182: a fallback adapter (SwiftShader in CI: the CPU in a GPU's place) checks the shaders against JavaScript and
+    // T.182: a fallback adapter (SwiftShader in CI: the CPU in a GPU's place) checks the shaders against JavaScript and
     // times nothing: its times are no GPU's, and they took about 4 minutes a browser (the owner, 2026-09-27: what CI
     // needs to know is that the GPU's path works). The timings are for a real GPU, on the owner's devices.
     if (info.fallback) of = 3; // the adapter, the check, the bridge
@@ -51,24 +51,24 @@ export async function gpu(): Promise<Result> {
       await step(`a token of ${name}`, { step: "token", model: name, kind: "widen" });
       if (info.packed) await step(`a token of ${name}, packed int8`, { step: "token", model: name, kind: "packed" });
     }
-    // T135's candidate on Llama 3.2 1B: the token chosen on the GPU
+    // T.135's candidate on Llama 3.2 1B: the token chosen on the GPU
     for (const [label, how] of GPU_WAYS) await step(`a token of Llama 3.2 1B, ${label}`, { step: "token", model: "Llama 3.2 1B", kind: "widen", ...how });
-    // T150: a layer of a token as separate steps and fused into fewer dispatches
+    // T.150: a layer of a token as separate steps and fused into fewer dispatches
     await step("a layer of a token", { step: "layer" });
-    // T202: where a layer's time goes, step by step
+    // T.202: where a layer's time goes, step by step
     await step("the steps of a layer", { step: "layer steps" });
-    // T151: tokens generated on the GPU, each read back as it comes against several a submission read back once
+    // T.151: tokens generated on the GPU, each read back as it comes against several a submission read back once
     await step("tokens generated on the GPU", { step: "generate" });
     await step("what a token costs besides the weights", { step: "overhead" });
-    // T168: the ceilings just before the prompt, so that both are measured as warm as each other
+    // T.168: the ceilings just before the prompt, so that both are measured as warm as each other
     await step("the device's ceilings", { step: "ceilings" });
     await step("a prompt all at once", { step: "prompt", counts: PROMPT_COUNTS });
     }
     staged("gpu", { stage: "the bridge", at: of, of });
     const bridge = await gpuBridge(w);
     const wrong = check && Object.values(check).some((v) => !v.ok && !v.error);
-    // not ok either when the shaders could not be checked (or a tiled one could not run, T146), or when the device
-    // was lost: a lost device answers every later wait at once, and the times after it are no GPU's (T134's review)
+    // not ok either when the shaders could not be checked (or a tiled one could not run, T.146), or when the device
+    // was lost: a lost device answers every later wait at once, and the times after it are no GPU's (T.134's review)
     const unchecked = steps.find((s) => s.name === "the shaders against JavaScript")?.error
       ?? (check && Object.values(check).find((v) => v.error))?.error;
     return { status: wrong ? "wrong" : unchecked || lost ? "error" : "ok", data: { steps, bridge, lost }, ...gpuMarkdown(steps, bridge, lost) };
@@ -84,16 +84,16 @@ async function gpuBridge(w: Asking<"benchmark/gpu.js">) {
   const answered = ask(w, { step: "bridge", memory, rounds: BRIDGE_ROUNDS });
   waiter.postMessage({ memory, rounds: BRIDGE_ROUNDS } satisfies ToWaiter);
   try {
-    // without Atomics.waitAsync nothing answers the waiter, which would wait for ever (T134's review)
+    // without Atomics.waitAsync nothing answers the waiter, which would wait for ever (T.134's review)
     const answer = await answered;
-    // (T227's review: a worker's error says "failed", as every step's does, so that the warnings list it; no waitAsync is no failure)
+    // (T.227's review: a worker's error says "failed", as every step's does, so that the warnings list it; no waitAsync is no failure)
     if (!answer.result?.waitAsync) return { error: answer.error ? `failed: ${answer.error}` : "no Atomics.waitAsync here" };
     return { microseconds: (await waited).microseconds };
   } finally {
     waiter.terminate();
   }
 }
-// the section's Markdown, and of its lines those that say what went wrong (T227: a lost device, shaders not checked,
+// the section's Markdown, and of its lines those that say what went wrong (T.227: a lost device, shaders not checked,
 // the verdicts that are not ok)
 export function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
   const lines: string[] = [], said: string[] = [];
@@ -112,7 +112,7 @@ export function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
   const bandwidths = steps.filter((s) => s.name.startsWith("bandwidth"));
   const ceilings: GpuCeilings | undefined = steps.find((s) => s.name === "the device's ceilings")?.result;
   lines.push(...matVecTable(bandwidths, check?.result, ceilings, { lost }), "");
-  // T157: the CPU beside the GPU is the CPU section's forward pass, rewritten when the CPU section runs after this one
+  // T.157: the CPU beside the GPU is the CPU section's forward pass, rewritten when the CPU section runs after this one
   const baseline = cpuBaseline(results.cpu);
   const gpu = { fallback: r.fallback, lost, check: check?.result };
   lines.push(...tokenTable(steps.filter((x) => x.name.startsWith("a token")), baseline, gpu));
@@ -126,7 +126,7 @@ export function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
   return { markdown: lines.join("\n"), said };
 }
 
-// what a token costs on the GPU besides reading its weights (T135: the phones' 18 to 20 ms, T94)
+// what a token costs on the GPU besides reading its weights (T.135: the phones' 18 to 20 ms, T.94)
 function overheadMarkdown(s?: Stepped<Overhead>) {
   if (!s || s.error) return [`**Besides the weights**: ${unmeasured(s?.error)}`];
   const o = s.result!;
@@ -137,7 +137,7 @@ function overheadMarkdown(s?: Stepped<Overhead>) {
     `| the token's id read back (4 bytes) | ${fixed(o.readToken, 2)} |`,
     `| every logit read back (${o.vocab} floats) | ${fixed(o.readLogits, 2)} |`];
 }
-// T168: the device's ceilings, each a loop of that alone (src/runtime/shaders.js, the method of clpeak): what the
+// T.168: the device's ceilings, each a loop of that alone (src/runtime/shaders.js, the method of clpeak): what the
 // prompt's shaders are held against
 const percent = (part: number, whole: number) => `${fixed((100 * part) / whole, 1)}%`;
 function ceilingsMarkdown(s?: Stepped<GpuCeilings>) {
@@ -169,16 +169,16 @@ function ceilingOf(row: PromptRow, c?: GpuCeilings) {
   return `${percent(row.GFLOPS!, v)} of ${what}${row.GFLOPS! > v ? " (past it: the ceiling read low)" : ""}`;
 }
 // a prompt's tokens at once on the GPU against the CPU section's blocks of 16 (the same made-up model: two layers of
-// Llama 3.2 1B's width, no classifier), by every shader of it (T146: the tiled ones beside T135's batched one), with
+// Llama 3.2 1B's width, no classifier), by every shader of it (T.146: the tiled ones beside T.135's batched one), with
 // the GFLOPS of each (a multiply and an add for each weight and token) and the CPU's GOPS from the same count; and
-// how many times faster each is than the CPU's fastest count of threads (T157)
+// how many times faster each is than the CPU's fastest count of threads (T.157)
 function promptMarkdown(s?: Stepped<PromptFound>, check?: Verdicts, ceilings?: GpuCeilings, baseline?: any, gpu?: any) {
   if (!s || s.error) return [`**A prompt all at once**: ${unmeasured(s?.error)}`];
   const r = s.result!, cpuPrompt = baseline?.prompt, none = noRatios(gpu);
   const cpuRows = (results.cpu?.data?.rows ?? []).filter((row: any) => row.promptMsPerToken);
   const cpu = cpuRows.length ? cpuRows.map((row: any) => `${fixed(row.promptMsPerToken, 2)} ms with ${row.threads} (${fixed((2 * r.weights) / (row.promptMsPerToken / 1000) / 1e9, 0)} GOPS)`).join(", ")
     : "run the CPU section for it";
-  // a shader the check found WRONG (or could not check) says so on its rows, and is never the fastest (T146's review)
+  // a shader the check found WRONG (or could not check) says so on its rows, and is never the fastest (T.146's review)
   const verdict = (row: PromptRow): Verdict | undefined => check?.[row.shader.replace(/, again at the end$/, "")];
   const wrong = (row: PromptRow) => { const v = verdict(row); return v !== undefined && !v.ok; };
   const fastest = (tokens: number) => {

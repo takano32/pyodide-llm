@@ -1,5 +1,5 @@
 # ternary_rows.py
-# T230: the converter's readers of the two ternary GGUF types (llama2_convert.pq2_0 and ptq1_0) held to a real model.
+# T.230: the converter's readers of the two ternary GGUF types (llama2_convert.pq2_0 and ptq1_0) held to a real model.
 # No small model is published as PTQ1_0 (only Prism ML's Ternary Bonsai 2 27B, 5.9 GB), so nothing is downloaded whole:
 # the heads of the model's three GGUF files (PTQ1_0, PQ2_0 and F16, the same weights) are fetched with Range requests,
 # and stretches of rows of some of their tensors, a few megabytes each. For every stretch:
@@ -39,7 +39,7 @@ BLOCK_BYTES = {gguf_check.PTQ1_0: 28, gguf_check.PQ2_0: 34}
 
 
 def fetch(url, start, length):
-    return ranged(url, start, length, said=lambda error: print(f"  again ({error})", flush=True))  # (tests/fetching.py, T357)
+    return ranged(url, start, length, said=lambda error: print(f"  again ({error})", flush=True))  # (tests/fetching.py, T.357)
 
 
 def head(url):

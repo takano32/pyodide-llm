@@ -1,6 +1,6 @@
-# T535 一覧のモデルの名前の頭の「作り手」の書き方（勧め、2026-10-15、Fable max）
+# T.535 一覧のモデルの名前の頭の「作り手」の書き方（勧め、2026-10-15、Fable max）
 
-検討だけ。コードは変えていない。読んだもの: docs/notes/t523-maker-names-2026-10-15.md、docs/tasks/T523.md、今の一覧（144 項目。T523 の後に T343 の Spark-X2.5 が 4 つ、Gemma 4 が 2 つ、Shisa の 4 ビットが 1 つ増えている）、Hugging Face の組織と利用者のページ（`/api/organizations/<組織>/overview`・`/api/users/<人>/overview` の `fullname`）、作り手のカード（README）、GitHub の組織のページ、作り手のサイト。
+検討だけ。コードは変えていない。読んだもの: docs/notes/t523-maker-names-2026-10-15.md、docs/tasks/T.523.md、今の一覧（144 項目。T.523 の後に T.343 の Spark-X2.5 が 4 つ、Gemma 4 が 2 つ、Shisa の 4 ビットが 1 つ増えている）、Hugging Face の組織と利用者のページ（`/api/organizations/<組織>/overview`・`/api/users/<人>/overview` の `fullname`）、作り手のカード（README）、GitHub の組織のページ、作り手のサイト。
 
 ## まとめ
 
@@ -9,11 +9,11 @@
 - 決め方は下の 5 つの決まり。今の 126 項目はこの決まりでそのまま通る（SB Intuitions・LINE・OpenBMB・TinyLlama は迷ったが変えない: 「迷いが残るもの」）。
 - 長さ: 閉じた選択欄の約 32 字を越える名前は 40 → 37、最長は 61 → 52 字。**文面だけでは閉じた選択欄の切れは直らない**（作り手を別の欄に持って閉じた選択欄では出さない形は、別のタスクで持ち主の決め）。
 
-## 決まり（この勧めの読み。T523 の決め方を 5 つに直した）
+## 決まり（この勧めの読み。T.523 の決め方を 5 つに直した）
 
-1. **作り手 = モデルを訓練した組織か人**（派生なら派生を作った組織。写し・量子化の作り手は入れない）。T523 のまま。
+1. **作り手 = モデルを訓練した組織か人**（派生なら派生を作った組織。写し・量子化の作り手は入れない）。T.523 のまま。
 2. **書き方 = 作り手が自分のカードか組織のページで自分を呼ぶ名を、いちばん通りのよい短い形に。** チームや銘柄の上に会社・研究所があって、作り手自身がその名で自分を言うなら、会社・研究所のほうを書く: Qwen Team → 「Alibaba Cloud's」→ Alibaba、InternAgent Team → 上海 AI Lab、Swallow team → Science Tokyo、Meta Llama → Meta、IBM Granite → IBM、HuggingFaceTB・H4 → Hugging Face、Google DeepMind → Google。自分でその名を言わないものは、その会社の名のまま（SB Intuitions を SoftBank と書かない、OpenBMB を Tsinghua と書かない）。
-3. **名前がもう作り手を言うなら重ねない**: llm-jp・Shisa・Underdog・RakutenAI・ELYZA・TinyLlama・DeepSeek・Mistral（T523）に、**EuroLLM と Spark** を足す。
+3. **名前がもう作り手を言うなら重ねない**: llm-jp・Shisa・Underdog・RakutenAI・ELYZA・TinyLlama・DeepSeek・Mistral（T.523）に、**EuroLLM と Spark** を足す。
 4. **改名・統合した組織は、作り手自身の今のカードが使う名**: Swallow は Science Tokyo（2025 年以降のカードが Institute of Science Tokyo）。LINE はカードも HF の組織も「LINE」のままなので LINE（LY Corporation と書かない）。
 5. **個人は、その人が HF で表示している名**: 本名なら姓名（Andrej Karpathy・Ellis Hoag）、筆名なら筆名（Atemoya）。handle（karpathy・ellishg・Takenoko12345678）は書かない。
 
@@ -28,7 +28,7 @@
 | `hf-eurollm-1.7b-instruct` | UTTER EuroLLM 1.7B Instruct | EuroLLM 1.7B Instruct | 決まり 3。カードの「Developed by」は Unbabel・Instituto Superior Técnico・Instituto de Telecomunicações・University of Edinburgh・Aveni・University of Paris-Saclay・University of Amsterdam・Naver Labs・Sorbonne Université の 9 つで「Funded by: European Union」、本文は「The EuroLLM project」（https://huggingface.co/utter-project/EuroLLM-1.7B-Instruct）。作り手は EuroLLM という計画そのもので、llm-jp（LLM-jp 計画の llm-jp-3）と同じ形。UTTER は資金の出た EU の計画の名（HF の組織の fullname「UTTER - Unified Transcription and Translation for Extended Reality」）で、訪問者には何も言わない |
 | `hf-agents-a1-4b-thinking` | Intern Science Agents-A1 4B (thinking) | **Shanghai AI Lab** Agents-A1 4B (thinking) | 決まり 2。カードの system 文が「developed by InternAgent Team, Shanghai Artificial Intelligence Laboratory. 你是Intern-A1，一个由上海人工智能实验室的InternAgent团队开发的…」（https://huggingface.co/InternScience/Agents-A1-4B）、GitHub の組織の説明も「Shanghai Artificial Intelligence Laboratory」（https://github.com/InternScience）。Intern Science は HF の組織の表示名（上海 AI Lab の Intern の銘柄）で、Qwen を Alibaba と書くのと同じ向きで研究所の名に。短い形は論文が使う「Shanghai AI Lab」（公式は Shanghai Artificial Intelligence Laboratory、https://www.shlab.org.cn/） |
 | `hf-agents-a1-4b` | Intern Science Agents-A1 4B (no thinking) | **Shanghai AI Lab** Agents-A1 4B (no thinking) | 同上 |
-| `hf-spark-x2.5-1.7b-thinking` | XHToken Spark-X2.5 1.7B (thinking) | Spark-X2.5 1.7B (thinking) | 決まり 2・3。XHToken は handle で、HF の組織の fullname も GitHub の組織の名も「SparkLLM」、カードの引用は「SparkLLM Team」（https://huggingface.co/XHToken、https://github.com/XHToken）。組織の名 Spark(LLM) が名前の Spark-X2.5 にあるので、Mistral AI の Mistral 7B・DeepSeek の DeepSeek-R1 と同じく重ねない。T343 の「XHToken」は T523 の決め方（組織の表示名）からも外れていた。会社のサイト xhtoken.ai は今日は届かず未確認 |
+| `hf-spark-x2.5-1.7b-thinking` | XHToken Spark-X2.5 1.7B (thinking) | Spark-X2.5 1.7B (thinking) | 決まり 2・3。XHToken は handle で、HF の組織の fullname も GitHub の組織の名も「SparkLLM」、カードの引用は「SparkLLM Team」（https://huggingface.co/XHToken、https://github.com/XHToken）。組織の名 Spark(LLM) が名前の Spark-X2.5 にあるので、Mistral AI の Mistral 7B・DeepSeek の DeepSeek-R1 と同じく重ねない。T.343 の「XHToken」は T.523 の決め方（組織の表示名）からも外れていた。会社のサイト xhtoken.ai は今日は届かず未確認 |
 | `hf-spark-x2.5-1.7b` | XHToken Spark-X2.5 1.7B (no thinking) | Spark-X2.5 1.7B (no thinking) | 同上 |
 | `hf-spark-x2.5-4b-thinking` | XHToken Spark-X2.5 4B (thinking) | Spark-X2.5 4B (thinking) | 同上 |
 | `hf-spark-x2.5-4b` | XHToken Spark-X2.5 4B (no thinking) | Spark-X2.5 4B (no thinking) | 同上 |
@@ -40,7 +40,7 @@
 | `stories15M-f32` | Karpathy TinyStories 15M (original) | **Andrej Karpathy** TinyStories 15M (original) | 同上（42 字。閉じた選択欄では前から「(original)」が切れていた） |
 | `stories42M-f32` | Karpathy TinyStories 42M (original) | **Andrej Karpathy** TinyStories 42M (original) | 同上 |
 
-置き場（実装する人へ）: `src/models/built.js` の 17・23・26・38・41 行（Karpathy）、`src/models/hf-japanese.js` の 112（EuroLLM）・190（Swallow-MS）・198（Llama 3.1 Swallow）行、`src/models/hf-families.js` の 24（Qwen3 Swallow）・70（Atemoya）・124（Agents-A1）・254・259（Spark）行。名前を文字で持つ試験（`tests/models-check.mjs` の Alibaba・Google Gemma 4・Hugging Face・Meta の行、`tests/ladder-check.mjs` の EleutherAI）はどれもこの 18 項目に当たらない（grep で見た）。`tests/format_check.py` が読む「(thinking)」はそのまま。記録（docs/notes/t523 の表、docs/tasks/T343.md の「XHToken Spark-X2.5」）は直さず、T535 の行を足す。
+置き場（実装する人へ）: `src/models/built.js` の 17・23・26・38・41 行（Karpathy）、`src/models/hf-japanese.js` の 112（EuroLLM）・190（Swallow-MS）・198（Llama 3.1 Swallow）行、`src/models/hf-families.js` の 24（Qwen3 Swallow）・70（Atemoya）・124（Agents-A1）・254・259（Spark）行。名前を文字で持つ試験（`tests/models-check.mjs` の Alibaba・Google Gemma 4・Hugging Face・Meta の行、`tests/ladder-check.mjs` の EleutherAI）はどれもこの 18 項目に当たらない（grep で見た）。`tests/format_check.py` が読む「(thinking)」はそのまま。記録（docs/notes/t523 の表、docs/tasks/T.343.md の「XHToken Spark-X2.5」）は直さず、T.535 の行を足す。
 
 ## 変えない項目（126）
 
@@ -74,11 +74,11 @@
 | TinyLlama | 1 | 決まり 3。組織の名も TinyLlama。大学（SUTD の StatNLP）はカードに無く、計画の名のほうが通っている（下の「迷い」） |
 | Nous Research（Hermes 3） | 1 | カード「by Nous Research」 |
 
-一貫性の確かめ: 同じ組織は全部の項目で同じ綴り（Alibaba 26・Hugging Face 9・Science Tokyo 4 など）。T523 で入れた名のうち、組織の表示名でなく handle だったのは TokyoTech-LLM・XHToken・Takenoko12345678 の 3 つで、今回全部直る。
+一貫性の確かめ: 同じ組織は全部の項目で同じ綴り（Alibaba 26・Hugging Face 9・Science Tokyo 4 など）。T.523 で入れた名のうち、組織の表示名でなく handle だったのは TokyoTech-LLM・XHToken・Takenoko12345678 の 3 つで、今回全部直る。
 
 ## 長さ（スマホの閉じた選択欄）
 
-- 閉じた `<select>` は `${name} — ${note}` を 1 行で出し、360 px では名前の頭から約 32 字しか見えない（T523 の実測）。
+- 閉じた `<select>` は `${name} — ${note}` を 1 行で出し、360 px では名前の頭から約 32 字しか見えない（T.523 の実測）。
 - 今回の 18 の前後: 32 字を越える名前は 40 → 37、最長は 61 → 52 字（Atemoya）。短くなるのは Spark 4 つ（−8）、Atemoya 2 つ（−9）、EuroLLM（−6）。長くなるのは Andrej Karpathy 5 つ（+7、260K は 32 字でぎりぎり、15M・42M は 31 字）と Shanghai AI Lab 2 つ（+1）。Science Tokyo は TokyoTech-LLM と同じ 13 字。
 - **文面だけでは直らない**: 切れる名前 37 のほとんどは、作り手を入れる前から長い（Qwen3.5 0.8B Japanese SFT v2.5 (thinking) で 41 字）。閉じた選択欄で大きさと「(thinking)」を見せたいなら、作り手を項目の別の欄（`maker`）に持って、閉じた選択欄では名前の後ろ（または出さない）、開いた一覧とステータス行では頭に出す形になる。これはコードの変更で、持ち主の決め（採番していない）。
 
