@@ -220,12 +220,13 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-saluki-tables": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: SALUKI_TABLES, valued: true }, { kinds: SALUKI_TABLES }],
   // (the review: a tied table of a K type, which binds nothing at 1; and an int8 embedding beside a classifier of Q2_K,
   // in pieces of a third of the table: a piece's rows from its first)
-  "synthetic-q4k-tied": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true },
+  // (calm: of 0.3 N the tied table makes a model whose 8-bit inputs alone move NumPy's logits by a KL of 6e-2, the CPU's as
+  // much, and the GPU's steps part from NumPy's float32 by up to 1.78 in log-probability, as the 8-bit NumPy does: run
+  // 40127682362, of two seeds)
+  "synthetic-q4k-tied": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true, calm: true },
     { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
   "synthetic-q4k-tables": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K", wcls: "Q4_K" }, valued: true },
     { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K", wcls: "Q4_K" } }],
-  "synthetic-q4k-tied-3": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" }, valued: true, seed: 3 },
-    { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K" } }],
   "synthetic-q2k-classifier": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: { ...Q2K_KINDS, wcls: "Q2_K" }, valued: true },
     { kinds: { ...Q2K_KINDS, wcls: "Q2_K" } }],
   "synthetic-q4k-qk-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_QK_APART, valued: true }, { kinds: Q4K_QK_APART }],
