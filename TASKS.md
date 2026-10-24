@@ -237,6 +237,8 @@
 - T.573 [整理][WebGPU] 1 つの層の状態だけで束縛の上限を越える linear の層を、読み込みの前に断る — 未着手
 - T.574 [試験][Bonsai][WebGPU] 塊 1024 の回した基底を持つ Qwen3.5 の作り物 — 未着手
 - T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 未着手
+- T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 未着手
+- T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T.567 [バグ][WebGPU] `gpuBytes()` が linear の層の畳み込みのタップ分を数えない — 未着手
 <!-- 目次ここまで -->
@@ -1681,6 +1683,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
     - **最初の版で落ちたもの**: 作り物の塊を乱数のバイトにしたら、CPU 自身が 8 ビットの NumPy から線の 15 倍（重みがほぼ正に偏り層を重ねて膨らむ）。値を量子化した塊にして CPU は 0.94 Q8 に。
     - CI を回した。訳: WebGPU の道。**run 40081312749**（Dawn、Q4_K と対照 3 つ）: Q4_K の形は全部で層は線の 0.33〜0.34、最初の層は 8 ビットの NumPy から 6.6e-4（CPU の 7 ビットの道は 1.9e-2）。落ちたのは答えのステップが CPU の行だけ（予定どおり、判定を直した）。対照（int8・3 値・27B の形）は通る。**run 40081681396**（Dawn と Chromium の SwiftShader、Q4_K と int8）: FAILED 0、Chromium も線の 0.33。手元: 型検査、GPU の側と gpu-check の道具の検査、Dawn（lavapipe）で 3 つの詰め方 × subgroups の文のコンパイル、網（`gpusteps` 277・`calls`・`choices` 同じ、`shaders` は鍵 192 と文 277 が同じで窓口の関数の文 3 つが予定どおり違う）、軽い組 437 秒。
     - **持ち主の端末で見るもの**（まとめての一覧へ）: 4-bit の Shisa（Shisa V2.1c LFM2 350M (4-bit)）を開いて、ステータス行がプロンプトを WebGPU と言うか（答えは CPU）、答えが読めるか。訪問者に見える新しい文は無い（GPU に置かない訳の「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」は今ある文の形 `REASONS.packed` に名前を入れたもの）。
+  - **T.547.2.3 のレビュー（Sonnet high、2026-10-24）: must-fix なし**（Q4_K の WGSL を `superblocks.py` と `blocks-model.mjs` に 1 行ずつ照らして合う: 群 4〜7 の尺度の詰め方・4 ビットの位置・塊の番地・補正の符号と倍率・subgroups の道・workgroup のメモリ 4864・障壁。int8 と 3 値の文は前の木と字まで同じ）。勧めから直したもの: 作り物の down も Q4_K に（前のコメントは「o と down の入力は 3 塊」と言って誤っていた: これで層でも 1 行の 2 つ目からの塊を踏む）、読み込みの検査に活性値を +0.5 ずらした回（群の和が大きいと補正の誤りが大きく出る）。**run 40085028016**（Dawn、`synthetic-q4k`）: FAILED 0、どの形も線の 0.33。積んだもの: 速さ（T.578）、GPU だけの Q4_K の端末の鍵（`worker/weights.ts` の鍵の選びは `dtype === "ternary"` だけ: T.547.3 で）、分類器が Q4_K のときの訳の文が「float weights」と言う（T.547.2.4 でその訳が無くなる）。**本番**（`models.yml` run 40082843959、`query=gpuTest=on&steps=16`）: 4-bit の Shisa は「prompts on WebGPU, answers on the CPU」で準備完了、プロンプトの 19 トークンを WebGPU で読み、178 トークンを 44.6 tok/s で書いて読める。対照の既定の Shisa（int8）は答えのステップが SwiftShader の GPU で 1800 秒の時間切れ（前からの落とし穴。`steps=16` が効いていなかった: T.577）。
   - **T.547.2.2 以降の形（取りまとめ役の決め）**: Q4_K の塊（144 バイト: d・dmin の float16、12 バイトの 6 ビットの s と m、128 バイトの 4 ビット）は GPU にもそのまま置き、尺度のバッファを持たない詰め方として `PACKINGS` に書く（llama.cpp の WebGPU・Vulkan の形）。重みは F·S·W − Fm·M なので、活性値の 32 個ごとの和を DP4A で 1 のベクトルとの内積として取り、32 個の群に `xs × (d·s·Σqx − dmin·m·Σx)` を足す。答えのステップの DP4A（`fusedDp4aMatVec` の `weights: "Q4_K"`）とプロンプトのタイル、読み込みの検査の JavaScript の答え（`tests/blocks-model.mjs` の形）、1 つのモデルの中で行列ごとにシェーダを選ぶ所（今は `form.pipes` がモデルに 1 つの詰め方）。
   - **T.547.3**: Saluki の残りの 9 種類（Q2_K と IQ 系、符号表を GPU に 1 回）と、GPU だけ（実物はパソコン）。
 
@@ -1748,6 +1751,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 状態: 未着手（2026-10-24、T.547.1 のレビューの勧め。規模 小）
 - `worker/weights.ts`（425〜451 行あたり）は `openGpu()` で GPU の Worker を作り `gpuOnlyWeights` を作った後で `gpuOnlyPlan()` を呼ぶ。`gpuOnlyPlan()` は純な関数で、T.547.1 から `gpuPacking()` が投げうる（今は届かない枝）。投げると Worker が残るので、計画を先に作る。
+
+### T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 状態: 未着手（2026-10-24、T.547.2.3 の本番の確かめから。規模 小）
+- e2e は準備完了の後に設定の欄 `steps` を 256（Agents-A1・SmolLM3 は 512）にする。`models.yml` の `query=gpuTest=on&steps=16` の `steps=16` はその前にページが読むので消える（AGENTS.md の「SwiftShader で GPU のステップを回す e2e は数トークンで確かめる: `query=…&steps=`」が働かない）。直し: `E2E_QUERY` が `steps=` を言うときは欄に触らない。
+
+### T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 状態: 未着手（2026-10-24、T.547.2.3 のレビューの勧め。規模 小）
+- いまはスレッドごとに k の 1 ステップで群の和を DP4A 8 回で作り（内側のループの ALU が約 25% 増、同じトークンを 4 スレッドが重ねて作る）、int8 のタイルの 0.6〜0.8 倍の見込み（未計測）。案: `loadSHMA` でトークン × 群の和を workgroup のメモリ `sum_A` に 1 回書く（+256 バイト、Q4_K の文と鍵だけが動く）。先に CI の `bench.yml` か gpu-check の秒で int8 の形と Q4_K の形の ms / トークンを測る（覆す条件: 0.9 倍以上なら入れない）。
 
 ### T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 未着手（2026-10-16、T.271 のレビューの気づき。持ち主の端末で費用を測ってから）
 - いまはブロックごとと 4 ステップごとに状態全体（Qwen3.5 0.8B で約 20 MiB）を読み戻して写す。見積もり（未計測）でブロックの 3〜5%、ステップの 10〜15%。
