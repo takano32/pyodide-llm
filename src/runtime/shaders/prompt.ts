@@ -721,7 +721,7 @@ const seven = (bits: number) => {
   return bits | ((ones & 1) << 7);
 };
 function iqWeights(blocks: Uint8Array, bytes: number, entryOf: (p: number, entry: number) => [number, number, number], codebooks: Uint8Array) {
-  const f = Math.fround, out = new Float32Array((blocks.length / bytes) * 256), grid = new Int8Array(codebooks.buffer, codebooks.byteOffset, codebooks.length);
+  const out = new Float32Array((blocks.length / bytes) * 256), grid = new Int8Array(codebooks.buffer, codebooks.byteOffset, codebooks.length);
   for (let p = 0, t0 = 0; p < blocks.length; p += bytes, t0 += 256) {
     const d = halfAt(blocks, p);
     for (let entry = 0; entry < 32; entry++) {
@@ -750,7 +750,7 @@ export const BLOCK_WEIGHTS = {
   Q4_K: {
     scale: at16(0, 2),
     weights(blocks: Uint8Array) {
-      const f = Math.fround, out = new Float32Array((blocks.length / 144) * 256);
+      const out = new Float32Array((blocks.length / 144) * 256);
       for (let p = 0, t0 = 0; p < blocks.length; p += 144, t0 += 256) {
         const d = halfAt(blocks, p), dmin = halfAt(blocks, p + 2), h = p + 4;
         for (let g = 0; g < 8; g++) {
@@ -768,7 +768,7 @@ export const BLOCK_WEIGHTS = {
   Q2_K: {
     scale: at16(80, 82),
     weights(blocks: Uint8Array) {
-      const f = Math.fround, out = new Float32Array((blocks.length / 84) * 256);
+      const out = new Float32Array((blocks.length / 84) * 256);
       for (let p = 0, t0 = 0; p < blocks.length; p += 84, t0 += 256) {
         const d = halfAt(blocks, p + 80), dmin = halfAt(blocks, p + 82);
         for (let i = 0; i < 256; i++) {
