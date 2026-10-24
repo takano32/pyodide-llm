@@ -52,7 +52,7 @@ const ORDER = {
   // T.547.2.4: a model's of llama.cpp's blocks besides int8 (T.547.3.3: a type after another)
   blocks: [...BLOCK_TYPES.flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
     // (T.547.3.6: the embedding's row of a table of each type)
-    ...BLOCK_TYPES.map((weights) => `embedBlocks(weights=${weights})`)],
+    ...[false, true].flatMap((rows) => BLOCK_TYPES.map((weights) => `embedBlocks(weights=${weights}, rows=${rows})`))],
 };
 const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T.379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);

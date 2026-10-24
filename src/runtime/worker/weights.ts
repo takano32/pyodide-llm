@@ -381,8 +381,9 @@ const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undef
   Boolean(gpuAdapter) && (!gpuAdapter!.fallback || Boolean(gpuForce.fallback));
 // T.156: whether the page kept that the CPU was faster here than this model on the GPU alone (forward.ts's aloneHolds)
 // (dtype, T.232: the key is the one gpu.ts gave the verdict, a ternary model's its own)
-const aloneKept = (dtype: Dtype) => Boolean(gpuAdapter) &&
-  forwardModule!.aloneHolds(gpuRequest?.remembered?.alone, dtype === "ternary" ? gpuAdapter!.ternaryKey : gpuAdapter!.key, gpuRequest?.cpu);
+// (T.547.3.7: a model whose rows have kinds of their own, Saluki's blocks, by the key of a model of blocks)
+const aloneKept = (dtype: Dtype, blocks = false) => Boolean(gpuAdapter) &&
+  forwardModule!.aloneHolds(gpuRequest?.remembered?.alone, dtype === "ternary" ? gpuAdapter!.ternaryKey : blocks ? gpuAdapter!.blocksKey : gpuAdapter!.key, gpuRequest?.cpu);
 // T.156: where a model goes ({ mode: "both" | "gpu" | "cpu", gpuRoom }, forward.ts's weightsPlace): the GPU alone only
 // for a Llama of int8 (T.232: or of ternary weights) the GPU's steps take (gpuOnlyUnfit), where the page and the device
 // may (gpuOnlyPossible)
@@ -393,7 +394,7 @@ function gpuOnlyWeightsFor(size: number, header: Header, options: Options, after
   // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built.
   // T.375.5: the whole form as the options carry it: the layers that keep a state are read off it too)
   const fit = gpuOnlyAllowed() && !forwardModule!.gpuOnlyUnfit(header, dtype, options, gpuAdapter, gpuForce);
-  const eligible = fit && !aloneKept(dtype);
+  const eligible = fit && !aloneKept(dtype, Boolean(options.kinds && Object.keys(options.kinds).length));
   // (the second review of T.156: the status line then says only the memory's reason where the layers do not fit beside
   // the CPU's copy; the console says the kept verdict, and what asks again)
   if (fit && !eligible) {

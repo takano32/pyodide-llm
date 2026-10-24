@@ -274,24 +274,26 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // ---- T.547.3.6: the embedding's row of a token from a table of llama.cpp's blocks (prompt.ts's BLOCK_READS: a text a
 // type), as EMBED's: bindings 0 the table's blocks (1, an IQ type's codebooks: its helpers bind them), 2 the state, 3 dst,
 // 4 the row's width and (T.209) the piece's first row and rows. A thread a group of 32 at a time: each half's values
-// times its scale, less its min, as the matrices' BLK takes them (prompt.ts)
-export const embedBlocks = ({ weights }: { weights: BlockPacking }): string => {
+// times its scale, less its min, as the matrices' BLK takes them (prompt.ts). T.547.3.7, rows: EMBED_ROWS's, the rows of
+// a prompt's block for a model on the GPU alone (binding 2 the block's ids, a workgroup a token, workgroup_id.y)
+export const embedBlocks = ({ weights, rows }: { weights: BlockPacking; rows: boolean }): string => {
   const { bytes, helpers, code } = BLOCK_READS[weights];
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
-${STATE}
+${rows ? "" : STATE}
 @group(0) @binding(0) var<storage, read> b: array<u32>;
-@group(0) @binding(2) var<storage, read> state: State;
+${rows ? "@group(0) @binding(2) var<storage, read> ids: array<u32>;" : "@group(0) @binding(2) var<storage, read> state: State;"}
 @group(0) @binding(3) var<storage, read_write> dst: array<f32>;
 @group(0) @binding(4) var<uniform> shape: vec4<u32>;
 ${BLK_READ}${helpers}${code}
 
 @compute @workgroup_size(256)
-fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
+fn main(@builtin(local_invocation_id) lid: vec3<u32>${rows ? ", @builtin(workgroup_id) wid: vec3<u32>" : ""}) {
     let n = shape.x;
-    let row = state.token - shape.y;
+    let row = ${rows ? "ids[wid.y]" : "state.token"} - shape.y;
     if (shape.z != 0u && row >= shape.z) {
         return;
     }
+    let out = ${rows ? "wid.y * n" : "0u"};
     for (var group = lid.x; group < n / 32u; group += 256u) {
         let block = (row * (n / 256u) + group / 8u) * ${bytes}u;
         let s = blk_scales(block, group % 8u);
@@ -302,7 +304,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
             for (var w = 0u; w < 4u; w++) {
                 let four = unpack4xI8(values[w]);
                 for (var k = 0u; k < 4u; k++) {
-                    dst[group * 32u + col * 16u + w * 4u + k] = f32(four[k]) * scale - least;
+                    dst[out + group * 32u + col * 16u + w * 4u + k] = f32(four[k]) * scale - least;
                 }
             }
         }

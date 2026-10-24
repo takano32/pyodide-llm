@@ -119,6 +119,14 @@ const SALUKI_LAYERS = { wq: ["IQ1_M", "IQ3_S", "Q2_K"], wk: ["IQ4_XS", "IQ1_S", 
   w1: ["IQ3_XXS", "IQ2_XXS", "IQ4_XS"], w2: ["IQ2_XXS", "IQ1_M", "IQ3_S"], w3: ["IQ2_S", "int8", "IQ1_S"] };
 // (T.547.3.6: and Saluki's tables, the embedding IQ1_M and the classifier apart IQ3_S, which a token's step reads)
 const SALUKI_TABLES = { ...SALUKI_LAYERS, token_embedding_table: "IQ1_M", wcls: "IQ3_S" };
+// (T.547.3.7: Saluki's form, small: a Qwen3.5 of four layers, linear and full in turn, every matrix's layers of types of
+// their own (its linear-attention layers' q, k and v as one, z, and their output; its full-attention layers' q, gate, k,
+// v and o), and its tables IQ1_M and IQ3_S: every row whole blocks of 256 (value heads of 8 × 64: z's 512 and its
+// output's input)
+const SALUKI_LINEAR = { every: 2, key_heads: 2, value_heads: 8, key_dim: 64, value_dim: 64, conv: 4 };
+const SALUKI_KINDS = { wq: ["IQ2_XXS", "Q2_K"], wg: ["Q2_K", "IQ2_XXS"], wk: ["IQ3_S", "IQ4_XS"], wv: ["IQ3_XXS", "Q4_K"], wo: ["IQ3_S", "IQ1_M"],
+  wqkv: ["IQ2_XS", "IQ1_S"], wz: ["IQ1_M", "Q2_K"], wout: ["IQ2_S", "IQ3_XXS"], w1: ["IQ2_XXS", "IQ1_S", "Q2_K", "IQ2_S"],
+  w2: ["IQ2_XXS", "IQ3_S", "IQ1_M", "IQ4_XS"], w3: ["IQ2_S", "IQ2_XS", "IQ1_S", "IQ3_XXS"], token_embedding_table: "IQ1_M", wcls: "IQ3_S" };
 // (the review: and an LFM2's, whose stacks of a kind's layers are by their places among that kind's: two attending
 // layers' q and k, four convolution layers' matrices in and out)
 const LFM2_Q4K_LAYERS = { wq: ["int8", "Q4_K"], wk: ["Q4_K", "int8"], win: ["Q4_K", "int8", "int8", "Q4_K"], wout: ["int8", "Q4_K", "Q4_K", "int8"],
@@ -230,6 +238,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
     { kinds: { ...Q4K_KINDS, token_embedding_table: "Q4_K", wcls: "Q4_K" } }],
   "synthetic-q2k-classifier": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, vocab: -320, kinds: { ...Q2K_KINDS, wcls: "Q2_K" }, valued: true },
     { kinds: { ...Q2K_KINDS, wcls: "Q2_K" } }],
+  "synthetic-saluki": [{ dim: 256, hidden: 768, layers: 4, heads: 8, kv_heads: 2, head_dim: 32, vocab: -320, arch: "qwen35", linear: SALUKI_LINEAR, kinds: SALUKI_KINDS, valued: true },
+    { arch: "qwen35", head_dim: 32, rotary: 8, linear: SALUKI_LINEAR, kinds: SALUKI_KINDS }],
   "synthetic-q4k-qk-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_QK_APART, valued: true }, { kinds: Q4K_QK_APART }],
   "synthetic-q4k-up-apart": [{ dim: 256, hidden: 768, layers: 3, heads: 4, kv_heads: 2, kinds: Q4K_UP_APART, valued: true }, { kinds: Q4K_UP_APART }],
   "synthetic-lfm2-q4k-layers": [{ dim: 256, hidden: 768, layers: 6, heads: 4, kv_heads: 2, arch: "lfm2", convolution: { layers: "ccacac", taps: 3 }, kinds: LFM2_Q4K_LAYERS, valued: true },

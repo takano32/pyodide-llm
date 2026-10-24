@@ -198,10 +198,13 @@ const KINDS = { attention: plain, echo };
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), STATE);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "a".repeat(16), taps: 3 } }, adapter), null, "(an LFM2 without a convolution layer has a Llama's facts)");
   assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), null, "(T.271.1: a rotated basis is the GPU's, its packed forms')");
-  // (T.363.5's review: a model of llama.cpp's blocks says the dtype int8, so this line of gpuOnlyUnfit() alone keeps it
-  // off the GPU alone; a form that names no kinds is as before)
-  assert.notEqual(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["IQ2_XXS", "int8"] } }, adapter), null, "rows as blocks are not for the GPU alone");
-  assert.notEqual(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { wcls: "Q4_K" } }, adapter), null, "nor one row of a kind of its own");
+  // (T.363.5's review: a model of llama.cpp's blocks says the dtype int8, so this line of gpuOnlyUnfit() alone kept it off
+  // the GPU alone; a form that names no kinds is as before. T.547.3.7: of kinds the GPU takes it goes, where the
+  // browser has the packed int8 dot; a kind no packing has keeps it off)
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["IQ2_XXS", "int8"] } }, { ...adapter, packed: true }), null, "rows as blocks the GPU takes, on the GPU alone");
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { wcls: "Q4_K" } }, { ...adapter, packed: true }), null, "and one row of a kind of its own");
+  assert.match(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["IQ2_XXS", "int8"] } }, { ...adapter, packed: false }) ?? "", /packed int8 dot/, "not without the packed int8 dot");
+  assert.notEqual(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["Q6_K", "int8"] } }, { ...adapter, packed: true }), null, "nor of a kind no packing has");
   for (const kinds of [{}, null, undefined]) assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds }, adapter), null, "a form that names no kinds is a Llama's");
   // by the packing's line: whether a model of it may be there alone, and what its shaders need of the browser
   const lacking = { ...adapter, packed: false };
