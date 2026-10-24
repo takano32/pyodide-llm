@@ -156,9 +156,9 @@ const tokenShape = (m: Model) => {
   const writes = new Set(kindsOf(m.plan).flatMap((kind) => GPU_KINDS[kind].writes?.(m.plan) ?? []));
   // (T.547.2.4: split, v apart from q and k (of two packings, weights.ts's tokensLayout), written as they are, as apart's;
   // blocks, matrices of Q4_K's among the int8 ones, whose shaders are the same forms' of Q4_K)
-  const split = Boolean(m.weights.together && !m.weights.together.homes.wv);
+  const split = Boolean(m.weights.together?.vAt);
   return { apart: Boolean(m.plan.vectors.bq || m.plan.vectors.qNorm) || split, gated: Boolean(m.weights.matrices.w3), geglu: m.plan.activation === "gelu", layerNorm: m.plan.layerNorm,
-    floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost), mix: writes.has("mix"), write: writes.has("write") || split,
+    floatHead: floatHead(m), posts: Boolean(m.plan.vectors.attentionPost || m.plan.vectors.ffnPost), mix: writes.has("mix"), write: writes.has("write"),
     blocks: m.own === "Q4_K" };
 };
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code

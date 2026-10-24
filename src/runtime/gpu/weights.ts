@@ -20,7 +20,9 @@ type Piece = { first: number; rows: number; layers: [Bound, Bound | null][] };
 type MatrixOn = { rows: number; n: number; packing: GpuPacking; pieces: Piece[] };
 // T.152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
 type Home = { joined: string; at: [number, number] };
-type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] } };
+// (T.547.2.4: vAt, where v is written after q and k in the buffer of the three where it is apart from them, of another
+// packing: attention.ts's split; 0 where the three are one matrix)
+type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] }; vAt: number };
 // (T.547.2.3: no scales where its matrices' blocks hold them)
 type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null] };
 type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
@@ -322,7 +324,8 @@ function tokensLayout(m: Model): Together | null {
   if (gated && packing("w1") !== packing("w3")) return why(`w1 and w3 are of two packings (${packing("w1")}, ${packing("w3")})`);
   // (v apart: one piece, as a matrix a token reads; and written after q's and k's rows where the device binds)
   if (!kv.qkv && m.weights.matrices.wv.pieces.length > 1) return why("wv is past a buffer of this GPU");
-  if (!kv.qkv && ((m.weights.matrices.wq.rows + m.weights.matrices.wk.rows) * 4) % align) return why("v would not start where this GPU binds a buffer, after q and k");
+  const vAt = kv.qkv ? 0 : (m.weights.matrices.wq.rows + m.weights.matrices.wk.rows) * 4;
+  if (vAt % align) return why("v would not start where this GPU binds a buffer, after q and k");
   for (const [joined, names] of Object.entries({ ...kv, ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;
     for (const name of names) {
@@ -338,7 +341,7 @@ function tokensLayout(m: Model): Together | null {
     if (values > m.limit) return why(`${names.join(" and ")} together are past a buffer of this GPU`);
     sizes[joined] = [values, scales];
   }
-  return { homes, sizes };
+  return { homes, sizes, vAt };
 }
 // T.152: the tables onto the GPU (int6 widened as a layer's matrices are), the final norm's weights, and RoPE's table
 // of every position, a row a position: the cos of its headSize / 2 angles, then their sin (shaders.ts's fusedMatVec
