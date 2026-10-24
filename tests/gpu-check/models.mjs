@@ -283,7 +283,10 @@ const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm",
   "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-q4k-wide",
   "synthetic-lfm2-q4k", "synthetic-q4k-layers",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
-  "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers"];
+  "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",
+  // (T.547.3.6: the tables of blocks' shaders are synthetic-q4k-tied's and synthetic-saluki-tables'; on SwiftShader the
+  // untied Q4_K tables' min-p took a token at its line that NumPy's set has not, run 40128589598)
+  "synthetic-q4k-tables", "synthetic-q2k-classifier"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };
