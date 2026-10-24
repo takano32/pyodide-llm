@@ -275,7 +275,7 @@
    - **note に「desktop only」と「Chrome and Firefox」を手で書かない**（T511.4）: 窓口が `devicesOf()` で付ける（「desktop only」は読み込んだ大きさ + 0.3 GB が 2 GiB を超える項目、「Chrome and Firefox」は `modelBytes()` が 4 GiB を超える項目）。note の大きさの語か `bytes`・`loaded` が正しければ付いてくる。手で書くと `models-check` が落ちる。
    - **考える形の項目の note は「thinks」で始める**（T520）: 窓口が `generation.thinking` を置く。`models-check` が名前か書式で考える項目を数えて比べる。文脈 4096 でない考える項目は上限を測り直す。
    - **名前（`name`）の頭に作り手の名を置く**（T523・T535）: 作り手は元のモデルを作った組織（量子化と写しの作り手は入れない）。チームや銘柄の上の会社・研究所の名で自分を言うならそちら（Qwen → Alibaba、Swallow → Science Tokyo）、言わないならその名のまま。HF の handle は書かない。個人は表示名か本名。名前がもう作り手を言うもの（llm-jp・Shisa・Underdog・ELYZA・DeepSeek など）は重ねない。決まりと表は docs/notes/t535-maker-names-advice-2026-10-15.md と t523-maker-names-2026-10-15.md（足したら行を足す）。**名前は誰も検査しない**。
-   - **note の言語の語（「日本語」「English」「中文」…）はカードに従う**（T537）。言語を言わないカードは `base_model` のカード。**「日本語」の有無で並びの側が決まる**。**ここで書かせて日本語で答えたモデルは、カードが言わなくても「日本語」を足す**（T539: `tests/answers.mjs` の日本語の問いの半分以上に日本語で答え、崩れていないこと。かなが字の 5 分の 1 以上）。表は docs/notes/t537-note-languages-2026-10-15.md・t539-japanese-notes-2026-10-15.md。
+   - **note の言語の語（「日本語」「English」「中文」…）はカードに従う**（T537）。言語を言わないカードは `base_model` のカード。直すのは、カードの言わない言語を言う・カードの言う日本語か英語を落とすもの（カードが 3 つ以上を言い note がその内の 1〜2 つを言うのはそのまま）。**「日本語」の有無で並びの側が決まる**。**ここで書かせて日本語で答えたモデルは、カードが言わなくても「日本語」を足す**（T539: `tests/answers.mjs` の日本語の問いの半分以上に日本語で答え、崩れていないこと。かなが字の 5 分の 1 以上）。表は docs/notes/t537-note-languages-2026-10-15.md・t539-japanese-notes-2026-10-15.md。
 9. **K 量子化・i 量子化の GGUF を塊のまま持つ項目**（Saluki の形）: `conversion: { dtype: "int8", blocks: true }`（`thinkingAndNot()` には `chat` の欄で）と、**読み込んだ後のバイト数 `loaded`**（`modelBytes()` は `bytes` → `loaded` → note の `int8 N GB` の順に読む）。`?bits=` は効かない。元のモデルと重みが違う GGUF、**元のモデルを 4 ビットほどに丸めた GGUF も `rebuilt: true`**（`gguf_check.py tensors` は 1e-3 の線で必ず落ちるので、同じ道具を原本に当てて数を読む: Q4_K は相対 0.07 ほど、読みを誤れば 1 の桁）。`models-check` の「塊を持つ項目」「`loaded` を持つ項目」「`rebuilt`」の一覧に id を足す。実ブラウザ: 手元は `node tests/blocks-in-browser.mjs chrome`、ブランチは CI の `bash tests/saluki_in_browser.sh`（`ENTRY=<id>`。64 ビットのメモリを求めるので、32 ビットに入る項目は `tests/e2e.mjs` を直に）。
 
 ### 家族（config.json の `model_type`）を足す（変換器）
@@ -323,7 +323,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 1. `engine/packing.py` に詰め方と戻し方、`engine/dtypes.py` の `DTYPES` に 1 行。大きさ・`Writer`・NumPy の読み・`checkpoint_dtype()` の候補・断りの文が付く（**同じ見出しでほかの dtype と大きさが重ならないことを `tests/test_ternary.py` の形で**）。カーネルの詰め手があれば行に export の名前。
 2. カーネル（次の項）、`jobs.ts` の `ADDRESSES`、仕事の種類を `WORK` に（relaxed の有無）、**`PACKED` に 1 行**（1 行のバイト数・`scale`・重みを読む式 `value` か 1 行を広げる `row`・仕事の種類・補正のカーネル・活性値の用意とその取り方 `takes`・`xs`・`group`・GPU の `gpu`）。`forward/engine.ts`・`memory.ts`・`gpuside.ts`・worker は触らない。
-3. 型: `contracts/plan.ts` の `Stored`、`contracts/form.ts` の `Dtype`。手で残る 2 つ: `kept.ts` の `replaced()` の名前の一覧（忘れると `kept-check`）と `src/models/memory.js` の比（`kernel-registry-check`）。保存の名前（`keptName()`）と、GPU だけに置けるなら `mayKeep` も。
+3. 型: `contracts/plan.ts` の `Stored`、`contracts/form.ts` の `Dtype`。手で残る 2 つ: `kept.ts` の `replaced()` の名前の一覧（忘れると `kept-check`。忘れると `?bits=` で開いたときに別の dtype の保存が消される）と `src/models/memory.js` の比（`kernel-registry-check`）。保存の名前（`keptName()`）と、GPU だけに置けるなら `mayKeep` も。
 4. 試験: `tests/kernel-registry-check.mjs` の `FACTS`・`ASKED`・`GPU`、`tests/test_dtypes.py`。
 5. GPU にも置くなら「ステップの行列の詰め方」。
 
