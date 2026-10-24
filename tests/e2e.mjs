@@ -309,7 +309,10 @@ const reported = await page.evaluate(() => window.__ready ?? null).catch(() => n
 // tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it. T.255: and for SmolLM3,
 // whose template's system turn is as long where it thinks.
 const tokens = /^hf-(agents-a1|smollm3)-/.test(id) ? "512" : "256";
-if (!process.env.E2E_LONG) await page.evaluate((tokens) => {
+// (T.577: not where the query says steps=: the page read it from the URL, models.yml's query=gpuTest=on&steps=16 for a
+// GPU's steps on SwiftShader, which writes 256 tokens in more than the job's 30 minutes)
+const stepsSaid = /(^|&)steps=/.test(process.env.E2E_QUERY ?? "");
+if (!process.env.E2E_LONG && !stepsSaid) await page.evaluate((tokens) => {
   const steps = document.getElementById("steps");
   steps.value = tokens;
   steps.dispatchEvent(new Event("input"));
