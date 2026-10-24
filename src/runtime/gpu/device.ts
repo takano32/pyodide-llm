@@ -13,7 +13,7 @@ import { deviceKey } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
 import { PACKINGS, packingsOf, isBlock } from "./packings.ts";
-import type { FromGpu, GpuPacking, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";
+import type { FromGpu, GpuPacking, Matrix, Opened, Remembered, Started, Tables, Tokens as TokensPlan } from "../contracts/gpu/protocol.ts";
 import type { Own } from "../shaders/prompt.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
@@ -78,8 +78,13 @@ const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKING
 const ternaryPlan = (plan: { matrices: Record<string, Matrix> }) => Object.values(plan.matrices).some((matrix) => packingsOf(matrix).includes("ternary"));
 // T.547.2.3: the shaders a model has of its own: ternary's, or (a matrix of llama.cpp's blocks among int8 ones) Q4_K's
 // (T.547.3.1: a layer's of a stack whose layers are each of a packing of their own too)
-const ownOf = (plan: { matrices: Record<string, Matrix> }): Own => (ternaryPlan(plan) ? "ternary"
-  : Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some(isBlock)) ? "blocks" : null);
+// (T.547.3.6's review: and a table's, the classifier's or the embedding's, of a model whose matrices are no blocks)
+const ownOf = (plan: { matrices: Record<string, Matrix>; tokens?: TokensPlan | null | true; tables?: Tables }): Own => {
+  const tables = plan.tables ?? (plan.tokens === true ? null : plan.tokens);
+  return ternaryPlan(plan) ? "ternary"
+  : [...Object.values(plan.matrices), ...[tables?.classifier, tables?.embedding].filter((table) => table !== null && table !== undefined)]
+    .some((matrix) => packingsOf(matrix).some(isBlock)) ? "blocks" : null;
+};
 // T.255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
 // and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
 const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (plan.unturned?.includes(l) ? 0 : plan.turned);

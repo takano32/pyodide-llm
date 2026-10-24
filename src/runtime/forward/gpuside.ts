@@ -218,11 +218,12 @@ export function gpuFit({ shape, weights, device, direct }:
     // the browser does not say what the device has: an iPhone's tab went down in /benchmark/'s model section. The
     // prompts' blocks still go (their layers alone)
     if (memoryUnsaid) return REASONS.memoryUnsaid;
-    const table = vocab * dim * gpuWeightBytes(wcls.kind);
+    // (T.547.3.6's review: each table as it is packed: Saluki's embedding of IQ1_M is half the bytes of its classifier)
+    const table = vocab * dim * gpuWeightBytes(wcls.kind), embeddingBytes = vocab * dim * gpuWeightBytes(embedding.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
     // (T.261.4.2: a Gemma 3's local layers' table of RoPE as well)
     // (T.545.2: and the state as the last step of a request leaves it, read back with its ids)
-    const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
+    const onGpu = layersOnGpu() + table + (sharedClassifier ? 0 : embeddingBytes) + (local ? 2 : 1) * seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0) +
       stateBytes;
     if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;
