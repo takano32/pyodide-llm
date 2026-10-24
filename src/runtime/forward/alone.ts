@@ -3,7 +3,7 @@
 // the tables to the GPU's worker and the rest to this memory without the holes they leave (gpuOnlyWeights, gpuOnlyPlan).
 // A module of src/runtime/forward.ts, which exports its names as before.
 
-import { PACKED, packingOf, weightBytes } from "../jobs.ts";
+import { BLOCK, PACKED, packingOf, weightBytes } from "../jobs.ts";
 import { BETTER } from "./choice.ts";
 import { architectureOf } from "./architectures.ts";
 import type { Architecture } from "./architectures.ts";
@@ -234,6 +234,11 @@ export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, acti
 export const ROTATE_MOST = 1024;
 export const rotatedBlockUnfit = (block: number) => Boolean(block) && ((block & (block - 1)) !== 0 || block < 32 || block > ROTATE_MOST);
 
+/** T.547.3.7: the kinds a form's rows have of their own (Saluki's types of llama.cpp's blocks, by row and by layer), and
+ * whether the model is one of llama.cpp's blocks (its GPU's shaders and key are a model of blocks': the GPU's worker's
+ * ownOf() says so of its plan, the worker of its form) */
+export const kindsOfForm = (form: { kinds?: Record<string, unknown> | null }) => Object.values(form.kinds ?? {}).flat() as string[];
+export const blocksForm = (form: { kinds?: Record<string, unknown> | null }) => kindsOfForm(form).some((kind) => packingOf(kind)?.tabled !== undefined);
 export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null; kinds?: Record<string, unknown> | null } = {},
   adapter: Adapter | null | undefined, force: Force = {}) {
   const [dim, hidden] = header;
@@ -252,7 +257,7 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // takes one packing for a file). T.547.3.7: but of kinds the GPU takes, every one (Saluki's ten types of blocks, by row
   // and by layer): its shaders need the packed int8 dot, and its matrices are joined or apart as the GPU's worker finds
   // them (tokensLayout()), so the starts below are not asked of it
-  const own = Object.values(form.kinds ?? {}).flat() as string[];
+  const own = kindsOfForm(form);
   if (own.some((kind) => !packingOf(kind)?.gpu)) return REASONS.aloneDtype("rows of kinds of their own: such");
   if (own.length && !adapter.packed) return REASONS.packed(String(own.find((kind) => packingOf(kind)!.gpu!.dot) ?? dtype));
   // (the packing's line of jobs.ts's PACKED: whether a model of it may be on the GPU alone, and what its shaders need)
@@ -266,8 +271,12 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim];
   if (!own.length && starts.some((weights) => packing.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return REASONS.aloneStarts;
   // (T.271.4: and a Qwen3.5's linear-attention layers' matrices, each one piece: a token's layer reads them whole)
+  // (T.547.3.7's review: of rows of kinds of their own, by the widest of them: Saluki's are no wider than Q4_K's, 0.56 of a
+  // byte a weight, and int8's count would keep it off a device that binds 128 MiB)
+  const widest = own.length ? Math.max(...own.map((kind) => packingOf(kind)!.rowBytes(BLOCK) / BLOCK)) : 0;
+  const rowBytes = (weights: number) => (own.length ? Math.ceil(weights * widest) : packing.rowBytes(weights));
   if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...(linear ? [linear.mixed * dim, linear.read * dim] : [])]
-    .some((weights) => packing.rowBytes(weights) > binds)) return REASONS.alonePast;
+    .some((weights) => rowBytes(weights) > binds)) return REASONS.alonePast;
   return null;
 }
 /** T.375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker

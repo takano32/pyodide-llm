@@ -394,7 +394,7 @@ function gpuOnlyWeightsFor(size: number, header: Header, options: Options, after
   // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built.
   // T.375.5: the whole form as the options carry it: the layers that keep a state are read off it too)
   const fit = gpuOnlyAllowed() && !forwardModule!.gpuOnlyUnfit(header, dtype, options, gpuAdapter, gpuForce);
-  const eligible = fit && !aloneKept(dtype, Boolean(options.kinds && Object.keys(options.kinds).length));
+  const eligible = fit && !aloneKept(dtype, forwardModule!.blocksForm(options));
   // (the second review of T.156: the status line then says only the memory's reason where the layers do not fit beside
   // the CPU's copy; the console says the kept verdict, and what asks again)
   if (fit && !eligible) {
