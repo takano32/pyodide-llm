@@ -4,7 +4,7 @@
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 import { GROUP } from "../shaders/common.ts";
 import { sixValues } from "../shaders/steps.ts";
-import { ternaryValues } from "../shaders/prompt.ts";
+import { ternaryValues, q4kWeights } from "../shaders/prompt.ts";
 import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
 // What a packing is to the GPU:
@@ -21,14 +21,15 @@ import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 //   dot       whether its shaders need WGSL's packed int8 dot (PACKED's gpu.dot: a device without it keeps the model on
 //             the CPU)
 //   values()  the bytes of a row as the checkpoint holds them, as its int8 values (the checks' answer), which a group's
-//             scale times is the row's weights (none of Q4_K, whose weights are d s q - dmin m)
+//             scale times is the row's weights; (T.547.2.4) a packing of no scales apart, its weights themselves (Q4_K's
+//             d s q - dmin m), which its one scale of 1 times is
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
-  values?(bytes: Uint8Array): Int8Array };
+  values(bytes: Uint8Array): ArrayLike<number> };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
 const blocks = (n: number) => (n / 256) * 144;
 export const PACKINGS: Record<GpuPacking, HeldAs> = {
   int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, values: asBytes },
   int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, values: sixValues },
   ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, values: ternaryValues },
-  Q4_K: { row: blocks, scales: () => 0, stored: blocks, scale: 0, widened: false, dot: true },
+  Q4_K: { row: blocks, scales: () => 0, stored: blocks, scale: 0, widened: false, dot: true, values: q4kWeights },
 };

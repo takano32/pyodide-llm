@@ -538,7 +538,7 @@ const blockLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `
 // `ternary` until then.)
 // T.547.2.3, weights "Q4_K": llama.cpp's blocks of 256 as the checkpoint holds them (Q4_K_BLOCK below: the loader turns
 // a group of 32's nibbles into packed int8, 0 to 15, and keeps the row's d s and dmin m of the group; no scales apart)
-export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing | "Q4_K" }): string => {
+export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
   const ternary = weights === "ternary", blocks = weights === "Q4_K";
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
@@ -777,4 +777,4 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
   return { worst, wrong, far, apart, values };
 }
 
-export { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 };
+export { TERNARY_PACKED, Q4_K_BLOCK, sdp8ai, GET_BYTE_I32 };

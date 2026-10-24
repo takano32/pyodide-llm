@@ -27,7 +27,7 @@ import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
 import { MAKERS_APART, makersOfWgsl } from "./shader-makers.mjs";
 
-const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, deviceKey, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
+const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS, deviceKey, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
 
 // ---- the order. A row: its name, and for a maker the choices it is given (what is no number), in the row's own order
 const said = ({ name, given }) => (given ? `${name}(${Object.entries(given).filter(([, value]) => typeof value !== "number").map(([key, value]) => `${key}=${value}`).join(", ")})` : name);
@@ -48,14 +48,17 @@ const ORDER = {
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
     "fusedDp4aMatVec(output=geglu, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "ROTATE_QUANTIZE", "UNROTATE"],
+  // T.547.2.4: a model's of Q4_K blocks besides int8
+  blocks: ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=Q4_K)`),
 };
 const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T.379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);
 assert.deepEqual(TERNARY_SHADERS.map(said), ORDER.ternary, `a ternary model's shaders: ${moved}`);
-console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone)`);
+assert.deepEqual(BLOCK_SHADERS.map(said), ORDER.blocks, `a Q4_K model's shaders: ${moved}`);
+console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone, ${BLOCK_SHADERS.length} of a Q4_K one alone)`);
 
 // ---- a row
-const rows = [...ENGINE_SHADERS, ...TERNARY_SHADERS];
+const rows = [...ENGINE_SHADERS, ...TERNARY_SHADERS, ...BLOCK_SHADERS];
 const seen = new Map();
 for (const row of rows) {
   const what = said(row), text = row.text();

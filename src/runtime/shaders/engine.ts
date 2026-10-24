@@ -56,6 +56,9 @@ export const TERNARY_SHADERS = [
   ...texts({ EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS }),
   // T.271.1: a rotated basis's (T.237: Ternary Bonsai 2 27B's, whose weights are ternary)
   ...texts({ ROTATE_QUANTIZE, UNROTATE })];
+/** T.547.2.4: and those of a model of int8 matrices and Q4_K blocks alone, after every model's (its tiles:
+ * devicePromptForms' Q4_K, each with its Q4_K text) */
+export const BLOCK_SHADERS = FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights: "Q4_K" }));
 /** the shaders by name, for the worker: a text, or a maker to call with a model's own numbers */
-export const ENGINE = Object.fromEntries([...ENGINE_SHADERS, ...TERNARY_SHADERS].map(({ name, shader }) => [name, shader])) as
-  Named<(typeof ENGINE_SHADERS)[number] | (typeof TERNARY_SHADERS)[number]>;
+export const ENGINE = Object.fromEntries([...ENGINE_SHADERS, ...TERNARY_SHADERS, ...BLOCK_SHADERS].map(({ name, shader }) => [name, shader])) as
+  Named<(typeof ENGINE_SHADERS)[number] | (typeof TERNARY_SHADERS)[number] | (typeof BLOCK_SHADERS)[number]>;

@@ -79,12 +79,15 @@ export const attention: GpuKind = {
           }
           return flashes.get(window)!;
         };
+        // (T.547.2.4: split, v apart from q and k, of two packings: written after them into qkv, weights.ts's tokensLayout)
+        const split = Boolean(m.weights.together) && !m.weights.together!.homes.wv;
         const u = { flash: layers.map((_, l) => flashOf(plan.windows[l] ?? 0)), o: params(plan.dim, qDim),
           qkv: layers.map((at, l) => params(qkvRows, plan.dim, 0, at, turnedAt(plan, l))),
+          qk: split ? layers.map((at) => params(qDim + kvDim, plan.dim, 0, at)) : [], v: split ? layers.map((at) => params(kvDim, plan.dim, 0, at)) : [],
           // QUANTIZE's (n, xStride) of the attention's output
           quantizeAttention: uniform(m, new Uint32Array([qDim, qDim, 0, 0])) };
         let rope: GPUComputePipeline | null = null, qkv: GPUBuffer | null = null, qkvBias: GPUBuffer | null = null, biasShapes: GPUBuffer[] | null = null;
-        if (bq || qNorm) {
+        if (bq || qNorm || split) {
           rope = await within(validated(m, () => pipelineOf(m, ENGINE.TOKEN_ROPE)), "compiling a token's RoPE");
           qkv = buffer(m, qkvRows * 4);
         }
@@ -115,7 +118,9 @@ export const attention: GpuKind = {
             return [...normed.norm, ...normed.quantize,
               // T.226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
               // RoPE: as the CPU has it and a prompt's block (T.153), the biases, the norms of the heads of q and of k, RoPE
-              matrix(P.qkv, W.joined[l].qkv, normed.input, u.qkv[l], qkvRows, qkv ? [[5, qkv]] : turned),
+              ...(split ? [matrix(P.qkv, W.joined[l].qk, normed.input, u.qk[l], qDim + kvDim, [[5, qkv!]]),
+                matrix(P.qkv, W.matrices.wv.pieces[0].layers[place], normed.input, u.v[l], kvDim, [[5, { buffer: qkv!, offset: (qDim + kvDim) * 4, size: kvDim * 4 }]])]
+                : [matrix(P.qkv, W.joined[l].qkv, normed.input, u.qkv[l], qkvRows, qkv ? [[5, qkv]] : turned)]),
               // (T.271.3: a Qwen3.5's gate of the output, of the same normed stream)
               ...(gated ? [matrix(P.mix, W.matrices.wg.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
               ...(qkvBias ? [added(qkv!, qkvBias, biasShapes![l], qkvRows)] : []),
