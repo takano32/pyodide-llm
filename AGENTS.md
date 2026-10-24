@@ -89,7 +89,7 @@
 | `src/runtime/worker.ts` と `worker/` | モデルの Web Worker。持ち主の `runtime.ts`（Pyodide・カーネル・forward・URL の旗・WebGPU）・`request.ts`・`loaded.ts`・`weights.ts`（重みの置き場）と、`pyodide.ts`・`sources.ts`（サイトの部品）・`ranges.ts`（HF の Range）・`conduct.ts`（段取りに答える輪と答え手）・`convert.ts`・`load.ts`・`timing.ts`・`clock.ts`・`outdated.ts` |
 | `src/runtime/forward.ts` と `forward/` | 1 トークンの forward（JavaScript が自前の `WebAssembly.Memory` の上でカーネルを呼ぶ）。`engine.ts`（`createForward()`）・`kinds.ts`（層の種類の表 `LAYER_KINDS`）と `attention.ts`・`linear.ts`・`convolution.ts`・`ffn.ts`・`cache.ts`（KV）・`perlayer.ts`・`control.ts`・`threads.ts`・`gpuside.ts`・`choice.ts`・`paths.ts`・`sizes.ts`・`architectures.ts`・`memory.ts`（`footprint()`）・`alone.ts`・`reasons.ts` |
 | `src/runtime/jobs.ts`・`helper.ts` | 制御領域の語・カーネルの番地 `ADDRESSES`・仕事の種類の表 `WORK`（`KIND`）・詰め方の表 `PACKED`・`runner()` / ソフトウェアスレッド（Node の試験は `tests/helper-node.mjs`） |
-| `src/runtime/gpu.ts` と `gpu/` | モデルのページの GPU の Worker。`device.ts`・`weights.ts`・`forms.ts`・`block.ts`（プロンプトのブロック）・`tokenattention.ts`・`tokens.ts`・`tokenforms.ts`（生成のステップ）・`requests.ts`・`start.ts`、層の種類の表 `kinds.ts`（`GPU_KINDS`）と種類ごとの `attention.ts`・`linear.ts`・`convolution.ts` |
+| `src/runtime/gpu.ts` と `gpu/` | モデルのページの GPU の Worker。`device.ts`・`weights.ts`・`forms.ts`・`block.ts`（プロンプトのブロック）・`tokenattention.ts`・`tokens.ts`・`tokenforms.ts`（生成のステップ）・`requests.ts`・`start.ts`、層の種類の表 `kinds.ts`（`GPU_KINDS`）と種類ごとの `attention.ts`・`linear.ts`・`convolution.ts`、詰め方ごとの行の形の表 `packings.ts`（`PACKINGS`） |
 | `src/runtime/shaders.ts` と `shaders/` | WGSL。エンジンの `common`・`prompt`・`steps`・`attention`・`fused`・`run`・`sample`、回した基底の `rotate`、目録 `engine.ts`（`ENGINE_SHADERS`・`TERNARY_SHADERS`・`ENGINE`）、端末の鍵 `key.ts`、ベンチだけの `bench`・`matvec`・`stages`、CPU の標本抽出の模型 `likecpu.ts` |
 | `src/runtime/contracts/` | 境目の型だけ: `plan.ts`・`messages.ts`・`gpu/protocol.ts`・`form.ts`・`conduct.ts`・`python.ts`・`benchmark.ts` |
 | `src/runtime/failure.ts`・`updated.ts`・`built.ts`・`kept.ts` | 失敗の運び方 / 「サイトが更新された」の判定と文 / 作る物の表 `BUILT` / 変換したモデルの保存（OPFS、無ければ Cache API。`CONVERTER`・`keptName()`・`replaced()`・`keeper()`） |
@@ -326,7 +326,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 2. カーネル（次の項）、`jobs.ts` の `ADDRESSES`、仕事の種類を `WORK` に（relaxed の有無）、**`PACKED` に 1 行**（1 行のバイト数・`scale`・重みを読む式 `value` か 1 行を広げる `row`・仕事の種類・補正のカーネル・活性値の用意とその取り方 `takes`・`xs`・`group`・GPU の `gpu`）。`forward/engine.ts`・`memory.ts`・`gpuside.ts`・worker は触らない。
 3. 型: `contracts/plan.ts` の `Stored`、`contracts/form.ts` の `Dtype`。手で残る 2 つ: `kept.ts` の `replaced()` の名前の一覧（忘れると `kept-check`。忘れると `?bits=` で開いたときに別の dtype の保存が消される）と `src/models/memory.js` の比（`kernel-registry-check`）。保存の名前（`keptName()`）と、GPU だけに置けるなら `mayKeep` も。
 4. 試験: `tests/kernel-registry-check.mjs` の `FACTS`・`ASKED`・`GPU`、`tests/test_dtypes.py`。
-5. GPU にも置くなら「ステップの行列の詰め方」。
+5. GPU にも置くなら「ステップの行列の詰め方」と、`gpu/packings.ts` の `PACKINGS` に行の形の 1 行（GPU での行のバイト数・チェックポイントでのバイト数・尺度のバイト数・値を広げるか・検査の答えの値）と `contracts/gpu/protocol.ts` の `GpuPacking` に名前（`kernel-registry-check` が `PACKED` の `gpu` と突き合わせる）。
 
 ### カーネル・仕事の種類を足す
 

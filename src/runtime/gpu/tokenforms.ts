@@ -3,13 +3,13 @@
 
 import { COPY_DST, MAP_READ, rowBytes, stopping, within, isLate, buffer, readBack, validated, pipelineOf, widenedHalves } from "./device.ts";
 import { tablesOf } from "./weights.ts";
+import { PACKINGS } from "./packings.ts";
 import { halfToFloat } from "./forms.ts";
 import { roomFor, BLOCK_ROUNDS } from "./block.ts";
 import { chooseTokenAttention } from "./tokenattention.ts";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
 import { GROUP } from "../shaders/common.ts";
-import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.ts";
-import { sixValues } from "../shaders/steps.ts";
+import { quantizedLikeCpu } from "../shaders/prompt.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
@@ -216,14 +216,13 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   // row r of a matrix or a table ({ n, packing }, its values and scales at [valuesAt, scalesAt] in the shared
   // memory): [its int8 values, its scales (one a group of 32 weights; T.232, ternary: of 128)]; (T.156) of a matrix read
   // back from the GPU (firstLayer: [values, scales]); (T.210) of a table's rows read back (tableRows)
-  const stored = (spec: Spec) => (spec.packing === "int6" ? (spec.n * 3) / 4 : rowBytes(spec)), scalesOf = (spec: Spec) => rowBytes(spec) / GROUP;
+  const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => rowBytes(spec) / GROUP;
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
-  const valuesOf = (spec: Spec, bytes: Uint8Array) => (spec.packing === "int6" ? sixValues(bytes) : spec.packing === "ternary" ? ternaryValues(bytes)
-    : new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length));
+  const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes);
   const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
     // (T.533: ternary's scales are float16s there, which went up widened)
-    spec.packing === "ternary" ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
+    PACKINGS[spec.packing].scale === 2 ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
       : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
   const readBackRows = (spec: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
     scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec))];
