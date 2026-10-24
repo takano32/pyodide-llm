@@ -1,0 +1,4 @@
+### T.580 [バグ][遠隔試験] `blocks-forward-check` が ok の後の終わりでまれに止まる — 状態: 完了（2026-10-24、Opus medium。前の状態: 未着手、T.547.3.4 の手元の軽い組で 1 回。規模 小）
+- 「blocks-forward-check: ok」を書いた後、`limited.mjs` の期限 30 分で切れた（「Node wrote no report: it was in JavaScript that did not return to the event loop (or in native code)」）。T.575 の `plan-facts-check` と同じ現れ方（AGENTS.md の落とし穴「Node は重い仕事の直後の `process.exit()` の中でまれに止まる」）。この検査は `tests/leave.mjs` の `leave()`（出力を流してすぐ `process.exit()`）で終わる。直す案: `leave()` そのものが 200 ms 待ってから終わる（T.575 の形を 1 か所に: `leave()` で終わる道具の全部に効く）。同じ木で回し直した軽い組は通った。
+- **結果**: `leave()` が流した後 200 ms 待ってから終わる（`tests/leave.mjs`。`leave()` で終わる道具 35 本の全部に効く）。単独では直す前に 80 回で 0（軽い組の中で他と並ぶときだけ出たのか、もっとまれなのかは分からない: 未再現）、直した後 40 回で 0。`serving-check` も通る。CI を省いた。訳: 道具の終わり方だけで、手元の軽い組が踏む。
+- **レビュー（Sonnet low、2026-10-24）: must-fix なし**（呼び出す 35 本はどれも最後の `await leave()` 1 回きりで、輪の中やシグナルの受け口は無い。終わりが 0.2 秒延びるだけ。効き目は未再現のまま）。勧めから: 軽い組でまた止まったら T.580 を開き直す。
