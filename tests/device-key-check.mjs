@@ -132,7 +132,7 @@ const TILES = ["regTile", "tfjsTile", "dp4a"];
 // the key's own lines (their strings choose what is made: no text of a shader), and what names the prompt's forms and
 // says why one is not made (a form's name is hashed with its text: the tiles' sizes are in it)
 // (T.379.1: and the catalogue's own: its rows, what makes a row, and the lists of the choices they walk)
-const KEY_ITSELF = ["deviceKey", "ENGINE_SHADERS", "TERNARY_SHADERS", "ENGINE", "EITHER", "texts", "made", "FUSED_INPUTS", "FUSED_OUTPUTS"], FORMS = ["devicePromptForms"];
+const KEY_ITSELF = ["deviceKey", "ENGINE_SHADERS", "TERNARY_SHADERS", "BLOCK_SHADERS", "ENGINE", "EITHER", "texts", "made", "FUSED_INPUTS", "FUSED_OUTPUTS"], FORMS = ["devicePromptForms"];
 for (const name of KEY_ITSELF) assert.ok(declared.has(name), `${name} is no declaration of the shaders' modules any more: this check's list of the key's own lines`);
 // the catalogue (T.379.1): the rows the key hashes, [name, the arguments of a maker's row] each
 const rowsOf = (rows) => rows.map(({ name, given }) => ({ name, given }));
