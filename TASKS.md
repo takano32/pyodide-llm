@@ -232,7 +232,6 @@
 - T.559 [整理][その他] Markdown の消毒の表を文字どおりに（`data-*`・`aria-*` を閉じる） — 未着手
 - T.561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T.562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
-- T.563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
 - T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 反映済み
 - T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
 - T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 進行中
@@ -1703,9 +1702,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 状態: 未着手（2026-10-16、T.546 の CI が見つけた。本線 `b3a9e41d` の run 38881685551 でも同じ数）
 - `gpu-prompt.yml real=hf-qwen3-0.6b` の Dawn で「ORT DP4A …: the keys and values of the GPU's layer 19 are 3.76e-1 and 3.76e-1 from NumPy's (its line 2.70e-1)」。前からの物で、いつからかは未確認（T.533 の 3 値のスケールの回の前後を見る）。線が厳しすぎるのか、DP4A の形の誤りかを切り分ける。Chromium のジョブのログは未確認。
-
-### T.563 [整理][WebGPU] GPU に置く決まりの古いコメント — 状態: 未着手（2026-10-16、T.261.4.2・T.545.2 のレビューの気づき）
-- `src/runtime/forward/alone.ts:191` の「a token's fused layer does not take yet」は古くなった。`gpuside.ts` の `tokensUnfit()` の説明は Llama の流れだけを言う（窓・GELU・後ろの norm・畳み込みを足す）。
 
 ### T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 状態: 反映済み（2026-10-24、Opus medium。前の状態: 未着手、T.547.2.3 の本番の確かめから。規模 小）
 - e2e は準備完了の後に設定の欄 `steps` を 256（Agents-A1・SmolLM3 は 512）にする。`models.yml` の `query=gpuTest=on&steps=16` の `steps=16` はその前にページが読むので消える（AGENTS.md の「SwiftShader で GPU のステップを回す e2e は数トークンで確かめる: `query=…&steps=`」が働かない）。直し: `E2E_QUERY` が `steps=` を言うときは欄に触らない。
