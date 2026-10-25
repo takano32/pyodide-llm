@@ -274,3 +274,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T.582](T.582.md) [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 2026-10-25
 - [T.583](T.583.md) [バグ][遠隔試験] `tests/updated-in-browser.mjs` の「the kernels gone from the start」が 180 秒で落ちる — 2026-10-25
 - [T.586](T.586.md) [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 2026-10-25
+- [T.588](T.588.md) [バグ][遠隔試験] 毎晩の全部の組が 27B の道具の `dry` で落ちる: 「GPU を渡しても Worker を始めない」の期待が古い — 2026-10-25
