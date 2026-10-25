@@ -354,7 +354,6 @@ def test_a_llamas_q_and_k_which_llama_cpp_turns_are_kept_where_they_are(arch):
     assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
 
 
-
 def test_a_granites_q_which_the_conversion_scales_is_widened_and_the_rest_kept():
     """T.502.5: a Granite's GGUF keeps its multiplier apart and q as a Llama's (turned): the conversion scales q once
     (T.253), which no bytes can do, so q is widened and every other matrix stays as its blocks. The logits are the
