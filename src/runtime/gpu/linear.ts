@@ -25,6 +25,9 @@ export const linear: GpuKind = {
   async block(m) {
     const { plan } = m, B = plan.batch, { keyHeads, valueHeads, keyDim, valueDim, taps } = plan.linear!, places = plan.kinds.filter((kind) => kind === "linear").length;
     const keys = keyHeads * keyDim, read = valueHeads * valueDim, mixed = 2 * keys + read, groups = Math.ceil(mixed / 64);
+    // (T.573: a place's state is bound whole: one past a buffer the device binds is refused before anything is made, as
+    // gpuOnlyUnfit() refuses it of a model on the GPU alone)
+    if (4 * valueHeads * keyDim * valueDim > m.limit) throw new Error(`a linear-attention layer's state of ${4 * valueHeads * keyDim * valueDim} bytes is past a buffer of this GPU (${m.limit} bytes)`);
     const [gates, convolving, moving, rule, swiglu] = await within(Promise.all([ENGINE.DELTA_GATES, ENGINE.DELTA_CONV, ENGINE.DELTA_CONV_STATE, ENGINE.DELTA_NET,
       ENGINE.SWIGLU].map((code) => pipelineOf(m, code))), "the linear attention's shaders");
     const z = buffer(m, B * read * 4);

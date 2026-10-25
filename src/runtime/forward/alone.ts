@@ -277,6 +277,9 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const rowBytes = (weights: number) => (own.length ? Math.ceil(weights * widest) : packing.rowBytes(weights));
   if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...(linear ? [linear.mixed * dim, linear.read * dim] : [])]
     .some((weights) => rowBytes(weights) > binds)) return REASONS.alonePast;
+  // (T.573: nor a linear-attention layer whose state alone is past a buffer: the GPU binds a place's state whole)
+  const numbers = form.linear;
+  if (numbers && 4 * numbers.value_heads * numbers.key_dim * numbers.value_dim > binds) return REASONS.aloneState;
   return null;
 }
 /** T.375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker

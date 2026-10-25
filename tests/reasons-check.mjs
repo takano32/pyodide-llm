@@ -51,6 +51,7 @@ const SAID = [
   ["aloneHeads", "heads of a size that is no multiple of 4"],
   ["aloneStarts", "q, k and v or gate and up would not start where this GPU binds a buffer"],
   ["alonePast", "a layer's matrices are past a buffer of this GPU"],
+  ["aloneState", "a layer's state is past a buffer of this GPU"],
   ["quiet", [180000], "the GPU said nothing for 180 s"],
   ["stalled", [10000], "the GPU's worker stopped answering for 10 s"],
   ["notStarted", ["Unexpected token"], "the GPU's worker did not start (Unexpected token)"],

@@ -59,6 +59,7 @@ export const REASONS = {
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",
   alonePast: "a layer's matrices are past a buffer of this GPU",
+  aloneState: "a layer's state is past a buffer of this GPU",  // T.573: a linear-attention layer's state matrices
   // ---- what stopped the GPU (gpuside.ts's stopGpu(): the prompts and the tokens go on on the CPU)
   quiet: (ms: number) => `the GPU said nothing for ${ms / 1000} s`,
   stalled: (ms: number) => `the GPU's worker stopped answering for ${ms / 1000} s`,
