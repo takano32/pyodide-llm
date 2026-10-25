@@ -45,7 +45,7 @@
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
 - T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 未着手
-- T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 未着手
+- T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 進行中
 - T.373 [調査][遠隔試験] デプロイの直後に始めた WebKit の本番の確かめが、何も出さずに 47 分止まった（1 回） — 未着手
 - T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
@@ -554,8 +554,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `engine/generation.py` のステップの輪は、`gpu_steps` があれば毎ステップ `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いかステップを取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T.164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
 - ステップの途中で GPU の準備ができることがあるので、読みをやめるだけでは済まない（準備ができたことを別の道で知らせる形が要る）。小さいので、T.375 でエンジンの窓口に触る回に一緒に。
 
-### T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 未着手（2026-10-10、T.359 の 3 つ目の子タスクのレビューから。規模 小）
-- GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この子タスクの前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。
+### T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 進行中（2026-10-25 に足した。前の状態: 未着手、2026-10-10、T.359 の 3 つ目の子タスクのレビューから。規模 小）
+- GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この子タスクの前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。- **結果（2026-10-25）**: `tests/test_families.py` に 3 つ（家族の関数を直に呼ぶ）: GPT-2 の `n_inner` が無い・None なら FFN は 4 × 幅、`tie_word_embeddings` を言わない config は GPT-2 で結ぶ・GPT-NeoX で結ばない、GPT-NeoX の head のどこも回さない（`rotary_pct` 0 と、2 つに満たない 0.05）は断る。壊し方: 3 つの行をそれぞれ替える（2 × 幅、NeoX の既定を True、断りの線を 0 に）と、それぞれ 1 つずつ落ちる。CI を省いた。訳: 試験を足しただけで、pytest で回した。
+
 ### Saluki の組（T.361〜T.364、2026-10-09 に採番。持ち主「[Saluki] で対応を採番できないかな？」、https://pc.watch.impress.co.jp/docs/news/2147095.html）
 - **モデル**: Underdog Saluki 27B 1.0（`ConwayResearch/Underdog-Saluki-27B-1.0`、リビジョン `1336c0b5d74dfe6ad7f793577092f5effd9f97c6`、apache-2.0、ゲートなし）。Qwen3.8-27B を平均 約 2.3 ビットに量子化した ISTA DASLab の `Qwen3.8-27B-GSQ-RCO-GGUF` に Underdog が手を入れたもの。ファイルは `Underdog-Saluki-27B-1.0-IQ2-mix.gguf` 7,898,369,152 バイトの 1 つ（ほかの 2 つは画像の入力用の `mmproj` で、このページでは使わない）。Bonsai 2 27B と違い、素の llama.cpp で動く。
 - **見出しを読んで分かったこと（2026-10-09、頭の 20 MB を Range で）**: アーキテクチャは `qwen35`（64 層・幅 5120・FFN 17408・head 24 / kv 4・4 層に 1 つが attention・値の head 48: **Bonsai 2 27B と同じ形で、回した基底は無い**）。語彙と config は一覧がすでに使っている `Qwen/Qwen3.8-27B` から取れる。**テンソル 851 個の型が 12 種類**: F32 353 個（norm など）、Q8_0 96 個（gate の小さな行列）、そして行列が **Q2_K 46・Q4_K 4・IQ2_XXS 119・IQ2_XS 39・IQ3_XXS 30・IQ1_S 36・IQ3_S 44・IQ2_S 46・IQ4_XS 7・IQ1_M 31**（値の数では IQ2_XXS が 92 億でいちばん多い。埋め込みは IQ1_M、分類器は IQ3_S）。**変換器が読めるのは F32・F16・BF16・Q8_0・PQ2_0・PTQ1_0 だけ**で、この 10 種類はどれも読めない。

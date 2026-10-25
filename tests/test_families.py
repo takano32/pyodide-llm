@@ -348,3 +348,29 @@ def test_the_form_of_a_qwen35_and_of_an_lfm2_says_no_qk_norm_whatever_the_names(
         assert (form["bias"], form["qk_norm"]) == (BIASES in source, NORMS in source)
     assert list(llama2_convert.checkpoint_form(normalize({**BASE, "model_type": "llama"}), {})) == \
         ["bias", "arch", "qk_norm", "head_dim", "linear", "rotated", "convolution"]
+
+
+# ---- T.387: three rows of the families that no real config steps on (a real config.json writes the key)
+def test_a_gpt2_config_without_n_inner_has_an_ffn_four_times_its_width():
+    from convert.families.gpt2 import gpt2_names
+    assert gpt2_names({"n_embd": 64, "n_layer": 2, "n_head": 4})["intermediate_size"] == 256
+    assert gpt2_names({"n_embd": 64, "n_layer": 2, "n_head": 4, "n_inner": 100})["intermediate_size"] == 100
+    assert gpt2_names({"n_embd": 64, "n_layer": 2, "n_head": 4, "n_inner": None})["intermediate_size"] == 256
+
+
+def test_the_tying_of_the_classifier_where_a_config_does_not_say():
+    from convert.families.gpt2 import gpt2_names, neox_names
+    # GPT-2 ties it to the embedding unless it says otherwise, GPT-NeoX does not
+    assert gpt2_names({"n_embd": 64})["tie_word_embeddings"] is True
+    assert neox_names({})["tie_word_embeddings"] is False
+    assert neox_names({"tie_word_embeddings": True})["tie_word_embeddings"] is True
+
+
+def test_a_neox_that_rotates_none_of_a_head_is_refused():
+    from convert.families.gpt2 import neox_check
+    config = {"hidden_size": 64, "num_attention_heads": 4, "hidden_act": "gelu"}
+    neox_check({**config, "rotary_pct": 0.25})  # (4 of a head's 16: taken)
+    with pytest.raises(ValueError, match="it rotates none of each head"):
+        neox_check({**config, "rotary_pct": 0.0})
+    with pytest.raises(ValueError, match="it rotates none of each head"):
+        neox_check({**config, "rotary_pct": 0.05})  # (0.8 of a value: none)
