@@ -366,6 +366,16 @@ def test_the_tying_of_the_classifier_where_a_config_does_not_say():
     assert neox_names({"tie_word_embeddings": True})["tie_word_embeddings"] is True
 
 
+def test_a_neox_config_that_says_not_how_much_of_a_head_turns_turns_a_quarter():
+    """T.589: as transformers' GPTNeoXConfig (rotary_pct 0.25), where rotary_dim() alone would read the whole head."""
+    from convert.families.family import rotary_dim
+    from convert.families.gpt2 import neox_names
+    config = {"hidden_size": 64, "num_attention_heads": 4}
+    assert rotary_dim(neox_names(config)) == 4
+    assert rotary_dim(neox_names({**config, "rotary_pct": 1.0})) == 16
+    assert rotary_dim(neox_names({**config, "partial_rotary_factor": 0.5})) == 8
+
+
 def test_a_neox_that_rotates_none_of_a_head_is_refused():
     from convert.families.gpt2 import neox_check
     assert FAMILIES["gpt_neox"].check is neox_check  # (the table's row is the function tested here)

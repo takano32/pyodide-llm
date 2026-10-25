@@ -55,8 +55,10 @@ def gpt2_names(config):
 
 
 def neox_names(config):
-    # GPT-NeoX has the Llama names already; only the angles are spelled differently
+    # GPT-NeoX has the Llama names already; only the angles are spelled differently. T.589: and a config that says not
+    # how much of a head turns turns a quarter, as transformers' GPTNeoXConfig (rotary_dim() reads 1.0 where it is not)
     return {**config, "rope_theta": config.get("rotary_emb_base", config.get("rope_theta", 10000.0)),
+            "rotary_pct": config.get("rotary_pct", config.get("partial_rotary_factor", 0.25)),
             "tie_word_embeddings": config.get("tie_word_embeddings", False)}
 
 
