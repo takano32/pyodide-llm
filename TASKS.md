@@ -233,7 +233,6 @@
 - T.561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T.562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 - T.563 [整理][WebGPU] GPU に置く決まりの古いコメント — 未着手
-- T.573 [整理][WebGPU] 1 つの層の状態だけで束縛の上限を越える linear の層を、読み込みの前に断る — 未着手
 - T.574 [試験][Bonsai][WebGPU] 塊 1024 の回した基底を持つ Qwen3.5 の作り物 — 未着手
 - T.581 [整理][WebGPU] GPU だけのモデルで、GPU の Worker を開いた後に投げうる所の後始末 — 未着手
 - T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 反映済み
@@ -246,8 +245,8 @@
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
 
 - **止めた所（2026-10-24 の再開で済んだ）**: T.271.1 は 2 回目の CI（run 40062442351）が通り、本線に入れた。以下はそのときの記録。T.271.1（回した基底を GPU に）の実装・レビュー（Sonnet high、must-fix なし）・レビューの直しが済み、ブランチ `t271.1-rotated-basis`（push 済み、本線には未）。CI の 1 回目（run 40061581668）は、シェーダが実機で正しいこと（回した基底の作り物でプロンプトの層は線の 0.37、答えのステップの「the norms apart」も通る）を示し、落ちたのは gpu-check が回した基底の取らない答えの形を名指したことだけ（`tests/gpu-check/harness.js` を直した）。**2 回目の CI**（`gpu-prompt.yml models="synthetic-ternary-rotated synthetic-ternary-rotated-untied synthetic-ternary-rotated-1024 synthetic-ternary synthetic" --ref t271.1-rotated-basis`）を 2026-10-24 に起動した: `gh run list --workflow gpu-prompt.yml --limit 3` で ID を見て、`node tests/ci.mjs wait <ID>` で読む。
-- **2026-10-24 の続き**: T.271.1 → T.572（番号を `T.番号.子` の形に）→ T.271.5（状態を層の束に割る T.565 と 27B の形の作り物、レビューの直しまで）が済み、T.271 は完了。T.547 は T.547.1（詰め方を名前で）・T.547.2.1〜T.547.2.4（Q4_K をプロンプトと答えのステップで GPU に: 本物の 4-bit の Shisa が本番で「prompts and answers on WebGPU」）まで、どれもレビューの直しまで本線に。途中で T.575（`plan-facts-check` の止まり）・T.577（e2e の `steps=`）を直した。T.547.3 は T.547.3.1〜T.547.3.7（層ごとの詰め方、行列を別々に掛ける答えのステップ、塊の型の表と Q2_K、符号表と IQ2 系、残りの IQ 系、塊の表、GPU だけ）がどれもレビューの直しまで本線に入り、T.547 は完了（実物の Saluki と 4-bit の Shisa は持ち主の PC で）。途中で T.580（道具の終わりの止まり）を直した。2026-10-25: T.579.1（答えのステップは使う管だけを作る）と T.576 が済んだ。T.579.2 と T.578 は持ち主の端末の数字を待つ（4-bit と int8 の Shisa の比べ）。次は積んであるもの: T.573、T.574、T.581、T.567、T.566。
-- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: (1) `REASONS.packed("Q4_K")`「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」（今ある文の形に名前を入れたもの）。(2) 分類器が Q4_K のモデルの答えのステップの訳が `REASONS.floatClassifier`（float weights と言う: 事実と合わない）のまま。
+- **2026-10-24 の続き**: T.271.1 → T.572（番号を `T.番号.子` の形に）→ T.271.5（状態を層の束に割る T.565 と 27B の形の作り物、レビューの直しまで）が済み、T.271 は完了。T.547 は T.547.1（詰め方を名前で）・T.547.2.1〜T.547.2.4（Q4_K をプロンプトと答えのステップで GPU に: 本物の 4-bit の Shisa が本番で「prompts and answers on WebGPU」）まで、どれもレビューの直しまで本線に。途中で T.575（`plan-facts-check` の止まり）・T.577（e2e の `steps=`）を直した。T.547.3 は T.547.3.1〜T.547.3.7（層ごとの詰め方、行列を別々に掛ける答えのステップ、塊の型の表と Q2_K、符号表と IQ2 系、残りの IQ 系、塊の表、GPU だけ）がどれもレビューの直しまで本線に入り、T.547 は完了（実物の Saluki と 4-bit の Shisa は持ち主の PC で）。途中で T.580（道具の終わりの止まり）を直した。2026-10-25: T.579.1（答えのステップは使う管だけを作る）と T.576 が済んだ。T.579.2 と T.578 は持ち主の端末の数字を待つ（4-bit と int8 の Shisa の比べ）。T.573 も済んだ。次は積んであるもの: T.574、T.581、T.567、T.566。
+- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: (1) `REASONS.packed("Q4_K")`「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」（今ある文の形に名前を入れたもの）。(2) 分類器が Q4_K のモデルの答えのステップの訳が `REASONS.floatClassifier`（float weights と言う: 事実と合わない）のまま。 (3) T.573 の `REASONS.aloneState`「a layer's state is past a buffer of this GPU」（`alonePast` と対の文。実在のモデルには出ない）。
 - **（前の版）次にすること**: 2 回目の CI で FAILED と wrong が 0 なら、T.271.1 の状態を台帳に書いて本線に入れ（`. ~/.keychain/*-sh` を読んでから SSH で push）、デプロイを待つ（記録だけの直しはデプロイしない: AGENTS.md の落とし穴）。シェーダの目録に 2 行足したので端末の鍵が 1 回変わる（ternary の端末だけ）。その後 T.271.5（27B そのもの、T.565 は「状態を層の束に割る」で取りまとめ役が決める）→ T.547。
 - 区切りのまとめで持ち主に出すもの（文面・選択・端末）は、各タスクの「持ち主の端末で見るもの」と「取りまとめ役の決め」に積んである。T.571 の Android の確かめが端末の一覧にある。
 
@@ -1709,9 +1708,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.563 [整理][WebGPU] GPU に置く決まりの古いコメント — 状態: 未着手（2026-10-16、T.261.4.2・T.545.2 のレビューの気づき）
 - `src/runtime/forward/alone.ts:191` の「a token's fused layer does not take yet」は古くなった。`gpuside.ts` の `tokensUnfit()` の説明は Llama の流れだけを言う（窓・GELU・後ろの norm・畳み込みを足す）。
-
-### T.573 [整理][WebGPU] 1 つの層の状態だけで束縛の上限を越える linear の層を、読み込みの前に断る — 状態: 未着手（2026-10-24、T.271.5 のレビューの勧め。規模 小）
-- いまは束が 1 層でも上限を越えると、束縛の検証で落ちる（4 × 値の head × 鍵の次元 × 値の次元 が `maxStorageBufferBindingSize` を越えるとき: 128 MiB なら 3200 万 float。実在のモデルには無い）。`gpuOnlyUnfit()` と `gpuFit()` で `alonePast` と同じ断りにするか、`gpu/linear.ts` で訳のある throw に。
 
 ### T.574 [試験][Bonsai][WebGPU] 塊 1024 の回した基底を持つ Qwen3.5 の作り物 — 状態: 未着手（2026-10-24、T.271.5 のレビューの勧め。規模 小）
 - 27B は塊 1024・linear の層の z の幅 6144（6 塊）・FFN 17408。作り物は塊 64 の Qwen3.5 と塊 1024 の Llama で、その組は無い（シェーダは独立なので危険は低い）。gpu-check に `rotatedBasis(1024, …)` の Qwen3.5 を 1 つ（6 層は f16 のタイルで線を越えたので 4 層まで）。
