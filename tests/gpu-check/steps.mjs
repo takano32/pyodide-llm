@@ -11,7 +11,7 @@
 // of its most likely; the steps after it are not compared, their inputs differ; the CPU's step feeds NumPy's id to the
 // GPU's next ones whatever it chose); the keys and values the GPU wrote back of its first 4 positions in forward.js's
 // cache against NumPy's, a layer at a time (T.187), to the line of the prompt's shaders of the same arithmetic (float32 GPU_LINE or K × E16;
-// DP4A K_PACKED × Q8's distance) or the run's own prompt's distance, the larger (the steps' attention reads the
+// DP4A K_PACKED_STEPS × Q8's distance) or the run's own prompt's distance, the larger (the steps' attention reads the
 // prompt's keys and values; the next 3 read the CPU's step's too, its 7-bit activations, and are held to their ids); a
 // stop token (NumPy's second) ends the steps after it; a penalty of 100 on NumPy's first id (greedy) gives the largest
 // of NumPy's logits penalized so (or a near tie); two sampled steps at temperature 2 with random numbers of 0.02 and
@@ -27,7 +27,7 @@
 // engine takes their columns of the classifier apart on the CPU, and the GPU's classifier multiplies floats).
 import { runtimeUrl } from "../tree.mjs";
 import { floats, worstRow, worstAt, argmax, logSoftmax } from "./measures.mjs";
-import { GEN, NOT_FINITE_STATUS, GPU_LINE, K, K_PACKED, TIE } from "./lines.mjs";
+import { GEN, NOT_FINITE_STATUS, GPU_LINE, K, K_PACKED_STEPS, TIE } from "./lines.mjs";
 const wgsl = await import(runtimeUrl("shaders.js"));
 
 // T.213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
@@ -124,7 +124,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   const rowsAt = (all, l) => all.subarray(l * positions.length * kvDim, (l + 1) * positions.length * kvDim);
   const packed = /DP4A/.test(steps.form ?? "");
   const offs = Array.from({ length: layers }, (_, l) => Math.max(worstRow(rowsAt(gotK, l), rowsAt(wantK, l), kvDim), worstRow(rowsAt(gotV, l), rowsAt(wantV, l), kvDim)));
-  const lines = offs.map((_, l) => Math.max(packed ? K_PACKED * q8s[l] : Math.max(GPU_LINE, K.float32 * e16s[l]), prompt[l]));
+  const lines = offs.map((_, l) => Math.max(packed ? K_PACKED_STEPS * q8s[l] : Math.max(GPU_LINE, K.float32 * e16s[l]), prompt[l]));
   const ratios = offs.map((off, l) => off / lines[l]);
   const at = worstAt(ratios);
   if (!(ratios[at] <= 1)) failures.push(`the keys and values of the steps' layer ${at} are ${offs[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);

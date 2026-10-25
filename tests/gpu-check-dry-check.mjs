@@ -58,7 +58,7 @@ for (const [id, layers] of Object.entries(MODELS)) {
   assert.deepEqual(own.slice(table + 2, table + 3 + layers).map((row) => row.split(" | ")[0]), [...Array.from({ length: layers }, (_, l) => `| ${l}`), "| all"]);
   assert.equal(own.filter((line) => line === `| layer | CPU | ${letters} |`).length, 2, `${id}: the other two tables`);
   assert.ok(own.some((line) => line.startsWith("- CPU: forward.js on the CPU: ")) && own.some((line) => line.startsWith(`- ${String.fromCharCode(64 + of.length)}: no form, no attention: `)));
-  assert.ok(own.some((line) => line.startsWith(`seconds of ${id}: NumPy (with its cache in float16, and Q8) `)));
+  assert.ok(own.some((line) => line.startsWith(`seconds of ${id}: NumPy (with its cache in float16, Q8 and H16) `)));
 }
 // what the made-up model alone is asked
 for (const start of ["  a GPU that answers late: not tried (", "  a fallback adapter without the tests' leave: prompts on the CPU (a fallback adapter", "  a GPU let go while it got ready: its worker ended in ",

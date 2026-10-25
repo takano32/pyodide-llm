@@ -55,7 +55,7 @@ function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
       `${(all(run) / e16).toFixed(1)} E16, ${(all(run) / q8).toFixed(2)} Q8, ${(all(run) / h16).toFixed(2)} H16, ${e(Math.max(...byLayer(run, half)))} from NumPy's with its cache in float16, ` +
       `${e(Math.max(...byLayer(run, eight)))} from Q8, the first layer's scale ${e(scale(run))} (against Q8 ${e(scale(run, eight))}), ${said(logits(run.logits))}${logits(run.logits).token === cpuLogits.token ? " as the CPU's" : ""}`);
   });
-  const seconds = { "NumPy (with its cache in float16, and Q8)": c.numpySeconds, "the plan": c.planSeconds, CPU: cpu.seconds };
+  const seconds = { "NumPy (with its cache in float16, Q8 and H16)": c.numpySeconds, "the plan": c.planSeconds, CPU: cpu.seconds };
   runs.forEach((run, i) => { seconds[`${letter(i)} (its GPU ready in ${run.readySeconds.toFixed(1)})`] = run.seconds; });
   console.log(`\nseconds of ${c.id}: ${Object.entries(seconds).map(([step, s]) => `${step} ${s.toFixed(1)}`).join(", ")}\n`);
 }
