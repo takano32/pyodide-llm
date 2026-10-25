@@ -263,6 +263,17 @@ for (const [isGone, event, told, askedFor] of [
   const thrown = (() => { try { run("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch (error) { return error; } })();
   assert.equal(thrown?.message, "a packing the GPU takes not", "gpuOnlyBuffer() throws its plan's error before it reckons a memory");
   assert.equal(workersMade.length, 0, "and opens no GPU's worker, which would be left");
+  // (T.576's review: and with a plan that does not throw, it is made before a memory is asked for, which comes before the
+  // GPU's worker is opened)
+  const order = [];
+  const { run: runAgain, context: again } = harness(true);
+  again.stand = { forward: { gpuOnlyPlan() { order.push(`plan, ${workersMade.length} workers`); return {}; }, needsWide: () => false,
+    weightsMemory() { order.push("memory"); throw new Error("no memory here"); } } };
+  runAgain("forwardModule = stand.forward; weightsPool = weightsNow = undefined");
+  const warned = console.warn;
+  console.warn = () => {};
+  try { runAgain("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch { /* the memory's, after the plan */ } finally { console.warn = warned; }
+  assert.deepEqual(order.slice(0, 2), ["plan, 0 workers", "memory"], `the plan before the memory and the worker (${order})`);
   cases += 1;
 }
 console.log("worker-outdated-check: weights.js fails a thread's start and hands on the GPU's worker as it did, and hands each one's error to outdated.js with its own address");
