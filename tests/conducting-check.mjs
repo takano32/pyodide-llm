@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { answered, fromFolder, listed } from "./conducting.mjs";
+import { answered, converted, fromFolder, listed } from "./conducting.mjs";
 import { pyProxies } from "./fakes/pyodide.mjs";
 
 const room = path.join(fileURLToPath(new URL("..", import.meta.url)), ".tmp", `conducting-check-${process.pid}`);
@@ -103,6 +103,28 @@ try {
     assert.throws(() => answered(played([["constructor", "weights"]]).steps, fromFolder(folder)), /asked for constructor/);
     assert.throws(() => answered(played([["text", "weights", "config.json"]]).steps, fromFolder(folder)), /ended without a word/);
     ok("a conduct that ends for want of a file says where, and what nothing answers ends the loop");
+  }
+  {
+    // T.422: converted() in a stand-in of Pyodide: the generator is closed and every proxy of it let go, the answerer
+    // closed, both where the conduct ends and where an answer fails (a steps.return() taken away went unseen before)
+    const pyOf = (requests) => {
+      const { steps } = played(requests);
+      const module = proxy({ conduct: { callKwargs: () => steps } }), model = proxy({});
+      return { steps, module, model, py: { pyimport: (name) => (assert.equal(name, "convert.conduct"), module), toPy: () => model } };
+    };
+    const conversion = proxy({});
+    let closed = 0;
+    const answerer = { answers: { text: () => "{}" }, missing: (where, name) => new Error(`no ${name}`), close: () => closed++ };
+    const ended = pyOf([["text", "weights", "config.json"], ["done", conversion]]);
+    assert.equal(converted(ended.py, {}, {}, answerer), conversion);
+    const failing = pyOf([["text", "weights", "config.json"], ["missing", "weights", "model.safetensors"]]);
+    assert.throws(() => converted(failing.py, {}, {}, answerer), /no model\.safetensors/);
+    for (const { steps, module, model } of [ended, failing]) {
+      assert.equal(steps.returned, 1, "the generator was not closed");
+      assert.deepEqual([steps.destroyed, module.destroyed, model.destroyed], [1, 1, 1], "a proxy of the conduct was not let go");
+    }
+    assert.equal(closed, 2, "the answerer was not closed");
+    ok("converted() closes the conduct's generator and lets go of its proxies and the answerer, whether it ends or fails");
   }
   {
     const gguf = folderOf("alone", { "model.Q8_0.gguf": "" });
