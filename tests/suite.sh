@@ -29,7 +29,7 @@ node() {
 # T.584: what Bun (1.4.4) cannot run, and why
 declare -A BUN_LEAVES=(
   [tests/memory-check.mjs]="its WebAssembly memory grows by a copy, about a second a time for a 1.8 GB model: past the limit"
-  [tests/blocks-forward-check.mjs]="its 64-bit WebAssembly memory is off (BUN_JSC_useWasmMemory64), and on it does not read the address field"
+  [tests/blocks-forward-check.mjs]="its 64-bit WebAssembly memory is off (BUN_JSC_useWasmMemory64), and on a shared one posted to a worker arrives 32-bit: oven-sh/bun#45739"
 )
 # each part's name and seconds, for the log (tests/ci.mjs reads the lines that start with "suite:" and "--- ")
 part() {
