@@ -221,8 +221,8 @@ export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, acti
   if (layerNorm) return REASONS.aloneNorms;
   // T.261: a Gemma 3's facts (its norms behind the attention and the FFN are rows of its file, which no line says: the
   // other two keep it off). An activation that is not a SiLU's is none the GPU's gate has, whatever it is. (T.261.4: a
-  // Gemma 3's prompts go to the GPU beside the CPU now; on the GPU alone its steps would have to as well, which a
-  // token's fused layer does not take yet: and the 270M and the 1B, 0.3 and 1.1 GB, are held twice where a GPU is)
+  // Gemma 3's prompts and (T.261.4.2) steps go to the GPU beside the CPU; the GPU alone has its GELU gate and its windows
+  // not yet, nor need of them: the 270M and the 1B, 0.3 and 1.1 GB, are held twice where a GPU is)
   if (activation !== "silu") return REASONS.aloneActivation;
   if (local) return REASONS.aloneLocal;
   return null;
