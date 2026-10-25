@@ -185,6 +185,11 @@ for (const [what, options] of [["a list of the copies that cannot be read", { un
   const { caches, said } = seeded();
   assert.equal(await worker({ caches, online: true, said, registered: "?v=new&offline=0" }).activate(), undefined);
   assert.deepEqual(said, ["delete the cache offline-v1", "claim"]);
+  // (T.449) and a deletion that fails keeps the claim from nothing
+  const refusing = { ...caches, delete: async () => { said.push("refused"); throw new Error("the deletion failed"); } };
+  said.length = 0;
+  assert.equal(await worker({ caches: refusing, online: true, said, registered: "?v=new&offline=0" }).activate(), undefined, "a deletion that fails does not fail the activation");
+  assert.deepEqual(said, ["refused", "claim"], "the pages are claimed after a deletion that failed");
 }
 // 7. What this file may not change without the owner's devices first (AGENTS.md: 2026-09-25, a change to how
 // another site's response passes was right in CI's browsers in the US and stopped the owner's phone and PC in Japan):
