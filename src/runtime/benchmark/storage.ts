@@ -74,9 +74,10 @@ async function run(mib: number): Promise<StorageRun> {
     } catch (error) {
       out.secondHandle = `refused (${(error as Error).name})`;
     }
-    doing = "sizing the file (truncate, flush)";
+    doing = "sizing the file (truncate)";
     began = performance.now();
     handle.truncate(size);
+    doing = "sizing the file (flush)";
     handle.flush();
     out.truncateSeconds = seconds(began);
     const bytes = new Uint8Array(PIECE);
@@ -119,15 +120,19 @@ async function run(mib: number): Promise<StorageRun> {
       for (const i of apart) {
         put(i);
         const f = performance.now();
+        doing = "a flush after each piece (flush)";
         handle.flush();
         const record = encoder.encode(JSON.stringify({ step: i, begin: i * PIECE, done: i, saved: Date.now() }));
+        doing = "rewriting the record of progress (truncate, write, flush)";
         progress.truncate(0);
         progress.write(record, { at: 0 });
         progress.flush();
+        doing = "writing far apart, a flush after each piece and the record rewritten";
         flushing += performance.now() - f;
       }
       out.scatteredFlushEach = { seconds: seconds(start), flushSeconds: flushing / 1000 };
     } finally {
+      doing = "closing the record of progress (close)";
       progress.close();
     }
     // (d) read back in order, and check that every piece is the one written there
@@ -141,6 +146,7 @@ async function run(mib: number): Promise<StorageRun> {
     }
     out.read = { seconds: seconds(began), wrong };
   } finally {
+    doing = "closing the file (close)";
     handle.close();
   }
   // the review of T.137 (5): once closed, the file opens again (a handle left open would look like another tab)
