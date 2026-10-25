@@ -175,7 +175,9 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
       const bits = (b64) => { const f = floats(b64); return new Uint32Array(f.buffer, f.byteOffset, f.length); };
       const cpuOwn = (got, want) => {
         const g = bits(got), w = bits(want), each = g.length / (32 * kvDim);
-        return g.every((word, i) => word === w[Math.floor(i / (32 * kvDim)) * n * kvDim + (i % (32 * kvDim))]) && w.length === each * n * kvDim;
+        // (T.558.1: but the positions a ring of the CPU's run no longer holds, which its run read over)
+        return g.every((word, i) => Math.floor((i % (32 * kvDim)) / kvDim) < (heldFrom?.[Math.floor(i / (32 * kvDim))] ?? 0)
+          || word === w[Math.floor(i / (32 * kvDim)) * n * kvDim + (i % (32 * kvDim))]) && w.length === each * n * kvDim;
       };
       const own = cpuOwn(r.keys, cpuRun.keys) && cpuOwn(r.values, cpuRun.values);
       if (r.gpuTokens !== 0 || r.after !== 0 || !NOT_FINITE_KV_STATUS.test(r.status ?? "") || !own) {
