@@ -1,6 +1,6 @@
 // The section "Model": the model page's worker itself, the page's path timed and the rounds (T.184, T.190).
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
-import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable } from "../bench.js";
+import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.js";
 import { BASE, $, parameters, type Result } from "./dom.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
 import type { BenchRow, ModelWorker, Progress, Round, ToWorker } from "../runtime/contracts/messages.ts";
@@ -78,7 +78,7 @@ export async function modelSection(): Promise<Result> {
     if (answer.error) return { status: "error", markdown: answer.error };
     const table = pathTable(paths, entry.name);
     measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide, paths: table, said: pathWarnings(paths) };
-    const lines = roundsTable(answer.rows);
+    const lines = [...roundsTable(answer.rows), ...[drift(answer.rows)].filter(Boolean).flatMap((line) => ["", line])];
     return { status: "ok", data: { rows: answer.rows, paths },
              markdown: `${entry.name} · Pyodide ${answer.pyodide}\n\n${lines.join("\n")}\n\n${table}` };
   } finally {

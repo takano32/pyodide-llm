@@ -6,7 +6,7 @@
 // (what came out wrong, at the report's head), cpu.js, gpu.js, layersteps.js and generate.js (the CPU's and the GPU's
 // tables), path.js (the page's own path), summary.js (a line a section) and cells.js (what the tables share).
 export { threadsOf, times, timesFaster, noRatios, tableCell, unmeasured } from "./bench/cells.js";
-export { ROUNDS, FULL_ROUNDS, MEMORY_UNSAID, roundsHere, environmentOf, benchMarkdown, roundsTable } from "./bench/rounds.js";
+export { ROUNDS, FULL_ROUNDS, MEMORY_UNSAID, DRIFT_LINE, roundsHere, environmentOf, benchMarkdown, roundsTable, drift } from "./bench/rounds.js";
 export { threadCounts, cpuTable, CPU_SPEED_KEY, USAGE_KEY, USAGE_DECAY, usedAfter, cpuBaseline } from "./bench/cpu.js";
 export { warnings, warningsBlock } from "./bench/warnings.js";
 export { REPOSITORY, QUESTIONS, reportBody, REPORT_LIMIT, TOO_LONG, PASTE, reportTooLong, reportUrl, loginUrl,

@@ -46,12 +46,13 @@ const failure = await page.evaluate(() => document.querySelector(".error")?.text
 assert.equal(failure, undefined, `the page reported: ${failure}`);
 const bench = await page.evaluate(() => window.__bench);
 console.log(bench.markdown);
-assert.equal(bench.rows.length, 2, "with and without the kernels");
+assert.deepEqual(bench.rows.map((row) => row.name), ["everything", "everything, before", "without the kernels", "everything, after"], "with and without the kernels, and the first twice more (T.555)");
+assert.match(bench.markdown, /\n\nThe last round ran the first one's switches again at \d+% of the speed of the second[.:]/, "the drift under the table (T.555)");
 for (const row of bench.rows) {
   assert.ok(row.speed > 0, `${row.name} measured nothing`);
   assert.ok(row.backend, `${row.name} did not say what ran`);
 }
-const [fast, slow] = bench.rows;
+const [, fast, slow] = bench.rows;
 assert.ok(fast.speed > slow.speed, `the kernels (${fast.speed.toFixed(1)}) must beat NumPy (${slow.speed.toFixed(1)})`);
 assert.ok(bench.markdown.includes("|---|---|---|---|"), "a table GitHub renders");
 // T.91: the link under the table opens the issue template, with the page's Markdown as the end of the body
