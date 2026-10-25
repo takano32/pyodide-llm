@@ -444,23 +444,24 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
       worker.terminate();
     });
   };
-  // (T.581: a worker opened and given nothing yet is let go of at once where what writes to it cannot be made)
+  // (T.581: a worker opened is let go of at once where what writes to it cannot be made or it cannot be told to open:
+  // it makes its device and buffers once it opens, from a plan it was handed whole)
   let weights: GpuOnlyWeights;
-  try {
-    weights = forwardModule!.gpuOnlyWeights({ memory, base, size, tensors, worker });
-  } catch (error) {
-    worker.terminate();
-    throw error;
-  }
   // T.377: a worker that says "error" before the engine is built (its script did not arrive, or it threw) takes no more
   // of the weights and counts none: the loops that write stop waiting for it at once (they waited 60 s, and the load
   // failed), and the engine, which listens from start() on, is handed the error it missed once it is built (failed)
   let failed: ErrorEvent | undefined;
-  worker.addEventListener("error", (event) => {
-    failed ??= event;
-    weights.gone();
-  });
-  worker.postMessage({ type: "open", plan, flow: weights.flow } satisfies ToGpu);
+  try {
+    weights = forwardModule!.gpuOnlyWeights({ memory, base, size, tensors, worker });
+    worker.addEventListener("error", (event) => {
+      failed ??= event;
+      weights.gone();
+    });
+    worker.postMessage({ type: "open", plan, flow: weights.flow } satisfies ToGpu);
+  } catch (error) {
+    worker.terminate();
+    throw error;
+  }
   // (T.156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.ts's aloneVerdict)
   const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
