@@ -45,7 +45,9 @@ export function markdownOf(marked: MarkedModule, purify: Purify): Markdown {
   const reader = markedFor(marked);
   return {
     blocks: (text) => reader.lexer(text),
-    html: (block, links) => purify.sanitize(reader.parser(Object.assign([block], { links })), { ALLOWED_TAGS: ELEMENTS, ALLOWED_ATTR: ATTRIBUTES, RETURN_DOM_FRAGMENT: true }),
+    // (T.559: and no data-* or aria-* either, which DOMPurify lets through beside ALLOWED_ATTR unless told not to)
+    html: (block, links) => purify.sanitize(reader.parser(Object.assign([block], { links })), { ALLOWED_TAGS: ELEMENTS, ALLOWED_ATTR: ATTRIBUTES,
+      ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false, RETURN_DOM_FRAGMENT: true }),
   };
 }
 
