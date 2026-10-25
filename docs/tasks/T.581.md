@@ -1,0 +1,4 @@
+### T.581 [整理][WebGPU] GPU だけのモデルで、GPU の Worker を開いた後に投げうる所の後始末 — 状態: 完了（2026-10-25、Opus medium。前の状態: 未着手、2026-10-25、T.576 のレビューの勧め。規模 小）
+- `gpuOnlyBuffer()` は `openGpu()` の後で `gpuOnlyWeights()` と `layerWeightsOf()` を呼ぶ。今は投げる道が無いが、投げれば Worker が残る。開いた後の段を `try` で包んで `end()` を呼ぶか、投げうる計算を開く前に寄せる。
+- **結果**: 見出しから数えるだけの `layerWeightsOf()` は計画と一緒に Worker を開く前に呼び、Worker を開いた後の `gpuOnlyWeights()` が投げたら、何も送っていない Worker をすぐ `terminate()` して投げ直す。試験は `tests/worker-outdated-check.mjs`: `layerWeightsOf()` が投げる代役で Worker が作られないこと、`gpuOnlyWeights()` が投げる代役で作った Worker が閉じられていること（壊し方 2 つ: 前の weights.ts と、`terminate()` だけを外した版が、それぞれ落ちる）。CI を省いた。訳: worker の中だけの変更で、手元の試験がこの道を回す。
+- レビュー（Sonnet low、2026-10-25）: must-fix なし。`open` を送る前の Worker は何も持たないので `terminate()` だけでよい。should 2 つを入れた: `open` の `postMessage()`（複製できない計画なら投げる）も同じ `try` に入れた。`gpuOnlyWeights()` の場合も作った Worker の数（1）を断言する（0 個でも通る `every()` だけだった）。軽い組を回し直した。

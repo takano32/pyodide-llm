@@ -287,7 +287,7 @@ for (const throwing of ["layerWeightsOf", "gpuOnlyWeights"]) {
   const thrown = (() => { try { run("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch (error) { return error; } })();
   assert.equal(thrown?.message, `${throwing} threw`);
   assert.ok(workersMade.every((worker) => worker.terminated), `${throwing} threw: no GPU's worker left open (${workersMade.length} made)`);
-  if (throwing === "layerWeightsOf") assert.equal(workersMade.length, 0, "the header's reckoning before the worker is opened");
+  assert.equal(workersMade.length, throwing === "layerWeightsOf" ? 0 : 1, "the header's reckoning before the worker is opened, its writer after");
   cases += 1;
 }
 console.log("worker-outdated-check: weights.js fails a thread's start and hands on the GPU's worker as it did, and hands each one's error to outdated.js with its own address");
