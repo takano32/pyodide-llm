@@ -8,7 +8,7 @@ import { pyodide, llama2_numpy, pythonKernels, blockKernels } from "./runtime.ts
 import { switchesNow } from "./request.ts";
 import { adopted } from "./loaded.ts";
 import { since, took } from "./clock.ts";
-import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink, runsPacked, tableInMemoryFromNow } from "./weights.ts";
+import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
 import { templatePackage, placePython } from "./pyodide.ts";
@@ -153,6 +153,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
   // those, fetched here for it before anything of it is placed (the memory is chosen in the middle of the conversion).
   // A load that does not run on the int8 kernels gets the blocks widened, as a model without the word: another
   // conversion, kept under another name (kept.ts)
+  blocksWidenedNow(Boolean(model.conversion?.blocks) && !runsPacked());
   if (model.conversion?.blocks) {
     if (runsPacked()) await blockKernels();
     else model = { ...model, conversion: { ...model.conversion, blocks: false } };

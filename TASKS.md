@@ -198,7 +198,7 @@
 - T.498 [整理][遠隔試験] T.391.6 の後の残り — 未着手
 - T.499 [整理][WebGPU] T.391.4 の後の残り — 未着手
 - T.502 [整理][その他] T.363（Saluki のエンジン）の後の残り — 未着手
-- T.503 [整理][Saluki] 塊のモデルの文面の残り — 持ち主の文面待ち
+- T.503 [整理][Saluki] 塊のモデルの文面の残り — 進行中
 - T.505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 進行中
 - T.506 [不具合][遠隔試験] WebKit 27.2 で 4 GB を越えるモデルが、断られずに黙って止まる — 調べは完了
 - T.508 [整理][変換] T.505.3 の残り — 未着手
@@ -1380,7 +1380,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 試験: Granite・GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で通す試験が無い（広げる道に落ちることは読んだだけ）。`signed_dots` を聞かずに符号つきのタイルを取る壊し方は x86-64 の CI でだけ落ちる。`blocks-forward-check` が軽い組に 14 秒足す。束ねた worker が `_astro/` から塊のカーネルを取る所と、`updated-in-browser.mjs` の塊のカーネルが 404 の場合は、ブラウザで通していない（T.364）。
 - `tests/kernels-in-browser.mjs` の頭の「WebKit has no such memory」は古い（Playwright の WebKit 27.2 は Linux で 64 ビットのメモリを作る）。`tests/ci.mjs run A + B` の `--ref` は最後に 1 回だけ書く（組ごとに書くと 2 つ目が始まらない: 道具の頭に書く）。
 
-### T.503 [整理][Saluki] 塊のモデルの文面の残り — 状態: 持ち主の文面待ち（2026-10-13、T.363.5・T.364 から。規模 小。最後にまとめて聞く） **持ち主（2026-10-15、選択肢）: 訳を言う文に**（SIMD の無いブラウザ・`?without=kernels` の塊のモデルは「This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.」、GPU に置かない訳は「llama.cpp's blocks are not on the GPU yet」）。実装待ち。
+### T.503 [整理][Saluki] 塊のモデルの文面の残り — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.503-blocks-texts`。前の状態: 持ち主の文面待ち、2026-10-13、T.363.5・T.364 から。規模 小。最後にまとめて聞く） **持ち主（2026-10-15、選択肢）: 訳を言う文に**（SIMD の無いブラウザ・`?without=kernels` の塊のモデルは「This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.」、GPU に置かない訳は「llama.cpp's blocks are not on the GPU yet」）。実装待ち。
+- **結果（2026-10-25）**: (1) カーネルの無い読み込みの塊のモデルは持ち主の文で断る: worker の `weightsBuffer()` が NumPy の道（Python の 32 ビットのメモリ）で、項目が塊を持ち、この読み込みが広げる（`convert.ts` が `blocksWidenedNow()` で言う）とき、大きさが 4 GiB を越えれば「This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.」（重みを取る前、見出しを読んだ所で）。小さい塊の項目（4-bit の Shisa、広げて 0.3 GB）は今までどおり広げて動く。`?without=int8`（カーネルはある）は今の「…needs about 32 GB…」のまま（持ち主の文は SIMD のカーネルを言う）。試験: `worker-sink-check`（大きい塊は断る・小さい塊と塊でない大きいものは断らない。壊し方「断らない」が落ちる）。(2) GPU に置かない訳「llama.cpp's blocks are not on the GPU yet」は要らなくなった: T.547 で Saluki の 10 種類の塊の型は全部 GPU に置けるようになり、塊の行列で「float32 weights…」と出る道は無い（`gpu-part-check` の表の Q6_K は塊でなく広げる型）。CI を省いた。訳: worker の Node の試験で踏める。取りまとめ役の決め: 線は Python のメモリの 4 GiB（それより小さい塊の項目は広げて動くか、メモリ不足の今の文で落ちる）。
 - **塊のモデルを GPU に置かない訳**: hybrid でない塊のモデルができると、ステータス行の「prompts on the CPU (…)」に「float32 weights are not on the GPU yet」が出る（誤り）。案「llama.cpp's blocks are not on the GPU yet」。Saluki は linear の層の訳が先に出るので当たらない。GPU だけの道の断り（「rows of kinds of their own: such weights stay on the CPU」）は訪問者にもコンソールにも出ない。
 - **SIMD のカーネルの無いブラウザ・`?without=kernels` で塊のモデル**: いまは広げた大きさで「…it needs about 32 GB of memory…」と断る。案「This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.」
 - **NOTICE の表示**: Saluki は Apache-2.0 で、NOTICE が元の 2 つ（Qwen3.8-27B、ISTA の GSQ-RCO）を名指す。ページは重みを配らないので今のまま（一覧のライセンス名だけ）が勧め。名指すなら About に。

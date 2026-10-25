@@ -257,6 +257,14 @@ assert.equal(destroyed, 1, "a second open() kept the first buffer");
 into.release();
 into.release();
 assert.equal(destroyed, 2, "release() let go of the buffer not once");
+// T.503: a model of llama.cpp's blocks widened past Python's 32-bit memory is refused in the owner's words; a small one
+// widened, and a large one that is no model of blocks, are not
+vm.runInContext(strictly("blocksWidenedNow(true)"), context);
+assert.throws(() => into.sink.open(5e9, proxy(QWEN3), "int8", proxy(qwen3)), /^Error: This model runs on the SIMD kernels only, which this browser \(or \?without=kernels\) leaves out\.$/);
+into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
+vm.runInContext(strictly("blocksWidenedNow(false)"), context);
+into.sink.open(5e9, proxy(QWEN3), "int8", proxy(qwen3));
+into.release();
 console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
 
 // T.329.2.2: a Gemma 4's table of every layer's inputs stays in the file the checkpoint is kept in. On the first visit

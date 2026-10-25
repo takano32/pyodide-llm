@@ -63,6 +63,9 @@ const cpuOnly = new Set<string | undefined>();
 // of the kept checkpoint: the only one its file can have), or undefined; and the models whose table could not be read
 // so, which keep it in the memory from then on (this visit)
 let rowsNow: Reader | undefined, rowsWhole: (() => boolean) | undefined;
+// T.503: the load now is of a model whose entry keeps llama.cpp's blocks, which this load widens (it does not run on
+// the int8 kernels: convert.ts)
+let blocksWidened = false;
 const tableInMemory = new Set<string | undefined>();
 const modelKey = (model: Listed) => model.hf ? `hf:${model.hf.repo}@${model.hf.revision}` : model.id ?? model.name;
 
@@ -95,6 +98,10 @@ export const tableApart = () => !tableInMemory.has(loadingKey);
 /** T.329.2.2: the model loading now keeps its table in the memory from now on (its kept file could not be opened) */
 export function tableInMemoryFromNow(model: Listed) {
   tableInMemory.add(modelKey(model));
+}
+/** T.503: the model loading now keeps llama.cpp's blocks in its entry, and this load widens them (true), or not */
+export function blocksWidenedNow(widened: boolean) {
+  blocksWidened = widened;
 }
 /** T.156: the GPU stopped under this model while it was on the GPU alone: on the CPU from now on, this visit */
 export function onCpuFromNow(model: Listed) {
@@ -353,6 +360,9 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     };
   }
   weightsNow = undefined;
+  // T.503: a model of blocks widened past what Python's 32-bit memory holds runs on the SIMD kernels alone (Saluki:
+  // about 32 GB widened). The words are the owner's (2026-10-15)
+  if (blocksWidened && size > 2 ** 32) throw new Error("This model runs on the SIMD kernels only, which this browser (or ?without=kernels) leaves out.");
   const { buffer, write } = pythonBuffer(size);
   return {
     hole: null,
