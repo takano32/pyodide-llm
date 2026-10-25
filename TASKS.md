@@ -189,7 +189,7 @@
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 未着手
-- T.589 [バグ][変換] `rotary_pct` を書かない GPT-NeoX の config を全部回すと読む（transformers は 0.25） — 未着手
+- T.589 [バグ][変換] `rotary_pct` を書かない GPT-NeoX の config を全部回すと読む（transformers は 0.25） — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1508,5 +1508,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 状態: 未着手（2026-10-25、T.435 のレビューから。規模 小）
 - `tests/tree.mjs`（と `tree-check.mjs` の「all in public」「the Python moved」の作り物の木）と `tests/imports.mjs`（`bundled` でない木の `?v=` つきの動的 import の読み手、`importsOf(…, { bundled })`）は、T.367 の前の木の形も読む。網が相手にする最も古い木 `f91d83f9`（2026-10-12）はもう `src/runtime/` の形。ほかに古い木を読む道具（`compare-builds.sh`・`abba-convert.sh`・`kernelSources()` に古いコミットを渡す使い方）が無いかを確かめてから、読み手と作り物を消す。消すと道具がその形の木を断るようになる（今は黙って読む）。
 
-### T.589 [バグ][変換] `rotary_pct` を書かない GPT-NeoX の config を全部回すと読む（transformers は 0.25） — 状態: 未着手（2026-10-25、T.387 のレビューから。規模 小）
+### T.589 [バグ][変換] `rotary_pct` を書かない GPT-NeoX の config を全部回すと読む（transformers は 0.25） — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-25、T.387 のレビューから。規模 小）
 - `src/python/convert/families/family.py` の `rotary_dim()` は鍵が無いとき 1.0 を取る。transformers の `GPTNeoXConfig` の既定は 0.25。一覧の実物の config はどれも鍵を書くので、いま変わるモデルは無い見込み（`tests/conversions_compare.py` で確かめる）。直すなら `neox_names()` で鍵の無い config に 0.25 を置く（Qwen3.5 も `rotary_dim()` を読む: 家族ごとに既定を分ける）。変換の options が変わりうるので `CONVERTER` の回にまとめるかを見る。
+- **結果（2026-10-25）**: `src/python/convert/families/gpt2.py` の `neox_names()` が `rotary_pct` を `rotary_pct` → `partial_rotary_factor` → 0.25 の順で置く（Qwen3.5 の `qwen35.py` と同じ形: 家族ごとの既定）。`tests/test_families.py` に、鍵が無いと 4 分の 1、書いてあればその値（1.0・`partial_rotary_factor` 0.5）の試験（壊し方: 既定を 1.0 にすると落ちる）。一覧の NeoX のモデル（Pythia 5 つと rinna の japanese-gpt-neox-small）は config に鍵を書く（0.25・1.0: 確かめた）ので変わらない。GGUF の道は `rope.dimension_count` から置く（前のまま）。`CONVERTER` は上げない（取りまとめ役の決め: 一覧の変換は変わらず、鍵の無い NeoX の `?hf=` の保存は実在の見込みが無い）。確かめ: 軽い組を通しで（455 秒）。CI を省いた。訳: 変換器の既定 1 つで、pytest と軽い組が踏む。
