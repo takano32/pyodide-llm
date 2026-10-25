@@ -76,7 +76,9 @@ if (!/^(local|hf|url|default|hf:.+)$/.test(model) && !MODELS.some((entry) => ent
 const expected = {
   stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   local: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
-  hf: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
+  // (T.401: its files have a chat template, which writes the prompt as it is: the answer is the same text, after the
+  // prompt, which a model of a template is not shown back)
+  hf: ", there was a little girl named Lily. She loved to play outside in the park.",
   url: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   "stories15M-f32": "Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.",
 };
