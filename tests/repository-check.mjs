@@ -18,7 +18,7 @@ import { PAGES, QUANTIZATIONS, SAFETENSORS, bestGguf, filesOf, looked, noteOf, q
 import { keptName, keptNames } from "../src/runtime/kept.ts";
 // (the page's module reads its address where it is loaded: there is none here)
 globalThis.location ??= { search: "" };
-const { FILE, hfEntry, unlisted } = await import("../src/page/address.ts");
+const { FILE, FILE_MOST, hfEntry, unlisted } = await import("../src/page/address.ts");
 
 // ---- the order, written a second time: the owner's four (2026-10-13: Q8_0, else Q6_K, Q5_K_M, Q4_K_M) keep their
 // order among themselves; the floats and a ternary model's own types stand right after Q8_0; what is below four bits
@@ -211,6 +211,10 @@ console.log("ok: safetensors first where a repository has them, else its best GG
 }
 
 // ---- the address a file may be named in (&file=, and the sheet's field by the same pattern)
+// (T.508.4: FILE_MOST characters at the most, as the pattern says it)
+assert.equal(FILE.source.includes(`.{1,${FILE_MOST}}`), true, "FILE_MOST is not the length the pattern says");
+assert.ok(FILE.test(`${"a/".repeat(126)}m.gguf`.slice(-FILE_MOST)) && FILE.test("m".repeat(FILE_MOST - 5) + ".gguf"), "a name of FILE_MOST characters is no file of an address");
+assert.ok(!FILE.test("m".repeat(FILE_MOST - 4) + ".gguf"), "a name past FILE_MOST characters is taken for a file of an address");
 for (const name of ["m-Q8_0.gguf", "Qwen3-0.6B-Q8_0.gguf", "Q8_0/m.gguf", "a.b/c_d/e-f.gguf", "model.fp16.safetensors", "..gguf"]) assert.ok(FILE.test(name), `${name} is no file of an address`);
 for (const name of ["", "../m.gguf", "a/../m.gguf", "a/..", ".", "./m.gguf", "/m.gguf", "m.gguf/", "a//b.gguf", "m gguf", "m.gguf?x=1", "m.gguf#x", "https://example.com/m.gguf", "a\\b.gguf", "m%2Fgguf"]) {
   assert.ok(!FILE.test(name), `${JSON.stringify(name)} is taken for a file of an address`);
