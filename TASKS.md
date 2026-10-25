@@ -40,7 +40,7 @@
 - T.411 [試験][遠隔試験] フォルダの道でまだ見ていないもの — 未着手
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
-- T.431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 未着手
+- T.431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 進行中
 - T.433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 未着手
 - T.435 [整理][その他] T.367.2 の小さな気づき — 未着手
 - T.436 [整理][遠隔試験] `tests/e2e.mjs` の `E2E_THEN` と `E2E_TWICE` を一緒に頼むと、HF のモデルは必ず落ちる — 未着手
@@ -547,7 +547,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 段取りが自分で渡す分（最大約 30 MiB）の変換の時間は「convert」の秒（T.84）に入らず、`weightsRoom()` も待たない（T.156 の線 64 MiB の内）。頭の片が届く間は進みを言わない（3 つ目の片は 24 MiB を 1 回の `fetchRange()` で、刻まず並べず）。頭と一緒に全部届く GGUF（2 MiB 未満）は進みを 1 回も言わない（一覧のいちばん小さい GGUF は 16.7 MB）。その大きさの GGUF を実ブラウザで通していない。
 - 答え手が手元の分より小さい大きさを言うと、始まりが終わりより後のストリームを頼む（前の `base > size` と同じ形）。
 
-### T.431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 状態: 未着手（2026-10-11、T.367.1 から。前からある。規模 小）
+### T.431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-11、T.367.1 から。前からある。規模 小）
+- **結果（2026-10-25）**: `tests/test_converter_version.py` は import の前に `tests/tree.py` の `python_folder()` を `sys.path` に置く（pytest では `conftest.py` が置くが、`--write` で直に走らせると「No module named 'llama2_convert'」で止まっていた: 直す前に再現した）。`--write` が 0 で終わり fixture は同じ、pytest も通る。CI を省いた。訳: 手で走らせる試験の道具 1 か所で、手元で両方の走り方を回した。
 
 ### T.433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 状態: 未着手（2026-10-11、T.367.2 のレビューから。規模 小。T.367.3 で束ね方が決まるときに一緒に）
 - `src/python/*.py` を直しても、立ち上げ直すまで古い `public/engine.zip` が配られ、何も言わない。`astro dev`・`astro build` を npm を通さずに直に呼ぶと zip が無く「Could not fetch engine.zip: 404」。軽い組の `python-archive-check` は「zip がソースと合う」を見るが、開発中には走らない。小さな Vite のプラグインか見張りで作り直すか、古いときに言う。

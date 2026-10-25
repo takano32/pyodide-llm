@@ -13,9 +13,12 @@ import re
 import sys
 from pathlib import Path
 
-import llama2_convert
-from made_up_tokenizers import byte_level, model, sentencepiece
-from tree import runtime_folder
+from tree import python_folder, runtime_folder
+
+# (T.431: run as a script, --write, the Python of the site is on no path yet: conftest.py puts it there for pytest)
+sys.path.insert(0, python_folder(Path(__file__).resolve().parent.parent))
+import llama2_convert  # noqa: E402
+from made_up_tokenizers import byte_level, model, sentencepiece  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "converter-output.json"
 CHATML = "{% for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_end|>\n{% endfor %}{{ '<|im_start|>assistant\\n' }}"
