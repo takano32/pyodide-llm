@@ -231,7 +231,8 @@ const CASES = {
     // and it is the page that is old, not the model: the next model of the visit says it too, though nothing fails now
     rule = () => undefined;
     await page.selectOption("#model", "tiny-lm");
-    await page.waitForFunction(() => /^tiny-lm .* · Pyodide /.test(document.getElementById("status-text").textContent) && document.getElementById("run")?.disabled === false, null, { timeout: 180000 });
+    // (T.583: the name has its maker before it since T.523, "SB Intuitions tiny-lm 29M": not at the line's start)
+    await page.waitForFunction(() => /\btiny-lm .* · Pyodide /.test(document.getElementById("status-text").textContent) && document.getElementById("run")?.disabled === false, null, { timeout: 180000 });
     await saysSlower(`${name} (the next model)`, page, await page.evaluate(() => document.getElementById("status-text").textContent));
   }),
   "model page, the kernels answered 500": goingOn(KERNELS, 500, 404, (name, page, said) => {
