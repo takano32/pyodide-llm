@@ -1,13 +1,15 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
 
 // T.433: the site's Python as the two archives the workers fetch (python_archive.py, T.367.2: src/runtime/built/), made
 // when a build or the development server starts (an `astro dev` or `astro build` called without npm had none: "Could not
 // fetch engine.zip: 404"), and made again, and the page reloaded, whenever a .py of src/python/ changes under the
 // development server (it served the archives of its start, and said nothing). Under 0.1 s: made whole every time.
-const PYTHON = path.resolve("src/python");
-const archives = () => execFileSync("python3", ["python_archive.py"], { stdio: ["ignore", "ignore", "inherit"] });
+// (by where this file is, whatever folder astro is called from)
+const ROOT = path.dirname(fileURLToPath(import.meta.url)), PYTHON = path.join(ROOT, "src", "python");
+const archives = () => execFileSync("python3", [path.join(ROOT, "python_archive.py")], { stdio: ["ignore", "ignore", "inherit"] });
 const pythonArchives = () => ({
   name: "python-archives",
   buildStart: archives,
@@ -15,7 +17,13 @@ const pythonArchives = () => ({
     server.watcher.add(PYTHON);
     server.watcher.on("all", (event, file) => {
       if (!file.startsWith(PYTHON + path.sep) || !file.endsWith(".py")) return;
-      archives();
+      // (a .py saved broken is said, and the server goes on: the next save makes them again)
+      try {
+        archives();
+      } catch (error) {
+        server.config.logger.error(`python-archives: ${path.relative(PYTHON, file)} ${event}: the archives not made again (${error.message})`);
+        return;
+      }
       server.config.logger.info(`python-archives: ${path.relative(PYTHON, file)} ${event}: the archives made again`);
       server.ws.send({ type: "full-reload" });
     });

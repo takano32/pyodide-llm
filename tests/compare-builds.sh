@@ -22,7 +22,8 @@ cd "$(dirname "$0")/.."
 ref="${1:-origin/main}"; rounds="${2:-21}"; times="${3:-2}"; shift $(( $# < 3 ? $# : 3 ))
 [ -d dist/_astro ] || { echo "compare-builds: no dist/_astro here: npm run build"; exit 1; }
 other=$(node -e "import('./tests/other-tree.mjs').then((m) => process.stdout.write(m.otherTree(process.argv[1]).folder))" "$ref")
-# the other commit's build: its sources, this tree's packages and built files (kernels, archives: not what is measured)
+# the other commit's build: its sources, this tree's packages and built files (kernels, archives: not what is measured;
+# a commit with T.433's plugin makes its archives again of its own sources as its build starts)
 [ -e "$other/node_modules" ] || ln -s "$PWD/node_modules" "$other/node_modules"
 mkdir -p "$other/src/runtime/built" && cp src/runtime/built/* "$other/src/runtime/built/"
 (cd "$other" && rm -rf dist && npx astro build > build.txt 2>&1) || { tail -20 "$other/build.txt"; echo "compare-builds: the build of $ref failed"; exit 1; }
