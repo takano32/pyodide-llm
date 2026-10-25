@@ -368,6 +368,7 @@ def test_the_tying_of_the_classifier_where_a_config_does_not_say():
 
 def test_a_neox_that_rotates_none_of_a_head_is_refused():
     from convert.families.gpt2 import neox_check
+    assert FAMILIES["gpt_neox"].check is neox_check  # (the table's row is the function tested here)
     config = {"hidden_size": 64, "num_attention_heads": 4, "hidden_act": "gelu"}
     neox_check({**config, "rotary_pct": 0.25})  # (4 of a head's 16: taken)
     with pytest.raises(ValueError, match="it rotates none of each head"):
