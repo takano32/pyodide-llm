@@ -244,6 +244,33 @@ def test_the_shared_layers_are_the_forms_and_read_what_they_can():
         Dims([32, 64, 6, 4, 1, 320, 24], {**form, "kv_shared": {"layers": [4, 5], "from": [3, 2]}})
 
 
+def test_a_shared_layer_attends_the_window_of_the_layer_it_reads():
+    """T.518: a layer that reads another's keys and values attends a window where that one does and none where it does
+    not (the CPU keeps a window's keys and values in a ring, which the reader takes as the layer it reads keeps it):
+    refused otherwise, by the plan and by NumPy's model"""
+    from engine.layout import check_shared_windows
+    from engine.plan import Settings, layer_facts
+    form = {"arch": "gemma4", "head_dim": 16, "wide": {"layers": [1, 3, 5], "head_dim": 32},
+            "kv_shared": {"layers": [4, 5], "from": [2, 3]}}
+    dims = Dims([32, 64, 6, 4, 1, 320, 24], form)
+    same = {"layers": [0, 2, 4], "window": 4, "rope_theta": 100.0}
+    check_shared_windows(dims.sharing, same)
+    check_shared_windows(dims.sharing, None)
+    assert len(layer_facts(dims, Settings(int8=True, kv_start=8, local=same))) == 6
+    for other in ({"layers": [0, 2], "window": 4, "rope_theta": 100.0}, {"layers": [0, 4], "window": 4, "rope_theta": 100.0}):
+        with pytest.raises(ValueError, match="Layer 4 cannot read the keys and values of layer 2: one of them attends a window"):
+            layer_facts(dims, Settings(int8=True, kv_start=8, local=other))
+    # (NumPy's model the same: a made-up Gemma 4 whose shared layers read their kind's, given local layers of another sort)
+    tensors, config = gemma4_model(kinds="ssllsssl", sharing=4)
+    made = conversion(tensors, config, "float32")
+    passed = {key: value for key, value in made.options.items() if key in PASSED}
+    vocabulary = pack_tokenizer(tiny_vocab(text(config)["vocab_size"]))
+    Llama(bytes(made.stream.out), vocabulary, **passed)
+    local = dict(passed["local"])
+    with pytest.raises(ValueError, match="one of them attends a window"):
+        Llama(bytes(made.stream.out), vocabulary, **{**passed, "local": {**local, "layers": [layer for layer in local["layers"] if layer < 4]}})
+
+
 def test_a_shared_layer_keeps_no_keys_and_values_and_reads_its_sources():
     tensors, config = gemma4_model(kinds="ssllsssl", sharing=4, double=True)
     llama = engine(tensors, config)[0]

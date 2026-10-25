@@ -34,7 +34,8 @@ import numpy as np
 from engine.checkpoint import OUTLIER_CHANNELS, outlier_channels, outside
 from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
-from engine.layout import ATTENDING, DOUBLE, NARROW, NARROW_KEPT, SINGLE, TABLE, WIDE, WIDE_KEPT, linear_widths, local_layers, unturned_layers
+from engine.layout import (ATTENDING, DOUBLE, NARROW, NARROW_KEPT, SINGLE, TABLE, WIDE, WIDE_KEPT, check_shared_windows, linear_widths, local_layers,
+                           unturned_layers)
 
 # the kind of a layer that attends over all the positions (and keeps keys and values); a layer that keeps a state in
 # their place is of the kind its architecture has (engine/layout.py's Stateful, by its name: "linear", "convolution")
@@ -89,6 +90,7 @@ def layer_facts(dims, settings):
     option, as another field of Settings)."""
     unturned = unturned_layers(dims.arch, dims.n_layers, settings.unturned)
     local = local_layers(dims.arch, dims.n_layers, settings.local) or {"layers": (), "window": 0}
+    check_shared_windows(dims.sharing, local)
     turning = any(row.role == TABLE for row in dims.rows())
     wide, double = dims.layers(WIDE), dims.layers(DOUBLE)
     narrow, single = dims.layers(NARROW), dims.layers(SINGLE)
