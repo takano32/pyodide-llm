@@ -41,6 +41,11 @@ on:
         type: boolean
         required: false
         default: false
+      updated:
+        description: 'T.441: also run tests/updated-in-browser.mjs in the three engines, as the nightly run does'
+        type: boolean
+        required: false
+        default: false
       minutes:
         description: 'T.238: the time limit of the job in minutes (optional, 90)'
         required: false
@@ -93,6 +98,23 @@ jobs:
         run: |
           npm run build
           node tests/dist-check.mjs
+
+      # T.441: a page left open across a deployment (tests/updated-in-browser.mjs: 39 cases, the model page's and
+      # /benchmark/'s), in the three engines, on the site just built: nightly, as nothing else runs it on a schedule
+      - name: Install the browsers (nightly)
+        if: ${{ github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true' }}
+        timeout-minutes: 20
+        run: |
+          bash tests/apt-timeouts.sh
+          npx playwright-core install --with-deps chromium firefox webkit
+
+      - name: A page left open across a deployment (nightly)
+        if: ${{ github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true' }}
+        timeout-minutes: 45
+        run: |
+          failed=0
+          for engine in chromium firefox webkit; do node tests/updated-in-browser.mjs "$engine" || failed=1; done
+          exit "$failed"
 
       - name: More
         if: ${{ inputs.extra != '' }}
