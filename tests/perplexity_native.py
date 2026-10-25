@@ -28,8 +28,14 @@ if "--eps" in args:
     eps = float(args[at + 1])
     del args[at:at + 2]
 out, count, text = args[0], int(args[1]), Path(args[2]).read_text()
+options = json.loads(Path(f"{out}.json").read_text())
 llama = Llama(np.memmap(f"{out}.bin", dtype=np.uint8, mode="r"), Path(f"{out}.tokenizer.bin").read_bytes(), kernels=None,
-              **{**json.loads(Path(f"{out}.json").read_text()), **({"rms_norm_eps": eps} if eps else {})})
+              **{**options, **({"rms_norm_eps": eps} if eps else {})})
+# (T.452: a float32 file holds the RoPE tables the converter made of config.json, and the engine reads them, never the
+# options: where the options (an entry's, through perplexity_prepare.py --entry) say the scaling, its tables, as the page)
+if options.get("dtype") == "float32" and "rope_scaling" in options:
+    from fixed_outputs import with_the_entrys_rope
+    with_the_entrys_rope(llama, options)
 tokens = llama.tokenizer.encode(text)[:count]
 started = time.perf_counter()
 value, n = perplexity(llama, tokens, min(512, llama.seq_len))

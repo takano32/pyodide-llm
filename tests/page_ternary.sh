@@ -70,8 +70,13 @@ sys.path.insert(0, python_folder())
 from llama2_numpy import Llama
 out, rows = sys.argv[1], {}
 for dtype in ("float32", "ternary"):
+    options = json.loads(Path(f"{out}/{dtype}.json").read_text())
     llama = Llama(np.memmap(f"{out}/{dtype}.bin", dtype=np.uint8, mode="r"), Path(f"{out}/{dtype}.tokenizer.bin").read_bytes(),
-                  kernels=None, **json.loads(Path(f"{out}/{dtype}.json").read_text()))
+                  kernels=None, **options)
+    # (T.452: the float32 file's tables are the converter's; the entry's RoPE on it, as the ternary one turns by it)
+    if dtype == "float32" and "rope_scaling" in options:
+        from fixed_outputs import with_the_entrys_rope
+        with_the_entrys_rope(llama, options)
     token, rows[dtype] = llama.bos, []
     for pos in range(6):
         rows[dtype].append(np.array(llama.forward(token, pos)))
