@@ -13,8 +13,9 @@ import path from "node:path";
 
 const [seconds, ...script] = process.argv.slice(2);
 const reports = fs.mkdtempSync(path.join(fs.existsSync(".tmp") ? ".tmp" : os.tmpdir(), "limited-"));
-const child = spawn(process.execPath, ["--report-on-signal", "--report-signal=SIGUSR2", `--report-directory=${reports}`,
-  ...process.execArgv, ...script], { stdio: "inherit" });
+// (T.584: Bun takes none of Node's reports: the limit is kept all the same, without the report of where the test stood)
+const reporting = process.versions.bun ? [] : ["--report-on-signal", "--report-signal=SIGUSR2", `--report-directory=${reports}`];
+const child = spawn(process.execPath, [...reporting, ...process.execArgv, ...script], { stdio: "inherit" });
 let stopped = false;
 const limit = setTimeout(() => {
   stopped = true;

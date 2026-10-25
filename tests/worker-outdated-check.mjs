@@ -17,6 +17,7 @@
 // It does not see: runtime.js's init() (Pyodide comes from its CDN: the kernels' and forward.js's catches are read as
 // text by tests/updated-check.mjs, and run in tests/updated-in-browser.mjs), the page (tests/page-parts-check.mjs),
 // a browser.
+import { fresh as anew } from "./fresh.mjs";
 import assert from "node:assert/strict";
 import { madeUpNetwork, status, failing, hang } from "./fakes/fetch.mjs";
 import { workers } from "./fakes/worker.mjs";
@@ -28,9 +29,8 @@ const here = { origin: "https://takano32.github.io" };
 const WORKER = "https://takano32.github.io/pyodide-llm/_astro/worker.BwFFQ8AO.js";
 const posted = [];
 globalThis.postMessage = (message) => posted.push(message);
-let made = 0;
-// outdated.js anew: what it holds (whether the page was told) is a visit's
-const fresh = () => import(`${runtimeUrl("worker/outdated.js")}?case=${made++}`);
+// outdated.js anew: what it holds (whether the page was told) is a visit's (T.584: tests/fresh.mjs, on Node and on Bun)
+const fresh = () => anew(runtimeUrl("worker/outdated.js"));
 // a server (tests/fakes/fetch.mjs): what it was asked, and its answer to each (route(url, init, n): the n-th of that address)
 function server(route) {
   const { fetch, requests: asked, answers } = madeUpNetwork();

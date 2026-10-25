@@ -20,13 +20,14 @@
 // stand-ins are: tests/worker-sink-check.mjs. worker.js's own (the run going on, the stop): tests/worker-check.mjs.
 //
 //   node tests/worker-parts-check.mjs        (Node only, under a second)
+import { fresh } from "./fresh.mjs";
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
 import { workerHarness } from "./worker-harness.mjs";
 
 // ---- request.js, a fresh one for every case (a module is made once for a URL)
-let made = 0;
-const request = () => import(`${runtimeUrl("worker/request.js").href}?case=${made++}`);
+// (T.584: tests/fresh.mjs, on Node and on Bun)
+const request = () => fresh(runtimeUrl("worker/request.js"));
 const read = (r) => ({ threads: r.threadsRequest, gpu: r.gpuRequest, root: r.root, ahead: r.loadsAhead, benching: r.benching, switches: r.switchesNow() });
 {
   const r = await request();

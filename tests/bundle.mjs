@@ -24,7 +24,7 @@ export function builtModule(name, dist = path.join(treeOf().root, "dist")) {
   const astro = path.join(dist, "_astro");
   if (!fs.existsSync(astro)) throw new Error(`${dist}: no _astro/ in it: npm run build`);
   const chunk = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.[\\w-]{6,}\\.js$`);
-  const found = fs.readdirSync(astro).filter((file) => chunk.test(file));
+  const found = fs.readdirSync(astro).filter((file) => chunk.test(file)).sort();  // (T.584: in one order on every runtime)
   if (found.length > 1) throw new Error(`${dist}: ${found.length} files of _astro/ are called ${name} (${found.join(", ")}): which one a page runs is not said by the name`);
   if (found.length) return pathToFileURL(path.join(astro, found[0]));
   const asItIs = path.join(dist, `${name}.js`);

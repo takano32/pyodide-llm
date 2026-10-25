@@ -22,8 +22,15 @@ echo "suite: $suite, starting"
 # longest test takes about ten); at the limit tests/limited.mjs prints where the test stood and what kept it alive, and
 # kills it, which fails the suite.
 node() {
-  command node tests/limited.mjs "${TEST_LIMIT:-1800}" "$@"
+  # (T.584: with RUNTIME=bun, the tests Bun cannot run are left out, each with a line that says so: TASKS.md's T.585)
+  if [ "${RUNTIME:-node}" = bun ] && [ -n "${BUN_LEAVES[$1]:-}" ]; then echo "$1: left out with Bun (${BUN_LEAVES[$1]})"; return 0; fi
+  command "${RUNTIME:-node}" tests/limited.mjs "${TEST_LIMIT:-1800}" "$@"
 }
+# T.584: what Bun (1.4.4) cannot run, and why
+declare -A BUN_LEAVES=(
+  [tests/memory-check.mjs]="its WebAssembly memory grows by a copy, about a second a time for a 1.8 GB model: past the limit"
+  [tests/blocks-forward-check.mjs]="its 64-bit WebAssembly memory is off (BUN_JSC_useWasmMemory64), and on it does not read the address field"
+)
 # each part's name and seconds, for the log (tests/ci.mjs reads the lines that start with "suite:" and "--- ")
 part() {
   local name=$1 began=$SECONDS
