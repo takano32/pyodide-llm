@@ -37,7 +37,6 @@ export const REASONS = {
   layersRoom: (bytes: number) => `the layers on the GPU as well (${Math.round(bytes / 1e6)} MB) would not leave this device enough memory`,
   // ---- what the model is: its answers' steps stay on the CPU (gpuFit()'s tokensUnfit(), and a generation's stops)
   floatClassifier: "a classifier of float weights is not on the GPU's tokens",
-  memoryUnsaid: "this browser does not say how much memory the device has",  // T.205
   classifierRoom: (bytes: number) => `the classifier on the GPU as well (${Math.round(bytes / 1e6)} MB with the layers) would not leave this device enough memory`,
   stops: (most: number) => `more than ${most} stop tokens`,
   // ---- what the device is (the engine's side without a GPU; gpu/device.ts as it opens one; alone.ts)

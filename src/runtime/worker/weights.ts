@@ -294,9 +294,6 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     // (the owner's B, 2026-09-27: forward.ts's weightsPlace; the double copy held to 6.5 GiB where the device says 8),
     // decided before any memory is made for it (a memory of the whole checkpoint would be one too many, T.96)
     const deviceMemory = self.navigator?.deviceMemory ?? 4;
-    // T.205: a browser that does not say (Safari, Firefox) keeps a generation's steps (the classifier and the embedding
-    // on the GPU as well) on the CPU: nor does it put a model on the GPU alone, whose steps are there
-    const memoryUnsaid = self.navigator?.deviceMemory === undefined;
     const onGpu = gpuOnlyWeightsFor(held, header, options, after, deviceMemory);
     if (onGpu.mode === "gpu") return gpuOnlyBuffer(size, header, options, onGpu as Required<Placed>, keep);
     const gpuRoom = onGpu.gpuRoom;
@@ -353,7 +350,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
         // them would slow down with its upload and compilation; its first load is one of them)
         // (nor under the rounds of /benchmark/'s model section, T.184: the same; its page path, timed on the first load
         // before the rounds, has the GPU, and T.205: the rounds' loads wait for that GPU to let go of its device)
-        const outside = forwardModule!.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom, memoryUnsaid,
+        const outside = forwardModule!.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom,
           gpuRemembered: gpuRequest?.remembered, gpuForce, halfKeys, apart, oneThread: threadsRequest?.fixed === 1 });
         return { llama: llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outside }), outside };
       },

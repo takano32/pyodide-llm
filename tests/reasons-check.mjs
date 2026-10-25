@@ -36,7 +36,6 @@ const SAID = [
   ["floats", "float32 weights are not on the GPU yet"],
   ["layersRoom", [72_600_000], "the layers on the GPU as well (73 MB) would not leave this device enough memory"],
   ["floatClassifier", "a classifier of float weights is not on the GPU's tokens"],
-  ["memoryUnsaid", "this browser does not say how much memory the device has"],
   ["classifierRoom", [189_400_000], "the classifier on the GPU as well (189 MB with the layers) would not leave this device enough memory"],
   ["stops", [8], "more than 8 stop tokens"],
   ["noWebGpu", "no WebGPU in a worker here"],
