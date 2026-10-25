@@ -1,6 +1,6 @@
 # The conduct of a conversion (src/python/convert/conduct.py) on a GGUF's head (T.374.3): asked for in pieces that end
 # ever further, each from where the last ended, until the converter reads all of it; what of the tensors came with it
-# fed to the conversion and not asked for again. Moved out of tests/test_conduct.py (T.420: past 1,000 lines), whose
+# fed to the conversion and not asked for again. Moved out of tests/test_conduct.py (T.420: 1,042 lines, past the 800 of AGENTS.md's measure), whose
 # stand-ins and repository of one model it shares; the tests are the same.
 import struct
 
