@@ -125,7 +125,7 @@ def spark_agrees(own, config):
 # T.342: llama.cpp's names of it (as XHToken's GGUF has them: q, k and v one matrix as the original's, in Hugging Face's
 # order, and the gate of the heads, attn_gate). Nothing is stored otherwise than the original has it
 SPARK = Family("Spark-X2.5", "spark", spark_sources, spark_check, before=spark_config, options=spark_options,
-               free_heads=True, rms_norm=True, partly=True, turns=turns,
+               free_heads=True, turns=turns,
                gguf="spark2_5", gguf_config=spark_gguf_config, agrees=spark_agrees,
                gguf_names=({"token_embd.weight": "model.embedding.weight", "output_norm.weight": "model.norm.weight",
                             "output.weight": "lm_head.weight"},

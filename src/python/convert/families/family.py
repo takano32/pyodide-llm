@@ -6,6 +6,8 @@ from typing import Any, Callable, NamedTuple, Optional
 
 import numpy as np
 
+from engine.layout import PARTLY, layout_of
+
 
 def refuse(reason):
     """ValueError, in words for the visitor: this config.json describes no model the engine can run."""
@@ -87,18 +89,10 @@ class Family(NamedTuple):
     scale: Callable = lambda config: 1.0
     # the classifier's name in a source, where it has one of its own
     classifier: str = "lm_head.weight"
-    # the context is the config's whatever is asked for (a table of learned positions has exactly that many rows)
-    fixed_context: bool = False
     # a head may be of another size than dim / heads (q and o are matrices of their own, T.124)
     free_heads: bool = False
     # its RoPE may be scaled (the kinds the tables know: Llama 3's, linear, yarn)
     scaled: bool = False
-    # its matrices may be in a rotated basis (T.237)
-    rotatable: bool = False
-    # its norms are RMSNorms, whose epsilon the options say where it is not the engine's (T.124)
-    rms_norm: bool = False
-    # RoPE turns part of each head only: the options say how much ("rotary")
-    partly: bool = False
     # (config) -> how many values of each layer's heads RoPE turns, a number for every layer (a tuple), where the layers
     # differ in it: what sources() is handed as its rotary in place of the one number (T.341: a Spark-X2.5's local
     # layers turn the whole head, the others a quarter of it). None: every layer the same
@@ -124,3 +118,25 @@ class Family(NamedTuple):
     # (own, config) -> what a GGUF and the original's config.json must agree on besides what every family's must
     # (gguf_agrees()), as (what, the GGUF's, the original's): the numbers of this family that no tensor shows
     agrees: Callable = lambda own, config: []
+
+    # ---- (T.392) what the layout of its forward pass says, read of the engine's table (engine/layout.py's LAYOUTS),
+    # which every family of an arch shares: not a second copy here
+    @property
+    def fixed_context(self):
+        """The context is the config's whatever is asked for (a table of learned positions has exactly that many rows)."""
+        return layout_of(self.arch).rope is None
+
+    @property
+    def rotatable(self):
+        """Its matrices may be in a rotated basis (T.237)."""
+        return layout_of(self.arch).rotatable
+
+    @property
+    def rms_norm(self):
+        """Its norms are RMSNorms, whose epsilon the options say where it is not the engine's (T.124)."""
+        return not layout_of(self.arch).layer_norm
+
+    @property
+    def partly(self):
+        """RoPE turns part of each head only: the options say how much ("rotary")."""
+        return layout_of(self.arch).rope == PARTLY

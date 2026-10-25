@@ -109,7 +109,7 @@ def lfm2_agrees(own, config):
 # T.260: its GGUF by transformers' names of it. llama.cpp calls the last norm token_embd_norm (the model's own name
 # for it is embedding_norm), the convolution layer's three tensors shortconv.*, and writes q and k in Hugging
 # Face's order, as a Qwen3's (its converter is no child of the Llama's: conversion/lfm2.py at f1cee994)
-LFM2 = Family("LFM2", "lfm2", lfm2_sources, lfm2_check, before=lfm2_config, rms_norm=True,
+LFM2 = Family("LFM2", "lfm2", lfm2_sources, lfm2_check, before=lfm2_config,
               form={"convolution": convolution},
               gguf="lfm2", gguf_config=lfm2_gguf_config, gguf_stored=lfm2_gguf_stored, agrees=lfm2_agrees,
               gguf_names=({"token_embd.weight": "model.embed_tokens.weight",

@@ -128,7 +128,7 @@ def gguf_turned(config):
     return stored
 
 
-LLAMA = Family("Llama", "llama", llama_sources, check, found=found, free_heads=True, scaled=True, rotatable=True, rms_norm=True,
+LLAMA = Family("Llama", "llama", llama_sources, check, found=found, free_heads=True, scaled=True,
                gguf="llama", gguf_names=(GGUF_NAMES, "model.layers.{}.", GGUF_LAYER), gguf_config=gguf_config,
                gguf_stored=gguf_turned)
 # (a Mistral's GGUF says "llama")

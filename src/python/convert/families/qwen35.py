@@ -167,7 +167,7 @@ def qwen35_agrees(own, config):
 # the state-space models it shares code with. A name with a dot is all of a tensor's name after its layer (llama.cpp
 # writes dt_bias as ssm_dt.bias, and A_log as ssm_a without a ".weight")
 QWEN35 = Family("Qwen3.5", "qwen35", qwen35_sources, qwen35_check, after=defaults, prefix=qwen35_prefix,
-                form={"linear": linear}, free_heads=True, rotatable=True, rms_norm=True, partly=True,
+                form={"linear": linear}, free_heads=True,
                 gguf="qwen35", gguf_config=qwen35_gguf_config, gguf_stored=qwen35_gguf_stored, agrees=qwen35_agrees,
                 gguf_names=(GGUF_NAMES, "model.layers.{}.",
                             {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
