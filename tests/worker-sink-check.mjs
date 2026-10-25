@@ -262,8 +262,8 @@ assert.equal(destroyed, 2, "release() let go of the buffer not once");
 vm.runInContext(strictly("blocksWidenedNow(true)"), context);
 assert.throws(() => into.sink.open(5e9, proxy(QWEN3), "int8", proxy(qwen3)), /^Error: This model runs on the SIMD kernels only, which this browser \(or \?without=kernels\) leaves out\.$/);
 into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
-vm.runInContext(strictly("blocksWidenedNow(false)"), context);
-into.sink.open(5e9, proxy(QWEN3), "int8", proxy(qwen3));
+await vm.runInContext(strictly("loadBegan({ id: 'another' })"), context);
+into.sink.open(5e9, proxy(QWEN3), "int8", proxy(qwen3));  // (a load after it, of no blocks: the word is not carried over)
 into.release();
 console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
 

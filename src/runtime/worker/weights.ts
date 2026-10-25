@@ -74,6 +74,7 @@ const modelKey = (model: Listed) => model.hf ? `hf:${model.hf.repo}@${model.hf.r
 export async function loadBegan(model: Listed) {
   loadingKey = modelKey(model);
   gpuOnlyNow = undefined;
+  blocksWidened = false;  // (T.503's review: a load that converts nothing does not say it: not the last load's)
   await adapterAsked;
   await gpuOnlyEnding;
 }
