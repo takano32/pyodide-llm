@@ -77,6 +77,12 @@ class Dtype(NamedTuple):
         """Whether a row of this length can be held: a kind in groups needs whole groups."""
         return not self.group or length % self.group(length) == 0
 
+    def ends_aligned(self, count, length):
+        """T.542: whether a tensor of count values in rows of this length ends on 4 bytes, where the next one begins (a
+        float32 vector's, read as float32s): its values do (whole groups of whole words), and its scales where they are
+        float32s or an even number of float16s (ternary's 34 bytes a group: an odd number of groups leaves 2 bytes)"""
+        return not self.group or self.block or self.scale % 4 == 0 or (count // self.group(length) * self.scale) % 4 == 0
+
     def floats(self, raw, scales, group):
         """The float32 values of a tensor in groups, from the bytes of its values and its scales."""
         if self.read is not None:
@@ -117,7 +123,7 @@ DTYPES = {dtype.name: dtype for dtype in (
           unsuited="Six bits a weight needs rows of whole groups of 32, and this model has other rows."),
     Dtype("ternary", "ternary", bits=2, scale=2, group=lambda length: TERNARY_GROUP, pack=ternary, unpack=unpack_ternary,
           packer="ternary_x", rounds=False, refusal=NOT_TERNARY,
-          unsuited="Ternary weights need rows of whole groups of 128, and this model has other rows."),
+          unsuited="Ternary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows."),
 )}
 # ---- llama.cpp's blocks (T.363)
 # A GGUF's K- and i-quantized types, kept as the file has them: 256 weights to a block of the row, its scales inside
