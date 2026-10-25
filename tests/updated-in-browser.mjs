@@ -314,9 +314,14 @@ const CASES = {
     (name, method) => (family("helper")(name) || (family("benchmark-sections")(name) && method === "HEAD") ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose reading threads are gone, with the worker's own file": measuring("cpu",
     (name, method) => (family("benchmark-reader")(name) || (family("benchmark-sections")(name) && method === "HEAD") ? 404 : undefined), sentenceOfSection),
-  "benchmark, the CPU section whose kernels are answered 500 (as before: it says there is no SIMD)": measuring("cpu", (name) => (/^_astro\/simdkernel/.test(name) ? 500 : undefined),
+  // (T.440: a file that did not come is said so, in built()'s words: no "no WebAssembly SIMD in this browser" any more)
+  "benchmark, the CPU section whose kernels are answered 500": measuring("cpu", (name) => (/^_astro\/simdkernel/.test(name) ? 500 : undefined),
     (name, said) => {
-      expect(name, said.status === "none" && /no WebAssembly SIMD/.test(said.markdown), `the section said ${JSON.stringify(said.markdown.slice(0, 120))}`);
+      expect(name, said.status !== "none" && /Could not fetch simdkernel\S*: 500/.test(said.markdown), `the section said ${JSON.stringify(said.markdown.slice(0, 120))}`);
+    }),
+  "benchmark, the CPU section whose ceilings' loops are answered 500": measuring("cpu", (name) => (/^_astro\/ceilings/.test(name) ? 500 : undefined),
+    (name, said) => {
+      expect(name, /Could not fetch ceilings\S*: 500/.test(said.markdown), `the section said ${JSON.stringify(said.markdown.slice(0, 160))}`);
     }),
 };
 

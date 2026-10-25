@@ -195,7 +195,7 @@ assert.ok(safari.includes("| relaxed_dot with its two loads (int8) | 1 | not in 
 assert.ok(safari.includes("| 1 | 11.2 | 18.9 (50%) | 89.3 | 5.80 | 21.0 |"), safari.join("\n"));
 // the ceilings could not start: the forward pass stands, the ceilings say why (T.227's review: "failed:", as the GPU
 // section's steps say it, so that the report's warnings list it)
-const unstarted = cpuTable({ ...cpuResult, ceilings: { error: "Error: the ceilings' loops could not be fetched" } });
+const unstarted = cpuTable({ ...cpuResult, ceilings: { error: "Error: Could not fetch ceilings_plain.wasm: 503" } });
 assert.ok(unstarted.includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | 21.0 |") && unstarted.at(-1).startsWith("failed: Error"), unstarted.join("\n"));
 // a report from before T.163 (no ceilings, no layerWeights) still makes a table
 assert.ok(cpuTable({ ...cpuResult, layerWeights: undefined, ceilings: undefined }).includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | ? |"));
