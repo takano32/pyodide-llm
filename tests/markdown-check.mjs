@@ -51,8 +51,9 @@ for (const text of ["&#60;img src=x onerror=alert(1)&#62;", "[x](javascript:aler
 {
   const told = [];
   markdownOf(marked, { sanitize: (text, options) => { told.push(options); return text; } }).html(reader.lexer("a")[0], undefined);
-  assert.deepEqual(told.map(({ ALLOWED_ATTR, ALLOW_DATA_ATTR, ALLOW_ARIA_ATTR }) => ({ ALLOWED_ATTR, ALLOW_DATA_ATTR, ALLOW_ARIA_ATTR })),
-    [{ ALLOWED_ATTR: ["align", "start"], ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false }], "DOMPurify is told the attributes and no data-* or aria-*");
+  assert.deepEqual(told.map(({ ALLOWED_TAGS, ALLOWED_ATTR, ALLOW_DATA_ATTR, ALLOW_ARIA_ATTR }) => ({ ALLOWED_TAGS, ALLOWED_ATTR, ALLOW_DATA_ATTR, ALLOW_ARIA_ATTR })),
+    [{ ALLOWED_TAGS: ["p", "br", "strong", "em", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "code", "pre", "table", "thead", "tbody", "tr", "th", "td"],
+      ALLOWED_ATTR: ["align", "start"], ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false }], "DOMPurify is told the elements, the attributes and no data-* or aria-*");
 }
 console.log(`markdown-check: marked ${version}: headings, paragraphs, lists, bold, italic, code and tables drawn; HTML, links, images, quotes, rules, strikethrough and task boxes said as text`);
 await leave(0);
