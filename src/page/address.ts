@@ -19,8 +19,10 @@ export const weighed = (entry: any) => {
 };
 export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
 // (T.505.3) a file of a repository goes into an address too: a name, or names with / between them, none of them dots alone
-// (the hyphens escaped: the sheet's field takes the same source as its pattern, which a browser reads more strictly)
-export const FILE = /^(?!\.+(\/|$))[\w.\-]+(\/(?!\.+(\/|$))[\w.\-]+)*$/;
+// (the hyphens escaped: the sheet's field takes the same source as its pattern, which a browser reads more strictly;
+// T.508.4: and FILE_MOST characters at the most, a name of an address and not a page of text)
+export const FILE_MOST = 256;
+export const FILE = /^(?=.{1,256}$)(?!\.+(\/|$))[\w.\-]+(\/(?!\.+(\/|$))[\w.\-]+)*$/;
 // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T.88). The
 // template and prompt of a link belong to the repository the link names, not to one opened later in the sheet.
 // T.374.2.3: it names no tokenizer. Which files are tried, and in which order, is the conduct's of the conversion to
