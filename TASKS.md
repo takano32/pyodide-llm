@@ -2,7 +2,7 @@
 
 このプロジェクトの作業台帳。背景・方針・落とし穴・検証手順は [AGENTS.md](AGENTS.md) にあるので、先にそちらを読むこと。
 
-**再開の所（2026-10-25、持ち主の求めで止めた）**: 進行中は T.452 だけ（ブランチ `t.452-entry-options`、CI の run 40230138214 の結果待ち。手順は T.452 の項）。ほかは本線に入れてデプロイ済み。そのあとは台帳の順で次（T.587・T.372・T.373・T.398 など）。持ち主に見せるまとめ（取りまとめ役の決めと残件）は、この日の各タスクの記録の「取りまとめ役の決め」と「残件」。
+**再開の所（2026-10-25、持ち主の求めで止めた）**: 進行中は T.452 だけ（ブランチ `t.452-entry-options`、CI は通った: 残りはレビューと本線へ。手順は T.452 の項）。ほかは本線に入れてデプロイ済み。そのあとは台帳の順で次（T.587・T.372・T.373・T.398 など）。持ち主に見せるまとめ（取りまとめ役の決めと残件）は、この日の各タスクの記録の「取りまとめ役の決め」と「残件」。
 
 **いまの状態と次にやること**は、下の「Opus の回とレビューの回」の節の「次の回」と、そのあとの「レビューの回」の記録にある。その節の「Opus の回（次）」と、下の「いまの勧める順番（2026-09-25）」は当時の記録（その頃の開発機ではブラウザを動かさなかった）。
 
@@ -572,8 +572,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.452 [バグ][遠隔試験] `tests/page_ternary.sh` が項目の options なしで測る — 状態: 進行中（2026-10-25、ブランチ `t.452-entry-options` に 2 コミット、本線に入れていない。前の状態: 未着手、2026-10-11、T.235 の素の RoPE の実装から。規模 小）
 - `perplexity_prepare.py` を `--entry` なしで呼ぶので、変換器の BOS（1）と yarn で測る: ページの数字ではない。`--entry "$id"` を渡す。
-- **途中の状態（2026-10-25、持ち主の求めで止めた所）**: ブランチ `t.452-entry-options`（push 済み）に 2 つ: (1) `tests/page_ternary.sh` の `perplexity_prepare.py` の 2 つの呼びに `--entry "$id"`。(2) それで float32 と 3 値の比べが「DIFFERENT — FAILED」になった（run 40229276575）: float32 のファイルは変換器が config.json から作った yarn の RoPE の表を持ち、エンジンは options を見ないため。`tests/fixed_outputs.py` の `with_the_entrys_rope()` を、`page_ternary.sh` の比べと `tests/perplexity_native.py`（options の `dtype` が float32 で `rope_scaling` があるとき）で当てた。**この (2) を確かめる CI**: run 40230138214（`node tests/ci.mjs run tests.yml extra="bash tests/page_ternary.sh hf-ternary-bonsai-1.7b en 'convert ptq1_0 perplexity'" --ref t.452-entry-options`）。止めた時は走っていた。
-- **再開の手順**: `node tests/ci.mjs wait 40230138214 --minutes 60 --grep "ternary|perplexity"` で結果を読む（終わっていれば `gh run view 40230138214` でも）。「the same logits to the bit」と 2 つの perplexity の行が出ていれば、台帳に数を書いてレビュー（`reviewer`）に出し、本線に入れてブランチを消す（ローカルと origin）。まだ違えば、float32 の表を作る `rope_tables()` の引数（`rotary`・`seq_len`）が 3 値の側と同じかを見る。
+- **途中の状態（2026-10-25、持ち主の求めで止めた所）**: ブランチ `t.452-entry-options`（push 済み）に 2 つ: (1) `tests/page_ternary.sh` の `perplexity_prepare.py` の 2 つの呼びに `--entry "$id"`。(2) それで float32 と 3 値の比べが「DIFFERENT — FAILED」になった（run 40229276575）: float32 のファイルは変換器が config.json から作った yarn の RoPE の表を持ち、エンジンは options を見ないため。`tests/fixed_outputs.py` の `with_the_entrys_rope()` を、`page_ternary.sh` の比べと `tests/perplexity_native.py`（options の `dtype` が float32 で `rope_scaling` があるとき）で当てた。**この (2) を確かめる CI**: run 40230138214（`node tests/ci.mjs run tests.yml extra="bash tests/page_ternary.sh hf-ternary-bonsai-1.7b en 'convert ptq1_0 perplexity'" --ref t.452-entry-options`）。止めた時は走っていた。**結果（同じ日、止めた後に読んだ）: 通った**（36.5 分）。float32 と 3 値の NumPy の logits は 6 位置でビット単位で同じ、PTQ1_0 の変換も同じバイト。項目の options（BOS と素の RoPE）での perplexity（英語の 1500 トークン）: NumPy の float32 22.111（int8 の重みの NumPy も 22.111）、ページのカーネルの 3 値（8 ビットの活性値）22.084（−0.12%、relaxed なしも同じ）、int8（7 ビット）22.124（+0.06%）。
+- **再開の手順**: 確かめは済んだ（上）。残りはレビュー（`reviewer`: ブランチ `t.452-entry-options` の 2 コミットと上の数を渡す）、本線に入れる、ブランチを消す（ローカルと origin）。
 
 ### T.453 [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 状態: 未着手（2026-10-11、T.235 から。規模 小）
 - 3 値のファイルが「int8 0.48 GB」と出る。チェックポイントの dtype を言う。
