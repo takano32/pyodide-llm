@@ -25,7 +25,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { runtime } from "./tree.mjs";
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.mjs";
 import { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn } from "./gpu-check/models.mjs";
-import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE } from "./gpu-check/lines.mjs";
+import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE } from "./gpu-check/lines.mjs";
 import { promptsOnGpu, quantizersWrong, modelWrong } from "./gpu-check/verdicts.mjs";
 import { unbound, stepsRight } from "./gpu-check/steps.mjs";
 import { layerTables } from "./gpu-check/tables.mjs";
@@ -107,7 +107,7 @@ check("the made-up models an engine runs", () => {
 check("the numbers a run is held to are the ones decided", () => {
   // each is a decision with its derivation in lines.mjs (T.187: the lines are the arithmetic's own distances): loosening one
   // lets a wrong GPU through, so changing one is changing this too, and saying why in TASKS.md
-  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4, f16: 8 }, K_PACKED: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
+  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4, f16: 8 }, K_PACKED: 5, K_HALF: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
 
 // ---- a made-up case: 2 layers, 3 positions of the prompt, keys and values 8 wide, a vocabulary of 6
@@ -197,7 +197,7 @@ check("a packed run of a model whose first layer is no attending layer's is held
     assert.equal(value, true, text);
     assert.match(runLine(text), pattern);
   };
-  failed(runOf({ ...packed, off: K_PACKED * Q8, layers: [1] }), /- the keys and values of the GPU's layer 1 are 8\.00e-2 and 8\.00e-2 from NumPy's \(its line 6\.00e-2\)$/);
+  failed(runOf({ ...packed, off: K_PACKED * Q8, layers: [1] }), /- the keys and values of the GPU's layer 1 are 1\.20e-1 and 1\.20e-1 from NumPy's \(its line 1\.00e-1\)$/);
   failed(runOf({ off: GPU_LINE * 1.5, layers: [0] }), /- the first layer's keys and values are 1\.20e-2 from NumPy's \(line 8\.00e-3\)/);
 });
 check("a run wrong in one thing fails, and says which", () => {
@@ -234,12 +234,12 @@ check("a run wrong in one thing fails, and says which", () => {
   assert.equal(model([scaled(1 + 5e-5)]).value, false);
   // a packed shader's second layer K_PACKED × Q8 and more from NumPy's (Q8's own distance, and as much again three times)
   failed(runOf({ form: "ORT's DP4A", keys: floats(REFERENCE.keys8), values: floats(REFERENCE.values8), off: K_PACKED * Q8, layers: [1] }),
-    /- the keys and values of the GPU's layer 1 are 8\.00e-2 and 8\.00e-2 from NumPy's \(its line 6\.00e-2\)$/);
+    /- the keys and values of the GPU's layer 1 are 1\.20e-1 and 1\.20e-1 from NumPy's \(its line 1\.00e-1\)$/);
   // (a layer's line is its own Q8's: where the second layer's Q8 is three times the first's, the same run passes)
   const deeper = { ...CASE, reference: { ...REFERENCE, keys8: b64(moved(floats(REFERENCE.keys8), 2 * Q8, [1])), values8: b64(moved(floats(REFERENCE.values8), 2 * Q8, [1])) } };
   const within = model([runOf({ form: "ORT's DP4A", keys: floats(REFERENCE.keys8), values: floats(REFERENCE.values8), off: K_PACKED * Q8, layers: [1] })], {}, deeper);
   assert.equal(within.value, false, within.text);
-  assert.match(runLine(within.text), /layer 1 0\.44 of its line\)/);
+  assert.match(runLine(within.text), /layer 1 0\.40 of its line\)/);
   // another most likely token: a near tie passes (half of NumPy's probability at least), another does not
   const logits = (token) => LOGITS.map((x, i) => (i === token ? 5 : x));
   assert.ok(logSoftmax(LOGITS)[4] >= logSoftmax(LOGITS)[2] - TIE && logSoftmax(LOGITS)[3] < logSoftmax(LOGITS)[2] - TIE);
@@ -270,6 +270,19 @@ check("of a layer whose keys and values the CPU keeps in a ring, the positions t
     const past = { ...ringed, ...late(ringed), again: { ...ringed.again, ...late(ringed.again) } };
     assert.equal(model([past], { cpu, heldFrom: [2, 0] }).value, true, `a row a ring holds, of layer ${layers[0]}, past its line`);
   }
+});
+check("an f16 form's layer by K_HALF × H16's distance, the f16 tiles' arithmetic (T.562)", () => {
+  // H16 1e-2 from NumPy's at layer 1: an f16 run 2.5e-2 off there passes (past HALF_LINE, within K_HALF × H16), one 4e-2
+  // off fails; a float32 form 2.5e-2 off fails (its line is E16's), and so does an f16 run of a reference with no H16
+  const H = 1e-2, withHalves = { ...CASE, reference: { ...REFERENCE, keysH: b64(moved(KEYS, H, [1])), valuesH: b64(moved(VALUES, H, [1])) } };
+  assert.ok(HALF_LINE < 2.5e-2 && 2.5e-2 < K_HALF * H && K_HALF * H < 4e-2);
+  const f16 = (off) => runOf({ form: "llama.cpp tiles 32×32, f16", off, layers: [1] });
+  const within = model([f16(2.5e-2)], {}, withHalves);
+  assert.equal(within.value, false, within.text);
+  assert.match(runLine(within.text), /layer 1 0\.83 of its line\)/);
+  assert.equal(model([f16(4e-2)], {}, withHalves).value, true);
+  assert.equal(model([runOf({ off: 2.5e-2, layers: [1] })], {}, withHalves).value, true);
+  assert.equal(model([f16(2.5e-2)]).value, true);
 });
 check("the status of a GPU that takes the prompts", () => {
   for (const note of ["prompts on WebGPU", "prompts and answers on WebGPU", "prompts on WebGPU, answers on the CPU"]) assert.ok(promptsOnGpu(note), note);
@@ -516,7 +529,7 @@ check("the tables of a model, a line a run, the seconds", () => {
   }
   assert.match(lines[at("- CPU: ")], /^- CPU: forward\.js on the CPU: 1\.0e-1, 100\.0 E16, 5\.00 Q8, the first layer's scale .*, logits KL .*, the ten most likely .*, most likely 2$/);
   assert.match(lines[at("- A: ")], /^- A: TF\.js's tiles, llama\.cpp flash attention tiles: 2\.0e-3 \(all at once 2\.0e-3\), the worst layer [01] at 0\.25 of its line 8\.0e-3, 2\.0 E16, 0\.10 Q8, /);
-  assert.match(lines[at("- B: ")], /^- B: ORT's DP4A, .* the worst layer [01] at 0\.07 of its line 6\.0e-2, .* most likely 2 as the CPU's$/);
+  assert.match(lines[at("- B: ")], /^- B: ORT's DP4A, .* the worst layer [01] at 0\.04 of its line 1\.0e-1, .* most likely 2 as the CPU's$/);
   assert.equal(lines.at(-1), "\nseconds of made-up: NumPy (with its cache in float16, and Q8) 1.3, the plan 0.5, CPU 2.0, A (its GPU ready in 1.5) 4.0, B (its GPU ready in 1.5) 4.0\n");
   // the seconds of the NaN rounds, where any were run
   const nan = model([runOf()], { nanSeconds: { rows: 1.25, values: 0, logits: 2 } });

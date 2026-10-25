@@ -81,13 +81,24 @@ const K = { float32: 4, f16: 8 };
 //     times over and the most likely token as well. Printed beside it: the largest difference of the logits of
 //     NumPy's ten most likely tokens over NumPy's largest |logit| (the old measure took all of them: GPT-2's went past
 //     on a token some 50 logits below the top).
-const K_PACKED = 3, SCALE_LINE = 1e-4, TIE = Math.LN2;
+// T.562: K_PACKED 3 went past a GPU as it should be on the real models' deep layers: Qwen3 0.6B's DP4A at layer 19,
+// 1.39 of its line (T.546's run 38881685551, 4.2 Q8 of the layer), Qwen2.5 0.5B's at layer 14, 1.06 (run 40157762775,
+// 3.2 Q8), each layer and run another (the same Qwen3 read 0.96 at layer 19 in run 40153360370): the 8-bit roundings
+// that fall on the other side of a boundary, as above, more of them over 24 to 28 layers. A wrong GPU is far past it
+// (the layer 0's biases in every layer: 2222 times the line on Qwen2.5 0.5B, run 40157832633; 7.02 Q8 on the made-up
+// Qwen2, the weakest one, 2.34 times K_PACKED 3's line). K_PACKED 5: those correct runs 0.83 of it at the most, the
+// made-up Qwen2's wrong one 1.40 past it
+const K_PACKED = 5, SCALE_LINE = 1e-4, TIE = Math.LN2;
 // T.562: the f16 tiles held to K × E16 went past it on Qwen3 0.6B, a GPU as it should be (llama.cpp's f16 tiles with the
 // float32 attention, layer 8 at 1.04 of 8 × E16, run 40153360370, where the same tiles with the f16 attention read 0.80):
 // they round every weight × scale and activation to f16, which E16 (the cache alone) does not, and which grows with
 // the depth and Qwen's large activations as Q8's 8 bits do. So their layers are held, as the packed shaders' are, to
 // H16's distance from NumPy's (NumPy's answer with the layers' matrices and their inputs rounded to float16 and its
-// cache in float16, reference.mjs's H16), K_HALF times it, and to HALF_LINE where that is larger. K_HALF: provisional
+// cache in float16, reference.mjs's H16), K_HALF times it, and to HALF_LINE where that is larger. K_HALF (CI's Dawn on
+// lavapipe, runs 40157762788 and 40157762775): a GPU as it should be is 0.79 to 1.42 H16 from NumPy's (the made-up
+// synthetic-yarn the most; Qwen3 0.6B 1.00, Qwen2.5 0.5B 0.96 to 1.08, SmolLM2 360M 0.79 to 1.00), at 0.58 of its line
+// at the most; one that reads layer 0's biases in every layer is 98 H16 away on the made-up Qwen2 (32.8 times its
+// line) and 17477 on Qwen2.5 0.5B (run 40157832633). K_HALF 3, as K_PACKED was
 const K_HALF = 3;
 
 export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE };
