@@ -46,10 +46,21 @@ let nucleusLast: i32 = -1;
 }
 
 // T.561: whether a place of probability p and token x comes before one of q and y: the more probable, or of equal ones the
-// lower token (no two places share a token, so one of them always comes first)
+// lower token (no two places share a token, so one of them always comes first). placeAhead() and aheadOfPlace() read a
+// place's token only where the probabilities are equal (the sorts' loops compare thousands of places, ties are rare)
 // @ts-ignore: decorator
 @inline function ahead(p: f32, x: i32, q: f32, y: i32): bool {
   return p > q || (p == q && x < y);
+}
+// @ts-ignore: decorator
+@inline function placeAhead(probs: usize, index: usize, i: i32, q: f32, y: i32): bool {
+  const p = load<f32>(probs + (<usize>i << 2));
+  return p > q || (p == q && load<i32>(index + (<usize>i << 2)) < y);
+}
+// @ts-ignore: decorator
+@inline function aheadOfPlace(p: f32, x: i32, probs: usize, index: usize, j: i32): bool {
+  const q = load<f32>(probs + (<usize>j << 2));
+  return p > q || (p == q && x < load<i32>(index + (<usize>j << 2)));
 }
 // Sorts probs[lo..hi] in descending order, and index[] along with it, from the left and only as far as the nucleus
 // reaches: usually a few dozen tokens out of thousands. Quicksort (median of three), insertion sort for short ranges.
@@ -65,8 +76,8 @@ function sortNucleus(probs: usize, index: usize, lo: i32, hi: i32): void {
     const pivot = b, token = xb;
     let i = lo, j = hi;
     while (i <= j) {
-      while (ahead(load<f32>(probs + (<usize>i << 2)), load<i32>(index + (<usize>i << 2)), pivot, token)) i++;
-      while (ahead(pivot, token, load<f32>(probs + (<usize>j << 2)), load<i32>(index + (<usize>j << 2)))) j--;
+      while (placeAhead(probs, index, i, pivot, token)) i++;
+      while (aheadOfPlace(pivot, token, probs, index, j)) j--;
       if (i <= j) {
         const pi = probs + (<usize>i << 2), pj = probs + (<usize>j << 2), xi = index + (<usize>i << 2), xj = index + (<usize>j << 2);
         const p = load<f32>(pi); store<f32>(pi, load<f32>(pj)); store<f32>(pj, p);
@@ -83,7 +94,7 @@ function sortNucleus(probs: usize, index: usize, lo: i32, hi: i32): void {
     const p = load<f32>(probs + (<usize>i << 2));
     const x = load<i32>(index + (<usize>i << 2));
     let j = i - 1;
-    while (j >= lo && ahead(p, x, load<f32>(probs + (<usize>j << 2)), load<i32>(index + (<usize>j << 2)))) {
+    while (j >= lo && aheadOfPlace(p, x, probs, index, j)) {
       store<f32>(probs + (<usize>(j + 1) << 2), load<f32>(probs + (<usize>j << 2)));
       store<i32>(index + (<usize>(j + 1) << 2), load<i32>(index + (<usize>j << 2)));
       j--;
@@ -129,8 +140,8 @@ function selectTop(probs: usize, index: usize, lo: i32, hi: i32, k: i32): void {
     const pivot = b, token = xb;
     let i = lo, j = hi;
     while (i <= j) {
-      while (ahead(load<f32>(probs + (<usize>i << 2)), load<i32>(index + (<usize>i << 2)), pivot, token)) i++;
-      while (ahead(pivot, token, load<f32>(probs + (<usize>j << 2)), load<i32>(index + (<usize>j << 2)))) j--;
+      while (placeAhead(probs, index, i, pivot, token)) i++;
+      while (aheadOfPlace(pivot, token, probs, index, j)) j--;
       if (i <= j) {
         const pi = probs + (<usize>i << 2), pj = probs + (<usize>j << 2), xi = index + (<usize>i << 2), xj = index + (<usize>j << 2);
         const p = load<f32>(pi); store<f32>(pi, load<f32>(pj)); store<f32>(pj, p);

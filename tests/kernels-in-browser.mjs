@@ -479,6 +479,36 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
+  // ---- sample (T.561: equal tokens at a top-k's border and in the walk by the lower token, as NumPy's, the GPU's and
+  // likecpu.ts's): 1000 logits, two of 6 and five of 4 at shuffled places, the rest -30; each top-k of 1 to 8 with a
+  // random number in the middle of every token's share, held to that token of the order written out here (the more
+  // probable first, equal ones by the lower token), with a nucleus of 0.999 and without one
+  {
+    const at = extra + 3145728 + 32768, count = 1000, logits = at, probs = at + 4096, index = at + 8192;
+    const high = [731, 90], equal = [888, 12, 640, 301, 47];
+    const values = new Float32Array(count).fill(-30);
+    for (const j of high) values[j] = 6;
+    for (const j of equal) values[j] = 4;
+    const order = [...high.sort((a, b) => a - b), ...equal.sort((a, b) => a - b)];
+    const cases = [];
+    for (let topk = 1; topk <= 8; topk++) {
+      const kept = order.slice(0, topk), weights = kept.map((j) => Math.exp(values[j] - 6)), total = weights.reduce((a, b) => a + b, 0);
+      let before = 0;
+      kept.forEach((token, j) => { cases.push({ topk, random: (before + weights[j] / 2) / total, token }); before += weights[j]; });
+    }
+    const call = () => { F.set(values, logits / 4); k.sample(logits, count, 1, 1, 0.5, probs, index, 3, 0); };
+    await check("sample (equal tokens by the lower)", call, () => {
+      let bad = 0;
+      for (const topp of [1, 0.999]) {
+        for (const { topk, random, token } of cases) {
+          F.set(values, logits / 4);
+          if (k.sample(logits, count, 1, topp, random, probs, index, topk, 0) !== token) bad++;
+        }
+      }
+      return bad ? `${bad} of ${2 * cases.length} draws not the token of the order` : null;
+    });
+  }
+
   // ---- what every model runs, as a control: quantize_x (8 bits and 7 with a bias), matmul_q8 and matmul_q8r against float64 sums
   {
     const x = extra + 262144, q = x + n * 4 + 64, s = q + n + 64;
