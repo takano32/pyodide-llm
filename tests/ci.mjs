@@ -11,6 +11,8 @@
 //   node tests/ci.mjs deploy [--sha <commit>]      the deploy of a commit (HEAD); if a newer push cancelled it while
 //                                                  it waited for its turn, the newer deploy (which has the commit too)
 //   options: [--minutes 60 (deploy: 20)] [--grep <regex> | --grep none] [--ref main]
+//   (written once, anywhere: --ref is every run's of the call, the ones after a + too. A second --ref is read as an input
+//   of the run it follows, which then does not start: T.502)
 //
 //   node tests/ci.mjs run models.yml models=hf-qwen3-0.6b browser=webkit + models.yml models=tiny-lm os=windows-latest
 //
