@@ -129,13 +129,13 @@ let gpuRequests = 0;
  * for this and for gpuSide()); device: { gpuRoom, memoryUnsaid, sharedMemory }, what the device and the page give;
  * direct: the model is on the GPU alone (T.156). */
 export function gpuFit({ shape, weights, device, direct }:
-  { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
+  { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
     sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, channels } = weights;
   // T.545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
   const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
-  const { gpuRoom, memoryUnsaid, sharedMemory } = device;
+  const { gpuRoom, memoryUnsaid, sharedMemory, oneThread } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T.135) takes Llama's layers of int8 weights
   // (T.153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T.154:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T.155: int6 weights and 64-bit memories too)
@@ -169,7 +169,9 @@ export function gpuFit({ shape, weights, device, direct }:
     // off by this line too). An FFN without a gate is GELU's on the GPU, as it was (T.154)
     if ((gatedFfn && activation !== "silu" && activation !== "gelu") || extras) return REASONS.pair;
     if ((attPost || ffnPost) && layerNorm) return REASONS.pair;
-    if (!sharedMemory) return REASONS.notIsolated;
+    // (T.371, the owner's choice C: a memory not shared on an isolated page is ?threads=1's, or one the browser would
+    // not share, or a 64-bit one with no shared kernels for it)
+    if (!sharedMemory) return !globalThis.crossOriginIsolated ? REASONS.notIsolated : oneThread ? REASONS.oneThread : REASONS.notShared;
     if (headSize % 4) return REASONS.heads;
     if (!Object.values(gpuMatrices()).every(onGpuAs)) return REASONS.floats;
     // T.148: the layers twice, in this memory and on the GPU (T.156 will keep one): a device with too little memory
