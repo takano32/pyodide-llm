@@ -173,6 +173,22 @@ def test_the_kernels_are_handed_each_setting_in_its_place():
     assert calls == [("penalize", 3, 1.2, 0.0), ("penalize", 1, 1.0, 0.5)] and rng.drawn == 0
 
 
+def test_each_penalty_reads_a_ring_of_its_own():
+    """T.394: the repetition penalty's ring of the history and the presence penalty's of what was written are two, each
+    at one address step after step: one ring that both took turns at was copied whole twice a step."""
+    rings = []
+    kernels = {"penalize": lambda logits, recent, count, penalty, presence: rings.append((presence, recent)),
+               "sample": lambda *arguments: 7}
+    draw = KernelSampler(kernels, VOCAB).drawing(Sampling(temperature=1.0, repetition_penalty=1.2, presence_penalty=0.5), Numbers([0.5] * 3))
+    history, written = [1, 2, 3], [3]
+    for token in (4, 5, 6):
+        draw(some_logits(token), history, written)
+        history.append(token)
+        written.append(token)
+    of = lambda presence: {recent for said, recent in rings if said == presence}
+    assert len(of(0.0)) == 1 and len(of(0.5)) == 1 and of(0.0) != of(0.5), rings
+
+
 @pytest.mark.parametrize("which", ["NumPy", "the kernels"])
 def test_the_repetition_penalty_is_the_historys_and_the_presence_penalty_what_was_written(which):
     """Each penalty on its own tokens, the latest REPETITION_WINDOW of them, and the presence penalty after the other."""
