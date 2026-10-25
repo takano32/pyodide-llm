@@ -99,8 +99,9 @@ async function init(search: string) {
   // switches say what is used (request.ts's switchesNow()), and the benchmark's rounds with the kernels need them there (T.119: its
   // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
   for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"] satisfies Built[]) {
-    // (also where it is gone, T.367.4: NumPy answers, and T.439: the page is told why it is slower. T.442: and where its
-    // body is cut short, as where it did not come: that ended the start before)
+    // (also where it is gone, T.367.4: NumPy answers, and T.439: where the site was updated the page is told why it is
+    // slower; any other failure goes on to NumPy saying nothing, as it did. T.442: a body cut short as well, as where it
+    // did not come: that ended the start before)
     const kernel = await built(name).then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));
     if (kernel) {
       pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(kernel));

@@ -1,0 +1,7 @@
+### T.442 [整理][その他] T.367.4 の小さな気づき — 状態: 完了（2026-10-25。前の状態: 未着手、2026-10-11。規模 小）
+- **済み（T.367.5）**: AGENTS.md の「束ねた後の決まり」の (10) を「`/*! … */` と `/** … */` が残る」に直した（束の `forward` に `/** … */` が 76 個）。
+- `/benchmark/` の GPU の Worker の `shaders` の Promise は、失敗すると unhandled rejection（前から）。
+- モデルのページの始まりで、`simdkernel.so` の取得の失敗は黙って NumPy、本文が途中で切れると致命（前からの不ぞろい）。
+- 確かめの HEAD は失敗の後に最大 10 秒待つ: 回線が死んでいるとき、前の文が出るまで 10 秒遅れる。
+- **結果（2026-10-25）**: (1) `src/runtime/benchmark/gpu/device.ts` のシェーダのモジュールの Promise に空の catch を足した（段が待つ前に失敗しても扱われない拒否にならない。待つ段はどれも同じ失敗を受けて言う）: `silent-check` の `SILENT` に訳つきの行。(2) `src/runtime/worker/runtime.ts` のカーネル（`simdkernel.so`・`simdkernel_relaxed.wasmlib`）は本文の読みも同じフォールバックの中に（本文が途中で切れても取れないときと同じく NumPy に。前は準備ごと止まった。`wentWithout()` がページに言うのはサイトが更新されたときだけで、ほかの失敗は前のまま黙って NumPy: 言わせるかは残件）: `updated-check` の `LATER` の行も今の文に。(3) そのまま: 確かめの HEAD が失敗の後に最大 10 秒待つのは、更新の判定を待つ形で、回線が死んでいるときだけ前の文が 10 秒遅れる（直す案は判定の期限を縮めることだが、遅い回線で更新を言い損ねる）。確かめ: 軽い組を通しで（460 秒）、`updated-check`・`silent-check`・`worker-check`・`worker-parts-check`、build と Chromium の e2e。本文が途中で切れる場合は手元の道具で作れないので回していない。CI を省いた。訳: 失敗の道の 2 か所で、手元の検査と実ブラウザの通常の道が踏む。
+- レビュー（Sonnet low、2026-10-25、T.442）: must-fix なし。`shaders.catch` は別の Promise を返すだけで段の `await` に失敗が届く。本文の途中の失敗を更新と言う誤りは無い。指摘を入れた: 台帳とコメントの「警告 1 行」は誤りで、更新でない失敗は黙って NumPy（前と同じ）。**残件**: カーネルが取れないとき（更新でない）に `console.warn` の 1 行を出すか、ベンチの `src/runtime/benchmark/matvec.ts` の `await (await built("simdkernel_plain.wasm")).arrayBuffer()`（節の失敗として上がる: 準備は止まらない）、本文が切れる場合の試験（`arrayBuffer` を断る偽の `built`）は無い。
