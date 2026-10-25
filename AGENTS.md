@@ -176,7 +176,7 @@
 - **道具は木の場所を書かない**: `tests/tree.mjs`（Python は `from tree import python_folder`）。**実行時のフォルダの下に、目印（`forward.ts`・`llama2_numpy.py`・`simdkernel.so`・`coi.js`）と同じ名前のファイルを置かない**。ソースを文として読む道具は `untyped(文, 木が持つ本当の名前)` を通す。ファイルを終わりの `.js` で数える道具を書かない。
 - **デプロイをまたいで開いていたページ**: 自分の版のファイルが無ければ「The site was updated while this page was open. Reload the page to go on.」（持ち主の文、`updated.ts` の `UPDATED`）。線は、作る物の取得が 404、または状態の分からない失敗のとき名指す側のモジュールを HEAD で聞いて 404。回線の切れ・5xx などは今の文のまま。**フォールバックのある所は動きを変えず**、遅い道に入った訳がこれのときだけ準備完了のステータス行に「the site was updated: reload for full speed」（`SLOWER`）。実ブラウザは `tests/updated-in-browser.mjs`。
 - **`coi.js` の `forgotten()`** は「このサイトで、`v=` があり、この登録の `v=` と違う写し」だけを捨てる。ほかのサイトの応答・隔離のヘッダ・fetch の受け口は `coi-js-check` が文のハッシュで持つ（変えると落ちて、持ち主の端末が先と言う）。
-- **開発サーバ**（`npm run dev`）は `vite.server.headers` で自分で COOP・COEP を送る。端末でない所の `astro dev` はデーモンで残る（`npx astro dev stop`）。
+- **開発サーバ**（`npm run dev`）は `vite.server.headers` で自分で COOP・COEP を送る。Python の zip 2 つは `astro.config.mjs` のプラグイン `python-archives` が、ビルドと開発サーバの始めに作り、開発サーバの間は `src/python/` の `.py` が変わるたびに作り直してページを読み込み直させる（T.433: npm を通さない `astro dev`・`astro build` でも zip がある）。端末でない所の `astro dev` はデーモンで残る（`npx astro dev stop`）。
 
 ### 型
 
