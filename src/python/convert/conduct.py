@@ -126,8 +126,17 @@ def beginning(where, name, end):
 
 
 def joined(data, more):
-    """data with more after it. (more: an answer's bytes, JavaScript's in Pyodide: copied once on the way)"""
-    return b"".join((data, more.to_py() if hasattr(more, "to_py") else more))
+    """data with more after it, in one bytearray made at its full size. (more: an answer's bytes, JavaScript's in
+    Pyodide: copied once, straight into its place. T.418: to_py() and a join held a third copy of it, the third piece
+    of a 9 MiB head grew Pyodide's heap by 69 MiB that way and by 37 this one)"""
+    count = more.length if hasattr(more, "assign_to") else len(more)
+    out = bytearray(len(data) + count)
+    out[:len(data)] = data
+    if hasattr(more, "assign_to"):
+        more.assign_to(memoryview(out)[len(data):])
+    else:
+        out[len(data):] = more
+    return out
 
 
 def whole(data):
