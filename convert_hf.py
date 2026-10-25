@@ -89,8 +89,8 @@ def tokenizer_of(name, data, vocab_size):
 def convert_tokenizer(directory, out_path, vocab_size):
     """The tokenizer of the directory: of the candidates the page tries, in its order (T.374.2.3: convert.conduct's
     TOKENIZERS, the one list), the first that is there and that the converter reads. Where none will do, the refusal
-    of one that is there says why."""
-    refusal = None
+    of one that is there says why; where a later one does, a line on stderr says which was left and why (T.414)."""
+    refusal, left = None, []
     for name in TOKENIZERS:
         if not (directory / name).exists():
             continue
@@ -99,8 +99,11 @@ def convert_tokenizer(directory, out_path, vocab_size):
             break
         except Exception as error:  # (whatever it was refused with: the next candidate may do)
             refusal = refusal or error
+            left.append((name, error))
     else:
         raise refusal or FileNotFoundError(f"{directory} has no tokenizer: none of {', '.join(TOKENIZERS)}")
+    for skipped, error in left:
+        print(f"{directory / skipped}: not read ({type(error).__name__}: {error}), so the tokenizer is {name}", file=sys.stderr)
     Path(out_path).write_bytes(vocabulary)
 
 
