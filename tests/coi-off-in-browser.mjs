@@ -46,8 +46,14 @@ try {
   await page.goto(`${server.url}?model=stories260K`);
   await settled("the visit before /benchmark/");
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 60000 });
+  const loads = [];
+  const counting = (frame) => frame === page.mainFrame() && frame.url().includes("benchmark/") && loads.push(frame.url());
+  page.on("framenavigated", counting);
   await page.goto(`${server.url}benchmark/?coi=off&run=device`);
   await page.waitForFunction(() => /done ·/.test(document.body.innerText), null, { timeout: 120000 });
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  page.off("framenavigated", counting);
+  assert.equal(loads.length, 2, `/benchmark/?coi=off loads once again, and no more: ${loads.length} loads`);
   assert.deepEqual(await page.evaluate(async () => [self.crossOriginIsolated, (await navigator.serviceWorker.getRegistrations()).length]), [false, 0],
     "/benchmark/?coi=off: not isolated, the worker unregistered");
   console.log(`ok: ?coi=off after an isolated visit in the same profile comes to ready without the service worker, and again after a visit under it, and /benchmark/'s too (${off})`);
