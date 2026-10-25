@@ -13,7 +13,7 @@ import { attention } from "./attention.ts";
 import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
 import type { Bound, Model, Pass } from "./device.ts";
-import type { Entry, Feed, Held, TokenForm, TokenRole } from "./tokens.ts";
+import type { Entry, Feed, Held, TokenRole } from "./tokens.ts";
 import type { LayerKind } from "../contracts/plan.ts";
 import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 
@@ -51,7 +51,7 @@ export type BlockStep = (running: Running) => boolean;
 export type State = { buffer: GPUBuffer; bytes: number };
 
 // ---- a token's step
-// What a kind's layer l is handed as tokens.ts makes a step's dispatches: its place, the form of the step, and
+// What a kind's layer l is handed as tokens.ts makes a step's dispatches: its place, and
 //   matrix()    a dispatch of a fused matrix (its role, [values, scales], its input's bindings, its Params, its rows,
 //               its output's bindings)
 //   plain()     what a matrix of a vector as it is reads (the vector quantized first on DP4A)
@@ -62,7 +62,7 @@ export type State = { buffer: GPUBuffer; bytes: number };
 //   positions   how many positions the attention reads at the most
 //   bindAt()    a bind group of the bindings given (the fused shaders skip a binding where they read no norm)
 export type Stepping = {
-  l: number; place: number; form: TokenForm;
+  l: number; place: number;
   // (T.547.3.3: weights, its values, scales and packing, by which a matrix of llama.cpp's blocks takes its type's pipeline;
   // T.579: role, the key of the form's pipelines it takes, with the type after it for a matrix of blocks)
   matrix(role: TokenRole, weights: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;

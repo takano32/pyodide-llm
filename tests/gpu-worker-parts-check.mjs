@@ -655,6 +655,29 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
     const keys = tokenCodes(form, { apart: false, gated: true, layerNorm: false, floatHead: false, roles }).map(([key]) => key);
     assert.deepEqual(keys, ["normQuantize", "qkv:Q4_K", "qkv:IQ2_XS", "add", "add:Q4_K", "glu:IQ1_M", "classifier:Q2_K"], `${form.name}: the keys of a model of blocks are those its matrices take (${keys})`);
   }
+  // T.579's review: the roles tokenShape() gathers from the kinds' matrices(), the FFN and the classifier: what joins the
+  // stream by "add", or (a norm behind it) by "write"; an LFM2's convolution's in by "mix", a Qwen3.5's gate by "mix" and
+  // its linear-attention layers' by "write"; each matrix by the packings of its layers
+  {
+    const { tokenShape } = await import(runtimeUrl("gpu/tokens.js"));
+    const matrix = (packing, packings) => ({ rows: 64, n: 64, packing, ...(packings ? { packings } : {}), layers: [] });
+    const shape = (kinds, matrices, vectors = {}, classifier = "int8") => {
+      const plan = { kinds, matrices: Object.fromEntries(Object.entries(matrices).map(([name, packing]) => [name, Array.isArray(packing) ? matrix("layers", packing) : matrix(packing)])),
+        vectors, tokens: { classifier: matrix(classifier) }, activation: "silu", layerNorm: false };
+      const { roles } = tokenShape({ plan, ternary: false, weights: { matrices: plan.matrices } });
+      return Object.fromEntries([...roles].map(([role, packings]) => [role, [...packings].sort()]));
+    };
+    const llama = { wq: "int8", wk: "int8", wv: "int8", wo: "int8", w1: "int8", w2: "int8", w3: "int8" };
+    assert.deepEqual(shape(["attention", "attention"], llama), { qkv: ["int8"], add: ["int8"], glu: ["int8"], classifier: ["int8"] }, "a Llama's roles");
+    assert.deepEqual(shape(["attention"], llama, { attentionPost: {}, ffnPost: {} }), { qkv: ["int8"], write: ["int8"], glu: ["int8"], classifier: ["int8"] },
+      "a Gemma 3's: o and down by write, no add");
+    assert.deepEqual(shape(["attention"], llama, { ffnPost: {} }), { qkv: ["int8"], add: ["int8"], write: ["int8"], glu: ["int8"], classifier: ["int8"] }, "one norm behind: down alone by write");
+    assert.deepEqual(shape(["convolution", "attention"], { ...llama, win: "int8", wout: "Q4_K" }), { mix: ["int8"], add: ["Q4_K", "int8"], qkv: ["int8"], glu: ["int8"], classifier: ["int8"] },
+      "an LFM2's: its convolution's in by mix, out by add");
+    assert.deepEqual(shape(["linear", "attention"], { ...llama, wg: "int8", wqkv: ["IQ2_XS", "Q4_K"], wz: "IQ1_M", wout: "int8", wv: ["IQ3_S", "Q4_K"] }, {}, "Q2_K"),
+      { write: ["IQ1_M", "IQ2_XS", "Q4_K"], add: ["int8"], qkv: ["IQ3_S", "Q4_K", "int8"], mix: ["int8"], glu: ["int8"], classifier: ["Q2_K"] },
+      "a Qwen3.5's of blocks: the linear layers' by write, the gate by mix, each matrix by its layers' packings, the classifier by its type");
+  }
   if (was) Object.defineProperty(globalThis, "navigator", was); else delete globalThis.navigator;
   console.log(`gpu-worker-parts-check: tokens.js's ${forms} forms of a token's layer (by the model's packing, its norm and its shape) compile ${codes} texts, each a row of the catalogue and of the model's own packing`);
 }
