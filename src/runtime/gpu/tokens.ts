@@ -100,7 +100,7 @@ type Run = { count: number; pos: number; state: GPUAllowSharedBufferSource; sett
 type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; notFinite: number; kv?: Uint8Array<ArrayBuffer>[][]; state?: Uint8Array<ArrayBuffer> };
 
 // ---- T.152: tokens on the GPU. A step of the engine's generate() (the forward pass of the token fed, the sampling of
-// the next) as one compute pass of shaders.ts's T.151 run: EMBED of the state's token, every layer in a fused form, the
+// the next) as one compute pass of shaders/run.ts's T.151 run: EMBED of the state's token, every layer in a fused form, the
 // final norm and the classifier, SAMPLE (the penalty, softmax, top-p and the draw, with the random number the CPU drew
 // for the step), after which the state's first four words go to the Step uniform for the next pass (a uniform is not a
 // shader's to write). plan.tokens.most steps a submission, their ids read back once (T.151: the wait of a submission,
@@ -122,7 +122,7 @@ type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; no
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
 // T.226: Qwen2's and Qwen3's steps too. What they have between the matrix of q, k and v and RoPE (T.153: a bias of each,
 // a norm of every head of q and of k) is the prompt's dispatches, ADD and HEAD_NORM, as the CPU orders them, on the
-// three as their matrix wrote them, and then shaders.ts's TOKEN_ROPE (the fused write's own lines, as a dispatch):
+// three as their matrix wrote them, and then shaders/fused.ts's TOKEN_ROPE (the fused write's own lines, as a dispatch):
 // two dispatches a layer more with the biases, three with the norms of the heads, none for a model without either.
 // (T.175's fused DP4A with the norms apart as well, RMSNORM and QUANTIZE where NORM_QUANTIZE is one: the owner's
 // Android ran a layer so in 3.36 ms against 3.67 fused, the fastest of its table, 2026-09-27; T.175's condition to
@@ -154,7 +154,7 @@ function tokenCandidates(m: Model) {
 // quantized to 8 bits with one of them loses the other 31; the CPU multiplies their columns apart, and the GPU has
 // T.150's matrix of floats, which needs no such thing)
 // (T.232: a ternary classifier is no matrix of floats: its outlier channels are taken apart as the CPU takes them,
-// shaders.ts's TAKE_OUTLIERS and TERNARY_COLUMNS)
+// shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS)
 // (T.261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
 // that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
 const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && !m.ternary;
@@ -277,7 +277,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     [name, uniform(m, new Uint32Array([size, l * size, 0, 0]))])));
   if (m.weights.positions) g.u.positions = uniform(m, new Uint32Array([plan.dim, 0, plan.dim, 0]));
   // T.232: a ternary classifier's outlier channels (plan.tokens.channels, T.92): the two dispatches around its matrix
-  // (shaders.ts's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
+  // (shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
   const channels = m.ternary ? plan.tokens!.channels ?? [] : [];
   if (channels.length) {
     g.take = await within(validated(m, () => pipelineOf(m, ENGINE.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
