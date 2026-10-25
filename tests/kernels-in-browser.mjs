@@ -15,7 +15,8 @@
 // Chrome and Firefox, the engines this model runs in, tier them up too.
 // Then the 64-bit builds on a memory of more than 4 GiB (what a 27B model runs on, in Chrome and Firefox): every address
 // argument low or high in every combination, the result held to the all-low one. The V8 of Node 24 on arm64 fails this
-// (it reads v128.load32_splat above 4 GiB at the low 32 bits); WebKit has no such memory and is skipped.
+// (it reads v128.load32_splat above 4 GiB at the low 32 bits). An engine without such a memory is skipped (Playwright's
+// WebKit 27.2 has one on Linux: T.502).
 // T.363.4: and the kernels of llama.cpp's blocks (kernels/blocks.ts, blocks_relaxed.ts: Underdog Saluki's weights), every
 // type of the ten through every kernel, each held after every batch to tests/blocks-model.mjs, to the bit (the model's
 // text goes to the page; the codebooks are made up there, which the kernels do not mind: blocks-check.mjs is where the
