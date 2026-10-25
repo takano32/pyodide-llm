@@ -354,6 +354,32 @@ def test_a_llamas_q_and_k_which_llama_cpp_turns_are_kept_where_they_are(arch):
     assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
 
 
+
+def test_a_granites_q_which_the_conversion_scales_is_widened_and_the_rest_kept():
+    """T.502.5: a Granite's GGUF keeps its multiplier apart and q as a Llama's (turned): the conversion scales q once
+    (T.253), which no bytes can do, so q is widened and every other matrix stays as its blocks. The logits are the
+    widened conversion's, to the bit."""
+    from test_granite import granite_gguf
+    config = dict(dim=256, hidden_dim=512, n_heads=4, vocab_size=40, n_layers=2)
+    settings, published, file, _ = granite_gguf(config=config, matrices=blocks_of("IQ2_XS", scale=0x1400))
+    vocabulary = unigram(settings["vocab_size"])
+    header, base = llama2_convert.gguf_weights(file, json.dumps(published))
+    made = {}
+    # (both float32: q widened stays float32 beside the blocks, as a float32 file keeps them: an int8 one would round it)
+    for blocks in (True, False):
+        conversion = Conversion(header, base, json.dumps(published), vocabulary, "tokenizer.json", dtype="float32",
+                                max_seq_len=1 << 20, start=base, blocks=blocks)
+        for start in range(base, len(file), 5000):
+            conversion.feed(file[start:start + 5000])
+        conversion.finish()
+        made[blocks] = conversion
+    kinds = made[True].options["kinds"]
+    assert "wq" not in kinds and {kinds[name] for name in ("wk", "wv", "wo", "w1", "w2", "w3")} == {"IQ2_XS"}, kinds
+    read = lambda conversion: Llama(bytes(conversion.checkpoint), bytes(conversion.tokenizer), **conversion.options)
+    ours, theirs = logits(read(made[True])), logits(read(made[False]))
+    assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
+
+
 # ---- the parts
 CASES = {
     "a Llama's q, turned in the file and turned by the plan": (dict(turned=4), ("permute", 4), 8),
