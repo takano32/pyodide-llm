@@ -39,7 +39,7 @@
 - T.410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
 - T.411 [試験][遠隔試験] フォルダの道でまだ見ていないもの — 未着手
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
-- T.418 [計測][変換] GGUF の頭を継ぐときの Pyodide のメモリの峰 — 未着手
+- T.418 [計測][変換] GGUF の頭を継ぐときの Pyodide のメモリの峰 — 進行中
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
 - T.420 [整理][遠隔試験] `tests/test_conduct.py` が 1041 行 — 未着手
 - T.430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 未着手
@@ -211,6 +211,7 @@
 - T.583 [バグ][遠隔試験] `tests/updated-in-browser.mjs` の「the kernels gone from the start」が 180 秒で落ちる — 未着手
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
+- T.586 [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -545,8 +546,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 状態: 未着手（訪問者に見える文。2026-10-10、T.374.2.3 から。規模 小）
 - 候補を足すときに直す場所は `conduct.py` の `TOKENIZERS` とフォルダの門（`src/page/folder.ts`、試験が見る）と、ここ（試験は見ない）。門の一覧から作る形にできるが、文が変わるなら持ち主に見せる。
 
-### T.418 [計測][変換] GGUF の頭を継ぐときの Pyodide のメモリの峰 — 状態: 未着手（2026-10-11、T.374.3 から。規模 小）
+### T.418 [計測][変換] GGUF の頭を継ぐときの Pyodide のメモリの峰 — 状態: 進行中（2026-10-25 に測って直した。前の状態: 未着手、2026-10-11、T.374.3 から。規模 小）
 - 実装の見立ては「頭が 8 MiB を越えるモデルで峰が最大 +32 MiB（前の分・`to_py()` の写し・継いだ分で 64 MiB）」、レビューの読みは「前の道も 64 MiB の峰」。どちらも未計測。Node の Pyodide で頭 9 MiB の作り物を通して測る。増えているなら、片を一覧で持って 1 回で継ぐか、読み手に片のまま渡す。
+- **測った（2026-10-25、Node の Pyodide 314.0.7、`.tmp/t418/peak.mjs`、1 つの道に 1 プロセス・2 回ずつ同じ数）**: 頭 2 MiB の片に 6 MiB・24 MiB の片を継ぐ（9 MiB の頭の 3 つ目の片まで）間のヒープの伸びは、前の `joined()`（`to_py()` の写しと `b"".join`）で 69 MiB、答えを結果の置き場に直に写す形（`assign_to`）で 37 MiB。**直した**: `src/python/convert/conduct.py` の `joined()` は結果を 1 回で全部の大きさの `bytearray` に作り、Pyodide の答えは `assign_to()` で直にその場所へ写す（素の Python の答えも同じ `bytearray` を返すので、pytest が同じ型を踏む）。確かめ: 段取りと GGUF の pytest 515、`worker-conduct-check`・`worker-fetches-check`・smoke、実ブラウザ（Chromium）の `hf` の e2e（safetensors の頭も `joined()` を通る）と `gemma4-in-browser.mjs`（`?hf=` の変換の 4 つの訪問）。`blocks-in-browser.mjs`（GGUF を開く）は本線でも落ちる（T.586）ので使えなかった。CI を省いた。訳: 触ったのは変換の頭の継ぎ方 1 か所で、手元の Pyodide と実ブラウザが踏む（変換器の出すバイトは同じなので `CONVERTER` も上げない）。
 
 ### T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 状態: 未着手（2026-10-11、T.374.3 から。規模 小）
 - safetensors は最初の 512 KiB に付いてきたテンソルのバイトを今も取り直す（ファイル 1 つ・シャード 1 つにつき最大約 0.5 MiB。`Weights.ahead` をストリームごとに持てば使えるが、safetensors の fixture の全部が動く）。
@@ -1614,3 +1616,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 置き場: `~/GitHub/bun`（`origin` = oven-sh/bun、`my` = takano32/bun のフォーク、どちらも ssh）。**手元では建てない**（下の行）。試した形と訳は docs/notes/t584-bun-2026-10-25.md。
 - **候補**（上流にまだ見当たらないもの）: (1) 問いだけ違う `file:` の URL の動的 import が同じモジュールになる（相対の指定・絶対の道なら別。Node と仕様は別のモジュール。再現は 4 行）。(2) WebAssembly のメモリの `grow` がエンジンの形で約 1 秒かかる（小さな再現はまだ）。**出さないもの**（上流に出ている）: `stripTypeScriptTypes`（PR #41649 ほか）、`onmessage` で終わらない（issue #24256、PR #32482 ほか）、共有の 64 ビットのメモリが worker に 32 ビットで届く（issue #45739、PR #45916: 前に候補 (3) と書いた「`address` を読まない」は取りまとめ役の読み違いで、本当はこれ）。
 - **手元のビルドは試してやめた（2026-10-25、持ち主の決め）**: LLVM 22 では建たない（手元の Rust は stable も LLVM 23 で、bun のビルドは clang と rustc の LLVM の大きい版をそろえることを求める）。LLVM 23 は入れない。試しの途中でビルドの道具が固定の nightly を入れた（取りまとめ役の誤り）のは消した。だから PR は、候補ごとに小さな再現と上流の試験の形の文を作り、issue か、上流の CI に任せる PR で出す（出す前に持ち主に見せる: 外向きの操作）。経緯は docs/notes/t584-bun-2026-10-25.md。
+
+### T.586 [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 状態: 未着手（2026-10-25、T.418 の確かめで見つけた。規模 小）
+- 手元の Chrome で 8 つの訪問の 6 つが「console errors: Failed to load resource: … 404」、`gone`・`refused` は「the model was asked for although its kernels did not come」。ログに `GET https://huggingface.co/api/models/made-up/saluki/tree/main (404)`: 道具の代わりの Hub が `/api/models/…/tree/…` に答えない（ページが一覧を聞くようになった T.508.1 か、その前の一覧の道から）。道具に一覧の答えを足すか、塊の項目を開く道が一覧を聞かないかを先に見る。最後に通った版は未確認。PATH に `python` が要る（`.venv/bin`）ことも道具の頭に書く。
