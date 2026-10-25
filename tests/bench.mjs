@@ -43,12 +43,12 @@ assert.deepEqual(ROUNDS.map((round) => [round.name, round.without.join()]), [["e
 const rowsOf = (before, after) => [{ name: "everything", without: [], speed: 1 }, { name: "everything, before", without: [], speed: before },
   { name: "without the kernels", without: ["kernels"], speed: 9 }, { name: "everything, after", without: [], speed: after }];
 assert.equal(drift(rowsOf(100, 97)), "The last round ran the first one's switches again at 97% of the speed of the second.");
-assert.equal(drift(rowsOf(100, 80)), "The last round ran the first one's switches again at 80% of the speed of the second: unsteady, the device slowed down as the rounds ran (heat, or other work).");
+assert.equal(drift(rowsOf(100, 80)), "The last round ran the first one's switches again at 80% of the speed of the second: unsteady, the device was slower after the rounds between them (heat, or other work).");
 assert.equal(DRIFT_LINE, 0.9);
 assert.equal(drift(rowsOf(100, undefined)), "");
 assert.equal(drift(rowsOf(100, 97).slice(0, 3)), "", "the last is not the first's switches");
 assert.equal(drift([{ name: "a", without: [], speed: 5 }]), "");
-assert.deepEqual(warnings([{ title: "Model", markdown: drift(rowsOf(100, 80)) }]), ["Model: The last round ran the first one's switches again at 80% of the speed of the second: unsteady, the device slowed down as the rounds ran (heat, or other work)."]);
+assert.deepEqual(warnings([{ title: "Model", markdown: drift(rowsOf(100, 80)) }]), ["Model: The last round ran the first one's switches again at 80% of the speed of the second: unsteady, the device was slower after the rounds between them (heat, or other work)."]);
 assert.deepEqual(warnings([{ title: "Model", markdown: drift(rowsOf(100, 97)) }]), []);
 assert.ok(benchMarkdown(rowsOf(100, 80), environmentOf({}, {})).includes("\n\nThe last round ran the first one's switches again at 80%"), "?bench='s report says it under its table");
 assert.equal(FULL_ROUNDS.length, 6, "?bench=full walks the steps of T.52, and T.110's");

@@ -93,5 +93,5 @@ export function drift(rows) {
   if (rows.length < 3 || !same(before) || !same(after) || !before.speed || !after.speed) return "";
   const share = after.speed / before.speed;
   return `The last round ran the first one's switches again at ${Math.round(share * 100)}% of the speed of the second` +
-    (share < DRIFT_LINE ? ": unsteady, the device slowed down as the rounds ran (heat, or other work)." : ".");
+    (share < DRIFT_LINE ? ": unsteady, the device was slower after the rounds between them (heat, or other work)." : ".");
 }
