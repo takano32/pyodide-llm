@@ -85,9 +85,12 @@ const expected = {
 
 let server;
 let url = deployed;
+// T.441: while E2E_OFFLINE's visit is offline, this tool's own server ends every connection without an answer as well:
+// Playwright's Firefox goes on reaching localhost when it is told it is offline (tests/updated-in-browser.mjs's offlineNow())
+let serverOffline = false;
 if (!url) {
   // plain static files and no special headers, like GitHub Pages (T.391.6: tests/serving.mjs)
-  server = await serving();
+  server = await serving(undefined, { instead: () => (serverOffline ? "drop" : undefined) });
   url = server.url;
 }
 
@@ -481,6 +484,7 @@ if (process.env.E2E_TWICE && !failures.length) {
 }
 let offline = null;
 if (process.env.E2E_OFFLINE && !failures.length) {
+  serverOffline = true;
   await page.context().setOffline(true);
   const reloaded = Date.now();
   await page.reload({ waitUntil: "load" }).catch((error) => failures.push(`offline, the page did not load: ${error.message}`));
@@ -500,6 +504,7 @@ if (process.env.E2E_OFFLINE && !failures.length) {
     if (offline.error || !/tok\/s/.test(offline.meta)) failures.push(`offline: ${offline.error || "no answer"}`);
   }
   await page.context().setOffline(false);
+  serverOffline = false;
 }
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
