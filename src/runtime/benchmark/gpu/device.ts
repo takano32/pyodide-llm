@@ -9,6 +9,9 @@
 // was opened, the step that awaits it says so: updated.ts)
 import { named } from "../../updated.ts";
 const shaders = named(import.meta.url, () => import("../../shaders.ts"));
+// (T.442: handled here as well, where it fails before a step awaits it: no unhandled rejection; every step that awaits
+// it gets the failure all the same)
+shaders.catch(() => {});
 // T.368.7: the types of what the steps hand one another. They are written here, where the things are made, and the
 // steps take them with `import type` (what crosses to the page is contracts/benchmark.ts's).
 import type * as Shaders from "../../shaders.ts";

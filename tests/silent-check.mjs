@@ -118,6 +118,9 @@ const SILENT = {
     ["remembered", "catch { return undefined; }", `${STORAGE}or something else under the name: the first model of the list opens`],
     ["remember", "catch {}", `${STORAGE}the next visit opens the first model of the list`],
   ],
+  "src/runtime/benchmark/gpu/device.ts": [
+    ["(the module)", "shaders.catch(() => {})", "T.442: the shaders' module, started before any step awaits it: a failure before that awaiter would be unhandled. Every step awaits the same promise and says the failure (an update, by updated.ts)"],
+  ],
   "src/runtime/benchmark/memory.ts": [
     ["grow", "catch { memory = new WebAssembly.Memory({ initial: 0 }); maximum = null; }", "a browser that takes no maximum that large: a memory with the browser's own, and the result says maximum: null"],
   ],
