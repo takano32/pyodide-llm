@@ -159,9 +159,7 @@ class KernelSampler:
 
     def __init__(self, kernels, vocab_size):
         probabilities, order = np.empty(vocab_size, dtype=np.float32), np.empty(vocab_size, dtype=np.int32)
-        recent = np.empty(REPETITION_WINDOW, dtype=np.int32)
-        probabilities_p, order_p, recent_p = probabilities.ctypes.data, order.ctypes.data, recent.ctypes.data
-        self.buffers = (probabilities, order, recent)  # keep them alive: the kernels only know addresses
+        probabilities_p, order_p = probabilities.ctypes.data, order.ctypes.data
         kernel_penalize, kernel_sample = kernels["penalize"], kernels["sample"]
         known = {}  # id(logits) -> (logits, address): forward() returns the same array every time
 
@@ -174,20 +172,28 @@ class KernelSampler:
                 entry = known[id(logits)] = (logits, logits.ctypes.data)
             return entry[1]
 
-        seen = [None, 0]  # the list that recent[] mirrors, and its length then
+        def ring():
+            """A ring of the latest tokens of one list, as the penalty kernel reads them: its address, and latest(tokens),
+            which makes it the latest of tokens and says how many of them it holds. generate() appends one token per
+            step, and then one number is written: copying 64 of them from a list costs more than the kernel takes.
+            (T.394: a ring for each list a penalty reads, the history and the written tokens: one ring that both
+            penalties took turns at was copied whole twice a step.)"""
+            recent = np.empty(REPETITION_WINDOW, dtype=np.int32)
+            seen = [None, 0]  # the list that recent[] mirrors, and its length then
 
-        def latest(tokens):
-            """recent[] as the latest of tokens, and how many of them it holds"""
-            # recent[] is a ring of the latest tokens. generate() appends one token per step, and then one number
-            # is written here: copying 64 of them from a list costs more than the kernel takes
-            size = len(tokens)
-            if seen[0] is tokens and size == seen[1] + 1:
-                recent[(size - 1) % REPETITION_WINDOW] = tokens[-1]
-            else:
-                for position in range(max(size - REPETITION_WINDOW, 0), size):
-                    recent[position % REPETITION_WINDOW] = tokens[position]
-            seen[0], seen[1] = tokens, size
-            return min(size, REPETITION_WINDOW)
+            def latest(tokens):
+                size = len(tokens)
+                if seen[0] is tokens and size == seen[1] + 1:
+                    recent[(size - 1) % REPETITION_WINDOW] = tokens[-1]
+                else:
+                    for position in range(max(size - REPETITION_WINDOW, 0), size):
+                        recent[position % REPETITION_WINDOW] = tokens[position]
+                seen[0], seen[1] = tokens, size
+                return min(size, REPETITION_WINDOW)
+            return recent, recent.ctypes.data, latest
+
+        (history_ring, history_p, history_latest), (written_ring, written_p, written_latest) = ring(), ring()
+        self.buffers = (probabilities, order, history_ring, written_ring)  # keep them alive: the kernels only know addresses
 
         def drawing(sampling, rng):
             """NumpySampler.drawing()'s, on the kernels. A closure of a closure, and no method: a step reads the
@@ -198,9 +204,9 @@ class KernelSampler:
 
             def draw(logits, history, written):
                 if penalty != 1.0:
-                    kernel_penalize(address(logits), recent_p, latest(history), penalty, 0.0)
+                    kernel_penalize(address(logits), history_p, history_latest(history), penalty, 0.0)
                 if presence != 0.0 and written:
-                    kernel_penalize(address(logits), recent_p, latest(written), 1.0, presence)
+                    kernel_penalize(address(logits), written_p, written_latest(written), 1.0, presence)
                 if temperature == 0.0:
                     return greedy(logits)
                 # the random number is drawn here, so that a seed gives the same text again
