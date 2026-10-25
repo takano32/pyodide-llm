@@ -136,7 +136,7 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     places() { return [{ keys: 60000, values: 61000, ring: 21 }, { keys: 62000 + beside.capacity, values: 63000, ring: 0 }]; } };
   const model = { ...SHAPE, ...shape };
   const weights = { ...WEIGHTS, ...other };
-  const fit = gpuFit({ shape: model, weights, device: { gpuRoom: undefined, memoryUnsaid: false, sharedMemory: true }, direct });
+  const fit = gpuFit({ shape: model, weights, device: { gpuRoom: undefined, sharedMemory: true }, direct });
   const taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot, tokensWhyNot, staging: whyNot ? 0 : STAGING, rows: whyNot || direct ? 0 : ROWS,
     ids: whyNot || tokensWhyNot ? 0 : IDS };
   const part = gpuSide({ shape: model, weights, taken, cpuSide, control, threads: beside.threads,
@@ -669,7 +669,7 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
 // ---- gpuFit(): why the GPU would not take a model, and the vectors it reads
 {
   const fitOf = (shape = {}, weights = {}, device = {}, direct) =>
-    gpuFit({ shape: { ...SHAPE, ...shape }, weights: { ...WEIGHTS, ...weights }, device: { gpuRoom: undefined, memoryUnsaid: false, sharedMemory: true, ...device }, direct });
+    gpuFit({ shape: { ...SHAPE, ...shape }, weights: { ...WEIGHTS, ...weights }, device: { gpuRoom: undefined, sharedMemory: true, ...device }, direct });
   assert.deepEqual([fitOf().unfit(), fitOf().tokensUnfit()], [null, null]);
   assert.deepEqual(Object.keys(fitOf()).sort(), ["matrices", "tokensUnfit", "unfit", "vectors"]);
   const reasons = [
@@ -788,7 +788,6 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{}, { wcls: { rows: 100, n: 8, kind: "f32", layer: () => [0] } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, { embedding: { kind: "f16", group: 32 } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, { wcls: matrixOf(100, 8, 0, { kind: "made-up" }) }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
-    [{}, {}, { memoryUnsaid: true }, /^this browser does not say how much memory the device has$/],
     [{}, {}, { gpuRoom: 20000 }, /^the classifier on the GPU as well \(0 MB with the layers\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of steps) assert.match(fitOf(shape, weights, device).tokensUnfit(), reason);

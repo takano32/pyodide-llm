@@ -126,16 +126,16 @@ let gpuRequests = 0;
 /** T.349: what the GPU would hold of one engine's model, and why it would not take it (createForward() asks before it
  * allocates the places the GPU writes to).
  * T.378.2: shape, the model's facts, and weights, where its tensors are in the memory (createForward() makes both once,
- * for this and for gpuSide()); device: { gpuRoom, memoryUnsaid, sharedMemory }, what the device and the page give;
+ * for this and for gpuSide()); device: { gpuRoom, sharedMemory, oneThread }, what the device and the page give;
  * direct: the model is on the GPU alone (T.156). */
 export function gpuFit({ shape, weights, device, direct }:
-  { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
+  { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; sharedMemory: boolean; oneThread?: boolean }; direct: Direct | undefined }) {
   const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, activation, local, extras, gpuKinds, stateful, rotated,
     sharedClassifier, kinds, attending, stateBytes } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions, attPost, ffnPost, own, channels } = weights;
   // T.545: how many layers a matrix or a vector of that name is of (every layer, or those of its kind: kindOf())
   const countOf = (name: string) => (kindOf(name, shape) ? kinds.filter((kind) => kind === kindOf(name, shape)).length : layers);
-  const { gpuRoom, memoryUnsaid, sharedMemory, oneThread } = device;
+  const { gpuRoom, sharedMemory, oneThread } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T.135) takes Llama's layers of int8 weights
   // (T.153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T.154:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T.155: int6 weights and 64-bit memories too)
@@ -218,10 +218,9 @@ export function gpuFit({ shape, weights, device, direct }:
     if (!wcls || !held || !embedded || (blocks ? channels.length > 0 : !PACKED[held].scale || embedded !== held)) {
       return REASONS.floatClassifier;
     }
-    // T.205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where
-    // the browser does not say what the device has: an iPhone's tab went down in /benchmark/'s model section. The
-    // prompts' blocks still go (their layers alone)
-    if (memoryUnsaid) return REASONS.memoryUnsaid;
+    // (T.548, the owner's choice: a browser that does not say the device's memory (Safari, Firefox) takes them too; T.205
+    // kept them off it after an iPhone's tab went down in /benchmark/'s model section with the classifier and the
+    // embedding on the GPU as well. Undone for Safari if the owner's iPhone goes down)
     // (T.547.3.6's review: each table as it is packed: Saluki's embedding of IQ1_M is half the bytes of its classifier)
     const table = vocab * dim * gpuWeightBytes(wcls.kind), embeddingBytes = vocab * dim * gpuWeightBytes(embedding.kind);
     // (GPT-2's positions on the GPU as well, a row a position)

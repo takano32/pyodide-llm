@@ -38,7 +38,7 @@ export type Trying = { signed?: boolean };
 // What an engine is made of (the comments above createForward() say each)
 export type Made = {
   memory: WebAssembly.Memory; base: number; size: number; kernels: Compiled; plan: Plan;
-  spawn?: Spawn | null; gpu?: () => GpuWorker; gpuRoom?: number; memoryUnsaid?: boolean; gpuRemembered?: Remembered; gpuForce?: Force;
+  spawn?: Spawn | null; gpu?: () => GpuWorker; gpuRoom?: number; gpuRemembered?: Remembered; gpuForce?: Force;
   halfKeys?: boolean; direct?: Direct; rows?: Rows; oneThread?: boolean;
   wrap?: (exports: Kernels) => Kernels; stalledMs?: number; clock?: () => number; kinds?: Kinds; trying?: Trying;
 };
@@ -57,9 +57,7 @@ const STALLED_MS = 10000;
 /** gpu (T.135; T.148: wherever the worker has WebGPU): makes the GPU's worker (gpu.js, not started: a Worker, or what
  * posts and listens as one). A prompt's blocks then go through the layers there where the model allows it and the GPU
  * is faster; see forwardMany. gpuRoom (T.148): the bytes this device can give the GPU's copy of the layers (the
- * worker's reckoning from navigator.deviceMemory; none said: no limit). memoryUnsaid (T.205): the browser does not say
- * how much memory the device has (no navigator.deviceMemory: Safari, Firefox); a generation's steps then stay on the
- * CPU. gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
+ * worker's reckoning from navigator.deviceMemory; none said: no limit). gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
  * gpu.js). */
 /** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
@@ -87,7 +85,7 @@ const STALLED_MS = 10000;
 /** direct (T.156, external()): the layers' matrices (T.210: and the tables) are on the GPU alone: nothing runs on the CPU,
  * every block and step goes to the GPU (as gpuForce.always), and one the GPU cannot take throws (the worker loads the
  * model again on the CPU). T.210: no cache of keys and values here either; the GPU embeds a prompt's tokens itself */
-export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce = {},
+export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, gpuRemembered, gpuForce = {},
   halfKeys, direct, rows, oneThread = false, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS, trying = {} }: Made) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen } = plan;
@@ -461,7 +459,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         .flatMap(([name, [tensor, size]]) => (floats(tensor) ? [[name, { at: floats(tensor), size }]] : []))),
     } };
   // T.349: what the GPU would hold of this model, and why it would not take it
-  const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory, oneThread }, direct });
+  const fit = gpuFit({ shape, weights, device: { gpuRoom, sharedMemory, oneThread }, direct });
 
   // T.135: where the GPU's worker puts the keys and values of a prompt's block (float16, T.147: the keys
   // [layers][GPU_BLOCK][kvDim], then the values the same), for the cache below, and where it reads the block's rows

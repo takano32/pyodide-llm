@@ -79,7 +79,7 @@ export function compileBlocks(plain: BufferSource, relaxed?: BufferSource | null
 /** T.156 direct ({ place, stored, onLost }, gpuOnlyWeights()): the layers' matrices are on the GPU alone, memory holds
  * the rest of the checkpoint (stored bytes) packed without them, a tensor at place(its offset in the checkpoint);
  * onLost(why) is told where the GPU stops (the model has to be loaded again on the CPU). */
-export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying, apart, oneThread }:
+export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpuRemembered, gpuForce, halfKeys, direct, trying, apart, oneThread }:
   Omit<Made, "plan" | "wrap" | "stalledMs" | "clock" | "kinds" | "rows"> & { apart?: Apart }) {
   const place = direct?.place ?? apart?.place ?? ((offset: number) => offset);
   const outside: Outside = {
@@ -100,7 +100,7 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, mem
           ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }])) as Plan["tensors"];
       }
       outside.engine = createForward({ memory, base, size: direct ? direct.stored : apart ? apart.stored : size, kernels, spawn, gpu, gpuRoom,
-        memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows, oneThread });
+        gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows, oneThread });
       return outside.engine;
     },
   };

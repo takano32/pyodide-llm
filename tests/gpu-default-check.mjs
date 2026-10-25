@@ -829,8 +829,8 @@ if (isMainThread) {
     expect("a model let go while its GPU gets ready: waited for, and the late ready ignored",
       [early.ended, early.ms >= 180 && early.ms < 2500, early.exited, /WebGPU/.test(early.status ?? "") && !/CPU/.test(early.status ?? "")], [true, true, true, false]);
   }
-  // T.205: a browser that does not say the device's memory (Safari, Firefox: no navigator.deviceMemory) keeps a
-  // generation's steps on the CPU (no classifier and embedding on the GPU), and the prompts' blocks on the GPU
+  // T.548 (T.205 undone, the owner's choice): a browser that does not say the device's memory (Safari, Firefox) has its
+  // steps on the GPU as any other; the engine is told nothing of the memory (memoryUnsaid is gone)
   {
     const fast = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep };
     const gpu = () => {
@@ -839,7 +839,7 @@ if (isMainThread) {
         set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
     };
     const outcome = async (memoryUnsaid) => {
-      const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, memoryUnsaid });
+      const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, ...(memoryUnsaid ? { memoryUnsaid } : {}) });
       await engine.setThreads(1);
       await engine.gpu;
       const prompts = [1, 2, 3].map(() => feed(engine)[1]);
@@ -850,10 +850,7 @@ if (isMainThread) {
       return got;
     };
     const unsaid = await outcome(true), said = await outcome(false);
-    expect("no deviceMemory: the steps not asked of the GPU, and why", [unsaid.planned, /does not say how much memory/.test(unsaid.why ?? "")], [false, true]);
-    expect("no deviceMemory: the prompts' blocks still on the GPU (after the first, timed on the CPU)", unsaid.prompts.slice(1), [PROMPT, PROMPT]);
-    expect("no deviceMemory: every step on the CPU", unsaid.written, all(1, 3, [0, STEPS]));
-    expect("no deviceMemory: the status line says no reason (the console does)", /memory/.test(unsaid.status ?? ""), false);
+    expect("what was memoryUnsaid: the steps asked of the GPU, and taken there", [unsaid.planned, unsaid.written.at(-1)[0] > 0], [true, true]);
     expect("with deviceMemory: the steps asked of the GPU, and taken there", [said.planned, said.written.at(-1)[0] > 0], [true, true]);
   }
   // T.152: Python's generate() through forward.js's external() (as the page's worker has it) on the made-up GPU far
