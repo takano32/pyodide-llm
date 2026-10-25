@@ -225,6 +225,7 @@
 - T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
 - T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 進行中
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
+- T.582 [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1469,7 +1470,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **気づき**: (a) **取得の間のバッファ**: `ranges.ts` は取った 1 バイトにつき 2 バイトの捨てる配列を作る。V8 と SpiderMonkey はすぐ回収するが、JavaScriptCore は大きなメモリを持つワーカーでは数 GB ためる。部品の配列を使い回す・BYOB の読み手にする、で減らせる見込み（未計測。Chromium と Firefox の道が変わるので別のタスクに: 採番していない）。(b) WebKit の 64 ビットのメモリの `grow()` は遅い（上）: KV を伸ばす `grow()` が 27B で何秒かかるかは未計測。(c) AGENTS.md の「6 ビットになるのは Safari と…」は、64 ビットのメモリを持つ WebKit では当たらない（int8 のまま 64 ビットに置く）。
 
 ### T.507 [不具合][描画] Service Worker の入ったブラウザで `?coi=off` を初めて開くと worker が始まらない — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.507-coi-off`。T.522 も同じ直しで閉じる。前の状態: 未着手、2026-10-13、T.505.3 の実装とレビューが見つけた。前からある: 本番で再現）
-- **結果**: 見立てのとおり。`?coi=off` の訪問はまだ Service Worker が受け持つページ（隔離のヘッダつき）のまま登録を外していて、その上で作る worker が始まらなかった（手元の Chromium で「Initializing...」のまま）。直しはページの側だけ（`src/page/isolation.ts`）: 登録を外した後、ページを Service Worker が受け持っていれば 1 回だけ（タブに 1 回、`sessionStorage` の `coi-off-reloaded`）読み込み直してヘッダの無いページにする。`public/coi.js` には触っていない（落とし穴の「持ち主の端末が先」の範囲の外: ほかのサイトの応答と隔離のヘッダの扱いは変わらない）。試験: 実ブラウザの道具 `tests/coi-off-in-browser.mjs`（隔離した訪問の後に同じ profile で `?coi=off`: 準備完了・隔離なし・登録なし）。直す前の版では 120 秒「Initializing...」で落ちる。ふつうの訪問は `tests/e2e.mjs stories260K` で前と同じ文。CI を省いた。訳: 手元の Chromium の実ブラウザで踏める（Firefox・WebKit の違いは未確認: `browsers.yml` の週次が `?coi=off` を開かない）。取りまとめ役の決め: 読み込み直しはタブに 1 回（読み込み直しても受け持たれたままのブラウザで回り続けないため）。
+- **結果**: 見立てのとおり。`?coi=off` の訪問はまだ Service Worker が受け持つページ（隔離のヘッダつき）のまま登録を外していて、その上で作る worker が始まらなかった（手元の Chromium で「Initializing...」のまま）。直しはページの側だけ（`src/page/isolation.ts`）: 登録を外した後、ページが隔離されていれば（Service Worker を通ってヘッダつきで来た）読み込み直してヘッダの無いページにする。そのページ自身が読み込み直しなら（それでもヘッダを付けるブラウザ）もうしない: 印は `sessionStorage` でなく `performance` の navigation の `type`（隔離したページとヘッダの無いページは `sessionStorage` を分け合わない: レビューの勧めで印を消す形を試して、2 回目の `?coi=off` で消したはずの印が隔離したページの側に残っていた）。`public/coi.js` には触っていない（落とし穴の「持ち主の端末が先」の範囲の外: ほかのサイトの応答と隔離のヘッダの扱いは変わらない）。試験: 実ブラウザの道具 `tests/coi-off-in-browser.mjs`（隔離した訪問の後に同じ profile で `?coi=off`: 準備完了・隔離なし・登録なし。そのあと Service Worker の下の訪問と、もう 1 回の `?coi=off`）。直す前の版では 120 秒「Initializing...」で落ちる。ふつうの訪問は `tests/e2e.mjs stories260K` で前と同じ文。CI を省いた。訳: 手元の Chromium の実ブラウザで踏める（Firefox・WebKit の違いは未確認: `browsers.yml` の週次が `?coi=off` を開かない）。取りまとめ役の決め: 読み込み直しは、読み込み直したページではしない（ヘッダを付け続けるブラウザで回り続けないため。その道は試せていない）。
+- レビュー（Sonnet low、2026-10-25）: must-fix なし。直しの向き、`coi-fallback` の道と 2 回読み込み直さないこと、`coi.js` に触らないので持ち主の端末が先に当たらないことを確かめた。勧め（印を消す所が無く、同じタブの 2 回目の `?coi=off` が止まる）を入れた: 上のとおり印をやめて navigation の `type` に。道具に 2 回目の `?coi=off` を足した。入れない: `/benchmark/` の `?coi=off` にも同じ症状が出うる（別の採番に: T.582）。
 - **手順**: 新しい profile の Chrome 155 で本番を開き、Service Worker が入るまで待ち（15 秒）、`?coi=off` に移る → ページに「Failed to start the worker: undefined」。開き直すと動く。一覧のモデルでも `?hf=` でも同じ。再現の道具はレビューが作業の木の `.tmp/coioff.mjs` に置いた（コミットしていない: Playwright の `launchPersistentContext`）。
 - **見立て（未確認）**: `?coi=off` は Service Worker の登録を外して読み込み直す。その読み込みは、まだ隔離のヘッダつきで配られたページ（COEP: require-corp）で、worker のスクリプトの応答に Service Worker が居ないので CORP のヘッダが付かず、ブラウザが worker を断る（AGENTS.md の開発サーバの項と同じ形: 文なしの `error`）。
 - **害**: `?coi=off` は試験と切り分けのための指定で、訪問者はまず踏まない。ただし Service Worker が外れる・壊れる道で同じことが起きないかを見る。
@@ -1673,3 +1675,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 未着手（2026-10-16、T.271 のレビューの気づき。持ち主の端末で費用を測ってから）
 - いまはブロックごとと 4 ステップごとに状態全体（Qwen3.5 0.8B で約 20 MiB）を読み戻して写す。見積もり（未計測）でブロックの 3〜5%、ステップの 10〜15%。
+
+### T.582 [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 状態: 未着手（2026-10-25、T.507 のレビューの気づき）
+- `src/benchmark/isolation.ts` は `?coi=off` で `false` を返すだけで、登録を外さず読み込み直しもしない。T.507 のモデルのページと同じく、Service Worker を通ってヘッダつきで来たページの上で節の Worker が始まらない見込み（未確認）。先に `tests/coi-off-in-browser.mjs` の形で `/benchmark/` を開いて確かめ、症状があればモデルのページと同じ直し（隔離されていれば、読み込み直しでないページだけ読み込み直す）。
