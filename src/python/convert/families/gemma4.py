@@ -285,7 +285,7 @@ def gemma4_agrees(own, config):
 
 GEMMA4 = Family("Gemma 4", "gemma4", gemma4_sources, gemma4_check, before=gemma4_config, options=gemma4_options,
                 form={"wide": wide, "double": double, "kv_shared": shared, "per_layer": per_layer}, prefix=gemma4_prefix, table=gemma4_table,
-                free_heads=True, rms_norm=True,
+                free_heads=True,
                 gguf="gemma4", gguf_config=gemma4_gguf_config, agrees=gemma4_agrees, gguf_rope_freqs=gemma4_rope_freqs,
                 # llama.cpp's names by transformers' of the language model saved alone ("model."; the whole model's
                 # "model.language_model." is the safetensors', not the GGUF's): a Gemma 3's, the embeddings of every

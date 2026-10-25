@@ -133,14 +133,14 @@ def neox_agrees(own, config):
             ("parallel residual", own.get("use_parallel_residual", True), config.get("use_parallel_residual", True))]
 
 
-GPT2 = Family("GPT-2", "gpt2", gpt2_sources, gpt2_check, after=gpt2_names, prefix=gpt2_prefix, fixed_context=True,
+GPT2 = Family("GPT-2", "gpt2", gpt2_sources, gpt2_check, after=gpt2_names, prefix=gpt2_prefix,
               gguf="gpt2", gguf_config=gpt2_gguf_config, gguf_stored=gpt2_gguf_stored, agrees=layer_norm_agrees,
               gguf_names=({"token_embd.weight": "wte.weight", "position_embd.weight": "wpe.weight",
                            "output_norm.weight": "ln_f.weight", "output_norm.bias": "ln_f.bias",
                            "output.weight": "lm_head.weight"}, "h.{}.",
                           {"attn_norm": "ln_1", "attn_qkv": "attn.c_attn", "attn_output": "attn.c_proj", "ffn_norm": "ln_2",
                            "ffn_up": "mlp.c_fc", "ffn_down": "mlp.c_proj"}))
-NEOX = Family("GPT-NeoX", "neox", neox_sources, neox_check, after=neox_names, classifier="embed_out.weight", partly=True,
+NEOX = Family("GPT-NeoX", "neox", neox_sources, neox_check, after=neox_names, classifier="embed_out.weight",
               # GPT-NeoX may run its two branches in parallel: the file does not say
               options=lambda config: {"parallel_residual": bool(config.get("use_parallel_residual", True))},
               gguf="gptneox", gguf_config=neox_gguf_config, gguf_stored=neox_gguf_stored, agrees=neox_agrees,

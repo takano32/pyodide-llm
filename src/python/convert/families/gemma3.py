@@ -146,7 +146,7 @@ def gemma3_agrees(own, config):
 # one behind the FFN post_ffw_norm; ffn_norm is the one in front of the FFN (transformers' pre_feedforward_layernorm,
 # where a Llama's ffn_norm is its post_attention_layernorm)
 GEMMA3 = Family("Gemma 3", "gemma3", gemma3_sources, gemma3_check, before=gemma3_config, options=gemma3_options,
-                free_heads=True, rms_norm=True,
+                free_heads=True,
                 gguf="gemma3", gguf_config=gemma3_gguf_config, gguf_stored=gemma3_gguf_stored, agrees=gemma3_agrees,
                 gguf_names=({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
                              "output.weight": "lm_head.weight"},

@@ -26,7 +26,7 @@
 - T.384 [バグ][遠隔試験] 全部の組が 1 つの試験で 88 分止まった回がある — 反映済み
 - T.385 [試験][変換] ブラウザの中でカーネルの読み手が使われたかを見る — 未着手
 - T.389 [バグ][遠隔試験] Windows の Firefox が切った部品を worker が取り直した回を、e2e が失敗と数える — 反映済み
-- T.392 [整理][変換] 変換器の家族の旗 4 つと `families.LAYOUTS` はエンジンの表と同じ事実 — 未着手
+- T.392 [整理][変換] 変換器の家族の旗 4 つと `families.LAYOUTS` はエンジンの表と同じ事実 — 進行中
 - T.393 [バグ][変換] 知らない `arch` を Llama として読む所が残っている — 未着手
 - T.394 [速度][CPU] カーネルの標本抽出: 罰を 2 つ使うと直近の語の輪を毎ステップ 2 回写す — 未着手
 - T.395 [バグ][CPU] 温度・top-p・繰り返しの罰の値を検査していない — 未着手
@@ -490,7 +490,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 読み手のカーネルが無ければ変換は黙って NumPy で読む（遅いだけ）。smoke は Node の Pyodide で 4 つとも作られることを見るが、ページの道は誰も見ない。案: `worker/convert.js` が使う読み手の名前を 1 行コンソールに出し、`tests/e2e.mjs` が GGUF のモデルでその行を見る。e2e の作り物 `hf` は F32 だけなので、BF16 の作り物も足す。
 ### T.389 [バグ][遠隔試験] Windows の Firefox が切った部品を worker が取り直した回を、e2e が失敗と数える — 状態: 反映済み（2026-10-10、`browsers.yml` run 38046609290 から。規模 小。**効くかは次に起きた回で分かる**）
 - Windows の Firefox は部品の本文を途中で切ることがあり（T.97 の落とし穴、12 回に 1 回ほど）、worker は取り直す（モデルは答えた）。ブラウザ自身がコンソールに書く `[JavaScript Error: "Failed to read data from the ReadableStream: …"]` を `tests/e2e.mjs` がコンソールのエラーとして落としていた。worker の「broke off …: fetched again」の行の数までは、その行を失敗に数えない（それを越える分と、ほかのエラーは今までどおり落とす）。**わたしの誤り**: 最初の正規表現は行の頭に固定していて、本物の行（頭に `[JavaScript Error: "` が付く）に当たらなかった。レビューがログの本物の行に当てて直した（26f3cbd）。**確かめていないこと**: worker の `console.warn` が Firefox でページのコンソールに届くか（届かなければ今までどおり落ちるだけ。次に落ちたら、まずそこを見る）。
-### T.392 [整理][変換] 変換器の家族の旗 4 つと `families.LAYOUTS` はエンジンの表と同じ事実 — 状態: 未着手（2026-10-10、T.359.6 から。規模 小〜中）
+### T.392 [整理][変換] 変換器の家族の旗 4 つと `families.LAYOUTS` はエンジンの表と同じ事実 — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.392-family-facts`。前の状態: 未着手、2026-10-10、T.359.6 から。規模 小〜中）
+- **結果（2026-10-25）**: `Family`（`convert/families/family.py`）の 4 つの欄を、エンジンの表 `LAYOUTS` を読む性質にした: `fixed_context` = RoPE が無い（`rope is None`: 学んだ位置の表）、`rotatable` = `Layout.rotatable`、`rms_norm` = `not layer_norm`、`partly` = `rope == PARTLY`。先に 15 の家族（`FAMILIES` の全部）で 4 つとも今の値と同じことを確かめてから書き換え、7 つの家族の記録から 4 つの言葉を消した。`families.LAYOUTS`（arch → その arch の最初の家族: 取り込み元と接頭辞を引く）は事実の写しでなく家族を引く表なので残した。`tests/test_families.py` の `FACTS` は 2 つ目の写しのまま（`getattr` で性質を読む）。pytest 3316 通る、`make python`。網: `layouts` 2401 同じ、`exports` の Python の窓口は `Family` の欄（`_fields` など）だけが違う（予定した違い）。変換の出力は変わらない（同じ値を読む）。CI を省いた。訳: Python の表の読み替えだけで、pytest が全部の家族を踏む。
 - `Family` の `rotatable`・`partly`・`rms_norm`・`fixed_context` は 11 の家族の全部でエンジンの `engine/layout.py` の `LAYOUTS` の事実と同じ値で、`families.LAYOUTS` の鍵も同じ。案: エンジンの表が持ち、家族は `layout_of(family.arch)` を読む（11 の記録と `tests/test_families.py` の `FACTS` を書き換える）。変換の出力は変わらない見込み。T.369 の前後どちらでもよい。
 
 ### T.393 [バグ][変換] 知らない `arch` を Llama として読む所が残っている — 状態: 未着手（2026-10-10、T.359.6 から。規模 小）
