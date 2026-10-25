@@ -41,7 +41,6 @@
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
 - T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 未着手
-- T.440 [バグ][計測実行] `/benchmark/` はカーネルが 5xx か回線の切れで取れないと「no WebAssembly SIMD in this browser」と言う — 進行中
 - T.441 [整理][遠隔試験] Firefox のオフラインの試験が何も見ていない見込み、と `updated-in-browser.mjs` の置き場 — 未着手
 - T.442 [整理][その他] T.367.4 の小さな気づき — 未着手
 - T.422 [整理][遠隔試験] `tests/conducting.mjs` の `converted()` がジェネレータを閉じ忘れても落ちない — 未着手
@@ -545,10 +544,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 状態: 未着手（2026-10-11、T.367.4 から。規模 小）
 - T.367.4 の「更新された」の線は、後から読む部品が変わると、それを名指す塊の名前（中身のハッシュ）も変わることに乗っている（実装が 7 つの部品を 1 つずつ変えて確かめた）。束ね手か名前の形を変える回に、2 つのビルドで見る検査が要る。
-
-### T.440 [バグ][計測実行] `/benchmark/` はカーネルが 5xx か回線の切れで取れないと「no WebAssembly SIMD in this browser」と言う — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-11、T.367.4 から。前からある。規模 小）
-- `kernelsOf`・`ceilingsOf` が取得の失敗を null にする。T.367.4 は 404 の場合だけ更新の文に替えた。取れなかったことをそのまま言う（今ある「Could not fetch <名前>: <状態>」）。
-- **結果（2026-10-25）**: `src/runtime/benchmark/sections.ts` の `kernelsOf()`・`ceilingsOf()` は取得の失敗を null にしない: `built()` の投げたもの（「Could not fetch <名前>: <状態>」、回線の切れはブラウザの TypeError、404 は今までどおり「サイトが更新された」）がそのまま節の失敗になる。null は「コンパイルできない（SIMD が無い）」だけ。relaxed の版が取れないときも黙って「relaxed なし」にしない。文は今ある文の使い回し（取りまとめ役の決め）。`tests/updated-in-browser.mjs` の「カーネルが 500 なら SIMD が無いと言う（前のまま）」の場合を「Could not fetch simdkernel…: 500」に替え、天井のループが 500 の場合を足した（手元の Chromium で CPU の節の 8 つの場合が通る。壊し方: 前の `sections.ts` で 2 つとも落ちる）。`tests/bench.mjs` の作り物の文も同じ形に。CI を省いた。訳: `/benchmark/` の Worker の失敗の道で、手元の実ブラウザが踏む（Firefox・WebKit だけの違いの出る所でない）。
 
 ### T.441 [整理][遠隔試験] Firefox のオフラインの試験が何も見ていない見込み、と `updated-in-browser.mjs` の置き場 — 状態: 未着手（2026-10-11、T.367.4 から。規模 小）
 - Playwright の Firefox は `setOffline(true)` の後も localhost に届く（`tests/updated-in-browser.mjs` の最初の CI の回 38123992979 で、Firefox の「オフライン」の変換がそのまま成功した）。`tests/e2e.mjs` の `E2E_OFFLINE` は `setOffline` と読み込み直しだけなので、`preview.yml offline=true` の Firefox は手元で配るファイルについて何も確かめていない見込み（状況証拠: Firefox では回していない）。道具の `offlineNow`（サーバも接続を落とす）を e2e に使うか、`setOffline` の後に取得が失敗することを先に見る。
