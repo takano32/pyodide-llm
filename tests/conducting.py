@@ -207,7 +207,9 @@ def converted(answerer, hf, weights=True, **make):
     steps = conduct(hf, **make)
     try:
         request = next(steps)
-        while True:
+        # (T.415: a conduct that never ends fails past this many requests rather than hangs a tool; a real model's, of
+        # many shards, asks for a few dozen)
+        for _ in range(10000):
             kind = request[0]
             if kind == "done":
                 return request[1]
@@ -218,6 +220,7 @@ def converted(answerer, hf, weights=True, **make):
             if kind not in ("text", "bytes", "range", "size", "stream"):
                 raise RuntimeError(f"The conduct of the conversion asked for {kind}, which nothing here answers.")
             request = steps.send(getattr(answerer, kind)(*request[1:]))
+        raise RuntimeError(f"The conduct of the conversion asked for more than 10000 things without ending: the last was {request[:5]}.")
     finally:
         steps.close()
 

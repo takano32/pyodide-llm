@@ -16,7 +16,7 @@ import struct
 from pathlib import Path
 
 import pytest
-from conduct_hub import THREE, Absent, File, Folder, Hub, MiB, StandIn, answer, answered, answering, cut, direct, gguf, made, safetensors, sound
+from conduct_hub import THREE, Absent, File, Folder, Hub, MiB, StandIn, ASKED, answer, answered, answering, cut, direct, gguf, made, safetensors, sound
 from conftest import synthetic_weights
 from test_convert import hugging_face, safetensors_file
 from test_gguf import EPS, gguf_file, sentencepiece, unigram
@@ -849,9 +849,12 @@ def test_a_conversion_made_only_after_the_tokenizer_is_fed_what_came_with_the_he
     hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": marked(1000, 3 * MiB), **repository({"tokenizer.json": "unreadable", "spiece.model": "a model"})}, hf)
     steps = conduct(hf)
     request = next(steps)
-    while request[0] != "stream":
+    for _ in range(ASKED):
+        if request[0] == "stream":
+            break
         assert pieces == []
         request = steps.send(answer(hub, request))
+    assert request[0] == "stream", f"no stream asked for in {ASKED} requests"
     assert [len(piece) for piece in pieces] == [2 * MiB - 1000] and request[3:7] == (2 * MiB, 3 * MiB + 1000, 2 * MiB, 3 * MiB + 1000)
     assert stand_in.handed[1].endswith(": refused") and "spiece.model" in stand_in.handed[2]
 
