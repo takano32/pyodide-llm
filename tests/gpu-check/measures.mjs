@@ -45,4 +45,13 @@ function scaleOff(got, want) {
   return gw / ww - 1;
 }
 
-export { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff };
+// T.558.1: keys or values ([layer][position][width]) with the positions before from[layer] of each layer zeroed: the
+// positions a ring of the CPU's cache no longer holds (a window's layer, T.510.1), compared as rows of zeros on both sides
+// (worstRow() reads a row of zeros as 0 from another)
+function held(b64, from, positions, width) {
+  if (!from?.some(Boolean)) return b64;
+  const out = floats(b64).slice();
+  from.forEach((first, l) => out.fill(0, l * positions * width, (l * positions + first) * width));
+  return Buffer.from(out.buffer).toString("base64");
+}
+export { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held };

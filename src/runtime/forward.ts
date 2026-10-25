@@ -20,7 +20,7 @@ import { BATCH } from "./jobs.ts";
 export { BATCH };
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.ts";
 import { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.ts";
-import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory, takesBlocks } from "./forward/memory.ts";
+import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory, takesBlocks, ringPositions } from "./forward/memory.ts";
 import { gpuWeightBytes, aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm,
   GPU_ALONE } from "./forward/alone.ts";
@@ -48,7 +48,7 @@ export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNT
   PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, gpuWeightBytes,
   aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
   aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm, needsWide, pastWide,
-  automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS, takesBlocks, tableHole };
+  automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS, takesBlocks, tableHole, ringPositions };
 // T.329.2.2: a model whose table of every layer's inputs is not in the memory (tableHole(): one stretch of the
 // checkpoint), which holds the rest packed without it (stored bytes), a tensor at place(its offset in the checkpoint);
 // rows reads the table's from where the checkpoint is kept (perlayer.ts's Rows)

@@ -164,6 +164,12 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // position: the CPU's step after the prompt reads its keys and values
   "synthetic-gemma3": [{ layers: 4, kv_heads: 1, arch: "gemma3", head_dim: 32, seq_len: 160 },
     { arch: "gemma3", head_dim: 32, local: { layers: [0, 1, 2], window: 64, rope_theta: 100 } }],
+  // T.558.1 (T.261.4.1's and T.545.2's reviews): the same with a window of 24, whose ring (a period of 40, held twice) is
+  // shorter than the context of 160 (the window of 64 keeps every position): the CPU keeps the local layers' keys and
+  // values in the ring, which wraps three times over the prompt, and a token's steps after a prompt on the CPU take
+  // their keys and values up from the ring's last period (keysIn())
+  "synthetic-gemma3-ring": [{ layers: 4, kv_heads: 1, arch: "gemma3", head_dim: 32, seq_len: 160 },
+    { arch: "gemma3", head_dim: 32, local: { layers: [0, 1, 2], window: 24, rope_theta: 100 } }],
   // T.545: an LFM2 (convolution layers among attending ones, an LFM2's norms of the heads of q and k), of six layers:
   // two of convolution first (the first, whose matrices the loading's check reads (T.545.2), and one whose rows the second
   // block goes on from), then attending and convolution in turn, the last a convolution layer (a prompt's block leaves
@@ -299,7 +305,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // (T.232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
-  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-qwen35-rotated-1024", "synthetic-q4k-wide",
+  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-qwen35-rotated-1024", "synthetic-gemma3-ring", "synthetic-q4k-wide",
   "synthetic-lfm2-q4k", "synthetic-q4k-layers",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
   "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",

@@ -254,6 +254,17 @@ check("a run wrong in one thing fails, and says which", () => {
   failed(runOf({ steps: { why: "wk would not start where this GPU binds a buffer" }, note: "prompts and answers on WebGPU" }),
     /- the status line is "prompts and answers on WebGPU", not "prompts on WebGPU, answers on the CPU"/);
 });
+check("of a layer whose keys and values the CPU keeps in a ring, the positions the ring holds alone (T.558.1)", () => {
+  // the first two positions of layer 0 wrong in the CPU's and in the GPU's run (a ring of the last position alone has
+  // written over them): past the lines where every position is compared, within them where layer 0 holds position 2 on
+  const wrong = (from) => ({ keys: b64(moved(floats(from.keys), 0.5, [0], 2)), values: b64(moved(floats(from.values), 0.5, [0], 2)) });
+  const run = runOf();
+  const ringed = { ...run, ...wrong(run), again: { ...run.again, ...wrong(run.again) } };
+  const cpu = { ...CPU, ...wrong(CPU) };
+  assert.equal(model([ringed], { cpu }).value, true, "every position compared: the rows a ring wrote over fail");
+  const within = model([ringed], { cpu, heldFrom: [2, 0] });
+  assert.equal(within.value, false, within.text);
+});
 check("the status of a GPU that takes the prompts", () => {
   for (const note of ["prompts on WebGPU", "prompts and answers on WebGPU", "prompts on WebGPU, answers on the CPU"]) assert.ok(promptsOnGpu(note), note);
   for (const note of ["prompts on the CPU (a fallback adapter)", "prompts on WebGPU's", undefined, ""]) assert.ok(!promptsOnGpu(note), String(note));
