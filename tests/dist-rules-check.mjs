@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { builtModule, forwardUrl } from "./bundle.mjs";
-import { ROOT, distSaid, families, familyOf } from "./dist-check.mjs";
+import { ROOT, distSaid, families, familyOf, undeclared } from "./dist-check.mjs";
 import { runtimeUrl, treeOf, RULE } from "./tree.mjs";
 
 const scratch = path.join(fileURLToPath(new URL("..", import.meta.url)), ".tmp", "dist-rules-check", String(process.pid));
@@ -48,7 +48,7 @@ const family = familyOf(coi);
   const sources = { "src/runtime/forward.js": 'import { J } from "./jobs.js";\nexport const F = J;\n', "src/runtime/jobs.js": "export const J = 1;\n", "src/runtime/worker/part.js": `${NOTICE}export const P = 2;\n`,
     "src/runtime/built/simdkernel.so": "so", "src/runtime/built/simdkernel_plain.wasm": "wasm", "src/runtime/built/engine.zip": "zip", "src/python/llama2_numpy.py": "", "public/coi.js": coi, "public/coi-test/sw.js": "" };
   const good = { "index.html": "", "benchmark/index.html": "", "coi.js": coi, "coi-test/sw.js": "", "models/t.bin": "",
-    "_astro/worker.DR4U5U7O.js": BUNDLED, "_astro/forward.Dqke8pTt.js": "export const F = 1;\n", "_astro/kept.BDa9_jbn.js": "k", "_astro/key.XnxXfX1x.js": "k", "_astro/gpu.BxCYF6dr.js": "g", "_astro/shaders.B-nxB-d4.js": "s", "_astro/simdkernel.DtNlNAG4.so": "so", "_astro/simdkernel_plain.DfCGpm7G.wasm": "wasm", "_astro/engine.D5queIE0.zip": "zip", "_astro/index.ChJdR91r.css": "" };
+    "_astro/worker.DR4U5U7O.js": BUNDLED, "_astro/forward.Dqke8pTt.js": "export const F = 1;\n", "_astro/kept.BDa9_jbn.js": "export const k = 1;\n", "_astro/key.XnxXfX1x.js": "export const k = 2;\n", "_astro/gpu.BxCYF6dr.js": "export const g = 1;\n", "_astro/shaders.B-nxB-d4.js": "export const s = 1;\n", "_astro/simdkernel.DtNlNAG4.so": "so", "_astro/simdkernel_plain.DfCGpm7G.wasm": "wasm", "_astro/engine.D5queIE0.zip": "zip", "_astro/index.ChJdR91r.css": "" };
   const build = (name, change = {}) => {
     const tree = written(name, { ...sources, ...Object.fromEntries(Object.entries({ ...good, ...change }).filter(([, text]) => text !== null).map(([file, text]) => [`dist/${file}`, text])) });
     return distSaid(path.join(tree, "dist"), treeOf(tree, { ...RULE }));
@@ -63,8 +63,8 @@ const family = familyOf(coi);
   };
   // (T.383) Python's bytecode, anywhere under it
   wrong("bytecode", { "models/x/__pycache__/a.cpython-312.pyc": "b" }, /^dist\/models\/x\/__pycache__\/a\.cpython-312\.pyc: Python's bytecode is served$/);
-  wrong("a name without a family", { "_astro/helper-CZLQhea1.js": "x" }, /^_astro\/helper-CZLQhea1\.js: the Service Worker takes no name and hash apart/);
-  wrong("two of a family", { "_astro/worker.AAAAAAAA.js": "another" }, /^_astro\/worker\.AAAAAAAA\.js and _astro\/worker\.DR4U5U7O\.js: one family/);
+  wrong("a name without a family", { "_astro/helper-CZLQhea1.js": "export const x = 1;\n" }, /^_astro\/helper-CZLQhea1\.js: the Service Worker takes no name and hash apart/);
+  wrong("two of a family", { "_astro/worker.AAAAAAAA.js": "export const another = 1;\n" }, /^_astro\/worker\.AAAAAAAA\.js and _astro\/worker\.DR4U5U7O\.js: one family/);
   wrong("a source as it is", { "_astro/part.B1B1B1B1.js": sources["src/runtime/worker/part.js"] }, /^_astro\/part\.B1B1B1B1\.js is src\/runtime\/worker\/part\.js as it is, not bundled: a URL made with a variable copies its whole folder/);
   wrong("a file as a data: URL", { "_astro/worker.DR4U5U7O.js": `${BUNDLED}const u = "data:application/wasm;base64,AGFzbQ==";` }, /^_astro\/worker\.DR4U5U7O\.js holds a file as a data: URL \(vite\.build\.assetsInlineLimit: 0\)$/);
   wrong("a built file that is not there", { "_astro/engine.D5queIE0.zip": null }, /^src\/runtime\/built\/engine\.zip: no file of _astro\/: every built file is named once/);
@@ -134,5 +134,13 @@ const family = familyOf(coi);
   assert.equal((await import(builtModule("forward", path.join(tree, "dist")))).F, 2, "a build that serves forward.js as it is: that file");
   ok("a tree that serves its runtime as it is: the families are held, the root is said not to be looked at");
 }
+// T.445: undeclared(), what the 9th rule reads of a built file: a name read and declared nowhere, and nothing else
+assert.deepEqual(undeclared("var a = 1; function f(b) { return a + b + c; }"), ["c"]);
+assert.deepEqual(undeclared("const { x = y, ...z } = o; class K { v = w; m(p) { return this.v + p + x + z; } }"), ["o", "w", "y"]);
+assert.deepEqual(undeclared("l: for (const i of list) { if (i) break l; } const g = function h() { return h; }; obj.prop; ({ key: 1 });"), ["list", "obj"]);
+assert.deepEqual(undeclared("import { a as b } from \"./x.js\"; export { b as c }; try { b(); } catch (e) { e.at; }"), []);
+// (file-wide, not by scope: a name one function declares hides another's reading it with no declaration, as said)
+assert.deepEqual(undeclared("function f() { let t = 1; return t; } function g() { return t; }"), []);
+ok("undeclared() counts a file's names read and declared nowhere: not a property, a key, a label, a function's own name; file-wide, not by scope");
 fs.rmSync(scratch, { recursive: true, force: true });
 console.log("dist-rules-check: ok");

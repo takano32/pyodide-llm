@@ -74,7 +74,6 @@ export function families(files, family) {
 const under = (folder) => (!fs.existsSync(folder) ? [] : fs.readdirSync(folder, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
   .map((entry) => path.relative(folder, path.join(entry.parentPath, entry.name)).split(path.sep).join("/")).sort());
 
-/** What is wrong with dist (a folder) as a build of tree, as lines; and what was looked at, in words. */
 /** T.445: the names a script reads that it declares nowhere, file-wide (a var, a let or a const, a function or a class
  * and its parameters, a catch's, an import's) */
 export function undeclared(text) {
@@ -105,10 +104,12 @@ export function undeclared(text) {
       for (const child of Array.isArray(value) ? value : [value]) if (child && typeof child.type === "string") walk(child, node, field);
     }
   };
-  walk(parse(text, { sourceType: "module" }).program, null, null);
+  // (errorRecovery: a name declared twice is no failure of this rule)
+  walk(parse(text, { sourceType: "module", errorRecovery: true }).program, null, null);
   return [...read].filter((one) => !declared.has(one)).sort();
 }
 
+/** What is wrong with dist (a folder) as a build of tree, as lines; and what was looked at, in words. */
 export function distSaid(dist, tree = treeOf()) {
   const astro = path.join(dist, "_astro");
   if (!fs.existsSync(astro)) throw new Error(`${dist}: no _astro/ in it: npm run build`);
