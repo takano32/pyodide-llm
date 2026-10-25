@@ -62,6 +62,8 @@ fs.rmSync(work, { recursive: true, force: true });
 fs.mkdirSync(work, { recursive: true });
 execFileSync(process.env.PYTHON ?? "python", [path.join(root, "tests", "reference_saluki_numpy.py"), "made-up", work], { stdio: ["ignore", "ignore", "inherit"] });
 const REPOSITORY = "made-up/saluki", GGUF = "made-up-saluki.gguf";
+// (T.586: the listing of the repository, which a page asks before it opens one it does not list)
+const LISTING = `https://huggingface.co/api/models/${REPOSITORY}/tree/main`;
 const files = Object.fromEntries(fs.readdirSync(path.join(work, "gguf")).map((name) => [name, fs.readFileSync(path.join(work, "gguf", name))]));
 console.log(`the made-up model: ${Object.entries(files).map(([name, bytes]) => `${name} ${bytes.length.toLocaleString("en")} bytes`).join(", ")}`);
 
@@ -82,12 +84,12 @@ const CORS = { "access-control-allow-origin": "*", "access-control-expose-header
 const asHub = (requests) => async (route) => {
   const request = route.request(), found = /^\/made-up\/saluki\/resolve\/main\/(.+)$/.exec(new URL(request.url()).pathname);
   const file = found && files[found[1]], range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range ?? "");
-  const listing = new URL(request.url()).pathname === `/api/models/${REPOSITORY}/tree/main`;
+  const listing = request.url() === LISTING;
   requests.push(`${request.method()} ${found?.[1] ?? request.url()}${range ? ` ${range[0]}` : ""}${file || listing ? "" : " (404)"}`);
   if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: CORS });
   // (T.586: the files of the repository, as huggingface.co lists them, which a page asks before it opens one it does
   // not list, src/page/repository.ts's filesOf(): answered 404, that was a console error on every visit)
-  if (new URL(request.url()).pathname === `/api/models/${REPOSITORY}/tree/main`) {
+  if (listing) {
     return route.fulfill({ status: 200, headers: { ...CORS, "content-type": "application/json" },
       body: JSON.stringify(Object.entries(files).map(([path, bytes]) => ({ type: "file", path, size: bytes.length }))) });
   }
@@ -174,7 +176,7 @@ for (const name of names.filter((name) => !VISITS[name].again)) {
   const { page, ready } = await visit(name, context);
   console.log(`${name}: asked of huggingface.co: ${requests.join("; ")}`);
   // (the listing of the repository is the page's, asked before the worker hears of the model: T.586)
-  const ofModel = requests.filter((request) => !request.includes("/api/models/"));
+  const ofModel = requests.filter((request) => request !== `GET ${LISTING}`);
   if (VISITS[name].ends ? ofModel.length : !requests.some((request) => request.startsWith(`GET ${GGUF}`))) {
     failures.push(VISITS[name].ends ? `${name}: the model was asked for although its kernels did not come` : `${name}: the GGUF was never asked for`);
   }
