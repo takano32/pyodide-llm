@@ -19,6 +19,13 @@ export async function isolating(): Promise<boolean> {
       for (const registration of await navigator.serviceWorker.getRegistrations()) {
         await registration.unregister();
       }
+      // (T.507, T.522: a page the worker still controls came with its headers, under which the model's worker did
+      // not start; once per tab, it loads again without them)
+      if (navigator.serviceWorker.controller && !sessionStorage.getItem("coi-off-reloaded")) {
+        sessionStorage.setItem("coi-off-reloaded", "1");
+        location.reload();
+        return true;
+      }
       return false;
     }
     // Registered every time: with the same URL nothing changes, with a new ?v= the browser installs the new
