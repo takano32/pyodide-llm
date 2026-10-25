@@ -475,7 +475,9 @@ if (process.env.E2E_TWICE && !failures.length) {
     load: ready?.seconds ?? null };
   const parts = Object.entries(again.load ?? {}).map(([name, value]) => `${name} ${Number(value).toFixed(2)}s`).join(", ");
   console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
-  if (/^hf[-:]/.test(id) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
+  // (T.436: the second visit opens the model chosen last, E2E_THEN's last where there is one: that one is to be kept)
+  const opened = then.at(-1)?.model ?? id;
+  if (/^hf[-:]/.test(opened) && !again.fromCache) failures.push(`${opened} not kept for the second visit: ${(opened === id && reported?.notKept) || ready?.keptMiss || "no reason given"}`);
 }
 let offline = null;
 if (process.env.E2E_OFFLINE && !failures.length) {
