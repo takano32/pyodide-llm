@@ -2,7 +2,7 @@
 // for a model (its runs on the CPU and with the GPU, lines.mjs's lines) against the model's case (NumPy's
 // answers), said in the log's lines, and whether any of them failed. Functions of what they are given: no GPU, no
 // browser, no Pyodide (tests/gpu-check-parts-check.mjs runs them on made-up numbers).
-import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./measures.mjs";
+import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held } from "./measures.mjs";
 import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE } from "./lines.mjs";
 import { stepsRight } from "./steps.mjs";
 import { layerTables } from "./tables.mjs";
@@ -27,10 +27,17 @@ function quantizersWrong(outcome) {
   return failed;
 }
 // a model's lines (the CPU's, each run's, the steps', the tables) and whether any of them failed
-function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSeconds }) {
+function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, remembered, alone, broken, nanSeconds, heldFrom }) {
   let failed = false;
-  const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
-  const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
+  const found = cases.find((entry) => entry.id === id), n = found.reference.tokens.length - 1;
+  const [dim, , every, heads, kvHeads] = found.reference.header, layers = found.reference.attending ?? every, kvDim = (found.headDim || dim / heads) * kvHeads;
+  // T.558.1: of a layer whose keys and values the CPU keeps in a ring (a window's), the positions the ring still holds
+  // alone (the harness's heldFrom): the rows before them zeroed in NumPy's and in every run's alike
+  const kept = (run) => run && { ...run, keys: held(run.keys, heldFrom, n, kvDim), values: held(run.values, heldFrom, n, kvDim), ...(run.again ? { again: kept(run.again) } : {}) };
+  const r = found.reference, c = { ...found, reference: { ...r, ...kept(r), ...(r.keys16 ? { keys16: held(r.keys16, heldFrom, n, kvDim), values16: held(r.values16, heldFrom, n, kvDim) } : {}),
+    ...(r.keys8 ? { keys8: held(r.keys8, heldFrom, n, kvDim), values8: held(r.values8, heldFrom, n, kvDim) } : {}),
+    ...(r.keysH ? { keysH: held(r.keysH, heldFrom, n, kvDim), valuesH: held(r.valuesH, heldFrom, n, kvDim) } : {}) } };
+  const ref = c.reference, cpu = kept(cpuRun), runs = runsGiven.map(kept);
   const exact = { keys: ref.keys, values: ref.values };
   // T.187: the worst row of every layer (the lines are held a layer at a time)
   const byLayer = (got, want = exact) => Array.from({ length: layers }, (_, l) => {
@@ -68,7 +75,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     // T.147: a request forward.js gave up on is answered by nothing
     const tried = promptsOnGpu(late.note) && late.gpuTokens === 0;
     // T.148: and the CPU did those blocks itself: its keys are the CPU's own run's, to the bit
-    const cpuDid = late.keys === cpu.keys;
+    const cpuDid = late.keys === cpuRun.keys;  // (T.558.1: as read, a ring's rows and all)
     const wrong = tried && (late.done !== 0 || late.failed !== 0 || !cpuDid);
     console.log(`  a GPU that answers late: ${!tried ? `not tried (${late.note}, ${late.gpuTokens} tokens on the GPU)` : wrong ? `it answered (done ${late.done}, failed ${late.failed}) or the CPU did not do its blocks (${cpuDid ? "it did" : "it did not"}) — FAILED` : "given up, it wrote nothing, and the CPU did the blocks"}`);
     failed ||= wrong;
@@ -170,7 +177,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
         const g = bits(got), w = bits(want), each = g.length / (32 * kvDim);
         return g.every((word, i) => word === w[Math.floor(i / (32 * kvDim)) * n * kvDim + (i % (32 * kvDim))]) && w.length === each * n * kvDim;
       };
-      const own = cpuOwn(r.keys, cpu.keys) && cpuOwn(r.values, cpu.values);
+      const own = cpuOwn(r.keys, cpuRun.keys) && cpuOwn(r.values, cpuRun.values);
       if (r.gpuTokens !== 0 || r.after !== 0 || !NOT_FINITE_KV_STATUS.test(r.status ?? "") || !own) {
         failures.push(`a block with ${r.value} in the row of token ${r.token} (at ${r.at}) through forward.js: ${r.gpuTokens} of its tokens and ${r.after} with the next block's taken on the GPU, ` +
           `the status line "${r.status}", the cache ${own ? "the CPU's own" : "not the CPU's own"}: the block is to be refused whole, the GPU stopped for keys or values that are not finite, the CPU to take both blocks`);

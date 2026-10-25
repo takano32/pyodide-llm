@@ -1,5 +1,5 @@
 const search = "?v=gpu-check";
-const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.ts" + search);
+const { compileKernels, compileBlocks, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf, ringPositions } = await import("/runtime/forward.ts" + search);
 const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const b64 = (floats) => {
@@ -592,7 +592,13 @@ try {
         ...(synthetic ? { cpuFaster: await direct({ ...force, quick: false }, { GBps: 1e9, promptGMACs: 1e9 }), key: adapter && wgsl.deviceKey(adapter) } : {}),
         keys: tokenRun.keys, values: tokenRun.values, first: tokenRun.steps.first };
     }
-    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken, nanSeconds });
+    // T.558.1: of every attending layer, the first position of the prompt the CPU's cache still holds after it (a ring's,
+    // a window's layer: the last period of positions, memory.ts's ringPositions(); every position otherwise)
+    const heldFrom = c.plan.layers.filter((layer) => layer.kind === "attention").map((layer) => {
+      const period = ringPositions(layer.window ?? 0, c.plan.seq_len) / 2;
+      return period ? Math.max(0, n - period + 1) : 0;
+    });
+    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken, nanSeconds, heldFrom });
   }
   postMessage({ results, forms: formsOf(false), quantizers });
 } catch (error) {
