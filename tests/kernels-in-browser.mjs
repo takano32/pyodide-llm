@@ -354,6 +354,56 @@ async function inPage({ plain, relaxed }) {
     });
   }
 
+  // ---- T.544: the same products of rows of 7 groups (a number no multiple of 4: the scales read four at a time and then
+  // the rest one at a time, half(), and a row's scales starting at any of the four places of a word pair), to the bit
+  {
+    const groups7 = 7, n7 = groups7 * 128, ng7 = n7 / 32, base = extra + 3145728 + 131072;
+    const w7 = base, ws7 = w7 + rows * n7 / 4, xq7 = ws7 + rows * groups7 * 2 + 64, xs7 = xq7 + n7, out7 = xs7 + ng7 * 8 + 64;
+    const frames7 = out7 + rows * 4 + 4096, outs7 = frames7 + tokens * frame;
+    const codes7 = Uint8Array.from({ length: rows * n7 }, () => next() % 3);
+    U.fill(0, w7, w7 + rows * n7 / 4);
+    codes7.forEach((code, j) => { U[w7 + (j >> 2)] |= code << (2 * (j & 3)); });
+    const sw7 = Float32Array.from({ length: rows * groups7 }, () => (1 + (next() % 1000)) / 1024);
+    new Uint16Array(memory.buffer).set(Array.from(sw7, halfOf), ws7 / 2);
+    const activations7 = (t) => Int8Array.from({ length: n7 }, (_, j) => ((next() ^ (j * 29 + t * 13)) & 255) - 128);
+    const scales7 = () => Float32Array.from({ length: ng7 }, () => f(1e-2 * (1 + (next() % 1000))));
+    const want7 = (a, sx) => Array.from({ length: rows }, (_, i) => {
+      const lanes = [0, 0, 0, 0];
+      for (let g = 0; g < groups7; g++) {
+        for (let lane = 0; lane < 4; lane++) {
+          let sum = 0;
+          for (let j = g * 128 + lane * 32; j < g * 128 + lane * 32 + 32; j++) sum += (codes7[i * n7 + j] - 1) * a[j];
+          lanes[lane] = f(lanes[lane] + f(f(sum * sx[g * 4 + lane]) * sw7[i * groups7 + g]));
+        }
+      }
+      return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
+    });
+    const prepare7 = (at, a, sx) => { I.set(a, at); F.set(sx, (at + n7) / 4); k.interleave(at, at + n7, n7); };
+    const a7 = activations7(0), sx7 = scales7(), expected7 = want7(a7, sx7);
+    const product7 = (name, call) => check(`${name} (7 groups a row)`, call, () => {
+      prepare7(xq7, a7, sx7);
+      F.fill(-7, out7 / 4, out7 / 4 + rows);
+      call();
+      return against((i) => F[out7 / 4 + i], expected7);
+    });
+    prepare7(xq7, a7, sx7);
+    await product7("matmul_t2", () => k.matmul_t2(out7, xq7, xs7, w7, ws7, n7, 0, rows, 3));
+    if (r) {
+      await product7("matmul_t2r", () => r.matmul_t2r(out7, xq7, xs7, w7, ws7, n7, 0, rows, 3));
+      const perToken7 = Array.from({ length: tokens }, (_, t) => { const at = activations7(t + 1), sc = scales7(); return { at, sc, expected: want7(at, sc) }; });
+      await check("matmul_t2r_tile (7 groups a row)", () => r.matmul_t2r_tile(outs7, frames7, frames7 + n7, w7, ws7, n7, 0, rows, tokens, 1024, frame, 3), () => {
+        perToken7.forEach(({ at, sc }, t) => prepare7(frames7 + t * frame, at, sc));
+        F.fill(-7, outs7 / 4, outs7 / 4 + tokens * 256);
+        r.matmul_t2r_tile(outs7, frames7, frames7 + n7, w7, ws7, n7, 0, rows, tokens, 1024, frame, 3);
+        for (let t = 0; t < tokens; t++) {
+          const wrong = against((i) => F[(outs7 + t * 1024) / 4 + i], perToken7[t].expected);
+          if (wrong) return `token ${t} ${wrong}`;
+        }
+        return null;
+      });
+    }
+  }
+
   // ---- ternary_x (the converter's): the bytes and scales of a matrix of ternary values
   {
     const count = 40, x = extra + 65536, packed = x + count * 512, scales = packed + count * 32;
