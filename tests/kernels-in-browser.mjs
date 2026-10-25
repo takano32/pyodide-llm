@@ -480,19 +480,20 @@ async function inPage({ plain, relaxed }) {
   }
 
   // ---- sample (T.561: equal tokens at a top-k's border and in the walk by the lower token, as NumPy's, the GPU's and
-  // likecpu.ts's): 1000 logits, two of 6 and five of 4 at shuffled places, the rest -30; each top-k of 1 to 8 with a
-  // random number in the middle of every token's share, held to that token of the order written out here (the more
-  // probable first, equal ones by the lower token), with a nucleus of 0.999 and without one
+  // likecpu.ts's): 1000 logits, two of 6 and twenty of 4 at shuffled places (more than the 12 the walk's sort takes by
+  // insertion: its quicksort partitions them too), the rest -30; each top-k of 1 to 22 and none, with a random number in
+  // the middle of every token's share, held to that token of the order written out here (the more probable first, equal
+  // ones by the lower token), with a nucleus of 0.999 and without one
   {
     const at = extra + 3145728 + 32768, count = 1000, logits = at, probs = at + 4096, index = at + 8192;
-    const high = [731, 90], equal = [888, 12, 640, 301, 47];
+    const high = [731, 90], equal = Array.from({ length: 20 }, (_, j) => (37 * j + 11) % 990 + 6);
     const values = new Float32Array(count).fill(-30);
     for (const j of high) values[j] = 6;
     for (const j of equal) values[j] = 4;
     const order = [...high.sort((a, b) => a - b), ...equal.sort((a, b) => a - b)];
     const cases = [];
-    for (let topk = 1; topk <= 8; topk++) {
-      const kept = order.slice(0, topk), weights = kept.map((j) => Math.exp(values[j] - 6)), total = weights.reduce((a, b) => a + b, 0);
+    for (const topk of [...Array(order.length + 1).keys()].slice(1).concat(0)) {
+      const kept = topk ? order.slice(0, topk) : order, weights = kept.map((j) => Math.exp(values[j] - 6)), total = weights.reduce((a, b) => a + b, 0);
       let before = 0;
       kept.forEach((token, j) => { cases.push({ topk, random: (before + weights[j] / 2) / total, token }); before += weights[j]; });
     }
@@ -500,12 +501,13 @@ async function inPage({ plain, relaxed }) {
     await check("sample (equal tokens by the lower)", call, () => {
       let bad = 0;
       for (const topp of [1, 0.999]) {
-        for (const { topk, random, token } of cases) {
+        // (without a top-k and a nucleus the walk is in the order of the tokens: not this one)
+        for (const { topk, random, token } of cases.filter((one) => one.topk || topp < 1)) {
           F.set(values, logits / 4);
           if (k.sample(logits, count, 1, topp, random, probs, index, topk, 0) !== token) bad++;
         }
       }
-      return bad ? `${bad} of ${2 * cases.length} draws not the token of the order` : null;
+      return bad ? `${bad} draws not the token of the order` : null;
     });
   }
 
