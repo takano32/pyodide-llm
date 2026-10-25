@@ -646,7 +646,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 - **Playwright の Firefox で速度を測らない**（wasm がベースラインコンパイラだけで 13 分の 1）。速度は `tests/stock-firefox.mjs` で CI で。
 - **ワークツリーの `node_modules` を本線へのシンボリックリンクにしない**（`make kernels` の `npm ci` がリンクの先を消して作り直した）。ワークツリーでは自分の `node_modules` を `npm ci` で。`make models` の作るファイルはリンクでよい。**ワークツリーで smoke を回すなら、そこで `npm ci`・`make kernels`・`make models` を回す**（本線のモデルのファイルは古いことがある）。
 - **開発機の `/tmp` は tmpfs（メモリ）**（a1-free は 5.9GB）。大きい作業ファイルはリポジトリの `.tmp/` に。前の開発機で `dist` を 2 つ `/tmp` にコピーして持ち主のマシンが落ちた。
-- **手元のブラウザ。** a1-free では Playwright の Chromium で `tests/e2e.mjs` が走る（入れ方は docs/notes/dev-setup.md。WebKit は動かない。`~/.cache/ms-playwright` のブラウザが `playwright-core` の版と合わないと止まる: 入れると `$HOME` に書くので先に言う）。本物の Chrome は Chrome DevTools MCP でも開ける。**7B 級は手元で動かさない**（`models.yml` で）。動かす前に峰の見込みが `free -m` の available に収まるかを見る。`TMPDIR` を替えると Chrome のソケットの道が 107 字を越えて起動しないことがある。画面の PNG は同じビルドでも数個のピクセルが違う。
+- **手元のブラウザ。** a1-free では Playwright の Chromium で `tests/e2e.mjs` が走る（入れ方は docs/notes/dev-setup.md。WebKit は動かない。`~/.cache/ms-playwright` のブラウザが `playwright-core` の版と合わないと止まる: 入れると `$HOME` に書くので先に言う）。本物の Chrome は Chrome DevTools MCP でも開ける。**7B 級は手元で動かさない**（`models.yml` で）。動かす前に峰の見込みが `free -m` の available に収まるかを見る。`TMPDIR` の長さは効かない（T.512 からプロファイルはリポジトリの `.tmp/` に: 159 字の `TMPDIR` でも `tests/e2e.mjs` が通った、T.412）。画面の PNG は同じビルドでも数個のピクセルが違う。
 - **開発機のメモリ。** a1-free は 11.9GB とスワップ 4GB で、持ち主の別のセッションや docker と分け合う（何も走らせていないときの available は約 9.9GB）。峰の読めない計測は `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0` で包む。
 - **`git rm` は削除をすぐ登録する**（別のタスクのコミットに入った）。コミットの前に `git diff --cached --stat`。止められたシェルコマンドは途中まで実行されていることがある: `git status` で確かめる。
 - **走っている `tests/suite.sh` を書き換えない**（bash はスクリプトを少しずつ読む）。
