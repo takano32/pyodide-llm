@@ -22,7 +22,6 @@
 - T.234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 未着手
 - T.266 [運用][遠隔試験] `format_check.py` を毎晩の組に — 候補
 - T.267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 候補
-- T.360 [バグ][遠隔試験] WebKit で `hf-smollm2-135m` を開くとコンソールに 404 が出て e2e が落ちる — 進行中
 - T.384 [バグ][遠隔試験] 全部の組が 1 つの試験で 88 分止まった回がある — 反映済み
 - T.385 [試験][変換] ブラウザの中でカーネルの読み手が使われたかを見る — 未着手
 - T.389 [バグ][遠隔試験] Windows の Firefox が切った部品を worker が取り直した回を、e2e が失敗と数える — 反映済み
@@ -424,11 +423,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **ねらい**: 大きいファイルを責務ごとに分け、1 つを読めば 1 つのことが分かる形にする。いまの大きさ（2026-10-09）: `public/shaders.js` 233 KB・4379 行、`public/benchmark/gpu.js` 196 KB、`public/llama2_convert.py` 168 KB、`public/forward.js` 137 KB、`public/gpu.js` 134 KB、`tests/gpu-check.mjs` 127 KB、`src/models.js` 125 KB、`public/llama2_numpy.py` 124 KB、`public/worker.js` 111 KB、`src/pages/index.astro` 75 KB、`kernels/kernel.ts` 68 KB。
 - **どの組にも共通の決まり（案。T.346 で確定する）**: (1) **動きは 1 つも変えない**: 変換の出力は 1 バイトも変えず `CONVERTER` を上げない、WGSL と `deviceKey()` の入力はバイト単位で同じ（端末の覚えた形を捨てさせない）、カーネルの呼び出しの列は前と同じ、一覧の `MODELS` は前と深く等しい。(2) 分けるだけの回と、形を替える回（パターンの導入）を別のコミットにする。(3) 1 タスク 1 ファイル（とその試験）で、進め方は今までどおり（実装 → CI → レビュー → 本線、直列）。(4) 外から見える名前（`llama2_numpy.Llama`、`shaders.js` の export など）は窓口（Facade）のファイルに残し、試験と道具の import を一度に書き換えない。(5) 目安の大きさは 1 ファイル 50 KB・800 行以下（**持ち主の判断**）。
 - **勧める順**（危なさの低い順、GPU は最後）: T.346 → T.354 → T.347 → T.348 → T.350 → T.349 → T.356 → T.355 → T.353 → T.351 → T.352 → T.357。（2026-10-10: T.357 は T.357.1（T.359 の前）と T.357.2〜.7（T.359 の 3 つ目の子タスクの後）に分けた。）
-
-### T.360 [バグ][遠隔試験] WebKit で `hf-smollm2-135m` を開くとコンソールに 404 が出て e2e が落ちる — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-11 にも Pythia 14M で出た: run 38099257741。無いファイルを 404 で確かめる項目はどれも当たる。直す形の案: e2e が huggingface.co の 404 の行を、段取りが「無い」と受けたものに限って許す。2026-10-09、T.350 の CI から。規模 小）
-- `E2E_TWICE=1 node tests/e2e.mjs hf-smollm2-135m webkit`（ブランチのビルドでも本線でも）が、答えを書いた後「console errors: Failed to load resource: the server responded with a status of 404 (Not Found)」で落ちる（最初の読み込みの 15 秒目）。Chromium の同じモデルは通る。見立て（未確認）: 書式の無いモデルで、あるかどうか分からないファイル（`chat_template.jinja` など）を HF に取りにいった 404 を、WebKit だけがコンソールのエラーにする。どの URL かを e2e の記録に出して確かめ、取りにいく前に有無を聞く形にするか、その 404 を e2e が失敗と数えない形にするかを決める。訪問者には見えない（答えは書ける）。週次の `browsers.yml` の WebKit の組にこのモデルは入っていないので、今まで出ていなかった。
-- **訳が分かった（2026-10-10、T.369 の本番の確かめ run 38072990762）**: rinna japanese-gpt2 small でも同じ落ち方。Hub に聞くと、このリポジトリの `tokenizer.json` と `chat_template.jinja` は 404（`config.json`・`tokenizer_config.json`・`spiece.model` は在る）。変換はトークナイザの候補を順に頼むので 404 は正しい動きで、**WebKit だけがその 404 をコンソールのエラーにする**（Chromium と Firefox は同じモデルで通る）。見立てのとおり。直す形は 2 つ: e2e が huggingface.co の 404 を失敗と数えない（どの URL かを記録に出して、あってよいファイルのときだけ）か、T.374 で段取りを Python に移すときに「あるかどうか」を先に聞く。
-- **結果（2026-10-25）**: 直す形は台帳の案の前者: `tests/e2e.mjs` が huggingface.co の 404 のうち、リポジトリが持たなくてよいファイル（トークナイザの候補 `tokenizer.json`・`tokenizer.model`・`spiece.model`、`chat_template.jinja`、`tokenizer_config.json`、`model.safetensors.index.json`）の数を数え、その数だけのコンソールの「Failed to load resource … 404」を失敗と数えない（数と一緒に 1 行言う）。ほかの 404 は前のまま失敗。製品は触っていない（段取りは無いことを 404 で知る形のまま）。確かめ: CI の WebKit 27.2 で `E2E_TWICE=1 node tests/e2e.mjs hf-smollm2-135m webkit`（run 40229334650）が通る: 「files a repository may not have, answered 404: 1」、2 回目は OPFS から。手元の Chromium の e2e も通る。CI を回した。訳: WebKit だけの違いで、手元に WebKit が無い。
 
 ### TypeScript と抽象化が済んだ後の順（2026-10-09、持ち主との話。持ち主「Saluki よりも優先すべきものはない？きちんと考えてみて」）
 - **いまの区切り（2026-10-14、持ち主「スマホのモデルまでで一区切りにしたい」）**: T.505（GGUF をそのまま開く）→ スマホで動く小さいモデル（Gemma 3 の T.261・T.257 → Gemma 4 の T.328〜T.334、Spark X の T.339〜T.343）までを 1 つの区切りにする。**区切りに着いたら、積んである文面と方針の判断（T.371・T.487・T.489・T.490・T.501・T.503・T.506 など）をまとめて 1 回で出し、端末での確かめを 1 回お願いし、その後の順（MLX・片付け）を選んでもらう。** それまでは、作業を進めるのに要る判断だけを選択肢で聞く。下の「順」は 2026-10-09 の時のもの（(2) と (4) の Saluki は済んだ）。
