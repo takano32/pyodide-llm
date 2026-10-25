@@ -185,7 +185,7 @@ for (const [what, options] of [["a list of the copies that cannot be read", { un
   const { caches, said } = seeded();
   assert.equal(await worker({ caches, online: true, said, registered: "?v=new&offline=0" }).activate(), undefined);
   assert.deepEqual(said, ["delete the cache offline-v1", "claim"]);
-  // (T.449) and a deletion that fails keeps the claim from nothing
+  // (T449) and a deletion that fails keeps the claim from nothing
   const refusing = { ...caches, delete: async () => { said.push("refused"); throw new Error("the deletion failed"); } };
   said.length = 0;
   assert.equal(await worker({ caches: refusing, online: true, said, registered: "?v=new&offline=0" }).activate(), undefined, "a deletion that fails does not fail the activation");

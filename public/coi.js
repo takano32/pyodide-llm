@@ -12,7 +12,7 @@
 // passed on: this site's files and Pyodide's (jsDelivr), not the models' parts (the worker keeps those itself).
 // the latest Pyodide is still resolved each visit (policy 2), and the page itself is asked for each time; only when
 // that fails does the copy answer. A file whose address says its version (Pyodide's under /pyodide/v…/, this site's
-// with ?v=<build> or under /_astro/) cannot change, so its copy answers without asking the network at all: on a
+// under /_astro/) cannot change, so its copy answers without asking the network at all: on a
 // mobile line a visit then costs the version check and the page, nothing more (the owner's wish; Safari does not
 // say what line it is on, so this does not ask). One copy per file: a new build or a new Pyodide replaces the old
 // one. Registered with offline=0, it throws the copies away.
@@ -32,7 +32,7 @@ function kept(request) {
 /** Whether the address names one version of the file, which then never changes. */
 function lasting(request) {
   const url = new URL(request.url);
-  // (T.449: no ?v= any more: no file of this site has one since T367.3, and a page asked for with one was answered
+  // (T449: no ?v= any more: no file of this site has one since T367.3, and a page asked for with one was answered
   // from its copy, unasked, until the next activation)
   if (url.origin === self.location.origin) return url.pathname.includes("/_astro/");
   return url.hostname === "cdn.jsdelivr.net" && /\/pyodide\/v[^/]+\//.test(url.pathname);
@@ -89,7 +89,7 @@ function isolated(response) {
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil((async () => {
-  // (T.449: quietly: a delete that fails must not keep the claim from being made)
+  // (T449: quietly: a delete that fails must not keep the claim from being made)
   if (!OFFLINE) await quietly(caches.delete(KEPT));
   await self.clients.claim();
   // T367.6: after the claim, which does not wait for it; and whatever fails in it, the activation ends
