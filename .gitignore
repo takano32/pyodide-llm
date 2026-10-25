@@ -20,3 +20,5 @@ src/runtime/built/
 .tmp/
 # the agents' worktrees (Claude Code makes them for work in parallel)
 .claude/worktrees/
+# T.584: tests/fresh.mjs's copies beside a source under Bun, where a run was killed before it took them away
+*.fresh-*
