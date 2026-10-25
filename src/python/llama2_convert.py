@@ -28,7 +28,7 @@ from convert.template import (DAY, Loop, Namespace, Undefined, Unsupported, arit
                               evaluate, jinja_environment, matching, one_turn, one_turn_template,
                               render, rendered, run)
 from convert.readers import (GGUF_TENSORS, SOURCES, Source, base3, bfloat16, kernel_readers,  # noqa: F401
-                             pq2_0, ptq1_0, q8_0, read_types, source_of)
+                             pq2_0, ptq1_0, q8_0, source_of)
 from convert.sources import Arrays, ROTATED, Safetensors, Shards, joined_shards  # noqa: F401
 from convert.families import FAMILIES, family_of  # noqa: F401
 from convert.families.family import Family  # noqa: F401

@@ -18,7 +18,6 @@ from test_kept import MATRICES, Model
 from test_superblocks import SALUKI, SPECIAL, blocks_of, half
 
 from convert import grids
-from convert.readers import read_types
 from convert.stream import stays
 from convert.superblocks import SUPERBLOCKS, WIDENED
 from llama2_convert import GGUF_TENSORS, SOURCES, Conversion, gguf_weights
@@ -152,17 +151,15 @@ def test_a_reader_reads_what_the_form_of_its_block_says_one_weight_at_a_time(nam
 
 
 def test_the_types_are_the_tables_and_a_gguf_says_them_by_ggmls_numbers():
-    """And none of them is a kind a row of a checkpoint is stored in, a kernel reads, or a refusal names."""
+    """And none of them is a kind a row of a checkpoint is stored in, or a kernel reads."""
     assert set(WIDENED) == {"Q3_K", "Q5_K", "Q6_K"} and not set(WIDENED) & set(SUPERBLOCKS)
     for name, (_, ggml, values, size, _, _) in SLOW.items():
         source = SOURCES[name]
-        assert (source.ggml, source.values, source.size, source.kernel, source.said) == (ggml, values, size, None, False)
+        assert (source.ggml, source.values, source.size, source.kernel) == (ggml, values, size, None)
         assert GGUF_TENSORS[ggml] == name and source.bytes(512) == 512 // values * size
         assert name not in BLOCKS and name not in KINDS
         assert not stays({"dtype": name}, None)
     assert set(BLOCKS) == set(SUPERBLOCKS) == {name for name, source in SOURCES.items() if source.values == 256} - set(WIDENED)
-    # the words of a refusal are the owner's, and as they were before T.362 (T.501)
-    assert read_types() == "F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"
 
 
 def test_what_is_read_of_blocks_made_the_same_everywhere_is_the_fixtures():

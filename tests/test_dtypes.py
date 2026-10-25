@@ -12,7 +12,7 @@ from test_convert import hugging_face, safetensors_file
 from test_external import Outside
 
 import llama2_convert
-from llama2_convert import GGUF_TENSORS, SOURCES, Conversion, Writer, checkpoint_size, read_types, source_of
+from llama2_convert import GGUF_TENSORS, SOURCES, Conversion, Writer, checkpoint_size, source_of
 from llama2_numpy import (DTYPES, EITHER, FORM, PACKED, QUANTIZED, Llama, checkpoint_dtype, dtype_of,
                           external_tensors, file_size, kind_of, placed, tensor_rows)
 
@@ -264,7 +264,7 @@ def test_the_options_of_a_conversion_carry_the_kinds_only_where_there_are_any(mo
 
 # ---- the types a file stores a tensor in
 def test_the_stored_types_and_what_comes_from_their_table():
-    # (T.362: and llama.cpp's ten of blocks of 256, which have no kernel and which a refusal does not name)
+    # (T.362: and llama.cpp's ten of blocks of 256, which have no kernel)
     blocks_of_256 = {"Q2_K": (10, 84), "Q4_K": (12, 144), "IQ2_XXS": (16, 66), "IQ2_XS": (17, 74), "IQ3_XXS": (18, 98),
                      "IQ1_S": (19, 50), "IQ3_S": (21, 110), "IQ2_S": (22, 82), "IQ4_XS": (23, 136), "IQ1_M": (29, 56)}
     # (T.505.1: and eight more that are read and never kept, blocks of 256 and of 32: name -> (ggml's id, values, bytes))
@@ -274,16 +274,15 @@ def test_the_stored_types_and_what_comes_from_their_table():
     assert GGUF_TENSORS == {0: "F32", 1: "F16", 30: "BF16", 8: "Q8_0", 142: "PQ2_0", 143: "PTQ1_0",
                             **{ggml: name for name, (ggml, _) in blocks_of_256.items()},
                             **{ggml: name for name, (ggml, _, _) in widened.items()}}
-    assert read_types() == "F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"
     assert [(source.values, source.size) for source in SOURCES.values()] == [
         (1, 4), (1, 2), (1, 2), (32, 34), (128, 34), (128, 28), *[(256, size) for _, size in blocks_of_256.values()],
         *[(values, size) for _, values, size in widened.values()]]
     assert {name: source.kernel for name, source in SOURCES.items()} == {
         "F32": None, "F16": None, "BF16": "widen_bf16", "Q8_0": "widen_q8_0", "PQ2_0": "widen_pq2_0", "PTQ1_0": "widen_ptq1_0",
         **dict.fromkeys(blocks_of_256), **dict.fromkeys(widened)}
-    assert [name for name, source in SOURCES.items() if not source.said] == [*blocks_of_256, *widened]
     assert source_of("a", "Q8_0") is SOURCES["Q8_0"]
-    with pytest.raises(ValueError, match="w is stored as I64: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 are read"):
+    # (T.501: the refusal names the type, and no list of the ones that are read)
+    with pytest.raises(ValueError, match=r"^w is stored as I64, which is not read\.$"):
         source_of("w", "I64")
 
 
