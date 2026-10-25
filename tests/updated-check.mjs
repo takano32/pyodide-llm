@@ -270,11 +270,11 @@ const LATER = {
     ['new Worker(new URL("../gpu.ts", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
   "src/runtime/benchmark/sections.ts": [
-    ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
+    ["built(name).then((res) => res.arrayBuffer())));", "said"],  // (T.440: thrown as it failed)
     ['named(import.meta.url, () => import("../forward.ts"))', "said"],
     ['new Worker(new URL("../helper.ts", import.meta.url)', "said"],
     ['named(import.meta.url, () => import("../forward.ts"))', "said"],
-    ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
+    ["built(name).then((res) => res.arrayBuffer())));", "said"],  // (T.440: thrown as it failed)
     ['new Worker(new URL("../benchmark/reader.ts", import.meta.url)', "said"],
   ],
   "src/runtime/benchmark/gpu/device.ts": [
