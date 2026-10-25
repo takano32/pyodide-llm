@@ -32,7 +32,8 @@
 //                  this browser kept, the origin private file system or the Cache API).
 //   E2E_OFFLINE    when set (T.111): after the answer (the page as a visitor opens it: keeping copies is the default) the browser goes
 //                  offline, loads the page again and must answer once more (Pyodide, NumPy and the page from the
-//                  service worker's copies, the model from the worker's cache).
+//                  service worker's copies, the model from the worker's cache). T.441: this tool's own server ends every
+//                  connection as well meanwhile (Playwright's Firefox reaches localhost offline).
 //   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T.107), added to what the model needs
 //                  and kept in the JSON line. With gpuTest=on (T.148: the tests' flag; the page takes the GPU by default,
 //                  and refuses a fallback adapter) a Chromium gets WebGPU without a GPU (SwiftShader, as

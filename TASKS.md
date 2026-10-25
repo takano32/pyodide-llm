@@ -545,10 +545,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 状態: 未着手（2026-10-11、T.367.4 から。規模 小）
 - T.367.4 の「更新された」の線は、後から読む部品が変わると、それを名指す塊の名前（中身のハッシュ）も変わることに乗っている（実装が 7 つの部品を 1 つずつ変えて確かめた）。束ね手か名前の形を変える回に、2 つのビルドで見る検査が要る。
 
-### T.441 [整理][遠隔試験] Firefox のオフラインの試験が何も見ていない見込み、と `updated-in-browser.mjs` の置き場 — 状態: 進行中（2026-10-25 に (1) を直した。前の状態: 未着手、2026-10-11、T.367.4 から。規模 小）
+### T.441 [整理][遠隔試験] Firefox のオフラインの試験が何も見ていない見込み、と `updated-in-browser.mjs` の置き場 — 状態: 進行中（2026-10-25 に (1) を本線に入れた、(2) は T.583 の後。前の状態: 未着手、2026-10-11、T.367.4 から。規模 小）
 - Playwright の Firefox は `setOffline(true)` の後も localhost に届く（`tests/updated-in-browser.mjs` の最初の CI の回 38123992979 で、Firefox の「オフライン」の変換がそのまま成功した）。`tests/e2e.mjs` の `E2E_OFFLINE` は `setOffline` と読み込み直しだけなので、`preview.yml offline=true` の Firefox は手元で配るファイルについて何も確かめていない見込み（状況証拠: Firefox では回していない）。道具の `offlineNow`（サーバも接続を落とす）を e2e に使うか、`setOffline` の後に取得が失敗することを先に見る。
 - `tests/updated-in-browser.mjs`（28 通り、Chrome で約 3 分）は決まって回る所が無い: `browsers.yml` に Chromium・Firefox・WebKit で 1 回（レビューの勧め）。
 - **(1) の結果（2026-10-25）**: `tests/e2e.mjs` の `E2E_OFFLINE` の訪問の間、道具が配るサーバも接続を答えずに切る（`updated-in-browser.mjs` の `offlineNow()` と同じ形: `serving()` の `instead` で "drop"）。手元の Chromium と、CI の Firefox 157（run 40219370913: 軽い組・build の後に `E2E_OFFLINE=1 node tests/e2e.mjs stories260K firefox`）で、オフラインの訪問が Service Worker の写しから準備完了して答えた: Firefox のオフラインの確かめが初めて本当にサーバ無しで通った。CI を回した。訳: Firefox だけの違いで、手元に Firefox が無い。
+- レビュー（Sonnet low、2026-10-25、T.441 (1)）: must-fix なし。本番の URL の道はサーバが無く前のまま、`E2E_TWICE` はオフラインより前なので切られた後に続く訪問は無い、失敗の道でも `serverOffline = false` に届く（例外で落ちる道は道具ごと終わる）。勧めを入れた: 頭の説明に 1 行。
 - **(2) は後で**: `updated-in-browser.mjs` を決まって回す所に置くのは、本線でも落ちる場合（T.583）を直してから（今置くと毎回赤い）。
 
 ### T.442 [整理][その他] T.367.4 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
