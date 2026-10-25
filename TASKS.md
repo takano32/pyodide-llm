@@ -215,6 +215,8 @@
 - T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 進行中
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T.583 [バグ][遠隔試験] `tests/updated-in-browser.mjs` の「the kernels gone from the start」が 180 秒で落ちる — 未着手
+- T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
+- T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1626,3 +1628,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.583 [バグ][遠隔試験] `tests/updated-in-browser.mjs` の「the kernels gone from the start」が 180 秒で落ちる — 状態: 未着手（2026-10-25、T.401 の確かめで見つけた。本線 `ac972495` の作り物でも同じに落ちる: 前からの物）
 - 手元の Chromium（`npm run build` の後、`node tests/updated-in-browser.mjs`）で、ほかの場合は「ok」、この場合だけ「page.waitForFunction: Timeout 180000ms exceeded」。カーネルが最初から 404 のサイトで、モデルのページがフォールバック（NumPy）の準備完了か「site was updated」の文まで来ない見込み（未確認）。原因を調べる: 道具の待ちの条件が今のステータス行と合わないのか、ページが本当に止まるのか。
+
+### T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 状態: 進行中（2026-10-25、持ち主「node の実行をすべて bunx にできないか検討して可能なら bunx で運用したいな」。調べた結果を選択肢で出し、持ち主が「手元だけ bun」を選んだ: CI とデプロイは Node 24 のまま、方針 3 は変えない）
+- **子タスクの番号**（取りまとめ役の決め）: T.584.1 軽い組を bun で通す — 進行中。ほかに要るものが分かれば足す（CI で bun の組を 1 回回すか、全部の組・実ブラウザの道具・Dawn）。
+- **T.584.1 の結果**: `RUNTIME=bun … bash tests/suite.sh light` が手元（bun 1.4.4）で 411 秒で通る。同じ直しで Node の軽い組も 486 秒で通る。直したもの・外した 2 本（`memory-check`・`blocks-forward-check`）とその訳・bun の違いは docs/notes/t584-bun-2026-10-25.md。足したもの: `tests/fresh.mjs`・`tests/bun-preload.mjs`・`bunfig.toml`・devDependency の `amaro` 1.2.2（Node の型の消し方の元: bun に `stripTypeScriptTypes` が無いので）。CI を省いた。訳: CI は Node のまま（持ち主の決め）で、Node の軽い組は手元で通った。
+
+### T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 状態: 未着手（2026-10-25、持ち主「発見した bun の未対応の対応などをプルリクしていくのが目標です」）
+- 置き場: `~/GitHub/bun`（`origin` = oven-sh/bun、`my` = takano32/bun のフォーク、どちらも ssh）。手元のビルドは新しい物をなるべく入れない形（持ち主、同じ日）: 今ある stable の Rust に `RUSTUP_TOOLCHAIN=stable`・`RUSTC_BOOTSTRAP=1`、LLVM は `BUN_TOOLCHAIN_LLVM=/usr/lib/llvm-22`、debug のビルド。キャッシュはホームの今ある置き場（`~/.cargo`・`~/.bun`）。訳と細かい所は docs/notes/t584-bun-2026-10-25.md。
+- **候補**（上流にまだ見当たらないもの）: (1) 問いだけ違う URL の動的 import が同じモジュールになる（Node と仕様は別のモジュール）。(2) WebAssembly のメモリの `grow` がエンジンの形で約 1 秒かかる（小さな再現はまだ）。(3) `WebAssembly.Memory` が `address: "i64"` を読まない（64 ビットのメモリを入れたとき）。**出さないもの**（上流に出ている）: `stripTypeScriptTypes`（PR #41649 ほか）、`onmessage` で終わらない（issue #24256、PR #32482 ほか）。
+- 先にやること: bun を手元で建てられるか（上の形で）。建てられたら候補ごとに上流の試験の形で再現を書き、直して PR。

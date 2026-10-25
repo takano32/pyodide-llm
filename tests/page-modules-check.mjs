@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
 import { parse } from "@babel/parser";
 import { namesOf } from "./names.mjs";
-import { stripTypeScriptTypes } from "node:module";
+import { blanked as stripTypeScriptTypes } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 // [the page, the folder of its script's modules]

@@ -22,12 +22,14 @@
 // see (tests/e2e.mjs, tests/bench-check.mjs).
 //
 //   node tests/page-parts-check.mjs        (Node only, about a second)
+import { fresh as made } from "./fresh.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { DEFAULT_MODEL, MODELS } from "../src/models.js";
 
-let made = 0, cases = 0;
-const fresh = (file) => import(`${new URL(`../src/${file}`, import.meta.url).href}?case=${made++}`);
+let cases = 0;
+// (T.584: tests/fresh.mjs, on Node and on Bun)
+const fresh = (file) => made(new URL(`../src/${file}`, import.meta.url));
 // every export that is no function: what the owner holds now
 const held = (module) => Object.fromEntries(Object.entries(module).filter(([, value]) => typeof value !== "function").map(([name, value]) =>
   [name, value && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype ? { ...value } : value]));

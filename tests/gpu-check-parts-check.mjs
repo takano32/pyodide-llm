@@ -21,7 +21,8 @@
 //   node tests/gpu-check-parts-check.mjs      (PYTHON=.venv/bin/python; about a second)
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { parse } from "@babel/parser";
 import { runtime } from "./tree.mjs";
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.mjs";
 import { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn } from "./gpu-check/models.mjs";
@@ -77,7 +78,8 @@ check("the measures", () => {
   assert.equal(worstAt([0.4]), 0);
   const p = logSoftmax([0, Math.log(3)]);
   assert.ok(Math.abs(Math.exp(p[0]) - 0.25) < 1e-12 && Math.abs(Math.exp(p[1]) - 0.75) < 1e-12);
-  assert.equal(divergence(p, [5, 5 + Math.log(3)]), 0);
+  // (T.584: within the last bits of a double: JavaScriptCore's exp and log (Bun) are not V8's to the bit)
+  assert.ok(Math.abs(divergence(p, [5, 5 + Math.log(3)])) < 1e-15);
   // KL(p || q) of (1/4, 3/4) from (1/2, 1/2)
   assert.ok(Math.abs(divergence(p, [0, 0]) - (0.25 * Math.log(0.5) + 0.75 * Math.log(1.5))) < 1e-12);
   assert.ok(Math.abs(scaleOff([2.02, -1.01, 3.03], [2, -1, 3]) - 0.01) < 1e-12);
@@ -548,8 +550,8 @@ check("the tables of a model, a line a run, the seconds", () => {
 // ---- harness.js and the rewriting Dawn's worker thread needs
 check("the harness is a module, and the runtime's files it names are in this tree", () => {
   const file = new URL("./gpu-check/harness.js", import.meta.url), text = fs.readFileSync(file, "utf8");
-  const parsed = spawnSync(process.execPath, ["--check", file.pathname], { encoding: "utf8" });
-  assert.equal(parsed.status, 0, parsed.stderr);
+  // (T.584: parsed as a module, whatever runs this: Bun's --check runs a file)
+  assert.doesNotThrow(() => parse(text, { sourceType: "module" }), "harness.js is no module that parses");
   // the two constants its window puts before it (engines.mjs), and nothing else of Node's side
   assert.match(text, /\bONLY\b/);
   assert.match(text, /\bNAN_ROUNDS\b/);
