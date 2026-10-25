@@ -5,8 +5,15 @@ import { number, tableCell } from "./cells.js";
 /** One row per switch combination the benchmark ran. */
 export const ROUNDS = [
   { name: "everything", without: [] },
+  // T.555: the first round twice more, right after it and last: a device that slows as it runs (heat) says so in
+  // drift(), apart from the rounds it would otherwise be mixed into (naidan's "before" and "after", MIT). The first of
+  // the three is not the measure: it runs cold (stories260K's was a fifth of the last in Chromium)
+  { name: "everything, before", without: [] },
   { name: "without the kernels", without: ["kernels"] },
+  { name: "everything, after", without: [] },
 ];
+/** T.555: below this share of the first round's speed, the last round's is a warning */
+export const DRIFT_LINE = 0.9;
 
 /** The steps of T.52, for ?bench=full: each optimization added to the one before it (T.110 added the sixth). */
 export const FULL_ROUNDS = [
@@ -63,7 +70,7 @@ export function benchMarkdown(rows, environment) {
     environment.site,
   ].filter(Boolean).join(" · ");
   // no rounds, no table: a /benchmark/ report without its model section (T.134) is no row of reportsTable()
-  const table = rows.length ? [...roundsTable(rows), ""] : [];
+  const table = rows.length ? [...roundsTable(rows), "", ...[drift(rows)].filter(Boolean).flatMap((line) => [line, ""])] : [];
   return [`### Pyodide LLM benchmark`, "", machine, "", ...table, `<sub>${environment.userAgent}</sub>`].join("\n");
 }
 
@@ -75,4 +82,16 @@ export function roundsTable(rows) {
     const ready = row.seconds === undefined ? "" : `${number(row.seconds)} s`;
     return `| ${row.name} | ${number(row.speed)} | ${ready} | ${row.backend ?? ""} |`;
   })];
+}
+
+/** T.555: where the second round and the last run the first one's switches again, how fast the last was against the
+ * second: the device's drift over the rounds (heat, other work), "" where there is no such pair. Below DRIFT_LINE the
+ * word "unsteady" makes it a warning of the report (warnings()). */
+export function drift(rows) {
+  const [first, before] = rows, after = rows.at(-1);
+  const same = (row) => row?.without.join() === first?.without.join();
+  if (rows.length < 3 || !same(before) || !same(after) || !before.speed || !after.speed) return "";
+  const share = after.speed / before.speed;
+  return `The last round ran the first one's switches again at ${Math.round(share * 100)}% of the speed of the second` +
+    (share < DRIFT_LINE ? ": unsteady, the device slowed down as the rounds ran (heat, or other work)." : ".");
 }

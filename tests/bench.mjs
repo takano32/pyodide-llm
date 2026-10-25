@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { FULL_ROUNDS, MEMORY_UNSAID, PASTE, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO_LONG, benchMarkdown, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, gpuSummary, lineSummary,
          loginUrl, parseReport, reportBody, shortReport, storageSummary,
          generateTable, gpuSkipped, layerCheckNumbers, layerStepsTable, layerTable, matVecTable, PATH_PROMPTS, PATH_WRITES, pathTable, reportTooLong, reportUrl, reportsTable, roundsHere, roundsTable, tableCell, threadCounts, threadsKey, threadsLine, times, timesFaster, tokenTable,
-         checkVerdict, pathWarnings, warnings, warningsBlock } from "../src/bench.js";
+         checkVerdict, pathWarnings, warnings, warningsBlock, drift, DRIFT_LINE } from "../src/bench.js";
 import fs from "node:fs";
 import { runtimeUrl } from "./tree.mjs";
 
@@ -36,14 +36,28 @@ assert.ok(!bare.includes("cores"), "no invented core count");
 const broken = benchMarkdown([{ name: "everything", speed: undefined, backend: "" }], environmentOf({}, {}));
 assert.ok(broken.includes("| everything | ? |"), broken);
 
-assert.equal(ROUNDS.length, 2, "?bench=1 runs with and without the kernels");
+assert.deepEqual(ROUNDS.map((round) => [round.name, round.without.join()]), [["everything", ""], ["everything, before", ""], ["without the kernels", "kernels"], ["everything, after", ""]],
+  "?bench=1 runs with and without the kernels, and the first twice more (T.555)");
+// T.555: the last round against the first, a warning below DRIFT_LINE; none where the two are not the same switches,
+// or a speed is missing
+const rowsOf = (before, after) => [{ name: "everything", without: [], speed: 1 }, { name: "everything, before", without: [], speed: before },
+  { name: "without the kernels", without: ["kernels"], speed: 9 }, { name: "everything, after", without: [], speed: after }];
+assert.equal(drift(rowsOf(100, 97)), "The last round ran the first one's switches again at 97% of the speed of the second.");
+assert.equal(drift(rowsOf(100, 80)), "The last round ran the first one's switches again at 80% of the speed of the second: unsteady, the device slowed down as the rounds ran (heat, or other work).");
+assert.equal(DRIFT_LINE, 0.9);
+assert.equal(drift(rowsOf(100, undefined)), "");
+assert.equal(drift(rowsOf(100, 97).slice(0, 3)), "", "the last is not the first's switches");
+assert.equal(drift([{ name: "a", without: [], speed: 5 }]), "");
+assert.deepEqual(warnings([{ title: "Model", markdown: drift(rowsOf(100, 80)) }]), ["Model: The last round ran the first one's switches again at 80% of the speed of the second: unsteady, the device slowed down as the rounds ran (heat, or other work)."]);
+assert.deepEqual(warnings([{ title: "Model", markdown: drift(rowsOf(100, 97)) }]), []);
+assert.ok(benchMarkdown(rowsOf(100, 80), environmentOf({}, {})).includes("\n\nThe last round ran the first one's switches again at 80%"), "?bench='s report says it under its table");
 assert.equal(FULL_ROUNDS.length, 6, "?bench=full walks the steps of T.52, and T.110's");
 assert.deepEqual(FULL_ROUNDS.at(-1).without, [], "the last step is everything switched on");
 // T.214: a browser that does not say its memory (Safari, Firefox: no navigator.deviceMemory) skips the round without the
 // kernels (NumPy's float32 weights took an iPhone's tab down, T.205's review), and its row says why; one that says runs all
 const quiet = roundsHere(ROUNDS, undefined);
 assert.deepEqual(quiet.map((round) => round.name), ROUNDS.map((round) => round.name), "every round keeps its row");
-assert.deepEqual(quiet.map((round) => round.skip), [undefined, MEMORY_UNSAID], "only the round without the kernels is skipped");
+assert.deepEqual(quiet.map((round) => round.skip), [undefined, undefined, MEMORY_UNSAID, undefined], "only the round without the kernels is skipped");
 assert.equal(ROUNDS[1].skip, undefined, "ROUNDS itself is left as it is");
 for (const memory of [8, 4, 0.5]) assert.deepEqual(roundsHere(ROUNDS, memory), ROUNDS, `a browser that says ${memory} GB runs every round`);
 assert.deepEqual(roundsHere(FULL_ROUNDS, undefined).filter((round) => round.skip).map((round) => round.name), ["NumPy only", "the kernels, int8 widened"], "?bench=full: the two rounds that widen the weights");
