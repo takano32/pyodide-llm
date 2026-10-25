@@ -56,6 +56,9 @@ if __name__ == "__main__":
     (out / "model.safetensors").write_bytes(safetensors_file(tensors, stored))
     (out / "config.json").write_text(json.dumps({**published, "hidden_act": "silu", "bos_token_id": 1, "eos_token_id": 2}, indent=2))
     (out / "tokenizer.model").write_bytes(sentencepiece_model((ROOT / "tok512.bin").read_bytes(), settings["vocab_size"]))
+    # (T.401: a chat template, as a published model has, which writes the prompt as it is: the converter reads it by
+    # jinja2 in the browser (the worker asks Pyodide for the package), and the text is the one without a template)
+    (out / "tokenizer_config.json").write_text(json.dumps({"chat_template": "{% for message in messages %}{{ message['content'] }}{% endfor %}"}))
     (out / "settings.json").write_text(json.dumps(dict(
         name="stories260K from Hugging Face files", conversion=dict(dtype="float32"), options=dict(stop_tokens=[1]),
         generation=dict(steps=256, temperature=0.0), prompt="Once upon a time")))
