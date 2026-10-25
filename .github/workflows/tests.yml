@@ -102,14 +102,14 @@ jobs:
       # T.441: a page left open across a deployment (tests/updated-in-browser.mjs: 39 cases, the model page's and
       # /benchmark/'s), in the three engines, on the site just built: nightly, as nothing else runs it on a schedule
       - name: Install the browsers (nightly)
-        if: ${{ github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true' }}
+        if: ${{ (github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true') && !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         timeout-minutes: 20
         run: |
           bash tests/apt-timeouts.sh
           npx playwright-core install --with-deps chromium firefox webkit
 
       - name: A page left open across a deployment (nightly)
-        if: ${{ github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true' }}
+        if: ${{ (github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true') && !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         timeout-minutes: 45
         run: |
           failed=0
