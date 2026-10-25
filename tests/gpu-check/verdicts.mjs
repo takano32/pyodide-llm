@@ -175,7 +175,8 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
       const bits = (b64) => { const f = floats(b64); return new Uint32Array(f.buffer, f.byteOffset, f.length); };
       const cpuOwn = (got, want) => {
         const g = bits(got), w = bits(want), each = g.length / (32 * kvDim);
-        // (T.558.1: but the positions a ring of the CPU's run no longer holds, which its run read over)
+        // (T.558.1: but the positions a ring of the CPU's run no longer holds, which its run read over: a refused block is
+        // 32 positions, shorter than a ring's period, so a ring's layers are not compared here at all, its other layers are)
         return g.every((word, i) => Math.floor((i % (32 * kvDim)) / kvDim) < (heldFrom?.[Math.floor(i / (32 * kvDim))] ?? 0)
           || word === w[Math.floor(i / (32 * kvDim)) * n * kvDim + (i % (32 * kvDim))]) && w.length === each * n * kvDim;
       };
