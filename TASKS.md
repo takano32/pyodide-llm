@@ -209,7 +209,7 @@
 - T.511 [調査][モデル] スマホのユーザ向けに一覧を見直す（小さい ELYZA を含む） — 進行中
 - T.513 [性能][モデル] 量子化を組み合わせて、スマホ向けのモデルをもっと軽くする — 調べまで済み
 - T.519 [調査][変換] wllama から取り込める設計を見る — 調べは完了
-- T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
+- T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 持ち主の判断待ち
 - T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 持ち主の判断待ち
 - T.545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T.546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
@@ -229,7 +229,7 @@
 
 - **止めた所（2026-10-24 の再開で済んだ）**: T.271.1 は 2 回目の CI（run 40062442351）が通り、本線に入れた。以下はそのときの記録。T.271.1（回した基底を GPU に）の実装・レビュー（Sonnet high、must-fix なし）・レビューの直しが済み、ブランチ `t271.1-rotated-basis`（push 済み、本線には未）。CI の 1 回目（run 40061581668）は、シェーダが実機で正しいこと（回した基底の作り物でプロンプトの層は線の 0.37、答えのステップの「the norms apart」も通る）を示し、落ちたのは gpu-check が回した基底の取らない答えの形を名指したことだけ（`tests/gpu-check/harness.js` を直した）。**2 回目の CI**（`gpu-prompt.yml models="synthetic-ternary-rotated synthetic-ternary-rotated-untied synthetic-ternary-rotated-1024 synthetic-ternary synthetic" --ref t271.1-rotated-basis`）を 2026-10-24 に起動した: `gh run list --workflow gpu-prompt.yml --limit 3` で ID を見て、`node tests/ci.mjs wait <ID>` で読む。
 - **2026-10-24 の続き**: T.271.1 → T.572（番号を `T.番号.子` の形に）→ T.271.5（状態を層の束に割る T.565 と 27B の形の作り物、レビューの直しまで）が済み、T.271 は完了。T.547 は T.547.1（詰め方を名前で）・T.547.2.1〜T.547.2.4（Q4_K をプロンプトと答えのステップで GPU に: 本物の 4-bit の Shisa が本番で「prompts and answers on WebGPU」）まで、どれもレビューの直しまで本線に。途中で T.575（`plan-facts-check` の止まり）・T.577（e2e の `steps=`）を直した。T.547.3 は T.547.3.1〜T.547.3.7（層ごとの詰め方、行列を別々に掛ける答えのステップ、塊の型の表と Q2_K、符号表と IQ2 系、残りの IQ 系、塊の表、GPU だけ）がどれもレビューの直しまで本線に入り、T.547 は完了（実物の Saluki と 4-bit の Shisa は持ち主の PC で）。途中で T.580（道具の終わりの止まり）を直した。2026-10-25: T.579.1（答えのステップは使う管だけを作る）と T.576 が済んだ。T.579.2 と T.578 は持ち主の端末の数字を待つ（4-bit と int8 の Shisa の比べ）。T.573・T.581 も済んだ。T.574・T.567・T.563 も済んだ。T.566 は持ち主の端末の数字を待つ。そのあとは目次の古い未着手を順に（T.559 から）。T.581 も済んだ（レビュー待ちの記録はその項）。
-- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: (1) `REASONS.packed("Q4_K")`「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」（今ある文の形に名前を入れたもの）。(2) 分類器が Q4_K のモデルの答えのステップの訳が `REASONS.floatClassifier`（float weights と言う: 事実と合わない）のまま。 (3) T.573 の `REASONS.aloneState`「a layer's state is past a buffer of this GPU」（`alonePast` と対の文。実在のモデルには出ない）。 (4) T.542 の 3 値の断り「Ternary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows.」（前の文に「偶数個」を足した。レビュー: 少し硬い）。
+- **区切りのまとめで持ち主に見せる文（訪問者に見える）**: (1) `REASONS.packed("Q4_K")`「Q4_K weights need the packed int8 dot product of WGSL, which this browser lacks」（今ある文の形に名前を入れたもの）。(2) 分類器が Q4_K のモデルの答えのステップの訳が `REASONS.floatClassifier`（float weights と言う: 事実と合わない）のまま。 (3) T.573 の `REASONS.aloneState`「a layer's state is past a buffer of this GPU」（`alonePast` と対の文。実在のモデルには出ない）。 (5) T.525 の保存できない訪問の Gemma 4 の警告: 上の 3 つの案から（勧めは今ある文の使い回し）。(4) T.542 の 3 値の断り「Ternary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows.」（前の文に「偶数個」を足した。レビュー: 少し硬い）。
 - **（前の版）次にすること**: 2 回目の CI で FAILED と wrong が 0 なら、T.271.1 の状態を台帳に書いて本線に入れ（`. ~/.keychain/*-sh` を読んでから SSH で push）、デプロイを待つ（記録だけの直しはデプロイしない: AGENTS.md の落とし穴）。シェーダの目録に 2 行足したので端末の鍵が 1 回変わる（ternary の端末だけ）。その後 T.271.5（27B そのもの、T.565 は「状態を層の束に割る」で取りまとめ役が決める）→ T.547。
 - 区切りのまとめで持ち主に出すもの（文面・選択・端末）は、各タスクの「持ち主の端末で見るもの」と「取りまとめ役の決め」に積んである。T.571 の Android の確かめが端末の一覧にある。
 
@@ -1560,7 +1560,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **速さ**: wllama の公表の tok/s は見つからない（README にもデモにも無く、WebGPU のブログはその場で測るだけ）。ここの台帳は Qwen3 0.6B 27.6 tok/s（T.511.5）、SmolLM2 360M 47.2 tok/s（2026-10-01）。
 - **持ち主に聞くもの（区切りのまとめで）**: (A) 比べに wllama を置いてよいか（試験のページだけ / 置かない / 比べをやめる）、(B) T.519.2 を積むか（見える動きと文面が変わる）、(C) 分けた GGUF は T.505 の「選ばない」のままでよいか（確認だけ）。
 
-### T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T.333 のレビューの気づき）
+### T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 持ち主の判断待ち（2026-10-25、区切りのまとめで聞く。前の状態: 未着手、2026-10-15、T.333 のレビューの気づき）
+- **調べ（2026-10-25）**: 警告（`src/models/memory.js` の `memoryWarning()`）は項目を選んだときにページが出し、そのときページは保存が使えるか（worker の `opfsWritable()`: 同期のアクセスハンドル）を知らない。数も、項目が持つのは表を引いた `loaded` だけ。だから直すには (a) ページが保存を使えるかを見積もる、(b) 項目に表を入れた大きさを持たせる、の 2 つが要る。案: (1) **勧め**: 今ある文（「… needs about N of memory, and this device has …」）を使い回し、保存の使えない訪問（ページの `navigator.storage.getDirectory` が無いか断る）では N に表を足す。新しい文は要らない。(2) 何もしない（保存の使えない訪問は Firefox の private のような少ない場合で、そのときは読み込みが落ちてメモリ不足の文が出る）。(3) 保存できない訪問だけに別の 1 文を足す（文面は持ち主）。
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
 ### T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 持ち主の判断待ち（2026-10-25。前の状態: 未着手、2026-10-15、T.532 のレビューの気づき）
