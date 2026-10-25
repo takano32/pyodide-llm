@@ -77,10 +77,10 @@ if has dry; then
   # (the widths of the made-up model's signs are 128, 256 and 384)
   node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines none --broken embedding,sign-128-5,sign-384-all
   # (T.358: a negative test: lines of 100 must let the broken engine through, so the tool says "NOT CAUGHT — FAILED" and
-  # ends with 1. That exit and no other: 0 would be lines that caught it, anything else a tool that broke)
+  # ends with 1. Both are asked for: 0 would be lines that caught it, and 1 alone is any failure of the tool as well)
   code=0
-  node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines 100,100,100 --broken embedding --texts 1 || code=$?
-  [ "$code" = 1 ] || { echo "page: dry: the run with lines of 100 ended with $code, not 1 (the broken engine let through) — FAILED"; exit 1; }
+  node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines 100,100,100 --broken embedding --texts 1 | tee "$dry/negative.log" || code=$?
+  { [ "$code" = 1 ] && grep -q "NOT CAUGHT — FAILED" "$dry/negative.log"; } || { echo "page: dry: the run with lines of 100 ended with $code, and not by letting the broken engine through — FAILED"; exit 1; }
   echo "page: dry: lines of 100 let the broken engine through, as they must: the NOT CAUGHT above is this negative test's, and expected"
   # (the long mode on the made-up model's own context: the same files as the fork's, made by the engine's NumPy forward pass, and
   # the engine broken on purpose, which must be caught by lines the right one passes)
