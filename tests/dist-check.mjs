@@ -26,6 +26,11 @@
 //      give the same deviceKey() as the sources, for 192 made-up devices.
 //   8. no file of dist/_astro/ asks for a module of Node's, or is the bundler's stand-in for one: the runtime is a
 //      browser's (T.367.5: what Node's tests need of a worker is tests/helper-node.mjs's to give).
+//   9. (T.445) no file of the runtime in dist/_astro/ reads a name it declares nowhere, other than the ambient names the
+//      runtime uses (tests/types.mjs's AMBIENT): a name the bundler dropped from its declaration fails only in the
+//      branch that reads it, and the bundled GPU worker's branches (ternary, int6, outlier columns) run on no GPU of
+//      CI's. File-wide, not by scope (the bundles use var, which tests/names.mjs's scopes refuse): a name declared in
+//      one function and read in another is not seen.
 // 3 to 8 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
 // served as it is from the same folder as the Service Worker, the root is those files, and this says so and checks 1
 // and 2 alone.
@@ -35,6 +40,8 @@ import path from "node:path";
 import vm from "node:vm";
 import { pathToFileURL } from "node:url";
 import { treeOf } from "./tree.mjs";
+import { parse } from "@babel/parser";
+import { AMBIENT } from "./types.mjs";
 
 const ORIGIN = "https://site.test", BASE = "/pyodide-llm/";
 /** what dist's root may hold: the pages, the bundler's folder, and what is served as it is */
@@ -68,6 +75,40 @@ const under = (folder) => (!fs.existsSync(folder) ? [] : fs.readdirSync(folder, 
   .map((entry) => path.relative(folder, path.join(entry.parentPath, entry.name)).split(path.sep).join("/")).sort());
 
 /** What is wrong with dist (a folder) as a build of tree, as lines; and what was looked at, in words. */
+/** T.445: the names a script reads that it declares nowhere, file-wide (a var, a let or a const, a function or a class
+ * and its parameters, a catch's, an import's) */
+export function undeclared(text) {
+  const declared = new Set(), read = new Set();
+  const declare = (pattern) => {
+    if (!pattern) return;
+    if (pattern.type === "Identifier") declared.add(pattern.name);
+    else if (pattern.type === "ObjectPattern") pattern.properties.forEach((one) => declare(one.type === "RestElement" ? one.argument : one.value));
+    else if (pattern.type === "ArrayPattern") pattern.elements.forEach(declare);
+    else if (pattern.type === "AssignmentPattern") declare(pattern.left);
+    else if (pattern.type === "RestElement") declare(pattern.argument);
+  };
+  // (an identifier that names no binding: a property, a key, a label, an exported or imported name, import.meta)
+  const named = (parent, key) => ((parent.type === "MemberExpression" || parent.type === "OptionalMemberExpression") && key === "property" && !parent.computed)
+    || (/^(ObjectProperty|ObjectMethod|ClassMethod|ClassProperty|ClassPrivateProperty)$/.test(parent.type) && key === "key" && !parent.computed)
+    || /^(LabeledStatement|BreakStatement|ContinueStatement|MetaProperty)$/.test(parent.type)
+    || (parent.type === "ExportSpecifier" && key === "exported") || (parent.type === "ImportSpecifier" && key === "imported");
+  const walk = (node, parent, key) => {
+    if (node.type === "VariableDeclarator") declare(node.id);
+    else if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassDeclaration|ClassExpression|ObjectMethod|ClassMethod)$/.test(node.type)) {
+      if (node.id) declared.add(node.id.name);
+      (node.params ?? []).forEach(declare);
+    } else if (node.type === "CatchClause") declare(node.param);
+    else if (/^Import(Default|Namespace)?Specifier$/.test(node.type)) declared.add(node.local.name);
+    if (node.type === "Identifier" && !(parent && named(parent, key))) read.add(node.name);
+    for (const [field, value] of Object.entries(node)) {
+      if (field === "loc") continue;
+      for (const child of Array.isArray(value) ? value : [value]) if (child && typeof child.type === "string") walk(child, node, field);
+    }
+  };
+  walk(parse(text, { sourceType: "module" }).program, null, null);
+  return [...read].filter((one) => !declared.has(one)).sort();
+}
+
 export function distSaid(dist, tree = treeOf()) {
   const astro = path.join(dist, "_astro");
   if (!fs.existsSync(astro)) throw new Error(`${dist}: no _astro/ in it: npm run build`);
@@ -134,6 +175,12 @@ export function distSaid(dist, tree = treeOf()) {
     const asked = /\b(?:from|import)\s*\(?\s*["'](node:[\w/]+)["']/.exec(got.toString("utf8"))?.[1];
     if (asked) said.push(`_astro/${name} asks for ${asked}: a module of Node's in a browser's file (what the tests need of Node is theirs to give: tests/helper-node.mjs)`);
     if (/^(__vite-browser-external|rolldown-runtime)\./.test(name)) said.push(`_astro/${name}: the bundler's stand-in for a module of Node's, or its own runtime for one: a file of the runtime imports a module a browser does not have`);
+  }
+  // 9 (T.445): names read and declared nowhere in a file of the runtime (the pages' scripts read the DOM's names)
+  for (const [name, got] of bytes) {
+    if (!name.endsWith(".js") || name.includes(".astro_astro_type_script")) continue;
+    const unknown = undeclared(got.toString("utf8")).filter((one) => !AMBIENT.has(one));
+    if (unknown.length) said.push(`_astro/${name} reads ${unknown.join(", ")}, declared nowhere in it and no ambient name of the runtime (tests/types.mjs's AMBIENT): a declaration the bundler dropped, or a new ambient name to add there`);
   }
   // 4: the built files, once each, the same bytes
   const built = under(tree.built());
