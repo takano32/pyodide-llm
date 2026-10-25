@@ -194,11 +194,13 @@ export function gpuFit({ shape, weights, device, direct }:
   // Llama's (RMSNorm, RoPE on whole heads, SwiGLU), and T.226: with what the prompt's blocks take besides (T.153: Qwen2's
   // biases of q, k and v, Qwen3's norms of the heads and heads of another size than dim / heads; T.154: GPT-2's and
   // GPT-NeoX's LayerNorm, biases, GELU, learned positions, RoPE on a part of a head, parallel residual), and T.92's
-  // outlier channels (the GPU's classifier multiplies floats for such a model, and needs no columns apart). The keys
-  // and values are float16 as the GPU's, or float32 where the CPU keeps them so (T.160, widened on the way back and
-  // narrowed on the way up). What is left: a classifier
-  // and an embedding of int8 or int6 in groups of 32 (T.232: or ternary in groups of 128; of a ternary classifier the
-  // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
+  // outlier channels (the GPU's classifier multiplies floats for such a model, and needs no columns apart); T.261.4.2: a
+  // Gemma 3's windows, GELU gate and norms behind; T.545.2: an LFM2's convolution layers; T.271.3: a Qwen3.5's
+  // linear-attention layers; T.547: matrices of llama.cpp's blocks. The keys and values are float16 as the GPU's, or
+  // float32 where the CPU keeps them so (T.160, widened on the way back and narrowed on the way up). What is left: a
+  // classifier and an embedding of int8 or int6 in groups of 32 (T.232: or ternary in groups of 128; of a ternary
+  // classifier the GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS; T.547.3.6: or each of
+  // its own packing where one is of llama.cpp's blocks); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
     // (T.545: an LFM2's steps stayed on the CPU here until T.545.2, which gave a token's fused layer its convolution layers)
