@@ -537,6 +537,19 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(same(now.keys[0].data.subarray(7 * KV_ROW, 9 * KV_ROW), rows.subarray(slot * row, (slot + 2) * row)), `positions 7 and 8 of a ring, from 7's slot ${slot}`);
     assert.ok(same(now.values[0].data.subarray(7 * KV_ROW, 9 * KV_ROW), rows.subarray((2 * ring + slot) * row, (2 * ring + slot + 2) * row)), "and their values");
     assert.ok(now.keys[0].data.subarray(0, 7 * KV_ROW).every((byte) => byte === 0) && now.keys[0].data.subarray(9 * KV_ROW).every((byte) => byte === 0), "nothing before from, nothing from pos on");
+    // (and a float32 ring, a grouped-query model's (T.160): narrowed to float16 on the way up, narrowIn() counting values
+    // where copyIn() counts bytes)
+    const wide = KV_DIM * 4, floatRing = { places: [{ keys: address, values: address + 2 * ring * wide, ring }, ...placesOf(wide).slice(1)], row: wide, half: false };
+    new Float32Array(memory.buffer, address, 4 * ring * KV_DIM).forEach((_, i, all) => { all[i] = (i % 23) - 11; });
+    clear();
+    keysIn(m, floatRing, 7, 9);
+    if (DataView.prototype.setFloat16) {
+      const halfOf = (value) => { const view = new DataView(new ArrayBuffer(2)); view.setFloat16(0, value, true); return view.getUint16(0, true); };
+      const got = new Uint16Array(now.values[0].data.buffer, 7 * KV_ROW, 2 * KV_DIM);
+      const want = new Float32Array(memory.buffer, address + (2 * ring + slot) * wide, 2 * KV_DIM);
+      assert.ok(got.every((bits, i) => bits === halfOf(want[i])), "a float32 ring's values of positions 7 and 8 go up as float16, from 7's slot");
+      assert.ok(now.values[0].data.subarray(9 * KV_ROW).every((byte) => byte === 0), "and nothing past them");
+    }
     for (const [first, late] of [[9, 9], [10, 9]]) {
       clear();
       keysIn(m, ringed, first, late);
