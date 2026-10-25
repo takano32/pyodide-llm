@@ -38,7 +38,8 @@ fi
 dtypes="int8 ternary"
 if has perplexity; then dtypes="float32 int8 ternary"; fi
 for dtype in $dtypes; do
-  python tests/perplexity_prepare.py "$model" "$dir/$dtype" "$dtype" 2>&1 | tail -1 | cut -c1-200
+  # (T.452: with the entry's options, as the page converts it: its BOS and its plain RoPE, not the converter's own)
+  python tests/perplexity_prepare.py "$model" "$dir/$dtype" "$dtype" --entry "$id" 2>&1 | tail -1 | cut -c1-200
   echo "ternary: $dtype is $(stat -c %s "$dir/$dtype.bin") bytes"
 done
 if has ptq1_0; then
@@ -52,7 +53,7 @@ if has ptq1_0; then
   python tests/make_ptq1_0.py "$gguf" "$dir/ptq/model-PTQ1_0.gguf"
   echo "ternary: the conversion of the PTQ1_0 file to ternary"
   node tests/profile-convert.mjs "$dir/ptq" ternary | head -12 | cut -c1-200
-  python tests/perplexity_prepare.py "$dir/ptq" "$dir/from-ptq" ternary 2>&1 | tail -1 | cut -c1-200
+  python tests/perplexity_prepare.py "$dir/ptq" "$dir/from-ptq" ternary --entry "$id" 2>&1 | tail -1 | cut -c1-200
   cmp "$dir/from-ptq.bin" "$dir/ternary.bin"
   echo "ternary: the PTQ1_0 file of the same weights converts to the same ternary checkpoint, byte for byte ($(stat -c %s "$dir/ptq/model-PTQ1_0.gguf") bytes of GGUF)"
   rm "$dir/from-ptq.bin" "$dir/ptq/model-PTQ1_0.gguf"
