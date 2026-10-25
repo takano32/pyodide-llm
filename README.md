@@ -57,7 +57,7 @@ Firefox and WebKit and in the installed Chrome and Edge: all 23 combinations run
 | software threads (through the Service Worker) | yes | yes | yes |
 | 64-bit memory: models over 4 GB | yes | yes | no |
 | WebGPU for the prompt | yes | not in the Firefox of the CI (no WebGPU in a worker) | on the owner's iPhone; not in the CI's WebKit |
-| WebGPU for the answer | yes, for Llama, Qwen2, Qwen3, GPT-2 and GPT-NeoX models | no | no (Safari does not say how much memory the device has) |
+| WebGPU for the answer | yes, for Llama, Qwen2, Qwen3, GPT-2 and GPT-NeoX models | not measured (no WebGPU in a worker in the CI) | where the prompt has it; not tried on the owner's iPhone yet |
 
 - Where a model does not fit in 32-bit memory and the browser has no 64-bit memory (Safari), the page stores the
   weights in 6 bits instead of 8. The 7B to 9B models do not fit even then, so they need Chrome or Firefox.
@@ -66,8 +66,9 @@ Firefox and WebKit and in the installed Chrome and Edge: all 23 combinations run
   for the GPU; up to 2B on a device with 8 GB or more) goes on the GPU alone where it can (int8; Llama, Qwen2 and Qwen3). The
   page then estimates the CPU from the device's run of `/benchmark/`, loads the model again on the CPU if that is
   faster, and remembers it for the next visit. Other models too large to hold twice stay on the CPU.
-- A browser that does not say how much memory the device has (Safari, Firefox) keeps the answer on the CPU, and
-  `/benchmark/` skips its round without the kernels there (NumPy widens the weights to float32: for llm-jp-3-150m,
+- A browser that does not say how much memory the device has (Safari, Firefox) puts the answer on the GPU too, where
+  it is faster than the CPU there (but never a model on the GPU alone), and `/benchmark/` skips its round without the
+  kernels there (NumPy widens the weights to float32: for llm-jp-3-150m,
   Pyodide grew to 958 MB in CI's Chromium).
 - For Safari, the only records are CI's WebKit (Playwright's build of Safari's engine) and the owner's iPhone.
   Safari on a Mac has not been tried.

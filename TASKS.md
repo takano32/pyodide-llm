@@ -210,7 +210,6 @@
 - T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 持ち主の判断待ち
 - T.545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T.546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
-- T.548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えのステップを GPU に置くか — 進行中
 - T.549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 候補
 - T.550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 候補
 - T.551 [性能][WebGPU] 1 回の submit のステップの数とプロンプトのブロックの大きさを、端末で測って選ぶ — 候補
@@ -1581,13 +1580,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - **鍵**: 動く（網の `shaders`: deviceKey の 192 通りの全部が変わる。変わった export は SAMPLE と分けた標本抽出の 4 つ・State を持つ EMBED と EMBED_TERNARY（State の文）・目録 2 つ・`samplingSettings`・`samplingState`・`penalizeLikeCpu`。目録の行の数は同じ）。
   - **見ていないもの**: 本物の GPU（持ち主の端末）での速さと同じトークン（SwiftShader・lavapipe だけ）。Gemma 3 の答えのステップが GPU に乗るのは T.261.4.2 の後（標本抽出はもう妨げない）。Qwen3.5 系・Saluki・Bonsai 2 27B は層が GPU に載らないので、まだ当たらない。手元の軽い組は 1 回、memory-check の後で外から止められた（143）ので、残りの検査を 1 つずつ回して全部通した。
 
-### T.548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えのステップを GPU に置くか — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.548-steps-unsaid`。前の状態: 未着手、2026-10-16、**持ち主が選択肢で「どちらも GPU に」**: Safari も Firefox も答えのステップを GPU に置く。iPhone でタブが落ちうるので、本線に入れた後に持ち主の iPhone で確かめる（端末の一覧に積む）。落ちたら Safari だけ戻す）。前の見出し: 持ち主の判断待ち（2026-10-16、WebGPU の洗い出しから。規模 小。区切りのまとめで聞く）
-- いまは `tokensUnfit()` の `REASONS.memoryUnsaid`（T.205）で、`navigator.deviceMemory` を言わないブラウザは答えのステップを GPU に置かない（プロンプトのブロックだけ GPU）。訳: iPhone の `/benchmark/` のモデルの節で、分類器と埋め込みも GPU に置いたらタブが落ちた。メモリの見積もりはもともと 4 GB の仮定（`weightsPlace()` の既定）なので、この行は余分の守り。
-- **選択肢（勧めを先頭に）**: (1) Firefox だけ置き、Safari は今のまま（Firefox の WebGPU はパソコンの版で使われている。Android の Firefox で WebGPU が使えるかは未確認。落ちた報告は iPhone の Safari のものだけ）。(2) 今のまま。(3) どちらも置く（iPhone の Safari のタブが落ちうる: 持ち主の iPhone で確かめてから）。
-- 見分けは端末の事実で（Safari かを UA の文字で見るのでなく、例えば WebKit だけの性質で）: 書くときに決める。鍵は動かない。確かめは CI の Firefox（`browsers.yml` の WebGPU のある組）と持ち主の端末。
-- **材料（2026-10-16、T.552 の naidan の調べから）**: naidan は Firefox（iOS の Firefox を除く）で WebGPU を使う訪問者に「Chromium のほうが速い」と出す。訳は Bugzilla 1870699: Firefox は GPU の仕事の終わりを時計で見回るので、終わりの知らせ（`mapAsync`・`onSubmittedWorkDone`）が遅れる（`src/features/llama-cpp-browser/firefox-webgpu-warning.ts` のコメント。バグの中身は読んでいない）。こちらは 1 回の submit の後に読み戻しを待つ形なので、Firefox では submit ごとの待ちが固定費として乗る見込み。端末で測って選ぶ形なので遅ければ CPU に戻るはずだが、入れる前に CI の Firefox で答えのステップの 1 回の submit の待ちを測って記録する（T.551 の数字と並べる）。
-- **結果（2026-10-25）**: `gpuFit()` の `tokensUnfit()` から `REASONS.memoryUnsaid` の行を外し、`memoryUnsaid` を worker・`external()`・`createForward()` から全部消した（訳の文も `REASONS` から）。GPU だけに置かない決め（`gpuOnlyPossible()`: メモリを言わない端末と 6 ビット）はそのまま。答えのステップはステップの計測（`faster`）で CPU と比べて選ぶので、Firefox の submit の待ちが大きければ CPU に戻る。Firefox の submit の待ちは未計測: CI の Firefox（Playwright）は WebGPU のアダプタを持たない見込みで（未確認）、測るのは持ち主の端末か本物の Firefox。試験: `gpu-default-check`（メモリを言わない端末だった場合もステップを GPU に頼み、GPU が取る）、`gpu-part-check`・`reasons-check` の表から行を消した。シェーダの文と端末の鍵は変わらない。CI を省いた。訳: 偽の GPU の Worker で回る判定だけで、シェーダは触っていない（本物の確かめは持ち主の iPhone: 端末の一覧に足した）。
-
 ### T.549 [性能][WebGPU] プロンプトの行列積に subgroup matrix を候補に足す — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。先に使えるかを調べる）
 - **当たるモデル**: GPU に置ける全部のプロンプトのブロック（その機能のある端末だけ）。
 - **作るもの**: 今の形の候補（llama.cpp の register tiling・TF.js の vec4・ORT の DP4A、`promptForms()`）に、subgroup matrix で掛けるタイルを 1 つ足し、今までどおり読み込みの時に JavaScript と比べて測って選ぶ。**先に調べること**: Chrome の `chromium-experimental-subgroup-matrix` が旗なしで訪問者に出ているか、持ち主の Android（Arm Valhall）で使えるか（どちらも未確認）。旗の後ろだけなら、訪問者に効かないので採らない。
@@ -1595,7 +1587,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **鍵**: 動く（候補が増えると `devicePromptForms()` が変わる）。確かめは CI（Dawn に機能があるか）と端末。
 
 ### T.550 [性能][WebGPU] int6 の重みを GPU に詰めたまま置く（GPU だけにも） — 状態: 候補（2026-10-16、WebGPU の洗い出しから。規模 中。今は効く端末が少ない）
-- いまの GPU は int6 を int8 に広げて持つ（T.155: 1.125 バイト / 重み）ので、int6（0.875）を選んだメモリの少ない端末では GPU だけに置けない（`PACKED` の int6 の `alone: false`）。**当たるのは** `deviceMemory` が 8 より小さいと言う Chromium（4 GB と丸められる 6 GB の Android など）で int6 になる 2B〜3B 級（64 ビットのメモリのある Chromium は int8 のまま: T.133）。Safari は答えのステップを GPU に置かない（T.548）ので当たらない。
+- いまの GPU は int6 を int8 に広げて持つ（T.155: 1.125 バイト / 重み）ので、int6（0.875）を選んだメモリの少ない端末では GPU だけに置けない（`PACKED` の int6 の `alone: false`）。**当たるのは** `deviceMemory` が 8 より小さいと言う Chromium（4 GB と丸められる 6 GB の Android など）で int6 になる 2B〜3B 級（64 ビットのメモリのある Chromium は int8 のまま: T.133）。Safari には当たらない（GPU だけに置くのは `gpuOnlyAllowed()` が `deviceMemory` を求める）。
 - **作るもの**: ステップの行列とプロンプトのタイルで 32 個を 24 バイトから読む（`pack6` の並び）。`Packing` に 1 行、`PACKED` の int6 の `gpu` を `{ as: "int6", alone: true }` に。
 - **元ネタ**: 無い（このプロジェクトの詰め方: `gpu-writer-unsourced`）。**鍵**: 動く。確かめは CI。
 
