@@ -42,6 +42,8 @@ export function quantization(name: string) {
 
 /** How long the list of a repository is waited for. */
 export const LISTING_SECONDS = 10;
+// T.508.1: the pages of a repository's list asked for at most (a thousand entries each)
+export const PAGES = 10;
 export type Listed = { path: string; size?: number };
 // A GGUF this page may open: one file that is a model. Not a part of a model split over several files
 // (-00001-of-00003.gguf), not the projector of a model that reads images (mmproj), and not the importance matrix a
@@ -80,17 +82,24 @@ export function settled<Of extends Entry>(entry: Of, files: Listed[]): Of {
   return { ...entry, ...fetched, note: noteOf(entry.hf.revision!, file.path), hf: { ...entry.hf, weights: file.path } };
 }
 
-/** The files at the top of a repository at a revision, as huggingface.co lists them (one request), or undefined where
- * it does not say (no such repository, a gated one, no line): the model is then opened as named, and whatever is
- * wrong with it is said by the worker, which meets the same answer. */
+/** The files at the top of a repository at a revision, as huggingface.co lists them, or undefined where it does not say
+ * (no such repository, a gated one, no line): the model is then opened as named, and whatever is wrong with it is said
+ * by the worker, which meets the same answer. T.508.1: a list of more than a page (1,000 entries) comes in pages, each
+ * naming the next in its Link header (which huggingface.co lets a page read), up to PAGES of them. */
 export async function filesOf(repository: string, revision: string, fetching: typeof fetch = fetch): Promise<Listed[] | undefined> {
   try {
-    // (it waits ten seconds at most: a line that does not answer must not hold the model back, and the same answer is
-    // then the worker's to meet)
-    const res = await fetching(`https://huggingface.co/api/models/${repository}/tree/${revision}`, { signal: AbortSignal.timeout(LISTING_SECONDS * 1000) });
-    const listed: unknown = res.ok ? await res.json() : undefined;
-    if (!Array.isArray(listed)) return undefined;
-    return listed.filter((one) => one?.type === "file" && typeof one.path === "string").map(({ path, size }) => ({ path, size }));
+    // (it waits ten seconds at most, all the pages: a line that does not answer must not hold the model back, and the
+    // same answer is then the worker's to meet)
+    const signal = AbortSignal.timeout(LISTING_SECONDS * 1000), files: Listed[] = [];
+    let url: string | null = `https://huggingface.co/api/models/${repository}/tree/${revision}`;
+    for (let page = 0; url && page < PAGES; page++) {
+      const res: Response = await fetching(url, { signal });
+      const listed: unknown = res.ok ? await res.json() : undefined;
+      if (!Array.isArray(listed)) return page ? files : undefined;
+      files.push(...listed.filter((one) => one?.type === "file" && typeof one.path === "string").map(({ path, size }) => ({ path, size })));
+      url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("Link") ?? "")?.[1] ?? null;
+    }
+    return files;
   } catch (error) {
     console.warn(`repository: the files of ${repository} could not be listed (${String(error)}): opened as named`);
     return undefined;
