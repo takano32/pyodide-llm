@@ -91,7 +91,7 @@ console.log("ok: T.450, an engine on the GPU alone starts no software thread wha
 // of 64, so that the two local layers keep their keys and values in a ring of 24 (T.510.1: each position at p mod 24 and
 // p mod 24 + 24); its blocks go to a GPU that writes known float16s for every position, layer and column: 48 positions,
 // then 10. What the cache holds after (read through keysAndValues(), and where a step's request says the rings are) is
-// those, both copies of a ring alike, the ring's last 24 positions and no older
+// those, both copies of a ring alike over the ring's last 24 positions, and the ring knows the last position written
 {
   // (heads of 32: the int8 kernels' groups; a key head for every head, so that the cache keeps float16s, which go in as
   // they are: a float32 cache widens them by a kernel, which does nothing here)
@@ -100,7 +100,7 @@ console.log("ok: T.450, an engine on the GPU alone starts no software thread wha
   const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + g.size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + g.size) / PAGE) + 64, shared: true });
   const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
   // (a value of position, layer and column: integers under 2048, which a float16 holds; a value's the negative)
-  const key = (pos, l, i) => pos + 64 * l + 256 * (i % 3);
+  const key = (pos, l, i) => pos + 64 * l + 192 * (i % 10);
   const half = (value) => { const view = new DataView(new ArrayBuffer(2)); view.setFloat16(0, value, true); return view.getUint16(0, true); };
   const { factory: gpu, posted } = workers({ answer: endedThen((data, worker) => {
     if (data.type === "start") {
@@ -158,9 +158,11 @@ console.log("ok: T.450, an engine on the GPU alone starts no software thread wha
       }
     }
   }
+  // (the ring's last position written, which the CPU's attention reads: a position the ring no longer holds is refused)
+  assert.throws(() => engine.forward(5, 20), /too far back after 61/);
   assert.equal(await engine.release(), true);
 }
-console.log("ok: T.558.3, fromStaging() writes a block's keys and values into a window's ring at both of its places, the ring's last period and no older");
+console.log("ok: T.558.3, fromStaging() writes a block's keys and values into a window's ring at both of its places, and the ring's last position written");
 
 // ---- the same model with its weights in the memory: the threads are started (what the check above would see)
 {
