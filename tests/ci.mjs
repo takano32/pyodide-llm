@@ -11,8 +11,8 @@
 //   node tests/ci.mjs deploy [--sha <commit>]      the deploy of a commit (HEAD); if a newer push cancelled it while
 //                                                  it waited for its turn, the newer deploy (which has the commit too)
 //   options: [--minutes 60 (deploy: 20)] [--grep <regex> | --grep none] [--ref main]
-//   (written once, anywhere: --ref is every run's of the call, the ones after a + too. A second --ref is read as an input
-//   of the run it follows, which then does not start: T.502)
+//   (written once, anywhere: --ref is every run's of the call, the ones after a + too. T.425: a second --ref, a flag this
+//   tool does not know, or an input that is not key=value is refused before any run is started)
 //
 //   node tests/ci.mjs run models.yml models=hf-qwen3-0.6b browser=webkit + models.yml models=tiny-lm os=windows-latest
 //
@@ -226,6 +226,9 @@ try {
   if (command === "run" && rest.length) {
     const specs = [[]];
     for (const word of rest) word === "+" ? specs.push([]) : specs.at(-1).push(word);
+    // (T.425: every run's words looked at before the first starts: a word left over refused one run after the others had begun)
+    const odd = specs.flatMap(([, ...pairs]) => pairs).filter((pair) => pair.startsWith("--") || pair.indexOf("=") < 1);
+    if (odd.length) throw new Error(`nothing was started: ${odd.join(", ")} ${odd.length > 1 ? "are" : "is"} no key=value input (a second --ref, or a flag this tool does not know: it takes --minutes, --grep, --ref and --sha once each)`);
     for (const spec of specs.filter((s) => s.length)) targets.push({ id: await start(spec) });
   } else if (command === "wait" && rest.length && rest.every((word) => /^\d+$/.test(word))) {
     targets.push(...rest.map((word) => ({ id: Number(word) })));
