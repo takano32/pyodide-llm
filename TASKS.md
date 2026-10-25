@@ -44,7 +44,6 @@
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
-- T.425 [整理][遠隔試験] `tests/ci.mjs run A + B` は `--ref` を 1 つしか取らない — 進行中
 - T.426 [整理][遠隔試験] T.374.4 の小さな気づき 3 つ — 未着手
 - T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 未着手
 - T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 未着手
@@ -552,10 +551,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - activate の `if (!OFFLINE) await caches.delete(KEPT)` は失敗を飲まず、投げると `clients.claim()` が呼ばれない（前から）。
 - **(1)(4) の結果（2026-10-25）**: `public/coi.js` の、このサイトのファイルの扱いの中だけ（ほかのサイトの応答と隔離のヘッダには触らない: `coi-js-check` の持つ文のハッシュは変わらない）。(1) `lasting()` のこのサイトの行から `?v=` を外した（`_astro/` だけ）。(4) activate の `caches.delete(KEPT)` を `quietly()` で包み、失敗しても `clients.claim()` に届く: `coi-js-check` の 6 番に「削除が失敗しても引き取る」の場合（前の形で落ちる）。確かめ: 軽い組を通しで（464 秒）、build、手元の Chromium の `E2E_OFFLINE=1 E2E_TWICE=1 node tests/e2e.mjs stories260K chromium` と `tests/coi-off-in-browser.mjs`。**持ち主の端末**: 触った所は地域と端末に依らない（落とし穴の「Service Worker」の範囲の外）。(2)（名前の消えた家族とモデルの写しを誰も捨てない）と (3)（`coi.js` を macOS・Windows のブラウザで見る CI）は残す。CI を省いた。訳: このサイトのファイルの扱いの 2 行で、Node の検査と手元の実ブラウザが踏む。
 - レビュー（Sonnet low、2026-10-25、T.449 (1)(4)）: must-fix なし。`?v=` 付きの取得は Service Worker の登録だけで fetch の受け口を通らない、外れた `?v=` のファイルはネットに聞いて取れなければ写しが答える（オフラインで落ちる道は増えない）、`quietly` は activate より前に定義、持ち主の端末が先の範囲の外。勧めを入れた: 15 行目のコメントの `?v=` を外した。取りまとめ役の誤りを直した: `coi.js` の中の番号は前の形 `T番号` のまま（AGENTS.md の例外 3）なのに `T.449` と書いていた。
-
-### T.425 [整理][遠隔試験] `tests/ci.mjs run A + B` は `--ref` を 1 つしか取らない — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-11、T.374.4 から。規模 小）
-- 2 つ目の `--ref` を書くと「an input is key=value: --ref」と言って 2 つ目を始めず、1 つ目は最初の `--ref` で走る。組ごとの `--ref` を受けるか、2 つあれば始める前に断る。`--no-wait` のような知らない旗も、何も始めずに断る（T.374.2 の回に「run 」とだけ出て何も始まらなかった）。
-- **結果（2026-10-25）**: `tests/ci.mjs run` は、どの run を始める前にも全部の run の語を見て、`--` で始まる語（2 つ目の `--ref`、知らない旗）と `key=value` でない入力があれば「nothing was started: …」で断る（終わり方 3）。組ごとの `--ref` は受けない（取りまとめ役の決め: 1 回の呼びは 1 つの `--ref`、違うブランチは呼びを分ける）。確かめ: 手元で `run tests.yml full=true --ref main + tests.yml --ref other` と `run tests.yml --no-wait` がどちらも何も始めずに断った（GitHub の run の一覧に新しい run が無い）。`ci.mjs` に検査は無い（GitHub の代役が要る）。CI を省いた。訳: 手元の道具の引数の読みだけで、手で回した。
 
 ### T.426 [整理][遠隔試験] T.374.4 の小さな気づき 3 つ — 状態: 未着手（2026-10-11。規模 小）
 - `page-27b.mjs` がカーネルの読み手を渡し忘れても出力は同じ（速さだけが変わる）: 読み手の数を出すか、MB/s を線にする。

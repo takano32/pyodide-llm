@@ -227,7 +227,8 @@ try {
     const specs = [[]];
     for (const word of rest) word === "+" ? specs.push([]) : specs.at(-1).push(word);
     // (T.425: every run's words looked at before the first starts: a word left over refused one run after the others had begun)
-    const odd = specs.flatMap(([, ...pairs]) => pairs).filter((pair) => pair.startsWith("--") || pair.indexOf("=") < 1);
+    const odd = specs.filter((spec) => spec.length).flatMap(([workflow, ...pairs]) => [
+      ...(/^[\w.-]+\.ya?ml$/.test(workflow) ? [] : [workflow]), ...pairs.filter((pair) => pair.startsWith("--") || pair.indexOf("=") < 1)]);
     if (odd.length) throw new Error(`nothing was started: ${odd.join(", ")} ${odd.length > 1 ? "are" : "is"} no key=value input (a second --ref, or a flag this tool does not know: it takes --minutes, --grep, --ref and --sha once each)`);
     for (const spec of specs.filter((s) => s.length)) targets.push({ id: await start(spec) });
   } else if (command === "wait" && rest.length && rest.every((word) => /^\d+$/.test(word))) {
