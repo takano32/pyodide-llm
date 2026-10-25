@@ -103,7 +103,7 @@ def convert_tokenizer(directory, out_path, vocab_size):
     else:
         raise refusal or FileNotFoundError(f"{directory} has no tokenizer: none of {', '.join(TOKENIZERS)}")
     for skipped, error in left:
-        print(f"{directory / skipped}: not read ({type(error).__name__}: {error}), so the tokenizer is {name}", file=sys.stderr)
+        print(f"{directory / skipped}: not read ({type(error).__name__}: {' '.join(str(error).split())}), so the tokenizer is {name}", file=sys.stderr)
     Path(out_path).write_bytes(vocabulary)
 
 
