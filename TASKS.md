@@ -545,6 +545,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `--broken tiled` は Qwen3.5 の hybrid の GGUF が要り、本物の 27B の段でしか走らない（T.374.4 の前から）。dry に作り物の hybrid の GGUF を足す。
 - `large()`（4B）は T.374.4 で `"bos": BOS` を渡す形に直したが、CI で回していない。次に Qwen3.5 に触る回に 1 回。
 - **(1) の結果（2026-10-25）**: `dry` の作り物の GGUF は linear の層の無い素の Qwen3 だった（`page.bin` だけが hybrid）ので、`--broken tiled` は 0 個の行列にしか印を付けず何も見なかった（手元で確かめた）。代わりに pytest `tests/test_reference_27b.py` の `test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf`: 回した基底の hybrid の作り物の GGUF（`rotated_qwen35_gguf()`、鍵の head 2・値の head 4、幅 256）に原本の `config.json`・`tokenizer.json` を並べ、`page_27b.convert()` を壊さずと `tiled` で回し、印が linear の層の数だけ付き、チェックポイントが違うことを見る。3 値は値が 3 つの重みが要るので int8 で（`convert()` に引数 `dtype` を足した: 既定は今までどおり `"ternary"`）。壊し方: `tiled()` が印を付けないと落ちる。CI を省いた。訳: 試験と道具の引数 1 つで、pytest で回した（14 通る）。
+- レビュー（Sonnet low、2026-10-25、T.423 (1)）: must-fix なし。`main()` は `dtype` を渡さず本物の段の呼び方は前のまま、軽い組の pytest が拾う。入れなかった勧め: tiled の出の行列の列が native の列の並べ替えに一致することまで見る（いまは「違う」だけ。同じ入力を 2 回変換するので違いの出る別の道は無い）。
 
 ### T.443 [整理][WebGPU] モデルの GPU の塊に、ベンチだけのシェーダが 9.5 KB 残る — 状態: 未着手（2026-10-11、T.367.5 の WebGPU のレビューから。規模 小）
 - `fused.js` と `tokens.js` が `shaders/matvec.js` から `MUL_MAT_VEC_ROWS`・`ORT_DP4A_MATVEC_ROWS` を取るので、同じファイルの最上位の文 `ortMatVec`・`ortDp4aMatVec`（と `ORT_MATVEC_ROWS`・`MATVEC_SHAPE`）と、その許諾文が `gpu` の塊に入る（9,538 バイト、gzip 2,677: 塊の約 5%。束ね手は最上位のテンプレートの定数を刈らない）。2 つの行の定数を `shaders/common.js` か `fused.js` に移せば `matvec.js` はベンチだけになる。WGSL の文と鍵は変わらない（網の `shaders` と `dist-check` で見る）。`gpu` の塊の許諾文は 19 → 17 になる見込み。
