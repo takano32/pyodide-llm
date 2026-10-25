@@ -21,7 +21,7 @@ import type { FusedOutput } from "../shaders/fused.ts";
 import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: a form of a token's layer: one of TOKEN_FORMS (Candidate), and, once tokenforms.ts's choose() tries it, its
-// pipelines by their keys (tokenCodes()'s: normQuantize, qkv, add, glu, classifier) and its steps' dispatches, made
+// pipelines by their keys (tokenCodes()'s: normQuantize and the roles, TokenRole) and its steps' dispatches, made
 // for the cache they bind and kept by the attention's parts a head (tokenStep())
 type Candidate = { name: string; dp4a: boolean; subgroups: boolean; normApart?: boolean; ternary?: boolean };
 // (T.547.2.4: a matrix of llama.cpp's blocks takes the pipeline of its role's key with ":" and its type after it; T.579:
@@ -307,7 +307,10 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   // (T.547.2.4: a matrix of no scales apart, Q4_K's blocks, by the pipeline's counterpart for them)
   // (T.547.3.3: by the type of its blocks, the third of what it is held as: weights.ts's Piece and Joined)
   const matrix = (role: TokenRole, [w, s, packing]: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass => {
-    const pipeline = form.pipes[packing && isBlock(packing) ? `${role}:${packing}` : role];
+    const key = packing && isBlock(packing) ? `${role}:${packing}` : role, pipeline = form.pipes[key];
+    // (T.579's review: a matrix of a role or a packing no kind's matrices() says has no pipeline: said here, not as a bind
+    // group of none)
+    if (!pipeline) throw new Error(`a token's step has no pipeline for ${key}: no kind's matrices() says a matrix of it`);
     return [pipeline, bindAt(m, pipeline, [[0, w], ...(s ? [[1, s] satisfies Entry] : []), ...input, [3, params], ...output]), ...spread(m, count, rows)];
   };
   // (T.271.1: in a rotated basis R of the vector, quantized: ROTATE_QUANTIZE with the signs of its width)
@@ -358,7 +361,7 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
       : [matrix("add", held, input, params, plan.dim, [[5, g.h]])]);
     // T.568.2: the layer's kind's dispatches (gpu/kinds.ts), from the stream as it is (the kind norms it: attention.norm and
     // quantize, or a dispatch of its own) to what joins it
-    list.push(...g.kinds[plan.kinds[l]]!.step({ l, place, form, matrix, plain, joining, normed: attention, ffnNorm: ffn.norm, biased, positions,
+    list.push(...g.kinds[plan.kinds[l]]!.step({ l, place, matrix, plain, joining, normed: attention, ffnNorm: ffn.norm, biased, positions,
       bindAt: (pipeline, entries) => bindAt(m, pipeline, entries) }));
     list.push(
       ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
