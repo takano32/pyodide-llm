@@ -229,7 +229,6 @@
 - T.555 [追加][計測実行] `/benchmark/` で同じ測りを頭と終わりに置き、ずれ（発熱）を報告に出す — 未着手
 - T.557 [描画][その他] モデルのページの取得と変換の間も画面を消さない — 未着手
 - T.558 [試験][WebGPU] `fromStaging` の窓の輪の枝を直に踏む試験 — 未着手
-- T.561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 未着手
 - T.562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 未着手
 - T.577 [バグ][遠隔試験] `tests/e2e.mjs` が URL の `steps=` を 256 トークンで上書きする — 反映済み
 - T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
@@ -1691,9 +1690,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.558 [試験][WebGPU] `fromStaging` の窓の輪の枝を直に踏む試験 — 状態: 未着手（2026-10-16、T.261.4.1 のレビューの気づき） **T.545.2 のレビューの足し（2026-10-16）**: 答えのステップでも輪が折り返す長さを gpu-check で通す（窓 24 前後・文脈 160・プロンプト 41 位置以上の作り物）。`keysIn` の単体試験に `from > pos-ring` と `first >= pos` の場合。
 - `ring.latest` の位置 0 での戻し、`pos % ring.size` の折り返し、2 か所に書く所を直に踏む試験が無い（gpu-check の実物は 150 位置で輪 528 の内）。小さな窓（例: 5 → 輪 21）の Gemma 3 の作り物と偽の GPU の Worker で、`fromStaging` の後の CPU の次のステップの logits を CPU だけの run と比べる。
-
-### T.561 [整理][CPU] CPU のカーネルの top-k の境の同点を、添字の順で決める — 状態: 未着手（2026-10-16、T.546 のレビューの気づき）
-- kernel の `selectTop`（`kernels/kernel/sample.ts`）は k 番目の境の同点を「どちらでも」にしている。GPU・NumPy・`likecpu.ts` は添字の順。厳密に同点の語が境にあると、kernel と GPU が別の語を引きうる（実の logits では稀。試験は許している: T.274）。直すなら kernel の選びを同点の添字で決める。優先度は低い。
 
 ### T.562 [バグ][WebGPU] Qwen3 0.6B の GPU の DP4A の形で、層 19 の K と V が線を越える（前から） — 状態: 未着手（2026-10-16、T.546 の CI が見つけた。本線 `b3a9e41d` の run 38881685551 でも同じ数）
 - `gpu-prompt.yml real=hf-qwen3-0.6b` の Dawn で「ORT DP4A …: the keys and values of the GPU's layer 19 are 3.76e-1 and 3.76e-1 from NumPy's (its line 2.70e-1)」。前からの物で、いつからかは未確認（T.533 の 3 値のスケールの回の前後を見る）。線が厳しすぎるのか、DP4A の形の誤りかを切り分ける。Chromium のジョブのログは未確認。
