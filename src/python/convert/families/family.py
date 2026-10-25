@@ -138,5 +138,6 @@ class Family(NamedTuple):
 
     @property
     def partly(self):
-        """RoPE turns part of each head only: the options say how much ("rotary")."""
+        """RoPE turns part of each head only: the options say how much ("rotary"). Not a Gemma 4's proportional RoPE
+        (PROPORTIONAL: the engine's Llama.partly counts it too), whose turns are the family's turns()."""
         return layout_of(self.arch).rope == PARTLY

@@ -285,7 +285,7 @@
 1. `src/python/convert/families/` に `Family` を 1 つ、`__init__.py` の `FAMILIES` に 1 行。**表の順が断りの文の順**。
 2. **Llama と数個の数だけが違う家族は `llama.py` に `LLAMA._replace(…)`**: `check`（先に Llama の `check(config)`）、`found`、`scale`、`options`、GGUF（`gguf`、`gguf_config`、`agrees`）。**`_replace` は GGUF の名前も引き継ぐ**: 自分の名前か `gguf=None` を必ず書く。
 3. 新しいレイアウトの家族は自分のモジュールに: 取り込み元（`*_sources()`）を `engine/layout.py` のそのレイアウトの行の全部に（無いと「no source for the row …」）、GGUF から読むなら `gguf_names`、llama.cpp が独自の `rope_freqs` を書く家族はその表の作り方を `gguf_rope_freqs` に。config の正規化は `before` と `after`。形の鍵は `form={"鍵": 関数}`（辞書で）。**層によって作りの違う束**は sources の変換を層の番号の関数にし、回す幅は `Family.turns(config)`。行を大きさの違う部分に切るのは `("rows", 始め, 終わり, 全部)`。**取り込み元の変換は値を変える段を持てる**（`convert/plan.py` の `transformed()`: `("one",)`・`("scale", c)`・`("decay",)`）。`("scale", c)` だけは断片ごとに通る。**表の倍率は、分類器が同じ表でも最後の norm の重みで戻せば畳める**（Gemma 3 の √dim）。
-4. `tests/test_families.py` の `FACTS` に 1 行。`config.py`・`plan.py`・`gguf.py`・`conversion.py`・`stream.py` は触らない。
+4. `tests/test_families.py` の `FACTS` に 1 行。`config.py`・`plan.py`・`gguf.py`・`conversion.py`・`stream.py` は触らない。`fixed_context`・`rotatable`・`rms_norm`・`partly` は `Family` に書かない: arch の `Layout` から読む性質（T.392）。
 5. forward の計算が違うなら次の「アーキテクチャ」、前分割が違うなら `convert/tokenizer.py` とエンジンの `pretokenize()`（本物の `tokenizers` と全符号位置で: `EVERY_CODE_POINT=1`、実物は `tests/tokenizer_json_check.py <フォルダ> --planes 17`）。`CharClasses` で書けない型は字の種類の表（`SparkClasses` の形）と段の並び（`STAGES`）を足し、変換器の `STAGED_PRETOKENIZERS` に 1 行。GGUF の前分割の名前は、実物の GGUF の語彙と merges を原本と突き合わせてから `GGUF_PRETOKENIZERS` に。
 6. 今あるモデルの変換が変わらないことを `tests/conversions_compare.py` で（変わるなら `CONVERTER` の回に）。**options に載せるのは既定と違うときだけ**。実物は `reference_llama.py` の形で transformers と比べ、通してはいけない壊し方を同じ道で入れる。
 
