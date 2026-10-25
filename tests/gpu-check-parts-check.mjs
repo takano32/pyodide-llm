@@ -78,8 +78,9 @@ check("the measures", () => {
   assert.equal(worstAt([0.4]), 0);
   const p = logSoftmax([0, Math.log(3)]);
   assert.ok(Math.abs(Math.exp(p[0]) - 0.25) < 1e-12 && Math.abs(Math.exp(p[1]) - 0.75) < 1e-12);
-  // (T.584: within the last bits of a double: JavaScriptCore's exp and log (Bun) are not V8's to the bit)
-  assert.ok(Math.abs(divergence(p, [5, 5 + Math.log(3)])) < 1e-15);
+  // (T.584: under Bun within the last bits of a double, JavaScriptCore's exp and log not being V8's to the bit; under Node 0)
+  if (process.versions.bun) assert.ok(Math.abs(divergence(p, [5, 5 + Math.log(3)])) < 1e-15);
+  else assert.equal(divergence(p, [5, 5 + Math.log(3)]), 0);
   // KL(p || q) of (1/4, 3/4) from (1/2, 1/2)
   assert.ok(Math.abs(divergence(p, [0, 0]) - (0.25 * Math.log(0.5) + 0.75 * Math.log(1.5))) < 1e-12);
   assert.ok(Math.abs(scaleOff([2.02, -1.01, 3.03], [2, -1, 3]) - 0.01) < 1e-12);
