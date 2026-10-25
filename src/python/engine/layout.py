@@ -173,6 +173,16 @@ def shared_form(shared, n_layers=None):
     return {"layers": layers, "from": tuple(source for _, source in pairs)} if layers else None
 
 
+def check_shared_windows(sharing, local):
+    """T.518: a layer that reads another's keys and values attends what that one does: both a window (local, the
+    model's local layers) or neither (the CPU's cache keeps a window's in a ring of its own, which the reader takes
+    as the layer it reads keeps it: forward/cache.ts). sharing: Dims.sharing; local: local_layers()'s, or None"""
+    windowed = set(local["layers"]) if local else set()
+    for layer, source in zip(*sharing.values()) if sharing else ():
+        if (layer in windowed) != (source in windowed):
+            raise ValueError(f"Layer {layer} cannot read the keys and values of layer {source}: one of them attends a window and the other does not.")
+
+
 class Stateful(NamedTuple):
     """A kind of layer that keeps a state in place of keys and values, as a layout has it (Layout's stateful): the
     rows of STATEFUL are its tensors. What such a layer computes is the forward pass's own (engine/model.py has

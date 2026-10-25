@@ -29,7 +29,7 @@ import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
 from engine.layout import (ATTENDING, DOUBLE, GELU, GELU_ERF, NARROW, NARROW_KEPT, PARTLY, PROPORTIONAL, WIDE, WIDE_KEPT, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
-                           stateful_kinds, unturned_layers)
+                           check_shared_windows, stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
@@ -255,6 +255,7 @@ class Llama:
         # keys and values it reads. And for every layer, the name of its FFN's (DOUBLE's "_double") and its place in
         # theirs. Every layer of a model without such is ("", its place, head_size, its place, its place) and ("", l)
         self.wide, self.double, self.shared = dims.wide, dims.double, dims.sharing
+        check_shared_windows(dims.sharing, self.local)  # (T.518)
         attending, sources = dims.layers(ATTENDING), dict(zip(*dims.sharing.values())) if dims.sharing else {}
         stacks = {per: dims.layers(per) for per in (NARROW, WIDE, NARROW_KEPT, WIDE_KEPT)}
         self.heads = []
