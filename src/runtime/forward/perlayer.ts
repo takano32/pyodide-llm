@@ -36,7 +36,9 @@ export function perLayer({ plan, eps, k, room, floats, matrix, at, S, matmuls }:
   const inputs = room.alloc(inputsBytes), I = values * 4;
   const read = room.alloc(readBytes), scales = read + align(valuesBytes), scalesBytes = readBytes - align(valuesBytes);
   const packing = packingOf(t.kind), value = packing?.value;
-  if (packing && !value) throw new Error(`This engine reads no row of a table stored as ${JSON.stringify(t.kind)}.`);
+  // (T.543: and whose scales are float32: a row's scales are read as F below, so a packing of float16 scales (ternary,
+  // which ternary_x refuses of this table today) or of none is refused here rather than read as other numbers)
+  if (packing && (!value || packing.scale !== 4)) throw new Error(`This engine reads no row of a table stored as ${JSON.stringify(t.kind)}.`);
   // a token's row of the table, added to what is at to (float32, as NumPy: each weight times its scale, then the sum)
   const addRow = (id: number, to: number) => {
     rows(t.offset + id * valuesBytes, valuesBytes, read);
