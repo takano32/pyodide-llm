@@ -570,13 +570,15 @@ if (isMainThread) {
         await tried.release();
       }
     }
-    // a browser with WebGPU: the page's worker hands forward.js the GPU's worker, and this model must not start one
+    // a browser with WebGPU: the page's worker hands forward.js the GPU's worker. T.588: since T.271 (the rotated basis
+    // and the linear layers) and T.547 (the 3-value and llama.cpp's blocks read on the GPU) such a model goes to it: its
+    // worker is started once (a stand-in that answers nothing here: what forward.js does after is gpu-check's)
     let spawned = 0;
     const withGpu = createForward({ memory, base, size, kernels, plan, spawn, halfKeys,
       gpu: () => { spawned++; return { postMessage() {}, set onmessage(handler) {}, set onerror(handler) {}, terminate() {} }; } });
     const status = await Promise.race([withGpu.gpu, new Promise((resolve) => setTimeout(() => resolve("no answer in 3 s"), 3000))]);
-    say(`with a GPU offered: ${spawned ? `its worker was started ${spawned} time(s) — FAILED` : "no worker of the GPU is started"}; the status line: ${JSON.stringify(withGpu.gpuStatus ?? status)}`);
-    failed ||= spawned > 0;
+    say(`with a GPU offered: its worker was started ${spawned} time(s)${spawned === 1 ? "" : " — FAILED (once, where it is offered)"}; the status line: ${JSON.stringify(withGpu.gpuStatus ?? status)}`);
+    failed ||= spawned !== 1;
     await withGpu.release();
   }
   if (job.mode === "memory") {
