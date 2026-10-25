@@ -40,7 +40,6 @@
 - T.411 [試験][遠隔試験] フォルダの道でまだ見ていないもの — 未着手
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
-- T.433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 進行中
 - T.435 [整理][その他] T.367.2 の小さな気づき — 未着手
 - T.436 [整理][遠隔試験] `tests/e2e.mjs` の `E2E_THEN` と `E2E_TWICE` を一緒に頼むと、HF のモデルは必ず落ちる — 未着手
 - T.437 [整理][その他] T.367.3 の小さな気づき — 未着手
@@ -545,11 +544,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - safetensors は最初の 512 KiB に付いてきたテンソルのバイトを今も取り直す（ファイル 1 つ・シャード 1 つにつき最大約 0.5 MiB。`Weights.ahead` をストリームごとに持てば使えるが、safetensors の fixture の全部が動く）。
 - 段取りが自分で渡す分（最大約 30 MiB）の変換の時間は「convert」の秒（T.84）に入らず、`weightsRoom()` も待たない（T.156 の線 64 MiB の内）。頭の片が届く間は進みを言わない（3 つ目の片は 24 MiB を 1 回の `fetchRange()` で、刻まず並べず）。頭と一緒に全部届く GGUF（2 MiB 未満）は進みを 1 回も言わない（一覧のいちばん小さい GGUF は 16.7 MB）。その大きさの GGUF を実ブラウザで通していない。
 - 答え手が手元の分より小さい大きさを言うと、始まりが終わりより後のストリームを頼む（前の `base > size` と同じ形）。
-
-### T.433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-11、T.367.2 のレビューから。規模 小。T.367.3 で束ね方が決まるときに一緒に）
-- `src/python/*.py` を直しても、立ち上げ直すまで古い `public/engine.zip` が配られ、何も言わない。`astro dev`・`astro build` を npm を通さずに直に呼ぶと zip が無く「Could not fetch engine.zip: 404」。軽い組の `python-archive-check` は「zip がソースと合う」を見るが、開発中には走らない。小さな Vite のプラグインか見張りで作り直すか、古いときに言う。
-- `astro dev` は TTY が無いとデーモンになって `timeout` を越えて残る: `npx astro dev stop` で止める。
-- **結果（2026-10-25）**: `astro.config.mjs` に Vite のプラグイン `python-archives`: `buildStart` で `python_archive.py` を回し（ビルドと開発サーバの始め。0.1 秒かからない）、開発サーバでは `src/python/` を見張って `.py` が変わるたびに作り直し、ページを読み込み直させる。npm の `dev`・`build` の頭の `python3 python_archive.py &&` は外した（`make python` はそのまま）。`tests/python-archive-check.mjs` は npm の文の代わりに、設定の中にそのプラグイン（`buildStart` と `configureServer`）があることを見る（壊し方: プラグインを外すと落ちる）。確かめ: zip を消して素の `npx astro build` で zip ができ `dist-check` が通る、`npm run build`、手元で `astro dev` を立てて `.py` に 1 行足すと配る `engine.zip` が変わる（`.tmp/t433-dev.sh`）。CI を省いた。訳: デプロイは `npm run build` で手元と同じ道を通り、手元で回した。
 
 ### T.435 [整理][その他] T.367.2 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
 - `src/python/engine/__init__.py` と `convert/__init__.py` のコメントが「public/llama2_….py is the window」のまま（T.367.2 は Python を 1 バイトも変えない証明のために残した）。次に Python に触る回に。
