@@ -43,7 +43,6 @@
 - T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 未着手
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
-- T.448 [整理][その他] T.367.5 の小さな気づき — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 未着手
 - T.424 [整理][遠隔試験] 変換器の出すものを変える回に、参照の道具の小さい実物を回す決まりが無い — 未着手
 - T.425 [整理][遠隔試験] `tests/ci.mjs run A + B` は `--ref` を 1 つしか取らない — 未着手
@@ -546,16 +545,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 状態: 進行中（2026-10-25 に文へ操作の名前を入れた（(1) は本線に）、(2) は次の `browsers.yml` の報告の後。前の状態: 未着手、2026-10-11、T.367.5 から。前からある。規模 小）
 - 「Storage: failed: NotSupportedError: Backend does not support this operation」（run 38116873499・38128420697・38132202030: 3 回とも）。道具は落とさない。どの操作（OPFS の同期のハンドルか、割り当ての見積もりか）が投げたかを節が言わないので、まず文に操作の名前を入れる。本物の Safari では未確認。
 - **(1) の結果（2026-10-25）**: `src/runtime/benchmark/storage.ts` の `run()` は、いまの操作を `doing` に持ち、失敗の文の後に「(while <操作>)」を付ける（フォルダを取る・ファイルを作る・開く・大きさを決める・順に書く・離して書く・進みの記録を開く・1 片ごとに flush・読み戻す・フォルダを消す）。`/benchmark/` の文は詳しくてよい（持ち主の決め）。確かめ: 軽い組を通しで（458 秒）、build、手元の Chromium の `bench-browser.mjs`。落ちる道は Windows の Playwright の WebKit だけなので、次の `browsers.yml`（週 1 回）の報告で操作が分かる。それを見て (2) 直すか、その操作の無いブラウザでの扱いを決める。レビュー（Sonnet low、2026-10-25、T.446 (1)）: must-fix なし（`info()` に古い操作は付かない、警告の語に響かない）。勧めを入れた: 1 つの名前にまとめていた呼びを分け（大きさ・flush・記録の書き直し）、閉じる所も名前を付けた。CI を省いた。訳: 失敗の文だけで、落ちる道は手元にも CI の 1 本にも無い（`browsers.yml` は本番を見る）。
-
-### T.448 [整理][その他] T.367.5 の小さな気づき — 状態: 進行中（2026-10-25。前の状態: 未着手、2026-10-11。規模 小）
-- `tests/imports.mjs` は束ねる前の配置（`?v=`・窓口の一覧）の読み手を持ったまま: 使う所を数えて、無ければ消す。
-- `gpu/` と `benchmark/gpu/` のコメントの「shaders.js's X」は窓口の名前で部品を言う（モデルの Worker はもう窓口を読まない）。
-- `worker-source.mjs` は「相手が export していない名前」を今も自分で断る（ビルドも止める）。
-- `/benchmark/` の GPU の Worker も部品を直に取れる（約 150 行。`shaders` の塊と `LATER` の 1 行が消え、窓口 `shaders.js` は道具だけの物になる: 残すかを決める）。
-- `tests/dist-check.mjs` の `keysSaid` は `globalThis.onmessage` を `try`/`finally` なしで置いて消す。規則 8 は `node:` で始まる import しか見ない（素の `worker_threads` は通る見込み）。
-- `models.yml` の `query=gpuTest=on` を `long=` と `steps=` なしで頼むと、SwiftShader のステップで 256 トークンが期限に入らない（run 38132198682。2 回目）: 道具が `gpuTest` のときの長さを自分で短くするか、頼みを断る。
-- 束ねた GPU の Worker を、GPT-2 か NeoX のモデルで 1 回通す（`LAYER_NORM`・`GELU` の枝）。
-- **結果（2026-10-25）**: 直した: (a) `tests/dist-check.mjs` の `keysSaid` は `onmessage` の代役を `try`/`finally` で外す、(b) 規則 8 は `node:` の名前のほかに Node の組み込みの素の名前（`worker_threads` など、`node:module` の `builtinModules`）の import も見る（`tests/dist-rules-check.mjs` に素の名前の場合: 前の規則では落ちる）、(c) `gpu/`・`benchmark/gpu/` のコメントの「shaders.ts's X」を、その名前を出す部品のファイル（`shaders/<部品>.ts's X`）に（26 か所と手で 2 つ。ベンチの `device.ts` の 1 つは本当に窓口を読むのでそのまま。`same-syntax` が同じコード）。そのまま: `imports.mjs` の古い形の読み手は T.587、`worker-source.mjs` が出していない名前を断るのは今も要る守り、ベンチの GPU の Worker が窓口を読むのは道具の都合で残す（取りまとめ役の決め）、`models.yml` の `gpuTest` の長さは T.577 の後も残る道具の頼み方の話（頼むときに `long=` か `steps=` を付ける）。CI を省いた。訳: 検査の道具とコメントで、手元で回した。
 
 ### T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 状態: 未着手（2026-10-11。規模 小。**`coi.js` に触るものは、ほかのサイトの応答と隔離のヘッダの外だけ**）
 - `lasting()` の `searchParams.has("v")` は、いま当たるファイルの無い名残り。訪問者がページの URL に `?v=…` と書くと、そのページは写しがネットに聞かずに答え続ける（次の activate まで）。
