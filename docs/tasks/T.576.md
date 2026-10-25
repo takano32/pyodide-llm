@@ -1,0 +1,4 @@
+### T.576 [整理][WebGPU] GPU だけのモデルの計画を、GPU の Worker を開く前に作る — 状態: 完了（2026-10-25、Opus medium。前の状態: 未着手、2026-10-24、T.547.1 のレビューの勧め。規模 小）
+- `worker/weights.ts`（425〜451 行あたり）は `openGpu()` で GPU の Worker を作り `gpuOnlyWeights` を作った後で `gpuOnlyPlan()` を呼ぶ。`gpuOnlyPlan()` は純な関数で、T.547.1 から `gpuPacking()` が投げうる（今は届かない枝）。投げると Worker が残るので、計画を先に作る。
+- **結果**: `gpuOnlyBuffer()` の頭で計画を作り、それからメモリを取り（`pooledWeights()`）、GPU の Worker を開く。計画が投げてもメモリも Worker も残らない。試験は `tests/worker-outdated-check.mjs`: 計画が投げる代役で、その文が出て Worker が作られないこと（前の順では `needsWide()` が先に投げて落ちる）、投げない代役で、計画がメモリより先に呼ばれ、そのとき Worker が 0 であること（壊し方「計画をメモリの後に」が落ちる）。CI を省いた。訳: worker の中だけの変更で、手元の試験がこの道を回す。軽い組 449 秒。
+- レビュー（Sonnet low、2026-10-25）: must-fix なし。計画は引数だけを読む純な関数で、前に出しても中身は同じ。`openGpu()` のもう 1 つの呼び（`external({ gpu })`）は forward が `start()` で開くので当たらない。勧めを 2 つ入れた: 計画がメモリより先であることを本当に縛る試験（はじめの試験の Worker の断言は前の順でも別の訳で落ちていた）。`openGpu()` の後の投げうる所（`gpuOnlyWeights()`・`layerWeightsOf()`）は T.581 に採番した。
