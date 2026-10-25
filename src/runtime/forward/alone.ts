@@ -72,7 +72,8 @@ const layersOf = (header: Header, form: Formed) => {
   const attending = sizes.kinds.filter((kind) => kind === ATTENTION).length, deltas = sizes.kinds.filter((kind) => kind === "linear").length;
   const ffn = (architectureOf(form.arch ?? "llama").gatedFfn ? 3 : 2) * hidden * dim;
   const attention = (2 * qDim + 2 * kvDim + (sizes.gate ? qDim : 0)) * dim, delta = linear ? (linear.mixed + 2 * linear.read) * dim : 0;
-  const numbers = form.linear, held = numbers && linear ? deltas * 4 * (numbers.value_heads * numbers.key_dim * numbers.value_dim + numbers.conv * linear.mixed +
+  // (a linear-attention layer's: its state, its convolution's taps and (T.567) the rows they read, its vectors)
+  const numbers = form.linear, held = numbers && linear ? deltas * 4 * (numbers.value_heads * numbers.key_dim * numbers.value_dim + 2 * numbers.conv * linear.mixed +
     2 * numbers.value_heads * dim + 2 * numbers.value_heads + numbers.value_dim) : 0;
   // (T.547.3.7: each matrix's weights a layer and its layers, for a form whose rows have kinds of their own)
   const roles: Record<string, [number, number]> = { wq: [qDim * dim, attending], wk: [kvDim * dim, attending], wv: [kvDim * dim, attending], wo: [qDim * dim, attending],

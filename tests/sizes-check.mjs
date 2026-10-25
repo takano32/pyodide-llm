@@ -195,6 +195,14 @@ const KINDS = { attention: plain, echo };
   const narrow = { ...adapter, limits: { maxStorageBufferBindingSize: 8 * 2 ** 20, maxBufferSize: 8 * 2 ** 20 } };
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35", linear }, narrow), "a layer's matrices are past a buffer of this GPU");
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35" }, narrow), null, "(the same without its linear-attention layers)");
+  // (T.567: a linear-attention layer's taps are held twice on the GPU, as gpu/linear.ts makes them: the plan's vector of
+  // them (taps × mixed) and the rows the convolution reads (taps × mixed, a place's): a tap more is 2 × mixed floats a layer,
+  // of the three linear layers of four (one attending every four), mixed = 2 × 16 × 128 + 16 × 128)
+  {
+    const small = [64, 96, 4, 4, 2, 100, 32], mixed = 2 * 16 * 128 + 16 * 128;
+    assert.equal(gpuBytes(small, { arch: "qwen35", linear: { ...linear, conv: 5 } }) - gpuBytes(small, { arch: "qwen35", linear }), 3 * 2 * mixed * 4,
+      "a tap more of a Qwen3.5's three linear-attention layers: their taps and the rows they read");
+  }
   // (T.573: and a place's state, bound whole: 16 value heads of 128 × 128 floats are 1 MiB, past a device that binds 512
   // KiB, where every matrix of this small header is within it: wqkv, 6144 rows of 64, is 384 KiB)
   const half = { ...adapter, limits: { maxStorageBufferBindingSize: 2 ** 19, maxBufferSize: 2 ** 19 } };
