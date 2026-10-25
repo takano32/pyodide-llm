@@ -1,0 +1,4 @@
+### T.514 [不具合][モデル] Mistral 7B Instruct v0.3 の固定リビジョンの tokenizer.model が 403 — 状態: 完了（2026-10-25、Opus medium。前の状態: 未着手、2026-10-15、T.511 の `conversions_compare` とレビューが見つけた）
+- `hf-mistral-7b-instruct-v0.3` は GGUF（bartowski の Q8_0）と原本の `tokenizer.model`（@c170c708）を取る。`resolve/c170c708…/tokenizer.model` が 403（本文「Auth failed: credentials expired」）、`resolve/main/tokenizer.model` は同じコミットで 200。原本はゲート付きでない（API の `gated` は False）。2 回とも 403。HF の側の一時の不具合の見込み（未確認）。
+- やること: 時間をおいて取り直し、まだ 403 なら本番（`models.yml models=hf-mistral-7b-instruct-v0.3`）で開けるかを見る。開けなければ、固定リビジョンの道が壊れた原因（Xet のキャッシュの経路など）を調べ、項目をどう直すかを決める。
+- **結果（2026-10-25）**: 取り直すと、固定リビジョンの `resolve/c170c708…/tokenizer.model` は 200 で、Range（0〜1023）に 206 と 1024 バイトで答え、頭は sentencepiece のモデルの `<unk>` の語片（`0a 0e 0a 05 3c 75 6e 6b 3e`）。10 日前の 403 は HF の側の一時の不具合だったと読む（取りまとめ役の読み）。項目は直さない。本番の確かめ（`models.yml`、7.7 GB の取得）は、手順の「まだ 403 なら」に当たらないので回さない。
