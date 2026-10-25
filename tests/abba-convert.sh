@@ -2,7 +2,8 @@
 # T.359 review: the page's conversion speed, this tree against origin/main's, in one job, the order of the two swapped
 # every round (A B, B A, A B, ...), for each dtype: tests/profile-convert.mjs on the same model directory.
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
-# The base tree is made on the runner's own clone (git worktree add .tmp/base FETCH_HEAD), with this tree's node_modules
+# The base tree is a copy of origin/main's that tests/other-tree.mjs makes (T.430: not `git fetch --depth 1`, which cut
+# the history of a whole clone behind the commit; a copy, as this script edits its tool), with this tree's node_modules
 # and kernels. PROFILE=0 times both without cProfile.
 # T.374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
 # request of a stream brings), and a base of before T.374.2.1 calls the converter itself: against such a base, the
@@ -10,10 +11,11 @@
 set -u
 dir=$1; rounds=${2:-8}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
-  git fetch -q --depth 1 origin main && git worktree add -q .tmp/base FETCH_HEAD
+  base=$(node --input-type=module -e 'import { otherTree } from "./tests/other-tree.mjs"; console.log(otherTree("origin/main").folder)') &&
+    cp -a "$base" .tmp/base && rm -f .tmp/base/done &&
   # (the built kernels are where each tree keeps them: tests/tree.mjs)
   cp -r node_modules .tmp/base/ && mkdir -p "$(node tests/tree.mjs --root .tmp/base built)" &&
-    cp "$(node tests/tree.mjs built)"/simdkernel* "$(node tests/tree.mjs --root .tmp/base built)"/
+    cp "$(node tests/tree.mjs built)"/*kernel* "$(node tests/tree.mjs --root .tmp/base built)"/  # (T.430: the blocks' kernels too, since T.363.5)
 fi
 # T.374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs): where the buffers lie is the
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT

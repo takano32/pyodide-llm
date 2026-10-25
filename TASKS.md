@@ -40,7 +40,7 @@
 - T.411 [試験][遠隔試験] フォルダの道でまだ見ていないもの — 未着手
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
-- T.430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 未着手
+- T.430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 進行中
 - T.431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 未着手
 - T.433 [整理][その他] 開発中の `npm run dev` は zip を始めに 1 回しか作らない — 未着手
 - T.435 [整理][その他] T.367.2 の小さな気づき — 未着手
@@ -548,8 +548,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 段取りが自分で渡す分（最大約 30 MiB）の変換の時間は「convert」の秒（T.84）に入らず、`weightsRoom()` も待たない（T.156 の線 64 MiB の内）。頭の片が届く間は進みを言わない（3 つ目の片は 24 MiB を 1 回の `fetchRange()` で、刻まず並べず）。頭と一緒に全部届く GGUF（2 MiB 未満）は進みを 1 回も言わない（一覧のいちばん小さい GGUF は 16.7 MB）。その大きさの GGUF を実ブラウザで通していない。
 - 答え手が手元の分より小さい大きさを言うと、始まりが終わりより後のストリームを頼む（前の `base > size` と同じ形）。
 
-### T.430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 状態: 未着手（2026-10-11、T.367.1 のレビューから。前からある。規模 小）
+### T.430 [バグ][遠隔試験] `tests/abba-convert.sh` が `git fetch --depth 1` を打つ — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-11、T.367.1 のレビューから。前からある。規模 小）
 - 開発機で回すと `origin/main` の履歴を切る（T.356 で 5 つの道具から外した行と同じ。落とし穴の「本線と並べて測る道具は…」）。`tests/other-tree.mjs` の `otherTree()` に替える。それまで開発機で回さない（CI では害が無い）。
+- **結果（2026-10-25）**: `tests/abba-convert.sh` の相手の木は `tests/other-tree.mjs` の `otherTree("origin/main")` の木（`.tmp/unchanged/<コミット>`）を `.tmp/base` に `cp -a` で写したもの（道具が相手の `profile-convert.mjs` を `sed` で書き換えるので、網と分け合う木そのものは使わない）。`otherTree()` は丸ごとの clone では `--depth` を付けない。もう 1 つ前からの穴を直した: 相手の木に写すカーネルが `simdkernel*` だけで、T.363.5 から相手の道具が `blockkernel_*.wasm` が無いと落ちていた（`*kernel*` を写す）。確かめ: 手元で `make_hf_fixture.py` の作り物に 2 ラウンド回して、両方の側が数を出す（速さは load 2〜5 の機械で読まない）。CI を省いた。訳: CI では `tests.yml` の `extra=` で回る道具で、手元で端から端まで回した。
 
 ### T.431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 状態: 未着手（2026-10-11、T.367.1 から。前からある。規模 小）
 
