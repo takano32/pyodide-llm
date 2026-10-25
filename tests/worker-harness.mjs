@@ -54,7 +54,7 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
     const fire = () => {
       const left = handle.due - realNow();
       if (left > 0) { handle.real = setTimeout(fire, Math.ceil(left)); return; }
-      if (again) { handle.due = Math.max(handle.due + ms, realNow()); handle.real = setTimeout(fire, handle.due - realNow()); }
+      if (again) { handle.due = Math.max(handle.due + ms, realNow()); handle.real = setTimeout(fire, Math.max(0, handle.due - realNow())); }  // (T.437: the clock read again may be past due: no negative delay)
       f(...args);
     };
     handle.real = setTimeout(fire, ms);
