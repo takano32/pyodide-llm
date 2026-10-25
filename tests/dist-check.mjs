@@ -148,7 +148,10 @@ export function distSaid(dist, tree = treeOf()) {
     if (!ROOT.includes(name)) said.push(`${path.basename(dist)}/${name}: nothing asks for it there (the root holds ${ROOT.join(", ")}): a file of ${tree.folders.served}/ that is no longer served as it is?`);
   }
   for (const name of ["index.html", "benchmark/index.html", "coi.js", "_astro"]) if (!fs.existsSync(path.join(dist, name))) said.push(`${path.basename(dist)}/${name} is not there`);
-  return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; ${notices} notices where their code is; the root holds nothing else` };
+  // (T.383: and no bytecode Python left beside a source, anywhere: the zips leave it out, and a build that copies a
+  // folder of Python would serve it)
+  for (const name of under(dist)) if (/(^|\/)__pycache__\/|\.pyc$/.test(name)) said.push(`${path.basename(dist)}/${name}: Python's bytecode is served`);
+  return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; ${notices} notices where their code is; the root holds nothing else, and no bytecode` };
 }
 
 /** The 192 made-up devices of tests/unchanged.mjs's shaders section: the device's key of each, by a module's deviceKey() */

@@ -55,12 +55,14 @@ const family = familyOf(coi);
   };
   const right = build("right");
   assert.deepEqual(right.said, []);
-  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; 1 notices where their code is; the root holds nothing else$/);
+  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; 1 notices where their code is; the root holds nothing else, and no bytecode$/);
   const wrong = (name, change, ...patterns) => {
     const { said } = build(name, change);
     assert.equal(said.length, patterns.length, `${name}: ${said.join(" | ")}`);
     patterns.forEach((pattern, i) => assert.match(said[i], pattern, name));
   };
+  // (T.383) Python's bytecode, anywhere under it
+  wrong("bytecode", { "models/x/__pycache__/a.cpython-312.pyc": "b" }, /^dist\/models\/x\/__pycache__\/a\.cpython-312\.pyc: Python's bytecode is served$/);
   wrong("a name without a family", { "_astro/helper-CZLQhea1.js": "x" }, /^_astro\/helper-CZLQhea1\.js: the Service Worker takes no name and hash apart/);
   wrong("two of a family", { "_astro/worker.AAAAAAAA.js": "another" }, /^_astro\/worker\.AAAAAAAA\.js and _astro\/worker\.DR4U5U7O\.js: one family/);
   wrong("a source as it is", { "_astro/part.B1B1B1B1.js": sources["src/runtime/worker/part.js"] }, /^_astro\/part\.B1B1B1B1\.js is src\/runtime\/worker\/part\.js as it is, not bundled: a URL made with a variable copies its whole folder/);
