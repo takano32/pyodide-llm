@@ -59,11 +59,11 @@ const unlessUpdated = (error: unknown): undefined => {
 };
 
 // ---- the kernels, as the model's worker compiles them (src/runtime/worker/runtime.ts): the plain build, and the shared one where
-// the page is cross-origin isolated. null where this browser cannot compile them (no WebAssembly SIMD)
+// the page is cross-origin isolated. null where this browser cannot compile them (no WebAssembly SIMD); a file that did
+// not come is thrown as it is (T.440: a 5xx or a line that dropped was said "no WebAssembly SIMD in this browser")
 async function kernelsOf(forward: typeof Forward, kind: "plain" | "shared"): Promise<Compiled | null> {
   const fetched = await Promise.all(([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
-    built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));
-  if (!fetched[0]) return null;
+    built(name).then((res) => res.arrayBuffer())));
   try {
     return forward.compileKernels(fetched[0], fetched[1]);
   } catch {
@@ -270,9 +270,9 @@ const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5, CHUNK = 1 << 2
 // dotting() makes 4 KB of them 7-bit for its loop (see ceilings_relaxed.ts) and puts them back after.
 async function ceilingsOf(memory: WebAssembly.Memory, base: number, size: number, shared: boolean): Promise<Ceilings> {
   const kind = shared ? "shared" : "plain";
+  // (T.440: a file that did not come is thrown as it is, in built()'s words)
   const [plain, relaxed] = await Promise.all(([`ceilings_${kind}.wasm`, `ceilings_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
-    built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));
-  if (!plain) throw new Error("the ceilings' loops could not be fetched");
+    built(name).then((res) => res.arrayBuffer())));
   const module = new WebAssembly.Module(plain);
   const loops = new WebAssembly.Instance(module, { env: { memory } }).exports as { read: Loop; fma: Loop };
   let dot: Loop | null = null, dotRegisters: Loop | null = null;
