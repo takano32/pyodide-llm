@@ -1,0 +1,4 @@
+### T.559 [整理][その他] Markdown の消毒の表を文字どおりに（`data-*`・`aria-*` を閉じる） — 状態: 完了（2026-10-25、Opus medium。前の状態: 未着手、2026-10-16、T.556 のレビューの気づき）
+- DOMPurify の `ALLOW_DATA_ATTR`・`ALLOW_ARIA_ATTR` の既定が真なので、`data-*` と `aria-*` は許す属性の表の外でも通る。実害は無い（marked の出力に HTML は来ない）が、`ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false` を足して表を文字どおりにする。試験に 1 つ。
+- **結果**: `markdownOf()` が DOMPurify に `ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false` も渡す。試験は `tests/markdown-check.mjs`: 代役の purify に渡る設定（要素の表・属性の表・2 つの旗）をそのまま見る（旗を外す壊し方が落ちる）。`npm run build` の後の `tests/markdown-in-browser.mjs`（手元の Chromium、jsDelivr の最新の DOMPurify）も通る。軽い組 455 秒。CI を省いた。訳: DOMPurify が前から持つ設定を足すだけ。
+- レビュー（Sonnet low、2026-10-25）: must-fix なし。名前は DOMPurify 3.x のもので、ほかの既定（SVG・MathML・カスタム要素・未知のプロトコル）は表より多くを通さない。勧めの 1 つ（要素の表も断言）を入れた。もう 1 つ（実物の DOMPurify で `data-x` が消えることをブラウザで見る）は入れない: ページの道では marked が HTML を文字にするので入口が無く、purify はページのモジュールの中にあって道具から渡せない。
