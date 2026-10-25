@@ -156,6 +156,14 @@ let threadReports = 0;  // T.172: the page's lines about the worker's search for
 // T.397: the worker loads Pyodide's jinja2 before it first converts a model, for the model's chat template. What it
 // asked the CDN for (the wheel's name, as Pyodide's lock has it), and what it said where the package did not come
 let jinjaAsked, jinjaMissed;
+// T.360: what huggingface.co answered 404 of the files a conversion asks for that a repository may not have (the
+// tokenizer's candidates, the template, the index of shards): the conduct takes that as "not there" and goes on, and
+// WebKit says each such answer on the console as an error, which is then no failure of the page
+const MAY_BE_MISSING = /^https:\/\/huggingface\.co\/[^?]+\/resolve\/[^/]+\/(tokenizer\.json|tokenizer\.model|spiece\.model|chat_template\.jinja|tokenizer_config\.json|model\.safetensors\.index\.json)$/;
+let missingAnswered = 0;
+page.context().on("response", (response) => {
+  if (response.status() === 404 && MAY_BE_MISSING.test(response.url())) missingAnswered++;
+});
 page.context().on("request", (request) => {
   const wheel = /\/(jinja2-[^/?]+\.whl)/i.exec(request.url());
   if (wheel) jinjaAsked ??= wheel[1];
@@ -385,6 +393,10 @@ const result = await page.evaluate(() => ({
 if (result.error) failures.push(`the page reported: ${result.error}`);
 const recovered = errors.filter((text) => BROKEN_STREAM.test(text)).slice(0, refetched);
 if (recovered.length) console.log(`parts that broke off and were fetched again: ${refetched} (the browser's ${recovered.length} lines about them are no failure)`);
+// (T.360: as many lines of a 404 as the files huggingface.co said a repository has not, of those it may not have)
+const missing = errors.filter((text) => /Failed to load resource: the server responded with a status of 404/.test(text)).slice(0, missingAnswered);
+if (missing.length) console.log(`files a repository may not have, answered 404: ${missingAnswered} (the browser's ${missing.length} lines about them are no failure)`);
+recovered.push(...missing);
 const unexplained = errors.filter((text) => !recovered.includes(text) || (recovered.splice(recovered.indexOf(text), 1), false));
 if (unexplained.length) failures.push(`console errors: ${unexplained.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
