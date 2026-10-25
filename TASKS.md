@@ -215,7 +215,7 @@
 - T.521 [整理][Gemma4] T.329.2.2 のレビューの残り — 未着手
 - T.522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
 - T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
-- T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 未着手
+- T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 持ち主の判断待ち
 - T.545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T.546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
 - T.548 [性能][WebGPU] メモリを言わないブラウザ（Safari・Firefox）の答えのステップを GPU に置くか — 未着手
@@ -1591,8 +1591,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T.333 のレビューの気づき）
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
 
-### T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 未着手（2026-10-15、T.532 のレビューの気づき）
+### T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 持ち主の判断待ち（2026-10-25。前の状態: 未着手、2026-10-15、T.532 のレビューの気づき）
 - transformers 5 は config に `original_max_position_embeddings` があると factor を `max_position_embeddings / original` で作り直す。こちらは config の factor をそのまま使う（前から）。一覧の 4 つ（Ternary Bonsai）には効かない。一覧の外の yarn のモデルで差が出るかは未計測。
+- **取りまとめ役の読み（2026-10-25）**: transformers に合わせるなら変換器の config の読み（`convert/config.py`）で factor を作り直すので、変換器の出す options が変わる: `CONVERTER` を上げる回になる（上げると全部の訪問者の保存が変換し直し: 既定の Shisa で 379 MB の取り直し）。一覧の項目には効かない（Ternary Bonsai の 3 つは項目の options の `PLAIN_ROPE`、27B は yarn でない）ので、急がず、**次に `CONVERTER` を上げる回にまとめて入れる**のが勧め。その回まで止めておく（区切りのまとめで持ち主に聞く）。
 
 ### T.545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 状態: 進行中（**T.545.1 はレビュー前**、ブランチ `t545-lfm2-gpu`。2026-10-16、WebGPU の洗い出しから。持ち主「ほかに WebGPU でできることあったら採番しよう」。勧めの順の 1 番目。規模 中。表と順は docs/notes/t545-webgpu-candidates-2026-10-16.md） **T.545.1 は本線に入れた（2026-10-16）。本番（models.yml run 38874653531、Chromium 156）: 既定の Shisa 14.2 秒・54.1 tok/s・2 回目 2.8 秒、LFM2.5 230M 10.3 秒・73.9 tok/s・2.6 秒（CI のランナーに GPU は無いので CPU の道: GPU の選ばれ方は端末で）。レビュー（Sonnet high、2026-10-16）: OK（直し 2: 軽い組が `gpu-check-parts-check` の case に plan が無く落ちていたのを直した ace6523c、断りで状態を CPU に写さない試験 d788a0b5）。** DP4A の最初の層を Q8 と見ない判断は、LFM2 では Q8 自身が NumPy から 2.6e-2〜3.6e-2 外れ、GPU と Q8 の差が 1.2e-2〜4.5e-2 で写しにならないと CI の表で確かめた（float の形が 1 層目を 1e-3 で守る）。網 `shaders` は新しい 2 つと目録・鍵だけ。覆す条件: 持ち主の Android で LFM2 の DP4A の出力だけが壊れるなら最初の層のゆるめを見直す。残り: なし。**T.545.2 と T.560 はレビュー前**（2026-10-16、ブランチ `t545.2-lfm2-steps`、T.261.4.2 の上に重ねた: 下の「T.545.2 の結果」）。 **T.545.2 は本線に入れた（2026-10-16、T.261.4.2 と同じ 1 回のデプロイ）。本番（デプロイ run 38913071825、models.yml run 38914434916）: 既定の Shisa 13.0 秒・56.7 tok/s・2 回目 3.6 秒、Gemma 3 270M 14.0 秒・65.3 tok/s・3.8 秒。本線のコードで `gpu-prompt.yml full=true models="synthetic-gemma3 synthetic-lfm2"`（run 38914652836）の 4 ジョブが全部成功。レビュー（Sonnet high、2026-10-16）: OK、直しなし。** 行の写しは断り・止まり・有限でない値・語彙の外・K/V が有限でない、のどれでも写さずに戻り、`follows` が偽なら頼まない。gpu-check の `again()` は本番の順（プロンプトのあとステップ）を再現するだけで線は動かない。実物 3 つ（Dawn）は全部の形が NumPy と「4 and 3」、壊し方 3 本は FAILED。T.560 もこの回で足した。
 - **子タスク（取りまとめ役の決め、2026-10-16: 1 つずつ CI とレビューで確かめられる単位が 2 つ。T.261.4 の分け方と同じ）**: **T.545.1 プロンプトのブロック**（レビュー前）、**T.545.2 答えのステップ**（レビュー前、2026-10-16、Opus medium、ブランチ `t545.2-lfm2-steps`: 1 トークンの融合した層に畳み込みの層を足した。前の状態: 未着手）。
