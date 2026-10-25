@@ -210,7 +210,7 @@
 - T.583 [バグ][遠隔試験] `tests/updated-in-browser.mjs` の「the kernels gone from the start」が 180 秒で落ちる — 未着手
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
-- T.586 [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 未着手
+- T.586 [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1612,5 +1612,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **候補**（上流にまだ見当たらないもの）: (1) 問いだけ違う `file:` の URL の動的 import が同じモジュールになる（相対の指定・絶対の道なら別。Node と仕様は別のモジュール。再現は 4 行）。(2) WebAssembly のメモリの `grow` がエンジンの形で約 1 秒かかる（小さな再現はまだ）。**出さないもの**（上流に出ている）: `stripTypeScriptTypes`（PR #41649 ほか）、`onmessage` で終わらない（issue #24256、PR #32482 ほか）、共有の 64 ビットのメモリが worker に 32 ビットで届く（issue #45739、PR #45916: 前に候補 (3) と書いた「`address` を読まない」は取りまとめ役の読み違いで、本当はこれ）。
 - **手元のビルドは試してやめた（2026-10-25、持ち主の決め）**: LLVM 22 では建たない（手元の Rust は stable も LLVM 23 で、bun のビルドは clang と rustc の LLVM の大きい版をそろえることを求める）。LLVM 23 は入れない。試しの途中でビルドの道具が固定の nightly を入れた（取りまとめ役の誤り）のは消した。だから PR は、候補ごとに小さな再現と上流の試験の形の文を作り、issue か、上流の CI に任せる PR で出す（出す前に持ち主に見せる: 外向きの操作）。経緯は docs/notes/t584-bun-2026-10-25.md。
 
-### T.586 [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 状態: 未着手（2026-10-25、T.418 の確かめで見つけた。規模 小）
-- 手元の Chrome で 8 つの訪問の 6 つが「console errors: Failed to load resource: … 404」、`gone`・`refused` は「the model was asked for although its kernels did not come」。ログに `GET https://huggingface.co/api/models/made-up/saluki/tree/main (404)`: 道具の代わりの Hub が `/api/models/…/tree/…` に答えない（ページが一覧を聞くようになった T.508.1 か、その前の一覧の道から）。道具に一覧の答えを足すか、塊の項目を開く道が一覧を聞かないかを先に見る。最後に通った版は未確認。PATH に `python` が要る（`.venv/bin`）ことも道具の頭に書く。
+### T.586 [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 状態: 進行中（2026-10-25 に直した。前の状態: 未着手、2026-10-25、T.418 の確かめで見つけた。規模 小）
+- 手元の Chrome で 8 つの訪問の 6 つが「console errors: Failed to load resource: … 404」、`gone`・`refused` は「the model was asked for although its kernels did not come」。ログに `GET https://huggingface.co/api/models/made-up/saluki/tree/main (404)`: 道具の代わりの Hub が `/api/models/…/tree/…` に答えない（ページが一覧を聞くようになった T.508.1 か、その前の一覧の道から）。道具に一覧の答えを足すか、塊の項目を開く道が一覧を聞かないかを先に見る。最後に通った版は未確認。（`python` は道具の頭に書いてある: 環境変数 `PYTHON` か PATH の NumPy のある Python。）
+- **結果（2026-10-25）**: 道具の代わりの Hub が `/api/models/made-up/saluki/tree/main` に、持っているファイルを huggingface.co の形（`type`・`path`・`size`）で答える（ページの `filesOf()` が一覧に無いリポジトリを開く前に聞く。404 が毎回の訪問でコンソールのエラーになっていた）。カーネルの来ない訪問（`gone`・`refused`）の「モデルを聞かない」の見張りは、ページの一覧の問いを数えない（worker がモデルを聞く前の、ページの問い）。手元の Chrome で 8 つの訪問が通る。CI を省いた。訳: 試験の道具だけで、手元の Chrome で回した（道具は試験の組に無い）。

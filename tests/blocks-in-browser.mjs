@@ -82,8 +82,15 @@ const CORS = { "access-control-allow-origin": "*", "access-control-expose-header
 const asHub = (requests) => async (route) => {
   const request = route.request(), found = /^\/made-up\/saluki\/resolve\/main\/(.+)$/.exec(new URL(request.url()).pathname);
   const file = found && files[found[1]], range = /^bytes=(\d+)-(\d*)$/.exec(request.headers().range ?? "");
-  requests.push(`${request.method()} ${found?.[1] ?? request.url()}${range ? ` ${range[0]}` : ""}${file ? "" : " (404)"}`);
+  const listing = new URL(request.url()).pathname === `/api/models/${REPOSITORY}/tree/main`;
+  requests.push(`${request.method()} ${found?.[1] ?? request.url()}${range ? ` ${range[0]}` : ""}${file || listing ? "" : " (404)"}`);
   if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: CORS });
+  // (T.586: the files of the repository, as huggingface.co lists them, which a page asks before it opens one it does
+  // not list, src/page/repository.ts's filesOf(): answered 404, that was a console error on every visit)
+  if (new URL(request.url()).pathname === `/api/models/${REPOSITORY}/tree/main`) {
+    return route.fulfill({ status: 200, headers: { ...CORS, "content-type": "application/json" },
+      body: JSON.stringify(Object.entries(files).map(([path, bytes]) => ({ type: "file", path, size: bytes.length }))) });
+  }
   if (!file) return route.fulfill({ status: 404, headers: CORS, body: "" });
   if (!range) return route.fulfill({ status: 200, headers: { ...CORS, "content-type": "application/octet-stream" }, body: request.method() === "HEAD" ? Buffer.alloc(0) : file });
   const from = Number(range[1]), to = Math.min(range[2] === "" ? file.length - 1 : Number(range[2]), file.length - 1);
@@ -166,7 +173,9 @@ for (const name of names.filter((name) => !VISITS[name].again)) {
   await context.addInitScript(asListed, { repo: REPOSITORY, weights: GGUF });
   const { page, ready } = await visit(name, context);
   console.log(`${name}: asked of huggingface.co: ${requests.join("; ")}`);
-  if (VISITS[name].ends ? requests.length : !requests.some((request) => request.startsWith(`GET ${GGUF}`))) {
+  // (the listing of the repository is the page's, asked before the worker hears of the model: T.586)
+  const ofModel = requests.filter((request) => !request.includes("/api/models/"));
+  if (VISITS[name].ends ? ofModel.length : !requests.some((request) => request.startsWith(`GET ${GGUF}`))) {
     failures.push(VISITS[name].ends ? `${name}: the model was asked for although its kernels did not come` : `${name}: the GGUF was never asked for`);
   }
   if (ready.told?.fromCache) failures.push(`${name}: a first visit came from a kept conversion`);
