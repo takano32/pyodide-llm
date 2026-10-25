@@ -570,8 +570,8 @@ if (isMainThread) {
         await tried.release();
       }
     }
-    // a browser with WebGPU: the page's worker hands forward.js the GPU's worker. T.588: since T.271 (the rotated basis
-    // and the linear layers) and T.547 (the 3-value and llama.cpp's blocks read on the GPU) such a model goes to it: its
+    // a browser with WebGPU: the page's worker hands forward.js the GPU's worker. T.588: since T.271.1 took away the last gate
+    // (the rotated basis: the 27B's shape) and T.547 read llama.cpp's blocks on the GPU (Saluki's) such a model goes to it: its
     // worker is started once (a stand-in that answers nothing here: what forward.js does after is gpu-check's)
     let spawned = 0;
     const withGpu = createForward({ memory, base, size, kernels, plan, spawn, halfKeys,
