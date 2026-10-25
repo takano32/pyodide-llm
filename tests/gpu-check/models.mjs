@@ -91,6 +91,10 @@ const ROTATED_UNTIED = rotatedBasis(128, [256, 1152]);
 // values and over its pairs, and 32 threads quantizing. dim 1024, the attention's output 8 heads of 128, the FFN's 2048)
 const ROTATED_1024 = rotatedBasis(1024, [1024, 2048]);
 const QWEN35_LINEAR = { every: 2, key_heads: 2, value_heads: 6, key_dim: 32, value_dim: 64, conv: 4 };
+// (T.574: the 27B's linear layers in its blocks of 1024: three value heads to a key head, of 128 each, so that z's gate
+// is three blocks wide (the 27B's six), and the FFN two; dim 1024, the attention's output 8 heads of 128)
+const QWEN35_LINEAR_1024 = { every: 2, key_heads: 8, value_heads: 24, key_dim: 128, value_dim: 128, conv: 4 };
+const ROTATED_QWEN35_1024 = rotatedBasis(1024, [1024, 2048, 3072]);
 // (T.547.2.3: the matrices kept as Q4_K blocks; the others are int8)
 const Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", wo: "Q4_K", w1: "Q4_K", w2: "Q4_K", w3: "Q4_K" };
 const LFM2_Q4K_KINDS = { wq: "Q4_K", wk: "Q4_K", win: "Q4_K", wout: "Q4_K", w1: "Q4_K", w3: "Q4_K" };
@@ -200,6 +204,11 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // of 384), the gates' small matrices the stream as it is (T.271.1)
   "synthetic-qwen35-ternary-rotated": [{ ...TERNARY, layers: 4, qk_norm: false, arch: "qwen35", linear: QWEN35_LINEAR, rotated: ROTATED },
     { dtype: "ternary", arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR, rotated: ROTATED }],
+  // T.574 (T.271.5's review): and in blocks of 1024 as the 27B's, which synthetic-ternary-rotated-1024 has of a Llama alone:
+  // a linear layer's z and the FFN's width rotated over blocks two and three at a time (four layers: six went past the
+  // f16 tile's line, T.271.5)
+  "synthetic-qwen35-rotated-1024": [{ ...TERNARY, dim: 1024, hidden: 2048, layers: 4, head_dim: 128, qk_norm: false, arch: "qwen35", linear: QWEN35_LINEAR_1024,
+    rotated: ROTATED_QWEN35_1024 }, { dtype: "ternary", arch: "qwen35", head_dim: 128, rotary: 32, linear: QWEN35_LINEAR_1024, rotated: ROTATED_QWEN35_1024 }],
   // T.547.2.3: a model of int8 matrices and Q4_K blocks, as a 4-bit Q4_K_M is kept (the 4-bit Shisa: q, k, o and the
   // FFN's gate and up Q4_K, v int8, widened from Q6_K): every row whole blocks of 256 (dim 256, hidden 768), and down
   // Q4_K too (the review: three blocks to its rows, so that a row's blocks after the first and every group of a block
@@ -290,7 +299,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // (T.232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied",
-  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-q4k-wide",
+  "synthetic-ternary-rotated-untied", "synthetic-ternary-rotated-1024", "synthetic-qwen35-bundles", "synthetic-qwen35-ternary-rotated", "synthetic-qwen35-rotated-1024", "synthetic-q4k-wide",
   "synthetic-lfm2-q4k", "synthetic-q4k-layers",
   "synthetic-lfm2-q4k-layers", "synthetic-q4k-qk-apart", "synthetic-q4k-up-apart",
   "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",
