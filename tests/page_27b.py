@@ -70,7 +70,8 @@ def tiled(header, config):
     return json.dumps(header)
 
 
-def convert(folder, out, context, broken):
+def convert(folder, out, context, broken, dtype="ternary"):
+    # (dtype: the 27B's own, ternary; T.423's test converts a made-up model of float values to int8)
     # (the folder as tests/hf_fetch.py makes it: the first .gguf by its name, with the original's files beside it)
     peak = own_memory()
 
@@ -96,7 +97,7 @@ def convert(folder, out, context, broken):
         print("page: broken on purpose: a PTQ1_0 block's values are read in the order of its bytes")
     sink = Mapped(f"{out}.bin")
     began, size = time.perf_counter(), gguf.stat().st_size
-    conversion = converted(answerer, hf, dtype="ternary", max_seq_len=context, sink=sink)
+    conversion = converted(answerer, hf, dtype=dtype, max_seq_len=context, sink=sink)
     sink.data.flush()
     seconds = time.perf_counter() - began
     Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)

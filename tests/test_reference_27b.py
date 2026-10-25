@@ -1,5 +1,6 @@
 """T.238: the parts of tests/reference_27b.py that can be checked without the 27B: how a PTQ1_0 block is read, and the
 one pass that serves every position (Conductor) against the engine's forward pass a position at a time."""
+import json
 import numpy as np
 from conftest import qwen35_model
 from reference_27b import Conductor, Matrix, Stored, as_bf16, as_q8_0, grouped, pack_ptq1_0, widen_ptq1_0
@@ -189,6 +190,30 @@ def rotated_qwen35_gguf(tmp_path, shape):
     path = tmp_path / "rotated.gguf"
     path.write_bytes(file)
     return path, file, config
+
+
+def test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf(tmp_path, capsys):
+    """T.423: tests/page_27b.py convert --broken tiled (the output matrices' columns read in llama.cpp's order of the value
+    heads), which only the real 27B's stage ran, on a made-up rotated hybrid GGUF of more value heads than key heads, with
+    its original's config.json and tokenizer.json beside it: the break marks the output matrices of the linear layers, and
+    their checkpoint is another. (int8 of float values: the 27B's ternary needs values of three, which this one has not.)"""
+    import filecmp
+    import page_27b
+    from test_gguf import unigram
+    shape = dict(dim=256, hidden_dim=256, n_heads=4, n_kv_heads=2, head_dim=64, key_heads=2, value_heads=4, key_dim=64, value_dim=64)
+    _, file, config = rotated_qwen35_gguf(tmp_path, shape)
+    folder = tmp_path / "gguf"
+    folder.mkdir()
+    (folder / "model.gguf").write_bytes(file)
+    (folder / "config.json").write_text(json.dumps(config))
+    vocabulary = unigram(config["text_config"]["vocab_size"])
+    (folder / "tokenizer.json").write_bytes(vocabulary if isinstance(vocabulary, bytes) else vocabulary.encode())
+    for broken in (None, "tiled"):
+        page_27b.convert(str(folder), str(tmp_path / (broken or "native")), 512, broken, "int8")
+    marked = [line for line in capsys.readouterr().out.splitlines() if "broken on purpose: the columns of" in line]
+    linear = sum(kind == "linear_attention" for kind in config["text_config"]["layer_types"])
+    assert marked == [f"page: broken on purpose: the columns of {linear} output matrices are read in llama.cpp's order of the value heads"], marked
+    assert not filecmp.cmp(tmp_path / "native.bin", tmp_path / "tiled.bin", shallow=False), "the tiled break read the same checkpoint"
 
 
 def streamed_run(path, tokens, rounding="float32", broken=""):
