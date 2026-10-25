@@ -174,7 +174,8 @@ export async function inOrder(url: string, start: number, size: number, feed: (b
         try {
           feed(arrived.get(fed)!);
         } catch (error) {
-          // T.404: the others stop now, before one of them hands the converter the part it refused once more
+          // T.404: the others stop now, before one of them hands the converter the part it refused once more. The
+          // reason is the feed's own error, which they throw as it is; the catch below aborts again, to no effect
           inner.abort(error);
           throw error;
         }

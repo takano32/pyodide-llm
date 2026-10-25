@@ -414,7 +414,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     });
     assert.equal(refusedPart.error.type, "ValueError");
     // (T.404: the refused part goes to the converter once, and nothing after it)
-    assert.equal(fedParts.length, 2, `the converter was handed ${fedParts.length} parts, the refused one among them more than once`);
+    assert.equal(fedParts.length, 2, `the converter was handed ${fedParts.length} parts, not 2 (one taken, then the refused one, once)`);
     assert.equal(w.played.steps.at(-1).returned, 1);
     w.allDestroyed();
     ok("a failure of the conduct's own is thrown as it came, and a conduct that asks what nothing answers is refused; the generator is closed all the same");
