@@ -41,7 +41,7 @@
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
 - T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 未着手
-- T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 未着手
+- T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T.443 [整理][WebGPU] モデルの GPU の塊に、ベンチだけのシェーダが 9.5 KB 残る — 未着手
 - T.444 [バグ][WebGPU] GPU だけに置くモデルで GPU の Worker が始まらないと、重みの書き手が 60 秒待つ — 未着手
 - T.445 [整理][遠隔試験] 束ねた塊の「宣言の無い名前」を `dist-check` で見る — 未着手
@@ -541,9 +541,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 状態: 未着手（2026-10-11、T.367.4 から。規模 小）
 - T.367.4 の「更新された」の線は、後から読む部品が変わると、それを名指す塊の名前（中身のハッシュ）も変わることに乗っている（実装が 7 つの部品を 1 つずつ変えて確かめた）。束ね手か名前の形を変える回に、2 つのビルドで見る検査が要る。
 
-### T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 状態: 未着手（2026-10-11、T.374.4 のレビューから。規模 小〜中）
+### T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 状態: 進行中（2026-10-25 に (1) を足した、(2) は Qwen3.5 に触る次の回に。前の状態: 未着手、2026-10-11、T.374.4 のレビューから。規模 小〜中）
 - `--broken tiled` は Qwen3.5 の hybrid の GGUF が要り、本物の 27B の段でしか走らない（T.374.4 の前から）。dry に作り物の hybrid の GGUF を足す。
 - `large()`（4B）は T.374.4 で `"bos": BOS` を渡す形に直したが、CI で回していない。次に Qwen3.5 に触る回に 1 回。
+- **(1) の結果（2026-10-25）**: `dry` の作り物の GGUF は linear の層の無い素の Qwen3 だった（`page.bin` だけが hybrid）ので、`--broken tiled` は 0 個の行列にしか印を付けず何も見なかった（手元で確かめた）。代わりに pytest `tests/test_reference_27b.py` の `test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf`: 回した基底の hybrid の作り物の GGUF（`rotated_qwen35_gguf()`、鍵の head 2・値の head 4、幅 256）に原本の `config.json`・`tokenizer.json` を並べ、`page_27b.convert()` を壊さずと `tiled` で回し、印が linear の層の数だけ付き、チェックポイントが違うことを見る。3 値は値が 3 つの重みが要るので int8 で（`convert()` に引数 `dtype` を足した: 既定は今までどおり `"ternary"`）。壊し方: `tiled()` が印を付けないと落ちる。CI を省いた。訳: 試験と道具の引数 1 つで、pytest で回した（14 通る）。
 
 ### T.443 [整理][WebGPU] モデルの GPU の塊に、ベンチだけのシェーダが 9.5 KB 残る — 状態: 未着手（2026-10-11、T.367.5 の WebGPU のレビューから。規模 小）
 - `fused.js` と `tokens.js` が `shaders/matvec.js` から `MUL_MAT_VEC_ROWS`・`ORT_DP4A_MATVEC_ROWS` を取るので、同じファイルの最上位の文 `ortMatVec`・`ortDp4aMatVec`（と `ORT_MATVEC_ROWS`・`MATVEC_SHAPE`）と、その許諾文が `gpu` の塊に入る（9,538 バイト、gzip 2,677: 塊の約 5%。束ね手は最上位のテンプレートの定数を刈らない）。2 つの行の定数を `shaders/common.js` か `fused.js` に移せば `matvec.js` はベンチだけになる。WGSL の文と鍵は変わらない（網の `shaders` と `dist-check` で見る）。`gpu` の塊の許諾文は 19 → 17 になる見込み。
