@@ -549,7 +549,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `tests/updated-in-browser.mjs`（28 通り、Chrome で約 3 分）は決まって回る所が無い: `browsers.yml` に Chromium・Firefox・WebKit で 1 回（レビューの勧め）。
 - **(1) の結果（2026-10-25）**: `tests/e2e.mjs` の `E2E_OFFLINE` の訪問の間、道具が配るサーバも接続を答えずに切る（`updated-in-browser.mjs` の `offlineNow()` と同じ形: `serving()` の `instead` で "drop"）。手元の Chromium と、CI の Firefox 157（run 40219370913: 軽い組・build の後に `E2E_OFFLINE=1 node tests/e2e.mjs stories260K firefox`）で、オフラインの訪問が Service Worker の写しから準備完了して答えた: Firefox のオフラインの確かめが初めて本当にサーバ無しで通った。CI を回した。訳: Firefox だけの違いで、手元に Firefox が無い。
 - レビュー（Sonnet low、2026-10-25、T.441 (1)）: must-fix なし。本番の URL の道はサーバが無く前のまま、`E2E_TWICE` はオフラインより前なので切られた後に続く訪問は無い、失敗の道でも `serverOffline = false` に届く（例外で落ちる道は道具ごと終わる）。勧めを入れた: 頭の説明に 1 行。
-- **(2) は後で**: `updated-in-browser.mjs` を決まって回す所に置くのは、本線でも落ちる場合（T.583）を直してから（今置くと毎回赤い）。
+- **(2) の結果（T.441.2、2026-10-25）**: T.583 を直した後、`tests.yml` の毎晩の run（と入力 `updated=true`）で、作ったサイトに `node tests/updated-in-browser.mjs` を Chromium・Firefox・WebKit の順に回す（ブラウザを入れる手順は `apt-timeouts.sh` と期限 20 分、回す手順は 45 分）。ブランチで `updated=true` を 1 回: run 40221205668 で 3 つとも「updated-in-browser: ok」、ジョブ全体 11.6 分（毎晩の約 31 分に足して 90 分の期限の内）。CI を回した。訳: ワークフローの手順で、手元に Firefox と WebKit が無い。
 
 ### T.442 [整理][その他] T.367.4 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
 - **済み（T.367.5）**: AGENTS.md の「束ねた後の決まり」の (10) を「`/*! … */` と `/** … */` が残る」に直した（束の `forward` に `/** … */` が 76 個）。
