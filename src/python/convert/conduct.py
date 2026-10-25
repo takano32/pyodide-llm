@@ -126,13 +126,13 @@ def beginning(where, name, end):
 
 
 def joined(data, more):
-    """data with more after it, in one bytearray made at its full size. (more: an answer's bytes, JavaScript's in
-    Pyodide: copied once, straight into its place. T.418: to_py() and a join held a third copy of it, the third piece
+    """data with more after it, in one bytearray made at its full size. (more: an answer's bytes, in Pyodide a
+    JavaScript Uint8Array, which every answerer gives: copied once, straight into its place. T.418: to_py() and a join held a third copy of it, the third piece
     of a 9 MiB head grew Pyodide's heap by 69 MiB that way and by 37 this one)"""
-    count = more.length if hasattr(more, "assign_to") else len(more)
-    out = bytearray(len(data) + count)
+    javascript = hasattr(more, "assign_to")
+    out = bytearray(len(data) + (more.length if javascript else len(more)))
     out[:len(data)] = data
-    if hasattr(more, "assign_to"):
+    if javascript:
         more.assign_to(memoryview(out)[len(data):])
     else:
         out[len(data):] = more
