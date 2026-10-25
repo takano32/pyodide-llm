@@ -215,7 +215,6 @@
 - T.521 [整理][Gemma4] T.329.2.2 のレビューの残り — 未着手
 - T.522 [不具合][その他] 同じブラウザの文脈で、隔離した訪問の後に `?coi=off` で開くと worker が始まらない — 未着手
 - T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 未着手
-- T.530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 未着手
 - T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 未着手
 - T.545 [性能][WebGPU] LFM2 の畳み込みの層を GPU に（既定のモデル） — 進行中
 - T.546 [性能][WebGPU] GPU の標本抽出に top-k・min-p・presence penalty — 反映済み
@@ -1591,9 +1590,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.525 [整理][Gemma4] 保存できない訪問の Gemma 4 のメモリの警告 — 状態: 未着手（2026-10-15、T.333 のレビューの気づき）
 - 保存（OPFS）が使えない訪問では層ごとの埋め込みの表をメモリに読む（E2B 5.2 GB・E4B 8.4 GB）が、ページの警告と note は保存できる前提の 2.6・5.2 GB で数える。直すなら、保存できない訪問のときだけ警告を足す（文面は持ち主）。数字は未計測。
-
-### T.530 [試験][CPU] `geglu_erf` の NumPy との線を、両方の道で同じ係数をずらす壊し方で確かめる — 状態: 未着手（2026-10-15、T.340〜T.342 のレビューの気づき）
-- いまの壊し方（ベクトルの道だけ係数をずらす）は「4 つずつと 1 つずつが同じ」の検査が落とす。両方の道で同じ誤りを入れたとき、smoke の NumPy との比べ（rtol 2e-6）と erf との比べ（5e-7）が係数の 1e-5 規模のずれを落とすかは未確認。通すなら線を締める。
 
 ### T.541 [バグ][変換] yarn の factor を transformers 5 のように `max_position_embeddings / original` で作り直すか — 状態: 未着手（2026-10-15、T.532 のレビューの気づき）
 - transformers 5 は config に `original_max_position_embeddings` があると factor を `max_position_embeddings / original` で作り直す。こちらは config の factor をそのまま使う（前から）。一覧の 4 つ（Ternary Bonsai）には効かない。一覧の外の yarn のモデルで差が出るかは未計測。
