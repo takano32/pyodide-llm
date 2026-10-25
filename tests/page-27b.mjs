@@ -758,6 +758,8 @@ async function convert(out, folder, context, pyodideWithEngine, blocks = false) 
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");
   const quantizeRows = numpy.kernel_quantizer("simdkernel.so");
   const readers = convert.kernel_readers("simdkernel.so");  // the stored types on the kernels, as the page (T.273: the two ternary ones)
+  // (T.426: said, as forgetting them changes no byte, only the speed)
+  console.log(`pyodide: the converter reads on the kernels: ${readers ? [...readers].join(", ") : "nothing (the kernels did not load)"}`);
   // T.374.4: by the conduct of a conversion, answered from the folder (tests/conducting.mjs) as the worker answers it from
   // huggingface.co: the GGUF's head in growing pieces, the original's config.json, its tokenizer (the conduct's
   // candidates) and its template, then the tensors, 16 MiB at a time as the worker's later parts are
