@@ -1,0 +1,3 @@
+### T.444 [バグ][WebGPU] GPU だけに置くモデルで GPU の Worker が始まらないと、重みの書き手が 60 秒待つ — 状態: 完了（2026-10-25、T.377 が済ませていた。前の状態: 未着手、2026-10-11、T.367.5 の WebGPU のレビューから。前からある。規模 小）
+- **閉じた（2026-10-25）**: T.377（`572ae690`、2026-10-12）が直していた: `worker/weights.ts` の `gpuOnlyBuffer()` は Worker の `error` で `weights.gone()` を呼び、`forward/alone.ts` の `gpuOnlyWeights()` の待ち（`room()`・`drained()`）がすぐ止まる。エンジンを作った後にその失敗を渡す（`failed`）。試験は `tests/gpu-choice-check.mjs` の `gone()` の場合。
+- `worker/weights.js` の GPU だけの置き場は、Worker の `error` で `ended()` しか呼ばない。書き手は `room()` を 60 秒まで待ってから CPU で読み直す。`error` で `direct.onLost` も呼んで `room()` をすぐ放す。T.367.5 で「シェーダの塊だけが無い」場合が無くなり、ここに来る道はこれ 1 つになった。読んだだけで、走らせていない。

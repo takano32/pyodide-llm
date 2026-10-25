@@ -42,7 +42,6 @@
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
 - T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 未着手
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
-- T.444 [バグ][WebGPU] GPU だけに置くモデルで GPU の Worker が始まらないと、重みの書き手が 60 秒待つ — 未着手
 - T.445 [整理][遠隔試験] 束ねた塊の「宣言の無い名前」を `dist-check` で見る — 未着手
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 未着手
 - T.447 [整理][遠隔試験] `compare-engines` の側の偏りと、束ねた `helper` の速さの前後 — 未着手
@@ -545,9 +544,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `large()`（4B）は T.374.4 で `"bos": BOS` を渡す形に直したが、CI で回していない。次に Qwen3.5 に触る回に 1 回。
 - **(1) の結果（2026-10-25）**: `dry` の作り物の GGUF は linear の層の無い素の Qwen3 だった（`page.bin` だけが hybrid）ので、`--broken tiled` は 0 個の行列にしか印を付けず何も見なかった（手元で確かめた）。代わりに pytest `tests/test_reference_27b.py` の `test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf`: 回した基底の hybrid の作り物の GGUF（`rotated_qwen35_gguf()`、鍵の head 2・値の head 4、幅 256）に原本の `config.json`・`tokenizer.json` を並べ、`page_27b.convert()` を壊さずと `tiled` で回し、印が linear の層の数だけ付き、チェックポイントが違うことを見る。3 値は値が 3 つの重みが要るので int8 で（`convert()` に引数 `dtype` を足した: 既定は今までどおり `"ternary"`）。壊し方: `tiled()` が印を付けないと落ちる。CI を省いた。訳: 試験と道具の引数 1 つで、pytest で回した（14 通る）。
 - レビュー（Sonnet low、2026-10-25、T.423 (1)）: must-fix なし。`main()` は `dtype` を渡さず本物の段の呼び方は前のまま、軽い組の pytest が拾う。入れなかった勧め: tiled の出の行列の列が native の列の並べ替えに一致することまで見る（いまは「違う」だけ。同じ入力を 2 回変換するので違いの出る別の道は無い）。
-
-### T.444 [バグ][WebGPU] GPU だけに置くモデルで GPU の Worker が始まらないと、重みの書き手が 60 秒待つ — 状態: 未着手（2026-10-11、T.367.5 の WebGPU のレビューから。前からある。規模 小）
-- `worker/weights.js` の GPU だけの置き場は、Worker の `error` で `ended()` しか呼ばない。書き手は `room()` を 60 秒まで待ってから CPU で読み直す。`error` で `direct.onLost` も呼んで `room()` をすぐ放す。T.367.5 で「シェーダの塊だけが無い」場合が無くなり、ここに来る道はこれ 1 つになった。読んだだけで、走らせていない。
 
 ### T.445 [整理][遠隔試験] 束ねた塊の「宣言の無い名前」を `dist-check` で見る — 状態: 未着手（2026-10-11、T.367.5 の WebGPU のレビューから。規模 小）
 - 束ねた `gpu` の塊を GPU で通すのは CI の数モデルだけで、3 値・int6・外れ値の枝は束では走らない。束ね手が名前を落とす誤りは、スコープを知っている名前の検査を `dist/_astro/gpu.*.js`（と `worker`・`key`）に当てれば GPU なしで見える（レビューは捨ての道具で見て、宣言の無い名前は無かった）。
