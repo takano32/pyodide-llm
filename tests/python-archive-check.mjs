@@ -166,10 +166,13 @@ const made = build(tree.python(), path.join(work, "tree"));
     assert.ok(fs.readFileSync(built).equals(made[name]), `${path.relative(root, built)} is not what python_archive.py makes of ${where} now: an old archive beside newer sources (make python)`);
     beside.push(path.relative(root, built));
   }
-  // and they are built wherever the site is: before a build and before the development server (a site without them
-  // says "Could not fetch engine.zip: 404" and nothing in Node would have said so)
-  const scripts = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).scripts;
-  for (const script of ["build", "dev"]) assert.match(scripts[script], /^python3 python_archive\.py && astro /, `npm run ${script} does not build the archives first`);
+  // and they are built wherever the site is: when a build or the development server starts, and again as a .py changes
+  // under that server (T.433: astro.config.mjs's plugin; a site without them says "Could not fetch engine.zip: 404" and
+  // nothing in Node would have said so)
+  const { default: config } = await import(pathToFileURL(path.join(root, "astro.config.mjs")).href);
+  const plugin = config.vite?.plugins?.flat().find((one) => one?.name === "python-archives");
+  assert.ok(plugin && typeof plugin.buildStart === "function" && typeof plugin.configureServer === "function",
+    "astro.config.mjs has no plugin that makes the archives when a build or the development server starts");
   // the build's own scripts find the sources where they are: run with no arguments from another folder, each gets past
   // its imports to its missing argument (tests/test_convert_hf.py imports the converter itself, by pytest's path)
   for (const script of ["convert_hf.py", "quantize.py"]) {

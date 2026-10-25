@@ -1,10 +1,33 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { defineConfig } from "astro/config";
+
+// T.433: the site's Python as the two archives the workers fetch (python_archive.py, T.367.2: src/runtime/built/), made
+// when a build or the development server starts (an `astro dev` or `astro build` called without npm had none: "Could not
+// fetch engine.zip: 404"), and made again, and the page reloaded, whenever a .py of src/python/ changes under the
+// development server (it served the archives of its start, and said nothing). Under 0.1 s: made whole every time.
+const PYTHON = path.resolve("src/python");
+const archives = () => execFileSync("python3", ["python_archive.py"], { stdio: ["ignore", "ignore", "inherit"] });
+const pythonArchives = () => ({
+  name: "python-archives",
+  buildStart: archives,
+  configureServer(server) {
+    server.watcher.add(PYTHON);
+    server.watcher.on("all", (event, file) => {
+      if (!file.startsWith(PYTHON + path.sep) || !file.endsWith(".py")) return;
+      archives();
+      server.config.logger.info(`python-archives: ${path.relative(PYTHON, file)} ${event}: the archives made again`);
+      server.ws.send({ type: "full-reload" });
+    });
+  },
+});
 
 // GitHub Pages serves the site under /pyodide-llm/
 export default defineConfig({
   site: "https://takano32.github.io",
   base: "/pyodide-llm/",
   vite: {
+    plugins: [pythonArchives()],
     // T.367.3: the runtime (src/runtime/) is bundled, a graph for each worker. A built file is always a file of its own
     // (never a data: URL in a worker's text), and a worker's files are named as Astro names the page's,
     // _astro/<name>.<hash>.<ext>: the shape public/coi.js's family() knows, so that the Service Worker drops the old
