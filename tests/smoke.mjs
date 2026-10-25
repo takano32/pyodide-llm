@@ -454,14 +454,18 @@ for size in (fast.vocab_size, fast.vocab_size - 3):
                         faint = max(narrowing[ours], narrowing[theirs]) < narrowing.max() - 0.7 * 25
                         assert ours == theirs or abs(narrowing[ours] - narrowing[theirs]) < 1e-3 or faint, (size, spread, top_k, topp, min_p, value, ours, theirs)
 # equal logits at the border of a top-k: the lower tokens first (T.561: the kernel's partition as NumPy's sort), and the
-# same draw as NumPy's of them
+# same draw as NumPy's of them; twenty equal ones (T.561's review), so that the walk's sort partitions them too (it sorts
+# more than 12 by quicksort), with no top-k and a nucleus as well
 tied = np.full(fast.vocab_size, -30.0, dtype=np.float32)
-equal = [1500, 5, 1000, 50, 500]
+equal = [(37 * j + 11) % 1900 + 3 for j in range(20)]
 tied[equal] = 4.0
-for top_k in (1, 3, 5, 7):
-    for value in (0.0, 0.3, 0.7, 1.0 - 1e-12):
+tied[[1777, 2]] = 6.0
+for top_k in (1, 2, 3, 7, 13, 21, 22, 30):
+    for value in (0.0, 0.3, 0.7, 0.95, 1.0 - 1e-12):
         ours = kernel_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0)
-        assert ours in sorted(equal)[:top_k] and ours == numpy_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0), (top_k, value, ours)
+        assert ours in ([2, 1777] + sorted(equal))[:top_k] and ours == numpy_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0), (top_k, value, ours)
+for value in np.linspace(0.0, 1.0 - 1e-12, 41):
+    assert kernel_sample(tied, 1.0, 0.999, Fixed(value), 0, 0.0) == numpy_sample(tied, 1.0, 0.999, Fixed(value), 0, 0.0), ("a nucleus", value)
 ours, theirs = logits.copy(), logits.copy()
 kernel_penalize(ours, history, 1.3, 1.5)
 numpy_penalize(theirs, history, 1.3, 1.5)

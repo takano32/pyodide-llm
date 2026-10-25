@@ -25,8 +25,7 @@ export function penalizeLikeCpu(logits: Float32Array, history: History, penalty:
   }
 }
 /** The token kernel.ts's sample() draws for random (in [0, 1)): float32 probabilities, float64 sums; the nucleus
- * sorted from the most probable, equal ones in the order of their index (the kernel's quicksort takes them in no set
- * order: either is its distribution). temperature 0: the first index of the largest logit (NumPy's argmax). */
+ * sorted from the most probable, equal ones in the order of their index (T.561: as the kernel's sort and NumPy's). temperature 0: the first index of the largest logit (NumPy's argmax). */
 export function sampleLikeCpu(logits: ArrayLike<number>, temperature: number, topp: number, random: number, topk = 0, minp = 0) {
   if (temperature === 0) return argmaxLikeCpu(finiteLikeCpu(logits));
   const { tokens, cumulative, mass } = walkLikeCpu(logits, temperature, topp, topk, minp);

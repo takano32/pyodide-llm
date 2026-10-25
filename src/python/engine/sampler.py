@@ -131,7 +131,8 @@ class NumpySampler:
                 # probable token alone. It always stays
                 cutoff = min((1.0 - topp) / max(probabilities.size - 1, 1), probabilities.max())
                 likely = np.flatnonzero(probabilities >= cutoff)
-                likely = likely[np.argsort(-probabilities[likely])]
+                # (T.561: equal ones by the lower token, as the top-k above, the kernel's and likecpu.ts's)
+                likely = likely[np.argsort(-probabilities[likely], kind="stable")]
                 candidates, probabilities = candidates[likely], probabilities[likely]
                 cumulative = np.cumsum(probabilities)
                 cumulative = cumulative[:np.searchsorted(cumulative, topp) + 1]
