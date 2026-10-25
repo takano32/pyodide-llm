@@ -122,7 +122,7 @@ const SILENT = {
     ["grow", "catch { memory = new WebAssembly.Memory({ initial: 0 }); maximum = null; }", "a browser that takes no maximum that large: a memory with the browser's own, and the result says maximum: null"],
   ],
   "src/runtime/benchmark/sections.ts": [
-    ["kernelsOf", "catch { return null; }", "no WebAssembly SIMD here: null is the answer, which the section says in its own row"],
+    ["kernelsOf", "catch { return null; }", "the kernels came and do not compile (no WebAssembly SIMD here): null is the answer, which the section says in its own row. A file that did not come is thrown, not caught here (T.440)"],
     ["device", "catch {}", "no navigator.storage here: the features' row of OPFS says it"],
     ["ceilingsOf", "catch {}", "no relaxed SIMD here (Safari): the ceilings' row says so"],
     ["measure", "reader.cancel().catch(() => {})", "a body that is read no further: whether the cancel took is nothing the measurement reads"],
