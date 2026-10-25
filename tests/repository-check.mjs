@@ -183,22 +183,27 @@ console.log("ok: safetensors first where a repository has them, else its best GG
     }
   }
   // T.508.1: a list of more than a page comes in pages, each naming the next in its Link header: followed to the end, up
-  // to PAGES of them; a later page that is no list leaves the pages before it
+  // to PAGES of them; a list not had whole (a later page that is no list, more pages, a next page elsewhere) is none
   {
     const paged = [];
-    const pages = (count, broken = -1) => async (url, init) => {
+    const pages = (count, broken = -1, host = "https://huggingface.co") => async (url, init) => {
       paged.push([url, init?.signal]);
       const at = Number(new URL(url).searchParams.get("cursor") ?? 0);
       if (at === broken) return new Response("{}", { status: 500 });
-      const next = at + 1 < count ? { Link: `<https://huggingface.co/api/models/owner/model/tree/${REVISION}?cursor=${at + 1}>; rel="next"` } : {};
+      const next = at + 1 < count ? { Link: `<${host}/api/models/owner/model/tree/${REVISION}?cursor=${at + 1}>; rel="next"` } : {};
       return new Response(JSON.stringify([{ type: "file", path: `f${at}.gguf`, size: at }]), { headers: next });
     };
     assert.deepEqual((await filesOf("owner/model", REVISION, pages(3))).map(({ path }) => path), ["f0.gguf", "f1.gguf", "f2.gguf"]);
     assert.equal(new Set(paged.map(([, signal]) => signal)).size, 1, "the pages wait on one signal: ten seconds for all of them");
     paged.length = 0;
-    assert.equal((await filesOf("owner/model", REVISION, pages(PAGES + 5))).length, PAGES, "no more than PAGES pages");
-    assert.equal(paged.length, PAGES);
-    assert.deepEqual((await filesOf("owner/model", REVISION, pages(3, 1))).map(({ path }) => path), ["f0.gguf"], "a later page that fails leaves the ones before it");
+    assert.deepEqual((await filesOf("owner/model", REVISION, pages(PAGES))).length, PAGES, "PAGES pages are had whole");
+    paged.length = 0;
+    assert.equal(await filesOf("owner/model", REVISION, pages(PAGES + 5)), undefined, "more than PAGES pages: no list");
+    assert.equal(paged.length, PAGES, "and no page asked past them");
+    assert.equal(await filesOf("owner/model", REVISION, pages(3, 1)), undefined, "a later page that fails: no list (its part would say a file is not there)");
+    assert.equal(await filesOf("owner/model", REVISION, pages(3, -1, "https://elsewhere.example")), undefined, "a next page elsewhere is not asked for");
+    // (and through looked(): a repository whose list is not had whole is opened as named, not refused)
+    assert.equal(await looked(pinned, pages(3, 1)), pinned);
   }
   // the sentence of a repository with nothing comes through looked() as it is
   await assert.rejects(looked(entry, answering(json([{ type: "file", path: "README.md", size: 1 }]))), { message: "owner/model has no model.safetensors and no GGUF file this page can read." });

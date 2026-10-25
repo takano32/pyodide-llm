@@ -85,17 +85,20 @@ export function settled<Of extends Entry>(entry: Of, files: Listed[]): Of {
 /** The files at the top of a repository at a revision, as huggingface.co lists them, or undefined where it does not say
  * (no such repository, a gated one, no line): the model is then opened as named, and whatever is wrong with it is said
  * by the worker, which meets the same answer. T.508.1: a list of more than a page (1,000 entries) comes in pages, each
- * naming the next in its Link header (which huggingface.co lets a page read), up to PAGES of them. */
+ * naming the next in its Link header (which huggingface.co lets a page read), up to PAGES of them. A list not had whole
+ * (a later page that is no list, more pages than that, a next page elsewhere) is none: a part of it would have
+ * settled() say a file is not there that a page not read has. */
 export async function filesOf(repository: string, revision: string, fetching: typeof fetch = fetch): Promise<Listed[] | undefined> {
   try {
     // (it waits ten seconds at most, all the pages: a line that does not answer must not hold the model back, and the
     // same answer is then the worker's to meet)
     const signal = AbortSignal.timeout(LISTING_SECONDS * 1000), files: Listed[] = [];
     let url: string | null = `https://huggingface.co/api/models/${repository}/tree/${revision}`;
-    for (let page = 0; url && page < PAGES; page++) {
+    for (let page = 0; url; page++) {
+      if (page === PAGES || !url.startsWith("https://huggingface.co/")) return undefined;
       const res: Response = await fetching(url, { signal });
       const listed: unknown = res.ok ? await res.json() : undefined;
-      if (!Array.isArray(listed)) return page ? files : undefined;
+      if (!Array.isArray(listed)) return undefined;
       files.push(...listed.filter((one) => one?.type === "file" && typeof one.path === "string").map(({ path, size }) => ({ path, size })));
       url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("Link") ?? "")?.[1] ?? null;
     }
