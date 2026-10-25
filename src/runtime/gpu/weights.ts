@@ -103,7 +103,7 @@ function gridsFilled(m: Model) {
 // (exact to 2^53; the views and copies take them as they are). T.232: ternary (plan.matrices' ternary) as it is, a row
 // of n weights n / 4 bytes (rowBytes)
 // T.152: where a token goes on the GPU too (plan.tokens), q, k and v are one matrix a layer, and gate and up one (the
-// layer of a token reads them so: shaders.ts's fusedMatVec and fusedDp4aMatVec, T.150 and T.175), each a range of it for
+// layer of a token reads them so: shaders/fused.ts's fusedMatVec and fusedDp4aMatVec, T.150 and T.175), each a range of it for
 // the prompt's tiled shaders (tokensLayout), and the classifier, the embedding, the final norm and RoPE's table go up
 // as well (uploadTokens)
 // T.156, a model on the GPU alone (alone: its record has routes): the layers' buffers are made as the worker opens,
@@ -340,7 +340,7 @@ function partialByte(m: Model, target: GPUBuffer, at: number, value: number) {
 }
 // whether bytes of a word still wait for the rest of it: the checkpoint's stretches did not all come
 const unwritten = (m: Model) => m.weights.partial!.size > 0;
-// T.152: how a token's layer holds its matrices (shaders.ts's fusedMatVec and fusedDp4aMatVec read q, k and v as one
+// T.152: how a token's layer holds its matrices (shaders/fused.ts's fusedMatVec and fusedDp4aMatVec read q, k and v as one
 // matrix, gate and up as one, up's rows after gate's): a buffer of values and one of scales a layer for each (sizes),
 // and each matrix's range of them (homes: its offsets in bytes), which the prompt's tiled shaders bind as a matrix of
 // its own. A range must start where the device binds a buffer (minStorageBufferOffsetAlignment: a matrix of a
@@ -395,7 +395,7 @@ function tokensLayout(m: Model): Together | null {
   return { homes, sizes, vAt, kAt, up };
 }
 // T.152: the tables onto the GPU (int6 widened as a layer's matrices are), the final norm's weights, and RoPE's table
-// of every position, a row a position: the cos of its headSize / 2 angles, then their sin (shaders.ts's fusedMatVec
+// of every position, a row a position: the cos of its headSize / 2 angles, then their sin (shaders/fused.ts's fusedMatVec
 // reads it so, T.151; from the CPU's two tables, Llama 3's scaling in them)
 // T.209: a table in pieces of rows where it is past what the device binds (piecesOf: Llama 3.2 3B's classifier is
 // 394 MB, the owner's Android binds 256 MiB; T.152's review (e)), [{ first, rows, values, scales }] each. The
@@ -445,7 +445,7 @@ async function uploadTokens(m: Model, widen: Widen | null) {
   return bytes;
 }
 
-// T.155: shaders.ts's WIDEN_SIX compiled and checked against JavaScript (sixValues), and into(values, address, groups):
+// T.155: shaders/steps.ts's WIDEN_SIX compiled and checked against JavaScript (sixValues), and into(values, address, groups):
 // groups of int6 at address in the shared memory widened into values (a buffer of int8, or T.152 a range of one) on
 // the GPU. The packed bytes go
 // through one buffer of their own, written again for every piece (the queue runs a write after the submissions before

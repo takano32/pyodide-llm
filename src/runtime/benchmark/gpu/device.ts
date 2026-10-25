@@ -171,7 +171,7 @@ function pipelinesFor(): Pipelines {
 const tiledPipelines = new Map<string, Promise<GPUComputePipeline>>();
 function promptShaders(): PromptShader[] {
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = shared.device.limits;
-  // T.147: the tiled ones are the model's GPU worker's candidates (shaders.ts's promptForms), the same list
+  // T.147: the tiled ones are the model's GPU worker's candidates (shaders/prompt.ts's promptForms), the same list
   return [{ name: "batched (T135)", kind: "batched" }, ...shared.WGSL.promptForms({ half: shared.device.features.has("shader-f16"),
     subgroups: shared.device.features.has("subgroups"), packed: shared.packed, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) })];
 }
@@ -207,7 +207,7 @@ async function kindOf(shader: PromptShader | MatVecShader): Promise<Kind | undef
   }
   return { pipeline: await tiledPipelines.get(shader.name)!, tile: shader.tile, rows: shader.rows, packed: shader.packed };
 }
-// the activations of the packed tiled shaders, quantized on the GPU (shaders.ts's QUANTIZE): the first n values of
+// the activations of the packed tiled shaders, quantized on the GPU (shaders/steps.ts's QUANTIZE): the first n values of
 // each of io's tokens, from io.x into io.xq and io.xs. One thread a group of 32, the tokens along y
 let quantizePipeline: GPUComputePipeline | undefined;
 function quantizer(io: Vectors, n: number): { dispatch: Dispatch; owned: GPUBuffer[] } {

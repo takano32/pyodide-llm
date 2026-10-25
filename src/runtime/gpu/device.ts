@@ -156,7 +156,7 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     const info: Info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
     if (fallback && !plan.force.fallback) return say(REASONS.fallback);
-    // T.232: ternary weights are multiplied as packed int8 alone (shaders.ts's TERNARY_PACKED; T.547.2.3: and Q4_K's
+    // T.232: ternary weights are multiplied as packed int8 alone (shaders/prompt.ts's TERNARY_PACKED; T.547.2.3: and Q4_K's
     // blocks, packings.ts's dot): said before anything goes up
     const ternary = ternaryPlan(plan), own = ownOf(plan);
     const dotted = Object.values(plan.matrices).flatMap(packingsOf).find((packing) => PACKINGS[packing].dot);

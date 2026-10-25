@@ -41,6 +41,7 @@ import vm from "node:vm";
 import { pathToFileURL } from "node:url";
 import { treeOf } from "./tree.mjs";
 import { parse } from "@babel/parser";
+import { builtinModules } from "node:module";
 import { AMBIENT } from "./types.mjs";
 
 const ORIGIN = "https://site.test", BASE = "/pyodide-llm/";
@@ -73,6 +74,9 @@ export function families(files, family) {
 /** every file under a folder, as its path from it with "/" between */
 const under = (folder) => (!fs.existsSync(folder) ? [] : fs.readdirSync(folder, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
   .map((entry) => path.relative(folder, path.join(entry.parentPath, entry.name)).split(path.sep).join("/")).sort());
+
+// T.448: Node's own modules by name (worker_threads, fs, ...), as a pattern
+const NODE_MODULES = builtinModules.filter((name) => !name.startsWith("_") && !name.includes("/")).map((name) => name.replace(/^node:/, "")).join("|");
 
 /** T.445: the names a script reads that it declares nowhere, file-wide (a var, a let or a const, a function or a class
  * and its parameters, a catch's, an import's) */
@@ -173,7 +177,8 @@ export function distSaid(dist, tree = treeOf()) {
   // fragment of its runtime that the importer then fetches on every visit.
   for (const [name, got] of bytes) {
     if (!name.endsWith(".js")) continue;
-    const asked = /\b(?:from|import)\s*\(?\s*["'](node:[\w/]+)["']/.exec(got.toString("utf8"))?.[1];
+    // (T.448: by its node: name, or by its bare name, which Node takes as well: worker_threads)
+    const asked = new RegExp(`\\b(?:from|import)\\s*\\(?\\s*["']((?:node:)?(?:${NODE_MODULES})(?:/[\\w/]*)?)["']`).exec(got.toString("utf8"))?.[1];
     if (asked) said.push(`_astro/${name} asks for ${asked}: a module of Node's in a browser's file (what the tests need of Node is theirs to give: tests/helper-node.mjs)`);
     if (/^(__vite-browser-external|rolldown-runtime)\./.test(name)) said.push(`_astro/${name}: the bundler's stand-in for a module of Node's, or its own runtime for one: a file of the runtime imports a module a browser does not have`);
   }
@@ -237,6 +242,8 @@ export async function keysSaid(dist, tree = treeOf()) {
     if (!name || /^\s*(import|export)\b/m.test(text)) return {};  // (no key.js in it, or a file that is not whole by itself)
     return import(`data:text/javascript;base64,${Buffer.from(`${text}\nexport { ${name} as deviceKey };\n`).toString("base64")}`);
   };
+  // (T.448: the stand-in goes whatever happens: a module that throws as it loads leaves no global behind)
+  try {
   for (const name of NAMES) {
     const url = builtModule(name, dist), module = await (name === "gpu" ? worker(url) : import(url));
     if (typeof module.deviceKey !== "function") {
@@ -246,7 +253,9 @@ export async function keysSaid(dist, tree = treeOf()) {
     const built = keysOf(module), differ = Object.keys(sources).filter((device) => built[device] !== sources[device]);
     if (differ.length) said.push(`_astro/${name}.<hash>.js gives another deviceKey() than the sources for ${differ.length} of ${Object.keys(sources).length} made-up devices (the first: ${differ[0]}: ${built[differ[0]]} for ${sources[differ[0]]})`);
   }
-  if (!had) delete globalThis.onmessage;
+  } finally {
+    if (!had) delete globalThis.onmessage;
+  }
   return { said, looked: `; the device's key the same from the built ${NAMES.join(", ")} modules and the sources, for ${Object.keys(sources).length} devices (${new Set(Object.values(sources)).size} keys)` };
 }
 

@@ -95,6 +95,8 @@ const family = familyOf(coi);
   wrong("a minified worker", { "_astro/worker.DR4U5U7O.js": `${BUNDLED}${"const a=1;".repeat(600)}\n` }, /^_astro\/worker\.DR4U5U7O\.js is minified \(\d+ characters a line\)/);
   wrong("a lazy part bundled into another file", { "_astro/key.XnxXfX1x.js": null }, /^_astro\/key\.<hash>\.js is not there: key\.js was bundled into another file, and is fetched on every visit now/);
   wrong("a module of Node's asked for", { "_astro/helper.CZLQh-ea.js": 'const port = (await import("node:worker_threads")).parentPort;\n' }, /^_astro\/helper\.CZLQh-ea\.js asks for node:worker_threads: a module of Node's in a browser's file/);
+  // (T.448: and by its bare name, which Node takes as well)
+  wrong("a module of Node's asked for by its bare name", { "_astro/helper.CZLQh-ea.js": 'import { parentPort } from "worker_threads";\nexport const port = parentPort;\n' }, /^_astro\/helper\.CZLQh-ea\.js asks for worker_threads: a module of Node's in a browser's file/);
   wrong("the bundler's stand-in for a module of Node's", { "_astro/__vite-browser-external.CnCWOxrk.js": "export default {};\n", "_astro/rolldown-runtime.DBMA93yC.js": "export {};\n" },
     /^_astro\/__vite-browser-external\.CnCWOxrk\.js: the bundler's stand-in for a module of Node's/, /^_astro\/rolldown-runtime\.DBMA93yC\.js: the bundler's stand-in/);
   wrong("a runtime file at the root", { "worker.js": "as it was" }, /^dist\/worker\.js: nothing asks for it there \(the root holds _astro, index\.html, benchmark, coi\.js, coi-test, models\)/);

@@ -25,7 +25,7 @@ type Recorded = { xq: Int8Array; xs: Float32Array }[][];
 type Caches = { keys: Uint16Array; values: Uint16Array }[];
 type Held = ReturnType<typeof heldHalves>;
 
-// The check of SAMPLE (T.151) against the CPU's sampling in JavaScript (shaders.ts's sampleLikeCpu and
+// The check of SAMPLE (T.151) against the CPU's sampling in JavaScript (shaders/likecpu.ts's sampleLikeCpu and
 // penalizeLikeCpu, which tests/smoke.mjs holds to the kernel): the same logits, history and random number must pick
 // the same token. Where a float32 sum in another order moves a border, a token next to it is as right: the token
 // passes when it is what the CPU picks, or where the CPU's walk (walkLikeCpu, with top-p as it is and moved by EDGE)
