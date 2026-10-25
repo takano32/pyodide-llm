@@ -838,20 +838,19 @@ if (isMainThread) {
       return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
         set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
     };
-    const outcome = async (memoryUnsaid) => {
-      const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, ...(memoryUnsaid ? { memoryUnsaid } : {}) });
+    const outcome = async () => {
+      const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu });
       await engine.setThreads(1);
       await engine.gpu;
       const prompts = [1, 2, 3].map(() => feed(engine)[1]);
       const written = [1, 2, 3].map(() => write(engine));
       const got = { planned: engine.gpuTokensPlanned, why: engine.gpuTokensWhyNot, prompts, written, status: engine.gpuStatus };
       await engine.release();
-      say(`T.205: memoryUnsaid ${memoryUnsaid}: ${JSON.stringify(got)}`);
+      say(`T.548: the steps whatever the browser says of its memory: ${JSON.stringify(got)}`);
       return got;
     };
-    const unsaid = await outcome(true), said = await outcome(false);
-    expect("what was memoryUnsaid: the steps asked of the GPU, and taken there", [unsaid.planned, unsaid.written.at(-1)[0] > 0], [true, true]);
-    expect("with deviceMemory: the steps asked of the GPU, and taken there", [said.planned, said.written.at(-1)[0] > 0], [true, true]);
+    const said = await outcome();
+    expect("the steps asked of the GPU, and taken there (no word of the device's memory reaches the engine)", [said.planned, said.written.at(-1)[0] > 0], [true, true]);
   }
   // T.152: Python's generate() through forward.js's external() (as the page's worker has it) on the made-up GPU far
   // faster: the steps go to it (Python draws the random numbers and hands the history over as the made-up GPU expects),

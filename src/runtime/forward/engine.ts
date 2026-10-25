@@ -57,7 +57,8 @@ const STALLED_MS = 10000;
 /** gpu (T.135; T.148: wherever the worker has WebGPU): makes the GPU's worker (gpu.js, not started: a Worker, or what
  * posts and listens as one). A prompt's blocks then go through the layers there where the model allows it and the GPU
  * is faster; see forwardMany. gpuRoom (T.148): the bytes this device can give the GPU's copy of the layers (the
- * worker's reckoning from navigator.deviceMemory; none said: no limit). gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
+ * worker's reckoning from navigator.deviceMemory, 4 GB where the browser does not say; none handed in: no limit).
+ * gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
  * gpu.js). */
 /** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
