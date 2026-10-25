@@ -532,7 +532,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     const went = await w.convert(hf(), function* () { yield ["text", "weights", "config.json"]; });
     assert.match(went.error.message, /answered 503/, "the conversion did not go on to its own end without the file");
     assert.deepEqual([w.kept.refused, w.kept.opened, w.kept.dropped], [before.refused + 1, before.opened, before.dropped], "the file was refused, and nothing of it is let go");
-    assert.deepEqual(said, ["kept: no file to keep this model in as it comes (Error: Access Handles cannot be created if there is another open Access Handle): a model on the GPU alone is not kept"]);
+    assert.deepEqual(said, ["kept: no file to keep this model in as it comes (Error: Access Handles cannot be created if there is another open Access Handle): it is not kept, and a model's table of every layer's inputs is held in the memory"]);
     // and a file that opens says nothing
     w.kept.open = 0;
     said.length = 0;

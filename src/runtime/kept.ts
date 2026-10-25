@@ -285,7 +285,10 @@ export async function keeper(model: Converted) {
   return {
     dtype: model.conversion?.dtype ?? "int8",
     holding(stretch: [number, number]) {
+      // (T.521: told again where the conversion opens again, another tokenizer's try: what the try before wrote is
+      // written again, and counted from nothing)
       hold = stretch;
+      held = 0;
     },
     write(offset: number, bytes: Uint8Array) {
       if (failed || !handle) return;

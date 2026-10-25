@@ -333,6 +333,23 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   assert.equal(ask("rowsReady")({ id: "gemma, kept" }), true, "a kept file is whole");
   await ask("rowsLetGo")();
   assert.equal(reader.closed, 1);
+  // (T.521: the review of T.329.2.2) and loadConverted() asks the kept parts to skip the table once the first part's
+  // header says where it is (a kept file read whole is 2.6 GB too many on a real Gemma 4, and the same model after)
+  const first = new Uint8Array(7000);
+  first.set(new Uint8Array(new Int32Array(GEMMA).buffer));
+  const skipped = [];
+  context.stand.kept = { openKept: async () => ({ manifest: { bytes: size, options: { ...form, dtype: "int8" } }, where: "opfs",
+    async *parts(skipping) {
+      skipped.push(skipping.range);
+      yield first;
+      skipped.push(skipping.range && [...skipping.range]);
+      throw new Error("no more parts here");
+    } }) };
+  ask("keptModule = stand.kept");
+  const missed = await ask("loadConverted")({ id: "gemma, kept" }, new AbortController().signal, 1);
+  assert.match(missed.miss, /no more parts here/);
+  assert.deepEqual(skipped, [undefined, hole], "the table skipped once the header said where it is");
+  await ask("rowsLetGo")();
   // the table in the memory: a file kept as another dtype than the model is converted to, a model without the table, ?without=kernels
   for (const [keeping, dtype, given] of [[keeperOf("int8"), "int6", form], [keeperOf(), "int8", { ...form, per_layer: 0 }]]) {
     const plain = sunk(keeping, dtype, given);

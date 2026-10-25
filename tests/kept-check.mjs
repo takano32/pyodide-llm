@@ -334,4 +334,18 @@ const readBack = async (found) => {
   }
   void root;
 }
+// T.521 (the review of T.329.2.2): a conversion that opens again in the same keeper (another tokenizer's try) tells it
+// the stretch again, and the bytes written again are not counted twice: half the table and then all of it is whole
+{
+  browser();
+  const hold = [3 * 1024 * 1024, 9 * 1024 * 1024 + 11];
+  const twice = await kept.keeper(model);
+  twice.holding(hold);
+  for (let at = 0; at < 6 << 20; at += 1 << 20) twice.write(at, bytes.subarray(at, at + (1 << 20)));
+  assert.equal(twice.whole(), false);
+  twice.holding(hold);
+  for (let at = 0; at < bytes.length; at += 1 << 20) twice.write(at, bytes.subarray(at, Math.min(at + (1 << 20), bytes.length)));
+  assert.equal(twice.whole(), true, "the stretch written again is whole, not counted twice");
+  await twice.drop();
+}
 console.log("ok");
