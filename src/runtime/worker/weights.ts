@@ -481,6 +481,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
     room: weights.room,
     drained: weights.drained,  // every byte of the layers on the GPU (or the GPU failed: start() says so)
     llama: (tokenizer, engineOptions) => {
+      // (no oneThread, T.371: a model on the GPU alone is one on a shared memory, which ?threads=1 does not ask for)
       const outside = forwardModule!.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce, halfKeys: true, direct,
         gpuRemembered: gpuRequest?.remembered });
       const made = llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: outside });

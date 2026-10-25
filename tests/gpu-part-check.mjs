@@ -712,13 +712,15 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
   // T.371 (the owner's choice C): a memory not shared on an isolated page is said by why: ?threads=1, or else not shared
+  const isolated = Object.getOwnPropertyDescriptor(globalThis, "crossOriginIsolated");
   globalThis.crossOriginIsolated = true;
   try {
     assert.match(fitOf({}, {}, { sharedMemory: false, oneThread: true }).unfit(), /^one thread was asked for$/);
     assert.match(fitOf({}, {}, { sharedMemory: false }).unfit(), /^the model's memory is not shared$/);
     assert.equal(fitOf({}, {}, { oneThread: true }).unfit(), null, "a shared memory with one thread asked for (it is not)");
   } finally {
-    delete globalThis.crossOriginIsolated;
+    if (isolated) Object.defineProperty(globalThis, "crossOriginIsolated", isolated);
+    else delete globalThis.crossOriginIsolated;
   }
   assert.match(fitOf({}, {}, { sharedMemory: false, oneThread: true }).unfit(), /^the page is not cross-origin isolated$/, "not isolated, whatever was asked");
   // T.547.2.3: a matrix of Q4_K blocks beside int8 ones goes to the GPU (as it is there, by the packed forms' Q4_K text)

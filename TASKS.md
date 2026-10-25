@@ -77,7 +77,6 @@
 - T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 未着手
 - T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 未着手
 - T.373 [調査][遠隔試験] デプロイの直後に始めた WebKit の本番の確かめが、何も出さずに 47 分止まった（1 回） — 未着手
-- T.371 [バグ][その他] `?threads=1` のとき、隔離されているのに「the page is not cross-origin isolated」と表示される — 進行中
 - T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T.358 [調査][遠隔試験] 全部の組の 27B の `dry` の段が「NOT CAUGHT — FAILED」と言いながら通る — 未着手
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
@@ -703,23 +702,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - run 37955775249（`models.yml`、WebKit、tiny-lm・llm-jp-3 150M・SmolLM2 135M Instruct、2 回の訪問）。デプロイの完了（run 37955210352）の 5 秒後に始め、「Run」の手順が 47 分何も出さずにジョブごと落ちた。ログも成果物も無い。同じ時に始めた Chromium と Firefox は通り、28 分後の WebKit の 3 本も通った。今日のほかのデプロイ（T.347〜T.356）の直後の WebKit は通っている。
 - 調べること: (1) 次のデプロイで、直後と数分後の WebKit を 1 本ずつ回して再現するか。**→ 1 回目（T.353 のデプロイ、2026-10-09）: 完了の 4 秒後に始めた WebKit の tiny-lm は 1.1 分で成功（run 37969664637）。再現しなかった。** 止まった回との違いは、モデルが 3 つで 2 回の訪問だったこと。**2 回目（T.366 のデプロイ）: 完了の 5 秒後に、止まった回と同じ条件（WebKit、tiny-lm・llm-jp-3 150M・SmolLM2 135M Instruct、2 回の訪問）で始めて 1.5 分で成功（run 37981542879）。再現しない。** 止まったのは 1 回だけで、原因は分からないまま。残りは (2) の、止まった所が分かる記録を道具に足すこと。(2) `tests/e2e.mjs` が 1 モデル 1800 秒の期限の前に何も書かない訳（ページの読み込みで止まると、最初の行が出ない）と、ジョブの期限でログが失われること: 止まった所が分かるよう、始まりの行と読み込みの段を先に書く。(3) デプロイの境目で、古い `index.html`（GitHub Pages の 10 分のキャッシュ）が消えたハッシュ付きのスクリプトを指す場合があるか（ページのスクリプトは前からハッシュ付きなので、T.355 で新しく生まれた形ではない見立て。未確認）。
 - **決まり（いまから）**: 本番の確かめの結果は、`ci.mjs` が全部の run の終わりを言ってから台帳に書く（T.355 で、終わっていない run を「成功」と書いた）。
-
-### T.371 [バグ][その他] `?threads=1` のとき、隔離されているのに「the page is not cross-origin isolated」と表示される — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.371-one-thread`: 下の「T.371 の結果」。前の状態: 持ち主の文面待ち（2026-10-12、T.380.3: 原因を確かめ、文面の案を書いた。**レビューで場合は 4 つでなく 5 つ**: 5 つ目は、隔離されたページで共有のカーネル `simdkernel_shared.wasm` が取れなかった・コンパイルできなかったとき（`runtime.ts` で `sharedKernels` が null、`sharedWanted()` が偽）。T.439 の「site was updated」と 1 行に並びうる。取りまとめ役のおすすめは案 C（`?threads=1` は「one thread was asked for」、ほかは「the model's memory is not shared」）。2026-10-09、T.355 の手元の確かめから。本線も同じ。規模 小） **持ち主（2026-10-15、選択肢）: 案 C**（`?threads=1` は「one thread was asked for」、ほかの共有できない場合は「the model's memory is not shared」）。実装待ち。
-- **T.371 の結果（2026-10-25）**: 持ち主の案 C のとおり。`gpuFit()` は共有でないメモリを、ページが隔離されていなければ今の文、隔離されていて `?threads=1` なら `REASONS.oneThread`「one thread was asked for」、ほかは `REASONS.notShared`「the model's memory is not shared」。worker が `external()` に `oneThread`（`threadsRequest.fixed === 1`）を渡し、エンジンが GPU の側に渡す。試験: `gpu-part-check`（3 つの場合と、隔離されていなければ何を頼んでも今の文）、`reasons-check` の `SAID` に 2 つ、`worker-sink-check`（worker がエンジンに `oneThread` を言う: 壊し方「渡さない」が落ちる）。実ブラウザ: `E2E_QUERY=threads=1 node tests/e2e.mjs stories260K chromium` のステータス行が「prompts on the CPU (one thread was asked for)」（渡さない版は「(the model's memory is not shared)」）。T.380.3 の「1 本になった訳を本数の所に出す」案は持ち主が選んでいないので入れていない。CI を省いた。訳: 手元の Node と Chromium で踏める。
-- stories260K を `?threads=1` で開くと、`crossOriginIsolated` が真なのにステータス行が「prompts on the CPU (the page is not cross-origin isolated)」と言う。理由の文が、スレッドを 1 本にしたことと隔離が無いことを取り違えている見込み（未確認）。訪問者に見える文なので、直すときは文面を持ち主に見せる。
-- **T.380.3 での読み（2026-10-12、Opus medium、ブランチ `t380.3-small-fixes`。実装の前に書いた）。**
-  - **原因（コードの読み。実ブラウザの再現は結果に）**: `worker/weights.ts` の `sharedWanted()` は「共有のカーネルがあり、ページが隔離されていて、`?threads=1` でない」のときだけ共有メモリを頼む。`?threads=1` は共有でないメモリになる。エンジン（`forward/engine.ts`）は GPU の側に「メモリが共有か」（`sharedMemory`）だけを渡し、`gpuside.ts` の `gpuFit()` は `if (!sharedMemory) return REASONS.notIsolated;` と、共有でない訳を 1 つの文で言う。共有でないメモリになる訳は 4 つあり、文が合うのは 1 つ目だけ: (1) ページが隔離されていない、(2) `?threads=1`、(3) ブラウザが共有メモリを断った・小さい上限でしか渡さなかった（`pooledWeights()`: コンソールに 1 行）、(4) 64 ビットのメモリが要るのに共有の 64 ビットのカーネルが無い。
-  - **決め**: 今ある訳の表（`REASONS`）に (2)〜(4) を言う文は無い。新しい文は訪問者に見える（ステータス行の「prompts on the CPU (…)」）ので、**実装しない**。文面の案を結果に書いて持ち主に出す。落ちる試験も足さない。
-- **T.380.3 の結果（2026-10-12。状態: 持ち主の文面待ち。製品のコードは触っていない）。**
-  - **再現（手元の Chrome 155、ヘッドレス、この木のビルド）**: `E2E_QUERY=threads=1 node tests/e2e.mjs stories260K chrome` のステータス行は「TinyStories 260K · SIMD kernels, float32, prompts on the CPU (the page is not cross-origin isolated) · Pyodide 314.0.7」で、ページは隔離されていた（e2e は隔離されていないとき行の終わりに「(not cross-origin isolated)」と書く: 書かなかった）。`?threads=1` なしの tiny-lm は「prompts on the CPU (no GPU adapter here)」。原因は上の読みのとおり（`gpuFit()` の `if (!sharedMemory) return REASONS.notIsolated;`）。
-  - **どの場合に何と出るか（いま）**: 共有でないメモリになる 4 つの場合の全部で「the page is not cross-origin isolated」。本当なのは (1) だけ。(2) `?threads=1`、(3) ブラウザが共有メモリを断った・小さくしか渡さなかった（コンソールに `memory:` の行）、(4) 64 ビットのメモリが要るモデルで共有の 64 ビットのカーネルが無い、では誤り。WebGPU の無いブラウザではこの訳は出ない（GPU の側が無い）。
-  - **文面の案（持ち主が決める。どれも今の「prompts on the CPU (…)」の括弧の中）**:
-    - 案 A（文 1 つ、場合を分けない）: 隔離されているページの (2)〜(4) は「**the model's memory is not shared**」。隔離されていないページは今の文のまま。直すのは `gpuFit()` の 1 行（エンジンが `crossOriginIsolated` を読む）と表の 1 項目。訳が 1 つ増えるだけで、worker からエンジンに渡すものは増えない。
-    - 案 B（場合ごと）: (2)「**one thread was asked for (?threads=1)**」、(3)「**this browser gave no shared memory**」、(4)「**no shared 64-bit memory here**」。worker がエンジンに「共有でない訳」を 1 つ渡す（`external()` の引数が 1 つ増える）。
-    - 案 C（(2) だけ言い分け、残りは A）: `?threads=1` は「**one thread was asked for**」、(3)(4) は「the model's memory is not shared」。
-    - おすすめは A（いちばん小さく、どの場合にも嘘にならない）。`?threads=1` は計測と試験のための旗で、訪問者はふつう付けない。
-  - **スレッドが 1 本になった訳（T.380.2 の気づき。同じ所）**: ステータス行は 1 本のとき本数を書かない（`threads > 1` のときだけ「, N threads」）。だから、共有メモリを断られて 1 本・スレッドが始まらず 1 本・途中で止まって 1 本（T.120）のどれも、行には何も出ない（コンソールに `memory:`・`threads:` の行があるだけ）。出すなら文面の案: 「**, 1 thread (no shared memory here)**」「**, 1 thread (the software threads did not start)**」「**, 1 thread (a software thread stopped)**」を本数の所に。出さない、も選べる（今のまま: 遅いだけで答えは同じ）。実装していない。
-  - **落ちる試験は足していない**（本線が落ちる）。直す回に足す試験の形: `tests/gpu-part-check.mjs` の `gpuFit()` の表の行 `[{}, {}, { sharedMemory: false }, /^the page is not cross-origin isolated$/]`（その行が変わる）と、`reasons-check` の `SAID`。
 
 ### T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 状態: 未着手（2026-10-09、T.355 の手元の確かめから。本線も同じ。規模 小）
 - Chrome の Issues が「Interactive element inside of a <summary> element」と言う。押すと内訳が開閉するのと種を固定するのが重なる。見た目のタスクなので `preview.yml` で前後を撮る。
