@@ -267,13 +267,27 @@ for (const [isGone, event, told, askedFor] of [
   // GPU's worker is opened)
   const order = [];
   const { run: runAgain, context: again } = harness(true);
-  again.stand = { forward: { gpuOnlyPlan() { order.push(`plan, ${workersMade.length} workers`); return {}; }, needsWide: () => false,
+  again.stand = { forward: { gpuOnlyPlan() { order.push(`plan, ${workersMade.length} workers`); return {}; }, needsWide: () => false, layerWeightsOf: () => 1,
     weightsMemory() { order.push("memory"); throw new Error("no memory here"); } } };
   runAgain("forwardModule = stand.forward; weightsPool = weightsNow = undefined");
   const warned = console.warn;
   console.warn = () => {};
   try { runAgain("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch { /* the memory's, after the plan */ } finally { console.warn = warned; }
   assert.deepEqual(order.slice(0, 2), ["plan, 0 workers", "memory"], `the plan before the memory and the worker (${order})`);
+  cases += 1;
+}
+// T.581: what is reckoned of the header (layerWeightsOf()) before the worker too, and a worker whose writer cannot be
+// made (gpuOnlyWeights() throws) let go of at once: nothing is left
+for (const throwing of ["layerWeightsOf", "gpuOnlyWeights"]) {
+  const { run, context } = harness(true);
+  const memory = run("new WebAssembly.Memory({ initial: 1, maximum: 4, shared: true })");
+  context.stand = { forward: { gpuOnlyPlan: () => ({}), needsWide: () => false, weightsMemory: () => ({ memory, base: 0 }), growMemory: () => {}, layerWeightsOf: () => 1, gpuOnlyWeights: () => ({}),
+    [throwing]() { throw new Error(`${throwing} threw`); } } };
+  run("forwardModule = stand.forward; weightsPool = weightsNow = undefined");
+  const thrown = (() => { try { run("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch (error) { return error; } })();
+  assert.equal(thrown?.message, `${throwing} threw`);
+  assert.ok(workersMade.every((worker) => worker.terminated), `${throwing} threw: no GPU's worker left open (${workersMade.length} made)`);
+  if (throwing === "layerWeightsOf") assert.equal(workersMade.length, 0, "the header's reckoning before the worker is opened");
   cases += 1;
 }
 console.log("worker-outdated-check: weights.js fails a thread's start and hands on the GPU's worker as it did, and hands each one's error to outdated.js with its own address");

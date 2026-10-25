@@ -422,6 +422,8 @@ function placesOf(header: Header, dtype: Dtype, form: Partial<Form>) {
 function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors, stored, gpuOnly }: Required<Placed>, keep?: Keeper): Weights {
   // (T.576: the GPU's plan first: what makes it may throw (gpuPacking()), before a memory is taken or a worker opened)
   const plan = forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options);
+  // (T.581: and what else is reckoned of the header alone, which may throw as well)
+  const layerWeights = forwardModule!.layerWeightsOf(header, options);
   const after = gpuOnly - stored, wide = forwardModule!.needsWide(stored, after);
   const { memory, base, shared } = pooledWeights(stored, after, true, wide);
   if (!shared) throw new Error("This browser gave no shared memory for a model on the GPU alone.");
@@ -442,7 +444,14 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
       worker.terminate();
     });
   };
-  const weights = forwardModule!.gpuOnlyWeights({ memory, base, size, tensors, worker });
+  // (T.581: a worker opened and given nothing yet is let go of at once where what writes to it cannot be made)
+  let weights: GpuOnlyWeights;
+  try {
+    weights = forwardModule!.gpuOnlyWeights({ memory, base, size, tensors, worker });
+  } catch (error) {
+    worker.terminate();
+    throw error;
+  }
   // T.377: a worker that says "error" before the engine is built (its script did not arrive, or it threw) takes no more
   // of the weights and counts none: the loops that write stop waiting for it at once (they waited 60 s, and the load
   // failed), and the engine, which listens from start() on, is handed the error it missed once it is built (failed)
@@ -455,7 +464,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
   // (T.156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.ts's aloneVerdict)
   const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
-    layerWeights: forwardModule!.layerWeightsOf(header, options), cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forwardModule!.USAGE_UNKNOWN,
+    layerWeights, cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forwardModule!.USAGE_UNKNOWN,
     room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end };
   weightsNow = memory;
   const kernels = (wide ? wideKernels!.shared : sharedKernels)!;
