@@ -25,7 +25,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { runtime } from "./tree.mjs";
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.mjs";
 import { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn } from "./gpu-check/models.mjs";
-import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE } from "./gpu-check/lines.mjs";
+import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, SCALE_LINE, TIE } from "./gpu-check/lines.mjs";
 import { promptsOnGpu, quantizersWrong, modelWrong } from "./gpu-check/verdicts.mjs";
 import { unbound, stepsRight } from "./gpu-check/steps.mjs";
 import { layerTables } from "./gpu-check/tables.mjs";
@@ -107,7 +107,7 @@ check("the made-up models an engine runs", () => {
 check("the numbers a run is held to are the ones decided", () => {
   // each is a decision with its derivation in lines.mjs (T.187: the lines are the arithmetic's own distances): loosening one
   // lets a wrong GPU through, so changing one is changing this too, and saying why in TASKS.md
-  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4, f16: 8 }, K_PACKED: 5, K_HALF: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
+  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4 }, K_PACKED: 5, K_PACKED_STEPS: 3, K_HALF: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
 
 // ---- a made-up case: 2 layers, 3 positions of the prompt, keys and values 8 wide, a vocabulary of 6
@@ -468,6 +468,12 @@ check("a generation's steps wrong in one thing", () => {
   wrong({ keys: b64(off) }, /- the keys and values of the steps' layer 1 are 1\.20e-2 from NumPy's \(its line 8\.00e-3\)/);
   assert.ok(GPU_LINE * 1.5 < K_PACKED * Q8);
   assert.equal(steps(stepsOf({ form: "ORT's DP4A", keys: b64(off) })).value, true);
+  // (T.562's review) the packed steps keep 3 × Q8 where the prompt's packed layers have 5: past the one, within the other
+  const between = moved(GREEDY_KEYS, K_PACKED_STEPS * Q8 * 1.2, [1], GEN);
+  assert.ok(K_PACKED_STEPS * Q8 * 1.2 < K_PACKED * Q8);
+  const { value: betweenValue, text: betweenText } = steps(stepsOf({ form: "ORT's DP4A", keys: b64(between) }));
+  assert.equal(betweenValue, false, betweenText);
+  assert.match(betweenText, /- the keys and values of the steps' layer 1 are /);
   const nan = floats(b64(GREEDY_KEYS)).slice();
   // (a NaN in the last layer; in the first, below. Before the review of T.357.3 a NaN in a layer before the last one was
   // passed over, here and in the prompt's verdict: ratios.reduce() left a NaN for whatever came after it)
@@ -530,7 +536,7 @@ check("the tables of a model, a line a run, the seconds", () => {
   assert.match(lines[at("- CPU: ")], /^- CPU: forward\.js on the CPU: 1\.0e-1, 100\.0 E16, 5\.00 Q8, the first layer's scale .*, logits KL .*, the ten most likely .*, most likely 2$/);
   assert.match(lines[at("- A: ")], /^- A: TF\.js's tiles, llama\.cpp flash attention tiles: 2\.0e-3 \(all at once 2\.0e-3\), the worst layer [01] at 0\.25 of its line 8\.0e-3, 2\.0 E16, 0\.10 Q8, /);
   assert.match(lines[at("- B: ")], /^- B: ORT's DP4A, .* the worst layer [01] at 0\.04 of its line 1\.0e-1, .* most likely 2 as the CPU's$/);
-  assert.equal(lines.at(-1), "\nseconds of made-up: NumPy (with its cache in float16, and Q8) 1.3, the plan 0.5, CPU 2.0, A (its GPU ready in 1.5) 4.0, B (its GPU ready in 1.5) 4.0\n");
+  assert.equal(lines.at(-1), "\nseconds of made-up: NumPy (with its cache in float16, Q8 and H16) 1.3, the plan 0.5, CPU 2.0, A (its GPU ready in 1.5) 4.0, B (its GPU ready in 1.5) 4.0\n");
   // the seconds of the NaN rounds, where any were run
   const nan = model([runOf()], { nanSeconds: { rows: 1.25, values: 0, logits: 2 } });
   assert.equal(nan.lines.at(-1), "seconds of the NaN rounds of made-up: rows 1.3, values 0.0, logits 2.0");

@@ -29,7 +29,7 @@ const NOT_FINITE_KV_STATUS = /^prompts on the CPU \(the GPU computed keys or val
 // a float32 or f16 form is held to the shader's line or K × E16, whichever is larger, and the first layer to the
 // shader's line alone. K (CI's Dawn on lavapipe, run 36308518805, 149 tokens): the float32 shaders are 0.9 to 1.6 E16
 // away (Qwen3 0.6B the most), llama.cpp's f16 0.9 to 3.2 and 5.5 (Qwen3 0.6B with the f16 attention), while a GPU that
-// reads layer 0's biases in every layer (synthetic-qwen2) is 13.9 E16 away on float32 and 14.4 on f16: K is 4 and 8.
+// reads layer 0's biases in every layer (synthetic-qwen2) is 13.9 E16 away on float32 and 14.4 on f16: K is 4 and 8 (T.562: the f16 forms are held to H16 now, below).
 // T.187: a layer at a time, the line of layer l max(shader's line, K × E16 of layer l): against the largest E16 of all
 // layers, a deep model's early layers had a line of the late ones (Qwen3 0.6B's DP4A 2.78 where its layers 0 to 7 read
 // 0.026 to 0.28 by their own). A GPU as it should be went to 0.75 of the lines a layer (runs 36325111865 and
@@ -37,7 +37,7 @@ const NOT_FINITE_KV_STATUS = /^prompts on the CPU \(the GPU computed keys or val
 // at most). The made-up Qwen2 with its biases around 0 (T.187): a GPU that reads layer 0's biases in every layer is 158
 // E16 away on float32 and f16, 39.6 and 19.8 times its layer's line (run 36325111772).
 const GPU_LINE = 8e-3, HALF_LINE = 1.5e-2;
-const K = { float32: 4, f16: 8 };
+const K = { float32: 4 };
 // T.187: none of the lines is a ratio to the CPU's error (T.147 to T.153 held DP4A to 0.75 of it and the logits to 1.5
 // times it: a correct DP4A went to 0.98 of its line on Qwen2.5 0.5B, one that read layer 0's biases in every layer
 // passed at 0.55, and GPT-2's logits went past 1.5 on keys and values that were NumPy's own; they moved wherever the
@@ -85,7 +85,7 @@ const K = { float32: 4, f16: 8 };
 // 1.39 of its line (T.546's run 38881685551, 4.2 Q8 of the layer), Qwen2.5 0.5B's at layer 14, 1.06 (run 40157762775,
 // 3.2 Q8), each layer and run another (the same Qwen3 read 0.96 at layer 19 in run 40153360370): the 8-bit roundings
 // that fall on the other side of a boundary, as above, more of them over 24 to 28 layers. A wrong GPU is far past it
-// (the layer 0's biases in every layer: 2222 times the line on Qwen2.5 0.5B, run 40157832633; 7.02 Q8 on the made-up
+// (the layer 0's biases in every layer: 2222 times K_PACKED 3's line on Qwen2.5 0.5B, run 40157832633; 7.02 Q8 on the made-up
 // Qwen2, the weakest one, 2.34 times K_PACKED 3's line). K_PACKED 5: those correct runs 0.83 of it at the most, the
 // made-up Qwen2's wrong one 1.40 past it
 const K_PACKED = 5, SCALE_LINE = 1e-4, TIE = Math.LN2;
@@ -100,5 +100,9 @@ const K_PACKED = 5, SCALE_LINE = 1e-4, TIE = Math.LN2;
 // at the most; one that reads layer 0's biases in every layer is 98 H16 away on the made-up Qwen2 (32.8 times its
 // line) and 17477 on Qwen2.5 0.5B (run 40157832633). K_HALF 3, as K_PACKED was
 const K_HALF = 3;
+// T.562 (the review): the steps' keys and values keep K_PACKED 3 × Q8, for their line is also the run's own prompt's
+// distance at the layer (steps.mjs), which carries a deep layer's 8-bit roundings; the weak wrong GPUs of T.226 (a layer
+// that reads layer 0's FFN norm) were measured against 3
+const K_PACKED_STEPS = 3;
 
-export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE };
+export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_PACKED_STEPS, K_HALF, SCALE_LINE, TIE };
