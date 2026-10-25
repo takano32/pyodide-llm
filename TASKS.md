@@ -45,7 +45,6 @@
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
 - T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 未着手
-- T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 進行中
 - T.373 [調査][遠隔試験] デプロイの直後に始めた WebKit の本番の確かめが、何も出さずに 47 分止まった（1 回） — 未着手
 - T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
@@ -190,6 +189,7 @@
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 未着手
+- T.589 [バグ][変換] `rotary_pct` を書かない GPT-NeoX の config を全部回すと読む（transformers は 0.25） — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -553,9 +553,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 未着手（2026-10-10、T.370 の数えから。T.152 からある。規模 小）
 - `engine/generation.py` のステップの輪は、`gpu_steps` があれば毎ステップ `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いかステップを取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T.164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
 - ステップの途中で GPU の準備ができることがあるので、読みをやめるだけでは済まない（準備ができたことを別の道で知らせる形が要る）。小さいので、T.375 でエンジンの窓口に触る回に一緒に。
-
-### T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 進行中（2026-10-25 に足した。前の状態: 未着手、2026-10-10、T.359 の 3 つ目の子タスクのレビューから。規模 小）
-- GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この子タスクの前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。- **結果（2026-10-25）**: `tests/test_families.py` に 3 つ（家族の関数を直に呼ぶ）: GPT-2 の `n_inner` が無い・None なら FFN は 4 × 幅、`tie_word_embeddings` を言わない config は GPT-2 で結ぶ・GPT-NeoX で結ばない、GPT-NeoX の head のどこも回さない（`rotary_pct` 0 と、2 つに満たない 0.05）は断る。壊し方: 3 つの行をそれぞれ替える（2 × 幅、NeoX の既定を True、断りの線を 0 に）と、それぞれ 1 つずつ落ちる。CI を省いた。訳: 試験を足しただけで、pytest で回した。
 
 ### Saluki の組（T.361〜T.364、2026-10-09 に採番。持ち主「[Saluki] で対応を採番できないかな？」、https://pc.watch.impress.co.jp/docs/news/2147095.html）
 - **モデル**: Underdog Saluki 27B 1.0（`ConwayResearch/Underdog-Saluki-27B-1.0`、リビジョン `1336c0b5d74dfe6ad7f793577092f5effd9f97c6`、apache-2.0、ゲートなし）。Qwen3.8-27B を平均 約 2.3 ビットに量子化した ISTA DASLab の `Qwen3.8-27B-GSQ-RCO-GGUF` に Underdog が手を入れたもの。ファイルは `Underdog-Saluki-27B-1.0-IQ2-mix.gguf` 7,898,369,152 バイトの 1 つ（ほかの 2 つは画像の入力用の `mmproj` で、このページでは使わない）。Bonsai 2 27B と違い、素の llama.cpp で動く。
@@ -1510,3 +1507,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 状態: 未着手（2026-10-25、T.435 のレビューから。規模 小）
 - `tests/tree.mjs`（と `tree-check.mjs` の「all in public」「the Python moved」の作り物の木）と `tests/imports.mjs`（`bundled` でない木の `?v=` つきの動的 import の読み手、`importsOf(…, { bundled })`）は、T.367 の前の木の形も読む。網が相手にする最も古い木 `f91d83f9`（2026-10-12）はもう `src/runtime/` の形。ほかに古い木を読む道具（`compare-builds.sh`・`abba-convert.sh`・`kernelSources()` に古いコミットを渡す使い方）が無いかを確かめてから、読み手と作り物を消す。消すと道具がその形の木を断るようになる（今は黙って読む）。
+
+### T.589 [バグ][変換] `rotary_pct` を書かない GPT-NeoX の config を全部回すと読む（transformers は 0.25） — 状態: 未着手（2026-10-25、T.387 のレビューから。規模 小）
+- `src/python/convert/families/family.py` の `rotary_dim()` は鍵が無いとき 1.0 を取る。transformers の `GPTNeoXConfig` の既定は 0.25。一覧の実物の config はどれも鍵を書くので、いま変わるモデルは無い見込み（`tests/conversions_compare.py` で確かめる）。直すなら `neox_names()` で鍵の無い config に 0.25 を置く（Qwen3.5 も `rotary_dim()` を読む: 家族ごとに既定を分ける）。変換の options が変わりうるので `CONVERTER` の回にまとめるかを見る。
