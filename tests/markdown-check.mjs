@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fetched } from "./fetching.mjs";
 import { leave, scratch } from "./leave.mjs";
-import { markedFor } from "../src/page/markdown.ts";
+import { markedFor, markdownOf } from "../src/page/markdown.ts";
 
 const { version } = JSON.parse(String(await fetched("https://data.jsdelivr.com/v1/packages/npm/marked/resolved?specifier=latest")));
 assert.match(version, /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/, "jsDelivr says a version of marked");
@@ -45,6 +45,14 @@ for (const element of ["<img", "<a ", "<a>", "<script", "<div", "<blockquote", "
 for (const text of ["&#60;img src=x onerror=alert(1)&#62;", "[x](javascript:alert(1))", "![i](https://example.com/x.png)", "https://example.com",
   "~~gone~~", "&#60;script&#62;", "&#60;div onclick=&#34;alert(1)&#34;&#62;", "&#62; quoted<br>&#62; twice", "<p>---</p>", "[ ] task", "[x] done", "[ref]"]) {
   assert.ok(said.includes(text), `said as text: ${text}, in ${said}`);
+}
+// ---- T.559: what DOMPurify is told: the elements and attributes of the lists and nothing beside them (its defaults let
+// data-* and aria-* through whatever ALLOWED_ATTR says)
+{
+  const told = [];
+  markdownOf(marked, { sanitize: (text, options) => { told.push(options); return text; } }).html(reader.lexer("a")[0], undefined);
+  assert.deepEqual(told.map(({ ALLOWED_ATTR, ALLOW_DATA_ATTR, ALLOW_ARIA_ATTR }) => ({ ALLOWED_ATTR, ALLOW_DATA_ATTR, ALLOW_ARIA_ATTR })),
+    [{ ALLOWED_ATTR: ["align", "start"], ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false }], "DOMPurify is told the attributes and no data-* or aria-*");
 }
 console.log(`markdown-check: marked ${version}: headings, paragraphs, lists, bold, italic, code and tables drawn; HTML, links, images, quotes, rules, strikethrough and task boxes said as text`);
 await leave(0);
