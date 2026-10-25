@@ -195,6 +195,12 @@ const KINDS = { attention: plain, echo };
   const narrow = { ...adapter, limits: { maxStorageBufferBindingSize: 8 * 2 ** 20, maxBufferSize: 8 * 2 ** 20 } };
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35", linear }, narrow), "a layer's matrices are past a buffer of this GPU");
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35" }, narrow), null, "(the same without its linear-attention layers)");
+  // (T.573: and a place's state, bound whole: 16 value heads of 128 × 128 floats are 1 MiB, past a device that binds 512
+  // KiB, where every matrix of this small header is within it: wqkv, 6144 rows of 64, is 384 KiB)
+  const half = { ...adapter, limits: { maxStorageBufferBindingSize: 2 ** 19, maxBufferSize: 2 ** 19 } };
+  assert.equal(gpuOnlyUnfit([64, 96, 4, 4, 2, 100, 32], "int8", { arch: "qwen35", linear }, half), "a layer's state is past a buffer of this GPU");
+  assert.equal(gpuOnlyUnfit([64, 96, 4, 4, 2, 100, 32], "int8", { arch: "qwen35", linear }, { ...half, limits: { maxStorageBufferBindingSize: 2 ** 20, maxBufferSize: 2 ** 20 } }), null,
+    "(a device that binds 1 MiB takes it)");
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), STATE);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "a".repeat(16), taps: 3 } }, adapter), null, "(an LFM2 without a convolution layer has a Llama's facts)");
   assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), null, "(T.271.1: a rotated basis is the GPU's, its packed forms')");

@@ -694,5 +694,17 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   assert.deepEqual(stateBundles(3, size, MiB).bytes, [3 * MiB, 3 * MiB, 3 * MiB]);
   console.log("gpu-worker-parts-check: the 27B's 48 places of state go in bundles of 42 and 6 where a device binds 128 MiB, each place at its own in its bundle");
 }
+// ---- T.573: a linear-attention layer whose state alone is past a buffer the device binds is refused before anything is
+// made (a model on both: gpuOnlyUnfit() refuses it of one on the GPU alone)
+{
+  const { linear } = await import(runtimeUrl("gpu/linear.js"));
+  const plan = { batch: 1, kinds: ["linear", "attention"], linear: { keyHeads: 16, valueHeads: 16, keyDim: 128, valueDim: 128, taps: 4 } };
+  const made = [];
+  const m = { plan, limit: 2 ** 20 - 4, device: new Proxy({}, { get: (_, name) => (...args) => { made.push(name); return {}; } }) };
+  const refused = await linear.block(m).then(() => null, (error) => error);
+  assert.match(String(refused?.message), /^a linear-attention layer's state of 1048576 bytes is past a buffer of this GPU \(1048572 bytes\)$/, `${refused}`);
+  assert.deepEqual(made, [], "nothing made on the device");
+  console.log("gpu-worker-parts-check: a linear-attention layer's state of 1 MiB is refused on a device that binds 4 bytes less, before anything is made");
+}
 console.log("gpu-worker-parts-check: ok");
 process.exit(0);
