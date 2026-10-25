@@ -42,7 +42,7 @@
 - T.419 [整理][変換] 頭と一緒に届いた分でまだ使っていないもの・数えていないもの — 未着手
 - T.438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 未着手
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
-- T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 未着手
+- T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.447 [整理][遠隔試験] `compare-engines` の側の偏りと、束ねた `helper` の速さの前後 — 未着手
 - T.448 [整理][その他] T.367.5 の小さな気づき — 未着手
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 未着手
@@ -544,8 +544,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **(1) の結果（2026-10-25）**: `dry` の作り物の GGUF は linear の層の無い素の Qwen3 だった（`page.bin` だけが hybrid）ので、`--broken tiled` は 0 個の行列にしか印を付けず何も見なかった（手元で確かめた）。代わりに pytest `tests/test_reference_27b.py` の `test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf`: 回した基底の hybrid の作り物の GGUF（`rotated_qwen35_gguf()`、鍵の head 2・値の head 4、幅 256）に原本の `config.json`・`tokenizer.json` を並べ、`page_27b.convert()` を壊さずと `tiled` で回し、印が linear の層の数だけ付き、チェックポイントが違うことを見る。3 値は値が 3 つの重みが要るので int8 で（`convert()` に引数 `dtype` を足した: 既定は今までどおり `"ternary"`）。壊し方: `tiled()` が印を付けないと落ちる。CI を省いた。訳: 試験と道具の引数 1 つで、pytest で回した（14 通る）。
 - レビュー（Sonnet low、2026-10-25、T.423 (1)）: must-fix なし。`main()` は `dtype` を渡さず本物の段の呼び方は前のまま、軽い組の pytest が拾う。入れなかった勧め: tiled の出の行列の列が native の列の並べ替えに一致することまで見る（いまは「違う」だけ。同じ入力を 2 回変換するので違いの出る別の道は無い）。
 
-### T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 状態: 未着手（2026-10-11、T.367.5 から。前からある。規模 小）
+### T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 状態: 進行中（2026-10-25 に文へ操作の名前を入れた。前の状態: 未着手、2026-10-11、T.367.5 から。前からある。規模 小）
 - 「Storage: failed: NotSupportedError: Backend does not support this operation」（run 38116873499・38128420697・38132202030: 3 回とも）。道具は落とさない。どの操作（OPFS の同期のハンドルか、割り当ての見積もりか）が投げたかを節が言わないので、まず文に操作の名前を入れる。本物の Safari では未確認。
+- **(1) の結果（2026-10-25）**: `src/runtime/benchmark/storage.ts` の `run()` は、いまの操作を `doing` に持ち、失敗の文の後に「(while <操作>)」を付ける（フォルダを取る・ファイルを作る・開く・大きさを決める・順に書く・離して書く・進みの記録を開く・1 片ごとに flush・読み戻す・フォルダを消す）。`/benchmark/` の文は詳しくてよい（持ち主の決め）。確かめ: 軽い組を通しで（458 秒）、build、手元の Chromium の `bench-browser.mjs`。落ちる道は Windows の Playwright の WebKit だけなので、次の `browsers.yml`（週 1 回）の報告で操作が分かる。それを見て (2) 直すか、その操作の無いブラウザでの扱いを決める。CI を省いた。訳: 失敗の文だけで、落ちる道は手元にも CI の 1 本にも無い（`browsers.yml` は本番を見る）。
 
 ### T.447 [整理][遠隔試験] `compare-engines` の側の偏りと、束ねた `helper` の速さの前後 — 状態: 未着手（2026-10-11、T.367.5 から。規模 小）
 - 同じバイトの forward どうしの対照で、llm-jp-3 150M は new の側が 4 回とも 0.4〜1.1% 速い（順の裏返しでは消えない）。1% を言う比は対照の比で読む（`tests/compare-builds.sh` は対照を毎回並べる）。偏りの訳は未確認。

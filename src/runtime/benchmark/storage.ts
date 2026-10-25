@@ -49,13 +49,20 @@ async function info(): Promise<StorageInfo> {
   return out;
 }
 
+// T.446: what run() was doing when it failed, said beside the failure (Windows' Playwright WebKit threw
+// "NotSupportedError: Backend does not support this operation", and nothing said which operation)
+let doing = "";
+
 async function run(mib: number): Promise<StorageRun> {
   const count = Math.max(2, Math.floor(mib * (1 << 20) / PIECE)), size = count * PIECE;
+  doing = "getting the folder (getDirectory, getDirectoryHandle)";
   const root = await navigator.storage.getDirectory();
   const dir = await root.getDirectoryHandle(FOLDER, { create: true });
+  doing = "making the file (getFileHandle)";
   const file = await dir.getFileHandle(FILE, { create: true });
   const out = { mib: size / (1 << 20), pieces: count } as StorageRun;
   let began = performance.now();
+  doing = "opening the file (createSyncAccessHandle)";
   const handle = await file.createSyncAccessHandle();
   out.openSeconds = seconds(began);
   try {
@@ -67,6 +74,7 @@ async function run(mib: number): Promise<StorageRun> {
     } catch (error) {
       out.secondHandle = `refused (${(error as Error).name})`;
     }
+    doing = "sizing the file (truncate, flush)";
     began = performance.now();
     handle.truncate(size);
     handle.flush();
@@ -92,15 +100,19 @@ async function run(mib: number): Promise<StorageRun> {
     };
     const apart = scattered(count);
     stage("writing in order", 1);
+    doing = "writing in order (write, flush)";
     out.sequential = once(Array.from({ length: count }, (_, i) => i));
     stage("writing far apart", 2);
+    doing = "writing far apart (write, flush)";
     out.scattered = once(apart);
     // (c) far apart with a flush after every piece and the small record rewritten, as a resumable conversion would
     // at every boundary of a tensor (T.137, 2: the record comes after the flush of the output)
+    doing = "opening the record of progress (getFileHandle, createSyncAccessHandle)";
     const progressFile = await dir.getFileHandle(PROGRESS, { create: true });
     const progress = await progressFile.createSyncAccessHandle();
     const encoder = new TextEncoder();
     stage("far apart, a flush after each piece", 3);
+    doing = "writing far apart, a flush after each piece and the record rewritten";
     try {
       const start = performance.now();
       let flushing = 0;
@@ -120,6 +132,7 @@ async function run(mib: number): Promise<StorageRun> {
     }
     // (d) read back in order, and check that every piece is the one written there
     stage("reading back", 4);
+    doing = "reading back (read)";
     began = performance.now();
     let wrong = 0;
     for (let i = 0; i < count; i++) {
@@ -138,11 +151,13 @@ async function run(mib: number): Promise<StorageRun> {
   } catch (error) {
     out.reopen = `refused (${(error as Error).name})`;
   }
+  doing = "removing the folder (removeEntry)";
   await root.removeEntry(FOLDER, { recursive: true });
   return out;
 }
 
 onmessage = async ({ data }: MessageEvent<ToStorage>) => {
+  doing = "";
   try {
     postMessage({ result: data.step === "info" ? await info() : await run(data.mib) } satisfies Answer<StorageResults[keyof StorageResults]>);
   } catch (error) {
@@ -152,6 +167,6 @@ onmessage = async ({ data }: MessageEvent<ToStorage>) => {
     } catch {
       // nothing was made
     }
-    postMessage({ error: `${(error as Error).name}: ${(error as Error).message}` } satisfies Answer<StorageResults[keyof StorageResults]>);
+    postMessage({ error: `${(error as Error).name}: ${(error as Error).message}${doing ? ` (while ${doing})` : ""}` } satisfies Answer<StorageResults[keyof StorageResults]>);
   }
 };
