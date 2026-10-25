@@ -215,7 +215,7 @@ const THEN = {
   "console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);": "return [];",
 };
 const SAID = {
-  "src/runtime/worker/convert.ts": ["console.warn(`kept: no file to keep this model in as it comes (${told(error)}): a model on the GPU alone is not kept`);"],
+  "src/runtime/worker/convert.ts": ["console.warn(`kept: no file to keep this model in as it comes (${told(error)}): it is not kept, and a model's table of every layer's inputs is held in the memory`);"],
   "src/runtime/worker/runtime.ts": [
     "console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);",
     "console.warn(`gpu: the adapter could not be asked for (${told(error)}): no GPU on this visit`);",

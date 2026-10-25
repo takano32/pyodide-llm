@@ -174,9 +174,10 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
   // (T.329.2.2: and on the kernels of forward.ts, where a table of every layer's inputs stays in that file, which the
   // engine reads its rows from: whether the model has one is known once its header is)
   const mayKeep = remote && (gpuOnlyPossible(keptDtype) || runsPacked());
-  // (T.380.2: a file that could not be opened is said: the conversion goes on, and a model on the GPU alone is then not kept)
+  // (T.380.2: a file that could not be opened is said: the conversion goes on, and a model on the GPU alone is then not
+  // kept; T.521: and a table of every layer's inputs is held in the memory)
   let keep = mayKeep ? await keptModule!.keeper({ ...(model as Remote), conversion: { ...model.conversion, dtype: keptDtype } }).catch((error) => {
-    console.warn(`kept: no file to keep this model in as it comes (${told(error)}): a model on the GPU alone is not kept`);
+    console.warn(`kept: no file to keep this model in as it comes (${told(error)}): it is not kept, and a model's table of every layer's inputs is held in the memory`);
     return undefined;
   }) : undefined;
   const into = checkpointSink(keep), { sink } = into;
