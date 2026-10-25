@@ -44,7 +44,6 @@
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
-- T.426 [整理][遠隔試験] T.374.4 の小さな気づき 3 つ — 未着手
 - T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 未着手
 - T.387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 未着手
 - T.373 [調査][遠隔試験] デプロイの直後に始めた WebKit の本番の確かめが、何も出さずに 47 分止まった（1 回） — 未着手
@@ -551,11 +550,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - activate の `if (!OFFLINE) await caches.delete(KEPT)` は失敗を飲まず、投げると `clients.claim()` が呼ばれない（前から）。
 - **(1)(4) の結果（2026-10-25）**: `public/coi.js` の、このサイトのファイルの扱いの中だけ（ほかのサイトの応答と隔離のヘッダには触らない: `coi-js-check` の持つ文のハッシュは変わらない）。(1) `lasting()` のこのサイトの行から `?v=` を外した（`_astro/` だけ）。(4) activate の `caches.delete(KEPT)` を `quietly()` で包み、失敗しても `clients.claim()` に届く: `coi-js-check` の 6 番に「削除が失敗しても引き取る」の場合（前の形で落ちる）。確かめ: 軽い組を通しで（464 秒）、build、手元の Chromium の `E2E_OFFLINE=1 E2E_TWICE=1 node tests/e2e.mjs stories260K chromium` と `tests/coi-off-in-browser.mjs`。**持ち主の端末**: 触った所は地域と端末に依らない（落とし穴の「Service Worker」の範囲の外）。(2)（名前の消えた家族とモデルの写しを誰も捨てない）と (3)（`coi.js` を macOS・Windows のブラウザで見る CI）は残す。CI を省いた。訳: このサイトのファイルの扱いの 2 行で、Node の検査と手元の実ブラウザが踏む。
 - レビュー（Sonnet low、2026-10-25、T.449 (1)(4)）: must-fix なし。`?v=` 付きの取得は Service Worker の登録だけで fetch の受け口を通らない、外れた `?v=` のファイルはネットに聞いて取れなければ写しが答える（オフラインで落ちる道は増えない）、`quietly` は activate より前に定義、持ち主の端末が先の範囲の外。勧めを入れた: 15 行目のコメントの `?v=` を外した。取りまとめ役の誤りを直した: `coi.js` の中の番号は前の形 `T番号` のまま（AGENTS.md の例外 3）なのに `T.449` と書いていた。
-
-### T.426 [整理][遠隔試験] T.374.4 の小さな気づき 3 つ — 状態: 未着手（2026-10-11。規模 小）
-- `page-27b.mjs` がカーネルの読み手を渡し忘れても出力は同じ（速さだけが変わる）: 読み手の数を出すか、MB/s を線にする。
-- 道具の `weights=False` は、`stream` の頼みの `feed` が `Conversion` の束縛メソッドであることに乗っている（`tests/test_conducting.py` が本物の段取りで見る）。段取りに「変換を作った所で止める」頼みを足せば要らなくなるが、製品の頼みの種類が増える: いまはそのまま。
-- `hf_fetch.py hf:<repo>` は候補を名指ししなくなった（`conduct` の候補を順に）。
 
 ### T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 未着手（2026-10-10、T.370 の数えから。T.152 からある。規模 小）
 - `engine/generation.py` のステップの輪は、`gpu_steps` があれば毎ステップ `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いかステップを取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T.164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
