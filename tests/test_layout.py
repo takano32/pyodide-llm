@@ -110,6 +110,9 @@ def test_a_layout_is_made_of_another_and_a_row_without_a_source_is_refused(monke
         return after(llama2_numpy.LAYOUTS["llama"].rows(d), "wo", d.stack("post_norm", VECTOR, EVERY, d.dim))
 
     monkeypatch.setitem(llama2_numpy.LAYOUTS, "twice normed", llama2_numpy.LAYOUTS["llama"]._replace(rows=twice_normed))
+    # (T.393: and the family that stands for it in the converter, a Llama's: one of no family is refused there now)
+    from convert import families
+    monkeypatch.setitem(families.LAYOUTS, "twice normed", families.LLAMA)
     rows = tensor_rows(header, form)
     assert [row.name for row in rows][5:7] == ["wo", "post_norm"] and rows[6] == Row("post_norm", VECTOR, (4, 256), EVERY)
     assert [row for row in rows if row.name != "post_norm"] == tensor_rows(header)
