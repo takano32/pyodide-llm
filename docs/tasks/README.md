@@ -272,4 +272,5 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T.580](T.580.md) [バグ][遠隔試験] `blocks-forward-check` が ok の後の終わりでまれに止まる — 2026-10-24
 - [T.581](T.581.md) [整理][WebGPU] GPU だけのモデルで、GPU の Worker を開いた後に投げうる所の後始末 — 2026-10-25
 - [T.582](T.582.md) [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 2026-10-25
+- [T.583](T.583.md) [バグ][遠隔試験] `tests/updated-in-browser.mjs` の「the kernels gone from the start」が 180 秒で落ちる — 2026-10-25
 - [T.586](T.586.md) [バグ][遠隔試験] `tests/blocks-in-browser.mjs` が本線で落ちる: ページが作り物のリポジトリの一覧を HF の API に聞いて 404 — 2026-10-25
