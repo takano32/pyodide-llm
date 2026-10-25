@@ -521,6 +521,9 @@ const S = 100000;
   perLayer(plain.core, (offset, bytes, to) => plainRead.push([offset, bytes, to])).inputs([3], 1);
   assert.deepEqual(plainRead, [[5000 + 3 * 24 * 4, 96, plain.room.taken[1][0]]]);
   assert.equal(perLayer(coreOf({ ...plan, tensors: {} }).core, rows), null);
+  // (T.543: a table whose scales are no float32s, ternary's float16 ones, is refused, not read as other numbers)
+  const ternary = coreOf({ ...plan, tensors: { ...plan.tensors, per_layer_table: { kind: "ternary", offset: 5000, scales: 90000, group: 8, shape: [10, 24] } } }, { has });
+  assert.throws(() => perLayer(ternary.core, rows), /^Error: This engine reads no row of a table stored as "ternary"\.$/);
   console.log("ok: the embedding of every layer: the projection of the embedded token, a norm of every layer's, its row of the table read by what is handed in (values, then scales) and added; every layer's gate, its input, the projection back, the norm and the stream");
 }
 
