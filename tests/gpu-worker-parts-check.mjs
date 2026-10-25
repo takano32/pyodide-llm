@@ -524,6 +524,25 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(same(now.values[0].data.subarray((late - ring) * KV_ROW, late * KV_ROW), rows.subarray((2 * ring + slot) * row, (3 * ring + slot) * row)), "and their values");
     assert.ok(now.keys[0].data.subarray(0, (late - ring) * KV_ROW).every((byte) => byte === 0), "none older: the ring no longer holds them");
   }
+  // T.558.2 (T.545.2's review): from past pos - ring (the GPU holds the ring's older positions already): from it alone,
+  // at its own slot; and from at pos or past it: nothing goes up
+  {
+    const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
+    rows.set(random(4 * ring * row));
+    const ringed = { places: [{ keys: address, values: address + 2 * ring * row, ring }, ...placesOf(row).slice(1)], row, half: true };
+    const clear = () => { for (let l = 0; l < LAYERS; l++) { now.keys[l].data.fill(0); now.values[l].data.fill(0); } };
+    clear();
+    keysIn(m, ringed, 7, 9);
+    const slot = 7 % ring;
+    assert.ok(same(now.keys[0].data.subarray(7 * KV_ROW, 9 * KV_ROW), rows.subarray(slot * row, (slot + 2) * row)), `positions 7 and 8 of a ring, from 7's slot ${slot}`);
+    assert.ok(same(now.values[0].data.subarray(7 * KV_ROW, 9 * KV_ROW), rows.subarray((2 * ring + slot) * row, (2 * ring + slot + 2) * row)), "and their values");
+    assert.ok(now.keys[0].data.subarray(0, 7 * KV_ROW).every((byte) => byte === 0) && now.keys[0].data.subarray(9 * KV_ROW).every((byte) => byte === 0), "nothing before from, nothing from pos on");
+    for (const [first, late] of [[9, 9], [10, 9]]) {
+      clear();
+      keysIn(m, ringed, first, late);
+      assert.ok(now.keys.every((buffer) => buffer.data.every((byte) => byte === 0)) && now.values.every((buffer) => buffer.data.every((byte) => byte === 0)), `from ${first} at pos ${late}: nothing goes up`);
+    }
+  }
 }
 console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up");
 
