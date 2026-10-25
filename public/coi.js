@@ -32,7 +32,9 @@ function kept(request) {
 /** Whether the address names one version of the file, which then never changes. */
 function lasting(request) {
   const url = new URL(request.url);
-  if (url.origin === self.location.origin) return url.searchParams.has("v") || url.pathname.includes("/_astro/");
+  // (T.449: no ?v= any more: no file of this site has one since T367.3, and a page asked for with one was answered
+  // from its copy, unasked, until the next activation)
+  if (url.origin === self.location.origin) return url.pathname.includes("/_astro/");
   return url.hostname === "cdn.jsdelivr.net" && /\/pyodide\/v[^/]+\//.test(url.pathname);
 }
 /** Files that are versions of one another: the same path of this site whatever ?v=, the same file of any Pyodide.
@@ -87,7 +89,8 @@ function isolated(response) {
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil((async () => {
-  if (!OFFLINE) await caches.delete(KEPT);
+  // (T.449: quietly: a delete that fails must not keep the claim from being made)
+  if (!OFFLINE) await quietly(caches.delete(KEPT));
   await self.clients.claim();
   // T367.6: after the claim, which does not wait for it; and whatever fails in it, the activation ends
   if (OFFLINE) await quietly(forget());
