@@ -413,9 +413,8 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
       assert.fail("a stream the converter refused a part of was ended as a whole one");
     });
     assert.equal(refusedPart.error.type, "ValueError");
-    // (inOrder() may hand the refused part to the converter once more, from another connection, before the refusal
-    // stops them all: as before T.374.2.1, and to be numbered. No later part goes to it)
-    assert.ok(fedParts.length >= 2 && fedParts.slice(1).every((first) => first === fedParts[1]), "a later part went to the converter after the one it refused");
+    // (T.404: the refused part goes to the converter once, and nothing after it)
+    assert.equal(fedParts.length, 2, `the converter was handed ${fedParts.length} parts, the refused one among them more than once`);
     assert.equal(w.played.steps.at(-1).returned, 1);
     w.allDestroyed();
     ok("a failure of the conduct's own is thrown as it came, and a conduct that asks what nothing answers is refused; the generator is closed all the same");

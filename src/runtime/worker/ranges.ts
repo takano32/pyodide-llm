@@ -171,7 +171,13 @@ export async function inOrder(url: string, start: number, size: number, feed: (b
       }
       while (arrived.has(fed)) {
         signal.throwIfAborted();
-        feed(arrived.get(fed)!);
+        try {
+          feed(arrived.get(fed)!);
+        } catch (error) {
+          // T.404: the others stop now, before one of them hands the converter the part it refused once more
+          inner.abort(error);
+          throw error;
+        }
         arrived.delete(fed++);
         // the conversion of a part takes a moment: let messages in (T.156: and the GPU's worker catch up)
         await breathe();
