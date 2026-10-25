@@ -453,12 +453,15 @@ for size in (fast.vocab_size, fast.vocab_size - 3):
                         # where the float64 sum stops growing: each less than 1e-11 of the most probable, exp(-25))
                         faint = max(narrowing[ours], narrowing[theirs]) < narrowing.max() - 0.7 * 25
                         assert ours == theirs or abs(narrowing[ours] - narrowing[theirs]) < 1e-3 or faint, (size, spread, top_k, topp, min_p, value, ours, theirs)
-# equal logits at the border of a top-k: any of them (the kernel's partition and NumPy's sort take them in their own order)
+# equal logits at the border of a top-k: the lower tokens first (T.561: the kernel's partition as NumPy's sort), and the
+# same draw as NumPy's of them
 tied = np.full(fast.vocab_size, -30.0, dtype=np.float32)
-tied[[5, 50, 500, 1000, 1500]] = 4.0
+equal = [1500, 5, 1000, 50, 500]
+tied[equal] = 4.0
 for top_k in (1, 3, 5, 7):
     for value in (0.0, 0.3, 0.7, 1.0 - 1e-12):
-        assert tied[kernel_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0)] == 4.0, (top_k, value)
+        ours = kernel_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0)
+        assert ours in sorted(equal)[:top_k] and ours == numpy_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0), (top_k, value, ours)
 ours, theirs = logits.copy(), logits.copy()
 kernel_penalize(ours, history, 1.3, 1.5)
 numpy_penalize(theirs, history, 1.3, 1.5)
