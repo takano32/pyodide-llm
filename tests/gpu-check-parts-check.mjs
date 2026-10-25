@@ -264,6 +264,12 @@ check("of a layer whose keys and values the CPU keeps in a ring, the positions t
   assert.equal(model([ringed], { cpu }).value, true, "every position compared: the rows a ring wrote over fail");
   const within = model([ringed], { cpu, heldFrom: [2, 0] });
   assert.equal(within.value, false, within.text);
+  // (the rows a ring holds are compared still: the last position of layer 0, and every row of layer 1)
+  for (const [layers, positions] of [[[0], N], [[1], N]]) {
+    const late = (from) => ({ keys: b64(moved(floats(from.keys), GPU_LINE * 2, layers, positions)), values: b64(moved(floats(from.values), GPU_LINE * 2, layers, positions)) });
+    const past = { ...ringed, ...late(ringed), again: { ...ringed.again, ...late(ringed.again) } };
+    assert.equal(model([past], { cpu, heldFrom: [2, 0] }).value, true, `a row a ring holds, of layer ${layers[0]}, past its line`);
+  }
 });
 check("the status of a GPU that takes the prompts", () => {
   for (const note of ["prompts on WebGPU", "prompts and answers on WebGPU", "prompts on WebGPU, answers on the CPU"]) assert.ok(promptsOnGpu(note), note);
