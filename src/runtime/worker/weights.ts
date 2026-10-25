@@ -346,7 +346,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
         // (nor under the rounds of /benchmark/'s model section, T.184: the same; its page path, timed on the first load
         // before the rounds, has the GPU, and T.205: the rounds' loads wait for that GPU to let go of its device)
         const outside = forwardModule!.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom, memoryUnsaid,
-          gpuRemembered: gpuRequest?.remembered, gpuForce, halfKeys, apart });
+          gpuRemembered: gpuRequest?.remembered, gpuForce, halfKeys, apart, oneThread: threadsRequest?.fixed === 1 });
         return { llama: llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outside }), outside };
       },
       destroy() {},

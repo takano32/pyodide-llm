@@ -39,7 +39,7 @@ export type Trying = { signed?: boolean };
 export type Made = {
   memory: WebAssembly.Memory; base: number; size: number; kernels: Compiled; plan: Plan;
   spawn?: Spawn | null; gpu?: () => GpuWorker; gpuRoom?: number; memoryUnsaid?: boolean; gpuRemembered?: Remembered; gpuForce?: Force;
-  halfKeys?: boolean; direct?: Direct; rows?: Rows;
+  halfKeys?: boolean; direct?: Direct; rows?: Rows; oneThread?: boolean;
   wrap?: (exports: Kernels) => Kernels; stalledMs?: number; clock?: () => number; kinds?: Kinds; trying?: Trying;
 };
 // The array forward() fills with the logits: a Float32Array, or Python's (a PyProxy of a NumPy array: copy() keeps
@@ -82,11 +82,13 @@ const STALLED_MS = 10000;
 /** rows (T.329.2): what reads a token's row of a table every layer has an input of (a Gemma 4's embedding of every
  * layer: perlayer.ts's Rows), at once. Left out, the row is copied from the checkpoint in this memory; the worker hands
  * in one that reads it from the kept checkpoint where the memory holds no table (T.329.2.2) */
+/** oneThread (T.371): the page asked for one thread (?threads=1), which is why an isolated page's memory is not shared:
+ * the GPU's side says so, not that the page is not isolated */
 /** direct (T.156, external()): the layers' matrices (T.210: and the tables) are on the GPU alone: nothing runs on the CPU,
  * every block and step goes to the GPU (as gpuForce.always), and one the GPU cannot take throws (the worker loads the
  * model again on the CPU). T.210: no cache of keys and values here either; the GPU embeds a prompt's tokens itself */
 export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce = {},
-  halfKeys, direct, rows, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS, trying = {} }: Made) {
+  halfKeys, direct, rows, oneThread = false, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now(), kinds = LAYER_KINDS, trying = {} }: Made) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen } = plan;
   // T.375.2: what the layers of one architecture differ from another's by is read here once, as the facts Python's plan
@@ -459,7 +461,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         .flatMap(([name, [tensor, size]]) => (floats(tensor) ? [[name, { at: floats(tensor), size }]] : []))),
     } };
   // T.349: what the GPU would hold of this model, and why it would not take it
-  const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory }, direct });
+  const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory, oneThread }, direct });
 
   // T.135: where the GPU's worker puts the keys and values of a prompt's block (float16, T.147: the keys
   // [layers][GPU_BLOCK][kvDim], then the values the same), for the cache below, and where it reads the block's rows

@@ -302,6 +302,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   assert.deepEqual(inMemory(without.length), without, "the memory holds the checkpoint without the table, the rest moved down");
   into.weights.llama({}, {});
   const { apart } = handed;
+  assert.equal(handed.oneThread, false, "the engine is told no one thread was asked for (T.371)");
   assert.deepEqual([apart.stored, apart.place(5), apart.place(hole[1]), apart.place(size - 1)], [size - (hole[1] - hole[0]), 5, hole[0], size - 1 - (hole[1] - hole[0])]);
   apart.rows(10000 + 3 * 160, 160, 30000);
   assert.deepEqual(new Uint8Array(ask("weightsNow").buffer, 30000, 160), bytes.subarray(10480, 10640), "a row read from the file into the memory");
@@ -360,6 +361,12 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   ask('roundBegan(["kernels"])');
   assert.equal(ask("weightsBuffer")(size, GEMMA, { ...form, dtype: "int8" }, keeperOf(), true).hole, null);
   ask("roundBegan([])");
+  // (T.371) the engine is told whether the page asked for one thread, which is why an isolated page's memory is not shared
+  ask("threadsRequest = { fixed: 1 }");
+  sunk(keeperOf()).weights.llama({}, {});
+  assert.equal(handed.oneThread, true, "?threads=1 told to the engine");
+  ask("threadsRequest = undefined");
+  await ask("rowsLetGo")();
   console.log("ok: a Gemma 4's table of every layer's inputs stays in the file it is kept in as it comes (or was kept in), the rest in the memory; " +
     "its rows are read from there, the file let go of with the model; where the table was not all written it is loaded again with the table in the memory");
 }

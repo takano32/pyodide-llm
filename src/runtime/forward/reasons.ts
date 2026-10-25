@@ -30,6 +30,8 @@ export const REASONS = {
   pair: "this pair of norms and FFN is not on the GPU yet",
   // (said wherever the memory is not a shared one: T.371, ?threads=1 on an isolated page reads this too)
   notIsolated: "the page is not cross-origin isolated",
+  oneThread: "one thread was asked for",
+  notShared: "the model's memory is not shared",
   heads: "heads of a size that is no multiple of 4 are not on the GPU",
   floats: "float32 weights are not on the GPU yet",
   layersRoom: (bytes: number) => `the layers on the GPU as well (${Math.round(bytes / 1e6)} MB) would not leave this device enough memory`,

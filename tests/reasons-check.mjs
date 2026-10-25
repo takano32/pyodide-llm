@@ -30,6 +30,8 @@ const SAID = [
   ["stateful", "layers that keep a state are not on the GPU yet"],
   ["pair", "this pair of norms and FFN is not on the GPU yet"],
   ["notIsolated", "the page is not cross-origin isolated"],
+  ["oneThread", "one thread was asked for"],
+  ["notShared", "the model's memory is not shared"],
   ["heads", "heads of a size that is no multiple of 4 are not on the GPU"],
   ["floats", "float32 weights are not on the GPU yet"],
   ["layersRoom", [72_600_000], "the layers on the GPU as well (73 MB) would not leave this device enough memory"],
