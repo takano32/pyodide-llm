@@ -1,0 +1,4 @@
+### T.414 [整理][変換] `convert_hf.py` は読めない候補を黙って飛ばす — 状態: 完了（2026-10-25。前の状態: 未着手、2026-10-10、T.374.2.3 のレビューから。規模 小）
+- 読めない `tokenizer.json` があって sentencepiece の model もあるフォルダでは、何も言わずに model を使う（ページの決まりと同じ。全部の候補が断ったときだけ最初の断りを言う）。いまのビルドの入力（llm-jp-3-150m は tokenizer.json だけ、tiny-lm は spiece.model だけ）では起きない。飛ばしたときに 1 行言わせる。ビルドの好みが「tokenizer.json が先」に変わったことも、両方を持つモデルをビルドに足すときに見る。
+- **結果（2026-10-25）**: `convert_hf.py` の `convert_tokenizer()` は、読めずに飛ばした候補があって後の候補を使ったとき、飛ばした候補ごとに stderr に 1 行言う（「<フォルダ>/tokenizer.json: not read (ValueError: …), so the tokenizer is spiece.model」）。飛ばさなかったときは何も言わない。出すファイルは同じ。`tests/test_convert_hf.py` の 2 つの試験が「1 行だけ」と「飛ばさなければ 0 行」を見る。壊し方: その print を外すと 1 つ落ちる。CI を省いた。訳: ビルドの道具の 1 か所で、pytest がそこを踏む。
+- レビュー（Sonnet low、2026-10-25、T.414）: must-fix なし。全部の候補が断ったときは前と同じ例外で stderr に何も出ない、Makefile と `deploy.yml` は stderr を読まない。勧めを入れた: 例外の文の改行と空白を畳んで 1 行に。入れなかった勧め: 2 つ飛ばす場合の試験（いまのビルドの入力に無い）。
