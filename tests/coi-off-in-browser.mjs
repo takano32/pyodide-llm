@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import * as playwright from "playwright-core";
 import { serving } from "./serving.mjs";
-import { scratch, closed, leave } from "./leave.mjs";
+import { closed, leave, scratch } from "./leave.mjs";
 
 const [engine = "chromium"] = process.argv.slice(2);
 const server = await serving();
@@ -32,7 +32,16 @@ try {
   assert.match(off, / · Pyodide /, "?coi=off comes to ready");
   assert.equal(await page.evaluate(() => self.crossOriginIsolated), false, "?coi=off is not isolated");
   assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0, "and the worker is unregistered");
-  console.log(`ok: ?coi=off after an isolated visit in the same profile comes to ready without the service worker (${off})`);
+  // (the review of T.507) a visit that registers it again in the same tab, then ?coi=off once more
+  await page.goto(`${server.url}?model=stories260K`);
+  await settled("the visit after");
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 60000 }).catch(() => page.reload());
+  await settled("the visit after, under the worker");
+  assert.equal(await page.evaluate(() => navigator.serviceWorker.controller !== null), true, "the visit after is under the worker again");
+  await page.goto(`${server.url}?model=stories260K&coi=off`);
+  assert.match(await settled("?coi=off again"), / · Pyodide /, "?coi=off again in the same tab comes to ready");
+  assert.equal(await page.evaluate(() => self.crossOriginIsolated), false);
+  console.log(`ok: ?coi=off after an isolated visit in the same profile comes to ready without the service worker, and again after a visit under it (${off})`);
 } catch (error) {
   console.log(`FAILED\n- ${error.message}`);
   code = 1;

@@ -19,10 +19,11 @@ export async function isolating(): Promise<boolean> {
       for (const registration of await navigator.serviceWorker.getRegistrations()) {
         await registration.unregister();
       }
-      // (T.507, T.522: a page the worker still controls came with its headers, under which the model's worker did
-      // not start; once per tab, it loads again without them)
-      if (navigator.serviceWorker.controller && !sessionStorage.getItem("coi-off-reloaded")) {
-        sessionStorage.setItem("coi-off-reloaded", "1");
+      // (T.507, T.522: a page that came through the worker has its headers, isolated, and the model's worker did not
+      // start under them: it loads again without them. Not a page that is that load itself, where a browser still
+      // gave it the headers. No mark in sessionStorage: the isolated page and the one without them do not share it)
+      const loaded = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      if (self.crossOriginIsolated && loaded?.type !== "reload") {
         location.reload();
         return true;
       }
