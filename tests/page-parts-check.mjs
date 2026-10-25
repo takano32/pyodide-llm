@@ -321,6 +321,18 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.equal(opens("", kept(large.id, false)).id, first.id, "a large model that was not kept is not started unasked");
   assert.equal(opens("", kept(large.id, true)).id, large.id, "one that was kept is (index.astro then looks whether it still is)");
   assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the default");
+  // T.508.3: what the page keeps of a model (its threads, its GPU's shaders) is under keptAs(): a model of the list by
+  // its id, one of ?hf= by its repository, revision and file (a repository's model.safetensors as it was), a folder's
+  // by its name
+  const keys = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", `
+    globalThis.location = { search: "" };
+    const { keptAs, gpuKey } = await import(${JSON.stringify(new URL("../src/page/remembered.ts", import.meta.url).href)});
+    const hf = (weights) => ({ id: "local", name: "owner/name", hf: { repo: "owner/name", revision: "main", weights } });
+    console.log(JSON.stringify([keptAs({ id: "tiny-lm" }), keptAs(hf("model.safetensors")), keptAs(hf("m-Q8_0.gguf")), keptAs(hf("m-Q4_K_M.gguf")),
+      keptAs({ id: "local", name: "a folder" }), gpuKey(hf("m-Q8_0.gguf"))]));`], { encoding: "utf8" }));
+  assert.deepEqual(keys, ["tiny-lm", "hf:owner/name@main", "hf:owner/name@main/m-Q8_0.gguf", "hf:owner/name@main/m-Q4_K_M.gguf", "file:a folder", "gpu:hf:owner/name@main/m-Q8_0.gguf"],
+    "the GGUF files of one repository, and the models of ?hf=, are kept apart");
+  cases += 1;
 }
 {
   // T.520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line

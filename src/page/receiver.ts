@@ -5,7 +5,7 @@ import { memoryFailure } from "../models.js";
 import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHere, usedAfter } from "../bench.js";
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
-import { gpuKey, remember, threadsKey } from "./remembered.ts";
+import { gpuKey, keptAs, remember, threadsKey } from "./remembered.ts";
 import { arrived, arriving, becameReady, fromTemplate, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
 import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answer.ts";
@@ -161,7 +161,8 @@ worker.onmessage = ({ data }) => {
       "the count remembered from an earlier visit" : `${data.hint} (the logical cores)`}`);
     // what the worker found for this device and model: the next visit starts with it
     try {
-      localStorage.setItem(threadsKey(data.model), String(data.count));
+      // (T.508.3: the model loaded now by the name its next visit asks with: a model of ?hf= is "local" to the worker)
+      localStorage.setItem(threadsKey(data.model === model.id ? keptAs(model) : data.model), String(data.count));
     } catch {
       // no storage here: the next visit searches again
     }
