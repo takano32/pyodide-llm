@@ -202,6 +202,7 @@
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 未着手
+- T.588 [バグ][遠隔試験] 毎晩の全部の組が 27B の道具の `dry` で落ちる: 「GPU を渡しても Worker を始めない」の期待が古い — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1571,3 +1572,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 状態: 未着手（2026-10-25、T.435 のレビューから。規模 小）
 - `tests/tree.mjs`（と `tree-check.mjs` の「all in public」「the Python moved」の作り物の木）と `tests/imports.mjs`（`bundled` でない木の `?v=` つきの動的 import の読み手、`importsOf(…, { bundled })`）は、T.367 の前の木の形も読む。網が相手にする最も古い木 `f91d83f9`（2026-10-12）はもう `src/runtime/` の形。ほかに古い木を読む道具（`compare-builds.sh`・`abba-convert.sh`・`kernelSources()` に古いコミットを渡す使い方）が無いかを確かめてから、読み手と作り物を消す。消すと道具がその形の木を断るようになる（今は黙って読む）。
+
+### T.588 [バグ][遠隔試験] 毎晩の全部の組が 27B の道具の `dry` で落ちる: 「GPU を渡しても Worker を始めない」の期待が古い — 状態: 進行中（2026-10-25 に直した。2026-10-24 の毎晩の run 40131308745 から。T.441 の確かめの途中で見つけた）
+- **原因**: `tests/page-27b.mjs` は 27B の形の作り物に GPU の Worker を渡して「始めない」を求めていた（27B を CPU だけで回していた頃の期待）。T.271（回した基底と linear の層を GPU に）と T.547（3 値と llama.cpp の塊を GPU が読む: 2026-10-24 に本線に入った）から、この形のモデルは GPU に行くので、Worker を 1 回始めて「prompts on the CPU while the GPU gets ready」と言う。10-23 の毎晩は通り、10-24 から落ちた。
+- **直し**: 期待を「GPU を渡せば Worker を 1 回始める」に（Worker の代役は何も答えない: その後の GPU の正しさは gpu-check が見る）。確かめ: 手元で `STAGES=dry bash tests/page_27b.sh` と `STAGES=dry bash tests/page_saluki.sh`（`page-27b.mjs` を分け合う）が両方通り、どちらも「its worker was started 1 time(s)」。CI を省いた。訳: 毎晩の組の道具の判定 1 行で、その段を手元で回した。毎晩の組の次の run で確かめる。
+
