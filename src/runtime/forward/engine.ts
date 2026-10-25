@@ -5,7 +5,7 @@
 // the cache of the keys and values cache.ts's: each is chosen or made here once, and a token's path calls what it gave.
 // A module of src/runtime/forward.ts.
 
-import { BATCH, BLOCK_TABLES, KIND, SPREAD_THREADS, addressed, packingOf, runner, spreadBytes } from "../jobs.ts";
+import { BATCH, KIND, addressed, packingOf, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
 import { growMemory, PAGE, align, frameArrays, frameBytes, halfToFloat } from "./memory.ts";
 import { LAYER_KINDS } from "./kinds.ts";
@@ -17,6 +17,8 @@ import { GPU_ALONE } from "./alone.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
 import { gpuFit, gpuSide } from "./gpuside.ts";
+import { blockTables } from "./blocks.ts";
+import { stagingReader } from "./staging.ts";
 import type { Kernels, Packed, Packing, Ready } from "../jobs.ts";
 import type { Direct } from "./alone.ts";
 import type { CpuSide, GpuWorker, Held, Placed, Shape, Taken } from "./gpuside.ts";
@@ -164,37 +166,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   };
 
   const count = (t: Tensor) => t.shape.reduce((a, b) => a * b, 1);
-  // T.363.5: what the kernels of llama.cpp's blocks read besides a matrix: their tables, made here once of the
-  // checkpoint's codebooks (0: the model has no such rows); and for the tile of the signed dot product, taken where
-  // this engine's relaxed SIMD multiplies signed bytes by signed bytes exactly (every pair of bytes is asked, once),
-  // the bytes each thread spreads a row into, for the widest row there is
-  let tables = 0, spread = 0;
-  if (blocked) {
-    tables = alloc(BLOCK_TABLES);
-    if (!T.codebooks || k.sb_tables(tables, base + T.codebooks.offset) !== BLOCK_TABLES) throw new Error("The kernels of llama.cpp's blocks did not make their tables of this checkpoint.");
-    if (relaxed?.matmul_sbw_tile && (trying.signed ?? signedDots(relaxed, alloc(64)))) {
-      const widest = Math.max(...Object.values(T).filter((t) => partsOf(t).some(({ kind }) => packingOf(kind)?.tabled !== undefined)).map((t) => t.shape[t.shape.length - 1]));
-      spread = alloc(SPREAD_THREADS * spreadBytes(widest));
-    }
-  }
-  // Whether the relaxed dot product of this engine multiplies signed bytes by signed bytes exactly, for every pair of
-  // bytes: what matmul_sbw_tile needs (kernels/README.md; arm64's does, x86's takes the second for unsigned). at: 48 bytes
-  function signedDots(r: Kernels, at: number) {
-    const I8 = new Int8Array(memory.buffer), I32 = new Int32Array(memory.buffer);
-    for (let x = -128; x < 128; x++) {
-      for (let y0 = -128; y0 < 128; y0 += 16) {
-        let want = 0;
-        for (let j = 0; j < 16; j++) {
-          I8[at + j] = x;
-          I8[at + 16 + j] = y0 + j;
-          want += x * (y0 + j);
-        }
-        r.signed_dots(at + 32, at, at + 16);
-        if (I32[at / 4 + 8] + I32[at / 4 + 9] + I32[at / 4 + 10] + I32[at / 4 + 11] !== want) return false;
-      }
-    }
-    return true;
-  }
+  // T.363.5: the tables of the kernels of llama.cpp's blocks and the scratch of their signed tile (blocks.ts; 0 where the
+  // model has no such rows)
+  const { tables, spread } = blocked ? blockTables({ k, relaxed, alloc, memory, base, tensors: T, partsOf, signed: trying.signed }) : { tables: 0, spread: 0 };
   // a float32 copy of a tensor: float16 converted; a packed one (int8, int6, ternary: jobs.ts's PACKED says how each
   // weight is read) times the scale of its group (Math.fround is the float32 product NumPy computes); T.363.5: a stack
   // whose layers are each of a kind of their own layer by layer, and rows of llama.cpp's blocks by their kernel
@@ -471,6 +445,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // (T.545: the attending layers' alone, and after them the state the GPU's worker leaves of a block, where it has one)
   const stagingKeys = 2 * attending * GPU_BLOCK * kvDim * 2;
   const staging = gpu && !gpuWhyNot ? alloc(stagingKeys + stateBytes) : 0;
+  // T.147, T.243: the keys and values the GPU's worker put there, looked at and written into the cache (staging.ts)
+  const { fromStaging, stagingFinite } = stagingReader({ k, cache, staging, attending, kvDim });
   const gpuRows = staging && !direct ? alloc(GPU_BLOCK * D) : 0;
   // T.152: why a generation's steps stay on the CPU where the prompt's blocks may go to the GPU (else null), and where
   // the GPU's worker writes the ids of the steps it took ([sampled, id, ...])
@@ -539,46 +515,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       // T.237: the table of a rotated basis holds rotated rows
       if (rotated) k.unrotate(rows + t * stride, rows + t * stride, signs![dim], dim, rotated);
     }
-  }
-  // T.147: the keys and values of count positions from pos that the GPU's worker put into staging (float16, [keys,
-  // values][layer][GPU_BLOCK positions]), into the cache
-  // (T.545: by the cache's places, the attending layers in order: every layer where every layer attends; and the
-  // staging place lays out as many)
-  function fromStaging(pos: number, count: number) {
-    const { capacity } = cache;
-    for (let l = 0; l < attending; l++) {
-      // T.261.4: a layer whose window a ring holds (T.510.1): each position at its two places there, and the ring told of
-      // the positions written, as the layer itself tells it (attention.ts: a run that would go back past what the ring
-      // still holds is refused there)
-      const ring = cache.ring(l);
-      if (ring) {
-        const twice = ring.size * ring.row;
-        for (let t = 0; t < count; t++) {
-          const slot = ((pos + t) % ring.size) * ring.row, key = staging + (l * GPU_BLOCK + t) * kvDim * 2, value = staging + ((attending + l) * GPU_BLOCK + t) * kvDim * 2;
-          cache.putHalves(ring.keys + slot, ring.values + slot, key, value);
-          cache.putHalves(ring.keys + slot + twice, ring.values + slot + twice, key, value);
-        }
-        ring.latest = pos === 0 ? count - 1 : Math.max(ring.latest, pos + count - 1);
-        continue;
-      }
-      // (a layer's block among those that keep every position: l * KV a position in, where no ring is)
-      const offset = capacity * cache.offset(cache.index(l)), layerKeys = cache.keys + offset, layerValues = cache.values + offset;
-      for (let t = 0; t < count; t++) {
-        cache.putHalves(layerKeys + (pos + t) * KV, layerValues + (pos + t) * KV,
-          staging + (l * GPU_BLOCK + t) * kvDim * 2, staging + ((attending + l) * GPU_BLOCK + t) * kvDim * 2);
-      }
-    }
-  }
-  // T.243: whether the keys and values of count positions in staging are all finite numbers. The CPU's readers of a
-  // float16 (the kernels' halves4, and so from_f16 and attention_f16) make a finite number of a NaN and of an infinity
-  // (65536 and more), so that what a GPU computed wrong would be read from the cache as numbers ever after, by the CPU's
-  // steps and its logits (T.195 sees nothing then). They are looked at by their bits (finite_f16: the exponent's five)
-  // before anything of them is written: one pass of a kernel over what fromStaging reads, none in the attention's loops
-  function stagingFinite(count: number) {
-    for (let part = 0; part < 2 * attending; part++) {
-      if (!k.finite_f16(staging + part * GPU_BLOCK * kvDim * 2, count * kvDim)) return false;
-    }
-    return true;
   }
   // one token (count 1) or up to BATCH tokens of a prompt at positions pos0, pos0 + 1, ... (T.108). Every token is
   // computed as it would be alone: the same kernels on the same numbers, only the matmuls of a layer go out once for
