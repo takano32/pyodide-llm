@@ -374,12 +374,16 @@ try {
           // not 0: the step reads nothing before it)
           const reach = plan.layers.filter((one) => one.kind === "attention")[layer]?.window ?? 0;
           for (const [position, column] of [[reach ? Math.max(0, n + 1 - reach) : 0, 0], [n - 1, columns - 1]]) {
-            const place = cache.places[layer], at = place.values + (place.ring ? position % place.ring : position) * cache.row + column * width;
-            const cell = cache.half ? new Uint16Array(memory.buffer, at, 1) : new Float32Array(memory.buffer, at, 1), kept = cell[0];
-            cell[0] = cache.half ? half : value;
+            // (T.558.1: a ring holds every position twice, at p mod its period and a period after: both, as the CPU
+            // writes them, whichever the step's keys and values are taken up from)
+            const place = cache.places[layer], row = (at) => place.values + at * cache.row + column * width;
+            const cells = (place.ring ? [position % place.ring, position % place.ring + place.ring] : [position])
+              .map((at) => (cache.half ? new Uint16Array(memory.buffer, row(at), 1) : new Float32Array(memory.buffer, row(at), 1)));
+            const kept = cells.map((cell) => cell[0]);
+            for (const cell of cells) cell[0] = cache.half ? half : value;
             ids.fill(-2);
             const [answered, failed] = own(seen.worker, { ...request, count: 1, pos: n, from: 0 });
-            cell[0] = kept;
+            cells.forEach((cell, i) => { cell[0] = kept[i]; });
             cases.push({ value: String(value), layer, position, column, answered, failed, sampled: ids[0], id: ids[1], notFinite: ids[1 + most] });
           }
         }
