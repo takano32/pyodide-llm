@@ -3,7 +3,7 @@
 // answers), said in the log's lines, and whether any of them failed. Functions of what they are given: no GPU, no
 // browser, no Pyodide (tests/gpu-check-parts-check.mjs runs them on made-up numbers).
 import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff, held } from "./measures.mjs";
-import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE } from "./lines.mjs";
+import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE } from "./lines.mjs";
 import { stepsRight } from "./steps.mjs";
 import { layerTables } from "./tables.mjs";
 
@@ -55,6 +55,8 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
   // T.153: E16, NumPy's answer with its cache in float16 against NumPy's. T.187: Q8, with the matrices' inputs in 8 bits
   const half = { keys: ref.keys16, values: ref.values16 }, eight = { keys: ref.keys8, values: ref.values8 };
   const e16 = kv(half), q8 = kv(eight), q8First = firstKv(eight), e16s = byLayer(half), q8s = byLayer(eight);
+  // T.562: H16, with the matrices' weights and inputs in float16 as well (the f16 tiles' arithmetic)
+  const h16s = ref.keysH ? byLayer({ keys: ref.keysH, values: ref.valuesH }) : e16s.map(() => 0);
   const want = floats(ref.logits), largest = want.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
   const p = logSoftmax(want), top = argmax(want);
   const tenBest = [...want.keys()].sort((i, j) => want[j] - want[i]).slice(0, 10);
@@ -131,7 +133,8 @@ function modelWrong(cases, { id, cpu: cpuRun, gpu: runsGiven, late, refused, rem
     const shaderLine = kind === "f16" ? HALF_LINE : GPU_LINE;
     // T.187: a line a layer (the review: the largest of all layers against the largest of E16's or Q8's let a deep
     // model's early layers go 10 times their own E16 or Q8)
-    const lines = e16s.map((e16l, l) => (packed ? K_PACKED * q8s[l] : Math.max(shaderLine, K[kind] * e16l)));
+    // (T.562: the f16 tiles by H16's distance, their own arithmetic's, as the packed ones by Q8's)
+    const lines = e16s.map((e16l, l) => (packed ? K_PACKED * q8s[l] : kind === "f16" ? Math.max(shaderLine, K_HALF * h16s[l]) : Math.max(shaderLine, K[kind] * e16l)));
     const gpuKv = kv(gpu), againKv = gpu.again ? kv(gpu.again) : NaN, gpuFirst = firstKv(gpu, firstStick);
     const gpuLayers = byLayer(gpu), againLayers = gpu.again ? byLayer(gpu.again) : lines.map(() => NaN);
     const ratios = lines.map((line, l) => Math.max(gpuLayers[l], againLayers[l]) / line);
