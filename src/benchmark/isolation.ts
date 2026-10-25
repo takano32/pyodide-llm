@@ -5,8 +5,17 @@ import { BASE, V, parameters } from "./dom.ts";
 // ---- cross-origin isolation, for the software threads and the GPU section's bridge: the site's service worker
 // (coi.js, T.93), registered as the model page registers it, and one reload the first time it takes the page over
 async function isolating(): Promise<boolean> {
-  if (!("serviceWorker" in navigator) || parameters.get("coi") === "off") return false;
+  if (!("serviceWorker" in navigator)) return false;
   try {
+    // ?coi=off, as on the model page (T.582, T.507): the worker unregistered, and a page that came through it with its
+    // headers loaded again without them (not a page that is that load itself)
+    if (parameters.get("coi") === "off") {
+      for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+      const loaded = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      if (!self.crossOriginIsolated || loaded?.type === "reload") return false;
+      location.reload();
+      return true;
+    }
     // a tab in which the model page gave up on it (Pyodide did not load under it, T.113) stays without it
     if (sessionStorage.getItem("coi-fallback")) return false;
     let offline = true;

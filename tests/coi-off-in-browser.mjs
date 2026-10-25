@@ -1,4 +1,4 @@
-// T.507, T.522: ?coi=off in a browser that has the service worker (public/coi.js) already. A first visit installs it
+// T.507, T.522, T.582: ?coi=off in a browser that has the service worker (public/coi.js) already. A first visit installs it
 // and is isolated; the same profile then opens ?coi=off, which unregisters it and must come to ready without it (it
 // stayed at "Initializing..." before: the page came with the worker's headers, under which the model's worker did not
 // start). On this tree's dist/ (npm run build first), with the site's smallest model.
@@ -41,7 +41,16 @@ try {
   await page.goto(`${server.url}?model=stories260K&coi=off`);
   assert.match(await settled("?coi=off again"), / · Pyodide /, "?coi=off again in the same tab comes to ready");
   assert.equal(await page.evaluate(() => self.crossOriginIsolated), false);
-  console.log(`ok: ?coi=off after an isolated visit in the same profile comes to ready without the service worker, and again after a visit under it (${off})`);
+  // (T.582) /benchmark/'s ?coi=off, after a visit that registers the worker again: unregistered, and its sections run
+  // without the headers
+  await page.goto(`${server.url}?model=stories260K`);
+  await settled("the visit before /benchmark/");
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 60000 });
+  await page.goto(`${server.url}benchmark/?coi=off&run=device`);
+  await page.waitForFunction(() => /done ·/.test(document.body.innerText), null, { timeout: 120000 });
+  assert.deepEqual(await page.evaluate(async () => [self.crossOriginIsolated, (await navigator.serviceWorker.getRegistrations()).length]), [false, 0],
+    "/benchmark/?coi=off: not isolated, the worker unregistered");
+  console.log(`ok: ?coi=off after an isolated visit in the same profile comes to ready without the service worker, and again after a visit under it, and /benchmark/'s too (${off})`);
 } catch (error) {
   console.log(`FAILED\n- ${error.message}`);
   code = 1;

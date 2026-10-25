@@ -223,7 +223,7 @@
 - T.578 [性能][Saluki][WebGPU] Q4_K のプロンプトのタイルの速さ — 未着手
 - T.579 [性能][Saluki][WebGPU] Q4_K の答えのステップの速さとコンパイルの数 — 進行中
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
-- T.582 [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 未着手
+- T.582 [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1664,5 +1664,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 状態: 未着手（2026-10-16、T.271 のレビューの気づき。持ち主の端末で費用を測ってから）
 - いまはブロックごとと 4 ステップごとに状態全体（Qwen3.5 0.8B で約 20 MiB）を読み戻して写す。見積もり（未計測）でブロックの 3〜5%、ステップの 10〜15%。
 
-### T.582 [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 状態: 未着手（2026-10-25、T.507 のレビューの気づき）
+### T.582 [不具合][計測実行] `/benchmark/` を Service Worker の入ったブラウザで `?coi=off` で開くと、ヘッダつきのページのまま Worker を作りうる — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.582-benchmark-coi-off`。前の状態: 未着手、2026-10-25、T.507 のレビューの気づき）
+- **結果**: 見込みの症状は無かった（`/benchmark/` は登録を外さないので、Service Worker の下のまま節の Worker は始まる）。代わりに、`?coi=off` なのに隔離されたまま測っていた（手元の Chromium: 隔離した訪問の後の `/benchmark/?coi=off` で `crossOriginIsolated` が真、Service Worker が受け持つ）。モデルのページと同じ形に: `?coi=off` で登録を外し、隔離されていれば読み込み直しでないページだけ読み込み直す（`src/benchmark/isolation.ts`）。試験: `tests/coi-off-in-browser.mjs` に `/benchmark/?coi=off&run=device` の訪問（隔離なし・登録なし・節が done）。直す前の版では隔離が真で落ちる。CI を省いた。訳: 手元の Chromium で踏める。取りまとめ役の決め: `/benchmark/` の `?coi=off` も Service Worker の登録を外す（モデルのページの `?coi=off` と同じ意味に）。
 - `src/benchmark/isolation.ts` は `?coi=off` で `false` を返すだけで、登録を外さず読み込み直しもしない。T.507 のモデルのページと同じく、Service Worker を通ってヘッダつきで来たページの上で節の Worker が始まらない見込み（未確認）。先に `tests/coi-off-in-browser.mjs` の形で `/benchmark/` を開いて確かめ、症状があればモデルのページと同じ直し（隔離されていれば、読み込み直しでないページだけ読み込み直す）。
