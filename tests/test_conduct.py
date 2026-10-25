@@ -16,7 +16,7 @@ import struct
 from pathlib import Path
 
 import pytest
-from conduct_hub import THREE, Absent, File, Folder, Hub, MiB, StandIn, answer, answered, cut, direct, gguf, made, safetensors, sound
+from conduct_hub import THREE, Absent, File, Folder, Hub, MiB, StandIn, answer, answered, answering, cut, direct, gguf, made, safetensors, sound
 from conftest import synthetic_weights
 from test_convert import hugging_face, safetensors_file
 from test_gguf import EPS, gguf_file, sentencepiece, unigram
@@ -513,8 +513,7 @@ def test_the_parts_go_to_the_converter_as_they_were_answered(monkeypatch):
     monkeypatch.setattr(conducting, "Conversion", Fed)
     steps = conduct(HF)
     hub, request = Hub(repository(), HF), next(steps)
-    while request[0] != "stream":
-        request = steps.send(getattr(hub, request[0])(*request[1:]))
+    request = answering(hub, steps, request, ("stream",))
     parts = [bytearray(b"a"), memoryview(b"bc"), b"", b"def"]
     for count, part in enumerate(parts, 1):
         # (the answerer feeds: the share converted comes back to it, and nothing of the conduct runs for a part)
@@ -877,8 +876,7 @@ def test_what_came_with_a_head_is_not_kept_once_it_is_fed(monkeypatch):
     hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": gguf(3 * MiB, 20 * MiB)}, GGUF_HF)
     steps = conduct(GGUF_HF)
     request = next(steps)
-    while request[0] != "stream":
-        request = steps.send(answer(hub, request))
+    request = answering(hub, steps, request, ("stream",))
     alive = [weakref.ref(data) for data in held]
     assert len(held) == 2 and len(held[-1]) == 8 * MiB
     del held[:]

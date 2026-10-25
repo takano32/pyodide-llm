@@ -179,15 +179,32 @@ def answer(hub, request):
     return None
 
 
+# T.415: the most requests a conduct of the tests' files asks for (the fixture's cases ask up to a few dozen): past
+# it, a conduct that never ends (a head that does not grow asks for the same bytes for ever) fails a test, not hangs it
+ASKED = 500
+
+
+def answering(hub, steps, request, until):
+    """Answers a conduct from the hub, from request on, until a request whose kind is in until: that request. Fails
+    past ASKED requests. told: see answered()."""
+    for _ in range(ASKED):
+        if request[0] in until:
+            return request
+        request = steps.send(answer(hub, request))
+    raise AssertionError(f"the conduct asked for more than {ASKED} things without ending: the last was {request[:5]}")
+
+
 def answered(hub, steps, told=None):
     """Answers a conduct from the hub until it ends: its last request, ("done", conversion) or ("missing", where,
-    name). told: a list for the requests as they came (a stream's without its feed)."""
+    name). told: a list for the requests as they came (a stream's without its feed). Fails past ASKED requests."""
     request = next(steps)
-    while request[0] not in ("done", "missing"):
+    for _ in range(ASKED):
+        if request[0] in ("done", "missing"):
+            return request
         if told is not None:
             told.append(request[:7])
         request = steps.send(answer(hub, request))
-    return request
+    raise AssertionError(f"the conduct asked for more than {ASKED} things without ending: the last was {request[:5]}")
 
 
 class Absent(Exception):
