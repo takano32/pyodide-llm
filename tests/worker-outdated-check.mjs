@@ -255,5 +255,15 @@ for (const [isGone, event, told, askedFor] of [
   assert.ok(!/new Worker\(/.test(String(run("gpuOnlyBuffer"))));
   cases += 1;
 }
+// T.576: its plan is made first: a plan that throws (a packing the GPU takes not) leaves no worker and takes no memory
+{
+  const { run, context } = harness(true);
+  context.stand = { forward: { gpuOnlyPlan() { throw new Error("a packing the GPU takes not"); }, needsWide() { throw new Error("a memory reckoned"); } } };
+  run("forwardModule = stand.forward");
+  const thrown = (() => { try { run("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch (error) { return error; } })();
+  assert.equal(thrown?.message, "a packing the GPU takes not", "gpuOnlyBuffer() throws its plan's error before it reckons a memory");
+  assert.equal(workersMade.length, 0, "and opens no GPU's worker, which would be left");
+  cases += 1;
+}
 console.log("worker-outdated-check: weights.js fails a thread's start and hands on the GPU's worker as it did, and hands each one's error to outdated.js with its own address");
 console.log(`worker-outdated-check: ok (${cases} cases)`);

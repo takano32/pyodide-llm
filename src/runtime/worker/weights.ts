@@ -420,6 +420,8 @@ function placesOf(header: Header, dtype: Dtype, form: Partial<Form>) {
 // T.156: the weights of a model on the GPU alone: the layers' matrices to the GPU's worker as they come (forward.ts's
 // gpuOnlyWeights), the rest into a memory of their size, and every byte to keep's file where the conversion is kept
 function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors, stored, gpuOnly }: Required<Placed>, keep?: Keeper): Weights {
+  // (T.576: the GPU's plan first: what makes it may throw (gpuPacking()), before a memory is taken or a worker opened)
+  const plan = forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options);
   const after = gpuOnly - stored, wide = forwardModule!.needsWide(stored, after);
   const { memory, base, shared } = pooledWeights(stored, after, true, wide);
   if (!shared) throw new Error("This browser gave no shared memory for a model on the GPU alone.");
@@ -449,7 +451,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
     failed ??= event;
     weights.gone();
   });
-  worker.postMessage({ type: "open", plan: forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options), flow: weights.flow } satisfies ToGpu);
+  worker.postMessage({ type: "open", plan, flow: weights.flow } satisfies ToGpu);
   // (T.156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.ts's aloneVerdict)
   const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
