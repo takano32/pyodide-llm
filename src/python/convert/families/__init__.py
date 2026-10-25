@@ -9,6 +9,7 @@ from convert.families.lfm2 import LFM2
 from convert.families.llama import GRANITE, LLAMA, MISTRAL, QWEN2, QWEN3, SMOLLM3
 from convert.families.qwen35 import QWEN35, QWEN35_WHOLE
 from convert.families.spark import SPARK
+from engine.layout import layout_of
 
 # (in the order the refusals name them)
 FAMILIES = {"llama": LLAMA, "mistral": MISTRAL, "granite": GRANITE, "smollm3": SMOLLM3, "qwen2": QWEN2, "qwen3": QWEN3,
@@ -43,8 +44,11 @@ def family_of(config):
 
 
 def of_layout(arch):
-    """The family that stands for a layout, for what is asked of a form alone (conversion_plan())."""
-    return LAYOUTS.get(arch, LLAMA)
+    """The family that stands for a layout, for what is asked of a form alone (conversion_plan(), name_prefix()). T.393:
+    a name that is no layout's is refused in the engine's words (layout_of()), as every other way in refuses it, not
+    read as a Llama."""
+    layout_of(arch)
+    return LAYOUTS[arch]
 
 
 def named(families):

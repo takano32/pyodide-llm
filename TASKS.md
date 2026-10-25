@@ -26,7 +26,7 @@
 - T.384 [バグ][遠隔試験] 全部の組が 1 つの試験で 88 分止まった回がある — 反映済み
 - T.385 [試験][変換] ブラウザの中でカーネルの読み手が使われたかを見る — 未着手
 - T.389 [バグ][遠隔試験] Windows の Firefox が切った部品を worker が取り直した回を、e2e が失敗と数える — 反映済み
-- T.393 [バグ][変換] 知らない `arch` を Llama として読む所が残っている — 未着手
+- T.393 [バグ][変換] 知らない `arch` を Llama として読む所が残っている — 進行中
 - T.394 [速度][CPU] カーネルの標本抽出: 罰を 2 つ使うと直近の語の輪を毎ステップ 2 回写す — 未着手
 - T.395 [バグ][CPU] 温度・top-p・繰り返しの罰の値を検査していない — 未着手
 - T.396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 未着手
@@ -489,7 +489,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 読み手のカーネルが無ければ変換は黙って NumPy で読む（遅いだけ）。smoke は Node の Pyodide で 4 つとも作られることを見るが、ページの道は誰も見ない。案: `worker/convert.js` が使う読み手の名前を 1 行コンソールに出し、`tests/e2e.mjs` が GGUF のモデルでその行を見る。e2e の作り物 `hf` は F32 だけなので、BF16 の作り物も足す。
 ### T.389 [バグ][遠隔試験] Windows の Firefox が切った部品を worker が取り直した回を、e2e が失敗と数える — 状態: 反映済み（2026-10-10、`browsers.yml` run 38046609290 から。規模 小。**効くかは次に起きた回で分かる**）
 - Windows の Firefox は部品の本文を途中で切ることがあり（T.97 の落とし穴、12 回に 1 回ほど）、worker は取り直す（モデルは答えた）。ブラウザ自身がコンソールに書く `[JavaScript Error: "Failed to read data from the ReadableStream: …"]` を `tests/e2e.mjs` がコンソールのエラーとして落としていた。worker の「broke off …: fetched again」の行の数までは、その行を失敗に数えない（それを越える分と、ほかのエラーは今までどおり落とす）。**わたしの誤り**: 最初の正規表現は行の頭に固定していて、本物の行（頭に `[JavaScript Error: "` が付く）に当たらなかった。レビューがログの本物の行に当てて直した（26f3cbd）。**確かめていないこと**: worker の `console.warn` が Firefox でページのコンソールに届くか（届かなければ今までどおり落ちるだけ。次に落ちたら、まずそこを見る）。
-### T.393 [バグ][変換] 知らない `arch` を Llama として読む所が残っている — 状態: 未着手（2026-10-10、T.359.6 から。規模 小）
+### T.393 [バグ][変換] 知らない `arch` を Llama として読む所が残っている — 状態: 進行中（2026-10-25、Opus medium、ブランチ `t.393-unknown-arch`。前の状態: 未着手、2026-10-10、T.359.6 から。規模 小）
+- **結果（2026-10-25）**: 変換器の `of_layout()`（`convert/families/__init__.py`）が、どの layout でもない名前をエンジンの文で断る（`layout_of()`: 「There is no architecture called …: llama, …」、今ある文）。前は Llama の家族を返し、`name_prefix()` だけを呼ぶ道で Llama として読んでいた。**残したもの（取りまとめ役の読み）**: `family_of()` の知らない `model_type` → Llama は前のまま（`check_config()` が家族の断りの文で断る: 書いてある設計）。JavaScript の `architectureOf()`（`footprint()`・`gpuBytes()`）の Llama も前のまま: コメントのとおり、見積もりは Llama で数え、断りは Python の文（モデルを作るときの `layout_of()`）が訪問者に言う（T.375 の決め）。試験: `test_families.py`（知らない名前と `None` を断る）、`test_layout.py` の作り物の layout に家族も置く（家族の無い layout は変換器が断るようになった: 表の全部の layout に家族があることは `test_families.py` が見る）。壊し方「Llama を返す」が落ちる。pytest 3316。CI を省いた。訳: Python だけ。
 - 変換器の `of_layout()`・`family_of()`（`conversion_plan()` からは `Dims` が先に断るので届かないが、`name_prefix()` だけを呼べば届く）と、JavaScript の `footprint()`・`gpuBytes()` の既定の枝。エンジンの側は T.359.6 で断るようになった。JavaScript の側は T.375 で。
 
 ### T.394 [速度][CPU] カーネルの標本抽出: 罰を 2 つ使うと直近の語の輪を毎ステップ 2 回写す — 状態: 未着手（2026-10-10、T.359.7 から。前からある。規模 小）

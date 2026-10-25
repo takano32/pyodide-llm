@@ -173,7 +173,11 @@ def test_every_layout_of_the_engine_has_a_family_and_the_first_of_the_table_stan
     assert set(families.LAYOUTS) == set(LAYOUTS) == {family.arch for family in FAMILIES.values()}
     assert set(families.LAYOUTS) == set(llama2_numpy.LAYOUTS)
     assert families.LAYOUTS["llama"] is LLAMA and families.LAYOUTS["qwen35"] is FAMILIES["qwen3_5_text"]
-    assert families.of_layout("a layout nobody wrote") is LLAMA
+    # (T.393: a name that is no layout's is refused in the engine's words, not read as a Llama: name_prefix() reached it)
+    with pytest.raises(ValueError, match="^There is no architecture called 'a layout nobody wrote': llama, "):
+        families.of_layout("a layout nobody wrote")
+    with pytest.raises(ValueError, match="^There is no architecture called None: "):
+        families.of_layout(None)
 
 
 def gguf_targets(family):
