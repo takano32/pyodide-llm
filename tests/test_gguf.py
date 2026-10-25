@@ -216,13 +216,13 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
     # make the first matrix a TQ1_0 (type 34, llama.cpp's own ternary type, which is not read: T.505.1 reads the K types
     # and the older ones of blocks of 32), or a
     # type 42 (the Q2_0 of Prism's earlier Bonsai files: 2 bits, 64 or 128 to a block): the type is the u32 before its
-    # u64 offset in the tensor infos. T.230's review: a type 42 file must be refused with the types that are read, not
-    # read as a type 8 or 142 of the same block size
+    # u64 offset in the tensor infos. T.230's review: a type 42 file must be refused (T.501: as a type that is not read),
+    # not read as a type 8 or 142 of the same block size
     at = file.index(b"token_embd.weight") + len(b"token_embd.weight") + 4 + 16
     for kind in (34, 42):
         other = bytearray(file)
         other[at:at + 4] = struct.pack("<I", kind)
-        with pytest.raises(ValueError, match=f"ggml type {kind}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"):
+        with pytest.raises(ValueError, match=rf"^token_embd\.weight is stored as ggml type {kind}, which is not read\.$"):
             Conversion.from_gguf(bytes(other))
 
 

@@ -8,7 +8,7 @@ import struct
 import numpy as np
 
 from engine.layers import rope_frequencies, sign_bits
-from convert.readers import GGUF_TENSORS, SOURCES, read_types
+from convert.readers import GGUF_TENSORS, SOURCES
 from convert.sources import ROTATED
 from convert.families import GGUF, family_of, named
 from convert.families.family import f32
@@ -147,8 +147,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
     stored = family.gguf_stored(config)
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
-            raise ValueError(f"{name} is stored as ggml type {info['type']}: only {read_types()} "
-                             f"GGUF files are supported (not the K-quants).")
+            raise ValueError(f"{name} is stored as ggml type {info['type']}, which is not read.")
         parts = name.split(".")
         if name in names:
             target = names[name]

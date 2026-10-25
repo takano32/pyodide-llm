@@ -149,14 +149,13 @@ class Source(NamedTuple):
     type's id in a GGUF. A tensor is whole blocks of values values in size bytes (a row is whole blocks too). read(the
     bytes of whole blocks) -> the values, float32 or float16: NumPy's. kernel: the export of the SIMD kernels that
     reads it to the same float32 (kernel(float32 out, blocks in, how many blocks); kernel_readers()), where there is
-    one. said: whether a refusal names it among the types that are read (read_types())."""
+    one."""
     name: str
     ggml: int
     values: int
     size: int
     read: Callable
     kernel: str = None
-    said: bool = True
 
     def bytes(self, count):
         """The bytes count values take (whole blocks of them)."""
@@ -165,8 +164,8 @@ class Source(NamedTuple):
 
 # (30 is BF16: Ternary Bonsai 2's two small matrices of the gates. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork
 # of llama.cpp. T.362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. T.505.1: its other three K
-# types, which are read and never kept (WIDENED), and the five of blocks of 32 above. A refusal names none of the
-# eighteen yet (said): its words are the owner's, and they are as they were before any of them was read (T.501). ggml's
+# types, which are read and never kept (WIDENED), and the five of blocks of 32 above. A refusal names none of them
+# (T.501, the owner's choice: it says the type is not read, and grows with nothing a type is added by). ggml's
 # other types are refused: docs/notes/t505-gguf-alone-2026-10-13.md says which and why)
 SOURCES = {source.name: source for source in (
     Source("F32", 0, 1, 4, float32),
@@ -175,28 +174,22 @@ SOURCES = {source.name: source for source in (
     Source("Q8_0", 8, 32, 34, q8_0, "widen_q8_0"),
     Source("PQ2_0", 142, 128, 34, pq2_0, "widen_pq2_0"),
     Source("PTQ1_0", 143, 128, 28, ptq1_0, "widen_ptq1_0"),
-    *(Source(name, ggml, VALUES, size, read, said=False) for name, (ggml, size, read) in SUPERBLOCKS.items()),
-    *(Source(name, ggml, VALUES, size, read, said=False) for name, (ggml, size, read) in WIDENED.items()),
-    Source("Q4_0", 2, 32, 18, of_32(18, q4_0), said=False),
-    Source("Q4_1", 3, 32, 20, of_32(20, q4_1), said=False),
-    Source("Q5_0", 6, 32, 22, of_32(22, q5_0), said=False),
-    Source("Q5_1", 7, 32, 24, of_32(24, q5_1), said=False),
-    Source("IQ4_NL", 20, 32, 18, of_32(18, iq4_nl), said=False),
+    *(Source(name, ggml, VALUES, size, read) for name, (ggml, size, read) in SUPERBLOCKS.items()),
+    *(Source(name, ggml, VALUES, size, read) for name, (ggml, size, read) in WIDENED.items()),
+    Source("Q4_0", 2, 32, 18, of_32(18, q4_0)),
+    Source("Q4_1", 3, 32, 20, of_32(20, q4_1)),
+    Source("Q5_0", 6, 32, 22, of_32(22, q5_0)),
+    Source("Q5_1", 7, 32, 24, of_32(24, q5_1)),
+    Source("IQ4_NL", 20, 32, 18, of_32(18, iq4_nl)),
 )}
 # a GGUF's type id -> the name
 GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items()}
 
 
-def read_types():
-    """The types that are read, as a refusal lists them."""
-    names = [name for name, source in SOURCES.items() if source.said]
-    return f"{', '.join(names[:-1])} and {names[-1]}"
-
-
 def source_of(name, dtype):
-    """The entry of the type a tensor called name is stored in, or the refusal that says which types are read."""
+    """The entry of the type a tensor called name is stored in, or the refusal that says its type is not read."""
     if dtype not in SOURCES:
-        raise ValueError(f"{name} is stored as {dtype}: only {read_types()} are read.")
+        raise ValueError(f"{name} is stored as {dtype}, which is not read.")
     return SOURCES[dtype]
 
 
