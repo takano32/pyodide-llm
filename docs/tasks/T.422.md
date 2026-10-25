@@ -1,0 +1,4 @@
+### T.422 [整理][遠隔試験] `tests/conducting.mjs` の `converted()` がジェネレータを閉じ忘れても落ちない — 状態: 完了（2026-10-25。前の状態: 未着手、2026-10-11、T.374.4 のレビューから。規模 小）
+- `conducting-check.mjs` は `answered()` を代役で見るだけで、`converted()`（Pyodide が要る）を回さない。`steps.return()` を消す壊し方が通った。Pyodide の代役で 1 つ足すか、`page-27b.mjs` の dry が踏むことを検査にする。
+- **結果（2026-10-25）**: `tests/conducting-check.mjs` に `converted()` の試験を 1 つ: `tests/fakes/pyodide.mjs` の代役（`pyimport`・`toPy` と、Python のジェネレータの顔）で、段取りが終わる場合と答えが失敗する場合の両方で、ジェネレータが 1 回閉じられ（`steps.returned`）、ジェネレータ・モジュール・モデルの代役が 1 回ずつ手放され、答え手が閉じられることを見る。壊し方: `steps.return()` を外すと「the generator was not closed」で落ちる。CI を省いた。訳: 試験を 1 つ足しただけで、手元で回した。
+- レビュー（Sonnet low、2026-10-25、T.422）: must-fix なし。勧めを入れた: 本物の PyProxy の寿命は見ていないとコメントに。残件: 本物の Pyodide で `converted()` の失敗の道（`missing`）を通す所は無い（`page-27b.mjs`・`profile-convert.mjs` は成功の道だけで、組の外の重い道具）。smoke の枠で小さな作り物を 1 つ通すなら別の番号で。

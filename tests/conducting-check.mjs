@@ -106,7 +106,9 @@ try {
   }
   {
     // T.422: converted() in a stand-in of Pyodide: the generator is closed and every proxy of it let go, the answerer
-    // closed, both where the conduct ends and where an answer fails (a steps.return() taken away went unseen before)
+    // closed, both where the conduct ends and where an answer fails (a steps.return() taken away went unseen before).
+    // Not seen here: the real PyProxy's life (a return() after done, a second destroy()): page-27b.mjs and
+    // profile-convert.mjs run converted() on real Pyodide, the way that ends alone
     const pyOf = (requests) => {
       const { steps } = played(requests);
       const module = proxy({ conduct: { callKwargs: () => steps } }), model = proxy({});
