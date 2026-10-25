@@ -17,6 +17,7 @@ from test_gguf import bonsai_gguf, pq2_0_blocks, unigram, with_original
 import gguf_check
 import llama2_convert
 from llama2_convert import Arrays, Conversion, Safetensors, checkpoint_size, gguf_read
+from engine.layout import suited, tensor_rows
 from llama2_numpy import (NOT_TERNARY, TERNARY_GROUP, Llama, checkpoint_dtype, external_tensors, pack_ternary, ternary,
                           unpack_ternary)
 
@@ -201,6 +202,19 @@ def test_weights_that_are_not_ternary_and_rows_that_are_not_groups_of_128_are_re
         converted(Arrays(tensors), published, "ternary")
 
 
+def test_a_ternary_tensor_of_an_odd_number_of_groups_is_refused():
+    """T.542: a ternary group is 34 bytes (32 of values, a float16 scale), so a tensor of an odd number of groups ends 2
+    bytes off the 4 the next one (a float32 vector) is read on: refused, as a file of such rows is"""
+    # (a vocabulary of 101 rows of one group: the embedding is 101 groups; of 102, 102)
+    odd, even = [128, 256, 2, 4, 2, 101, 32], [128, 256, 2, 4, 2, 102, 32]
+    assert not suited(tensor_rows(odd), "ternary") and suited(tensor_rows(even), "ternary")
+    assert suited(tensor_rows(odd), "int8") and suited(tensor_rows(odd), "int6")
+    config, weights = synthetic_weights(dim=128, hidden_dim=256, n_kv_heads=2, vocab_size=101)
+    tensors, published = hugging_face(config, weights, True)
+    with pytest.raises(ValueError, match="an even number of them in each tensor"):
+        converted(Arrays(tensors), published, "ternary")
+
+
 def test_the_file_in_its_own_order_gives_the_same_ternary():
     config, published, file, same = bonsai("PQ2_0")
     safetensors = safetensors_file(same)
@@ -242,8 +256,11 @@ def test_no_shape_gives_two_dtypes_one_size():
             (128, 256, 1024), (128, 384, 4096), (1, 2, 12), (1, 2, 8), (1, 300, 150000, -300, -150000), (1, 512, 1 << 18)):
         for form in ({}, {"bias": True}, {"qk_norm": True}, {"qk_norm": True, "head_dim": 128}, {"arch": "gpt2"}, {"arch": "neox"}):
             header = [dim, hidden, layers, heads, heads, vocab, context]
+            # (T.542: a shape with a tensor of an odd number of groups of 128 has no ternary file: refused)
+            if not suited(tensor_rows(header, form), "ternary"):
+                continue
             sizes = sizes_of(header, form)
             assert len(set(sizes.values())) == len(DTYPES), (header, form, sizes)
             assert checkpoint_dtype(header, sizes["ternary"], form) == "ternary"
             tried += 1
-    assert tried > 1500
+    assert tried > 1000

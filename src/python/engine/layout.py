@@ -667,9 +667,11 @@ def file_size(rows, dtype):
 
 
 def unsuited(rows, dtype):
-    """The kinds of a file of this dtype that cannot hold their rows: a packed kind needs rows of whole groups."""
+    """The kinds of a file of this dtype that cannot hold their rows: a packed kind needs rows of whole groups (T.542: and
+    a tensor that ends on 4 bytes, where the next one begins)."""
     return [part.kind for place in placed(rows, dtype) if place.kind for part in place.parts
-            if not KINDS[part.kind].suits(part.row.shape[-1])]
+            if not KINDS[part.kind].suits(part.row.shape[-1])
+            or not KINDS[part.kind].ends_aligned(math.prod(part.row.shape), part.row.shape[-1])]
 
 
 def suited(rows, dtype):
