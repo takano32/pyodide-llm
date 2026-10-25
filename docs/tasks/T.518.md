@@ -1,0 +1,5 @@
+### T.518 [整理][Gemma4] T.331.2・T.330.2 の残り — 状態: 完了（2026-10-25、Opus medium。前の状態: 未着手、2026-10-15、レビューの気づき）
+- 共有の層（前の層の K と V を読む層）が中ほどにある形の作り物を `plan_facts.py` に（k の norm を q の束の番号で読む取り違えが今は通る。実物の Gemma 4 は共有の層が全部後ろなので害は無い）。
+- 共有の層と元の層の窓が同じことを Python の計画が見ているかを確かめ、見ていなければ断る（窓の層の輪の枝はそれを前提にしている）。
+- **結果**: (1) は前からある（`plan_facts.py` の「gemma4, a layer in the middle reading another's keys and values」）。(2) は誰も見ていなかった（Dims は head の大きさだけを比べ、局所の層は options）: `engine/layout.py` の `check_shared_windows()` を計画の `layer_facts()` と NumPy の `Llama.__init__` が呼び、共有の層と読む元の層の一方だけが窓の層なら断る（エンジンの `ValueError`: 変換器は両方を同じ `layer_types` から作るので、訪問者には出ない）。試験は `test_gemma4.py`（関数、`layer_facts()` の合う場合と合わない 2 つ、変換した作り物の局所の層を変えた `Llama`）。壊し方: どちらの呼びを外しても落ちる。軽い組 634 秒、網の `python`・`layouts`・`calls` は足した試験のほか同じ。CI を省いた。訳: Python の計画と NumPy だけで、一覧のモデルは当たらない。
+- レビュー（Sonnet low、2026-10-25）: must-fix なし。実物の Gemma 4 は変換器の `shared()` が同じ種類の最後の層を元にするので必ず通り（GGUF の道も同じ関数）、窓の大きさはモデルに 1 つなので層が局所かどうかの比べで足りる。JavaScript の計画は Python が作るので同じ決まりは要らない。
