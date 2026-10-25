@@ -4,7 +4,7 @@
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
 # The base tree is a copy of origin/main's that tests/other-tree.mjs makes (T.430: not `git fetch --depth 1`, which cut
 # the history of a whole clone behind the commit; a copy, as this script edits its tool), with this tree's node_modules
-# and kernels. PROFILE=0 times both without cProfile.
+# and kernels. A .tmp/base left by an earlier run is used as it is (the origin/main of then): rm -rf .tmp/base for today's. PROFILE=0 times both without cProfile.
 # T.374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
 # request of a stream brings), and a base of before T.374.2.1 calls the converter itself: against such a base, the
 # difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <MB/s>" line per run and the medians and ranges at the end.
@@ -15,7 +15,8 @@ if [ ! -d .tmp/base ]; then
     cp -a "$base" .tmp/base && rm -f .tmp/base/done &&
   # (the built kernels are where each tree keeps them: tests/tree.mjs)
   cp -r node_modules .tmp/base/ && mkdir -p "$(node tests/tree.mjs --root .tmp/base built)" &&
-    cp "$(node tests/tree.mjs built)"/*kernel* "$(node tests/tree.mjs --root .tmp/base built)"/  # (T.430: the blocks' kernels too, since T.363.5)
+    cp "$(node tests/tree.mjs built)"/*kernel* "$(node tests/tree.mjs --root .tmp/base built)"/ ||  # (T.430: the blocks' kernels too, since T.363.5)
+    { rm -rf .tmp/base; echo "abba-convert: the base tree could not be made"; exit 1; }  # (T.430: not left half made)
 fi
 # T.374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs): where the buffers lie is the
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
