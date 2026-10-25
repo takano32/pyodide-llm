@@ -86,6 +86,82 @@ const tokens = (count) => Array.from({ length: count }, (_, i) => i % 100);
 }
 console.log("ok: T.450, an engine on the GPU alone starts no software thread whatever is asked, sends its blocks and steps to the GPU, and is lost where a token would run on the CPU");
 
+// ---- T.558.3 (T.261.4.1's review): fromStaging() into a ring, by what the GPU's worker writes into the staging place. A
+// made-up Gemma 3 of three layers (plans.mjs: the first two attend a window of 8, the last all positions) in a context
+// of 64, so that the two local layers keep their keys and values in a ring of 24 (T.510.1: each position at p mod 24 and
+// p mod 24 + 24); its blocks go to a GPU that writes known float16s for every position, layer and column: 48 positions,
+// then 10. What the cache holds after (read through keysAndValues(), and where a step's request says the rings are) is
+// those, both copies of a ring alike, the ring's last 24 positions and no older
+{
+  // (heads of 32: the int8 kernels' groups; a key head for every head, so that the cache keeps float16s, which go in as
+  // they are: a float32 cache widens them by a kernel, which does nothing here)
+  const [g] = plansOf([{ header: [64, 128, 3, 4, 4, 100, 64], form: { ...FORM, arch: "gemma3", head_dim: 32 }, dtype: "int8" }]);
+  const plan = planOf(g), kvDim = 128, layers = 3, ring = 24;
+  const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + g.size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + g.size) / PAGE) + 64, shared: true });
+  const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
+  // (a value of position, layer and column: integers under 2048, which a float16 holds; a value's the negative)
+  const key = (pos, l, i) => pos + 64 * l + 256 * (i % 3);
+  const half = (value) => { const view = new DataView(new ArrayBuffer(2)); view.setFloat16(0, value, true); return view.getUint16(0, true); };
+  const { factory: gpu, posted } = workers({ answer: endedThen((data, worker) => {
+    if (data.type === "start") {
+      queueMicrotask(() => worker.say(READY({ blocks: [{ count: 16, ms: 1 }, { count: 64, ms: 2 }], tokens: { form: "fused", attention: "vec", ms: 1, forms: [] } })));
+      return;
+    }
+    // (a block's, and a step's: they come back through the same place)
+    if (data.type === "prompt" || data.type === "tokens") {
+      const staging = new Uint16Array(memory.buffer, worker.posted[0].plan.staging, 2 * layers * GPU_BLOCK * kvDim);
+      for (let l = 0; l < layers; l++) {
+        for (let t = 0; t < data.count; t++) {
+          for (let i = 0; i < kvDim; i++) {
+            staging[(l * GPU_BLOCK + t) * kvDim + i] = half(key(data.pos + t, l, i));
+            staging[((layers + l) * GPU_BLOCK + t) * kvDim + i] = half(-key(data.pos + t, l, i));
+          }
+        }
+      }
+    }
+    if (data.type === "tokens") new Int32Array(memory.buffer, worker.posted[0].plan.tokens?.ids, 2 + GPU_TOKENS).set([data.count, ...Array.from({ length: GPU_TOKENS }, (_, i) => 10 + i), 0]);
+    Atomics.store(ctl, GPU_FAILED, 0);
+    Atomics.store(ctl, GPU_DONE, data.serial);
+  }) });
+  const wrap = () => new Proxy({}, { get: (_, name) => () => (name === "finite_f16" ? 1 : 0) });
+  const engine = createForward({ memory, base: CONTROL_BYTES, size: g.size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, spawn: () => Promise.resolve({ terminate() {} }),
+    gpu, wrap, gpuForce: { always: true } });
+  assert.match(await engine.gpu, /^prompts (and answers )?on WebGPU/);
+  engine.newGeneration();
+  engine.forwardMany(tokens(48), 0);
+  engine.forwardMany(tokens(10), 48);
+  assert.deepEqual(posted.filter((data) => data.type === "prompt").map(({ pos, count }) => [pos, count]), [[0, 48], [48, 10]], "the two blocks went to the GPU");
+  // through the cache's reader: the last 24 positions of the local layers, every position of the last
+  const { keys, values } = engine.keysAndValues(0, 58);
+  for (let l = 0; l < layers; l++) {
+    for (let pos = l < 2 ? 58 - ring : 0; pos < 58; pos++) {
+      for (let i = 0; i < kvDim; i++) {
+        const at = (l * 58 + pos) * kvDim + i;
+        assert.ok(keys[at] === key(pos, l, i) && values[at] === -key(pos, l, i), `layer ${l}, position ${pos}, column ${i}: ${keys[at]} and ${values[at]}`);
+      }
+    }
+  }
+  // and where a step's request says the rings are: both copies of every position the ring holds
+  engine.generateMany(5, 58, [1, 2], 2, 4, 0, 0.9, 1, [], []);
+  const asked = posted.filter((data) => data.type === "tokens").at(-1).cache;
+  assert.deepEqual([asked.places.map((place) => place.ring), asked.half], [[ring, ring, 0], true], "the local layers' rings, of 24, of float16s");
+  const read = (at) => (asked.half ? new Uint16Array(memory.buffer, at, kvDim) : new Float32Array(memory.buffer, at, kvDim));
+  // (after the four steps, positions 58 to 61: the ring's last 24 positions are 38 to 61)
+  for (const l of [0, 1]) {
+    const place = asked.places[l];
+    for (let pos = 62 - ring; pos < 62; pos++) {
+      const slot = pos % ring;
+      for (const [base, sign] of [[place.keys, 1], [place.values, -1]]) {
+        const first = [...read(base + slot * asked.row)], second = [...read(base + (slot + ring) * asked.row)];
+        assert.deepEqual(second, first, `layer ${l}, position ${pos}: the ring's two copies`);
+        assert.deepEqual(first, Array.from({ length: kvDim }, (_, i) => (asked.half ? half(sign * key(pos, l, i)) : sign * key(pos, l, i))), `layer ${l}, position ${pos}: what the GPU wrote`);
+      }
+    }
+  }
+  assert.equal(await engine.release(), true);
+}
+console.log("ok: T.558.3, fromStaging() writes a block's keys and values into a window's ring at both of its places, the ring's last period and no older");
+
 // ---- the same model with its weights in the memory: the threads are started (what the check above would see)
 {
   const { engine, beside } = made(false);
