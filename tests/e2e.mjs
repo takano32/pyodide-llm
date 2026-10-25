@@ -159,7 +159,7 @@ let jinjaAsked, jinjaMissed;
 // T.360: what huggingface.co answered 404 of the files a conversion asks for that a repository may not have (the
 // tokenizer's candidates, the template, the index of shards): the conduct takes that as "not there" and goes on, and
 // WebKit says each such answer on the console as an error, which is then no failure of the page
-const MAY_BE_MISSING = /^https:\/\/huggingface\.co\/[^?]+\/resolve\/[^/]+\/(tokenizer\.json|tokenizer\.model|spiece\.model|chat_template\.jinja|tokenizer_config\.json|model\.safetensors\.index\.json)$/;
+const MAY_BE_MISSING = /^https:\/\/huggingface\.co\/[^?]+\/resolve\/[^/]+\/(tokenizer\.json|tokenizer\.model|spiece\.model|chat_template\.jinja|tokenizer_config\.json|[^/]+\.index\.json)$/;
 let missingAnswered = 0;
 page.context().on("response", (response) => {
   if (response.status() === 404 && MAY_BE_MISSING.test(response.url())) missingAnswered++;
