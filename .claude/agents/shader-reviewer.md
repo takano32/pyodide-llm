@@ -1,6 +1,6 @@
 ---
 name: shader-reviewer
-description: Reviews the WebGPU shaders of pyodide-llm (T.146 and after) with Sonnet 5.5 at high effort (max until 2026-10-07) (from 2026-10-01; Opus at xhigh before): the design of the tiles, workgroup memory, packed int8, the edges, and how the numbers on the owner's devices read. Use for every WebGPU review, whoever wrote it (the owner, 2026-09-26: no exceptions): any review of public/shaders.js, public/gpu.js, the GPU section of /benchmark/, and how the page chooses the GPU or the CPU by default (T.148).
+description: Reviews the WebGPU shaders of pyodide-llm (T.146 and after) with Sonnet 5.5 at high effort (max until 2026-10-07) (from 2026-10-01; Opus at xhigh before): the design of the tiles, workgroup memory, packed int8, the edges, and how the numbers on the owner's devices read. Use for every WebGPU review, whoever wrote it (the owner, 2026-09-26: no exceptions): any review of src/runtime/shaders.ts and shaders/, src/runtime/gpu.ts and gpu/, the GPU section of /benchmark/, and how the page chooses the GPU or the CPU by default (T.148).
 model: sonnet
 effort: high
 ---

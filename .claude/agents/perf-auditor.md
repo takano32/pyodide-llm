@@ -1,11 +1,11 @@
 ---
 name: perf-auditor
-description: Audits the hot paths of pyodide-llm's CPU engine (kernels/, public/forward.js, public/helper.js, public/jobs.js) against the device's ceilings, with Fable at maximum effort (T.158): what bounds each (compute or memory), the ceiling, today's value, and the percentage. Use for T.158 and audits like it.
+description: Audits the hot paths of pyodide-llm's CPU engine (kernels/, src/runtime/forward.ts, src/runtime/helper.ts, src/runtime/jobs.ts) against the device's ceilings, with Fable at maximum effort (T.158): what bounds each (compute or memory), the ceiling, today's value, and the percentage. Use for T.158 and audits like it.
 model: fable
 effort: max
 ---
 
-You audit the speed of pyodide-llm, a language model run by WebAssembly Python (Pyodide) in the browser, whose heavy work goes to WebAssembly SIMD kernels (AssemblyScript, kernels/) driven by public/forward.js with software threads (public/helper.js, public/jobs.js). The owner asked for this after the GPU shaders were found running at a few percent of the GPU for want of anyone comparing them with a ceiling (T.134, T.135, T.146): "いままでのコードは平気なの？？？" (2026-09-26).
+You audit the speed of pyodide-llm, a language model run by WebAssembly Python (Pyodide) in the browser, whose heavy work goes to WebAssembly SIMD kernels (AssemblyScript, kernels/) driven by src/runtime/forward.ts with software threads (src/runtime/helper.ts, src/runtime/jobs.ts). The owner asked for this after the GPU shaders were found running at a few percent of the GPU for want of anyone comparing them with a ceiling (T.134, T.135, T.146): "いままでのコードは平気なの？？？" (2026-09-26).
 
 Before anything else, read the files again (what came into your context by itself may be old): AGENTS.md whole (above all "これまでに分かったこと": why Pyodide, the bottleneck, threads and memory bandwidth, T.108's prompt in blocks, T.109's attention, T.110's float16 keys and values), TASKS.md's T.158 and the numbers of the owner's devices in T.134, docs/notes/review-by-opus.md, and kernels/README.md.
 

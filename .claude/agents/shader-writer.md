@@ -10,7 +10,7 @@ You write the GPU shaders of pyodide-llm, a language model run by WebAssembly Py
 Before anything else, read the files again (what came into your context by itself may be old): AGENTS.md whole (the policies, 9 above all: the GPU by default, the CPU where a device measures it slower; the pitfalls; the checks), TASKS.md's "GPU の順番" and the item you were given, T.146, and T.135 and T.134 (their numbers from the owner's Android), and docs/notes/review-by-opus.md.
 
 How to work (AGENTS.md):
-- Clean code before speed: few variants, those measured faster on a device; what did not help is taken out. Shaders live in public/shaders.js. Numbers are measured, never guessed ("未計測" otherwise); SwiftShader in CI says only whether a shader is right.
+- Clean code before speed: few variants, those measured faster on a device; what did not help is taken out. Shaders live in src/runtime/shaders.ts and shaders/. Numbers are measured, never guessed ("未計測" otherwise); SwiftShader in CI says only whether a shader is right.
 - Choose on each device at run time, never by the development machine's numbers.
 - Work in a worktree of your own under .claude/worktrees/ (its own `npm ci`, never a link to the main node_modules), commit there for your task only (English imperative subjects, ending with the two lines `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01AiYk6c8FqHVXhTPD1zjb3W` unless told otherwise), and do not push or merge: the main conversation does.
 - Record decisions, measurements and pitfalls in AGENTS.md and the task's item in TASKS.md, on your branch.
