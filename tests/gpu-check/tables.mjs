@@ -22,6 +22,11 @@ function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
   const [dim, , every, heads, kvHeads] = ref.header, layers = ref.attending ?? every, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values }, half = { keys: ref.keys16, values: ref.values16 };
   const eight = { keys: ref.keys8, values: ref.values8 };
+  // (T.562: H16's distance, the f16 tiles' yardstick)
+  const h16 = ref.keysH ? Math.max(...Array.from({ length: layers }, (_, l) => {
+    const layer = (b64) => floats(b64).subarray(l * n * kvDim, (l + 1) * n * kvDim);
+    return Math.max(worstRow(layer(ref.keysH), layer(ref.keys), kvDim), worstRow(layer(ref.valuesH), layer(ref.values), kvDim));
+  })) : NaN;
   const byLayer = (got, want) => Array.from({ length: layers }, (_, l) => {
     const layer = (b64) => floats(b64).subarray(l * n * kvDim, (l + 1) * n * kvDim);
     return Math.max(worstRow(layer(got.keys), layer(want.keys), kvDim), worstRow(layer(got.values), layer(want.values), kvDim));
@@ -47,7 +52,7 @@ function layerTables(c, cpu, runs, { e16, q8, cpuLogits, logits, scale }) {
   runs.forEach((run, i) => {
     console.log(`- ${letter(i)}: ${run.form ?? "no form"}, ${run.attention ?? "no attention"}: ${e(all(run))} ` +
       `(all at once ${run.again ? e(all(run.again)) : "-"}), the worst layer ${run.layer} at ${run.ratio.toFixed(2)} of its line ${e(run.line)}, ` +
-      `${(all(run) / e16).toFixed(1)} E16, ${(all(run) / q8).toFixed(2)} Q8, ${e(Math.max(...byLayer(run, half)))} from NumPy's with its cache in float16, ` +
+      `${(all(run) / e16).toFixed(1)} E16, ${(all(run) / q8).toFixed(2)} Q8, ${(all(run) / h16).toFixed(2)} H16, ${e(Math.max(...byLayer(run, half)))} from NumPy's with its cache in float16, ` +
       `${e(Math.max(...byLayer(run, eight)))} from Q8, the first layer's scale ${e(scale(run))} (against Q8 ${e(scale(run, eight))}), ${said(logits(run.logits))}${logits(run.logits).token === cpuLogits.token ? " as the CPU's" : ""}`);
   });
   const seconds = { "NumPy (with its cache in float16, and Q8)": c.numpySeconds, "the plan": c.planSeconds, CPU: cpu.seconds };

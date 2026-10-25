@@ -40,12 +40,25 @@ class Q8(np.ndarray):
         inverse = np.divide(np.float32(1), scale, out=np.zeros_like(scale), where=scale > 0)
         return np.asarray(self).view(np.ndarray) @ (np.rint(groups * inverse) * scale).reshape(x.shape)
 
-def answer(data, vocabulary, text, count, options, half=False, q8=False):
+class H16(np.ndarray):
+    """T.562: a layer's matrix whose weights (weight × scale) are rounded to float16 once, and whose product takes its
+    input rounded to float16, with float32 sums: the arithmetic of llama.cpp's f16 tiles (every weight × scale and
+    activation in the workgroup's memory as f16, shaders/prompt.ts's regTile), rounded to the nearest as SwiftShader
+    and lavapipe round"""
+    def __matmul__(self, x):
+        x = np.asarray(x, dtype=np.float32).astype(np.float16).astype(np.float32)
+        return np.asarray(self).view(np.ndarray) @ x
+
+def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False):
     """NumPy's keys and values of the prompt's first count - 1 positions ([layers][positions][kv dim] each) and the
     logits of its last token, and the tokens. half (T.153): the cache rounded to float16, and nothing else (made whole
     at first, so that it never grows into an array of another class). q8 (T.187): the inputs of the layers' matrices
-    quantized to 8 bits (Q8)"""
+    quantized to 8 bits (Q8). h16 (T.562): the layers' matrices and their inputs rounded to float16 (H16)"""
     numpy = Llama(data, vocabulary, **options)
+    if h16:
+        for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
+            if getattr(numpy, name, None) is not None:
+                setattr(numpy, name, np.asarray(getattr(numpy, name), dtype=np.float32).astype(np.float16).astype(np.float32).view(H16))
     if q8:
         # (T.545: an LFM2's matrices in and out too; T.271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
         # attention's output)
@@ -91,8 +104,11 @@ def answers(data, vocabulary, text, count, options):
     gc.collect()
     eight = answer(data, vocabulary, text, count, options, half=True, q8=True)
     gc.collect()
+    # (T.562: and of answer(half=True, h16=True), the arithmetic of llama.cpp's f16 tiles)
+    halves = answer(data, vocabulary, text, count, options, half=True, h16=True)
+    gc.collect()
     return {**exact, "keys16": rounded["keys"], "values16": rounded["values"], "logits16": rounded["logits"],
-            "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"]}
+            "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"], "keysH": halves["keys"], "valuesH": halves["values"]}
 `;
 // Pyodide with the engine as the page has it, the Python above and the made-up models' maker
 async function referencePython() {

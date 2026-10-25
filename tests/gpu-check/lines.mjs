@@ -82,5 +82,12 @@ const K = { float32: 4, f16: 8 };
 //     NumPy's ten most likely tokens over NumPy's largest |logit| (the old measure took all of them: GPT-2's went past
 //     on a token some 50 logits below the top).
 const K_PACKED = 3, SCALE_LINE = 1e-4, TIE = Math.LN2;
+// T.562: the f16 tiles held to K × E16 went past it on Qwen3 0.6B, a GPU as it should be (llama.cpp's f16 tiles with the
+// float32 attention, layer 8 at 1.04 of 8 × E16, run 40153360370, where the same tiles with the f16 attention read 0.80):
+// they round every weight × scale and activation to f16, which E16 (the cache alone) does not, and which grows with
+// the depth and Qwen's large activations as Q8's 8 bits do. So their layers are held, as the packed shaders' are, to
+// H16's distance from NumPy's (NumPy's answer with the layers' matrices and their inputs rounded to float16 and its
+// cache in float16, reference.mjs's H16), K_HALF times it, and to HALF_LINE where that is larger. K_HALF: provisional
+const K_HALF = 3;
 
-export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE };
+export { COUNT, KV_START, GEN, NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, K_HALF, SCALE_LINE, TIE };
