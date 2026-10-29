@@ -62,7 +62,6 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.screenshot({ path: path.join(directory, `list-${width}.png`), fullPage: true });
   await page.evaluate(() => { document.getElementById("model").size = 0; });
 
-
   // T.372: an answer's line, with the seed's button beside its summary (not in it): closed, after the button is
   // pressed (the line stays closed, and the next run is to use the seed), and open. (stories260K, the one model
   // preview.yml builds, is greedy, and a greedy answer has no seed: the URL sets a temperature)
