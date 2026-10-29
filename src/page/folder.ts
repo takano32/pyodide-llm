@@ -33,3 +33,27 @@ export async function openHuggingFace(chosen: File[]) {
     prompt: given.prompt ?? "", placeholder: given.placeholder ?? "",
   };
 }
+
+// T.411: the model the page makes of a checkpoint of llama2.c's format and its tokenizer.bin of the visitor's disk (moved
+// here from choose.ts as it was, so that Node tries it). The legacy format knows nothing about itself, so whatever
+// differs from llama2.c's conventions comes as a third file: .json, shaped like an entry of src/models.js ({options,
+// generation, prompt, placeholder}). ask: the browser's confirm(); undefined where the visitor declines a large file
+export async function openLegacy(chosen: File[], ask: (question: string) => boolean) {
+  const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json"));
+  // the larger of the other two is the checkpoint
+  const [checkpoint, tokenizer, ...more] = chosen.filter((file) => file !== settings).sort((a, b) => b.size - a.size);
+  if (!tokenizer || more.length) {
+    throw new Error("Choose two files together: the checkpoint and its tokenizer.bin (and, optionally, settings as .json).");
+  }
+  const given = settings ? JSON.parse(await settings.text()) : {};
+  // WebAssembly addresses 32 bits, and a phone gives a tab far less than that
+  if (checkpoint.size > 1e9 && !ask(`${checkpoint.name} has ${(checkpoint.size / 1e9).toFixed(1)} GB. That may be more than this browser can hold. Read it anyway?`)) {
+    return undefined;
+  }
+  return {
+    id: "local", name: given.name ?? checkpoint.name, note: `local · ${(checkpoint.size / 1e6).toFixed(0)} MB`,
+    file: checkpoint, tokenizerFile: tokenizer, bytes: checkpoint.size, options: given.options ?? {},
+    generation: given.generation ?? { steps: 0, temperature: 0.0 },
+    prompt: given.prompt ?? "Once upon a time", placeholder: given.placeholder ?? "",
+  };
+}
