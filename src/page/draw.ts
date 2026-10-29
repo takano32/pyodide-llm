@@ -186,22 +186,26 @@ export function meta(element: Element, text: string, breakdown: string[], seed?:
   line.className = "meta";
   const head = document.createElement("summary");
   head.textContent = text;
-  if (seed !== undefined) {
-    // the seed is a button: the next run, of this model or another, uses it again
+  line.append(head);
+  rows(line, breakdown);
+  if (seed === undefined) element.append(line);
+  else {
+    // the seed is a button: the next run, of this model or another, uses it again. It stands beside the line and not
+    // in its summary (T.372: a button inside a <summary> opened the breakdown too, and is no interactive content there)
     const again = document.createElement("button");
     again.className = "seed";
     again.type = "button";
     again.title = "Use this seed for the next run";
     again.textContent = `seed ${seed}`;
-    again.onclick = (event) => {
-      event.preventDefault(); // or the line would open
-      fixSeed(seed);
-    };
-    head.append(" · ", again);
+    again.onclick = () => fixSeed(seed);
+    const beside = document.createElement("span");
+    beside.className = "seed-beside";
+    beside.append("· ", again);
+    const both = document.createElement("div");
+    both.className = "meta-line";
+    both.append(line, beside);
+    element.append(both);
   }
-  line.append(head);
-  rows(line, breakdown);
-  element.append(line);
   chat.scrollTop = chat.scrollHeight;
 }
 export const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} s`;

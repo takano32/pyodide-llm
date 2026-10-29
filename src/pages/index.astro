@@ -282,6 +282,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   .meta > summary::after, #load.measured > summary::after { content: " ▸"; }
   .meta[open] > summary::after, #load.measured[open] > summary::after { content: " ▾"; }
   .meta > div, #load-stats > div { padding-left: 1.1em; }
+  /* T.372: the seed's button beside the line, on its first row (and under it where the width is short) */
+  .meta-line { display: flex; flex-wrap: wrap; align-items: first baseline; column-gap: 0.3em; font-size: 0.72rem; color: var(--muted); padding-inline: 6px; }
+  .meta-line > .meta { padding-inline: 0; }
   /* nothing to open until the numbers are in */
   #load { min-width: 0; }
   #load:not(.measured) > summary { cursor: default; pointer-events: none; }
@@ -316,7 +319,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     .sheet::backdrop { background: rgb(0 0 0 / 0.3); }
   }
   /* the seed under an answer is a button: it fixes that seed for the next run */
-  .meta .seed { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .meta .seed, .seed-beside .seed { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
   #composer:focus-within { border-color: var(--accent); }
   /* grows with its lines (the script sets the height) up to five of them, then scrolls: the page never does */
   #prompt { flex: 1; min-width: 0; font: inherit; line-height: 1.5; color: var(--text); background: transparent; border: 0; outline: 0; resize: none; padding: 6px 0; max-height: calc(7.5em + 12px); overflow-y: auto; }
