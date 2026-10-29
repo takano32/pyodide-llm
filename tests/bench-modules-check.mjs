@@ -42,7 +42,7 @@ const at = (name) => `benchmark/${name}`;  // (a file of this worker, by its nam
 // (T.368.7: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given,
 // and the modules are then named by their own endings)
 const WINDOW = path.basename(tree.runtime(at("gpu.js"))), END = path.extname(WINDOW);
-const linked = windowed(at(WINDOW), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
+const linked = windowed(at(WINDOW), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), outside: true });
 // (a file by its name under the worker's folder; one outside it that a module takes names of, T.367.3's table of the
 // built files, by its way from there: "../built.js")
 const short = (name) => (name.startsWith(at("")) ? name.slice(at("").length) : `../${name}`);

@@ -28,28 +28,27 @@ function madeUp(name, files) {
 const pythonOf = (...args) => spawnSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/tree.py"), ...args], { encoding: "utf8" });
 const nodeOf = (...args) => spawnSync(process.execPath, [path.join(root, "tests/tree.mjs"), ...args], { encoding: "utf8" });
 const KINDS = ["runtime", "python", "built", "served"];
-const AS_IT_IS = "const { BATCH } = await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));\n", LINKED = 'import { BATCH } from "./jobs.js";\n';
+const LINKED = 'import { BATCH } from "./jobs.js";\n';
 
 // ---- the layouts: nothing of them is written in tree.mjs, tree.py or tree.json
 const LAYOUTS = {
-  "all in public": { files: { "public/forward.js": AS_IT_IS, "public/llama2_numpy.py": "", "public/simdkernel.so": "", "public/coi.js": "", "public/gpu.js": "", "public/gpu/device.js": "",
+  "all in public": { files: { "public/forward.js": LINKED, "public/llama2_numpy.py": "", "public/simdkernel.so": "", "public/coi.js": "", "public/gpu.js": "", "public/gpu/device.js": "",
     "public/benchmark/gpu.js": "", "public/benchmark/gpu/device.js": "", "public/coi-test/worker.js": "", "public/worker.js": "" },
-    folders: { runtime: "public", python: "public", built: "public", served: "public" }, bundled: false },
-  "the Python moved": { files: { "public/forward.js": AS_IT_IS, "src/python/llama2_numpy.py": "", "public/simdkernel.so": "", "public/coi.js": "", "public/gpu.js": "" },
-    folders: { runtime: "public", python: "src/python", built: "public", served: "public" }, bundled: false },
+    folders: { runtime: "public", python: "public", built: "public", served: "public" } },
+  "the Python moved": { files: { "public/forward.js": LINKED, "src/python/llama2_numpy.py": "", "public/simdkernel.so": "", "public/coi.js": "", "public/gpu.js": "" },
+    folders: { runtime: "public", python: "src/python", built: "public", served: "public" } },
   "both moved": { files: { "src/runtime/forward.js": LINKED, "src/python/llama2_numpy.py": "", "src/runtime/built/simdkernel.so": "", "public/coi.js": "", "src/runtime/gpu.js": "",
     "src/runtime/benchmark/gpu.js": "" },
-    folders: { runtime: "src/runtime", python: "src/python", built: "src/runtime/built", served: "public" }, bundled: true },
+    folders: { runtime: "src/runtime", python: "src/python", built: "src/runtime/built", served: "public" } },
   "one nobody planned": { files: { "app/js/forward.js": LINKED, "py/llama2_numpy.py": "", "out/wasm/simdkernel.so": "", "coi.js": "", "app/js/gpu.js": "" },
-    folders: { runtime: "app/js", python: "py", built: "out/wasm", served: "" }, bundled: true },
+    folders: { runtime: "app/js", python: "py", built: "out/wasm", served: "" } },
   // (nothing built: the place is the one the tree's Makefile builds the kernels in)
-  "nothing built yet": { files: { "public/forward.js": AS_IT_IS, "public/llama2_numpy.py": "", "public/coi.js": "", "public/gpu.js": "", "Makefile": "kernels:\tlib/out/simdkernel.so\nlib/out/simdkernel.so:\tkernels/kernel.ts\n\tpython kernels/build.py\n" },
-    folders: { runtime: "public", python: "public", built: "lib/out", served: "public" }, bundled: false },
+  "nothing built yet": { files: { "public/forward.js": LINKED, "public/llama2_numpy.py": "", "public/coi.js": "", "public/gpu.js": "", "Makefile": "kernels:\tlib/out/simdkernel.so\nlib/out/simdkernel.so:\tkernels/kernel.ts\n\tpython kernels/build.py\n" },
+    folders: { runtime: "public", python: "public", built: "lib/out", served: "public" } },
 };
-for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
+for (const [name, { files, folders }] of Object.entries(LAYOUTS)) {
   const folder = madeUp(name, files), tree = treeOf(folder);
   assert.deepEqual(tree.folders, folders, `${name}: the folders`);
-  assert.equal(tree.bundled, bundled, `${name}: whether a bundler links the runtime`);
   assert.equal(tree.root, folder);
   assert.equal(tree.runtime("gpu.js"), path.join(folder, folders.runtime, "gpu.js"), `${name}: a name under its kind, where another file of the tree ends the same`);
   for (const kind of KINDS) {
@@ -147,7 +146,6 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
     "src/python/llama2_numpy.py": "", "src/runtime/built/simdkernel.so": "", "public/coi.js": "", "public/page.ts": "", "elsewhere/deep/lone.ts": "", "kernels/kernel.ts": "" });
   const tree = treeOf(half);
   assert.deepEqual(tree.folders, { runtime: "src/runtime", python: "src/python", built: "src/runtime/built", served: "public" }, "the anchor is found in its other spelling");
-  assert.equal(tree.bundled, true);
   const both = (kind, name, file) => {
     assert.equal(tree[kind](name), path.join(half, file), `${kind} ${name}`);
     assert.equal(pythonOf("--root", half, kind, name).stdout.trim(), path.join(half, file), `tree.py, ${kind} ${name}`);
@@ -190,7 +188,6 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   const rule = { anchors: { runtime: "main.js", python: "start.py", built: "k.so", served: "sw.js" }, skip: ["node_modules", "vendor"], packages: { start: "pkg" } };
   const tree = treeOf(folder, rule);
   assert.deepEqual(tree.folders, { runtime: "lib", python: "py", built: "o", served: "static" });
-  assert.equal(tree.bundled, true);
   assert.deepEqual(tree.pythonFiles("start"), ["start.py", "pkg/a.py"]);
   assert.throws(() => treeOf(folder, { ...rule, skip: ["node_modules"] }).runtime(), /main\.js .* is in 2 places: lib\/main\.js and vendor\/main\.js/);
 }
@@ -254,7 +251,7 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   const began = performance.now();
   treeOf(root, { ...RULE }).runtime();
   console.log(`tree-check: this tree: the runtime in ${tree.folders.runtime}/, the Python in ${tree.folders.python}/ (${all.length} files), ` +
-    `the built files in ${tree.folders.built}/${tree.bundled ? ", bundled" : ""}; a walk of it takes ${(performance.now() - began).toFixed(1)} ms`);
+    `the built files in ${tree.folders.built}/; a walk of it takes ${(performance.now() - began).toFixed(1)} ms`);
 }
 fs.rmSync(scratch, { recursive: true, force: true });
 console.log(`tree-check: ok (${Object.keys(LAYOUTS).length} layouts found by looking, by tree.mjs and tree.py alike)`);
