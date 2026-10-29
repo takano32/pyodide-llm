@@ -32,7 +32,9 @@ options = json.loads(Path(f"{out}.json").read_text())
 llama = Llama(np.memmap(f"{out}.bin", dtype=np.uint8, mode="r"), Path(f"{out}.tokenizer.bin").read_bytes(), kernels=None,
               **{**options, **({"rms_norm_eps": eps} if eps else {})})
 # (T.452: a float32 file holds the RoPE tables the converter made of config.json, and the engine reads them, never the
-# options: where the options (an entry's, through perplexity_prepare.py --entry) say the scaling, its tables, as the page)
+# options: where the options (an entry's, through perplexity_prepare.py --entry) say the scaling, its tables, as the page.
+# A float32 file whose converter put its own yarn or llama3 scaling in the options has its tables made anew by the same
+# formula: the same numbers, but for where the float64 of convert/plan.py is rounded to float32)
 if options.get("dtype") == "float32" and "rope_scaling" in options:
     from fixed_outputs import with_the_entrys_rope
     with_the_entrys_rope(llama, options)
