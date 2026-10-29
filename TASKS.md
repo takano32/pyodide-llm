@@ -565,7 +565,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 - **したこと（2026-10-29）**: 種のボタンを `<summary>` の外に出した（`src/page/draw.ts` の `meta()`）。行は `div.meta-line` に `details.meta` と `span.seed-beside`（「· seed N」）を並べ、CSS は flex の折り返しで最初の行の高さにそろえる（`index.astro` の `.meta-line`）。種の無い答え（greedy）は前と同じ `details.meta` だけ。ボタンは押しても内訳を開かなくなった（`preventDefault` は要らない）。
 - **取りまとめ役の決め（訳）**: (1) 幅の足りないスマホでは、種は要約の下の行に回り、開くと内訳の下に動く。PC の幅では要約の右で、開いても動かない。要約の中に置けない以上、同じ行に置き続けるには `details` を inline にする必要があり、Safari での動きが読めないのでやめた。(2) 「▸」は要約の終わりに付くので、並びは「… temp 0.7 ▸ · seed N」になる（前は「… · seed N ▸」）。どちらも見た目は持ち主が `preview.yml` の画面で決める。
-- 試験: `tests/screenshots.mjs` に場面を足した（tiny-lm で答えさせ、閉じた行・種を押した後・開いた行を撮る。押しても開かないこと、要約の中にボタン・リンク・入力が無いことを見て、違えば落ちる。壊し方: ボタンを要約の中に戻すと「interactive elements in a summary: 1」で落ちる）。手元の Chromium の e2e（tiny-lm）が通った。
+- 試験: `tests/screenshots.mjs` に場面を足した（stories260K に `?temperature=0.7` で答えさせ、閉じた行・種を押した後・開いた行を撮る。押しても開かないこと、要約の中にボタン・リンク・入力が無いことを見て、違えば落ちる。壊し方: ボタンを要約の中に戻すと「interactive elements in a summary: 1」で落ちる）。手元の Chromium の e2e（tiny-lm）が通った。
 ### T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 状態: 未着手（2026-10-02 に採番。規模 小〜中）
 - relaxed SIMD の無いブラウザ（Safari）の 3 値のカーネルは、relaxed の形の約 0.6 倍（T.231 の表: arm64 で 12.1 対 20.2 G 重み / 秒）。本番の WebKit は 1.7B で 7.6 tok/s、Chromium は 16.9。iPhone と Mac の Safari に効く。
 

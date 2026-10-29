@@ -64,11 +64,11 @@ for (const [width, viewport] of Object.entries(widths)) {
 
 
   // T.372: an answer's line, with the seed's button beside its summary (not in it): closed, after the button is
-  // pressed (the line stays closed, and the next run is to use the seed), and open. (tiny-lm: stories260K is greedy,
-  // and a greedy answer has no seed)
+  // pressed (the line stays closed, and the next run is to use the seed), and open. (stories260K, the one model
+  // preview.yml builds, is greedy, and a greedy answer has no seed: the URL sets a temperature)
   {
     const answering = await fresh(viewport);
-    await answering.page.goto(`${site}?model=tiny-lm`);
+    await answering.page.goto(`${site}?model=stories260K&temperature=0.7`);
     await acrossReload(() => answering.page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 600000 }));
     await answering.page.fill("#prompt", "Once upon a time");
     await answering.page.click("#run");
