@@ -530,6 +530,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 状態: 未着手（2026-10-02 に採番。規模 小〜中）
 - relaxed SIMD の無いブラウザ（Safari）の 3 値のカーネルは、relaxed の形の約 0.6 倍（T.231 の表: arm64 で 12.1 対 20.2 G 重み / 秒）。本番の WebKit は 1.7B で 7.6 tok/s、Chromium は 16.9。iPhone と Mac の Safari に効く。
+- **調べ（2026-10-29、取りまとめ役。まだ何も変えていない）**: bun（JavaScriptCore）で手元の a1-free（arm64）に `tests/ternary-bench.mjs --shapes 2048x2048 --forms t2r,t2,q8r,q8 --no-prompt` を回した: 1 本で t2r 14.4・t2 9.6・q8r 8.9・q8 7.8 G 重み / 秒（t2 は t2r の 0.67 倍、V8 の 0.6 倍と同じ形）。JavaScriptCore でも t2 は int8 の形（q8）より速い。案を 1 つ数えた: 符号を −1・0・+1 に直して選び（`i8x16.eq` と `neg` と `and`・`or`）、`i16x8.extadd_pairwise_i8x16_s` で足す形は、組み替えの shuffle が要らない代わりに 1 面に 7 命令で、今の形（8 つの `extmul` と足し算、1 面あたり約 5 命令）より多い。速くする形はまだ見つかっていない。測るなら CI の WebKit（Playwright）で: 速さは手元の数字で決めない（bun は CI では使わない: 持ち主の決め）。
 
 ### T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 状態: 未着手（2026-10-02、T.232 から。規模 小〜中）
 - GPU の節に 3 値の行列 × ベクトル（符号を −1・0・+1 に直す今の形と、0・1・2 のまま −Σa を引く形を並べる）・タイル・層、CPU の節に 3 値のカーネルと回転の行。どちらの形が速いかは未計測で、端末の報告で決める。`public/benchmark/gpu.js` は T.232 では触っていない。
