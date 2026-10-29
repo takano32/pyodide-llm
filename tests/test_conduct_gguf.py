@@ -173,7 +173,6 @@ def test_a_server_that_answers_a_piece_short_is_asked_from_where_its_answer_ende
     assert told[-1][3:7] == (47634, 70000, 47634, 70000)
 
 
-
 def test_a_gguf_said_to_be_shorter_than_what_came_is_fed_what_its_size_allows(monkeypatch):
     """T.419: an answerer that says a size smaller than the bytes in hand (a file that changed between two requests, or
     an answerer that is wrong): no stream that begins after its end is asked for, and what is fed ends at the size
@@ -193,6 +192,12 @@ def test_a_gguf_said_to_be_shorter_than_what_came_is_fed_what_its_size_allows(mo
     assert all(request[3] <= request[4] for request in streams), streams
     assert last[0] == "done" and same(pieces, file[40000:50000])
     assert [request[3:7] for request in streams] == [(50000, 50000, 50000, 50000)]
+    # and one said to be shorter than its head: nothing is fed, and the stream begins and ends at base
+    Smaller.range = lambda self, where, name, begin, end: (Hub.range(self, where, name, begin, end)[0], 30000)
+    stand_in, pieces = fed_to(monkeypatch)
+    hub, told = Smaller({"maker/model-GGUF/model.Q8_0.gguf": file}, GGUF_HF, first=5000, rest=5000), []
+    answered(hub, conduct(GGUF_HF), told)
+    assert pieces == [] and [request[3:5] for request in told if request[0] == "stream"] == [(40000, 40000)]
 
 def test_a_gguf_whose_head_never_ends_is_the_converters_to_refuse(monkeypatch):
     """The file ends before its head does: Incomplete for good, once a piece that ends at the file's end or past it
