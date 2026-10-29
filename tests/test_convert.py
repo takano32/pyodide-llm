@@ -165,6 +165,8 @@ def test_a_tokenizer_json_precompiled_map_goes_into_tokenizer_bin():
         assert tokenizer_json_charsmap(tokenizer) == map and tokenizer_json_options(tokenizer) == {"tokenizer_kind": "unigram", "nfkc": False}
         conversion = vocabulary_conversion(json.dumps(tokenizer).encode(), "tokenizer.json", 320)
         assert bytes(conversion.tokenizer).endswith(b"charsmap" + struct.pack("<I", len(map)) + map)
+        # (T.385: and how its stored types were read, the worker's: none fed yet, and a copy of the stream's own)
+        assert conversion.widened == {} and conversion.widened is not conversion.stream.widened
         vocabulary = Tokenizer(bytes(conversion.tokenizer), 320, kind="unigram")
         assert vocabulary.encode("Ａ\nw1") == vocabulary.encode("A w1") == [3, 5]
     assert tokenizer_json_charsmap({"normalizer": None}) == b"" and tokenizer_json_charsmap({"normalizer": {"type": "NFKC"}}) == b""
