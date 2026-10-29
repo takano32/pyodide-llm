@@ -49,6 +49,8 @@ async function visit(name, moment) {
       await page.waitForFunction(() => /(\d+) % converted/.test(document.getElementById("status-text")?.textContent ?? "") &&
         Number(/(\d+) % converted/.exec(document.getElementById("status-text").textContent)[1]) >= 5, null, { timeout: 300e3 });
     }
+    // (in either moment, the requests are seen: a browser that showed none of a worker's would pass "none after" for nothing)
+    if (!asked.length) return failed(`${name}: no request to huggingface.co was seen before the switch`);
     const at = await status();
     await page.selectOption("#model", SMALL);
     const switched = Date.now();
