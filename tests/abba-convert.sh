@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# T.359 review: the page's conversion speed, this tree against origin/main's, in one job, the order of the two swapped
-# every round (A B, B A, A B, ...), for each dtype: tests/profile-convert.mjs on the same model directory.
+# T.359 review: the page's conversion speed, this tree against origin/main's, in one job, each round running one side
+# twice and the order swapped every round (now base base now, base now now base, ...: T.409), for each dtype:
+# tests/profile-convert.mjs on the same model directory.
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
 # The base tree is a copy of origin/main's that tests/other-tree.mjs makes (T.430: not `git fetch --depth 1`, which cut
 # the history of a whole clone behind the commit; a copy, as this script edits its tool), with this tree's node_modules
 # and kernels. A .tmp/base left by an earlier run is used as it is (the origin/main of then): rm -rf .tmp/base for today's. PROFILE=0 times both without cProfile.
 # T.374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
 # request of a stream brings), and a base of before T.374.2.1 calls the converter itself: against such a base, the
-# difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <MB/s>" line per run and the medians and ranges at the end.
+# difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <round> <MB/s>" line per run and the medians and ranges at the end.
 set -u
-dir=$1; rounds=${2:-8}; shift 2 || true; dtypes=${*:-int8 float32}
+dir=$1; rounds=${2:-4}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
   base=$(node --input-type=module -e 'import { otherTree } from "./tests/other-tree.mjs"; console.log(otherTree("origin/main").folder)') &&
     cp -a "$base" .tmp/base && rm -f .tmp/base/done &&
@@ -22,7 +23,9 @@ fi
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
 # (before T.374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
 # this job; between jobs the same comparison moved by more than that (TASKS.md's T.374.2.1): one job is not a verdict.
-# T.409: and, under it, the control of this job (one side twice in each round), which a difference has to be outside of.
+# T.409: and, under it, the control of this job (one side twice in each round), which a difference has to be outside of
+# (the standard error takes the four runs of a tree in two rounds as apart, and the two of one round are nearer: it is a
+# little small, which the control makes up for).
 if ! grep -q LAYOUT .tmp/base/tests/profile-convert.mjs; then
   sed -i -e 's|^const convert = py.pyimport("llama2_convert");$|py.runPython(`layout_before = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[0])})`);\n&|' \
     -e 's|^py.globals.set("conversion", conversion);$|py.runPython(`layout_beside = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[1])})`);\n&|' .tmp/base/tests/profile-convert.mjs
