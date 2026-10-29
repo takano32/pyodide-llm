@@ -26,6 +26,8 @@
 //                  what a page that no longer answers last said).
 //   E2E_SILENCE    seconds (T.506, default 120): a page that has answered the tool and then answers nothing for so long
 //                  is taken for gone (its process ended), and the run fails there with what its status line last said.
+//   E2E_BEAT       seconds (T.373, default 300) between the lines that say how far a run has come and what its status
+//                  line says (the first line, before the browser starts, says when it started).
 //   E2E_CONSOLE    a file every line of the page's console is appended to as it comes (T.380.2), whatever the run's end.
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T.99: a model converted from Hugging Face must come from what
@@ -105,13 +107,26 @@ let browser, browserVersion = "", page;
 const statusLines = [];
 let statusNow;
 const limit = Number(process.env.E2E_TIMEOUT ?? 900) * 1000;
+// T.373: a line before anything can hang, and one every five minutes until the run ends, with what the status line
+// says: a run the job's own limit ends (its log is all there is then: no artifact is kept) still says how far it came.
+// (One WebKit run on the site just deployed said nothing for 47 minutes and left no log, run 37955775249.)
+console.log(`e2e: ${engine}, ${model}: started at ${new Date(started).toISOString()}, a limit of ${limit / 1000}s`);
+const heartbeat = setInterval(() => {
+  console.log(`e2e: ${engine}, ${model}: ${((Date.now() - started) / 1000).toFixed(0)}s in, the status line says ${statusNow === undefined ? "nothing yet" : JSON.stringify(statusNow)}`);
+}, Number(process.env.E2E_BEAT ?? 300) * 1000);
+heartbeat.unref();
+// (and where stdout no longer drains, the process ends anyway: a stuck pipe kept no time limit)
+const exitAfter = (code, line) => {
+  setTimeout(() => process.exit(code), 10e3).unref();
+  process.stdout.write(line, () => process.exit(code));
+};
 const watchdog = setTimeout(async () => {
   const seconds = limit / 1000;
   record({ ok: false, timedOut: true, failures: [`timed out after ${seconds}s`] });
   if (page) await keepArtifacts(`timed out after ${seconds}s`);
   console.error(`FAILED\n- timed out after ${seconds}s (the status line last said: ${statusLines.at(-1) ?? "nothing"})`);
   // stdout may be a pipe (| tee): let it drain before the process ends
-  process.stdout.write(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`, () => process.exit(2));
+  exitAfter(2, `${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`);
 }, limit);
 const kind = playwright[channel ? "chromium" : engine], viewport = { width: 390, height: 844 };
 // T.135, T.148: a runner has no GPU; SwiftShader stands in (its speed means nothing), taken with ?gpuTest=on, refused without
@@ -193,7 +208,7 @@ const lost = async (how) => {
   record({ ok: false, timedOut: false, failures: [reason] });
   await keepArtifacts(reason);
   console.error(`FAILED\n- ${reason}`);
-  process.stdout.write(`${engine} ${browserVersion}, ${model}: ${reason}\n`, () => process.exit(1));
+  exitAfter(1, `${engine} ${browserVersion}, ${model}: ${reason}\n`);
 };
 const statusWatch = setInterval(async () => {
   const text = await Promise.race([page.evaluate(() => document.getElementById("status-text")?.textContent ?? ""),
@@ -527,6 +542,7 @@ record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Numb
          ...(then.length ? { then } : {}) });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
+clearInterval(heartbeat);
 clearInterval(statusWatch);
 // T.141: browser.close() of WebKit on Windows did not return (three times in CI: the answer printed, then nothing),
 // the watchdog was already stopped, the next run never started and the job ran into its limit. The close is given
