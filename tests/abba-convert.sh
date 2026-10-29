@@ -22,6 +22,7 @@ fi
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
 # (before T.374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
 # this job; between jobs the same comparison moved by more than that (TASKS.md's T.374.2.1): one job is not a verdict.
+# T.409: and, under it, the control of this job (one side twice in each round), which a difference has to be outside of.
 if ! grep -q LAYOUT .tmp/base/tests/profile-convert.mjs; then
   sed -i -e 's|^const convert = py.pyimport("llama2_convert");$|py.runPython(`layout_before = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[0])})`);\n&|' \
     -e 's|^py.globals.set("conversion", conversion);$|py.runPython(`layout_beside = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[1])})`);\n&|' .tmp/base/tests/profile-convert.mjs
@@ -30,24 +31,32 @@ fi
 # PROFILE=0 (the time without cProfile): the base tree's tool may not know it (run the profiled comparison first)
 if [ "${PROFILE:-}" = 0 ]; then sed -i 's/began = time.perf_counter(); profiler.enable()")/profiler.enable(); profiler.disable(); began = time.perf_counter()")/' .tmp/base/tests/profile-convert.mjs; fi
 mkdir -p .tmp/abba; : > .tmp/abba/lines
-run() { # tree name dtype
-  (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n 's/.*(\([0-9]*\) MB\/s).*/\1/p' | head -1 | sed "s|^|$2 $3 |") >> .tmp/abba/lines
+run() { # tree name dtype round
+  (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n 's/.*(\([0-9]*\) MB\/s).*/\1/p' | head -1 | sed "s|^|$2 $3 $4 |") >> .tmp/abba/lines
 }
+# T.409: each round runs one side twice (now base base now, then base now now base): the two runs of one tree in a
+# round are the control, what a measurement moves by itself within this job (tests/compare-engines.mjs's "one side twice")
 for r in $(seq 1 "$rounds"); do
   for d in $dtypes; do
-    if [ $((r % 2)) = 1 ]; then run . now "$d"; run .tmp/base base "$d"; else run .tmp/base base "$d"; run . now "$d"; fi
+    if [ $((r % 2)) = 1 ]; then run . now "$d" "$r"; run .tmp/base base "$d" "$r"; run .tmp/base base "$d" "$r"; run . now "$d" "$r"
+    else run .tmp/base base "$d" "$r"; run . now "$d" "$r"; run . now "$d" "$r"; run .tmp/base base "$d" "$r"; fi
   done
 done
 cat .tmp/abba/lines
 node -e '
-const rows = require("fs").readFileSync(".tmp/abba/lines", "utf8").trim().split("\n").map((l) => l.split(" "));
+const rows = require("fs").readFileSync(".tmp/abba/lines", "utf8").trim().split("\n").map((l) => l.split(" "));  // (name dtype round MB/s)
 for (const key of new Set(rows.map((r) => r[0] + " " + r[1]))) {
-  const v = rows.filter((r) => r[0] + " " + r[1] === key).map((r) => +r[2]).sort((a, b) => a - b);
+  const v = rows.filter((r) => r[0] + " " + r[1] === key).map((r) => +r[3]).sort((a, b) => a - b);
   console.log(key, "median", v[v.length >> 1], "min", v[0], "max", v[v.length - 1], "n", v.length);
 }
 // now against base, by the means, with one standard error of the difference within this job
 for (const d of new Set(rows.map((r) => r[1]))) {
-  const stat = (name) => { const v = rows.filter((r) => r[0] === name && r[1] === d).map((r) => +r[2]), m = v.reduce((a, b) => a + b, 0) / v.length; return [m, v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1) / v.length]; };
+  const stat = (name) => { const v = rows.filter((r) => r[0] === name && r[1] === d).map((r) => +r[3]), m = v.reduce((a, b) => a + b, 0) / v.length; return [m, v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1) / v.length]; };
   const [bm, bv] = stat("base"), [nm, nv] = stat("now");
   console.log(d, "now against base:", ((nm / bm - 1) * 100).toFixed(2) + "%", "+-", (Math.sqrt(bv + nv) / bm * 100).toFixed(2) + "%");
+  // T.409: the control, the faster of the two runs of one tree in a round over the slower (each round has one side twice):
+  // a difference of now against base inside these is no verdict
+  const twice = [...new Set(rows.filter((r) => r[1] === d).map((r) => r[2]))].flatMap((round) => ["now", "base"].map((name) => rows.filter((r) => r[0] === name && r[1] === d && r[2] === round).map((r) => +r[3])))
+    .filter((v) => v.length === 2 && Math.min(...v) > 0).map((v) => Math.max(...v) / Math.min(...v)).sort((a, b) => a - b);
+  if (twice.length) console.log(d, "one side twice, the faster over the slower:", "median", ((twice[twice.length >> 1] - 1) * 100).toFixed(2) + "%", "largest", ((twice.at(-1) - 1) * 100).toFixed(2) + "%", "of", twice.length);
 }'
