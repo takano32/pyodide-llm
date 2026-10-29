@@ -38,9 +38,6 @@
 //                                      asks whether, or says "make kernels")
 //   tree.folders                       { runtime, python, built, served }: the folders as the tree names them, for a
 //                                      tool's words ("public", "src/runtime")
-//   tree.bundled                       whether a bundler links the runtime's files (static imports), or each is fetched
-//                                      as it is and reads its neighbours with its own ?v= (tests/imports.mjs): read off
-//                                      the runtime's anchor, which takes its neighbours' names in one way or the other
 //   tree.pythonFiles("llama2_numpy")   the module's files under tree.python(): its window, then every .py of its
 //                                      package's folder (a commit of before the packages has the window alone)
 //   placePython(pyodide, tree, modules)   those files into Pyodide's file system, where `import` finds them
@@ -126,8 +123,6 @@ export function treeOf(root = HERE, rule = RULE) {
   for (const kind of KINDS) tree[kind] = at(kind);
   tree.runtimeUrl = (name = "", options) => pathToFileURL(tree.runtime(name, options));
   Object.defineProperty(tree, "folders", { enumerable: true, get: () => Object.fromEntries(KINDS.map((kind) => [kind, folder(kind)])) });
-  // (a file that is fetched as it is takes a neighbour's names by an awaited import; one a bundler links, by `import … from "./…"`)
-  Object.defineProperty(tree, "bundled", { enumerable: true, get: () => /^import [^\n]* from "\.\.?\//m.test(fs.readFileSync(tree.runtime(rule.anchors.runtime), "utf8")) });
   tree.pythonFiles = (module) => {
     const package_ = rule.packages[module];
     if (!package_) throw new Error(`tests/tree.json names no package of ${module}`);

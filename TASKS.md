@@ -188,7 +188,7 @@
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
-- T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 未着手
+- T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1497,5 +1497,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **候補**（上流にまだ見当たらないもの）: (1) 問いだけ違う `file:` の URL の動的 import が同じモジュールになる（相対の指定・絶対の道なら別。Node と仕様は別のモジュール）: **issue oven-sh/bun#46900 を出した**（2026-10-25、持ち主「出していいよ」。文は `.tmp/bun/issue-file-url-query.md` の下書きのまま）。直す PR は手元で建てられないので、上流が拾うかを見てから。(2) WebAssembly のメモリの `grow` がエンジンの形で約 1 秒かかる（小さな再現はまだ）。**出さないもの**（上流に出ている）: `stripTypeScriptTypes`（PR #41649 ほか）、`onmessage` で終わらない（issue #24256、PR #32482 ほか）、共有の 64 ビットのメモリが worker に 32 ビットで届く（issue #45739、PR #45916: 前に候補 (3) と書いた「`address` を読まない」は取りまとめ役の読み違いで、本当はこれ）。
 - **手元のビルドは試してやめた（2026-10-25、持ち主の決め）**: LLVM 22 では建たない（手元の Rust は stable も LLVM 23 で、bun のビルドは clang と rustc の LLVM の大きい版をそろえることを求める）。LLVM 23 は入れない。試しの途中でビルドの道具が固定の nightly を入れた（取りまとめ役の誤り）のは消した。だから PR は、候補ごとに小さな再現と上流の試験の形の文を作り、issue か、上流の CI に任せる PR で出す（出す前に持ち主に見せる: 外向きの操作）。経緯は docs/notes/t584-bun-2026-10-25.md。
 
-### T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 状態: 未着手（2026-10-25、T.435 のレビューから。規模 小）
+### T.587 [整理][遠隔試験] 試験の道具が読む「全部 `public/`」の木の形と `?v=` つきの import を消すか — 状態: 進行中（2026-10-29、ブランチ `t.587-one-form`。前の状態: 未着手、2026-10-25、T.435 のレビューから。規模 小）
 - `tests/tree.mjs`（と `tree-check.mjs` の「all in public」「the Python moved」の作り物の木）と `tests/imports.mjs`（`bundled` でない木の `?v=` つきの動的 import の読み手、`importsOf(…, { bundled })`）は、T.367 の前の木の形も読む。網が相手にする最も古い木 `f91d83f9`（2026-10-12）はもう `src/runtime/` の形。ほかに古い木を読む道具（`compare-builds.sh`・`abba-convert.sh`・`kernelSources()` に古いコミットを渡す使い方）が無いかを確かめてから、読み手と作り物を消す。消すと道具がその形の木を断るようになる（今は黙って読む）。
+- **したこと（2026-10-29）**: 古い木を読む道具を先に見た: 網（`unchanged.mjs`）の相手は `f91d83f9` から後で全部 `src/runtime/` の束ねる形。`compare-engines.mjs`・`compare-builds.sh`・`abba-convert.sh` は相手の木の forward をそのまま import するかビルドするだけで、import の読み手も `tree.bundled` も読まない。`kernelSources()` はカーネルの文だけ。だから消した: `tests/imports.mjs` の `?v=` つきの読み手（awaited な import と窓の一覧 `modules`、`importsOf()` と `windowed()` の引数 `bundled`、戻り値の `asked`・`how`）、`tests/tree.mjs` の `tree.bundled`、`dist-check.mjs` の「束ねない木は規則 1 と 2 だけ」の 2 か所、`bundle.mjs` の `dist/<名前>.js` への戻り、`dist-rules-check.mjs` の「そのまま配る木」の組。`python-archive-check.mjs` は zip を頼む番地を、束ねる木の作る物の名前だけで見る（前は束ねない木の「worker の隣に `?v=`」も持っていた）。呼び手 5 つ（`worker-source`・`shaders-source`・forward・GPU・ベンチの `*-modules-check`）は `bundled:` を渡さなくなった。古い形の import は「an import this check does not know」で断る。
+- **取りまとめ役の決め（訳）**: `tests/tree-check.mjs` の「all in public」「the Python moved」「nothing built yet」の作り物の木は残した（中の forward.js は static import に）。`tree.mjs` の置き場の探し方はどの形の木にも同じで（持ち主の「そのときに探す」）、これらの木は「種類の下で先に探す」「2 か所にある」の試験を持っている。消すのは import の読み手と束ねるかの判定だけ。
+- 試験: 軽い組。壊し方 1 つ: `importsOf()` の awaited な import の断りを外すと `imports-check` が「Missing expected exception」で落ちる。CI を省いた。訳: 試験の道具だけで、触った検査は全部軽い組にある。

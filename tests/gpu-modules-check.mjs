@@ -40,7 +40,7 @@ import { treeOf } from "./tree.mjs";
 const tree = treeOf();
 // (T.368.6: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given)
 const WINDOW = path.basename(tree.runtime("gpu.js")), END = path.extname(WINDOW);
-const linked = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
+const linked = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), outside: true });
 const own = (name) => name === WINDOW || name.startsWith("gpu/");
 const programs = new Map([...linked.files].filter(([name]) => own(name)).map(([name, { program }]) => [name, program]));
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);

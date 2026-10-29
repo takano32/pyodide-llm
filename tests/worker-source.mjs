@@ -28,7 +28,7 @@ export function workerScripts(tree = treeOf()) {
   // (T.368.3: the window by the name the tree has it under, worker.ts or worker.js: windowed() blanks a .ts file's types
   // by its name, and lists the folder's files of either ending)
   const WINDOW = path.basename(tree.runtime("worker.js"));
-  const { files, there, others } = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
+  const { files, there, others } = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), outside: true });
   // (the second name of "export const A = 1, B = 2;" and of "export let a, b;" too)
   const exported = (name, file) => new RegExp(`^export ((async )?(function\\*?|const|let|class) |(const|let) [^;\\n]*, )${name}\\b`, "m").test(files.get(file).text);
   // (a module by its name without the folder and the ending, as the checks that read these scripts know it; the

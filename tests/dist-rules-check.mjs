@@ -113,8 +113,8 @@ const family = familyOf(coi);
   const dist = path.join(scratch, "right", "dist");
   assert.equal(builtModule("forward", dist).href, pathToFileURL(path.join(dist, "_astro/forward.Dqke8pTt.js")).href);
   assert.equal((await import(builtModule("forward", dist))).F, 1, "what is imported is the build's file, not the sources'");
-  assert.throws(() => builtModule("forwar", dist), /neither _astro\/forwar\.<hash>\.js nor forwar\.js in it/);
-  assert.throws(() => builtModule("lazy", dist), /neither _astro\/lazy\.<hash>\.js nor lazy\.js/);
+  assert.throws(() => builtModule("forwar", dist), /no _astro\/forwar\.<hash>\.js in it/);
+  assert.throws(() => builtModule("lazy", dist), /no _astro\/lazy\.<hash>\.js in it/);
   assert.throws(() => builtModule("forward", path.join(scratch, "nowhere")), /no _astro\/ in it: npm run build/);
   const twice = path.join(written("two forwards", { "dist/_astro/forward.Dqke8pTt.js": "", "dist/_astro/forward.AAAAAAAA.js": "", "dist/_astro/forward-check.BBBBBBBB.js": "" }), "dist");
   assert.throws(() => builtModule("forward", twice), /2 files of _astro\/ are called forward \(forward\.AAAAAAAA\.js, forward\.Dqke8pTt\.js\)/);
@@ -125,18 +125,6 @@ const family = familyOf(coi);
   ok("a module as a build wrote it: the one chunk of its name, or why there is none");
 }
 
-// ---- a build of a tree whose runtime is served as it is: the families alone
-{
-  const tree = written("as it is", { "public/forward.js": "const { J } = await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));\n", "public/coi.js": coi, "public/simdkernel.so": "so", "public/llama2_numpy.py": "",
-    "dist/_astro/index.BwOPHeO8.js": "", "dist/_astro/index.ChJdR91r.css": "", "dist/forward.js": "export const F = 2;\n", "dist/worker.js": "", "dist/coi.js": coi, "dist/index.html": "" });
-  const said = distSaid(path.join(tree, "dist"), treeOf(tree, { ...RULE }));
-  assert.deepEqual(said.said, []);
-  assert.match(said.looked, /^2 files of _astro\/, each a family of its own \(the runtime is served as it is from public\/: the root is not looked at\)$/);
-  fs.writeFileSync(path.join(tree, "dist/_astro/index.AAAAAAAA.js"), "");
-  assert.equal(distSaid(path.join(tree, "dist"), treeOf(tree, { ...RULE })).said.length, 1, "two of a family are said there too");
-  assert.equal((await import(builtModule("forward", path.join(tree, "dist")))).F, 2, "a build that serves forward.js as it is: that file");
-  ok("a tree that serves its runtime as it is: the families are held, the root is said not to be looked at");
-}
 // T.445: undeclared(), what the 9th rule reads of a built file: a name read and declared nowhere, and nothing else
 assert.deepEqual(undeclared("var a = 1; function f(b) { return a + b + c; }"), ["c"]);
 assert.deepEqual(undeclared("const { x = y, ...z } = o; class K { v = w; m(p) { return this.v + p + x + z; } }"), ["o", "w", "y"]);

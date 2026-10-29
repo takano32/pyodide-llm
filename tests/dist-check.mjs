@@ -31,9 +31,6 @@
 //      branch that reads it, and the bundled GPU worker's branches (ternary, int6, outlier columns) run on no GPU of
 //      CI's. File-wide, not by scope (the bundles use var, which tests/names.mjs's scopes refuse): a name declared in
 //      one function and read in another is not seen.
-// 3 to 8 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
-// served as it is from the same folder as the Service Worker, the root is those files, and this says so and checks 1
-// and 2 alone.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -119,7 +116,6 @@ export function distSaid(dist, tree = treeOf()) {
   if (!fs.existsSync(astro)) throw new Error(`${dist}: no _astro/ in it: npm run build`);
   const files = fs.readdirSync(astro).sort();
   const said = families(files, familyOf(fs.readFileSync(tree.served("coi.js"), "utf8")));
-  if (!tree.bundled) return { said, files, looked: `${files.length} files of _astro/, each a family of its own (the runtime is served as it is from ${tree.folders.runtime}/: the root is not looked at)` };
   // 3: a source as it is, a file as a data: URL
   const bytes = new Map(files.map((name) => [name, fs.readFileSync(path.join(astro, name))]));
   const sources = under(tree.runtime()).filter((name) => /\.(js|ts)$/.test(name) && !name.endsWith(".d.ts") && !name.startsWith(`${path.relative(tree.runtime(), tree.built())}/`));
@@ -221,7 +217,7 @@ export function keysOf(module) {
   return keys;
 }
 
-/** 7 (a bundled tree): the model's worker reads the device's key from one built module (key) and the GPU's worker
+/** 7: the model's worker reads the device's key from one built module (key) and the GPU's worker
  * computes it in its own file (gpu: T.367.5, the shaders' parts linked into it), each with its own copy of the shaders'
  * texts: what the page remembers of a device under the one's key is looked up under the other's, so the two and the
  * sources must give the same key for every device. And shaders, /benchmark/'s module of all of them, as the sources.
@@ -229,7 +225,6 @@ export function keysOf(module) {
  * with one line after it, which exports the deviceKey of its copy of shaders/key.js. It sets its receiver as it
  * loads and does nothing else.) Lines, as distSaid(). */
 export async function keysSaid(dist, tree = treeOf()) {
-  if (!tree.bundled) return { said: [], looked: "" };
   const { builtModule } = await import("./bundle.mjs");
   const said = [], NAMES = ["key", "gpu", "shaders"];
   const sources = keysOf(await import(tree.runtimeUrl("shaders.js")));

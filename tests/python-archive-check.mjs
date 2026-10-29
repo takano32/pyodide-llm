@@ -12,7 +12,7 @@
 //       sources is what a server of public/ would hand out). What python-files-check held of the sources stays: a
 //       package has an __init__.py, and its parts import by the package's own name;
 //   (3) the worker's way with them (src/runtime/worker/pyodide.js and convert.js, in a vm: tests/worker-harness.mjs): what it
-//       asks for and with which ?v=, what it says when the archive is not there, that the converter's archive is asked
+//       asks for and at which address, what it says when the archive is not there, that the converter's archive is asked
 //       for when a model is first converted and not before, on a stand-in of Pyodide; and with the real Pyodide, that
 //       what it unpacks is found by `import`, with the sources' bytes.
 //
@@ -187,15 +187,14 @@ const made = build(tree.python(), path.join(work, "tree"));
 {
   const { context, run, requests, fresh } = workerHarness();
   assert.equal(requests.length, 0, "the worker asked for something as its modules ran");
-  const beside = (name) => new URL(name, tree.runtimeUrl("worker.js")).href;
   context.location.search = "?v=0123abc";
-  // the address an archive is asked for at: beside the worker with the worker's ?v=<build> where each file is served as
-  // it is; the built file by its own name where a bundler links the runtime (it gives the file a name with a hash)
-  const asked = (name) => (tree.bundled ? pathToFileURL(tree.built(name, { maybe: true })).href : `${beside(name)}?v=0123abc`);
+  // the address an archive is asked for at: the built file by its own name (the bundler gives it a name with a hash),
+  // with nothing of the worker's ?v=
+  const asked = (name) => pathToFileURL(tree.built(name, { maybe: true })).href;
   const last = (url) => url.slice(url.lastIndexOf("/") + 1);
   const answers = (bytes) => (url) => (Object.keys(ARCHIVES).some((name) => url === asked(name)) ? new Response(bytes) : new Response("", { status: 404 }));
 
-  // what is asked for: the archive beside the worker, with the worker's ?v=<build>, once; its bytes whole
+  // what is asked for: the archive, once; its bytes whole
   fresh(answers(made["engine.zip"]));
   // (T.367.4: an archive is fetched as every built file is, by built.js's built(); its body is the caller's to read)
   const archive = (name, signal) => run("built")(name, signal).then((res) => res.arrayBuffer());
@@ -278,7 +277,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.match(body(sources.convert, /^async function convert\(model *, signal *, id *\) \{$/m), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal\);/,
     "convert() asks for the converter only once the model is not among the kept ones");
   assert.ok(!/\.py\b[^"'`\n]*\$\{self\.location\.search\}|python\.js/.test(Object.values(sources).join("\n")), "the worker still fetches a .py or python.js");
-  ok("the worker asks for an archive beside itself with its own ?v=, says the fetch's words where it is not there, unpacks it where Pyodide is; the converter's on the first conversion alone");
+  ok("the worker asks for an archive as a built file, says the fetch's words where it is not there, unpacks it where Pyodide is; the converter's on the first conversion alone");
 
   // the real Pyodide: what the worker unpacks is where `import` finds it, with the sources' bytes
   const real = await loadPyodide();
