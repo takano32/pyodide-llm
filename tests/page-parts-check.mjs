@@ -354,4 +354,31 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   cases += 1;
 }
 console.log(`page-parts-check: thought.ts by itself: a thought, its end and its line`);
+
+// ---- T.411: folder.ts by itself: the models the page makes of the files of the visitor's disk (Node has File)
+{
+  const { openHuggingFace, openLegacy } = await fresh("page/folder.ts");
+  const file = (name, size, text) => new File([text ?? new Uint8Array(size)], name);
+  // the legacy form: the larger of the two is the checkpoint, its size the note's MB; a .json beside them is the settings
+  const legacy = await openLegacy([file("tok512.bin", 6000), file("stories260K.bin", 1_100_000)], () => assert.fail("asked of a small file"));
+  assert.deepEqual([legacy.name, legacy.note, legacy.file.name, legacy.tokenizerFile.name, legacy.bytes, legacy.prompt, legacy.generation],
+    ["stories260K.bin", "local · 1 MB", "stories260K.bin", "tok512.bin", 1_100_000, "Once upon a time", { steps: 0, temperature: 0.0 }], "two files of llama2.c's form");
+  const named = await openLegacy([file("a.bin", 3_400_000), file("settings.json", 0, JSON.stringify({ name: "Mine", options: { bias: true }, prompt: "Hi" })), file("t.bin", 10)], () => true);
+  assert.deepEqual([named.name, named.note, named.options, named.prompt], ["Mine", "local · 3 MB", { bias: true }, "Hi"], "and the settings of a .json");
+  for (const chosen of [[file("a.bin", 10)], [file("a.bin", 10), file("b.bin", 5), file("c.bin", 1)]]) {
+    await assert.rejects(openLegacy(chosen, () => true), /Choose two files together: the checkpoint and its tokenizer\.bin/, `${chosen.length} files`);
+  }
+  // a checkpoint of more than a GB is asked about (its size is a File's: none is made here)
+  const large = Object.defineProperty(file("big.bin", 0), "size", { value: 2.5e9 });
+  const questions = [];
+  assert.equal(await openLegacy([large, file("t.bin", 10)], (question) => { questions.push(question); return false; }), undefined, "declined: no model");
+  assert.equal((await openLegacy([large, file("t.bin", 10)], () => true)).bytes, 2.5e9, "taken");
+  assert.deepEqual(questions, ["big.bin has 2.5 GB. That may be more than this browser can hold. Read it anyway?"]);
+  // what Hugging Face publishes: the weights' size is the note's MB
+  const hf = await openHuggingFace([file("model.safetensors", 12_600_000), file("config.json", 0, "{}"), file("tokenizer.json", 0, "{}")]);
+  assert.deepEqual([hf.name, hf.note, hf.hf.weights], ["model.safetensors", "local · Hugging Face · 13 MB", "model.safetensors"], "a folder of Hugging Face's files");
+  await assert.rejects(openHuggingFace([file("model.safetensors", 10), file("config.json", 0, "{}")]), /A Hugging Face model needs three files together/, "no tokenizer");
+  cases += 6;
+}
+console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);
