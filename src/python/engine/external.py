@@ -73,6 +73,7 @@ class ExternalForward:
                 temperature, topp, penalty = sampling.temperature, sampling.topp, sampling.repetition_penalty
                 top_k, min_p, presence = sampling.top_k, sampling.min_p, sampling.presence_penalty
                 first[0] = None
+                said[0] = None
 
                 def many(token, pos, history, count, stops):
                     # a number for every step, drawn in the order the CPU draws them (none where greedy);
@@ -89,16 +90,27 @@ class ExternalForward:
                 return many
 
             self.gpu_steps = gpu_steps
-            self.token_block = lambda: int(engine.tokenBlock)
+
+            def token_block():
+                # T.398: what the forward pass of the step before said, where it did (read once); asked of
+                # JavaScript after the GPU's steps, and at a generation's first step
+                told, said[0] = said[0], None
+                return int(engine.tokenBlock) if told is None else told
+
+            self.token_block = token_block
 
         # T.546: the position of the first step of a generation (one that makes logits, on the CPU or asked of the GPU),
         # from which on the history's tokens are sampled ones: gpu_steps() begins a generation with None
         first = [None]
+        # T.398: how many steps the GPU takes after the last step on the CPU, as its forward pass answered (None: not
+        # said, or read already)
+        said = [None]
 
         def forward(token, pos, need_logits=True):
-            run(token, pos, need_logits)
+            told = run(token, pos, need_logits)
             if not need_logits:
                 return None
+            said[0] = None if told is None else int(told)
             if first[0] is None:
                 first[0] = pos
             return logits

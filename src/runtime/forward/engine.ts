@@ -734,7 +734,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     },
     /** T.152: count steps of generate() on the GPU, or undefined where it did not take them (gpuside.js's generateMany) */
     generateMany,
-    forward(token: number, pos: number, needLogits = true) {
+    forward(token: number, pos: number, needLogits = true): number | undefined {
       if (tokenBegan(needLogits)) {
         // a token of the search for the number of threads (threads.ts), timed for it
         const began = clock();
@@ -752,6 +752,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       const view = bound.getBuffer ? bound.getBuffer("f32") : { data: bound, release() {} };
       view.data.set(new Float32Array(memory.buffer, logits, vocab));
       view.release();
+      // T.398: and how many of the steps after it the GPU takes now (tokenBlock), so that Python's next step does not
+      // cross into JavaScript once more to ask
+      return tokenBlock();
     },
     /** Python's array goes back (Llama.release()), the helper threads end, and the GPU's worker (T.135). T.205: resolves
      * once the GPU's worker has let go of its buffers and its device, or after GPU_END_MS (the worker is terminated
