@@ -570,6 +570,34 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   ok("T.407: a conduct that throws as it is closed: its proxy, the conversion and the kernels' two are let go of all the same, and the conversion's own failure (a cancelled load too) is what is thrown");
 }
 
+// ---- T.411: two of the lettings go fail after a conversion that ended well: the first of them is what is thrown (the
+// order of convert.ts's finally), and the rest is let go of all the same
+{
+  const w = world();
+  w.played.returnFails = true;
+  w.fresh(() => new Response("{}"));
+  const failing = w.conversion(), counted = failing.destroy;
+  failing.destroy = () => { counted.call(failing); throw new Error("the conversion would not be let go of"); };
+  const failed = await w.convert(hf(), function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; yield ["done", failing]; });
+  assert.match(failed?.error?.message ?? "", /would not be closed/, `the first failure of letting go (the conduct's return) is thrown: ${failed?.error?.message} was`);
+  assert.equal(failing.destroyed, 1, "the conversion was not let go of");
+  w.allDestroyed();
+  ok("T.411: where two of the lettings go fail after a conversion that ended well, the first is thrown, and everything is let go of");
+}
+
+// ---- T.411: a request of a kind that is a name every object has (its prototype's) is one nothing answers: the
+// answerers are looked up as their own keys (Object.hasOwn), not by `in`
+{
+  const w = world();
+  w.fresh(() => notFound());
+  for (const kind of ["toString", "constructor", "hasOwnProperty"]) {
+    const failed = await w.convert(hf(), function* () { yield [kind, "weights", "config.json"]; });
+    assert.match(failed?.error?.message ?? "", new RegExp(`asked for ${kind}, which nothing here answers`), `${kind}: ${failed?.error?.message ?? "no failure"}`);
+  }
+  w.allDestroyed();
+  ok("T.411: a request named as a prototype's name (toString, constructor) is refused as one nothing answers");
+}
+
 // ---- T.374.2.2: a folder of the visitor's disk answers the same conduct from its Files
 {
   const w = world();
