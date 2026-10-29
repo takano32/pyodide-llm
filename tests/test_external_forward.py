@@ -189,7 +189,8 @@ def test_the_block_after_a_step_on_the_cpu_is_what_its_forward_pass_said():
     assert part.token_block() == 4 and asks() == 1
     # read once: the step after the GPU's steps asks (there was no forward pass on the CPU)
     assert part.token_block() == 4 and asks() == 2
-    # a forward pass without logits (a prompt's token) says nothing
+    # a forward pass without logits (a prompt's token) says nothing, and leaves nothing of the one before it said
+    part.forward(5, 4)
     part.forward(5, 4, need_logits=False)
     assert part.token_block() == 4 and asks() == 3
     # a new generation forgets what the last one's last step said
