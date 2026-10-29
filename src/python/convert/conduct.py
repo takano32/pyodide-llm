@@ -184,9 +184,13 @@ def gguf_head(name, read):
 def after(name, header, base, data, size, conversion=None):
     """The Weights of one GGUF whose beginning (data) is in hand: what follows its head there is fed from here, and
     the rest of the file streamed. (The head may be read whole from fewer bytes than base: the tensors begin at a
-    multiple of 32, and what stands before that is padding. Nothing is in hand then, and the stream begins at base.)"""
-    at = max(len(data), base)
-    return Weights(header, base, [(name, at, size)], at, size, conversion, memoryview(data)[base:])
+    multiple of 32, and what stands before that is padding. Nothing is in hand then, and the stream begins at base.)
+    T.419: the bytes in hand are held to the size the answerer says, so that no stream begins after its end: a file
+    said to be shorter than what came is fed what the size allows (and one shorter than its head says, nothing: the
+    conversion then says that the file ended before its tensors)."""
+    held = min(len(data), size)
+    at = max(held, base)
+    return Weights(header, base, [(name, at, max(at, size))], at, max(at, size), conversion, memoryview(data)[base:held])
 
 
 def gguf_alone(hf, config, make):
