@@ -79,7 +79,9 @@ export type ConverterWindow = Proxy & {
 };
 
 // What a conversion ends with (convert/conversion.py's Conversion): the checkpoint went to the sink as it came
-export type Conversion = Proxy & { options: Dict<Options>; tokenizer: Bytes };
+// (T.385: widened, how each stored type that has a kernel's reader was read: "kernel" or "NumPy")
+export type Conversion = Proxy & { options: Dict<Options>; tokenizer: Bytes; widened: Dict<Record<string, Widened>> };
+export type Widened = "kernel" | "NumPy";
 
 // src/python/convert/conduct.py: conduct(hf, **make), a generator of requests (contracts/conduct.ts), each a tuple
 export type ConductModule = Proxy & { conduct: Proxy & { callKwargs(hf: Proxy, make: object): Conduct } };

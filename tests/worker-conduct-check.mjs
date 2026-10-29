@@ -99,7 +99,9 @@ function world({ gpu = false } = {}) {
   // the conversion a conduct ends with, as the worker gets it: a proxy
   const conversion = (more = {}) => proxy("the conversion", {
     get options() { return readable("the options", { dtype: "int8", bos: 1, ...more }); },
-    get tokenizer() { return proxy("the tokenizer", { getBuffer: () => ({ data: new Uint8Array(4), release() {} }) }); } });
+    get tokenizer() { return proxy("the tokenizer", { getBuffer: () => ({ data: new Uint8Array(4), release() {} }) }); },
+    // (T.385: how each type with a kernel's reader was read)
+    get widened() { return readable("the readers", { BF16: "kernel" }); } });
   const convert = (hf, play, { signal = new AbortController().signal, conversion: asked, options } = {}) => {
     body = play;
     proxies.length = 0;

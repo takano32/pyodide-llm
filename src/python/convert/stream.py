@@ -94,6 +94,9 @@ class Stream:
                  readers=None):
         config = normalize(config)
         self.readers = readers or {}
+        # T.385: how each stored type that has a kernel's reader was widened, by its name: "kernel" or "NumPy"
+        # (a page's conversion without its reader is only slower, and said nowhere else)
+        self.widened = {}
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         self.rotated = header_rotated(header)  # T.237: what checkpoint_form() asks
@@ -178,6 +181,8 @@ class Stream:
         info = self.tensors[name]
         source = SOURCES[info["dtype"]]
         reader = self.readers.get(source.name) or source.read
+        if source.kernel:
+            self.widened[source.name] = "NumPy" if reader is source.read else "kernel"
         shape = tuple(info["shape"])
         # T.136's third stage: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in), is read in that shape
         stored = tuple(reversed(shape)) if info.get("transposed") else shape

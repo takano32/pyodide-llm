@@ -310,12 +310,15 @@ def test_a_reader_given_for_a_type_reads_it_and_the_tables_own_reads_the_rest(mo
         seen.append(len(raw))
         return llama2_convert.bfloat16(raw)
 
-    outs = []
+    outs, widened = [], []
     for readers in (None, {"BF16": bf16}, {"Q8_0": lambda raw: 1 / 0}):
         stream = llama2_convert.Stream(json.loads(file[8:8 + size]), 8 + size, published, "int8", 1 << 20, readers=readers)
         stream.feed(file)
         stream.finish()
         outs.append(bytes(stream.out))
+        widened.append(stream.widened)
     assert seen and outs[0] == outs[1] == outs[2]
+    # T.385: and says how each type that has a kernel's reader was read (the page's e2e reads it)
+    assert widened == [{"BF16": "NumPy"}, {"BF16": "kernel"}, {"BF16": "NumPy"}]
     with pytest.raises(TypeError):
         llama2_convert.Stream(json.loads(file[8:8 + size]), 8 + size, published, "int8", 1 << 20, bfloat16=bf16)

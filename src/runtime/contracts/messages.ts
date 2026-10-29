@@ -149,6 +149,8 @@ export type Ready = {
   notKept?: string;
   keptMiss?: string;
   template?: string;
+  // T.385: of a conversion, how each stored type that has a kernel's reader was read ("kernel" or "NumPy": tests/e2e.mjs)
+  widened?: Record<string, "kernel" | "NumPy">;
 };
 export type Token = { type: "token"; load?: undefined; text: string };
 // an answer ended (also one stopped): the threads in use, the prompt's tokens and the steps the GPU took, its note

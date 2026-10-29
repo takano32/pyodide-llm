@@ -137,7 +137,7 @@ class Opened(stand.Conversion):
         # (a refused tokenizer opens nothing, as the converter's own)
         super().__init__(*files, **more)
         sink.open(1000, HEADER, "int8", FORM)
-        self.options, self.tokenizer = {"dtype": "int8", "bos": 1}, bytes(4)
+        self.options, self.tokenizer, self.widened = {"dtype": "int8", "bos": 1}, bytes(4), {}
 
 for name, value in dict(Conversion=Opened, gguf_weights=stand.gguf_weights, joined_shards=stand.joined_shards).items():
     setattr(convert.conduct, name, value)

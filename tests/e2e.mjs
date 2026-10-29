@@ -314,7 +314,8 @@ if (opens) {
   let chosen = [`${repository}stories260K.bin`, `${repository}tok512.bin`];
   if (model === "hf") {
     const directory = scratch("hf-fixture-");
-    execFileSync("python3", [`${repository}tests/make_hf_fixture.py`, directory]);
+    // (T.385: stored as bfloat16, a type with a kernel's reader: the conversion is to read it on the kernel)
+    execFileSync("python3", [`${repository}tests/make_hf_fixture.py`, directory, "BF16"]);
     chosen = fs.readdirSync(directory).map((name) => path.join(directory, name));
   }
   await page.setInputFiles("#files", chosen);
@@ -437,6 +438,15 @@ if (swiftShader && !gpuTest && (!/prompts on the CPU \(/.test(gpuVerdict?.status
 if (/^hf([-:]|$)/.test(id)) {
   if (!jinjaAsked) failures.push("the conversion did not ask Pyodide for jinja2");
   console.log(jinjaMissed ?? `jinja2: ${jinjaAsked ?? "not asked for"}`);
+}
+// T.385: where the page runs on the SIMD kernels, a conversion widens every stored type that has a kernel's reader on
+// the kernel (without it, the conversion is only slower, and nothing else says so). The ready message says how each
+// was read (a conversion kept before says nothing: it is not converted again)
+if (reported?.widened) {
+  const read = Object.entries(reported.widened);
+  console.log(`widened: ${read.map(([type, how]) => `${type} on ${how === "kernel" ? "the kernel" : how}`).join(", ") || "no stored type that has a kernel's reader"}`);
+  const plain = read.filter(([, how]) => how !== "kernel").map(([type]) => type);
+  if (/SIMD kernels/.test(result.status) && plain.length) failures.push(`the conversion read ${plain.join(", ")} with NumPy, where the kernels were there`);
 }
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);

@@ -209,6 +209,11 @@ class Conversion:
         self.options.update(family.options(self.config))
         self.checkpoint = self.stream.out
 
+    @property
+    def widened(self):
+        """T.385: the stored types that have a kernel's reader, each as it was read so far ("kernel" or "NumPy")"""
+        return dict(self.stream.widened)
+
     def beginning(self, turn, named, tokens, options, ids):
         """T.264: (the format of one turn as the engine takes it, the id of the token every text then begins with, or
         None where that stays the BOS, and that token's text) of a model's own turn (model_turn()'s), so that the page
