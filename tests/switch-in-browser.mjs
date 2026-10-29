@@ -91,4 +91,5 @@ try {
 await closed(() => browser.close());
 await server.close?.();
 console.log(failures.length ? `switch-in-browser: ${failures.length} FAILED` : `switch-in-browser: ok (${engine}: two switches in the middle of a conversion)`);
-leave(failures.length ? 1 : 0);
+const code = failures.length ? 1 : 0;
+await leave(code);
