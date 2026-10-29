@@ -108,9 +108,9 @@ class ExternalForward:
 
         def forward(token, pos, need_logits=True):
             told = run(token, pos, need_logits)
+            said[0] = None if told is None or not need_logits else int(told)
             if not need_logits:
                 return None
-            said[0] = None if told is None else int(told)
             if first[0] is None:
                 first[0] = pos
             return logits
