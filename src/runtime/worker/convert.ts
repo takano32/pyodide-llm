@@ -21,7 +21,7 @@ import { told } from "../failure.ts";
 import type { Thrown } from "../failure.ts";
 import type { Hf, OfHuggingFace, Progress, Status } from "../contracts/messages.ts";
 import type { Progress as Arriving } from "../contracts/conduct.ts";
-import type { Bytes, Conduct, Conversion, ConverterWindow, Dict, Options, Proxy } from "../contracts/python.ts";
+import type { Bytes, Conduct, Conversion, ConverterWindow, Dict, Options, Proxy, Widened } from "../contracts/python.ts";
 
 // T.368.3: a model of huggingface.co, as what is kept reads it (kept.ts's Converted): its repository and revision
 type Remote = OfHuggingFace & { hf: Hf & { repo: string; revision: string } };
@@ -245,10 +245,11 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     const constructStarted = performance.now();
     // every one of these proxies keeps its Python object alive: none may be left behind (the checkpoint went to
     // weights, through the sink)
-    const proxies: [Dict<Options>, Bytes] = [conversion.options, conversion.tokenizer];
-    let kept, template;
+    const proxies: [Dict<Options>, Bytes, Dict<Record<string, Widened>>] = [conversion.options, conversion.tokenizer, conversion.widened];
+    let kept, template, widened;
     try {
       const options = proxies[0].toJs({ dict_converter: Object.fromEntries });
+      widened = proxies[2].toJs({ dict_converter: Object.fromEntries });
       // template is for the page (the format of one turn), not for the engine
       ({ template } = options);
       const engineOptions = { ...options };
@@ -271,7 +272,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     } finally {
       proxies.forEach((proxy) => proxy.destroy());
     }
-    return { fromCache: false, notKept: kept, keptMiss, template };
+    return { fromCache: false, notKept: kept, keptMiss, template, widened };
   } catch (error) {
     failed = { error };
     throw error;
