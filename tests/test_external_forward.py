@@ -155,6 +155,55 @@ def test_steps_on_the_gpu_return_ids_or_none():
     assert part.token_block() == 0
 
 
+
+class Telling:
+    """T.398: an engine whose forward pass with logits answers how many steps the GPU takes after it (forward.js's)"""
+    tokenBlock, answer = 4.0, None
+    said = 0.0
+
+    def forward(self, token, pos, need_logits):
+        Engine.forward(self, token, pos, need_logits)
+        return self.said if need_logits else None
+
+    def __getattribute__(self, name):
+        if name == "tokenBlock":
+            object.__getattribute__(self, "asked").append(("tokenBlock",))
+        return object.__getattribute__(self, name)
+
+
+def test_the_block_after_a_step_on_the_cpu_is_what_its_forward_pass_said():
+    """T.398: a step on the CPU does not ask JavaScript for tokenBlock once more: its forward pass said it. Asked at a
+    generation's first step, after the GPU's steps, and where the forward pass said nothing (an engine of before)"""
+    outside = Outside(Telling, Steps)
+    part = ExternalForward({"vocab_size": 16}, outside)
+    asks = lambda: sum(1 for one in outside.engine.asked if one == ("tokenBlock",))
+    part.gpu_steps(Sampling(temperature=0.0, topp=1.0), None)
+    assert part.token_block() == 4 and asks() == 1, "the first step of a generation asks"
+    for pos in range(3):
+        part.forward(5, pos)
+        told = part.token_block()
+        assert told == 0 and type(told) is int
+    assert asks() == 1, "what each step's forward pass said, without asking"
+    outside.engine.said = 4.0
+    part.forward(5, 3)
+    assert part.token_block() == 4 and asks() == 1
+    # read once: the step after the GPU's steps asks (there was no forward pass on the CPU)
+    assert part.token_block() == 4 and asks() == 2
+    # a forward pass without logits (a prompt's token) says nothing
+    part.forward(5, 4, need_logits=False)
+    assert part.token_block() == 4 and asks() == 3
+    # a new generation forgets what the last one's last step said
+    outside.engine.said, outside.engine.tokenBlock = 0.0, 4.0
+    part.forward(5, 5)
+    part.gpu_steps(Sampling(temperature=0.0, topp=1.0), None)
+    assert part.token_block() == 4 and asks() == 4
+    # an engine whose forward pass says nothing: asked every time, as before
+    plain = Outside(Steps)
+    old = ExternalForward({"vocab_size": 16}, plain)
+    old.forward(5, 0)
+    assert old.token_block() == 4
+
+
 def test_an_engine_that_offers_everything():
     part = ExternalForward({"vocab_size": 4}, Outside(SizedBlocks, Steps))
     assert [name for name in STEPS if hasattr(part, name)] == list(STEPS)

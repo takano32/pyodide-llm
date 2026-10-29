@@ -45,7 +45,7 @@
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
 - T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
-- T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 未着手
+- T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 進行中
 - T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
 - T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
@@ -543,9 +543,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **(1)(4) の結果（2026-10-25）**: `public/coi.js` の、このサイトのファイルの扱いの中だけ（ほかのサイトの応答と隔離のヘッダには触らない: `coi-js-check` の持つ文のハッシュは変わらない）。(1) `lasting()` のこのサイトの行から `?v=` を外した（`_astro/` だけ）。(4) activate の `caches.delete(KEPT)` を `quietly()` で包み、失敗しても `clients.claim()` に届く: `coi-js-check` の 6 番に「削除が失敗しても引き取る」の場合（前の形で落ちる）。確かめ: 軽い組を通しで（464 秒）、build、手元の Chromium の `E2E_OFFLINE=1 E2E_TWICE=1 node tests/e2e.mjs stories260K chromium` と `tests/coi-off-in-browser.mjs`。**持ち主の端末**: 触った所は地域と端末に依らない（落とし穴の「Service Worker」の範囲の外）。(2)（名前の消えた家族とモデルの写しを誰も捨てない）と (3)（`coi.js` を macOS・Windows のブラウザで見る CI）は残す。CI を省いた。訳: このサイトのファイルの扱いの 2 行で、Node の検査と手元の実ブラウザが踏む。
 - レビュー（Sonnet low、2026-10-25、T.449 (1)(4)）: must-fix なし。`?v=` 付きの取得は Service Worker の登録だけで fetch の受け口を通らない、外れた `?v=` のファイルはネットに聞いて取れなければ写しが答える（オフラインで落ちる道は増えない）、`quietly` は activate より前に定義、持ち主の端末が先の範囲の外。勧めを入れた: 15 行目のコメントの `?v=` を外した。取りまとめ役の誤りを直した: `coi.js` の中の番号は前の形 `T番号` のまま（AGENTS.md の例外 3）なのに `T.449` と書いていた。
 
-### T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 未着手（2026-10-10、T.370 の数えから。T.152 からある。規模 小）
+### T.398 [速度][CPU] GPU がステップを取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 進行中（2026-10-29、ブランチ `t.398-block-with-the-step`。前の状態: 未着手、2026-10-10、T.370 の数えから。T.152 からある。規模 小）
 - `engine/generation.py` のステップの輪は、`gpu_steps` があれば毎ステップ `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いかステップを取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T.164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
 - ステップの途中で GPU の準備ができることがあるので、読みをやめるだけでは済まない（準備ができたことを別の道で知らせる形が要る）。小さいので、T.375 でエンジンの窓口に触る回に一緒に。
+- **したこと（2026-10-29）**: 「別の道」は、すでにある 1 回の呼び出しの答え: forward.js の `forward()` は logits を書いた後に `tokenBlock()` を返す（`forward/engine.ts`）。Python の `ExternalForward`（`engine/external.py`）はそれを持ち、次のステップの `token_block()` は 1 回だけそれを読む（JavaScript に聞かない）。聞くのは、生成の最初のステップ（`gpu_steps()` が前の生成の値を消す）、GPU のステップの後（CPU の forward が無かった）、logits の無い forward の後、何も返さない前のエンジンのとき。GPU の準備がステップの途中でできても、次のステップは forward の終わりの値を読むので、前と同じ所で GPU に移る。
+- 試験: `tests/test_external_forward.py` に 1 つ（聞く回数を数える偽のエンジン）。壊し方 2 つ: 生成の始めで値を消さない・値を読まずに毎回聞く、のどちらも落ちる。軽い組が通った（421 秒）。速さ（`compare-engines.mjs tiny-lm llm-jp-3-150m --ref main --rounds 7`、a1-free、load 1.4 前後）: tiny-lm 538.7 → 549.2 tok/s（1.019、同じ側 2 回の幅 1.019）、llm-jp-3 150M 84.5 → 85.6（1.013、幅 1.005）。見込みの 0.1% は雑音の中で、遅くはなっていない。CI を省いた。訳: GPU のステップの道は `gpu-default-check`（全部の組）が毎晩見る。手元の軽い組は CPU の道を全部踏む。
 
 ### Saluki の組（T.361〜T.364、2026-10-09 に採番。持ち主「[Saluki] で対応を採番できないかな？」、https://pc.watch.impress.co.jp/docs/news/2147095.html）
 - **モデル**: Underdog Saluki 27B 1.0（`ConwayResearch/Underdog-Saluki-27B-1.0`、リビジョン `1336c0b5d74dfe6ad7f793577092f5effd9f97c6`、apache-2.0、ゲートなし）。Qwen3.8-27B を平均 約 2.3 ビットに量子化した ISTA DASLab の `Qwen3.8-27B-GSQ-RCO-GGUF` に Underdog が手を入れたもの。ファイルは `Underdog-Saluki-27B-1.0-IQ2-mix.gguf` 7,898,369,152 バイトの 1 つ（ほかの 2 つは画像の入力用の `mmproj` で、このページでは使わない）。Bonsai 2 27B と違い、素の llama.cpp で動く。
