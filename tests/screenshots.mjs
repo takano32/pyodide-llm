@@ -100,7 +100,9 @@ for (const [width, viewport] of Object.entries(widths)) {
   await shot(page, "bench", width);
   const benched = await page.evaluate(() => window.__bench?.rows ?? []);
   console.log(`${width}: ?bench=1${unsaid ? " without deviceMemory" : ""}: ${benched.map((row) => `${row.name} ${row.skip !== undefined ? `skipped (${row.skip})` : `${row.speed?.toFixed(1)} tok/s`}`).join(", ")}`);
-  const [all, plain] = benched;
+  // (T.590: by name: since T.555 the first round runs twice at the head and once at the end, so "everything" is the
+  // first two rows and the last)
+  const all = benched.find((row) => row.name === "everything"), plain = benched.find((row) => row.name === "without the kernels");
   if (!(all?.speed > 0) || all.skip !== undefined || !plain || (plain.skip !== undefined) !== unsaid ||
       (unsaid ? !/does not say how much memory/.test(plain.skip) || plain.speed !== undefined : !(plain.speed > 0))) {
     throw new Error(`${width}: ?bench=1 did not ${unsaid ? "skip the round without the kernels, in words" : "run both rounds"}`);
