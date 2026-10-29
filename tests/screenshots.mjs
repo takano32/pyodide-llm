@@ -4,7 +4,7 @@
 //
 //   node tests/screenshots.mjs <directory> [url of a deployed site]
 //
-// The scenes: the page with the smallest model ready; the settings sheet open at its engine switches (T.75); the
+// The scenes: the page with the smallest model ready; an answer's line under it, closed and open (T.372); the settings sheet open at its engine switches (T.75); the
 // benchmark's bubble (T.76); the sheet that opens any repository, and a repository the converter refuses (T.88);
 // /benchmark/ before a run, while "Run all" runs the CPU section (T.177: its progress) and after (T.134, whole pages: it is
 // a page that scrolls).
@@ -61,6 +61,34 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(directory, `list-${width}.png`), fullPage: true });
   await page.evaluate(() => { document.getElementById("model").size = 0; });
+
+
+  // T.372: an answer's line, with the seed's button beside its summary (not in it): closed, after the button is
+  // pressed (the line stays closed, and the next run is to use the seed), and open. (tiny-lm: stories260K is greedy,
+  // and a greedy answer has no seed)
+  {
+    const answering = await fresh(viewport);
+    await answering.page.goto(`${site}?model=tiny-lm`);
+    await acrossReload(() => answering.page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 600000 }));
+    await answering.page.fill("#prompt", "Once upon a time");
+    await answering.page.click("#run");
+    await answering.page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 600000 });
+    await answering.page.waitForTimeout(300);
+    await shot(answering.page, "answer", width);
+    const before = await answering.page.evaluate(() => ({ seed: Boolean(document.querySelector(".model .meta-line .seed")), inSummary: document.querySelectorAll("summary button, summary a, summary input").length }));
+    if (!before.seed) { console.log(`${width}: NO seed's button beside the answer's line`); process.exitCode = 1; }
+    else {
+      await answering.page.click(".model .meta-line .seed");
+      const open = await answering.page.evaluate(() => document.querySelector(".model .meta-line details").open);
+      console.log(`${width}: after the seed's button, the line is ${open ? "OPEN" : "closed"}; interactive elements in a summary: ${before.inSummary}`);
+      if (open || before.inSummary) process.exitCode = 1;
+      await shot(answering.page, "answer-seed", width);
+      await answering.page.click(".model .meta-line summary");
+      await answering.page.waitForTimeout(300);
+      await shot(answering.page, "answer-open", width);
+    }
+    await closed(() => answering.context.close());
+  }
 
   // 2. the settings sheet, the engine's switches open (T.75)
   await page.click("#settings-open");
