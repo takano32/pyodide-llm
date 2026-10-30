@@ -1,8 +1,8 @@
-// src/page-memory.js (T.173): the page-memory section's steps and its mark, with a made-up worker and storage. Node alone.
+// src/benchmark/page-memory.ts (T.173): the page-memory section's steps and its mark, with a made-up worker and storage. Node alone.
 //
 //   node tests/page-memory.mjs
 import assert from "node:assert/strict";
-import { MEMORY_MARK, MEMORY_MOST, MEMORY_STEP, holdMemory, memoryLimit, memoryResult, memorySummary, readMark } from "../src/page-memory.js";
+import { MEMORY_MARK, MEMORY_MOST, MEMORY_STEP, holdMemory, memoryLimit, memoryResult, memorySummary, readMark } from "../src/benchmark/page-memory.ts";
 
 const MiB = 2 ** 20;
 // sessionStorage as the page has it; `log` keeps every mark written, in order

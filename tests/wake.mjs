@@ -1,9 +1,9 @@
-// src/wake.js (T.194): the wake lock of /benchmark/ and the seconds its page was hidden, with a made-up document,
+// src/benchmark/wake.ts (T.194): the wake lock of /benchmark/ and the seconds its page was hidden, with a made-up document,
 // navigator and clock. Node alone.
 //
 //   node tests/wake.mjs
 import assert from "node:assert/strict";
-import { hiddenLine, wakeKeeper } from "../src/wake.js";
+import { hiddenLine, wakeKeeper } from "../src/benchmark/wake.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 

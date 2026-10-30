@@ -1,7 +1,7 @@
 // Running sections: the sections' elements and their Run buttons, the run of one or all, the clipboard, a tab that was
 // loaded again by the page-memory section, and ?run=.
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
-import { forgetMark, readMark, memoryResult } from "../page-memory.js";
+import { forgetMark, readMark, memoryResult } from "./page-memory.ts";
 import { cpuBaseline, CPU_SPEED_KEY } from "../bench.js";
 import { $, parameters, SECTIONS, type Name, ALL, type Result, results } from "./dom.ts";
 import { runAt, runBegan, runEnded, sectionAt, sectionBegan } from "./running.ts";
