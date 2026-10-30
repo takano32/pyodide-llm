@@ -96,7 +96,7 @@ export const linear: GpuKind = {
           // as floats), wqkv's and wz's of it, the gates, the convolution and its rows moved on by the token, the l2 norms
           // of q and k, the delta rule over the place's state, the norm of every value head, z's gate, the matrix out
           step({ l, place, matrix, plain, joining }) {
-            const g = m.tokens, b = m.block, W = m.weights, V = W.vectors!;
+            const g = m.tokens!, b = m.block, W = m.weights, V = W.vectors!;
             const normed = plain(g.xb, g.u.quantizeNormed, plan.dim), gatedZ = plain(t.z, u.quantizeZ, read);
             return [[b.norm, bind(m, b.norm, [g.h, V.attention, g.xb, g.u.norm[l], g.step]), 1, 1], ...normed.quantize,
               matrix("write", W.matrices.wqkv!.pieces[0].layers[place], normed.input, u.wqkv, mixed, [[5, t.mixed]]),

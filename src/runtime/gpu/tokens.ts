@@ -301,7 +301,7 @@ function spread(m: Model, rows: number, perGroup: number): [number, number] {
 // (T.224: flash_attn_vec's parts a head go by it)
 function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, head = true, embed = true, positions = m.block.cache!.capacity }: { from?: number; to?: number; head?: boolean;
   embed?: boolean; positions?: number } = {}) {
-  const { plan, tokens: g } = m, W = m.weights, b = m.block, V = W.vectors!, P = form.pipes;
+  const { plan } = m, g = m.tokens!, W = m.weights, b = m.block, V = W.vectors!, P = form.pipes;
   const rows = form.dp4a ? ORT_DP4A_MATVEC_ROWS : MUL_MAT_VEC_ROWS;
   // (T.547.2.3: no scales where a matrix's blocks hold them, Q4_K's)
   // (T.547.2.4: a matrix of no scales apart, Q4_K's blocks, by the pipeline's counterpart for them)
@@ -393,7 +393,7 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
 // a form's whole step for a run that reads up to positions, made again when the cache has grown (its buffers are others
 // then); T.224: one a count of the attention's parts a head (flash_attn_vec's nwg goes by the positions)
 function tokenStep(m: Model, form: TokenForm, positions: number) {
-  const a = m.tokenAttention.attention, { cache } = m.block, parts = a.tiles ? 0 : flashVecSplits(a.shape, positions);
+  const a = m.tokenAttention!.attention, { cache } = m.block, parts = a.tiles ? 0 : flashVecSplits(a.shape, positions);
   if (form.steps?.cache !== cache) form.steps = { cache, lists: new Map() };
   if (!form.steps.lists.has(parts)) form.steps.lists.set(parts, tokenPass(m, form, { positions }));
   return form.steps.lists.get(parts)!;
@@ -407,7 +407,7 @@ function tokenStep(m: Model, form: TokenForm, positions: number) {
 // (T.271.2: of the last step alone: steps that stopped before it leave no state of their position, and the CPU goes on
 // from position 0 then, forward/gpuside.ts)
 async function runTokens(m: Model, dispatches: Pass[], { count, pos, state, settings, randoms, keep = false, extra }: Run) {
-  const { device, tokens: g } = m, { cache, states } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
+  const { device } = m, g = m.tokens!, { cache, states } = m.block, kvRow = m.plan.kvHeads * m.plan.headSize * 2, idsBytes = g.most * 4;
   const layers = cache!.keys.length, stateBytes = keep && !m.plan.direct ? m.block.stateBytes : 0, stateAt = idsBytes + STATE_BYTES + 2 * layers * g.most * kvRow;
   if (pos + count > cache!.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
   device.pushErrorScope("out-of-memory");

@@ -42,7 +42,7 @@ export const convolution: GpuKind = {
         const conv = [...Array(places)].map((_, p) => uniform(m, new Uint32Array([dim, taps, p * taps * dim, 0])));
         return {
           step({ l, place, matrix, plain, joining, normed }) {
-            const g = m.tokens, W = m.weights, V = W.vectors!, convolved = plain(g.xb, g.u.quantizeNormed, dim);
+            const g = m.tokens!, W = m.weights, V = W.vectors!, convolved = plain(g.xb, g.u.quantizeNormed, dim);
             return [...normed.norm, ...normed.quantize,
               matrix("mix", W.matrices.win!.pieces[0].layers[place], normed.input, mix[l], 3 * dim, [[5, token]]),
               [short, bind(m, short, [token, V.conv!, rows, g.xb, conv[place], g.step]), groups, 1],

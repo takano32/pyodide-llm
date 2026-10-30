@@ -112,7 +112,7 @@ export const attention: GpuKind = {
         return {
           // an attending layer l, at its place among the attending layers: q, k and v, RoPE into the cache, the attention, o
           step({ l, place, matrix, plain, joining, normed, ffnNorm, biased, bindAt, positions }) {
-            const g = m.tokens, t = m.tokenAttention, b = m.block, W = m.weights, V = W.vectors!, cache = b.cache!;
+            const g = m.tokens!, t = m.tokenAttention!, b = m.block, W = m.weights, V = W.vectors!, cache = b.cache!;
             const [o] = W.matrices.wo!.pieces, attended = plain(g.att, u.quantizeAttention, qDim);
             const added = (to: GPUBuffer, bias: GPUBuffer, shape: GPUBuffer, n: number): Pass => [b.add, bind(m, b.add, [to, bias, shape, g.step]), Math.ceil(n / 64), 1];
             // where q, k and v go turned: q, and the cache at the Step's position (T.261.4.2: a local layer by its own table)
