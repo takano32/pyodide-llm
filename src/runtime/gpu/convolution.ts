@@ -44,10 +44,10 @@ export const convolution: GpuKind = {
           step({ l, place, matrix, plain, joining, normed }) {
             const g = m.tokens, W = m.weights, V = W.vectors!, convolved = plain(g.xb, g.u.quantizeNormed, dim);
             return [...normed.norm, ...normed.quantize,
-              matrix("mix", W.matrices.win.pieces[0].layers[place], normed.input, mix[l], 3 * dim, [[5, token]]),
+              matrix("mix", W.matrices.win!.pieces[0].layers[place], normed.input, mix[l], 3 * dim, [[5, token]]),
               [short, bind(m, short, [token, V.conv, rows, g.xb, conv[place], g.step]), groups, 1],
               [state, bind(m, state, [token, rows, conv[place], g.step]), groups, 1],
-              ...convolved.quantize, ...joining(V.attentionPost, W.matrices.wout.pieces[0].layers[place], convolved.input, wout)] satisfies Pass[];
+              ...convolved.quantize, ...joining(V.attentionPost, W.matrices.wout!.pieces[0].layers[place], convolved.input, wout)] satisfies Pass[];
           },
         };
       },

@@ -19,6 +19,7 @@ import type { Model } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import type { TokenBuffers, TokenForm } from "./tokens.ts";
 import type { GpuPacking, Table, TokensChosen, Tried, Vectors } from "../contracts/gpu/protocol.ts";
+import type { TensorName } from "../contracts/plan.ts";
 
 // T.466: this module's two records: m.tokens, what tokens.ts's tokenBuffers() made, and m.tokenForm, the form of a
 // token's layer chosen here with its ms a step and what each form came to (null until chooseTokens() has them, and
@@ -314,8 +315,8 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     });
   };
   const all = (n: number) => [...Array(n).keys()];
-  const matmul = (name: string, x: ArrayLike<number>) => {
-    const matrix = plan.matrices[name], first = { ...matrix, packing: packingAt(matrix, 0) };
+  const matmul = (name: TensorName, x: ArrayLike<number>) => {
+    const matrix = plan.matrices[name]!, first = { ...matrix, packing: packingAt(matrix, 0) };
     return product(matrix.n, back.firstLayer ? readBackRows(first, back.firstLayer[name]) : inMemory(first, matrix.layers[0]), x, all(matrix.rows));
   };
   const rms = (x: Float64Array, weights: Float64Array) => {
