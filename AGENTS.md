@@ -95,7 +95,7 @@
 | `src/runtime/shaders.ts` と `shaders/` | WGSL。エンジンの `common`・`prompt`・`steps`・`attention`・`fused`・`run`・`sample`、回した基底の `rotate`、目録 `engine.ts`（`ENGINE_SHADERS`・`TERNARY_SHADERS`・`ENGINE`）、端末の鍵 `key.ts`、ベンチだけの `bench`・`matvec`・`stages`、CPU の標本抽出の模型 `likecpu.ts` |
 | `src/runtime/contracts/` | 境目の型だけ: `plan.ts`・`messages.ts`・`gpu/protocol.ts`・`form.ts`・`conduct.ts`・`python.ts`・`benchmark.ts` |
 | `src/runtime/failure.ts`・`updated.ts`・`built.ts`・`kept.ts` | 失敗の運び方 / 「サイトが更新された」の判定と文 / 作る物の表 `BUILT` / 変換したモデルの保存（OPFS、無ければ Cache API。`CONVERTER`・`keptName()`・`replaced()`・`keeper()`） |
-| `src/pages/index.astro` と `src/page/` | チャット風のページ。持ち主の `model.ts`・`answer.ts`、純な部品（Node が import できる）`remaining.ts`・`repository.ts`・`thought.ts`・`folder.ts`、ほかに `dom`・`markdown`・`address`・`remembered`・`opening`・`list`・`settings`・`draw`・`isolation`・`receiver`・`choose`・`composer` |
+| `src/pages/index.astro` と `src/page/` | チャット風のページ。持ち主の `model.ts`・`answer.ts`、純な部品（Node が import できる）`remaining.ts`・`repository.ts`・`thought.ts`・`folder.ts`、ほかに `dom`・`markdown`・`address`・`remembered`・`opening`・`list`・`settings`・`draw`・`isolation`・`receiver`・`choose`・`composer`、最後に最初の読み込みの `first`（T.474: `index.astro` の中では tsc が読まなかった） |
 | `src/pages/benchmark.astro`・`src/benchmark/`・`src/runtime/benchmark/` | `/benchmark/`: 端末の計測を 1 回・1 つの報告に（節: 機能・CPU・モデル・GPU・保存・回線・Page memory）。節ごとに Worker を作って閉じる。`?run=all`・`?model=`・`?size=`・`?large`・`?full` |
 | `src/models.js` と `src/models/` | モデル一覧。窓口が組み立てて並べ替え、`DEFAULT_MODEL` を名指す。`formats.js`・`sampling.js`・`builders.js`・`filled.js`・`licenses.js`・`memory.js` と一覧の `built.js`・`hf-japanese.js`・`hf-classics.js`・`hf-families.js` |
 | `src/bench.js` と `src/bench/` | ベンチの報告の組み立て（JavaScript のまま） |

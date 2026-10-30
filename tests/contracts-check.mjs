@@ -31,6 +31,12 @@ export type Sent = One | ({ type: "two" } & Base) | { type: "three"; a: 1 } | { 
 export type Asked = ["text", where: string, name: string] | ["done", unknown] | Stream;
 type Stream = ["stream", string, number, number];
 export type Listed = Record<string, number>;
+export type Left = Omit<Whole, "one">;
+export type Picked = Pick<Whole, "one">;
+export type Maybe = Partial<Inner>;
+export type Either<T> = T extends string ? Inner : Base;
+export type Mapped = { [name in Names]: number };
+export type Joined = Base & Omit<Inner, "x">;
 `, "made-up.ts");
 assert.deepEqual(sorted(made.keysOf("Whole")), ["inner", "method", "one", "quoted-key", "signs.<number>", "two"], "an object type's keys: not the one that can only be undefined");
 assert.deepEqual(sorted(made.keysOf("Both")), ["load", "more", "root"], "an intersection's keys, through an alias");
@@ -41,7 +47,11 @@ assert.deepEqual([...made.membersOf("Sent")].map(([tag, keys]) => [tag, sorted(k
 assert.deepEqual([...made.tuplesOf("Asked")], [["text", 3], ["done", 2], ["stream", 4]]);
 for (const [what, read] of [["a type that is not there", () => made.keysOf("Nowhere")], ["a type this file imports", () => made.keysOf("Elsewhere")],
   ["a Record's keys", () => made.keysOf("Listed")], ["the texts of an object type", () => made.literalsOf("Inner")],
-  ["the members of a union without a tag", () => made.membersOf("Row")], ["the tuples of an object type", () => made.tuplesOf("Inner")]]) {
+  ["the members of a union without a tag", () => made.membersOf("Row")], ["the tuples of an object type", () => made.tuplesOf("Inner")],
+  // T.474: the types made of other types, whose keys this reader does not work out: refused where a check asks for them
+  ["an Omit's keys", () => made.keysOf("Left")], ["a Pick's keys", () => made.keysOf("Picked")], ["a Partial's keys", () => made.keysOf("Maybe")],
+  ["a conditional type's keys", () => made.keysOf("Either")], ["a mapped type's keys", () => made.keysOf("Mapped")],
+  ["the keys of an intersection with an Omit", () => made.keysOf("Joined")]]) {
   assert.throws(read, Error, `${what} was answered, not refused`);
 }
 assert.throws(() => contractOf("export const FORM = { a: 1 };\nexport type A = { a: number };", "a value"), /holds types alone/);
