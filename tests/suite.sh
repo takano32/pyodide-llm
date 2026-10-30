@@ -147,6 +147,9 @@ page_modules() {
   # T.378.3: what the worker's modules hold has owners: request.js (what the page asked for with a load) as the module
   # it is, and loaded.js (the model loaded now) on a stand-in of Pyodide and of a model: no model, no network
   node tests/worker-parts-check.mjs
+  # T.462: the worker's start (runtime.ts's init()) run whole: the version of Pyodide, its loader by its URL, engine.zip,
+  # the kernels for Python, forward.ts's kernels, and NumPy where forward.ts does not come (a made-up Pyodide; a second)
+  node tests/worker-init-check.mjs
   # T.349: what tsc does not hold of what forward.ts and its modules (src/runtime/forward/) hand one another: no ring of
   # imports, a part takes nothing createForward() never hands it, every key made of shape, weights, … is taken by a
   # part, and what is read of the two parts' state is their getters
