@@ -399,5 +399,24 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.ok(/\n  if \(endsWork\(data\)\) \{\n/.test(handler), "receiver.ts gives the page back its buttons where a report ends a piece of work");
   cases += 2;
 }
+{
+  // T.468.2: lines.ts, the status line's words: a ready model's, and a load's as it fetches and converts
+  const { readyStatus, progressLine } = await fresh("page/lines.ts");
+  const { SLOWER } = await fresh("runtime/updated.ts");
+  const ready = { name: "Tiny", backend: "SIMD kernels, int8, relaxed SIMD", threads: 1, pyodide: "314.0.7", gpuTest: false, outdated: false };
+  assert.equal(readyStatus(ready), "Tiny · SIMD kernels, int8, relaxed SIMD · Pyodide 314.0.7", "one thread, no GPU, a page of this build");
+  assert.equal(readyStatus({ ...ready, threads: 4, gpuNote: "prompts on WebGPU" }), "Tiny · SIMD kernels, int8, relaxed SIMD, 4 threads, prompts on WebGPU · Pyodide 314.0.7",
+    "the threads where more than one, then what the GPU takes");
+  assert.equal(readyStatus({ ...ready, gpuTest: true }), readyStatus(ready), "?gpuTest=on says nothing where the GPU says nothing");
+  assert.equal(readyStatus({ ...ready, gpuNote: "prompts on WebGPU", gpuTest: true, outdated: true }),
+    `Tiny · SIMD kernels, int8, relaxed SIMD, prompts on WebGPU (gpuTest) · Pyodide 314.0.7 · ${SLOWER}`, "the tests' flag after the GPU's words, and an old page's words last");
+  const progress = { name: "Tiny", received: 2.5e6, total: 10e6 };
+  assert.equal(progressLine(progress), "Tiny: 2.5 / 10.0 MB", "what has arrived of how much");
+  assert.equal(progressLine({ ...progress, perSecond: 1.25e6, converted: 0.237 }), "Tiny: 2.5 / 10.0 MB · 1.3 MB/s · 23 % converted",
+    "T.119: how fast, and the share converted apart (rounded down)");
+  assert.equal(progressLine({ ...progress, received: 0, converted: 0.5 }), "Tiny: 50 % converted", "a file of the visitor's disk: the share alone");
+  assert.equal(progressLine({ ...progress, received: 0 }), "Tiny: 0.0 / 10.0 MB", "nothing yet, nothing converted: the bytes");
+  cases += 8;
+}
 console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);

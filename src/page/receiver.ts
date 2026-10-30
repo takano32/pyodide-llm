@@ -15,6 +15,7 @@ import { showSettings } from "./settings.ts";
 import { drawAnswer, message, meta, thoughtSaid, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { endsWork, ofThisLoad } from "./heard.ts";
+import { progressLine } from "./lines.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
 
@@ -52,19 +53,13 @@ worker.onmessage = ({ data }) => {
   } else if (data.type === "progress") {
     progress.hidden = false;
     progress.max = data.total;
-    const megabytes = (bytes: number) => (bytes / 1e6).toFixed(1);
-    // T.119: a conversion says what has arrived and how fast apart from what is converted: the share converted
-    // moves only as fast as the bytes come, and alone it made a slow line look like a slow conversion. A file of
-    // the visitor's own disk has nothing to fetch: the share alone
-    const converted = data.converted === undefined ? "" : `${Math.floor(data.converted * 100)} % converted`;
     progress.value = data.received || (data.converted ?? 0) * data.total;
     // T.553: and, last, about how long the fetch has left (the owner's words: nothing for its first 3 seconds, nor while
     // nothing arrived for 10)
     const now = performance.now();
     if (data.received) arrived(advanced(arriving, data.received, now));
-    const line = !data.received && converted ? `${model.name}: ${converted}`
-      : `${model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
-        (data.perSecond ? ` · ${megabytes(data.perSecond)} MB/s` : "") + (converted ? ` · ${converted}` : "");
+    // (lines.ts: the words, T.119's)
+    const line = progressLine({ name: model.name, ...data });
     const left = data.received ? leftSaid(secondsLeft(arriving, data.total, now)) : "";
     statusText.textContent = line + left;
     clearTimeout(stillTimer);

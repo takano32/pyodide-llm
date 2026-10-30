@@ -9,7 +9,7 @@ import { thoughtLine, thoughtOf } from "./thought.ts";
 import { markdownBroke } from "./markdown.ts";
 import type { Markdown } from "./markdown.ts";
 import { fixSeed } from "./settings.ts";
-import { SLOWER } from "../runtime/updated.ts";
+import { readyStatus } from "./lines.ts";
 import type { BenchRow, Done } from "../runtime/contracts/messages.ts";
 
 // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
@@ -208,11 +208,8 @@ export const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} 
 export function showStatus(note?: string) {
   if (gpuSaid(note)) console.info(`gpu: ${note}`);
   if (!readyLine || benchmarking) return;
-  const { backend, threads, pyodide } = readyLine;
-  // (?gpuTest=on, the tests' flag, says so as ?without= does)
-  const tested = gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
-  // (T.439: and, last, that a reload would make it faster, where it runs slower for a file of this build that is gone)
-  statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${gpuNote ? `, ${gpuNote}${tested}` : ""} · Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : ""}`;
+  // (lines.ts: the words)
+  statusText.textContent = readyStatus({ name: model.name, ...readyLine, gpuNote, gpuTest: parameters.get("gpuTest") === "on", outdated });
 }
 // T.135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
 // makes the first logits, on the CPU)
