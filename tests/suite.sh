@@ -287,8 +287,8 @@ part "the reference tools without torch" python tests/reference_dry.py
 part "attention's largest score" node tests/attention-check.mjs
 # T.458: the engine tells the GPU's side what happened (run() where the CPU wrote, forward() each step timed, a generation
 # begun) on forward.js's real CPU pass of llm-jp-3 150M with a made-up GPU's worker: a GPU far faster, its prompts and its
-# steps (gpu-default-check --quick; the whole check is the full suite's). Each of the four ways to forget failed the
-# full check alone before (about 20 seconds)
+# steps (gpu-default-check --quick; the whole check is the full suite's), about 20 seconds. Each of the four ways to
+# forget failed only the full check before
 part "what the engine tells the GPU's side" node tests/gpu-default-check.mjs --quick
 
 if [ "$suite" = full ]; then
