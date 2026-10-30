@@ -55,6 +55,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+from cpu import cpu_name
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
@@ -703,6 +704,7 @@ def main():
     if failed:
         print(f"reference: FAILED: {', '.join(failed)}")
         sys.exit(1)
+    print(f"reference: the CPU: {cpu_name()}")
     print("reference: ok: the engine's NumPy forward pass computes the 27B as the fork does")
 
 
