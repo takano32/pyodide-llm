@@ -168,7 +168,7 @@
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
 - T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
 - T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 候補
-- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 未着手
+- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 調べは済み
 - T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 未着手
 - T.612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 未着手
 - T.613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 未着手
@@ -1438,7 +1438,21 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CyberAgent open-calm（gpt_neox、bin だけ、CC-BY-SA、base だけ、7B は likes 205）: 2023 年の GGUF は `attn_qkv` が HF の並びのおそれ（T.306・T.517 と同じ）。
 - tiny-lm-chat（bin だけ 0.06 GB）: 変換すればサイトでいちばん小さいチャットのモデルになる。サイトのモデルを足すかは持ち主。
 
-### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
+### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 調べは済み、持ち主の判断待ち（2026-10-30、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小〜中）
+- **結果（`footprint()` で数えた。config は各原本の main、文脈は 4096（stockmark は 2048）、共有メモリ・relaxed・float16 の KV。手で回した `.tmp/t610.mjs`）**:
+
+| モデル | int8: ファイル + 後ろ = 全部 | int6: 全部 |
+|---|---|---|
+| Qwen3-14B（ABEJA-Qwen3-14B も同じ形） | 15.47 + 2.28 = **17.75 GiB**（越える） | 14.31 GiB |
+| shisa-v2.1-unphi4-14b | 15.36 + 2.45 = **17.81 GiB** | 14.40 GiB |
+| DeepSeek-R1-Distill-Qwen-14B-Japanese | 15.48 + 2.40 = **17.88 GiB** | 14.44 GiB |
+| llm-jp-3.1-13b-instruct4（MHA） | 14.36 + 4.68 = **19.05 GiB** | 15.85 GiB |
+| stockmark-13b（MHA、文脈 2048） | 13.83 + 3.08 = **16.91 GiB** | 13.84 GiB |
+| sarashina2-13b（MHA） | 14.39 + 4.68 = **19.08 GiB** | 15.88 GiB |
+
+- **読み**: 調べ手の見積もり（16.4〜16.5 GB で入る）は誤りで、int8 ではどれも 16 GiB の上限を越える（int8 のファイルに尺度と補正が乗り、後ろに活性値の枠と分類器の補正がある）。int6 ならどれも入る。塊（Q4_K_M など）でも入る見込み（未計測）。
+- **いまのページの動き**: 64 ビットのメモリのあるブラウザは int8 のまま置き（`automaticDtype()`）、16 GiB を越える項目は取得の前に断る（`pastWide()`）。int6 にするのは 64 ビットの無いブラウザだけ。だから 14B 級を入れる道は 3 つ: (A) 項目ごとに int6 を名指す（`?bits=6` の形を項目に: 速さは int8 の約 0.45 倍で、14B は CPU で 1 tok/s を大きく下回る見込み）、(B) 塊の GGUF をそのまま持つ（Saluki の形: `blocks: true`・`loaded`・`rebuilt`。Q4_K_M の 14B は約 9 GB）、(C) `automaticDtype()` を「64 ビットでも int8 が 16 GiB を越え int6 が入るなら int6」に（今ある項目は変わらず、`?hf=` で開く 14B 級が断られずに 6 ビットで読まれる: 取得 15〜30 GB）。
+- **持ち主に決めてもらうこと**: 14B 級を足すか、足すなら (A)〜(C) のどれか。勧め: (B)（取得とメモリが半分ほどで、Saluki で道ができている）。(C) は訪問者の取得が大きいので持ち主の判断。
 - **見積もりは調べ手のもので未計測**: int8 + 文脈 4096 の KV で 16.4〜16.5 GB（上限 17.18 GB）。先に `footprint()` で出す（KV の型の規則で float16 になるか、文脈を詰めずに入るか）。入るなら 1 つずつ子タスクに。
 - GQA の 14B: Qwen/Qwen3-14B @ 40c069824f4251a91eefaf281ebe4c544efd3e18（Swallow の順位表で ≤14B の 2 位、Qwen/Qwen3-14B-GGUF @ 530227a7d994db8eca5ab5ced2fb692b614357fd の Q8_0 15.70 GB）・shisa-ai/shisa-v2.1-unphi4-14b @ fb2ae1891b6296fc2ecb4c2399912ef2caed4719（llama、MIT、Shisa でいちばん高い点、mradermacher @ 3f3044899c094d10d71e4a2c51c85c77cd330633 の Q8_0 15.58 GB、前分割は llama3 と同じ型の見込み）・cyberagent/DeepSeek-R1-Distill-Qwen-14B-Japanese @ cc1ebcc1e37521c3f4f69145ce922ca8f01e4cd0（likes 94）・abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1 @ c18c202ab2deefede0e50eabb8f3ede832eb9cdb。
 - MHA の 13B（int8 では越える見込み）: llm-jp-3.1-13b-instruct4（mmnga の IQ4_XS 7.43 GB @ 7809b3c6… なら塊で入る）・stockmark-13b(-instruct)（Q8_0 14.03 GB、文脈 2048）・Swallow-13b-instruct・ELYZA-13b-fast-instruct・sarashina2-13b。塊で入れるなら Saluki の形（`blocks: true`・`loaded`・`rebuilt`）。
