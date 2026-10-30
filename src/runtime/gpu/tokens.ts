@@ -60,7 +60,7 @@ type Uniforms = {
   // T.271.1: a rotated basis's Shape of each width (ROTATE_QUANTIZE's and UNROTATE's: n, xStride, block)
   rotate?: Record<number, GPUBuffer>;
 };
-// What tokenBuffers() makes, the first part of the model's record of a token (tokenforms.ts's m.tokens): the
+// What tokenBuffers() makes, the model's record of a token's buffers (tokenforms.ts sets it as m.tokens, T.466): the
 // pipelines every form shares, the buffers, the uniforms, and what only some models have (null without)
 type TokenBuffers = {
   embed: GPUComputePipeline;
@@ -224,8 +224,8 @@ const bindAt = (m: Model, pipeline: GPUComputePipeline, entries: Entry[]) => m.d
 // scratch arrays of the vocabulary; the state, the ids, the random numbers, the Step and the settings; the quantized
 // vector (DP4A: one serves every quantization of a token, each read before the next is made: T.175's (l)); what a
 // submission reads back (the ids, the state, and the keys and values of its positions, [keys, values][layer][step])
-// T.378.4: what this makes is the first part of the model's record of a token, m.tokens, which tokenforms.ts's
-// chooseTokens() sets (with the attention and the form chosen); the functions below read it
+// T.378.4: what this makes is the model's record of a token's buffers, m.tokens, which tokenforms.ts's chooseTokens()
+// sets (T.466: the attention and the form chosen are records of their own); the functions below read it
 async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   // (T.271.4: the state of the layers that keep one comes back where the CPU holds it too: not on the GPU alone)
   const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows, attending = attendingOf(plan).length, stateBytes = plan.direct ? 0 : m.block.stateBytes;

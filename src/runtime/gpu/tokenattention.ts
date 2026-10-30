@@ -16,7 +16,7 @@ import type { Tried } from "../contracts/gpu/protocol.ts";
 type Vec = { name: string; tiles?: undefined; shape: FlashVecShape; pipeline?: GPUComputePipeline; reduce?: GPUComputePipeline };
 type Tiles = { name: string; tiles: true; shape?: undefined; pipeline: GPUComputePipeline; reduce?: undefined };
 type TokenAttention = Vec | Tiles;
-// what chooseTokenAttention() returns, a part of the model's record of a token (tokenforms.ts's m.tokens): the
+// the model's record of a token's attention, m.tokenAttention, which chooseTokenAttention() sets (T.466): the
 // attention taken, what each came to, and the vec form's parts and Params (undefined with the tiles)
 type Chosen = { attention: TokenAttention; attentions: Tried[]; parts: GPUBuffer | undefined; params: ((nwg: number, window?: number) => GPUBuffer) | undefined };
 // the buffers an attention's dispatches bind (parts and params: the vec form's; T.261.4.2: window, the layer's, which the
