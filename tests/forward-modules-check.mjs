@@ -92,8 +92,9 @@ assert.deepEqual([...objects.keys()].sort(), ["control", "cpuSide", "fit", "onGp
 // T.378.2: a part is handed a few things, each an object it takes apart at its top (const { a, b } = shape): every name
 // taken out of one is a key createForward() made (a misspelt one is tsc's to say; one that is optional in the type and
 // never made is undefined without a word), and every key made is taken by some part (one that no part takes is a fact
-// carried for nothing). NOT_HANDED: what a part takes with a default and only a test hands it
-const NOT_HANDED = { gpuSide: { options: ["now"] } };
+// carried for nothing). NOT_HANDED: what a part takes with a default and only a test hands it (none since T.455, which
+// has createForward() hand gpuSide() its clock)
+const NOT_HANDED = {};
 const made = new Map(), taken = new Map();  // an object of createForward() -> its keys; -> the keys the parts take
 let grouped = 0;
 for (const [part, declared, call] of calls) {

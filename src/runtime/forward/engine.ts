@@ -65,7 +65,8 @@ const STALLED_MS = 10000;
 /** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
 /** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T.120) */
-/** clock (tests only, T.199): the time the threads' search reads, in ms (a made-up one slows a block of its choice) */
+/** clock (tests only, T.199): the time the engine reads, in ms (a made-up one slows a block of its choice): the threads'
+ * search, and (T.455) the GPU's side, its blocks and steps and the CPU's steps timed against them */
 /** halfKeys (T.160): keysInHalf's answer for this model on the memory it got (T.130: a shared one refused, the
  * worker asks again for the plain one). Left out (the tests, the benchmark's own model): float16 on a shared memory
  * where every head has keys of its own, which keysInHalf answers for every model that fits a 32-bit memory with
@@ -627,7 +628,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T.349: the GPU's side (forward/gpuside.ts): its functions by name. T.378.2: its state is its own: what happens here is
   // told through those functions, and what the page is shown of it is read (onGpu.status, .ready, ...)
   const onGpu = gpuSide({ shape, weights, taken, cpuSide, control, threads,
-    options: { gpu, remembered: gpuRemembered, force: gpuForce, direct, stalledMs } });
+    options: { gpu, remembered: gpuRemembered, force: gpuForce, direct, stalledMs, now: clock } });
   const { cpuWrote, cpuStepBegan, cpuStepEnded, generateMany, promptBlock, tokenBlock } = onGpu;
 
   let bound: Bound | null = null;
@@ -742,9 +743,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         tokenEnded(clock() - began);
       } else if (cpuStepBegan(needLogits)) {
         // T.152: a step on the CPU, timed against the GPU's
-        const began = performance.now();
+        const began = clock();
         forward(token, pos, needLogits);
-        cpuStepEnded(performance.now() - began);
+        cpuStepEnded(clock() - began);
       } else {
         forward(token, pos, needLogits);
       }
