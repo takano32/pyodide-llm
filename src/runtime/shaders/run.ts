@@ -184,63 +184,38 @@ export function samplingSettings({ vocab, temperature, topp, penalty = 1, topK =
 // pieces of rows (past what the device binds: Llama 3.2 3B's 394 MB on the owner's Android, which binds 256 MiB) is
 // one dispatch a piece, y its first row and z its rows: the piece that holds the token writes its row, the others
 // nothing (z 0: the whole table, as before). llama.cpp's get_rows reads one table; the range is ours (T.209)
-export const EMBED = /* wgsl */ `
-${STATE}
-@group(0) @binding(0) var<storage, read> table: array<u32>;
+const embedInt8 = (block: boolean) => /* wgsl */ `
+${block ? "" : `${STATE}\n`}@group(0) @binding(0) var<storage, read> table: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> state: State;
+@group(0) @binding(2) var<storage, read> ${block ? "ids: array<u32>" : "state: State"};
 @group(0) @binding(3) var<storage, read_write> dst: array<f32>;
 @group(0) @binding(4) var<uniform> shape: vec4<u32>;
 
 ${GET_BYTE_I32}
 
 @compute @workgroup_size(256)
-fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
+fn main(@builtin(local_invocation_id) lid: vec3<u32>${block ? ", @builtin(workgroup_id) wid: vec3<u32>" : ""}) {
     let n = shape.x;
     let words = n / 4u;
-    let row = state.token - shape.y;
+    let row = ${block ? "ids[wid.y]" : "state.token"} - shape.y;
     if (shape.z != 0u && row >= shape.z) {
         return;
     }
-    for (var word = lid.x; word < words; word += 256u) {
+${block ? "    let out = wid.y * n;\n" : ""}    for (var word = lid.x; word < words; word += 256u) {
         let q_packed = table[row * words + word];
         let d = scales[(row * n + word * 4u) / 32u];
         for (var k = 0u; k < 4u; k++) {
-            dst[word * 4u + k] = f32(get_byte_i32(q_packed, k)) * d;
+            dst[${block ? "out + " : ""}word * 4u + k] = f32(get_byte_i32(q_packed, k)) * d;
         }
     }
 }`;
+export const EMBED = embedInt8(false);
 // T.210: the rows of a prompt's block from the embedding, for a model on the GPU alone (the CPU holds no embedding
-// then): EMBED's loop, a workgroup a token (workgroup_id.y) of ids, into its row of dst. Bindings: 0 the table, 1 its
+// then): EMBED's loop (T.624: one maker of the two texts, as embedTernary's), a workgroup a token (workgroup_id.y) of ids, into its row of dst. Bindings: 0 the table, 1 its
 // scales, 2 the block's ids, 3 x (the block's rows, dense), 4 the row's width and (T.209) the piece's first row and rows.
 // llama.cpp's get_rows.wgsl reads its row's index from idx and writes a row of dst for each (i_dst1: a row of the
 // output an index); the range of a piece is T.209's
-export const EMBED_ROWS = /* wgsl */ `
-@group(0) @binding(0) var<storage, read> table: array<u32>;
-@group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> ids: array<u32>;
-@group(0) @binding(3) var<storage, read_write> dst: array<f32>;
-@group(0) @binding(4) var<uniform> shape: vec4<u32>;
-
-${GET_BYTE_I32}
-
-@compute @workgroup_size(256)
-fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
-    let n = shape.x;
-    let words = n / 4u;
-    let row = ids[wid.y] - shape.y;
-    if (shape.z != 0u && row >= shape.z) {
-        return;
-    }
-    let out = wid.y * n;
-    for (var word = lid.x; word < words; word += 256u) {
-        let q_packed = table[row * words + word];
-        let d = scales[(row * n + word * 4u) / 32u];
-        for (var k = 0u; k < 4u; k++) {
-            dst[out + word * 4u + k] = f32(get_byte_i32(q_packed, k)) * d;
-        }
-    }
-}`;
+export const EMBED_ROWS = embedInt8(true);
 // T.232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.ts's TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
 // CPU's embed() has it (src/runtime/forward/engine.ts's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
