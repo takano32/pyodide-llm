@@ -28,7 +28,8 @@ export type Arch = "llama" | "gpt2" | "neox" | "qwen35" | "lfm2" | "gemma3" | "g
 // The numbers of the layers that keep a state, each under its kind's name (forward/kinds.ts): what a form says of
 // them, and a plan after it by the same names (contracts/plan.ts)
 // (tiled, T.363: of the linear-attention layers, whose output matrix then reads its value heads in llama.cpp's order)
-export type Stateful = { linear?: Linear | null; convolution?: Convolution | null; tiled?: boolean | null };
+// (T.623: Form's own keys, written once there)
+export type Stateful = Partial<Pick<Form, "linear" | "convolution" | "tiled">>;
 
 export type Form = {
   // Qwen2: q, k and v have a bias (and every matrix of a GPT-2)
