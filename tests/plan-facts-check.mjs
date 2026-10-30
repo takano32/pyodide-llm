@@ -17,8 +17,10 @@
 // forward/kinds.ts's Core) and handed in beside the product's attention: NumPy's logits again, and the engine's own
 // rule for a kind that keeps a state (the positions in turn).
 //
-// For every model: the logits of every token one at a time are NumPy's (within 1e-3, and the same largest: forward-check's
-// line for float32), and the same again where the first tokens went through the layers as a prompt's block.
+// For every model: the logits of every token one at a time are NumPy's (within LINE, and the same largest), and the same
+// again where the first tokens went through the layers as a prompt's block. T.484: LINE is 1e-5, not forward-check's
+// 1e-3 for float32: these made-up models are small, the right answers differ by at most 4.4e-7 (of 33 cases), and a
+// fact taken wrong moved them by less than 1e-3 (a RoPE of the wrong layers: AGENTS.md), which 1e-3 let through.
 //
 //   node tests/plan-facts-check.mjs [--forward <another forward.ts, to see a broken one fail>]      (PYTHON=.venv/bin/python)
 import assert from "node:assert/strict";
@@ -28,6 +30,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { built, runtime } from "./tree.mjs";
 
+const LINE = 1e-5;
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
@@ -156,7 +159,7 @@ try {
       assert.equal(cleared, 3, `${name}: and position 0 begins again`);
     }
     block.made.release();
-    const right = worst <= 1e-3 && same;
+    const right = worst <= LINE && same;
     if (!right) failed++;
     console.log(`${right ? "ok" : "WRONG"}: ${name} (${plan.layer_norm ? "LayerNorms" : "RMSNorms"}, ${plan.gated_ffn ? "a gated FFN" : "GPT-2's FFN"}, ` +
       `${plan.layers.map(({ kind, rope }) => (kind === "attention" ? (rope ? "A" : "a") : kind === OUTSIDE ? "o" : kind[0])).join("")}${plan.rotated ? ", rotated" : ""}): forward.ts's logits are within ${worst.toExponential(2)} of NumPy's over ` +

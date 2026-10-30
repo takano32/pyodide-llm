@@ -52,7 +52,7 @@
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
 - T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 未着手
 - T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 未着手
-- T.484 [整理][その他] T.375.2 の後の残り — 未着手
+- T.484 [整理][その他] T.375.2 の後の残り — 反映済み
 - T.485 [整理][その他] T.375.3 の後の残り — 未着手
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
@@ -554,9 +554,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 状態: 未着手（2026-10-12、T.368.7 から。規模 小〜中）
 - `sections.ts` の作り物の計画は `Plan` の全部でなく `as Plan` で渡している（`layers`・`widths` などが無い）: **T.375 が `layers`・`widths` を読み始めると、型に言われずに壊れる。T.375 の前に決める**。（**T.375.2 で**: 作り物の計画は `benchmark/madeup.ts` に全部の鍵で書き、`as Plan` を外した。`plan-keys-check` が Python の計画と比べる。）`shared` は「段が読むときの型」で、新しい段が `await gpu()` を忘れると型は黙ったまま undefined を読む（`device.ts` のコメントに「新しい段も同じ」の 1 文を）。`if (answer.error) return` は答えを絞らない（印つきの合併にすればページの `!` が減るが Worker の文が変わる。`interleaved()` も）。GPU の節がステップを名前で引く `steps: any[]`。`Asked` の鍵と `section.ts` の `WORKERS` の鍵は `.js` のラベルのまま（直すなら網の `page` の文字と一緒に）。`updated-check` は製品の 2 行を文で持ち、型を足すたびに直す。コメントの古い名前（`outdated.ts` の `/** */`、`gpu/forms.ts`・`gpu/tokens.ts`・`shaders.ts`・`shaders/prompt.ts`・`worker.ts`、`src/page-memory.js` の頭: T.472 と一緒に。`shaders/` の行は鍵に注意）。
 
-### T.484 [整理][その他] T.375.2 の後の残り — 状態: 未着手（2026-10-12、T.375.2 から。T.375.5 と一緒に。規模 小）
+### T.484 [整理][その他] T.375.2 の後の残り — 状態: 反映済み（2026-10-12、T.375.2 から。T.375.5 と一緒に。規模 小）
 - NumPy は GPT-2 の `bo` を attention の層の中の番号で引き、JavaScript は層の番号で引く（今ある記録では同じ。状態を持つ層と bias を両方持つ記録ができると食い違う）。GPU の Worker は `layerNorm` と `w3` の有無で層を選び、`gpuFit()` に渡る `shape` に `gatedFfn` が無い: RMSNorm で GELU のような事実の組の記録は、`gpuFit()` が知らないまま GPU に出して読み込みの検査が断る形になる（T.375.5 で、事実の組の断りを置くか決める）。`footprint()` とエンジンは層の置き場と幅を別の式で数える（T.375.5）。計画は `toJs()` で来るので Python の `None` は `undefined`（`widths.linear`）: 新しい鍵は null と undefined の取り違えに注意。`plan-facts-check` の線 1e-3 は締められる（正しい答えは 2e-7、取り違えは 0.4）。`calls` の作り物の gpt2 は手書きの頃の名残りで `derived` に RoPE の表を持つ（番地を変えないために残した）。Python のソースを変えたら `make python`（軽い組の `python-archive-check` が古い zip を落とす）。
-
+- **2026-10-30**: `plan-facts-check` の線を 1e-3 から 1e-5 に（`LINE`）。正しい答えの差は 33 の場合のどれも 4.4e-7 以下。壊し方（エンジンが RMSNorm の eps を 1.1 倍に読む）で、新しい線は 21 の場合を落とし（差 1.0e-5〜8.3e-3）、前の 1e-3 はそのうち 9 しか落とさなかった。ほかの項は今の形の説明として残す（取りまとめ役の決め）: GPT-2 の `bo` の番号の引き方・`gatedFfn` の無い `shape`・置き場と幅の 2 つの式は、状態を持つ層と bias を両方持つ記録、事実の組の新しい記録が来た回に。`toJs()` の `None` は `undefined`、`calls` の作り物の名残り、`make python` は AGENTS.md と検査が言っている。CI を省いた。訳: 検査の線だけで、手元で回した。
 
 ### T.485 [整理][その他] T.375.3 の後の残り — 状態: 未着手（2026-10-12、T.375.3 とそのレビューから。T.375.5 と一緒に。規模 小）
 - 軽い組に、GPU が書き戻した half をキャッシュに写す所（`fromStaging()`）の中身を見る試験が無い（全部の組の `gpu-default-check` だけ）。`cpuSide` の `capacity`・`keys`・`values` はキャッシュの getter を読む getter の 2 段（`gpuSide()` にキャッシュを直に渡せば 1 段。`gpuside.ts` と `gpu-part-check` の代役に手が入る）。`shape.stateful` は「`clear` を持つ種類があるか」: `clear` を書かない attention 以外の種類は GPU に置かれうるので、`Kind` の型の説明に一文。`gpuFit()` は `linear`・`convolution` を名指しで断る文が残る。枠の `gate` の置き場は `footprint()` が「linear があるとき」、エンジンが「`wg` の行があるとき」（今あるモデルでは同じ）。`footprint()` は種類の枠と状態を自分の式で持つ（種類の `frame()` と同じ出どころにするには、`frame()` が計画でなく形から答える必要がある）。`at`（枠の番地）の名前は型でなく `forward-modules-check` の規則が見る。速さの道具（`compare-engines`・`threads-compare`）は作り物のモデルを受けず、状態を持つ層の道の前後を測れない。2 つの種類が同じ名前の配列を言うモデルの断りは作り物が無い。
