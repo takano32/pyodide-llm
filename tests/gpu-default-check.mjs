@@ -608,6 +608,30 @@ if (isMainThread) {
     // (the owner's words, 2026-09-27: "prompts and answers on WebGPU", or the prompts' own verdict and "answers on WebGPU")
     expect(`the status line says the answers are on WebGPU (${seen.status})`, /answers on WebGPU$/.test(seen.status), true);
   }
+  // T.485: what forward.js copies into its cache of the keys and values a GPU's block wrote back (fromStaging()), to the
+  // bit, in a float16 cache and a float32 one: in the quick run too (the whole check's T.243 does it with the rest)
+  for (const halfKeys of [true, false]) {
+    const LAYERS = plan.n_layers, ROW = plan.n_kv_heads * (plan.dim / plan.n_heads), FED = 150;  // blocks of 64, 64 and 22
+    const wide = new Float16Array(1), narrow = new Uint16Array(wide.buffer);
+    const float = (bits) => { narrow[0] = bits; return wide[0]; };
+    const side = (s) => Float32Array.from({ length: LAYERS * FED * ROW }, (_, j) =>
+      float(madeUpHalf(s * LAYERS + Math.floor(j / (FED * ROW)), Math.floor(j / ROW) % FED % 64, j % ROW)));
+    const bits = (floats) => [...new Uint32Array(floats.buffer, floats.byteOffset, floats.length)].join();
+    const gpu = () => {
+      const fake = new Worker(FAKE, { eval: true, workerData: { fixed: 10 * perToken, perToken: 0.05 * perToken, kv: { stale: 0x7e00 } } });
+      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
+        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+    };
+    const engine = createForward({ memory, base, size, kernels, plan, spawn, halfKeys, gpu });
+    await engine.setThreads(1);
+    await engine.gpu;
+    engine.gpuSide = "gpu";
+    const tokens = feed(engine, FED)[1], got = engine.keysAndValues(0, FED);
+    await engine.release();
+    say(`T.485, ${halfKeys ? "a float16 cache" : "a float32 cache"}: ${tokens} of ${FED} tokens on the GPU, its keys and values ${bits(got.keys) === bits(side(0)) && bits(got.values) === bits(side(1)) ? "the cache's to the bit" : "NOT the cache's"}`);
+    expect(`T.485, ${halfKeys ? "a float16 cache" : "a float32 cache"}: the keys and values the GPU wrote back are the cache's, to the bit`,
+      [tokens, bits(got.keys) === bits(side(0)), bits(got.values) === bits(side(1))], [FED, true, true]);
+  }
   if (!quick) {
     {
       const seen = await steps("the steps, a GPU far slower", 5, 12);
