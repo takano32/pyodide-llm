@@ -252,7 +252,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // T.156: on the GPU alone: where each layer's values and scales start in the checkpoint (what gpu.ts was opened
     // with), for the plan the GPU's worker is started with; the CPU never multiplies by it (T.210: nor by the classifier)
     if (direct && GPU_ALONE.includes(source)) {
-      const rowBytes = packing!.rowBytes(n);
+      // (T.486: gpuOnlyUnfit() keeps a model of float32 or float16 matrices off the GPU alone before it is loaded; one
+      // that came here anyway is said so, not read as a packing it has not)
+      if (!packing) throw new Error(`The matrix ${source} is of ${t.kind}, which is not on the GPU alone.`);
+      const rowBytes = packing.rowBytes(n);
       return { rows, n, kind: t.kind as Packed, group: t.group, onGpu: true, layer: (l) => [t.offset + l * rows * rowBytes, t.scales + l * scaled] };
     }
     if (packing && plan.int8) {

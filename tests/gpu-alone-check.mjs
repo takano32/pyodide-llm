@@ -259,4 +259,11 @@ for (const dtype of ["int8", "ternary"]) {
   assert.equal(await engine.release(), true);
 }
 console.log("ok: T.375.4, a model on the GPU alone, of int8 or of ternary weights: the GPU is told where every layer's values and scales are, a layer's rows of the packing's bytes apart");
+// T.486: a model of float32 weights is kept off the GPU alone before it is loaded (gpuOnlyUnfit()); an engine made of one
+// on it anyway says which matrix, and is not read as a packing it has not ("Cannot read properties of null")
+{
+  const [f] = plansOf([{ header: [64, 128, 2, 4, 4, 100, 128], form: FORM, dtype: "float32" }]);
+  assert.throws(() => made(true, planOf(f), f.size), /The matrix wq is of f32, which is not on the GPU alone\./);
+}
+console.log("ok: T.486, an engine of float32 weights on the GPU alone says which matrix the GPU does not take");
 process.exit(0);
