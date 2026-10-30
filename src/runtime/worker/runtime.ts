@@ -63,11 +63,9 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
     packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
     const wgsl = await import("../shaders/key.ts");
-    gpuAdapter.key = wgsl.deviceKey(adapter);
-    // (T.232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one)
-    gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, "ternary");
-    // (T.547.3.7: and a model of llama.cpp's blocks one, with theirs)
-    gpuAdapter.blocksKey = wgsl.deviceKey(adapter, adapter, "blocks");
+    // (T.232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one; T.547.3.7: and a
+    // model of llama.cpp's blocks one, with theirs. T.623: the three in one, by the shaders of a model's own)
+    gpuAdapter.keys = { plain: wgsl.deviceKey(adapter), ternary: wgsl.deviceKey(adapter, adapter, "ternary"), blocks: wgsl.deviceKey(adapter, adapter, "blocks") };
   } catch (error) {
     // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
     console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);

@@ -20,10 +20,10 @@ import type { LayerKind, Tensor, TensorName, Tensors } from "../contracts/plan.t
 // (T.368.4, the types) what of a form says whether a model can go on the GPU, and how many bytes it takes there
 // (T.375.5: the architecture's name, the size of a head, and the numbers of the layers that keep a state: sizes.ts's Formed)
 export type GpuForm = Formed & { bias?: boolean; qk_norm?: boolean };
-// the adapter as the worker keeps it (worker/runtime.ts)
-// (T.547.3.7: blocksKey, a model of llama.cpp's blocks', with their shaders)
-export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize: number; maxBufferSize: number }; packed: boolean; key?: string; ternaryKey?: string;
-  blocksKey?: string };
+// the adapter as the worker keeps it (worker/runtime.ts). keys: the device's key of a model by the shaders of its own
+// (shaders/key.ts's deviceKey(): plain, T.232 ternary weights', T.547.3.7 llama.cpp's blocks'), none where it was not made
+export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize: number; maxBufferSize: number }; packed: boolean;
+  keys?: { plain: string; ternary: string; blocks: string } };
 // T.156: where a model goes (weightsPlace()); gpuRoom: the bytes left for the GPU's copy where it is not on the GPU alone
 export type Place = { mode: "both" | "gpu" | "cpu"; gpuRoom?: number };
 // a stretch of a checkpoint that the GPU alone holds: [start, end)
