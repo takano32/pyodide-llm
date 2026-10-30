@@ -47,7 +47,7 @@
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
-- T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
+- T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 進行中
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
@@ -559,7 +559,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 状態: 未着手（2026-10-11、T.378.4 から。T.357.5 と一緒に。規模 中）
 - T.352 と T.378.4 の証明（装置への呼び出しの列を本線と比べる記録）は `.tmp/` の捨ての道具（約 630 行）で、毎回作り直している。`tests/` に入れれば、`gpu/` の `forms.js`・`tokenattention.js`・`tokens.js`・`tokenforms.js`・`start.js`（検査を通らないと記録を作らないので、いまは軽い組で単独に踏めない: レビューの壊し方 5 つが軽い組を通った）も部品だけの試験にでき、次に `gpu/` に触る回が比べる手段を持つ。偽の装置は約束を後のターンで果たす形に（その場で果たすと、途中の stop の比べが空振りになる）。
 
-### T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 状態: 未着手（2026-10-11、T.368.3 から。T.368.8 の後。規模 中）
+### T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-11、T.368.3 から。T.368.8 の後。規模 中）
+- **(1) `timing.ts` 完了（2026-10-30、ブランチ `t.476-timing`）**: `llama!`・`forwardModule!` の 18 か所を、`timedPaths()` の頭の 1 文（`const python = llama!, forward = forwardModule!`: 「この 2 つを当てにする」を 1 か所で言う）と、`timedGeneration()`・`warmUp()` の引数 `python`（呼ぶ側の worker.ts が `llama!` を 1 つ渡す）に。動きは同じ。手元: 型検査、worker の 4 つの検査、軽い組（630 秒）、`bench-check.mjs --dist chromium`（モデルのページの道の節が走る）。**CI を省いた。訳: 触った道は軽い組と実ブラウザの `/benchmark/` が踏む。** **レビュー（Sonnet low、2026-10-30）: OK、直しなし。** 頭で取っても動きは同じ（`paths` の受け口は走っている間と `llama` の無いときを断り、読み込みは割り込めない）。新しい局所の名前は import を隠さない。残りの数え直しを勧められた（下の行）。
+- **残り**（2026-10-30 に数え直した、名前の後の `!` の数）: `weights.ts` 42・`convert.ts` 18・`worker.ts` 9・`load.ts` 9・`runtime.ts` 4・`timing.ts` 4（頭の 2 つほか）・`ranges.ts` 3・`sources.ts` 3・`conduct.ts` 2・`pyodide.ts` 2・`request.ts` 1。前の言い方では `weights.ts` の 36 個、caught value への cast 24 個（`Thrown`）、`(err)?.` の形、`resolvePyodideVersion()` の `RegExp.test(null)`、`fetchRange()` の `undefined >= 400`、`updated-check` の `knows()`（`updated.ts` になった今の文字）。
 - `!`（ここには値がある、の言い切り）の 46 個は `forwardModule` と `llama`: `weights.ts`（36 個）と `timing.ts`（18 個）が、引数で受けていない状態を当てにしている印。引数で受ける形にすれば消える。caught value への cast 24 個（`Thrown`）と、ソースに増えた `(err)?.` の形も。`timing.ts` の `llama.tokenizer.encode(prompt)` は `llama.tokenizer` の PyProxy を壊していない見立て（未確認）。`resolvePyodideVersion()` は `?pyodide=` が無いとき `RegExp.test(null)` を通る、`fetchRange()` の catch は `status` が無いとき `undefined >= 400` を通る（結果は正しい）。`updated-check` の `knows()` は `updated\.js` を文字で探す（`updated.js` を `.ts` にする回に）。ページの項目は `src/models.js` 由来で形が言えない（`Listed` は worker の側だけが見る）。
 
 ### T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 状態: 未着手（2026-10-12、T.368.4 から。T.368.8 と T.375 と一緒に。規模 中）
