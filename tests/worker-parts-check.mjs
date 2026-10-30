@@ -17,7 +17,7 @@
 //
 // What these parts are still bound to: loaded.js to runtime.js's pyodide (the collector is Python's). weights.js's own
 // (the memory kept from model to model, the model on the GPU alone, the models back on the CPU) is held where its
-// stand-ins are: tests/worker-sink-check.mjs. worker.js's own (the run going on, the stop): tests/worker-check.mjs.
+// stand-ins are: tests/worker-sink-check.mjs. worker.js's own (the run going on, the stop): tests/worker-memory-check.mjs.
 //
 //   node tests/worker-parts-check.mjs        (Node only, under a second)
 import { fresh } from "./fresh.mjs";
