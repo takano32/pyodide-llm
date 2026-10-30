@@ -207,7 +207,8 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   context.console = { ...console, warn: (line) => said.push(line), info() {} };
   context.stand = {
     forward: { ...forward, weightsMemory: () => ({ memory: new WebAssembly.Memory({ initial: 1 }), base: 0 }), growMemory() {},
-      external: () => ({ engine: context.stand.engineOf?.(++engines) ?? { n: ++engines, gpu: context.stand.gpuOf?.(engines) ?? Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1 } }) },
+      external: () => ({ engine: context.stand.engineOf?.(++engines) ?? { n: ++engines, gpu: context.stand.gpuOf?.(engines) ?? Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1,
+        release: () => Promise.resolve(true) } }) },
     pyodide: { version: "0.0.0-stand-in", _module: { HEAPU8: { length: 1000 } }, runPython: (code) => told.push(`python: ${code}`),
       globals: { get: () => (size) => ({ destroy() {}, getBuffer: () => ({ data: new Uint8Array(size), release() {} }) }) } },
     numpy: { OUTLIER_CHANNELS: 8, Llama: { callKwargs: (checkpoint, tokenizer, options) => {
@@ -277,6 +278,19 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.deepEqual([of("error"), of("ready").map((r) => r.gpu), of("gpu")], [[], ["prompts on the CPU (the engine's reason (a stand-in))"], []],
     "the line of an engine without a GPU's side is the engine's reason, and no GPU is waited for");
   context.stand.engineOf = undefined;
+
+  // T.461: a Llama that throws as it is built (after external() built its engine) lets go of that engine: the load
+  // fails as it did, and the engine's threads and GPU's worker are let go of (release()), which nothing else would do
+  {
+    let released = 0;
+    context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", threads: 1, release: () => { released += 1; return Promise.resolve(true); } });
+    context.stand.asBuilt = () => { throw new Error("a checkpoint Python refuses (a stand-in)"); };
+    const errors = of("error").length;
+    await load({ load: 70, model: model("refused") });
+    context.stand.asBuilt = undefined;
+    assert.deepEqual([of("error").length - errors, released], [1, 1], "T.461: the load failed, and the engine its Llama threw over was let go of");
+    context.stand.engineOf = undefined;
+  }
 
   // T.380.2: software threads that do not start leave the model ready on one thread, as before, and the console is told
   // why; threads that start say nothing

@@ -52,9 +52,25 @@ type Placed = Place & { tensors?: Tensors; stored?: number; gpuOnly?: number };
 let weightsPool: Pool | undefined, weightsNow: WebAssembly.Memory | undefined;
 // T.156: the model on the GPU alone that is loading or loaded now (what gpuOnlyBuffer() made), or undefined
 let gpuOnlyNow: GpuOnly | undefined;
-// the GPU's worker of a model on the GPU alone let go before its engine was built (gpuOnlyBuffer()'s destroy()): the next load
-// waits for it, as release() waits for a built one's (T.205)
+// the GPU's worker of a model on the GPU alone let go before its engine was built (gpuOnlyBuffer()'s destroy()), or
+// (T.461) of an engine whose Llama threw as it was built: the next load waits for it, as release() waits for a built
+// one's (T.205)
 let gpuOnlyEnding = Promise.resolve();
+// T.461: a Llama that threw as it was built (Python's checks of the checkpoint and its options, after start()) lets go
+// of the engine its external() built by then (the software threads, the GPU's worker): no model holds it, and nothing
+// else would. The error goes on as it was
+function builtOrLetGo(outside: Outside, build: () => Llama) {
+  try {
+    return build();
+  } catch (error) {
+    const engine = outside.engine;
+    if (engine) {
+      const released = engine.release();
+      gpuOnlyEnding = Promise.all([gpuOnlyEnding, released]).then(() => {});
+    }
+    throw error;
+  }
+}
 // the key of the model being loaded (cpuOnly)
 let loadingKey: string | undefined;
 // T.156: the models whose GPU failed while they were on it alone, loaded again on the CPU from then on (this visit)
@@ -352,7 +368,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
         // before the rounds, has the GPU, and T.205: the rounds' loads wait for that GPU to let go of its device)
         const outside = forwardModule!.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom,
           gpuRemembered: gpuRequest?.remembered, gpuForce, halfKeys, apart, oneThread: threadsRequest?.fixed === 1 });
-        return { llama: llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outside }), outside };
+        return { llama: builtOrLetGo(outside, () => llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outside })), outside };
       },
       destroy() {},
     };
@@ -492,7 +508,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
       // (no oneThread, T.371: a model on the GPU alone is one on a shared memory, which ?threads=1 does not ask for)
       const outside = forwardModule!.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce, halfKeys: true, direct,
         gpuRemembered: gpuRequest?.remembered });
-      const made = llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: outside });
+      const made = builtOrLetGo(outside, () => llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: outside }));
       built = true;
       // (T.377: the engine's side of the GPU says why, as of a worker that failed under it, and the model is loaded
       // again on the CPU: gpuOnlyReady(). An engine that started no worker has said its own reason already)
