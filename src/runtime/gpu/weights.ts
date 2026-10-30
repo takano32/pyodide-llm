@@ -29,11 +29,11 @@ type Home = { joined: string; at: [number, number] };
 // two are apart as well, 0 where they are one; up, whether gate and up are apart, written each into a buffer of its own
 // and joined by the activation's dispatch)
 type Together = { homes: Partial<Record<TensorName, Home>>; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
-// T.625: a buffer of each of the plan's vectors, by their names, which say which every model has (attention, ffn)
+// T.625: a buffer of each of the plan's vectors, by their names; every model has attention and ffn
 type GpuVectors = { [name in keyof Vectors]: GPUBuffer };
-// T.625: a record by the plan's tensor names (the plan's matrices, a token's homes), entry by entry, by those names
+// T.625: a record by names of its own (the plan's matrices and vectors, a token's homes), entry by entry, by those names
 // (Object.entries says string)
-const named = <V>(record: Partial<Record<TensorName, V>>) => Object.entries(record) as [TensorName, NonNullable<V>][];
+const named = <K extends string, V>(record: Partial<Record<K, V>>) => Object.entries(record) as [K, NonNullable<V>][];
 // (T.547.2.3: no scales where its matrices' blocks hold them)
 // (T.547.3.3: and their packing, every matrix's of them)
 type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null, GpuPacking] };
@@ -206,7 +206,7 @@ async function uploadRest(m: Model) {
   gridsFilled(m);
   if (m.weights.together) bytes += await uploadTokens(m, m.weights.widen);
   const vectors: Partial<GpuVectors> = {};
-  for (const [name, { at, size, of }] of Object.entries(plan.vectors) as [keyof Vectors, Vector][]) {
+  for (const [name, { at, size, of }] of named<keyof Vectors, Vector>(plan.vectors)) {
     // (T.545: of the layers of a kind, where it is theirs alone)
     const vectorBytes = (of ? plan.kinds.filter((kind) => kind === of).length : plan.layers) * size * 4;
 
@@ -214,7 +214,7 @@ async function uploadRest(m: Model) {
     copyIn(m, made, at, vectorBytes);
     bytes += vectorBytes;
   }
-  // (the plan's names, each: attention and ffn among them)
+  // (all of them: the loop made one of each of the plan's vectors, whose attention and ffn every model has)
   m.weights.vectors = vectors as GpuVectors;
   // T.271.1: a rotated basis's signs of each width, from the shared memory (Python's derived tables)
   if (plan.rotated) {
