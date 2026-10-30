@@ -293,6 +293,9 @@ part "attention's largest score" node tests/attention-check.mjs
 # steps (gpu-default-check --quick; the whole check is the full suite's), about 20 seconds. Each of the four ways to
 # forget failed only the full check before
 part "what the engine tells the GPU's side" node tests/gpu-default-check.mjs --quick
+# T.483: the three windows of a worker (the model's, its GPU's, /benchmark/'s GPU's) await nothing before their receiver
+# is set: a module worker's first message is lost where they do (under a second)
+part "the workers' receivers come first" node tests/receivers-check.mjs
 
 if [ "$suite" = full ]; then
   # T.262's review: every workflow job has a time limit and every step that installs a browser or runs apt has its own (and
