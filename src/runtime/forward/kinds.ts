@@ -11,15 +11,21 @@
 import { attention } from "./attention.ts";
 import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
-import type { Kernels } from "../jobs.ts";
+import type { Kernels, Packed, Ready } from "../jobs.ts";
 import type { Cache } from "./cache.ts";
-import type { Held } from "./gpufit.ts";
 import type { Framed, KindFrame } from "./memory.ts";
 import type { Sizes } from "./sizes.ts";
 import type { Stateful } from "../contracts/form.ts";
 import type { Derived, Layer, LayerKind, Plan, TensorName, Widths } from "../contracts/plan.ts";
 import type { KindNumbers } from "../contracts/gpu/protocol.ts";
 
+// A matrix as createForward()'s matrix() made it: kind, how it is multiplied: packed (the name of its line of jobs.ts's
+// PACKED, in groups of group) or float32; and for a layer the addresses of its values and, where it is packed, of its
+// scales and its corrections (0: none). onGpu (T.156): on the GPU alone, its addresses the checkpoint's offsets.
+// T.375.4: job and ready are the CPU's (the kind of the job that multiplies by it and what makes its input ready:
+// engine.ts's matmuls()); this side reads neither
+// (T.363.5: layers, of a stack whose layers are each of a kind of their own: each layer's matrix, and kind is "layers")
+export type Held = { rows: number; n: number; kind: "f32" | Packed | "layers"; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null; layers?: Held[] };
 // a matmul of one input: [the matrix (one the model has: matmuls() reads it as there), its output, the output's stride, the layer]
 export type Product = [Held | null, number, number, number];
 // The engine's memory after the checkpoint: alloc() takes bytes of it (and never gives them back), and F, U and H are

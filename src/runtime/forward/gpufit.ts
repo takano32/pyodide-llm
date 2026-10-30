@@ -6,7 +6,8 @@ import { PACKED, packingOf } from "../jobs.ts";
 import { gpuWeightBytes } from "./alone.ts";
 import { REASONS } from "./reasons.ts";
 import { rotatedBlockUnfit } from "./alone.ts";
-import type { Packed, Ready } from "../jobs.ts";
+import type { Packed } from "../jobs.ts";
+import type { Held } from "./kinds.ts";
 import type { Direct } from "./alone.ts";
 import type { KindNumbers, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { Activation, LayerKind, Tensor } from "../contracts/plan.ts";
@@ -37,13 +38,6 @@ export type Shape = {
   // Qwen3.5's linear-attention layers' states and rows; 0: none)
   kinds: LayerKind[]; places: number[]; attending: number; stateBytes: number;
 };
-// A matrix as createForward()'s matrix() made it: kind, how it is multiplied: packed (the name of its line of jobs.ts's
-// PACKED, in groups of group) or float32; and for a layer the addresses of its values and, where it is packed, of its
-// scales and its corrections (0: none). onGpu (T.156): on the GPU alone, its addresses the checkpoint's offsets.
-// T.375.4: job and ready are the CPU's (the kind of the job that multiplies by it and what makes its input ready:
-// engine.ts's matmuls()); this side reads neither
-// (T.363.5: layers, of a stack whose layers are each of a kind of their own: each layer's matrix, and kind is "layers")
-export type Held = { rows: number; n: number; kind: "f32" | Packed | "layers"; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null; layers?: Held[] };
 // T.375.4, T.375.5: whether the GPU takes a matrix as it is packed: its packing's line of jobs.ts's PACKED says how the GPU
 // holds it (gpu.ts widens int6 to int8, T.155, and takes ternary as it is, T.232), in the groups that line says. A
 // matrix that is not packed, or whose packing the GPU has not, stays on the CPU. (T.547.3.1: a stack whose layers are each
