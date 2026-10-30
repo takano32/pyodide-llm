@@ -2,12 +2,14 @@
 // A stand-in for the Cache API (a browser's `caches`), for the checks of what keeps copies in it: the service worker
 // (coi-js-check.mjs), the kept conversions (kept-check.mjs) and the site's models' parts (worker-check.mjs).
 //
-//   const { caches, cache, map, said } = cacheStorage({ broken, stuck, unlisted })
+//   const { caches, cache, map, said, stored } = cacheStorage({ broken, stuck, unlisted })
 //
 //   caches     what stands for globalThis.caches: open(name) gives the one cache whatever the name, delete(name) empties it
 //   cache      that one cache: put, match, keys, delete
 //   map        what it holds, address -> bytes: a check reads it, and may seed it (a Uint8Array or an ArrayBuffer)
 //   said       what was asked of it, in order: "open", "keys", "delete <address>", "delete the cache <name>"
+//   stored     every copy put() stored, in order: [address, its bytes' length] (T.495: a copy that was stored and
+//              written over later is gone from map, and seen here)
 //   broken     it does not open (a private window, storage turned off); stuck: the addresses whose copies cannot be
 //              deleted; unlisted: keys() fails
 //
@@ -22,13 +24,14 @@
 
 /** A Cache API of one cache. */
 export function cacheStorage({ broken = false, stuck = [], unlisted = false } = {}) {
-  const map = new Map(), said = [];
+  const map = new Map(), said = [], stored = [];
   const addressOf = (key) => (typeof key === "string" ? key : key.url);
   const withoutQuery = (address) => address.split("?")[0];
   const cache = {
     async put(key, response) {
       const bytes = new Uint8Array(await response.arrayBuffer());
       map.set(addressOf(key), bytes);
+      stored.push([addressOf(key), bytes.length]);
     },
     async match(key, { ignoreSearch = false } = {}) {
       const address = addressOf(key);
@@ -61,5 +64,5 @@ export function cacheStorage({ broken = false, stuck = [], unlisted = false } = 
       return true;
     },
   };
-  return { map, said, cache, caches };
+  return { map, said, stored, cache, caches };
 }
