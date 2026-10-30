@@ -126,7 +126,6 @@
 - T.489 [整理][その他] T.380.1 の後の残り — 持ち主の文面待ち
 - T.491 [整理][WebGPU] T.380.3 の後の残り — 未着手
 - T.493 [整理][遠隔試験] T.357.3 の後の残り — 未着手
-- T.496 [整理][遠隔試験] T.357.6 の後の残り — 未着手
 - T.498 [整理][遠隔試験] T.391.6 の後の残り — 未着手
 - T.499 [整理][WebGPU] T.391.4 の後の残り — 未着手
 - T.502 [整理][その他] T.363（Saluki のエンジン）の後の残り — 進行中
@@ -1078,12 +1077,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 見ていない道: `real=`（`<prefix>.json` の実物）、乾いた回の arm64 のランナーでの秒。
 - 開発機（arm64 の Node 24）で 64 ビットのメモリの作り物を装置なしで回すと、最初の run の数が揺れる（V8 の Liftoff の既知の誤り: AGENTS.md の落とし穴。道具の誤りではない）。手元で回すなら `node --no-liftoff`。乾いた回は 64 ビットの作り物を入れていない。
 - 実装の回に、待ちの式の中で `pgrep -f` を 1 回使った（決まり違反、害は無し）。次の頼みには「前の回がこれを破った」と書いてある。
-
-### T.496 [整理][遠隔試験] T.357.6 の後の残り — 状態: 未着手（2026-10-12、T.357.6 とそのレビューから。規模 小）
-- `tests/fetching.py` を通らない Python の `urlopen` が 5 つ残る（`fork_readers.py`・`start_check.py`・`template_corpus.py`・`unfold_27b.py`・`t200_fable_check.py`）。`models.yml`・`int4.yml` の `curl -f` は取り直さない（触るとその 2 つのワークフローの dispatch が要る）。
-- 走らせていない道: `tests/encode-bench.mjs` そのもの（計測。`hfFile()` は行を写して比べた）、`browsers.yml` の Firefox・WebKit での `kernels-in-browser.mjs --site`（次の週次が回す）、`gguf.yml` の index とシャードの原本（手元の作り物のサーバでだけ）、本物のサーバが短く閉じる回。
-- `gguf_fetch.py` の期限（300 秒）は検査が値を見ていない。`fetching.mjs` は、`Accept-Encoding: identity` を無視して圧縮を返すサーバでは長さを比べない（正しいファイルを断りはしない）。失敗で終わった `.part` は Node では消し、Python では残る。Python は `HTTPError`、Node は `Answered` を投げる（名前はそろえていない）。
-- 行の合計は増えた（`tests/` と `.github/` で +525 −93: 前は試験の無かった取得に検査が付いた分）。
 
 ### T.498 [整理][遠隔試験] T.391.6 の後の残り — 状態: 未着手（2026-10-13、T.391.6 とそのレビューから。規模 小）
 - 再読み込みをまたぐ待ち `acrossReload` の写しが 5 つの道具にある。`tests/gpu-check/engines.mjs` に、15 秒で見切る閉じ方の写しが 1 つ残る（Playwright の道は `gpu-prompt.yml` だけが回すので、この回は触っていない）。
