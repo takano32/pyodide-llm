@@ -156,6 +156,9 @@ page_modules() {
   # layout and dtype (under a second); T.375.2: and the one plan written by hand, /benchmark/'s made-up
   # model's (src/runtime/benchmark/madeup.ts), held to the plan Python makes for the same header
   node tests/plan-keys-check.mjs
+  # T.622: a token's frame as createForward() lays it out from the plan, held array by array to the one footprint()
+  # counts from the header and the form (forward/memory.ts's frameOf()), every architecture and kind of layer (a second)
+  node tests/frame-check.mjs
   # T.355: the names the model page's script (src/pages/index.astro and src/page/) and /benchmark/'s use: declared,
   # imported, or a page's globals (the .astro scripts are in no program of tsc's, the build does not say a name that
   # is nowhere, and tsc takes a page's own names for the modules'); T.378.5: what the parts hold has owners (model.ts,
