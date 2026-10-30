@@ -5,7 +5,7 @@
 import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady, forwardModule, blockKernels } from "./runtime.ts";
 import { threadsRequest, root, switchesNow } from "./request.ts";
 import { llama, engineNow, adopted, letGo } from "./loaded.ts";
-import { since, took, secondsSoFar } from "./clock.ts";
+import { since, took, secondsSoFar, loadStarted } from "./clock.ts";
 import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes, runsPacked, rowsReady } from "./weights.ts";
 import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
@@ -34,6 +34,7 @@ async function localOptions(model: OfTwoFiles | OfTwoUrls, vocabulary: Uint8Arra
 
 export async function load(model: Listed, signal: AbortSignal, id: number): Promise<void> {
   signal.throwIfAborted();
+  loadStarted();  // (T.460)
   // (T.156: the adapter before any weights are placed, and the GPU's worker of a model on the GPU alone let go before it
   // was built: weights.ts)
   await loadBegan(model);

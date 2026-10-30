@@ -5,8 +5,8 @@ import type { LoadSeconds } from "../contracts/messages.ts";
 
 export const since = (started: number) => (performance.now() - started) / 1000;
 
-// How long the load took, in seconds: Pyodide once per session, the others per model (what is not measured again
-// stays as it was). The download of a model
+// How long the load took, in seconds: Pyodide once per session, the others per load (T.460: a load begins with none of
+// them, so that a site's model after a conversion does not say the conversion's seconds). The download of a model
 // of this site runs while Pyodide loads and usually ends first, so its seconds are counted until the last byte
 // arrives (not until the bytes reach Python, which has to wait for Pyodide). The page says that the two overlap
 // instead of adding them up, but only for the model that was loaded while Pyodide was still coming.
@@ -14,6 +14,12 @@ const seconds = {} as LoadSeconds;
 /** A part of the load (pyodide, download, convert, construct) took so many seconds */
 export function took(part: keyof LoadSeconds, spent: number) {
   seconds[part] = spent;
+}
+/** A load begins: the parts of the one before are not its own (Pyodide's, once a session, stays) */
+export function loadStarted() {
+  delete (seconds as Partial<LoadSeconds>).download;
+  delete (seconds as Partial<LoadSeconds>).construct;
+  delete seconds.convert;
 }
 /** The seconds of the load's parts as they stand, for the ready a load reports */
 export const secondsSoFar = () => ({ ...seconds });

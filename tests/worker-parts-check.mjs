@@ -97,6 +97,21 @@ const read = (r) => ({ threads: r.threadsRequest, gpu: r.gpuRequest, root: r.roo
 }
 console.log("ok: request.js by itself: a load's asking, the page's switches read once, the rounds' switches, the count the page path found; nothing assigned from outside");
 
+// ---- T.460: clock.js, the seconds of a load's parts: a load begins with none of the one before but Pyodide's
+{
+  const clock = await fresh(runtimeUrl("worker/clock.js"));
+  clock.took("pyodide", 3);
+  clock.took("download", 2);
+  clock.took("convert", 5);
+  clock.took("construct", 1);
+  assert.deepEqual(clock.secondsSoFar(), { pyodide: 3, download: 2, convert: 5, construct: 1 }, "a conversion's load");
+  clock.loadStarted();
+  clock.took("download", 0.5);
+  clock.took("construct", 0.25);
+  assert.deepEqual(clock.secondsSoFar(), { pyodide: 3, download: 0.5, construct: 0.25 }, "T.460: a site's model after it, without the conversion's seconds");
+}
+console.log("ok: clock.js by itself: a load says its own parts' seconds and Pyodide's, none of the load before");
+
 // ---- loaded.js, in the worker's context: a stand-in of Pyodide (the collector) and of a model
 {
   const { context, run } = workerHarness();
@@ -225,8 +240,10 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   // the next model: the first is let go of before the second is built (two never have to fit), and the memory stays
   told.length = 0;
   context.stand.asBuilt = () => told.push("the next is built");
+  run("took('convert', 9)");  // (T.460: as a conversion before it would have left)
   await load({ load: 2, model: model("second") });
   assert.deepEqual(told, ["llama 1: destroy", "python: import gc; gc.collect()", "the next is built"]);
+  assert.ok(!("convert" in of("ready")[0].seconds), "T.460: the next load's ready says none of the conversion's seconds before it");
   assert.deepEqual([of("ready").length, of("ready")[0].load, run("llama") === built[1], run("engineNow()").n, of("ready")[0].seconds.download >= 0], [1, 2, true, 2, true]);
 
   // T.156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
