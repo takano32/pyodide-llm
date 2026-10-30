@@ -22,7 +22,8 @@ export async function modelSection(): Promise<Result> {
   // run: the worker says ready at the end of each round's load; a skipped round loads nothing)
   const rounds = asked.filter((round) => round.skip === undefined);
   const stages = 2 + rounds.length;
-  let readies = 0, pathing = false;
+  // (T.475: the worker said a file of this page's build is gone, whenever it said it: between two requests as well)
+  let readies = 0, pathing = false, siteUpdated = false;
   const prompt = entry.prompt || "Once upon a time";
   const megabytes = (data: Progress) => `the model: ${(data.received / 1e6 || 0).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
   try {
@@ -47,7 +48,10 @@ export async function modelSection(): Promise<Result> {
         } else if (data.type === "bench" || data.type === "paths") resolve(data);
         // T.475: a file of this page's build is gone from the site (the kernels, the engine's module: the worker goes on
         // without it, slower): the rounds would time that, and not this device. The section ends with the sentence
-        else if (data.type === "updated") resolve({ error: UPDATED });
+        else if (data.type === "updated") {
+          siteUpdated = true;
+          resolve({ error: UPDATED });
+        }
         else if (data.type === "error") {
           // T.242: where it happened goes to the console, as on the model page (the report holds the message alone)
           console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
@@ -78,9 +82,10 @@ export async function modelSection(): Promise<Result> {
     staged("model", { stage: "the page's path", at: 2, of: stages });
     const paths = await request({ type: "paths", load: 1, prompt, counts: PATH_PROMPTS, sampled: PATH_WRITES });
     pathing = false;
-    if (paths.error === UPDATED) return { status: "error", markdown: UPDATED };
+    if (siteUpdated) return { status: "error", markdown: UPDATED };
     const answer = await request({ type: "bench", model: entry, load: 1, rounds: asked, prompt, steps: 64 });
     if (answer.error) return { status: "error", markdown: answer.error };
+    if (siteUpdated) return { status: "error", markdown: UPDATED };
     const table = pathTable(paths, entry.name);
     measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide, paths: table, said: pathWarnings(paths) };
     const lines = [...roundsTable(answer.rows), ...[drift(answer.rows)].filter(Boolean).flatMap((line) => ["", line])];

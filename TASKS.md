@@ -50,7 +50,6 @@
 - T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 未着手
 - T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 未着手
 - T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 未着手
-- T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 反映済み
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
 - T.478 [整理][WebGPU] シェーダの型の残り — 未着手
@@ -549,16 +548,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `m.tokens` はバッファとパイプラインと uniform（`tokens.js` が作る）・選んだ形（`tokenforms.js`）・attention（`tokenattention.js`）が 1 つの記録に入っている。分ければ `tokens.js` が自分の物の持ち主になる。`forms.js` の `timeForms()` は `m.block` を 14 個名前で読む: `block.js` の関数にできる。`start()` が `m.weights.unjoined` を名前で読む所も。
 
 ### T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 状態: 未着手（2026-10-11、T.378.5 から。規模 中）
-- 「どの知らせでどの出来事を言うか」（`receiver.ts`・`choose.ts`・`composer.ts`・`run.ts`）は要素を最上位で取るので Node の試験に無く、実ブラウザだけが見る（別の読み込みの知らせを捨てる条件を外しても Node の検査は通る）。受け口を「知らせ → 言う出来事と描くもの」の関数に。`answerBegan()` が書いている間の 2 回目を断らないこと（守りは `composer.ts`）も一緒に。
+- 「どの知らせでどの出来事を言うか」（`receiver.ts`・`choose.ts`・`composer.ts`・`run.ts`）は要素を最上位で取るので Node の試験に無く、実ブラウザだけが見る（別の読み込みの知らせを捨てる条件を外しても Node の検査は通る）。受け口を「知らせ → 言う出来事と描くもの」の関数に。`answerBegan()` が書いている間の 2 回目を断らないこと（守りは `composer.ts`）も一緒に。（T.475 から: ステータス行の文字列を組む所（`draw.ts`、要素を読む）も、行を組む純関数に分ける。）
 
 ### T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 状態: 未着手（2026-10-11、T.378.5 から。規模 小）
 - `tests/e2e.mjs` は `?bench=1` を知らず、`tests/bench-browser.mjs` は Playwright の Chromium しか開かない（手元には入っていない）。`tests/bench-check.mjs` は節の秒と全体の行（「Section 2 / 2 · … in all」）を見ない。
-
-### T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 状態: 反映済み（2026-10-11、T.439 から。規模 小）
-- 古いページで 64 ビットのカーネルだけが 404 だと、4 GB を越えるモデルの断りが「no 64-bit WebAssembly memory: Safari has none yet」と誤った訳を言う（前から）。`/benchmark/` のモデルの節は、カーネルが 404 だとラウンドが黙って NumPy で走る（`updated` の知らせは届くが節は捨てる）。ステータス行の文字列を組む所は `draw.ts`（要素を読む）で、Node では文の検査だけが守る: 行を組む純関数に分ける（T.468 と一緒に）。Firefox と WebKit の GPU の Worker の「知らせる」場合は CI で見られない（持ち主の端末の一覧に）。
-- **2026-10-30**: (1) `worker/runtime.ts` が 64 ビットのメモリのカーネルの取得の失敗を、サイトの更新（`kindOf(error) === "updated"`）のときだけ `wideUpdated` に取っておき、`weights.ts` の 4 GB を越えるモデルの断りは、それがあればそれを投げる（ページは持ち主の文 `UPDATED` を言う。訪問者の文は足していない）。`updated-check` のカーネルの取得の文の写しも直した。(2) `/benchmark/` のモデルの節（`src/benchmark/model.ts`）は worker の `updated` の知らせで、節を `UPDATED` の誤りで終える（取りまとめ役の決め: 古いビルドで遅い道に入ったラウンドの数は、この端末の数でない。持ち主の今ある文を使う）。(3) ステータス行を組む純関数は T.468 で（台帳の言うとおり）。(4) Firefox と WebKit の GPU の Worker の場合は「持ち主の端末でまとめて見るもの」に足した。
-- 検査: `tests/updated-in-browser.mjs` に 2 つの場合（モデルのページの `?wide=on` と 64 ビットのカーネルが 404、`/benchmark/` のモデルの節とカーネルが 404）。本線のソースのビルドでは 2 つとも落ち（「…no 64-bit WebAssembly memory: Safari has none yet…」と、NumPy のラウンドの表を ok で）、直したビルドで通る。全部の 41 の場合が手元の Chromium で通る。
-- 手元: 軽い組（449 秒: 1 回目は `updated-check` の写しで落ちた）・型検査・ビルド。CI を省いた。訳: 毎晩の組が `updated-in-browser.mjs` を 3 つのブラウザで回し、手元の Chromium で全部の場合を回した。
 
 ### T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 状態: 未着手（2026-10-11、T.368.3 から。T.368.8 の後。規模 中）
 - `!`（ここには値がある、の言い切り）の 46 個は `forwardModule` と `llama`: `weights.ts`（36 個）と `timing.ts`（18 個）が、引数で受けていない状態を当てにしている印。引数で受ける形にすれば消える。caught value への cast 24 個（`Thrown`）と、ソースに増えた `(err)?.` の形も。`timing.ts` の `llama.tokenizer.encode(prompt)` は `llama.tokenizer` の PyProxy を壊していない見立て（未確認）。`resolvePyodideVersion()` は `?pyodide=` が無いとき `RegExp.test(null)` を通る、`fetchRange()` の catch は `status` が無いとき `undefined >= 400` を通る（結果は正しい）。`updated-check` の `knows()` は `updated\.js` を文字で探す（`updated.js` を `.ts` にする回に）。ページの項目は `src/models.js` 由来で形が言えない（`Listed` は worker の側だけが見る）。
