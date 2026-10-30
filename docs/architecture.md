@@ -39,7 +39,7 @@ flowchart TD
 | `src/runtime/gpu.js`, `src/runtime/gpu/`, `src/runtime/shaders.js`, `src/runtime/shaders/` | The GPU worker and all WGSL shaders (`gpu.js` is the window the worker starts from, over the nine files of `gpu/`: the device, the weights, the forms checked and chosen, a prompt's block, a token's steps, the requests; the twelve files of `shaders/` hold the shaders by family and the sources' notices, and the worker's files import the ones they run from there; `shaders.js` is the window over all twelve, which the benchmark page's GPU worker and the tools read). |
 | `public/coi.js` | The Service Worker: adds the headers for threads, keeps Pyodide and NumPy for offline use. |
 | `src/runtime/built.js` and `src/runtime/built/` | What is built and not written: the kernels (`make kernels`) and the Python as two archives (`python_archive.py`), each named once in a table. |
-| `src/runtime/benchmark/`, `src/pages/benchmark.astro`, `src/benchmark/`, `src/bench/` | `/benchmark/`, the measurements of one device in one report: the sections' workers, the page and its script's modules, and the modules that write the tables and the report (`src/bench.js` is their window). |
+| `src/runtime/benchmark/`, `src/pages/benchmark.astro`, `src/benchmark/`, `src/bench/` | `/benchmark/`, the measurements of one device in one report: the sections' workers, the page and its script's modules, and the modules that write the tables and the report (`src/bench.ts` is their window). |
 
 The build (Astro's, with Vite) links the files of `src/runtime/` into one file a worker, and names every file it
 writes by a hash of its content (`_astro/worker.<hash>.js`, `_astro/simdkernel_plain.<hash>.wasm`): a page never runs a
