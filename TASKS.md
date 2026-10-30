@@ -47,6 +47,7 @@
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
+- T.627 [整理][CPU] GPU に置けないモデルの `gpuBytes()` — 未着手
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -176,7 +177,6 @@
 - T.620 [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 未着手
 - T.621 [整理][CPU] 仕事を位置の並びでなく `WORK` の記録の関数で組む — 未着手
 - T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 未着手
-- T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 進行中
 - T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 進行中
 <!-- 目次ここまで -->
 
@@ -555,6 +555,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 状態: 未着手（2026-10-11、T.378.4 から。T.357.5 と一緒に。規模 中）
 - T.352 と T.378.4 の証明（装置への呼び出しの列を本線と比べる記録）は `.tmp/` の捨ての道具（約 630 行）で、毎回作り直している。`tests/` に入れれば、`gpu/` の `forms.js`・`tokenattention.js`・`tokens.js`・`tokenforms.js`・`start.js`（検査を通らないと記録を作らないので、いまは軽い組で単独に踏めない: レビューの壊し方 5 つが軽い組を通った）も部品だけの試験にでき、次に `gpu/` に触る回が比べる手段を持つ。偽の装置は約束を後のターンで果たす形に（その場で果たすと、途中の stop の比べが空振りになる）。
+
+### T.627 [整理][CPU] GPU に置けないモデルの `gpuBytes()` — 状態: 未着手（2026-10-30、T.623 から。規模 小。持ち主の判断は要らない見込み: 置き場が変わるなら CI の `models.yml` で確かめる）
+- `forward/alone.ts` の `gpuBytes()` は、GPU に置けないモデル（`gpuOnlyUnfit()` が断るモデル）にも Llama の行の形で GPU のバイト数を答える。`worker/weights.ts` の `gpuOnlyWeightsFor()` はそれを判定の前に数え、置けないモデルでも `weightsPlace({ cpu, gpu, deviceMemory })` の 2 重の判定に入る。直す案: 置けないモデルの GPU の数を判定に入れない（`weightsPlace()` に `gpu: 0` か、2 重を考えない道）。先に、今の数でどのモデルの置き場が変わるかを一覧の全項目で数える（`deviceMemory` 4・8 の端末で）。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
@@ -1481,13 +1484,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `footprint()` と `createForward()` は同じ `frameArrays()` を呼ぶが、渡す詰め方の並び（`xs` の大きさを決める）は別々に作る。軽い組には両方の枠を数十バイトの精度で比べる試験が無い（全部の組の `memory-check` は 1 MiB の線）。エンジンが枠のバイト数を出すか、両方の詰め方の並びを比べる検査を足す。
 - 壊し方の道具を速い組 → smoke → 重い組の 3 段に（T.375.4 のレビューの勧め）。
 - T.487 から: `gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」と `tokensUnfit()` の `embedding.group` の比べに効く入力が無い（作り物の事実を `gpuOnlyUnfit()`・`gpuBytes()` に渡せない）。網の `unchanged-choices` の格子は `linear`・`convolution`・`rotated` を渡さない（足すなら別の記録に: 網の決まり (6)）。
-
-### T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.487 から。規模 小〜中）
-- **(1) 完了（2026-10-30、ブランチ `t.623-keys`）**: worker のアダプタが持つ端末の鍵 3 つ（`key`・`ternaryKey`・`blocksKey`）を、モデル自身のシェーダの名前で引く表 `keys: { plain, ternary, blocks }` 1 つに（`forward/alone.ts` の `Adapter`、`worker/runtime.ts` が 1 文で作り、`weights.ts` の `aloneKept()` が引く）。動きの違い: 3 つのうち 1 つでも作れなければ表ごと無い（前は作れた所まで残った: `deviceKey()` は同じ文を畳むだけで、1 つだけ投げる訳は無い）。`worker-sink-check` が書いていた `gpuAdapter.key` も表に（壊し方: 素のモデルの鍵を `ternary` で引くと「a verdict the page kept left the model on the GPU alone」で落ちる）。手元: 型検査、build、軽い組（740 秒）。**CI を省いた。訳: 鍵を引く道は `worker-sink-check` が踏み、鍵そのものの文は変わらない。** **レビュー（Sonnet low、2026-10-30）: 直し 1 つ、直した。** AGENTS.md の「`Adapter.blocksKey`」を `Adapter.keys.blocks` に。古い名前を読む所はほかに無い。1 つだけ投げる場合は無く、投げても保存した判定を使わず量り直す（安全な向き）。
-- **(2) 完了（2026-10-30、ブランチ `t.623-stateful`）**: `contracts/form.ts` の `Stateful` を `Partial<Pick<Form, "linear" | "convolution" | "tiled">>` に（鍵と型を `Form` の 1 か所で）。型だけ: `same-syntax` が同じコード。手元: 型検査、`worker-sink-check`・`contracts-check`・`plan-keys-check`・`types`。**CI を省いた。訳: 同じコード。** レビューは下に。
-- **ほかの項を見た（2026-10-30、取りまとめ役の決め）**: (a) GPU の Worker への知らせの `six`・`ternary` は今の `contracts/gpu/protocol.ts` に無い（詰め方は `GpuPacking` の名前で行ごとに言う形になっていた）: 済み。(b) `/benchmark/` の `sections.ts` の `t.kind === "int8"` は動かさない: 作り物のモデルは int8 だけで、`PACKED` の行で言うには `sections.ts` が `jobs.ts` を静的に読む要があり、`jobs.ts` は後から取る forward の塊にある（AGENTS.md の「worker の入口と、後から取る `forward` の塊の両方が読むモジュールを作らない」）。(c) `engine.ts` の `shape`（GPU に置けるかの記録 `Shape`）と `Sizes`（層の種類が読む記録）は重なりが一部で、寄せるのは `gpuFit()` と種類の `frame()` に触る設計の話: 残す。(d) `gpuBytes()` は GPU に置けないモデルにも Llama の形で答え、その数は `weightsPlace()` の 2 重の判定に入る（`worker/weights.ts` の `gpuOnlyWeightsFor()`: 判定の前に数える）。直すと置き場が変わりうる（動きの話）ので、ここでは残す。
-
-- （採番の時の行）`Form` の型と `Stateful` が形の数の鍵を 2 回書く。`engine.ts` の `shape` と `Sizes` は同じ数を 2 つの名前で持つ。GPU の Worker への知らせの `six`・`ternary`、`aloneKept()` の `ternaryKey`、`/benchmark/` の `t.kind === "int8"` は詰め方の名前のまま（表 `PACKED` の行で言える）。`gpuBytes()` は GPU に置かれないモデルにも Llama の行列の形で答える。
 
 ### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
 - **(1) 完了（2026-10-30、ブランチ `t.624-embed`）**: `EMBED` と `EMBED_ROWS` を `shaders/run.ts` の 1 つの作る関数 `embedInt8(block)` に（`embedTernary` と同じ形。窓口の名前は前のまま定数）。出す文は前と 1 字も違わない（前の文を書き出して `===` で比べた。頭の改行 1 つが要った）。手元: 型検査、`shaders-modules-check`・`shaders-catalogue-check`・`device-key-check`・`gpu-worker-parts-check`、網の `shaders`・`gpuworker`・`gpusteps` が同じ。**CI を省いた。訳: 装置に渡す文が 1 字も変わらない（網の `shaders` が言う）。** int8 と 3 値の 4 つを 1 つにするのは、輪の中が違う（4 個ずつと 16 個ずつ）ので寄せない。 **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: OK、コメントの直し 2 つを入れた。** 2 つの木の `run.ts` を import して、4 つの埋め込みの文と窓口の名前が全部 `===` で同じと確かめた。作る関数は窓口から出さないので `shader-makers.mjs` の数えに入らない。長い行の折り返しと、`embedInt8()` のどちらの呼びがどちらの文かの 1 行を足した。
