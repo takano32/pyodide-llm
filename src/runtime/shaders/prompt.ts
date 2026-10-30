@@ -23,8 +23,8 @@ export type Own = "ternary" | "blocks" | null;
 // what a device says that chooses the forms it can make
 export type DeviceForms = { half: boolean; subgroups: boolean; packed: boolean; memory: number; threads: number; own?: Own };
 // what tiledOff() is given: the matrix (w, s), the tokens (x), the GPU's products (got) and, of a packed form, what the
-// GPU quantized (xq, xs)
-type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got: ArrayLike<number>; xq?: ArrayLike<number> | null; xs?: ArrayLike<number> | null;
+// GPU quantized (quantized: its codes xq and their scales xs, which come together: T.478)
+type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got: ArrayLike<number>; quantized?: { xq: ArrayLike<number>; xs: ArrayLike<number> } | null;
   rows: number; n: number; tokens: number; xStride: number; yStride: number; half: boolean; group?: number };
 
 // ---- T.146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
@@ -1136,27 +1136,28 @@ export function quantizedLikeCpu(x: ArrayLike<number>) {
 // the f32 forms' line of tiledOff, a share of the sum of |products| (the matrix × vector checks of the benchmark hold theirs to it too)
 // T.232: group, the weights a scale of s (32; 128 for ternary weights, w then their values of -1 to 2: ternaryValues)
 export const TILED_LINE = 1e-4;
-export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half, group = GROUP }: Tiled) {
+export function tiledOff({ w, s, x, got, quantized, rows, n, tokens, xStride, yStride, half, group = GROUP }: Tiled) {
   const perRow = n / GROUP, scaleOf = (r: number, g: number) => s[r * (n / group) + Math.floor((g * GROUP) / group)];
   let worst = 0, over = false, far = false, apart = 0, values = 0;
   for (let t = 0; t < tokens; t++) {
     const at = t * xStride, groups = t * (xStride / GROUP);
-    const mine = xq ? quantizedLikeCpu(x.subarray(at, at + n)) : null;
-    if (mine) {
-      for (let g = 0; g < perRow; g++) far ||= Math.abs(xs![groups + g] - mine.xs[g]) > 1e-6 * mine.xs[g];
+    const mine = quantized ? quantizedLikeCpu(x.subarray(at, at + n)) : null;
+    if (mine && quantized) {
+      const { xq, xs } = quantized;
+      for (let g = 0; g < perRow; g++) far ||= Math.abs(xs[groups + g] - mine.xs[g]) > 1e-6 * mine.xs[g];
       for (let i = 0; i < n; i++) {
-        far ||= Math.abs(xq![at + i] - mine.xq[i]) > 1;
-        apart += (xq![at + i] !== mine.xq[i]) as unknown as number;
+        far ||= Math.abs(xq[at + i] - mine.xq[i]) > 1;
+        apart += Number(xq[at + i] !== mine.xq[i]);
       }
       values += n;
     }
     for (let r = 0; r < rows; r++) {
       let want = 0, size = 0, small = 0;
       for (let g = 0; g < perRow; g++) {
-        const scale = scaleOf(r, g) * (mine ? xs![groups + g] : 1);
+        const scale = scaleOf(r, g) * (quantized ? quantized.xs[groups + g] : 1);
         for (let i = g * GROUP; i < (g + 1) * GROUP; i++) {
           const weight = Math.fround(w[r * n + i] * scaleOf(r, g)), value = x[at + i];
-          const product = mine ? w[r * n + i] * xq![at + i] * scale : half ? weight * value : w[r * n + i] * value * scaleOf(r, g);
+          const product = quantized ? w[r * n + i] * quantized.xq[at + i] * scale : half ? weight * value : w[r * n + i] * value * scaleOf(r, g);
           want += product;
           size += Math.abs(product);
           small += Math.abs(weight) + Math.abs(value);

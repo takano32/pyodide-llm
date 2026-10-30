@@ -49,7 +49,7 @@
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
-- T.478 [整理][WebGPU] シェーダの型の残り — 未着手
+- T.478 [整理][WebGPU] シェーダの型の残り — 反映済み
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
 - T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 未着手
 - T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 未着手
@@ -547,8 +547,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 状態: 未着手（2026-10-12、T.368.4 から。T.368.8 と T.375 と一緒に。規模 中）
 - `gpuside.ts` の `get status()` は `string | undefined` に cast しているが、GPU が有効で準備が始まる前は null を返せる（`gpuLine()` は `string | null | undefined`）。worker の `load.ts` の `engine.gpuStatus!` がそれを ready に載せる（前からの動き。ページが null をどう扱うかは未確認）: 型を直して `!` を外す。カーネルの引数の数と順を型が見ない（`jobs.ts` の `Kernel` が `(...args) => unknown`: カーネルごとの署名を書けば見える）。`!` 111 個のうち 32 個は制御領域の語と仕事の表（共有メモリのときだけ作る部品に分ければ消える）、行列の `!` は T.375 の形で消える。`Object.fromEntries(xs.map(…))` はタプルでない配列を受けると `any` を返す（worker と `/benchmark/` の `.ts` に同じ形があるかは未確認）。`worker/told.ts` の `message!` は要らない。forward の `/** */` のコメントと文字列 1 つ、Python の docstring が `forward.js` のまま（束と zip のバイトが変わる: T.472 と一緒に）。`/benchmark/` のページの経路（`paths.ts`）はどの組も走らせていない。判定の中の 4 か所（`generationBegan`・`gpuTakes`・`gpuSteps`・`promptBlock`）を抜く壊し方は誰も落とさない。
 
-### T.478 [整理][WebGPU] シェーダの型の残り — 状態: 未着手（2026-10-12、T.368.5 から。T.379 と一緒に。規模 小。レビューは `shader-reviewer`）
+### T.478 [整理][WebGPU] シェーダの型の残り — 状態: 反映済み（2026-10-12、T.368.5 から。T.379 と一緒に。規模 小。レビューは `shader-reviewer`）
 - 枝の名前の一覧が 3 か所（型 `FusedOutput`、`key.ts` の `OUTPUTS`、網の `MAKERS`）: 値の一覧を 1 つ置いて型をそこから作る（T.379）。`tiledOff()` の `xq`・`xs` を 1 つの鍵にすれば `!` 5 個と cast 1 つが消える。`flashVecParams()` は `splits` を取って読まない。軽い組に網の `shaders` が無く、鍵の `named` の側（`vendor` を落とす、など）は軽い組が見ない。`tests/sample-gpu-bench.mjs` はどの組も走らせない（名前を替える回のたびに確かめずに直す）。検査の出力文の「shaders.js links …」と、`shaders/*.ts` の `/** */`・WGSL の中のコメント・エラーの文の古いファイル名（束に残る・鍵が動く: T.472 と一緒に）。網の `gpuworker` は `import()` の指定を `.js` に戻した形も「同じ」と読む（古い名前の残りは `updated-check` の表と CI が落とす）。
+- **2026-10-30**: (1) 枝の名前の 3 か所は済んでいた: `fused.ts` の `FUSED_OUTPUTS`（値の一覧）から型 `FusedOutput` を作り、`key.ts` に写しは無い。(2) `tiledOff()` の `xq`・`xs` を 1 つの鍵 `quantized: { xq, xs } | null` に（`!` 5 個と cast 1 つが消えた）。呼ぶ所 3 つ（`gpu/forms.ts`・`benchmark/gpu/check.ts`・`gpu-choice-check`）も。`gpu-choice-check` の「量子化の尺度が NaN なら誤り」の場合は `xs` を別の鍵で渡していた: 新しい形では `quantized` の中に（前は `more` の `xs` が `xq` と組でなく上書きしていただけ）。(3) `flashVecParams()` の読まない `splits` を外した。(4) 残すもの（取りまとめ役の決め）: 網の `shaders` を軽い組に入れない（手元で約 2 分。シェーダに触るブランチは今までどおり網を回す決まり）、`tests/sample-gpu-bench.mjs` はどの組にも入れない（GPU のベンチの道具で、名前を替えたら手で）、WGSL の中のコメントと古いファイル名は端末の鍵を動かすので、次に鍵を動かす回にまとめる。
+- 確かめ: 型検査・`gpu-choice-check`・`device-key-check`・`shaders-catalogue-check`・`shaders-modules-check`・`gpu-worker-parts-check`、網の `shaders`（窓口の export のうち `flashVecParams`・`tiledOff` の 2 つが違う: 予定。`deviceKey()` は 192 が同じ: 鍵は動かない）。
 
 ### T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 状態: 未着手（2026-10-12、T.368.6 から。T.466 と一緒に。規模 中。レビューは `shader-reviewer`）
 - **型が守らない所**: `Model.tokens` は型では常に在るが、形が決まらなければ null、`plan.tokens` が偽のモデルでは鍵が無い（undefined）。全部のモデルが通る道（`block()` など）に `m.tokens.<何か>` を足すと、tsc は通ってステップの無いモデルで落ちる。`Model.plan` は `Started` 型だが、GPU だけのモデルが開いてから `handed()` までは `Opened`（`tokens: true`）: その間に動く関数（`uploadLayers`・`tablesOn`・`piecesOf`・`tablePieces`・`routed`）が `Started` だけの鍵を読む変更をしても tsc は通る。直す形: `m.tokens` を段ごとの記録に（T.466）、その区間の関数の引数を共通の鍵だけの型（`Pick<Started, …>`）に、開くときの計画は `open()` が持って渡す。`!` 153 の大半は「記録が `start()` の順に埋まる」印（`model!` 24、`plan.tokens!` 21）。`start()` の `model!` 15 は 1 回取れば 1 つ。caught value の読みが 15 か所に同じ形（worker の `told()` のような 1 つの関数に）。`weights.vectors`・`matrices` は名前の索引で、無い名前を読んでも tsc は言わない。`Math.f16round` が tsconfig の lib（ES2024）に無く自分の型で読んでいる。`gpu.ts` の頭のコメント（T.467）とエラーの文の古い名前（T.472）。コミット 5bc2b75 の文の「26 files, 73 names」は 25 ファイル 67 行の誤り（履歴は書き換えていない）。

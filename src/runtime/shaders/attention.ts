@@ -382,7 +382,7 @@ export function flashVecSplits({ splits, kvTile }: Pick<FlashVecShape, "splits" 
 export const flashVecPartsBytes = ({ splits, headSize }: Pick<FlashVecShape, "splits" | "headSize">, heads: number) => heads * splits * (headSize + 2) * 4;
 // the Params both dispatches read: heads, kvHeads, the scale of a score, nwg, where the sums and largests start; T.261.4.2:
 // the window the layer attends (0: every position)
-export function flashVecParams({ headSize, splits }: Pick<FlashVecShape, "headSize"> & { splits?: number }, heads: number, kvHeads: number, nwg: number, window = 0) {
+export function flashVecParams({ headSize }: Pick<FlashVecShape, "headSize">, heads: number, kvHeads: number, nwg: number, window = 0) {
   const bytes = new ArrayBuffer(32);
   new Uint32Array(bytes).set([heads, kvHeads, 0, nwg, heads * nwg * headSize, window, 0, 0]);
   new Float32Array(bytes, 8, 1)[0] = 1 / Math.sqrt(headSize);

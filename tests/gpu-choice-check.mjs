@@ -640,7 +640,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     return 2 * sum;
   });
   const right = (r, g) => r * (n / group) + Math.floor(g / 4);
-  const off = (got, more = {}) => tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
+  const off = (got, more = {}) => tiledOff({ w, s, x, got, quantized: { xq, xs }, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
   assert.equal(off(product(1, right)), null, "the right products");
   assert.match(off(product(-1, right)), /products/, "the codes' signs swapped");
   assert.match(off(product(1, (r, g) => r * (n / group) + Math.min(Math.floor(g / 4) + 1, 2))), /products/, "the scale of the next group of 128");
@@ -705,10 +705,10 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     }
     return 2 * sum;
   });
-  const off = (got, more = {}) => tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
+  const off = (got, more = {}) => tiledOff({ w, s, x, got, quantized: { xq, xs }, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
   assert.equal(off(exact), null);
   assert.match(off(new Float32Array(exact.length).fill(NaN)), /products/, "a form that writes only NaN is wrong, not right");
-  assert.match(off(exact, { xs: Float32Array.from(xs, (v, i) => (i === 3 ? NaN : v)) }), /products/, "a quantized scale that is a NaN is wrong");
+  assert.match(off(exact, { quantized: { xq, xs: Float32Array.from(xs, (v, i) => (i === 3 ? NaN : v)) } }), /products/, "a quantized scale that is a NaN is wrong");
   assert.match(off(exact.map((v, i) => (i === 2 ? Infinity : v))), /products/, "an infinity is wrong");
   // the f16 forms' line takes the same road
   assert.match(off(new Float32Array(exact.length).fill(NaN), { half: true }), /products/, "an f16 form that writes only NaN is wrong");

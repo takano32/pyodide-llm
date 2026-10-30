@@ -309,9 +309,8 @@ async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, pa
       pass.end();
       device.queue.submit([encoder.finish()]);
       const got = new Float32Array(await readBack(m, y, tokens * yStride * 4));
-      const xq = form.packed ? new Int8Array(await readBack(m, io.xq, tokens * xStride)) : null;
-      const xs = form.packed ? new Float32Array(await readBack(m, io.xs, tokens * (xStride / GROUP) * 4)) : null;
-      const { wrong } = tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
+      const quantized = form.packed ? { xq: new Int8Array(await readBack(m, io.xq, tokens * xStride)), xs: new Float32Array(await readBack(m, io.xs, tokens * (xStride / GROUP) * 4)) } : null;
+      const { wrong } = tiledOff({ w, s, x, got, quantized, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
       if (wrong) return `${wrong} (${tokens} tokens${wider ? ", wider x and y" : ""}${shift ? ", x shifted" : ""})`;
     } finally {
       owned.forEach((b) => b.destroy());
