@@ -52,7 +52,7 @@
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
 - T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 未着手
 - T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 未着手
-- T.483 [整理][遠隔試験] 名前の検査の残り: 受け口の前の await、`moduleDetection`、グローバルの一覧 — 未着手
+- T.483 [整理][遠隔試験] 名前の検査の残り: 受け口の前の await、`moduleDetection`、グローバルの一覧 — 反映済み
 - T.484 [整理][その他] T.375.2 の後の残り — 未着手
 - T.485 [整理][その他] T.375.3 の後の残り — 未着手
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
@@ -555,8 +555,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 状態: 未着手（2026-10-12、T.368.7 から。規模 小〜中）
 - `sections.ts` の作り物の計画は `Plan` の全部でなく `as Plan` で渡している（`layers`・`widths` などが無い）: **T.375 が `layers`・`widths` を読み始めると、型に言われずに壊れる。T.375 の前に決める**。（**T.375.2 で**: 作り物の計画は `benchmark/madeup.ts` に全部の鍵で書き、`as Plan` を外した。`plan-keys-check` が Python の計画と比べる。）`shared` は「段が読むときの型」で、新しい段が `await gpu()` を忘れると型は黙ったまま undefined を読む（`device.ts` のコメントに「新しい段も同じ」の 1 文を）。`if (answer.error) return` は答えを絞らない（印つきの合併にすればページの `!` が減るが Worker の文が変わる。`interleaved()` も）。GPU の節がステップを名前で引く `steps: any[]`。`Asked` の鍵と `section.ts` の `WORKERS` の鍵は `.js` のラベルのまま（直すなら網の `page` の文字と一緒に）。`updated-check` は製品の 2 行を文で持ち、型を足すたびに直す。コメントの古い名前（`outdated.ts` の `/** */`、`gpu/forms.ts`・`gpu/tokens.ts`・`shaders.ts`・`shaders/prompt.ts`・`worker.ts`、`src/page-memory.js` の頭: T.472 と一緒に。`shaders/` の行は鍵に注意）。
 
-### T.483 [整理][遠隔試験] 名前の検査の残り: 受け口の前の await、`moduleDetection`、グローバルの一覧 — 状態: 未着手（2026-10-12、T.368.8 から。規模 小）
+### T.483 [整理][遠隔試験] 名前の検査の残り: 受け口の前の await、`moduleDetection`、グローバルの一覧 — 状態: 反映済み（2026-10-12、T.368.8 から。規模 小）
 - **3 つの窓口の検査（worker・GPU の Worker 2 つ）は「受け口の前に何も待たない」と頭に書いているが、見ていない**: 受け口の前に `await null` を足しても通る（worker だけは `worker-check` が別の訳で落ちる。GPU の 2 つは誰も落とさない）。窓口の最上位で、受け口を置く文より前に await が無いことを構文木で見れば数行。`tsconfig.base.json` に `"moduleDetection": "force"`（レビューが試して `types.mjs` は ok のまま、`threads.ts` が `COUNT` の import を忘れる壊し方を tsc が TS2552 で落とす: `benchmark/reader.ts` をスクリプトと読む穴が閉じる。束が変わらないことを `dist-same` で見てから）。グローバルの一覧 `AMBIENT`（56 個）をファイルの種類ごとに（いまは 1 つ: シェーダの部品が `postMessage` を使っても通る）。ページの部品が export する `prompt`・`open`・`escape` はページ自身の名前でもある。`tests/types.mjs` の +1 秒のうち `!` と cast の数えが 0.6 秒。`namesOf()` そのものの試験が無い。
+- **2026-10-30**: (1) 新しい `tests/receivers-check.mjs`（軽い組）: 3 つの窓口（`worker.ts`・`gpu.ts`・`benchmark/gpu.ts`）の最上位で、`onmessage` を置く文より前に、関数の中でない await（`for await` も）が無い。規則は作り物の文 6 つで先に試す。壊し方: `gpu.ts` の受け口の前に `await null;` で落ちる。(2) `tsconfig.base.json` に `"moduleDetection": "force"`: 束は前のビルドとバイトまで同じ（`dist-same`）。壊し方（`threads.ts` が `COUNT` の import を忘れる）は、前は tsc が通し（`benchmark/reader.ts` をスクリプトと読み、その大域の名前と取った）`types.mjs` の `AMBIENT` の規則だけが落としていた。いまは tsc も TS2552 で落とす。(3) 残すもの（取りまとめ役の決め）: `AMBIENT` をファイルの種類ごとに分けるのは、どの名前をどの種類が使うかの表を起こす回で（ここでは足さない）。ページの部品が出す `prompt`・`open`・`escape` の名前、`types.mjs` の数えの 0.6 秒、`namesOf()` の試験は、そのまま。
+- 手元: 型検査・軽い組・`dist-same`。CI を省いた。訳: 束は同じで、検査の道具と型の設定だけ。
 
 ### T.484 [整理][その他] T.375.2 の後の残り — 状態: 未着手（2026-10-12、T.375.2 から。T.375.5 と一緒に。規模 小）
 - NumPy は GPT-2 の `bo` を attention の層の中の番号で引き、JavaScript は層の番号で引く（今ある記録では同じ。状態を持つ層と bias を両方持つ記録ができると食い違う）。GPU の Worker は `layerNorm` と `w3` の有無で層を選び、`gpuFit()` に渡る `shape` に `gatedFfn` が無い: RMSNorm で GELU のような事実の組の記録は、`gpuFit()` が知らないまま GPU に出して読み込みの検査が断る形になる（T.375.5 で、事実の組の断りを置くか決める）。`footprint()` とエンジンは層の置き場と幅を別の式で数える（T.375.5）。計画は `toJs()` で来るので Python の `None` は `undefined`（`widths.linear`）: 新しい鍵は null と undefined の取り違えに注意。`plan-facts-check` の線 1e-3 は締められる（正しい答えは 2e-7、取り違えは 0.4）。`calls` の作り物の gpt2 は手書きの頃の名残りで `derived` に RoPE の表を持つ（番地を変えないために残した）。Python のソースを変えたら `make python`（軽い組の `python-archive-check` が古い zip を落とす）。
