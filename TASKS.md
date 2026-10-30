@@ -50,7 +50,7 @@
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
-- T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 未着手
+- T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 進行中
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -569,7 +569,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 状態: 未着手（2026-10-12、T.368.6 から。T.466 と一緒に。規模 中。レビューは `shader-reviewer`）
 - **型が守らない所**: `Model.tokens` は型では常に在るが、形が決まらなければ null、`plan.tokens` が偽のモデルでは鍵が無い（undefined）。全部のモデルが通る道（`block()` など）に `m.tokens.<何か>` を足すと、tsc は通ってステップの無いモデルで落ちる。`Model.plan` は `Started` 型だが、GPU だけのモデルが開いてから `handed()` までは `Opened`（`tokens: true`）: その間に動く関数（`uploadLayers`・`tablesOn`・`piecesOf`・`tablePieces`・`routed`）が `Started` だけの鍵を読む変更をしても tsc は通る。直す形: `m.tokens` を段ごとの記録に（T.466）、その区間の関数の引数を共通の鍵だけの型（`Pick<Started, …>`）に、開くときの計画は `open()` が持って渡す。`!` 153 の大半は「記録が `start()` の順に埋まる」印（`model!` 24、`plan.tokens!` 21）。`start()` の `model!` 15 は 1 回取れば 1 つ。caught value の読みが 15 か所に同じ形（worker の `told()` のような 1 つの関数に）。`weights.vectors`・`matrices` は名前の索引で、無い名前を読んでも tsc は言わない。`Math.f16round` が tsconfig の lib（ES2024）に無く自分の型で読んでいる。`gpu.ts` の頭のコメント（T.467）とエラーの文の古い名前（T.472）。コミット 5bc2b75 の文の「26 files, 73 names」は 25 ファイル 67 行の誤り（履歴は書き換えていない）。
 
-### T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 状態: 未着手（2026-10-12、T.368.7 から。T.368 の範囲の外だった。規模 中）
+### T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 状態: 進行中（2026-10-30 に孫タスクに分けた。前の状態: 未着手、2026-10-12、T.368.7 から。T.368 の範囲の外だった。規模 中）
+- **子タスクの番号（2026-10-30、取りまとめ役の決め: 115 のファイルが名前で指すので 3 つに）**: T.480.1 `src/wake.js`・`src/page-memory.js`（反映済み）、T.480.2 `src/bench.js` と `src/bench/` の 10（未着手）、T.480.3 `src/models.js` と `src/models/` の 10（未着手）。手順は AGENTS.md の「1 ファイルを `.ts` にする」（動かすコミットと型のコミットを分け、`dist-same`・軽い組）。
+- **T.480.1（2026-10-30、ブランチ `t.480.1-wake`）**: 2 つは `/benchmark/` だけが使うので、型の読まれる `src/benchmark/`（`tsconfig.page.json` のプログラム）に `wake.ts`・`page-memory.ts` として動かした（名指す 9 ファイルを同じコミットで: 動かした所の `./bench.js` は `../bench.js` に）。型は文を変えずに当てた（`!` 6 つ、caught value への cast 2 つ、`unique symbol` の注釈）。`page-memory.ts` の節の値 `MemoryData` と、Worker の答え `Answered`（`contracts/benchmark.ts` の `MemoryGrown` から）。`page-modules-check` の大域の名前に `Date`・`Symbol`（本物の大域。初めて使う部品だった: 軽い組の 1 回目がこれで落ちた）。**束は main と 48 ファイルとも 1 バイトも違わない**（`dist-same`）。**CI を省いた。訳: 出るコードが同じ。** 実ブラウザ: `page-memory-check.mjs --dist`（Chromium）も通った。**レビュー（Sonnet low、2026-10-30）: OK、直しなし。** 古い道を名指すのは日付の付いた記録だけ、型は動きに合う（`readMark` は印の `limit` を必ず書く、`!` は誤りを読んだ後）、動かすコミットと型のコミットが分かれている。T.480.1 は完了。
 - `src/bench.js` と `src/bench/` の 10、`src/models.js` と `src/models/` の 10、`src/page-memory.js`、`src/wake.js`。`.ts` にすると: ページの `any` の残り 46 個の多く（JavaScript の返す物の形が言えない所）が消える、`/benchmark/` の Worker が書く欄と表（`src/bench/`）が読む欄が初めて両側で見える、ページ → worker の項目の形（`Listed`）がページの側でも見える。`tests/bench.mjs`・`models-check.mjs`・網の `models`・`bench` がソースを名前で読む。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
