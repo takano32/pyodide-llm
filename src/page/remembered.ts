@@ -2,7 +2,7 @@
 // under the same names: the model that was chosen, the number of threads and what the GPU chose for a model on this
 // device. (The receiver writes the GPU's and the usage's entries where the worker's reports come: receiver.ts.)
 import { MODELS } from "../models.js";
-import { CPU_SPEED_KEY, USAGE_KEY, threadsKey as sharedThreadsKey } from "../bench.js";
+import { CPU_SPEED_KEY, USAGE_KEY, threadsKey as sharedThreadsKey } from "../bench.ts";
 import { fromUrl, parameters, requested } from "./address.ts";
 import { SAFETENSORS } from "./repository.ts";
 

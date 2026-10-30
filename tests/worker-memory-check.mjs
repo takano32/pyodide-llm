@@ -199,7 +199,7 @@ const ok = (line) => {
 // built models (make models; where there are none this says so and checks nothing)
 {
   const { MODELS } = await import("../src/models.js");
-  const { ROUNDS, FULL_ROUNDS, roundsHere } = await import("../src/bench.js");
+  const { ROUNDS, FULL_ROUNDS, roundsHere } = await import("../src/bench.ts");
   const PAGE = 65536, folder = pathToFileURL(served("models/", { maybe: true }));
   const headerOf = (entry) => {
     const part = new URL(`${entry.checkpoint}.000`, folder);

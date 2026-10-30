@@ -34,7 +34,7 @@ function warmUp(prompt: string) {
   }
 }
 
-// T.184: the model page's own path on the model loaded now (src/bench.js's pathTable() writes it). The GPU is waited for
+// T.184: the model page's own path on the model loaded now (src/bench.ts's pathTable() writes it). The GPU is waited for
 // first, GPU_WAIT_S at most (the page does not wait: its first prompts go on the CPU meanwhile; a GPU not ready by then
 // is said as such), then the number of threads is the model page's (T.190: the count the model page remembers, which
 // /benchmark/ passes as the model page does, or else the search run to its end: forward.ts's endSearch()), and every
@@ -57,7 +57,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
     : { why: engine.gpuWhyNot ?? `not ready after ${GPU_WAIT_S} s` };
   postMessage({ type: "status", text: "the software threads" } satisfies Status);
   const { threads, found, ended } = await forwardModule!.endSearch(engine, () => timedGeneration(prompt, 64));
-  // how the count came about, for the table's head (T.190): src/bench.js's pathTable() says it. A software thread that
+  // how the count came about, for the table's head (T.190): src/bench.ts's pathTable() says it. A software thread that
   // stopped (T.120: the engine gave its helpers up and runs on one) is said first: found is 1 then, and the search's
   // verdicts or the remembered count would name another count (T.190's review)
   const remembered = threadsRequest?.remembered || 0;

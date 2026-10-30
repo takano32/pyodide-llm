@@ -105,7 +105,7 @@ for (const [width, viewport] of Object.entries(widths)) {
   const all = benched.find((row) => row.name === "everything"), plain = benched.find((row) => row.name === "without the kernels");
   if (!(all?.speed > 0) || all.skip !== undefined || !plain || (plain.skip !== undefined) !== unsaid ||
       (unsaid ? !/does not say how much memory/.test(plain.skip) || plain.speed !== undefined : !(plain.speed > 0))) {
-    throw new Error(`${width}: ?bench=1 did not ${unsaid ? "skip the round without the kernels, in words" : "run both rounds"}${all && plain ? "" : ` (no row called ${[!all && '"everything"', !plain && '"without the kernels"'].filter(Boolean).join(" nor ")}: src/bench/rounds.js's names)`}`);
+    throw new Error(`${width}: ?bench=1 did not ${unsaid ? "skip the round without the kernels, in words" : "run both rounds"}${all && plain ? "" : ` (no row called ${[!all && '"everything"', !plain && '"without the kernels"'].filter(Boolean).join(" nor ")}: src/bench/rounds.ts's names)`}`);
   }
 
   // 5. a repository the converter refuses, in words (T.88)

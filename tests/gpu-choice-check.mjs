@@ -7,7 +7,7 @@ const { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, 
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } = await import(runtimeUrl("forward.js"));
 const { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
   tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
-import { usedAfter } from "../src/bench.js";
+import { usedAfter } from "../src/bench.ts";
 import { python as sources, runtimeUrl } from "./tree.mjs";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)

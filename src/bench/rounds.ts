@@ -1,6 +1,6 @@
 // The rounds of the benchmark (T.45: ?bench= and /benchmark/'s model section), the environment, and their table.
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, tableCell } from "./cells.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, tableCell } from "./cells.ts";
 
 /** One row per switch combination the benchmark ran. */
 export const ROUNDS = [

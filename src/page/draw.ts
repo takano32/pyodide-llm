@@ -1,6 +1,6 @@
 // src/page/draw.ts (T.355): what the page draws: the bubbles, the lines under an answer, the benchmark's table, the
 // status line, the round button.
-import { reportUrl } from "../bench.js";
+import { reportUrl } from "../bench.ts";
 import { chat, run, statusText } from "./dom.ts";
 import { parameters } from "./address.ts";
 import { benchmarking, gpuNote, gpuSaid, model, outdated, readyLine } from "./model.ts";

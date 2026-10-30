@@ -1,5 +1,5 @@
 // What the tables of /benchmark/ share: a number, a ratio, a cell's words, why there are no ratios, the threads' words.
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 
 const number = (value, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
 

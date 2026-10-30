@@ -3,7 +3,7 @@
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 declare const __BUILD__: string;
 import { deviceSummary, cpuSummary, storageSummary, lineSummary, gpuSummary, cpuBaseline, tableCell, environmentOf,
-  benchMarkdown, warnings, warningsBlock, shortReport, reportUrl, reportTooLong } from "../bench.js";
+  benchMarkdown, warnings, warningsBlock, shortReport, reportUrl, reportTooLong } from "../bench.ts";
 import { memorySummary } from "./page-memory.ts";
 import { hiddenLine, wakeKeeper } from "./wake.ts";
 import { $, SECTIONS, type Name, type Result, results } from "./dom.ts";
@@ -12,7 +12,7 @@ import { measured } from "./model.ts";
 export const STATE = { ok: "done", none: "not in this browser", wrong: "WRONG", error: "failed" };
 
 const TITLES: Record<Name, string> = { device: "This browser", cpu: "CPU", model: "Model", gpu: "GPU", storage: "Storage", line: "Line", memory: "Page memory" };
-// T.185: a section's lines of the summary (src/bench.js), from the data its tables are made of; a section that did not
+// T.185: a section's lines of the summary (src/bench.ts), from the data its tables are made of; a section that did not
 // measure says its state and the first line of why. The GPU's CPU beside it is the CPU section's, as in its tables.
 const SUMMARIES: Partial<Record<Name, (data: any) => string[]>> = {
   device: deviceSummary, cpu: cpuSummary, storage: storageSummary, line: lineSummary, memory: memorySummary,

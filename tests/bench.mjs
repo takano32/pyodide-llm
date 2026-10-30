@@ -1,11 +1,11 @@
-// src/bench.js: the table a visitor pastes into an issue (T.45). A plain module, so this runs in Node alone.
+// src/bench.ts: the table a visitor pastes into an issue (T.45). A plain module, so this runs in Node alone.
 //
 //   node tests/bench.mjs
 import assert from "node:assert/strict";
 import { FULL_ROUNDS, MEMORY_UNSAID, PASTE, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO_LONG, benchMarkdown, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, gpuSummary, lineSummary,
          loginUrl, parseReport, reportBody, shortReport, storageSummary,
          generateTable, gpuSkipped, layerCheckNumbers, layerStepsTable, layerTable, matVecTable, PATH_PROMPTS, PATH_WRITES, pathTable, reportTooLong, reportUrl, reportsTable, roundsHere, roundsTable, tableCell, threadCounts, threadsKey, threadsLine, times, timesFaster, tokenTable,
-         checkVerdict, pathWarnings, warnings, warningsBlock, drift, DRIFT_LINE } from "../src/bench.js";
+         checkVerdict, pathWarnings, warnings, warningsBlock, drift, DRIFT_LINE } from "../src/bench.ts";
 import fs from "node:fs";
 import { runtimeUrl } from "./tree.mjs";
 
@@ -562,7 +562,7 @@ assert.equal(threadsKey("llm-jp-3-150m", nav), "threads:llm-jp-3-150m:8:8:Mozill
 assert.equal(threadsKey("x", { hardwareConcurrency: 4, userAgent: "u" }), "threads:x:4::u", "no deviceMemory (Safari, Firefox)");
 for (const page of ["index.astro", "benchmark.astro"]) {
   assert.ok(/threadsKey as sharedThreadsKey|threadsKey\(entry\.id, navigator\)/.test(pageText(page)),
-    `${page} keys the remembered threads with src/bench.js's threadsKey`);
+    `${page} keys the remembered threads with src/bench.ts's threadsKey`);
 }
 const headOf = (how, threads = 4) => pathTable({ ...real, threads, how }).split("\n")[0];
 assert.ok(headOf({ remembered: true }).includes("4 software threads, as the model page remembers ·"), headOf({ remembered: true }));
@@ -861,7 +861,7 @@ const unsteadyForm = { ...stepsStep, result: { ...stepsStep.result, forms: steps
 assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: layerStepsTable(unsteadyForm, layerRight, layerCeilings).join("\n") }]),
   ['GPU: "DP4A, fused (T175)", 9 dispatches: the layer (unsteady) 3.50 ms.']);
 // WRONG in a row of its own (no verdict of the check says it): the storage section's read back, which the page writes
-// itself (no function of src/bench.js to build it from, so this is its row as written there)
+// itself (no function of src/bench.ts to build it from, so this is its row as written there)
 assert.deepEqual(warnings([{ title: "Storage", status: "wrong", markdown: ["| writes | s | of it flushing, s | MB/s | × a download of 8.3 MB/s |", "|---|---:|---:|---:|---:|",
   "| in order, one flush | 0.33 | 0.31 | 204 | 25× |", "| read back in order (3 pieces WRONG) | 0.01 |  | 6711 | 809× |"].join("\n") }]),
   ["Storage: writes: read back in order (3 pieces WRONG); s: 0.01; MB/s: 6711; × a download of 8.3 MB/s: 809×"]);

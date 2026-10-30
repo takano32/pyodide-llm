@@ -1,6 +1,6 @@
 // The GPU section's table of generated tokens and of the sampling (T.151, T.191).
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, times, noRatios, tableCell, unmeasured } from "./cells.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, times, noRatios, tableCell, unmeasured } from "./cells.ts";
 
 /**
  * T.151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.js's EMBED, fusedMatVec and SAMPLE: the

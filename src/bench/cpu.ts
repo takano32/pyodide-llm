@@ -1,6 +1,6 @@
 // The CPU section's table (T.134, T.158), and what it leaves for the model page to estimate a CPU's speed from (T.157).
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, tableCell, unmeasured } from "./cells.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, tableCell, unmeasured } from "./cells.ts";
 
 // T.157: the GPU section of /benchmark/ against the CPU section's forward pass (forward.ts itself, relaxed SIMD and the
 // software threads, as the model page runs it). Before T.157 the CPU of the GPU's token table was one thread of

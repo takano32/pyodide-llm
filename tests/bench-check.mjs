@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
-import { REPORT_LIMIT, TOO_LONG, pathTable } from "../src/bench.js";
+import { REPORT_LIMIT, TOO_LONG, pathTable } from "../src/bench.ts";
 import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 

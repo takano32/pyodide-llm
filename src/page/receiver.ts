@@ -2,7 +2,7 @@
 // of its reports. This module waits at its top level: whatever imports it runs after that wait, and the parts that
 // must not start before the worker (choose.ts, composer.ts and the script in index.astro) all import it.
 import { memoryFailure } from "../models.js";
-import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHere, usedAfter } from "../bench.js";
+import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHere, usedAfter } from "../bench.ts";
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, keptAs, remember, threadsKey } from "./remembered.ts";

@@ -1,6 +1,6 @@
 // The GPU section's tables: the check's verdicts, a matrix × a vector (T.149), a token, a layer (T.150, T.175).
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, threadsOf, times, noRatios, tableCell, unmeasured } from "./cells.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, threadsOf, times, noRatios, tableCell, unmeasured } from "./cells.ts";
 
 /** T.186: the numbers under a layer's verdict in the check (T.175), in one short line for the page and the report: its
  * quantized vectors held to quantize_x (quantized: [{point, wrong, scale, apart, of}]; the worst scale's relative

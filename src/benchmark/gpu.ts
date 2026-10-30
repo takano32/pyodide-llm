@@ -1,7 +1,7 @@
 // The section "GPU": the steps asked of src/runtime/benchmark/gpu.ts one at a time, and the Markdown of what came back.
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { checkVerdict, matVecTable, cpuBaseline, tokenTable, layerTable, layerStepsTable, generateTable, unmeasured,
-  tableCell, noRatios, threadsOf, timesFaster } from "../bench.js";
+  tableCell, noRatios, threadsOf, timesFaster } from "../bench.ts";
 import { $, type Result, results } from "./dom.ts";
 import { staged, ask, worker, fixed, yes } from "./section.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
@@ -105,7 +105,7 @@ export function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
   const check: Stepped<Verdicts> | undefined = steps.find((s) => s.name === "the shaders against JavaScript");
   if (check?.error) said.push(`**Shaders against JavaScript**: not checked (${check.error})`);
   lines.push(...said.flatMap((line) => [line, ""]));
-  // every verdict of the check in one line (src/bench.js's checkVerdict()); those not ok are the section's own warnings
+  // every verdict of the check in one line (src/bench.ts's checkVerdict()); those not ok are the section's own warnings
   const verdicts = Object.entries(check?.result ?? {});
   if (check?.result) lines.push(`**Shaders against JavaScript**: ${verdicts.map(checkVerdict).join(", ")}`, "");
   said.push(...verdicts.filter(([, v]) => v.error || !v.ok).map(checkVerdict));

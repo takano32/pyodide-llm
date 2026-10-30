@@ -282,7 +282,7 @@ async function attentionLengths(shape: LayerShape): Promise<AttentionLengths> {
         postMessage({ alive: true } satisfies Alive);
       });
     }
-    // (bytes: the keys and values of a length, read once: float16, two of them; src/bench.js turns the time into GB/s)
+    // (bytes: the keys and values of a length, read once: float16, two of them; src/bench.ts turns the time into GB/s)
     return { positions: ATTENTION_LENGTHS, rows, base, MB, bytes: ATTENTION_LENGTHS.map((positions) => positions * kvDim * 2 * 2) };
   } catch (error) {
     return { error: String((error as Thrown)?.message ?? error) };

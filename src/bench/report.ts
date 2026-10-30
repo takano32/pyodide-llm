@@ -1,7 +1,7 @@
 // The report: the issue's body and link, how long a link may be, the short report, and reading reports back (T.91).
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number } from "./cells.js";
-import { cells, warningsBlock } from "./warnings.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number } from "./cells.ts";
+import { cells, warningsBlock } from "./warnings.ts";
 
 // T.91: where a visitor sends the result, and the one table the results make.
 export const REPOSITORY = "takano32/pyodide-llm";

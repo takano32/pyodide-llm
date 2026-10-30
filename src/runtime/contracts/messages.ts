@@ -81,7 +81,7 @@ export type Sampled = {
   thinking?: number;
 };
 
-// T.45: a round of ?bench=1 (src/bench/rounds.js): the switches it leaves out; skip: the words of its row where the
+// T.45: a round of ?bench=1 (src/bench/rounds.ts): the switches it leaves out; skip: the words of its row where the
 // device does not run it (T.214)
 export type Round = { name: string; without: string[]; skip?: string };
 

@@ -1,6 +1,6 @@
 // The section "Model": the model page's worker itself, the page's path timed and the rounds (T.184, T.190).
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
-import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.js";
+import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.ts";
 import { BASE, $, parameters, type Result } from "./dom.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
 import { UPDATED } from "../runtime/updated.ts";
@@ -10,8 +10,8 @@ import type { BenchRow, ModelWorker, Progress, Round, ToWorker } from "../runtim
 // model page's own path is timed on it (T.184: prompts and writing as the page chooses between the GPU and the CPU,
 // and on each alone), then the rounds of ?bench=1 (T.45), which load it again each, on the CPU alone
 // what the model section measured, under the name of the model it ran (the choice may change after)
-// said (T.227's review): what the page's path says went wrong in its first line (src/bench.js's pathWarnings()), for the warnings
-// (a round of ?bench=1 as src/bench/rounds.js lists it: the contract's Round)
+// said (T.227's review): what the page's path says went wrong in its first line (src/bench.ts's pathWarnings()), for the warnings
+// (a round of ?bench=1 as src/bench/rounds.ts lists it: the contract's Round)
 export let measured: { name: string; rows: BenchRow[]; pyodide: string; paths?: string; said?: string[] } | undefined;
 export async function modelSection(): Promise<Result> {
   const entry = model();
