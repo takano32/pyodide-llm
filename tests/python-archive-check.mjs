@@ -257,8 +257,8 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.equal(run("llama2_convert"), undefined);
 
   // who names the archives: init() the engine's, converter() the converter's, and convert() alone calls converter().
-  // (init() runs in no check in Node: it loads Pyodide from the CDN. What it asks for and when is seen in a browser,
-  // tests/e2e.mjs; here its text says that the one archive it names is the engine's.)
+  // (T.462: init() runs in Node on a made-up Pyodide, tests/worker-init-check.mjs, and in a browser, tests/e2e.mjs; here its
+  // text says that the one archive it names is the engine's, asked for before Pyodide is waited for.)
   // (the worker's window and its modules: not the table of the built files, which names every one of them, T.367.3)
   const sources = Object.fromEntries(workerScripts(tree).filter(({ url }) => /\/worker(\.(js|ts)$|\/)/.test(url.pathname)).map(({ name, source }) => [name, source]));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
@@ -268,7 +268,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   // (the names as the code says them, in quotes: the comments name them too)
   assert.deepEqual(naming(/"engine\.zip"/), ["runtime"]);
   assert.deepEqual(naming(/"converter\.zip"/), ["convert"]);
-  assert.match(body(sources.runtime, /^async function init\(search *\) \{$/m), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(pyodide, engine, "engine\.zip"\);\s*llama2_numpy = pyodide\.pyimport\("llama2_numpy"\);/,
+  assert.match(body(sources.runtime, /^async function init\(search *, starts *\) \{$/m), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(pyodide, engine, "engine\.zip"\);\s*llama2_numpy = pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, /^async function converter\(signal *\) \{$/m), /"converter\.zip"/);
