@@ -278,7 +278,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   if (m.weights.positions) g.u.positions = uniform(m, new Uint32Array([plan.dim, 0, plan.dim, 0]));
   // T.232: a ternary classifier's outlier channels (plan.tokens.channels, T.92): the two dispatches around its matrix
   // (shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
-  const channels = m.ternary ? plan.tokens!.channels ?? [] : [];
+  const channels = m.ternary ? planned.channels ?? [] : [];
   if (channels.length) {
     g.take = await within(validated(m, () => pipelineOf(m, ENGINE.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
     g.columns = await within(validated(m, () => pipelineOf(m, ENGINE.TERNARY_COLUMNS)), "compiling the outlier channels' columns");
