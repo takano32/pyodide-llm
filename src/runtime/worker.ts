@@ -133,7 +133,7 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
           unloaded = current.catch(() => {});
           await current;
           const ready = since(started);
-          const { tokens, speed } = timedGeneration(data.prompt, data.steps);
+          const { tokens, speed } = timedGeneration(llama!, data.prompt, data.steps);
           rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama!.backend, seconds: ready });
         }
       } finally {
