@@ -166,6 +166,10 @@ function halfToFloat(h) {
     // matrices of a linear layer's gates, its taps and its other vectors are float32 in every file (2 MB a layer of the 27B's),
     // which footprint() counts as int8 weights, and so for their relaxed corrections, a ninth of them: over by that much more
     // than the megabyte (hybridOver()), 0.5 MiB for the 0.8B, 12 MiB of the 27B's 28 GB, never under
+    // T.487: and one whose only width that is no whole groups of 32 is what its linear layers read (3 value heads of 80):
+    // footprint() hears it from the kind (its widest), and counts the weights widened, as the engine has them
+    ...big("qwen3.5, int8 kernels cannot run (value heads 240 wide)", [256, 512, 8, 4, 2, 1000, 4096],
+      { arch: "qwen35", head_dim: 64, linear: { every: 4, key_heads: 1, value_heads: 3, key_dim: 64, value_dim: 80, conv: 4 } }, ["int8"], true),
     ...big("qwen3.5 0.8B", [1024, 3584, 24, 8, 2, 248320, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_08B }, ["int8"]),
     ...big("qwen3.5 27B's layers, 4 of 64", [5120, 17408, 4, 24, 4, 1000, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_27B }, ["int8"]),
     // T.237's review: and in a rotated basis, as Ternary Bonsai 2 27B is (its signs of three widths, and a place in every

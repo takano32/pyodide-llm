@@ -264,11 +264,12 @@ const returned = (fn) => {
       assert.equal(layer.window > 0, layer.local, `${which}: layer ${l} has a window and the local layers' tables, or neither`);
       assert.ok(!layer.local || (layer.kind === "attention" && "local_cis_real" in plan.derived && "local_cis_imag" in plan.derived), `${which}: layer ${l} is a local one`);
     });
-    // (T.375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
-    // GPT-2's and a GPT-NeoX's)
-    if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN`);
     assert.deepEqual(ARCHITECTURES[plan.arch], said, `${which}: src/runtime/forward/architectures.ts's line of ${JSON.stringify(plan.arch)} is not what Python's plan of that architecture says ` +
       "(a table of positions and a gate of the attention's output by the tensors, RoPE and local layers by the layers, gated_ffn, layer_norm, activation). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
+    // (T.375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
+    // GPT-2's and a GPT-NeoX's. T.487: after architectures.ts's line, which says which side to put right, and saying it too)
+    if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN ` +
+      "are not this check's second copy of them (SECOND). engine/layout.py's LAYOUTS is the owner: where it was changed on purpose, put SECOND right");
     // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise)
     assert.equal("freq_cis_real" in plan.tensors, said.rope && dtype === "float32", `${which}: the RoPE tables are the file's`);
     assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);
