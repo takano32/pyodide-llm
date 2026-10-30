@@ -5,6 +5,7 @@
 import { BETTER } from "./choice.ts";
 import { REASONS } from "./reasons.ts";
 import type { Engine } from "./engine.ts";
+import type { Side } from "./gpuside.ts";
 import type { PathCell, PathRow } from "../contracts/messages.ts";
 
 // (T.368.4, the types) a run of one side: its ms, and the tokens of it the GPU took
@@ -22,7 +23,7 @@ type Row = Omit<PathRow, "cpu" | "gpu"> & Partial<Pick<PathRow, "cpu" | "gpu">>;
 export const PATH_ROUNDS = 4;
 export function timePrompts(engine: Engine, { words, counts, rounds = PATH_ROUNDS }: { words: number[]; counts: number[]; rounds?: number }) {
   const gpu = Boolean(engine.gpuReady);
-  const sides = gpu ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
+  const sides: Record<string, Side> = gpu ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
   const rows: PathRow[] = [];
   try {
     for (const count of counts) {

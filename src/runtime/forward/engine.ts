@@ -21,7 +21,7 @@ import { blockTables } from "./blocks.ts";
 import { stagingReader } from "./staging.ts";
 import type { Kernels, Packed, Packing, Ready } from "../jobs.ts";
 import type { Direct } from "./alone.ts";
-import type { CpuSide, GpuWorker, Held, Placed, Shape, Taken } from "./gpuside.ts";
+import type { CpuSide, GpuWorker, Held, Placed, Shape, Side, Taken } from "./gpuside.ts";
 import type { Spawn } from "./threads.ts";
 import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
@@ -707,7 +707,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     },
     /** T.184 (the benchmark's page path): every block of a prompt on "cpu" or on "gpu" (where the GPU is on and holds
      * the keys and values before it, as gpuForce.always), or null: each where it is faster (promptTimes) */
-    set gpuSide(side: string | null) {
+    set gpuSide(side: Side) {
       onGpu.put(side);
     },
     /** T.135: the tokens of a prompt that went through the GPU since the generation began */
