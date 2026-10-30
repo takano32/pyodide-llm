@@ -1,0 +1,4 @@
+### T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 状態: 完了（2026-10-11、T.378.5 から。規模 小）
+- `tests/e2e.mjs` は `?bench=1` を知らず、`tests/bench-browser.mjs` は Playwright の Chromium しか開かない（手元には入っていない）。`tests/bench-check.mjs` は節の秒と全体の行（「Section 2 / 2 · … in all」）を見ない。
+- **2026-10-30**: `bench-check.mjs` の `watchStages()` が、節の上の行（`#overall`）の文の移りと各節の秒（`.elapsed`）も取る。終わった後に: 走った節の秒がどれもページの時計の形（「N s」か「N min SS s」）、2 つ以上走ったら上の行が走る間に「Section k / n · 題 · 時間 in all」を言い、最後が「n sections in 時間」。手元の Chromium で `--dist chromium --run device,storage` が通る（壊し方: ページの最後の行を「2 sections, in …」にすると落ちる）。`bench-browser.mjs` は今の開発機の Playwright の Chromium で回る（stories260K で約 1 分）: 頭の「開発機では回せない」を直した。`?bench=1` の画面は T.590 から `screenshots.mjs` が見るので、`e2e.mjs` には足さない（取りまとめ役の決め）。CI を省いた。訳: 試験の道具だけで、手元の Chromium で回した。
+- レビュー（Sonnet low、2026-10-30）: OK。1 秒未満の節も節の始めに「0 s」と上の行が出る、節が 1 つなら上の行を見ない、再読み込みは文書ごとに記録を作り直す、文はエンジンに依らない（`textContent`、ふつうの空白）。
