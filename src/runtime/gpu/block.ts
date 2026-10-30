@@ -209,7 +209,7 @@ function bindLayers(m: Model) {
     const added = (to: GPUBuffer, name: keyof Vectors) => V[name] && { group: bind(m, b.add, [to, V[name], uniform(m, new Uint32Array([plan.vectors[name]!.size, index(plan.vectors[name]!.of) * plan.vectors[name]!.size, 0, 0])), b.step]),
       x: Math.ceil(plan.vectors[name]!.size / 64) };
     // T.154: LayerNorm reads its bias from the same place in its own buffer
-    const normed = (weight: string, bias: string, out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias], out, normShape, b.step]
+    const normed = (weight: "attention" | "ffn", bias: "attentionBias" | "ffnBias", out: GPUBuffer) => bind(m, b.norm, plan.layerNorm ? [b.x, V[weight], V[bias]!, out, normShape, b.step]
       : [b.x, V[weight], out, normShape, b.step]);
     // T.261.4: the norm of what joins the stream (from), added to it (a Gemma 3's: the output of the step's matrix out,
     // and of w2, written apart into gate and xb, which nothing reads by then)

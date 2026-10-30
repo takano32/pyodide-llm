@@ -10,7 +10,7 @@ import { CODEBOOK_BYTES } from "../shaders/prompt.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, packingsOf } from "./packings.ts";
 import type { Model, Bound } from "./device.ts";
-import type { GpuPacking, Matrix, Table, Tables } from "../contracts/gpu/protocol.ts";
+import type { GpuPacking, Matrix, Table, Tables, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { TensorName } from "../contracts/plan.ts";
 
 // T.368.6: this module's record, m.weights, as uploadLayers() makes it and the rest fills it (what is null there until
@@ -29,6 +29,8 @@ type Home = { joined: string; at: [number, number] };
 // two are apart as well, 0 where they are one; up, whether gate and up are apart, written each into a buffer of its own
 // and joined by the activation's dispatch)
 type Together = { homes: Partial<Record<TensorName, Home>>; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
+// T.625: a buffer of each of the plan's vectors, by their names, which say which every model has (attention, ffn)
+type GpuVectors = { [name in keyof Vectors]: GPUBuffer };
 // T.625: a record by the plan's tensor names (the plan's matrices, a token's homes), entry by entry, by those names
 // (Object.entries says string)
 const named = <V>(record: Partial<Record<TensorName, V>>) => Object.entries(record) as [TensorName, NonNullable<V>][];
@@ -60,7 +62,7 @@ type Weights = {
   widen: Widen | null;
   routes: Route[] | null;
   partial: Map<GPUBuffer, Map<number, { bytes: Uint8Array<ArrayBuffer>; count: number }>> | null;
-  vectors: { [name: string]: GPUBuffer } | null;
+  vectors: GpuVectors | null;
   tables: { classifier: TablePiece[]; embedding: TablePiece[] } | null;
   finalNorm: GPUBuffer | null;
   finalBias: GPUBuffer | null;
@@ -203,15 +205,17 @@ async function uploadRest(m: Model) {
   // (T.547.3.7: the codebooks of a model on the GPU alone, made as it opened)
   gridsFilled(m);
   if (m.weights.together) bytes += await uploadTokens(m, m.weights.widen);
-  m.weights.vectors = {};
-  for (const [name, { at, size, of }] of Object.entries(plan.vectors)) {
+  const vectors: Partial<GpuVectors> = {};
+  for (const [name, { at, size, of }] of Object.entries(plan.vectors) as [keyof Vectors, Vector][]) {
     // (T.545: of the layers of a kind, where it is theirs alone)
     const vectorBytes = (of ? plan.kinds.filter((kind) => kind === of).length : plan.layers) * size * 4;
 
-    m.weights.vectors[name] = buffer(m, vectorBytes, STORAGE | COPY_DST);
-    copyIn(m, m.weights.vectors[name], at, vectorBytes);
+    const made = vectors[name] = buffer(m, vectorBytes, STORAGE | COPY_DST);
+    copyIn(m, made, at, vectorBytes);
     bytes += vectorBytes;
   }
+  // (the plan's names, each: attention and ffn among them)
+  m.weights.vectors = vectors as GpuVectors;
   // T.271.1: a rotated basis's signs of each width, from the shared memory (Python's derived tables)
   if (plan.rotated) {
     m.weights.signs = {};

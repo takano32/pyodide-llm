@@ -128,7 +128,7 @@ export const attention: GpuKind = {
               // (T.271.3: a Qwen3.5's gate of the output, of the same normed stream)
               ...(gated ? [matrix("mix", W.matrices.wg!.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
               ...(qkvBias ? [added(qkv!, qkvBias, biasShapes![l], qkvRows)] : []),
-              ...(headNorms ? ([[V.qNorm, plan.heads], [V.kNorm, plan.kvHeads]] satisfies [GPUBuffer, number][]).map(([weights, heads], i): Pass =>
+              ...(headNorms ? ([[V.qNorm!, plan.heads], [V.kNorm!, plan.kvHeads]] satisfies [GPUBuffer, number][]).map(([weights, heads], i): Pass =>
                 [b.headNorm, bind(m, b.headNorm, [qkv!, weights, headNorms[l][i], g.step]), heads, 1]) : []),
               ...(qkv ? [[rope!, bindAt(rope!, [[2, qkv], [3, u.qkv[l]], ...turned]), 1, 1]] satisfies Pass[] : []),
               // T.154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which
