@@ -47,7 +47,6 @@
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
-- T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 進行中
 - T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 未着手
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
@@ -542,11 +541,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 状態: 未着手（2026-10-11、T.378.4 から。T.357.5 と一緒に。規模 中）
 - T.352 と T.378.4 の証明（装置への呼び出しの列を本線と比べる記録）は `.tmp/` の捨ての道具（約 630 行）で、毎回作り直している。`tests/` に入れれば、`gpu/` の `forms.js`・`tokenattention.js`・`tokens.js`・`tokenforms.js`・`start.js`（検査を通らないと記録を作らないので、いまは軽い組で単独に踏めない: レビューの壊し方 5 つが軽い組を通った）も部品だけの試験にでき、次に `gpu/` に触る回が比べる手段を持つ。偽の装置は約束を後のターンで果たす形に（その場で果たすと、途中の stop の比べが空振りになる）。
-
-### T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 状態: 進行中（2026-10-11、T.378.4 から。規模 小。レビューは `shader-reviewer`）
-- `m.tokens` はバッファとパイプラインと uniform（`tokens.js` が作る）・選んだ形（`tokenforms.js`）・attention（`tokenattention.js`）が 1 つの記録に入っている。分ければ `tokens.js` が自分の物の持ち主になる。`forms.js` の `timeForms()` は `m.block` を 14 個名前で読む: `block.js` の関数にできる。`start()` が `m.weights.unjoined` を名前で読む所も。
-- **2026-10-30**: (1) 記録を 3 つに: `m.tokens`（バッファとパイプラインと uniform: 鍵は `tokens.ts` の `tokenBuffers()` が言い、置くのは `tokenforms.ts`）、`m.tokenAttention`（`tokenattention.ts` の `chooseTokenAttention()` が自分で置く: 返さない）、`m.tokenForm`（選んだ形・ms・形ごとの結果: `tokenforms.ts`）。読む所（`attention.ts` の層・`tokens.ts` の `tokenStep()`・`requests.ts` の `generate()`・`tokensSaid()`）はそれぞれの記録から。`gpu-modules-check` の `RECORDS` に 2 つ。取りまとめ役の決め: `m.tokens` を `tokens.ts` が自分で置く形は、`tokenBuffers()` が局所 `g` に後から足して組む（`gpu-modules-check` は「書き出したリテラルか、関数が返したものの展開」を求める）ので取らず、鍵の宣言を `tokenBuffers()` に残した。(2) `timeForms()` は `m.block` を 13 の名前で読まず、`block.ts` が記録に置く `products`（層の行列ごとに読む物・書く物・足すか・入力の量子化）を読む（`timeForms()` を `block.ts` に動かすと `block.ts` ↔ `forms.ts` の import の輪になる）。(3) `start()` が `m.weights.unjoined` を名前で読む所は、ほかの記録の欄を読むふつうの形なので、そのまま。網の `gpusteps` の道具は手で記録を作るので、新しい 2 つの記録も置く（前の木は `m.tokens` の欄を、今の木は新しい記録を読む）。
-- 確かめ: 型検査・`gpu-modules-check`・`gpu-worker-parts-check`・`gpu-choice-check`・`gpu-part-check`・`shaders-modules-check`・`device-key-check`、網の `gpusteps`（偽の装置への頼み 277 が同じ）。網の `gpuworker` の文の違いは予定の 8 つ。
 
 ### T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 状態: 未着手（2026-10-11、T.378.5 から。規模 中）
 - 「どの知らせでどの出来事を言うか」（`receiver.ts`・`choose.ts`・`composer.ts`・`run.ts`）は要素を最上位で取るので Node の試験に無く、実ブラウザだけが見る（別の読み込みの知らせを捨てる条件を外しても Node の検査は通る）。受け口を「知らせ → 言う出来事と描くもの」の関数に。`answerBegan()` が書いている間の 2 回目を断らないこと（守りは `composer.ts`）も一緒に。（T.475 から: ステータス行の文字列を組む所（`draw.ts`、要素を読む）も、行を組む純関数に分ける。）
