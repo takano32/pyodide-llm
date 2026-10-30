@@ -51,7 +51,6 @@
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
 - T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 未着手
-- T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 未着手
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -572,9 +571,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 状態: 未着手（2026-10-12、T.368.7 から。T.368 の範囲の外だった。規模 中）
 - `src/bench.js` と `src/bench/` の 10、`src/models.js` と `src/models/` の 10、`src/page-memory.js`、`src/wake.js`。`.ts` にすると: ページの `any` の残り 46 個の多く（JavaScript の返す物の形が言えない所）が消える、`/benchmark/` の Worker が書く欄と表（`src/bench/`）が読む欄が初めて両側で見える、ページ → worker の項目の形（`Listed`）がページの側でも見える。`tests/bench.mjs`・`models-check.mjs`・網の `models`・`bench` がソースを名前で読む。
-
-### T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 状態: 未着手（2026-10-12、T.368.7 から。規模 小〜中）
-- `sections.ts` の作り物の計画は `Plan` の全部でなく `as Plan` で渡している（`layers`・`widths` などが無い）: **T.375 が `layers`・`widths` を読み始めると、型に言われずに壊れる。T.375 の前に決める**。（**T.375.2 で**: 作り物の計画は `benchmark/madeup.ts` に全部の鍵で書き、`as Plan` を外した。`plan-keys-check` が Python の計画と比べる。）`shared` は「段が読むときの型」で、新しい段が `await gpu()` を忘れると型は黙ったまま undefined を読む（`device.ts` のコメントに「新しい段も同じ」の 1 文を）。`if (answer.error) return` は答えを絞らない（印つきの合併にすればページの `!` が減るが Worker の文が変わる。`interleaved()` も）。GPU の節がステップを名前で引く `steps: any[]`。`Asked` の鍵と `section.ts` の `WORKERS` の鍵は `.js` のラベルのまま（直すなら網の `page` の文字と一緒に）。`updated-check` は製品の 2 行を文で持ち、型を足すたびに直す。コメントの古い名前（`outdated.ts` の `/** */`、`gpu/forms.ts`・`gpu/tokens.ts`・`shaders.ts`・`shaders/prompt.ts`・`worker.ts`、`src/page-memory.js` の頭: T.472 と一緒に。`shaders/` の行は鍵に注意）。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
