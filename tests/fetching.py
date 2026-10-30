@@ -15,6 +15,9 @@ import urllib.error
 import urllib.request
 
 CHUNK = 8 << 20
+# (T.496: what fetched() asks for again of the refusals, as template_corpus.py's own loop did of every one it did not take
+# for a missing model: the Hub's timeout and its rate limit)
+AGAIN = (408, 429)
 
 
 def download(url, target, tries=3, timeout=60, optional=False, said=None):
@@ -102,8 +105,9 @@ def sized(url, tries=4, timeout=120):
 def fetched(url, headers=None, tries=4, timeout=120, wait=5, missing=(), said=None):
     """The bytes of the file at url, whole (to its Content-Length where the answer says one), or None where the server
     answers with a status of missing (a model the Hub does not let one read: 401, 403, 404). What stopped short, a
-    connection that broke and a server's own failure (5xx) are asked for again, tries times in all, wait seconds more
-    before each next one (said(error): told of each try that failed but the last); another refusal (4xx) raises."""
+    connection that broke, a server's own failure (5xx) and AGAIN's (the Hub's timeout and rate limit) are asked for
+    again, tries times in all, wait seconds more before each next one (said(error): told of each try that failed but
+    the last); another refusal (4xx) raises."""
     request = urllib.request.Request(url, headers=headers or {})
     for attempt in range(tries):
         try:
@@ -115,7 +119,7 @@ def fetched(url, headers=None, tries=4, timeout=120, wait=5, missing=(), said=No
         except urllib.error.HTTPError as error:
             if error.code in missing:
                 return None
-            if error.code < 500 or attempt == tries - 1:
+            if (error.code < 500 and error.code not in AGAIN) or attempt == tries - 1:
                 raise
             if said:
                 said(error)

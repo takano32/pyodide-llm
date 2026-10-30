@@ -155,6 +155,8 @@ def test_a_small_file_is_fetched_whole_or_asked_for_again(monkeypatch):
     assert fetching.fetched("https://example.test/f", missing=(401, 403, 404)) is None
     serving(monkeypatch, [refused(503), Whole(b"xyz")])
     assert fetching.fetched("https://example.test/f") == b"xyz"
+    serving(monkeypatch, [refused(429), refused(408), Whole(b"xyz")])
+    assert fetching.fetched("https://example.test/f") == b"xyz", "the Hub's rate limit and timeout are asked again"
     serving(monkeypatch, [refused(404)])
     with pytest.raises(urllib.error.HTTPError):
         fetching.fetched("https://example.test/f")
