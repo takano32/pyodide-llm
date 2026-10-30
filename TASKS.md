@@ -168,7 +168,6 @@
 - T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
-- T.620 [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 進行中
 - T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 進行中
 <!-- 目次ここまで -->
 
@@ -1442,12 +1441,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
-
-### T.620 [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 状態: 進行中（2026-10-30、ブランチ `t.620-prompt-tool`。前の状態: 未着手、2026-10-30、T.486 から。規模 小。速さを測る）
-- **結果（2026-10-30）**: 先に要るものを作ってから直した。(1) 道具: `tests/threads-compare.mjs --prompt`（プロンプトの塊を `promptBlock` ずつ `forwardMany` で通して測る。ビット単位の比べにプロンプトの後のトークンの logits も入れた）、モデルをファイル（`<out>.bin`・`.tokenizer.bin`・`.json`）でも取る、`compare-builds.sh` の `PROMPT=1`、`tests/make_ternary.py` の形 `large`（dim 1024・FFN 3072・8 層・分類器は自分の: 3 値で 27 MB）。壊し方: `forwardMany` がトークンを 1 ずらす束を `--new` にすると `--prompt` は「the two compute other logits」で落ちる（`--prompt` なしは通る: 1 トークンの道は踏まない）。(2) 直し: `jobs.ts` の `matmul_q6r`・`matmul_q6` の `rowBytes` を `(n * 3) / 4` に（int6 の 1 行は 32 個に 24 バイト）、`WORK` の行に `tileRows`（`matmul_q8r` だけ 4）と表 `TILE_ROWS`、`threads.ts` はプロンプトの塊を種類の `tileRows` ずつに切る（前は塊のどの種類も 4 行ずつ）。数は変わらない: `threads-check` で int8 の 2 モデルと作り物の int6・3 値が本数を変えてもビット単位で同じ。網: `calls` が int6 の作り物だけ違う（プロンプトの塊の行の切り方: 予定の違い）、`exports` が `WORK` と新しい `TILE_ROWS`。`kernel-registry-check` の 2 つ目の写し（int6 の 1 行のバイト数、各種類の `tileRows`）を直し、int6 だけ int8 と数えていた例外を外した。壊し方: `tileRows: 4` を外すと「the rows its tile takes at once」で落ちる。
-- **速さ（2026-10-30）: 速くも遅くもならない。** `PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh origin/main 15 2`、モデルは 3 値の `large`・int6 の llm-jp-3 150M（`convert_hf.py` で float32 にして `quantize.py … int6`）・int8 の llm-jp-3 150M（変わらない道の対照）、64 トークンでなく 128 トークンのプロンプト。x86-64（AMD EPYC 9V45、run 41138417185）: 新 ÷ 旧が 3 値 0.994〜1.000、int6 0.989〜1.014、同じコードの対照 0.996〜1.013。arm64（run 41138416363）: 3 値 0.998〜1.002、int6 0.995〜1.001、対照 0.997〜1.004。int8 の 4 本は 0.966・0.988 と出たが、その行は同じ側どうしで 4% 動き（対照も 1.029）、道は変わっていない。取りまとめ役の決め: 入れる（数え方が本当の大きさになり、タイルの行の数が表の 1 か所になる。遅くならない）。CI を回した。訳: 速さは手元の数で決めない。
-- **見直し（2026-10-30）**: 直しそのものは小さい（`jobs.ts` の `matmul_q6r`・`matmul_q6` の `rowBytes` を `(n * 3) / 4` に、`WORK` の記録に「タイルが取る行の数」（`matmul_q8r` だけ 4）を足して `threads.ts` の `quad` がそれを読む）。ただし今ある速さの道具（`compare-engines.mjs`・`threads-compare.mjs`）は 1 トークンの道だけを測り、どちらの直しも踏まない（プロンプトの塊を数トークンずつ回すときだけ効く）。**先に要るもの**: `threads-compare.mjs` にプロンプトの塊（`forwardMany`）を測る段と、int6・3 値のモデル。それまで取りかからない（取りまとめ役の決め）。
-- int6 の仕事のブロックは 1 行を n バイトと数える（本当は 0.75 n: `jobs.ts` の `WORK` の `rowBytes`）。`threads.ts` の `quad` はプロンプトの塊を 4 行ずつにする int8 のタイルの決まりを、3 値・塊・タイルの無い種類にも当てている（`WORK` の記録に「タイルが取る行の数」を持たせられる）。どちらも数は変わらず、塊の切り方（速さ）だけが変わる: 入れる前に前後を同じプロセスで交互に 1 回測る（`THREADS=2,4 bash tests/compare-builds.sh`、int6 と 3 値のモデル）。
 
 ### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
 - **(1) 完了（2026-10-30、ブランチ `t.624-embed`）**: `EMBED` と `EMBED_ROWS` を `shaders/run.ts` の 1 つの作る関数 `embedInt8(block)` に（`embedTernary` と同じ形。窓口の名前は前のまま定数）。出す文は前と 1 字も違わない（前の文を書き出して `===` で比べた。頭の改行 1 つが要った）。手元: 型検査、`shaders-modules-check`・`shaders-catalogue-check`・`device-key-check`・`gpu-worker-parts-check`、網の `shaders`・`gpuworker`・`gpusteps` が同じ。**CI を省いた。訳: 装置に渡す文が 1 字も変わらない（網の `shaders` が言う）。** int8 と 3 値の 4 つを 1 つにするのは、輪の中が違う（4 個ずつと 16 個ずつ）ので寄せない。 **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: OK、コメントの直し 2 つを入れた。** 2 つの木の `run.ts` を import して、4 つの埋め込みの文と窓口の名前が全部 `===` で同じと確かめた。作る関数は窓口から出さないので `shader-makers.mjs` の数えに入らない。長い行の折り返しと、`embedInt8()` のどちらの呼びがどちらの文かの 1 行を足した。
