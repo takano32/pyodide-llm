@@ -97,9 +97,9 @@ async function chooseTokens(m: Model) {
 // what "ready" says of a token here: the form of its layer chosen and its ms a step, what each form came to, the pieces
 // of the classifier, the attention and what each of those came to; null where the tokens stay on the CPU
 function tokensSaid(m: Model): TokensChosen | null {
-  const chosen = m.tokenForm, a = m.tokenAttention!;
+  const chosen = m.tokenForm;
   return chosen?.form ? { form: chosen.form.name, ms: chosen.ms, forms: chosen.forms!, remembered: chosen.forms!.some((f) => f.remembered), pieces: m.weights.tables!.classifier.length,
-    attention: a.attention.name, attentions: a.attentions } : null;
+    attention: m.tokenAttention!.attention.name, attentions: m.tokenAttention!.attentions } : null;
 }
 
 // ms a step of each form: runs of plan.tokens.most steps a submission from position 0 (a made-up state, the settings

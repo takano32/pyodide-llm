@@ -38,7 +38,8 @@ type Opening = Opened & { tokens: true };
 // (null till then). weights, block and forms are set by their owners before another module reads them, in start()'s
 // order; tokens, tokenAttention and tokenForm are set as a token's are chosen (T.466), with the form null (or the
 // records unset, T.467) where no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
-// tokensSaid()). T.479: the type says those three may be missing, and their readers take them once at their heads
+// tokensSaid()). T.479: the type says those three may be missing, and their readers take them once at their heads with `!`,
+// after the form's check where there is one
 type Base = {
   device: GPUDevice;
   plan: Started;
