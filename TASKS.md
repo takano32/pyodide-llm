@@ -180,7 +180,7 @@
 - T.621 [整理][CPU] 仕事を位置の並びでなく `WORK` の記録の関数で組む — 未着手
 - T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 未着手
 - T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 進行中
-- T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 未着手
+- T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1498,6 +1498,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **残り**: `Form` と `Stateful` の形の数の鍵、`engine.ts` の `shape` と `Sizes`、GPU の Worker への知らせの `six`・`ternary`、`/benchmark/` の `t.kind === "int8"`、`gpuBytes()` の Llama の形。
 - （採番の時の行）`Form` の型と `Stateful` が形の数の鍵を 2 回書く。`engine.ts` の `shape` と `Sizes` は同じ数を 2 つの名前で持つ。GPU の Worker への知らせの `six`・`ternary`、`aloneKept()` の `ternaryKey`、`/benchmark/` の `t.kind === "int8"` は詰め方の名前のまま（表 `PACKED` の行で言える）。`gpuBytes()` は GPU に置かれないモデルにも Llama の行列の形で答える。
 
-### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 未着手（2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
+### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
+- **(1) 完了（2026-10-30、ブランチ `t.624-embed`）**: `EMBED` と `EMBED_ROWS` を `shaders/run.ts` の 1 つの作る関数 `embedInt8(block)` に（`embedTernary` と同じ形。窓口の名前は前のまま定数）。出す文は前と 1 字も違わない（前の文を書き出して `===` で比べた。頭の改行 1 つが要った）。手元: 型検査、`shaders-modules-check`・`shaders-catalogue-check`・`device-key-check`・`gpu-worker-parts-check`、網の `shaders`・`gpuworker`・`gpusteps` が同じ。**CI を省いた。訳: 装置に渡す文が 1 字も変わらない（網の `shaders` が言う）。** int8 と 3 値の 4 つを 1 つにするのは、輪の中が違う（4 個ずつと 16 個ずつ）ので寄せない。 **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: OK、コメントの直し 2 つを入れた。** 2 つの木の `run.ts` を import して、4 つの埋め込みの文と窓口の名前が全部 `===` で同じと確かめた。作る関数は窓口から出さないので `shader-makers.mjs` の数えに入らない。長い行の折り返しと、`embedInt8()` のどちらの呼びがどちらの文かの 1 行を足した。
+- **(2) 残り**: `shaders/matvec.ts`（ベンチ）を `fused.ts` の文に寄せる（`bench.yml` を回す回）。
 - `shaders/matvec.ts`（ベンチ）を `fused.ts` の文に寄せる（重なりは `mulMatVec` の 86 行のうち 63〜68、`ortDp4aMatVec` の 89 行のうち 74、`ortMatVec` の 83 行のうち 35。エンジンの文をそのままにすれば鍵は動かない）。`EMBED`・`EMBED_ROWS` と 3 値の 2 つを 1 つの作る関数に（出す文が今と 1 字も違わないこと: 網の `shaders` と `device-key-check`）。確かめは網の `shaders`（`--built` も）と `gpu-prompt.yml`・`bench.yml` を 1 本ずつ。
 
