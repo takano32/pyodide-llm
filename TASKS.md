@@ -48,7 +48,6 @@
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
 - T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 未着手
-- T.467 [整理][WebGPU] GPU の Worker の小さな片付け — 反映済み
 - T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 未着手
 - T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 未着手
 - T.470 [バグ][その他] ページの選び直しのあいだの小さな穴 2 つ — 未着手
@@ -551,11 +550,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 状態: 未着手（2026-10-11、T.378.4 から。規模 小。レビューは `shader-reviewer`）
 - `m.tokens` はバッファとパイプラインと uniform（`tokens.js` が作る）・選んだ形（`tokenforms.js`）・attention（`tokenattention.js`）が 1 つの記録に入っている。分ければ `tokens.js` が自分の物の持ち主になる。`forms.js` の `timeForms()` は `m.block` を 14 個名前で読む: `block.js` の関数にできる。`start()` が `m.weights.unjoined` を名前で読む所も。
-
-### T.467 [整理][WebGPU] GPU の Worker の小さな片付け — 状態: 反映済み（2026-10-11、T.378.4 から。規模 小）
-- `src/runtime/gpu.js` の頭のコメントが `device.js` を「what the modules share」と書いたまま（`common` は無い）。形が無いとき `m.tokens` を null にする行は無くても動きが同じ。ready の知らせの鍵の順は誰も読まない。
-- **2026-10-30**: (1) `gpu.ts` の頭の部品の一覧: `device.ts` は「the shaders' module」を外して「the model's record and what the modules share」、一覧に無かった `packings.ts`・`kinds.ts` と種類の 3 つ（`attention.ts`・`linear.ts`・`convolution.ts`）を足した。(2) `tokenforms.ts` の `chooseTokens()` の try で `m.tokens` を null にする行と包む関数を外した（形は最後の throw の後にしか置かれず、読む所はどれも `form` を聞く: `tokensSaid()` は null、`generate()` は断る。記録の頭のコメントも直した）。(3) `start.ts` の ready の鍵の順を言うコメントを外した（誰も読まない）。
-- 確かめ: 型検査・`gpu-modules-check`・`gpu-worker-parts-check`・`shaders-modules-check`・`device-key-check`、網の `gpusteps`（偽の装置への頼み 277 が同じ）。網の `gpuworker` は文の違いを `chooseTokens` と消えた `choose` の 1 つと言う（予定の違い）。CI を省いた。訳: 装置への頼みが同じで、シェーダの文に触っていない。
 
 ### T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 状態: 未着手（2026-10-11、T.378.5 から。規模 中）
 - 「どの知らせでどの出来事を言うか」（`receiver.ts`・`choose.ts`・`composer.ts`・`run.ts`）は要素を最上位で取るので Node の試験に無く、実ブラウザだけが見る（別の読み込みの知らせを捨てる条件を外しても Node の検査は通る）。受け口を「知らせ → 言う出来事と描くもの」の関数に。`answerBegan()` が書いている間の 2 回目を断らないこと（守りは `composer.ts`）も一緒に。
