@@ -257,7 +257,7 @@
 
 ### 計測の読み方
 
-- **前後は同じプロセスで交互に、順を毎回裏返して**（`compare-engines.mjs`、スレッドつきは `THREADS=2,4 bash tests/compare-builds.sh`、変換は `tests/abba-convert.sh`）。測る前に 2 つが同じ答えかを見る。**CPU の名前を出して CPU ごとに読む**（GitHub のランナーは回ごとに CPU が違う）。x86-64 と arm64 の両方で。
+- **前後は同じプロセスで交互に、順を毎回裏返して**（`compare-engines.mjs`、スレッドつきは `THREADS=2,4 bash tests/compare-builds.sh`、プロンプトの塊は `PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh`（`threads-compare.mjs --prompt`: 1 トークンの道の道具はプロンプトの塊を踏まない。モデルはファイルでも渡せる: int6 は `quantize.py`、3 値は `tests/make_ternary.py <out> ternary large`）、変換は `tests/abba-convert.sh`）。測る前に 2 つが同じ答えかを見る。**CPU の名前を出して CPU ごとに読む**（GitHub のランナーは回ごとに CPU が違う）。x86-64 と arm64 の両方で。
 - **対照を並べる**: 同じコードの 2 つのビルドの比が雑音（1.5% 動くことがある）。**1〜2% の差は読まない**。1 回の run の「± の外」で決めない。
 - **疑った費用は、それだけを回して µs で測る**（差の差で測らない）。プロファイラの下の計測は呼び出しの数の違いを大きく見せる（`PROFILE=0`）。
 - 速さは手元の数字で決めない。静かな機械で（`/proc/loadavg`）。ソフトウェアのアダプタ（lavapipe・SwiftShader）の速さでシェーダの費用を決めない。
@@ -334,7 +334,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 ### カーネル・仕事の種類を足す
 
 1. `kernels/` にカーネル。**形の決まり**: 静的データを置けない（数学関数はテーブルなしで）。relaxed SIMD を使うものは別ファイル。内側のループに定数のベクトルを書かず引数から作る。シャッフルを続けた形は疑う（JavaScriptCore が誤って畳んだ）。x86 に 8 ビットのシフトと `f32x4.max` の命令は無い。int8 の積の和を i16 で足すならあふれる組を数える。**ファイルを足したら Makefile の `KERNEL_PARTS` にも**。部品が使う共通の関数は末尾の `export { … };` で出す。
-2. `jobs.ts` の `ADDRESSES` に名前と番地の引数（64 ビットのメモリで番地は BigInt、仕事の表は float64）。段の仕事なら **`WORK` の最後に 1 行**（`from`・`one(k)`・`tile(k, スレッドの番号)`・`rowBytes`・`warm`）。組む所が `KIND.<名前>` と書く。`runner()`・`helper.ts`・`threads.ts` は触らない。
+2. `jobs.ts` の `ADDRESSES` に名前と番地の引数（64 ビットのメモリで番地は BigInt、仕事の表は float64）。段の仕事なら **`WORK` の最後に 1 行**（`from`・`one(k)`・`tile(k, スレッドの番号)`・`rowBytes`・タイルが一度に取る行の数 `tileRows`（プロンプトの塊はこの数ずつに切る: 1 なら書かない）・`warm`）。組む所が `KIND.<名前>` と書く。`runner()`・`helper.ts`・`threads.ts` は触らない。
 3. 試験: `kernel-registry-check.mjs` の `KINDS`、JavaScript の同じ順の計算と比べる検査（残りが 0〜3 のどれも通る幅で）、**`tests/kernels-in-browser.mjs` に足す**、smoke。任意の機能の準備は別の `try` に。
 4. 速さは x86-64 と arm64 で、行列をメモリから読む形で測り、的の arm で決める。int8 は加算順で文が変わる（回帰試験を「前と同じ文」にしない）。
 5. **塊の型（`BLOCKS`）のカーネルは別のモジュール**（`kernels/blocks.ts`・`blocks_relaxed.ts`）。型を足すなら `blocks/types.ts` に型のクラスと GGUF の番号、塊のバイト数（`bytesOf`・`sizeOf`）、16 個の重みの読み（`magnitudes`・`minuses`）、`scaleOf`・`blockScale`、`bySixteen`・`hasSigns`。`blocks/row.ts` の `floatScale`。**型の番号で分ける並びが 4 か所**（`rowsOf`・`tileOf`・`matmul_sbw_tile`・`sb_row`: 忘れるとその型は 0 を書く。`blocks-check` が落とす）。試験は `tests/blocks-model.mjs` の `TYPES`。**型と relaxed の有無は型引数で渡す**（`blockOf<XXS2, R>`）。ページの側は `jobs.ts` の `BLOCK_TYPES` と `PACKED` に 1 行（`blocks(BLOCK_TYPES.<名前>)`）、`Stored`。塊のカーネルは暖機しない。
