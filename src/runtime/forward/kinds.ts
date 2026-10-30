@@ -13,7 +13,7 @@ import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
 import type { Kernels } from "../jobs.ts";
 import type { Cache } from "./cache.ts";
-import type { Held } from "./gpuside.ts";
+import type { Held } from "./gpufit.ts";
 import type { Framed, KindFrame } from "./memory.ts";
 import type { Sizes } from "./sizes.ts";
 import type { Stateful } from "../contracts/form.ts";

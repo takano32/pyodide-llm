@@ -59,7 +59,7 @@ const membersOf = (object) => {
   }
   return members;
 };
-const PARTS = { controlArea: "forward/control.ts", softwareThreads: "forward/threads.ts", gpuFit: "forward/gpuside.ts", gpuSide: "forward/gpuside.ts" };
+const PARTS = { controlArea: "forward/control.ts", softwareThreads: "forward/threads.ts", gpuFit: "forward/gpufit.ts", gpuSide: "forward/gpuside.ts" };
 const objects = new Map();  // the name a part's object has in the engine -> its members
 const create = functionOf("forward/engine.ts", "createForward");
 let handed = 0;

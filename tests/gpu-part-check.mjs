@@ -24,7 +24,8 @@ import assert from "node:assert/strict";
 import { workers } from "./fakes/worker.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
-const { gpuSide, gpuFit } = await import(runtimeUrl("forward/gpuside.js"));
+const { gpuSide } = await import(runtimeUrl("forward/gpuside.js"));
+const { gpuFit } = await import(runtimeUrl("forward/gpufit.js"));
 const { controlArea } = await import(runtimeUrl("forward/control.js"));
 const { BATCH, CONTROL_BYTES, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import(runtimeUrl("jobs.ts"));
 const { GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU } = await import(runtimeUrl("forward/choice.js"));
