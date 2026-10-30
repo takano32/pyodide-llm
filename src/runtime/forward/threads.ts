@@ -4,7 +4,7 @@
 // A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
-  FIRST } from "../jobs.ts";
+  FIRST, TILE_ROWS } from "../jobs.ts";
 import { lowerMedian, BETTER } from "./choice.ts";
 import type { Job } from "../jobs.ts";
 import type { Control } from "./control.ts";
@@ -86,7 +86,9 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     words[JOBS] = jobs.length;
     jobs.forEach((job, i) => {
       const at = i * JOB, rows = job[ROWS];
-      const quad = job[COUNT] > 1 ? 4 : 1;  // T.159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile
+      // T.159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile; T.620: in the rows of its kind's tile
+      // (a row: the other tiles, and the kinds without one)
+      const quad = job[COUNT] > 1 ? TILE_ROWS[job[0]] : 1;
       const size = quad * Math.ceil(rows / (threads * CHUNKS_PER_THREAD * quad));
       list.set(job, at);
       list[at + SIZE] = size;
