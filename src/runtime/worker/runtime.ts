@@ -134,7 +134,7 @@ async function compileKernelsHere() {
 
 // T.462: how the runtime's two modules from elsewhere are taken: Pyodide's loader by its URL (pyodide.ts's
 // pyodideSteps()), and forward.ts (its failure told as the site's update where that is why: T.439). A check in Node
-// hands its own (tests/worker-check.mjs: a made-up Pyodide, and forward.ts as Node imports it), where these imports
+// hands its own (tests/worker-init-check.mjs: a made-up Pyodide, and forward.ts as Node imports it), where these imports
 // are none a vm runs
 type Starts = { pyodide: (url: string) => Promise<PyodideModule>; forward: () => Promise<typeof Forward> };
 const STARTS: Starts = {

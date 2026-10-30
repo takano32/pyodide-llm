@@ -10,6 +10,10 @@
 //     (no shared ones: the vm is not cross-origin isolated);
 //   - where forward.ts does not come, the engine runs on NumPy: no kernels of forward.ts, and the console says why;
 //   - runtimeAsked() starts it once: a second load is the same promise.
+// Not held here: STARTS's own catch of forward.ts (the failure handed in is the check's: tests/updated-check.mjs holds that
+// catch's text), the switches but hfParts (hfConnections, wide, gpuTest, bench), the shared kernels of a cross-origin
+// isolated page, the kernels of a 64-bit memory as they are kept, and blockKernels(). Pyodide's real start is trodden
+// by the browsers (tests/e2e.mjs).
 //   node tests/worker-init-check.mjs
 import assert from "node:assert/strict";
 import fs from "node:fs";
