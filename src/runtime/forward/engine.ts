@@ -369,7 +369,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // every model before T.363, takes the one it always did)
   const matmuls = plan.own_kinds ? matmulsByKind : matmulsAlike;
   const core: Core = { plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase, cache };
-  const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count, facts.filter((fact) => fact.kind === kind))]));
+  const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count, facts.filter((fact) => fact.kind === kind))] as const));
   const steps = facts.map((fact) => parts[fact.kind].layer(fact.place, fact));
   const keeping = Object.values(parts).filter((part) => part.clear);
   // T.545: the state the GPU's worker goes on from, of the kinds whose layers it has a step for (an LFM2's convolution
@@ -389,7 +389,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T.237: the signs of a rotated basis for every width a matrix reads (Python's, each times 1 / sqrt(block))
   const signs: Record<number, number> | null = rotated ? Object.fromEntries(plan.widths.rotated.map((width) => {
     if (!(`signs.${width}` in derived)) throw new Error(`The rotated basis has no signs for an input ${width} wide.`);
-    return [width, floats(`signs.${width}`)];
+    return [width, floats(`signs.${width}`)] as const;
   })) : null;
 
   // the outlier channels of the classifier's input (T.92): their columns in float32, multiplied apart (T.210: not of a

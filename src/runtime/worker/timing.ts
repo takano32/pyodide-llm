@@ -104,7 +104,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   // T.152: the sides, where the GPU takes a generation's steps (else the CPU's alone), in turn
   const tokens = Boolean(chosen?.tokens);
   const sides: Record<string, Side> = tokens ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
-  const runs = Object.fromEntries(Object.keys(sides).map((name) => [name, [] as Run[]]));
+  const runs = Object.fromEntries(Object.keys(sides).map((name) => [name, [] as Run[]] as const));
   for (let run = 0; run < WRITING_RUNS; run++) {
     for (const [name, side] of Object.entries(sides)) runs[name].push(written(side));
   }
