@@ -17,14 +17,13 @@ import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
 import type { Model, Thrown } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
-import type { Chosen } from "./tokenattention.ts";
 import type { TokenBuffers, TokenForm } from "./tokens.ts";
 import type { GpuPacking, Table, TokensChosen, Tried, Vectors } from "../contracts/gpu/protocol.ts";
 
-// T.368.6: this module's record, m.tokens: what tokens.ts's tokenBuffers() made, what tokenattention.ts's
-// chooseTokenAttention() chose, and the form of a token's layer chosen here with its ms a step and what each form
-// came to (null until chooseTokens() has them, and where no form is right: T.467, the record may also be unset then)
-type Tokens = TokenBuffers & Chosen & { form: TokenForm | null; ms: number | undefined; forms: Tried[] | null };
+// T.466: this module's two records: m.tokens, what tokens.ts's tokenBuffers() made, and m.tokenForm, the form of a
+// token's layer chosen here with its ms a step and what each form came to (null until chooseTokens() has them, and
+// where no form is right: T.467, the record may also be unset then)
+type TokenChoice = { form: TokenForm | null; ms: number | undefined; forms: Tried[] | null };
 // T.156, T.210: what a model on the GPU alone reads back for the check (firstLayer(), tableRows()); nothing of another
 type Back = { firstLayer?: Awaited<ReturnType<typeof firstLayer>>; tableRows?: Awaited<ReturnType<typeof tableRows>> };
 // the check's own: what says how a row is packed (a plan's matrix or table), a row as [its int8 values, its scales],
@@ -36,20 +35,22 @@ type Numbers = ArrayLike<number> & { reduce(step: (sum: number, value: number) =
 type Rounding = Math & { f16round?: (value: number) => number };
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
-// taken (m.tokens.form), with what each came to (m.tokens.forms) and its ms a step (m.tokens.ms). plan.remembered.tokens: the
+// taken (m.tokenForm.form), with what each came to (m.tokenForm.forms) and its ms a step (m.tokenForm.ms). plan.remembered.tokens: the
 // one the page kept for this adapter, alone where it is still right here. plan.force.tokens (tests): that form alone;
 // plan.force.quick: the first right one, untimed. Throws where none is right (the tokens then stay on the CPU)
-// T.378.4: m.tokens is this module's to set, and no other's: a token's buffers and pipelines (tokens.ts's
-// tokenBuffers() makes them), its attention (tokenattention.ts's chooseTokenAttention() chooses it), and the form of
-// its layer chosen here; no form where none is right (T.467: a choice that throws leaves the record, or none, without
+// T.378.4, T.466: m.tokens and m.tokenForm are this module's to set, and no other's: a token's buffers and pipelines
+// (tokens.ts's tokenBuffers() makes them) and the form of its layer chosen here (its attention is m.tokenAttention,
+// tokenattention.ts's); no form where none is right (T.467: a choice that throws leaves the record, or none, without
 // a form, which every reader asks for: tokensSaid() says null, requests.ts's generate() refuses)
 async function chooseTokens(m: Model) {
   const { plan } = m;
   // (tokenPass puts a parallel residual's second norm before o as a dispatch: LayerNorm's, GPT-NeoX's)
   if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");
-  const made = await tokenBuffers(m), chosen = await chooseTokenAttention(m);
+  const made = await tokenBuffers(m);
+  await chooseTokenAttention(m);
   if (stopping) return;
-  m.tokens = { ...made, ...chosen!, form: null, ms: undefined, forms: null };
+  m.tokens = { ...made };
+  m.tokenForm = { form: null, ms: undefined, forms: null };
   // T.156: the first layer's matrices of a model on the GPU alone are not in the shared memory: checkTokens reads them
   // back from the GPU (T.210: and the rows of the tables it reads). (The review of T.156: they go as this returns: the
   // first layer stayed in this worker for the whole visit, 113 MB of Llama 3.2 3B, 245 MB of Llama 3.1 Swallow 8B)
@@ -87,17 +88,17 @@ async function chooseTokens(m: Model) {
   }
   const ms: (number | undefined)[] = plan.force.quick ? right.map(() => undefined) : await within(timeTokens(m, right), "timing a token");
   const best = ms.reduce((b: number, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
-  m.tokens.form = right[best];
-  m.tokens.ms = ms[best];
-  m.tokens.forms = [...tried, ...right.map((form, i) => ({ name: form.name, ms: ms[i], ...(kept && form.name === kept.name ? { remembered: true } : {}) }))];
+  m.tokenForm.form = right[best];
+  m.tokenForm.ms = ms[best];
+  m.tokenForm.forms = [...tried, ...right.map((form, i) => ({ name: form.name, ms: ms[i], ...(kept && form.name === kept.name ? { remembered: true } : {}) }))];
 }
 
 // what "ready" says of a token here: the form of its layer chosen and its ms a step, what each form came to, the pieces
 // of the classifier, the attention and what each of those came to; null where the tokens stay on the CPU
 function tokensSaid(m: Model): TokensChosen | null {
-  const g = m.tokens;
-  return g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms!, remembered: g.forms!.some((f) => f.remembered), pieces: m.weights.tables!.classifier.length,
-    attention: g.attention.name, attentions: g.attentions } : null;
+  const chosen = m.tokenForm, a = m.tokenAttention;
+  return chosen?.form ? { form: chosen.form.name, ms: chosen.ms, forms: chosen.forms!, remembered: chosen.forms!.some((f) => f.remembered), pieces: m.weights.tables!.classifier.length,
+    attention: a.attention.name, attentions: a.attentions } : null;
 }
 
 // ms a step of each form: runs of plan.tokens.most steps a submission from position 0 (a made-up state, the settings
@@ -451,4 +452,4 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
 }
 
 export { chooseTokens, tokensSaid };
-export type { Tokens };
+export type { TokenChoice };

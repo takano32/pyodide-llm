@@ -393,7 +393,7 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
 // a form's whole step for a run that reads up to positions, made again when the cache has grown (its buffers are others
 // then); T.224: one a count of the attention's parts a head (flash_attn_vec's nwg goes by the positions)
 function tokenStep(m: Model, form: TokenForm, positions: number) {
-  const a = m.tokens.attention, { cache } = m.block, parts = a.tiles ? 0 : flashVecSplits(a.shape, positions);
+  const a = m.tokenAttention.attention, { cache } = m.block, parts = a.tiles ? 0 : flashVecSplits(a.shape, positions);
   if (form.steps?.cache !== cache) form.steps = { cache, lists: new Map() };
   if (!form.steps.lists.has(parts)) form.steps.lists.set(parts, tokenPass(m, form, { positions }));
   return form.steps.lists.get(parts)!;

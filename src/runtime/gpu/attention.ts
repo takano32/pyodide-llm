@@ -112,7 +112,7 @@ export const attention: GpuKind = {
         return {
           // an attending layer l, at its place among the attending layers: q, k and v, RoPE into the cache, the attention, o
           step({ l, place, matrix, plain, joining, normed, ffnNorm, biased, bindAt, positions }) {
-            const g = m.tokens, b = m.block, W = m.weights, V = W.vectors!, cache = b.cache!;
+            const g = m.tokens, t = m.tokenAttention, b = m.block, W = m.weights, V = W.vectors!, cache = b.cache!;
             const [o] = W.matrices.wo.pieces, attended = plain(g.att, u.quantizeAttention, qDim);
             const added = (to: GPUBuffer, bias: GPUBuffer, shape: GPUBuffer, n: number): Pass => [b.add, bind(m, b.add, [to, bias, shape, g.step]), Math.ceil(n / 64), 1];
             // where q, k and v go turned: q, and the cache at the Step's position (T.261.4.2: a local layer by its own table)
@@ -134,7 +134,7 @@ export const attention: GpuKind = {
               // T.154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which
               // q, k and v have read by now; a norm on the matrix's read would come too late: chooseTokens refuses the pair)
               ...(plan.parallel ? ffnNorm : []),
-              ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[place], values: cache.values[place], out: g.att, parts: g.parts, params: g.params,
+              ...attentionPasses(m, t.attention, { q: g.q, keys: cache.keys[place], values: cache.values[place], out: g.att, parts: t.parts, params: t.params,
                 flash: u.flash[l], window: plan.windows[l] ?? 0, step: g.step }, plan.heads, positions),
               ...(gated ? [[outputGate!.pipeline, bind(m, outputGate!.pipeline, [g.att, gated.buffer, gated.size, g.step]), Math.ceil(qDim / 64), 1]] satisfies Pass[] : []),
               ...attended.quantize, ...joining(V.attentionPost, o.layers[place], attended.input, u.o), ...biased(g.h, "bo", l)];

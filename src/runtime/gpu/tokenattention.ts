@@ -29,12 +29,12 @@ type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; fl
 // subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.forms.attention: one
 // row of four used, a workgroup a head, T.150's (a)). Each checked against JavaScript (checkTokenAttention), the right
 // ones timed (timeTokenAttention), the fastest taken: attention, with what each came to (attentions), which
-// tokenforms.ts's chooseTokens() puts in the model's record of a token (T.378.4: this returns them; null where a stop was asked).
+// T.466: this module's record, m.tokenAttention (none where a stop was asked: tokenforms.ts's chooseTokens() ends then).
 // plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
 // remembered (T.148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
 // compiled, checked and timed at every start.
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
-async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
+async function chooseTokenAttention(m: Model): Promise<void> {
   const { device, plan } = m;
   const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
   const vec = (withSubgroups: boolean) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
@@ -62,7 +62,7 @@ async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
       if (isLate(error)) throw error;
       attentions.push({ name: a.name, none: String((error as Thrown)?.message ?? error) });
     }
-    if (stopping) return null;
+    if (stopping) return;
   }
   if (!right.length) {
     throw new Error(`no attention of a token is right on this GPU (${attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
@@ -77,7 +77,7 @@ async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
     parts = buffer(m, flashVecPartsBytes(attention.shape, plan.heads));
     params = paramsOf(m, attention.shape, plan.heads, plan.kvHeads, m.owned);
   }
-  return { attention, attentions, parts, params };
+  m.tokenAttention = { attention, attentions, parts, params };
 }
 // flashVec's Params a count of parts (T.261.4.2: and a window), each made once (owned: where they go)
 function paramsOf(m: Model, shape: FlashVecShape, heads: number, kvHeads: number, owned: GPUBuffer[]) {

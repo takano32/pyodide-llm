@@ -24,9 +24,6 @@ type Attention = { name: string; pipeline: GPUComputePipeline; shape: FlashShape
 // the model has)
 type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipelines: Partial<Record<BlockPacking, GPUComputePipeline>>; remembered?: boolean };
 type Forms = { attention: Attention; form: Tiled | null; tried: Tried[] };
-// timeForms(): a matrix of the layer, what it reads and writes (up is null where the FFN has no gate, and then no w3
-// is there to multiply), whether it adds, and the quantization of its input where it is the first to read it
-type Timed = [string, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 
 // The right tiled shaders are timed together, in turn, on the model's first layer (its seven matrices by a whole block,
 // with the quantizations of a packed one): a submission of n passes of the layer and one of 2n, their difference the
@@ -327,13 +324,10 @@ async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, pa
 // each packed one's inputs quantized first
 async function timeForms(m: Model, forms: Tiled[]) {
   const { device, plan } = m, owned: GPUBuffer[] = [], layer: { rows: number; group: GPUBindGroup; pipeline: GPUComputePipeline; quantize: Quantizing | null | undefined }[][] = [];
-  // (the block's own buffers and quantizations, block.ts's: read here, written by a pass)
-  const { step, x, xb, q, k, v, gate, up, ffnInput, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate } = m.block;
+  // (the layer's matrices with the block's own buffers and quantizations, block.ts's: read here, written by a pass)
+  const { step, products } = m.block;
   try {
     device.queue.writeBuffer(step, 0, new Uint32Array([plan.batch, 0, 0, 0]));
-    const products = ([["wq", xb, q, false, quantizeXb], ["wk", xb, k], ["wv", xb, v], ["wo", xb, x, true, quantizeAttention],
-      ["w1", ffnInput, gate, false, quantizeFfn], ["w3", ffnInput, up], ["w2", gate, x, true, quantizeGate]] satisfies Timed[])
-      .filter(([name]) => m.weights.matrices[name]);
     // (a matrix's input quantized once, before its first piece)
     for (const form of forms) {
       layer.push(await validated(m, () => products.flatMap(([name, from, to, add, quantize]) =>
