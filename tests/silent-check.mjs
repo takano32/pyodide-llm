@@ -183,9 +183,9 @@ const SILENT = {
     ["bodyBetween", "reader.cancel().catch(() => {})", "a body that is read no further (T.112: the whole file came for a range): whether the cancel took is nothing the load reads"],
   ],
   "src/runtime/worker/runtime.ts": [
-    ["init", "engine.catch(() => {})", "awaited below (placePython): a load that ends before that leaves no unhandled rejection"],
-    ["init", "catch { wideKernels = undefined; }", "T.101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
+    ["compileKernelsHere", "catch { wideKernels = undefined; }", "T.101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
       "keeps the 32-bit ones; a model past 4 GB is then refused with its own sentence"],
+    ["init", "engine.catch(() => {})", "awaited below (placePython): a load that ends before that leaves no unhandled rejection"],
   ],
   "src/runtime/worker/sources.ts": [
     ["(the module)", "globalThis.caches?.delete(\"models-v1\").catch(() => {})", "what an earlier version of the page stored: if it cannot be deleted it stays, and nothing reads it"],

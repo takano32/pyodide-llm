@@ -97,6 +97,34 @@ async function placeKernels() {
   }
 }
 
+// The kernels of every memory this visit may make (T.93, T.101), compiled once forward.ts is here (forwardModule).
+// (T.490: a function of its own, which a check can run in the worker's context)
+async function compileKernelsHere() {
+  // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
+  const build = async (kind: "plain" | "shared" | "plain64" | "shared64", wide = false) => {
+    const [plain, relaxed] = await Promise.all(([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
+      built(name).then((res) => res.arrayBuffer()).catch((error) => {
+        // (T.439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused, T.475:
+        // by the site's update where that is why)
+        if (!wide) void wentWithout(error);
+        else if (kindOf(error) === "updated") wideUpdated ??= error;
+        return null;
+      })));
+    return plain ? forwardModule!.compileKernels(plain, relaxed, wide) : null;
+  };
+  jsKernels = await build("plain");
+  if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
+  // T.101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
+  // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
+  if (jsKernels && forwardModule!.memory64()) {
+    try {
+      wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
+    } catch {
+      wideKernels = undefined;
+    }
+  }
+}
+
 async function init(search: string) {
   const started = performance.now();
   const asked = new URLSearchParams(search);
@@ -126,29 +154,7 @@ async function init(search: string) {
       void wentWithout(error, import.meta.url);
       throw error;
     });
-    // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
-    const build = async (kind: "plain" | "shared" | "plain64" | "shared64", wide = false) => {
-      const [plain, relaxed] = await Promise.all(([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
-        built(name).then((res) => res.arrayBuffer()).catch((error) => {
-          // (T.439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused, T.475:
-          // by the site's update where that is why)
-          if (!wide) void wentWithout(error);
-          else if (kindOf(error) === "updated") wideUpdated ??= error;
-          return null;
-        })));
-      return plain ? forwardModule!.compileKernels(plain, relaxed, wide) : null;
-    };
-    jsKernels = await build("plain");
-    if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
-    // T.101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
-    // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
-    if (jsKernels && forwardModule.memory64()) {
-      try {
-        wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
-      } catch {
-        wideKernels = undefined;
-      }
-    }
+    await compileKernelsHere();
   } catch (error) {
     // (T.380.2: said, whatever it was: no WebAssembly SIMD here, a kernel that did not compile, forward.ts that did not come)
     console.warn(`kernels: forward.js and its kernels did not start (${told(error)}): the engine runs NumPy`);

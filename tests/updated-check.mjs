@@ -254,10 +254,10 @@ const LATER = {
   "src/runtime/worker/runtime.ts": [
     ['import("../shaders/key.ts")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
-    ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
-    ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
+    ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
+    ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
     // (T.363.5: the kernels of llama.cpp's blocks, for a model with such rows: it does not run without them)
     ["built(name).then((res) => res.arrayBuffer()))));", "said"],
   ],
@@ -402,7 +402,7 @@ assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerF
 // the kernels of a 64-bit memory are fetched on the same line as the others and are no slower path (without them a
 // model past 4 GB is refused, and a small one runs as fast as ever): their absence is not told. T.475: where the site
 // was updated, the failure is kept, and a model past 4 GB is refused with it (tests/updated-in-browser.mjs sees that)
-assert.ok(code("src/runtime/worker/runtime.ts").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n          if (!wide) void wentWithout(error);\n          else if (kindOf(error) === \"updated\") wideUpdated ??= error;\n          return null;\n        })));"),
+assert.ok(code("src/runtime/worker/runtime.ts").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n        if (!wide) void wentWithout(error);\n        else if (kindOf(error) === \"updated\") wideUpdated ??= error;\n        return null;\n      })));"),
   "runtime.js tells of the kernels that are gone, but for those of a 64-bit memory, and keeps the update of those");
 // each sentence is written once, and the status line's is read by what draws the status line alone (as its last part)
 for (const words of ["The site was updated", "the site was updated: ", "reload for full speed", "for full speed"]) {
