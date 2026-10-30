@@ -43,7 +43,7 @@ type Source = Pick<Entry, "original" | "hf">;
 
 /** A Qwen3 twice (T.124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
- * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
+ * kept.ts's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
  * the two forms' generation settings where they are not Qwen3's. chat.languages: the note's languages where the card's
  * are not Japanese and English (T.537), with 日本語 where it answered Japanese questions in Japanese here (T.539) */
 export function thinkingAndNot(id: string, name: string, source: Source, download: number, sizes: string, { languages = "日本語 / English", ...chat }: { languages?: string } & Partial<Entry> = {},

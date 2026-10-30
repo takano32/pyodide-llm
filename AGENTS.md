@@ -97,7 +97,7 @@
 | `src/runtime/failure.ts`・`updated.ts`・`built.ts`・`kept.ts` | 失敗の運び方 / 「サイトが更新された」の判定と文 / 作る物の表 `BUILT` / 変換したモデルの保存（OPFS、無ければ Cache API。`CONVERTER`・`keptName()`・`replaced()`・`keeper()`） |
 | `src/pages/index.astro` と `src/page/` | チャット風のページ。持ち主の `model.ts`・`answer.ts`、純な部品（Node が import できる）`remaining.ts`・`repository.ts`・`thought.ts`・`folder.ts`・`heard.ts`（知らせのどれを読み、どれが仕事の終わりか: T.468.1）、ほかに `dom`・`markdown`・`address`・`remembered`・`opening`・`list`・`settings`・`draw`・`isolation`・`receiver`・`choose`・`composer`、最後に最初の読み込みの `first`（T.474: `index.astro` の中では tsc が読まなかった） |
 | `src/pages/benchmark.astro`・`src/benchmark/`・`src/runtime/benchmark/` | `/benchmark/`: 端末の計測を 1 回・1 つの報告に（節: 機能・CPU・モデル・GPU・保存・回線・Page memory）。節ごとに Worker を作って閉じる。`?run=all`・`?model=`・`?size=`・`?large`・`?full` |
-| `src/models.ts` と `src/models/` | モデル一覧。窓口が組み立てて並べ替え、`DEFAULT_MODEL` を名指す。`formats.js`・`sampling.js`・`builders.js`・`filled.js`・`licenses.js`・`memory.js` と一覧の `built.js`・`hf-japanese.js`・`hf-classics.js`・`hf-families.js` |
+| `src/models.ts` と `src/models/` | モデル一覧。窓口が組み立てて並べ替え、`DEFAULT_MODEL` を名指す。`formats.ts`・`sampling.ts`・`builders.ts`（項目の型 `Entry`）・`filled.ts`・`licenses.ts`・`memory.ts` と一覧の `built.ts`・`hf-japanese.ts`・`hf-classics.ts`・`hf-families.ts` |
 | `src/bench.ts` と `src/bench/` | ベンチの報告の組み立て（T.480.2 で TypeScript に: ページと worker の両方のプログラムが読む） |
 | `public/coi.js` | サイト全体の Service Worker（COOP・COEP、このサイトと jsDelivr の応答の写し `offline-v1`、別のビルドの写しを捨てる。`?coi=off`・`?offline=off`）。**触る前に落とし穴の「Service Worker」の項を読む** |
 | `astro.config.mjs`・`tsconfig.*.json`・`package.json` | 束の設定（worker は `format: "es"`、名前は `_astro/[name].[hash].js`、`minify: false`、`assetsInlineLimit: 0`、開発サーバの COOP・COEP）/ 型検査の 3 つのプログラム / `npm run build`・`dev`・`types` |
@@ -386,7 +386,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 - **実行時の部品**: `src/runtime/<窓口>/` に置いて窓口か隣から静的に import（届かないファイルは検査が落とす）。新しいグローバルは `AMBIENT`。状態を持つなら持ち主の形で、`tests/*-parts-check.mjs` に部品の試験。
 - **Python の部品**: パッケージのフォルダに置くだけ。外に出す名前は窓口の import に。`make python`。
 - **ページの部品**: `src/page/` に置き、`index.astro` が順に名指しで読む。持ち主の関数は誰かが呼んでいること。確かめは実ブラウザ。
-- **1 ファイルを `.ts` にする**（残りは `src/models.ts` と `src/models/*.js`）: `git mv` と名指す行を 1 コミット、型を足す（文を変えない）、`npm run types`・build・`dist-same`・`same-syntax`・軽い組・網。
+- **1 ファイルを `.ts` にする**（`src/` の `.js` は T.480 で無くなった。次に要るのは `public/coi.js` のような束ねない物だけで、これは `// @ts-check` のまま）: `git mv` と名指す行を 1 コミット、型を足す（文を変えない）、`npm run types`・build・`dist-same`・`same-syntax`・軽い組・網。
 
 ### 試験の作り物・偽物・道具を足す
 
