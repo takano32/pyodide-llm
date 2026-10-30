@@ -246,7 +246,8 @@ function pageShape(tree, astro = "index.astro", modules = "page") {
   if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) sources.push(fs.readFileSync(path.join(folder, file), "utf8"));
   const found = {};
   const add = (key) => { found[key] = (found[key] ?? 0) + 1; };
-  // (what the division itself changes: imports and exports, `page.x` for a `let x`, the shape of declarations, comments, `undefined` for `let x;`)
+  // (what the division itself changes: imports and exports, the shape of declarations, comments, `undefined` for `let x;`.
+  // T.471: the object the parts shared before T.378.5, `page`, is in no tree the net compares with: f91d83f9 has none)
   const SKIPPED = /^(Identifier|MemberExpression|OptionalMemberExpression|ImportDeclaration|ExportNamedDeclaration|CommentLine|CommentBlock|Program|File|VariableDeclaration|VariableDeclarator|ObjectProperty|ObjectExpression)$/;
   const visit = (node) => {
     if (!node || typeof node !== "object") return;
@@ -254,8 +255,6 @@ function pageShape(tree, astro = "index.astro", modules = "page") {
     if (!node.type || node.type === "ImportDeclaration") return;
     if (node.type === "UnaryExpression" && node.operator === "void") return;  // (`void 0`: esbuild's `undefined`)
     const type = node.type;
-    // (the one object the parts share: the names of its fields were the names of the `let`s)
-    if (type === "VariableDeclarator" && node.id.name === "page" && node.init?.type === "ObjectExpression") { node.init.properties.forEach((property) => visit(property.value)); return; }
     if (!SKIPPED.test(type)) add(`node ${type}`);
     // (T.368.7: a file of the runtime that a page names, a worker's in new URL(), is the same file under its other ending:
     // "../runtime/benchmark/gpu.ts" was "../runtime/benchmark/gpu.js". Only such a name, and only its ending)
@@ -263,7 +262,7 @@ function pageShape(tree, astro = "index.astro", modules = "page") {
     if (type === "RegExpLiteral") add(`regular expression /${node.pattern}/${node.flags}`);
     if (type === "TemplateElement") add(`template ${JSON.stringify(node.value.cooked)}`);
     if (/^(Binary|Logical|Assignment|Unary|Update)Expression$/.test(type)) add(`operator ${type} ${node.operator}`);
-    if ((type === "MemberExpression" || type === "OptionalMemberExpression") && !node.computed && !(node.object.type === "Identifier" && node.object.name === "page")) add(`property .${node.property.name}${node.optional ? "?" : ""}`);
+    if ((type === "MemberExpression" || type === "OptionalMemberExpression") && !node.computed) add(`property .${node.property.name}${node.optional ? "?" : ""}`);
     if (type === "ObjectProperty" && !node.computed && node.key.type === "Identifier" && node.key.name !== "id") add(`key ${node.key.name}`);
     for (const key of Object.keys(node)) if (key !== "loc" && key !== "extra") visit(node[key]);
   };
