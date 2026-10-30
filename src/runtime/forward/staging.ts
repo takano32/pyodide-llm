@@ -16,6 +16,7 @@ export function stagingReader({ k, cache, staging, attending, kvDim }: { k: Kern
   // staging place lays out as many)
   function fromStaging(pos: number, count: number) {
     const { capacity } = cache;
+    cache.written(pos);  // (T.244)
     for (let l = 0; l < attending; l++) {
       // T.261.4: a layer whose window a ring holds (T.510.1): each position at its two places there, and the ring told of
       // the positions written, as the layer itself tells it (attention.ts: a run that would go back past what the ring

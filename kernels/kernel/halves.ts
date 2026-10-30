@@ -23,8 +23,12 @@ const HALF_SCALE: f32 = 5.192296858534828e33;  // 2^112 (0x77800000)
 }
 
 // T.110: float32 to float16, rounded to the nearest (ties to even), as NumPy's astype(float16) does: the keys and
-// values of a token, into the cache. Too large a number becomes infinity (a key never is one).
-export function to_f16(out: usize, x: usize, n: i32): void {
+// values of a token, into the cache. Too large a number becomes infinity (a key never is one). T.244: and how many of
+// the n were no finite number already (a NaN or an infinity of float32's), which a float32 cache would keep and the
+// reads above take for 65536: the engine stops the logits that read them (forward/cache.ts). Counted in the branch of
+// the too large alone, which the numbers of a model that works never take
+export function to_f16(out: usize, x: usize, n: i32): i32 {
+  let bad: i32 = 0;
   for (let i = 0; i < n; i++) {
     const bits = reinterpret<u32>(load<f32>(x + (<usize>i << 2)));
     const sign = (bits >> 16) & 0x8000;
@@ -33,6 +37,7 @@ export function to_f16(out: usize, x: usize, n: i32): void {
     let result: u32;
     if (exponent >= 31) {
       result = sign | 0x7c00;
+      if (exponent == 143) bad++;  // (every bit of float32's exponent set: 255 - 112)
     } else if (exponent <= 0) {
       // a subnormal float16 (or zero): the implicit bit comes in, and the rest is shifted out with rounding
       if (exponent < -10) {
@@ -53,6 +58,7 @@ export function to_f16(out: usize, x: usize, n: i32): void {
     }
     store<u16>(out + (<usize>i << 1), <u16>result);
   }
+  return bad;
 }
 
 // T.160 (the review of (4)): float16 to float32, n values: the keys and values the GPU writes back (float16) into a

@@ -77,7 +77,7 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
   // (T.545: follows, whether a block goes on from the CPU's state: false holds the GPU off it; stated, the positions
   // that came next as a block's state came back)
   // (T.271.2: put, how many times the CPU's state was put where the GPU's worker takes it up)
-  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0, follows: true, stated: [], put: 0,
+  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0, follows: true, stated: [], put: 0, unfinite: Infinity,
     finite: true, capacity: 256, cpuMs: 1, gpuMs: (count) => 4 + count / 16, stepMs: 1, threads: { count: 1, searching: false },
     // what the stand-in GPU answers a request with: silent (no answer), failed, ended (says "ended" after a stop), and
     // for the steps: sampled (how many, by default all asked), ids (by default 500 + position), notFinite
@@ -122,6 +122,7 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     fromStaging(pos, count) { beside.staged.push([pos, count]); },
     stagingFinite(count) { return beside.finite; },
     follows(pos) { return beside.follows; },
+    unfiniteBy(pos) { return beside.unfinite <= pos; },
     stateToStaging() { beside.put += 1; },
     stateFromStaging(next) { beside.stated.push(next); },
     // (as the engine's run(): it says the CPU wrote from there, or that a model on the GPU alone cannot run here)
@@ -422,6 +423,11 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   const before = beside.posted.length;
   assert.deepEqual([step(part, 30), beside.posted.length], [undefined, before], "steps that do not go on from the CPU's state");
   beside.follows = true;
+  // T.244: steps that would take up keys or values of the CPU's that were no finite numbers are the CPU's (nothing asked),
+  // whose logits stop on them (the steps after, below, are the GPU's)
+  beside.unfinite = 30;
+  assert.deepEqual([step(part, 30), beside.posted.length], [undefined, before], "steps that read keys or values that were not finite");
+  beside.unfinite = Infinity;
   // a stop token sampled: the ids up to it
   beside.answer.sampled = 2;
   assert.deepEqual([step(part, 30, { stops: [31] }), part.sampled], [[30, 31], 12]);

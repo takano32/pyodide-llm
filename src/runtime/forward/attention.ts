@@ -129,8 +129,8 @@ export const attention: Kind = {
               const pos = pos0 + t, slot = (pos % size) * KV;
               ready(t, pos);
               if (!own) continue;
-              cache.put(keys + slot, values + slot, kNow + t * S, vNow + t * S, kvWidth);
-              cache.put(keys + slot + twice, values + slot + twice, kNow + t * S, vNow + t * S, kvWidth);
+              cache.put(pos, keys + slot, values + slot, kNow + t * S, vNow + t * S, kvWidth);
+              cache.put(pos, keys + slot + twice, values + slot + twice, kNow + t * S, vNow + t * S, kvWidth);
             }
             // every token's window is in the ring now, from where its first position is
             const jobs = [];
@@ -151,7 +151,7 @@ export const attention: Kind = {
           matmuls(xb, count, into);
           for (let t = 0; t < count; t++) {
             ready(t, pos0 + t);
-            if (own) cache.put(kp + t * KV, vp + t * KV, kNow + t * S, vNow + t * S, kvWidth);  // into the cache, at this token's position
+            if (own) cache.put(pos0 + t, kp + t * KV, vp + t * KV, kNow + t * S, vNow + t * S, kvWidth);  // into the cache, at this token's position
           }
           // the keys and values of positions up to each token's are all there now: its own and the ones before it.
           // The heads of every token go out as one phase (T.109).

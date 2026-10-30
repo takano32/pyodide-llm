@@ -530,6 +530,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (pos0 + count - 1 >= cache.capacity) cache.grow(pos0 + count - 1);
     views();
     cpuWrote(pos0);  // T.135: from here on the cache holds what the GPU does not
+    cache.written(pos0);
     if (keeping.length) follow(pos0);
     embed(tokens, pos0);
     if (perLayered) perLayered.inputs(tokens, count);
@@ -571,6 +572,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       // (in float32, as NumPy: the quotient, its tanh and the product each rounded)
       for (let i = logits / 4, end = i + vocab; i < end; i++) F[i] = Math.fround(softcap * Math.fround(Math.tanh(Math.fround(F[i] / softcap))));
     }
+    // T.244: a float16 cache read keys or values here that were no finite numbers as 65536: a float32 one would have
+    // kept them, and these logits would not be finite either. So they are made not finite, and Python stops on them
+    // (T.195's NOT_FINITE)
+    if (cache.unfiniteBy(pos0 + count - 1)) F.fill(NaN, logits / 4, logits / 4 + vocab);
   }
   const forward = (token: number, pos: number, needLogits: boolean) => run([token], pos, needLogits);
 
@@ -590,7 +595,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T.378.2: what the GPU's side is handed of the CPU's side: the memory and its views, the cache of the keys and values as
   // it is now (T.349: getters, read each time: the cache moves as it grows) and grown, and what the CPU does for a block
   const cpuSide: CpuSide = {
-    memory, views, grow: cache.grow, embed, fromStaging, stagingFinite, run,
+    memory, views, grow: cache.grow, embed, fromStaging, stagingFinite, run, unfiniteBy: cache.unfiniteBy,
     // T.545: whether a block at pos may go on from the state the layers that keep one have (follow()'s rule: position 0,
     // or the one that comes next), and that state taken from what the GPU's worker left of a block after its keys and
     // values, the tokens up to next there now. T.271.2: put there first for the GPU's worker to take it up (it goes on
