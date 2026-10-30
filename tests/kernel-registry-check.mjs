@@ -44,16 +44,17 @@ const both = () => {
 // the second copy: every kind in the order of its number, the module it calls, and of a job
 // [kind, 1, 2, 3, 4, 5, 6, 7, 8, rows 9] and rows 20 to 30 what its kernel is handed. tile: of count 4 tokens, strides
 // 100 and 200. rowBytes: the bytes of a row n wide as the blocks count it (blockRows() before the table: float32 4 n,
-// ternary n / 4, any other n). T: the ternary kernels' mask.
+// ternary n / 4, any other n; T.620: int6 3 n / 4, 24 bytes a group of 32). tileRows: the rows a tile takes at once
+// (T.620: a prompt's chunks are cut in as many; 1 where not said). T: the ternary kernels' mask.
 const T = 3, B = 16;
 const KINDS = [
-  ["matmul_q8r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { tile: ["matmul_q8r_tile", [1, 2, 3, 4, 5, 6, 7, 20, 30, 4, 100, 200]], rowBytes: (n) => n }],
+  ["matmul_q8r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { tile: ["matmul_q8r_tile", [1, 2, 3, 4, 5, 6, 7, 20, 30, 4, 100, 200]], rowBytes: (n) => n, tileRows: 4 }],
   ["matmul_q8", "plain", [1, 2, 3, 4, 5, 7, 20, 30], { rowBytes: (n) => n }],
   ["matmul_f32", "plain", [1, 2, 4, 7, 20, 30], { rowBytes: (n) => 4 * n }],
   ["attention", "plain", [1, 2, 3, 4, 5, 6, 9, 7, 8, 20, 30], {}],
   ["attention_f16", "plain", [1, 2, 3, 4, 5, 6, 9, 7, 8, 20, 30], {}],
-  ["matmul_q6r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { rowBytes: (n) => n }],
-  ["matmul_q6", "plain", [1, 2, 3, 4, 5, 7, 20, 30], { rowBytes: (n) => n }],
+  ["matmul_q6r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { rowBytes: (n) => (n * 3) / 4 }],
+  ["matmul_q6", "plain", [1, 2, 3, 4, 5, 7, 20, 30], { rowBytes: (n) => (n * 3) / 4 }],
   ["delta_rule", "plain", [1, 2, 3, 4, 5, 6, 7, 8, 9, 20, 30], {}],
   ["matmul_t2r", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, T], { tile: ["matmul_t2r_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, T]], rowBytes: (n) => n / 4 }],
   ["matmul_t2", "plain", [1, 2, 3, 4, 5, 7, 20, 30, T], { rowBytes: (n) => n / 4 }],
@@ -71,8 +72,9 @@ const jobOf = (kind, said = {}) => [KIND[kind], 1, 2, 3, 4, 5, more(kind).a6 ?? 
 assert.deepEqual(Object.keys(WORK), KINDS.map(([name]) => name), "the kinds of jobs, in the order of their numbers");
 assert.deepEqual(Object.entries(KIND), Object.keys(WORK).map((name, number) => [name, number]), "a kind's number is its place in WORK");
 assert.equal(new Set(Object.values(KIND)).size, KINDS.length);
-for (const [name, from, , { tile, rowBytes }] of KINDS) {
+for (const [name, from, , { tile, rowBytes, tileRows = 1 }] of KINDS) {
   assert.equal(WORK[name].from, from, `${name}: whose kernels`);
+  assert.equal(J.TILE_ROWS[KIND[name]], tileRows, `${name}: the rows its tile takes at once`);
   assert.equal(Boolean(WORK[name].tile), Boolean(tile), `${name}: whether it has a tile`);
   assert.equal(Boolean(WORK[name].rowBytes), Boolean(rowBytes), `${name}: whether its rows are a matrix's`);
 }
@@ -281,10 +283,11 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       assert.deepEqual(said.map(([, kernel, args]) => [kernel, args]), fact.ready[i], `${name}: the activations made ready${relaxed ? ", relaxed" : ""}`);
     });
   }
-  // (the blocks of a packing's job count a row's bytes as the packing does, but for int6's, counted as int8's as they always were)
+  // (the blocks of a packing's job count a row's bytes as the packing does: T.620, int6's too, which were counted as int8's)
   for (const [name, packing] of Object.entries(PACKED)) {
-    const kind = Object.keys(KIND)[packing.jobs.plain];
-    assert.equal(WORK[kind].rowBytes(256, packing.tabled), name === "int6" ? 256 : packing.rowBytes(256), `${name}: a row in a block`);
+    for (const kind of [packing.jobs.relaxed, packing.jobs.plain].map((number) => Object.keys(KIND)[number])) {
+      assert.equal(WORK[kind].rowBytes(256, packing.tabled), packing.rowBytes(256), `${name}: a row in a block (${kind})`);
+    }
   }
   // T.375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
