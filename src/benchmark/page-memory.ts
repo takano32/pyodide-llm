@@ -14,7 +14,7 @@
 // front, so a tab ended after that says nothing of the limit, and a page left is no tab ended. A mark found is then a
 // tab that ended with no such event: the browser ended it (for its memory, most likely: a crash of another cause
 // looks the same).
-import { tableCell } from "./bench.js";
+import { tableCell } from "../bench.js";
 
 export const MEMORY_MARK = "benchmark-memory";
 // the steps: 64 MiB of random bytes, a quarter of a second apart (time for the device to end the tab after a step, so

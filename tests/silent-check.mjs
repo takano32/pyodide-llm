@@ -93,7 +93,7 @@ const SILENT = {
     ["runSections", "catch {}", `${STORAGE}the CPU's speed is not kept for the model page, where a model on the GPU alone then stays there`],
     ["toClipboard", "catch { refused(); }", "the clipboard refused: refused() selects the report and says to copy it by hand, which is all a visitor can do about any reason"],
   ],
-  "src/page-memory.js": [
+  "src/benchmark/page-memory.ts": [
     ["forgetMark", "catch {}", `${STORAGE}there is no mark to remove`],
     ["readMark", "catch { return undefined; }", `${STORAGE}no mark was written either`],
     ["readMark", "catch { return undefined; }", "what stands under the mark's name is not a mark (something else wrote there): as none"],
@@ -202,7 +202,7 @@ const SILENT = {
     ["download", "finished.catch(() => {})", "awaited by into(): a load cancelled while Pyodide still loads never gets there, and that is no unhandled rejection"],
     ["download", "source.header.catch(() => {})", "awaited by the load: one that ends before it leaves no unhandled rejection"],
   ],
-  "src/wake.js": [
+  "src/benchmark/wake.ts": [
     ["ask", "got.release?.().catch?.(() => {})", "a lock that is let go at once (the run ended while the browser answered): one already released is the same"],
     ["ask", "catch {}", "the wake lock was refused (a battery saver, a page not shown, a policy): the run goes on, and the report says how long the page was hidden"],
     ["stop", "held?.release?.().catch?.(() => {})", "the run is over: a lock the browser already took back is the same"],

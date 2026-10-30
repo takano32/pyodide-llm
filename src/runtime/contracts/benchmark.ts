@@ -59,7 +59,7 @@ export type StorageRun = { mib: number; pieces: number; openSeconds: number; sec
   scattered: StorageWrites; scatteredFlushEach: StorageWrites; read: { seconds: number; wrong: number }; reopen: string };
 export type StorageResults = { info: StorageInfo; run: StorageRun };
 
-// ---- memory.ts: how much this page can hold (src/page-memory.js asks, which is JavaScript)
+// ---- memory.ts: how much this page can hold (src/benchmark/page-memory.ts asks)
 export type ToMemory = { step: "grow"; to: number; limit: number };
 export type MemoryGrown = { held: number; maximum: number | null; refused?: string };
 export type MemoryResults = { grow: MemoryGrown };

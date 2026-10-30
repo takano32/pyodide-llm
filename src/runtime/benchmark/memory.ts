@@ -1,6 +1,6 @@
 // The page-memory section of /benchmark/ (T.173): how much memory this page can hold before the browser refuses it or
 // ends the tab. iOS ends a tab past about 2 to 3 GB of its own (jetsam) and throws nothing, so this cannot find the
-// limit by catching an error: the page (src/page-memory.js) asks for one step at a time and writes in sessionStorage,
+// limit by catching an error: the page (src/benchmark/page-memory.ts) asks for one step at a time and writes in sessionStorage,
 // before each step, how much was held; a tab ended and loaded again finds that mark and reports it.
 //
 //   { step: "grow", to, limit }   grow one WebAssembly memory to `to` bytes (a multiple of its 64 KiB pages) and fill the

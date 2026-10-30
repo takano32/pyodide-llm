@@ -4,8 +4,8 @@
 declare const __BUILD__: string;
 import { deviceSummary, cpuSummary, storageSummary, lineSummary, gpuSummary, cpuBaseline, tableCell, environmentOf,
   benchMarkdown, warnings, warningsBlock, shortReport, reportUrl, reportTooLong } from "../bench.js";
-import { memorySummary } from "../page-memory.js";
-import { hiddenLine, wakeKeeper } from "../wake.js";
+import { memorySummary } from "./page-memory.ts";
+import { hiddenLine, wakeKeeper } from "./wake.ts";
 import { $, SECTIONS, type Name, type Result, results } from "./dom.ts";
 import { measured } from "./model.ts";
 

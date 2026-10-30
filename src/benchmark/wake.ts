@@ -1,4 +1,4 @@
-// src/wake.js (T.194): keep the screen on while /benchmark/ runs, and count the seconds the page was hidden.
+// src/benchmark/wake.ts (T.194): keep the screen on while /benchmark/ runs, and count the seconds the page was hidden.
 //
 // A phone that turns its screen off puts the page away: its timers and workers slow down or stop, and a section that
 // takes minutes then measures a device asleep. While sections run, the page asks for a Screen Wake Lock
