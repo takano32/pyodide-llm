@@ -359,6 +359,15 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
         }
       }
     }
+    // (T.299: a byte that comes again after its word was written is written nowhere: it waits as a word of one byte, which
+    // the start reads as the checkpoint not all come, rather than a word written a byte short)
+    {
+      const [again, , target, at] = a.weights.routes.find(([, , , , halves]) => !halves), word = at - (at % 4);
+      const before = target.data.slice(word, word + 4);
+      routed(a, again, checkpoint.subarray(again, again + 1));
+      assert.ok(same(target.data.subarray(word, word + 4), before) && unwritten(a), "a byte again after its word was written: nothing written, and the checkpoint is not all there");
+      a.weights.partial.clear();
+    }
     // a half that waits is told, and a stretch that begins in the middle of a half is held to its low byte
     for (const [, , target] of a.weights.routes) target.data.fill(0);
     const [start] = halved[0];
