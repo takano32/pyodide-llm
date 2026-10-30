@@ -9,10 +9,15 @@
 //       (T.145: a GGUF with its original's vocabulary and configuration, T.136's second stage; tests/hf_fetch.py makes it)
 //
 // int8 quantizes on the SIMD kernels, as the page does (T.89: kernel_quantizer); int6 (T.98) as the page does too.
+// T.401: and the conversion's start, timed apart: from the conduct's first request to its first part fed (the head,
+// the tokenizer, the chat template, and jinja2's environment, which the converter makes the first time it reads a
+// template: jinja2 is loaded first, as the worker loads it, src/runtime/worker/pyodide.ts's templatePackage()). The MB/s
+// above are the parts' alone, as they were. "the start: <ms> ms" is the line tests/abba-convert.sh's START=1 reads.
 import { converted, fromFolder, listed } from "./conducting.mjs";
 import { pyodideWithEngine } from "./engine.mjs";
 const [dir, dtype = "int8"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const { pyodide: py } = await pyodideWithEngine();
+await py.loadPackage("jinja2", { messageCallback: () => {} });
 // LAYOUT=<bytes>,<bytes> (T.374.2.1): two buffers of those sizes made and held in Python, one before anything of the
 // conversion and one once the conversion is made, before it is fed. Where the conversion's buffers lie beside one
 // another is the same in every run of one tool, and another tool (or tree) lays them out otherwise: with sizes of its
@@ -32,12 +37,13 @@ const readers = process.argv.includes("--numpy") ? undefined : convert.kernel_re
 // T.374.4: the answerer and what a path stands for are tests/conducting.mjs's (page-27b.mjs has the same), and the
 // tokenizer is the conduct's choice of its own candidates.
 const { hf, folder } = listed(dir);
-let js = 0, size = 0;
+let js = 0, size = 0, began = 0, start = 0;
 const answerer = fromFolder(folder, {
   // the parts of a stream, 8 MiB each as the worker's first, to the conversion's own feed as the worker hands them
   part: 8 << 20,
   // the clock (and the profiler) from the first part on: the head, the tokenizer and the template are read before
   starting(total) {
+    start = performance.now() - began;
     size = total;
     py.runPython(`layout_beside = bytes(${layoutBeside})`);
     py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter()");
@@ -46,6 +52,7 @@ const answerer = fromFolder(folder, {
   },
   reading(ms) { js += ms; },
 });
+began = performance.now();
 converted(py, hf, { dtype, quantize_rows: quantizeRows, readers }, answerer).destroy();
 // (the conduct finished the conversion before it said so)
 console.log(py.runPython(`
@@ -56,3 +63,4 @@ pstats.Stats(profiler, stream=out).sort_stats("tottime").print_stats(12)
 f"converted {${size} / 1e6:.0f} MB in {total:.1f} s ({${size} / 1e6 / total:.0f} MB/s)\\n" + "\\n".join(line for line in out.getvalue().splitlines() if line.strip())[:3000]
 `));
 console.log(`reading the file in JS: ${(js / 1000).toFixed(1)} s`);
+console.log(`the start: ${start.toFixed(0)} ms (the head, the tokenizer, the chat template and jinja2's environment, before the first part)`);
