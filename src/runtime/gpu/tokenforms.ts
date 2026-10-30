@@ -268,7 +268,7 @@ async function checkTokenBlocks(m: Model) {
   }
 }
 async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
-  const { plan, tokens: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
+  const { plan, tokens: g, device } = m, planned = plan.tokens!, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
   const kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address: number, n: number) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
   // row r of a matrix or a table ({ n, packing }, its values and scales at [valuesAt, scalesAt] in the shared
@@ -287,7 +287,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
       : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
   const readBackRows = (spec: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
     scalesOf(spec) ? scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec)) : ONE];
-  const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? plan.tokens!.embedding ?? plan.tokens!.classifier : plan.tokens!.classifier);
+  const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? planned.embedding ?? planned.classifier : planned.classifier);
   const tableRow = (name: "embedding" | "classifier") => (back.tableRows ? (r: number): Row => {
     const [bytes, scales] = back.tableRows![name].get(r)!;
     // (T.547.3.7: a table of blocks' one scale of 1, as inMemory's)
@@ -376,7 +376,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const [eRow, eScales] = embeddingRow(token);
     // (T.226: with GPT-2's learned position of pos, as the CPU's embed() adds it)
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[Math.floor((i * eScales.length) / eRow.length)]);
-    if (plan.tokens!.positions) floats(plan.tokens!.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
+    if (planned.positions) floats(planned.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
     // (T.271.1: the embedding of a rotated basis holds R^-1 of its rows, turned back as the CPU's embed() does)
     if (plan.rotated) x0.set(unrotateLikeCpu(x0, signsOf(dim), plan.rotated.block));
     const xn = norm(x0, vectorOf("attention")!, vectorOf("attentionBias"));
@@ -420,10 +420,10 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const greedy = await run(samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
     // (T.226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
     const packedHead = form.dp4a && !floatHead(m);
-    const normedStream = norm(Float64Array.from(stream2), floats(plan.tokens!.final, dim), plan.tokens!.finalBias && floats(plan.tokens!.finalBias, dim));
+    const normedStream = norm(Float64Array.from(stream2), floats(planned.final, dim), planned.finalBias && floats(planned.finalBias, dim));
     // T.232: a ternary classifier's outlier channels as the CPU has them (src/runtime/forward/engine.ts's picked): taken out of the normed
     // stream before it is quantized, and their columns of the table multiplied apart, in floats
-    const taken = g.take ? plan.tokens!.channels.map((c): [number, number] => {
+    const taken = g.take ? planned.channels.map((c): [number, number] => {
       const value = normedStream[c];
       normedStream[c] = 0;
       return [c, value];

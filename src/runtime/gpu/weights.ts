@@ -403,7 +403,7 @@ function tokensLayout(m: Model): Together | null {
 // T.210: a model on the GPU alone makes them as it opens, their bytes routes of the checkpoint as the layers' are
 // (tablesOn), and only the final norm and RoPE's table come from the shared memory here
 async function uploadTokens(m: Model, widen: Widen | null) {
-  const { plan } = m, half = plan.headSize / 2;
+  const { plan } = m, planned = plan.tokens!, half = plan.headSize / 2;
   let bytes = 0;
   m.weights.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
@@ -420,9 +420,9 @@ async function uploadTokens(m: Model, widen: Widen | null) {
     bytes += floats * 4;
     return made;
   };
-  m.weights.finalNorm = vector(plan.tokens!.final, plan.dim);
-  m.weights.finalBias = plan.tokens!.finalBias ? vector(plan.tokens!.finalBias, plan.dim) : null;
-  m.weights.positions = plan.tokens!.positions ? vector(plan.tokens!.positions, plan.seqLen * plan.dim) : null;
+  m.weights.finalNorm = vector(planned.final, plan.dim);
+  m.weights.finalBias = planned.finalBias ? vector(planned.finalBias, plan.dim) : null;
+  m.weights.positions = planned.positions ? vector(planned.positions, plan.seqLen * plan.dim) : null;
   const rows = Math.max(1, Math.floor(CHUNK / (plan.headSize * 4))), chunk = new Float32Array(rows * plan.headSize);
   // (T.261.4.2: and a Gemma 3's local layers' table, from its own two)
   const table = (cos: number, sin: number) => {
