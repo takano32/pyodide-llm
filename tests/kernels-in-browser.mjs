@@ -27,6 +27,7 @@
 // Exit 1 where a result is wrong. Needs playwright-core's browsers installed (the workflows' own step).
 import fs from "node:fs";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
 import { blocksModel } from "./blocks-model.mjs";
 import { fetched } from "./fetching.mjs";
@@ -34,7 +35,7 @@ import { closed, leave } from "./leave.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
 const { ADDRESSES } = await import(runtimeUrl("jobs.ts"));
 
-const root = new URL("../", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../", import.meta.url));  // (T.498: a path on Windows and with spaces too)
 const args = process.argv.slice(2);
 const siteAt = args.indexOf("--site");
 const site = siteAt >= 0 ? args[siteAt + 1].replace(/\/?$/, "/") : null;
