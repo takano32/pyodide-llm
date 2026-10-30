@@ -150,7 +150,7 @@ if (isMainThread) {
     process.exit(2);
   }
   const { pyodideWithEngine } = await import("./engine.mjs");
-  const { MODELS, filled } = await import("../src/models.js");
+  const { MODELS, filled } = await import("../src/models.ts");
   // --as <a JSON file>:<a name>: what an entry would be, for a model the list does not have yet (T.364: tests/page_saluki.py entries)
   const drafted = option("--as", "");
   const asked = drafted || option("--entry", "hf-ternary-bonsai-2-27b");

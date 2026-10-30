@@ -300,7 +300,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   // the page cuts every conversion to)
   {
     globalThis.location ??= { search: "" };
-    const { weighed } = await import("../src/page/address.ts"), { MODELS } = await import("../src/models.js");
+    const { weighed } = await import("../src/page/address.ts"), { MODELS } = await import("../src/models.ts");
     const listed = MODELS.filter((entry) => entry.conversion?.blocks);
     assert.deepEqual(listed.map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b"]);
     fresh(kernel);
@@ -811,7 +811,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
 {
   const w = world();
   const yarn = { rope_type: "yarn", factor: 4, original_max_position_embeddings: 8192 };
-  // (as src/models/formats.js's PLAIN_ROPE beside an entry's tokens)
+  // (as src/models/formats.ts's PLAIN_ROPE beside an entry's tokens)
   const entry = { bos: 151643, stop_tokens: [151643, 151645], rope_scaling: {} };
   w.fresh(() => notFound());
   const play = function* (make) {

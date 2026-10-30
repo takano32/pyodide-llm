@@ -237,7 +237,7 @@ def test_what_the_review_of_t127_found():
 
 
 def test_the_date_of_a_template_is_the_day_the_prompt_is_sent(reads):
-    # strftime_now() is the day the prompt is sent: filled() in src/models.js makes {date:format} of it
+    # strftime_now() is the day the prompt is sent: filled() in src/models.ts makes {date:format} of it
     assert one_turn("Today Date: {{ strftime_now('%d %b %Y') }}\n{{ messages[0].content }}", {}) == "Today Date: {date:%d %b %Y}\n{prompt}"
     for unknown in ("strftime_now('%j')", "strftime_now(fmt)", "strftime_now('%d}')"):
         assert one_turn("{{ " + unknown + " }}{{ messages[0].content }}", {}) is None, unknown
@@ -279,7 +279,7 @@ def test_it_reads_a_tokenizer_config(reads):
 
 
 def test_the_conversion_hands_the_template_to_the_page():
-    """The page uses options["template"] when src/models.js has none for that model. The engine must not see
+    """The page uses options["template"] when src/models.ts has none for that model. The engine must not see
     it: Llama() would refuse a keyword it does not know."""
     import json
     import struct

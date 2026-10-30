@@ -38,7 +38,7 @@ for id in "$@"; do
       ln -sf "$PWD/$id.tokenizer.bin" "$out.tokenizer.bin"
       node -e '
         const fs = require("fs");
-        import("./src/models.js").then(({ MODELS }) => {
+        import("./src/models.ts").then(({ MODELS }) => {
           const [id, file] = process.argv.slice(1), entry = MODELS.find((m) => m.id === id), head = Buffer.alloc(28), fd = fs.openSync(`${id}.bin`, "r");
           fs.readSync(fd, head, 0, 28, 0);
           const header = Array.from({ length: 7 }, (_, i) => head.readInt32LE(4 * i));

@@ -1,5 +1,5 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
-// model is an entry of src/models.js, or one with {file, tokenizerFile}: two files of the visitor's own disk,
+// model is an entry of src/models.ts, or one with {file, tokenizerFile}: two files of the visitor's own disk,
 // which are read where they are and go nowhere. Or one with {hf: {weights, config, tokenizer}}: a Hugging Face
 // model by the names of its files, of huggingface.co ({repo, revision}) or of that disk ({files}: the Files of a
 // folder, T.374.2.2), which the converter (src/python/llama2_convert.py) converts in here as it arrives.

@@ -9,11 +9,11 @@
 // tokens, which is the gain before the cost of that pass (stage 2) and of the drafting.
 //
 //   node tests/draft_check.mjs <small> <large> <text file> [tokens = 1500] [greedy = 256]
-//   (<small> and <large>: a model id of src/models.js, or the <out> of tests/perplexity_prepare.py)
+//   (<small> and <large>: a model id of src/models.ts, or the <out> of tests/perplexity_prepare.py)
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 const [smallId, largeId, textFile, tokensArg = "1500", greedyArg = "256"] = process.argv.slice(2);

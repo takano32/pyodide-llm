@@ -22,7 +22,7 @@
 #     logits, over the whole text at once and token by token with its cache, against the engine converted the way the
 #     page converts. And the same tensors converted as a Llama's, which must be another model: the comparison sees the
 #     multiplier. A Granite 4.1's other multipliers are refused.
-#   an id of the list (src/models.js): its original repository at the list's revision. The text as the real
+#   an id of the list (src/models.ts): its original repository at the list's revision. The text as the real
 #     tokenizer splits it against the engine's tokenizer, the chat prompt as the list's format writes it against
 #     apply_chat_template, the logits of the same ids through transformers and through the engine (NumPy, float32,
 #     converted from the safetensors in the file's own order, shards joined as the page joins them), and 16 greedy
@@ -393,7 +393,7 @@ def made_up(name, settings, positions=80):
 
 # ------------------------------------------------------------------------------------------------- a real model
 def entries(ids):
-    script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify("
+    script = ("import('./src/models.ts').then(({ MODELS }) => console.log(JSON.stringify("
               f"MODELS.filter((m) => {json.dumps(ids)}.includes(m.id)))))")
     found = {entry["id"]: entry for entry in json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))}
     missing = [id for id in ids if id not in found]

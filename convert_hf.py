@@ -108,7 +108,7 @@ def convert_tokenizer(directory, out_path, vocab_size):
 
 
 def options_note(directory):
-    """T.255: the file of a SmolLM3 is a Llama's, and only the options (src/models.js) say which layers RoPE leaves alone: a
+    """T.255: the file of a SmolLM3 is a Llama's, and only the options (src/models.ts) say which layers RoPE leaves alone: a
     model listed without them runs as a Llama, writes worse text and throws nothing. The line to say it, or None."""
     left = unturned_layers(normalize(json.loads((directory / "config.json").read_text())))
     return f"options: unturned {left} (to be given to the engine with the file: the file does not say it)" if left else None

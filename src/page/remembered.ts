@@ -1,7 +1,7 @@
 // src/page/remembered.ts (T.355): what the page finds in localStorage from an earlier visit, and what it leaves there
 // under the same names: the model that was chosen, the number of threads and what the GPU chose for a model on this
 // device. (The receiver writes the GPU's and the usage's entries where the worker's reports come: receiver.ts.)
-import { MODELS } from "../models.js";
+import { MODELS } from "../models.ts";
 import { CPU_SPEED_KEY, USAGE_KEY, threadsKey as sharedThreadsKey } from "../bench.ts";
 import { fromUrl, parameters, requested } from "./address.ts";
 import { SAFETENSORS } from "./repository.ts";

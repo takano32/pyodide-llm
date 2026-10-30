@@ -154,7 +154,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
     assert.deepEqual(reads, [], `${name} uses ${reads.join(", ")}: an owner of the page's state reads nothing of a page (Node imports it as it is)`);
     const own = [...kinds].filter(([, kind]) => kind === "let").map(([declared]) => declared);
     assert.ok(own.length > 0, `${name} declares no variable: it owns nothing`);
-    // (and it takes nothing from a module that reads a page as it loads: its imports are ../models.js's at most)
+    // (and it takes nothing from a module that reads a page as it loads: its imports are ../models.ts's at most)
     for (const { from } of files.get(name).imports) assert.ok(!from.startsWith(`${FOLDER}/`), `${name} imports ${from}: an owner imports no other part of the page's script`);
     lets.push(...own.map((declared) => `${owner}: ${declared}`));
   }

@@ -65,7 +65,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
-import { DEFAULT_MODEL, MODELS } from "../src/models.js";
+import { DEFAULT_MODEL, MODELS } from "../src/models.ts";
 import { closed, leave, scratch } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
@@ -73,7 +73,7 @@ const [model = "stories260K", engine = "chromium", deployed] = process.argv.slic
 // an id the list does not have opens the page's default model, and the run passed on it (T.144: models.yml with a
 // misspelt id answered with tiny-lm): such an id fails before a browser starts
 if (!/^(local|hf|url|default|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id === model)) {
-  console.error(`FAILED\n- no model ${model} in src/models.js (the page would open its default model instead)`);
+  console.error(`FAILED\n- no model ${model} in src/models.ts (the page would open its default model instead)`);
   process.exit(1);
 }
 // expected beginning of the greedy text, where the model is deterministic

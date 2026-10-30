@@ -136,7 +136,7 @@ class Conversion:
         said = [*([bos] if isinstance(bos, int) else []), *([own] if "bos_token_id" in self.config and own != bos else [])]
         bos = bos if isinstance(bos, int) else own
         eos = self.config.get("eos_token_id", 2)
-        # the format of one turn, from the model's own chat_template (T.73). src/models.js wins when it has one
+        # the format of one turn, from the model's own chat_template (T.73). src/models.ts wins when it has one
         ids = piece_ids(self.tokenizer, self.config["vocab_size"])
         template, head, mark = self.beginning(*model_turn(described(tokenizer_config), chat_template), [*specials, *added],
                                               options, ids)

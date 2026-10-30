@@ -118,7 +118,7 @@ files are read where they are: nothing is uploaded. Choose the files together:
   `chat_template.jinja`, if you add them, give the chat template.
 - **A checkpoint in llama2.c's format** (for example `stories110M.bin`, or what `convert_hf.py` and `quantize.py`
   write) and its `tokenizer.bin`. float32, float16 and int8 are told apart by the header and the file size.
-- Optionally a `.json` with what differs from llama2.c's conventions, shaped like an entry of `src/models.js`:
+- Optionally a `.json` with what differs from llama2.c's conventions, shaped like an entry of `src/models.ts`:
 
 ```json
 { "name": "tiny-lm", "options": { "tokenizer_kind": "unigram", "stop_tokens": [1, 2] },

@@ -17,7 +17,7 @@
 //                             reads both as it loads, through address.ts and remembered.ts): the URL's first, then the
 //                             one remembered, then the default (T.511.6)
 //
-// What these are still bound to: model.ts to src/models.js (its DEFAULT_MODEL is what a visit starts with);
+// What these are still bound to: model.ts to src/models.ts (its DEFAULT_MODEL is what a visit starts with);
 // opening.ts to `location` and `localStorage` (stand-ins here). What the page draws of all this is the browsers' to
 // see (tests/e2e.mjs, tests/bench-check.mjs).
 //
@@ -25,7 +25,7 @@
 import { fresh as made } from "./fresh.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { DEFAULT_MODEL, MODELS } from "../src/models.js";
+import { DEFAULT_MODEL, MODELS } from "../src/models.ts";
 
 let cases = 0;
 // (T.584: tests/fresh.mjs, on Node and on Bun)

@@ -1,10 +1,10 @@
 # start_check.py (T.249's review): what the token in front of a text costs a model. The page begins every text with the
-# BOS the converter says (src/models.js can set another), where the real tokenizer of a model may put another token in
+# BOS the converter says (src/models.ts can set another), where the real tokenizer of a model may put another token in
 # front or none (a T5Tokenizer puts nothing in front and </s> after; Qwen's puts nothing). Not something a format
 # check says (tests/format_check.py compares what comes after) and not something to settle by reading what the model
 # writes: this scores the same targets under every start, on the original in float32 with transformers.
 #
-#   python3 tests/start_check.py <model id of src/models.js> [--also <token id> ...] [--tokens N = 1500] [--window W = 512]
+#   python3 tests/start_check.py <model id of src/models.ts> [--also <token id> ...] [--tokens N = 1500] [--window W = 512]
 #                                [--text <file>] [--directory <where the downloads go> = .tmp/start-check] [--stored | --by-layer]
 #
 # The ids are the page's (the converter's tokenizer.bin through llama2_numpy.Tokenizer, which tests/format_check.py and

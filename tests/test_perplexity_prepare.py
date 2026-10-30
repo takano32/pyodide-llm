@@ -2,7 +2,7 @@
 # it they are the converter's alone, what ?hf= opens: a Qwen3.5 of the list begins with <|im_start|> where the converter's
 # BOS is <|endoftext|>, which costs a Qwen3.5 18% to 45% of perplexity on plain text (T.236, T.247's review) and makes its
 # perplexity move by 3% under a rounding of its weights, so a measurement that leaves the entry's options out measures
-# another model's way. Needs node (it reads src/models.js), which the suite has.
+# another model's way. Needs node (it reads src/models.ts), which the suite has.
 import json
 import subprocess
 import sys

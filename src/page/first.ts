@@ -1,7 +1,7 @@
 // src/page/first.ts (T.474, out of src/pages/index.astro's script, where tsc did not read it): the first load of the
 // page, which index.astro names last, after every other part has run. A model chosen while this looks (the one kept
 // gone, the repository of ?hf= looked at) has started the worker itself, and wins: the review of T.116.
-import { DEFAULT_MODEL } from "../models.js";
+import { DEFAULT_MODEL } from "../models.ts";
 import { weighed } from "./address.ts";
 import { gpuFor, recalled, remember, threadsFor } from "./remembered.ts";
 import { loads, model, opensWith } from "./model.ts";

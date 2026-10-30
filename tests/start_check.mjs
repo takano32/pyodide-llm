@@ -23,7 +23,7 @@ import { pyodideWithEngine } from "./engine.mjs";
 import { runtimeUrl } from "./tree.mjs";
 const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 import { leave } from "./leave.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -39,7 +39,7 @@ const site = MODELS.find((entry) => entry.id === id);
 const model = site ?? (fs.existsSync(`${id}.json`) &&
   { id: path.basename(id), checkpoint: path.resolve(`${id}.bin`), tokenizer: path.resolve(`${id}.tokenizer.bin`),
     options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) });
-if (!model) throw new Error(`${id} is neither a model of src/models.js nor the <out> of tests/perplexity_prepare.py`);
+if (!model) throw new Error(`${id} is neither a model of src/models.ts nor the <out> of tests/perplexity_prepare.py`);
 const page = pageFile?.endsWith(".json") ? JSON.parse(fs.readFileSync(pageFile, "utf8")) : null;
 const options = page?.options ?? model.options;
 const fromFile = !site;

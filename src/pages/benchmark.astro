@@ -3,7 +3,7 @@
 // of ?bench=1 alone, /gpu-test/ (T.94) and /opfs-test/ (T.137), which a visitor had to open one by one and report one
 // by one. Every section runs in a worker of its own, which the page ends before the next section starts: a phone
 // never holds the model, the GPU's buffers and a large file at once (T.96: Chromium refused a page its third memory).
-import { MODELS } from "../models.js";
+import { MODELS } from "../models.ts";
 // the models of the site itself: the model section loads one of them, and the line section fetches its first part
 const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
 // T.176: the model the benchmark takes unless one is chosen: llm-jp-3 150M, heavy enough that a device's numbers mean

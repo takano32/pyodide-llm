@@ -5,7 +5,7 @@
 //   bytebpe   Hugging Face's byte-level BPE: GPT-2 (gpt2), Qwen3 (qwen), Llama 3.2 (llama3), SmolLM2's pattern (gpt2-digits
 //             with Pythia's vocabulary would not be one: SmolLM2 comes as a GGUF, so its pattern is run on GPT-2's)
 // Before timing, the two must give the same IDs for every text: the timed ones, the prompts and templates of
-// src/models.js, and random texts of letters, digits, spaces, line breaks, CJK, emoji and control characters, with
+// src/models.ts, and random texts of letters, digits, spaces, line breaks, CJK, emoji and control characters, with
 // and without specials. Any difference fails (exit 1). Each side is what a visitor gets from its commit: the old engine
 // with the old converter's tokenizer.bin and options and the old list's options for the site's files (T.216 put the
 // sentencepiece model's map into tokenizer.bin and took the nfkc and nmt options out, so the new options and file
@@ -21,7 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 import { download } from "./fetching.mjs";
 import { otherTree } from "./other-tree.mjs";
 import { leave } from "./leave.mjs";
@@ -38,9 +38,9 @@ const other = otherTree(ref).folder;
 // the old list's options for the site's tokenizer.bin files (tiny-lm's nfkc, before T.216)
 // (from the other commit's whole tree: the list is a window over src/models/ since T.354)
 fs.mkdirSync(`${root}.tmp/t200/`, { recursive: true });
-const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(other, "src/models.js")));
+const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(other, "src/models.ts")));
 
-// tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/ (T.357.6: each held to its
+// tokenizer files of Hugging Face at the revisions src/models.ts pins, kept in .tmp/t200/ (T.357.6: each held to its
 // length and asked for again by tests/fetching.mjs; a file that is there is a whole one)
 const cache = `${root}.tmp/t200/hf/`;
 async function hfFile(id) {

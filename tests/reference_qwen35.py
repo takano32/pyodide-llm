@@ -281,7 +281,7 @@ def fixture(out):
 # ------------------------------------------------------------------------------------------------- the real model
 # the other models the real part runs on (--model=): one file of weights under a shard's name, as the 0.8B's
 OTHERS = {"2B": ("Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc")}
-# tests/fixed_outputs.py's prompt in the list's format without thinking (src/models.js's QWEN35_AT_ONCE after its BOS,
+# tests/fixed_outputs.py's prompt in the list's format without thinking (src/models.ts's QWEN35_AT_ONCE after its BOS,
 # <|im_start|>): the ids the page sends, with no <|endoftext|> in front
 LISTED = "<|im_start|>user\nこれからの流行りを3つ挙げてください。<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 

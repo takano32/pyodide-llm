@@ -2,9 +2,9 @@
 import {
   ASK_JAPANESE, CHATML_AFTER_START, MISTRAL, MISTRAL_V3, QWEN25, QWEN3_OWN_BOS, SMOLLM3_AT_ONCE, SMOLLM3_THINKING, STORY,
   ZEPHYR, chatml, smollm3,
-} from "./formats.js";
-import { sampled, thinking } from "./sampling.js";
-import { ggufOf, thinkingAndNot } from "./builders.js";
+} from "./formats.ts";
+import { sampled, thinking } from "./sampling.ts";
+import { ggufOf, thinkingAndNot } from "./builders.ts";
 
 export const HF_CLASSICS = [
   // English. Pythia is the same design at five sizes: a ladder for measuring (T.80)

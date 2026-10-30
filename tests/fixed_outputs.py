@@ -7,7 +7,7 @@
 # answered from the files fetched: tests/conducting.py) to float32, then 16 greedy tokens from the model's own prompt and template. float32
 # because int8 changes its text with the order of additions (AGENTS.md); float32 with NumPy is the same, to the
 # character, as float32 with the kernels. Where each model comes from, its prompt and template are read from
-# src/models.js (with Node), so nothing here can drift from the list.
+# src/models.ts (with Node), so nothing here can drift from the list.
 #
 #   python3 tests/fixed_outputs.py <directory for the downloads> [--write] [--only=<id>,<id>]
 #
@@ -77,7 +77,7 @@ MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m
 
 def entries():
     wanted = [SAFETENSORS.get(id, (id,))[0] for id in MODELS]
-    script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify("
+    script = ("import('./src/models.ts').then(({ MODELS }) => console.log(JSON.stringify("
               f"MODELS.filter((m) => {json.dumps(wanted)}.includes(m.id)))))")
     found = {entry["id"]: entry for entry in json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))}
     for id, (of, weights) in SAFETENSORS.items():
@@ -117,11 +117,11 @@ def with_the_entrys_rope(llama, options):
 
 def written(entry, conversion, checkpoint):
     """What the page would write with this model at temperature 0: the prompt in the model's template, the
-    options of the conversion with those of src/models.js on top (as the worker merges them)."""
+    options of the conversion with those of src/models.ts on top (as the worker merges them)."""
     options = {**conversion.options, **entry.get("options", {})}
     template = entry.get("template") or options.pop("template", None)
     options.pop("template", None)
-    # filled() of src/models.js: {prompt:trim} trims (T.138); the prompts here have no spaces to trim
+    # filled() of src/models.ts: {prompt:trim} trims (T.138); the prompts here have no spaces to trim
     prompt = template.replace("{prompt:trim}", "{prompt}").replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
     llama = Llama(np.memmap(checkpoint, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
     if "rope_scaling" in entry.get("options", {}):

@@ -5,7 +5,7 @@
 #
 #   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|int6|float32] [--entry <id>] [--blocks]
 #
-# --entry <id> (the review of T.247): the options of that entry of src/models.js under the converter's, as the worker merges them
+# --entry <id> (the review of T.247): the options of that entry of src/models.ts under the converter's, as the worker merges them
 # ({...engineOptions, ...model.options}), as tests/write_options.py makes them. Without it the options are the converter's alone,
 # which is what ?hf= opens: of the files the folder has (T.374.4: tokenizer_config.json and chat_template.jinja are read where
 # they are there, as the page asks for them, so the BOS and the stops are those the converter takes from the model's template,
@@ -40,12 +40,12 @@ dtype = arguments[2] if len(arguments) > 2 else "int8"
 
 
 def entry_options(entry_id):
-    """What the list gives the engine for this entry besides what the converter makes (src/models.js's options)."""
-    script = (f"import('./src/models.js').then(({{ MODELS }}) => {{ const m = MODELS.find((m) => m.id === {json.dumps(entry_id)}); "
+    """What the list gives the engine for this entry besides what the converter makes (src/models.ts's options)."""
+    script = (f"import('./src/models.ts').then(({{ MODELS }}) => {{ const m = MODELS.find((m) => m.id === {json.dumps(entry_id)}); "
               "console.log(JSON.stringify(m ? m.options ?? {} : null)); })")
     options = json.loads(subprocess.check_output(["node", "-e", script], cwd=Path(__file__).resolve().parent.parent))
     if options is None:
-        raise SystemExit(f"{entry_id} is no entry of src/models.js")
+        raise SystemExit(f"{entry_id} is no entry of src/models.ts")
     return options
 
 

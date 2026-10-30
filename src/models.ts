@@ -2,17 +2,17 @@
 //
 // This file is the window (T.354): the list is put together here, in the order it had as one file, from its parts
 // in src/models/, and everything the page, the worker and the tests take from the list is exported from here.
-import { LICENSES, NOTICES } from "./models/licenses.js";
-import { modelBytes, devicesOf } from "./models/memory.js";
-import { BUILT } from "./models/built.js";
-import { THOUGHT_BUDGET, thinks } from "./models/sampling.js";
-import { HF_JAPANESE } from "./models/hf-japanese.js";
-import { HF_CLASSICS } from "./models/hf-classics.js";
-import { HF_FAMILIES } from "./models/hf-families.js";
+import { LICENSES, NOTICES } from "./models/licenses.ts";
+import { modelBytes, devicesOf } from "./models/memory.ts";
+import { BUILT } from "./models/built.ts";
+import { THOUGHT_BUDGET, thinks } from "./models/sampling.ts";
+import { HF_JAPANESE } from "./models/hf-japanese.ts";
+import { HF_CLASSICS } from "./models/hf-classics.ts";
+import { HF_FAMILIES } from "./models/hf-families.ts";
 
-export { filled } from "./models/filled.js";
-export { LICENSES, NOTICES } from "./models/licenses.js";
-export { PAGE_MEMORY, modelBytes, SIX_OF_EIGHT, TERNARY_OF_EIGHT, DEVICE_MEMORY_CAP, weightsFor, memoryWarning, memoryFailure } from "./models/memory.js";
+export { filled } from "./models/filled.ts";
+export { LICENSES, NOTICES } from "./models/licenses.ts";
+export { PAGE_MEMORY, modelBytes, SIX_OF_EIGHT, TERNARY_OF_EIGHT, DEVICE_MEMORY_CAP, weightsFor, memoryWarning, memoryFailure } from "./models/memory.ts";
 
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;

@@ -48,7 +48,7 @@ differs(swap("export function f(ms, ids) {", "export function f(ms: number, ids 
 differs(`"use strict";\n${JS}`, ["2 statements were, 3 are"], "a directive");
 
 // ---- the tool: this tree against its own commit is the same code but for what is being worked on, and it says its count
-const run = spawnSync(process.execPath, [fileURLToPath(new URL("./same-syntax.mjs", import.meta.url)), "--before", "HEAD", "src/runtime/jobs.ts", "src/models.js"], { encoding: "utf8" });
+const run = spawnSync(process.execPath, [fileURLToPath(new URL("./same-syntax.mjs", import.meta.url)), "--before", "HEAD", "src/runtime/jobs.ts", "src/models.ts"], { encoding: "utf8" });
 assert.match(run.stdout, /^same-syntax: 2 files against HEAD: \d+ statements and \d+ \/\*! \*\/ and \/\*\* \*\/ comments; 0 new; (the same code|\d+ DIFFERENT)$/m, `the tool's last line: ${run.stdout}${run.stderr}`);
 const none = spawnSync(process.execPath, [fileURLToPath(new URL("./same-syntax.mjs", import.meta.url)), "--before"], { encoding: "utf8" });
 assert.equal(none.status, 2, "--before without a commit is a usage error");

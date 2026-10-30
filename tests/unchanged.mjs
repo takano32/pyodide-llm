@@ -12,7 +12,7 @@
 //            device forgets the forms it measured when the key changes (AGENTS.md). The key holds the WGSL a device is
 //            given and no function's source (tests/device-key-check.mjs holds that every piece of the engine's shaders
 //            reaches it), so a maker may be formatted, moved or given a parameter and this still says "the same"
-//   models   every export of src/models.js: the data as JSON, and what every exported function answers for every
+//   models   every export of src/models.ts: the data as JSON, and what every exported function answers for every
 //            entry of the list (a builder moved to another file leaves both as they were)
 //   calls    tests/unchanged-calls.mjs: the plan Python hands forward.js and every call of a kernel, 150 hashes
 //   layouts  (T.357) tests/unchanged_layouts.py: what a tree says of a checkpoint's file over a grid of made-up headers, forms
@@ -159,7 +159,8 @@ async function shaders(other) {
 }
 
 async function models(other) {
-  const [was, now] = await Promise.all([other, root].map((tree) => import(pathToFileURL(path.join(tree, "src/models.js")))));
+  // (T.480.3: src/models.ts was src/models.js in a tree before it)
+  const [was, now] = await Promise.all([other, root].map((tree) => import(pathToFileURL(path.join(tree, fs.existsSync(path.join(tree, "src/models.ts")) ? "src/models.ts" : "src/models.js")))));
   const answers = (module) => {
     const found = {};
     for (const [name, value] of Object.entries(module)) {

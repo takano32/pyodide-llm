@@ -180,7 +180,7 @@ const readBack = async (found) => {
   await kept.keep(as("int6"), manifest, (a, b) => bytes.slice(a, b), vocabulary);
   assert.deepEqual(await readBack(await kept.openKept(as(undefined))), bytes);
   assert.equal(await kept.openKept(as("int8")), undefined);
-  // T.230: a ternary model is converted to the ternary dtype (the page asks for it by name: src/models.js's
+  // T.230: a ternary model is converted to the ternary dtype (the page asks for it by name: src/models.ts's
   // weightsFor), kept under that name. What was kept of it as int8 before serves ?bits=8 alone, never the ternary one
   const [six] = await kept.keptModels();
   assert.ok(!kept.serves(six, as("ternary")));

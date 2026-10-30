@@ -1,6 +1,6 @@
 // The sections "Storage" (T.137) and "Line" (T.118).
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
-import { MODELS } from "../models.js";
+import { MODELS } from "../models.ts";
 import { tableCell, unmeasured } from "../bench.ts";
 import { BASE, $, type Result } from "./dom.ts";
 import { ask, worker, fixed, model } from "./section.ts";

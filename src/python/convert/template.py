@@ -17,7 +17,7 @@ import time
 # which Qwen3's, Mistral v0.3's and sarashina2.2's templates use; since T.269 also a if c else b and a list written
 # out ([a, b]), which Granite 4.2's uses. A macro is skipped where it is defined (the
 # templates define them for tools, which one turn has none of); calling one is Unsupported. Anything else raises
-# Unsupported, and then the caller keeps whatever format src/models.js has for that model. Chosen over a real
+# Unsupported, and then the caller keeps whatever format src/models.ts has for that model. Chosen over a real
 # Jinja (jinja2 through micropip) to add no dependency.
 
 class Unsupported(Exception):
@@ -399,7 +399,7 @@ def value_of(expression, scope):
         return None
     if expression.startswith("strftime_now(") and expression.endswith(")"):
         # the one function these templates call: the date of today, for a system prompt. Written as {date:format},
-        # which filled() in src/models.js makes the visitor's day when the prompt is sent: the format is kept with
+        # which filled() in src/models.ts makes the visitor's day when the prompt is sent: the format is kept with
         # the conversion, and a date written now went stale from the next day on (the review of T.127)
         argument = expression[len("strftime_now("):-1].strip()
         if not argument or argument[0] not in "'\"" or string_end(argument) != len(argument) - 1:
@@ -724,7 +724,7 @@ def answer_end(template, specials, mark="\x00prompt\x00", answer="\x00answer\x00
 
 
 def one_turn(template, specials, mark="\x00prompt\x00"):
-    """The template of one user turn, as src/models.js writes it: the text around a {prompt}.
+    """The template of one user turn, as src/models.ts writes it: the text around a {prompt}.
 
     specials: the tokenizer's special tokens, for bos_token and eos_token. Returns None when the template uses
     something this reader does not know, and then the caller keeps the format it has.

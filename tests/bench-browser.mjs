@@ -4,14 +4,14 @@
 //   node tests/bench-browser.mjs [model id] [url of a deployed site]
 import assert from "node:assert/strict";
 import * as playwright from "playwright-core";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 import { closed, leave } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [model = "stories260K", deployed] = process.argv.slice(2);
 // an id the list does not have would open the default model and pass on it (T.144)
 if (!MODELS.some((entry) => entry.id === model)) {
-  console.error(`FAILED\n- no model ${model} in src/models.js`);
+  console.error(`FAILED\n- no model ${model} in src/models.ts`);
   process.exit(1);
 }
 let server, site = deployed;

@@ -119,7 +119,7 @@ rm -f .tmp/page-27b.log
 file=$(ls "$work"/*PTQ1_0.gguf)
 # the list's entry is what the reference pins
 node --input-type=module -e '
-  const { MODELS } = await import("./src/models.js");
+  const { MODELS } = await import("./src/models.ts");
   const entry = MODELS.find((model) => model.id === process.argv[1]);
   if (!entry) throw new Error(`${process.argv[1]} is not in the list`);
   const script = (await import("node:fs")).readFileSync("tests/reference_27b.sh", "utf8");
@@ -128,7 +128,7 @@ node --input-type=module -e '
   }
   console.log(`page: ${entry.id} is ${entry.hf.repo}@${entry.hf.revision}/${entry.hf.weights} with the vocabulary of ${entry.hf.vocabulary.repo}@${entry.hf.vocabulary.revision}, context ${entry.conversion?.max_seq_len ?? 4096}`);
 ' "$id"
-context=$(node --input-type=module -e 'const { MODELS } = await import("./src/models.js"); console.log(MODELS.find((model) => model.id === process.argv[1]).conversion?.max_seq_len ?? 4096)' "$id")
+context=$(node --input-type=module -e 'const { MODELS } = await import("./src/models.ts"); console.log(MODELS.find((model) => model.id === process.argv[1]).conversion?.max_seq_len ?? 4096)' "$id")
 
 if has reference; then
   STAGES="${REFERENCE_STAGES:-fork f32 numpy}" SAVE_LOGITS="$work/saved" bash tests/reference_27b.sh
@@ -172,7 +172,7 @@ folder_of() {  # <the GGUF's file> -> a folder with it and the original's small 
   local gguf=$1 name
   name=$(basename "$gguf")
   local repo
-  repo=$(node --input-type=module -e 'const { MODELS } = await import("./src/models.js"); const { hf } = MODELS.find((model) => model.id === process.argv[1]); console.log(`${hf.repo.replace("/", "--")}/${hf.revision}`)' "$id")
+  repo=$(node --input-type=module -e 'const { MODELS } = await import("./src/models.ts"); const { hf } = MODELS.find((model) => model.id === process.argv[1]); console.log(`${hf.repo.replace("/", "--")}/${hf.revision}`)' "$id")
   mkdir -p "$work/hf/$repo"
   ln -sf "$file" "$work/hf/$repo/$(basename "$file")"
   local original

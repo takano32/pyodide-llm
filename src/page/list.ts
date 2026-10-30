@@ -1,5 +1,5 @@
 // src/page/list.ts (T.355): the list of models in the select, and what this browser kept of them.
-import { GROUPS, MODELS } from "../models.js";
+import { GROUPS, MODELS } from "../models.ts";
 import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";

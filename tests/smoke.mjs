@@ -986,7 +986,7 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
 // before, all 8 runs of 160 tokens here ended in an IndexError (the kernel drew a word outside the vocabulary; none
 // did in 64 tokens: it comes when the penalty has flattened the few likely tokens of a loop)
 if (fs.existsSync(root + "llm-jp-3-150m.bin")) {
-  const { MODELS } = await import("../src/models.js");
+  const { MODELS } = await import("../src/models.ts");
   const entry = MODELS.find((m) => m.id === "llm-jp-3-150m");
   pyodide.FS.writeFile("llm-jp.bin", fs.readFileSync(root + entry.checkpoint));
   pyodide.FS.writeFile("llm-jp.tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
@@ -1027,7 +1027,7 @@ for dummy in (False, True):
         assert "merges its pieces" in str(error)
 f"T.257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} texts read as natively, {sum(map(len, read_ids))} tokens"
 `));
-// T.235: an entry's rope_scaling: {} (src/models/formats.js's PLAIN_ROPE) as the worker hands it to the engine: a
+// T.235: an entry's rope_scaling: {} (src/models/formats.ts's PLAIN_ROPE) as the worker hands it to the engine: a
 // JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
 // plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them
 {

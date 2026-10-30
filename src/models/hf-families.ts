@@ -4,11 +4,11 @@ import {
   AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASK_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
   QWEN3_THINKING_AFTER_START, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
-} from "./formats.js";
+} from "./formats.ts";
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
-} from "./sampling.js";
-import { gemma3, gemma4, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.js";
+} from "./sampling.ts";
+import { gemma3, gemma4, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 
 export const HF_FAMILIES = [
   ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",

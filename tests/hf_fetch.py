@@ -1,4 +1,4 @@
-# hf_fetch.py: the files of a Hugging Face model of src/models.js, at the revision the list pins, for measurements in
+# hf_fetch.py: the files of a Hugging Face model of src/models.ts, at the revision the list pins, for measurements in
 # CI that need the original (T.100): the weights, config.json, the tokenizer and tokenizer_config.json. Prints what to
 # hand to tests/perplexity_prepare.py: the directory, or the .gguf file. For a GGUF that takes the vocabulary of its
 # original (T.136's second stage, hf.vocabulary): the directory of the original's files, with the GGUF linked into it
@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE))
 from conducting import Fetched, Nothing, converted  # noqa: E402
 
 model_id, directory = sys.argv[1], Path(sys.argv[2])
-script = f"import('./src/models.js').then(({{ MODELS }}) => console.log(JSON.stringify(MODELS.find((m) => m.id === {json.dumps(model_id)}))))"
+script = f"import('./src/models.ts').then(({{ MODELS }}) => console.log(JSON.stringify(MODELS.find((m) => m.id === {json.dumps(model_id)}))))"
 if model_id.startswith("hf:"):
     # a repository the list does not name as it is (the original of a model the list takes from a GGUF, T.98), as ?hf=
     # opens one: no tokenizer is named, so the conduct's candidates (T.374.4: tokenizer.json alone before)

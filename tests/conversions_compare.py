@@ -9,7 +9,7 @@
 #   python3 tests/conversions_compare.py --dump <tree> <directory for the downloads> <out.json> [model id ...]
 #
 # --before: the commit to compare with (origin/main; its tree is tests/other-tree.mjs's). Each tree is read by its own
-# tests/format_check.py and src/models.js, in a process of its own (--dump): what an entry says may change too.
+# tests/format_check.py and src/models.ts, in a process of its own (--dump): what an entry says may change too.
 # The table: one line an entry whose options, tokenizer.bin or ids differ, and the count of those that do not. The exit
 # status is 0 either way: what may differ is the change's own to say. Needs no reference tools (numpy only).
 import hashlib
