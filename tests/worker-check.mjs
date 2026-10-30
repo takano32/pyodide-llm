@@ -216,7 +216,7 @@ const ok = (line) => {
   // streams): a Cache that does what the specification says of put(), which reads the body to its end and, where it
   // breaks, stores nothing and rejects. A part that came whole is kept for the next visit; none that did not
   {
-    const { map: kept, caches } = cacheStorage();
+    const { map: kept, caches, stored } = cacheStorage();
     context.caches = caches;
     const partsKept = async () => {
       await sleep(2000);  // the copies go in as the parts stream, and a little after
@@ -239,6 +239,7 @@ const ok = (line) => {
       }
       // a part whose body ends short without an error is no whole: not kept, fetched again
       kept.clear();
+      stored.length = 0;
       fresh((url, init, n) => {
         const [from, to] = whole(partOf(url));
         return new Response(body(from, partOf(url) === 1 && n === 0 ? from + 3 * MiB : to, { signal: init.signal }), { status: 200 });
@@ -249,6 +250,10 @@ const ok = (line) => {
         assert.deepEqual(into, bytesOf(0, model.bytes));
         await expectKept([0, 1, 2], "a part that ended short");
         assert.equal(requests.filter((r) => partOf(r.url) === 1).length, 2);
+        // (T.495: and never stored short on the way: the next try's whole copy writes over a short one, so what is kept at
+        // the end does not say it; fetchPart()'s check of the length breaks the copy's body, and put() stores nothing)
+        assert.deepEqual(stored.filter(([key]) => partOf(key.split("?")[0]) === 1).map(([, bytes]) => bytes), [whole(1)[1] - whole(1)[0]],
+          "the part that ended short was stored as a copy before its whole one");
       }
       // a copy that is short (kept before T.97's check) is not read again after it failed
       kept.clear();

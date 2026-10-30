@@ -163,6 +163,9 @@ parentPort.on("message", (data) => {
     }, line.endAfter ?? 0);
   }
 });`;
+// (T.495: a worker_threads Worker of the made-up GPU, with the face a browser's Worker shows createForward()'s gpu)
+const faced = (fake) => ({ postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
+  set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() });
 
 if (isMainThread) {
   const { pyodideWithEngine } = await import("./engine.mjs");
@@ -226,8 +229,7 @@ if (isMainThread) {
     const line = { fixed: fixed * perToken, perToken: tokenCost * perToken, failAt };
     const gpu = () => {
       const fake = new Worker(FAKE, { eval: true, workerData: line });
-      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+      return faced(fake);
     };
     const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu });
     await engine.setThreads(1);
@@ -284,8 +286,7 @@ if (isMainThread) {
       const line = { fixed: 10 * perToken, perToken: 0.05 * perToken, failAt: 0 };
       const gpu = () => {
         const fake = new Worker(FAKE, { eval: true, workerData: line });
-        return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-          set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        return faced(fake);
       };
       const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: () => (reads++, performance.now()) });
       await engine.setThreads(1);
@@ -405,8 +406,7 @@ if (isMainThread) {
       const beside = { 1: 16, 2: 12, 4: 8, 8: 10 };
       const gpu = () => {
         fake = new Worker(FAKE, { eval: true, workerData: { fixed: 1e3, perToken: 1e3, readyOnGo: true } });
-        return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-          set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        return faced(fake);
       };
       engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: tokenClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
       const told = [];
@@ -443,8 +443,7 @@ if (isMainThread) {
       const beside = { 1: 16, 2: 12, 4: 8, 8: 10 };
       const gpu = () => {
         fake = new Worker(FAKE, { eval: true, workerData: { fixed: 1e3, perToken: 1e3, readyOnGo: true } });
-        return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-          set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        return faced(fake);
       };
       engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: tokenClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
       const told = [];
@@ -586,8 +585,7 @@ if (isMainThread) {
     const line = { fixed: 60 * perToken, perToken: 2 * perToken, step: stepCost * cpuStep, ...more };
     const gpu = () => {
       const fake = new Worker(FAKE, { eval: true, workerData: line });
-      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+      return faced(fake);
     };
     const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu });
     await engine.setThreads(1);
@@ -619,8 +617,7 @@ if (isMainThread) {
     const bits = (floats) => [...new Uint32Array(floats.buffer, floats.byteOffset, floats.length)].join();
     const gpu = () => {
       const fake = new Worker(FAKE, { eval: true, workerData: { fixed: 10 * perToken, perToken: 0.05 * perToken, kv: { stale: 0x7e00 } } });
-      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+      return faced(fake);
     };
     const engine = createForward({ memory, base, size, kernels, plan, spawn, halfKeys, gpu });
     await engine.setThreads(1);
@@ -671,8 +668,7 @@ if (isMainThread) {
     for (const [outsideId, more] of [[-1, { outsideAt: 1, outsideId: -1 }], [plan.vocab_size, { outsideAt: 1, outsideId: plan.vocab_size }], ["a refused step", { refuseAt: 1, refuseAfter: 0 }]]) {
       const line = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep, ...more };
       const fake = new Worker(FAKE, { eval: true, workerData: line });
-      const gpu = () => ({ postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() });
+      const gpu = () => faced(fake);
       let lost = null;
       const engine = createForward({ memory, base, size, kernels, plan, gpu, direct: { onLost: (why) => { lost = why; } } });
       await engine.gpu;
@@ -700,8 +696,7 @@ if (isMainThread) {
       const gpu = () => {
         const fake = new Worker(FAKE, { eval: true, workerData: { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep, kv: { stale: 0x7e00, probe: true } } });
         fake.on("message", (data) => { if (data.type === "probe") probes.push(data); });
-        return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-          set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        return faced(fake);
       };
       const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu });
       await engine.setThreads(1);
@@ -745,8 +740,7 @@ if (isMainThread) {
         const open = (kv) => {
           const gpu = () => {
             const fake = new Worker(FAKE, { eval: true, workerData: { ...fast, kv } });
-            return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-              set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+            return faced(fake);
           };
           return createForward({ memory, base, size, kernels, plan, spawn, halfKeys, ...(kv ? { gpu } : {}) });
         };
@@ -856,8 +850,7 @@ if (isMainThread) {
         const gpu = () => {
           const fake = new Worker(FAKE, { eval: true, workerData: { ...fast, ...more } });
           fake.once("exit", () => { exited = true; });
-          return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-            set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+          return faced(fake);
         };
         const warned = console.warn;
         console.warn = () => {};  // the line forward.js writes of a worker that did not end
@@ -886,8 +879,7 @@ if (isMainThread) {
       const fast = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep };
       const gpu = () => {
         const fake = new Worker(FAKE, { eval: true, workerData: fast });
-        return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-          set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        return faced(fake);
       };
       const outcome = async () => {
         const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu });
@@ -916,8 +908,7 @@ if (isMainThread) {
       const line = { fixed: 60 * perToken, perToken: 2 * perToken, step: 0.2 * cpuStep };
       const gpuOf = (workerData) => () => {
         const fake = new Worker(FAKE, { eval: true, workerData });
-        return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
-          set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        return faced(fake);
       };
       // (T.205's review: its worker says ended 300 ms after the stop, for the release through Python below)
       const outside = external({ memory, base, size, kernels, gpu: gpuOf({ ...line, endAfter: 300 }) });
