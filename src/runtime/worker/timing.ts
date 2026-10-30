@@ -6,7 +6,7 @@ import { threadsRequest, threadsFound } from "./request.ts";
 import { llama, engineNow } from "./loaded.ts";
 import { memoryShared } from "./weights.ts";
 import type { Paths, PathThreads, Status, ToWorker } from "../contracts/messages.ts";
-import type { Side } from "../forward/gpuside.ts";
+import type { Side } from "../forward.ts";
 
 // T.368.3: a run of the writing: the ms of its tokens, and how many of them the GPU took
 type Run = { ms: number; gpuTokens: number };

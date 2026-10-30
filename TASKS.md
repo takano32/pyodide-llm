@@ -44,7 +44,6 @@
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
 - T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
 - T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
-- T.456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 反映済み
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 未着手
 - T.458 [整理][遠隔試験] エンジンが GPU の側に言い忘れる壊し方は全部の組でしか落ちない — 未着手
 - T.459 [整理][遠隔試験] `forward-modules-check` は取り出さずに読む鍵を見ない — 未着手
@@ -535,12 +534,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T.235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
-
-### T.456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 状態: 反映済み（2026-10-11、T.378.2 から。規模 小）
-- スレッドの `tokenEnded()` は始まっていないトークンの終わりを無視する（T.378.1）。GPU の側も同じにそろえる。`put()` が知らない語を null に直す所は要らない（読む側は `"cpu"` と `"gpu"` としか比べない）。
-- **2026-10-30**: `gpuSide()` が `stepping` を持ち、`cpuStepBegan()` が真と言ったステップの終わりだけを `steps.cpu` に書く（スレッドの `tokenEnded()` と同じ形）。側の型は `Side`（`"cpu" | "gpu" | null`、`forward/gpuside.ts`）で閉じ、`put()` は値をそのまま置く。書く所（`forward/paths.ts` の `timePrompts()`・`worker/timing.ts` の `written()`・エンジンの `gpuSide` の setter）も `Side` に（取りまとめ役の決め: 知らない語を null に直す代わりに、tsc が綴りを言う）。
-- 検査: `gpu-part-check` に「始まりの無い終わりを 2 つ言っても、CPU のステップは計られていない（`tokenBlock()` が 0）」。壊し方: `if (!stepping) return;` を外すと落ちる。
-- 手元: 軽い組（484 秒）・`gpu-default-check`・`gpu-part-check`・型検査。CI を省いた。訳: 偽の GPU の Worker の試験が全部踏み、エンジンの道（`forward()` の枝）は今までどおり始まりと終わりを対で言う。速さは測っていない: ステップごとに真偽 1 つの代入と比べ。
 
 ### T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 未着手（2026-10-11、T.378.2 から。規模 中）
 - 606 行で、1 つの関数が 480 行。状態に持ち主ができたので、置けるかの判定・Worker の始まりと知らせ・プロンプト・ステップに分けられる。
