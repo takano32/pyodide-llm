@@ -253,8 +253,8 @@ const root = new URL("../", import.meta.url);
 const LATER = {
   "src/runtime/worker/runtime.ts": [
     ['import("../shaders/key.ts")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
-    ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
+    ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
