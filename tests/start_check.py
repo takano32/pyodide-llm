@@ -27,10 +27,10 @@ import math
 import subprocess
 import sys
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+from fetching import fetched
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
@@ -45,8 +45,7 @@ def wikipedia(titles):
     for title in titles:
         url = ("https://ja.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&format=json"
                f"&titles={urllib.parse.quote(title)}")
-        request = urllib.request.Request(url, headers={"User-Agent": "pyodide-llm start measurement"})
-        pages = json.loads(urllib.request.urlopen(request, timeout=60).read())["query"]["pages"]
+        pages = json.loads(fetched(url, headers={"User-Agent": "pyodide-llm start measurement"}, timeout=60))["query"]["pages"]  # (tests/fetching.py, T.496)
         text += next(iter(pages.values()))["extract"][:6000] + "\n"
     return text
 

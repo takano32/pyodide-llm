@@ -25,7 +25,6 @@ import argparse
 import json
 import struct
 import sys
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -37,7 +36,7 @@ sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
 import llama2_numpy  # noqa: E402
 from reference_27b import grouped, widen_ptq1_0  # noqa: E402
-from fetching import ranged  # noqa: E402
+from fetching import fetched, ranged  # noqa: E402
 
 ORIGINAL = "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/"
 BONSAI = ("https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/b072e1d3b35a0a630cece372c2127528e0994386/"
@@ -90,9 +89,7 @@ class Original:
 
 
 def fetch_text(url):
-    request = urllib.request.Request(url)
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read().decode()
+    return fetched(url).decode()  # (tests/fetching.py, T.496)
 
 
 class Stored:

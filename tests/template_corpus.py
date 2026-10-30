@@ -25,10 +25,10 @@ import importlib.util
 import json
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
+
+from fetching import fetched
 
 HERE = Path(__file__).resolve().parent
 MARK = "\x00prompt\x00"
@@ -56,19 +56,8 @@ def converter(path, name):
 
 
 def get(url, tries=4):
-    for attempt in range(tries):
-        try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "pyodide-llm tests"}), timeout=60) as response:
-                return response.read()
-        except urllib.error.HTTPError as error:
-            if error.code in (401, 403, 404):
-                return None
-            if attempt == tries - 1:
-                raise
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
-            if attempt == tries - 1:
-                raise
-        time.sleep(5 * (attempt + 1))
+    # (tests/fetching.py, T.496: a model the Hub does not let one read is None)
+    return fetched(url, headers={"User-Agent": "pyodide-llm tests"}, tries=tries, timeout=60, missing=(401, 403, 404))
 
 
 def most_downloaded(count):
