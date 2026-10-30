@@ -6,7 +6,7 @@
 # and +d of one d of its own, about a third each, as Prism ML's Ternary Bonsai models are), converted the way the page
 # converts them (llama2_convert.Conversion), to the ternary dtype or to any other of the same values.
 #
-#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid | rotated | rotated-tied]
+#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid | rotated | rotated-tied | large]
 #
 # qwen3 (the default): the shape of Ternary Bonsai 1.7B in small, a Qwen3 (norms of the heads of q and k, heads that
 #   do not fill dim, grouped-query attention, the classifier shared with the embedding).
@@ -17,6 +17,9 @@
 # rotated: hybrid said to be in a rotated basis (T.237: blocks of 128 with random signs), as the 27B's file is: the
 #   engine turns every matrix's input before it is quantized and laid out for the ternary kernels, and the
 #   embedding's rows back.
+# large (T.620): qwen3 a model's width, for timing (tests/threads-compare.mjs --prompt): dim 1024, an FFN of 3072, 8 layers,
+#   16 heads of 64 and 8 of keys, a classifier of its own (about 100 million values, 26 MB ternary). Its numbers
+#   are no model's: only how long its matrices take.
 # rotated-tied: the same with the embedding as the classifier too (no output matrix: what version 2 of Prism ML's
 #   rotated basis is for, `tied_output`, as the smaller models of a Qwen3.5 have it): one ternary table whose rows
 #   the engine turns back where it embeds and multiplies by the turned input where it classifies (T.237's review).
@@ -60,6 +63,11 @@ def model(kind):
         # (the widths a matrix reads: the residual stream, an attention's output and the FFN's inside, a linear layer's output)
         said = basis(128, {128, 256, 384})[0] if kind.startswith("rotated") else None
         return tensors, config, 1024, said and {llama2_convert.ROTATED: json.dumps(said)}
+    if kind == "large":
+        settings, weights = synthetic_weights(dim=1024, hidden_dim=3072, n_layers=8, n_heads=16, n_kv_heads=8, vocab_size=VOCAB,
+                                              seq_len=1024, shared=False, head_size=64)
+        tensors, config = qwen3(settings, weights, False)
+        return tensors, {**config, "rms_norm_eps": 1e-6}, 1024, None
     settings, weights = synthetic_weights(dim=128, hidden_dim=384, n_layers=4, n_heads=4, n_kv_heads=2, vocab_size=VOCAB,
                                           seq_len=1024, shared=kind != "own", head_size=64)
     if kind == "own":

@@ -13,6 +13,10 @@
 #                                                 (tests/threads-compare.mjs: each build's forward and its own helper, that
 #                                                 many threads). compare-engines runs no software thread: a change of
 #                                                 forward/threads.js, helper.js or jobs.js is measured only here.
+#   PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh …    T.620: those two pairs alone, timing prompts (threads-compare's
+#                                                 --prompt: the blocks of forwardMany, which no one-token run treads),
+#                                                 and models given by their files as well (<out>.bin, .tokenizer.bin,
+#                                                 .json: tests/make_ternary.py), which compare-engines does not take.
 #
 # CI's (the speed of a development machine decides nothing): tests.yml's extra=, on x86-64 and runner=ubuntu-24.04-arm,
 # after the suite (the models, the kernels and dist/ are there then). Both sides read this tree's Python and kernels:
@@ -31,14 +35,18 @@ again=.tmp/compare-builds/again
 rm -rf "$again" && mkdir -p .tmp/compare-builds && npx astro build --outDir "$again" > .tmp/compare-builds/build.txt 2>&1 || { tail -20 .tmp/compare-builds/build.txt; echo "compare-builds: the second build of this tree failed"; exit 1; }
 name() { basename "$(ls "$1"/_astro/forward.*.js)"; }
 echo "compare-builds: forward as built: $ref $(name "$other/dist") ($(sha256sum "$other"/dist/_astro/forward.*.js | cut -c1-12)), this tree $(name dist) ($(sha256sum dist/_astro/forward.*.js | cut -c1-12)), this tree again $(name "$again") ($(sha256sum "$again"/_astro/forward.*.js | cut -c1-12))"
+[ -z "${PROMPT:-}" ] || [ -n "${THREADS:-}" ] || { echo "compare-builds: PROMPT=1 times the prompts with software threads: THREADS=2,4"; exit 1; }
+prompt=(); [ -z "${PROMPT:-}" ] || prompt=(--prompt)
 for time in $(seq 1 "$times"); do
-  echo "compare-builds: $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
-  node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
-  echo "compare-builds: the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
-  node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$again" --bundle dist
+  if [ -z "${PROMPT:-}" ]; then
+    echo "compare-builds: $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
+    node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
+    echo "compare-builds: the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
+    node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$again" --bundle dist
+  fi
   [ -n "${THREADS:-}" ] || continue
-  echo "compare-builds: with $THREADS software threads, $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
-  node tests/threads-compare.mjs "$@" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
-  echo "compare-builds: with $THREADS software threads, the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
-  node tests/threads-compare.mjs "$@" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
+  echo "compare-builds: with $THREADS software threads${PROMPT:+, prompts}, $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
+  node tests/threads-compare.mjs "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
+  echo "compare-builds: with $THREADS software threads${PROMPT:+, prompts}, the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
+  node tests/threads-compare.mjs "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
 done
