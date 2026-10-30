@@ -225,7 +225,10 @@ const SAID = {
     "console.warn(`kernels: forward.js and its kernels did not start (${told(error)}): the engine runs NumPy`);",
   ],
   "src/runtime/worker/load.ts": ["console.warn(`threads: the software threads did not start (${told(error)}): one thread`);"],
-  "src/runtime/worker/weights.ts": ["console.warn(`memory: no shared memory for this model (${told(error)}): a memory that is not shared, and one thread`);"],
+  "src/runtime/worker/weights.ts": [
+    "console.warn(`memory: no shared memory for this model (${told(error)}): a memory that is not shared, and one thread`);",
+    "console.warn(`engine: the engine of a model that failed as it was built could not be let go of (${told(error)}): its threads and GPU's worker may stay`);",
+  ],
   // (forward.ts's parts and the page's read no failure.ts: the caught value in its own words)
   "src/runtime/forward/threads.ts": ["console.warn(`threads: a software thread did not start (${String(error)}): the search ends at ${best}`);"],
   "src/page/list.ts": ["console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);"],
