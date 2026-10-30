@@ -223,6 +223,7 @@ const SAID = {
     "console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);",
     "console.warn(`gpu: the adapter could not be asked for (${told(error)}): no GPU on this visit`);",
     "console.warn(`kernels: forward.js and its kernels did not start (${told(error)}): the engine runs NumPy`);",
+    "console.warn(`kernels: the kernels of a shared memory did not compile (${told(error)}): one thread`);",
   ],
   "src/runtime/worker/load.ts": ["console.warn(`threads: the software threads did not start (${told(error)}): one thread`);"],
   "src/runtime/worker/weights.ts": [
@@ -231,7 +232,10 @@ const SAID = {
   ],
   // (forward.ts's parts and the page's read no failure.ts: the caught value in its own words)
   "src/runtime/forward/threads.ts": ["console.warn(`threads: a software thread did not start (${String(error)}): the search ends at ${best}`);"],
-  "src/page/list.ts": ["console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);"],
+  "src/page/list.ts": [
+    "console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);",
+    "console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it stays in the list`);",
+  ],
 };
 
 // ---- the tree against the table

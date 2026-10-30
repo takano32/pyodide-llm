@@ -131,6 +131,32 @@ console.log("ok: clock.js by itself: a load says its own parts' seconds and Pyod
 }
 console.log("ok: runtime.js's placeKernels(): the kernels' path for Python where the plain build came, none where the relaxed one alone did");
 
+// ---- T.490: runtime.js's compileKernelsHere(), in the worker's context on a made-up network: a shared build that does
+// not compile leaves the plain one (one thread), and says so; the plain one that does not compile leaves none (NumPy)
+{
+  const { context, run, fresh } = workerHarness({ root: null });
+  const said = [];
+  context.console = { ...console, warn: (line) => said.push(line), info() {} };
+  context.crossOriginIsolated = true;
+  for (const [refused, plain, shared, lines] of [[[], "plain", "shared", 0], [["shared"], "plain", null, 1]]) {
+    said.length = 0;
+    let n = 0;
+    const kinds = ["plain", "shared"];
+    context.stand = { forward: { memory64: () => false, compileKernels: () => {
+      const kind = kinds[n++];
+      if (refused.includes(kind)) throw new Error(`the ${kind} kernels do not compile (a stand-in)`);
+      return kind;
+    } } };
+    run("forwardModule = stand.forward; jsKernels = undefined; sharedKernels = undefined; wideKernels = undefined");
+    fresh(() => new Response(new Uint8Array(8), { status: 200 }));
+    await run("compileKernelsHere()");
+    assert.deepEqual([run("jsKernels"), run("sharedKernels"), said.length], [plain, shared, lines],
+      `T.490: ${refused.join(", ") || "nothing"} refused: the plain kernels, the shared ones, the lines said`);
+    if (lines) assert.match(said[0], /^kernels: the kernels of a shared memory did not compile \(.*\): one thread$/);
+  }
+}
+console.log("ok: runtime.js's compileKernelsHere(): a shared build that does not compile leaves the plain one, and says so");
+
 // ---- loaded.js, in the worker's context: a stand-in of Pyodide (the collector) and of a model
 {
   const { context, run } = workerHarness();

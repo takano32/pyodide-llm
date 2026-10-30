@@ -14,10 +14,15 @@ const listed = () => keptModels().catch((error): Awaited<ReturnType<typeof keptM
   console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);
   return [];
 });
+// T.490: what was kept, deleted. One that cannot be deleted says so on the console, and the list is drawn again as it is
+// (an unhandled rejection left it as it was before the press)
+const forgotten = (one: Parameters<typeof forget>[0]) => forget(one).catch((error) => {
+  console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it stays in the list`);
+});
 export async function showKept() {
   let models = await listed();
   // T.116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
-  for (const one of models.filter((one) => outdated(one))) await forget(one);
+  for (const one of models.filter((one) => outdated(one))) await forgotten(one);
   models = models.filter((one) => !outdated(one));
   for (const option of select.querySelectorAll("option")) {
     const entry = MODELS.find(({ id }) => id === option.value) as any;
@@ -35,7 +40,7 @@ export async function showKept() {
     remove.type = "button";
     remove.textContent = "delete";
     remove.onclick = async () => {
-      await forget(one);
+      await forgotten(one);
       if (model.id === one.manifest.id) {
         remember(model, false);
       }
