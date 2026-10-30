@@ -29,7 +29,7 @@ export const SCRATCH = 4608;
 export const GPU_DONE = 1280, GPU_FAILED = 1281, GPU_BEAT = 1282, GPU_WANTED = 1283;
 if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRATCH || SCRATCH + 448 > GPU_DONE * 4 ||
     (GPU_WANTED + 1) * 4 > CONTROL_BYTES) {
-  throw new Error("the control area does not hold its jobs, the scratch and the GPU's words: see jobs.js");
+  throw new Error("the control area does not hold its jobs, the scratch and the GPU's words: see jobs.ts");
 }
 
 // A job: [kind, eight arguments, rows, count, out stride, a stride, b stride], and the control area holds it as it
