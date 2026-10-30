@@ -11,7 +11,7 @@
 //   - who may read the table: forward.ts's parts, the GPU's worker and the pages; not the model's worker, whose entry
 //     would take the module with it and leave forward.ts's chunk importing the worker's own file (and forward.ts's
 //     parts read neither failure.ts nor updated.ts, for the same reason);
-//   - /benchmark/'s few words for a cell the GPU did not run (src/bench/path.js's gpuSkipped()) are chosen by which
+//   - /benchmark/'s few words for a cell the GPU did not run (src/bench/path.ts's gpuSkipped()) are chosen by which
 //     reason it is, not by words found in it.
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -21,7 +21,7 @@ import { untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { REASONS } = await import("../src/runtime/forward/reasons.ts");
-const { gpuSkipped } = await import("../src/bench.js");
+const { gpuSkipped } = await import("../src/bench.ts");
 
 // ---- the sentences, each whole: [the entry, what it is handed (a function's), the sentence]
 const SAID = [
@@ -106,7 +106,7 @@ console.log(`reasons-check: the table's ${Object.keys(REASONS).length} reasons, 
   // chunk, fetched later, would import the worker's file for it; /benchmark/'s sections' worker the same)
   const entries = (name) => /^src\/runtime\/(?:worker\.ts|worker\/|benchmark\/sections\.ts|updated\.ts|built\.ts|failure\.ts|kept\.ts)/.test(name);
   for (const name of readers) assert.ok(!entries(name), `${name} reads the table of the reasons: it is of forward.ts's chunk, and the worker asks the engine (engine.gpuWhyNot)`);
-  assert.deepEqual(readers, ["src/bench/path.js", "src/benchmark/gpu.ts", "src/runtime/forward/alone.ts", "src/runtime/forward/gpufit.ts", "src/runtime/forward/gpuside.ts", "src/runtime/forward/linear.ts", "src/runtime/forward/paths.ts", "src/runtime/gpu/device.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)),
+  assert.deepEqual(readers, ["src/bench/path.ts", "src/benchmark/gpu.ts", "src/runtime/forward/alone.ts", "src/runtime/forward/gpufit.ts", "src/runtime/forward/gpuside.ts", "src/runtime/forward/linear.ts", "src/runtime/forward/paths.ts", "src/runtime/gpu/device.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)),
     "who reads the table (a new reader: named here, and never one of the model's worker)");
   for (const name of sources.filter((one) => one.startsWith("src/runtime/forward"))) {
     assert.ok(!reads(name, "/failure.ts") && !reads(name, "/updated.ts"), `${name} reads failure.ts or updated.ts: a module of forward.ts's chunk reads nothing the worker's entry reads too`);

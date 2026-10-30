@@ -1,6 +1,6 @@
 // T.227: what came out WRONG, failed, unsteady or skipped in a run, listed once at the report's head.
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { STATES } from "./cpu.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { STATES } from "./cpu.ts";
 
 // a | that tableCell() escaped stays in its cell (T.214: a skipped round's reason is the words of a cell)
 const cells = (line) => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));

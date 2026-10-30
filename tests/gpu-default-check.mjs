@@ -10,7 +10,7 @@
 //     the GPU once;
 //   - a GPU faster from 36 tokens on (the band of 17 to 64 where the first version of T.148 put the prompt on blocks of
 //     16 on the GPU in its check, 1.47 times as long): the generation that checks again takes no longer than the others.
-// T.184 (the review's must-fix): /benchmark/'s page path (forward.js's timePrompts, src/bench.js's pathTable) on the same
+// T.184 (the review's must-fix): /benchmark/'s page path (forward.js's timePrompts, src/bench.ts's pathTable) on the same
 // made-up GPU: far faster, every block of the GPU's side on it and a ratio; failing on its sixth block, the GPU's cells
 // empty with why and no ratio anywhere (its time was the CPU's: 0.90× before); no GPU, the CPU's side alone.
 // T.190: the page path's number of threads: a search run to its end (forward.js's endSearch) and timed on the count it
@@ -196,7 +196,7 @@ if (isMainThread) {
 } else {
   const { memory, base, size, plan, forwardFile, tokenizer, options, quick } = workerData;
   const { compileKernels, createForward, endSearch, timePrompts, external, OUTSIDE_VOCABULARY } = await import(forwardFile);
-  const { pathTable } = await import(path.join(root, "src/bench.js"));
+  const { pathTable } = await import(path.join(root, "src/bench.ts"));
   const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   const spawn = (data) => new Promise((resolve) => {
     const helper = softwareThread(runtimeUrl("helper.ts"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
@@ -512,7 +512,7 @@ if (isMainThread) {
       expect("T.223: a remembered count: no search as it loads, one on the first generation, 2 remembered", [idle, began, after, told], [false, true, 2, [2]]);
     }
     {
-      const { threadsKey } = await import(path.join(root, "src/bench.js"));
+      const { threadsKey } = await import(path.join(root, "src/bench.ts"));
       const device = { hardwareConcurrency: 8, deviceMemory: 8, userAgent: "made up" };
       expect("T.223: the page remembers the count one a model", threadsKey("llm-jp-3-150m", device) !== threadsKey("tiny-lm", device), true);
     }

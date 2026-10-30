@@ -1,6 +1,6 @@
 // The model section's table of the page's own path (T.184, T.190): its threads, its prompts and writing, and what it warns of.
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, times, tableCell } from "./cells.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, times, tableCell } from "./cells.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
 
 /** T.93: where the model page remembers the number of threads it found for a model on this device (localStorage).

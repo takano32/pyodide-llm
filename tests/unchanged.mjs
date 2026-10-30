@@ -26,7 +26,7 @@
 //            conversion the tests make, the logits of every forward pass, the ids of every encode (two runs of pytest)
 //   choices  (review) tests/unchanged-choices.mjs: what forward.js decides without a browser over a grid of made-up numbers (GPU or CPU for
 //            a block and a step, where the weights go, the memory a model needs): the constants that choose a device are in no other check
-//   exports  (review) the names a window keeps: every export of forward.js, jobs.js, kept.js, gpu.js and src/bench.js (a function by its
+//   exports  (review) the names a window keeps: every export of forward.js, jobs.js, kept.js, gpu.js and src/bench.ts (a function by its
 //            arity, a constant as JSON), and every public name of llama2_convert and llama2_numpy with its signature, a class's methods too
 //            (tests/unchanged_exports.py): the tests reach only the names they use, a facade that forgets one breaks the page
 //   page     (T.355 review) the model page's script (src/pages/index.astro's <script> and src/page/*.ts): what it is made of, counted: every
@@ -34,7 +34,7 @@
 //            expression. A moved statement counts the same wherever it is; a branch dropped, a key spelled otherwise, a limit
 //            changed or `===` turned to `!==` is a count that differs. (No test outside CI's browsers runs the page's script.)
 //            (T.353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
-//   bench    (T.353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
+//   bench    (T.353 review) every call tests/bench.mjs makes to src/bench.ts, written down (tests/unchanged-bench.mjs), in both trees:
 //            the arguments and the Markdown or numbers that come back. The tables' words, cells and warnings, read by nothing else
 //   gpuworker (T.353 review) the statements of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js and src/runtime/benchmark/gpu/*.js), and (T.352)
 //            of the model's (src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common` where the benchmark's share `shared`), each
@@ -222,9 +222,11 @@ async function exports(other) {
   const [was, now] = await Promise.all([other, root].map(async (tree) => {
     const found = {};
     // (T.367.1: a window of the runtime by its name there, wherever the tree keeps the runtime: tests/tree.mjs)
-    for (const file of ["forward.js", "jobs.js", "kept.js", "gpu.js", "src/bench.js"]) {
+    for (const file of ["forward.js", "jobs.js", "kept.js", "gpu.js", "src/bench.ts"]) {
       let module;
-      try { module = await import(file.startsWith("src/") ? pathToFileURL(path.join(tree, file)) : treeOf(tree).runtimeUrl(file)); } catch (error) { found[`${file}: import`] = `throws ${error.message}`; continue; }
+      // (T.480.2: src/bench.ts was src/bench.js in a tree before it, and is written down by the one name)
+      const own = (name) => (fs.existsSync(path.join(tree, name)) ? name : name.replace(/\.ts$/, ".js"));
+      try { module = await import(file.startsWith("src/") ? pathToFileURL(path.join(tree, own(file))) : treeOf(tree).runtimeUrl(file)); } catch (error) { found[`${file}: import`] = `throws ${error.message}`; continue; }
       for (const [name, value] of Object.entries(module)) {
         found[`${file}: ${name}`] = typeof value === "function" ? `${/^class\b/.test(String(value)) ? "class" : "function"}/${value.length}` : JSON.stringify(value) ?? String(value);
       }
@@ -293,8 +295,8 @@ function bench(other) {
     return flat;
   };
   const was = run(other), now = run(root);
-  if (Object.keys(now).length < 100) throw new Error(`only ${Object.keys(now).length} calls were written down: the preload does not reach src/bench.js`);
-  return said("src/bench.js, the calls tests/bench.mjs makes", differences(was, now));
+  if (Object.keys(now).length < 100) throw new Error(`only ${Object.keys(now).length} calls were written down: the preload does not reach src/bench.ts`);
+  return said("src/bench.ts, the calls tests/bench.mjs makes", differences(was, now));
 }
 
 // the statements of /benchmark/'s GPU worker (T.353 review), as syntax trees. What the division adds is told apart from what it moves:

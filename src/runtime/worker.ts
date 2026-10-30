@@ -116,7 +116,7 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
       const rows: BenchRow[] = [];
       try {
         for (const round of data.rounds) {
-          // T.214: a round the page skips (src/bench.js's roundsHere(): NumPy's float32 weights where the browser does
+          // T.214: a round the page skips (src/bench.ts's roundsHere(): NumPy's float32 weights where the browser does
           // not say its memory) is a row that says why, with nothing loaded
           if (round.skip !== undefined) {
             rows.push({ name: round.name, without: round.without, skip: round.skip });

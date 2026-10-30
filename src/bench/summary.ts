@@ -1,9 +1,9 @@
 // T.192: one line a section for the short report and the page's head.
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, threadsOf, times, timesFaster, noRatios } from "./cells.js";
-import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.js";
-import { tokenWrong, fastestMatVec } from "./gpu.js";
-import { stepMs, less, layerSplit } from "./layersteps.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, threadsOf, times, timesFaster, noRatios } from "./cells.ts";
+import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.ts";
+import { tokenWrong, fastestMatVec } from "./gpu.ts";
+import { stepMs, less, layerSplit } from "./layersteps.ts";
 
 // ---- T.185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
 // Each says the fastest and the ceilings; the tables with every row are in the whole report.

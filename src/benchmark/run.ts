@@ -2,7 +2,7 @@
 // loaded again by the page-memory section, and ?run=.
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { forgetMark, readMark, memoryResult } from "./page-memory.ts";
-import { cpuBaseline, CPU_SPEED_KEY } from "../bench.js";
+import { cpuBaseline, CPU_SPEED_KEY } from "../bench.ts";
 import { $, parameters, SECTIONS, type Name, ALL, type Result, results } from "./dom.ts";
 import { runAt, runBegan, runEnded, sectionAt, sectionBegan } from "./running.ts";
 import { parts, rendered, clock, staged, ticked, live, stalled } from "./section.ts";
@@ -13,7 +13,7 @@ import { storage, line } from "./storage.ts";
 import { tabStorage, pageMemory } from "./memory.ts";
 import { STATE, report, awake } from "./report.ts";
 
-// what src/bench/cpu.js's cpuBaseline() answers: the CPU section's fastest token and prompt, or why there is none
+// what src/bench/cpu.ts's cpuBaseline() answers: the CPU section's fastest token and prompt, or why there is none
 type Baseline = { why?: string; token?: { threads: number; msPerToken: number; GBps: number; isolated: boolean };
   prompt?: { threads: number; msPerToken: number; isolated: boolean } };
 

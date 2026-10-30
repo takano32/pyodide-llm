@@ -1,6 +1,6 @@
 // The GPU section's table of where a layer's time goes (T.202, T.208), and its attention by the cache's length.
-// (T.353: a part of src/bench.js, which is the window that exports every name of these)
-import { number, times, noRatios, tableCell, unmeasured } from "./cells.js";
+// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+import { number, times, noRatios, tableCell, unmeasured } from "./cells.ts";
 
 // T.202: a time of layerSteps() in ms (undefined where it failed or is not a positive number)
 const stepMs = (one) => (one && !one.error && Number.isFinite(one.ms) && one.ms > 0 ? one.ms : undefined);

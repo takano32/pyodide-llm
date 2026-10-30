@@ -14,7 +14,7 @@
 // front, so a tab ended after that says nothing of the limit, and a page left is no tab ended. A mark found is then a
 // tab that ended with no such event: the browser ended it (for its memory, most likely: a crash of another cause
 // looks the same).
-import { tableCell } from "../bench.js";
+import { tableCell } from "../bench.ts";
 import type { Result } from "./dom.ts";
 import type { Stage } from "./section.ts";
 import type { MemoryGrown, ToMemory } from "../runtime/contracts/benchmark.ts";

@@ -13,7 +13,7 @@ type Run = { ms: number; gpuTokens: number };
 // a row as it is filled: every side's cell comes after the row is made
 type Row = Omit<PathRow, "cpu" | "gpu"> & Partial<Pick<PathRow, "cpu" | "gpu">>;
 
-// T.184: the model page's own path on /benchmark/ (worker/timing.ts's timedPaths, src/bench.js's pathTable): prompts of counts
+// T.184: the model page's own path on /benchmark/ (worker/timing.ts's timedPaths, src/bench.ts's pathTable): prompts of counts
 // tokens through forwardMany() at position 0 as the page chooses (T.148), on the CPU only and on the GPU only
 // (engine.gpuSide). The sides take turns, a warm-up round and then PATH_ROUNDS, so that a device that heats up or is
 // busy for a while slows all of them alike; each cell is the median with the slowest and the fastest, unsteady where

@@ -32,7 +32,7 @@ const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 const { createForward, footprint } = await import(forwardFile);
 const { CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
-const { threadsKey } = await import(new URL("src/bench.js", root));
+const { threadsKey } = await import(new URL("src/bench.ts", root));
 
 // a float32 Llama of 2 layers (the engine reads none of its tensors with kernels that do nothing). T.375.2: its plan is
 // Python's own (tests/plans.mjs, the native Python), as every plan a test hands the engine
