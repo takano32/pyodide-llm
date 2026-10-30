@@ -23,7 +23,7 @@ type Logged = { best: number; candidate: number; times: Record<number, number[]>
 // candidate is chosen), the step of the comparison, whether the candidate's helpers are still starting
 type Search = { best: number; direction: "down" | "up"; moved: boolean; far: boolean; candidate: number; times: Record<number, number[]> | null; step: number;
   waiting: boolean; whileGpu: boolean };
-// (the control area's words and the table of the jobs are read where threads run and nowhere else: ctl! and table! below)
+// (the control area's words and the table of the jobs are read where threads run and nowhere else: taken once there, ctl! and table!)
 
 // ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.ts has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
@@ -74,39 +74,41 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
       for (const job of jobs) runRows(job, 0, job[ROWS]);
     };
     if (threads <= 1) return alone();
+    // (more threads than one: a shared memory, whose words and table of the jobs there are)
+    const words = ctl!, list = table!;
     // close the previous phase (odd), let every helper still awake leave it, then rewrite the jobs
-    Atomics.store(ctl!, GEN, gen + 1);
+    Atomics.store(words, GEN, gen + 1);
     if (!waitUntil(ACTIVE, (seen) => seen === 0)) {
       giveUp();
       return alone();
     }
     let total = 0;
-    ctl![JOBS] = jobs.length;
+    words[JOBS] = jobs.length;
     jobs.forEach((job, i) => {
       const at = i * JOB, rows = job[ROWS];
       const quad = job[COUNT] > 1 ? 4 : 1;  // T.159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile
       const size = quad * Math.ceil(rows / (threads * CHUNKS_PER_THREAD * quad));
-      table!.set(job, at);
-      table![at + SIZE] = size;
-      table![at + FIRST] = total;
+      list.set(job, at);
+      list[at + SIZE] = size;
+      list[at + FIRST] = total;
       total += Math.ceil(rows / size);
     });
-    ctl![TOTAL] = total;
-    Atomics.store(ctl!, COUNTER, 0);
-    Atomics.store(ctl!, FINISHED, 0);
+    words[TOTAL] = total;
+    Atomics.store(words, COUNTER, 0);
+    Atomics.store(words, FINISHED, 0);
     gen += 2;
-    Atomics.store(ctl!, GEN, gen);
+    Atomics.store(words, GEN, gen);
     // wake helpers 1.. by name, no more than there are chunks for them and no more than this many threads
     for (let h = 1, wake = Math.min(threads - 1, total - 1); h <= wake; h++) {
-      Atomics.store(ctl!, WAKE + h, gen);
-      Atomics.notify(ctl!, WAKE + h, 1);
+      Atomics.store(words, WAKE + h, gen);
+      Atomics.notify(words, WAKE + h, 1);
     }
-    for (let c = Atomics.add(ctl!, COUNTER, 1); c < total; c = Atomics.add(ctl!, COUNTER, 1)) {
+    for (let c = Atomics.add(words, COUNTER, 1); c < total; c = Atomics.add(words, COUNTER, 1)) {
       let j = jobs.length - 1;
-      while (table![j * JOB + FIRST] > c) j--;
-      const at = j * JOB, size = table![at + SIZE], r0 = (c - table![at + FIRST]) * size;
+      while (list[j * JOB + FIRST] > c) j--;
+      const at = j * JOB, size = list[at + SIZE], r0 = (c - list[at + FIRST]) * size;
       runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][ROWS]));
-      Atomics.add(ctl!, FINISHED, 1);
+      Atomics.add(words, FINISHED, 1);
     }
     if (!waitUntil(FINISHED, (seen) => seen === total)) {
       giveUp();
@@ -222,11 +224,13 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // the helpers in QUIT's hands: set, every one woken to see it, and each ended
   let stops = 0;  // stopHelpers() counts them: a helper whose start began before one is not kept
   function stopHelpers() {
+    // (a shared memory's: stop() asks for it there alone, and giveUp() where a helper ran)
+    const words = ctl!;
     stops += 1;
-    Atomics.store(ctl!, QUIT, 1);
+    Atomics.store(words, QUIT, 1);
     for (let h = 1; h <= helpers.length; h++) {
-      Atomics.add(ctl!, WAKE + h, 2);
-      Atomics.notify(ctl!, WAKE + h);
+      Atomics.add(words, WAKE + h, 2);
+      Atomics.notify(words, WAKE + h);
     }
     // QUIT stays set until the next ensureHelpers(): a helper that wakes late must still see it
     helpers.splice(0).forEach((helper) => helper.terminate?.());
