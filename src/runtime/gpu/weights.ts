@@ -31,7 +31,7 @@ type Home = { joined: string; at: [number, number] };
 type Together = { homes: Partial<Record<TensorName, Home>>; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
 // T.625: a record by the plan's tensor names (the plan's matrices, a token's homes), entry by entry, by those names
 // (Object.entries says string)
-const named = <V>(record: Partial<Record<TensorName, V>>) => Object.entries(record) as [TensorName, V][];
+const named = <V>(record: Partial<Record<TensorName, V>>) => Object.entries(record) as [TensorName, NonNullable<V>][];
 // (T.547.2.3: no scales where its matrices' blocks hold them)
 // (T.547.3.3: and their packing, every matrix's of them)
 type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null, GpuPacking] };
