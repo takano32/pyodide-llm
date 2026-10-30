@@ -58,10 +58,12 @@ export type Vectors = {
   deltaNorm?: Vector;
 };
 
+// T.625: a plan's matrices, by the names of the plan's tensors, and only those the model has
+export type Matrices = Partial<Record<TensorName, Matrix>>;
+
 // T.152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
 // another table, the embedding; the final norm (its bias and GPT-2's positions: 0 where the model has none); whether
 // the classifier has outlier channels (T.92) and which; where the ids go; the most steps of a submission
-export type Matrices = Partial<Record<TensorName, Matrix>>;
 export type Tokens = {
   classifier: Table;
   embedding: Table | null;
@@ -148,7 +150,6 @@ export type Started = KindNumbers & {
   rotated: { block: number; signs: { width: number; at: number }[] } | null;
   // the most tokens of a block
   batch: number;
-  // (T.625: by the names of the plan's tensors, and only those the model has)
   matrices: Matrices;
   // T.547.3.4: where the codebooks of llama.cpp's blocks are (the checkpoint's row "codebooks", engine/dtypes.py's
   // CODEBOOKS bytes: convert/grids.py's codebooks()); 0: the model has none
