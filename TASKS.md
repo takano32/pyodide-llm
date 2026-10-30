@@ -179,7 +179,7 @@
 - T.620 [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 未着手
 - T.621 [整理][CPU] 仕事を位置の並びでなく `WORK` の記録の関数で組む — 未着手
 - T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 未着手
-- T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 未着手
+- T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 進行中
 - T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 未着手
 <!-- 目次ここまで -->
 
@@ -1493,8 +1493,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 壊し方の道具を速い組 → smoke → 重い組の 3 段に（T.375.4 のレビューの勧め）。
 - T.487 から: `gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」と `tokensUnfit()` の `embedding.group` の比べに効く入力が無い（作り物の事実を `gpuOnlyUnfit()`・`gpuBytes()` に渡せない）。網の `unchanged-choices` の格子は `linear`・`convolution`・`rotated` を渡さない（足すなら別の記録に: 網の決まり (6)）。
 
-### T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 状態: 未着手（2026-10-30、T.487 から。規模 小〜中）
-- `Form` の型と `Stateful` が形の数の鍵を 2 回書く。`engine.ts` の `shape` と `Sizes` は同じ数を 2 つの名前で持つ。GPU の Worker への知らせの `six`・`ternary`、`aloneKept()` の `ternaryKey`、`/benchmark/` の `t.kind === "int8"` は詰め方の名前のまま（表 `PACKED` の行で言える）。`gpuBytes()` は GPU に置かれないモデルにも Llama の行列の形で答える。
+### T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.487 から。規模 小〜中）
+- **(1) 完了（2026-10-30、ブランチ `t.623-keys`）**: worker のアダプタが持つ端末の鍵 3 つ（`key`・`ternaryKey`・`blocksKey`）を、モデル自身のシェーダの名前で引く表 `keys: { plain, ternary, blocks }` 1 つに（`forward/alone.ts` の `Adapter`、`worker/runtime.ts` が 1 文で作り、`weights.ts` の `aloneKept()` が引く）。動きの違い: 3 つのうち 1 つでも作れなければ表ごと無い（前は作れた所まで残った: `deviceKey()` は同じ文を畳むだけで、1 つだけ投げる訳は無い）。`worker-sink-check` が書いていた `gpuAdapter.key` も表に（壊し方: 素のモデルの鍵を `ternary` で引くと「a verdict the page kept left the model on the GPU alone」で落ちる）。手元: 型検査、build、軽い組（740 秒）。**CI を省いた。訳: 鍵を引く道は `worker-sink-check` が踏み、鍵そのものの文は変わらない。** **レビュー（Sonnet low、2026-10-30）: 直し 1 つ、直した。** AGENTS.md の「`Adapter.blocksKey`」を `Adapter.keys.blocks` に。古い名前を読む所はほかに無い。1 つだけ投げる場合は無く、投げても保存した判定を使わず量り直す（安全な向き）。
+- **残り**: `Form` と `Stateful` の形の数の鍵、`engine.ts` の `shape` と `Sizes`、GPU の Worker への知らせの `six`・`ternary`、`/benchmark/` の `t.kind === "int8"`、`gpuBytes()` の Llama の形。
+- （採番の時の行）`Form` の型と `Stateful` が形の数の鍵を 2 回書く。`engine.ts` の `shape` と `Sizes` は同じ数を 2 つの名前で持つ。GPU の Worker への知らせの `six`・`ternary`、`aloneKept()` の `ternaryKey`、`/benchmark/` の `t.kind === "int8"` は詰め方の名前のまま（表 `PACKED` の行で言える）。`gpuBytes()` は GPU に置かれないモデルにも Llama の行列の形で答える。
 
 ### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 未着手（2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
 - `shaders/matvec.ts`（ベンチ）を `fused.ts` の文に寄せる（重なりは `mulMatVec` の 86 行のうち 63〜68、`ortDp4aMatVec` の 89 行のうち 74、`ortMatVec` の 83 行のうち 35。エンジンの文をそのままにすれば鍵は動かない）。`EMBED`・`EMBED_ROWS` と 3 値の 2 つを 1 つの作る関数に（出す文が今と 1 字も違わないこと: 網の `shaders` と `device-key-check`）。確かめは網の `shaders`（`--built` も）と `gpu-prompt.yml`・`bench.yml` を 1 本ずつ。
