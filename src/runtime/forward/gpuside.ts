@@ -1,6 +1,6 @@
-// forward/gpuside.ts (T.349): the GPU's side of one engine: what the GPU would hold of the model and why it would not
-// take it, the GPU's worker (src/runtime/gpu.ts) started and stopped, a prompt's blocks and a generation's steps through
-// it, and which of them go there (T.135, T.148, T.152, T.156, T.210).
+// forward/gpuside.ts (T.349): the GPU's side of one engine (what the GPU would hold of the model and why it would not
+// take it is gpufit.ts's, T.457.1): the GPU's worker (src/runtime/gpu.ts) started and stopped, a prompt's blocks and a
+// generation's steps through it, and which of them go there (T.135, T.148, T.152, T.156, T.210).
 // A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
 import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.ts";
