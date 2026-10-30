@@ -6,8 +6,9 @@ import {
 } from "./formats.ts";
 import { greedy, sampled } from "./sampling.ts";
 import { ggufOf, hf } from "./builders.ts";
+import type { Entry } from "./builders.ts";
 
-export const HF_JAPANESE = [
+export const HF_JAPANESE: Entry[] = [
   // Fetched from huggingface.co and converted in the page. Japanese from light to heavy, then English from light
   // to heavy, as everywhere else. What "fetches" says is the download; int8 is what it becomes here.
   { group: "hf", id: "hf-llm-jp-3-150m-instruct3", name: "llm-jp-3 150M instruct3", note: "answers instructions · 日本語 / English · fetches 305 MB → int8 171 MB",

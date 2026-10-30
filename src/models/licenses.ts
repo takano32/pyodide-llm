@@ -27,7 +27,7 @@ const LFM_OPEN = "LFM Open License v1.0";
 // T.261.3: Google's terms for Gemma, as the cards of Gemma 3 name them ("**Terms of Use**: [Terms]", a link to
 // ai.google.dev/gemma/terms; their metadata: gemma). unsloth's copies and GGUFs have the same words
 const GEMMA = "Gemma Terms of Use";
-export const LICENSES = {
+export const LICENSES: Record<string, string> = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
   "llm-jp/llm-jp-3-980m-instruct3": APACHE, "rinna/japanese-gpt2-small": MIT, "rinna/japanese-gpt-neox-small": MIT,
@@ -192,4 +192,4 @@ export const LICENSES = {
 // original in About (the owner's choice, 2026-10-14: not in the note, which a phone cuts short). Gemma's Terms of Use
 // (section 3.1) ask for this one, word for word.
 const GEMMA_NOTICE = "Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms";
-export const NOTICES = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE };
+export const NOTICES: Partial<Record<string, string>> = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE };

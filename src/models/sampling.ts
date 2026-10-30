@@ -1,8 +1,9 @@
 // How the list's entries sample: the sets the models' cards recommend.
+import type { Sampled } from "../runtime/contracts/messages.ts";
 
 // greedy decoding makes small models loop, so the Japanese ones sample, and penalize repetition
 // steps: 0 is as many tokens as the context of the model holds. Nothing here holds a model back by default.
-export const sampled = (repetition_penalty) => ({ steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty });
+export const sampled = (repetition_penalty: number) => ({ steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty });
 export const greedy = { steps: 0, temperature: 0.0 };
 
 // the sampling of Qwen3's model card for either form, without its top-k of 20: the engine has one since T.274, on the
@@ -15,7 +16,7 @@ export const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalt
 // thinking; without, 1.0, top-p 1.0 and a presence penalty of 2.0 "for text" and these 0.7 and 0.8 "for VL tasks":
 // the 0.8B wrote worse with the former (TASKS.md's T.274: a French sentence that means nothing, where it translated
 // rightly with 0.7 and 0.8), so the latter. Agents-A1's card has one set, Bonsai 2's a min-p where it thinks
-const sampling35 = (temperature, topp, more) => ({ steps: 0, temperature, topp, repetition_penalty: 1.0, top_k: 20, ...more });
+const sampling35 = (temperature: number, topp: number, more?: Sampled) => ({ steps: 0, temperature, topp, repetition_penalty: 1.0, top_k: 20, ...more });
 export const QWEN35_SAMPLING = { thinking: sampling35(1.0, 0.95, { presence_penalty: 1.5 }), atOnce: sampling35(0.7, 0.8, { presence_penalty: 1.5 }) };
 export const AGENTS_A1_SAMPLING = { thinking: sampling35(0.85, 0.95, { presence_penalty: 1.1 }), atOnce: sampling35(0.85, 0.95, { presence_penalty: 1.1 }) };
 export const BONSAI_2_SAMPLING = { thinking: sampling35(1.0, 0.95, { min_p: 0.05 }), atOnce: QWEN35_SAMPLING.atOnce };
@@ -41,4 +42,4 @@ export const SPARK_SAMPLING = { thinking: spark, atOnce: spark };
 // the answer: a thought of the Qwen3.5 family longer than this (3 of its 32 that closed: 3,701 to 3,860) is closed a little early.
 export const THOUGHT_BUDGET = 4096 - 512;
 /** T.520: whether an entry thinks before it answers (its note says so, as every one of them does). */
-export const thinks = (entry) => /^thinks\b/.test(entry.note ?? "");
+export const thinks = (entry: { note?: string }) => /^thinks\b/.test(entry.note ?? "");

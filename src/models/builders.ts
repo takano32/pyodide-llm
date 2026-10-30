@@ -1,16 +1,56 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
 import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.ts";
 import { atOnce, sampled, thinking } from "./sampling.ts";
+import type { Hf, OfHuggingFace, Sampled } from "../runtime/contracts/messages.ts";
+import type { Options } from "../runtime/contracts/python.ts";
+import type { Dtype } from "../runtime/contracts/form.ts";
+
+// An entry of the list (src/models.ts, which exports this type): an id, a name and a note (the note of the list: the
+// window adds the devices it is for), the group it is listed in (none: "site"), and what the worker is handed of it
+// (src/page/address.ts weighs it into the worker's Listed, src/runtime/contracts/messages.ts): a model of this site
+// (source: the repository it was built from, checkpoint, tokenizer and bytes), or one of Hugging Face converted in the
+// page (hf, original: the repository whose model it is, download, conversion, shares, weights: the dtype it keeps where
+// it names one, loaded: its bytes once loaded where the note cannot say them, rebuilt: its weights are not the
+// original's), the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
+// opens with
+export type Entry = {
+  group?: "site" | "original" | "hf";
+  id: string;
+  name: string;
+  note: string;
+  source?: string;
+  checkpoint?: string;
+  tokenizer?: string;
+  bytes?: number;
+  hf?: Hf;
+  original?: string;
+  download?: number;
+  conversion?: OfHuggingFace["conversion"];
+  shares?: string[];
+  weights?: Dtype;
+  loaded?: number;
+  rebuilt?: boolean;
+  options: Options;
+  template?: string;
+  generation: Sampled;
+  prompt: string;
+  placeholder: string;
+};
+// what the entries a function below writes share, before their own id, name, note and sampling
+type Common = Omit<Entry, "id" | "name" | "note" | "generation">;
+// the weights a function below is given: a GGUF's with its original's vocabulary (ggufOf()), or a repository's (hf())
+type Source = Pick<Entry, "original" | "hf">;
 
 /** A Qwen3 twice (T.124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
  * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
  * the two forms' generation settings where they are not Qwen3's. chat.languages: the note's languages where the card's
  * are not Japanese and English (T.537), with 日本語 where it answered Japanese questions in Japanese here (T.539) */
-export function thinkingAndNot(id, name, source, download, sizes, { languages = "日本語 / English", ...chat } = {}, formats = {}, sampling = {}) {
+export function thinkingAndNot(id: string, name: string, source: Source, download: number, sizes: string, { languages = "日本語 / English", ...chat }: { languages?: string } & Partial<Entry> = {},
+  formats: { thinking?: string; atOnce?: string } = {}, sampling: { thinking?: Sampled; atOnce?: Sampled } = {}): Entry[] {
   // T.369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
   // the whole format, formats.js's note on QWEN25). The converter alone would begin with the template's <|im_start|> now
-  const common = { group: "hf", ...source, download, conversion: {}, options: QWEN3_OWN_BOS, shares: [`${id}-thinking`, id],
+  const common: Common = { group: "hf", ...source, download, conversion: {}, options: QWEN3_OWN_BOS, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...chat };
   return [
     // formats.thinking: where the model's format is not Qwen3's (T.236)
@@ -24,10 +64,10 @@ export function thinkingAndNot(id, name, source, download, sizes, { languages = 
  * with "<think>\n" where enable_thinking is true and with an empty thought where it is false (and with neither where
  * nothing is said, which is the format the converter reads). The real tokenizer begins every text with <s>, the
  * converter's BOS. sampling: its card's for either form */
-export function miniCpm5(id, name, source, download, sizes, sampling) {
-  const common = { group: "hf", ...source, download, conversion: {}, options: {}, shares: [`${id}-thinking`, id],
+export function miniCpm5(id: string, name: string, source: Source, download: number, sizes: string, sampling: { thinking: number; atOnce: number }): Entry[] {
+  const common: Common = { group: "hf", ...source, download, conversion: {}, options: {}, shares: [`${id}-thinking`, id],
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" };
-  const sampled = (temperature) => ({ steps: 0, temperature, topp: 0.95, repetition_penalty: 1.0 });
+  const sampled = (temperature: number) => ({ steps: 0, temperature, topp: 0.95, repetition_penalty: 1.0 });
   return [
     { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · English / 中文 · ${sizes}`,
       generation: sampled(sampling.thinking), template: `${CHATML}<think>\n` },
@@ -37,11 +77,12 @@ export function miniCpm5(id, name, source, download, sizes, sampling) {
 }
 /** T.203 (T.136's fourth stage): a Q8_0 GGUF's weights with the vocabulary and config.json of its original, which
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
-export const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
+export const ggufOf = (repo: string, revision: string, weights: string, original: string, originalRevision: string, tokenizer = "tokenizer.json"): Source =>
   ({ original, hf: { repo, revision, weights, vocabulary: { repo: original, revision: originalRevision, tokenizer } } });
 /** an LFM2 of the list: the maker's own Q8_0 GGUF's weights with the vocabulary and config.json of its original, or
  * (no revision of a GGUF: null) the original's safetensors */
-export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes, format = { options: lfm25, template: CHATML }, temperature = 0.1) => ({
+export const lfm2 = (id: string, name: string, repo: string, revision: string | null, originalRevision: string, download: number, sizes: string,
+  format: Partial<Entry> = { options: lfm25, template: CHATML }, temperature = 0.1): Entry => ({
   group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`,
   ...(revision ? ggufOf(`LiquidAI/${repo}-GGUF`, revision, `${repo}-Q8_0.gguf`, `LiquidAI/${repo}`, originalRevision)
     : { hf: hf(`LiquidAI/${repo}`, originalRevision) }), download,
@@ -55,7 +96,8 @@ export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes
  * LFM2 700M's (temperature 0.3, Liquid AI's LFM2 cards; a choice of the coordinator, TASKS.md's T.511).
  * T.528: another GGUF of the same repository (quantization: the name's word, Q4_K_M) with what it takes besides (more:
  * conversion.blocks and loaded) */
-export const shisaLfm2 = (id, name, repo, revision, ggufRevision, download, sizes, quantization = "Q8_0", more = {}) => ({
+export const shisaLfm2 = (id: string, name: string, repo: string, revision: string, ggufRevision: string, download: number, sizes: string, quantization = "Q8_0",
+  more: Partial<Entry> = {}): Entry => ({
   group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`,
   ...ggufOf(`mradermacher/${repo}-GGUF`, ggufRevision, `${repo}.${quantization}.gguf`, `shisa-ai/${repo}`, revision), download,
   conversion: {}, options: {}, generation: { steps: 0, temperature: 0.3, topp: 1.0, repetition_penalty: 1.05 },
@@ -69,7 +111,7 @@ export const shisaLfm2 = (id, name, repo, revision, ggufRevision, download, size
  * top-k of 64 and a top-p of 0.95, and transformers' temperature of 1.0 where it names none.
  * The notice the Gemma Terms of Use ask for is not in the note: at a phone's width the select never shows it (the
  * owner chooses where it goes, TASKS.md's T.261.3) */
-export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
+export const gemma3 = (size: string, revision: string, originalRevision: string, download: number, sizes: string): Entry => ({
   group: "hf", id: `hf-gemma-3-${size.toLowerCase()}`, name: `Google Gemma 3 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`,
   ...ggufOf(`unsloth/gemma-3-${size.toLowerCase()}-it-GGUF`, revision, `gemma-3-${size.toLowerCase()}-it-Q8_0.gguf`,
@@ -88,7 +130,7 @@ export const gemma3 = (size, revision, originalRevision, download, sizes) => ({
  * apply_chat_template's without a thought) are the converter's. The stops are generation_config.json's eos_token_id,
  * <eos>, <turn|> and <|tool_response> (1, 106, 50): the converter names <bos> and <eos> alone (T.524), and an answer
  * then went on past <turn|>. The sampling is generation_config.json's: a temperature of 1.0, top-k 64, top-p 0.95 */
-export const gemma4 = (size, revision, ggufRevision, download, loaded, sizes) => ({
+export const gemma4 = (size: string, revision: string, ggufRevision: string, download: number, loaded: number, sizes: string): Entry => ({
   group: "hf", id: `hf-gemma-4-${size.toLowerCase()}`, name: `Google Gemma 4 ${size}`,
   note: `answers instructions · 日本語 / English · ${sizes}`,
   ...ggufOf(`ggml-org/gemma-4-${size}-it-GGUF`, ggufRevision, `gemma-4-${size}-it-Q8_0.gguf`, `google/gemma-4-${size}-it`,
@@ -110,7 +152,8 @@ export const gemma4 = (size, revision, ggufRevision, download, loaded, sizes) =>
  * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T.250's review).
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */
-export const ternaryBonsai = (size, revision, originalRevision, download, sizes, { options = QWEN3_OWN_BOS, ...start } = {}) => ({
+export const ternaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
+  { options = QWEN3_OWN_BOS, ...start }: Partial<Entry> = {}): Entry => ({
   group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Prism ML Ternary Bonsai ${size}`,
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
@@ -121,4 +164,4 @@ export const ternaryBonsai = (size, revision, originalRevision, download, sizes,
 // Models that huggingface.co serves and this page converts itself (src/python/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
-export const hf = (repo, revision, tokenizer = "tokenizer.json") => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
+export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json"): Hf => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
