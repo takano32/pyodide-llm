@@ -158,6 +158,35 @@
 - T.566 [性能][WebGPU] 状態を持つ層の読み戻しを、CPU が続けうるときだけに — 未着手
 - T.584 [運用][遠隔試験] 手元の道具と軽い組を bun でも回す — 進行中
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
+- T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
+- T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
+- T.593 [追加][モデル] ELYZA-Shortcut-1.0-Qwen-7B — 未着手
+- T.594 [追加][モデル] Tanuki-8B-dpo-v1.0（GENIAC、松尾研） — 未着手
+- T.595 [追加][モデル] llm-jp-3 7.2B instruct3 — 未着手
+- T.596 [追加][モデル] LFM2-350M-ENJP-MT（日英の翻訳）と LFM2.5-2.6B — 未着手
+- T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 未着手
+- T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 未着手
+- T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 未着手
+- T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 未着手
+- T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 未着手
+- T.602 [追加][モデル] Sakana AI の残り（TinySwallow 1.5B base・TAID-LLM 1.5B・Karamaru・EvoLLM-JP 7B） — 未着手
+- T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 未着手
+- T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 未着手
+- T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 未着手
+- T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 未着手
+- T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
+- T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
+- T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 候補
+- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 未着手
+- T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 未着手
+- T.612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 未着手
+- T.613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 未着手
+- T.614 [追加][モデル] PLaMo 3（plamo3） — 未着手
+- T.615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 候補
+- T.616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 候補
+- T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
+- T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
+- T.619 [追加][モデル] LFM3（lfm3） — 候補
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1380,3 +1409,128 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 置き場: `~/GitHub/bun`（`origin` = oven-sh/bun、`my` = takano32/bun のフォーク、どちらも ssh）。**手元では建てない**（下の行）。試した形と訳は docs/notes/t584-bun-2026-10-25.md。
 - **候補**（上流にまだ見当たらないもの）: (1) 問いだけ違う `file:` の URL の動的 import が同じモジュールになる（相対の指定・絶対の道なら別。Node と仕様は別のモジュール）: **issue oven-sh/bun#46900 を出した**（2026-10-25、持ち主「出していいよ」。文は `.tmp/bun/issue-file-url-query.md` の下書きのまま）。直す PR は手元で建てられないので、上流が拾うかを見てから。(2) WebAssembly のメモリの `grow` がエンジンの形で約 1 秒かかる（小さな再現はまだ）。**出さないもの**（上流に出ている）: `stripTypeScriptTypes`（PR #41649 ほか）、`onmessage` で終わらない（issue #24256、PR #32482 ほか）、共有の 64 ビットのメモリが worker に 32 ビットで届く（issue #45739、PR #45916: 前に候補 (3) と書いた「`address` を読まない」は取りまとめ役の読み違いで、本当はこれ）。
 - **手元のビルドは試してやめた（2026-10-25、持ち主の決め）**: LLVM 22 では建たない（手元の Rust は stable も LLVM 23 で、bun のビルドは clang と rustc の LLVM の大きい版をそろえることを求める）。LLVM 23 は入れない。試しの途中でビルドの道具が固定の nightly を入れた（取りまとめ役の誤り）のは消した。だから PR は、候補ごとに小さな再現と上流の試験の形の文を作り、issue か、上流の CI に任せる PR で出す（出す前に持ち主に見せる: 外向きの操作）。経緯は docs/notes/t584-bun-2026-10-25.md。
+
+### T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 状態: 進行中（2026-10-30、持ち主「有名で動かせる日本語のモデルを徹底的に限界まで調査してタスクとして書き起こしてほしい」。調べは済み、書き起こしは T.592〜T.619）
+- 表と順位表と「やらない」ものの一覧: docs/notes/t591-japanese-models-2026-10-30.md（学術・国・大手研究所 / 日本の企業 / コミュニティと世界のモデルの日本語版と HF の ja の順位、の 3 つの調べ手の表を付録に）。
+- **どの候補も未計測**: 「動く見込み」は model_type とトークナイザの形からの読み。足す回はどれも AGENTS.md の「モデルを一覧に足す」の 1〜8（`gguf_check.py tensors` を 1 つずつ・`format_check.py`・`start_check`・書かせて読む・`models.yml`）。sha は 2026-10-30 の main で、足す時に取り直す。
+- **取りまとめ役の勧めの順**: (1) いまのエンジンで開く有名なもの（T.592〜T.596）→ (2) 梯子の残りと古典（T.597〜T.609）→ (3) 14B 級のメモリの確かめ（T.610）→ (4) 開く物の多い仕事（T.611 Tekken・T.612 gemma2・T.613 Gemma 3 のまるごと）→ (5) 大きい仕事（T.614〜T.619）。サイトのモデルは足さない（`make models` の約 840 MB は変えない）。
+- **持ち主に決めてもらうこと（まとめて）**: 一覧が長くなる（いま 144 項目）ので、どこまで足すか。勧め: (1)〜(3) は足し、梯子の古いものは T.303（一覧の整理）と一緒に決める。名前と note の文面は T.302 の形で。
+
+### T.592 [追加][モデル] llm-jp-4 8B thinking — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
+- 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
+- **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
+
+### T.593 [追加][モデル] ELYZA-Shortcut-1.0-Qwen-7B — 状態: 未着手（2026-10-30、T.591 から。T.511 が足す ELYZA に挙げていた。規模 小）
+- elyza/ELYZA-Shortcut-1.0-Qwen-7B @ d33448648d9b1b7d69cbadb3f1a8d6fb4c8a01ee（qwen2、7.62B、apache-2.0、書式あり）。Q8_0: mmnga @ fc1fb43597cab7c9edbe71e41c109fadb83d3815（8.10 GB）。
+- 考える形（ELYZA-Thinking）の答えを、考えずに出すよう学ばせたもの。BOS は Qwen2.5 の項目の形で `start_check`。
+
+### T.594 [追加][モデル] Tanuki-8B-dpo-v1.0（GENIAC、松尾研） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
+- weblab-GENIAC/Tanuki-8B-dpo-v1.0 @ e2f8d17243f709043b18c24d88c3d7853749859c（llama、7.51B、apache-2.0）。Q8_0: team-hatakeyama-phase2 @ d3e6436b…（7.984 GB、作り手の組の GGUF）。
+- トークナイザは Unigram の tokenizer.json（NFKC と `(?<!\n)^` → ▁ の置き換え: llm-jp-3 と同じ形の見込み）。**書式の文に全角の空白がある**（`{{　bos_token }}`）: jinja2 と自前の読み手の両方で描けるかを先に見る。描けなければ手書きの書式。
+
+### T.595 [追加][モデル] llm-jp-3 7.2B instruct3 — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- llm-jp/llm-jp-3-7.2b-instruct3 @ cdd4c7f3296fdc7785423a864bd9a86ce4c15915。Q8_0: mmnga @ 368515ca…（7.751 GB）。一覧の llm-jp-3 3.7B と 8B（llm-jp-4）の間。
+
+### T.596 [追加][モデル] LFM2-350M-ENJP-MT（日英の翻訳）と LFM2.5-2.6B — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- LiquidAI/LFM2-350M-ENJP-MT @ 80367784d525777ad7565b24534ba5810eeac59f（lfm2、354M、LFM Open License、likes 98）。GGUF: LiquidAI/LFM2-350M-ENJP-MT-GGUF @ 889c88c3d3681b4f342ae210a1d2a1369aba0e10（Q8_0 0.38 GB）。カードの system の文（訳す向き）を手書きの書式に: CAT-Translate の項目の形。スマホで使える翻訳のモデル（CAT-Translate 0.8B の約半分）。
+- LiquidAI/LFM2.5-2.6B @ b212e75975bbda9676a94d3cb7b2ca25b65fed48（lfm2、likes 859、ja の順位に入る）。GGUF @ e7caca5d835a3901a8e0d63e94009429bafafdfc（Q8_0 2.87 GB）。一覧の LFM2.5 1.2B の上の段。
+- 同じ作り手の LFM2-350M-PII-Extract-JP は JSON を書く道具なので入れない。
+
+### T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- Takenoko12345678/Spark-X2.5-4B-Japanese @ bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1（spark2_5、Apache-2.0）。作り手の GGUF @ 79fd825680c88ba3b4f823202f0ef94aa90ba006（Q8_0 4.38 GB）。カードは中国語の混ざりを 18% → 0% と言う（一覧の Spark-X2.5 の弱み: AGENTS.md）。`tests/answers.mjs` の日本語の問いで確かめる。
+- Spark-X2.6 4B・1.7B（2026-10-27、spark2_5）: 前分割と書式が X2.5 と同じかを見てから。違えば別の子タスク。
+
+### T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- sbintuitions/sarashina2.2-3b @ 9a06e768a2156c21bccb96cf4c99ae4b98755577（llama、3.36B、mit、base）: base の Q8_0 は無く safetensors 6.71 GB から（`tokenizer.model`）。一覧の 0.5B・1B base の続き。
+- sbintuitions/sarashina2-7b @ 15b989b8a4eb6f68b990787fc1016def7dabf0bb（MHA、bin だけ）: QuantFactory/sarashina2-7b-GGUF（7.78 GB）を段 ② で（語彙は原本）。
+- sbintuitions/sarashina2.1-1b @ 30348c324bc3d1b7b33d9687ca20478b2e5b3dd9（Sarashina Model NonCommercial License: 方針 8 で入れてよい）。mradermacher の Q8_0 1.5 GB。
+- sarashina2-13b は int8 で上限を越える見込み（MHA、約 17.1 GB）: T.610 で。
+
+### T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- cyberagent/calm2-7b-chat @ 3e110c7624ff7a940badebfd5f9a91569f98cc56（llama、MHA、apache-2.0、likes 77）。書式が無い: カードの `USER: …\nASSISTANT: ` を手書き。トークナイザは NFC と gpt2-digits（読める見込み）。Q8_0: TheBloke/calm2-7B-chat-GGUF（7.45 GB、2023 年: `gguf_check.py tensors` を必ず）。
+- cyberagent/CAT-Translate-7b @ e36edfc6858a9a6ba41f8d9fa34427f3d8461eca（mistral、mit）: 一覧の CAT-Translate の梯子のいちばん上。トークナイザは T.257 で確かめた形。Q8_0: mmnga-o か mradermacher（7.96 GB）。書式は一覧の CAT-Translate と同じ組（T.400）。
+- CAT-Paws-8B（qwen3、エージェント向け）はカード自身が単発の問いには CAT-Thinking を勧めるので入れない。
+
+### T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- stabilityai/japanese-stablelm-instruct-gamma-7b @ bb4590d461327a6d63f52a5cdbaa64cfceabbb4a と base @ ffc474da0e4f5dbb9db54e96a94a22c081fc7fbf（mistral、apache-2.0、likes 52）。トークナイザは sentencepiece の BPE を書き出した形（T.257 の道）。Q8_0: TheBloke（7.7 GB）。書式はカードの文を手書き。
+- Rakuten/RakutenAI-7B-instruct @ eb48a29043cda2dba50c088556f0ee411badcf2e と base @ eb61524c1ab1a7c656457bd68be4a423371cbacb（mistral、語彙 48,000）: 一覧の chat と同じ形で 1 行ずつ（7.84 GB）。RakutenAI-2.0-mini の base（mistral 1.5B、safetensors だけ）も一覧の instruct の隣に。
+
+### T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- rinna/llama-3-youko-8b-instruct @ 681390a11903461d2066dbb68ab8bc7f66f3eb67 と base @ 6af890bc6294b8f311e25a1462fcd38554d95b8e（Llama 3、llama3 のライセンス）。mradermacher の Q8_0 8.54 GB。
+- rinna/youri-7b-chat @ 12c3e0e288efbdb525aa98abcab0c92d8445fcbc・-instruction・base（Llama 2、Q8_0 7.16 GB）: 語彙を日本語に広げていないので日本語は遅い（1 字あたりのトークンが多い）。入れるなら chat の 1 つ。
+- `<NL>` の置き換えが要る rinna の gpt-neox は T.617。
+
+### T.602 [追加][モデル] Sakana AI の残り（TinySwallow 1.5B base・TAID-LLM 1.5B・Karamaru・EvoLLM-JP 7B） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- SakanaAI/TinySwallow-1.5B @ 535d1322…（qwen2、base: mmnga の Q8_0 1.647 GB）。一覧の instruct の隣。
+- SakanaAI/TAID-LLM-1.5B @ 2e649507…（qwen2: bartowski の Q8_0 1.646 GB）。
+- SakanaAI/Llama-3-Karamaru-v1 @ 17411929…（江戸時代の文体、ELYZA-JP 8B から、llama3 のライセンス: mradermacher の Q8_0 8.541 GB）。
+- SakanaAI/EvoLLM-JP-A-v1-7B（apache-2.0）と EvoLLM-JP-v1-7B（Microsoft Research License、非商用）: mistral、mmnga の q8_0 7.696 GB（GGUF v3）。書式は手書き。EvoLLM-JP-v1-10B は evomistral で読まない。
+
+### T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese @ f5f497038d5da4221631058ff1e9b9563fe539d2（qwen2、Apache-2.0、日本語で考える）: mmnga の GGUF @ d5a63bd4cb76aec396fad7602a72352cc02e6006（8.10 GB）。BOS は DeepSeek-R1 Distill の項目の形（tokenizer_config の `bos_token`）を `start_check` で。
+- lightblue/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual @ 9c9c7b64e4d7e2154db8ee4cae0e015d7fac5e82: mradermacher @ 06eaa38aae801e83d2887cb2d06d4f84e8716f0e（1.89 GB）。スマホの考える形。
+- abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1 @ b0027a80acb4052482d4b55499100f568e937644: mmnga @ e9edf6f2d3a4890dac56d6dde158e388f7d2690c（8.10 GB）。
+- suzume-llama-3-8B（2024）は古いので入れない。
+
+### T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- DataPilot/ArrowCanaria-Llama-8B-RL-v0.1 @ 2b487b422b5a30dbe5f4127cd6b60a15d25ad226（llama、Llama-3.1-Swallow 8B v0.5 から）: mradermacher @ ec04d0610d5ef9a7d6c2e01e814023db6b3e7b9d（8.54 GB）。ライセンスはカードから（Llama 3.1 と Gemma の両方を言う）。
+- SousiOmine/Lumi-v2-llm-jp-4-8b @ 0af15b25d14de36972c39501e883da7f07efbe61（llama、Apache-2.0、llm-jp-4 8B base を ChatML で）: 作り手の GGUF @ 820b4d43d7f89097d77073437cc53f11579793b1（9.13 GB）。
+- 有名さは小さい（likes が少ない）ので、足すかは持ち主（T.591 の決め）。
+
+### T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- elyza/ELYZA-japanese-Llama-2-7b-instruct・-fast-instruct（2023、likes 75〜83、原本は bin だけ）: mmnga の q8_0（7.16・7.28 GB、GGUF v3）。古い GGUF なので `gguf_check.py tensors` を必ず（原本が bin なら `tests/gguf_fetch.py` の `torch_tensors()` の形で比べる）。fast は語彙を広げた形。
+- 有名だが古い。足すかは T.303 と一緒に。
+
+### T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 状態: 未着手（2026-10-30、T.591 から。規模 小。勧めは足さないか CPT の 1 つだけ）
+- Qwen3-Swallow-8B SFT v0.2（mmnga-o の Q8_0 8.71 GB）・CPT v0.2（base の形、tatsuyaaaaaaa の Q8_0 8.71 GB）・Medical-Qwen3-Swallow-8B（safetensors だけ 16.4 GB）。一覧の RL v0.2 と中身が近い。
+
+### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
+- ArrowPro-7B-KUJIRA（likes 64）・Vecteus・Oumuamua-v2・Gleipnir（書式があるのは Vecteus だけ）、AXCXEPT の Qwen3-EZO-8B-beta・EZO-Llama-3.2-3B・llm-jp-3-3.7b-EZO、Aratako の Qwen3-8B-RP。古いか用途が狭い。NSFW を名乗るものは入れるかを持ち主が。
+
+### T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 状態: 候補（2026-10-30、T.591 から）
+- pfnet/Qwen3-1.7B-pfn-qfin @ 3e454cbe406cc778feb6f2e9bc4b4397e5cc98bf・Qwen2.5-1.5B-pfn-qfin（safetensors だけ、ライセンスはカード）。用途が狭い。PFN の主のモデルは T.614・T.615。
+
+### T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 状態: 候補（2026-10-30、T.591 から。規模 小〜中）
+- Fugaku-LLM/Fugaku-LLM-13B-instruct @ 847b9aac…（原本はゲート付き）: GGUF の見出しは gpt2・40 層・d 5184・head 144、語彙は sentencepiece の「llama」49,152。mmnga の Q8_0 14.28 GB（文脈 2048 なので入る見込み）。語彙は GGUF だけの道しかなく、その道は Unigram の点数を断る（AGENTS.md の「GGUF だけの変換」）: 読むなら GGUF の Unigram の語彙を受ける仕事が要る。
+- matsuo-lab/weblab-10b-instruction-sft @ 112a5ad9…（gpt_neox、cc-by-nc-4.0、likes 74）: main は bin だけ、mmnga の GGUF は v1（読まない）。safetensors は変換の bot の PR `refs/pr/4` @ 3f4b5eeb74637041e7e50f9ac1907600c7a82c5a（fp16 21.4 GB）にだけある: PR のコミットを一覧のリビジョンにしてよいかは持ち主。
+- CyberAgent open-calm（gpt_neox、bin だけ、CC-BY-SA、base だけ、7B は likes 205）: 2023 年の GGUF は `attn_qkv` が HF の並びのおそれ（T.306・T.517 と同じ）。
+- tiny-lm-chat（bin だけ 0.06 GB）: 変換すればサイトでいちばん小さいチャットのモデルになる。サイトのモデルを足すかは持ち主。
+
+### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
+- **見積もりは調べ手のもので未計測**: int8 + 文脈 4096 の KV で 16.4〜16.5 GB（上限 17.18 GB）。先に `footprint()` で出す（KV の型の規則で float16 になるか、文脈を詰めずに入るか）。入るなら 1 つずつ子タスクに。
+- GQA の 14B: Qwen/Qwen3-14B @ 40c069824f4251a91eefaf281ebe4c544efd3e18（Swallow の順位表で ≤14B の 2 位、Qwen/Qwen3-14B-GGUF @ 530227a7d994db8eca5ab5ced2fb692b614357fd の Q8_0 15.70 GB）・shisa-ai/shisa-v2.1-unphi4-14b @ fb2ae1891b6296fc2ecb4c2399912ef2caed4719（llama、MIT、Shisa でいちばん高い点、mradermacher @ 3f3044899c094d10d71e4a2c51c85c77cd330633 の Q8_0 15.58 GB、前分割は llama3 と同じ型の見込み）・cyberagent/DeepSeek-R1-Distill-Qwen-14B-Japanese @ cc1ebcc1e37521c3f4f69145ce922ca8f01e4cd0（likes 94）・abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1 @ c18c202ab2deefede0e50eabb8f3ede832eb9cdb。
+- MHA の 13B（int8 では越える見込み）: llm-jp-3.1-13b-instruct4（mmnga の IQ4_XS 7.43 GB @ 7809b3c6… なら塊で入る）・stockmark-13b(-instruct)（Q8_0 14.03 GB、文脈 2048）・Swallow-13b-instruct・ELYZA-13b-fast-instruct・sarashina2-13b。塊で入れるなら Saluki の形（`blocks: true`・`loaded`・`rebuilt`）。
+- calm3-22b-chat（likes 85）は Q4_K_M の塊（grapevine-AI）なら入るかもしれない: 同じ回に `footprint()` だけ出す。
+
+### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
+- 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
+- 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。
+
+### T.612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 状態: 未着手（2026-10-30、T.591 から。規模 中）
+- 開くもの: google/gemma-2-2b-jpn-it @ 6b046bbc091084a1ec89fe03e58871fde10868eb（Google の唯一の日本語版、likes 218、bartowski @ bd1518c8610c36695a89c3d7df74ae8bf61e72c2 の Q8_0 2.78 GB）、tokyotech-llm の Gemma-2-Llama-Swallow 2B・9B（Q8_0 2.78・9.83 GB）、rinna/gemma-2-baku-2b(-it)、AXCXEPT の EZO gemma-2。
+- Gemma 3 との違い: attention の score の softcap（50·tanh(s/50)、CPU の attention のカーネルに）、最後の logits の softcap（Gemma 4 にある）、局所と全体が 1:1、`query_pre_attn_scalar`、q・k の head の norm が無い。GPU は softcap を足すか `REASONS` で CPU に。`Layout` の欄と `LAYOUTS` の行、`FAMILIES` に 1 行、transformers との比べ（`reference_*.py`）。
+
+### T.613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
+- google/gemma-3-4b-it @ 093f9f388b31de276ce2de164bdc2081324b9767・gemma-3-12b-it @ 96b6f1eccf38110c56df3a15bffe176da04bfd80 は model_type `gemma3`（画像つき）で、いまは Llama として読まれて断られる。Gemma 4 と Qwen3.5 の `*_WHOLE` の形で `text_config` を読む家族を足す。全体の層の RoPE の linear の縮め（factor 8）も要る。
+- 開くもの: ほかに ArrowMint-Gemma3-4B・Aratako の gemma-3-4b-RP・EZO2.5-gemma-3-12b・translategemma-4b。Swallow の順位表で 12B 0.405・4B 0.292（一覧の Gemma 4 E2B・E4B より下）。
+
+### T.614 [追加][モデル] PLaMo 3（plamo3） — 状態: 未着手（2026-10-30、T.591 から。規模 中）
+- 層はほぼ Gemma 3（前後の norm、q・k の head の norm、窓 2048 と 8 層に 1 つの全体の層、局所の RoPE 1e4・全体 1e6 と yarn ×256）。違いは SwiGLU、変換器が畳める norm の定数のずれ、埋め込みの倍率なし。**重いのは PLaMo 自身のトークナイザ（`tokenizer.jsonl`）**。
+- 開くもの: pfnet/plamo-3-610m-fin-instruct（GGUF 0.95 GB）・plamo-3-nict-2b-base（2.77 GB、ゲート付き）・plamo-3-nict-8b-base（8.6 GB、ゲート付き）。
+
+### T.615 [追加][モデル] Mamba2 の層（PLaMo 2・Nemotron-Nano-9B-v2-Japanese） — 状態: 候補（2026-10-30、T.591 から。規模 大）
+- 新しい状態を持つ層の種類（AGENTS.md の「層の種類を足す」）。開くもの: pfnet/plamo-2-translate（likes 128、Q8_0 10.13 GB、T.614 のトークナイザも要る）・plamo-2-1b・plamo-2.1-2b-cpt、nvidia/NVIDIA-Nemotron-Nano-9B-v2-Japanese @ 3979dd16634988c34cc3bd911583c51e6a731d10（nemotron_h、Swallow の順位表で ≤14B の 4 位）。
+
+### T.616 [追加][モデル] stablelm の家族（Japanese StableLM 3B） — 状態: 候補（2026-10-30、T.591 から。規模 中）
+- LayerNorm・head の 25% を回す・SwiGLU。開くもの: japanese-stablelm-3b-4e1t の base と instruct（Q8_0 2.97 GB）、JSLM2 1.6B（ゲート付き）。
+
+### T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
+- rinna/japanese-gpt-neox-3.6b-instruction-ppo @ 018e1f11cfe7ceeaad26c5c6f7dc570281516a51（likes 74）・-sft-v2、rinna/bilingual-gpt-neox-4b-instruction-ppo @ 512ee77fef7a6081bb195cbd214237686b2ab194（gpt_neox、spiece.model、mit、文脈 2048）。safetensors から（2023 年の mmnga の GGUF は `attn_qkv` の並びのおそれ）。
+- トークナイザに改行が無く、カードは書式で改行を `<NL>` に置き換える: 入れる文と出る文の置き換え（項目の options か書式の機能）が要る。訪問者に見える形が変わるので、形は取りまとめ役が決めて見せる。
+
+### T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 状態: 候補（2026-10-30、T.591 から。規模 中）
+- 層の小さな違いと `qwen.tiktoken` のトークナイザ。開くもの: rinna/nekomata-7b(-instruction)（Q8_0 8.21 GB）。14B は上限を越える。古いので勧めは低い。
+
+### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
+- LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
