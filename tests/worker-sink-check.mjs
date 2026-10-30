@@ -494,7 +494,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       "the verdict went to the page without its load's id");
     const placed = (cpu) => {
       gpuContext.cpu = cpu;
-      vm.runInContext(strictly("gpuAdapter.key = verdict.key; gpuRequest = { remembered: { alone: verdict }, cpu }"), gpuContext);
+      vm.runInContext(strictly("gpuAdapter.keys = { plain: verdict.key, ternary: \"\", blocks: \"\" }; gpuRequest = { remembered: { alone: verdict }, cpu }"), gpuContext);
       const sunk = vm.runInContext(strictly("checkpointSink()"), gpuContext);
       sunk.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
       const direct = Boolean(sunk.weights.direct);
