@@ -20,7 +20,8 @@
 //     rows (FNV-1a, the unit separator after each text) for eight made-up devices and their ternary models.
 //   - (T.379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.mjs (the
 //     tiles', the benchmark's), each set of which makes a text of its own.
-//   - (T.379.2) a text declares nothing it does not use, and declares the struct of what it binds.
+//   - (T.379.2) a text declares nothing it does not use, and declares the struct of what it binds;
+//   - (T.499) a text calls nothing it does not declare that is not WGSL's own.
 // What a maker's text branches on that no row walks (a new parameter) is tests/device-key-check.mjs's, which changes
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
@@ -141,6 +142,30 @@ for (const [what, raw] of given) {
   }
 }
 console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the tiles'): each of their ${declarations} declarations is used, and each struct that is bound is declared`);
+
+// ---- (T.499) and what a text calls is declared there or is WGSL's own: a piece of text that one shader's text left out
+// (a function its neighbour declares) is a text that does not compile, which the light suite did not see (T.391.4's
+// four ways of breaking a text passed it; only the net's shaders and CI's devices fail it). By the text, as above: a
+// name before "(" (or before a template's "<...>(") that the text does not declare as a fn, a struct or an alias
+const WGSL = new Set(["abs", "acos", "all", "any", "array", "asin", "atan", "atan2", "atomicAdd", "atomicLoad", "atomicMax", "atomicMin",
+  "atomicStore", "atomicSub", "bitcast", "bool", "ceil", "clamp", "cos", "countOneBits", "dot", "dot4I8Packed", "dot4U8Packed", "exp", "exp2",
+  "extractBits", "f16", "f32", "firstLeadingBit", "floor", "fma", "fract", "i32", "insertBits", "inverseSqrt", "log", "log2", "mat2x2", "mat4x4",
+  "max", "min", "mix", "pack2x16float", "pack4xI8", "pack4xU8", "pow", "round", "select", "sign", "sin", "sqrt", "step", "storageBarrier",
+  "subgroupAdd", "subgroupBroadcast", "subgroupMax", "subgroupShuffle", "subgroupShuffleDown", "tanh", "trunc", "u32", "unpack2x16float",
+  "unpack4xI8", "unpack4xU8", "vec2", "vec3", "vec4", "workgroupBarrier", "workgroupUniformLoad",
+  // (attributes and a directive, which take parentheses too)
+  "binding", "builtin", "diagnostic", "group", "workgroup_size"]);
+let calls = 0;
+for (const [what, raw] of given) {
+  const text = raw.replace(/\/\/.*$/gm, "");
+  const own = new Set([...text.matchAll(/^(?:struct|fn|alias)\s+(\w+)/gm)].map((found) => found[1]));
+  for (const found of text.matchAll(/\b([A-Za-z_]\w*)\s*(?:<[^<>()]*(?:<[^<>()]*>[^<>()]*)?>)?\s*\(/g)) {
+    if (["fn", "if", "for", "while", "switch", "return", "loop"].includes(found[1])) continue;
+    calls += 1;
+    assert.ok(own.has(found[1]) || WGSL.has(found[1]), `${what} calls ${found[1]}, which it does not declare and WGSL has not (or a builtin this check's WGSL does not list yet)`);
+  }
+}
+console.log(`shaders-catalogue-check: and each of their ${calls} calls is of a function they declare or of WGSL's`);
 
 // ---- (T.379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
 // its name is the one of the form's own name (read backwards, a ternary model was handed the int8 text under the
