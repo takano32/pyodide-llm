@@ -46,6 +46,22 @@ for (const part of parts) for (const name of part.given) {
 }
 console.log(`shaders-modules-check: each of the ${parts.length} modules of ${tree.folders.runtime}/shaders/ comes after those it takes from (${taken} names taken), and what one hands its neighbours is taken`);
 
+// ---- T.488: no name at the top of two modules. tests/shaders-source.mjs's oneSource() puts every module in one text
+// for the tools (the net's shaders, gpu-check): a const twice is a SyntaxError there and a function twice the second one,
+// where tsc and the build, a module each, see nothing (T.379.2: two modules had a PACKED)
+const owners = new Map();
+for (const part of parts) {
+  for (const node of part.program.body) {
+    const s = node.type === "ExportNamedDeclaration" ? node.declaration : node;
+    if (!s || !(s.type === "VariableDeclaration" || s.type === "FunctionDeclaration" || s.type === "ClassDeclaration")) continue;
+    for (const name of s.id ? [s.id.name] : s.declarations.flatMap((d) => (d.id.type === "Identifier" ? [d.id.name] : []))) {
+      assert.ok(!owners.has(name), `${name} is declared at the top of ${owners.get(name)} and of ${part.file}: one text of the shaders (oneSource()) has it twice`);
+      owners.set(name, part.file);
+    }
+  }
+}
+console.log(`shaders-modules-check: the ${owners.size} names at the tops of the modules are each one module's`);
+
 // ---- the window: what it takes of each module, and what it exports
 const windowTakes = new Map();
 for (const { from, names } of linking.takes) {
