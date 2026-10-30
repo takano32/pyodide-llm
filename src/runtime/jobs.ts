@@ -228,7 +228,7 @@ export const WORK = kinds({
 });
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
-export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [name, number])) as Record<Kind, number>;
+export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [name, number] as const)) as Record<Kind, number>;
 
 // ---- T.375.4: how the weights of a matrix are packed in a checkpoint, as the kernels take them: one line for each
 // way a quantized tensor is stored (contracts/plan.ts's Stored; float32 is no packing: the engine multiplies by it as

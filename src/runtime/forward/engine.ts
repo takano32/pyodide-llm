@@ -435,9 +435,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // table's order: T.545 an LFM2's matrices in and out and its taps; T.271.2 a Qwen3.5's linear-attention layers' matrices
     // and their gates' vectors, and its attending layers' gate of the output), where the model has them
     own: {
-      matrices: Object.fromEntries(had.flatMap(({ kind }) => kinds[kind].gpu?.matrices ?? []).flatMap((name) => (matrix(name) ? [[name, matrix(name)!]] : []))),
+      matrices: Object.fromEntries(had.flatMap(({ kind }) => kinds[kind].gpu?.matrices ?? []).flatMap((name) => (matrix(name) ? [[name, matrix(name)!] as const] : []))),
       vectors: Object.fromEntries(had.flatMap(({ kind }) => Object.entries(kinds[kind].gpu?.vectors?.(sizes) ?? {}))
-        .flatMap(([name, [tensor, size]]) => (floats(tensor) ? [[name, { at: floats(tensor), size }]] : []))),
+        .flatMap(([name, [tensor, size]]) => (floats(tensor) ? [[name, { at: floats(tensor), size }] as const] : []))),
     } };
   // T.349: what the GPU would hold of this model, and why it would not take it
   const fit = gpuFit({ shape, weights, device: { gpuRoom, sharedMemory, oneThread }, direct });

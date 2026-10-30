@@ -506,7 +506,7 @@ const blockRow = (packing: BlockPacking) => {
                 inter_results[tile_size + row_offset + local_row][local_col] += BLK(own_a, blk_values(up_block, g, 0u), own_a1, blk_values(up_block, g, 1u), blk_scales(up_block, g), own_sums) * own_scale_a;` : ""}`,
   };
 };
-const blockRows = () => Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blockRow(packing)])) as Record<BlockPacking, ReturnType<typeof blockRow>>;
+const blockRows = () => Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blockRow(packing)] as const)) as Record<BlockPacking, ReturnType<typeof blockRow>>;
 const DP4A_WEIGHTS = {
   int8: {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
