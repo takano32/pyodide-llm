@@ -49,7 +49,7 @@
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 進行中
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 進行中
-- T.625 [整理][WebGPU] GPU の重みの記録と計画の行列の名前を閉じた型に — 未着手
+- T.625 [整理][WebGPU] GPU の重みの記録と計画の行列の名前を閉じた型に — 進行中
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -571,7 +571,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **残りの 2 つを見た（2026-10-30、取りまとめ役の決め）**: (a) `Math.f16round` は変えない: 古いブラウザに無いので、「無いかもしれない」と言う今の型（`Rounding` の `f16round?`）が正直で、lib を上げると常に在ると嘘を言う。(b) `weights.matrices` を `Record<TensorName, MatrixOn>` に閉じると型の誤り 17（`block.ts`・`forms.ts`・`weights.ts` の、名前を `string` で渡す 9 か所）。直すには計画の `matrices`（`contracts/gpu/protocol.ts` の `Started`・`Opened`: forward の側が `Object.fromEntries` で作る）と `Together.homes` の鍵も閉じる要があり、在るかを言うなら `Partial` で、種類のファイルの `W.matrices.wo` などに `!` が約 20 増える。中くらいの別の回にする: T.625 に分けた。`weights.vectors` は計画の `Vectors` がもう閉じていて、GPU の記録の索引だけが開いている（同じ回に）。
 - **型が守らない所**: `Model.tokens` は型では常に在るが、形が決まらなければ null、`plan.tokens` が偽のモデルでは鍵が無い（undefined）。全部のモデルが通る道（`block()` など）に `m.tokens.<何か>` を足すと、tsc は通ってステップの無いモデルで落ちる。`Model.plan` は `Started` 型だが、GPU だけのモデルが開いてから `handed()` までは `Opened`（`tokens: true`）: その間に動く関数（`uploadLayers`・`tablesOn`・`piecesOf`・`tablePieces`・`routed`）が `Started` だけの鍵を読む変更をしても tsc は通る。直す形: `m.tokens` を段ごとの記録に（T.466）、その区間の関数の引数を共通の鍵だけの型（`Pick<Started, …>`）に、開くときの計画は `open()` が持って渡す。`!` 153 の大半は「記録が `start()` の順に埋まる」印（`model!` 24、`plan.tokens!` 21）。`start()` の `model!` 15 は 1 回取れば 1 つ。caught value の読みが 15 か所に同じ形（worker の `told()` のような 1 つの関数に）。`weights.vectors`・`matrices` は名前の索引で、無い名前を読んでも tsc は言わない。`Math.f16round` が tsconfig の lib（ES2024）に無く自分の型で読んでいる。`gpu.ts` の頭のコメント（T.467）とエラーの文の古い名前（T.472）。コミット 5bc2b75 の文の「26 files, 73 names」は 25 ファイル 67 行の誤り（履歴は書き換えていない）。
 
-### T.625 [整理][WebGPU] GPU の重みの記録と計画の行列の名前を閉じた型に — 状態: 未着手（2026-10-30、T.479 から。規模 中。レビューは `shader-reviewer`）
+### T.625 [整理][WebGPU] GPU の重みの記録と計画の行列の名前を閉じた型に — 状態: 進行中（2026-10-30、T.479 から。規模 中。レビューは `shader-reviewer`。残りは (2) `vectors`）
+- **(1) 完了（2026-10-30、ブランチ `t.625-names`。取りまとめ役の決め: 勧めの `Partial`）**: 計画の `matrices`（`Started`・`Opened`）を `Matrices = Partial<Record<TensorName, Matrix>>` に、GPU の `Weights.matrices` を `Partial<Record<TensorName, MatrixOn>>` に、`Together.homes` も同じ鍵に。種類のファイルの読み（`W.matrices.wo!` など 13）は「その種類の層ならある」の `!`。名前を文字で渡していた所（`block.ts` の `Timed`・`product`・`out`、`forms.ts` の `productGroups`、`tokenforms.ts` の `matmul`、`kinds.ts` の `matrices()`）は `TensorName`。`tokens.ts` の `take()` は名前を在る行列に写してから。`weights.ts` に局所の `named()`（`Object.entries` を名前の型で: cast は 1 つ）。網: `gpusteps` は 277 とも同じ、`gpuworker` は予定どおり `tokenShape`・`tokensLayout`・`uploadLayers`・`widener` と新しい `named` だけ。手元: 型検査、`gpu-worker-parts-check`・`gpu-modules-check`・`plan-keys-check`・`gpu-alone-check`・`gpu-default-check --quick`、軽い組。**CI を省いた。訳: 偽の装置への頼みが同じ（網）。** **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: 直し 1 つと勧め 1 つ、どちらも入れた**: `Matrices` の行が `Tokens` の注釈の下に入っていた（自分の注釈と上へ）、`named()` の戻り値を `NonNullable<V>` に（`same-syntax` で同じコード）。動きは同じ（`take()` の集合と順、`home.joined` の `?.` を外しても書くのは本物の `Home` だけ、新しい `!` はどれも前の索引と同じ条件の内）。残る勧め: 作る側（`gpuside.ts`・`alone.ts`・`weights.ts`）の `Object.fromEntries` の組の鍵は `string` のまま（(2) で一緒に）。
+- **(2) `vectors`**: `Weights.vectors` を `Partial<Record<keyof Vectors, GPUBuffer>>` にすると型の誤り 25（種類のファイルの `!` が約 20 と、`block.ts` の名前を文字で渡す所）。
 - `gpu/weights.ts` の `Weights.matrices`・`vectors` と、`contracts/gpu/protocol.ts` の `Started.matrices`・`Opened.matrices`（`Record<string, Matrix>`）、`Together.homes` の鍵を `TensorName`（か行列の名前だけの型）に。綴りの誤りを tsc が言うようにする。試した形と数は T.479 の「残りの 2 つを見た」。決めること: 在るかを型で言う（`Partial`、種類のファイルに `!` が増える）か、綴りだけを守る（`Record`）か。勧めは `Partial`（型の書き方の (2)(4)）。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
