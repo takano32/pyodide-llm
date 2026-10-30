@@ -18,7 +18,7 @@
 import type { Dtype } from "./form.ts";
 import type { Options } from "./python.ts";
 
-// An item of src/models.js as the page weighed it (src/page/address.ts's weighed()), or one the page made of a folder,
+// An item of src/models.ts as the page weighed it (src/page/address.ts's weighed()), or one the page made of a folder,
 // of two files, of a repository or of two URLs: as far as the worker reads it (T.368.3; the list's own shape is that
 // file's, which is JavaScript still, and has more). One of four kinds, told apart by hf, file and url:
 export type Listed = OfThisSite | OfTwoFiles | OfTwoUrls | OfHuggingFace;

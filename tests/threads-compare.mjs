@@ -31,7 +31,7 @@ const range = (values, digits = 1) => `${Math.min(...values).toFixed(digits)}–
 
 if (isMainThread) {
   const { pyodideWithEngine } = await import("./engine.mjs");
-  const { MODELS } = await import("../src/models.js");
+  const { MODELS } = await import("../src/models.ts");
   const { leave } = await import("./leave.mjs");
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);

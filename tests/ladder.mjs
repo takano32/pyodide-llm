@@ -7,7 +7,7 @@
 //
 //   node tests/ladder.mjs huggingface-small/results.jsonl huggingface-large/results.jsonl huggingface-classics/results.jsonl
 import fs from "node:fs";
-import { MODELS, modelBytes } from "../src/models.js";
+import { MODELS, modelBytes } from "../src/models.ts";
 import { readResults } from "./summary.mjs";
 
 export const LADDER = ["hf-pythia-14m", "hf-pythia-70m", "hf-pythia-160m", "hf-pythia-410m", "hf-pythia-1b", "hf-pythia-1.4b",

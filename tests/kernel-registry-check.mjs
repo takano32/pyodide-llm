@@ -318,10 +318,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual(["int8", "int6", "ternary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false], "the dtypes a model on the GPU alone may be of");
   assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
-  // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.js)
-  const { SIX_OF_EIGHT, TERNARY_OF_EIGHT } = await import("../src/models/memory.js");
+  // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.ts)
+  const { SIX_OF_EIGHT, TERNARY_OF_EIGHT } = await import("../src/models/memory.ts");
   assert.deepEqual([SIX_OF_EIGHT, TERNARY_OF_EIGHT], [weightBytes(PACKED.int6) / weightBytes(PACKED.int8), weightBytes(PACKED.ternary) / weightBytes(PACKED.int8)],
-    "src/models/memory.js's sizes of six bits and of ternary against int8 are the packings' (jobs.ts's PACKED is the owner: put memory.js right)");
+    "src/models/memory.ts's sizes of six bits and of ternary against int8 are the packings' (jobs.ts's PACKED is the owner: put memory.js right)");
   assert.deepEqual(["int8", "int6", "ternary", "f32", "f16", "", undefined, "toString", "constructor"].map((name) => packingOf(name)),
     [PACKED.int8, PACKED.int6, PACKED.ternary, null, null, null, null, null, null], "packingOf(): a packing's line by its name, null for anything else");
   console.log("ok: each packing's jobs (relaxed and plain), corrections, activations made ready and bytes in xs; packingOf() knows the packings and nothing else");

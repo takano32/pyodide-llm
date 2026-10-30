@@ -34,14 +34,14 @@ import convert.stream  # noqa: E402
 from conducting import Fetched, Mapped, Nothing, converted, listed  # noqa: E402
 from reference_saluki import FILE, REPOSITORY, REVISION  # noqa: E402
 
-# T.364.3: the list's two entries of the model (src/models/hf-families.js): what they fetch and convert (hf, conversion)
+# T.364.3: the list's two entries of the model (src/models/hf-families.ts): what they fetch and convert (hf, conversion)
 # and what they hand the engine and the page (the options, the two formats, each form's sampling). The file the
 # references are made of (tests/reference_saluki.py's) must be the one the list names
 IDS = {"at-once": "hf-underdog-saluki-27b", "thinking": "hf-underdog-saluki-27b-thinking"}
 
 
 def listed_entries():
-    script = "import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.conversion?.blocks))))"
+    script = "import('./src/models.ts').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.conversion?.blocks))))"
     found = {entry["id"]: entry for entry in json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))}
     entries = {name: found[id] for name, id in IDS.items()}
     for entry in entries.values():

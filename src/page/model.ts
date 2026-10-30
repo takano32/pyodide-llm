@@ -2,7 +2,7 @@
 // parts of the page's script read these by the names they import (a static import of src/ is a live binding), and say
 // what happened to the functions below; none of them sets one. Nothing of a page is read here (no element, no address,
 // no storage): Node imports this file as it is (tests/page-parts-check.mjs).
-import { DEFAULT_MODEL, MODELS } from "../models.js";
+import { DEFAULT_MODEL, MODELS } from "../models.ts";
 
 export type Model = typeof MODELS[number];
 /** T.553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,

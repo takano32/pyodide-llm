@@ -39,7 +39,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import { pyodideWithEngine } from "./engine.mjs";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -95,7 +95,7 @@ console.log(`${os.cpus()[0]?.model ?? "?"} (${process.arch}) × ${os.cpus().leng
 const tokenRows = [], promptRows = [];
 for (const id of ids.length ? ids : ["llm-jp-3-150m", "tiny-lm"]) {
   const entry = MODELS.find((m) => m.id === id);
-  if (!entry) throw new Error(`${id} is not a model of src/models.js`);
+  if (!entry) throw new Error(`${id} is not a model of src/models.ts`);
   py.globals.set("CHECKPOINT", root + entry.checkpoint);
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
   py.globals.set("OPTIONS", py.toPy(entry.options));

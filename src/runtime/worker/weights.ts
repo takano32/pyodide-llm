@@ -262,7 +262,7 @@ export const runsPacked = () => Boolean(jsKernels) && !switchesNow().some((left)
 // the page cross-origin isolated (stage 3), shared memories to be had, and not ?threads=1: the memory is shared
 const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
 
-// T.115: the bits of a model converted with none asked for (weightsFor() in src/models.js asks for six bits where the
+// T.115: the bits of a model converted with none asked for (weightsFor() in src/models.ts asks for six bits where the
 // device says it has too little memory): int8 unless its forward pass does not fit a 32-bit memory and this browser
 // has no 64-bit one (T.133), then six bits (T.98: 7/9 of int8's memory, and about half as fast). The converter calls
 // this once it knows the header: the size of either (sizes) and what the forward pass puts after them depend on it.
@@ -309,7 +309,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
         "memory, and a browser gives a page 16 GB at most.");
     }
     // T.148: the layers on the GPU are a second copy of them, in the same memory where the GPU is a phone's or an
-    // Apple's: both, with the rest of this model, within half of what the device says it has (as src/models.js's
+    // Apple's: both, with the rest of this model, within half of what the device says it has (as src/models.ts's
     // weightsFor asks for six bits past half). T.156: a model that does not fit so goes on the GPU alone where it can
     // (the owner's B, 2026-09-27: forward.ts's weightsPlace; the double copy held to 6.5 GiB where the device says 8),
     // decided before any memory is made for it (a memory of the whole checkpoint would be one too many, T.96)

@@ -1,6 +1,6 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
-import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.js";
-import { atOnce, sampled, thinking } from "./sampling.js";
+import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.ts";
+import { atOnce, sampled, thinking } from "./sampling.ts";
 
 /** A Qwen3 twice (T.124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for

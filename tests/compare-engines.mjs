@@ -12,7 +12,7 @@
 //
 // Before timing, the two must write the same text from the same seed (exit 1 otherwise).
 //
-//   node tests/compare-engines.mjs [model ids of src/models.js = tiny-lm llm-jp-3-150m] [--ref origin/main]
+//   node tests/compare-engines.mjs [model ids of src/models.ts = tiny-lm llm-jp-3-150m] [--ref origin/main]
 //                                  [--rounds 5] [--tokens 128] [--greedy] [--bundle [<dist>]] [--bundle-old <dist>]
 // --greedy: temperature 0 (the forward pass and the least of a sampler), not the entry's own sampling.
 // T.510.1: a model may also be a converted one's <out> of tests/perplexity_prepare.py (<out>.bin, <out>.tokenizer.bin,
@@ -26,7 +26,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import { loadPyodide } from "pyodide";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 import { otherTree } from "./other-tree.mjs";
 import { leave } from "./leave.mjs";
 import { builtModule } from "./bundle.mjs";
@@ -156,7 +156,7 @@ const rows = [];
 let failed = false;
 for (const id of models) {
   const entry = MODELS.find((m) => m.id === id) ?? fileModel(id);
-  if (!entry) throw new Error(`${id} is no model of src/models.js, nor a converted model's <out> (<out>.bin, .tokenizer.bin, .json)`);
+  if (!entry) throw new Error(`${id} is no model of src/models.ts, nor a converted model's <out> (<out>.bin, .tokenizer.bin, .json)`);
   if (entry.hf) throw new Error(`${id} is converted in the browser: this tool takes the site's own files (make models), or a converted model's <out>`);
   const settings = { ...entry.generation, ...(greedy ? { temperature: 0.0 } : {}) };
   delete settings.steps;

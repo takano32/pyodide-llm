@@ -20,7 +20,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { runtimeUrl } from "./tree.mjs";
 const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
-import { MODELS, filled } from "../src/models.js";
+import { MODELS, filled } from "../src/models.ts";
 import { leave } from "./leave.mjs";
 
 // <out> and the JSON as tests/write.sh gives them; or the id of a model of this site (tiny-lm: the baseline of a model of

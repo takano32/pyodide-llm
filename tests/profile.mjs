@@ -12,7 +12,7 @@
 // that the attention of a long context shows (T.109).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 import { built, runtimeUrl } from "./tree.mjs";
 const { compileKernels, createForward, weightsMemory } = await import(runtimeUrl("forward.js"));
 

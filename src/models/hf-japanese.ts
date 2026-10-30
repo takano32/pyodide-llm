@@ -3,9 +3,9 @@ import {
   ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_OWN_BOS, RAKUTEN, SARASHINA, SWALLOW_MS, TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp,
   sarashina,
-} from "./formats.js";
-import { greedy, sampled } from "./sampling.js";
-import { ggufOf, hf } from "./builders.js";
+} from "./formats.ts";
+import { greedy, sampled } from "./sampling.ts";
+import { ggufOf, hf } from "./builders.ts";
 
 export const HF_JAPANESE = [
   // Fetched from huggingface.co and converted in the page. Japanese from light to heavy, then English from light

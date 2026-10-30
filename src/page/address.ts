@@ -1,6 +1,6 @@
 // src/page/address.ts (T.355): what the page's address says: which model, how it is weighed (?bits=), whether to measure.
-import { weightsFor } from "../models.js";
-import type { MODELS } from "../models.js";
+import { weightsFor } from "../models.ts";
+import type { MODELS } from "../models.ts";
 import { SAFETENSORS, noteOf } from "./repository.ts";
 
 // A model that is in no list, named in the URL: ?hf=<owner>/<repository>[&revision=][&file=] is a Hugging Face model that

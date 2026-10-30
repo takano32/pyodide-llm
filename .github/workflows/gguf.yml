@@ -5,7 +5,7 @@
 #
 #   gh workflow run gguf.yml -f only=hf-qwen2.5-3b-instruct,hf-qwen2.5-7b-instruct
 #
-# T.136, stage 2: candidate GGUFs not in the list yet, each against the original src/models.js pins for that item.
+# T.136, stage 2: candidate GGUFs not in the list yet, each against the original src/models.ts pins for that item.
 # The page will take the vocabulary and config.json from the original, so a difference in the GGUF's vocabulary is
 # shown and not counted (gguf_check.py --original-vocabulary). One job per candidate; the eight above do not run.
 #
@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # the original at the revision src/models.js pins, and the GGUF (repository@revision/file)
+        # the original at the revision src/models.ts pins, and the GGUF (repository@revision/file)
         include:
           - { id: hf-qwen2.5-0.5b-instruct, original: Qwen/Qwen2.5-0.5B-Instruct@7ae557604adf67be50417f59c2c2f167def9a775, gguf: bartowski/Qwen2.5-0.5B-Instruct-GGUF@41ba88dbac95fed2528c92514c131d73eb5a174b/Qwen2.5-0.5B-Instruct-Q8_0.gguf }
           - { id: hf-qwen2.5-coder-0.5b-instruct, original: Qwen/Qwen2.5-Coder-0.5B-Instruct@ea3f2471cf1b1f0db85067f1ef93848e38e88c25, gguf: bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF@69a2c192eed24297fb09a34d8ba948b8624cc3e2/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf }
@@ -85,7 +85,7 @@ jobs:
           echo "gguf_check.py tensors: exit $status" | tee -a "$GITHUB_STEP_SUMMARY"
           exit $status
 
-  # stage 2: the candidates, each with its original from src/models.js
+  # stage 2: the candidates, each with its original from src/models.ts
   plan:
     if: inputs.candidates != '' || inputs.listed
     runs-on: ubuntu-latest
@@ -100,14 +100,14 @@ jobs:
           LISTED: ${{ inputs.listed }}
         run: |
           node --input-type=module -e '
-            const { MODELS } = await import("./src/models.js");
+            const { MODELS } = await import("./src/models.ts");
             // names of Hugging Face (letters, digits, "-", "_", "."): nothing a shell would read as more
             const NAME = "[A-Za-z0-9][A-Za-z0-9._-]*";
             const form = new RegExp(`^${NAME}/${NAME}@[0-9a-f]{40}/(${NAME}/)*${NAME}\\.gguf$`);
             const jobs = process.env.CANDIDATES.split(/[\s,]+/).filter(Boolean).map((pair) => {
               const [id, gguf] = pair.split("=");
               const entry = MODELS.find((model) => model.id === id);
-              if (!entry?.hf) throw new Error(`${id}: no item from Hugging Face by that id in src/models.js`);
+              if (!entry?.hf) throw new Error(`${id}: no item from Hugging Face by that id in src/models.ts`);
               if (!form.test(gguf ?? "")) throw new Error(`${pair}: not <id>=<repo>@<revision>/<file>`);
               // an item that takes a GGUF already (T.136) has its original where its vocabulary comes from; one of
               // stage 1 (a GGUF with its own vocabulary) has no original revision in the list

@@ -169,7 +169,7 @@ const faced = (fake) => ({ postMessage: (data) => fake.postMessage(data), set on
 
 if (isMainThread) {
   const { pyodideWithEngine } = await import("./engine.mjs");
-  const { MODELS } = await import("../src/models.js");
+  const { MODELS } = await import("../src/models.ts");
   const { weightsMemory, footprint } = await import(forwardFile);
   const entry = MODELS.find((m) => m.id === "llm-jp-3-150m");
   const { pyodide: py } = await pyodideWithEngine();

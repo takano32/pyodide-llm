@@ -20,7 +20,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { runtimeUrl } from "./tree.mjs";
 const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
-import { filled } from "../src/models.js";
+import { filled } from "../src/models.ts";
 import { leave } from "./leave.mjs";
 
 const QUESTIONS = ["日本でいちばん高い山はどこですか？", "これからの流行りを3つ挙げてください。", "17 × 24 はいくつですか？途中の計算も書いてください。",

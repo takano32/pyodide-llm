@@ -20,7 +20,7 @@
 // 20480 bytes at most (gpuForce.pieceBytes: w1 and w3 in three, w2 in two, the last of w1's rows short), as a matrix
 // past a buffer of the device goes. The others are the models of this directory (make models kernels), or <prefix>.json: a
 // model tests/perplexity_prepare.py converted (<prefix>.bin, <prefix>.tokenizer.bin, and the options in <prefix>.json;
-// gpu-prompt.yml's input real= fetches and converts models of src/models.js so, T.183), whose NumPy answer comes from
+// gpu-prompt.yml's input real= fetches and converts models of src/models.ts so, T.183), whose NumPy answer comes from
 // the native Python ($PYTHON, python3 by default).
 //
 // T.226's review: "synthetic-gpt2-calm" and "synthetic-qwen-calm" (Qwen2's biases and Qwen3's norms of the heads in one
@@ -65,7 +65,7 @@
 // each; the three made-up models below differ in the steps around them: Llama's fused layer, Qwen3's norms of the heads,
 // GPT-2's LayerNorm and GELU), so: Dawn runs every round on the made-up models, Chromium the rows and the values on those
 // three (the weights are lavapipe's), Chrome and Edge none. --nan all|made-up|small|none chooses otherwise (all: the
-// models of src/models.js too)
+// models of src/models.ts too)
 const NAN_MODELS = ["synthetic", "synthetic-qwen3", "synthetic-gpt2"];
 const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models: "made-up", weights: true }, small: { models: NAN_MODELS, weights: false },
   none: { models: [], weights: false } };

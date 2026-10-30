@@ -508,16 +508,16 @@ def test_a_pq2_0_gguf_with_the_originals_files_is_the_safetensors_conversion(dty
 
 
 # T.235 (the owner, 2026-10-11): the list's three Ternary Bonsai turn by a plain RoPE, which their entries say
-# (src/models/formats.js's PLAIN_ROPE); the converter, config.json and the GGUF go on saying yarn
+# (src/models/formats.ts's PLAIN_ROPE); the converter, config.json and the GGUF go on saying yarn
 BONSAI_ENTRIES = {"the 1.7B's": "hf-ternary-bonsai-1.7b", "the 4B's: heads wider than dim / heads, theta 5e6": "hf-ternary-bonsai-4b",
                   "the 8B's: a classifier of its own, yarn from 16384": "hf-ternary-bonsai-8b"}
 
 
 def listed_options():
-    """The options of every Hugging Face entry of src/models.js, by its id."""
+    """The options of every Hugging Face entry of src/models.ts, by its id."""
     import subprocess
     from pathlib import Path
-    script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(Object.fromEntries("
+    script = ("import('./src/models.ts').then(({ MODELS }) => console.log(JSON.stringify(Object.fromEntries("
               "MODELS.filter((m) => m.hf).map((m) => [m.id, m.options ?? {}])))))")
     return json.loads(subprocess.check_output(["node", "-e", script], cwd=Path(__file__).resolve().parent.parent))
 

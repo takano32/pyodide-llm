@@ -189,7 +189,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
   // converter holds. The file's handle is the only one its file can have: left open, the next conversion of the
   // model got none and was not kept.
   try {
-    // T.115: no bits asked for (weightsFor() in src/models.js asks for six only where the device says it has too little
+    // T.115: no bits asked for (weightsFor() in src/models.ts asks for six only where the device says it has too little
     // memory): int8 where its forward pass fits a 32-bit memory or the browser has a 64-bit one, six bits where neither
     // (T.133), once the header is known
     // (T.329.2.2: a table of every layer's inputs not counted where it will stay in the file kept as it comes)

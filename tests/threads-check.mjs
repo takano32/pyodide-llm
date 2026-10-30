@@ -42,7 +42,7 @@ const spawn = (data) => new Promise((resolve) => {
 if (isMainThread) {
   if (process.env.ENGINE_FROM === "dist") console.log(`threads: helper.js as built, ${helperUrl().pathname.slice(root.length - 1)} (its jobs.js in it)`);
   const { pyodideWithEngine } = await import("./engine.mjs");
-  const { MODELS } = await import("../src/models.js");
+  const { MODELS } = await import("../src/models.ts");
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
   const counts = option("--threads", "1,2,4,8").split(",").map(Number);

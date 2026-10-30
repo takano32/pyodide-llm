@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pyodideWithEngine } from "../engine.mjs";
-import { MODELS } from "../../src/models.js";
+import { MODELS } from "../../src/models.ts";
 import { python as sources } from "../tree.mjs";
 import { SYNTHETIC } from "./models.mjs";
 import { COUNT, KV_START, GEN } from "./lines.mjs";
@@ -129,7 +129,7 @@ const TEXTS = {
     "多くの和歌や絵画に描かれてきた。二〇一三年には世界文化遺産に登録され、毎年夏には多くの登山者が山頂を目指す。",
 };
 // NumPy's answers for one model and its case (caseOf, below): a made-up model's name, <prefix>.json, or a model of
-// src/models.js
+// src/models.ts
 function referenceCase(py, directory, id) {
   let options, text, run = {};
   const began = performance.now();
@@ -156,7 +156,7 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
     return { ...caseOf(py, directory, id, options, JSON.parse(native.stdout), new Uint8Array(fs.readFileSync(`${prefix}.bin`))), numpySeconds };
   } else {
     const entry = MODELS.find((m) => m.id === id);
-    if (!entry) throw new Error(`no model ${id} in src/models.js`);
+    if (!entry) throw new Error(`no model ${id} in src/models.ts`);
     py.FS.writeFile("model.bin", fs.readFileSync(root + entry.checkpoint));
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
     py.runPython(`data, vocabulary = open("model.bin", "rb").read(), open("tokenizer.bin", "rb").read()`);

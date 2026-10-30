@@ -20,7 +20,7 @@ import path from "node:path";
 import { version } from "pyodide";
 import { pyodideWithEngine } from "./engine.mjs";
 import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
@@ -34,7 +34,7 @@ const maxChange = Number(flags.find((flag) => flag.startsWith("--max-change="))?
 const model = MODELS.find((entry) => entry.id === id) ?? (fs.existsSync(`${id}.json`) &&
   { id: path.basename(id), checkpoint: path.resolve(`${id}.bin`), tokenizer: path.resolve(`${id}.tokenizer.bin`),
     options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) });
-if (!model) throw new Error(`${id} is neither a model of src/models.js nor the <out> of tests/perplexity_prepare.py`);
+if (!model) throw new Error(`${id} is neither a model of src/models.ts nor the <out> of tests/perplexity_prepare.py`);
 const local = (file) => (path.isAbsolute(file) ? file : root + file);
 const titles = sources.length ? sources : ARTICLES.ja;
 

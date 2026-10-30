@@ -1,6 +1,6 @@
 // src/page/choose.ts (T.355): choosing a model: the select, the files of the visitor's own disk, the sheet that asks
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
-import { DEFAULT_MODEL, MODELS, memoryWarning } from "../models.js";
+import { DEFAULT_MODEL, MODELS, memoryWarning } from "../models.ts";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
 import { FILE, REPOSITORY, REVISION, type Unlisted, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
 import { looked, unnamed } from "./repository.ts";

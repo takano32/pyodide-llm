@@ -36,7 +36,7 @@ export async function openHuggingFace(chosen: File[]) {
 
 // T.411: the model the page makes of a checkpoint of llama2.c's format and its tokenizer.bin of the visitor's disk (moved
 // here from choose.ts as it was, so that Node tries it). The legacy format knows nothing about itself, so whatever
-// differs from llama2.c's conventions comes as a third file: .json, shaped like an entry of src/models.js ({options,
+// differs from llama2.c's conventions comes as a third file: .json, shaped like an entry of src/models.ts ({options,
 // generation, prompt, placeholder}). ask: the browser's confirm(); undefined where the visitor declines a large file
 export async function openLegacy(chosen: File[], ask: (question: string) => boolean) {
   const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json"));

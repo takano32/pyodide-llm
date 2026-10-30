@@ -1,13 +1,13 @@
-// src/models.js: every model says where it comes from and under which license (T.87). Node alone.
+// src/models.ts: every model says where it comes from and under which license (T.87). Node alone.
 //
 //   node tests/models-check.mjs
 import assert from "node:assert/strict";
-import { DEFAULT_MODEL, GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
-import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.js";
-import { BUILT } from "../src/models/built.js";
-import { HF_JAPANESE } from "../src/models/hf-japanese.js";
-import { HF_CLASSICS } from "../src/models/hf-classics.js";
-import { HF_FAMILIES } from "../src/models/hf-families.js";
+import { DEFAULT_MODEL, GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
+import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
+import { BUILT } from "../src/models/built.ts";
+import { HF_JAPANESE } from "../src/models/hf-japanese.ts";
+import { HF_CLASSICS } from "../src/models/hf-classics.ts";
+import { HF_FAMILIES } from "../src/models/hf-families.ts";
 
 for (const entry of MODELS) {
   const repo = sourceOf(entry);
@@ -43,7 +43,7 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
   }
 }
 // T.520: every entry that thinks (Qwen3's and Qwen3.5's thinking forms, DeepSeek-R1's distills, ...) has the budget of a
-// thought, and no other entry has one (a second copy of the number, on purpose: src/models/sampling.js's THOUGHT_BUDGET)
+// thought, and no other entry has one (a second copy of the number, on purpose: src/models/sampling.ts's THOUGHT_BUDGET)
 {
   const thinking = MODELS.filter((entry) => /\(thinking\)|Thinking|DeepSeek-R1/.test(entry.name) || /<think>\s*$/.test(entry.template ?? ""));
   assert.ok(thinking.length >= 27, `only ${thinking.length} entries that think were found`);

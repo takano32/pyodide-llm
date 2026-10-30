@@ -13,7 +13,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { runtimeUrl } from "./tree.mjs";
 const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
-import { filled } from "../src/models.js";
+import { filled } from "../src/models.ts";
 import { leave } from "./leave.mjs";
 
 const [out, pageFile, count = "32"] = process.argv.slice(2);

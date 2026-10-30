@@ -133,7 +133,7 @@ ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9
 
 
 def entries():
-    script = "import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.hf))))"
+    script = "import('./src/models.ts').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.hf))))"
     return json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))
 
 
@@ -184,7 +184,7 @@ def tokenizers_ids(tokenizer_file, text):
 
 
 def filled(template, prompt):
-    """src/models.js's filled(), for today"""
+    """src/models.ts's filled(), for today"""
     template = re.sub(r"\{date(?::([^}]*))?\}", lambda found: time.strftime(found.group(1) or "%Y-%m-%d"), template)
     return re.sub(r"\{prompt(:trim)?\}", lambda found: prompt.strip() if found.group(1) else prompt, template, count=1)
 

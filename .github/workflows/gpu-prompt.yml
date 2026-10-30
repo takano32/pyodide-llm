@@ -7,7 +7,7 @@
 # only (every shader, 150 tokens), and Dawn in Node on Mesa's lavapipe (shader-f16 and subgroups) takes every model
 # (about 5 minutes on the development machine).
 #
-# T.183: real= takes models of src/models.js from Hugging Face (as the page does, at the revisions the list pins:
+# T.183: real= takes models of src/models.ts from Hugging Face (as the page does, at the revisions the list pins:
 # tests/hf_fetch.py), converts them to int8 as the page converts them (tests/perplexity_prepare.py) and checks them too;
 # NumPy's answer is then the native Python's (Pyodide has no room for Qwen3 0.6B in float32, T.153). With real= and no
 # models=, only those. The log has, for every model, E16 (how far NumPy's answer moves with its cache in float16),
@@ -54,7 +54,7 @@ on:
         description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: tests/gpu-check/models.mjs madeUpOn; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
         required: false
       real:
-        description: 'T.183: ids of Hugging Face models of src/models.js, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'
+        description: 'T.183: ids of Hugging Face models of src/models.ts, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'
         required: false
       forms:
         description: "T.147: only the matrices' shaders whose names hold one of these, separated by commas (gpu-check --forms)"

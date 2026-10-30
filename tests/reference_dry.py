@@ -155,7 +155,7 @@ def run(call):
 
 
 def entry(name):
-    """an entry of the list (src/models.js) for a made-up Llama"""
+    """an entry of the list (src/models.ts) for a made-up Llama"""
     return {"id": f"dry-{name}", "name": f"Dry {name}", "options": {},
             "hf": {"repo": f"made/{name}", "revision": REVISION, "weights": "model.safetensors"}}
 

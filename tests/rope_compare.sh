@@ -20,7 +20,7 @@ languages="${3:-ja en}"
 dir="${RUNNER_TEMP:-.tmp}/rope"
 mkdir -p "$dir"
 echo "rope: $id, $(node -p 'require("os").cpus()[0].model') ($(uname -m))"
-dtype=$(node -e "import('./src/models.js').then(({ MODELS }) => console.log(MODELS.find((m) => m.id === process.argv[1]).weights ?? 'int8'))" "$id")
+dtype=$(node -e "import('./src/models.ts').then(({ MODELS }) => console.log(MODELS.find((m) => m.id === process.argv[1]).weights ?? 'int8'))" "$id")
 model=$(python3 tests/hf_fetch.py "$id" "$dir" | tail -1)
 python3 tests/perplexity_prepare.py "$model" "$dir/made" "$dtype" | cut -c1-200
 python3 tests/write_options.py "$id" "$dir/small" > "$dir/page.json"

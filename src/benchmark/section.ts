@@ -2,7 +2,7 @@
 // (T.177), a worker asked once, the watch for a section that says nothing, and the words the sections share.
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import "./isolation.ts";
-import { MODELS } from "../models.js";
+import { MODELS } from "../models.ts";
 import { $, type Name, type Result } from "./dom.ts";
 import { current, runAt, runNames, sectionAt } from "./running.ts";
 import { unstarted } from "../runtime/updated.ts";

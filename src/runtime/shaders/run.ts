@@ -95,7 +95,7 @@ import type { BlockPacking } from "./common.ts";
 
 // the engine's REPETITION_WINDOW (llama2_numpy.py): the penalty looks at this many of the latest tokens
 export const REPETITION_WINDOW = 64;
-// the most stop tokens settings hold (the list's models have up to 5, src/models.js)
+// the most stop tokens settings hold (the list's models have up to 5, src/models.ts)
 export const STOPS_MOST = 8;
 // State: Step's four words first (copied into the Step uniform after each token), then the loop's own
 const STATE = /* wgsl */ `struct State {

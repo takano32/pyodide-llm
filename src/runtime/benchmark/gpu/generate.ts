@@ -31,7 +31,7 @@ export type GenerationParts = ReturnType<typeof generationParts>;
 // difference is the reading back alone). On DP4A the classifier takes its normed input quantized too
 // (NORM_QUANTIZE, then fusedDp4aMatVec's "write")
 const GENERATE_MODEL: GenerateModel = { ...PROMPT_MODEL, vocab: 32000 };  // the CPU section's model and its vocabulary
-// the settings a token is timed with: the list's sampled models' (src/models.js: temperature 0.7, top-p 0.9, and
+// the settings a token is timed with: the list's sampled models' (src/models.ts: temperature 0.7, top-p 0.9, and
 // tiny-lm's penalty 1.3)
 const GENERATE_SETTINGS = { temperature: 0.7, topp: 0.9, penalty: 1.3 };
 // the forms, in turn: tokens a submission (1: each read back as it comes), GENERATE_TOKENS tokens each round

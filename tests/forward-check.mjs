@@ -36,7 +36,7 @@ import { pyodideWithEngine } from "./engine.mjs";
 import { forwardUrl } from "./bundle.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
 const { automaticDtype, footprint, keysInHalf, needsWide } = await import(forwardUrl());  // (the sources', or with ENGINE_FROM=dist a build's: tests/bundle.mjs)
-import { MODELS } from "../src/models.js";
+import { MODELS } from "../src/models.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);

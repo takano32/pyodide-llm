@@ -59,7 +59,7 @@ for form in "$@"; do
         # takes the first .gguf of a folder)
         place="$room/blocks-${form%.gguf}"
         mkdir -p "$place"
-        repo=$(node -e 'import("./src/models.js").then(({ MODELS }) => { const m = MODELS.find((m) => m.id === process.argv[1]); console.log(`${m.hf.repo}/resolve/${m.hf.revision}`); })' "$id")
+        repo=$(node -e 'import("./src/models.ts").then(({ MODELS }) => { const m = MODELS.find((m) => m.id === process.argv[1]); console.log(`${m.hf.repo}/resolve/${m.hf.revision}`); })' "$id")
         python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "tests"); from fetching import download; download(sys.argv[1], Path(sys.argv[2]))' \
           "https://huggingface.co/$repo/$form" "$place/$form"
         dir=$( [ -d "$folder" ] && echo "$folder" || dirname "$folder" )
