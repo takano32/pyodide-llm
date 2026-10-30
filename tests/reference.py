@@ -105,7 +105,20 @@ def options_shown(options):
     return json.dumps({key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()})
 
 
+def cpu_name():
+    """the CPU's name as Linux says it (x86-64's model name; arm64 says none: unknown), for runs to be read CPU by CPU"""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return "unknown"
+
+
 def ended(say, failed):
+    # (T.494: an only_extra run says nothing of its runner but this)
+    say(f"the CPU: {cpu_name()}")
     say("FAILED" if failed else "the engine computes what transformers computes")
     sys.exit(1 if failed else 0)
 
