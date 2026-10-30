@@ -254,7 +254,7 @@ console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix an
   direct.tables.classifier.at = [size, size + 96 * DIM];
   const checkpoint = random(size + 96 * DIM + (96 * DIM / GROUP) * 4 + 64);
   const a = await openDevice({ ...direct, tokens: true });
-  const layersUp = await uploadLayers(a, true), tablesUp = tablesOn(a);
+  const layersUp = await uploadLayers(a), tablesUp = tablesOn(a, direct.tables);
   assert.equal(tablesUp, 96 * DIM + (96 * DIM / GROUP) * 4);
   assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop]) => sum + stop - start, 0), "every byte put up has a route");
   assert.ok(a.weights.routes.every(([start], i, routes) => !i || routes[i - 1][0] <= start), "the routes in the checkpoint's order");
@@ -328,7 +328,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
     direct.tables.classifier.at = [size, size + 96 * 64];
     const checkpoint = random(size + 96 * 64 + 96 * 2 * 2 + 64);
     const a = await openDevice({ ...direct, tokens: true });
-    const layersUp = await uploadLayers(a, true), tablesUp = tablesOn(a);
+    const layersUp = await uploadLayers(a), tablesUp = tablesOn(a, direct.tables);
     const halved = a.weights.routes.filter(([, , , , halves]) => halves);
     assert.equal(halved.length, Object.keys(TERNARY).length * LAYERS + 1, "a route of halves for each ternary matrix of each layer, and the table's");
     assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, and its scales as the GPU holds them (float32)");

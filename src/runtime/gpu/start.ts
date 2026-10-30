@@ -35,9 +35,9 @@ function open(plan: Opened, shared: SharedArrayBuffer) {
         failure ??= "the GPU's worker was stopped";
         return;
       }
-      openedBytes = await uploadLayers(model!, true);
-      // T.210: the tables too, which nothing holds in the shared memory either
-      openedBytes += tablesOn(model!);
+      openedBytes = await uploadLayers(model!);
+      // T.210: the tables too, which nothing holds in the shared memory either (T.626: as this plan says, which start()'s has not)
+      openedBytes += tablesOn(model!, plan.tables);
       if (stopping) failure ??= "the GPU's worker was stopped";
     } catch (error) {
       failure = whyOf(error);
