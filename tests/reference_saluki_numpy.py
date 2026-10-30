@@ -42,6 +42,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+from cpu import cpu_name  # noqa: E402
 import reference_27b  # noqa: E402 (puts the engine's Python on the path)
 import engine.model  # noqa: E402
 import gguf_check  # noqa: E402
@@ -388,4 +389,5 @@ def made_up(directory):
 if __name__ == "__main__":
     if sys.argv[1] == "made-up":
         sys.exit(made_up(Path(sys.argv[2])))
+    print(f"the CPU: {cpu_name()}")
     sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2])))

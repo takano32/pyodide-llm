@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+from cpu import cpu_name
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
@@ -103,17 +104,6 @@ def logits_said(say, label, whole, ours):
 def options_shown(options):
     """the options of a conversion for one line of the log: how many specials, not which"""
     return json.dumps({key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()})
-
-
-def cpu_name():
-    """the CPU's name as Linux says it (x86-64's model name; arm64 says none: unknown), for runs to be read CPU by CPU"""
-    try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.startswith("model name"):
-                return line.split(":", 1)[1].strip()
-    except OSError:
-        pass
-    return "unknown"
 
 
 def ended(say, failed):

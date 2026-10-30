@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+from cpu import cpu_name
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 from llama2_numpy import rope_frequencies, rope_magnitude  # noqa: E402
@@ -67,6 +68,7 @@ def main():
         failed |= bad
         say(f"{name} ({count} heads, thetas, factors and contexts): the frequencies within {worst:.2e} of transformers' ({past:.2f} of the line), "
             f"the magnitude within {worst_magnitude:.2e}{' — FAILED' if bad else ''}")
+    say(f"the CPU: {cpu_name()}")
     say("FAILED" if failed else "the engine's yarn tables are transformers'")
     sys.exit(1 if failed else 0)
 
