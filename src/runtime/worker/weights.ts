@@ -193,6 +193,7 @@ function openGpu() {
 // section alone ends it. undefined on the model page: any model may follow.
 // ahead: what the forward pass of the largest of loadsAhead puts after the checkpoint, or undefined
 function pooledWeights(size: number, after: number, shared: boolean, wide: boolean, ahead?: number) {
+  const forward = forwardModule!;  // (T.476: the forward module, which a load that places weights has: taken once)
   const pages = (bytes: number) => Math.ceil(bytes / 65536);
   const needs = (base: number) => pages(base + size + (weightsPool!.limited ? 0 : after)) + 1;
   // what a memory made now is for: the load going on, and the largest of those that follow it where the page said which do
@@ -205,7 +206,7 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
     if (shared) {
       try {
         // (a page more where nothing follows, as needs() counts one past what the model takes)
-        ({ memory, base } = forwardModule!.weightsMemory(size, { shared: true, wide, after: largest, ...(ahead !== undefined && { spare: 65536 }) }));
+        ({ memory, base } = forward.weightsMemory(size, { shared: true, wide, after: largest, ...(ahead !== undefined && { spare: 65536 }) }));
       } catch (error) {
         // no shared memory here: one thread (T.380.2: said, as the lowered one below is)
         console.warn(`memory: no shared memory for this model (${told(error)}): a memory that is not shared, and one thread`);
@@ -222,7 +223,7 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
         memory = undefined;
       }
     }
-    if (!memory) ({ memory, base } = forwardModule!.weightsMemory(size, { wide }));
+    if (!memory) ({ memory, base } = forward.weightsMemory(size, { wide }));
     const isShared = shared && memory.buffer instanceof SharedArrayBuffer;
     // a memory without a maximum (not shared) grows as far as the browser allows: 4 GB of pages, 16 GB when wide
     const most = wide ? 262144 : 65536;
@@ -231,7 +232,7 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
   }
   const { memory, base } = weightsPool!;
   const more = pages(base + size) + 1 - memory.buffer.byteLength / 65536;
-  if (more > 0) forwardModule!.growMemory(memory, more, wide);
+  if (more > 0) forward.growMemory(memory, more, wide);
   return weightsPool!;
 }
 
@@ -288,6 +289,7 @@ export function automaticBits(header: List<Header>, form: Dict<Partial<Form>>, s
 // T.329.2.2, later: the checkpoint is read from where it is kept, which can be read from at once once it is all read
 // (attach()): a table of every layer's inputs may stay there. keep: the file of the first visit, to read from as it comes
 export function weightsBuffer(size: number, header: Header, options: Options, keep?: Keeper, later = false): Weights {
+  const forward = forwardModule!;  // (T.476: the forward module, which a load that places weights has: taken once)
   if (jsKernels && !switchesNow().includes("kernels")) {
     // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
     const wanted = sharedWanted();
@@ -300,11 +302,11 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     // where it is kept as the dtype it is converted to; or a kept one): the memory holds the rest, held bytes. footprint()
     // was asked of the whole checkpoint, and counts the table for nothing
     const keeps = keep && keep.dtype === options.dtype;
-    const hole = options.per_layer && tableApart() && (keeps || later) ? forwardModule!.tableHole(placesOf(header, options.dtype ?? "float32", options)) : null;
+    const hole = options.per_layer && tableApart() && (keeps || later) ? forward.tableHole(placesOf(header, options.dtype ?? "float32", options)) : null;
     const held = hole ? size - (hole[1] - hole[0]) : size;
     // T.129 (7): a model past even a 64-bit memory is refused here, before its weights are fetched (a Qwen2.5 32B of
     // ?hf=, about 37 GB as int8, began a 65 GB download and failed at 7.8 GB). The words are the owner's (2026-09-28)
-    if (forwardModule!.pastWide(held, after)) {
+    if (forward.pastWide(held, after)) {
       throw new Error(`This model is too large for a web page: it needs about ${Math.ceil((held + after) / 1e9)} GB of ` +
         "memory, and a browser gives a page 16 GB at most.");
     }
@@ -317,7 +319,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     const onGpu = gpuOnlyWeightsFor(held, header, options, after, deviceMemory);
     if (onGpu.mode === "gpu") return gpuOnlyBuffer(size, header, options, onGpu as Required<Placed>, keep);
     const gpuRoom = onGpu.gpuRoom;
-    const wide = forceWide || forwardModule!.needsWide(held, after);
+    const wide = forceWide || forward.needsWide(held, after);
     if (wide && !wideKernels?.plain) {
       if (wideUpdated) throw wideUpdated;  // (T.475: the page is told the site was updated, not that this browser has none)
       throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
@@ -329,7 +331,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
       .map((without) => afterCheckpoint(header, size, options, wanted, without)));
     const { memory, base, shared } = pooledWeights(held, after, wanted && (!wide || Boolean(wideKernels!.shared)), wide, ahead);
     // T.160: the type of the keys and values that after counts, T.130: on the memory the browser gave
-    const halfKeys = forwardModule!.keysInHalf(header, size, forwardOptions(header, options, shared));
+    const halfKeys = forward.keysInHalf(header, size, forwardOptions(header, options, shared));
     const kernels = (wide ? (shared ? wideKernels!.shared : wideKernels!.plain) : (shared ? sharedKernels : jsKernels))!;
     const spawn = shared ? spawnThread : undefined;
     weightsNow = memory;
@@ -338,7 +340,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     // read, then into the memory: a shared one is not handed to the file system)
     let reader: Reader | undefined = hole && keeps ? keep : undefined;
     if (hole && keeps) keep.holding(hole);
-    const place = hole ? forwardModule!.placer([hole]) : (offset: number) => offset;
+    const place = hole ? forward.placer([hole]) : (offset: number) => offset;
     const write: Write = !hole ? (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk) : (offset, chunk) => {
       const end = offset + chunk.length;
       if (offset < hole[0]) new Uint8Array(memory.buffer, base + offset, Math.min(end, hole[0]) - offset).set(chunk.subarray(0, Math.min(end, hole[0]) - offset));
@@ -371,7 +373,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
         // them would slow down with its upload and compilation; its first load is one of them)
         // (nor under the rounds of /benchmark/'s model section, T.184: the same; its page path, timed on the first load
         // before the rounds, has the GPU, and T.205: the rounds' loads wait for that GPU to let go of its device)
-        const outside = forwardModule!.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom,
+        const outside = forward.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom,
           gpuRemembered: gpuRequest?.remembered, gpuForce, halfKeys, apart, oneThread: threadsRequest?.fixed === 1 });
         return { llama: builtOrLetGo(outside, () => llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outside })), outside };
       },
@@ -417,25 +419,26 @@ const aloneKept = (dtype: Dtype, blocks = false) => Boolean(gpuAdapter) &&
 // for a Llama of int8 (T.232: or of ternary weights) the GPU's steps take (gpuOnlyUnfit), where the page and the device
 // may (gpuOnlyPossible)
 function gpuOnlyWeightsFor(size: number, header: Header, options: Options, after: number, deviceMemory: number): Placed {
+  const forward = forwardModule!;  // (T.476: the forward module, which a load that places weights has: taken once)
   const { dtype = "float32" } = options;
-  const cpu = size + after, gpu = forwardModule!.gpuBytes(header, { ...options, dtype });
+  const cpu = size + after, gpu = forward.gpuBytes(header, { ...options, dtype });
   // (T.232: with the form's rotated basis, which the GPU does not turn the inputs for (T.237): the worker did not hand it
   // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built.
   // T.375.5: the whole form as the options carry it: the layers that keep a state are read off it too)
-  const fit = gpuOnlyAllowed() && !forwardModule!.gpuOnlyUnfit(header, dtype, options, gpuAdapter, gpuForce);
-  const eligible = fit && !aloneKept(dtype, forwardModule!.blocksForm(options));
+  const fit = gpuOnlyAllowed() && !forward.gpuOnlyUnfit(header, dtype, options, gpuAdapter, gpuForce);
+  const eligible = fit && !aloneKept(dtype, forward.blocksForm(options));
   // (the second review of T.156: the status line then says only the memory's reason where the layers do not fit beside
   // the CPU's copy; the console says the kept verdict, and what asks again)
   if (fit && !eligible) {
     console.info("gpu: the CPU as /benchmark/ measured it was faster here than this model on the GPU alone, as the page kept it: " +
       "on the CPU (a new run of /benchmark/'s CPU section, another browser version or new shaders weigh the two again)");
   }
-  if (!eligible) return forwardModule!.weightsPlace({ cpu, gpu, deviceMemory });
+  if (!eligible) return forward.weightsPlace({ cpu, gpu, deviceMemory });
   // (T.571: of the whole form as the options carry it, as gpuOnlyUnfit() is asked above: four keys of it went before, and a
   // Qwen3.5 on the GPU alone, whose linear-attention layers are in the form's linear, was refused by Python)
-  const tensors = placesOf(header, dtype, options), stored = size - forwardModule!.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
+  const tensors = placesOf(header, dtype, options), stored = size - forward.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
   const gpuOnly = stored + afterCheckpoint(header, stored, { ...options, direct: true }, true);
-  return { ...forwardModule!.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: gpuForce.only }), tensors, stored, gpuOnly };
+  return { ...forward.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: gpuForce.only }), tensors, stored, gpuOnly };
 }
 // llama2_numpy.external_tensors(): where every tensor of the checkpoint is, from its header alone
 function placesOf(header: Header, dtype: Dtype, form: Partial<Form>) {
@@ -449,11 +452,12 @@ function placesOf(header: Header, dtype: Dtype, form: Partial<Form>) {
 // T.156: the weights of a model on the GPU alone: the layers' matrices to the GPU's worker as they come (forward.ts's
 // gpuOnlyWeights), the rest into a memory of their size, and every byte to keep's file where the conversion is kept
 function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors, stored, gpuOnly }: Required<Placed>, keep?: Keeper): Weights {
+  const forward = forwardModule!;  // (T.476: the forward module, which a load that places weights has: taken once)
   // (T.576: the GPU's plan first: what makes it may throw (gpuPacking()), before a memory is taken or a worker opened)
-  const plan = forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options);
+  const plan = forward.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered, options);
   // (T.581: and what else is reckoned of the header alone, which may throw as well)
-  const layerWeights = forwardModule!.layerWeightsOf(header, options);
-  const after = gpuOnly - stored, wide = forwardModule!.needsWide(stored, after);
+  const layerWeights = forward.layerWeightsOf(header, options);
+  const after = gpuOnly - stored, wide = forward.needsWide(stored, after);
   const { memory, base, shared } = pooledWeights(stored, after, true, wide);
   if (!shared) throw new Error("This browser gave no shared memory for a model on the GPU alone.");
   const worker = openGpu();
@@ -467,7 +471,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
   const end = () => {
     worker.postMessage({ type: "stop" });
     let timer: ReturnType<typeof setTimeout>;
-    const late = new Promise<void>((resolve) => { timer = setTimeout(resolve, forwardModule!.GPU_END_MS); });
+    const late = new Promise<void>((resolve) => { timer = setTimeout(resolve, forward.GPU_END_MS); });
     return Promise.race([ending, late]).then(() => {
       clearTimeout(timer);
       worker.terminate();
@@ -481,7 +485,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
   // failed), and the engine, which listens from start() on, is handed the error it missed once it is built (failed)
   let failed: ErrorEvent | undefined;
   try {
-    weights = forwardModule!.gpuOnlyWeights({ memory, base, size, tensors, worker });
+    weights = forward.gpuOnlyWeights({ memory, base, size, tensors, worker });
     worker.addEventListener("error", (event) => {
       failed ??= event;
       weights.gone();
@@ -494,7 +498,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
   // (T.156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.ts's aloneVerdict)
   const direct: GpuOnly = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
-    layerWeights, cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forwardModule!.USAGE_UNKNOWN,
+    layerWeights, cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forward.USAGE_UNKNOWN,
     room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end };
   weightsNow = memory;
   const kernels = (wide ? wideKernels!.shared : sharedKernels)!;
@@ -511,7 +515,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
     drained: weights.drained,  // every byte of the layers on the GPU (or the GPU failed: start() says so)
     llama: (tokenizer, engineOptions) => {
       // (no oneThread, T.371: a model on the GPU alone is one on a shared memory, which ?threads=1 does not ask for)
-      const outside = forwardModule!.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce, halfKeys: true, direct,
+      const outside = forward.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce, halfKeys: true, direct,
         gpuRemembered: gpuRequest?.remembered });
       const made = builtOrLetGo(outside, () => llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: outside }));
       built = true;
