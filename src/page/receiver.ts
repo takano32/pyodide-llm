@@ -14,6 +14,7 @@ import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { drawAnswer, message, meta, thoughtSaid, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
+import { endsWork, ofThisLoad } from "./heard.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
 
@@ -42,8 +43,8 @@ export const worker: ModelWorker = new Worker(new URL("../runtime/worker.ts", im
 /** the site's root, which the worker is told with a load: models/ is under it, and the worker's own URL is not (T.367.3) */
 export const root = new URL(import.meta.env.BASE_URL, location.href).href;
 worker.onmessage = ({ data }) => {
-  // a late report about a load that another choice of model has cancelled
-  if (data.load !== undefined && data.load !== loads) {
+  // a late report about a load that another choice of model has cancelled (heard.ts)
+  if (!ofThisLoad(data, loads)) {
     return;
   }
   if (data.type === "status") {
@@ -224,11 +225,11 @@ worker.onmessage = ({ data }) => {
     message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);
     statusText.textContent = data.reloading ? `${model.name}: loading again on the CPU...` : ready ? `${model.name}` : `Could not load ${model.name}`;
   }
-  // T.172: only the messages that end a piece of the worker's work mean it is idle again (a load: ready, the
-  // benchmark: bench, a text: done, any of them: error). The others come in the middle of one: status, progress
-  // and token, and the search for the number of threads (threads, threads-compared), which runs inside a text, and gpu (T.148); read
-  // as idle, they gave the run button back and a press started a second text on the same engine
-  if (["ready", "bench", "done", "error"].includes(data.type)) {
+  // T.172: only the messages that end a piece of the worker's work mean it is idle again (heard.ts's endsWork()). The
+  // others come in the middle of one: status, progress and token, and the search for the number of threads (threads,
+  // threads-compared), which runs inside a text, and gpu (T.148); read as idle, they gave the run button back and a
+  // press started a second text on the same engine
+  if (endsWork(data)) {
     progress.hidden = true;
     idle();
     showRun();

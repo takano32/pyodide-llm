@@ -381,5 +381,23 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   await assert.rejects(openHuggingFace([file("model.safetensors", 10), file("config.json", 0, "{}")]), /A Hugging Face model needs three files together/, "no tokenizer");
   cases += 6;
 }
+{
+  // T.468.1: heard.ts, what the page reads of a report first: a late report of a cancelled load is passed over, and
+  // only the reports that end a piece of the worker's work give the page its buttons back. Every kind of report the
+  // contract has (contracts/messages.ts's FromWorker) is asked, so a kind added there is asked too
+  const { ofThisLoad, endsWork } = await fresh("page/heard.ts");
+  const { contract } = await import("./contracts.mjs");
+  assert.deepEqual([ofThisLoad({ type: "status", load: 3 }, 3), ofThisLoad({ type: "status", load: 2 }, 3), ofThisLoad({ type: "threads" }, 3)],
+    [true, false, true], "a report of this load is read, one of a load before it is not, and one of no load is");
+  const kinds = [...contract("messages.ts").membersOf("FromWorker").keys()].sort();
+  assert.deepEqual(kinds.filter((type) => endsWork({ type })), ["bench", "done", "error", "paths", "ready"],
+    `of the reports (${kinds.join(", ")}), the ends of a piece of work`);
+  // (receiver.ts reads elements at its top, and Node cannot import it: its text asks the two, first and last)
+  const receiver = (await import("node:fs")).readFileSync(new URL("../src/page/receiver.ts", import.meta.url), "utf8");
+  const handler = receiver.slice(receiver.indexOf("worker.onmessage = ({ data }) => {"));
+  assert.ok(/^worker\.onmessage = \(\{ data \}\) => \{\n(\s*\/\/[^\n]*\n)*\s*if \(!ofThisLoad\(data, loads\)\) \{\n\s*return;/.test(handler), "receiver.ts passes over another load's report before anything else");
+  assert.ok(/\n  if \(endsWork\(data\)\) \{\n/.test(handler), "receiver.ts gives the page back its buttons where a report ends a piece of work");
+  cases += 2;
+}
 console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);
