@@ -532,7 +532,7 @@ assert.deepEqual(Object.keys(LAYER_KINDS), ["attention", "linear", "convolution"
 assert.deepEqual([LAYER_KINDS.attention, LAYER_KINDS.linear, LAYER_KINDS.convolution], [attention, linear, convolution]);
 for (const [name, kind] of Object.entries(LAYER_KINDS)) assert.deepEqual([typeof kind.frame, typeof kind.make], ["function", "function"], name);
 // T.568.4: what a kind says of the GPU's side: its matrices and the vectors it hands are among the names of its tensors (a
-// name it forgets there is a matrix or a vector of every layer to forward/gpuside.ts's kindOf(), counted and placed so)
+// name it forgets there is a matrix or a vector of every layer to forward/gpufit.ts's kindOf(), counted and placed so)
 {
   const linearForm = { every: 2, key_heads: 1, value_heads: 2, key_dim: 16, value_dim: 16, conv: 4 };
   const sizes = { dim: 64, numbers: { linear: linearForm, convolution: { layers: "ca", taps: 3 } }, widths: { linear: LAYER_KINDS.linear.widths({ linear: linearForm }).linear } };

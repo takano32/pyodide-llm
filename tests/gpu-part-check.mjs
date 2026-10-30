@@ -1,5 +1,5 @@
-// tests/gpu-part-check.mjs (T.378.2): the GPU's side of the engine (src/runtime/forward/gpuside.js's gpuSide() and
-// gpuFit()) by itself, with stand-ins for everything beside it: two pages of shared memory of its own, a "GPU's worker"
+// tests/gpu-part-check.mjs (T.378.2): the GPU's side of the engine (src/runtime/forward/gpuside.js's gpuSide() and,
+// T.457.1, gpufit.js's gpuFit()) by itself, with stand-ins for everything beside it: two pages of shared memory of its own, a "GPU's worker"
 // on this very thread that answers a request in the control area as it is posted (so that the wait finds its answer
 // there), a clock the test moves (a block on the stand-in GPU and a block on the stand-in CPU each take what the test
 // says), a CPU's side that writes down what it was asked for, and the software threads as two numbers. No engine, no
