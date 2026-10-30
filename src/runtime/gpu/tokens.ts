@@ -117,7 +117,7 @@ type Ran = { ids: Uint32Array<ArrayBuffer>; sampled: number; stopped: number; no
 // each in turn: the fastest is taken (T.150's and T.175's tables left which is fastest to the device: the owner's
 // Android read a layer at 18.5% of its buffer's reads with mul_mat_vec and a matrix at 96.8% with DP4A). The attention
 // (T.224, chooseTokenAttention) is llama.cpp's decode form, flash_attn_vec, split over the positions and reduced, or the
-// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T.151 (src/runtime/benchmark/gpu/generate.js's generate()), whose
+// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T.151 (src/runtime/benchmark/gpu/generate.ts's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
 // T.226: Qwen2's and Qwen3's steps too. What they have between the matrix of q, k and v and RoPE (T.153: a bias of each,

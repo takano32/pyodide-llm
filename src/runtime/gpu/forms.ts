@@ -237,7 +237,7 @@ function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, pipeline: 
   dispatch(pass, pipeline, group, across, Math.ceil(tiles / across));
 }
 
-// T.146's check (src/runtime/benchmark/gpu/check.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
+// T.146's check (src/runtime/benchmark/gpu/check.ts's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
 // of rows everywhere), 11 and 70 tokens (a part of a tile of tokens; two or one and a part), and 11 tokens whose x and
 // y are wider than the product (xStride 608, yStride 320), each product twice into the same y (the second added:
 // shape.add) against JavaScript's (shaders/prompt.ts's tiledOff). The reason it is wrong, or null

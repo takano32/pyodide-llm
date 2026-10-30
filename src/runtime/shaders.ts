@@ -1,4 +1,4 @@
-// shaders.ts (T.135): the WGSL of this project in one place. The GPU section of /benchmark/ (src/runtime/benchmark/gpu.js,
+// shaders.ts (T.135): the WGSL of this project in one place. The GPU section of /benchmark/ (src/runtime/benchmark/gpu.ts,
 // T.134) measures with some of them; the model's GPU worker (src/runtime/gpu.ts) runs a prompt's tokens through the layers
 // with the tiled matrices of T.146 (the one each device runs fastest, T.147), the flash attention and the steps of a
 // layer below them. A plain ES module, which a bundler links into each of them (T.367.3).
@@ -17,7 +17,7 @@
 // likecpu.ts (the CPU's sampling in JavaScript: no shader), engine.ts (T.379.1: the catalogue of the engine's shaders,
 // which the key hashes and the model's worker takes them from) and key.ts (the device's key). Each is a static import
 // (T.367.3: a bundler links them).
-// T.367.5: who reads the window. /benchmark/'s GPU worker (benchmark/gpu/device.js), which measures with nearly all of
+// T.367.5: who reads the window. /benchmark/'s GPU worker (benchmark/gpu/device.ts), which measures with nearly all of
 // them and fetches this module when its section runs; and the tools (the net's shaders section, tests/gpu-check.mjs,
 // tests/smoke.mjs and others), to which shaders.ts is the name of all the WGSL there is. The model's GPU worker does
 // not: its modules take the shaders they run from the catalogue (shaders/engine.ts's ENGINE, T.379.1) and the other
