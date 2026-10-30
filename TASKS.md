@@ -123,7 +123,6 @@
 - T.102 [運用][その他] JSPI で Python の同期ループから非同期の JS を待つ — 保留
 - T.103 [性能][その他] WebNN でブラウザの NPU や GPU を使う — 保留
 - T.104 [性能][CPU] WebAssembly の FP16（f16x8）で活性値を半精度にする — 保留
-- T.487 [整理][その他] T.375.5 の後の残り — 未着手
 - T.488 [整理][WebGPU] T.379 の後の残り — 未着手
 - T.489 [整理][その他] T.380.1 の後の残り — 未着手
 - T.491 [整理][WebGPU] T.380.3 の後の残り — 未着手
@@ -189,6 +188,7 @@
 - T.620 [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 未着手
 - T.621 [整理][CPU] 仕事を位置の並びでなく `WORK` の記録の関数で組む — 未着手
 - T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 未着手
+- T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1063,12 +1063,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - T.50 オフライン対応（PWA）。2026-09-19 に却下: 古い `worker.js` のキャッシュで 404 を出した前例があり、Service Worker はその種の事故をもっと起こしやすい。「Pyodide は常に最新を実行時に解決する」方針とも噛み合わない。
 - T.46 会話の継続（ターンをまたぐ KV キャッシュ、文脈があふれたときの作り直し、リセット）。2026-09-19 に却下: 実験の範囲の外。このプロジェクトの価値は「WASM Python でどこまでできるかを測って公開する」ことで、状態を持つチャットの作り込みは測れるものを増やさない。150M の指示モデルの受け答えは弱く、チャットボットとして評価される土俵に自分から上がることになる。T.46 のもう半分、チャットテンプレート（1 ターンだけ、状態なし）は、T.60 で HF の一覧に指示モデルを入れる場合の付属としてだけ残した。「チャット風の UI なのに続きを書くだけ」という違和感は文言で解く。長い入力の処理速度が問題になったら、見直すのは T.49（prefill のバッチ化）。
 
-### T.487 [整理][その他] T.375.5 の後の残り — 状態: 未着手（2026-10-12、T.375.5 とそのレビューから。規模 小。文面の 1 つは持ち主）
-- **持ち主の文面**: `gpuFit()` の新しい断り「this pair of norms and FFN is not on the GPU yet」（ステータス行の「prompts on the CPU (…)」に入りうる。今あるモデルには出ない）。替えるか、断りごと外すかは `gpuside.ts` の 1 行と試験 3 か所。`gpuOnlyUnfit()` の最初の断りの文は「only a Llama's tensors are, by external_tensors()」と言うが、`external_tensors()` は T.359 から全レイアウトに答える（文面）。
-- 試験の穴: `footprint()` の `onInt8` から種類の `widest` を外しても誰も落とさない（Qwen3.5 で value_heads × value_dim だけが 32 の倍数でない形がどの検査にも無い。本線からの穴）。`gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」と `tokensUnfit()` の `embedding.group` の比べは、今ある 5 行では効く入力が無い（作り物の事実の組を `gpuOnlyUnfit()`・`gpuBytes()` に渡せない: `ARCHITECTURES` を直に読む）。`tests/unchanged-choices.mjs` の格子は `linear`・`convolution`・`rotated` を渡さない。
-- `gpuOnlyUnfit()` は表に無いアーキテクチャの名前を Llama として扱う（本線は `arch !== "llama"` で断った。Python が自分の文で断るので一覧からは届かない）。`plan-keys-check` は Python の側だけを直したとき、古い 2 つ目の写し `SECOND` の文が先に出て、どちらを直すかを言わない。`footprint()` は float16 のファイルの RoPE の表を別に数えていない（`size * 2` の内に収まっている見立て、未確認）。`gpuBytes()` は GPU に置かれないモデルにも Llama の行列の形で答える。`Form` の型と `Stateful` は形の数の鍵を 2 回書いている。`engine.ts` の `shape` と `Sizes` は同じ数を 2 つの名前で持つ。GPU の Worker への知らせの `six`・`ternary`、`aloneKept()` の `ternaryKey`、`/benchmark/` の `t.kind === "int8"` は名前のまま。
-- T.484・T.485 のうち T.375.5 が片付けなかったもの（見積もりに関わらない）はそのまま T.484・T.485 に残る: NumPy と JavaScript の `bo` の引き方、`plan-facts-check` の線、`calls` の gpt2 の RoPE の表、`fromStaging()` の軽い組の試験、`cpuSide` の getter の 2 段、`gpuFit()` の `linear`・`convolution` を名指す文、`at` の名前の型、速さの道具の作り物。
-
 ### T.488 [整理][WebGPU] T.379 の後の残り — 状態: 未着手（2026-10-12、T.379.1・T.379.2 とそのレビューから。規模 小〜中。鍵を動かさないものだけ先に）
 - **鍵が動かないもの**: `shaders/matvec.ts`（ベンチ）を `fused.ts` の文に合わせて寄せる（重なりは `mulMatVec` の 86 行のうち 63〜68、`ortDp4aMatVec` の 89 行のうち 74、`ortMatVec` の 83 行のうち 35。エンジンの文をそのままにすれば鍵は動かない）。`EMBED`・`EMBED_ROWS` と 3 値の 2 つを 1 つの作る関数に。`promptForms()`・`devicePromptForms()`・`deviceKey()` の `ternary` の真偽を詰め方の名前に（5 ファイル）。T.478 の残り（`tiledOff()` の `xq`・`xs`、`flashVecParams()` の `splits`）。`device-key-check` の「コンパイルする式の一覧（13）」は目録を通す形になった今は外せる見立て。
 - **鍵が動くもの（次に鍵を動かす回があれば一緒に。それだけのためには動かさない）**: `flashVecLanes` の、片方のシェーダが使わない関数。ONNX Runtime の写しの字下げ。`write_pair` と `ROPE` の回す行の重なり。`FLOAT_MAGNITUDE` の 1 行の共有（TensorFlow.js の通知の写しが増える）。
@@ -1543,4 +1537,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 状態: 未着手（2026-10-30、T.486 から。規模 小）
 - `footprint()` と `createForward()` は同じ `frameArrays()` を呼ぶが、渡す詰め方の並び（`xs` の大きさを決める）は別々に作る。軽い組には両方の枠を数十バイトの精度で比べる試験が無い（全部の組の `memory-check` は 1 MiB の線）。エンジンが枠のバイト数を出すか、両方の詰め方の並びを比べる検査を足す。
 - 壊し方の道具を速い組 → smoke → 重い組の 3 段に（T.375.4 のレビューの勧め）。
+- T.487 から: `gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」と `tokensUnfit()` の `embedding.group` の比べに効く入力が無い（作り物の事実を `gpuOnlyUnfit()`・`gpuBytes()` に渡せない）。網の `unchanged-choices` の格子は `linear`・`convolution`・`rotated` を渡さない（足すなら別の記録に: 網の決まり (6)）。
+
+### T.623 [整理][その他] 同じ数を 2 つの名前で持つ所 — 状態: 未着手（2026-10-30、T.487 から。規模 小〜中）
+- `Form` の型と `Stateful` が形の数の鍵を 2 回書く。`engine.ts` の `shape` と `Sizes` は同じ数を 2 つの名前で持つ。GPU の Worker への知らせの `six`・`ternary`、`aloneKept()` の `ternaryKey`、`/benchmark/` の `t.kind === "int8"` は詰め方の名前のまま（表 `PACKED` の行で言える）。`gpuBytes()` は GPU に置かれないモデルにも Llama の行列の形で答える。
 
