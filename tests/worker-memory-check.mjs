@@ -326,7 +326,7 @@ const ok = (line) => {
     assert.deepEqual(await asked({}), ["https://other.test/site/models/small.000", "https://other.test/site/models/small.tokenizer.bin"], "a load without a root keeps the one it was told");
     context.rootBefore = before;
     run("loadAsked({ root: rootBefore }); initialized = undefined");
-    const posts = ["src/pages/index.astro", "src/page/choose.ts", "src/benchmark/model.ts"].map((file) => [file, fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8").match(/\{ type: "(?:init|load)",[^}]*/g) ?? []]);
+    const posts = ["src/page/first.ts", "src/page/choose.ts", "src/benchmark/model.ts"].map((file) => [file, fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8").match(/\{ type: "(?:init|load)",[^}]*/g) ?? []]);
     for (const [file, found] of posts) assert.ok(found.length === 1 && /\broot\b/.test(found[0]), `${file}: the load it sends the worker says no root: ${found}`);
     ok("the site's root comes with a load and models/ is asked for under it; the page's three loads say it");
   }
