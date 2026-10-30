@@ -365,9 +365,15 @@ const returned = (fn) => {
   // (`plan.tables ?? plan.tokens`: either)
   const insidesOf = (node) => (node.type === "LogicalExpression" ? [...insidesOf(node.left), ...insidesOf(node.right)] : insideOf(node) ? [insideOf(node)] : []);
   for (const { program } of readers) {
+    // (T.479: a name a file gives one level down, `planned = plan.tokens`, whose `planned.<key>` is a read of it too)
+    const aliases = new Map();
+    walk(program, (node) => {
+      if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.init && insideOf(node.init)) aliases.set(node.id.name, insideOf(node.init));
+    });
     walk(program, (node) => {
       if (member(node) && isPlan(node.object)) read.add(node.property.name);
       if (member(node) && insideOf(node.object)) readInside[insideOf(node.object)].add(node.property.name);
+      if (member(node) && node.object.type === "Identifier" && aliases.has(node.object.name)) readInside[aliases.get(node.object.name)].add(node.property.name);
       // the vectors go up as a list (m.vectors, by the plan's own names) and are read back as `V.<name>`, `m.vectors.<name>`
       // or by a name in a text (added(to, "bq")): a property is a read, and so is a text that is one of the written names
       if (member(node) && ((node.object.type === "Identifier" && node.object.name === "V") || (member(node.object) && node.object.property.name === "vectors"))) readInside.vectors.add(node.property.name);
