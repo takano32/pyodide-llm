@@ -49,7 +49,7 @@
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
 - T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 未着手
 - T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 未着手
-- T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 未着手
+- T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 反映済み
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
 - T.478 [整理][WebGPU] シェーダの型の残り — 未着手
@@ -550,8 +550,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 状態: 未着手（2026-10-11、T.378.5 から。規模 中）
 - 「どの知らせでどの出来事を言うか」（`receiver.ts`・`choose.ts`・`composer.ts`・`run.ts`）は要素を最上位で取るので Node の試験に無く、実ブラウザだけが見る（別の読み込みの知らせを捨てる条件を外しても Node の検査は通る）。受け口を「知らせ → 言う出来事と描くもの」の関数に。`answerBegan()` が書いている間の 2 回目を断らないこと（守りは `composer.ts`）も一緒に。（T.475 から: ステータス行の文字列を組む所（`draw.ts`、要素を読む）も、行を組む純関数に分ける。）
 
-### T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 状態: 未着手（2026-10-11、T.378.5 から。規模 小）
+### T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 状態: 反映済み（2026-10-11、T.378.5 から。規模 小）
 - `tests/e2e.mjs` は `?bench=1` を知らず、`tests/bench-browser.mjs` は Playwright の Chromium しか開かない（手元には入っていない）。`tests/bench-check.mjs` は節の秒と全体の行（「Section 2 / 2 · … in all」）を見ない。
+- **2026-10-30**: `bench-check.mjs` の `watchStages()` が、節の上の行（`#overall`）の文の移りと各節の秒（`.elapsed`）も取る。終わった後に: 走った節の秒がどれもページの時計の形（「N s」か「N min SS s」）、2 つ以上走ったら上の行が走る間に「Section k / n · 題 · 時間 in all」を言い、最後が「n sections in 時間」。手元の Chromium で `--dist chromium --run device,storage` が通る（壊し方: ページの最後の行を「2 sections, in …」にすると落ちる）。`bench-browser.mjs` は今の開発機の Playwright の Chromium で回る（stories260K で約 1 分）: 頭の「開発機では回せない」を直した。`?bench=1` の画面は T.590 から `screenshots.mjs` が見るので、`e2e.mjs` には足さない（取りまとめ役の決め）。CI を省いた。訳: 試験の道具だけで、手元の Chromium で回した。
 
 ### T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 状態: 未着手（2026-10-11、T.368.3 から。T.368.8 の後。規模 中）
 - `!`（ここには値がある、の言い切り）の 46 個は `forwardModule` と `llama`: `weights.ts`（36 個）と `timing.ts`（18 個）が、引数で受けていない状態を当てにしている印。引数で受ける形にすれば消える。caught value への cast 24 個（`Thrown`）と、ソースに増えた `(err)?.` の形も。`timing.ts` の `llama.tokenizer.encode(prompt)` は `llama.tokenizer` の PyProxy を壊していない見立て（未確認）。`resolvePyodideVersion()` は `?pyodide=` が無いとき `RegExp.test(null)` を通る、`fetchRange()` の catch は `status` が無いとき `undefined >= 400` を通る（結果は正しい）。`updated-check` の `knows()` は `updated\.js` を文字で探す（`updated.js` を `.ts` にする回に）。ページの項目は `src/models.js` 由来で形が言えない（`Listed` は worker の側だけが見る）。

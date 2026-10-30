@@ -1,5 +1,5 @@
-// ?bench=1 in a real browser (T.45): the rows must be there, and the Markdown must be a table. Meant for CI:
-// the development machine has not the memory to run browsers any more.
+// ?bench=1 in a real browser (T.45): the rows must be there, and the Markdown must be a table. On Playwright's Chromium,
+// in CI and on the development machine (T.469: stories260K in about a minute there).
 //
 //   node tests/bench-browser.mjs [model id] [url of a deployed site]
 import assert from "node:assert/strict";

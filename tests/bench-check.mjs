@@ -77,7 +77,15 @@ const OURS = ["device", "cpu", "model"];
 const STAGED = ["cpu", "model", "gpu", "storage", "line"];
 function watchStages() {
   const seen = (window.__stages = {});
+  // T.469: and the line over the sections (every text it showed) and each section's seconds as it last showed them
+  const overall = (window.__overall = []), elapsed = (window.__elapsed = {});
   const look = () => {
+    const line = document.getElementById("overall");
+    if (line && !line.hidden && line.textContent && overall.at(-1) !== line.textContent) overall.push(line.textContent);
+    for (const box of document.querySelectorAll("section[data-section] .progress")) {
+      const text = box.querySelector(".elapsed")?.textContent;
+      if (text) elapsed[box.closest("section").dataset.section] = text;
+    }
     for (const box of document.querySelectorAll("section[data-section] .progress")) {
       const text = box.querySelector(".stage")?.textContent;
       const name = box.closest("section").dataset.section;
@@ -204,6 +212,24 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     } else if (unsaid) {
       console.log(`model without deviceMemory: FAILED, the section is ${results.model?.status ?? "missing"}`);
       failed = true;
+    }
+    // T.469: each section that ran says its seconds as the page's clock writes them, and where more than one ran, the
+    // line over them said which ran, of how many, and its time in all, and ends with how many ran in how long
+    const { overall, elapsed } = await page.evaluate(() => ({ overall: window.__overall, elapsed: window.__elapsed }));
+    const ran = Object.keys(results), CLOCK = String.raw`(\d+ s|\d+ min \d\d s)`;
+    console.log(`the line over the sections: ${overall.join(" → ") || "none"}; seconds: ${ran.map((name) => `${name} ${elapsed[name] ?? "none"}`).join(", ")}`);
+    for (const name of ran) {
+      if (!new RegExp(`^${CLOCK}$`).test(elapsed[name] ?? "")) {
+        console.log(`${name}: FAILED, its seconds were ${JSON.stringify(elapsed[name] ?? null)}, not the page's clock`);
+        failed = true;
+      }
+    }
+    if (ran.length > 1) {
+      const during = overall.filter((text) => new RegExp(`^Section \\d+ / ${ran.length} · .+ · ${CLOCK} in all$`).test(text));
+      if (!during.length || !new RegExp(`^${ran.length} sections in ${CLOCK}$`).test(overall.at(-1) ?? "")) {
+        console.log(`the line over the sections: FAILED, it did not say a section of ${ran.length} as they ran, and how many in how long at the end`);
+        failed = true;
+      }
     }
     for (const [name, result] of Object.entries(results)) {
       const shown = stages[name] ?? [];
