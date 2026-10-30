@@ -128,7 +128,7 @@ const given = [...rows.map((row) => [said(row), row.text()]),
     .flatMap((form) => [[`the tile ${form.name}`, form.code], ...Object.entries(form.blocks ?? {}).map(([packing, code]) => [`the ${packing} text of ${form.name}`, code])]))];
 let declarations = 0;
 for (const [what, raw] of given) {
-  const text = raw.replace(/\/\/.*$/gm, "");
+  const text = raw.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");  // (T.499: both kinds of comment)
   const unused = [];
   for (const found of text.matchAll(/^(?:@group\(0\) @binding\(\d+\) )?(?:(?:struct|const|fn|override|alias)\s+(\w+)|var(?:<[^>]*>)?\s+(\w+)\s*:)/gm)) {
     const declared = found[1] ?? found[2];
@@ -146,7 +146,7 @@ console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the t
 // ---- (T.499) and what a text calls is declared there or is WGSL's own: a piece of text that one shader's text left out
 // (a function its neighbour declares) is a text that does not compile, which the light suite did not see (T.391.4's
 // four ways of breaking a text passed it; only the net's shaders and CI's devices fail it). By the text, as above: a
-// name before "(" (or before a template's "<...>(") that the text does not declare as a fn, a struct or an alias
+// name before "(" (or a type's before its template's "<...>(") that the text does not declare as a fn, a struct or an alias
 const WGSL = new Set(["abs", "acos", "all", "any", "array", "asin", "atan", "atan2", "atomicAdd", "atomicLoad", "atomicMax", "atomicMin",
   "atomicStore", "atomicSub", "bitcast", "bool", "ceil", "clamp", "cos", "countOneBits", "dot", "dot4I8Packed", "dot4U8Packed", "exp", "exp2",
   "extractBits", "f16", "f32", "firstLeadingBit", "floor", "fma", "fract", "i32", "insertBits", "inverseSqrt", "log", "log2", "mat2x2", "mat4x4",
@@ -157,12 +157,13 @@ const WGSL = new Set(["abs", "acos", "all", "any", "array", "asin", "atan", "ata
   "binding", "builtin", "diagnostic", "group", "workgroup_size"]);
 let calls = 0;
 for (const [what, raw] of given) {
-  const text = raw.replace(/\/\/.*$/gm, "");
+  const text = raw.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");  // (T.499: both kinds of comment)
   const own = new Set([...text.matchAll(/^(?:struct|fn|alias)\s+(\w+)/gm)].map((found) => found[1]));
-  for (const found of text.matchAll(/\b([A-Za-z_]\w*)\s*(?:<[^<>()]*(?:<[^<>()]*>[^<>()]*)?>)?\s*\(/g)) {
-    if (["fn", "if", "for", "while", "switch", "return", "loop"].includes(found[1])) continue;
+  for (const found of text.matchAll(/\b(?:(array|vec[234]|mat[234]x[234]|bitcast|ptr|atomic)\s*<[^<>()]*(?:<[^<>()]*>[^<>()]*)?>|([A-Za-z_]\w*))\s*\(/g)) {
+    const name = found[1] ?? found[2];
+    if (["fn", "if", "for", "while", "switch", "return", "loop"].includes(name)) continue;
     calls += 1;
-    assert.ok(own.has(found[1]) || WGSL.has(found[1]), `${what} calls ${found[1]}, which it does not declare and WGSL has not (or a builtin this check's WGSL does not list yet)`);
+    assert.ok(own.has(name) || WGSL.has(name), `${what} calls ${name}, which it does not declare and WGSL has not (or a builtin this check's WGSL does not list yet)`);
   }
 }
 console.log(`shaders-catalogue-check: and each of their ${calls} calls is of a function they declare or of WGSL's`);
