@@ -52,7 +52,7 @@
 - T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
 - T.480 [整理][その他] `src/` に残る `.js` 24 個を `.ts` に — 未着手
 - T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 未着手
-- T.485 [整理][その他] T.375.3 の後の残り — 未着手
+- T.485 [整理][その他] T.375.3 の後の残り — 反映済み
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -553,8 +553,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.482 [整理][計測実行] `/benchmark/` の Worker の型の残り — 状態: 未着手（2026-10-12、T.368.7 から。規模 小〜中）
 - `sections.ts` の作り物の計画は `Plan` の全部でなく `as Plan` で渡している（`layers`・`widths` などが無い）: **T.375 が `layers`・`widths` を読み始めると、型に言われずに壊れる。T.375 の前に決める**。（**T.375.2 で**: 作り物の計画は `benchmark/madeup.ts` に全部の鍵で書き、`as Plan` を外した。`plan-keys-check` が Python の計画と比べる。）`shared` は「段が読むときの型」で、新しい段が `await gpu()` を忘れると型は黙ったまま undefined を読む（`device.ts` のコメントに「新しい段も同じ」の 1 文を）。`if (answer.error) return` は答えを絞らない（印つきの合併にすればページの `!` が減るが Worker の文が変わる。`interleaved()` も）。GPU の節がステップを名前で引く `steps: any[]`。`Asked` の鍵と `section.ts` の `WORKERS` の鍵は `.js` のラベルのまま（直すなら網の `page` の文字と一緒に）。`updated-check` は製品の 2 行を文で持ち、型を足すたびに直す。コメントの古い名前（`outdated.ts` の `/** */`、`gpu/forms.ts`・`gpu/tokens.ts`・`shaders.ts`・`shaders/prompt.ts`・`worker.ts`、`src/page-memory.js` の頭: T.472 と一緒に。`shaders/` の行は鍵に注意）。
 
-### T.485 [整理][その他] T.375.3 の後の残り — 状態: 未着手（2026-10-12、T.375.3 とそのレビューから。T.375.5 と一緒に。規模 小）
+### T.485 [整理][その他] T.375.3 の後の残り — 状態: 反映済み（2026-10-12、T.375.3 とそのレビューから。T.375.5 と一緒に。規模 小）
 - 軽い組に、GPU が書き戻した half をキャッシュに写す所（`fromStaging()`）の中身を見る試験が無い（全部の組の `gpu-default-check` だけ）。`cpuSide` の `capacity`・`keys`・`values` はキャッシュの getter を読む getter の 2 段（`gpuSide()` にキャッシュを直に渡せば 1 段。`gpuside.ts` と `gpu-part-check` の代役に手が入る）。`shape.stateful` は「`clear` を持つ種類があるか」: `clear` を書かない attention 以外の種類は GPU に置かれうるので、`Kind` の型の説明に一文。`gpuFit()` は `linear`・`convolution` を名指しで断る文が残る。枠の `gate` の置き場は `footprint()` が「linear があるとき」、エンジンが「`wg` の行があるとき」（今あるモデルでは同じ）。`footprint()` は種類の枠と状態を自分の式で持つ（種類の `frame()` と同じ出どころにするには、`frame()` が計画でなく形から答える必要がある）。`at`（枠の番地）の名前は型でなく `forward-modules-check` の規則が見る。速さの道具（`compare-engines`・`threads-compare`）は作り物のモデルを受けず、状態を持つ層の道の前後を測れない。2 つの種類が同じ名前の配列を言うモデルの断りは作り物が無い。
+- **2026-10-30**（コードは変えていない。取りまとめ役の決め）: (1) `fromStaging()` の軽い組の試験は T.458 が入れた `gpu-default-check --quick` が持つ（速い GPU のプロンプトのブロックが書き戻した鍵と値を写し、ステップがそれを読む）。(2) `Kind` の型の説明の一文は書いてあった（`forward/kinds.ts` の「One that keeps none there and is not attention's would be taken there」）。(3) ほかは今の形の説明: `cpuSide` の getter の 2 段（直すと `gpuside.ts` と `gpu-part-check` の代役に手が入り、得は 1 段）、`gpuFit()` の名指しの文（文面）、`gate` の置き場の 2 つの数え方（今あるモデルで同じ）、`footprint()` の枠の式（`frame()` が形から答える回に）、`at` の名前（`forward-modules-check` の規則が見る）、速さの道具と作り物、同じ名前の配列の断りの作り物。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
