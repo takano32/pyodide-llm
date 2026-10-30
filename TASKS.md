@@ -1478,6 +1478,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 状態: 未着手（2026-10-30、T.486 から。規模 小）
 - `footprint()` と `createForward()` は同じ `frameArrays()` を呼ぶが、渡す詰め方の並び（`xs` の大きさを決める）は別々に作る。軽い組には両方の枠を数十バイトの精度で比べる試験が無い（全部の組の `memory-check` は 1 MiB の線）。エンジンが枠のバイト数を出すか、両方の詰め方の並びを比べる検査を足す。
+- **(1) 完了（2026-10-30、ブランチ `t.622-frame`）**: 枠を数十バイトで見る試験: `forward/memory.ts` に `frameOf(header, options, kinds)`（`footprint()` が数える枠の並び: `footprint()` もこれを呼ぶ）、エンジンに getter `frame`（自分の並び）。`tests/frame-check.mjs`（軽い組）が `memory-check` の形を小さくした 42 の形 × dtype を relaxed の有無で（84 のエンジン、1 秒ほど）並びごとに比べ、塊の型の行を持つ 4 つのモデルは `blocks-forward-check` が同じ比べをする（形の `kinds` の詰め方の `xs` はここでだけ踏む）。壊し方 3 つ（`frameOf()` が回した基底を落とす・エンジンが詰め方の `xs` を落とす・`frameOf()` が形の `kinds` の詰め方を落とす）はどれも名指しで落ちる。網の `choices`・`calls`・`exports` は同じ。手元: 型検査、軽い組。**CI を省いた。訳: Node の検査。** **レビュー（Sonnet low、2026-10-30）: 直し 1 つと穴 1 つ、どちらも入れた**: `footprint()` の頭の注釈が `frameOf()` の上に来ていた（`frameOf()` をその注釈の上へ）、塊のモデルの形が無かった（`blocks-forward-check` に）。`footprint()` は前と同じ数を数える（消した局所 `packings` は枠だけが読んでいた）。
 - 壊し方の道具を速い組 → smoke → 重い組の 3 段に（T.375.4 のレビューの勧め）。
 - T.487 から: `gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」と `tokensUnfit()` の `embedding.group` の比べに効く入力が無い（作り物の事実を `gpuOnlyUnfit()`・`gpuBytes()` に渡せない）。網の `unchanged-choices` の格子は `linear`・`convolution`・`rotated` を渡さない（足すなら別の記録に: 網の決まり (6)）。
 
