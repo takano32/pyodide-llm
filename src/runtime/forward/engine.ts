@@ -686,6 +686,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     get promptBlock() {
       return promptBlock();
     },
+    /** T.622: a token's frame as this engine laid it out (frameArrays(): each array's name and bytes; tests: memory.ts's
+     * frameOf() counts the same from the header and the form) */
+    get frame() {
+      return inFrame;
+    },
     /** T.147: the shaders the GPU multiplies a prompt's matrices and runs its attention with (tests) */
     get gpuForm() {
       return onGpu.chosen?.matrices;
