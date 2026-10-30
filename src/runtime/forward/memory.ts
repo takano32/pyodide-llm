@@ -122,6 +122,18 @@ const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size
  * keep besides is their kinds' (kinds: forward/kinds.ts's table, the engine's own: frame(), state(), cached), asked
  * with what sizes the model as the form says it (sizes.ts's sizesOfForm()); what the architecture's name says is its
  * line of architectures.ts; how the weights are packed is the dtype's line of jobs.ts's PACKED. */
+/** T.622: a token's frame (frameArrays()) as footprint() counts it from the header and the form: the kinds' arrays, a
+ * rotated basis's, and the scales of a group of 32 activations by the most any packing of the model's takes (the
+ * dtype's, and those of the kinds its form gives rows). The engine makes its own from the plan (createForward()'s
+ * frame): tests/frame-check.mjs holds the two to each other, array by array */
+export function frameOf(header: Header, options: Footprint = {}, kinds: Kinds = LAYER_KINDS): Framed[] {
+  const { dtype = "float32", rotated = null } = options;
+  const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
+  const packing = packingOf(dtype), own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
+  const packings = packing ? [packing, ...own] : own;
+  const frames = kindsHad(sizes, kinds).map(({ kind }) => kinds[kind].frame(sizes));
+  return frameArrays(header[0], sizes.hidden, kvDim, qDim, frames, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined);
+}
 export function footprint(header: Header, size: number, options: Footprint = {}, kinds: Kinds = LAYER_KINDS) {
   const { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false, shared = false, outliers = 8, head_dim = 0, gpu = false,
     direct = false, rotated = null } = options;
@@ -134,7 +146,6 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   const { positions, rope, local } = architectureOf(arch), packing = packingOf(dtype);
   // (T.363.5) the packings the model's rows are in: the dtype's, and those of the kinds its form gives rows
   const own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
-  const packings = packing ? [packing, ...own] : own;
   // the kinds of layers this model has, and what each puts in a token's frame
   const had = kindsHad(sizes, kinds), frames = had.map(({ kind }) => kinds[kind].frame(sizes));
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others; a ternary file's rows are whole
@@ -171,7 +182,7 @@ export function footprint(header: Header, size: number, options: Footprint = {},
   // the frames of BATCH tokens and what the kinds keep of a token apart from its frame (the scores of its
   // attention), the logits; the keys and values of a block from the GPU (in float16) and its rows
   const apart = frames.flatMap(({ apart = [] }) => apart).reduce((sum, [, each]) => sum + align(each), 0);
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, frames, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined);
+  const inFrame = frameOf(header, options, kinds);
   bytes += BATCH * (frameBytes(inFrame) + apart) + vocab * 4;
   // T.329.2: the inputs of every layer of BATCH tokens and what a token's row of their table is read into
   if (perLayer) bytes += perLayerBytes(layers, perLayer, packing ? dtype : dtype === "float16" ? "f16" : "f32", packing?.group ?? 0).slice(0, 2).reduce((sum, each) => sum + align(each), 0);
