@@ -57,6 +57,10 @@ type Base = {
   own: Own;
 };
 type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens?: TokenBuffers; tokenAttention?: TokenAttentionChosen; tokenForm?: TokenChoice };
+// T.626: the record of a model, or of one on the GPU alone as it opens, before handed() puts start()'s plan and the
+// memory in (its memory null till then says which): what runs then (start.ts's open(), and routed() as the checkpoint's
+// bytes come) takes this, and reads only what the two plans share where it is not told which
+type Open = Model | (Omit<Model, "plan" | "memory"> & { plan: Opening; memory: null });
 // (the record as openDevice() makes it: its literal is held to this, then taken as the Model it becomes)
 type Made = Omit<Base, "plan" | "memory"> & { plan: Started | Opening; memory: null };
 // a buffer, or a part of one ({ buffer, offset, size }), as bind() takes either (the whole one has no .buffer to ask)
@@ -221,7 +225,7 @@ function end() {
 }
 
 // ---- buffers
-function buffer(m: Model, bytes: number, usage: number = STORAGE, owned: GPUBuffer[] = m.owned) {
+function buffer(m: Open, bytes: number, usage: number = STORAGE, owned: GPUBuffer[] = m.owned) {
   const made = m.device.createBuffer({ size: Math.max(16, Math.ceil(bytes / 16) * 16), usage });
   owned.push(made);
   return made;
@@ -320,4 +324,4 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
 
 export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
   describe, unusable, end, whyOf, buffer, uniform, normShape, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
-export type { Model, Bound, Whole, Pass, Opening };
+export type { Model, Open, Bound, Whole, Pass, Opening };

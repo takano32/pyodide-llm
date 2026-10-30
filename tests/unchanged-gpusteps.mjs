@@ -127,8 +127,10 @@ for (const [model, made, packed, direct] of runs) {
       // then the rest from the shared memory)
       m = await device_.openDevice({ layers: plan.layers, matrices: plan.matrices, tables: plan.tables, force: {}, remembered: undefined, kinds: plan.kinds,
         places: plan.places, tokens: true });
+      // (T.626: a tree after it opens by the record's memory, null here, and takes the tables from open()'s plan; one
+      // before it, by its second argument and from the record's plan, which is open()'s here: either reads its own)
       await uploadLayers(m, true);
-      tablesOn(m);
+      tablesOn(m, m.plan.tables);
       routed(m, 0, new Uint8Array(memory.buffer));
       device_.handed(memory, plan);
       await uploadRest(m);
