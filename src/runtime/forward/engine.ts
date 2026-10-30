@@ -22,12 +22,12 @@ import { blockTables } from "./blocks.ts";
 import { stagingReader } from "./staging.ts";
 import type { Kernels, Packed, Packing, Ready } from "../jobs.ts";
 import type { Direct } from "./alone.ts";
-import type { Held, Placed, Shape, Taken } from "./gpufit.ts";
+import type { Placed, Shape, Taken } from "./gpufit.ts";
 import type { CpuSide, GpuWorker, Side } from "./gpuside.ts";
 import type { Spawn } from "./threads.ts";
 import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
-import type { Core, Kinds, Product, Room } from "./kinds.ts";
+import type { Core, Held, Kinds, Product, Room } from "./kinds.ts";
 import type { Derived, LayerKind, Part, Plan, Tensor, TensorName } from "../contracts/plan.ts";
 
 // ---- (T.368.4, the types)
