@@ -1,7 +1,9 @@
 // T.462: the model's worker's start (src/runtime/worker/runtime.ts's init(), asked for by runtimeAsked()) run whole in
 // Node, which no check did: the others set by hand what init() sets. The worker runs in tests/worker-harness.mjs's vm on
-// its made-up network: data.jsdelivr.com answers the version of Pyodide, this tree's built files (src/runtime/built/)
-// come from the disk, and every other request is a 404 (pyodide-lock.json: no wheel read ahead). The two modules a
+// its made-up network: data.jsdelivr.com answers the version of Pyodide, engine.zip is made-up bytes (the made-up Pyodide
+// reads none of it, and the deploy's light suite runs before the build makes the archives), this tree's kernels
+// (src/runtime/built/, `make kernels`) come from the disk, and every other request is a 404 (pyodide-lock.json: no
+// wheel read ahead). The two modules a
 // browser imports from elsewhere are handed in (runtimeAsked(search, starts)): a made-up Pyodide, which writes down what
 // it is asked (the archive it unpacks, the files written into it, the module imported, NumPy), and forward.ts as Node
 // imports it, or a forward.ts that does not come.
@@ -19,9 +21,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { workerHarness } from "./worker-harness.mjs";
-import { built, runtimeUrl } from "./tree.mjs";
+import { runtimeUrl } from "./tree.mjs";
 
 const VERSION = "314.0.7";
+// (engine.zip's bytes as this network has them)
+const ARCHIVE = new Uint8Array(4096).map((_, i) => i % 251);
 const forward = await import(runtimeUrl("forward.ts"));
 
 // a made-up Pyodide: what the worker asks of it, written down
@@ -44,6 +48,7 @@ function started() {
   const harness = workerHarness();
   harness.fresh((url) => {
     if (url === "https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest") return Response.json({ version: VERSION });
+    if (url.endsWith("/built/engine.zip")) return new Response(ARCHIVE);
     if (url.startsWith("file:")) {
       const file = fileURLToPath(url);
       return fs.existsSync(file) ? new Response(fs.readFileSync(file)) : new Response("", { status: 404 });
@@ -64,7 +69,7 @@ function started() {
   assert.deepEqual(asked.loader, [`https://cdn.jsdelivr.net/pyodide/v${VERSION}/full/pyodide.mjs`], "Pyodide's loader by its URL, of the version jsDelivr said");
   // (the options are the vm's object: compared as text)
   assert.equal(JSON.stringify(asked.packages), JSON.stringify([["numpy", { checkIntegrity: false }]]), "NumPy, fetched without integrity (the owner's choice, 2026-09-28)");
-  assert.deepEqual(asked.unpacked, [[fs.statSync(built("engine.zip")).size, "zip"]], "engine.zip, unpacked whole");
+  assert.deepEqual(asked.unpacked, [[ARCHIVE.length, "zip"]], "engine.zip, unpacked whole");
   assert.deepEqual(asked.imported, ["llama2_numpy"], "the engine's window imported");
   assert.deepEqual(asked.written.map(([path]) => path), ["/home/pyodide/simdkernel.so", "/home/pyodide/simdkernel_relaxed.wasmlib"], "the two kernels for Python, beside it");
   assert.equal(run("llama2_numpy"), module);
