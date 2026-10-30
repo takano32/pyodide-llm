@@ -1,0 +1,6 @@
+### T.456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 状態: 完了（2026-10-11、T.378.2 から。規模 小）
+- スレッドの `tokenEnded()` は始まっていないトークンの終わりを無視する（T.378.1）。GPU の側も同じにそろえる。`put()` が知らない語を null に直す所は要らない（読む側は `"cpu"` と `"gpu"` としか比べない）。
+- **2026-10-30**: `gpuSide()` が `stepping` を持ち、`cpuStepBegan()` が真と言ったステップの終わりだけを `steps.cpu` に書く（スレッドの `tokenEnded()` と同じ形）。側の型は `Side`（`"cpu" | "gpu" | null`、`forward/gpuside.ts`）で閉じ、`put()` は値をそのまま置く。書く所（`forward/paths.ts` の `timePrompts()`・`worker/timing.ts` の `written()`・エンジンの `gpuSide` の setter）も `Side` に（取りまとめ役の決め: 知らない語を null に直す代わりに、tsc が綴りを言う）。
+- 検査: `gpu-part-check` に「始まりの無い終わりを 2 つ言っても、CPU のステップは計られていない（`tokenBlock()` が 0）」。壊し方: `if (!stepping) return;` を外すと落ちる。
+- 手元: 軽い組（484 秒）・`gpu-default-check`・`gpu-part-check`・型検査。CI を省いた。訳: 偽の GPU の Worker の試験が全部踏み、エンジンの道（`forward()` の枝）は今までどおり始まりと終わりを対で言う。速さは測っていない: ステップごとに真偽 1 つの代入と比べ。
+- レビュー（Sonnet high、shader-reviewer、2026-10-30）: OK。`forward()` が投げて `cpuStepEnded()` が呼ばれなくても、次の `cpuStepBegan()` が `stepping` を置き直し、検索の枝は終わりを言わないので、残った真が数えられることは無い。should 1 つ: worker は forward の型を窓口から取るので、`Side` も `forward.ts` から出して `timing.ts` はそこから取る: 直した（同じタスクのコミット。型検査・`worker-modules-check`・`forward-modules-check`・`imports-check`・網の `exports` が同じ）。

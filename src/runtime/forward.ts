@@ -37,7 +37,7 @@ export type { Core, Kind, Kinds, Layers, Room, Step } from "./forward/kinds.ts";
 export type { Cache } from "./forward/cache.ts";
 export type { Footprint, Header, Memory } from "./forward/memory.ts";
 export type { Adapter, Direct, GpuForm, GpuOnlyWeights, Hole, Place } from "./forward/alone.ts";
-export type { Chosen, GpuWorker } from "./forward/gpuside.ts";
+export type { Chosen, GpuWorker, Side } from "./forward/gpuside.ts";
 export type { Spawn, Thread } from "./forward/threads.ts";
 export type { Rows } from "./forward/perlayer.ts";
 // What Python's Llama(external=) takes (external()): engine is there once Python called start(plan). The plan comes as
