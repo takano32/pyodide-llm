@@ -256,8 +256,8 @@ const LATER = {
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
-    ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
+    ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     // (T.363.5: the kernels of llama.cpp's blocks, for a model with such rows: it does not run without them)
     ["built(name).then((res) => res.arrayBuffer()))));", "said"],
   ],
@@ -334,9 +334,11 @@ for (const name of sources) {
     if (why.startsWith("quiet")) assert.ok(!/ithout\(/.test(what), `${name}: ${what} is quiet`);
     if (why.startsWith("slower") && what.startsWith("built(")) assert.ok(/\.catch\(\(error\) => (void wentWithout\(error\)\);|\{)$/.test(what), `${name}: ${what} hands its failure to wentWithout(error)`);
     if (why.startsWith("slower") && what.startsWith("import(")) {
-      // (T.368.3: the module may be cast to a type after it, which is no part of what runs)
-      const handing = `${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    })`;
-      assert.ok(text.includes(`${handing};`) || /^ as [\w ]+;/.test(text.slice(text.indexOf(handing) + handing.length)) && text.includes(handing), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
+      // (T.368.3: the module may be cast to a type after it, which is no part of what runs; T.462: and the import may be
+      // a value of a table, runtime.ts's STARTS, whose comma ends it. Read with its white space as one space)
+      const flat = text.replace(/\s+/g, " "), handing = `${what}.catch((error) => { void wentWithout(error, import.meta.url); throw error; })`;
+      const after = flat.slice(flat.indexOf(handing) + handing.length);
+      assert.ok(flat.includes(handing) && /^(;|,| as [\w ]+;)/.test(after), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
     }
     // a built file whose failure is said: nothing on its line swallows it (a catch there lets updated() through)
     if (why === "said" && what.startsWith("built(")) assert.ok(!what.includes(".catch(") || what.includes(".catch((error) => unlessUpdated(error) ?? null)"), `${name}: ${what} is said`);
