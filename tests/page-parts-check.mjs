@@ -100,9 +100,10 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   }
   m.becameReady(ready);
 
-  // a model is chosen: nothing of the one before it holds, but what only the next ready says (the context, the format)
+  // a model is chosen: nothing of the one before it holds (T.470: nor its context and format, which the next ready says:
+  // the first value of each till then)
   m.benchBegan();
-  assert.equal(only(m, () => m.chose(first), { model: first, loads: 2, ready: false, benchmarking: false, readyLine: undefined, gpuNote: undefined },
+  assert.equal(only(m, () => m.chose(first), { model: first, loads: 2, ready: false, benchmarking: false, readyLine: undefined, gpuNote: undefined, longest: 256, fromTemplate: undefined },
     "a choice: the model, its load's number, and nothing ready, measured or said of the one before"), 2, "chose() answers the load's number");
   assert.equal(m.takesPrompts(), false);
   assert.equal(only(m, () => m.chose(first), { loads: 3 }, "the same model chosen again is another load"), 3);

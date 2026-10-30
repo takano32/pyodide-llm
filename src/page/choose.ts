@@ -38,6 +38,9 @@ async function open(chosen: File[]) {
   showLocal();
 }
 function showLocal() {
+  // (T.470: not while an answer is written, which keeps the select from a choice: the repository's sheet stays open
+  // beside it, and its address may come back after that began)
+  if (select.disabled) return;
   // the select shows what is running: one entry for the local model, replaced by the next one
   select.querySelector('option[value="local"]')?.remove();
   select.add(new Option(`${local!.name} — ${local!.note}`, "local"));
@@ -143,6 +146,8 @@ fileField.pattern = FILE.source;
     at.oninput = () => at.setCustomValidity("");
     return;
   }
+  // (T.470: as the intro's buttons, nothing while an answer is written: the sheet stays as it is, to be sent after it)
+  if (select.disabled) return;
   repositorySheet.hidePopover();
   let entry: Unlisted;
   try {
