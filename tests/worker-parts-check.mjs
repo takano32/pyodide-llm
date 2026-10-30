@@ -112,6 +112,25 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
 }
 console.log("ok: clock.js by itself: a load says its own parts' seconds and Pyodide's, none of the load before");
 
+// ---- T.463: runtime.js's placeKernels(), in the worker's context on a made-up network: the kernels Python loads with
+// ctypes written into Pyodide's file system, and their path where the plain one came (Python loads the relaxed one
+// beside it): the relaxed one alone is no kernels Python can load
+{
+  const { context, run, fresh } = workerHarness({ root: null });
+  const written = [];
+  context.stand = { pyodide: { FS: { writeFile: (path) => written.push(path) } } };
+  run("pyodide = stand.pyodide");
+  context.console = { ...console, warn() {}, info() {} };
+  for (const [came, path] of [[["simdkernel.so", "simdkernel_relaxed.wasmlib"], "/home/pyodide/simdkernel.so"], [["simdkernel_relaxed.wasmlib"], undefined], [["simdkernel.so"], "/home/pyodide/simdkernel.so"], [[], undefined]]) {
+    written.length = 0;
+    run("pythonKernels = undefined");
+    fresh((url) => new Response(new Uint8Array(8), { status: came.some((name) => url.endsWith(name)) ? 200 : 500 }));
+    await run("placeKernels()");
+    assert.deepEqual([written.map((p) => p.split("/").at(-1)), run("pythonKernels")], [came, path], `T.463: ${came.join(" and ") || "none"} came`);
+  }
+}
+console.log("ok: runtime.js's placeKernels(): the kernels' path for Python where the plain build came, none where the relaxed one alone did");
+
 // ---- loaded.js, in the worker's context: a stand-in of Pyodide (the collector) and of a model
 {
   const { context, run } = workerHarness();
