@@ -4,8 +4,9 @@
 // is the checkpoint size: it sizes the download buffer and the progress bar.
 import { JAPANESE, STORY, unigram } from "./formats.ts";
 import { greedy, sampled } from "./sampling.ts";
+import type { Entry } from "./builders.ts";
 
-export const BUILT = [
+export const BUILT: Entry[] = [
   { id: "tiny-lm", name: "SB Intuitions tiny-lm 29M", note: "日本語 / English · int8 · 33 MB",
     source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "int8", ...unigram, stop_tokens: [1, 2] },

@@ -144,7 +144,7 @@ const SMOLLM3_THINKS =
   "previous steps. In the Solution section, based on various attempts, explorations, and reflections from the " +
   "Thought section, systematically present the final solution that you deem correct. The Solution section " +
   "should be logical, accurate, and concise and detail necessary steps needed to reach the conclusion.";
-const smollm3Format = (mode, instructions, answer) => "system\n## Metadata\n\nKnowledge Cutoff Date: June 2025\n" +
+const smollm3Format = (mode: string, instructions: string, answer: string) => "system\n## Metadata\n\nKnowledge Cutoff Date: June 2025\n" +
   `Today Date: {date:%d %B %Y}\nReasoning Mode: ${mode}\n\n## Custom Instructions\n\n${instructions}\n\n` +
   `<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n${answer}`;
 export const SMOLLM3_THINKING = smollm3Format("/think", SMOLLM3_THINKS, "");

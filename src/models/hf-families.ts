@@ -9,8 +9,9 @@ import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.ts";
 import { gemma3, gemma4, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
+import type { Entry } from "./builders.ts";
 
-export const HF_FAMILIES = [
+export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",
     ggufOf("Qwen/Qwen3-4B-GGUF", "bc640142c66e1fdd12af0bd68f40445458f3869b", "Qwen3-4B-Q8_0.gguf",
       "Qwen/Qwen3-4B", "1cfa9a7208912126459214e8b04321603b3df60c"), 4280404704,

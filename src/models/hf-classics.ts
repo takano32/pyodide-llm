@@ -5,8 +5,9 @@ import {
 } from "./formats.ts";
 import { sampled, thinking } from "./sampling.ts";
 import { ggufOf, thinkingAndNot } from "./builders.ts";
+import type { Entry } from "./builders.ts";
 
-export const HF_CLASSICS = [
+export const HF_CLASSICS: Entry[] = [
   // English. Pythia is the same design at five sizes: a ladder for measuring (T.80)
   { group: "hf", id: "hf-pythia-70m", name: "EleutherAI Pythia 70M", note: "English · fetches 77 MB (GGUF) → int8 96 MB",
     original: "EleutherAI/pythia-70m-deduped",
@@ -217,7 +218,7 @@ export const HF_CLASSICS = [
   // it answered five Japanese questions of six in Japanese, in either form, so the note says 日本語 too (T.539).
   // Twice, as a Qwen3 is: the two share their weights and a kept conversion. Its card's sampling for either form
   ...[["hf-smollm3-3b-thinking", "Hugging Face SmolLM3 3B (thinking)", "thinks before it answers", SMOLLM3_THINKING],
-    ["hf-smollm3-3b", "Hugging Face SmolLM3 3B (no thinking)", "answers at once", SMOLLM3_AT_ONCE]].map(([id, name, what, template]) => ({
+    ["hf-smollm3-3b", "Hugging Face SmolLM3 3B (no thinking)", "answers at once", SMOLLM3_AT_ONCE]].map(([id, name, what, template]): Entry => ({
     group: "hf", id, name, note: `${what} · 日本語 / English · fetches 3.3 GB (GGUF) → int8 3.5 GB`,
     ...ggufOf("ggml-org/SmolLM3-3B-GGUF", "4965cb60b150737b68a0408c36aeefb65078f894", "SmolLM3-Q8_0.gguf",
       "HuggingFaceTB/SmolLM3-3B", "a07cc9a04f16550a088caea529712d1d335b0ac1"), download: 3275574624,
