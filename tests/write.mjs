@@ -1,5 +1,5 @@
 // write.mjs (T.249): what a Hugging Face model of the list writes for its own prompt on the page's engine
-// (src/runtime/forward.js on the int8 kernels, tests/engine.mjs), greedy, for a person to read: whether a model added to
+// (src/runtime/forward.js on the kernels of the file's dtype, tests/engine.mjs), greedy, for a person to read: whether a model added to
 // the list writes sensible text is not something a number says. The checkpoint is read from its file straight into
 // forward.js's memory (a 64-bit one where the model with its forward pass does not fit 4 GiB, as on the page).
 //
@@ -29,6 +29,9 @@ pyodide.globals.set("CHECKPOINT", `${out}.bin`);
 pyodide.globals.set("OPTIONS", pyodide.toPy(page.options));
 pyodide.globals.set("TEXT", text);
 pyodide.globals.set("COUNT", Number(count));
+// T.453: what the file holds, as the engine reads it (a ternary file is no int8 one)
+pyodide.globals.set("HEADER", pyodide.toPy(page.header));
+pyodide.globals.set("SIZE", size);
 pyodide.globals.set("SEEDS", pyodide.toPy((process.env.SEEDS ?? "").split(/\s+/).filter(Boolean).map(Number)));
 pyodide.globals.set("SAMPLING", pyodide.toPy(Object.fromEntries(Object.entries({ temperature, topp, repetition_penalty }).filter(([, value]) => value !== undefined))));
 const result = JSON.parse(pyodide.runPython(`
@@ -39,12 +42,12 @@ began = time.perf_counter()
 written = "".join(llama.generate(TEXT, steps=len(ids) + COUNT, temperature=0.0, echo=False))
 stats = dict(llama.stats)
 sampled = [[seed, "".join(llama.generate(TEXT, steps=len(ids) + COUNT, seed=seed, echo=False, **SAMPLING))] for seed in SEEDS]
-json.dumps({"written": written, "prompt_tokens": len(ids), "sampled": stats["sampled"], "bos": llama.bos,
+json.dumps({"dtype": llama2_numpy.checkpoint_dtype(HEADER, SIZE, OPTIONS), "written": written, "prompt_tokens": len(ids), "sampled": stats["sampled"], "bos": llama.bos,
             "stops": sorted(llama.stop_tokens), "seconds": stats["seconds"], "others": sampled,
             "tokens_per_second": stats["tokens_per_second"]})
 `));
 const shown = (value) => JSON.stringify(value);
-console.log(`written by ${page.id} (${page.name}; ${wide ? "a 64-bit" : "a 32-bit"} memory, int8 ${(size / 1e9).toFixed(2)} GB, bos ${result.bos}, ` +
+console.log(`written by ${page.id} (${page.name}; ${wide ? "a 64-bit" : "a 32-bit"} memory, ${result.dtype} ${(size / 1e9).toFixed(2)} GB, bos ${result.bos}, ` +
   `stops ${result.stops.join(" ")}, ${result.prompt_tokens} tokens of prompt, ${result.sampled} sampled in ${result.seconds.toFixed(0)} s, ` +
   `${result.tokens_per_second.toFixed(1)} tok/s on one thread)`);
 console.log(`written by ${page.id}: prompt ${shown(text)}`);
