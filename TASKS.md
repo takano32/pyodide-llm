@@ -537,12 +537,17 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 進行中（2026-10-11、T.378.2 から。規模 中）
 - 606 行で、1 つの関数が 480 行。状態に持ち主ができたので、置けるかの判定・Worker の始まりと知らせ・プロンプト・ステップに分けられる。
-- **子タスクの番号**（2026-10-30、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 2 つ）: T.457.1 置けるかの判定（`gpuFit()`）を自分のファイルに — 完了。T.457.2 `gpuSide()` の閉包を、Worker の始まりと知らせ・プロンプト・ステップに分ける — 未着手。
+- **子タスクの番号**（2026-10-30、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 2 つ）: T.457.1 置けるかの判定（`gpuFit()`）を自分のファイルに — 完了。T.457.2 `gpuSide()` の閉包を、Worker の始まりと知らせ・プロンプト・ステップに分ける — 保留（下の T.457.2 の項）。
 
 #### T.457.1 `gpuFit()` を `forward/gpufit.ts` に — 状態: 完了（2026-10-30）
 - 動かすだけのコミット: `gpuFit()` と、`gpuSide()` と分け合う型（`Shape`・`Held`・`Placed`・`Taken`）・`onGpuAs`・`kindOf` を `forward/gpufit.ts` に（文は 1 字も変えず、`kindOf` に `export` を付けただけ）。`gpuside.ts` は 815 → 626 行。読む側（`engine.ts`・`kinds.ts`・`gpu-part-check`・`forward-modules-check` の `PARTS`・`reasons-check` の読み手の一覧）を新しい置き場に。続くコミットで 2 つのファイルの頭のコメントと AGENTS.md の一覧。
 - 同じの証明: 前後のビルドの `forward` の塊の最上位の文 141 が集合として同じ（`dist-same` は順の違いで「different」と言う: 動かした宣言が前に来る。比べの道具は `.tmp/` の捨て）。型検査・`forward-modules-check`・`gpu-part-check`・`reasons-check`・`imports-check`・`tree-check`・`updated-check`。CI を省いた。訳: 束の文が同じ。
 - レビュー（Sonnet high、shader-reviewer、2026-10-30）: OK。両方の import に余りも欠けも無く、検査の名指しも直っている。直したもの: 試験の 2 つのコメント（`layer-parts-check` の `kindOf()` の置き場、`gpu-part-check` の頭）が `gpuside` を言っていた、AGENTS.md の「種類の名前を比べない」に `gpufit.ts` を（同じ子タスクのコミット）。`gpuside.ts` は 626 行（記録の 627 は数え違い）。
+
+#### T.457.2 `gpuSide()` の閉包を分ける — 状態: 保留（2026-10-30、取りまとめ役の決め）
+- 閉包の関数ごとに、どの状態の変数に触るかを数えた（`.tmp/` の捨ての道具）。プロンプトの道（`promptOnGpu`・`gpuKeysAndValues`・`prompt`）とステップの道（`generateMany`・`gpuSteps`）が、どちらも GPU の Worker・`gpuEnd`・`gpuSerial`・`written`・`gpuStateAt` を書く。`startGpu`・`stopGpu`・`release` はほぼ全部の状態に触る。
+- 分けると、何人もが書く状態を 1 つのオブジェクトにして渡すか、書くたびの出来事（「GPU が pos まで書いた」など）を 10 ほど足すことになる。前者は「設計の決まり」の「分け合うオブジェクトは無い・setter は無い」に反し、後者は 1 トークン・1 ブロックの道に関数の呼び出しを足す。T.457.1 で `gpuside.ts` は 626 行になり、目安の 800 行の内。
+- 決め: 今は分けない。覆す条件: GPU の側にまた機能を足して 800 行を越えるとき、または状態の一部（例えばステップの時間と測り直しの数）を、ほかと書き合わない持ち主に出せると分かったとき。区切りのまとめで持ち主に見せる。
 
 ### T.458 [整理][遠隔試験] エンジンが GPU の側に言い忘れる壊し方は全部の組でしか落ちない — 状態: 未着手（2026-10-11、T.378.2 の実装とレビューから。規模 小）
 - `run()` が `cpuWrote` を呼ばない、`forward()` がステップを計らない・`cpuStepEnded` に 0 を渡す、`newGeneration()` が GPU の側に言わない、の 4 つは軽い組を通り、`gpu-default-check`（全部の組）だけが落とす。代役の GPU と偽の時計で 1 回の生成を通す短い検査を軽い組に。
