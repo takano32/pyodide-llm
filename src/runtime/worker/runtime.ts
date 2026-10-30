@@ -78,7 +78,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
 // them, or with ?kernel=off, NumPy does the math, several times slower. They are read even with ?kernel=off: the
 // switches say what is used (request.ts's switchesNow()), and the benchmark's rounds with the kernels need them there (T.119: its
 // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
-// (T.463: a function of its own, which a check can run on a made-up network)
+// (T.463: a function of its own, which tests/worker-parts-check.mjs runs on a made-up network)
 async function placeKernels() {
   for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"] satisfies Built[]) {
     // (also where it is gone, T.367.4: NumPy answers, and T.439: where the site was updated the page is told why it is
@@ -87,7 +87,9 @@ async function placeKernels() {
     const kernel = await built(name).then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));
     if (kernel) {
       pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(kernel));
-      pythonKernels = "/home/pyodide/simdkernel.so";
+      // (T.463: Python loads the plain one, and the relaxed one beside it where it is there: the relaxed one alone is
+      // no kernels it can load, and NumPy answers)
+      if (name === "simdkernel.so") pythonKernels = "/home/pyodide/simdkernel.so";
     }
   }
 }
