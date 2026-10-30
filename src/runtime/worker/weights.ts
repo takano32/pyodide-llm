@@ -2,7 +2,7 @@
 // a Python buffer where NumPy runs, or the GPU alone (T.156), and the sink a conversion writes them through.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T.367.3).
 
-import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKernels, forceWide, gpuForce, benchPage, gpuAdapter, hasWebGpu,
+import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKernels, wideUpdated, forceWide, gpuForce, benchPage, gpuAdapter, hasWebGpu,
   adapterAsked } from "./runtime.ts";
 import { threadsRequest, gpuRequest, loadsAhead, benching, switchesNow } from "./request.ts";
 import { workerWentWithout } from "./outdated.ts";
@@ -319,6 +319,7 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
     const gpuRoom = onGpu.gpuRoom;
     const wide = forceWide || forwardModule!.needsWide(held, after);
     if (wide && !wideKernels?.plain) {
+      if (wideUpdated) throw wideUpdated;  // (T.475: the page is told the site was updated, not that this browser has none)
       throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
         "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
     }

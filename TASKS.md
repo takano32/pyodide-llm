@@ -50,7 +50,7 @@
 - T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 未着手
 - T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 未着手
 - T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 未着手
-- T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 未着手
+- T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 反映済み
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
 - T.478 [整理][WebGPU] シェーダの型の残り — 未着手
@@ -344,6 +344,7 @@
   - Chromebook（ARM、Chrome、Arm Valhall）: `/benchmark/` を 1 回（T.226 の「4 GB と言う端末」: 機能の節の `deviceMemory` が 4 か 8 か。4 なら Qwen3 0.6B か Qwen2.5 1.5B を開いて、ステータス行（GPU だけか）と tok/s が、同じ回の CPU の節から見積もる CPU の速さ（重みの GB ÷ 読みの GB/s）より遅くないか。T.226 の項の持ち主の判断 (2) の材料）。
   - **T.367.3.2（束ねた後、どの端末でも 1 回）**: Android の Chrome でモデルのページを開き、GPU を使う行が出て、前に覚えた形を選び直さない（鍵は同じはず）こと、プロンプトと答えの tok/s が前と同じ桁であること。`/benchmark/` の GPU の節が最後まで通り、T.190・T.191 の数字と同じ桁で「matmul_q8, one thread」の行が出ること。iPhone・macOS の Safari と PC の Chrome・Edge でも同じ 2 つ。tok/s が前の報告より 3% を越えて落ちていたら T.367.3.2 を疑う。
   - **T.367.5（モデルの GPU の Worker がシェーダを自分の塊に持つ。T.367.3.2 と同じ 1 回で見られる）**: Android の Chrome でモデルのページが、コンソールに警告なしで GPU の判定（GPU を使う行か、いつもの CPU の判定）まで行くこと。前に覚えた形（`localStorage` の `gpu:<モデル>`）を選び直さないこと（鍵は同じはず: 古い鍵を持つのは本物の端末だけ）。225 KB の `gpu` の塊の読み込みで GPU の準備が目に見えて遅くなっていないこと（未計測）。
+  - **T.475（T.439 から。PC の Firefox と Mac の Safari、WebGPU のある版で）**: モデルのページを開いたまま、新しいデプロイ（本線への push の後、数分）を待ってから別のモデルを選ぶ: GPU の Worker のファイルが無いので GPU は始まらず、ステータス行の終わりに「the site was updated: reload for full speed」が出るか（Chromium の道は `tests/updated-in-browser.mjs` が見る。Firefox と WebKit の GPU の Worker は CI に WebGPU が無く見られない）。
   - Android（Xiaomi 13T Pro、Chrome）: **T.555**: `/benchmark/` のモデルの節の表の下の「The last round ran the first one's switches again at N%」の N（何度か: 線 `DRIFT_LINE` 0.9 で警告が出すぎないか、熱くなった端末で下回るか）。
   - iPhone（Safari）: **T.548**: モデルのページで WebGPU のある Safari の答えのステップが GPU に置かれ（ステータス行「prompts and answers on WebGPU」）、タブが落ちないか（llm-jp-3 150M と既定の Shisa、`/benchmark/` のモデルの節も: T.205 で落ちた所）。落ちたら Safari だけ戻す。モデルのページ（T.129 の同じ 4 つ）と `/benchmark/` の Page memory（T.173）、モデルの節が終わるか（T.205・T.214）、GPU の節の「sampling」と「sampling in chunks」の検査が ok か（T.219: Safari の WGSL がこのシェーダを通すか）。 **T.242**: `/benchmark/` のモデルの節の共有メモリの最大は llm-jp-3 150M で 1.3 GiB から 280 MiB に減った。節が最後まで走るか（T.205・T.214 と同じ見方）。
   - **T.129 のレビューから（スマホと PC、本線に入れた後）**: (a) スマホで、初めての訪問の読み込みの途中に別のアプリへ 1 分切り替えて戻る: 「got nothing from the network for 30 seconds」が出ず、準備完了まで行くか（静けさを時計でなく回ったチックで数えるようにした）。(b) 機内モードで 2 回目の訪問（T.111 のオフライン。NumPy の wheel の SRI を外した）が開いて答えるか。(c) 速度制限中の回線（約 128 kbps）で開く: 準備完了まで行き、フォールバック（隔離のない 1 コア）に入らないか（CI は fifo の 0.15 Mbps でフォールバックした。T.129 の項の持ち主の判断の材料）。(d) PC の Chrome で `?hf=Qwen/Qwen2.5-32B-Instruct` を開く: 数秒で「This model is too large for a web page: it needs about 42 GB …」が出るか（直す前は 8GB を取って「ran out of memory」。CI の Chromium では確かめた）。実 GPU のある PC では、断った後に OPFS（devtools の Application → Storage）に空のフォルダが残らないか（`keeper()` の開きっぱなし、T.129 の項）。
@@ -553,8 +554,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 状態: 未着手（2026-10-11、T.378.5 から。規模 小）
 - `tests/e2e.mjs` は `?bench=1` を知らず、`tests/bench-browser.mjs` は Playwright の Chromium しか開かない（手元には入っていない）。`tests/bench-check.mjs` は節の秒と全体の行（「Section 2 / 2 · … in all」）を見ない。
 
-### T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 状態: 未着手（2026-10-11、T.439 から。規模 小）
+### T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 状態: 反映済み（2026-10-11、T.439 から。規模 小）
 - 古いページで 64 ビットのカーネルだけが 404 だと、4 GB を越えるモデルの断りが「no 64-bit WebAssembly memory: Safari has none yet」と誤った訳を言う（前から）。`/benchmark/` のモデルの節は、カーネルが 404 だとラウンドが黙って NumPy で走る（`updated` の知らせは届くが節は捨てる）。ステータス行の文字列を組む所は `draw.ts`（要素を読む）で、Node では文の検査だけが守る: 行を組む純関数に分ける（T.468 と一緒に）。Firefox と WebKit の GPU の Worker の「知らせる」場合は CI で見られない（持ち主の端末の一覧に）。
+- **2026-10-30**: (1) `worker/runtime.ts` が 64 ビットのメモリのカーネルの取得の失敗を、サイトの更新（`kindOf(error) === "updated"`）のときだけ `wideUpdated` に取っておき、`weights.ts` の 4 GB を越えるモデルの断りは、それがあればそれを投げる（ページは持ち主の文 `UPDATED` を言う。訪問者の文は足していない）。`updated-check` のカーネルの取得の文の写しも直した。(2) `/benchmark/` のモデルの節（`src/benchmark/model.ts`）は worker の `updated` の知らせで、節を `UPDATED` の誤りで終える（取りまとめ役の決め: 古いビルドで遅い道に入ったラウンドの数は、この端末の数でない。持ち主の今ある文を使う）。(3) ステータス行を組む純関数は T.468 で（台帳の言うとおり）。(4) Firefox と WebKit の GPU の Worker の場合は「持ち主の端末でまとめて見るもの」に足した。
+- 検査: `tests/updated-in-browser.mjs` に 2 つの場合（モデルのページの `?wide=on` と 64 ビットのカーネルが 404、`/benchmark/` のモデルの節とカーネルが 404）。本線のソースのビルドでは 2 つとも落ち（「…no 64-bit WebAssembly memory: Safari has none yet…」と、NumPy のラウンドの表を ok で）、直したビルドで通る。全部の 41 の場合が手元の Chromium で通る。
+- 手元: 軽い組（449 秒: 1 回目は `updated-check` の写しで落ちた）・型検査・ビルド。CI を省いた。訳: 毎晩の組が `updated-in-browser.mjs` を 3 つのブラウザで回し、手元の Chromium で全部の場合を回した。
 
 ### T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 状態: 未着手（2026-10-11、T.368.3 から。T.368.8 の後。規模 中）
 - `!`（ここには値がある、の言い切り）の 46 個は `forwardModule` と `llama`: `weights.ts`（36 個）と `timing.ts`（18 個）が、引数で受けていない状態を当てにしている印。引数で受ける形にすれば消える。caught value への cast 24 個（`Thrown`）と、ソースに増えた `(err)?.` の形も。`timing.ts` の `llama.tokenizer.encode(prompt)` は `llama.tokenizer` の PyProxy を壊していない見立て（未確認）。`resolvePyodideVersion()` は `?pyodide=` が無いとき `RegExp.test(null)` を通る、`fetchRange()` の catch は `status` が無いとき `undefined >= 400` を通る（結果は正しい）。`updated-check` の `knows()` は `updated\.js` を文字で探す（`updated.js` を `.ts` にする回に）。ページの項目は `src/models.js` 由来で形が言えない（`Listed` は worker の側だけが見る）。
