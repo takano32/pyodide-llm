@@ -53,12 +53,12 @@ export const linear: GpuKind = {
         quantizeZ ??= b.quantizing(z, read);
         const conv = uniform(m, new Uint32Array([mixed, taps, place * taps * mixed, keys, B, 0, 0, 0]));
         const into = product("wqkv", b.xb, mixedOut), zOf = product("wz", b.xb, z);
-        const gated = bind(m, gates, [b.xb, V.wb, V.wa, V.dtBias, V.decay, work, uniform(m, new Uint32Array([plan.dim, valueHeads, place * valueHeads, 0])), b.step]);
-        const convolution = bind(m, convolving, [mixedOut, V.conv, rows, convolved, conv, b.step]), moved = bind(m, moving, [mixedOut, rows, conv, b.step]);
+        const gated = bind(m, gates, [b.xb, V.wb!, V.wa!, V.dtBias!, V.decay!, work, uniform(m, new Uint32Array([plan.dim, valueHeads, place * valueHeads, 0])), b.step]);
+        const convolution = bind(m, convolving, [mixedOut, V.conv!, rows, convolved, conv, b.step]), moved = bind(m, moving, [mixedOut, rows, conv, b.step]);
         const qNorm = bind(m, b.headNorm, [convolved, units, headNorm(m, keyDim, 0, 1e-6 / keyDim, 0), b.step]);
         const kNorm = bind(m, b.headNorm, [convolved, units, headNorm(m, keyDim, keyDim, 1e-6 / keyDim, B * keyHeads), b.step]);
         const ruled = bind(m, rule, [convolved, work, stateOf(place), out, uniform(m, new Uint32Array([keyHeads, valueHeads, keyDim, valueDim, B, stateAt(place), 0, 0])), b.step]);
-        const valueNorm = bind(m, b.headNorm, [out, V.deltaNorm, headNorm(m, valueDim, place * valueDim, plan.eps, 0), b.step]);
+        const valueNorm = bind(m, b.headNorm, [out, V.deltaNorm!, headNorm(m, valueDim, place * valueDim, plan.eps, 0), b.step]);
         const gate = bind(m, swiglu, [z, out, uniform(m, new Uint32Array([read, 0, 0, 0])), b.step]), wout = joins("wout", z);
         // its two matrices of the normed stream, its gates, the convolution and its rows moved on, the l2 norms of q and
         // k, the delta rule over its state, the norm of every value head, z's gate, its matrix out (the last layer's too:
@@ -101,13 +101,13 @@ export const linear: GpuKind = {
             return [[b.norm, bind(m, b.norm, [g.h, V.attention, g.xb, g.u.norm[l], g.step]), 1, 1], ...normed.quantize,
               matrix("write", W.matrices.wqkv!.pieces[0].layers[place], normed.input, u.wqkv, mixed, [[5, t.mixed]]),
               matrix("write", W.matrices.wz!.pieces[0].layers[place], normed.input, u.wz, read, [[5, t.z]]),
-              [gates, bind(m, gates, [g.xb, V.wb, V.wa, V.dtBias, V.decay, t.work, u.gates[place], g.step]), valueHeads, 1],
-              [convolving, bind(m, convolving, [t.mixed, V.conv, rows, t.convolved, u.conv[place], g.step]), groups, 1],
+              [gates, bind(m, gates, [g.xb, V.wb!, V.wa!, V.dtBias!, V.decay!, t.work, u.gates[place], g.step]), valueHeads, 1],
+              [convolving, bind(m, convolving, [t.mixed, V.conv!, rows, t.convolved, u.conv[place], g.step]), groups, 1],
               [moving, bind(m, moving, [t.mixed, rows, u.conv[place], g.step]), groups, 1],
               [b.headNorm, bind(m, b.headNorm, [t.convolved, units, u.qNorm, g.step]), keyHeads, 1],
               [b.headNorm, bind(m, b.headNorm, [t.convolved, units, u.kNorm, g.step]), keyHeads, 1],
               [rule, bind(m, rule, [t.convolved, t.work, stateOf(place), t.out, u.rule[place], g.step]), valueHeads, 1],
-              [b.headNorm, bind(m, b.headNorm, [t.out, V.deltaNorm, u.norm[place], g.step]), valueHeads, 1],
+              [b.headNorm, bind(m, b.headNorm, [t.out, V.deltaNorm!, u.norm[place], g.step]), valueHeads, 1],
               [swiglu, bind(m, swiglu, [t.z, t.out, u.read, g.step]), Math.ceil(read / 64), 1],
               ...gatedZ.quantize, ...joining(V.attentionPost, W.matrices.wout!.pieces[0].layers[place], gatedZ.input, u.wout)] satisfies Pass[];
           },

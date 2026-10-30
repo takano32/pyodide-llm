@@ -21,7 +21,7 @@ export const convolution: GpuKind = {
       // a layer's matrix in, its two shaders on the layer's taps and rows (at its place), its matrix out
       layer({ place, product, out }) {
         const b = m.block, V = m.weights.vectors!, shape = uniform(m, new Uint32Array([dim, taps, place * taps * dim, 0]));
-        const into = product("win", b.xb, mixed), convolved = bind(m, short, [mixed, V.conv, rows, b.xb, shape, b.step]);
+        const into = product("win", b.xb, mixed), convolved = bind(m, short, [mixed, V.conv!, rows, b.xb, shape, b.step]);
         const moved = bind(m, state, [mixed, rows, shape, b.step]), wout = out("wout", b.xb);
         // (the last layer leaves the convolution alone: the rows are all a prompt's token leaves there)
         return ({ pass, count, last, multiplied, quantized }) => {
@@ -45,7 +45,7 @@ export const convolution: GpuKind = {
             const g = m.tokens, W = m.weights, V = W.vectors!, convolved = plain(g.xb, g.u.quantizeNormed, dim);
             return [...normed.norm, ...normed.quantize,
               matrix("mix", W.matrices.win!.pieces[0].layers[place], normed.input, mix[l], 3 * dim, [[5, token]]),
-              [short, bind(m, short, [token, V.conv, rows, g.xb, conv[place], g.step]), groups, 1],
+              [short, bind(m, short, [token, V.conv!, rows, g.xb, conv[place], g.step]), groups, 1],
               [state, bind(m, state, [token, rows, conv[place], g.step]), groups, 1],
               ...convolved.quantize, ...joining(V.attentionPost, W.matrices.wout!.pieces[0].layers[place], convolved.input, wout)] satisfies Pass[];
           },
