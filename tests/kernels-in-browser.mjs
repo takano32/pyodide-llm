@@ -297,6 +297,20 @@ async function inPage({ plain, relaxed }) {
     return bad ? `${bad} of ${n} bytes and ${ng} sums wrong` : null;
   });
 
+  // ---- T.244: to_f16, a token's keys into a float16 cache, and how many of them were no finite number (a NaN or an
+  // infinity of float32's; one too large is written as an infinity and not counted). 67 values: the eights and a rest
+  const halves = [[1, 0x3c00], [-2, 0xc000], [0.5, 0x3800], [65504, 0x7bff], [70000, 0x7c00], [-1e30, 0xfc00], [0, 0], [-0, 0x8000],
+    [2 ** -24, 1], [NaN, 0x7c00], [Infinity, 0x7c00], [-Infinity, 0xfc00]];
+  const picked = Array.from({ length: 67 }, (_, i) => halves[(next() + i) % halves.length]);
+  const unfinite = picked.filter(([x]) => !Number.isFinite(x)).length;
+  await check("to_f16", () => { F.set(picked.map(([x]) => x), xq / 4); k.to_f16(out, xq, picked.length); }, () => {
+    F.set(picked.map(([x]) => x), xq / 4);
+    const counted = k.to_f16(out, xq, picked.length), H = new Uint16Array(memory.buffer, out, picked.length);
+    if (counted !== unfinite) return `counted ${counted} not ${unfinite}`;
+    const at = picked.findIndex(([, bits], i) => H[i] !== bits);
+    return at < 0 ? null : `value ${at} (${picked[at][0]}): ${H[at].toString(16)} not ${picked[at][1].toString(16)}`;
+  });
+
   // ---- T.273: the converter's readers of the two ternary types of a GGUF (24 blocks each, high in the memory)
   const blocksOf = 24, raw = 7 << 20, wide = raw + 4096;
   const scaleBits = Array.from({ length: blocksOf }, () => ((1 + next() % 29) << 10) | (next() % 1024));  // normal, positive
