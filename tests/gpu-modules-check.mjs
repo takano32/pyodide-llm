@@ -93,14 +93,16 @@ for (const [name, program] of programs) {
 }
 console.log(`gpu-modules-check: model, stopping and lost are gpu/device.js's, named ${read} times; no module hides them`);
 
-// ---- the model's record (T.378.4): what device.js puts in it, and the four records, each one module's
+// ---- the model's record (T.378.4): what device.js puts in it, and the six records (T.466), each one module's
 // A record's fields are what its owner declares where it makes the record (m.<record> = { ... }: the literal's keys, and
 // the keys of what a builder of another module returns where the literal spreads it). Every field read is one of them
 // (tsc says a name that the record's type has not; one that the type has as optional and the owner never makes is
 // undefined without a word); a record and its fields are set in the owner's file alone; a record goes nowhere whole
 // (taken apart or under a local name in the function that reads it, where this follows it); and every field is read
 // somewhere.
-const RECORDS = { weights: `gpu/weights${END}`, block: `gpu/block${END}`, forms: `gpu/forms${END}`, tokens: `gpu/tokenforms${END}` };
+// (T.466: a token's three: its buffers and pipelines, its attention, the form of its layer)
+const RECORDS = { weights: `gpu/weights${END}`, block: `gpu/block${END}`, forms: `gpu/forms${END}`, tokens: `gpu/tokenforms${END}`,
+  tokenAttention: `gpu/tokenattention${END}`, tokenForm: `gpu/tokenforms${END}` };
 const MODEL = ["m", "model"];
 const isMember = (node) => node.type === "MemberExpression" || node.type === "OptionalMemberExpression";
 const ofModel = (node) => isMember(node) && !node.computed && node.object.type === "Identifier" && MODEL.includes(node.object.name);

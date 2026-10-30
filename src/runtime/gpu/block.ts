@@ -87,7 +87,13 @@ type Block = {
   // T.271.2 a Qwen3.5's states, then its rows), and its bytes
   states: State[];
   stateBytes: number;
+  // T.466: the matrices of a layer the model has, each with what it reads and writes (up is null where the FFN has no
+  // gate, and then no w3 is there to multiply), whether it adds, and the quantization of its input where it is the
+  // first to read it: forms.ts's timeForms() multiplies them so on the first layer, knowing none of the buffers
+  products: Timed[];
 };
+// a matrix of the layer as products holds it
+type Timed = [string, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T.378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
@@ -177,7 +183,10 @@ async function prepare(m: Model) {
     readback, rows, turns, turnsLocal, ropeShape, ropeAlone, activationGroup, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate, quantizing, rotate, unrotateRows,
     embedRows, ids, embedGroups,
     // (bindLayers() and grow())
-    layers: null, cache: null, kinds, states, stateBytes };
+    layers: null, cache: null, kinds, states, stateBytes,
+    products: ([["wq", xb, q, false, quantizeXb], ["wk", xb, k], ["wv", xb, v], ["wo", xb, x, true, quantizeAttention],
+      ["w1", ffnInput, gate, false, quantizeFfn], ["w3", ffnInput, up], ["w2", gate, x, true, quantizeGate]] satisfies Timed[])
+      .filter(([name]) => m.weights.matrices[name]) };
 }
 
 // every layer's bind groups but those of the cache, with the form chosen. T.153: a bias (Qwen2's) added to q, k and

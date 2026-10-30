@@ -18,7 +18,9 @@ import type { Own } from "../shaders/prompt.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
 import type { Forms } from "./forms.ts";
-import type { Tokens } from "./tokenforms.ts";
+import type { TokenBuffers } from "./tokens.ts";
+import type { Chosen as TokenAttentionChosen } from "./tokenattention.ts";
+import type { TokenChoice } from "./tokenforms.ts";
 
 // T.368.6: the types of what the parts of this worker hand one another. They say the shapes as they are (the record's
 // own notes are below, at model).
@@ -29,13 +31,13 @@ type Info = Partial<Pick<GPUAdapterInfo, "vendor" | "architecture" | "device" | 
 type Adapter = GPUAdapter & { isFallbackAdapter?: boolean };
 // the plan a model on the GPU alone is opened with (start.ts's open(): its layers are joined for a token always)
 type Opening = Opened & { tokens: true };
-// The record of the model on the GPU, as its readers hold it: what openDevice() puts in it, and the four records of
+// The record of the model on the GPU, as its readers hold it: what openDevice() puts in it, and the six records of
 // the other modules. plan is start()'s: a model on the GPU alone is opened with another (Opening) before its
 // checkpoint comes, of which only what the two plans share is read (matrices, layers, force, remembered, whether
 // there are tokens; the tables through weights.ts's tablesOf()) until handed() puts start()'s in, with the memory
 // (null till then). weights, block and forms are set by their owners before another module reads them, in start()'s
-// order; tokens is set once tokenforms.ts has a token's buffers, with its form null (or the record unset, T.467) where
-// no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
+// order; tokens, tokenAttention and tokenForm are set as a token's are chosen (T.466), with the form null (or the
+// records unset, T.467) where no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
 // tokensSaid())
 type Base = {
   device: GPUDevice;
@@ -53,7 +55,7 @@ type Base = {
   // T.547.2.3: the shaders the model has of its own (ternary's, or Q4_K's beside int8), which its key holds
   own: Own;
 };
-type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens: Tokens };
+type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens: TokenBuffers; tokenAttention: TokenAttentionChosen; tokenForm: TokenChoice };
 // (the record as openDevice() makes it: its literal is held to this, then taken as the Model it becomes)
 type Made = Omit<Base, "plan" | "memory"> & { plan: Started | Opening; memory: null };
 // a buffer, or a part of one ({ buffer, offset, size }), as bind() takes either (the whole one has no .buffer to ask)
@@ -96,11 +98,13 @@ const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (pla
 //
 // model is the record of what is on the GPU for the model. What openDevice() puts in it is this module's and is read
 // by all: the device, the plan and the shared memory, the buffers that live as long as the model (owned), and what
-// the adapter said of itself. The rest is four records, each made and set by one module and read by the others:
+// the adapter said of itself. The rest is six records, each made and set by one module and read by the others:
 //   model.weights  weights.ts   the layers' matrices and vectors and a token's tables, as buffers
 //   model.block    block.ts     the small steps' pipelines, a block's buffers and bind groups, the keys and values
 //   model.forms    forms.ts     the prompt's attention and tiled shader chosen here, and what each one tried came to
-//   model.tokens   tokenforms.ts  a token's buffers and pipelines, its attention and the form of its layer chosen here
+//   model.tokens   tokenforms.ts  a token's buffers and pipelines (tokens.ts's tokenBuffers() declares them, T.466)
+//   model.tokenAttention  tokenattention.ts  the attention of a token chosen here, and what each one tried came to
+//   model.tokenForm  tokenforms.ts  the form of a token's layer chosen here, its ms a step and what each form came to
 // (tests/gpu-modules-check.mjs holds every field read to one its owner declares, and every write to its owner)
 let model: Model | null = null;
 let stopping = false;  // a stop was asked: start() ends at its next step

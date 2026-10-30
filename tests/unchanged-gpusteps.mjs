@@ -184,8 +184,12 @@ for (const [model, made, packed, direct] of runs) {
       }
     }
     if (packed) {
-      m.tokens = { ...(await tokens_.tokenBuffers(m)), attention: { name: "the prompt's attention tiles", tiles: true, pipeline: attention.pipeline }, attentions: [],
-        parts: undefined, params: undefined, form: null, ms: undefined, forms: null };
+      // (T.466: a token's attention and form are records of their own, m.tokenAttention and m.tokenForm; a tree before it
+      // reads them of m.tokens: both are set, and each tree reads its own)
+      const chosen = { attention: { name: "the prompt's attention tiles", tiles: true, pipeline: attention.pipeline }, attentions: [], parts: undefined, params: undefined };
+      m.tokens = { ...(await tokens_.tokenBuffers(m)), ...chosen, form: null, ms: undefined, forms: null };
+      m.tokenAttention = chosen;
+      m.tokenForm = { form: null, ms: undefined, forms: null };
       for (const candidate of tokens_.tokenCandidates(m)) {
         const token = { ...candidate, pipes: {} };
         for (const [key, code] of tokens_.tokenCodes(token, tokens_.tokenShape(m))) token.pipes[key] = await device_.pipelineOf(m, code);

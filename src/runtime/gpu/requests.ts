@@ -28,14 +28,14 @@ type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 // states and rows; fresh, from the GPU's own (block.ts's stateIn). On the GPU alone (cache null) the state is its own
 function generate({ serial, count, pos, fresh = false, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
-    const m = model!, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
-    if (!g?.form) throw new Error("no tokens on this GPU");
+    const m = model!, { plan, tokens: g, tokenForm: chosen } = m, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
+    if (!chosen?.form) throw new Error("no tokens on this GPU");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);
     const encoder = m.device.createCommandEncoder();
     stateIn(m, encoder, pos, fresh || !cache);
     m.device.queue.submit([encoder.finish()]);
-    const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
+    const out = await runTokens(m, tokenStep(m, chosen.form, pos + count), { count, pos, keep: Boolean(cache),
       state: samplingState({ token, pos, history, length, written }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
     if (!wanted()) return;
