@@ -14,10 +14,11 @@ const listed = () => keptModels().catch((error): Awaited<ReturnType<typeof keptM
   console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);
   return [];
 });
-// T.490: what was kept, deleted. One that cannot be deleted says so on the console, and the list is drawn again as it is
-// (an unhandled rejection left it as it was before the press)
-const forgotten = (one: Parameters<typeof forget>[0]) => forget(one).catch((error) => {
-  console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it stays in the list`);
+// T.490: what was kept, deleted: whether it went. One that cannot be deleted says so on the console, and the list is
+// drawn again as it is (an unhandled rejection left it as it was before the press)
+const forgotten = (one: Parameters<typeof forget>[0]) => forget(one).then(() => true, (error) => {
+  console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it is still kept`);
+  return false;
 });
 export async function showKept() {
   let models = await listed();
@@ -40,8 +41,8 @@ export async function showKept() {
     remove.type = "button";
     remove.textContent = "delete";
     remove.onclick = async () => {
-      await forgotten(one);
-      if (model.id === one.manifest.id) {
+      // (its review: where it is still kept, the model is not remembered as one kept no more)
+      if ((await forgotten(one)) && model.id === one.manifest.id) {
         remember(model, false);
       }
       showKept();

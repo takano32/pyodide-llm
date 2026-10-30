@@ -234,7 +234,7 @@ const SAID = {
   "src/runtime/forward/threads.ts": ["console.warn(`threads: a software thread did not start (${String(error)}): the search ends at ${best}`);"],
   "src/page/list.ts": [
     "console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);",
-    "console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it stays in the list`);",
+    "console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it is still kept`);",
   ],
 };
 
