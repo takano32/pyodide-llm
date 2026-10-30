@@ -95,7 +95,7 @@ async function gpuBridge(w: Asking<"benchmark/gpu.js">) {
 }
 // the section's Markdown, and of its lines those that say what went wrong (T.227: a lost device, shaders not checked,
 // the verdicts that are not ok)
-export function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
+export function gpuMarkdown(steps: any[], bridge: { error?: string; microseconds?: number }, lost?: string) {
   const lines: string[] = [], said: string[] = [];
   const r: GpuInfo = steps.find((s) => s.name === "the adapter").result;
   lines.push(`**Adapter**: ${r.adapter}${r.fallback ? " (a fallback adapter: the CPU in a GPU's place, each measured once, its speed no GPU's)" : ""}; max binding ${fixed(r.maxStorageBufferBindingSize! / 2 ** 20, 0)} MiB, ` +

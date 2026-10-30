@@ -1,6 +1,7 @@
 // The sections "This browser" and "CPU" (src/runtime/benchmark/sections.ts's steps).
 // (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { threadCounts, cpuTable } from "../bench.ts";
+import type { CpuMeasured } from "../bench.ts";
 import type { Result } from "./dom.ts";
 import { ask, worker, yes } from "./section.ts";
 import type { CpuCeilings } from "../runtime/contracts/benchmark.ts";
@@ -42,7 +43,8 @@ export async function cpu(): Promise<Result> {
     const notFinite = r.rows!.some((row) => row.finite === false);
     const said = [...(notFinite ? ["**The logits were not finite numbers: the forward pass computed something wrong.**"] : []),
       ...(cutShort ? ["**A ceiling's loop did not do its work (its checksum or its time): the compiler cut it short, and its number is no ceiling.**"] : [])];
-    const lines = [...cpuTable(r), ...said.flatMap((line) => ["", line])];
+    // (r.none was ruled out above, which TypeScript does not narrow on: a string's truth)
+    const lines = [...cpuTable(r as CpuMeasured), ...said.flatMap((line) => ["", line])];
     return { status: said.length ? "wrong" : "ok", data: r, markdown: lines.join("\n"), said };
   } finally {
     w.terminate();

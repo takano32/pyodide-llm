@@ -2,21 +2,25 @@
 // (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, times, tableCell } from "./cells.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
+import type { PathCell, PathThreads, Paths } from "../runtime/contracts/messages.ts";
+
+// what the worker answered of the page path (worker/timing.ts's timedPaths()), without the message's own keys
+type PathsFound = Omit<Paths, "type" | "load">;
 
 /** T.93: where the model page remembers the number of threads it found for a model on this device (localStorage).
  * T.190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */
-export const threadsKey = (id, nav) => `threads:${id}:${nav.hardwareConcurrency}:${nav.deviceMemory ?? ""}:${nav.userAgent}`;
+export const threadsKey = (id: string, nav: Pick<Navigator, "hardwareConcurrency" | "userAgent"> & { deviceMemory?: number }) => `threads:${id}:${nav.hardwareConcurrency}:${nav.deviceMemory ?? ""}:${nav.userAgent}`;
 
 // the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T.227's
 // review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
 // sides were timed; and (src/runtime/worker/timing.ts) why a page that is not isolated has one thread, which is no failure
 const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
-const searchNotEnded = (how) => `the search had not ended after ${how.unfinished} s`;
-const gpuStopped = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
+const searchNotEnded = (how: PathThreads) => `the search had not ended after ${how.unfinished} s`;
+const gpuStopped = (gpu: { lost?: string }) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
 const NO_SHARED_MEMORY = "no shared memory here";
 
 /** T.190: how the page path's number of threads came about (worker/timing.js's timedPaths), in a few words */
-export function threadsHow(how) {
+export function threadsHow(how: PathThreads | undefined): string {
   if (!how) return "";
   if (how.alone) return `: ${how.alone}`;
   // T.190's review: a software thread that stopped after the count was found (T.120): the later times are one thread's
@@ -29,9 +33,9 @@ export function threadsHow(how) {
 
 /** T.190's review: the writing on each number of software threads (worker/timing.js's timedPaths: in turn, CPU only), the page's
  * marked; "" where there is one count or none. perCount: [{ threads, speed, low, high, unsteady }] */
-export function threadsLine(perCount = [], page) {
+export function threadsLine(perCount: PathsFound["perCount"] = [], page?: number): string {
   if (perCount.length < 2) return "";
-  const rate = (value) => number(value, value >= 100 ? 0 : 1);
+  const rate = (value: number | undefined) => number(value, value! >= 100 ? 0 : 1);
   const cells = perCount.map((c) => `${c.threads}${c.threads === page ? " (the page's)" : ""}: ${rate(c.speed)} tok/s` +
     ` (${rate(c.low)}–${rate(c.high)}${c.unsteady ? ", unsteady" : ""})`);
   return `Writing on each number of software threads (CPU only): ${cells.join(" · ")}`;
@@ -45,7 +49,7 @@ export const PATH_WRITES = 64;
 /** T.184: why a GPU cell of the page path is empty, in a few words: "not here" (no WebGPU, no adapter), "not on a
  * fallback adapter" (the CPU in a GPU's place: the page refuses it, T.148, and CI's are all such, T.182), else the words of
  * forward.js (a model the GPU does not take yet, too little memory, a failure). */
-export function gpuSkipped(why = "") {
+export function gpuSkipped(why = ""): string {
   if (why === REASONS.noWebGpu || why === REASONS.noAdapter) return "not here";
   if (why === REASONS.fallback) return "not on a fallback adapter";
   return why || "not measured";
@@ -60,7 +64,7 @@ export function gpuSkipped(why = "") {
  * unsteady }, { same: "cpu" } (one path: timed once) or { skip: why }; or { error }. The writing's GPU cells (T.152: the
  * steps of a generation on the GPU) are timed where the GPU takes them, else the reason. A GPU that stopped while the sides were timed
  * (gpu.lost) leaves no ratio anywhere: its later times are no GPU's (T.157). */
-export function pathTable(paths, name = "") {
+export function pathTable(paths: PathsFound | undefined, name = ""): string {
   const title = `**The model page's path**${name ? ` (${name})` : ""}`;
   if (!paths || paths.error) return `${title}: failed: ${tableCell(paths?.error ?? "no answer")}`;
   const { gpu = {}, rows = [] } = paths;
@@ -72,9 +76,9 @@ export function pathTable(paths, name = "") {
     if (paths.status) facts.push(tableCell(paths.status));
   }
   // a cell the GPU did not run: the few words of gpuSkipped(), or "not used" where the line above has the reason
-  const skipped = (why) => (why === gpu.why && gpuSkipped(why) === why ? "not used" : tableCell(gpuSkipped(why)));
-  const rate = (value) => number(value, value >= 100 ? 0 : 1);
-  const speed = (cell) => {
+  const skipped = (why: string) => (why === gpu.why && gpuSkipped(why) === why ? "not used" : tableCell(gpuSkipped(why)));
+  const rate = (value: number | undefined) => number(value, value! >= 100 ? 0 : 1);
+  const speed = (cell: PathCell | undefined) => {
     if (!cell) return "?";
     if (cell.skip !== undefined) return skipped(cell.skip);
     if (cell.same) return "same as CPU only";
@@ -82,7 +86,7 @@ export function pathTable(paths, name = "") {
     return `${rate(cell.speed)} tok/s${spread}`;
   };
   // where the page's choice put the tokens: all on one side, or a part on the GPU (a GPU, then the CPU: T.148)
-  const side = (cell, tokens) => (cell?.gpuTokens === undefined || cell.same ? "" : cell.gpuTokens >= tokens ? ", GPU"
+  const side = (cell: PathCell | undefined, tokens: number) => (cell?.gpuTokens === undefined || cell.same ? "" : cell.gpuTokens >= tokens ? ", GPU"
     : cell.gpuTokens > 0 ? `, GPU ${cell.gpuTokens} of ${tokens}` : ", CPU");
   const lines = [`${title}: ${facts.filter(Boolean).join(" · ")}`, "",
     "| the page | as chosen | CPU only | GPU only | GPU ÷ CPU |", "|---|---|---|---|---|",
@@ -103,10 +107,10 @@ export function pathTable(paths, name = "") {
  * finite), software threads that stopped or did not start, a search for their count that did not end. [] where none
  * did; a page that is not isolated has no software threads, and that is no failure.
  */
-export function pathWarnings(paths) {
+export function pathWarnings(paths: PathsFound | undefined): string[] {
   if (!paths || paths.error) return [];  // (an error says "failed" itself)
   const { gpu = {}, how = {} } = paths;
   // (as threadsHow() and pathTable() write them: alone says why the count is one, and nothing else of the threads)
   const threads = how.alone ? [how.alone !== NO_SHARED_MEMORY && how.alone] : [how.unfinished && searchNotEnded(how), how.stopped && STOPPED_WHILE_TIMED];
-  return [gpu.why === undefined && gpu.lost && gpuStopped(gpu), ...threads].filter(Boolean);
+  return [gpu.why === undefined && gpu.lost && gpuStopped(gpu), ...threads].filter(Boolean) as string[];
 }

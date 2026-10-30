@@ -8,6 +8,7 @@
 export { threadsOf, times, timesFaster, noRatios, tableCell, unmeasured } from "./bench/cells.ts";
 export { ROUNDS, FULL_ROUNDS, MEMORY_UNSAID, DRIFT_LINE, roundsHere, environmentOf, benchMarkdown, roundsTable, drift } from "./bench/rounds.ts";
 export { threadCounts, cpuTable, CPU_SPEED_KEY, USAGE_KEY, USAGE_DECAY, usedAfter, cpuBaseline } from "./bench/cpu.ts";
+export type { CpuMeasured, Baseline } from "./bench/cpu.ts";
 export { warnings, warningsBlock } from "./bench/warnings.ts";
 export { REPOSITORY, QUESTIONS, reportBody, REPORT_LIMIT, TOO_LONG, PASTE, reportTooLong, reportUrl, loginUrl,
   shortReport, parseReport, reportsTable } from "./bench/report.ts";
