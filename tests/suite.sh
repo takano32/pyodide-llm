@@ -314,6 +314,9 @@ if [ "$suite" = full ]; then
   part "the workflows' time limits" node tests/workflows-check.mjs
   # T.346: the files past the size a file should have, said every night (never a failure)
   part "the sizes of the files" node tests/unchanged.mjs sizes
+  # T.438: a built script that changes is named again by every file that names it, to the page's scripts (what T.367.4's
+  # "the site was updated" rests on): the site built once, and once with each named script touched (about 3 minutes)
+  part "a changed file's namers named again" node tests/names-follow-check.mjs
   # T.93: the forward pass of src/runtime/forward.js against NumPy's, on the site's models (the line is for 128 positions)
   part "forward.js against NumPy" node tests/forward-check.mjs --rounds 1 --positions 128
   part "forward.js against NumPy, not shared" node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
