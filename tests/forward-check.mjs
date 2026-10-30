@@ -264,6 +264,9 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
         if (name in source) throw new Error(`the kernel ${name} is written twice (${file})`);
         source[name] = parameters.split(",").map((p, i) => [i, p.split(":")[1].trim()]).filter(([, type]) => type === "usize").map(([i]) => i);
         argumentsOf[name] = parameters.split(",").map((p) => p.split(":")[0].trim());
+        // (all numbers to jobs.ts's Arguments: a kernel of another type of argument, a 64-bit integer, needs a BigInt)
+        const other = parameters.split(",").map((p) => p.split(":")[1]?.trim()).find((type) => !["usize", "i32", "f32", "f64"].includes(type));
+        if (other !== undefined) throw new Error(`the kernel ${name} takes an argument of type ${other}, which jobs.ts's Arguments says is a number`);
         if (file.startsWith(`kernels/${folder}/`)) written.push(`${name} of ${file.slice(folder.length + 9, -3)}`);
       }
     }
