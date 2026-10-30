@@ -12,14 +12,19 @@
 
 /** Starts counting and holding the screen on; `stop()` lets the lock go and ends the count. `hidden()` is the
  * milliseconds hidden so far, over every run of this page (a report holds the sections of every run). */
-export function wakeKeeper({ document, navigator, now = () => performance.now() }) {
-  let hiddenMs = 0, hiddenSince, running = false, lock, asking;
+// (T.480.1: what it reads of the document and of the navigator: the page's own, or a test's made-up ones)
+type Shown = { visibilityState: DocumentVisibilityState; addEventListener(type: "visibilitychange", listener: () => void): void };
+type Lock = { release?(): Promise<void>; addEventListener?(type: "release", listener: () => void): void };
+type Locking = { wakeLock?: { request(type: "screen"): Promise<Lock> } } | undefined;
+
+export function wakeKeeper({ document, navigator, now = () => performance.now() }: { document: Shown; navigator: Locking; now?: () => number }) {
+  let hiddenMs = 0, hiddenSince: number | undefined, running = false, lock: Lock | undefined, asking: boolean | undefined;
 
   async function ask() {
     if (!running || asking || lock || document.visibilityState !== "visible" || !navigator?.wakeLock?.request) return;
     asking = true;
     try {
-      const got = await navigator.wakeLock.request("screen");
+      const got = await navigator!.wakeLock!.request("screen");
       // a run that ended while the browser answered: let the lock go at once
       if (!running) got.release?.().catch?.(() => {});
       else {
@@ -68,7 +73,7 @@ export function wakeKeeper({ document, navigator, now = () => performance.now() 
 }
 
 /** The report's line of the seconds hidden, or "" when the page was never hidden while it ran. */
-export function hiddenLine(ms) {
+export function hiddenLine(ms: number) {
   const seconds = Math.round(ms / 1000);
   if (!(seconds > 0)) return "";
   return `**hidden for ${seconds} s** while the sections ran: the page was not on the screen (another app, the screen off), and the browser may have slowed or stopped it then; the numbers of those sections may be low.`;
