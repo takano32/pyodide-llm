@@ -1,6 +1,8 @@
 // The GPU section's table of generated tokens and of the sampling (T.151, T.191).
 // (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, times, noRatios, tableCell, unmeasured } from "./cells.ts";
+import type { Ratios, Step } from "./cells.ts";
+import type { GenerateFound, SamplingAlone, SamplingTimed, Verdicts } from "../runtime/contracts/benchmark.ts";
 
 /**
  * T.151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.js's EMBED, fusedMatVec and SAMPLE: the
@@ -19,7 +21,7 @@ import { number, times, noRatios, tableCell, unmeasured } from "./cells.ts";
  * (the first) where a token's work was unsteady. A submission's cost below 0 (a token's work read higher than the
  * row's time allows) is "under the noise".
  */
-export function generateTable(step, check, gpu = {}) {
+export function generateTable(step: Step<GenerateFound> | undefined, check: Verdicts | undefined, gpu: Ratios = {}): string[] {
   if (!step) return [];
   if (step.error || !step.result) return [`**Tokens generated on the GPU**: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
@@ -28,7 +30,7 @@ export function generateTable(step, check, gpu = {}) {
   const derived = !none && !wrong;
   const one = r.rows.find((row) => row.perSubmission === 1);
   // a submission's cost besides its tokens, or its share a token (what N tokens a submission leave of it: F / N)
-  const fixed = (row, ms) => (derived && Number.isFinite(ms) ? (ms < 0 ? "under the noise" : number(ms, 2)) : "");
+  const fixed = (row: GenerateFound["rows"][number], ms: number | undefined) => (derived && Number.isFinite(ms) ? (ms! < 0 ? "under the noise" : number(ms, 2)) : "");
   const s = r.settings ?? {};
   return [`**Tokens generated on the GPU** (${tableCell(r.model)}: ${r.layers} layers, a vocabulary of ${r.vocab}, ${number(r.GB, 2)} GB of weights a token; ` +
     `a token is ${r.dispatches} dispatches: its row of the embedding, the layers as ${r.layer ? `the layer table's "${tableCell(r.layer)}"` : "T.150's fused"}, the classifier, and the sampling on the GPU in one workgroup (T.151), ` +
@@ -42,7 +44,7 @@ export function generateTable(step, check, gpu = {}) {
     "|---|---:|---:|---:|---:|---:|",
     ...r.rows.map((row) => `| ${row.perSubmission === 1 ? "1, each read back as it comes" : `${row.perSubmission}, read back once`}${wrong ? " (WRONG in the check)" : ""} | ` +
       `${number(row.msPerToken, 2)} | ${Number.isFinite(row.chunks) ? `${number(row.chunks, 2)}${chunksWrong ? " (WRONG in the check)" : ""}` : ""} | ` +
-      `${fixed(row, row.fixedMs)} | ${fixed(row, row.fixedMs / row.perSubmission)} | ` +
+      `${fixed(row, row.fixedMs)} | ${fixed(row, row.fixedMs! / row.perSubmission)} | ` +
       `${derived && row !== one && one ? times(one.msPerToken / row.msPerToken) : ""} |`),
     "", `A token's work: ${r.work ? `${r.work.unsteady ? "unsteady: " : ""}${number(r.work.ms, 2)} ms` : "not measured here"}` +
     `${r.chunkWork ? ` (with the sampling in chunks ${r.chunkWork.unsteady ? "unsteady: " : ""}${number(r.chunkWork.ms, 2)} ms)` : ""}; ` +
@@ -53,8 +55,8 @@ export function generateTable(step, check, gpu = {}) {
 // the ms of the sampling alone, with how many tokens were over the nucleus's floor (what SAMPLE gathers and reads each
 // round of its searches: T.151), in one workgroup and (T.191) in chunks, and of those the last stage alone (T.191's
 // review: one workgroup's nucleus and draw, SAMPLE's search; the rest of SAMPLE is its reading of the vocabulary)
-const samplingTime = (s) => (s.error ? `failed: ${tableCell(s.error)}` : `${s.unsteady ? "unsteady: " : ""}${number(s.msEach, 3)} ms`);
-const samplingCell = (s) => `${s.chunks ? "one workgroup " : ""}${samplingTime(s)}` +
+const samplingTime = (s: SamplingTimed) => (s.error ? `failed: ${tableCell(s.error)}` : `${s.unsteady ? "unsteady: " : ""}${number(s.msEach, 3)} ms`);
+const samplingCell = (s: SamplingAlone) => `${s.chunks ? "one workgroup " : ""}${samplingTime(s)}` +
   `${Number.isFinite(s.over) ? ` (${s.over} tokens over the floor)` : ""}` +
   `${s.chunks ? `, in chunks ${samplingTime(s.chunks)}` : ""}` +
   `${s.chunks?.pick ? ` (of it the last stage, one workgroup's nucleus and draw: ${samplingTime(s.chunks.pick)})` : ""}`;

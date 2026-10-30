@@ -1,17 +1,28 @@
 // The GPU section's table of where a layer's time goes (T.202, T.208), and its attention by the cache's length.
 // (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, times, noRatios, tableCell, unmeasured } from "./cells.ts";
+import type { Ratios, Step } from "./cells.ts";
+import type { AttentionLengths, AttentionRow, GpuCeilings, LayerStepsFound, StepTimed, StepsForm, Timestamps, Timing, Verdicts } from "../runtime/contracts/benchmark.ts";
+
+// layerSteps()'s result as the tables read it: what a time, a form, the GPU's clock and an attention's lengths hold where
+// they were measured (one that failed or was not here has none of these, and they are not read of it)
+type Timed = Timing & { ms: number };
+export type Form = StepsForm & Timed & { dispatches: number; steps: { step: string; count: number }[] };
+type Stamped = Timestamps & { layers: number; rounds: number; forms: { form: string; ms: number; span: number }[] };
+type Lengths = Omit<AttentionLengths, "positions" | "rows"> & { positions: number[]; rows: (Omit<AttentionRow, "times"> & { times: Timed[] })[] };
+export type Found = Omit<LayerStepsFound, "forms" | "steps" | "timestamps" | "lengths"> & { forms: Form[]; steps: (StepTimed & Timed)[];
+  timestamps?: Stamped; lengths: Lengths };
 
 // T.202: a time of layerSteps() in ms (undefined where it failed or is not a positive number)
-const stepMs = (one) => (one && !one.error && Number.isFinite(one.ms) && one.ms > 0 ? one.ms : undefined);
-const less = (a, b) => (a === undefined || b === undefined ? undefined : a - b);
+const stepMs = (one: Timed | undefined): number | undefined => (one && !one.error && Number.isFinite(one.ms) && one.ms > 0 ? one.ms : undefined);
+const less = (a: number | undefined, b: number | undefined) => (a === undefined || b === undefined ? undefined : a - b);
 // T.202: a form's layer (r: layerSteps()'s result) and its parts in ms: the steps one by one (steps) as the matrices
 // with what they write (matrices), the attention and the norms and quantizing (small); the four matrices alone
 // (alone); the chain (the layer less its steps). undefined where a part was not timed.
-function layerSplit(r, form) {
+function layerSplit(r: Found, form: Form) {
   const byName = new Map(r.steps.map((one) => [one.step, one]));
-  const sum = (kinds) => form.steps.filter(({ step }) => kinds.includes(byName.get(step)?.kind))
-    .reduce((total, { step, count }) => (total === undefined || stepMs(byName.get(step)) === undefined ? undefined : total + count * byName.get(step).ms), 0);
+  const sum = (kinds: (string | undefined)[]) => form.steps.filter(({ step }) => kinds.includes(byName.get(step)?.kind))
+    .reduce((total: number | undefined, { step, count }) => (total === undefined || stepMs(byName.get(step)) === undefined ? undefined : total + count * byName.get(step)!.ms), 0);
   const aloneRows = r.steps.filter((one) => one.kind === "alone");
   const alone = aloneRows.length && aloneRows.every((one) => stepMs(one) !== undefined) ? aloneRows.reduce((total, one) => total + one.ms, 0) : undefined;
   const layer = stepMs(form), steps = sum(["matrix", "attention", "small"]);
@@ -34,16 +45,16 @@ function layerSplit(r, form) {
  * the attention's ({count, MB}: the step alone reads them in turn); timestamps, the whole layer by the GPU's own clock
  * ({layers, rounds, forms: [{form, ms}]}, {none} or {error}), one line under the forms'.
  */
-export function layerStepsTable(step, check, ceilings, gpu = {}) {
+export function layerStepsTable(step: Step<Found> | undefined, check: Verdicts | undefined, ceilings: GpuCeilings | undefined, gpu: Ratios = {}): string[] {
   if (!step) return [];
   const title = "**Where a layer's time goes**";
   if (step.error || !step.result) return [`${title}: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
-  const wrong = (form) => Boolean(check && check[form.check] && !check[form.check].ok);
-  const microseconds = (one) => (one?.error ? `failed: ${tableCell(one.error)}` : `${one?.unsteady ? "unsteady: " : ""}${stepMs(one) === undefined ? "?" : number(1000 * one.ms, 1)}`);
+  const wrong = (form: Form) => Boolean(check && check[form.check] && !check[form.check].ok);
+  const microseconds = (one: Timed | undefined) => (one?.error ? `failed: ${tableCell(one.error)}` : `${one?.unsteady ? "unsteady: " : ""}${stepMs(one) === undefined ? "?" : number(1000 * one!.ms, 1)}`);
   const floor = r.steps.find((one) => one.kind === "floor"), forms = r.forms.filter((form) => !form.error);
-  const GBps = (took) => (took === undefined ? "?" : `${number(r.GB / (took / 1000))} GB/s${reads ? `, ${number((100 * r.GB) / (took / 1000) / reads)}% of the buffer's reads (${number(reads)} GB/s)` : ""}`);
+  const GBps = (took: number | undefined) => (took === undefined ? "?" : `${number(r.GB / (took / 1000))} GB/s${reads ? `, ${number((100 * r.GB) / (took / 1000) / reads)}% of the buffer's reads (${number(reads)} GB/s)` : ""}`);
   const named = forms.map((form) => `"${tableCell(form.form)}"`).join(" and ");
   const which = r.chosen?.by === "layer"
     ? `the layer a token would run here: the fastest fused layer of the table above that the check found right, "${tableCell(r.chosen.fastest)}", as the engine chooses it (T.152)` +
@@ -61,8 +72,8 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
     "what a chain of different dispatches, each waiting for the one before, costs beyond each on its own. " +
     "The fused matrices less the matrices alone is what fusing adds to them: the writes folded in (RoPE and the cache, the residual's add, SwiGLU), in llama.cpp's fused form the norm folded into the read, " +
     "and gate with up in one workgroup, which can take less than the two alone (so this can come out less than nothing). " +
-    (r.caches?.count > 1
-      ? `The attention alone reads ${r.caches.count} copies of the cache (the keys and values of the positions up to this one) in turn, ${number(r.caches.MB, 0)} MB, so not from the GPU's caches, as a token's layers each read their own; ` +
+    (r.caches?.count! > 1
+      ? `The attention alone reads ${r.caches!.count} copies of the cache (the keys and values of the positions up to this one) in turn, ${number(r.caches!.MB, 0)} MB, so not from the GPU's caches, as a token's layers each read their own; ` +
         "in the whole layer it reads one cache, with a copy of the layer's weights read between two reads of it, as in the layer table."
       : "The attention reads one cache (the positions up to this one) every time, in the GPU's caches as in the layer table."),
   ...(none ? [`Read nothing from these times: ${none.replace(/^none:? /, "")}.`] : []), "",
@@ -78,18 +89,18 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
       continue;
     }
     const { layer, steps, matrices, attention, small, alone: aloneMs, chain } = layerSplit(r, form);
-    const signed = (value) => (value === undefined ? "?" : `${value < 0 ? "−" : ""}${number(Math.abs(value), 2)}`);
+    const signed = (value: number | undefined) => (value === undefined ? "?" : `${value < 0 ? "−" : ""}${number(Math.abs(value), 2)}`);
     lines.push(`- "${tableCell(form.form)}"${wrong(form) ? " (WRONG in the check)" : ""}, ${form.dispatches} dispatches: the layer ${form.unsteady ? "(unsteady) " : ""}${signed(layer)} ms. ` +
       `Its steps one by one ${signed(steps)} ms (the matrices with what they write ${signed(matrices)}, the attention ${signed(attention)}, the norms and quantizing ${signed(small)}); ` +
       `the layer less them, what the chain costs beyond each step alone: ${signed(chain)} ms. ` +
       `The matrices alone ${signed(aloneMs)} ms (${GBps(aloneMs)}); the layer less them, ${signed(less(layer, aloneMs))} ms, is ` +
       `what fusing adds to the matrices ${signed(less(matrices, aloneMs))} + the attention ${signed(attention)} + the norms and quantizing ${signed(small)} + the chain ${signed(chain)}. ` +
-      `A dispatch of one workgroup takes ${microseconds(floor)} µs: ${form.dispatches} of them ${stepMs(floor) === undefined ? "?" : number(form.dispatches * floor.ms, 2)} ms.`);
+      `A dispatch of one workgroup takes ${microseconds(floor)} µs: ${form.dispatches} of them ${stepMs(floor) === undefined ? "?" : number(form.dispatches * floor!.ms, 2)} ms.`);
   }
   // T.202's review: how far this run's times move. Two forms of the same matrices and attention (DP4A's) differ only in
   // their norms and quantizing, so their layers less those should come out the same; on lavapipe in CI (steady by the
   // pairs) they came out 0.4 and 4.2 ms apart in 48, where the chain was −2.4 to 2.7
-  const bigSteps = (form) => form.steps.filter(({ step }) => ["matrix", "attention"].includes(r.steps.find((one) => one.step === step)?.kind))
+  const bigSteps = (form: Form) => form.steps.filter(({ step }) => ["matrix", "attention"].includes(r.steps.find((one) => one.step === step)?.kind!))
     .map(({ step, count }) => `${step} ${count}`).sort().join("\n");
   if (forms.length === 2 && bigSteps(forms[0]) === bigSteps(forms[1])) {
     const [a, b] = forms.map((form) => { const s = layerSplit(r, form); return less(s.layer, s.small); });
@@ -105,7 +116,7 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
     const head = "The whole layer by the GPU's own clock (timestamp-query), a check of the times above";
     if (t.none || t.error) lines.push("", `${head}: ${t.none ? "not here" : "failed"}: ${tableCell(t.none ?? t.error)}.`);
     else {
-      const ms = (value) => (Number.isFinite(value) && value > 0 ? number(value, 2) : "?");
+      const ms = (value: number) => (Number.isFinite(value) && value > 0 ? number(value, 2) : "?");
       const got = t.forms.map(({ form, ms: mean, span }) => {
         const above = stepMs(r.forms.find((one) => one.form === form));
         return `"${tableCell(form)}" ${ms(mean)} ms (first to last ${ms(span)}; above: ${above === undefined ? "?" : number(above, 2)})`;
@@ -135,17 +146,17 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
  * that only reads a buffer: T.168's, the layer steps' `reads`) their share: a head of q reads its keys and values
  * again for every head of q that shares them (4 on Llama 3.2 1B's), so past 100% the caches serve the rereads.
  */
-function attentionLengthsLines(lengths, none, reads) {
+function attentionLengthsLines(lengths: Lengths | undefined, none: string | undefined, reads: number | undefined): string[] {
   if (!lengths) return [];
   const head = "**A token's attention alone, by the positions it reads** (T.224)";
   if (lengths.error) return ["", `${head}: failed: ${tableCell(lengths.error)}`];
   const tiles = lengths.rows[lengths.base ?? 0], two = lengths.rows.filter((row) => row.tiles).length > 1;
-  const cell = (one, i, row) => {
+  const cell = (one: Timed, i: number, row: Lengths["rows"][number]) => {
     if (one?.none) return tableCell(`not here: ${one.none}`);
     if (one?.error || !(Number.isFinite(one?.ms) && one.ms > 0)) return `failed: ${tableCell(one?.error ?? "no time")}`;
     const base = tiles.times[i], steady = !one.unsteady && !base?.unsteady && Number.isFinite(base?.ms) && base.ms > 0;
     const faster = row !== tiles && !row.tiles && !none && steady ? `${times(base.ms / one.ms)} the ${two ? "engine's " : ""}tiles` : "";
-    const rate = lengths.bytes?.[i] > 0 && !one.unsteady ? lengths.bytes[i] / (one.ms / 1000) / 1e9 : undefined;
+    const rate = lengths.bytes?.[i]! > 0 && !one.unsteady ? lengths.bytes![i] / (one.ms / 1000) / 1e9 : undefined;
     const reading = rate === undefined ? "" : `${number(rate)} GB/s${reads ? `, ${number((100 * rate) / reads, 0)}% of the buffer's reads` : ""}`;
     const notes = [faster, reading].filter(Boolean).join("; ");
     return `${one.unsteady ? "unsteady: " : ""}${number(1000 * one.ms, 1)}${notes ? ` (${notes})` : ""}`;

@@ -4,35 +4,45 @@ import { number, threadsOf, times, timesFaster, noRatios } from "./cells.ts";
 import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.ts";
 import { tokenWrong, fastestMatVec } from "./gpu.ts";
 import { stepMs, less, layerSplit } from "./layersteps.ts";
+import type { Step } from "./cells.ts";
+import type { Baseline, CpuMeasured } from "./cpu.ts";
+import type { Found } from "./layersteps.ts";
+import type { DeviceFound, GenerateFound, GpuAbout, LayerFound, LayerRow, LineFound, PromptFound, PromptRow, StorageRun, Verdicts } from "../runtime/contracts/benchmark.ts";
+
+// a layer's and a prompt's rows as the GPU's lines read them: the times of a row that ran (one that did not has none,
+// and is left out by them)
+type LayerTimed = Omit<LayerFound, "rows"> & { rows: (LayerRow & { msPerLayer: number; dispatches: number })[] };
+type PromptTimed = Omit<PromptFound, "rows"> & { rows: (PromptRow & { tokens: number; msPerToken: number; GFLOPS: number })[] };
 
 // ---- T.185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
 // Each says the fastest and the ceilings; the tables with every row are in the whole report.
+// (gpuSummary()'s steps: each name has a result of its own kind, which the page keeps in one list: any)
 
-const yesNo = (value) => (value ? "yes" : "no");
+const yesNo = (value: unknown) => (value ? "yes" : "no");
 
 /** The device section's line: what the head's line does not say (the cores and the memory are there) */
-export function deviceSummary(r) {
+export function deviceSummary(r: DeviceFound): string[] {
   return [`Browser: SIMD ${yesNo(r.simd)}, relaxed SIMD ${yesNo(r.relaxedSimd)}, 64-bit memory ${yesNo(r.memory64)}, ` +
     `cross-origin isolated ${yesNo(r.crossOriginIsolated && r.sharedMemory)}, WebGPU in a worker ${yesNo(r.webgpu)}, ` +
     `private file system ${yesNo(r.opfs && r.syncHandle)}`];
 }
 
 /** The CPU section's line: its fastest token and prompt (cpuTable()'s rows), and the ceilings */
-export function cpuSummary(r) {
+export function cpuSummary(r: CpuMeasured): string[] {
   const c = r.ceilings ?? {};
-  const rows = (r.rows ?? []).filter((row) => row.msPerToken > 0);
-  const token = [...rows].sort((a, b) => a.msPerToken - b.msPerToken)[0];
-  const prompt = rows.filter((row) => row.promptMsPerToken > 0).sort((a, b) => a.promptMsPerToken - b.promptMsPerToken)[0];
+  const rows = (r.rows ?? []).filter((row) => row.msPerToken! > 0);
+  const token = [...rows].sort((a, b) => a.msPerToken! - b.msPerToken!)[0];
+  const prompt = rows.filter((row) => row.promptMsPerToken! > 0).sort((a, b) => a.promptMsPerToken! - b.promptMsPerToken!)[0];
   if (!token) return ["CPU: no token measured"];
   const isolated = r.shared !== false;
   const readAlone = steadyCeiling((c.read ?? []).find((one) => one.threads === token.threads), "GBps");
   const parts = [`${number(token.msPerToken)} ms a token with ${threadsOf({ threads: token.threads, isolated })}, ${number(token.GBps)} GB/s` +
     (readAlone ? ` (${number((100 * tokenReads(r, token)) / readAlone, 0)}% of reading alone)` : "")];
   if (prompt) parts.push(`a prompt ${number(promptGMACsOf(r, prompt))} G MAC/s with ${prompt.threads}`);
-  const reads = (c.read ?? []).map((one) => steadyCeiling(one, "GBps")).filter(Boolean);
+  const reads = (c.read ?? []).map((one) => steadyCeiling(one, "GBps")).filter(Boolean) as number[];
   const ceilings = [reads.length && `reading alone ${number(Math.max(...reads))} GB/s`,
-    steadyCeiling(c.dot, "GMACs") && `relaxed_dot ${number(c.dot.GMACs)} G MAC/s`,
-    steadyCeiling(c.fma, "GMACs") && `f32 ${number(c.fma.GMACs)} G MAC/s`].filter(Boolean);
+    steadyCeiling(c.dot, "GMACs") && `relaxed_dot ${number(c.dot!.GMACs)} G MAC/s`,
+    steadyCeiling(c.fma, "GMACs") && `f32 ${number(c.fma!.GMACs)} G MAC/s`].filter(Boolean);
   if (ceilings.length) parts.push(`ceilings: ${ceilings.join(", ")}`);
   return [`CPU: ${parts.join("; ")}`];
 }
@@ -44,10 +54,10 @@ export function cpuSummary(r) {
  * noRatios() says none or the check found the row WRONG; a step that failed or was not measured has no line (the whole
  * report says why). baseline: cpuBaseline(); gpu: { lost }.
  */
-export function gpuSummary(steps, baseline = {}, gpu = {}) {
-  const find = (name) => steps.find((s) => s.name === name);
-  const a = find("the adapter")?.result ?? {};
-  const checkStep = find("the shaders against JavaScript"), check = checkStep?.result;
+export function gpuSummary(steps: Step<any>[], baseline: { token?: Baseline["token"]; prompt?: Baseline["prompt"] } = {}, gpu: { lost?: string } = {}): string[] {
+  const find = (name: string) => steps.find((s) => s.name === name);
+  const a: Partial<GpuAbout> = find("the adapter")?.result ?? {};
+  const checkStep: Step<Verdicts> | undefined = find("the shaders against JavaScript"), check = checkStep?.result;
   const none = noRatios({ fallback: a.fallback, lost: gpu.lost });
   const verdicts = Object.entries(check ?? {});
   const bad = verdicts.filter(([, v]) => v.error || !v.ok).map(([k, v]) => `${k} ${v.error ? "FAILED" : "WRONG"}`);
@@ -66,14 +76,14 @@ export function gpuSummary(steps, baseline = {}, gpu = {}) {
   const widest = steps.filter((s) => s.name.startsWith("bandwidth: ")).at(-1);
   const best = widest && fastestMatVec(widest, check);
   const reads = find("the device's ceilings")?.result?.global;
-  const share = best && !gpu.lost && !a.fallback && reads?.GBps > 0 && !reads.unsteady ? ` (${number((100 * best.GBps) / reads.GBps, 0)}% of reading a buffer)` : "";
+  const share = best && !gpu.lost && !a.fallback && reads?.GBps > 0 && !reads.unsteady ? ` (${number((100 * best.GBps!) / reads.GBps, 0)}% of reading a buffer)` : "";
   if (tokens.length || best) {
     lines.push(`GPU, a token: ${[...tokens, best && `the fastest matrix × vector of ${widest.name.replace(/^bandwidth: /, "")} ${best.shader}, ${number(best.GBps)} GB/s${share}`].filter(Boolean).join("; ")}`);
   }
-  const layer = find("a layer of a token")?.result;
+  const layer: LayerTimed | undefined = find("a layer of a token")?.result;
   const fastestLayer = (layer?.rows ?? []).filter((row) => row.msPerLayer > 0 && !row.unsteady && !(check?.[row.check] && !check[row.check].ok))
     .sort((x, y) => x.msPerLayer - y.msPerLayer)[0];
-  const generated = find("tokens generated on the GPU")?.result;
+  const generated: GenerateFound | undefined = find("tokens generated on the GPU")?.result;
   const one = generated?.rows?.find((row) => row.perSubmission === 1);
   const most = generated?.rows?.filter((row) => row.perSubmission > 1 && row.msPerToken > 0).sort((x, y) => x.msPerToken - y.msPerToken)[0];
   const samplingWrong = ["sampling", "tokens on the GPU"].some((key) => check?.[key] && !check[key].ok);
@@ -82,15 +92,15 @@ export function gpuSummary(steps, baseline = {}, gpu = {}) {
       (none || samplingWrong ? "" : ` (${times(one.msPerToken / most.msPerToken)})`)].filter(Boolean);
   if (layerParts.length) lines.push(`GPU, ${layerParts.join("; ")}`);
   // T.202: where the time of the fastest layer the steps' table broke down goes
-  const split = find("the steps of a layer")?.result;
+  const split: Found | undefined = find("the steps of a layer")?.result;
   const splitForm = (split?.forms ?? []).filter((form) => stepMs(form) !== undefined && !form.unsteady && !(check?.[form.check] && !check[form.check].ok))
     .sort((x, y) => x.ms - y.ms)[0];
   if (splitForm && !none) {
-    const parts = layerSplit(split, splitForm), two = (value) => (value === undefined ? "?" : number(value, 2));
+    const parts = layerSplit(split!, splitForm), two = (value: number | undefined) => (value === undefined ? "?" : number(value, 2));
     lines.push(`GPU, where the time of a layer ${splitForm.form} goes: ${two(parts.layer)} ms, the matrices alone ${two(parts.alone)}, fusing adds ${two(less(parts.matrices, parts.alone))}, ` +
       `the attention ${two(parts.attention)}, the norms and quantizing ${two(parts.small)}, the chain ${two(parts.chain)}`);
   }
-  const prompt = find("a prompt all at once")?.result;
+  const prompt: PromptTimed | undefined = find("a prompt all at once")?.result;
   const promptTokens = Math.max(0, ...(prompt?.rows ?? []).filter((row) => row.tokens).map((row) => row.tokens));
   const fastestPrompt = (prompt?.rows ?? []).filter((row) => row.tokens === promptTokens && !row.again && row.msPerToken > 0 && !(check?.[row.shader] && !check[row.shader].ok))
     .sort((x, y) => x.msPerToken - y.msPerToken)[0];
@@ -102,15 +112,15 @@ export function gpuSummary(steps, baseline = {}, gpu = {}) {
 }
 
 /** The storage section's line: the writes' MB/s and the read back */
-export function storageSummary(r) {
-  const mb = (r.mib * 2 ** 20) / 1e6, rate = (part) => number(mb / part.seconds, 0);
+export function storageSummary(r: StorageRun): string[] {
+  const mb = (r.mib * 2 ** 20) / 1e6, rate = (part: { seconds: number }) => number(mb / part.seconds, 0);
   return [`Storage: writes ${rate(r.sequential)} MB/s in order, ${rate(r.scattered)} far apart, ${rate(r.scatteredFlushEach)} with a flush each piece; ` +
     `read back ${rate(r.read)} MB/s${r.read.wrong ? ` (${r.read.wrong} pieces WRONG)` : ""}`];
 }
 
 /** The line section's line: the two fetches and the paced reads */
-export function lineSummary(r) {
-  const fetched = (f) => (f?.error ? "failed" : f ? `${number(f.MBps)} MB/s (first byte ${number(f.firstByteMs, 0)} ms)` : "not measured");
+export function lineSummary(r: LineFound): string[] {
+  const fetched = (f: LineFound["site"] | undefined) => (f?.error ? "failed" : f ? `${number(f.MBps)} MB/s (first byte ${number(f.firstByteMs, 0)} ms)` : "not measured");
   const paced = (r.paced ?? []).map((p) => (p.slower ? "slower" : p.error ? "failed" : number(p.MBps, 2)));
   return [`Line: this site ${fetched(r.site)}, huggingface.co ${fetched(r.hf)}` +
     (paced.length ? `; huggingface.co read no faster than ${r.paced.map((p) => p.rate).join(", ")} MB/s: ${paced.join(", ")}` : "")];

@@ -1,9 +1,14 @@
 // The rounds of the benchmark (T.45: ?bench= and /benchmark/'s model section), the environment, and their table.
 // (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, tableCell } from "./cells.ts";
+import type { BenchRow, Round } from "../runtime/contracts/messages.ts";
+
+// what environmentOf() makes: the navigator's words, and what the page adds (the model, Pyodide, the site's build and address)
+export type Environment = { userAgent: string; threads?: number; memory?: number } & Told;
+type Told = { model?: string; pyodide?: string; build?: string; site?: string };
 
 /** One row per switch combination the benchmark ran. */
-export const ROUNDS = [
+export const ROUNDS: Round[] = [
   { name: "everything", without: [] },
   // T.555: the first round twice more, right after it and last: a device that slows as it runs (heat) says so in
   // drift(), apart from the rounds it would otherwise be mixed into (naidan's "before" and "after", MIT). The first of
@@ -16,7 +21,7 @@ export const ROUNDS = [
 export const DRIFT_LINE = 0.9;
 
 /** The steps of T.52, for ?bench=full: each optimization added to the one before it (T.110 added the sixth). */
-export const FULL_ROUNDS = [
+export const FULL_ROUNDS: Round[] = [
   { name: "NumPy only", without: ["kernels"] },
   { name: "the kernels, int8 widened", without: ["int8", "relaxed", "sampler", "kv16"] },
   { name: "int8 kept as int8", without: ["relaxed", "sampler", "kv16"] },
@@ -36,15 +41,16 @@ export const MEMORY_UNSAID = "this browser does not say how much memory the devi
 
 /** The rounds as this device runs them (T.214): a round without the kernels carries skip (the words of its row) where
  * deviceMemory is not a number. The page decides (both ?bench= and /benchmark/), and the worker writes the row. */
-export function roundsHere(rounds, deviceMemory) {
+export function roundsHere(rounds: Round[], deviceMemory: unknown): Round[] {
   const unsaid = typeof deviceMemory !== "number";
   // without the kernels NumPy widens them, and without int8 the kernels do (the owner, 2026-09-28: skip it too)
-  const widens = (round) => round.without.includes("kernels") || round.without.includes("int8");
+  const widens = (round: Round) => round.without.includes("kernels") || round.without.includes("int8");
   return rounds.map((round) => (unsaid && widens(round) ? { ...round, skip: MEMORY_UNSAID } : round));
 }
 
 /** The environment the page can see. Whatever a browser does not tell is left out, never guessed. */
-export function environmentOf(navigatorLike = globalThis.navigator, extra = {}) {
+export function environmentOf(navigatorLike: { hardwareConcurrency?: unknown; deviceMemory?: unknown; userAgent?: string } | undefined = globalThis.navigator,
+  extra: Told = {}): Environment {
   const { hardwareConcurrency, deviceMemory, userAgent } = navigatorLike ?? {};
   return {
     userAgent: userAgent ?? "unknown",
@@ -58,7 +64,7 @@ export function environmentOf(navigatorLike = globalThis.navigator, extra = {}) 
  * The Markdown of a benchmark: a line about the machine, then a row per round.
  * rows: [{ name, without, speed, backend, seconds }], environment: what environmentOf() made.
  */
-export function benchMarkdown(rows, environment) {
+export function benchMarkdown(rows: BenchRow[], environment: Environment): string {
   const machine = [
     environment.model && `**${environment.model}**`,
     // hardwareConcurrency counts logical cores: the software threads the engine used are in the backend column
@@ -76,7 +82,7 @@ export function benchMarkdown(rows, environment) {
 
 /** The rounds' table (its lines): a row per round; a skipped round (T.214) says "skipped" for its speed, and why in
  * the last column. benchMarkdown() and /benchmark/'s model section both write it. */
-export function roundsTable(rows) {
+export function roundsTable(rows: BenchRow[]): string[] {
   return ["| what ran | tok/s | ready | backend |", "|---|---|---|---|", ...rows.map((row) => {
     if (row.skip !== undefined) return `| ${row.name} | skipped |  | ${tableCell(row.skip)} |`;
     const ready = row.seconds === undefined ? "" : `${number(row.seconds)} s`;
@@ -87,9 +93,9 @@ export function roundsTable(rows) {
 /** T.555: where the second round and the last run the first one's switches again, how fast the last was against the
  * second: the device's drift over the rounds (heat, other work), "" where there is no such pair. Below DRIFT_LINE the
  * word "unsteady" makes it a warning of the report (warnings()). */
-export function drift(rows) {
-  const [first, before] = rows, after = rows.at(-1);
-  const same = (row) => row?.without.join() === first?.without.join();
+export function drift(rows: { without: string[]; speed?: number }[]): string {
+  const [first, before] = rows, after = rows.at(-1)!;
+  const same = (row: { without: string[] } | undefined) => row?.without.join() === first?.without.join();
   if (rows.length < 3 || !same(before) || !same(after) || !before.speed || !after.speed) return "";
   const share = after.speed / before.speed;
   return `The last round ran the first one's switches again at ${Math.round(share * 100)}% of the speed of the second` +

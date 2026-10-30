@@ -1,18 +1,22 @@
 // T.227: what came out WRONG, failed, unsteady or skipped in a run, listed once at the report's head.
 // (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 import { STATES } from "./cpu.ts";
+import type { Result } from "../benchmark/dom.ts";
+
+// a section as warnings() reads it: its title, its state (src/benchmark/dom.ts's Result), its Markdown, and what it says went wrong itself
+type Written = { title: string; status?: Result["status"]; markdown?: string; said?: string[] };
 
 // a | that tableCell() escaped stays in its cell (T.214: a skipped round's reason is the words of a cell)
-const cells = (line) => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));
+const cells = (line: string): string[] => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));
 
 // T.227: the words the page writes where something did not come out right
 const MARKED = /\b(?:WRONG|FAILED|failed|unsteady|skipped)\b/;
 // a row or a sentence that only repeats a verdict of the GPU's check, which is listed itself
 const REPEATED = /\(WRONG in the check\)|The check found [^.]*WRONG\./g;
-const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
+const marked = (text: string) => MARKED.test(text.replace(REPEATED, ""));
 // how much a warning matters (T.227's review), the worst first: 0 a result that cannot be right or a step that did not
 // run (WRONG, FAILED, failed), 1 a round that was skipped, 2 a time that was rough (unsteady)
-const severity = (text) => {
+const severity = (text: string) => {
   const words = text.replace(REPEATED, "");
   return /\b(?:WRONG|FAILED|failed)\b/.test(words) ? 0 : /\bskipped\b/.test(words) ? 1 : 2;
 };
@@ -32,10 +36,10 @@ const severity = (text) => {
  * the order of the sections (severity()): a summary that has room for a few (shortReport()) keeps the WRONG ones, not
  * the rough times of the page's path that open the report. [] where nothing did.
  */
-export function warnings(sections) {
-  const out = [];
+export function warnings(sections: Written[]): string[] {
+  const out: { rank: number; text: string }[] = [];
   for (const { title, status, markdown = "", said = [] } of sections) {
-    const before = out.length, add = (text, rank = severity(text)) => out.push({ rank, text: `${title}: ${text.replace(/\s*\n\s*/g, " ")}` });
+    const before = out.length, add = (text: string, rank = severity(text)) => out.push({ rank, text: `${title}: ${text.replace(/\s*\n\s*/g, " ")}` });
     // a section that failed and wrote only why (no table, nothing it names itself)
     if (status === "error" && !said.length && !/^\|/m.test(markdown)) {
       add(`failed: ${markdown}`, 0);
@@ -45,7 +49,7 @@ export function warnings(sections) {
     let rest = markdown;
     for (const one of said) rest = rest.split(one).join("");
     const lines = rest.split("\n");
-    let head = [];
+    let head: string[] = [];
     lines.forEach((line, i) => {
       if (!line.startsWith("|")) {
         for (const sentence of line.split(/(?<=\.) (?=[A-Z"])/)) if (marked(sentence)) add(sentence.replace(/^- /, ""));
@@ -61,7 +65,7 @@ export function warnings(sections) {
 
 /** T.227: the warnings as the report holds them, under a heading of their own ("" where there are none); kept: how
  * many of them a summary has room for (shortReport()), the rest counted in a last line. */
-export function warningsBlock(warned, kept = warned.length) {
+export function warningsBlock(warned: string[], kept = warned.length): string {
   if (!warned.length) return "";
   const rest = warned.length - kept;
   const more = rest ? [`- ${kept ? `… and ${rest} more` : `${rest} of them`}, in the whole report below`] : [];

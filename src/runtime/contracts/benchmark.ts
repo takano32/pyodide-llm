@@ -40,7 +40,7 @@ export type CpuCeiling<Rate extends string> = ({ [Key in Rate]: number } & { pas
   | ({ [Key in Rate]?: undefined } & { none: string; error?: undefined; cutShort?: undefined });
 export type CpuCeilings = { read?: ({ threads: number } & CpuCeiling<"GBps">)[]; dot?: CpuCeiling<"GMACs">; dotRegisters?: CpuCeiling<"GMACs">; fma?: CpuCeiling<"GMACs">; error?: string };
 // a row of the CPU's table: a count of software threads asked for, and what it measured (none: why it did not)
-export type CpuRow = { asked: number; threads: number; none: string; msPerToken?: undefined; finite?: undefined; promptMsPerToken?: undefined }
+export type CpuRow = { asked: number; threads: number; none: string; msPerToken?: undefined; GBps?: undefined; finite?: undefined; promptMsPerToken?: undefined }
   | { asked: number; threads: number; msPerToken: number; GBps: number; promptMsPerToken: number; finite: boolean; none?: undefined };
 export type CpuFound = { none: string; rows?: undefined; ceilings?: undefined }
   | { backend: string; shared: boolean; megabytes: number; tokenMegabytes: number; layerWeights: number; rows: CpuRow[]; ceilings: CpuCeilings; none?: undefined };

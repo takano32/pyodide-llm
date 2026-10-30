@@ -1,6 +1,9 @@
 // The GPU section's tables: the check's verdicts, a matrix × a vector (T.149), a token, a layer (T.150, T.175).
 // (T.353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, threadsOf, times, noRatios, tableCell, unmeasured } from "./cells.ts";
+import type { Ratios, Step } from "./cells.ts";
+import type { Baseline } from "./cpu.ts";
+import type { Bandwidth, GpuCeilings, LayerFound, LayerRow, TokenFound, Verdict, Verdicts } from "../runtime/contracts/benchmark.ts";
 
 /** T.186: the numbers under a layer's verdict in the check (T.175), in one short line for the page and the report: its
  * quantized vectors held to quantize_x (quantized: [{point, wrong, scale, apart, of}]; the worst scale's relative
@@ -8,11 +11,11 @@ import { number, threadsOf, times, noRatios, tableCell, unmeasured } from "./cel
  * with the norms apart (sameAsNormsApart: {ulps, apart, stream, bitForBit}). T.225: then the worker's own line of how
  * each stage of the layer held (stages: short where the form is ok, every stage and the first that departed where it
  * is not). "" where the verdict has none of them. */
-export function layerCheckNumbers({ quantized, sameAsNormsApart: apart, stages } = {}) {
-  const parts = [];
+export function layerCheckNumbers({ quantized, sameAsNormsApart: apart, stages }: Pick<Verdict, "quantized" | "sameAsNormsApart" | "stages"> = {}): string {
+  const parts: string[] = [];
   if (quantized?.length) {
     const wrong = quantized.find((q) => q.wrong);
-    const sum = (key) => quantized.reduce((total, q) => total + q[key], 0);
+    const sum = (key: "apart" | "of") => quantized.reduce((total, q) => total + q[key], 0);
     parts.push(wrong ? `quantized: ${wrong.point} ${wrong.wrong}`
       : `quantized: scales ${Math.max(...quantized.map((q) => q.scale)).toExponential(1)}, ${sum("apart")} of ${sum("of")} off by 1`);
   }
@@ -28,7 +31,7 @@ export function layerCheckNumbers({ quantized, sameAsNormsApart: apart, stages }
  * values the GPU quantized came out apart from the CPU's; a layer, its quantized vectors and the fused form against
  * the norms apart (T.186); the tokens generated, the first that differed, and (T.225) the worker's line of how each
  * run's steps held (steps). */
-export function checkVerdict([name, v]) {
+export function checkVerdict([name, v]: [string, Verdict]): string {
   // (a device's validation error has line breaks, and with them the verdict is lines of its own in the report)
   if (v.error) return `${name} FAILED (${tableCell(v.error)})`;
   const verdict = `${name} ${v.ok ? "ok" : "WRONG"}`;
@@ -40,9 +43,9 @@ export function checkVerdict([name, v]) {
 
 /** Whether the check of the shaders found the one a token's row ran with wrong (or could not run it): widened or
  * packed, and the choosing on the GPU where it chose. */
-function tokenWrong(t, check) {
+function tokenWrong(t: Pick<TokenFound, "kind" | "sample">, check: Verdicts | undefined): boolean {
   if (!check) return false;
-  const bad = (key) => check[key] !== undefined && !check[key].ok;
+  const bad = (key: string) => check[key] !== undefined && !check[key].ok;
   return bad(t.kind === "packed" ? "packed" : "widen") || (Boolean(t.sample) && bad("argmax"));
 }
 
@@ -53,32 +56,32 @@ function tokenWrong(t, check) {
  * or where that read was unsteady. A shader the check found WRONG says so and is never the fastest, nor is a row
  * measured again at the end. gpu: { lost }. */
 /** Of a shape's matrix × vector rows, the fastest the check did not find WRONG (not one measured again, nor unsteady) */
-function fastestMatVec(s, check) {
-  const wrong = (row) => Boolean(check && check[row.check] && !check[row.check].ok);
-  return (s.result?.rows ?? []).filter((row) => row.GBps && !row.again && !row.unsteady && !wrong(row)).sort((a, b) => b.GBps - a.GBps)[0];
+function fastestMatVec(s: Step<Bandwidth>, check: Verdicts | undefined) {
+  const wrong = (row: { check: string }) => Boolean(check && check[row.check] && !check[row.check].ok);
+  return (s.result?.rows ?? []).filter((row) => row.GBps && !row.again && !row.unsteady && !wrong(row)).sort((a, b) => b.GBps! - a.GBps!)[0];
 }
 const QUANTIZED_A_TOKEN = 16 * 4 + 1;  // Llama 3.2 1B: q, o, gate and down a layer read an input of their own, and the classifier
-export function matVecTable(bandwidths, check, ceilings, gpu = {}) {
-  const percent = (part, whole) => `${number((100 * part) / whole)}%`;
+export function matVecTable(bandwidths: Step<Bandwidth>[], check: Verdicts | undefined, ceilings: GpuCeilings | undefined, gpu: { lost?: string } = {}): string[] {
+  const percent = (part: number, whole: number) => `${number((100 * part) / whole)}%`;
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
-  const wrong = (row) => Boolean(check && check[row.check] && !check[row.check].ok);
-  const shape = (s) => s.name.replace(/^bandwidth: /, "");
+  const wrong = (row: { check: string }) => Boolean(check && check[row.check] && !check[row.check].ok);
+  const shape = (s: Step<Bandwidth>) => s.name.replace(/^bandwidth: /, "");
   const shaders = [...new Map(bandwidths.flatMap((s) => (s.result?.rows ?? []).map((row) => [row.shader, row]))).values()];
-  const cell = (s, name) => {
+  const cell = (s: Step<Bandwidth>, name: string) => {
     const row = s.result?.rows?.find((one) => one.shader === name);
     if (s.error || !row) return s.error ? tableCell(unmeasured(s.error)) : "";
     if (row.none || row.error) return tableCell(row.none ?? `failed: ${row.error}`);
-    return `${row.unsteady ? "unsteady: " : ""}${number(row.GBps)} GB/s${reads ? ` (${percent(row.GBps, reads)})` : ""}`;
+    return `${row.unsteady ? "unsteady: " : ""}${number(row.GBps)} GB/s${reads ? ` (${percent(row.GBps!, reads)})` : ""}`;
   };
-  const fastest = (s) => {
+  const fastest = (s: Step<Bandwidth>) => {
     const best = fastestMatVec(s, check);
     return best ? `${shape(s)} ${best.shader}, ${number(best.GBps)} GB/s` : "";
   };
   const quantized = bandwidths.filter((s) => s.result?.quantize?.msEach);
   const wide = quantized.find((s) => s.name.includes("1B"));
   const quantizing = quantized.length ? "**Quantizing the vector** of a packed row (QUANTIZE, one dispatch; not in the packed rows): " +
-    quantized.map((s) => `${shape(s)} ${number(s.result.quantize.msEach, 3)} ms`).join(", ") +
-    (wide ? `; a token of Llama 3.2 1B quantizes ${QUANTIZED_A_TOKEN} vectors (16 of them 8192 wide), ${number(QUANTIZED_A_TOKEN * wide.result.quantize.msEach, 2)} ms or more` : "") : "";
+    quantized.map((s) => `${shape(s)} ${number(s.result!.quantize!.msEach, 3)} ms`).join(", ") +
+    (wide ? `; a token of Llama 3.2 1B quantizes ${QUANTIZED_A_TOKEN} vectors (16 of them 8192 wide), ${number(QUANTIZED_A_TOKEN * wide.result!.quantize!.msEach!, 2)} ms or more` : "") : "";
   return ["**An int8 matrix × vector** (a generated token's). A shader's name says whose form it takes and the rows a workgroup takes. " +
     "Each is timed as a submission of 2n of it less one of n: what waiting for a submission costs is not in it (a token pays it once, in the table of what it costs besides the weights below), " +
     "and each matrix is read from copies of it that make 128 MiB in turn, as a token reads it once, not from the GPU's caches: not to be compared with reports from before T.149. " +
@@ -100,7 +103,7 @@ export function matVecTable(bandwidths, check, ceilings, gpu = {}) {
  * an estimate: its weights read at the GB/s the CPU section measured (a token of the model page reads its weights once,
  * T.93). GPU ÷ CPU is then the GPU's tok/s over that.
  */
-export function tokenTable(steps, baseline, gpu = {}) {
+export function tokenTable(steps: Step<TokenFound>[], baseline: Baseline, gpu: Ratios & { check?: Verdicts } = {}): string[] {
   const cpu = baseline.token, none = noRatios(gpu);
   const lines = [cpu ? `The CPU (an estimate): each model's weights at the CPU section's fastest, ${number(cpu.GBps)} GB/s with ${threadsOf(cpu)}. ` +
       "Its model is as wide as Llama 3.2 1B; a narrower one such as llm-jp-3 150M runs slower than this says. Above 1× the GPU is faster. " +
@@ -110,15 +113,15 @@ export function tokenTable(steps, baseline, gpu = {}) {
     "| a token (weights, dispatches, logits back) | GB | dispatches | GPU ms | GPU tok/s | CPU tok/s (estimate) | GPU ÷ CPU |",
     "|---|---:|---:|---:|---:|---:|---:|"];
   for (const s of steps) {
-    const t = s.result ?? {};
+    const t: Partial<TokenFound> = s.result ?? {};
     const name = s.name.replace(/^a token of /, "");
     if (s.error || t.error) {
       lines.push(`| ${name} | | | ${tableCell(unmeasured(s.error ?? t.error))} | | | |`);
       continue;
     }
-    const cpuTok = cpu && Number.isFinite(t.GB) && t.GB > 0 ? cpu.GBps / t.GB : undefined;
+    const cpuTok = cpu && Number.isFinite(t.GB) && t.GB! > 0 ? cpu.GBps / t.GB! : undefined;
     const wrong = tokenWrong(t, gpu.check);
-    const ratio = none || wrong || cpuTok === undefined ? "" : times(t.tokPerSecond / cpuTok);
+    const ratio = none || wrong || cpuTok === undefined ? "" : times(t.tokPerSecond! / cpuTok);
     lines.push(`| ${name}${wrong ? " (WRONG in the check)" : ""} | ${number(t.GB, 2)} | ${t.dispatches} | ${number(t.msPerToken)} | ` +
                `${number(t.tokPerSecond)} | ${cpuTok === undefined ? "" : number(cpuTok)} | ${ratio} |`);
   }
@@ -138,20 +141,20 @@ export function tokenTable(steps, baseline, gpu = {}) {
  * found WRONG or that was unsteady. The share of the reads: not after a lost device, on a fallback adapter, or where
  * that read was unsteady (as matVecTable). none: a form this device cannot run (no packed int8 dot), and why.
  */
-export function layerTable(step, check, ceilings, gpu = {}) {
+export function layerTable(step: Step<LayerFound> | undefined, check: Verdicts | undefined, ceilings: GpuCeilings | undefined, gpu: Ratios = {}): string[] {
   if (!step) return [];
   if (step.error || !step.result) return [`**A layer of a token**: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
-  const wrong = (row) => Boolean(check && check[row.check] && !check[row.check].ok);
-  const usable = (row) => Number.isFinite(row?.msPerLayer) && row.msPerLayer > 0 && !row.unsteady && !wrong(row);
-  const faster = (row) => {
+  const wrong = (row: LayerRow) => Boolean(check && check[row.check] && !check[row.check].ok);
+  const usable = (row: LayerRow | undefined) => Number.isFinite(row?.msPerLayer) && row!.msPerLayer! > 0 && !row!.unsteady && !wrong(row!);
+  const faster = (row: LayerRow) => {
     if (none || !row.fused || !usable(row)) return "";
     const separate = r.rows.find((one) => !one.fused && one.subgroups === row.subgroups && one.base === row.base);
-    return usable(separate) ? times(separate.msPerLayer / row.msPerLayer) : "";
+    return usable(separate) ? times(separate!.msPerLayer! / row.msPerLayer!) : "";
   };
   // two significant digits under 1 GB/s (a fallback adapter reads a layer at a few hundredths)
-  const GBps = (row) => (Number.isFinite(row.GBps) ? `${row.GBps < 1 ? row.GBps.toPrecision(2) : number(row.GBps)}${reads ? ` (${number((100 * row.GBps) / reads)}%)` : ""}` : "");
+  const GBps = (row: LayerRow) => (Number.isFinite(row.GBps) ? `${row.GBps! < 1 ? row.GBps!.toPrecision(2) : number(row.GBps)}${reads ? ` (${number((100 * row.GBps!) / reads)}%)` : ""}` : "");
   return [`**A layer of a token** (${r.model}'s width, at position ${r.pos}, ${number(r.GB * 1000, 1)} MB of weights): on llama.cpp's matrix × vector, its fourteen steps each a dispatch of its own ` +
     "(the norm, q, k, v, RoPE and the cache, the attention, o, the residual's add, the norm, gate, up, SwiGLU, down, the add) and the same fused into five " +
     "(q, k and v with the norm, RoPE and the cache; the attention; o with the add; gate and up with the norm and SwiGLU; down with the add); " +
@@ -167,7 +170,7 @@ export function layerTable(step, check, ceilings, gpu = {}) {
     ...r.rows.map((row) => (row.none ? `| ${tableCell(row.form)} | ${tableCell(`not here: ${row.none}`)} | | | | |`
       : row.error ? `| ${tableCell(row.form)} | ${tableCell(`failed: ${row.error}`)} | | | | |`
       : `| ${tableCell(row.form)}${wrong(row) ? " (WRONG in the check)" : ""} | ${row.dispatches} | ${row.unsteady ? "unsteady: " : ""}${number(row.msPerLayer, 2)} | ` +
-        `${GBps(row)} | ${number(row.msPerLayer * r.layers)} | ${faster(row)} |`))];
+        `${GBps(row)} | ${number(row.msPerLayer! * r.layers)} | ${faster(row)} |`))];
 }
 
 export { tokenWrong, fastestMatVec };
