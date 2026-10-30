@@ -165,8 +165,8 @@ async function uploadLayers(m: Open) {
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of named(plan.matrices)) {
       // (T.545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
-      // them, and none in a layer of another kind: its pieces' layers are by those places. T.626: of is a model's whose
-      // layers are of kinds, whose plan says kinds and places, the opener's too: forward/alone.ts's gpuOnlyPlan())
+      // them, and none in a layer of another kind: its pieces' layers are by those places. T.626: of is set only for
+      // models of mixed kinds, whose plans, start()'s and forward/alone.ts's gpuOnlyPlan()'s, carry kinds and places)
       if (matrix.of && plan.kinds![l] !== matrix.of) continue;
       // (T.547.3.1: held, the layer's rows as its packing holds them, where each layer has a packing of its own)
       const place = matrix.of ? plan.places![l] : l, [valuesAt, scalesAt] = matrix.layers[place], held = { n: matrix.n, packing: packingAt(matrix, place) };

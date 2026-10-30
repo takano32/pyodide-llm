@@ -35,7 +35,7 @@ type Opening = Opened & { tokens: true };
 // the other modules. plan is start()'s: a model on the GPU alone is opened with another (Opening) before its
 // checkpoint comes, of which only what the two plans share is read (matrices, layers, force, remembered, whether
 // there are tokens; the tables through weights.ts's tablesOf()) until handed() puts start()'s in, with the memory
-// (null till then). weights, block and forms are set by their owners before another module reads them, in start()'s
+// (null till then; T.626: what runs then takes the record as Open, below, whose type holds it to that). weights, block and forms are set by their owners before another module reads them, in start()'s
 // order; tokens, tokenAttention and tokenForm are set as a token's are chosen (T.466), with the form null (or the
 // records unset, T.467) where no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
 // tokensSaid()). T.479: the type says those three may be missing, and their readers take them once at their heads with `!`,
