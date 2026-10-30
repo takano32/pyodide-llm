@@ -1,0 +1,5 @@
+### T.463 [バグ][その他] カーネルの読み込みの輪が、relaxed だけ届いたときも `simdkernel.so` の道を置く — 状態: 完了（2026-10-11、T.378.3 から。1 字も変えずに動かした行。規模 小）
+- **2026-10-30**: 2 つのコミット。(1) 動かすだけ: Python のカーネルを置く輪を `init()` から `worker/runtime.ts` の `placeKernels()` に（`updated-check` の `LATER` は行の順だけ）。(2) 直し: `pythonKernels` を置くのは `simdkernel.so` が届いたときだけ（Python は plain を `CDLL` で開き、relaxed をその隣から読む: relaxed だけでは開けない。前も `load_kernels()`・`kernel_readers()` が開けずに NumPy に倒れていたので、答えは同じ。直ったのは、無いファイルを指す道を `pythonKernels` が言っていたこと）。
+- 検査: `worker-parts-check` に、作り物の回線で `placeKernels()` を回す節（両方・relaxed だけ・plain だけ・どちらも無い: 書いたファイルと `pythonKernels`）。壊し方: 前の行（届けば必ず置く）で「relaxed だけ」が落ちる。T.462 の最初の一歩（`init()` の段を Node で回す）にもなる。
+- 手元: `worker-parts-check`・`worker-modules-check`・`worker-check`・`silent-check`・`updated-check`・型検査・軽い組・ビルドして e2e。CI を省いた。訳: 届かないファイルの道だけで、作り物の回線が踏む。
+- レビュー（Sonnet low、2026-10-30）: OK。コミット 1 は輪の本文を 1 字も変えていない。`pythonKernels` を読む所はどれも「無ければ NumPy」で、答えは前も今も同じ。作り物の回線は 500 で、404 の道（`answeredGone()`）は踏まないが、`placeKernels()` から見れば同じ catch で、404 の道は `updated-check` の `LATER` が持つ。

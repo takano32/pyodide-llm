@@ -46,7 +46,6 @@
 - T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
-- T.463 [バグ][その他] カーネルの読み込みの輪が、relaxed だけ届いたときも `simdkernel.so` の道を置く — 反映済み
 - T.464 [整理][遠隔試験] `tests/worker-check.mjs` が 955 行 — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
 - T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 未着手
@@ -547,11 +546,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 状態: 未着手（2026-10-11、T.378.3 から。規模 中）
 - `init()` は Pyodide を CDN から読むので、Node のどの検査も走らせない（試験は `init()` が置く変数を自分で書いている）。`pyodideSteps` の `importer` の引数と fetch の代役で回せる見込み。`weights.js` も、読む名前（`runtime.js` の 12・`request.js` の 5）を引数で受ければ Node がそのまま import できる。
-
-### T.463 [バグ][その他] カーネルの読み込みの輪が、relaxed だけ届いたときも `simdkernel.so` の道を置く — 状態: 反映済み（2026-10-11、T.378.3 から。1 字も変えずに動かした行。規模 小）
-- **2026-10-30**: 2 つのコミット。(1) 動かすだけ: Python のカーネルを置く輪を `init()` から `worker/runtime.ts` の `placeKernels()` に（`updated-check` の `LATER` は行の順だけ）。(2) 直し: `pythonKernels` を置くのは `simdkernel.so` が届いたときだけ（Python は plain を `CDLL` で開き、relaxed をその隣から読む: relaxed だけでは開けない。前も `load_kernels()`・`kernel_readers()` が開けずに NumPy に倒れていたので、答えは同じ。直ったのは、無いファイルを指す道を `pythonKernels` が言っていたこと）。
-- 検査: `worker-parts-check` に、作り物の回線で `placeKernels()` を回す節（両方・relaxed だけ・plain だけ・どちらも無い: 書いたファイルと `pythonKernels`）。壊し方: 前の行（届けば必ず置く）で「relaxed だけ」が落ちる。T.462 の最初の一歩（`init()` の段を Node で回す）にもなる。
-- 手元: `worker-parts-check`・`worker-modules-check`・`worker-check`・`silent-check`・`updated-check`・型検査・軽い組・ビルドして e2e。CI を省いた。訳: 届かないファイルの道だけで、作り物の回線が踏む。
 
 ### T.464 [整理][遠隔試験] `tests/worker-check.mjs` が 955 行 — 状態: 未着手（2026-10-11、T.378.3 から。前から 908 行で目安の 800 を越えていた。規模 小）
 
