@@ -1,0 +1,12 @@
+### T.492 [整理][遠隔試験] T.357.2 の後の残り — 状態: 完了（2026-10-30、Opus medium、ブランチ `t.492-unigram`。前の状態: 未着手、2026-10-12、T.357.2 とそのレビューから。規模 小）
+- **この回にしたこと**（試験だけ）: (1) 試験のファイルの「Unigram の語彙を作る 2 行」13 か所（10 ファイル）と `test_gguf.py` の自前の `unigram()` を `made_up.unigram()` に（`test_gguf.py` は名前を出し続ける: `page_27b.py`・`test_rotated.py` がそこから取る）。pytest 3324 passed・8 skipped。(2) `test_quantize.py` の順の試験が、行の数でなく行ごとの形と「行列か」を `ORDER` の名前から比べる（壊し方: 期待の `w2` の形を `w1` と同じにすると落ちる）。(3) `page_27b.sh` の `pip install pytest` のコメントを今の訳に（`page_27b.py` が単体試験から作り物の Bonsai と語彙を取り、単体試験が pytest を import する）。**CI を省いた。訳: 試験だけの変更で、pytest を手元で全部回した。`page_27b.sh` はコメントだけ（`bash -n`）。**
+- **レビュー（Sonnet low、2026-10-30）: OK、直しなし。** 置き換えた所はどれも `made_up.unigram()` と同じ式で、試験が作る語彙は変わらない。import の抜けも名前の隠しも無い。別の語彙を作る `test_dtypes.py`・`test_beginning.py`・`test_tokenizer_says.py` はそのままが正しい。`BIASES` を残す決めも妥当。
+- **skip の訳を読んだ**（いまは 8: 網の pytest の数の差はその頃のもの）: 7 つは `EVERY_CODE_POINT=1` の全符号位置（全部の組が回す）、1 つは Gemma 4 の最後の層の倍率（最後の norm が消すので見えない: AGENTS.md）。
+- **しなかったもの**: `made_up.py` の `BIASES` を無くすのは製品の行に「bias」の役を足す変更（ファイルの形式の側）なので、取りまとめ役の決めで今のまま（`test_made_up.py` が名前の付け忘れに気づく）。
+- 試験のファイルに「Unigram の語彙を作る 2 行」が約 20 か所ある（`test_qwen3.conversion()` など。`made_up.unigram()` に替えられる）。`test_gguf.py` にも別の `unigram()`。
+- 「forward.js の代役（計画を受けて終わる）」が 3 つ（`engine_plans.py` の `External`・`plan_facts.py` の `External`・`test_plan.py` の `Outside`）。T.357.5 と一緒に。 **済み（T.357.5、2026-10-12）: `tests/engine_plans.py` の `External(size, read)` の 1 つに。**
+- `tests/page_27b.sh` の `pip install pytest` の訳のコメントが古い（`page_27b.py` が単体試験を読むので pytest は今も要る）。
+- `tests/test_quantize.py` の順の試験は数しか比べていない（前から）。
+- 網の pytest は skip が 12（素の pytest は 6）。前後で同じで、訳は読んでいない。
+- `made_up.py` の `BIASES` を無くすには、製品の行に「bias」の役が要る（製品の変更。新しい bias の行を名前に足し忘れると norm の重みとして 1 のまわりに引かれる: `test_made_up.py` の `test_what_is_drawn_for_a_row_goes_by_its_name` が気づく）。
+- **本線の作業ツリーの `make models` の産物が古い**（`tiny-lm.tokenizer.bin` が 2026-09-26 のもので、T.216 の charsmap を持たない）: 本線の木で pytest を回すと `test_tokenizer.py::test_the_skip_to_where_a_key_may_begin_changes_no_text` が 1 件落ちる（T.357.2 を入れた後に回して出た。ワークツリーの木では通る。この回の変更とは関係が無く、訳はファイルの日付と大きさ（802,799 対 1,040,373 バイト）で確かめた）。本線の木で `make models` を回せば直る。**直した（2026-10-12、持ち主「make models 回しなよ」）: 本線の木で `make models` を回し、pytest は 2357 passed・6 skipped。**
