@@ -2,12 +2,12 @@
 // keys and values (T.210), each answered by serve().
 // (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
-import { model, lost } from "./device.ts";
+import { model, lost, whyOf } from "./device.ts";
 import { roomFor, keysIn, block, keysOut, keysBack, stateIn } from "./block.ts";
 import { attendingOf } from "./kinds.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
-import type { Thrown } from "./device.ts";
+
 import type { FromGpu, ToGpu } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: a request by its kind (gpu.ts hands each on as it came)
@@ -73,7 +73,7 @@ async function serve(serial: number, work: (wanted: () => boolean) => Promise<vo
     if (lost) throw new Error(lost);
     failed = 0;
   } catch (error) {
-    postMessage({ type: "failed", reason: String((error as Thrown)?.message ?? error) } satisfies FromGpu);
+    postMessage({ type: "failed", reason: whyOf(error) } satisfies FromGpu);
   } finally {
     clearInterval(beat);
     if (wanted()) {

@@ -65,6 +65,8 @@ type Bound = Whole | GPUBufferBinding;
 type Pass = [GPUComputePipeline, GPUBindGroup, number, number];
 // what is caught, as it is read: an Error's message, and within()'s late
 type Thrown = { message?: string } | null | undefined;
+// (T.479: what a caught value says, as the worker tells it: its message, else the value itself)
+const whyOf = (error: unknown) => String((error as Thrown)?.message ?? error);
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;
@@ -316,5 +318,5 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
 }
 
 export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
-  describe, unusable, end, buffer, uniform, normShape, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
-export type { Model, Bound, Whole, Pass, Thrown, Opening };
+  describe, unusable, end, whyOf, buffer, uniform, normShape, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
+export type { Model, Bound, Whole, Pass, Opening };

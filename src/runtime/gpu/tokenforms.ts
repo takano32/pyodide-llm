@@ -1,7 +1,7 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T.152), timed and chosen.
 // (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, widenedHalves, bind, dispatch } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, widenedHalves, bind, dispatch, whyOf } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { PACKINGS, packingAt, blocksOf } from "./packings.ts";
 import { halfToFloat } from "./forms.ts";
@@ -15,7 +15,7 @@ import { ENGINE } from "../shaders/engine.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
-import type { Model, Thrown } from "./device.ts";
+import type { Model } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import type { TokenBuffers, TokenForm } from "./tokens.ts";
 import type { GpuPacking, Table, TokensChosen, Tried, Vectors } from "../contracts/gpu/protocol.ts";
@@ -79,7 +79,7 @@ async function chooseTokens(m: Model) {
       else right.push(form);
     } catch (error) {
       if (isLate(error)) throw error;
-      tried.push({ name: form.name, none: String((error as Thrown)?.message ?? error) });
+      tried.push({ name: form.name, none: whyOf(error) });
     }
     if (stopping) return;
   }

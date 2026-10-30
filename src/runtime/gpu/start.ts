@@ -2,12 +2,12 @@
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
 // (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
-import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end } from "./device.ts";
+import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end, whyOf } from "./device.ts";
 import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from "./weights.ts";
 import { chooseAttention, chooseMatrices, formsSaid } from "./forms.ts";
 import { prepare, bindLayers, grow, timeBlocks } from "./block.ts";
 import { chooseTokens, tokensSaid } from "./tokenforms.ts";
-import type { Thrown } from "./device.ts";
+
 import type { FromGpu, Opened, Started, ToGpu } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: a stretch of the checkpoint as it is posted (gpu.ts hands it on)
@@ -40,7 +40,7 @@ function open(plan: Opened, shared: SharedArrayBuffer) {
       openedBytes += tablesOn(model!);
       if (stopping) failure ??= "the GPU's worker was stopped";
     } catch (error) {
-      failure = String((error as Thrown)?.message ?? error);
+      failure = whyOf(error);
     } finally {
       opened = true;
       starting = startAsked;  // (a start() waiting on this is still starting)
@@ -58,7 +58,7 @@ function take(data: Stretch) {
     try {
       routed(model!, offset, bytes);
     } catch (error) {
-      failure = String((error as Thrown)?.message ?? error);
+      failure = whyOf(error);
     }
   }
   const count = BigInt(bytes.length), done = () => {
@@ -113,7 +113,7 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
       try {
         await chooseTokens(m);
       } catch (error) {
-        tokensWhy = String((error as Thrown)?.message ?? error);
+        tokensWhy = whyOf(error);
       }
       if (stopping) return end();
     }
@@ -121,7 +121,7 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
       ...formsSaid(m), blocks, tokens: tokensSaid(m), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined } satisfies FromGpu);
   } catch (error) {
-    unusable(String((error as Thrown)?.message ?? error));
+    unusable(whyOf(error));
   } finally {
     starting = false;
   }
