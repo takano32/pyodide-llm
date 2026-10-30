@@ -87,29 +87,31 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
       handed(memory, plan);
       bytes = await upload(model!);
     }
-    const { device, adapter, key } = model!;
+    // (T.479: the model's record, made by open() or openDevice() and handed its plan above: a stop in the middle of start()
+    // ends it at its next step, not before (stop()), so it is the same record to the end)
+    const m = model!, { device, adapter, key } = m;
     if (stopping) return end();
-    await prepare(model!);
-    await chooseAttention(model!);
+    await prepare(m);
+    await chooseAttention(m);
     if (stopping) return end();
-    await chooseMatrices(model!);
+    await chooseMatrices(m);
     if (stopping) return end();
-    bindLayers(model!);
-    grow(model!, Math.max(Math.min(plan.kvStart, plan.seqLen), Math.min(plan.batch, plan.seqLen)));
+    bindLayers(m);
+    grow(m, Math.max(Math.min(plan.kvStart, plan.seqLen), Math.min(plan.batch, plan.seqLen)));
     await within(device.queue.onSubmittedWorkDone(), "the GPU's work");
     const invalid = await device.popErrorScope(), full = await device.popErrorScope();
     if (stopping) return end();
     if (invalid || full) return unusable(`the GPU did not take the layers (${(invalid ?? full)!.message})`);
     // (not for the page's tests: SwiftShader took more than STEP_MS to time Llama 3.2 1B's shaders, T.147 in CI)
-    const blocks = plan.force.quick ? [] : await within(timeBlocks(model!), "timing a block");
+    const blocks = plan.force.quick ? [] : await within(timeBlocks(m), "timing a block");
     if (stopping) return end();
     // T.152: a token and the ones after it, where the model's layers were put up for them (tokensLayout). What fails
     // here leaves the tokens on the CPU and the prompts on the GPU
     // (why not: the layers could not be joined for a token as they went up, or no form of a token is right here)
-    let tokensWhy = model!.weights.unjoined;
+    let tokensWhy = m.weights.unjoined;
     if (plan.tokens && !tokensWhy) {
       try {
-        await chooseTokens(model!);
+        await chooseTokens(m);
       } catch (error) {
         tokensWhy = String((error as Thrown)?.message ?? error);
       }
@@ -117,7 +119,7 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
     }
     if (lost) return unusable(lost);
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
-      ...formsSaid(model!), blocks, tokens: tokensSaid(model!), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined } satisfies FromGpu);
+      ...formsSaid(m), blocks, tokens: tokensSaid(m), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined } satisfies FromGpu);
   } catch (error) {
     unusable(String((error as Thrown)?.message ?? error));
   } finally {
