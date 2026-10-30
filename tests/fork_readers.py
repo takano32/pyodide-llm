@@ -26,7 +26,6 @@ header, and
 import re
 import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -215,7 +214,8 @@ def upstream(work, check, rng):
 def main():
     work = Path(sys.argv[1] if len(sys.argv) > 1 else HERE.parent / ".tmp" / "fork-readers").resolve()
     work.mkdir(parents=True, exist_ok=True)
-    source = urllib.request.urlopen(SOURCE, timeout=120).read().decode()
+    from fetching import fetched  # (tests/fetching.py, T.496)
+    source = fetched(SOURCE).decode()
     (work / "functions.c").write_text("\n".join(cut(source, name) for name in FUNCTIONS))
     (work / "harness.c").write_text(HARNESS)
     subprocess.run(["gcc", "-O2", "-o", str(work / "harness"), str(work / "harness.c"), "-lm"], check=True, cwd=work)

@@ -8,6 +8,7 @@
 # T.374.4: and the size of a file, for whoever reads a file by its ranges and must know where it ends (ranged() holds
 # an answer to the length asked for: a range past the end of the file is never right). The tools reach all three
 # through tests/conducting.py's answerers, or call them as they are.
+# T.496: and a small file whole, to memory (a source of llama.cpp's, an API's answer, Wikipedia's text): fetched().
 import http.client
 import time
 import urllib.error
@@ -96,3 +97,31 @@ def sized(url, tries=4, timeout=120):
         except (OSError, http.client.HTTPException):
             if attempt == tries - 1:
                 raise
+
+
+def fetched(url, headers=None, tries=4, timeout=120, wait=5, missing=(), said=None):
+    """The bytes of the file at url, whole (to its Content-Length where the answer says one), or None where the server
+    answers with a status of missing (a model the Hub does not let one read: 401, 403, 404). What stopped short, a
+    connection that broke and a server's own failure (5xx) are asked for again, tries times in all, wait seconds more
+    before each next one (said(error): told of each try that failed but the last); another refusal (4xx) raises."""
+    request = urllib.request.Request(url, headers=headers or {})
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                data, expected = response.read(), response.headers.get("Content-Length")
+            if expected is not None and len(data) != int(expected):
+                raise OSError(f"{url}: {len(data):,} of {int(expected):,} bytes came")
+            return data
+        except urllib.error.HTTPError as error:
+            if error.code in missing:
+                return None
+            if error.code < 500 or attempt == tries - 1:
+                raise
+            if said:
+                said(error)
+        except (OSError, http.client.HTTPException) as error:
+            if attempt == tries - 1:
+                raise
+            if said:
+                said(error)
+        time.sleep(wait * (attempt + 1))

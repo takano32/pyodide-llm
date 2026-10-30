@@ -139,3 +139,25 @@ def test_the_size_of_a_file_is_what_the_answer_to_a_range_of_one_byte_says(monke
     serving(monkeypatch, [Ranged({"Content-Range": "bytes 0-0/*"}) for _ in range(2)])
     with pytest.raises(OSError, match="does not say the size"):
         fetching.sized("https://huggingface.co/x", tries=2)
+
+
+def test_a_small_file_is_fetched_whole_or_asked_for_again(monkeypatch):
+    # T.496: fetched(), what the tools that read a small file to memory take (llama.cpp's source, an API's answer)
+    class Whole(Response):
+        def read(self, amount=None):
+            return self.stream.read()
+    monkeypatch.setattr(fetching.time, "sleep", lambda seconds: None)
+    told = []
+    asked = serving(monkeypatch, [Whole(b"ab", 5), Whole(b"abcde", 5)])
+    assert fetching.fetched("https://example.test/f", said=told.append) == b"abcde" and len(asked) == 2 and len(told) == 1
+    refused = lambda code: urllib.error.HTTPError("https://example.test/f", code, "refused", {}, None)
+    serving(monkeypatch, [refused(404)])
+    assert fetching.fetched("https://example.test/f", missing=(401, 403, 404)) is None
+    serving(monkeypatch, [refused(503), Whole(b"xyz")])
+    assert fetching.fetched("https://example.test/f") == b"xyz"
+    serving(monkeypatch, [refused(404)])
+    with pytest.raises(urllib.error.HTTPError):
+        fetching.fetched("https://example.test/f")
+    serving(monkeypatch, [Whole(b"ab", 5), Whole(b"ab", 5)])
+    with pytest.raises(OSError, match="2 of 5 bytes"):
+        fetching.fetched("https://example.test/f", tries=2)
