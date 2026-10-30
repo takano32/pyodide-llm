@@ -255,19 +255,21 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
       const engineOptions = { ...options };
       delete engineOptions.template;
       await weightsDrained();  // (T.156)
-      adopted(into.weights!.llama(proxies[1], { kernels: pythonKernels, disable: switchesNow(), ...engineOptions, ...model.options }));
+      // (T.476: what the conversion's sink placed the weights in, which a conversion that came this far has: taken once)
+      const placed = into.weights!;
+      adopted(placed.llama(proxies[1], { kernels: pythonKernels, disable: switchesNow(), ...engineOptions, ...model.options }));
       took("construct", since(constructStarted));
       // (the review of T.156: a model not on the GPU alone is kept from its memory, as before (keep()): the file opened
       // for it as it came goes first. Its open handle refused keep()'s, and its drop() in the finally below removed what
       // keep() wrote: every conversion of a browser with a GPU adapter was kept no more, run 36344754761)
-      if (keep && !into.weights!.direct && !into.weights!.hole) {
+      if (keep && !placed.direct && !placed.hole) {
         await keep.drop();
         keep = undefined;
       }
       if (remote) {
         postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` } satisfies Status);
-        keptAsItCame = Boolean((into.weights!.direct || into.weights!.hole) && keep);
-        kept = await keepConverted(model as Remote, into.weights!, into.bytes, proxies[1], options, signal, into.weights!.direct || into.weights!.hole ? keep : undefined);
+        keptAsItCame = Boolean((placed.direct || placed.hole) && keep);
+        kept = await keepConverted(model as Remote, placed, into.bytes, proxies[1], options, signal, placed.direct || placed.hole ? keep : undefined);
       }
     } finally {
       proxies.forEach((proxy) => proxy.destroy());
