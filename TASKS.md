@@ -126,7 +126,6 @@
 - T.489 [整理][その他] T.380.1 の後の残り — 持ち主の文面待ち
 - T.491 [整理][WebGPU] T.380.3 の後の残り — 未着手
 - T.493 [整理][遠隔試験] T.357.3 の後の残り — 未着手
-- T.498 [整理][遠隔試験] T.391.6 の後の残り — 未着手
 - T.499 [整理][WebGPU] T.391.4 の後の残り — 未着手
 - T.502 [整理][その他] T.363（Saluki のエンジン）の後の残り — 進行中
 - T.505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 進行中
@@ -1077,12 +1076,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 見ていない道: `real=`（`<prefix>.json` の実物）、乾いた回の arm64 のランナーでの秒。
 - 開発機（arm64 の Node 24）で 64 ビットのメモリの作り物を装置なしで回すと、最初の run の数が揺れる（V8 の Liftoff の既知の誤り: AGENTS.md の落とし穴。道具の誤りではない）。手元で回すなら `node --no-liftoff`。乾いた回は 64 ビットの作り物を入れていない。
 - 実装の回に、待ちの式の中で `pgrep -f` を 1 回使った（決まり違反、害は無し）。次の頼みには「前の回がこれを破った」と書いてある。
-
-### T.498 [整理][遠隔試験] T.391.6 の後の残り — 状態: 未着手（2026-10-13、T.391.6 とそのレビューから。規模 小）
-- 再読み込みをまたぐ待ち `acrossReload` の写しが 5 つの道具にある。`tests/gpu-check/engines.mjs` に、15 秒で見切る閉じ方の写しが 1 つ残る（Playwright の道は `gpu-prompt.yml` だけが回すので、この回は触っていない）。
-- `tests/e2e.mjs`・`tests/updated-in-browser.mjs` の `repository` と `tests/kernels-in-browser.mjs` の `root` は今も `.pathname`（Windows と空白のある道で誤る）。`e2e`・`updated-in-browser` は fixture とプロファイルを `os.tmpdir()` に置く（T.406 と一緒に）。
-- `tests/serving.mjs` は `.json`・`.zip` に型を持たない（`application/octet-stream`）。リンクの扱いは見ていない（`dist/` にリンクは無い）。`close()` がポートの空きを待たずに解決しても試験は気づかない。
-- 走らせていない道: Windows で `dist/` を配る `e2e`・`page-memory-check`・`screenshots`・`updated-in-browser`（Windows で配ったのは `bench-check` だけ）、`updated-in-browser` の Firefox・WebKit と全部の場合、`bench-browser` の `dist/` の道（どのワークフローも回さない）。
 
 ### T.499 [整理][WebGPU] T.391.4 の後の残り — 状態: 未着手（2026-10-13、T.391.4 とそのレビューから。規模 小）
 - **軽い組はシェーダの文の 1 字の変更をほぼ落とさない**（壊し方 4 通りとも通した。宣言の無い名前を読む文＝WGSL として通らない文も通す。前からの穴で、落とすのは守りの網の `shaders` だけ）。シェーダの部品に触るブランチで網を回し忘れる余地がある。`shaders-catalogue-check` の宣言の読みに「使う名前が宣言にあるか」を足せる。
