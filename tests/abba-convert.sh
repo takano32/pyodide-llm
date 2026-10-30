@@ -9,6 +9,9 @@
 # T.374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
 # request of a stream brings), and a base of before T.374.2.1 calls the converter itself: against such a base, the
 # difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <round> <MB/s>" line per run and the medians and ranges at the end.
+# T.401: START=1 compares the conversion's start instead (profile-convert's "the start: <ms> ms": the head, the
+# tokenizer, the chat template and jinja2's environment, before the first part), in ms: lower is faster, so "now against
+# base" above 0% is slower there. A base tree of before T.401 says no start (nothing to compare).
 set -u
 dir=$1; rounds=${2:-4}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
@@ -34,8 +37,10 @@ fi
 # PROFILE=0 (the time without cProfile): the base tree's tool may not know it (run the profiled comparison first)
 if [ "${PROFILE:-}" = 0 ]; then sed -i 's/began = time.perf_counter(); profiler.enable()")/profiler.enable(); profiler.disable(); began = time.perf_counter()")/' .tmp/base/tests/profile-convert.mjs; fi
 mkdir -p .tmp/abba; : > .tmp/abba/lines
+# (what a run says: its MB/s, or with START=1 its start's ms)
+if [ -n "${START:-}" ]; then measure='s/^the start: \([0-9]*\) ms.*/\1/p'; else measure='s/.*(\([0-9]*\) MB\/s).*/\1/p'; fi
 run() { # tree name dtype round
-  (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n 's/.*(\([0-9]*\) MB\/s).*/\1/p' | head -1 | sed "s|^|$2 $3 $4 |") >> .tmp/abba/lines
+  (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n "$measure" | head -1 | sed "s|^|$2 $3 $4 |") >> .tmp/abba/lines
 }
 # T.409: each round runs one side twice (now base base now, then base now now base): the two runs of one tree in a
 # round are the control, what a measurement moves by itself within this job (tests/compare-engines.mjs's "one side twice")
