@@ -132,12 +132,14 @@ for (const [part, declared, call] of calls) {
     if (!literal) continue;
     const where = value.type === "Identifier" ? value.name : `${part}.${name}`, keys = [...membersOf(literal).keys()];
     walk(declared.body, (node) => {
-      if (node.type !== "MemberExpression" || node.computed || node.object.type !== "Identifier" || node.object.name !== name) return;
+      // (kernels?.blocks too, which babel makes an OptionalMemberExpression)
+      if (!/^(Optional)?MemberExpression$/.test(node.type) || node.computed || node.object.type !== "Identifier" || node.object.name !== name) return;
       const key = node.property.name;
       assert.ok(keys.includes(key), `${part} reads ${name}.${key}, which createForward() made without it: undefined`);
       made.set(where, keys);
-      taken.set(where, (taken.get(where) ?? new Set()).add(key));
-      grouped += 1;
+      const read = taken.get(where) ?? new Set();
+      if (!read.has(key)) grouped += 1;  // (a name once, however often it is read)
+      taken.set(where, read.add(key));
     });
   }
 }
