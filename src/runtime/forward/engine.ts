@@ -464,9 +464,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   cache.place();
   // the job (jobs.ts) of a matrix by count tokens of an input: what phase() shares out. Its kind is the matrix's (made());
   // a packed matrix reads the activations made ready in xq and xs, a float32 one the input as it is
+  // (T.621: last, a layer of llama.cpp's blocks' fourth word: its spread, matmulsByKind()'s; 0 of any other)
   const jobOf = (m: Held, out: number, outStride: number, input: number, l: number, count: number) => {
-    const [w, s, c] = m.layer(l);
-    return m.ready ? [m.job!, out, xq, xs, w, s, c, m.n, 0, m.rows, count, outStride, S, S] : [m.job!, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
+    const [w, s, c, last = 0] = m.layer(l);
+    return m.ready ? [m.job!, out, xq, xs, w, s, c, m.n, last, m.rows, count, outStride, S, S] : [m.job!, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
   };
   // T.363.5: the same of a model whose rows have kinds of their own (the plan's own_kinds): a stack may be its layers,
   // each a matrix of a kind of its own, and the matrices of one input may take their activations in different forms.
@@ -482,10 +483,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     readied.forEach((ready, first) => {
       if (readied.indexOf(ready) !== first) return;
       if (ready) for (let t = 0; t < count; t++) ready(xq + t * S, xs + t * S, input + t * S, n);
-      phase(helds.filter((_, i) => readied[i] === ready).map(([m, out, outStride, l]) => {
-        const [w, s, c, last = 0] = m.layer(l);
-        return m.ready ? [m.job!, out, xq, xs, w, s, c, m.n, last, m.rows, count, outStride, S, S] : [m.job!, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
-      }));
+      phase(helds.filter((_, i) => readied[i] === ready).map(([m, out, outStride, l]) => jobOf(m, out, outStride, input, l, count)));
     });
   }
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
