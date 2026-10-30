@@ -268,6 +268,9 @@ export function gpuFit({ shape, weights, device, direct }:
  *   threads  the software threads' (threads.js): threads.count and threads.searching are read
  *   options  { gpu: makes the GPU's worker (none: no WebGPU here), remembered, force (gpuForce), direct (T.156),
  *            stalledMs, now (T.455: the engine's clock, createForward()'s, the blocks and steps are timed by) } */
+/** T.456: the side the benchmark puts every block of a prompt and every step on, or null: the page's choice */
+export type Side = "cpu" | "gpu" | null;
+
 export function gpuSide({ shape, weights, taken, cpuSide, control, threads, options }: {
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now: () => number } }) {
@@ -309,7 +312,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   let gpuStatus: string | null | undefined = gpu ? null : undefined, recheck: "cpu" | "gpu" | null = null, sinceCheck = 0, written = 0;
   // T.184: why the prompts stay on the CPU (the model, the device, a failure), once it is known; and the side the
   // benchmark puts every block of a prompt on ("cpu", "gpu"), or null: the choice above
-  let gpuReason: string | null = null, gpuSide: "cpu" | "gpu" | null = null;
+  let gpuReason: string | null = null, gpuSide: Side = null;
   // T.156: why the GPU stopped under a model on the GPU alone, once it has
   let directLost: string | null = null;
   // T.271.2: the position the GPU's own state of the layers that keep one is at, where it is the one the CPU's goes on
@@ -753,11 +756,19 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     if (!directLost) stopGpu(REASONS.notTaken);
     return new Error(`The GPU stopped (${directLost}), and this model's weights were on it alone`);
   }
+  // a step cpuStepBegan() said to time, until cpuStepEnded()
+  let stepping = false;
   /** T.152: a token is about to run on the CPU. Whether it is a step to time against the GPU's (one that makes logits,
    * where the GPU takes steps): the caller times it then and says cpuStepEnded(its milliseconds) */
-  const cpuStepBegan = (needLogits: boolean) => needLogits && tokensOn && gpuOn;
-  /** the step cpuStepBegan() said to time took this long */
+  function cpuStepBegan(needLogits: boolean) {
+    stepping = needLogits && tokensOn && gpuOn;
+    return stepping;
+  }
+  /** the step cpuStepBegan() said to time took this long. Nothing where no such step began (T.456: as the threads'
+   * tokenEnded()) */
   function cpuStepEnded(milliseconds: number) {
+    if (!stepping) return;
+    stepping = false;
     steps.cpu(threads.count, milliseconds);
     if (tokenRecheck === "cpu" && --cpuRecheck <= 0) tokenRecheck = null;
   }
@@ -767,8 +778,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   const tokenBlock = () => (gpuSteps() ? GPU_TOKENS : 0);
   /** T.184 (the benchmark's page path): every block of a prompt on "cpu" or on "gpu" (where the GPU is on and holds
    * the keys and values before it, as gpuForce.always), or anything else: each where it is faster (promptTimes) */
-  function put(side: string | null) {
-    gpuSide = side === "cpu" || side === "gpu" ? side : null;
+  function put(side: Side) {
+    gpuSide = side;
   }
   /** The engine is let go: the GPU's worker stops. T.205: resolves once it has let go of its buffers and its device, or
    * after GPU_END_MS (the worker is terminated then), true where it said so: the next model is read after it (an

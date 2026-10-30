@@ -390,6 +390,10 @@ console.log("ok: a block goes where it is faster; the other side is timed again 
   said();
   assert.equal(part.tokenBlock(), 0, "no step on the GPU before the CPU's is timed");
   assert.equal(part.cpuStepBegan(false), false, "a token without logits is no step");
+  // T.456: an end with no step begun (as the threads' tokenEnded()), and the end after a token without logits: not timed
+  part.cpuStepEnded(5);
+  part.cpuStepEnded(5);
+  assert.equal(part.tokenBlock(), 0, "T.456: ends of steps that did not begin are not the CPU's times");
   beside.cpuMs = 5;
   assert.deepEqual([cpuStep(part, beside), part.tokenBlock(), cpuStep(part, beside), part.tokenBlock()], [true, 0, true, GPU_TOKENS], "two steps of the CPU timed, and the GPU's are faster");
   part.generationBegan();

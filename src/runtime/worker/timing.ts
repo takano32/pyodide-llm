@@ -6,6 +6,7 @@ import { threadsRequest, threadsFound } from "./request.ts";
 import { llama, engineNow } from "./loaded.ts";
 import { memoryShared } from "./weights.ts";
 import type { Paths, PathThreads, Status, ToWorker } from "../contracts/messages.ts";
+import type { Side } from "../forward/gpuside.ts";
 
 // T.368.3: a run of the writing: the ms of its tokens, and how many of them the GPU took
 type Run = { ms: number; gpuTokens: number };
@@ -77,7 +78,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   warmUp(prompt);
   let fewest = writes;  // a stop token may end a run first: its tok/s stands, and the row says the fewest
   // a run of the writing on side ("cpu", "gpu", or null: as the page chooses, T.152); whether the GPU took every step
-  const written = (side: string | null = null): Run => {
+  const written = (side: Side = null): Run => {
     engine.gpuSide = side;
     const before = engine.gpuSampled;
     try {
@@ -98,7 +99,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   };
   // T.152: the sides, where the GPU takes a generation's steps (else the CPU's alone), in turn
   const tokens = Boolean(chosen?.tokens);
-  const sides = tokens ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
+  const sides: Record<string, Side> = tokens ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
   const runs = Object.fromEntries(Object.keys(sides).map((name) => [name, [] as Run[]]));
   for (let run = 0; run < WRITING_RUNS; run++) {
     for (const [name, side] of Object.entries(sides)) runs[name].push(written(side));
