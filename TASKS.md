@@ -544,7 +544,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 状態: 進行中（2026-10-11、T.378.5 から。規模 中）
 - 「どの知らせでどの出来事を言うか」（`receiver.ts`・`choose.ts`・`composer.ts`・`run.ts`）は要素を最上位で取るので Node の試験に無く、実ブラウザだけが見る（別の読み込みの知らせを捨てる条件を外しても Node の検査は通る）。受け口を「知らせ → 言う出来事と描くもの」の関数に。`answerBegan()` が書いている間の 2 回目を断らないこと（守りは `composer.ts`）も一緒に。（T.475 から: ステータス行の文字列を組む所（`draw.ts`、要素を読む）も、行を組む純関数に分ける。）
-- **子タスクの番号**（2026-10-30、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 3 つ）: T.468.1 知らせを読むかと仕事の終わりかを純関数に — 完了。T.468.2 ステータス行の文字列（進みの行・準備完了の行）を組む純関数（T.475 から） — 反映済み。T.468.3 `answerBegan()` が書いている間の 2 回目を断る — 未着手。受け口の全部を「知らせ → 出来事と描くもの」の関数にする形は、この 3 つの後に要るかを決める。
+- **子タスクの番号**（2026-10-30、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 3 つ）: T.468.1 知らせを読むかと仕事の終わりかを純関数に — 完了。T.468.2 ステータス行の文字列（進みの行・準備完了の行）を組む純関数（T.475 から） — 完了。T.468.3 `answerBegan()` が書いている間の 2 回目を断る — 未着手。受け口の全部を「知らせ → 出来事と描くもの」の関数にする形は、この 3 つの後に要るかを決める。
 
 #### T.468.1 知らせを読むかと、仕事の終わりか — 状態: 完了（2026-10-30）
 - 新しい純な部品 `src/page/heard.ts`: `ofThisLoad(data, loads)`（別の読み込みの遅い知らせは捨てる）と `endsWork(data)`（`ready`・`bench`・`paths`・`done`・`error`: 契約 `contracts/messages.ts` の頭の言うとおり `paths` も。モデルのページには届かないので動きは同じ）。`receiver.ts` はこの 2 つを呼ぶ。
@@ -552,11 +552,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 手元: 軽い組（450 秒）・型検査・`page-modules-check`・`contracts-check`・ビルドして実ブラウザ（Chromium の e2e と `switch-in-browser.mjs`: 変換の途中で替えたモデルの遅い知らせを捨てる道）。CI を省いた。訳: ページの部品の小さな切り出しで、手元の Chromium が踏んだ。
 - レビュー（Sonnet low、2026-10-30）: OK。前の条件と `ofThisLoad()` は undefined・null・数のどれでも同じ。`paths` を足しても、モデルのページは送らず受けない（`/benchmark/` は自分の受け口）。文の検査は、捨てる所の前にコメントしか許さない（意図どおり）、終わりの所は字下げ 2 の `if` があることだけを見る（中身は見ない: 許す範囲）。
 
-#### T.468.2 ステータス行の文字列を組む純関数 — 状態: 反映済み（2026-10-30）
+#### T.468.2 ステータス行の文字列を組む純関数 — 状態: 完了（2026-10-30）
 - 新しい純な部品 `src/page/lines.ts`: `readyStatus()`（準備完了の行: 名前・動き方・2 本以上の本数・GPU の言葉・`?gpuTest=on`・Pyodide の版・古いページの `SLOWER` を最後に）と `progressLine()`（取得と変換の行: 届いた MB・速さ・変換の割合、ローカルのファイルは割合だけ。残りの時間は今までどおり `remaining.ts`）。`draw.ts` の `showStatus()` と `receiver.ts` の `progress` が呼ぶ（式はそのまま移した）。
 - 検査: `page-parts-check` に 8 つ（行の部品を 1 つずつ）、壊し方（本数を 1 本でも言う）が落ちる。`updated-check` は `draw.ts` の式を文で持っていたのを、`readyStatus()` を Node で呼んで「古いページでは前と同じ行の後に `SLOWER`、そうでなければ言わない」と見る形に（`draw.ts` が `outdated` を渡すことは文で）。`SLOWER` を読むのは `lines.ts` だけ。
 - 網の `page` は違う（予定）: 関数とその鍵（`converted`・`gpuNote`・`gpuTest`・`outdated`・`perSecond`・`received`・`total`）と展開が増え、文と数は同じ（`literal` の違いは無い）。
 - 手元: 軽い組（443 秒）・型検査・`page-modules-check`・`bench.mjs`・ビルドして実ブラウザ（Chromium の e2e、`updated-in-browser.mjs` のモデルのページの 24 の場合: 古いページのステータス行を読む）。CI を省いた。訳: ページの部品の切り出しで、手元の Chromium が踏んだ。
+- レビュー（Sonnet low、2026-10-30）: OK。移した式はどの入力でも同じ文（`Progress` に `name` は無く、`type`・`load` は読まれない）。`updated-check` の `.ts` の import は bun でも通る。
 
 ### T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 状態: 未着手（2026-10-11、T.368.3 から。T.368.8 の後。規模 中）
 - `!`（ここには値がある、の言い切り）の 46 個は `forwardModule` と `llama`: `weights.ts`（36 個）と `timing.ts`（18 個）が、引数で受けていない状態を当てにしている印。引数で受ける形にすれば消える。caught value への cast 24 個（`Thrown`）と、ソースに増えた `(err)?.` の形も。`timing.ts` の `llama.tokenizer.encode(prompt)` は `llama.tokenizer` の PyProxy を壊していない見立て（未確認）。`resolvePyodideVersion()` は `?pyodide=` が無いとき `RegExp.test(null)` を通る、`fetchRange()` の catch は `status` が無いとき `undefined >= 400` を通る（結果は正しい）。`updated-check` の `knows()` は `updated\.js` を文字で探す（`updated.js` を `.ts` にする回に）。ページの項目は `src/models.js` 由来で形が言えない（`Listed` は worker の側だけが見る）。
