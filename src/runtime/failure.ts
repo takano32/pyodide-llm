@@ -67,9 +67,8 @@ export function told(err: unknown) {
   }
   const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
   const name = text((err as Thrown).name) ?? text((err as Thrown).constructor?.name === "Object" ? undefined : (err as Thrown).constructor?.name);
-  if (text((err as Thrown).message)) {
-    return name ? `${name}: ${(err as Thrown).message}` : (err as Thrown).message!;
-  }
+  const message = text((err as Thrown).message);
+  if (message) return name ? `${name}: ${message}` : message;
   let fields;
   try {
     fields = JSON.stringify(err);
