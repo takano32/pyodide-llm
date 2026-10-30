@@ -15,24 +15,33 @@
 // tab that ended with no such event: the browser ended it (for its memory, most likely: a crash of another cause
 // looks the same).
 import { tableCell } from "../bench.js";
+import type { Result } from "./dom.ts";
+import type { Stage } from "./section.ts";
+import type { MemoryGrown, ToMemory } from "../runtime/contracts/benchmark.ts";
+
+// (T.480.1: the section's data, what the worker answers a step with, and the tab's sessionStorage where there is one)
+export type MemoryData = { stop: "limit" | "refused" | "hidden" | "error" | "none" | "reloaded"; held: number; trying?: number; limit: number;
+  maximum?: number | null; why?: string; seconds?: number };
+type Answered = { error: string; result?: undefined } | { error?: undefined; result: MemoryGrown };
+type Storing = Pick<Storage, "getItem" | "setItem" | "removeItem"> | null | undefined;
 
 export const MEMORY_MARK = "benchmark-memory";
 // the steps: 64 MiB of random bytes, a quarter of a second apart (time for the device to end the tab after a step, so
 // that a step the page went on from was held for a while); up to 4 GiB, the most one 32-bit WebAssembly memory holds
 export const MEMORY_STEP = 64 * 2 ** 20, MEMORY_MOST = 4 * 2 ** 30, MEMORY_PAUSE_MS = 250;
 
-const mib = (bytes) => `${Math.round(bytes / 2 ** 20)} MiB`;
-const HIDDEN = Symbol("hidden");
+const mib = (bytes: number) => `${Math.round(bytes / 2 ** 20)} MiB`;
+const HIDDEN: unique symbol = Symbol("hidden");
 
 /** The limit the page is asked for (?memoryMB=, for tests: a runner stops short of its own limit), in whole steps,
  * at least one step and at most MEMORY_MOST. */
-export function memoryLimit(asked) {
+export function memoryLimit(asked: string | null | undefined) {
   const bytes = Number(asked) > 0 ? Number(asked) * 2 ** 20 : MEMORY_MOST;
   return Math.min(MEMORY_MOST, Math.max(MEMORY_STEP, Math.floor(bytes / MEMORY_STEP) * MEMORY_STEP));
 }
 
 /** Remove the mark: a run that ended, or one the page stopped for its silence (it never reaches its own finally). */
-export function forgetMark(storage) {
+export function forgetMark(storage: Storing) {
   try {
     storage?.removeItem(MEMORY_MARK);
   } catch {
@@ -48,12 +57,14 @@ export function forgetMark(storage) {
  * seconds }; maximum is the bytes the memory was made with room for, null where the browser refused that. */
 export async function holdMemory({ ask, storage, limit = MEMORY_MOST, stage = () => {}, pause = MEMORY_PAUSE_MS,
                                    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now,
-                                   hidden = new Promise(() => {}) }) {
+                                   hidden = new Promise(() => {}) }: { ask: (message: ToMemory) => Promise<Answered>; storage: Storing; limit?: number;
+                                   stage?: (stage: Stage) => void; pause?: number; sleep?: (ms: number) => Promise<unknown>; now?: () => number;
+                                   hidden?: Promise<unknown> }): Promise<MemoryData> {
   if (!storage) return { stop: "none", held: 0, limit, why: "no sessionStorage in this tab: a tab the browser ended could not say how far it got" };
   const began = now(), of = limit / MEMORY_STEP;
-  const or = (promise) => Promise.race([promise, hidden.then(() => HIDDEN)]);
-  let held = 0, maximum;
-  const data = (fields) => ({ held, limit, ...(maximum !== undefined && { maximum }), ...fields, seconds: (now() - began) / 1000 });
+  const or = <T>(promise: Promise<T>) => Promise.race([promise, hidden.then((): typeof HIDDEN => HIDDEN)]);
+  let held = 0, maximum: number | null | undefined;
+  const data = (fields: Partial<MemoryData> & Pick<MemoryData, "stop">): MemoryData => ({ held, limit, ...(maximum !== undefined && { maximum }), ...fields, seconds: (now() - began) / 1000 });
   try {
     while (held < limit) {
       const to = held + MEMORY_STEP;
@@ -62,14 +73,14 @@ export async function holdMemory({ ask, storage, limit = MEMORY_MOST, stage = ()
       const answer = await or(ask({ step: "grow", to, limit }));
       if (answer === HIDDEN) return data({ stop: "hidden", trying: to });
       if (answer.error) return data({ stop: "error", trying: to, why: answer.error });
-      if (answer.result.maximum !== undefined) maximum = answer.result.maximum;
-      if (answer.result.refused) return data({ stop: "refused", held: answer.result.held, trying: to, why: answer.result.refused });
-      held = answer.result.held;
+      if (answer.result!.maximum !== undefined) maximum = answer.result!.maximum;
+      if (answer.result!.refused) return data({ stop: "refused", held: answer.result!.held, trying: to, why: answer.result!.refused });
+      held = answer.result!.held;
       if ((await or(sleep(pause))) === HIDDEN) return data({ stop: "hidden", trying: held + MEMORY_STEP });
     }
     return data({ stop: "limit" });
   } catch (error) {
-    return data({ stop: "error", why: `${error?.name ?? "Error"}: ${error?.message ?? error}` });
+    return data({ stop: "error", why: `${(error as Error | null)?.name ?? "Error"}: ${(error as Error | null)?.message ?? error}` });
   } finally {
     forgetMark(storage);
   }
@@ -77,11 +88,11 @@ export async function holdMemory({ ask, storage, limit = MEMORY_MOST, stage = ()
 
 /** A mark left by a run that never ended (the tab ended while it grew, with no hidden page or page left to stop it):
  * the section's data for it, and the mark removed. undefined when there is none. */
-export function readMark(storage, now = Date.now) {
-  let text;
+export function readMark(storage: Storing, now = Date.now): MemoryData | undefined {
+  let text: string | null | undefined;
   try {
     text = storage?.getItem(MEMORY_MARK);
-    if (text) storage.removeItem(MEMORY_MARK);
+    if (text) storage!.removeItem(MEMORY_MARK);
   } catch {
     return undefined;
   }
@@ -96,21 +107,21 @@ export function readMark(storage, now = Date.now) {
 }
 
 // how a run ended (the owner chose the words that do not say more than the page knows, 2026-09-27: TASKS.md T.173)
-function ending(d) {
+function ending(d: MemoryData) {
   switch (d.stop) {
-    case "reloaded": return `the tab ended while it grew to ${mib(d.trying)} and the page was loaded again: the browser ended it, most likely for its memory`;
-    case "refused": return `the browser refused to grow it to ${mib(d.trying)} (${d.why})`;
+    case "reloaded": return `the tab ended while it grew to ${mib(d.trying!)} and the page was loaded again: the browser ended it, most likely for its memory`;
+    case "refused": return `the browser refused to grow it to ${mib(d.trying!)} (${d.why})`;
     case "limit": return d.limit >= MEMORY_MOST ? "it held the most one 32-bit WebAssembly memory holds" : "it held all it was asked to";
     default: return d.why ?? d.stop;
   }
 }
 
 /** The section's result for the page: { status, markdown, data } */
-export function memoryResult(d) {
-  if (d.stop === "none") return { status: "none", markdown: d.why, data: d };
+export function memoryResult(d: MemoryData): Result {
+  if (d.stop === "none") return { status: "none", markdown: d.why!, data: d };
   if (d.stop === "error") return { status: "error", markdown: `${d.why} (after holding ${mib(d.held)})`, data: d };
   if (d.stop === "hidden") return { status: "error", data: d, markdown:
-    `stopped: the page was hidden or left (another app, the screen locked, or another page) while it grew to ${mib(d.trying)}, ` +
+    `stopped: the page was hidden or left (another app, the screen locked, or another page) while it grew to ${mib(d.trying!)}, ` +
     `after holding ${mib(d.held)}. A phone ends a hidden page far sooner than one in front, so this is not the limit: ` +
     "run it again and keep this page in front until it ends." };
   const room = d.maximum === null ? ` The browser refused a memory with room for ${mib(d.limit)}, so it was made without a maximum.` : "";
@@ -123,7 +134,7 @@ export function memoryResult(d) {
 }
 
 /** The section's line of the report's summary (T.185) */
-export function memorySummary(d) {
+export function memorySummary(d: MemoryData | undefined) {
   if (!d || d.stop === "none" || d.stop === "error" || d.stop === "hidden") return [];
   return [`Page memory: held ${mib(d.held)}; ${ending(d)}`];
 }
