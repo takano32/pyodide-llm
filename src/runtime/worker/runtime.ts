@@ -113,7 +113,16 @@ async function compileKernelsHere() {
     return plain ? forwardModule!.compileKernels(plain, relaxed, wide) : null;
   };
   jsKernels = await build("plain");
-  if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
+  // (T.490: on their own as well: a shared build that does not compile leaves the plain one, one thread on a memory that
+  // is not shared; in the caller's one try it lost every kernel and ran NumPy)
+  if (jsKernels && self.crossOriginIsolated) {
+    try {
+      sharedKernels = await build("shared");
+    } catch (error) {
+      console.warn(`kernels: the kernels of a shared memory did not compile (${told(error)}): one thread`);
+      sharedKernels = null;
+    }
+  }
   // T.101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
   // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
   if (jsKernels && forwardModule!.memory64()) {

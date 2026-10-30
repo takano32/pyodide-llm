@@ -127,7 +127,7 @@
 - T.487 [整理][その他] T.375.5 の後の残り — 未着手
 - T.488 [整理][WebGPU] T.379 の後の残り — 未着手
 - T.489 [整理][その他] T.380.1 の後の残り — 未着手
-- T.490 [整理][その他] T.380.2 の後の残り — 未着手
+- T.490 [整理][その他] T.380.2 の後の残り — 反映済み
 - T.491 [整理][WebGPU] T.380.3 の後の残り — 未着手
 - T.492 [整理][遠隔試験] T.357.2 の後の残り — 未着手
 - T.493 [整理][遠隔試験] T.357.3 の後の残り — 未着手
@@ -1051,11 +1051,14 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **持ち主の文面**: フォールバックのアダプタを言う文が 2 つある（`gpuOnlyUnfit()` の「a fallback adapter」は訪問者に出ない側: 出る側の文に寄せてよいか）。4 の倍数でない head の文も 2 つ。`/benchmark/` のラウンドの読み込みは WebGPU があっても「no WebGPU in a worker here」になる（ページに出るかは未確認）。`gpuOnlyUnfit()` の文は訪問者にもコンソールにも出ない: GPU だけに置けなかった訳を知る手段が無い（出すなら文面）。
 - ページのスクリプトの共有の塊 `path.*.js` に `REASONS` の全 39 項目が入る（使うのは 3 項目、数 KB）。`worker/timing.ts` の 3 つの訳と `worker/load.ts` の 2 つは表の外（エンジンに言わせれば入る）。`shaders/run.ts` の `samplingSettings()` が「more than N stop tokens」を自分でも投げる（届かない）。`REASONS.quiet()` の秒の二重割りを見る試験が無い（180 秒の見張りを走らせる試験が無い）。`isLate(error)` を読む 5 か所は手元で走らない。訳を 1 つ足す場所は 3 か所（表・使う所・文を固定する試験の `SAID`）。
 
-### T.490 [整理][その他] T.380.2 の後の残り — 状態: 未着手（2026-10-12、T.380.2 とそのレビューから。規模 小。文面は持ち主）
+### T.490 [整理][その他] T.380.2 の後の残り — 状態: 反映済み（2026-10-12、T.380.2 とそのレビューから。規模 小。文面は持ち主）
 - **持ち主の文面（実装していない）**: 保存用のファイルを開けなかった GPU だけのモデルは、ファイルシステムがあっても「…there is no file system here to keep them in as they came」と出る（案: `keep()` と同じに、ブラウザの言った文をそのまま「not kept」の訳に）。保存の一覧が読めないと About の欄が「何も無い」と同じに見える（案: 「Could not list what this browser kept.」）。共有メモリを断られて 1 本・スレッドが始まらず 1 本のとき、ステータス行に訳が無い（T.371 と一緒に）。
 - **バグの見立て**: `runtime.ts` の `init()` の `try` は 1 つなので、共有のカーネルのコンパイルだけが投げても素のカーネルごと失って NumPy になる（T.101 が 64 ビットのカーネルで直したのと同じ形）。`list.ts` の削除のボタンの `await forget(one)` と、`showKept()` の中の古い保存の `forget()` に catch が無い（投げると未処理の拒否で、一覧が描き直されない）。
 - **残したが言う候補**: `runtime.ts` の `catch { wideKernels = undefined; }`（Playwright の WebKit がふつうの訪問で踏む: 言うと正常な訪問に行が増えうる）、Service Worker の登録の `catch { return false; }` 2 つ、`sources.ts` の `cache.put(…).catch(() => {})`（部品ごとに 1 行になる）、`kept.ts` の `openNamed()` の `catch {}`。
 - **試験**: `tests/silent.mjs` が見逃す 4 つの形（上のレビュー）。言う 9 のうち `init()` の catch と `list.ts` は Node で走らない（行の文と次の文を検査が持つだけ）。`worker-sink-check` と `worker-parts-check` の出力に「gpu: no key of this device (…ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING…)」が混ざる（vm が後から取る import をできない: 試験は通る）。`threads-part-check` の `until()` は同期の輪で、スレッドの起動を待つ検索では終わらない。
+- **2026-10-30**: 「バグの見立て」の 2 つを直した。(1) カーネルを組む所を `init()` から `worker/runtime.ts` の `compileKernelsHere()` に動かし（動かすだけのコミット: `silent-check` と `updated-check` の表は行の順と関数の名前だけ）、共有のメモリのカーネルのビルドを自分の `try` に: コンパイルできなければ警告 1 行（`kernels: the kernels of a shared memory did not compile (…): one thread`）で素のカーネルは残り、1 本で動く（前は外の `try` に落ちて全部のカーネルを失い NumPy）。`worker-parts-check` に、作り物の回線と代役の `compileKernels()` で、共有のビルドを断ると素のものが残り 1 行言う場合（前の形では投げて落ちる）。(2) `list.ts` の削除（`forget()`）が投げたら警告 1 行（`kept: <名前> could not be deleted (…): it stays in the list`）で一覧を描き直す（前は未処理の拒否で一覧がそのまま）。2 つの行は `silent-check` の `SAID` に。
+- 残すもの: 持ち主の文面の 3 つ（保存のファイルを開けない GPU だけのモデルの訳・保存の一覧が読めないときの About・1 本になった訳）はまとめで聞く。「残したが言う候補」は正常な訪問で行が増えうるので今のまま。`tests/silent.mjs` が見逃す形と、Node で走らない catch、vm の後から取る import の行、`threads-part-check` の `until()` は今の形の説明。
+- 手元: 型検査・`silent-check`・`updated-check`・`worker-parts-check`・`worker-modules-check`・軽い組・ビルドして e2e。CI を省いた。訳: 失敗の道の後始末で、代役の試験が踏む。
 
 ### T.491 [整理][WebGPU] T.380.3 の後の残り — 状態: 未着手（2026-10-12、T.377・T.382 とそのレビューから。規模 小）
 - **固まった GPU の Worker**（`error` も出さず数えも進めない）は今も 60 秒で読み込みが失敗する（CPU に読み直す形にするなら訳の文が要る: 今ある `REASONS.quiet` か新しい文か = 文面）。そのとき保存した変換の読みは `room()` の失敗を「保存が読めない」と読み、保存が正しくても変換し直しに行く（読みだけ）。
