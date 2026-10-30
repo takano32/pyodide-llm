@@ -113,20 +113,20 @@ export const attention: GpuKind = {
           // an attending layer l, at its place among the attending layers: q, k and v, RoPE into the cache, the attention, o
           step({ l, place, matrix, plain, joining, normed, ffnNorm, biased, bindAt, positions }) {
             const g = m.tokens, t = m.tokenAttention, b = m.block, W = m.weights, V = W.vectors!, cache = b.cache!;
-            const [o] = W.matrices.wo.pieces, attended = plain(g.att, u.quantizeAttention, qDim);
+            const [o] = W.matrices.wo!.pieces, attended = plain(g.att, u.quantizeAttention, qDim);
             const added = (to: GPUBuffer, bias: GPUBuffer, shape: GPUBuffer, n: number): Pass => [b.add, bind(m, b.add, [to, bias, shape, g.step]), Math.ceil(n / 64), 1];
             // where q, k and v go turned: q, and the cache at the Step's position (T.261.4.2: a local layer by its own table)
             const turned: Entry[] = [[5, g.q], [6, cache.keys[place]], [7, cache.values[place]], [8, plan.local.includes(l) ? W.localAngleTable! : W.angleTable!], [9, g.step]];
             return [...normed.norm, ...normed.quantize,
               // T.226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
               // RoPE: as the CPU has it and a prompt's block (T.153), the biases, the norms of the heads of q and of k, RoPE
-              ...(split ? [...(kAt ? [matrix("qkv", W.matrices.wq.pieces[0].layers[place], normed.input, u.q[l], qDim, [[5, { buffer: qkv!, offset: 0, size: qDim * 4 }]]),
-                matrix("qkv", W.matrices.wk.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: kAt, size: kvDim * 4 }]])]
+              ...(split ? [...(kAt ? [matrix("qkv", W.matrices.wq!.pieces[0].layers[place], normed.input, u.q[l], qDim, [[5, { buffer: qkv!, offset: 0, size: qDim * 4 }]]),
+                matrix("qkv", W.matrices.wk!.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: kAt, size: kvDim * 4 }]])]
                 : [matrix("qkv", W.joined[l].qk, normed.input, u.qk[l], qDim + kvDim, [[5, qkv!]])]),
-                matrix("qkv", W.matrices.wv.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: vAt, size: kvDim * 4 }]])]
+                matrix("qkv", W.matrices.wv!.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: vAt, size: kvDim * 4 }]])]
                 : [matrix("qkv", W.joined[l].qkv, normed.input, u.qkv[l], qkvRows, qkv ? [[5, qkv]] : turned)]),
               // (T.271.3: a Qwen3.5's gate of the output, of the same normed stream)
-              ...(gated ? [matrix("mix", W.matrices.wg.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
+              ...(gated ? [matrix("mix", W.matrices.wg!.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
               ...(qkvBias ? [added(qkv!, qkvBias, biasShapes![l], qkvRows)] : []),
               ...(headNorms ? ([[V.qNorm, plan.heads], [V.kNorm, plan.kvHeads]] satisfies [GPUBuffer, number][]).map(([weights, heads], i): Pass =>
                 [b.headNorm, bind(m, b.headNorm, [qkv!, weights, headNorms[l][i], g.step]), heads, 1]) : []),

@@ -99,8 +99,8 @@ export const linear: GpuKind = {
             const g = m.tokens, b = m.block, W = m.weights, V = W.vectors!;
             const normed = plain(g.xb, g.u.quantizeNormed, plan.dim), gatedZ = plain(t.z, u.quantizeZ, read);
             return [[b.norm, bind(m, b.norm, [g.h, V.attention, g.xb, g.u.norm[l], g.step]), 1, 1], ...normed.quantize,
-              matrix("write", W.matrices.wqkv.pieces[0].layers[place], normed.input, u.wqkv, mixed, [[5, t.mixed]]),
-              matrix("write", W.matrices.wz.pieces[0].layers[place], normed.input, u.wz, read, [[5, t.z]]),
+              matrix("write", W.matrices.wqkv!.pieces[0].layers[place], normed.input, u.wqkv, mixed, [[5, t.mixed]]),
+              matrix("write", W.matrices.wz!.pieces[0].layers[place], normed.input, u.wz, read, [[5, t.z]]),
               [gates, bind(m, gates, [g.xb, V.wb, V.wa, V.dtBias, V.decay, t.work, u.gates[place], g.step]), valueHeads, 1],
               [convolving, bind(m, convolving, [t.mixed, V.conv, rows, t.convolved, u.conv[place], g.step]), groups, 1],
               [moving, bind(m, moving, [t.mixed, rows, u.conv[place], g.step]), groups, 1],
@@ -109,7 +109,7 @@ export const linear: GpuKind = {
               [rule, bind(m, rule, [t.convolved, t.work, stateOf(place), t.out, u.rule[place], g.step]), valueHeads, 1],
               [b.headNorm, bind(m, b.headNorm, [t.out, V.deltaNorm, u.norm[place], g.step]), valueHeads, 1],
               [swiglu, bind(m, swiglu, [t.z, t.out, u.read, g.step]), Math.ceil(read / 64), 1],
-              ...gatedZ.quantize, ...joining(V.attentionPost, W.matrices.wout.pieces[0].layers[place], gatedZ.input, u.wout)] satisfies Pass[];
+              ...gatedZ.quantize, ...joining(V.attentionPost, W.matrices.wout!.pieces[0].layers[place], gatedZ.input, u.wout)] satisfies Pass[];
           },
         };
       },

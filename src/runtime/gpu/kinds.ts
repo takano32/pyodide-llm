@@ -14,7 +14,7 @@ import { linear } from "./linear.ts";
 import { convolution } from "./convolution.ts";
 import type { Bound, Model, Pass } from "./device.ts";
 import type { Entry, Feed, Held, TokenRole } from "./tokens.ts";
-import type { LayerKind } from "../contracts/plan.ts";
+import type { LayerKind, TensorName } from "../contracts/plan.ts";
 import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 
 // ---- a prompt's block
@@ -129,7 +129,7 @@ export type KindBlock = {
 export type GpuKind = {
   cached?: boolean;
   widest?(plan: Started): number;
-  matrices(plan: Started): Partial<Record<"qkv" | "mix" | "write" | "join", string[]>>;
+  matrices(plan: Started): Partial<Record<"qkv" | "mix" | "write" | "join", TensorName[]>>;
   block(m: Model): Promise<KindBlock>;
 };
 

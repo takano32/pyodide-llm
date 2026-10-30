@@ -11,6 +11,7 @@ import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, packingsOf } from "./packings.ts";
 import type { Model, Bound } from "./device.ts";
 import type { GpuPacking, Matrix, Table, Tables } from "../contracts/gpu/protocol.ts";
+import type { TensorName } from "../contracts/plan.ts";
 
 // T.368.6: this module's record, m.weights, as uploadLayers() makes it and the rest fills it (what is null there until
 // its part has gone up is read with a ! by the modules that come after).
@@ -27,7 +28,10 @@ type Home = { joined: string; at: [number, number] };
 // packing: attention.ts's split; 0 where the three are one matrix. T.547.3.2: kAt, where k is written after q where the
 // two are apart as well, 0 where they are one; up, whether gate and up are apart, written each into a buffer of its own
 // and joined by the activation's dispatch)
-type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
+type Together = { homes: Partial<Record<TensorName, Home>>; sizes: { [joined: string]: [number, number] }; vAt: number; kAt: number; up: boolean };
+// T.625: a record by the plan's tensor names (the plan's matrices, a token's homes), entry by entry, by those names
+// (Object.entries says string)
+const named = <V>(record: Partial<Record<TensorName, V>>) => Object.entries(record) as [TensorName, V][];
 // (T.547.2.3: no scales where its matrices' blocks hold them)
 // (T.547.3.3: and their packing, every matrix's of them)
 type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null, GpuPacking] };
@@ -49,7 +53,7 @@ function scalesIn(m: Model, spec: { packing: GpuPacking }, target: GPUBuffer, ad
 // (T.547.3.6: no scales where the table's blocks hold them; an IQ type's binds the codebooks there)
 type TablePiece = { first: number; rows: number; values: GPUBuffer; scales: GPUBuffer | null };
 type Weights = {
-  matrices: { [name: string]: MatrixOn };
+  matrices: Partial<Record<TensorName, MatrixOn>>;
   together: Together | null;
   unjoined: string | null;
   joined: Joined[];
@@ -150,19 +154,19 @@ async function uploadLayers(m: Model, alone = false) {
   for (let l = 0; l < plan.layers; l++) {
     // a layer's matrices that are one (T.152): a buffer of values and one of scales for all of them (T.271.3: where the
     // layer has them: q, k and v the attending layers' alone, where they are theirs: an LFM2's and a Qwen3.5's)
-    const has = (joinedName: string) => Object.entries(together!.homes).some(([name, home]) => home?.joined === joinedName && (!plan.matrices[name].of || plan.matrices[name].of === plan.kinds[l]));
-    const packingOf = (joinedName: string) => packingAt(plan.matrices[Object.keys(together!.homes).find((name) => together!.homes[name]?.joined === joinedName)!], 0);
+    const has = (joinedName: string) => named(together!.homes).some(([name, home]) => home.joined === joinedName && (!plan.matrices[name]!.of || plan.matrices[name]!.of === plan.kinds[l]));
+    const packingOf = (joinedName: string) => packingAt(plan.matrices[named(together!.homes).find(([, home]) => home.joined === joinedName)![0]]!, 0);
     const joined = together && Object.fromEntries(Object.entries(together.sizes).filter(([name]) => has(name)).map(([name, [valueBytes, scaleBytes]]): [string, Joined[string]] =>
       [name, [buffer(m, valueBytes, usage), scaleBytes ? buffer(m, scaleBytes, usage) : PACKINGS[packingOf(name)].grid ? grids : null, packingOf(name)]]));
     if (joined) m.weights.joined.push(joined);
-    for (const [name, matrix] of Object.entries(plan.matrices)) {
+    for (const [name, matrix] of named(plan.matrices)) {
       // (T.545: a matrix of the layers of a kind, an LFM2's attending or convolution layers', at the layer's place among
       // them, and none in a layer of another kind: its pieces' layers are by those places)
       if (matrix.of && plan.kinds[l] !== matrix.of) continue;
       // (T.547.3.1: held, the layer's rows as its packing holds them, where each layer has a packing of its own)
       const place = matrix.of ? plan.places[l] : l, [valuesAt, scalesAt] = matrix.layers[place], held = { n: matrix.n, packing: packingAt(matrix, place) };
       const home = together?.homes[name], row = rowBytes(held), perRow = scalesOf(held);
-      for (const piece of m.weights.matrices[name].pieces) {
+      for (const piece of m.weights.matrices[name]!.pieces) {
         const valueBytes = piece.rows * row, scaleBytes = piece.rows * perRow * 4;
         // its own buffers, or its range of the layer's joined ones (T.547.2.3: no scales where its blocks hold them)
         const [values, own]: [Bound, Bound | null] = home
@@ -357,7 +361,8 @@ function tokensLayout(m: Model): Together | null {
   const gated = Boolean(m.weights.matrices.w3);
   // (T.545.2: and an LFM2's matrices in and out of its convolution layers; T.271.3: a Qwen3.5's of its linear-attention
   // layers and the gate of its output)
-  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"]), "win", "wout", "wqkv", "wz", "wg"]) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
+  const whole: TensorName[] = ["wo", "w2", ...(gated ? [] : ["w1" as const]), "win", "wout", "wqkv", "wz", "wg"];
+  for (const name of whole) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, matrices = m.weights.matrices;
   // T.547.2.4: matrices are one of a packing alone (a matrix's shader reads one): q, k and v one where they are; q and
   // k where v is of another (a 4-bit Q4_K_M's q and k of Q4_K blocks, its v int8: a token's layer writes v apart into
@@ -365,20 +370,20 @@ function tokensLayout(m: Model): Together | null {
   // T.547.3.2: and none where two of them are of two packings, or of layers of their own packings (Saluki's, whose q and
   // k, gate and up are mostly of two types): each written apart, q, k and v into the buffer of the three, gate and up
   // into theirs (tokens.ts)
-  const one = (a: string, b: string) => matrices[a].packing !== "layers" && matrices[a].packing === matrices[b].packing;
-  const qk = Boolean(matrices.wq) && one("wq", "wk"), kv = qk && one("wq", "wv") ? { qkv: ["wq", "wk", "wv"] } : qk ? { qk: ["wq", "wk"] } : {};
+  const one = (a: TensorName, b: TensorName) => matrices[a]!.packing !== "layers" && matrices[a]!.packing === matrices[b]!.packing;
+  const qk = Boolean(matrices.wq) && one("wq", "wk"), kv: { qkv?: TensorName[]; qk?: TensorName[] } = qk && one("wq", "wv") ? { qkv: ["wq", "wk", "wv"] } : qk ? { qk: ["wq", "wk"] } : {};
   const up = gated && !one("w1", "w3");
   // (a matrix apart: one piece, as a matrix a token reads; and written where the device binds, k after q's rows and v
   // after q's and k's)
-  const aparts = [...(matrices.wq && !qk ? ["wq", "wk"] : []), ...(matrices.wq && !("qkv" in kv) ? ["wv"] : []), ...(up ? ["w1", "w3"] : [])];
-  for (const name of aparts) if (matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
-  const vAt = !matrices.wq || "qkv" in kv ? 0 : (matrices.wq.rows + matrices.wk.rows) * 4, kAt = !matrices.wq || qk ? 0 : matrices.wq.rows * 4;
+  const aparts = [...(matrices.wq && !qk ? ["wq", "wk"] as const : []), ...(matrices.wq && !("qkv" in kv) ? ["wv"] as const : []), ...(up ? ["w1", "w3"] as const : [])];
+  for (const name of aparts) if (matrices[name]!.pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
+  const vAt = !matrices.wq || "qkv" in kv ? 0 : (matrices.wq.rows + matrices.wk!.rows) * 4, kAt = !matrices.wq || qk ? 0 : matrices.wq.rows * 4;
   if (kAt % align) return why("k would not start where this GPU binds a buffer, after q");
   if (vAt % align) return why("v would not start where this GPU binds a buffer, after q and k");
-  for (const [joined, names] of Object.entries({ ...kv, ...(gated && !up ? { gateUp: ["w1", "w3"] } : {}) })) {
+  for (const [joined, names] of Object.entries({ ...kv, ...(gated && !up ? { gateUp: ["w1", "w3"] satisfies TensorName[] } : {}) })) {
     let values = 0, scales = 0;
     for (const name of names) {
-      const matrix = m.weights.matrices[name];
+      const matrix = m.weights.matrices[name]!;
       if (matrix.pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
       if (values % align || scales % align) {
         return why(`${name} would not start where this GPU binds a buffer`);
@@ -456,8 +461,8 @@ async function widener(m: Model, tables: Table[] = []): Promise<Widen> {
   const owned: GPUBuffer[] = [];
   // (T.152: and the classifier's and the embedding's, one piece each)
   // (T.547.3.1: each packing of a matrix whose layers have their own)
-  const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).flatMap(([name, matrix]) => packingsOf(matrix).filter((packing) => PACKINGS[packing].widened)
-    .flatMap((packing) => m.weights.matrices[name].pieces.map((piece) => PACKINGS[packing].stored(piece.rows * matrix.n)))),
+  const largest = Math.max(CHECK_GROUPS * 24, ...named(m.plan.matrices).flatMap(([name, matrix]) => packingsOf(matrix).filter((packing) => PACKINGS[packing].widened)
+    .flatMap((packing) => m.weights.matrices[name]!.pieces.map((piece) => PACKINGS[packing].stored(piece.rows * matrix.n)))),
   ...tables.filter((table) => PACKINGS[table.packing].widened).map(({ rows, n, packing }) => PACKINGS[packing].stored(rows * n)));
   const packed = buffer(m, largest, STORAGE | COPY_DST, owned);
   const run = (values: Bound, groups: number, most = device.limits.maxComputeWorkgroupsPerDimension) => {

@@ -12,7 +12,7 @@
 // Both ends are JavaScript still, which no compiler reads: tests/plan-keys-check.mjs holds the plans' keys written
 // (forward/) to the keys read (gpu/) and to these types, and the messages' kinds and keys to ToGpu and FromGpu.
 
-import type { Activation, LayerKind } from "../plan.ts";
+import type { Activation, LayerKind, TensorName } from "../plan.ts";
 
 // T.547.1: how a matrix's or a table's values are packed at their addresses, the checkpoint's own (jobs.ts's PACKED
 // names): int8, int6 (T.155: widened to int8 as it goes up), ternary (T.232: two bits a weight, as they are) or Q4_K
@@ -61,6 +61,7 @@ export type Vectors = {
 // T.152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
 // another table, the embedding; the final norm (its bias and GPT-2's positions: 0 where the model has none); whether
 // the classifier has outlier channels (T.92) and which; where the ids go; the most steps of a submission
+export type Matrices = Partial<Record<TensorName, Matrix>>;
 export type Tokens = {
   classifier: Table;
   embedding: Table | null;
@@ -147,7 +148,8 @@ export type Started = KindNumbers & {
   rotated: { block: number; signs: { width: number; at: number }[] } | null;
   // the most tokens of a block
   batch: number;
-  matrices: Record<string, Matrix>;
+  // (T.625: by the names of the plan's tensors, and only those the model has)
+  matrices: Matrices;
   // T.547.3.4: where the codebooks of llama.cpp's blocks are (the checkpoint's row "codebooks", engine/dtypes.py's
   // CODEBOOKS bytes: convert/grids.py's codebooks()); 0: the model has none
   codebooks: number;
@@ -166,7 +168,7 @@ export type Started = KindNumbers & {
 
 // The plan of { type: "open" } (gpuOnlyPlan()): the layers and their matrices by where they are in the checkpoint
 // (T.271.4: kinds and places, as Started's, where some layers are of another kind than attention: a Qwen3.5's)
-export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined; kinds?: LayerKind[];
+export type Opened = { layers: number; matrices: Matrices; tables: Tables; force: Force; remembered: Remembered | undefined; kinds?: LayerKind[];
   places?: number[] };
 
 // forward.ts's cache of the keys and values a generation's steps go up from: where each attending layer's are now (T.261.4.2,

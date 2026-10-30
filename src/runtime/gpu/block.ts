@@ -12,7 +12,7 @@ import { ENGINE } from "../shaders/engine.ts";
 import { isBlock } from "./packings.ts";
 import type { Model } from "./device.ts";
 import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
-import type { LayerKind } from "../contracts/plan.ts";
+import type { LayerKind, TensorName } from "../contracts/plan.ts";
 import type { Cache as Sent, Vectors } from "../contracts/gpu/protocol.ts";
 
 // T.368.6: this module's record, m.block, as prepare() makes it (the layers' bind groups and the keys and values come
@@ -93,7 +93,7 @@ type Block = {
   products: Timed[];
 };
 // a matrix of the layer as products holds it
-type Timed = [string, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
+type Timed = [TensorName, GPUBuffer, GPUBuffer | null, boolean?, Quantizing?];
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T.378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
@@ -201,7 +201,7 @@ function bindLayers(m: Model) {
     const place = plan.places?.[l] ?? l;
     const index = (of: string | undefined) => (of ? place : l);
     // (a piece each, T.155)
-    const product = (name: string, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, index(plan.matrices[name]?.of), from, to, add);
+    const product = (name: TensorName, from: GPUBuffer, to: GPUBuffer, add = false) => productGroups(m, form, name, index(plan.matrices[name]?.of), from, to, add);
     const norm = new ArrayBuffer(16);
     new Uint32Array(norm, 0, 2).set([plan.dim, l * plan.dim]);
     new Float32Array(norm, 8, 1)[0] = plan.eps;
@@ -215,7 +215,7 @@ function bindLayers(m: Model) {
     // and of w2, written apart into gate and xb, which nothing reads by then)
     const post = (name: keyof Vectors, from: GPUBuffer) => (V[name] ? bind(m, b.normAdd!, [from, V[name], b.x, normShape, b.step]) : null);
     // (the step's matrix out: added to the stream, or written into gate for the norm behind it)
-    const out = (name: string, from: GPUBuffer) => (V.attentionPost ? product(name, from, b.gate) : product(name, from, b.x, true));
+    const out = (name: TensorName, from: GPUBuffer) => (V.attentionPost ? product(name, from, b.gate) : product(name, from, b.x, true));
     layers.push({
       // T.568.2: the layer's kind's step (gpu/kinds.ts)
       step: b.kinds[plan.kinds[l]]!.layer({ l, place, product, out, added }),

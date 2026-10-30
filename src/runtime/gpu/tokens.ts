@@ -16,7 +16,7 @@ import type { TablePiece } from "./weights.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import type { Kept } from "./block.ts";
 import type { Steps } from "./kinds.ts";
-import type { LayerKind } from "../contracts/plan.ts";
+import type { LayerKind, TensorName } from "../contracts/plan.ts";
 import type { FusedOutput } from "../shaders/fused.ts";
 import type { GpuPacking } from "../contracts/gpu/protocol.ts";
 
@@ -170,9 +170,9 @@ const tokenShape = (m: Model) => {
   // T.579: roles, the packings of the matrices of each role (the kinds' matrices(), and every layer's FFN), the pipelines
   // a form compiles for them; what joins the stream is written as it is where a norm behind comes after (joining())
   const { plan } = m, roles = new Map<TokenRole, Set<GpuPacking>>();
-  const take = (role: TokenRole, names: string[]) => {
-    for (const name of names.filter((name) => plan.matrices[name])) {
-      for (const packing of packingsOf(plan.matrices[name])) roles.set(role, (roles.get(role) ?? new Set()).add(packing));
+  const take = (role: TokenRole, names: TensorName[]) => {
+    for (const matrix of names.map((name) => plan.matrices[name]).filter((matrix) => matrix !== undefined)) {
+      for (const packing of packingsOf(matrix)) roles.set(role, (roles.get(role) ?? new Set()).add(packing));
     }
   };
   for (const kind of kindsOf(plan)) {
@@ -351,7 +351,7 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
   for (let l = from; l < to; l++) {
     // (T.545.2: a matrix of the layers of a kind, an LFM2's, at the layer's place among them: an attending layer's keys
     // and values too; every layer's place where there is one kind)
-    const place = plan.places[l], [down] = W.matrices.w2.pieces;
+    const place = plan.places[l], [down] = W.matrices.w2!.pieces;
     const attention = normed(V.attention, V.attentionBias, g.u.norm[l]), ffn = normed(V.ffn, V.ffnBias, g.u.norm[l]);
     const activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
     // T.261.4.2: what joins the stream after a matrix: added on its write, or (a Gemma 3's norm behind it) written as it
@@ -367,11 +367,11 @@ function tokenPass(m: Model, form: TokenForm, { from = 0, to = m.plan.layers, he
       ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
       // gate and up as one matrix with SwiGLU on its write; or (T.154: no gate) w1, its bias and GELU; or (T.547.3.2) gate
       // and up apart, of two packings, each written as it is and joined by the prompt's SWIGLU (GEGLU)
-      ...(g.up ? [matrix("glu", W.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
-        matrix("glu", W.matrices.w3.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.up]]),
+      ...(g.up ? [matrix("glu", W.matrices.w1!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
+        matrix("glu", W.matrices.w3!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.up]]),
         [b.activation, bind(m, b.activation, [g.gate, g.up, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]
       : gated ? [matrix("glu", W.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
-        : [matrix("glu", W.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
+        : [matrix("glu", W.matrices.w1!.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
           [b.activation, bind(m, b.activation, [g.gate, g.u.hidden!, g.step]), Math.ceil(plan.hidden / 64), 1]] satisfies Pass[]),
       ...activated.quantize, ...joining(V.ffnPost, down.layers[l], activated.input, g.u.down), ...biased(g.h, "b2", l));
   }
