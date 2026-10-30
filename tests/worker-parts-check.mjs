@@ -289,6 +289,14 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     await load({ load: 70, model: model("refused") });
     context.stand.asBuilt = undefined;
     assert.deepEqual([of("error").length - errors, released], [1, 1], "T.461: the load failed, and the engine its Llama threw over was let go of");
+    // (its review: a release() that throws says so on the console, and the load's error is still what Python said)
+    const before = said.length;
+    context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", threads: 1, release: () => { throw new Error("a release that fails (a stand-in)"); } });
+    context.stand.asBuilt = () => { throw new Error("a checkpoint Python refuses (a stand-in)"); };
+    await load({ load: 71, model: model("refused") });
+    context.stand.asBuilt = undefined;
+    assert.match(of("error").at(-1)?.message ?? "", /a checkpoint Python refuses/, "T.461: the error is Python's, not the release's");
+    assert.deepEqual(said.slice(before).filter((line) => line.startsWith("engine:")).length, 1, "T.461: the release that failed is said once");
     context.stand.engineOf = undefined;
   }
 

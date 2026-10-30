@@ -62,13 +62,17 @@ let gpuOnlyEnding = Promise.resolve();
 function builtOrLetGo(outside: Outside, build: () => Llama) {
   try {
     return build();
-  } catch (error) {
+  } catch (thrown) {
     const engine = outside.engine;
     if (engine) {
-      const released = engine.release();
-      gpuOnlyEnding = Promise.all([gpuOnlyEnding, released]).then(() => {});
+      // (T.461's review: a release() that throws does not hide what Python said)
+      try {
+        gpuOnlyEnding = Promise.all([gpuOnlyEnding, engine.release()]).then(() => {});
+      } catch (error) {
+        console.warn(`engine: the engine of a model that failed as it was built could not be let go of (${told(error)}): its threads and GPU's worker may stay`);
+      }
     }
-    throw error;
+    throw thrown;
   }
 }
 // the key of the model being loaded (cpuOnly)
@@ -519,7 +523,7 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
     // (sink.open() again), let go of the GPU's worker: nothing else would, and it held the device and a buffer for
     // every layer's matrices, 4.1 GB for Llama 3.2 3B, for the rest of the visit. The next load waits for it)
     destroy() {
-      if (!built) gpuOnlyEnding = end();
+      if (!built) gpuOnlyEnding = Promise.all([gpuOnlyEnding, end()]).then(() => {});  // (T.461: after a release() too)
     },
   };
 }
