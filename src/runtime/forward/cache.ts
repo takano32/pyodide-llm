@@ -42,6 +42,9 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
   // place, its index among those (-1: a ring's), and the rings by place. T.331: every place's width, and of the
   // blocks, the bytes a position of each and of those before it (before; total, of them all)
   let held = 0, layers = 0, capacity = 0, keys = 0, values = 0, placed = false, total = 0;
+  // T.244: the first position whose keys or values the CPU wrote from numbers that were not finite (Infinity: none), which
+  // a float16 cache does not keep (to_f16 writes them as infinities, which the reads take for 65536)
+  let unfinite = Infinity;
   const indices: number[] = [], rings: (Ring | null)[] = [], widths: number[] = [], rows: number[] = [], before: number[] = [];
   // (the bytes a position of the block of index l)
   const rowOf = (l: number) => (l + 1 < layers ? before[l + 1] : total) - before[l];
@@ -109,18 +112,24 @@ export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: R
       values = newValues;
       capacity = larger;
     },
-    /** a token's key and value (float32, at key and value) into the cache at keyAt and valueAt (T.331: width values
-     * of each, a place's own; kvDim where it is not said) */
-    put(keyAt: number, valueAt: number, key: number, value: number, width = kvDim) {
+    /** a token's key and value (float32, at key and value) into the cache at keyAt and valueAt, the token's at pos
+     * (T.331: width values of each, a place's own; kvDim where it is not said) */
+    put(pos: number, keyAt: number, valueAt: number, key: number, value: number, width = kvDim) {
       if (half) {
-        k.to_f16(keyAt, key, width);
-        k.to_f16(valueAt, value, width);
+        const keysBad = k.to_f16(keyAt, key, width), valuesBad = k.to_f16(valueAt, value, width);
+        if ((keysBad || valuesBad) && pos < unfinite) unfinite = pos;
       } else {
         const U = room.U;
         U.copyWithin(keyAt, key, key + width * 4);
         U.copyWithin(valueAt, value, value + width * 4);
       }
     },
+    /** T.244: positions from pos on are written anew (a block of the CPU's or the GPU's): what was not finite there is gone */
+    written(pos: number) {
+      if (pos <= unfinite) unfinite = Infinity;
+    },
+    /** T.244: whether a token at pos reads keys or values that were not finite, which a float32 cache would have kept */
+    unfiniteBy: (pos: number) => unfinite <= pos,
     /** T.147: a token's key and value in float16 (the GPU's) into the cache at keyAt and valueAt. T.160: a float32 cache
      * (a grouped-query model's) widens them with a kernel, as attention_f16 reads them (halfToFloat one at a time took
      * 27 to 33 ns a value on CI's runners: 1.7 ms a token of Qwen3 0.6B's prompt) */

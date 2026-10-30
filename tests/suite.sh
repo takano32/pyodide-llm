@@ -253,6 +253,7 @@ part "the rotated basis's kernels" node tests/rotate-check.mjs
 # instantiates: every half at every place of a 16-byte line, the rest after the eights (no engine's kvDim leaves one), a bad
 # half just outside the run, an address above 4 GiB (a few seconds)
 part "the finite look at float16" node tests/finite-check.mjs
+part "keys and values that were not finite, in a float16 cache" node tests/unfinite-check.mjs
 # T.229 (the review): a Qwen3.5 was not put on a GPU where an adapter is there (no adapter of CI's reaches gpuUnfit's lines);
 # T.271.2: its prompts are the GPU's now, its worker started with a plan of its linear-attention layers (a few seconds)
 qwen35_goes_to_the_gpu() {

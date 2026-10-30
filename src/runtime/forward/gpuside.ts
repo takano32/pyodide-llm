@@ -27,6 +27,8 @@ export type CpuSide = {
   fromStaging(pos: number, count: number): void;
   stagingFinite(count: number): boolean;
   run(tokens: number[], pos0: number, needLogits: boolean): void;
+  // T.244: whether a token at pos reads keys or values of the CPU's that were no finite numbers (a float16 cache's)
+  unfiniteBy(pos: number): boolean;
   // T.545: whether a block at pos goes on from the state of the layers that keep one, and that state taken from what the
   // GPU's worker left of a block (next: the position that comes after it)
   follows(pos: number): boolean;
@@ -78,7 +80,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs, codebooks } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
-  const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateToStaging, stateFromStaging } = cpuSide;
+  const { memory, views, grow, embed, fromStaging, stagingFinite, run, unfiniteBy, follows, stateToStaging, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
   const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now } = options;
   // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
@@ -420,7 +422,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     const list = (x: Listed) => (x?.toJs ? x.toJs() : [...(x ?? [])]);
     // (T.545.2: and steps that go on from the state of the layers that keep one, where the model has those: else the
     // CPU's step says why it cannot, follow()'s words)
-    if (!gpuSteps() || count < 1 || count > GPU_TOKENS || (!direct && !follows(pos))) return undefined;
+    // (T.244: and steps that would take up keys or values of the CPU's that were no finite numbers, which a float16
+    // cache keeps as 65536: the CPU's step stops on its logits)
+    if (!gpuSteps() || count < 1 || count > GPU_TOKENS || (!direct && (!follows(pos) || unfiniteBy(pos)))) return undefined;
     const stopList = list(stops);
     if (stopList.length > STOPS_MOST) {
       tokensOn = false;
