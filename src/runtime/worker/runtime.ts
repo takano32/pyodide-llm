@@ -132,7 +132,20 @@ async function compileKernelsHere() {
   }
 }
 
-async function init(search: string) {
+// T.462: how the runtime's two modules from elsewhere are taken: Pyodide's loader by its URL (pyodide.ts's
+// pyodideSteps()), and forward.ts (its failure told as the site's update where that is why: T.439). A check in Node
+// hands its own (tests/worker-check.mjs: a made-up Pyodide, and forward.ts as Node imports it), where these imports
+// are none a vm runs
+type Starts = { pyodide: (url: string) => Promise<PyodideModule>; forward: () => Promise<typeof Forward> };
+const STARTS: Starts = {
+  pyodide: (url) => import(/* @vite-ignore */ url),
+  forward: () => import("../forward.ts").catch((error) => {
+    void wentWithout(error, import.meta.url);
+    throw error;
+  }),
+};
+
+async function init(search: string, starts: Starts) {
   const started = performance.now();
   const asked = new URLSearchParams(search);
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
@@ -147,7 +160,7 @@ async function init(search: string) {
   const engine = built("engine.zip").then((res) => res.arrayBuffer());
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
-  pyodide = await pyodideSteps(version, (url: string): Promise<PyodideModule> => import(/* @vite-ignore */ url));
+  pyodide = await pyodideSteps(version, starts.pyodide);
 
   await placePython(pyodide, engine, "engine.zip");
   llama2_numpy = pyodide.pyimport("llama2_numpy");
@@ -157,10 +170,7 @@ async function init(search: string) {
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
     // (T.439: a module's failure has no status: this module's own address is asked for, and nothing waits for it)
-    forwardModule = await import("../forward.ts").catch((error) => {
-      void wentWithout(error, import.meta.url);
-      throw error;
-    });
+    forwardModule = await starts.forward();
     await compileKernelsHere();
   } catch (error) {
     // (T.380.2: said, whatever it was: no WebAssembly SIMD here, a kernel that did not compile, forward.ts that did not come)
@@ -191,8 +201,8 @@ export function blockKernels() {
 
 /** A load was asked for: the runtime starts with the first one (the model downloads while Pyodide loads), from what
  * the page's URL said, and is the same promise for every later one */
-export function runtimeAsked(search: string) {
-  initialized ??= init(search);
+export function runtimeAsked(search: string, starts = STARTS) {
+  initialized ??= init(search, starts);
   return initialized;
 }
 /** The runtime as a promise, which a load waits for (undefined before any was asked for) */
