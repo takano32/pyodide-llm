@@ -173,7 +173,7 @@
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
 - T.620 [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 未着手
 - T.621 [整理][CPU] 仕事を位置の並びでなく `WORK` の記録の関数で組む — 進行中
-- T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 未着手
+- T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 進行中
 - T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 進行中
 <!-- 目次ここまで -->
 
@@ -1467,12 +1467,14 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **(1) 完了（2026-10-30、ブランチ `t.621-job`）**: `engine.ts` の `matmulsByKind()`（塊の型の行を持つモデル）が `jobOf()` と同じ並びをもう一度書いていた（違いは塊の層の 4 つ目の語 `last` を読むこと）。`jobOf()` が `[w, s, c, last = 0] = m.layer(l)` と読み、`matmulsByKind()` はそれを呼ぶ。ほかの行列の `layer()` は 1〜3 語なので `last` は前の 0 のまま。網の `calls`・`choices` は同じ、`blocks-forward-check` は 53 とも通る。速さ（`compare-engines.mjs tiny-lm llm-jp-3-150m --ref main --rounds 5`、load 4〜5 の混んだ機械）: ラウンドごとの比 1.003・0.991、同じ側を 2 回の揺れ 1.108・1.038 の内。手元: 型検査、軽い組。**CI を省いた。訳: 網と Node の検査。** **レビュー（Sonnet low、2026-10-30）: OK、直しなし。** 4 語を返す `layer()` は塊のものだけ。
 - **残り**: 並びの 14 の位置を組む側が覚えること（`jobOf()` と `linear.ts` の `delta_rule` の 1 か所）。名前つきの記録で組むと 1 トークンの仕事ごとにオブジェクトが 1 つ増えるので、測ってから。
 
-### T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 状態: 未着手（2026-10-30、T.486 から。規模 小）
+### T.622 [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.486 から。規模 小）
 - `footprint()` と `createForward()` は同じ `frameArrays()` を呼ぶが、渡す詰め方の並び（`xs` の大きさを決める）は別々に作る。軽い組には両方の枠を数十バイトの精度で比べる試験が無い（全部の組の `memory-check` は 1 MiB の線）。エンジンが枠のバイト数を出すか、両方の詰め方の並びを比べる検査を足す。
 - **(1) 完了（2026-10-30、ブランチ `t.622-frame`）**: 枠を数十バイトで見る試験: `forward/memory.ts` に `frameOf(header, options, kinds)`（`footprint()` が数える枠の並び: `footprint()` もこれを呼ぶ）、エンジンに getter `frame`（自分の並び）。`tests/frame-check.mjs`（軽い組）が `memory-check` の形を小さくした 42 の形 × dtype を relaxed の有無で（84 のエンジン、1 秒ほど）並びごとに比べ、塊の型の行を持つ 4 つのモデルは `blocks-forward-check` が同じ比べをする（形の `kinds` の詰め方の `xs` はここでだけ踏む）。壊し方 3 つ（`frameOf()` が回した基底を落とす・エンジンが詰め方の `xs` を落とす・`frameOf()` が形の `kinds` の詰め方を落とす）はどれも名指しで落ちる。網の `choices`・`calls`・`exports` は同じ。手元: 型検査、軽い組。**CI を省いた。訳: Node の検査。** **レビュー（Sonnet low、2026-10-30）: 直し 1 つと穴 1 つ、どちらも入れた**: `footprint()` の頭の注釈が `frameOf()` の上に来ていた（`frameOf()` をその注釈の上へ）、塊のモデルの形が無かった（`blocks-forward-check` に）。`footprint()` は前と同じ数を数える（消した局所 `packings` は枠だけが読んでいた）。
 - 壊し方の道具を速い組 → smoke → 重い組の 3 段に（T.375.4 のレビューの勧め）。
 - T.487 から: `gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」と `tokensUnfit()` の `embedding.group` の比べに効く入力が無い（作り物の事実を `gpuOnlyUnfit()`・`gpuBytes()` に渡せない）。網の `unchanged-choices` の格子は `linear`・`convolution`・`rotated` を渡さない（足すなら別の記録に: 網の決まり (6)）。
 
+- **(2) 閉じた（2026-10-30、取りまとめ役の決め）**: 「壊し方の道具」は T.375.4 のレビューが `.tmp/` で使った捨ての道具で、`tests/` に段を分ける道具は無い（壊し方は回ごとに捨てのワークツリーで 1 本ずつ: 「試験の作り」の決まり）。分ける物が無いので何もしない。
+- **(3) 完了（2026-10-30、ブランチ `t.622-group`）**: `gpuOnlyUnfit()` の「LayerNorm なら断る」「位置の表なら断る」は、`sizes-check` が `aloneFactsUnfit()` を事実 1 つずつで踏んでいた（`gpuOnlyUnfit()` はそれを呼ぶだけ: 実在のアーキテクチャでは先の事実が先に断るので、`gpuOnlyUnfit()` の入口からは届かない）。`tokensUnfit()` の `embedding.group` の比べは、どの入力も踏んでいなかった: `gpu-part-check` の理由の表に「int8 で群が 8 の埋め込み」の行を足した（比べを抜くと落ちる）。網の `unchanged-choices` の格子に `linear`・`convolution`・`rotated` を足す件は、網の決まり (6) のとおり別の記録に足す話で、`frame-check`・`gpu-part-check` が形ごとに踏むので足さない。**CI を省いた。訳: 試験の行 1 つ。** レビューは下に。
 ### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
 - **(1) 完了（2026-10-30、ブランチ `t.624-embed`）**: `EMBED` と `EMBED_ROWS` を `shaders/run.ts` の 1 つの作る関数 `embedInt8(block)` に（`embedTernary` と同じ形。窓口の名前は前のまま定数）。出す文は前と 1 字も違わない（前の文を書き出して `===` で比べた。頭の改行 1 つが要った）。手元: 型検査、`shaders-modules-check`・`shaders-catalogue-check`・`device-key-check`・`gpu-worker-parts-check`、網の `shaders`・`gpuworker`・`gpusteps` が同じ。**CI を省いた。訳: 装置に渡す文が 1 字も変わらない（網の `shaders` が言う）。** int8 と 3 値の 4 つを 1 つにするのは、輪の中が違う（4 個ずつと 16 個ずつ）ので寄せない。 **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: OK、コメントの直し 2 つを入れた。** 2 つの木の `run.ts` を import して、4 つの埋め込みの文と窓口の名前が全部 `===` で同じと確かめた。作る関数は窓口から出さないので `shader-makers.mjs` の数えに入らない。長い行の折り返しと、`embedInt8()` のどちらの呼びがどちらの文かの 1 行を足した。
 - **(2) 残り**: `shaders/matvec.ts`（ベンチ）を `fused.ts` の文に寄せる（`bench.yml` を回す回）。
