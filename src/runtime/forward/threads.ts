@@ -87,7 +87,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     jobs.forEach((job, i) => {
       const at = i * JOB, rows = job[ROWS];
       // T.159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile; T.620: in the rows of its kind's tile
-      // (a row: the other tiles, and the kinds without one)
+      // (a row at a time for every other kind)
       const quad = job[COUNT] > 1 ? TILE_ROWS[job[0]] : 1;
       const size = quad * Math.ceil(rows / (threads * CHUNKS_PER_THREAD * quad));
       list.set(job, at);
