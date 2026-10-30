@@ -34,8 +34,9 @@ type Opening = Opened & { tokens: true };
 // checkpoint comes, of which only what the two plans share is read (matrices, layers, force, remembered, whether
 // there are tokens; the tables through weights.ts's tablesOf()) until handed() puts start()'s in, with the memory
 // (null till then). weights, block and forms are set by their owners before another module reads them, in start()'s
-// order; tokens is set where a token's steps go on the GPU, and null where no form of them is right here (the two
-// that may meet it so ask: requests.ts's generate(), tokenforms.ts's tokensSaid())
+// order; tokens is set once tokenforms.ts has a token's buffers, with its form null (or the record unset, T.467) where
+// no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
+// tokensSaid())
 type Base = {
   device: GPUDevice;
   plan: Started;

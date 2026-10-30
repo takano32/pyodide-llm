@@ -23,7 +23,7 @@ import type { GpuPacking, Table, TokensChosen, Tried, Vectors } from "../contrac
 
 // T.368.6: this module's record, m.tokens: what tokens.ts's tokenBuffers() made, what tokenattention.ts's
 // chooseTokenAttention() chose, and the form of a token's layer chosen here with its ms a step and what each form
-// came to (null until choose() has them; the record itself is null where no form is right)
+// came to (null until chooseTokens() has them, and where no form is right: T.467, the record may also be unset then)
 type Tokens = TokenBuffers & Chosen & { form: TokenForm | null; ms: number | undefined; forms: Tried[] | null };
 // T.156, T.210: what a model on the GPU alone reads back for the check (firstLayer(), tableRows()); nothing of another
 type Back = { firstLayer?: Awaited<ReturnType<typeof firstLayer>>; tableRows?: Awaited<ReturnType<typeof tableRows>> };
