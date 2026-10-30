@@ -213,26 +213,35 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   assert.deepEqual([drawn.length, settings], [1, { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 }], "the seed is drawn once, and the page's settings are not written to");
   only(a, () => a.idle(), { generating: false }, "idle: nothing is written any more; the bubble and its settings stay for the line under it");
   only(a, () => a.idle(), {}, "idle twice");
+  // T.468.3: none while one is being written, and nothing of that one changes
+  a.answerBegan(bubble, { ...settings, seed: 9 }, 4096, seed);  // (a fixed seed: none drawn for it)
+  assert.equal(only(a, () => a.answerBegan({ bubble: "second" }, { ...settings, seed: 1 }, 4096, seed), {}, "a second answer while one is written changes nothing"),
+    undefined, "and is not begun");
+  assert.equal(drawn.length, 1, "nor draws a seed");
+  a.idle();
+  cases += 2;
 
+  // (each answer after the worker went idle, as the page asks: T.468.3)
+  const begin = (...args) => (a.idle(), a.answerBegan(...args));
   // a seed the visitor fixed is the seed, and none is drawn
-  how = a.answerBegan(bubble, { ...settings, seed: 7 }, 4096, seed);
+  how = begin(bubble, { ...settings, seed: 7 }, 4096, seed);
   assert.deepEqual([how.seed, drawn.length], [7, 1], "a fixed seed is kept");
-  how = a.answerBegan(bubble, { ...settings, seed: 0 }, 4096, seed);
+  how = begin(bubble, { ...settings, seed: 0 }, 4096, seed);
   assert.deepEqual([how.seed, drawn.length], [0, 1], "the seed 0 is a seed");
   // greedy: no seed, not even a fixed one (showing one would suggest it mattered)
-  how = a.answerBegan(bubble, { ...settings, temperature: 0, seed: 7 }, 4096, seed);
+  how = begin(bubble, { ...settings, temperature: 0, seed: 7 }, 4096, seed);
   assert.deepEqual(["seed" in how, drawn.length], [false, 1], "a greedy run has no seed and draws none");
   // the steps: 0 is all of the context and stays 0; more than the context is the context; fewer stay
   for (const [steps, longest, sent] of [[0, 4096, 0], [128, 4096, 128], [4096, 4096, 4096], [5000, 4096, 4096], [300, 256, 256], [-1, 256, 0]]) {
-    assert.equal(a.answerBegan(bubble, { ...settings, steps }, longest, seed).steps, sent, `${steps} steps asked of a context of ${longest}`);
+    assert.equal(begin(bubble, { ...settings, steps }, longest, seed).steps, sent, `${steps} steps asked of a context of ${longest}`);
     cases += 1;
   }
   // settings the page has no field for go to the worker as they are (T.274)
-  how = a.answerBegan(bubble, { ...settings, top_k: 20, min_p: 0.05, presence_penalty: 1.5 }, 4096, seed);
+  how = begin(bubble, { ...settings, top_k: 20, min_p: 0.05, presence_penalty: 1.5 }, 4096, seed);
   assert.deepEqual([how.top_k, how.min_p, how.presence_penalty], [20, 0.05, 1.5]);
   // the next answer's bubble replaces the last one's
   const next = { bubble: 2 };
-  a.answerBegan(next, settings, 4096, seed);
+  begin(next, settings, 4096, seed);
   assert.equal(a.answer, next);
   cases += 4;
 }
@@ -250,8 +259,9 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   assert.equal(a.wrote("x", 1041), false, "31 ms after a draw: not yet");
   assert.equal(a.wrote("y", 1042), true, "32 ms: drawn");
   a.drew(1042);
+  a.idle();  // (T.468.3: the next answer after the worker said this one's end)
   const bubble = {};
-  only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
+  only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { generating: true, answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
   assert.equal(a.wrote("z", 0), true, "and its first token is drawn at once");
   cases += 2;
 }
@@ -261,6 +271,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   const drawn = { markdown: true, thinking: true }, bubble = {};
   only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1, drawn), { generating: true, answer: bubble, used: { steps: 0, temperature: 0 }, shape: { markdown: true, thinking: true } }, "an answer drawn as Markdown, in a thought");
   assert.notEqual(a.shape, drawn, "the shape is the owner's own");
+  a.idle();
   a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
   assert.deepEqual(a.shape, { markdown: false, thinking: false }, "an answer that says nothing of it is plain text");
   cases += 2;

@@ -16,9 +16,12 @@ export let shape = { markdown: false, thinking: false };
 
 /** An answer begins: its bubble, and the settings it is written with (no more steps than the model's context holds).
  * A run that samples draws its seed here rather than in the engine, so that the answer can say which seed wrote it;
- * greedy models ignore it, and showing one would suggest it mattered. The settings, as the worker is to get them. */
+ * greedy models ignore it, and showing one would suggest it mattered. The settings, as the worker is to get them.
+ * T.468.3: none while an answer is being written (the worker writes one at a time: composer.ts asks no second, and
+ * this one is not begun where it would), and nothing of the one being written changes. */
 export function answerBegan(bubble: HTMLElement, settings: Sampled & { steps: number }, longest: number, seed: () => number,
-  drawn = { markdown: false, thinking: false }) {
+  drawn = { markdown: false, thinking: false }): Sampled | undefined {
+  if (generating) return undefined;
   generating = true;
   answer = bubble;
   shape = { ...drawn };
