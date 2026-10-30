@@ -105,7 +105,8 @@ def test_the_small_lines(monkeypatch):
         say = Said()
         with pytest.raises(SystemExit) as left:
             R.ended(say, failed)
-        assert left.value.code == code and say == [line]
+        # (T.494: the CPU it ran on first, for runs to be read CPU by CPU)
+        assert left.value.code == code and say == [f"the CPU: {R.cpu_name()}", line]
 
 
 def test_a_file_is_fetched_from_the_repository_at_the_revision(monkeypatch, tmp_path):
