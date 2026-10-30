@@ -10,9 +10,14 @@
 // from position 0 after 8 that wake the threads. Each side is measured twice a round: the two of one side say how far
 // a measurement moves by itself, and the control (the same code built twice, on the two sides) what the tool says of
 // no difference: read a ratio against both.
+// T.620: --prompt times a prompt instead: `positions` tokens from position 0 in blocks of the engine's promptBlock
+// (forwardMany, no logits), as Python feeds one; the logits held to the bit are then those of the token after a prompt
+// as well. A model is an id of the list, or the files of one (<out>.bin, .tokenizer.bin, .json: tests/make_ternary.py,
+// tests/perplexity_prepare.py, quantize.py with that .json beside it): the ternary and six-bit dtypes have no model of
+// the site's own.
 //
-//   node tests/threads-compare.mjs [model ids = tiny-lm llm-jp-3-150m] --old <a dist> [--new <a dist> = dist]
-//                                  [--threads 2,4] [--rounds 21] [--positions 128]
+//   node tests/threads-compare.mjs [models = tiny-lm llm-jp-3-150m] --old <a dist> [--new <a dist> = dist]
+//                                  [--threads 2,4] [--rounds 21] [--positions 128] [--prompt]
 //
 // tests/compare-builds.sh runs it after compare-engines where THREADS is set (THREADS=2,4), the control beside it.
 // The speed of a development machine decides nothing: CI's runners, x86-64 and arm64, the CPU's name with the numbers.
@@ -38,28 +43,32 @@ if (isMainThread) {
   const dists = { old: option("--old"), new: option("--new", path.join(root, "dist")) };
   if (!dists.old) throw new Error("threads-compare: --old <the dist of the build to compare with>");
   const counts = option("--threads", "2,4").split(",").map(Number);
-  const rounds = Number(option("--rounds", 21)), positions = Number(option("--positions", 128));
-  const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
+  const rounds = Number(option("--rounds", 21)), positions = Number(option("--positions", 128)), prompt = args.includes("--prompt");
+  const flags = ["--prompt"];
+  const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1]?.startsWith("--") && !flags.includes(args[i - 1])));
   const files = Object.fromEntries(Object.entries(dists).map(([side, dist]) => [side, { forward: String(builtModule("forward", dist)), helper: String(builtModule("helper", dist)) }]));
   const here = (url) => new URL(url).pathname.replace(root, "");
   console.log(`threads-compare: ${here(files.old.forward)} with ${here(files.old.helper)} (old) against ${here(files.new.forward)} with ${here(files.new.helper)} (new); ` +
     `${os.cpus()[0]?.model ?? "?"} (${process.arch}, ${os.cpus().length} logical cores), Node ${process.version}, load ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}`);
-  console.log(`threads-compare: ${positions} tokens with logits a run, ${rounds} rounds after a warm-up (old new new old, then new old old new), a memory and its threads a side`);
+  console.log(`threads-compare: ${prompt ? `a prompt of ${positions} tokens` : `${positions} tokens with logits`} a run, ${rounds} rounds after a warm-up (old new new old, then new old old new), a memory and its threads a side`);
   const { pyodide: py } = await pyodideWithEngine();
   const rows = [];
   let failed = false;
   for (const id of ids.length ? ids : ["tiny-lm", "llm-jp-3-150m"]) {
-    const entry = MODELS.find((m) => m.id === id);
-    if (!entry || entry.hf) throw new Error(`${id}: a model of the site's own files (make models)`);
-    const checkpoint = fs.readFileSync(root + entry.checkpoint);
-    py.FS.writeFile("tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
+    // (a model of the list, or the files of one, as tests/threads-check.mjs takes them)
+    const entry = MODELS.find((m) => m.id === id) ?? (fs.existsSync(`${id}.bin`) ? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
+      tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) } : null);
+    if (!entry || entry.hf) throw new Error(`${id}: a model of the site's own files (make models), or <out> of <out>.bin, .tokenizer.bin and .json`);
+    const file = (name) => (path.isAbsolute(name) ? name : root + name);
+    const checkpoint = fs.readFileSync(file(entry.checkpoint));
+    py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
     let plan;
     // Python says where every tensor is (threads-check.mjs's way); the forward passes themselves are made in the worker
     py.globals.set("OUTSIDE", { size: checkpoint.length, read: (o, l) => new Uint8Array(checkpoint.buffer, checkpoint.byteOffset + o, l).slice(),
       start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } });
     py.globals.set("OPTIONS", py.toPy(entry.options ?? {}));
     py.runPython(`from llama2_numpy import Llama\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
-    const worker = new Worker(new URL(import.meta.url), { workerData: { files, checkpoint, plan, counts, rounds, positions } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { files, checkpoint, plan, counts, rounds, positions, prompt } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     await worker.terminate();
     if (result.differ) {
@@ -85,7 +94,7 @@ if (isMainThread) {
   console.log(`threads-compare: load after ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}${failed ? "; FAILED" : ""}`);
   await leave(failed ? 1 : 0);
 } else if (workerData?.files) {
-  const { files, checkpoint, plan, counts, rounds, positions } = workerData;
+  const { files, checkpoint, plan, counts, rounds, positions, prompt } = workerData;
   const engines = {};
   for (const [side, { forward, helper }] of Object.entries(files)) {
     const { compileKernels, createForward, weightsMemory } = await import(forward);
@@ -99,6 +108,16 @@ if (isMainThread) {
     });
     engines[side] = createForward({ memory, base, size: checkpoint.length, kernels, plan, spawn });
   }
+  // (a prompt's tokens: made up, the same every time)
+  const tokens = Array.from({ length: positions }, (_, i) => (i ? 100 + ((i * 37) % 400) : plan.bos ?? 1));
+  // a prompt of count tokens from position 0, in blocks as Python hands them over (no logits)
+  const fed = (engine, count) => {
+    for (let at = 0; at < count;) {
+      const block = tokens.slice(at, Math.min(count, at + engine.promptBlock));
+      engine.forwardMany(block, at);
+      at += block.length;
+    }
+  };
   const greedy = (engine) => {
     const seen = [];
     let token = plan.bos ?? 1;
@@ -108,12 +127,19 @@ if (isMainThread) {
       seen.push(logits.slice());
       token = logits.indexOf(Math.max(...logits));
     }
+    // (T.620: and the logits of the token after a prompt, where the prompt's blocks are what is timed)
+    if (prompt) {
+      fed(engine, positions - 1);
+      engine.forward(tokens[positions - 1], positions - 1, true);
+      seen.push(engine.logits().slice());
+    }
     return seen;
   };
   const run = (engine) => {
     for (let pos = 0; pos < 8; pos++) engine.forward(1, pos, true);  // the threads wake up
     const began = performance.now();
-    for (let pos = 0; pos < positions; pos++) engine.forward(1, pos, true);
+    if (prompt) fed(engine, positions);
+    else for (let pos = 0; pos < positions; pos++) engine.forward(1, pos, true);
     return (positions * 1000) / (performance.now() - began);
   };
   const speeds = {};
