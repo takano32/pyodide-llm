@@ -53,7 +53,7 @@ const bytes = (...values) => Uint8Array.from(values);
 }
 {
   // put() reads the body to its end, and where the body breaks nothing is stored and the put fails with the body's error
-  const { cache, map } = cacheStorage();
+  const { cache, map, stored } = cacheStorage();
   const streamed = (chunks, breaks) => new Response(new ReadableStream({
     pull(controller) {
       if (chunks.length) return controller.enqueue(chunks.shift());
@@ -64,6 +64,12 @@ const bytes = (...values) => Uint8Array.from(values);
   assert.deepEqual(map.get("whole"), bytes(1, 2, 3, 4, 5), "every chunk of a body is in the copy");
   const broke = new TypeError("Error in input stream");
   assert.equal(await failure(cache.put("broken", streamed([bytes(1, 2), bytes(3)], broke))), broke, "a body that breaks fails the put with its error");
+  // (T.495: stored, every copy put() stored, in order: none of a body that broke, and one written over is still there)
+  assert.deepEqual(stored, [["whole", 5]], "a copy stored is written down; one of a body that broke is not");
+  await cache.put("again", streamed([bytes(6, 7)]));
+  await cache.put("again", streamed([bytes(8)]));
+  assert.deepEqual([stored, map.get("again")], [[["whole", 5], ["again", 2], ["again", 1]], bytes(8)], "a copy written over is gone from the map, and still in stored");
+  map.delete("again");
   assert.deepEqual([...map.keys()], ["whole"], "and leaves no copy, not the part that came");
   // a copy that is there stays as it was where the put of a new one breaks
   assert.equal(await failure(cache.put("whole", streamed([bytes(9)], broke))), broke);
