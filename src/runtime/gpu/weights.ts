@@ -61,7 +61,8 @@ type Weights = {
   joined: Joined[];
   widen: Widen | null;
   routes: Route[] | null;
-  partial: Map<GPUBuffer, Map<number, { bytes: Uint8Array<ArrayBuffer>; count: number }>> | null;
+  // (T.299: which of its bytes are there, a bit each: a byte that comes twice is one byte)
+  partial: Map<GPUBuffer, Map<number, { bytes: Uint8Array<ArrayBuffer>; there: number }>> | null;
   vectors: GpuVectors | null;
   tables: { classifier: TablePiece[]; embedding: TablePiece[] } | null;
   finalNorm: GPUBuffer | null;
@@ -328,10 +329,11 @@ function partialHalf(m: Open, target: GPUBuffer, at: number, k: number, value: n
   const { partial } = m.weights;
   if (!partial!.has(target)) partial!.set(target, new Map());
   const halves = partial!.get(target)!;
-  if (!halves.has(at)) halves.set(at, { bytes: new Uint8Array(2), count: 0 });
+  if (!halves.has(at)) halves.set(at, { bytes: new Uint8Array(2), there: 0 });
   const held = halves.get(at)!;
   held.bytes[k] = value;
-  if (++held.count < 2) return;
+  held.there |= 1 << k;
+  if (held.there !== 0b11) return;
   m.device.queue.writeBuffer(target, at, widenedHalves(Uint16Array.of(held.bytes[0] | (held.bytes[1] << 8)), new Float32Array(1)));
   halves.delete(at);
   if (!halves.size) partial!.delete(target);
@@ -341,10 +343,11 @@ function partialByte(m: Open, target: GPUBuffer, at: number, value: number) {
   const { partial } = m.weights, word = at - (at % 4);
   if (!partial!.has(target)) partial!.set(target, new Map());
   const words = partial!.get(target)!;
-  if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), count: 0 });
+  if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), there: 0 });
   const held = words.get(word)!;
   held.bytes[at % 4] = value;
-  if (++held.count < 4) return;
+  held.there |= 1 << at % 4;
+  if (held.there !== 0b1111) return;
   m.device.queue.writeBuffer(target, word, held.bytes);
   words.delete(word);
   if (!words.size) partial!.delete(target);
