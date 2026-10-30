@@ -48,7 +48,7 @@
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 進行中
-- T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 未着手
+- T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 進行中
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -563,7 +563,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **見直し（2026-10-30、取りまとめ役の決め）**: `gpuside.ts` の `get status()` の cast は、`null` が `gpuSide()` の走る間（GPU の Worker を始めるか断るまで）だけで、返った後に読む人には届かないとコメントが言う（T.368.4）。`load.ts` の `engine.gpuStatus!` は直前の `if (!engine.gpu)` が `undefined` の場合を除いている。どちらも型が嘘を言っていないので残す。**残り**: カーネルごとの署名（`jobs.ts` の `Kernel`）、制御領域の語と仕事の表の `!` 32（共有メモリのときだけ作る部品に分ける）、`Object.fromEntries(xs.map(…))` の `any`、`/benchmark/` のページの経路（`paths.ts`）を走らせる組が無い、判定の 4 か所を抜く壊し方を誰も落とさない、`forward.js` の名前の残る `/** */` と docstring。
 - `gpuside.ts` の `get status()` は `string | undefined` に cast しているが、GPU が有効で準備が始まる前は null を返せる（`gpuLine()` は `string | null | undefined`）。worker の `load.ts` の `engine.gpuStatus!` がそれを ready に載せる（前からの動き。ページが null をどう扱うかは未確認）: 型を直して `!` を外す。カーネルの引数の数と順を型が見ない（`jobs.ts` の `Kernel` が `(...args) => unknown`: カーネルごとの署名を書けば見える）。`!` 111 個のうち 32 個は制御領域の語と仕事の表（共有メモリのときだけ作る部品に分ければ消える）、行列の `!` は T.375 の形で消える。`Object.fromEntries(xs.map(…))` はタプルでない配列を受けると `any` を返す（worker と `/benchmark/` の `.ts` に同じ形があるかは未確認）。`worker/told.ts` の `message!` は要らない。forward の `/** */` のコメントと文字列 1 つ、Python の docstring が `forward.js` のまま（束と zip のバイトが変わる: T.472 と一緒に）。`/benchmark/` のページの経路（`paths.ts`）はどの組も走らせていない。判定の中の 4 か所（`generationBegan`・`gpuTakes`・`gpuSteps`・`promptBlock`）を抜く壊し方は誰も落とさない。
 
-### T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 状態: 未着手（2026-10-12、T.368.6 から。T.466 と一緒に。規模 中。レビューは `shader-reviewer`）
+### T.479 [整理][WebGPU] GPU の Worker の型の残り: 嘘を言う型 2 つ、`!` 153 個 — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-12、T.368.6 から。T.466 と一緒に。規模 中。レビューは `shader-reviewer`）
+- **(1) 完了（2026-10-30、ブランチ `t.479-start`）**: `gpu/start.ts` の `start()` が `model!` を 11 回読んでいたのを、計画を渡した後で 1 回取る（`const m = model!, { device, adapter, key } = m`）。`start()` の間の止まりは `end()` を呼ばず（`stop()` は `starting` なら次の段で終わらせる）、記録は最後まで同じ。網: `gpusteps` は 277 とも同じ、`gpuworker` は予定どおり `start` だけが違う。手元: 型検査、`gpu-worker-parts-check`・`gpu-modules-check`、軽い組（512 秒）。**CI を回した。訳: WebGPU の道。`gpu-prompt.yml` の Dawn（run 41057484784、成功）。** **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: OK、直しなし。** `model` を置くのは `openDevice()` と `end()` だけで、`start()` の間に外から `end()` は走らない（装置を失っても `lost` を立てるだけ）。`stopping` と `lost` の見る所は前のまま。
 - **型が守らない所**: `Model.tokens` は型では常に在るが、形が決まらなければ null、`plan.tokens` が偽のモデルでは鍵が無い（undefined）。全部のモデルが通る道（`block()` など）に `m.tokens.<何か>` を足すと、tsc は通ってステップの無いモデルで落ちる。`Model.plan` は `Started` 型だが、GPU だけのモデルが開いてから `handed()` までは `Opened`（`tokens: true`）: その間に動く関数（`uploadLayers`・`tablesOn`・`piecesOf`・`tablePieces`・`routed`）が `Started` だけの鍵を読む変更をしても tsc は通る。直す形: `m.tokens` を段ごとの記録に（T.466）、その区間の関数の引数を共通の鍵だけの型（`Pick<Started, …>`）に、開くときの計画は `open()` が持って渡す。`!` 153 の大半は「記録が `start()` の順に埋まる」印（`model!` 24、`plan.tokens!` 21）。`start()` の `model!` 15 は 1 回取れば 1 つ。caught value の読みが 15 か所に同じ形（worker の `told()` のような 1 つの関数に）。`weights.vectors`・`matrices` は名前の索引で、無い名前を読んでも tsc は言わない。`Math.f16round` が tsconfig の lib（ES2024）に無く自分の型で読んでいる。`gpu.ts` の頭のコメント（T.467）とエラーの文の古い名前（T.472）。コミット 5bc2b75 の文の「26 files, 73 names」は 25 ファイル 67 行の誤り（履歴は書き換えていない）。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
