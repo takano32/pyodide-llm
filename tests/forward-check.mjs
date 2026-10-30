@@ -34,7 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
 import { forwardUrl } from "./bundle.mjs";
-import { built, runtimeUrl } from "./tree.mjs";
+import { built, runtime, runtimeUrl } from "./tree.mjs";
 const { automaticDtype, footprint, keysInHalf, needsWide } = await import(forwardUrl());  // (the sources', or with ENGINE_FROM=dist a build's: tests/bundle.mjs)
 import { MODELS } from "../src/models.ts";
 
@@ -256,13 +256,14 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   // (T.356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
   // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
   // (T.363.4: and blocks.ts and blocks_relaxed.ts are the windows over blocks/*.ts, two modules of their own.)
-  const source = {}, makefile = fs.readFileSync(`${root}Makefile`, "utf8");
+  const source = {}, argumentsOf = {}, makefile = fs.readFileSync(`${root}Makefile`, "utf8");
   for (const [folder, windows, more] of [["kernel", ["kernel.ts"], ["kernels/kernel_relaxed.ts"]], ["blocks", ["blocks.ts", "blocks_relaxed.ts"], []]]) {
     const parts = fs.readdirSync(`${root}kernels/${folder}`).filter((file) => file.endsWith(".ts")).sort(), written = [];
     for (const file of [...parts.map((part) => `kernels/${folder}/${part}`), ...more]) {
       for (const [, name, parameters] of fs.readFileSync(root + file, "utf8").matchAll(/^export function (\w+)\(([^)]*)\)/gm)) {
         if (name in source) throw new Error(`the kernel ${name} is written twice (${file})`);
         source[name] = parameters.split(",").map((p, i) => [i, p.split(":")[1].trim()]).filter(([, type]) => type === "usize").map(([i]) => i);
+        argumentsOf[name] = parameters.split(",").map((p) => p.split(":")[0].trim());
         if (file.startsWith(`kernels/${folder}/`)) written.push(`${name} of ${file.slice(folder.length + 9, -3)}`);
       }
     }
@@ -279,6 +280,19 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
   if (JSON.stringify(Object.keys(source).sort().map((n) => [n, source[n]])) !== JSON.stringify(Object.keys(ADDRESSES).sort().map((n) => [n, ADDRESSES[n]]))) {
     throw new Error("jobs.js's ADDRESSES is not the kernels' usize parameters");
+  }
+  // T.477: and jobs.ts's type of each kernel's arguments (Arguments, a type alone: a second copy of the source's) names
+  // them as the source does, every kernel and no other, one by one
+  const jobs = fs.readFileSync(runtime("jobs.ts"), "utf8"), block = jobs.match(/^type Arguments = \{\n([^]*?)\n\};$/m);
+  if (!block) throw new Error("jobs.ts has no type Arguments of the kernels' arguments");
+  const typed = Object.fromEntries(block[1].split("\n").map((line) => line.match(/^  (\w+): \[(.*)\];$/)).map((match, i) => {
+    if (!match) throw new Error(`jobs.ts's Arguments, line ${i + 1}, is not "  name: [argument: number, ...];"`);
+    return [match[1], match[2].split(", ").map((argument) => argument.replace(/: number$/, ""))];
+  }));
+  for (const name of new Set([...Object.keys(argumentsOf), ...Object.keys(typed)])) {
+    if (JSON.stringify(typed[name]) !== JSON.stringify(argumentsOf[name])) {
+      throw new Error(`jobs.ts's Arguments says ${name} takes ${typed[name] ? `(${typed[name].join(", ")})` : "nothing (it has no line)"}; the kernels' source says ${argumentsOf[name] ? `(${argumentsOf[name].join(", ")})` : "there is no such kernel"}`);
+    }
   }
 }
 

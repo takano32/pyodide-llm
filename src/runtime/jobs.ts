@@ -66,7 +66,62 @@ export const ADDRESSES = {
 // its caller to know: most return nothing. The kernels are the names of ADDRESSES and no other: a kernel that is
 // called and is not in that table is a type error, where it was a Number for an address on a 64-bit memory.)
 export type Kernel = (...args: (number | bigint)[]) => unknown;
-export type Kernels = Record<keyof typeof ADDRESSES, Kernel>;
+// T.477: each kernel's arguments by their names in kernels/*.ts (an address a Number here: addressed() makes it a BigInt
+// on a 64-bit memory). A second copy of the source's, which tests/forward-check.mjs holds to it name by name; a call
+// of a kernel with an argument too many or too few is a type error
+type Arguments = {
+  rmsnorm: [out: number, x: number, w: number, n: number, eps: number];
+  layernorm: [out: number, x: number, w: number, b: number, n: number];
+  gelu: [out: number, x: number, b: number, n: number];
+  swiglu: [out: number, h1: number, h3: number, n: number];
+  geglu: [out: number, h1: number, h3: number, n: number];
+  geglu_erf: [out: number, h1: number, h3: number, n: number];
+  add_inplace: [x: number, y: number, n: number];
+  rotate: [out: number, x: number, signs: number, n: number, block: number];
+  unrotate: [out: number, z: number, signs: number, n: number, block: number];
+  rope: [v: number, fcr: number, fci: number, nh: number, hs: number, rot: number];
+  attention: [out: number, q: number, kc: number, vc: number, att: number, pos: number, nh: number, nkv: number, hs: number, h0: number, h1: number];
+  attention_f16: [out: number, q: number, kc: number, vc: number, att: number, pos: number, nh: number, nkv: number, hs: number, h0: number, h1: number];
+  to_f16: [out: number, x: number, n: number];
+  from_f16: [out: number, x: number, n: number];
+  finite_f16: [x: number, n: number];
+  matmul_f32: [xout: number, x: number, w: number, n: number, r0: number, r1: number];
+  six_sums: [out: number, w: number, groups: number];
+  int8_sums: [out: number, w: number, groups: number];
+  matmul_q8: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number];
+  interleave: [xq: number, xs: number, n: number];
+  matmul_t2: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, three: number];
+  matmul_q6: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number];
+  add_columns: [y: number, rows: number, a: number, count: number, n: number];
+  widen_bf16: [out: number, raw: number, n: number];
+  widen_q8_0: [out: number, raw: number, n: number];
+  widen_pq2_0: [out: number, raw: number, n: number];
+  widen_ptq1_0: [out: number, raw: number, n: number];
+  quantize_x: [xq: number, xs: number, x: number, n: number, bias: number];
+  quantize6_x: [out: number, xs: number, x: number, n: number];
+  ternary_x: [out: number, xs: number, x: number, n: number];
+  argmax: [x: number, n: number];
+  penalize: [logits: number, tokens: number, count: number, penalty: number, presence: number];
+  sample: [logits: number, n: number, temperature: number, topp: number, random: number, probs: number, index: number, topk: number, minp: number];
+  gate: [out: number, x: number, g: number, n: number];
+  convolve: [out: number, taps: number, rows: number, n: number, count: number];
+  short_conv: [out: number, taps: number, rows: number, b: number, n: number, count: number];
+  delta_rule: [out: number, state: number, next: number, c: number, work: number, kh: number, kd: number, vd: number, vh: number, h0: number, h1: number];
+  matmul_q8r: [xout: number, xq: number, xs: number, wq: number, ws: number, wc: number, n: number, r0: number, r1: number];
+  matmul_q8r_tile: [xout: number, xq: number, xs: number, wq: number, ws: number, wc: number, n: number, r0: number, r1: number, count: number, os: number, frame: number];
+  matmul_q6r: [xout: number, xq: number, xs: number, wq: number, ws: number, wc: number, n: number, r0: number, r1: number];
+  matmul_t2r: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, three: number];
+  matmul_t2r_tile: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, count: number, os: number, frame: number, three: number];
+  sb_row: [out: number, w: number, tab: number, n: number, type: number];
+  matmul_sbr_tile: [xout: number, xq: number, xs: number, w: number, tab: number, n: number, r0: number, r1: number, count: number, os: number, frame: number, type: number];
+  signed_dots: [out: number, a: number, b: number];
+  matmul_sbw_tile: [xout: number, xq: number, xs: number, w: number, tab: number, n: number, r0: number, r1: number, count: number, os: number, frame: number, type: number, scratch: number];
+  matmul_sb: [xout: number, xq: number, xs: number, w: number, tab: number, n: number, r0: number, r1: number, type: number];
+  matmul_sbr: [xout: number, xq: number, xs: number, w: number, tab: number, n: number, r0: number, r1: number, type: number];
+  sums_x: [xs: number, xq: number, n: number];
+  sb_tables: [area: number, codebooks: number];
+};
+export type Kernels = { [name in keyof typeof ADDRESSES]: (...args: Arguments[name]) => unknown };
 // a job as it is run: an array, or its view of the control area's table
 export type Job = Iterable<number>;
 /** A kernel module's exports as they are, or on a 64-bit memory (wide) with the addresses made BigInt on the way
@@ -261,7 +316,7 @@ export type Packing<Name extends string = string> = {
   rowBytes(n: number): number; scale: number; value?(U: Uint8Array, at: number, i: number): number;
   row?(k: Kernels, tables: number): (out: number, w: number, n: number) => void;
   jobs: { relaxed: number; plain: number; signed?: number }; tabled?: number; takes: string;
-  sums: keyof typeof ADDRESSES | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
+  sums: "int8_sums" | "six_sums" | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
   group: number; gpu: { as: Name; alone: boolean; dot: boolean } | null;
 };
 const signed = (byte: number) => (byte << 24) >> 24;
