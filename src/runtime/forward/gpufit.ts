@@ -200,7 +200,7 @@ export function gpuFit({ shape, weights, device, direct }:
   }
   // T.545: the same, each with the kind of the layers it is of where it is not every layer's (kindOf()), for the plan
   function gpuVectorsOf(): Vectors {
-    return Object.fromEntries(Object.entries(gpuVectors()).map(([name, vector]) => [name, kindOf(name, shape) ? { ...vector, of: kindOf(name, shape) } : vector])) as Vectors;
+    return Object.fromEntries(Object.entries(gpuVectors()).map(([name, vector]) => [name, kindOf(name, shape) ? { ...vector, of: kindOf(name, shape) } : vector] as const)) as Vectors;
   }
   return { matrices: gpuMatrices, vectors: gpuVectorsOf, unfit: gpuUnfit, tokensUnfit };
 

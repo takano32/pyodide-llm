@@ -1087,7 +1087,7 @@ export const promptForms = ({ half, subgroups, packed, memory, threads, own = nu
     const none = packed ? past(DP4A_SHAPE, 5376) : "no packed int8 dot here";
     return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, blocks`,
       tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: lanes, weights: "int8" }),
-      blocks: Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, dp4a({ subgroups: lanes, weights: packing })])) as Record<BlockPacking, string>, none }));
+      blocks: Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, dp4a({ subgroups: lanes, weights: packing })] as const)) as Record<BlockPacking, string>, none }));
   }
   if (own === "ternary") {
     const none = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";

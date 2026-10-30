@@ -90,6 +90,7 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpu
       // (T.156: every tensor but those on the GPU alone where it is in memory; those keep their offsets in the
       // checkpoint, which only the GPU's worker reads)
       if (direct) {
+        // (T.477: the entries `as const`, tuples, which Object.fromEntries types; an array of two it reads as any)
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
           : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }] as const)) as Plan["tensors"];
       }

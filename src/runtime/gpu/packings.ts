@@ -38,7 +38,7 @@ export const PACKINGS: Record<GpuPacking, HeldAs> = {
   int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, grid: false, values: asBytes },
   int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, grid: false, values: sixValues },
   ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, grid: false, values: ternaryValues },
-  ...(Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blocks(packing)])) as Record<BlockPacking, HeldAs>),
+  ...(Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blocks(packing)] as const)) as Record<BlockPacking, HeldAs>),
 };
 // T.547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
 // "layers": its packings'), and the packings a matrix has

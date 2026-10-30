@@ -168,7 +168,7 @@ function generationParts(model: GenerateModel, form: Form, pipes: GenerationPipe
   }
   // the token's sampling: SAMPLE's one workgroup, or in chunks (T.191), as use() says
   const samplerBuffers = { 0: v.logits, 1: v.probs, 2: v.order, 3: v.state, 4: v.chosen, 5: v.randoms, 6: v.settings, 7: v.parts };
-  const samplers = Object.fromEntries(SAMPLERS.map((kind) => [kind, samplerDispatches(kind, pipes.sampler, samplerBuffers, vocab)])) as Record<Sampler, Dispatch[]>;
+  const samplers = Object.fromEntries(SAMPLERS.map((kind) => [kind, samplerDispatches(kind, pipes.sampler, samplerBuffers, vocab)] as const)) as Record<Sampler, Dispatch[]>;
   let sampling = samplers.one;
   const use = (kind: Sampler) => (sampling = samplers[kind]);
   // the check's record of the quantized vectors: a token's are perToken bytes, each xq then its xs
