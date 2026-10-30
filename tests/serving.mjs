@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 export const DIST = new URL("../dist/", import.meta.url);
 export const BASE = "/pyodide-llm/";
 export const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
-  ".py": "text/plain", ".wasm": "application/wasm" };
+  ".py": "text/plain", ".wasm": "application/wasm", ".zip": "application/x-zip-compressed" };  // (T.498: the Python zips, as GitHub Pages types them)
 const typeOf = (name) => TYPES[path.extname(name)] ?? "application/octet-stream";
 const stat = (file) => {
   try {

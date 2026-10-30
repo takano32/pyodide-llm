@@ -26,13 +26,14 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
 import { UPDATED, SLOWER } from "../src/runtime/updated.ts";
 import { closed, leave, scratch } from "./leave.mjs";
 import { serving } from "./serving.mjs";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);
-const repository = new URL("../", import.meta.url).pathname;
+const repository = fileURLToPath(new URL("../", import.meta.url));  // (T.498: a path on Windows and with spaces too)
 
 // ---- the server: what becomes of a request is the case's rule(name under the site, method): undefined (served),
 // a status, or "drop" (the connection ends without an answer)

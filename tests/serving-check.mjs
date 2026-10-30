@@ -81,7 +81,7 @@ try {
     assert.equal(got.headers["content-length"], String(Buffer.from(data).length), name);
   }
   assert.deepEqual(TYPES, { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
-    ".py": "text/plain", ".wasm": "application/wasm" }, "the types, written a second time");
+    ".py": "text/plain", ".wasm": "application/wasm", ".zip": "application/x-zip-compressed" }, "the types, written a second time");
   ok(`${Object.keys(FILES).length} files with their bytes, types and lengths (a name with a space and Japanese among them)`);
 
   for (const target of ["/pyodide-llm/", "/pyodide-llm/?model=tiny-lm&bench=1", "/pyodide-llm/index.html?v=1#here"]) {

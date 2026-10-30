@@ -63,6 +63,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
 import { DEFAULT_MODEL, MODELS } from "../src/models.js";
 import { closed, leave, scratch } from "./leave.mjs";
@@ -310,7 +311,7 @@ const acrossReload = async (wait) => {
 const idle = () => acrossReload(() => page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 0 }));
 await idle();
 if (opens) {
-  const repository = new URL("../", import.meta.url).pathname;
+  const repository = fileURLToPath(new URL("../", import.meta.url));  // (T.498: a path on Windows and with spaces too)
   let chosen = [`${repository}stories260K.bin`, `${repository}tok512.bin`];
   if (model === "hf") {
     const directory = scratch("hf-fixture-");
