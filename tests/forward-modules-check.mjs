@@ -124,6 +124,22 @@ for (const [part, declared, call] of calls) {
       }
     }
   }
+  // T.459: and the keys a part reads of such an object without taking it apart (threads.ts's kernels.plain): each one
+  // createForward() made, and each taken. (A name of the part's own that hides the object would be read as it: no
+  // part has one.) Not of another part's object, which tsc holds to that part's type
+  for (const [name, value] of groups) {
+    const literal = value.type === "Identifier" ? literals.get(value.name) : value.type === "ObjectExpression" ? value : null;
+    if (!literal) continue;
+    const where = value.type === "Identifier" ? value.name : `${part}.${name}`, keys = [...membersOf(literal).keys()];
+    walk(declared.body, (node) => {
+      if (node.type !== "MemberExpression" || node.computed || node.object.type !== "Identifier" || node.object.name !== name) return;
+      const key = node.property.name;
+      assert.ok(keys.includes(key), `${part} reads ${name}.${key}, which createForward() made without it: undefined`);
+      made.set(where, keys);
+      taken.set(where, (taken.get(where) ?? new Set()).add(key));
+      grouped += 1;
+    });
+  }
 }
 // (cpuSide's two getters are read as cpuSide.<name> each time, not taken out once: the places below hold those)
 // (T.261.4.2: and places(), where each attending layer's keys and values are, called as cpuSide.places())
@@ -132,7 +148,7 @@ for (const [where, keys] of made) {
   const unread = keys.filter((name) => !taken.get(where).has(name) && !READ_THROUGH[where]?.includes(name));
   assert.deepEqual(unread, [], `createForward() makes ${where} with ${unread}, which no part takes out of it`);
 }
-assert.deepEqual([...made.keys()].sort(), ["cpuSide", "gpuFit.device", "gpuSide.options", "shape", "taken", "weights"], "the things createForward() hands its parts");
+assert.deepEqual([...made.keys()].sort(), ["cpuSide", "gpuFit.device", "gpuSide.options", "shape", "softwareThreads.kernels", "taken", "weights"], "the things createForward() hands its parts");
 // T.378.1, T.378.2: the state of the software threads and of the GPU's side has one owner each: what happens is told the
 // part by functions named for that, and what is read of it is these getters and no other (that none can be assigned is
 // tests/threads-part-check.mjs's and tests/gpu-part-check.mjs's to see, and that each is a member where it is read, tsc's)
