@@ -258,7 +258,7 @@ def parts(work):
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
                 fine + [("the same ids", 2), (": a fault, ", 3), ("seen by neither", 0), ("the check did not see: none", 1)], {}))
     # the tools by their arguments
-    ok = [("FAILED", 0), ("the engine computes what transformers computes", 1)]
+    ok = [("FAILED", 0), ("the engine computes what transformers computes", 1), ("the CPU: ", 1)]
     out.append(("reference_llama.py --only=made-up", main(reference_llama, str(work / "llama"), "--only=made-up"), ("exit", 0), ok, {}))
     out.append(("reference_qwen35.py --only=made-up", main(reference_qwen35, str(work / "qwen35"), "--only=made-up"), ("exit", 0), ok, {}))
     out.append(("reference_lfm2.py --only=made-up", main(reference_lfm2, str(work / "lfm2"), "--only=made-up"), ("exit", 0), ok, {}))
