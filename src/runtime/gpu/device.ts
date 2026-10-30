@@ -38,7 +38,7 @@ type Opening = Opened & { tokens: true };
 // (null till then). weights, block and forms are set by their owners before another module reads them, in start()'s
 // order; tokens, tokenAttention and tokenForm are set as a token's are chosen (T.466), with the form null (or the
 // records unset, T.467) where no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
-// tokensSaid())
+// tokensSaid()). T.479: the type says those three may be missing, and their readers take them once at their heads
 type Base = {
   device: GPUDevice;
   plan: Started;
@@ -55,7 +55,7 @@ type Base = {
   // T.547.2.3: the shaders the model has of its own (ternary's, or Q4_K's beside int8), which its key holds
   own: Own;
 };
-type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens: TokenBuffers; tokenAttention: TokenAttentionChosen; tokenForm: TokenChoice };
+type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens?: TokenBuffers; tokenAttention?: TokenAttentionChosen; tokenForm?: TokenChoice };
 // (the record as openDevice() makes it: its literal is held to this, then taken as the Model it becomes)
 type Made = Omit<Base, "plan" | "memory"> & { plan: Started | Opening; memory: null };
 // a buffer, or a part of one ({ buffer, offset, size }), as bind() takes either (the whole one has no .buffer to ask)

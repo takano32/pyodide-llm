@@ -28,7 +28,7 @@ type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 // states and rows; fresh, from the GPU's own (block.ts's stateIn). On the GPU alone (cache null) the state is its own
 function generate({ serial, count, pos, fresh = false, from, token, history, length, written, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
-    const m = model!, { plan, tokens: g, tokenForm: chosen } = m, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
+    const m = model!, { plan, tokenForm: chosen } = m, g = m.tokens!, kvRow = plan.kvHeads * plan.headSize * 2, layers = attendingOf(plan).length;
     if (!chosen?.form) throw new Error("no tokens on this GPU");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);

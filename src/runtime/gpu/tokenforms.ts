@@ -97,7 +97,7 @@ async function chooseTokens(m: Model) {
 // what "ready" says of a token here: the form of its layer chosen and its ms a step, what each form came to, the pieces
 // of the classifier, the attention and what each of those came to; null where the tokens stay on the CPU
 function tokensSaid(m: Model): TokensChosen | null {
-  const chosen = m.tokenForm, a = m.tokenAttention;
+  const chosen = m.tokenForm, a = m.tokenAttention!;
   return chosen?.form ? { form: chosen.form.name, ms: chosen.ms, forms: chosen.forms!, remembered: chosen.forms!.some((f) => f.remembered), pieces: m.weights.tables!.classifier.length,
     attention: a.attention.name, attentions: a.attentions } : null;
 }
@@ -107,7 +107,7 @@ function tokensSaid(m: Model): TokensChosen | null {
 // a fallback adapter: its times are no GPU's), the median of each over its steps. The runs write the GPU's own keys
 // and values of those positions, which hold nothing of forward.ts's yet (as timeBlocks)
 async function timeTokens(m: Model, forms: TokenForm[]) {
-  const { tokens: g } = m, most = g.most;
+  const g = m.tokens!, most = g.most;
   const state = samplingState({ token: 1, pos: 0, history: [1] });
   const settings = samplingSettings({ vocab: g.vocab, temperature: 0.7, topp: 0.9, penalty: 1.1 });
   const randoms = new Float32Array(most).map(() => Math.fround(Math.random()) % 1);
@@ -269,7 +269,7 @@ async function checkTokenBlocks(m: Model) {
   }
 }
 async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
-  const { plan, tokens: g, device } = m, planned = plan.tokens!, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
+  const { plan, device } = m, g = m.tokens!, planned = plan.tokens!, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
   const kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address: number, n: number) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
   // row r of a matrix or a table ({ n, packing }, its values and scales at [valuesAt, scalesAt] in the shared
