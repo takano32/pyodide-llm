@@ -28,7 +28,7 @@ export function timePrompts(engine: Engine, { words, counts, rounds = PATH_ROUND
   try {
     for (const count of counts) {
       const tokens = Array.from({ length: count }, (_, i) => words[i % words.length]);
-      const runs: Record<string, Run[]> = Object.fromEntries(Object.keys(sides).map((name) => [name, []]));
+      const runs: Record<string, Run[]> = Object.fromEntries(Object.keys(sides).map((name) => [name, [] as Run[]] as const));
       for (let round = 0; round <= rounds; round++) {
         for (const [name, side] of Object.entries(sides)) {
           engine.gpuSide = side;

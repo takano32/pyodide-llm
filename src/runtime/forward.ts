@@ -91,13 +91,13 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpu
       // checkpoint, which only the GPU's worker reads)
       if (direct) {
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
-          : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }])) as Plan["tensors"];
+          : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }] as const)) as Plan["tensors"];
       }
       // (T.329.2.2: every tensor where it is in memory; the table of every layer's inputs is the hole, whose offsets
       // place() leaves as they are in the checkpoint, which only apart.rows reads)
       if (apart) {
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}),
-          ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }])) as Plan["tensors"];
+          ...(t.layers ? { layers: t.layers.map((part) => ({ ...part, offset: place(part.offset), ...(part.scales ? { scales: place(part.scales) } : {}) })) } : {}) }] as const)) as Plan["tensors"];
       }
       outside.engine = createForward({ memory, base, size: direct ? direct.stored : apart ? apart.stored : size, kernels, spawn, gpu, gpuRoom,
         gpuRemembered, gpuForce, halfKeys, direct, trying, plan, rows: apart?.rows, oneThread });

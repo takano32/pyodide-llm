@@ -302,7 +302,7 @@ async function checkGeneration(): Promise<Verdicts> {
   const pos = GENERATION_CHECK_POS, count = GENERATION_CHECK_TOKENS, positions = pos + count + 1;
   const matrix = ([rows, n]: Shape, scale: number): Weights => ({ w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / shared.GROUP, scale) });
   const cache = () => new Uint16Array(positions * kvDim).map((_, i) => (i < pos * kvDim ? toHalf((Math.random() - 0.5) * 4) : 0));
-  const data = { layers: [...Array(model.layers)].map(() => Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, m]) => [key, matrix(m, 0.01 * Math.sqrt(256 / m[1]))])) as Record<MatrixKey, Weights>),
+  const data = { layers: [...Array(model.layers)].map(() => Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, m]) => [key, matrix(m, 0.01 * Math.sqrt(256 / m[1]))] as const)) as Record<MatrixKey, Weights>),
     classifier: matrix([model.vocab, dim], 0.002), norms: new Float32Array((2 * model.layers + 1) * dim).map(() => 0.5 + Math.random()),
     keys: [...Array(model.layers)].map(cache), values: [...Array(model.layers)].map(cache), eps: EPS } satisfies GenerationData;
   const history = [...Array(pos + 1)].map(() => (Math.random() * model.vocab) | 0), draws = randomsOf(count);

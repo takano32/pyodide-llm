@@ -287,7 +287,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
     g.u.columns = m.weights.tables!.classifier.map((piece) => uniform(m, outliersOf(channels, piece.rows, plan.dim)));
   }
   g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
-  if (plan.rotated) g.u.rotate = Object.fromEntries(plan.rotated.signs.map(({ width }) => [width, uniform(m, new Uint32Array([width, width, plan.rotated!.block, 0]))]));
+  if (plan.rotated) g.u.rotate = Object.fromEntries(plan.rotated.signs.map(({ width }) => [width, uniform(m, new Uint32Array([width, width, plan.rotated!.block, 0]))] as const));
   return g as TokenBuffers;
 }
 

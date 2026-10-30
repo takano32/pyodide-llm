@@ -108,7 +108,7 @@ function generationParts(model: GenerateModel, form: Form, pipes: GenerationPipe
   };
   const cacheBytes = positions * kvDim * 2;
   const stack = [...Array(layers)].map((_, l) => {
-    const m = Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, matrix]) => [key, weights(matrix, data?.layers[l][key])])) as Record<MatrixKey, ReturnType<typeof weights>>;
+    const m = Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, matrix]) => [key, weights(matrix, data?.layers[l][key])] as const)) as Record<MatrixKey, ReturnType<typeof weights>>;
     const keys = make(cacheBytes), values = make(cacheBytes);
     if (data) {
       shared.device.queue.writeBuffer(keys, 0, data.keys[l]);

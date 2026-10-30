@@ -246,7 +246,7 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   };
   const copiesOf: Record<MatrixKey, Held>[] = [];
   for (let c = 0; c < copies; c++) {
-    copiesOf.push(Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, size]) => [key, matrixOf(key, size, data?.[key])])) as Record<MatrixKey, Held>);
+    copiesOf.push(Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, size]) => [key, matrixOf(key, size, data?.[key])] as const)) as Record<MatrixKey, Held>);
   }
   const cacheBytes = (pos + 1) * kvDim * 2;
   const v = { h: make(dim * 4), xb: make(dim * 4), q: make(dim * 4), k: make(kvDim * 4), v: make(kvDim * 4), att: make(dim * 4),
