@@ -9,6 +9,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import CORPUS, TEXTS, synthetic_weights
+from made_up import unigram
 from test_convert import converted, hugging_face, reader, safetensors_file
 from test_gguf import gguf_file
 
@@ -239,8 +240,7 @@ def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     config, tensors, published = llama3(scaling=scaling)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(config["vocab_size"])]}}).encode()
+    vocabulary = unigram(config["vocab_size"])
     tables = {}
     for dtype in ("float32", "int8"):
         conversion = Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary, "tokenizer.json",
@@ -364,8 +364,7 @@ def transformers5(published):
 def options_of(tensors, published, dtype, max_seq_len):
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(published["vocab_size"])]}}).encode()
+    vocabulary = unigram(published["vocab_size"])
     conversion = Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary, "tokenizer.json",
                             dtype=dtype, max_seq_len=max_seq_len)
     conversion.feed(file)

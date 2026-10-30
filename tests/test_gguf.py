@@ -8,6 +8,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import synthetic_weights
+from made_up import unigram  # noqa: F401 (the other tests take it from here)
 from test_bias import qwen2
 from test_convert import converted, hugging_face, reader, safetensors_file
 
@@ -281,8 +282,7 @@ def test_a_gguf_with_the_originals_vocabulary_is_the_safetensors_conversion(mode
         table = llama3_table(published)
     file, same = gguf_file(tensors, published, config["vocab_size"], extra=None if table is None else {"rope_freqs.weight": table}, more=[EPS])
     vocabulary, name = (sentencepiece(config["vocab_size"]), "tokenizer.model") if model == "sentencepiece" else \
-        (json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                     "vocab": [[f"w{i}", -float(i)] for i in range(config["vocab_size"])]}}).encode(), "tokenizer.json")
+        (unigram(config["vocab_size"]), "tokenizer.json")
     got = with_original(file, published, vocabulary, name, dtype)
     safetensors = safetensors_file(same)
     size = struct.unpack("<Q", safetensors[:8])[0]
@@ -735,11 +735,6 @@ def other_gguf(tensors, config, split=True, transposed=True):
     head = b"".join(out)
     head += b"\0" * (-len(head) % 32)
     return head + b"".join(blobs), same
-
-
-def unigram(vocab_size):
-    return json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                       "vocab": [[f"w{i}", -float(i)] for i in range(vocab_size)]}}).encode()
 
 
 def the_other(model):

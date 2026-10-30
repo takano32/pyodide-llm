@@ -81,9 +81,17 @@ def test_the_tensor_order_of_quantize_matches_the_engine(tmp_path):
     config, _ = synthetic_weights()
     header = (config["dim"], config["hidden_dim"], config["n_layers"], config["n_heads"],
               config["n_kv_heads"], -config["vocab_size"], config["seq_len"])
-    shapes = [shape for shape, _ in quantize.layout(*header)]
-    expected = ORDER["llama, its own classifier"].split()
-    assert len(shapes) == len(expected)
+    dim, hidden, layers, heads, kv_heads, vocab, seq_len = (abs(n) for n in header)
+    kv, half = dim * kv_heads // heads, dim // heads // 2
+    # (T.492: each row's shape and what quantize.py makes of it, by its name in test_layout.py's ORDER, not their count alone:
+    # a row moved, or a vector taken for a matrix, is another file)
+    rows = {"token_embedding_table": ((vocab, dim), True), "rms_att_weight": ((layers, dim), False), "wq": ((layers, dim, dim), True),
+            "wk": ((layers, kv, dim), True), "wv": ((layers, kv, dim), True), "wo": ((layers, dim, dim), True),
+            "rms_ffn_weight": ((layers, dim), False), "w1": ((layers, hidden, dim), True), "w2": ((layers, dim, hidden), True),
+            "w3": ((layers, hidden, dim), True), "rms_final_weight": ((dim,), False), "freq_cis_real": ((seq_len, half), None),
+            "freq_cis_imag": ((seq_len, half), None), "wcls": ((vocab, dim), True)}
+    expected = [rows[name] for name in ORDER["llama, its own classifier"].split()]
+    assert [(tuple(shape), matrix) for shape, matrix in quantize.layout(*header)] == expected
 
 
 def test_int8_embedding_row_is_widened_when_the_classifier_is_separate(tmp_path):

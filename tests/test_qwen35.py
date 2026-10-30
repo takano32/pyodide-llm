@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from conftest import naive_qwen35_logits, pack_tokenizer, qwen35_model, tiny_vocab
+from made_up import unigram
 from test_convert import converted, reader, safetensors_file, streamed
 
 import llama2_convert
@@ -58,8 +59,7 @@ def conversion(tensors, config, dtype="float32"):
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
     text = config["text_config"]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(text["vocab_size"])]}}).encode()
+    vocabulary = unigram(text["vocab_size"])
     made = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
                                      "tokenizer.json", dtype=dtype, max_seq_len=text["max_position_embeddings"], start=8 + size)
     made.stream.feed(file[8 + size:])

@@ -5,7 +5,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
-from made_up import qwen2  # noqa: F401 (the other tests take it from here)
+from made_up import qwen2, unigram  # noqa: F401 (the other tests take it from here)
 from test_convert import converted, reader, safetensors_file, streamed
 
 from llama2_convert import Safetensors, checkpoint_header, checkpoint_size, has_bias, layout
@@ -57,8 +57,7 @@ def test_the_conversion_tells_the_engine_about_the_biases():
     tensors, published = qwen2(settings, weights, True)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(settings["vocab_size"])]}}).encode()
+    vocabulary = unigram(settings["vocab_size"])
     conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary,
                                            "tokenizer.json", dtype="float32", max_seq_len=settings["seq_len"])
     assert conversion.options["bias"] is True and conversion.options["arch"] == "llama"

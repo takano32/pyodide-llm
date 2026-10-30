@@ -7,6 +7,7 @@ installed; CI has neither, so the expectations are written out).
 import json
 
 import pytest
+from made_up import unigram
 
 from llama2_convert import Unsupported, one_turn, one_turn_template, render
 
@@ -292,8 +293,7 @@ def test_the_conversion_hands_the_template_to_the_page():
     tensors, published = hugging_face(settings, weights, True)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(settings["vocab_size"])]}}).encode()
+    vocabulary = unigram(settings["vocab_size"])
     tokenizer_config = json.dumps({"chat_template": SMOLLM2, "bos_token": "<s>", "eos_token": "</s>"})
     conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary,
                                            "tokenizer.json", dtype="float32", max_seq_len=settings["seq_len"],
