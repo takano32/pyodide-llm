@@ -40,6 +40,7 @@ const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 const { createForward, compileKernels, compileBlocks, weightsMemory, footprint, takesBlocks } = await import(pathToFileURL(forwardFile).href);
 const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES, KIND, PACKED } = await import(runtimeUrl("jobs.ts"));
+const { frameOf } = await import(runtimeUrl("forward/memory.ts"));
 
 import { blocksModel } from "./blocks-model.mjs";
 const { BLOCK_TYPES } = await import(runtimeUrl("jobs.ts"));
@@ -304,6 +305,10 @@ try {
     say(!whole || (first.placed <= bound && bound - first.placed < 2 ** 20 + 2 ** 17 && unsaid >= bound),
       `${name}: the engine placed ${first.placed} bytes after the checkpoint (${cache} of them keys and values), footprint() counted ${bound}` +
       ` (${unsaid} without Python's count of the int8 weights)`);
+    // T.622: and a token's frame as the engine laid it out from the plan, array by array as footprint() counts it from the
+    // form's kinds (frame-check.mjs holds the other models; the activations' scales of the blocks' packings are here)
+    const { made: framed } = await engine();
+    say(JSON.stringify(framed.frame) === JSON.stringify(frameOf(header, options)), `${name}: a token's frame as the engine laid it out is the one footprint() counts`);
   }
   // what the engine chooses of the jobs' kinds is read off a job: none is built here, so the table is asked
   assert.ok(KIND.matmul_sbr > KIND.matmul_t2 && KIND.matmul_sb > KIND.matmul_t2 && KIND.matmul_sbw > KIND.matmul_t2, "the blocks' kinds of jobs come after the kinds there were");

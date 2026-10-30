@@ -97,6 +97,18 @@ const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, kin
 };
 const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
 
+/** T.622: a token's frame (frameArrays()) as footprint() counts it from the header and the form: the kinds' arrays, a
+ * rotated basis's, and the scales of a group of 32 activations by the most any packing of the model's takes (the
+ * dtype's, and those of the kinds its form gives rows). The engine makes its own from the plan (createForward()'s
+ * frame): tests/frame-check.mjs holds the two to each other, array by array */
+export function frameOf(header: Header, options: Footprint = {}, kinds: Kinds = LAYER_KINDS): Framed[] {
+  const { dtype = "float32", rotated = null } = options;
+  const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
+  const packing = packingOf(dtype), own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
+  const packings = packing ? [packing, ...own] : own;
+  const frames = kindsHad(sizes, kinds).map(({ kind }) => kinds[kind].frame(sizes));
+  return frameArrays(header[0], sizes.hidden, kvDim, qDim, frames, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined);
+}
 /** T.115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T.130). An upper bound, a little above what createForward allocates
  * (tests/forward-check.mjs holds the two together).
@@ -122,18 +134,6 @@ const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size
  * keep besides is their kinds' (kinds: forward/kinds.ts's table, the engine's own: frame(), state(), cached), asked
  * with what sizes the model as the form says it (sizes.ts's sizesOfForm()); what the architecture's name says is its
  * line of architectures.ts; how the weights are packed is the dtype's line of jobs.ts's PACKED. */
-/** T.622: a token's frame (frameArrays()) as footprint() counts it from the header and the form: the kinds' arrays, a
- * rotated basis's, and the scales of a group of 32 activations by the most any packing of the model's takes (the
- * dtype's, and those of the kinds its form gives rows). The engine makes its own from the plan (createForward()'s
- * frame): tests/frame-check.mjs holds the two to each other, array by array */
-export function frameOf(header: Header, options: Footprint = {}, kinds: Kinds = LAYER_KINDS): Framed[] {
-  const { dtype = "float32", rotated = null } = options;
-  const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
-  const packing = packingOf(dtype), own = Object.values(options.kinds ?? {}).flat().map((kind) => packingOf(kind)).filter((one) => one !== null);
-  const packings = packing ? [packing, ...own] : own;
-  const frames = kindsHad(sizes, kinds).map(({ kind }) => kinds[kind].frame(sizes));
-  return frameArrays(header[0], sizes.hidden, kvDim, qDim, frames, rotated, packings.length ? Math.max(...packings.map(({ xs }) => xs)) : undefined);
-}
 export function footprint(header: Header, size: number, options: Footprint = {}, kinds: Kinds = LAYER_KINDS) {
   const { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false, shared = false, outliers = 8, head_dim = 0, gpu = false,
     direct = false, rotated = null } = options;
