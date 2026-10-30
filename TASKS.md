@@ -43,7 +43,7 @@
 - T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
 - T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
-- T.453 [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 未着手
+- T.453 [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 反映済み
 - T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T.455 [整理][WebGPU] GPU の側に時計が 2 つある — 未着手
 - T.456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 未着手
@@ -535,8 +535,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 状態: 未着手（2026-10-02、T.232 から。規模 小〜中）
 - GPU の節に 3 値の行列 × ベクトル（符号を −1・0・+1 に直す今の形と、0・1・2 のまま −Σa を引く形を並べる）・タイル・層、CPU の節に 3 値のカーネルと回転の行。どちらの形が速いかは未計測で、端末の報告で決める。`public/benchmark/gpu.js` は T.232 では触っていない。
 
-### T.453 [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 状態: 未着手（2026-10-11、T.235 から。規模 小）
+### T.453 [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 状態: 反映済み（2026-10-11、T.235 から。規模 小）
 - 3 値のファイルが「int8 0.48 GB」と出る。チェックポイントの dtype を言う。
+- **2026-10-30**: 行の dtype は `llama2_numpy.checkpoint_dtype(見出し, 大きさ, options)`（エンジンが読む dtype そのもの: options の `dtype` の欄は読まない）。手元で `tests/make_ternary.py` の作り物 2 つ（ternary と int8）に回して「ternary 0.00 GB」「int8 0.00 GB」。CI を省いた。訳: 書く行 1 つの道具の直しで、手元で両方の dtype を回せた。検査は足していない（人が読む行）ので壊し方も無い。
 
 ### T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T.235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
