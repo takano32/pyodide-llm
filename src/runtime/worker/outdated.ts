@@ -38,5 +38,5 @@ export const wentWithout = (failure: unknown, namer?: string, probe?: Probe) =>
 
 /** The engine goes on without a worker that did not start: `event` is its error event, namer the import.meta.url of
  * the module that made it. A script that threw says what (a message) and is no missing file; one that did not load
- * says nothing, and then the namer is asked for (updated.js's unstarted() has the same line). */
+ * says nothing, and then the namer is asked for (updated.ts's unstarted() has the same line). */
 export const workerWentWithout = (event: { message?: string } | undefined, namer: string, probe?: Probe) => notice(() => !event?.message && goneNow(namer, probe));
