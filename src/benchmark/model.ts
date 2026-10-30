@@ -3,6 +3,7 @@
 import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.js";
 import { BASE, $, parameters, type Result } from "./dom.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
+import { UPDATED } from "../runtime/updated.ts";
 import type { BenchRow, ModelWorker, Progress, Round, ToWorker } from "../runtime/contracts/messages.ts";
 
 // the model page's worker itself (src/runtime/worker.js): the model loads as the model page loads it (the GPU too), the
@@ -44,6 +45,9 @@ export async function modelSection(): Promise<Result> {
           readies++;
           if (readies === 1) resolve(data);
         } else if (data.type === "bench" || data.type === "paths") resolve(data);
+        // T.475: a file of this page's build is gone from the site (the kernels, the engine's module: the worker goes on
+        // without it, slower): the rounds would time that, and not this device. The section ends with the sentence
+        else if (data.type === "updated") resolve({ error: UPDATED });
         else if (data.type === "error") {
           // T.242: where it happened goes to the console, as on the model page (the report holds the message alone)
           console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
@@ -74,6 +78,7 @@ export async function modelSection(): Promise<Result> {
     staged("model", { stage: "the page's path", at: 2, of: stages });
     const paths = await request({ type: "paths", load: 1, prompt, counts: PATH_PROMPTS, sampled: PATH_WRITES });
     pathing = false;
+    if (paths.error === UPDATED) return { status: "error", markdown: UPDATED };
     const answer = await request({ type: "bench", model: entry, load: 1, rounds: asked, prompt, steps: 64 });
     if (answer.error) return { status: "error", markdown: answer.error };
     const table = pathTable(paths, entry.name);

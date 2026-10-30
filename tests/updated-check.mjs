@@ -400,9 +400,10 @@ assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerF
   assert.ok(!/\?\.name \?\? "Error"\}/.test(text.replace(/const failed = [^\n]*/, "")), "no other place of sections.ts puts a name before a caught value's words");
 }
 // the kernels of a 64-bit memory are fetched on the same line as the others and are no slower path (without them a
-// model past 4 GB is refused, and a small one runs as fast as ever): their absence is not told
-assert.ok(code("src/runtime/worker/runtime.ts").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n          if (!wide) void wentWithout(error);\n          return null;\n        })));"),
-  "runtime.js tells of the kernels that are gone, but for those of a 64-bit memory");
+// model past 4 GB is refused, and a small one runs as fast as ever): their absence is not told. T.475: where the site
+// was updated, the failure is kept, and a model past 4 GB is refused with it (tests/updated-in-browser.mjs sees that)
+assert.ok(code("src/runtime/worker/runtime.ts").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n          if (!wide) void wentWithout(error);\n          else if (kindOf(error) === \"updated\") wideUpdated ??= error;\n          return null;\n        })));"),
+  "runtime.js tells of the kernels that are gone, but for those of a 64-bit memory, and keeps the update of those");
 // each sentence is written once, and the status line's is read by what draws the status line alone (as its last part)
 for (const words of ["The site was updated", "the site was updated: ", "reload for full speed", "for full speed"]) {
   const writers = sources.filter((name) => fs.readFileSync(new URL(name, root), "utf8").includes(words));

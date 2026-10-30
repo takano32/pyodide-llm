@@ -214,6 +214,17 @@ const CASES = {
     console.log(`  the page: ${JSON.stringify(said)}`);
     isSentence(name, said);
   },
+  // T.475: a model past 4 GB (here any, ?wide=on) on a page whose 64-bit kernels are gone is refused with the sentence,
+  // not with "no 64-bit WebAssembly memory" (the page is old, not the browser)
+  "model page, the 64-bit kernels gone, and a model on a 64-bit memory": async (context, name) => {
+    rule = (file, method) => (method === "HEAD" && built(file) ? 404 : family("simdkernel_plain64", "simdkernel_relaxed_plain64", "simdkernel_shared64", "simdkernel_relaxed_shared64")(file) ? 404 : undefined);
+    const page = await modelPage(context, "stories260K&wide=on");
+    await ready(page);
+    const said = await page.evaluate(lastError);
+    console.log(`  the page: ${JSON.stringify(said)}`);
+    expect(name, requests.some((line) => /^GET _astro\/simdkernel_plain64\..* -> 404$/.test(line)), "the 64-bit kernels were not asked for: the case saw nothing");
+    isSentence(name, said);
+  },
   "model page, the worker answered 500": async (context, name) => {
     rule = (file) => (family("worker")(file) ? 500 : undefined);
     const page = await modelPage(context);
@@ -309,6 +320,8 @@ const CASES = {
   "benchmark, a section whose engine's module is answered 500": measuring("device", (name) => (family("forward")(name) ? 500 : undefined),
     (name, said) => isNot(name, said.markdown, /TypeError/)),
   "benchmark, a section whose kernels are gone": measuring("device", (name) => (family("simdkernel_plain", "simdkernel_relaxed_plain")(name) ? 404 : undefined), sentenceOfSection),
+  // T.475: the model section, whose worker goes on without its kernels (slower): its rounds would time that
+  "benchmark, the model section whose kernels are gone": measuring("model", (name) => (family("simdkernel", "simdkernel_relaxed", "simdkernel_plain", "simdkernel_relaxed_plain", "simdkernel_shared", "simdkernel_relaxed_shared")(name) ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose kernels are gone": measuring("cpu", (name) => (/^_astro\/simdkernel/.test(name) ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose ceilings' loops are gone": measuring("cpu", (name) => (/^_astro\/ceilings/.test(name) ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose software threads are gone, with the worker's own file": measuring("cpu",

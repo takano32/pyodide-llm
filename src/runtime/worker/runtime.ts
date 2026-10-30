@@ -9,7 +9,7 @@ import type { Built } from "../built.ts";
 import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.ts";
 import { since, took } from "./clock.ts";
 import { wentWithout } from "./outdated.ts";
-import { told } from "../failure.ts";
+import { kindOf, told } from "../failure.ts";
 import type { EngineWindow, Pyodide, PyodideModule } from "../contracts/python.ts";
 import type { Force } from "../contracts/gpu/protocol.ts";
 import type * as Forward from "../forward.ts";
@@ -27,6 +27,9 @@ export let forwardModule: typeof Forward | undefined, jsKernels: Compiled | null
 export let sharedKernels: Compiled | null | undefined;
 // T.101: the kernels for a 64-bit memory, for a model past 4 GiB ({ plain, shared }), where the browser has Memory64
 export let wideKernels: { plain: Compiled | null; shared: Compiled | null } | undefined;
+// T.475: where a kernel of a 64-bit memory did not come because the site was updated since this page was opened, that
+// failure (updated.ts's), which a model past 4 GB is refused with in place of "no 64-bit memory here"
+export let wideUpdated: unknown;
 // ?wide=on: a 64-bit memory for every model, to try that path on a small one (measuring, tests), as ?offline=on says
 export let forceWide = false;
 // ?gpuTest= (T.148, T.156; the tests only): what a fallback adapter is taken for (hasWebGpu's comment below)
@@ -127,8 +130,10 @@ async function init(search: string) {
     const build = async (kind: "plain" | "shared" | "plain64" | "shared64", wide = false) => {
       const [plain, relaxed] = await Promise.all(([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
         built(name).then((res) => res.arrayBuffer()).catch((error) => {
-          // (T.439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused)
+          // (T.439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused, T.475:
+          // by the site's update where that is why)
           if (!wide) void wentWithout(error);
+          else if (kindOf(error) === "updated") wideUpdated ??= error;
           return null;
         })));
       return plain ? forwardModule!.compileKernels(plain, relaxed, wide) : null;
