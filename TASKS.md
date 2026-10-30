@@ -45,7 +45,6 @@
 - T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
 - T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
-- T.460 [バグ][その他] 読み込みの秒が次の読み込みに持ち越される — 反映済み
 - T.461 [バグ][その他] 組み立ての途中で投げた `Llama` が forward.js のエンジンを手放さない — 未着手
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.463 [バグ][その他] カーネルの読み込みの輪が、relaxed だけ届いたときも `simdkernel.so` の道を置く — 未着手
@@ -546,12 +545,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 閉包の関数ごとに、どの状態の変数に触るかを数えた（`.tmp/` の捨ての道具）。プロンプトの道（`promptOnGpu`・`gpuKeysAndValues`・`prompt`）とステップの道（`generateMany`・`gpuSteps`）が、どちらも GPU の Worker・`gpuEnd`・`gpuSerial`・`written`・`gpuStateAt` を書く。`startGpu`・`stopGpu`・`release` はほぼ全部の状態に触る。
 - 分けると、何人もが書く状態を 1 つのオブジェクトにして渡すか、書くたびの出来事（「GPU が pos まで書いた」など）を 10 ほど足すことになる。前者は「設計の決まり」の「分け合うオブジェクトは無い・setter は無い」に反し、後者は 1 トークン・1 ブロックの道に関数の呼び出しを足す。T.457.1 で `gpuside.ts` は 626 行になり、目安の 800 行の内。
 - 決め: 今は分けない。覆す条件: GPU の側にまた機能を足して 800 行を越えるとき、または状態の一部（例えばステップの時間と測り直しの数）を、ほかと書き合わない持ち主に出せると分かったとき。区切りのまとめで持ち主に見せる。
-
-### T.460 [バグ][その他] 読み込みの秒が次の読み込みに持ち越される — 状態: 反映済み（2026-10-11、T.378.3 から。規模 小）
-- 変換の後に読んだサイトのモデルが、前の変換の `seconds.convert` を言う。ページは出さないが、e2e の JSON の行には出うる。読み込みの始まりで消す。
-- **2026-10-30**: `worker/clock.ts` に出来事 `loadStarted()`（`download`・`construct`・`convert` を消す。`pyodide` は訪問に 1 回なので残す）、`load()` の頭で呼ぶ（GPU だけのモデルの読み直しの再帰でも置き直す）。
-- 検査: `worker-parts-check` に `clock.js` だけの節（変換の 4 つの秒の後に `loadStarted()` と 2 つ: `pyodide` と新しい 2 つだけ）と、`load.js` の代役の節に「前の変換の秒（`took('convert', 9)`）を置いてから読んだ次のモデルの準備完了が `convert` を言わない」。壊し方: `delete seconds.convert` を外す・`load()` の `loadStarted()` を外す、どちらも落ちる。
-- 手元: 軽い組（448 秒）・型検査・`worker-modules-check`・`worker-check`・`silent-check`・ビルドして実ブラウザ（Chromium の e2e、stories260K）。CI を省いた。訳: 秒の記録だけで、読み込みの道は手元の e2e が踏んだ。
 
 ### T.461 [バグ][その他] 組み立ての途中で投げた `Llama` が forward.js のエンジンを手放さない — 状態: 未着手（2026-10-11、T.378.3 から。前からの動き。規模 小）
 - `external()` の物（GPU の Worker を開いていればそれも）が `release()` されないまま残る。T.378.3 は「次の読み込みに持ち主として残らない」までを直した。
