@@ -151,6 +151,8 @@ export function addressed(exports: WebAssembly.Exports, wide: boolean): Kernels 
 //             the job's last argument (thread: which of a memory's threads calls, the coordinator 0, T.363.5)
 //   rowBytes  (the kinds whose rows are a matrix's) the bytes of a row n wide, for the blocks count tokens go in
 //             (a6: the job's sixth argument, where the kind's rows differ by it)
+//   tileRows  (a tile's kinds) the rows its tile takes at once: a prompt's chunks are cut in as many (T.620; 1 where
+//             it is not said)
 //   warm      a tiny call of each of its kernels on the scratch (warmUp())
 // runner() and warmUp() read every line once as a thread is made; a job then costs a look into an array by its
 // number. A new kind is a line here, at the end (the numbers before it stay), its kernels' names in ADDRESSES, and
@@ -160,7 +162,7 @@ type Tile = (out: number, a: number, b: number, a4: number, a5: number, a6: numb
 type Scratch = { xq: number; xs: number; w: number; s: number; c: number; out: number };
 export type Work = {
   from: "plain" | "relaxed"; one(k: Kernels): Call; tile?(k: Kernels, thread: number): Tile; rowBytes?(n: number, a6: number): number;
-  warm(k: Kernels, at: Scratch): void;
+  tileRows?: number; warm(k: Kernels, at: Scratch): void;
 };
 const kinds = <Name extends string>(table: Record<Name, Work>) => table;
 // ---- T.363.5: llama.cpp's blocks (kernels/blocks.ts; kernels/README.md, "llama.cpp's blocks"): 256 weights of a row in
@@ -187,7 +189,7 @@ export const WORK = kinds({
   // out, xq, xs, w, scales, corrections, n: int8 weights by 7-bit activations. T.159, its tile: four rows by four
   // tokens, each number matmul_q8r's to the bit
   matmul_q8r: {
-    from: "relaxed", rowBytes: (n) => n,
+    from: "relaxed", rowBytes: (n) => n, tileRows: 4,
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q8r(out, a, b, a4, a5, a6, a7, r0, r1),
     tile: (k) => (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as) => k.matmul_q8r_tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as),
     warm: (k, { xq, xs, w, s, c, out }) => {
@@ -219,15 +221,15 @@ export const WORK = kinds({
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1),
     warm: (k, { xq, w, c, out }) => { k.attention_f16(out, xq, w, w, c, 0, 1, 1, 4, 0, 1); },
   },
-  // as matmul_q8r, on int6 weights (T.98). (rowBytes: a block of them was always counted as int8's, a byte a weight)
+  // as matmul_q8r, on int6 weights (T.98): 24 bytes for 32 weights (T.620: they were counted as int8's, a byte a weight)
   matmul_q6r: {
-    from: "relaxed", rowBytes: (n) => n,
+    from: "relaxed", rowBytes: (n) => (n * 3) / 4,
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q6r(out, a, b, a4, a5, a6, a7, r0, r1),
     warm: (k, { xq, xs, w, s, c, out }) => { k.matmul_q6r(out, xq, xs, w, s, c, 32, 0, 1); },
   },
   // as matmul_q8, on int6 weights
   matmul_q6: {
-    from: "plain", rowBytes: (n) => n,
+    from: "plain", rowBytes: (n) => (n * 3) / 4,
     one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q6(out, a, b, a4, a5, a7, r0, r1),
     warm: (k, { xq, xs, w, s, out }) => { k.matmul_q6(out, xq, xs, w, s, 32, 0, 1); },
   },
@@ -284,6 +286,8 @@ export const WORK = kinds({
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
 export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [name, number] as const)) as Record<Kind, number>;
+/** T.620: the rows a kind's tile takes at once, by the kind's number (1: a row at a time, or no tile) */
+export const TILE_ROWS = Object.values(WORK).map((work: Work) => work.tileRows ?? 1);
 
 // ---- T.375.4: how the weights of a matrix are packed in a checkpoint, as the kernels take them: one line for each
 // way a quantized tensor is stored (contracts/plan.ts's Stored; float32 is no packing: the engine multiplies by it as
