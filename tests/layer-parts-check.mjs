@@ -106,7 +106,7 @@ const S = 100000;
     held();
     // a float32 key and value go in as they are or through the kernel, and float16 ones the other way round
     room.U.fill(7, 100, 100 + 32);
-    cache.put(cache.keys, cache.values, 100, 100);
+    cache.put(0, cache.keys, cache.values, 100, 100);
     cache.putHalves(cache.keys + KV, cache.values + KV, 100, 100);
     assert.deepEqual(asked, half ? [["to_f16", cache.keys, 100, 8], ["to_f16", cache.values, 100, 8]]
       : [["from_f16", cache.keys + KV, 100, 8], ["from_f16", cache.values + KV, 100, 8]]);
