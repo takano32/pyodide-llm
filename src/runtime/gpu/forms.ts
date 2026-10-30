@@ -2,14 +2,14 @@
 // and the matrices' tiled shaders (T.146, T.147), with how a matrix's pieces are bound and dispatched.
 // (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, CODEBOOK_BYTES, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
-import type { Model, Thrown } from "./device.ts";
+import type { Model } from "./device.ts";
 import type { Quantizing } from "./block.ts";
 import type { PromptForm } from "../shaders/prompt.ts";
 import type { BlockPacking } from "../shaders/common.ts";
@@ -73,7 +73,7 @@ async function chooseAttention(m: Model) {
       tried.push(`${name}: ${wrong}`);
     } catch (error) {
       if (isLate(error)) throw error;
-      tried.push(`${name}: ${(error as Thrown)?.message ?? error}`);
+      tried.push(`${name}: ${whyOf(error)}`);
     }
   }
   throw new Error(`no attention is right on this GPU (${tried.join("; ") || `none named ${plan.force.attention}`})`);
@@ -182,7 +182,7 @@ async function chooseMatrices(m: Model) {
       m.forms.tried.push({ name: kept.name, none: `remembered, but wrong now: ${wrong}` });
     } catch (error) {
       if (isLate(error)) throw error;
-      m.forms.tried.push({ name: kept.name, none: `remembered, but ${(error as Thrown)?.message ?? error}` });
+      m.forms.tried.push({ name: kept.name, none: `remembered, but ${whyOf(error)}` });
     }
     if (stopping) return;
   }
@@ -201,7 +201,7 @@ async function chooseMatrices(m: Model) {
       else right.push(tiled);
     } catch (error) {
       if (isLate(error)) throw error;
-      m.forms.tried.push({ name: form.name, none: String((error as Thrown)?.message ?? error) });
+      m.forms.tried.push({ name: form.name, none: whyOf(error) });
     }
     if (stopping) return;
   }
