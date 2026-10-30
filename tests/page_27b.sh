@@ -72,7 +72,7 @@ fi
 if has dry; then
   dry=.tmp/page-27b-dry
   mkdir -p "$dry"
-  python -m pip install -q pytest  # (tests/make_ternary.py takes its made-up tensors from the unit tests)
+  python -m pip install -q pytest  # (tests/page_27b.py takes its made-up Bonsai and GGUF vocabulary from the unit tests, which import pytest)
   python tests/page_27b.py made-up "$dry"
   # (the widths of the made-up model's signs are 128, 256 and 384)
   node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines none --broken embedding,sign-128-5,sign-384-all

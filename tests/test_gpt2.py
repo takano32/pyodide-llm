@@ -8,6 +8,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import pack_tokenizer, tiny_vocab
+from made_up import unigram
 from test_convert import converted, reader, safetensors_file, streamed
 
 from llama2_convert import Safetensors, checkpoint_header, normalize
@@ -96,8 +97,7 @@ def test_the_conversion_tells_the_engine_the_architecture():
     tensors, config = gpt2_model()
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(VOCAB)]}}).encode()
+    vocabulary = unigram(VOCAB)
     conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
                                            "tokenizer.json", dtype="float32", max_seq_len=POSITIONS)
     assert conversion.options["arch"] == "gpt2" and conversion.options["bias"] is False

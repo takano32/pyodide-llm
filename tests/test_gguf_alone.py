@@ -10,7 +10,7 @@ import struct
 import numpy as np
 import pytest
 from conducting import Directory, converted
-from made_up import hugging_face, safetensors_file, synthetic_weights
+from made_up import hugging_face, safetensors_file, synthetic_weights, unigram
 from make_hf_fixture import field
 from test_gguf import EPS, fed, gguf_file, with_original
 
@@ -114,8 +114,7 @@ def test_a_rope_freqs_table_alone_is_read_back_into_the_scaling_that_makes_it(dt
     config, published, file, same = llama3_gguf()
     got = fed(file, dtype)
     assert got.options["rope_scaling"] == LLAMA3
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(config["vocab_size"])]}}).encode()
+    vocabulary = unigram(config["vocab_size"])
     staged = with_original(file, published, vocabulary, "tokenizer.json", dtype)
     assert bytes(got.checkpoint) == bytes(staged.checkpoint) and staged.options["rope_scaling"] == LLAMA3
     # and it is not the checkpoint of the same weights turned by a plain RoPE, where the file has the tables

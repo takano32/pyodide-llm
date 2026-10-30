@@ -95,8 +95,7 @@ def conversion(tensors, config, said, dtype="float32", vocab_size=None, max_seq_
     """The page's way: a file that says its basis in its header, in its own order, and the options that come out."""
     file = safetensors_file(tensors, metadata={ROTATED: json.dumps(said)} if said else None)
     size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(vocab_size)]}}).encode()
+    vocabulary = unigram(vocab_size)
     made = Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary, "tokenizer.json", dtype=dtype,
                       max_seq_len=max_seq_len, start=8 + size)
     made.stream.feed(file[8 + size:])

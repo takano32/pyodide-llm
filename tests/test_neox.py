@@ -9,6 +9,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import pack_tokenizer, tiny_vocab
+from made_up import unigram
 from test_convert import converted, reader, safetensors_file, streamed
 
 from llama2_convert import Safetensors, normalize, rotary_dim
@@ -119,8 +120,7 @@ def test_the_conversion_tells_the_engine_what_the_file_cannot(rotary_pct, parall
     tensors, config = neox_model(rotary_pct, parallel)
     file = safetensors_file(tensors)
     header, base = file[8:8 + struct.unpack("<Q", file[:8])[0]].decode(), 8 + struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(VOCAB)]}}).encode()
+    vocabulary = unigram(VOCAB)
     conversion = llama2_convert.Conversion(header, base, json.dumps(config), vocabulary,
                                            "tokenizer.json", dtype="float32", max_seq_len=POSITIONS)
     assert conversion.options["arch"] == "neox"
