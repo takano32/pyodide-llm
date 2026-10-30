@@ -40,6 +40,10 @@ export function chose(entry: Model) {
   benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
   readyLine = gpuNote = undefined;  // T.148: the status line waits for the new model's
   arriving = undefined;
+  // T.470: and its context and format are the new model's, known once it is ready (the settings' longest steps said
+  // the one before's till then)
+  longest = 256;
+  fromTemplate = undefined;
   loads += 1;
   return loads;
 }
