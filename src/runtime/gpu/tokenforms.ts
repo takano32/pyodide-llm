@@ -41,17 +41,9 @@ type Rounding = Math & { f16round?: (value: number) => number };
 // plan.force.quick: the first right one, untimed. Throws where none is right (the tokens then stay on the CPU)
 // T.378.4: m.tokens is this module's to set, and no other's: a token's buffers and pipelines (tokens.ts's
 // tokenBuffers() makes them), its attention (tokenattention.ts's chooseTokenAttention() chooses it), and the form of
-// its layer chosen here. null where no form is right
+// its layer chosen here; no form where none is right (T.467: a choice that throws leaves the record, or none, without
+// a form, which every reader asks for: tokensSaid() says null, requests.ts's generate() refuses)
 async function chooseTokens(m: Model) {
-  try {
-    await choose(m);
-  } catch (error) {
-    // (the record is null from here: Model says what its readers hold, device.ts)
-    m.tokens = null as unknown as Tokens;
-    throw error;
-  }
-}
-async function choose(m: Model) {
   const { plan } = m;
   // (tokenPass puts a parallel residual's second norm before o as a dispatch: LayerNorm's, GPT-NeoX's)
   if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");

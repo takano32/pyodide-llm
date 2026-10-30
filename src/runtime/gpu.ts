@@ -60,8 +60,9 @@
 // shader loads them); a device without the packed int8 dot keeps such a model on the CPU.
 //
 // T.352: this file is the window of the worker: forward.ts starts it and its messages come here. What it does is the
-// modules of gpu/: device.ts (the shaders' module, what the modules share, the device, buffers), weights.ts (the
-// weights onto the GPU), forms.ts (the prompt's shaders checked, timed and chosen), block.ts (a block of a prompt),
+// modules of gpu/: device.ts (the model's record and what the modules share, the device, buffers), weights.ts (the
+// weights onto the GPU), packings.ts (each packing's rows on the GPU), kinds.ts with attention.ts, linear.ts and
+// convolution.ts (each kind of layer's shaders, places and steps), forms.ts (the prompt's shaders checked, timed and chosen), block.ts (a block of a prompt),
 // tokenattention.ts, tokens.ts and tokenforms.ts (a generated token's attention, its steps, and their forms checked,
 // timed and chosen), requests.ts (what forward.ts waits for in the control area) and start.ts (the model going onto
 // the GPU and leaving it). Each is a static import: a bundler links them into this worker's file (T.367.3),

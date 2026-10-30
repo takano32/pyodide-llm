@@ -116,7 +116,6 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
       if (stopping) return end();
     }
     if (lost) return unusable(lost);
-    // (in this order: form, attention, forms and remembered are formsSaid()'s)
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
       ...formsSaid(model!), blocks, tokens: tokensSaid(model!), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined } satisfies FromGpu);
   } catch (error) {
