@@ -334,12 +334,16 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
     assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, and its scales as the GPU holds them (float32)");
     assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , halves]) => sum + (stop - start) * (halves ? 2 : 1), 0), "every byte put up has a route, a half's twice");
     const steps = [1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1];
-    for (const step of [steps, [1], [2], [3]]) {
+    // (T.299: and a byte at a time where the first byte of the first route of codes and of the first of halves comes
+    // twice, before the rest of its word or half: counted, its word or half was written a byte short)
+    const plainAt = a.weights.routes.find(([, , , , halves]) => !halves)[0], halfAt = a.weights.routes.find(([, , , , halves]) => halves)[0];
+    for (const [step, twice] of [[steps, []], [[1], []], [[2], []], [[3], []], [[1], [plainAt, halfAt]]]) {
       for (const [, , target] of a.weights.routes) target.data.fill(0);
       a.weights.partial.clear();
       for (let offset = 0, k = 0; offset < checkpoint.length; k++) {
         const length = Math.min(step[k % step.length], checkpoint.length - offset);
         routed(a, offset, checkpoint.subarray(offset, offset + length));
+        if (twice.includes(offset)) routed(a, offset, checkpoint.subarray(offset, offset + length));
         offset += length;
       }
       assert.equal(unwritten(a), false, `every half is whole once the checkpoint has come (stretches of ${step.slice(0, 3)}...)`);
