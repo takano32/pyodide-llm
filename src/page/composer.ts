@@ -45,6 +45,7 @@ $("composer").onsubmit = (event) => {
   // T.556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in <think>
   const drawn = { markdown: Boolean(template), thinking: Boolean(template) && /<think>\s*$/.test(sent) };
   const how = answerBegan(message("model"), settings, longest, () => crypto.getRandomValues(new Uint32Array(1))[0], drawn);
+  if (!how) return;  // (T.468.3: one is being written: the guard above keeps from here)
   showRun();
   worker.postMessage({ type: "generate", prompt: sent, echo: !template, ...how });
 };
