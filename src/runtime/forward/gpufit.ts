@@ -11,7 +11,7 @@ import type { Direct } from "./alone.ts";
 import type { KindNumbers, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { Activation, LayerKind, Tensor } from "../contracts/plan.ts";
 
-// ---- (T.368.4, the types) what createForward() (engine.ts) makes once and hands the two functions of this file
+// ---- (T.368.4, the types) what createForward() (engine.ts) makes once and hands gpuFit() and gpuSide() (gpuside.ts)
 // the model's facts
 export type Shape = {
   dim: number; hidden: number; layers: number; heads: number; kvHeads: number; headSize: number; kvDim: number; qDim: number; vocab: number; seqLen: number;

@@ -44,7 +44,7 @@
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
 - T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
 - T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
-- T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 未着手
+- T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T.458 [整理][遠隔試験] エンジンが GPU の側に言い忘れる壊し方は全部の組でしか落ちない — 未着手
 - T.459 [整理][遠隔試験] `forward-modules-check` は取り出さずに読む鍵を見ない — 未着手
 - T.460 [バグ][その他] 読み込みの秒が次の読み込みに持ち越される — 未着手
@@ -535,8 +535,13 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T.235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
 
-### T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 未着手（2026-10-11、T.378.2 から。規模 中）
+### T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 進行中（2026-10-11、T.378.2 から。規模 中）
 - 606 行で、1 つの関数が 480 行。状態に持ち主ができたので、置けるかの判定・Worker の始まりと知らせ・プロンプト・ステップに分けられる。
+- **子タスクの番号**（2026-10-30、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位が 2 つ）: T.457.1 置けるかの判定（`gpuFit()`）を自分のファイルに — 反映済み。T.457.2 `gpuSide()` の閉包を、Worker の始まりと知らせ・プロンプト・ステップに分ける — 未着手。
+
+#### T.457.1 `gpuFit()` を `forward/gpufit.ts` に — 状態: 反映済み（2026-10-30）
+- 動かすだけのコミット: `gpuFit()` と、`gpuSide()` と分け合う型（`Shape`・`Held`・`Placed`・`Taken`）・`onGpuAs`・`kindOf` を `forward/gpufit.ts` に（文は 1 字も変えず、`kindOf` に `export` を付けただけ）。`gpuside.ts` は 815 → 627 行。読む側（`engine.ts`・`kinds.ts`・`gpu-part-check`・`forward-modules-check` の `PARTS`・`reasons-check` の読み手の一覧）を新しい置き場に。続くコミットで 2 つのファイルの頭のコメントと AGENTS.md の一覧。
+- 同じの証明: 前後のビルドの `forward` の塊の最上位の文 141 が集合として同じ（`dist-same` は順の違いで「different」と言う: 動かした宣言が前に来る。比べの道具は `.tmp/` の捨て）。型検査・`forward-modules-check`・`gpu-part-check`・`reasons-check`・`imports-check`・`tree-check`・`updated-check`。CI を省いた。訳: 束の文が同じ。
 
 ### T.458 [整理][遠隔試験] エンジンが GPU の側に言い忘れる壊し方は全部の組でしか落ちない — 状態: 未着手（2026-10-11、T.378.2 の実装とレビューから。規模 小）
 - `run()` が `cpuWrote` を呼ばない、`forward()` がステップを計らない・`cpuStepEnded` に 0 を渡す、`newGeneration()` が GPU の側に言わない、の 4 つは軽い組を通り、`gpu-default-check`（全部の組）だけが落とす。代役の GPU と偽の時計で 1 回の生成を通す短い検査を軽い組に。
