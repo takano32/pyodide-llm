@@ -68,8 +68,8 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
 // convert()'s and timedPaths()'s results, the threads' verdict, what the GPU chose); the type has each of those, and
 // nothing that none of them writes.
 // What this does not see: the values (a number where the type says a text), the keys inside a row (a round's, a
-// path's), a message posted under a computed type, and src/pages/index.astro's own first load (no .ts: tsc does not
-// read it; it is the same literal as src/page/choose.ts's, which tsc does).
+// path's), and a message posted under a computed type. (T.474: the page's first load, src/page/first.ts, is held to
+// ToWorker by tsc, as src/page/choose.ts's.)
 {
   const typed = contract("messages.ts");
   const trees = workerScripts().map(({ name, url }) => ({ file: name, program: parse(plain(url), { sourceType: "module" }).program }));
