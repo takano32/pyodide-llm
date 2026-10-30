@@ -12,7 +12,8 @@
 // T.401: and the conversion's start, timed apart: from the conduct's first request to its first part fed (the head,
 // the tokenizer, the chat template, and jinja2's environment, which the converter makes the first time it reads a
 // template: jinja2 is loaded first, as the worker loads it, src/runtime/worker/pyodide.ts's templatePackage()). The MB/s
-// above are the parts' alone, as they were. "the start: <ms> ms" is the line tests/abba-convert.sh's START=1 reads.
+// above are the parts' alone, as they were (a tool of before T.401 drew the template with the converter's own reader, which
+// the start of a comparison with it has in it). "the start: <ms> ms" is the line tests/abba-convert.sh's START=1 reads.
 import { converted, fromFolder, listed } from "./conducting.mjs";
 import { pyodideWithEngine } from "./engine.mjs";
 const [dir, dtype = "int8"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));

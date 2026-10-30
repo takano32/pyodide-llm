@@ -11,7 +11,8 @@
 # difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <round> <MB/s>" line per run and the medians and ranges at the end.
 # T.401: START=1 compares the conversion's start instead (profile-convert's "the start: <ms> ms": the head, the
 # tokenizer, the chat template and jinja2's environment, before the first part), in ms: lower is faster, so "now against
-# base" above 0% is slower there. A base tree of before T.401 says no start (nothing to compare).
+# base" above 0% is slower there. A base tree of before T.401 says no start, and is refused. Its tool loads no jinja2
+# either (the converter draws a template with its own reader there): a start compared with one has that in it.
 set -u
 dir=$1; rounds=${2:-4}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
@@ -51,6 +52,9 @@ for r in $(seq 1 "$rounds"); do
   done
 done
 cat .tmp/abba/lines
+# (START=1: a base that says no start has nothing to be compared with)
+if [ -n "${START:-}" ] && ! grep -q '^base ' .tmp/abba/lines; then echo "abba-convert: the base tree's tool says no start (a tree of before T.401)"; exit 1; fi
+[ -z "${START:-}" ] || echo "abba-convert: the start in ms: lower is faster (now against base above 0% is slower)"
 node -e '
 const rows = require("fs").readFileSync(".tmp/abba/lines", "utf8").trim().split("\n").map((l) => l.split(" "));  // (name dtype round MB/s)
 for (const key of new Set(rows.map((r) => r[0] + " " + r[1]))) {
