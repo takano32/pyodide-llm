@@ -285,6 +285,11 @@ part "the reference tools without torch" python tests/reference_dry.py
 # T.217 (the review of T.201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
+# T.458: the engine tells the GPU's side what happened (run() where the CPU wrote, forward() each step timed, a generation
+# begun) on forward.js's real CPU pass of llm-jp-3 150M with a made-up GPU's worker: a GPU far faster, its prompts and its
+# steps (gpu-default-check --quick; the whole check is the full suite's). Each of the four ways to forget failed the
+# full check alone before (about 20 seconds)
+part "what the engine tells the GPU's side" node tests/gpu-default-check.mjs --quick
 
 if [ "$suite" = full ]; then
   # T.262's review: every workflow job has a time limit and every step that installs a browser or runs apt has its own (and
