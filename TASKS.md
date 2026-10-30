@@ -50,7 +50,6 @@
 - T.466 [整理][WebGPU] `m.tokens` の 34 フィールドを 3 つの記録に、`timeForms()` を `block.js` に — 未着手
 - T.468 [整理][遠隔試験] ページの知らせの受け口を、要素を引数で受ける関数に分けて Node で回す — 未着手
 - T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 未着手
-- T.474 [整理][遠隔試験] 境目の型の残り: 読み手が読めない形の一覧、試験の計画、`index.astro` の `init` — 反映済み
 - T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 未着手
 - T.476 [整理][その他] worker の `!` 106 個: 当てにしている状態を引数で受ける — 未着手
 - T.477 [整理][その他] forward の型の残り: `gpuStatus` の null、カーネルの署名、`!` 111 個 — 未着手
@@ -553,11 +552,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.469 [整理][遠隔試験] ベンチのページの道具: 手元の Chrome で回す、節の秒と全体の行を見る — 状態: 未着手（2026-10-11、T.378.5 から。規模 小）
 - `tests/e2e.mjs` は `?bench=1` を知らず、`tests/bench-browser.mjs` は Playwright の Chromium しか開かない（手元には入っていない）。`tests/bench-check.mjs` は節の秒と全体の行（「Section 2 / 2 · … in all」）を見ない。
-
-### T.474 [整理][遠隔試験] 境目の型の残り: 読み手が読めない形の一覧、試験の計画、`index.astro` の `init` — 状態: 反映済み（2026-10-11、T.368.2 から。T.368.4 と一緒に。規模 小）
-- `tests/contracts.mjs` が、読まれる所に置かれた `Omit`・条件つきの型などを断るかを一覧で確かめる（交差は断る）。`tests/plans.mjs` の手書きの計画は `layers`・`widths` を持たない: `forward/` を `.ts` にする回に型に合わせるか決める。（**T.375.2 で**: `planOf()` は Python の `forward_plan()` の計画になった。）`src/pages/index.astro` の最初の `init` は tsc のプログラムに入っていない（`src/page/` の `.ts` に移せば見える。束が変わる）。突き合わせは種類ごとの鍵の 1 段までで、値の型と行の中の鍵は見ない。`src/runtime/worker.js` の頭の説明に `gpu-alone` が無い（コメント）。知らせの `error` は 1 つの型に任意の鍵。
-- **2026-10-30**: (1) `contracts-check` の作り物に、読み手が鍵を出さずに断るべき形を 6 つ（`Omit`・`Pick`・`Partial`・条件つき・mapped・`Omit` との交差）。どれも断られた（壊し方: `shapes()` が `Omit` に最初の引数の鍵で答えると落ちる）。(2) `index.astro` の最初の読み込みを `src/page/first.ts` に移し（`index.astro` は部品を順に名指すだけに）、`init` の知らせを `satisfies ToWorker` で型に当てた（壊し方: 鍵の綴りを 1 つ誤ると tsc が落とす）。網の `page` は同じ（文の部分 6415 が同じ）、`dist-check` も通る。AGENTS.md のページの部品の一覧に `first`。`worker-memory-check` の「ページの 3 つの読み込みが root を言う」の名指しを `first.ts` に（軽い組が落として分かった）、`worker-modules-check` の頭の「見ないもの」から最初の読み込みを外した。(3) 残り: `worker.ts` の頭は `gpu-alone` を言っていた。`plans.mjs` の手書きは T.375.2 で無くなっていた。「突き合わせは鍵の 1 段まで」と「`error` は任意の鍵」は今の形の説明で、手は入れない。
-- 手元: 軽い組・型検査・`page-modules-check`・`page-parts-check`・`contracts-check`・ビルドと `dist-check`・実ブラウザの e2e（Chromium、stories260K）。CI を省いた。訳: ページの文は網が同じと言い、最初の読み込みは e2e が踏んだ。
 
 ### T.475 [バグ][その他] 更新の後の古いページの残り: 64 ビットのカーネルの断りの訳、`/benchmark/` のモデルの節、ステータス行を組む関数 — 状態: 未着手（2026-10-11、T.439 から。規模 小）
 - 古いページで 64 ビットのカーネルだけが 404 だと、4 GB を越えるモデルの断りが「no 64-bit WebAssembly memory: Safari has none yet」と誤った訳を言う（前から）。`/benchmark/` のモデルの節は、カーネルが 404 だとラウンドが黙って NumPy で走る（`updated` の知らせは届くが節は捨てる）。ステータス行の文字列を組む所は `draw.ts`（要素を読む）で、Node では文の検査だけが守る: 行を組む純関数に分ける（T.468 と一緒に）。Firefox と WebKit の GPU の Worker の「知らせる」場合は CI で見られない（持ち主の端末の一覧に）。
