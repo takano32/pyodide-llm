@@ -13,6 +13,8 @@
 // Where it is simpler than a real clock: time stands still between a token's end and the next one's start, and it
 // takes the readings to come in pairs. Something else that reads the engine's clock (one reading, not two) would put
 // every later token out of step, its start taken for an end: the check's times would then be of the wrong tokens.
+// (T.455: the GPU's side reads the same clock, a pair to each block or steps it times: each such pair takes what
+// msOfToken() says too, which the checks that hand a GPU read as the GPU's and the CPU's times, not the search's.)
 
 /** A clock a token takes msOfToken() on: read as a token starts and as it ends. */
 export function tokenClock(msOfToken) {

@@ -44,7 +44,7 @@
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
 - T.270 [計測][Bonsai][WebGPU] /benchmark/ に 3 値の行を足す — 未着手
 - T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 未着手
-- T.455 [整理][WebGPU] GPU の側に時計が 2 つある — 未着手
+- T.455 [整理][WebGPU] GPU の側に時計が 2 つある — 反映済み
 - T.456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 未着手
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 未着手
 - T.458 [整理][遠隔試験] エンジンが GPU の側に言い忘れる壊し方は全部の組でしか落ちない — 未着手
@@ -537,8 +537,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T.235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
 
-### T.455 [整理][WebGPU] GPU の側に時計が 2 つある — 状態: 未着手（2026-10-11、T.378.2 から。規模 小）
+### T.455 [整理][WebGPU] GPU の側に時計が 2 つある — 状態: 反映済み（2026-10-11、T.378.2 から。規模 小）
 - `gpuSide()` はブロックとステップを自分の `now` で計り、CPU のステップはエンジンの `performance.now()` で計る。エンジンの試験用の `clock` はスレッドの検索にしか届かない。1 つの時計を渡す。
+- **2026-10-30**: `createForward()` が自分の `clock` を `gpuSide()` の `options.now` に渡し、CPU のステップ（GPU と比べるもの）も `clock` で計る。`now` は省けない引数に（既定の `performance.now()` を外した）。`forward-modules-check` の `NOT_HANDED` は空に（検査が「渡すようになった」と言って落ちた: 仕組みは残す）。`tests/fakes/token-clock.mjs` の頭に、GPU の側も同じ時計を対で読むことを 1 行。
+- 検査: `gpu-default-check` に「時計の読みを数える `clock` と速い偽の GPU で 2 つのプロンプトを流すと、2 つ目は GPU で、時計が読まれる」（37 回）。壊し方: `now: clock` を外すと 0 回で落ちる。
+- 手元: 軽い組（475 秒）・`gpu-default-check`・`thread-search-check`・`gpu-part-check`・`gpu-choice-check`・`threads-part-check`・型検査。CI を省いた。訳: 触ったのは時計の渡し方だけで、偽の GPU の Worker の試験が全部踏む。速さは測っていない: 足したのは GPU がステップを取るモデルの CPU のステップごとに閉包 1 回の呼び出し（WebGPU の道で手元で回せず、`performance.now()` の呼び出しを閉包が包むだけ）。
 
 ### T.456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 状態: 未着手（2026-10-11、T.378.2 から。規模 小）
 - スレッドの `tokenEnded()` は始まっていないトークンの終わりを無視する（T.378.1）。GPU の側も同じにそろえる。`put()` が知らない語を null に直す所は要らない（読む側は `"cpu"` と `"gpu"` としか比べない）。

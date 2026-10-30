@@ -267,17 +267,17 @@ export function gpuFit({ shape, weights, device, direct }:
  *   control  the control area (control.js): the words the GPU's worker answers in, and the wait on one
  *   threads  the software threads' (threads.js): threads.count and threads.searching are read
  *   options  { gpu: makes the GPU's worker (none: no WebGPU here), remembered, force (gpuForce), direct (T.156),
- *            stalledMs, now (tests only: the clock the blocks and steps are timed by) } */
+ *            stalledMs, now (T.455: the engine's clock, createForward()'s, the blocks and steps are timed by) } */
 export function gpuSide({ shape, weights, taken, cpuSide, control, threads, options }: {
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
-  options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
+  options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now: () => number } }) {
   const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
     unturned, sharedClassifier, activation, windows, locals, gpuKinds, kinds, places, attending, stateBytes, rotated } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels, localCos, localSin, signs, codebooks } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
   const { memory, views, grow, embed, fromStaging, stagingFinite, run, follows, stateToStaging, stateFromStaging } = cpuSide;
   const { ctl, waitUntil } = control;
-  const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now = () => performance.now() } = options;
+  const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now } = options;
   // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
   // on the GPU alone (T.156)
   const always = Boolean(gpuForce.always || direct);

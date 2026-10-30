@@ -271,6 +271,25 @@ if (isMainThread) {
     expect("the check: the last 32 tokens on the CPU", seen[8][1], PROMPT - 38);
     if (!(check <= 1.5 * normal)) failures.push(`the check took ${check.toFixed(0)} ms, the others ${normal.toFixed(0)} (more than 1.5 times)`);
   }
+  // T.455: the GPU's side times its blocks by the engine's clock (createForward's clock), not a clock of its own: an
+  // engine on one thread with no search reads its clock only there
+  {
+    let reads = 0;
+    const line = { fixed: 10 * perToken, perToken: 0.05 * perToken, failAt: 0 };
+    const gpu = () => {
+      const fake = new Worker(FAKE, { eval: true, workerData: line });
+      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
+        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+    };
+    const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: () => (reads++, performance.now()) });
+    await engine.setThreads(1);
+    await engine.gpu;
+    const tokens = [feed(engine)[1], feed(engine)[1]];
+    engine.release();
+    say(`T.455, the engine's clock: read ${reads} times over two prompts (tokens on the GPU ${tokens.join(" ")})`);
+    expect("T.455: the second prompt on the GPU", tokens, [0, PROMPT]);
+    if (!reads) failures.push("T.455: the GPU's side timed the prompts by a clock other than the engine's");
+  }
   // T.184: the page path of /benchmark/, as worker/timing.js's timedPaths times it (2 rounds here), and its table
   const paths = (engine) => {
     const ready = engine.gpuReady;  // as timedPaths: what the GPU was before the sides were timed
