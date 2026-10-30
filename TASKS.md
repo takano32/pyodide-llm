@@ -125,7 +125,6 @@
 - T.104 [性能][CPU] WebAssembly の FP16（f16x8）で活性値を半精度にする — 保留
 - T.489 [整理][その他] T.380.1 の後の残り — 持ち主の文面待ち
 - T.491 [整理][WebGPU] T.380.3 の後の残り — 未着手
-- T.492 [整理][遠隔試験] T.357.2 の後の残り — 未着手
 - T.493 [整理][遠隔試験] T.357.3 の後の残り — 未着手
 - T.494 [整理][遠隔試験] T.357.4 の後の残り — 未着手
 - T.495 [整理][遠隔試験] T.357.5 の後の残り — 未着手
@@ -1074,15 +1073,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - GPU の Worker が始まらなかった GPU だけのモデルは、最初の読み込みを最後まで走らせてから CPU で読み直す（GB 級の変換では無駄が大きい。打ち切るなら `weights.ts` が「読み直し」を投げる形。今の形は T.156 の「GPU が生成中に落ちた」道と同じ流れ）。訪問者には「Downloading …」が 2 回出る見込み（未確認）。
 - **試験**: 始まらない Worker の GPU だけの道を実ブラウザで見る案（`tests/updated-in-browser.mjs` に SwiftShader の起動の引数と、`tiny-lm&gpuTest=only` で `gpu` の塊を 404・500 にする場合 2 つ。期待は「ready が 60 秒より速い」「答えが出る」。CI は `tests.yml only_extra=true`。レビューの手元の版は本線の木の `.tmp/t380.3-review/uib.mjs`: リポジトリには無い）。`weights.ts` と本物の `gpuside` を 1 本で結ぶ試験は無い（別々の検査が見る）。保存した変換の読み（`loadConverted`）を vm で走らせる試験が無い。`gpuBytes()` と `tokensUnfit()` の、今ある 5 行では効く入力が無い検査（T.487）はそのまま。gpu-check の台は `worker/weights.ts` の `gpuOnlyBuffer` を通らない（通るのは本番の `gpuTest=only`）。
 - AGENTS.md の T.371 の場合の数（4 つ）を 5 つに。
-
-### T.492 [整理][遠隔試験] T.357.2 の後の残り — 状態: 未着手（2026-10-12、T.357.2 とそのレビューから。規模 小）
-- 試験のファイルに「Unigram の語彙を作る 2 行」が約 20 か所ある（`test_qwen3.conversion()` など。`made_up.unigram()` に替えられる）。`test_gguf.py` にも別の `unigram()`。
-- 「forward.js の代役（計画を受けて終わる）」が 3 つ（`engine_plans.py` の `External`・`plan_facts.py` の `External`・`test_plan.py` の `Outside`）。T.357.5 と一緒に。 **済み（T.357.5、2026-10-12）: `tests/engine_plans.py` の `External(size, read)` の 1 つに。**
-- `tests/page_27b.sh` の `pip install pytest` の訳のコメントが古い（`page_27b.py` が単体試験を読むので pytest は今も要る）。
-- `tests/test_quantize.py` の順の試験は数しか比べていない（前から）。
-- 網の pytest は skip が 12（素の pytest は 6）。前後で同じで、訳は読んでいない。
-- `made_up.py` の `BIASES` を無くすには、製品の行に「bias」の役が要る（製品の変更。新しい bias の行を名前に足し忘れると norm の重みとして 1 のまわりに引かれる: `test_made_up.py` の `test_what_is_drawn_for_a_row_goes_by_its_name` が気づく）。
-- **本線の作業ツリーの `make models` の産物が古い**（`tiny-lm.tokenizer.bin` が 2026-09-26 のもので、T.216 の charsmap を持たない）: 本線の木で pytest を回すと `test_tokenizer.py::test_the_skip_to_where_a_key_may_begin_changes_no_text` が 1 件落ちる（T.357.2 を入れた後に回して出た。ワークツリーの木では通る。この回の変更とは関係が無く、訳はファイルの日付と大きさ（802,799 対 1,040,373 バイト）で確かめた）。本線の木で `make models` を回せば直る。**直した（2026-10-12、持ち主「make models 回しなよ」）: 本線の木で `make models` を回し、pytest は 2357 passed・6 skipped。**
 
 ### T.493 [整理][遠隔試験] T.357.3 の後の残り — 状態: 未着手（2026-10-12、T.357.3 とそのレビューから。規模 小〜中）
 - `tests/gpu-check/harness.js`（541 行・42 KB、ブラウザと Dawn に渡す 1 つのスクリプト）を段ごとの関数に分ける案。分けると配る文が変わるので、この回は 1 つのまま置いた。
