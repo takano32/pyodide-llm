@@ -47,7 +47,6 @@
 - T.457 [整理][WebGPU] `forward/gpuside.js` を分ける — 進行中
 - T.462 [整理][遠隔試験] worker の `init()` を Node で回す — 未着手
 - T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 未着手
-- T.627 [整理][CPU] GPU に置けないモデルの `gpuBytes()` — 未着手
 - T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 未着手
 - T.278 [描画][モデル] 「Built with Llama」の表示 — 未着手
 - T.279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 未着手
@@ -555,9 +554,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.465 [整理][遠隔試験] 検査の答えを作る偽の WebGPU をリポジトリに入れる — 状態: 未着手（2026-10-11、T.378.4 から。T.357.5 と一緒に。規模 中）
 - T.352 と T.378.4 の証明（装置への呼び出しの列を本線と比べる記録）は `.tmp/` の捨ての道具（約 630 行）で、毎回作り直している。`tests/` に入れれば、`gpu/` の `forms.js`・`tokenattention.js`・`tokens.js`・`tokenforms.js`・`start.js`（検査を通らないと記録を作らないので、いまは軽い組で単独に踏めない: レビューの壊し方 5 つが軽い組を通った）も部品だけの試験にでき、次に `gpu/` に触る回が比べる手段を持つ。偽の装置は約束を後のターンで果たす形に（その場で果たすと、途中の stop の比べが空振りになる）。
-
-### T.627 [整理][CPU] GPU に置けないモデルの `gpuBytes()` — 状態: 未着手（2026-10-30、T.623 から。規模 小。持ち主の判断は要らない見込み: 置き場が変わるなら CI の `models.yml` で確かめる）
-- `forward/alone.ts` の `gpuBytes()` は、GPU に置けないモデル（`gpuOnlyUnfit()` が断るモデル）にも Llama の行の形で GPU のバイト数を答える。`worker/weights.ts` の `gpuOnlyWeightsFor()` はそれを判定の前に数え、置けないモデルでも `weightsPlace({ cpu, gpu, deviceMemory })` の 2 重の判定に入る。直す案: 置けないモデルの GPU の数を判定に入れない（`weightsPlace()` に `gpu: 0` か、2 重を考えない道）。先に、今の数でどのモデルの置き場が変わるかを一覧の全項目で数える（`deviceMemory` 4・8 の端末で）。
 
 ### T.277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
