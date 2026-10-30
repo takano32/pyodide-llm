@@ -792,6 +792,9 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   const steps = [
     [{}, { wcls: { rows: 100, n: 8, kind: "f32", layer: () => [0] } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, { embedding: { kind: "f16", group: 32 } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
+    // (T.622: an int8 embedding in groups other than its packing's, a dim that is no whole groups of 32: llama2_numpy's
+    // groups of 8, which no EMBED reads)
+    [{}, { embedding: { kind: "int8", group: 8, offset: 100, scales: 200 } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, { wcls: matrixOf(100, 8, 0, { kind: "made-up" }) }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, {}, { gpuRoom: 20000 }, /^the classifier on the GPU as well \(0 MB with the layers\) would not leave this device enough memory$/],
   ];
