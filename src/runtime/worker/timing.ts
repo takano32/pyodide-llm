@@ -6,6 +6,7 @@ import { threadsRequest, threadsFound } from "./request.ts";
 import { llama, engineNow } from "./loaded.ts";
 import { memoryShared } from "./weights.ts";
 import type { Paths, PathThreads, Status, ToWorker } from "../contracts/messages.ts";
+import type { Llama } from "../contracts/python.ts";
 import type { Side } from "../forward.ts";
 
 // T.368.3: a run of the writing: the ms of its tokens, and how many of them the GPU took
@@ -13,10 +14,11 @@ type Run = { ms: number; gpuTokens: number };
 
 // T.45: a warm-up, then the measured run: the prompt, greedy, steps tokens (fewer where the model ends it first). The
 // warm-up runs its 8 steps (T.184's review: return() on a generator that has not started runs none of it)
-export function timedGeneration(prompt: string, steps: number) {
-  warmUp(prompt);
+// (T.476: python, the model loaded now, which the caller relies on being there)
+export function timedGeneration(python: Llama, prompt: string, steps: number) {
+  warmUp(python, prompt);
   const begin = performance.now();
-  const pieces = llama!.generate.callKwargs(prompt, { steps, temperature: 0, echo: false });
+  const pieces = python.generate.callKwargs(prompt, { steps, temperature: 0, echo: false });
   let tokens = 0;
   try {
     while (!pieces.next().done) tokens += 1;
@@ -25,8 +27,8 @@ export function timedGeneration(prompt: string, steps: number) {
   }
   return { tokens, speed: tokens / ((performance.now() - begin) / 1000) };
 }
-function warmUp(prompt: string) {
-  const pieces = llama!.generate.callKwargs(prompt, { steps: 8, temperature: 0, echo: false });
+function warmUp(python: Llama, prompt: string) {
+  const pieces = python.generate.callKwargs(prompt, { steps: 8, temperature: 0, echo: false });
   try {
     while (!pieces.next().done);
   } finally {
@@ -44,8 +46,10 @@ function warmUp(prompt: string) {
 // GPU only (engine.gpuSide), the sides in turn, a run each after the warm-up.
 const GPU_WAIT_S = 240, WRITING_RUNS = 3;
 export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, { type: "paths" }>): Promise<Omit<Paths, "type" | "load">> {
+  // (T.476: the model loaded now and the forward module, which a load that made an engine has: taken once here)
+  const python = llama!, forward = forwardModule!;
   const engine = engineNow();
-  if (!engine) return { error: `${llama!.backend} runs this model here: the page's path is the NumPy engine's` };
+  if (!engine) return { error: `${python.backend} runs this model here: the page's path is the NumPy engine's` };
   if (engine.gpu && !engine.gpuReady) {
     postMessage({ type: "status", text: "the GPU gets ready" } satisfies Status);
     let timer: ReturnType<typeof setTimeout>;
@@ -56,7 +60,7 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   const gpu: NonNullable<Paths["gpu"]> = chosen ? { seconds: chosen.seconds, matrices: chosen.matrices, attention: chosen.attention }
     : { why: engine.gpuWhyNot ?? `not ready after ${GPU_WAIT_S} s` };
   postMessage({ type: "status", text: "the software threads" } satisfies Status);
-  const { threads, found, ended } = await forwardModule!.endSearch(engine, () => timedGeneration(prompt, 64));
+  const { threads, found, ended } = await forward.endSearch(engine, () => timedGeneration(python, prompt, 64));
   // how the count came about, for the table's head (T.190): src/bench.ts's pathTable() says it. A software thread that
   // stopped (T.120: the engine gave its helpers up and runs on one) is said first: found is 1 then, and the search's
   // verdicts or the remembered count would name another count (T.190's review)
@@ -64,31 +68,31 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   const how: PathThreads = !memoryShared() ? { alone: "no shared memory here" }
     : engine.lostThreads ? { alone: "a software thread stopped" }
     : threads < found ? { alone: `not the ${found} asked for: its software threads did not start` }
-    : !ended ? { unfinished: forwardModule!.SEARCH_SECONDS }
+    : !ended ? { unfinished: forward.SEARCH_SECONDS }
     : remembered && threads !== remembered ? { alone: `not the ${remembered} the model page remembers: its software threads did not start` }
     : remembered ? { remembered: true }
     : { searched: engine.searchLog.map(({ best, candidate, faster }) => [best, candidate, faster ? candidate : best]) };
-  const encoded = llama!.tokenizer.encode(prompt);
+  const encoded = python.tokenizer.encode(prompt);
   const words = encoded.toJs();
   encoded.destroy();
   postMessage({ type: "status", text: `prompts of ${counts.join(" and ")} tokens` } satisfies Status);
-  const rows = forwardModule!.timePrompts(engine, { words: words.length ? words : [llama!.bos], counts: counts.filter((n) => n <= llama!.seq_len) });
-  const writes = Math.min(sampled, llama!.seq_len - words.length);  // steps counts the prompt's positions too
+  const rows = forward.timePrompts(engine, { words: words.length ? words : [python.bos], counts: counts.filter((n) => n <= python.seq_len) });
+  const writes = Math.min(sampled, python.seq_len - words.length);  // steps counts the prompt's positions too
   postMessage({ type: "status", text: `writing ${writes} tokens` } satisfies Status);
-  warmUp(prompt);
+  warmUp(python, prompt);
   let fewest = writes;  // a stop token may end a run first: its tok/s stands, and the row says the fewest
   // a run of the writing on side ("cpu", "gpu", or null: as the page chooses, T.152); whether the GPU took every step
   const written = (side: Side = null): Run => {
     engine.gpuSide = side;
     const before = engine.gpuSampled;
     try {
-      const pieces = llama!.generate.callKwargs(prompt, { steps: words.length + writes, temperature: 0, echo: false });
+      const pieces = python.generate.callKwargs(prompt, { steps: words.length + writes, temperature: 0, echo: false });
       try {
         while (!pieces.next().done);
       } finally {
         pieces.destroy();
       }
-      const stats = llama!.stats.toJs({ dict_converter: Object.fromEntries });
+      const stats = python.stats.toJs({ dict_converter: Object.fromEntries });
       fewest = Math.min(fewest, stats.sampled);
       const whole = engine.gpuSampled - before >= stats.sampled;
       // as if each had written them all, at its tok/s
@@ -104,8 +108,8 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
   for (let run = 0; run < WRITING_RUNS; run++) {
     for (const [name, side] of Object.entries(sides)) runs[name].push(written(side));
   }
-  const row = { what: "generation", tokens: fewest, chosen: tokens ? forwardModule!.timedCell(runs.chosen, writes) : { same: "cpu" },
-    cpu: forwardModule!.timedCell(runs.cpu, writes), gpu: tokens ? forwardModule!.timedCell(runs.gpu, writes) : { skip: chosen ? engine.gpuTokensWhyNot ?? "not on the GPU" : gpu.why } };
+  const row = { what: "generation", tokens: fewest, chosen: tokens ? forward.timedCell(runs.chosen, writes) : { same: "cpu" },
+    cpu: forward.timedCell(runs.cpu, writes), gpu: tokens ? forward.timedCell(runs.gpu, writes) : { skip: chosen ? engine.gpuTokensWhyNot ?? "not on the GPU" : gpu.why } };
   // a GPU side the GPU did not take whole (it failed, or was lost, on the way: its time is the CPU's)
   if (tokens && runs.gpu.some((run) => run.gpuTokens < writes)) row.gpu = { skip: engine.gpuTokensWhyNot ?? "the GPU did not take every step" };
   rows.push(row);
@@ -125,13 +129,13 @@ export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, 
           byCount.delete(n);
           continue;
         }
-        warmUp(prompt);  // the helpers a switch wakes, out of the time
+        warmUp(python, prompt);  // the helpers a switch wakes, out of the time
         byCount.get(n)!.push(written("cpu"));  // (T.152: the CPU's steps, whichever side the page chooses)
       }
     }
     await engine.setThreads(threads);
   }
-  const perCount = engine.lostThreads ? [] : [...byCount].filter(([, list]) => list.length).map(([n, list]) => ({ threads: n, ...forwardModule!.timedCell(list, writes) }));
+  const perCount = engine.lostThreads ? [] : [...byCount].filter(([, list]) => list.length).map(([n, list]) => ({ threads: n, ...forward.timedCell(list, writes) }));
   // a software thread that stopped while the sides were timed: the times after it are one thread's
   if (engine.lostThreads && !how.alone) how.stopped = true;
   // the rounds (T.45) that follow load the model again: on this count too, not searching again while they are timed
