@@ -54,7 +54,7 @@ for (const part of parts) {
   for (const node of part.program.body) {
     const s = node.type === "ExportNamedDeclaration" ? node.declaration : node;
     if (!s || !(s.type === "VariableDeclaration" || s.type === "FunctionDeclaration" || s.type === "ClassDeclaration")) continue;
-    for (const name of s.id ? [s.id.name] : s.declarations.flatMap((d) => (d.id.type === "Identifier" ? [d.id.name] : []))) {
+    for (const name of s.id ? [s.id.name] : s.declarations.map((d) => (assert.equal(d.id.type, "Identifier", `${part.file}: a pattern at its top (this check reads plain names)`), d.id.name))) {
       assert.ok(!owners.has(name), `${name} is declared at the top of ${owners.get(name)} and of ${part.file}: one text of the shaders (oneSource()) has it twice`);
       owners.set(name, part.file);
     }
