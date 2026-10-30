@@ -55,10 +55,9 @@ for (const [n, file] of named.entries()) {
   if (broken && n === 0) {
     const namer = [...base].find(([other, text]) => other !== file && text.includes(file))[0];
     const moved = [...now.keys()].find((name) => !base.has(name) && name.startsWith(namer.replace(/\.[^.]+\.js$/, ".")));
-    if (moved) {
-      now.set(namer, now.get(moved));
-      now.delete(moved);
-    }
+    assert.ok(moved, `--broken: ${namer} kept its name, and nothing is broken`);
+    now.set(namer, now.get(moved));
+    now.delete(moved);
   }
   const gone = [...base.keys()].filter((name) => !now.has(name));
   assert.ok(gone.includes(file), `${file} touched: its name is the same`);
