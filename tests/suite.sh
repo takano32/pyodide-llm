@@ -123,6 +123,9 @@ page_modules() {
   node tests/worker-sink-check.mjs
   # T.129: where fetching and loading meet in worker.js, on made-up fetches and a fast clock (a few seconds)
   node tests/worker-check.mjs
+  # T.464 (out of it): the place of the weights, /benchmark/'s shared memory, what is thrown and is no Error, a stop during
+  # a run and the GPU lost under one, on the same harness (a few seconds)
+  node tests/worker-memory-check.mjs
   # T.357: what a conversion asks of huggingface.co, in order, for every kind of source the page converts (one file, shards, a
   # GGUF alone and with another repository's vocabulary, the tokenizer's candidates, the optional files), on a made-up hub
   # and a converter's stand-in, against tests/fixtures/conversion-fetches.json (T.374.2.1: by the real conduct in Pyodide
