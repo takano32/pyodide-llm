@@ -165,7 +165,7 @@ async function checkTiled() {
           destroyVectors(io);
         });
         // T.147: the comparison is shaders/prompt.ts's tiledOff, the model's GPU worker's too
-        const off = shared.WGSL.tiledOff({ w: signed, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: shader.half! });
+        const off = shared.WGSL.tiledOff({ w: signed, s, x, got, quantized: xq && xs ? { xq, xs } : null, rows, n, tokens, xStride, yStride, half: shader.half! });
         worst = Math.max(worst, off.worst);
         over ||= Boolean(off.wrong);
         far ||= off.far;
