@@ -184,6 +184,7 @@ export function samplingSettings({ vocab, temperature, topp, penalty = 1, topK =
 // pieces of rows (past what the device binds: Llama 3.2 3B's 394 MB on the owner's Android, which binds 256 MiB) is
 // one dispatch a piece, y its first row and z its rows: the piece that holds the token writes its row, the others
 // nothing (z 0: the whole table, as before). llama.cpp's get_rows reads one table; the range is ours (T.209)
+// (T.624: embedInt8(false) is EMBED, the state's token; embedInt8(true) EMBED_ROWS, below)
 const embedInt8 = (block: boolean) => /* wgsl */ `
 ${block ? "" : `${STATE}\n`}@group(0) @binding(0) var<storage, read> table: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
@@ -211,8 +212,9 @@ ${block ? "    let out = wid.y * n;\n" : ""}    for (var word = lid.x; word < wo
 }`;
 export const EMBED = embedInt8(false);
 // T.210: the rows of a prompt's block from the embedding, for a model on the GPU alone (the CPU holds no embedding
-// then): EMBED's loop (T.624: one maker of the two texts, as embedTernary's), a workgroup a token (workgroup_id.y) of ids, into its row of dst. Bindings: 0 the table, 1 its
-// scales, 2 the block's ids, 3 x (the block's rows, dense), 4 the row's width and (T.209) the piece's first row and rows.
+// then): EMBED's loop (T.624: embedInt8(true), one maker of the two texts, as embedTernary's), a workgroup a token
+// (workgroup_id.y) of ids, into its row of dst. Bindings: 0 the table, 1 its scales, 2 the block's ids, 3 x (the
+// block's rows, dense), 4 the row's width and (T.209) the piece's first row and rows.
 // llama.cpp's get_rows.wgsl reads its row's index from idx and writes a row of dst for each (i_dst1: a row of the
 // output an index); the range of a piece is T.209's
 export const EMBED_ROWS = embedInt8(true);
