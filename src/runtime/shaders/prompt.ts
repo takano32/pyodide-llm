@@ -428,7 +428,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
 // ---- T.547.2.3, T.547.3.3: llama.cpp's blocks of 256 weights (as src/python/convert/superblocks.py and
-// tests/blocks-model.mjs read them) on the GPU, as the checkpoint holds them: a type a row of BLOCK_READS. A block is
+// tests/blocks-model.ts read them) on the GPU, as the checkpoint holds them: a type a row of BLOCK_READS. A block is
 // eight groups of 32 weights (the activations' groups), each two halves of 16; a weight is a half's scale times its
 // small integer q, less the half's min (Q4_K: d s q - dmin m; Q2_K: d (sc & 15) q - dmin (sc >> 4)). So a row's group
 // adds, for each half, the scale times the integers' dot (DP4A) less the min times the activations' sum of the half,
@@ -484,7 +484,7 @@ fn blk_bits(at: u32, shift: u32, mask: u32) -> vec4<u32> {
 // convert/grids.py's codebooks(), a value a byte, each grid's entries one after the other, 8 or 4 values an entry) and the
 // GPU holds as they are, bound where the K types' texts bind nothing (binding 1, a matrix's scales of int8): an entry of
 // 8 is two words of packed int8 (DP4A's). IQ_WORDS: the word each grid begins at (codebooks()' places over 4; a second
-// copy, which tests/gpu-worker-parts-check.mjs holds to Python's). Signs: a byte, bit j the minus of the j-th value; of
+// copy, which tests/gpu-worker-parts-check.ts holds to Python's). Signs: a byte, bit j the minus of the j-th value; of
 // 7 bits, the eighth is their parity (llama.cpp's ksigns_iq2xs, this formula)
 // (of the grids a type the GPU reads reads: every word of these is in a text, and the key's check holds that)
 export const IQ_WORDS = { IQ2XXS: 0, IQ2XS: 512, IQ2S: 1536, IQ3XXS: 3584, IQ3S: 3840, IQ1S: 4352, IQ4NL: 8448 };
@@ -709,7 +709,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
 } satisfies Record<BlockPacking, { bytes: number; helpers: string; codebooks: boolean; code: string }>;
 /** T.547.3.4: whether a type's text reads the codebooks (an IQ type: gpu/packings.ts's grid) */
 export const readsGrid = (packing: BlockPacking) => BLOCK_READS[packing].codebooks;
-// T.547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.mjs's read(): the weights,
+// T.547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.ts's read(): the weights,
 // float32 at each step), and where its float16 scales are (d and dmin: where a check draws them small)
 const halfAt = (bytes: Uint8Array, at: number) => {
   const bits = bytes[at] | (bytes[at + 1] << 8), sign = bits & 0x8000 ? -1 : 1, e = (bits >> 10) & 31, m = bits & 1023;

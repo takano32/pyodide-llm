@@ -2,18 +2,18 @@
 # with, and what it holds it to.
 #
 #   Hub        a dictionary for huggingface.co: {"<repository>/<file>": a text, bytes, or a File}, which answers what is
-#              asked and writes each request down as tests/worker-fetches-check.mjs writes the worker's
+#              asked and writes each request down as tests/worker-fetches-check.ts writes the worker's
 #              ("GET owner/model@0123456 model.safetensors bytes=0-524287"). What only the answerer decides is the
 #              hub's: how a stream is cut into parts (see parts()), and whether a range's answer says the file's size
 #   Folder     the same for a folder of the visitor's disk (T.374.2.2): {"<name>": ...}, found by its name whatever the
-#              case of its letters, which writes down what is read of each file as worker-fetches-check.mjs's Files do
+#              case of its letters, which writes down what is read of each file as worker-fetches-check.ts's Files do
 #              ("range model.safetensors bytes=0-524287"). The disk's is how a stream is cut: a MiB at a time
 #   answered   the loop that answers a conduct from a hub or a folder: the worker's side (src/runtime/worker/conduct.js)
 #   direct     a conversion with no conduct in it (T.374.2.3): the files read whole, a Conversion made of them and fed
 #              in one piece. What a conduct's conversion is compared with on real files, since the worker's old ladder
 #              (and today(), its copy in Python, which this took the place of) is gone
 #   sound      what the requests of any conduct must be, whatever the repository: what needs no second opinion to say
-#   StandIn    the converter's stand-in of worker-fetches-check.mjs in Python: it reads the made-up files as far as the
+#   StandIn    the converter's stand-in of worker-fetches-check.ts in Python: it reads the made-up files as far as the
 #              conduct depends on it and writes down what it is handed
 import json
 import struct
@@ -25,7 +25,7 @@ MiB = 1 << 20
 
 
 class File:
-    """A file of size bytes that begins with head; zeros after it (as worker-fetches-check.mjs's stream())."""
+    """A file of size bytes that begins with head; zeros after it (as worker-fetches-check.ts's stream())."""
 
     def __init__(self, head, size=None):
         self.head, self.size = bytes(head), len(head) if size is None else size
@@ -372,7 +372,7 @@ def sound(told, conversion, ended, hf, hub):
 
 class StandIn:
     """llama2_convert as the conduct calls it, for the made-up files: handed is what it was given, in the words of
-    worker-fetches-check.mjs's stand-in (the fixture's "converter", but for the lines of what the worker keeps).
+    worker-fetches-check.ts's stand-in (the fixture's "converter", but for the lines of what the worker keeps).
     T.257: a tokenizer that begins "written out" is put off as the converter puts off a tokenizer.json that writes out
     a sentencepiece model with its dummy prefix, while others are left to try (last false)."""
 
@@ -381,7 +381,7 @@ class StandIn:
         said = lambda text: json.dumps(text, ensure_ascii=False)
 
         def base_of(first):
-            # (the worker's answer is JavaScript's bytes in Pyodide: tests/worker-fetches-check.mjs)
+            # (the worker's answer is JavaScript's bytes in Pyodide: tests/worker-fetches-check.ts)
             first = first.to_py() if hasattr(first, "to_py") else first
             base = struct.unpack_from("<Q", bytes(first[:12]), 4)[0]
             if len(first) < base:

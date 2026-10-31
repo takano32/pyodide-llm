@@ -229,7 +229,7 @@ export function aloneFactsUnfit({ stateful, positions, gatedFfn, layerNorm, acti
   return null;
 }
 // T.271.1: the largest block of a rotated basis the GPU's ROTATE_QUANTIZE and UNROTATE hold in a workgroup's memory
-// (shaders/rotate.ts's ROTATE_MOST, a second copy here: no shader's text comes into this chunk; tests/gpu-part-check.mjs
+// (shaders/rotate.ts's ROTATE_MOST, a second copy here: no shader's text comes into this chunk; tests/gpu-part-check.ts
 // holds it to that one), and whether a rotated basis's block is one they take: a power of two (the butterflies) of 32 (a
 // group of the 8 bits a thread) to that most (0: the model's own basis, which they are not asked of)
 export const ROTATE_MOST = 1024;

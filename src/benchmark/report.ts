@@ -25,10 +25,10 @@ function summaryOf(name: Name, result: Result): string[] {
   return [`${TITLES[name]}: ${STATE[result.status]}${lines.length || !why ? "" : `: ${why}`}`, ...lines];
 }
 
-// ---- one report: the model's table first (as ?bench=1 writes it, which tests/reports.mjs reads), then every section
+// ---- one report: the model's table first (as ?bench=1 writes it, which tests/reports.ts reads), then every section
 export function report() {
   // the model and its table only when the model section measured: a report of the other sections names no model,
-  // which tests/reports.mjs then leaves out (T.134's review)
+  // which tests/reports.ts then leaves out (T.134's review)
   const environment = environmentOf(navigator, { model: measured?.name, pyodide: measured?.pyodide, build: __BUILD__, site: location.origin + location.pathname });
   // the model section's table is the one on top; the section itself only where it did not measure
   const shown = SECTIONS.filter((name) => results[name] && (name !== "model" || results[name]!.status !== "ok"));

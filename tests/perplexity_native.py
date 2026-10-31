@@ -1,5 +1,5 @@
 # perplexity_native.py
-# The NumPy row of tests/perplexity.mjs in native Python, for checkpoints too big for Pyodide on a small machine
+# The NumPy row of tests/perplexity.ts in native Python, for checkpoints too big for Pyodide on a small machine
 # (a float32 original is read through a memory map, not copied). Only NumPy computes here: the kernels need Pyodide.
 # The float32 rows of NumPy and of the kernels agree to the last digit (AGENTS.md), so this is the original's value.
 #

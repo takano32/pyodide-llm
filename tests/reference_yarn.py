@@ -5,7 +5,7 @@
 # tests/test_llama3.py holds the same to a transcription of the file in float64 (without PyTorch); this holds the
 # transcription's reading to the code itself. PyTorch is not on the development machine, so this runs in CI:
 #
-#   node tests/ci.mjs run tests.yml only_extra=true extra="pip install --quiet numpy && pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu && pip install --quiet transformers==5.16.1 && python tests/reference_yarn.py" --ref <branch> --grep "yarn:"
+#   node tests/ci.ts run tests.yml only_extra=true extra="pip install --quiet numpy && pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu && pip install --quiet transformers==5.16.1 && python tests/reference_yarn.py" --ref <branch> --grep "yarn:"
 #
 # transformers computes the inverse frequencies in float32 (PyTorch), the engine in float64: the line is
 # 1e-6 + 1.5e-7 factor of each frequency (float32's rounding of base ** (2i / dim), and of the ramp, whose error of

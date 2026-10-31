@@ -182,7 +182,7 @@ the attention on any real GPU. The numbers from CI and from the development mach
 
 ## Correctness
 
-- `tests/gpu-check.mjs` runs a prompt of 150 tokens on the CPU and on the GPU, and compares the keys and values
+- `tests/gpu-check.ts` runs a prompt of 150 tokens on the CPU and on the GPU, and compares the keys and values
   written back and the logits of the last token with NumPy. It runs every shader shape, and the attention without
   subgroups, in Chromium's SwiftShader and in Node with Dawn and Mesa's lavapipe.
 - It then writes 8 tokens greedy on the GPU (4, one on the CPU, 3 more) and checks the ids against NumPy's
@@ -206,7 +206,7 @@ the attention on any real GPU. The numbers from CI and from the development mach
   not grow from layer to layer and their lines are tight.
 - The sampling on the GPU picks the token the CPU's sampling picks for the same logits and random number (or, where
   a float32 sum moves a border, one next to it: within 1e-4 of the probability mass), in the benchmark's check; the JavaScript it
-  is held to is held to the CPU's kernel in `tests/smoke.mjs`.
+  is held to is held to the CPU's kernel in `tests/smoke.ts`.
 - On the device, the page checks each shader against JavaScript before it uses it.
 
 ## Next

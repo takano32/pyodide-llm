@@ -77,7 +77,7 @@ jobs:
           failed=0
           echo "## the kernels in every browser's engine" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          node tests/kernels-in-browser.mjs --site "$SITE" ${{ matrix.browsers }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+          node tests/kernels-in-browser.ts --site "$SITE" ${{ matrix.browsers }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit $failed
 
@@ -98,7 +98,7 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             # float32, int8 with a small and with the largest vocabulary
             for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
-              node tests/e2e.mjs "$model" "$browser" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+              node tests/e2e.ts "$model" "$browser" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
             done
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
@@ -107,7 +107,7 @@ jobs:
           echo "## stock firefox (Selenium)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
-            node tests/stock-firefox.mjs "$model" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            node tests/stock-firefox.ts "$model" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit $failed
@@ -117,7 +117,7 @@ jobs:
         shell: bash
         run: |
           echo "## Every run" >> "$GITHUB_STEP_SUMMARY"
-          node tests/summary.mjs results.jsonl >> "$GITHUB_STEP_SUMMARY"
+          node tests/summary.ts results.jsonl >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the results and what the failed runs left
         if: always()
@@ -217,7 +217,7 @@ jobs:
               hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
               hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
           # T.251 (2026-10-02): the English classics, 13 GB of downloads: GPT-2's other sizes with DistilGPT2, and the
-          # two ends of the Pythia ladder (tests/ladder.mjs reads this job's results with the small and the large one's);
+          # two ends of the Pythia ladder (tests/ladder.ts reads this job's results with the small and the large one's);
           # Pythia 6.9B on a 64-bit memory
           - size: classics
             timeout: 3000
@@ -291,7 +291,7 @@ jobs:
           for model in ${{ matrix.models }}; do
             echo "### $model" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            node tests/e2e.mjs "$model" chromium "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            node tests/e2e.ts "$model" chromium "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
           exit $failed
@@ -312,7 +312,7 @@ jobs:
           for model in hf-llm-jp-3-150m-instruct3 hf-smollm2-135m-instruct hf-qwen2.5-0.5b-instruct; do
             echo "### $model in WebKit" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            node tests/e2e.mjs "$model" webkit "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            node tests/e2e.ts "$model" webkit "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
           exit $failed
@@ -327,7 +327,7 @@ jobs:
         run: |
           echo "### ?bench=1" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/bench-browser.ts tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # T.86: real models (tests/fixed_outputs.py's MODELS: GPT-NeoX, GPT-2 from GGUFs and from a safetensors, Llamas, a
@@ -349,7 +349,7 @@ jobs:
         shell: bash
         run: |
           echo "## Every run" >> "$GITHUB_STEP_SUMMARY"
-          node tests/summary.mjs results.jsonl >> "$GITHUB_STEP_SUMMARY"
+          node tests/summary.ts results.jsonl >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the results and what the failed runs left
         if: always()

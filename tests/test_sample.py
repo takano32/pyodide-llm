@@ -118,7 +118,7 @@ def test_a_low_top_p_over_few_likely_tokens(llama, topp, above):
 @pytest.mark.parametrize("temperature, topp", [(1.0, 0.9), (0.7, 1.0), (0.0, 0.9)])
 def test_logits_that_are_not_finite_stop(llama, where, bad, temperature, topp):
     """T.195: a NaN or +inf anywhere (and all -inf) leaves no distribution to draw from: a broken model or an overflow.
-    The sampler says so, as the kernels' does (tests/smoke.mjs), rather than draw a token."""
+    The sampler says so, as the kernels' does (tests/smoke.ts), rather than draw a token."""
     logits = np.random.default_rng(where).standard_normal(200).astype(np.float32)
     logits[where] = bad
     for broken in (logits, np.full(200, -np.inf, dtype=np.float32)):

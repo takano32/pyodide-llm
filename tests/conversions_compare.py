@@ -8,7 +8,7 @@
 #   python3 tests/conversions_compare.py <directory for the downloads> [--before <commit>] [model id ...]
 #   python3 tests/conversions_compare.py --dump <tree> <directory for the downloads> <out.json> [model id ...]
 #
-# --before: the commit to compare with (origin/main; its tree is tests/other-tree.mjs's). Each tree is read by its own
+# --before: the commit to compare with (origin/main; its tree is tests/other-tree.ts's). Each tree is read by its own
 # tests/format_check.py and src/models.ts, in a process of its own (--dump): what an entry says may change too.
 # The table: one line an entry whose options, tokenizer.bin or ids differ, and the count of those that do not. The exit
 # status is 0 either way: what may differ is the change's own to say. Needs no reference tools (numpy only).
@@ -94,7 +94,7 @@ def main():
         commit = arguments[at + 1]
         del arguments[at:at + 2]
     directory, only = arguments[0], arguments[1:]
-    script = f"import('./tests/other-tree.mjs').then(({{ otherTree }}) => console.log(otherTree({json.dumps(commit)}).folder))"
+    script = f"import('./tests/other-tree.ts').then(({{ otherTree }}) => console.log(otherTree({json.dumps(commit)}).folder))"
     other = subprocess.check_output(["node", "-e", script], cwd=HERE.parent, text=True).strip()
     work = HERE.parent / ".tmp" / "conversions"
     work.mkdir(parents=True, exist_ok=True)

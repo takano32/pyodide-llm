@@ -1,11 +1,11 @@
-# tests/saluki_blocks.py (T.363.1): what tests/saluki-kernel-bench.mjs asks of the converter's own readers (T.362), so
+# tests/saluki_blocks.py (T.363.1): what tests/saluki-kernel-bench.ts asks of the converter's own readers (T.362), so
 # that the forms it times are held to them and not to a second reading written in JavaScript.
 #
 #   python tests/saluki_blocks.py <folder>
 #
 # writes <folder>/grids.bin (the grids of convert/grids.py the forms look up: IQ2XXS's 256 entries of 8 values, IQ3S's
 # 512 of 4, IQ1S's 2048 of 8, one int8 a value), <folder>/codebooks.bin (T.363.4: a checkpoint's row "codebooks",
-# convert/grids.py's codebooks(), which the kernels of kernels/blocks.ts make their tables of: tests/blocks-check.mjs)
+# convert/grids.py's codebooks(), which the kernels of kernels/blocks.ts make their tables of: tests/blocks-check.ts)
 # and, for every <folder>/<TYPE>.blocks (whole blocks of the type, as a
 # GGUF holds them), <folder>/<TYPE>.f32: their weights as convert/superblocks.py reads them, float32.
 import sys

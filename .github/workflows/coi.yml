@@ -46,4 +46,4 @@ jobs:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
           echo "### ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
-          node tests/coi-check.mjs "$SITE" ${{ matrix.browsers }} | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/coi-check.ts "$SITE" ${{ matrix.browsers }} | tee -a "$GITHUB_STEP_SUMMARY"

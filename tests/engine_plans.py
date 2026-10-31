@@ -6,7 +6,7 @@
 #                                                     the form (rotary, unturned, ...), and "outliers": True for a final
 #                                                     norm with three channels far above the rest
 #   python tests/engine_plans.py <the root of a tree> < [{header, dtype, form, more}]     -> the plans, as JSON
-# The derived tables (bytes) are given as a hash each. tests/unchanged_layouts.py and tests/plan-keys-check.mjs read it.
+# The derived tables (bytes) are given as a hash each. tests/unchanged_layouts.py and tests/plan-keys-check.ts read it.
 import hashlib
 import json
 import struct

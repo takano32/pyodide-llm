@@ -164,7 +164,7 @@ export const HF_CLASSICS: Entry[] = [
   // T.252: well-known ones the engine opens as it is, each from a Q8_0 GGUF that tests/gguf_check.py tensors held to its
   // original (gguf.yml's candidates), with the original's vocabulary, config.json and chat template: the formats and
   // the special tokens are the converter's reading, the same IDs as the real template's for tests/format_check.py's
-  // prompts. What the page puts in front was measured for each (tests/start_check.mjs, tests/answer_check.mjs: T.250's
+  // prompts. What the page puts in front was measured for each (tests/start_check.ts, tests/answer_check.ts: T.250's
   // review found a Qwen3 8B 178% worse for it).
   // SmolLM2's base models (the Instruct ones are above): <|endoftext|> in front is 1 to 1.5% better than nothing
   { group: "hf", id: "hf-smollm2-135m", name: "Hugging Face SmolLM2 135M", note: "English · fetches 145 MB (GGUF) → int8 151 MB",
@@ -200,7 +200,7 @@ export const HF_CLASSICS: Entry[] = [
   // string, which puts <|begin_of_text|> in front (tokenizer.json's post-processor, and llama.cpp does the same), and the
   // page began with that until T.252's review measured what it does to a chat: on 24 answers written by hand it is 6 to 7%
   // higher in perplexity, 13 to 15% for the 13 English ones (four standard errors, with transformers' float32 products and
-  // with this engine alike; tests/chat_nll.py, tests/chat_fluency.mjs), and the model's own answers move (KL 0.05 nats a
+  // with this engine alike; tests/chat_nll.py, tests/chat_fluency.ts), and the model's own answers move (KL 0.05 nats a
   // token, the likeliest token the same at 94%), where plain text is 5% better with it. So the BOS is the format's own first
   // token, <|im_start|> (128040), and the format begins after it: the ids are the real template's (a Qwen3 8B's
   // QWEN3_FROM_IM_START, T.250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark

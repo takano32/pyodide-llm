@@ -8,7 +8,7 @@
 # For every test, a count and a hash of: the checkpoints its conversions finish (Stream.finish: the bytes), the options
 # and the tokenizer.bin of each Conversion, the logits of every Llama.forward, the ids of every Tokenizer.encode, the
 # tokens the reference sampler draws and the logits it penalized.
-# tests/unchanged.mjs runs it on the working tree and on another commit's tree and compares the two files. The names
+# tests/unchanged.ts runs it on the working tree and on another commit's tree and compares the two files. The names
 # it wraps are the ones a refactoring keeps where they are (the windows llama2_convert and llama2_numpy).
 import hashlib
 import json

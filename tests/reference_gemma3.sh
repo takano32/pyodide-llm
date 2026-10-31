@@ -2,8 +2,8 @@
 # tests/reference_gemma3.sh (T.261): what tests/reference_gemma3.py needs, and the run itself, for CI (tests.yml's extra=;
 # the development machine has no PyTorch):
 #
-#   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh" --ref <branch> --grep "gemma3:"
-#   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh --only=real --model=270M,1B" --ref <branch> --grep "gemma3:"
+#   node tests/ci.ts run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh" --ref <branch> --grep "gemma3:"
+#   node tests/ci.ts run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh --only=real --model=270M,1B" --ref <branch> --grep "gemma3:"
 #
 # With only_extra=true it runs alone (no models of the site, no kernels, no suite): it installs what it needs.
 # transformers at the commit the engine's formulas were read from (engine/layers.py, the comment on Gemma 3), and numpy,

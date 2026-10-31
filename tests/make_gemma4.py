@@ -2,7 +2,7 @@
 # T.331.2: a made-up Gemma 4 (its language model: a Gemma 3's layers, the full-attention ones with heads of a size of
 # their own turned in part by the angles of the whole head, the heads of v normalized, a number every layer ends by
 # multiplying the stream by, the logits capped) as files, for the checks of forward.js that take a model by its files
-# (tests/forward-check.mjs, tests/threads-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
+# (tests/forward-check.ts, tests/threads-check.ts: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). The real ones are too large to be built with the site (E2B is 5 GB as
 # int8), so this one stands in: random Hugging Face tensors (tests/made_up.py's gemma4_model) converted the way the page
 # converts them (llama2_convert.Conversion), with rows of whole groups of 32 for the int8 kernels.
@@ -49,7 +49,7 @@ def main():
     tensors, config = gemma4_model(vocab_size=VOCAB, **shape)
     if dtype == "hub":
         # T.329.2.2: the files of a Hugging Face repository of it (<out>/config.json, model.safetensors, tokenizer.json),
-        # for a page to fetch and convert (tests/gemma4-in-browser.mjs)
+        # for a page to fetch and convert (tests/gemma4-in-browser.ts)
         folder = Path(out)
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "config.json").write_text(json.dumps(config))

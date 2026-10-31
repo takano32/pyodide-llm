@@ -1,6 +1,6 @@
 // src/page/lines.ts (T.468.2, T.475): the status line's words, from what the page holds of the model and of its load
 // (model.ts) and what a report says: what draw.ts and receiver.ts write there. Pure: Node imports this file as it is
-// (tests/page-parts-check.mjs), which reads every part of each line.
+// (tests/page-parts-check.ts), which reads every part of each line.
 import { SLOWER } from "../runtime/updated.ts";
 
 /** A ready model's line: its name, how it runs (and on how many threads, and what the GPU takes: gpuNote, with

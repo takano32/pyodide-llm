@@ -14,7 +14,7 @@
 # targets: the first token is context (or, with a start, the second), as in T.131's measure. The starts are: none, the
 # page's BOS, and every other token that config.json, tokenizer_config.json and special_tokens_map.json name (plus
 # --also). Per start: perplexity, and nats per character (so that a model of another vocabulary can be set beside it:
-# tests/start_check.mjs prints the same for the page's engine).
+# tests/start_check.ts prints the same for the page's engine).
 #
 # Needs torch and transformers (a venv, or CI's tests.yml extra=: docs/notes/dev-setup.md). Memory: float32 weights.
 # --stored: the weights are held as the original stores them (bfloat16) and every product is float32: Granite 4.2 3B is 14.6 GB as
@@ -37,7 +37,7 @@ sys.path.insert(0, str(HERE))
 import format_check  # noqa: E402
 import llama2_numpy  # noqa: E402
 
-ARTICLES = ["富士山", "夏目漱石", "新幹線"]  # tests/wikipedia.mjs's ARTICLES.ja
+ARTICLES = ["富士山", "夏目漱石", "新幹線"]  # tests/wikipedia.ts's ARTICLES.ja
 
 
 def wikipedia(titles):

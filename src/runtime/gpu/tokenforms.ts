@@ -162,7 +162,7 @@ function heldFloats(x: Float64Array, got: ArrayLike<number>) {
   const round16 = (Math as Rounding).f16round ?? ((value: number) => value), slack = HALF_SLACK * x.reduce((top, value) => Math.max(top, Math.abs(value)), 0);
   return x.map((value, i) => (Math.abs(got[i] - value) <= 2 ** (Math.max(Math.floor(Math.log2(Math.abs(value))), -14) - 10) + slack ? got[i] : round16(value)));
 }
-export { heldFloats };  // (tests/gpu-choice-check.mjs)
+export { heldFloats };  // (tests/gpu-choice-check.ts)
 // T.156: the first layer's matrices, { name: [values, scales] } as the bytes of their rows (rowBytes: int8, or T.232
 // ternary codes) and a Float32Array each, read back from their buffers (a piece after another: the rows in order)
 async function firstLayer(m: Model) {

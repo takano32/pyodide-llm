@@ -59,8 +59,8 @@ import type { Thrown } from "./gpu/device.ts";
 import type { Answer, BenchGpuResults, Bridged, ToBenchGpu } from "../contracts/benchmark.ts";
 type Result = BenchGpuResults[keyof BenchGpuResults] | undefined;
 
-// (these are pure: tests/gpu-choice-check.mjs holds the rounding of the cache to what a device may choose, and
-// tests/layer-check.mjs holds the layer check's judgement to devices that are JavaScript too)
+// (these are pure: tests/gpu-choice-check.ts holds the rounding of the cache to what a device may choose, and
+// tests/layer-check.ts holds the layer check's judgement to devices that are JavaScript too)
 export { toHalf, fromHalf, heldHalves, halvesSaid, farthest, layerCheckData, judgeLayer, layerReference, load };
 
 // ---- the bridge: a worker that waits (Atomics.wait, as the model's worker would while Python calls forward())

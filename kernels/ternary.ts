@@ -11,7 +11,7 @@
 // sums: dot(a, w + 1) = dot(a, w) + sum(a), and interleave leaves minus the sum of each group of 32 activations after
 // their scales, once a token. So a row needs nothing besides its weights and its scales.
 //
-// The form was chosen among those of tests/ternary-forms.ts, by tests/ternary-bench.mjs on CI's arm64 and x86-64
+// The form was chosen among those of tests/ternary-forms.ts, by tests/ternary-bench.ts on CI's arm64 and x86-64
 // (TASKS.md's T.231 has the table). The fork of llama.cpp that reads these files widens a group to int8 first (its NEON
 // kernel for PQ2_0, ggml/src/ggml-cpu/arch/arm/quants.c, MIT); none of its lines is here.
 //
@@ -37,7 +37,7 @@
 // codes of the matrix as the float32 ones were. A row's kernels widen four groups' at once (kernel/halves.ts's
 // halves4, exact for every finite half) and broadcast a lane of them to each group (a shuffle); the groups past the
 // last four, and the tiles once for four tokens, one at a time (half). Timed against the float32 scales on CI's
-// arm64 and x86-64 (tests/ternary-bench.mjs: TASKS.md's T.533): the same speed; one half widened a group was 7 to 9 %
+// arm64 and x86-64 (tests/ternary-bench.ts: TASKS.md's T.533): the same speed; one half widened a group was 7 to 9 %
 // slower on arm64. The form is ssig33/pyodide-llm's (7d7b776c, MPL-2.0: the blocks of PQ2_0 as they are, a half
 // widened once a block); none of its lines is here.
 // (kernel/matmul.ts and kernel_relaxed.ts import halves4 and half from kernel/halves.ts.)

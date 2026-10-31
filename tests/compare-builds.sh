@@ -1,7 +1,7 @@
 #!/bin/bash
 # tests/compare-builds.sh (T.367.5): what a change did to the forward pass as a visitor's browser runs it, with the
 # measure of no change beside it every time. Three builds: another commit's (main by default), this tree's (dist/, which
-# `npm run build` wrote), and this tree's built once more. Then tests/compare-engines.mjs through the bundles, `times`
+# `npm run build` wrote), and this tree's built once more. Then tests/compare-engines.ts through the bundles, `times`
 # times over:
 #   the other commit's build against this tree's          what is asked
 #   this tree's second build against this tree's          the control: the same code on both sides
@@ -10,7 +10,7 @@
 #
 #   bash tests/compare-builds.sh [<commit> = origin/main] [<rounds> = 21] [<times> = 2] [model ids = tiny-lm llm-jp-3-150m]
 #   THREADS=2,4 bash tests/compare-builds.sh …    T.378.1, T.447: after each of those, the same two pairs WITH software threads
-#                                                 (tests/threads-compare.mjs: each build's forward and its own helper, that
+#                                                 (tests/threads-compare.ts: each build's forward and its own helper, that
 #                                                 many threads). compare-engines runs no software thread: a change of
 #                                                 forward/threads.js, helper.js or jobs.js is measured only here.
 #   PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh …    T.620: those two pairs alone, timing prompts (threads-compare's
@@ -25,7 +25,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ref="${1:-origin/main}"; rounds="${2:-21}"; times="${3:-2}"; shift $(( $# < 3 ? $# : 3 ))
 [ -d dist/_astro ] || { echo "compare-builds: no dist/_astro here: npm run build"; exit 1; }
-other=$(node -e "import('./tests/other-tree.mjs').then((m) => process.stdout.write(m.otherTree(process.argv[1]).folder))" "$ref")
+other=$(node -e "import('./tests/other-tree.ts').then((m) => process.stdout.write(m.otherTree(process.argv[1]).folder))" "$ref")
 # the other commit's build: its sources, this tree's packages and built files (kernels, archives: not what is measured;
 # a commit with T.433's plugin makes its archives again of its own sources as its build starts)
 [ -e "$other/node_modules" ] || ln -s "$PWD/node_modules" "$other/node_modules"
@@ -40,13 +40,13 @@ prompt=(); [ -z "${PROMPT:-}" ] || prompt=(--prompt)
 for time in $(seq 1 "$times"); do
   if [ -z "${PROMPT:-}" ]; then
     echo "compare-builds: $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
-    node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
+    node tests/compare-engines.ts "$@" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
     echo "compare-builds: the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
-    node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$again" --bundle dist
+    node tests/compare-engines.ts "$@" --rounds "$rounds" --bundle-old "$again" --bundle dist
   fi
   [ -n "${THREADS:-}" ] || continue
   echo "compare-builds: with $THREADS software threads${PROMPT:+, prompts}, $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
-  node tests/threads-compare.mjs "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
+  node tests/threads-compare.ts "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
   echo "compare-builds: with $THREADS software threads${PROMPT:+, prompts}, the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
-  node tests/threads-compare.mjs "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
+  node tests/threads-compare.ts "$@" "${prompt[@]}" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
 done

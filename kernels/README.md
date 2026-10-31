@@ -24,10 +24,10 @@ two modules of their own, over `blocks/` (T.363.4: "llama.cpp's blocks" below).
 | `kernel/sample.ts` | `argmax`, `penalize`, `sample` |
 | `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
 
-A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.mjs` fails when the
+A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.ts` fails when the
 window and the files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). **A new
 file goes into the Makefile's rule too** (`KERNEL_PARTS`): `make kernels` sees only the files named there, and the
-checks then test the old kernels (`tests/forward-check.mjs` fails when a file of `kernel/` is not named there). `node tests/kernels-same.mjs [--before <commit>]` builds this tree's kernels and
+checks then test the old kernels (`tests/forward-check.ts` fails when a file of `kernel/` is not named there). `node tests/kernels-same.ts [--before <commit>]` builds this tree's kernels and
 another commit's and says for every built file whether it is the same bytes, the same functions in another order,
 or different, and whether `src/runtime/built/`'s are this tree's. (The division itself changed the order of the functions in the
 five builds of `kernel.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their
@@ -76,7 +76,7 @@ taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel cal
 
 ## Every browser the runners offer (2026-09-19, T.44 and T.58)
 
-`.github/workflows/browsers.yml` runs `tests/e2e.mjs` against the deployed site on five systems, in Playwright's
+`.github/workflows/browsers.yml` runs `tests/e2e.ts` against the deployed site on five systems, in Playwright's
 own Chromium, Firefox and WebKit and in the Chrome and Edge that the runner has installed: one job per system,
 its browsers one after the other, by hand (`gh workflow run browsers.yml`) or once a week. **All 23 combinations
 ran all four models.** tok/s over 256 tokens
@@ -118,7 +118,7 @@ machines with different CPUs, some of them much faster than the machine of the o
   code 0.07 against 1.2); forcing the baseline compiler changes nothing, and with the optimizing compiler alone
   that Firefox says "no WebAssembly compiler available". Inside the kernels it is 13 to 15 times slower, while a
   ctypes call costs 24 us and is 4% of a token. **The Firefox that the runners have installed, driven by Selenium
-  and geckodriver (`tests/stock-firefox.mjs`), is as fast as the Chromium family on every system:**
+  and geckodriver (`tests/stock-firefox.ts`), is as fast as the Chromium family on every system:**
 
   | system | Playwright's Firefox 150, llm-jp-3-150m | installed Firefox 155 | Chromium family on that system |
   |---|---:|---:|---:|
@@ -138,7 +138,7 @@ machines with different CPUs, some of them much faster than the machine of the o
 
 ## Where the time of one token goes (2026-09-19, T.53)
 
-`node tests/profile.mjs [node|chromium|firefox] [model ...]` measures this inside Pyodide. A browser's clock is too
+`node tests/profile.ts [node|chromium|firefox] [model ...]` measures this inside Pyodide. A browser's clock is too
 coarse for single kernel calls, so every number is a difference of totals: the same model runs its forward pass
 with the real kernels, with kernels that only count, and with kernels that do nothing (what Python and NumPy cost
 around the calls); a kernel called on nothing (n = 0) costs exactly one ctypes call. Positions 16 to 79.
@@ -256,7 +256,7 @@ integer sum before that is scaled. The relaxed module is loaded in `try/except`:
 (shipping Safari) refuses to compile it, which arrives in Python as `OSError` (verified by switching the
 feature off in Firefox), and int8 then runs on `matmul_q8`.
 
-What quantizing the activations costs (2026-09-19, T.55; `node tests/perplexity.mjs [model]`, 1499 tokens from the
+What quantizing the activations costs (2026-09-19, T.55; `node tests/perplexity.ts [model]`, 1499 tokens from the
 beginnings of three Japanese Wikipedia articles, contexts of 512 tokens, Pyodide in Node):
 
 | computation | llm-jp-3-150m | tiny-lm |
@@ -293,7 +293,7 @@ scales. The codes are the 7-bit side of the relaxed dot product and the activati
 its own. `matmul_t2` is the same without relaxed SIMD (the same numbers to the bit), `matmul_t2r_tile` a prompt's
 tokens four to a row (the codes made once for the four), and `ternary_x` the converter's packing.
 
-Chosen among the forms of `tests/ternary-forms.ts` by `tests/ternary-bench.mjs` (matrices read from memory, the
+Chosen among the forms of `tests/ternary-forms.ts` by `tests/ternary-bench.ts` (matrices read from memory, the
 widths of Ternary Bonsai 1.7B and 27B; billions of weights a second, and against `matmul_q8r` on the same weights
 widened to int8):
 
@@ -316,7 +316,7 @@ phones this is for are arm64.
 (`7d7b776c`, MPL-2.0: PQ2_0's blocks as they are, a half widened once a block), written anew in this layout (the
 scales after all the codes, as before). A row's kernels widen four groups' scales at once (`halves4`) and broadcast a
 lane to each group; one half widened a group (`half`) was 7 to 9% slower on arm64. The numbers are the float32
-form's to the bit for the same scales (`tests/ternary-bench.mjs` holds every form to it). Against the float32 form
+form's to the bit for the same scales (`tests/ternary-bench.ts` holds every form to it). Against the float32 form
 (a copy of it, t2c, in the same process; a second copy of it is within 1%), G weights/s, 1 / 4 threads, the
 geometric mean of the widths of 1.7B, 8B and 27B:
 
@@ -341,13 +341,13 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
   came out wrong and the model wrote nonsense, with 1 thread and with 4. Each piece alone, a swizzle in place of the byte
   shuffle, shifts and narrows, and a scalar loop were right on that engine; the narrows cost 5 to 8 ns more a block of 64
   bytes in V8 (EPYC 9V74 3.6 to 10.5, EPYC 7763 4.8 to 9.9, arm64 4.5 to 12.4: 0.04 ms of a token of the 1.7B).
-  `tests/kernels-in-browser.mjs` runs the kernels in the engine of each browser, in batches up to 30000 calls, and says
+  `tests/kernels-in-browser.ts` runs the kernels in the engine of each browser, in batches up to 30000 calls, and says
   WRONG on the old `interleave` in WebKit on x86-64.
 - On a 64-bit memory, the V8 of Node 24 (13.6) on arm64 reads `v128.load32_splat` and `v128.load32_lane` at the low 32 bits
   of an address above 4 GiB. Every kernel that takes a scale so reads a wrong one there: the ternary kernels' weights'
   scales and the int8 tile's. Chromium 148 on arm64, Firefox 150 and V8 on x86-64 read them right.
-  `tests/ternary-check.mjs` has a canary module for it and leaves its above-4 GiB config out where it fires, and
-  `tests/kernels-in-browser.mjs` runs every kernel above 4 GiB in each browser that has such a memory (the 27B model
+  `tests/ternary-check.ts` has a canary module for it and leaves its above-4 GiB config out where it fires, and
+  `tests/kernels-in-browser.ts` runs every kernel above 4 GiB in each browser that has such a memory (the 27B model
   runs there).
 
 ## llama.cpp's blocks (2026-10-13, T.363.4)
@@ -391,18 +391,18 @@ on relaxed SIMD, on how many tokens a kernel takes, or on which side the signs a
   weight's is negative.
 - **Above 4 GiB** (the 27B's weights are, on a 64-bit memory) the kernels load with `v128.load`, `load64_zero`,
   `load32_zero` and `load64_lane`, none of which V8's Liftoff on arm64 reads at the low 32 bits of the address (it
-  does that to `load32_splat` and `load32_lane`): `tests/blocks-check.mjs` runs every kernel three times, as V8's
+  does that to `load32_splat` and `load32_lane`): `tests/blocks-check.ts` runs every kernel three times, as V8's
   tiers come, with Liftoff alone and with TurboFan alone.
 - **`matmul_sbw_tile` is the first kernel that leans on what relaxed SIMD leaves open**: the second operand of its dot
   product is a signed byte in all 8 bits, which arm64's SDOT multiplies exactly and x86's PMADDUBSW takes as unsigned.
-  The caller asks the engine with `signed_dots` (every pair of bytes: `tests/blocks-model.mjs`'s `signedDots()`), and
+  The caller asks the engine with `signed_dots` (every pair of bytes: `tests/blocks-model.ts`'s `signedDots()`), and
   where the answer is the exact product the kernel's integers are `matmul_sbr`'s, so its numbers are too. CI's
   WebKit, Firefox and Chromium on arm64 all answered yes, and all three on x86-64 no.
 
-`tests/blocks-check.mjs` holds the reading of every type to the converter's own (`convert/superblocks.py`, to the
-bit) and every kernel to `tests/blocks-model.mjs` (to the bit) on the eight builds; `tests/kernels-in-browser.mjs`
+`tests/blocks-check.ts` holds the reading of every type to the converter's own (`convert/superblocks.py`, to the
+bit) and every kernel to `tests/blocks-model.ts` (to the bit) on the eight builds; `tests/kernels-in-browser.ts`
 calls them in each browser's engine up to 30000 times and above 4 GiB. Billions of weights a second, matrices of the
-27B's shapes read from memory (`tests/saluki-kernel-bench.mjs`, CI, 1 thread / 4 threads):
+27B's shapes read from memory (`tests/saluki-kernel-bench.ts`, CI, 1 thread / 4 threads):
 
 | kernel and type | CI arm64 (Neoverse-N2), 1 / 4 threads | CI x86-64 (EPYC 9V45), 1 / 4 threads |
 |---|---:|---:|
@@ -448,5 +448,5 @@ scales are read as a vector and the units' sums made one lane each, for every ty
   runs Pyodide in a worker anyway.
 - The ABI this relies on is Emscripten's dynamic linking, not the CPython C API, so one binary has served every
   Pyodide version so far. A future Emscripten could break it, which is why NumPy stays as the fallback and why
-  `tests/smoke.mjs` checks both paths against the latest Pyodide before every deployment.
+  `tests/smoke.ts` checks both paths against the latest Pyodide before every deployment.
 - `?kernel=off` in the page URL forces NumPy, to compare.

@@ -3,13 +3,13 @@
 # llama.cpp stores them in, held to its references, on a CI runner (never on the development machine: it fetches 7.9 GB
 # and makes a checkpoint of 7.96 GB). On demand, not nightly (but for `dry`):
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=170 extra="bash tests/page_saluki.sh" \
+#   node tests/ci.ts run tests.yml only_extra=true minutes=170 extra="bash tests/page_saluki.sh" \
 #     --grep "^(llama|f32|reference|saluki|runner|page|pyodide):" --minutes 180 --ref <branch>
 #   ... extra="STAGES='convert write' WRITE='at-once sampled thinking' bash tests/page_saluki.sh" ...
 #   ... extra="REFERENCES=<a run's id> STAGES='convert page breaks' bash tests/page_saluki.sh" ...
 # On x86-64 or arm64 (runner=ubuntu-24.04-arm: the page's forward pass is faster there, and its prompts take the tile of
 # the signed dot product). The tool is tests/page_27b.sh's, Ternary Bonsai 2 27B's, made for another file: the stages
-# have its names, tests/page-27b.mjs runs both models (this one by the list's two entries, which tests/page_saluki.py
+# have its names, tests/page-27b.ts runs both models (this one by the list's two entries, which tests/page_saluki.py
 # reads and hands over with --as, a third form beside them), and what that file's head says of Liftoff above 4 GiB on the
 # V8 of Node 24 on arm64 holds here.
 #
@@ -20,7 +20,7 @@
 # STAGES (the default: "reference convert pyodide page breaks speed", 50 minutes on 4 logical cores of x86-64, of which
 # the reference is 25; with REFERENCES and no speed, 20 on arm64. memory is 35 minutes more on arm64, write an hour):
 #   dry        a made-up model of the kind (ten types by the layer, three value heads to a key head) through the
-#              reference's NumPy pass over its GGUF, both conversions and every mode of tests/page-27b.mjs
+#              reference's NumPy pass over its GGUF, both conversions and every mode of tests/page-27b.ts
 #              (a minute, no download): the tool itself, before an hour is spent on the real model
 #   reference  tests/reference_saluki.sh: llama.cpp as it is, llama.cpp with float32 activations and the engine's NumPy
 #              forward pass over the GGUF, kept with the run (REFERENCE_STAGES: its STAGES; TEXTS, F32_PICK,
@@ -29,7 +29,7 @@
 #              (tests/page_saluki.py): its seconds, its memory, the options it yields, the checkpoint's size
 #   pyodide    the page's conversion itself, in Pyodide, into a 64-bit shared memory: the checkpoint's sha256 against
 #              the native file's, its seconds and Pyodide's heap
-#   page       tests/page-27b.mjs compare: forward.ts against the references, the plan broken on purpose (BROKEN), and
+#   page       tests/page-27b.ts compare: forward.ts against the references, the plan broken on purpose (BROKEN), and
 #              rows of every product of the blocks' kernels against the model of the kernels (EXACT)
 #   breaks     the conversion broken on purpose (the value heads left in the file's order), through the comparison of
 #              the first text: it must fail
@@ -43,7 +43,7 @@
 #              for the form that thinks) positions each, PICK="0,1" only these of the questions (from 0)
 # The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of the
 # same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
-# LINES: the lines of the comparison (logits,kl,kv,the KL on average), as tests/page-27b.mjs takes them, the logits' over
+# LINES: the lines of the comparison (logits,kl,kv,the KL on average), as tests/page-27b.ts takes them, the logits' over
 # the tokens the reference gives a probability; QUIET: the texts whose logits, keys and values are held (the bare
 # texts: after the marks of a chat's turn this model's logits move by 13 with the last bit of an activation, in the
 # engine's own NumPy run too). What T.364's runs measured (TASKS.md): the page is 0.14 and 0.25 from llama.cpp with
@@ -75,7 +75,7 @@ if has dry; then
   python tests/reference_saluki_numpy.py made-up "$dry"
   python tests/page_saluki.py entries "$dry/entries.json" --made-up
   python tests/page_saluki.py convert "$dry/gguf" "$dry/page" --context 128
-  node tests/page-27b.mjs "$dry/pyodide" convert "$dry/gguf" --blocks --context 128 | tee "$dry/pyodide.log"
+  node tests/page-27b.ts "$dry/pyodide" convert "$dry/gguf" --blocks --context 128 | tee "$dry/pyodide.log"
   [ "$(sed -n 's/^pyodide: sha256 of the checkpoint //p' "$dry/pyodide.log")" = "$(sha256sum "$dry/page.bin" | cut -d' ' -f1)" ] \
     || { echo "page: dry: the conversion in Pyodide is not the native one's checkpoint — FAILED"; exit 1; }
   as="--as $dry/entries.json:sampled --wide"
@@ -83,22 +83,22 @@ if has dry; then
   # made-up model is 0.2 of a logit off, against the float32 one 5: its random blocks make the rounding count for more
   # than the real model's. The layer of w1 is a matrix every token reads)
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$dry/page" compare "$dry" $as --threads 1 --exact 4 --likely --lines 10,2,0.05,1 --broken untiled,codebooks,embedding-kind,layer-w1-3
+  node tests/page-27b.ts "$dry/page" compare "$dry" $as --threads 1 --exact 4 --likely --lines 10,2,0.05,1 --broken untiled,codebooks,embedding-kind,layer-w1-3
   python tests/page_saluki.py convert "$dry/gguf" "$dry/broken" --context 128 --broken tiled
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$dry/broken" compare "$dry" $as --threads 2 --lines 10,2,0.05 --texts 0 --expect-failure
+  node tests/page-27b.ts "$dry/broken" compare "$dry" $as --threads 2 --lines 10,2,0.05 --texts 0 --expect-failure
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$dry/page" speed $as --prompts 40,100
+  node tests/page-27b.ts "$dry/page" speed $as --prompts 40,100
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$dry/page" memory $as
+  node tests/page-27b.ts "$dry/page" memory $as
   printf 'w3 w9 w27 w5 w1 w30 w2 w4 w8 w10 w11 w12' > "$dry/text.txt"
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$dry/page" starts "$dry/text.txt" $as --heads 7,3,none --positions 9
+  node tests/page-27b.ts "$dry/page" starts "$dry/text.txt" $as --heads 7,3,none --positions 9
   # (the writing, with each form's sampling: on a small Qwen3.5 of the unit tests with a whole tokenizer, tests/make_qwen35.py's;
   # the made-up GGUF's vocabulary is 40 tokens of a tokenizer that has not all of them)
   python tests/make_qwen35.py "$dry/q35" int8 > /dev/null
   for form in at-once sampled thinking; do
-    node tests/page-27b.mjs "$dry/q35" write "w3 w9" --as "$dry/entries.json:$form" --tokens 90 < /dev/null | tail -1 | cut -c1-300
+    node tests/page-27b.ts "$dry/q35" write "w3 w9" --as "$dry/entries.json:$form" --tokens 90 < /dev/null | tail -1 | cut -c1-300
   done
   echo "page: dry: the made-up model of blocks went through the reference, both conversions and every mode"
   rm -rf "$dry"
@@ -140,7 +140,7 @@ if has convert; then
     || { echo "page: the checkpoint has $(stat -c %s "$work/page.bin") bytes, not 7,956,712,492 — FAILED"; status=1; }
 fi
 if has pyodide; then
-  node tests/page-27b.mjs "$work/pyodide" convert "$folder" --blocks --context "$context" | tee "$work/pyodide.log" || status=1
+  node tests/page-27b.ts "$work/pyodide" convert "$folder" --blocks --context "$context" | tee "$work/pyodide.log" || status=1
   got=$(sed -n 's/^pyodide: sha256 of the checkpoint //p' "$work/pyodide.log")
   if [ -n "$got" ] && [ "$got" = "$(cat "$work/page.sha256")" ]; then
     echo "pyodide: the page's conversion in Pyodide is the native conversion's checkpoint, byte for byte"
@@ -157,36 +157,36 @@ if has page; then
   # put in the file's order of the value heads, the codebooks a byte off, the embedding and a layer of a matrix taken
   # for another type's blocks: the feed-forward matrix of layer 20, the linear layers' qkv of their layer 10)
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" --likely --quiet "$quiet" ${TEXTS_OF_PAGE:+--texts "$TEXTS_OF_PAGE"} \
+  node tests/page-27b.ts "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" --likely --quiet "$quiet" ${TEXTS_OF_PAGE:+--texts "$TEXTS_OF_PAGE"} \
     --broken "${BROKEN:-untiled,codebooks,embedding-kind,layer-w1-20,layer-wqkv-10}" || status=1
   if [ "${EXACT:-4 2}" != none ]; then
     # EXACT="<rows> <texts>" (or none): so many rows of every product of the blocks' kernels held to the model of the
-    # kernels (tests/blocks-model.mjs), to the bit, on one thread (every call is the first thread's then), for these
+    # kernels (tests/blocks-model.ts), to the bit, on one thread (every call is the first thread's then), for these
     # texts: a chat's turn by default, whose marks are where the logits are touchy
     exact=${EXACT:-4 2}
     # shellcheck disable=SC2086
-    node tests/page-27b.mjs "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" --likely --quiet "$quiet" --threads 1 --exact "${exact% *}" --texts "${exact#* }" || status=1
+    node tests/page-27b.ts "$work/page" compare "$work" $as ${ANYWAY:+--anyway} --lines "$lines" --likely --quiet "$quiet" --threads 1 --exact "${exact% *}" --texts "${exact#* }" || status=1
   fi
 fi
 if has breaks; then
   python tests/page_saluki.py convert "$folder" "$work/broken" --context "$context" --broken tiled
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/broken" compare "$work" $as --lines "$lines" --likely --quiet "$quiet" --texts 0 --expect-failure || status=1
+  node tests/page-27b.ts "$work/broken" compare "$work" $as --lines "$lines" --likely --quiet "$quiet" --texts 0 --expect-failure || status=1
   rm "$work/broken.bin"
 fi
 if has speed; then
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/page" speed $as --threads "${THREADS:-1,2,4}" --prompts "${PROMPTS:-40,256}" ${ANYWAY:+--anyway} || status=1
+  node tests/page-27b.ts "$work/page" speed $as --threads "${THREADS:-1,2,4}" --prompts "${PROMPTS:-40,256}" ${ANYWAY:+--anyway} || status=1
 fi
 if has starts; then
   language=${STARTS_TEXT:-en}
-  node tests/wikipedia.mjs "$language" "$work/starts.txt"
+  node tests/wikipedia.ts "$language" "$work/starts.txt"
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/page" starts "$work/starts.txt" $as --heads "${HEADS:-248045,248044,none}" --positions "${STARTS_POSITIONS:-128}" ${ANYWAY:+--anyway} || status=1
+  node tests/page-27b.ts "$work/page" starts "$work/starts.txt" $as --heads "${HEADS:-248045,248044,none}" --positions "${STARTS_POSITIONS:-128}" ${ANYWAY:+--anyway} || status=1
 fi
 if has memory; then
   # shellcheck disable=SC2086
-  node tests/page-27b.mjs "$work/page" memory $as ${ANYWAY:+--anyway} || status=1
+  node tests/page-27b.ts "$work/page" memory $as ${ANYWAY:+--anyway} || status=1
 fi
 if has write; then
   questions=${QUESTIONS:-}
@@ -204,7 +204,7 @@ if has write; then
       index=$((index + 1))
       if [ -n "${PICK:-}" ] && [[ ",$PICK," != *",$index,"* ]]; then continue; fi
       echo "page: $form, question $index"
-      node tests/page-27b.mjs "$work/page" write "$question" --as "$work/entries.json:$form" --tokens "$tokens" ${ANYWAY:+--anyway} < /dev/null || status=1
+      node tests/page-27b.ts "$work/page" write "$question" --as "$work/entries.json:$form" --tokens "$tokens" ${ANYWAY:+--anyway} < /dev/null || status=1
     done < "$questions"
   done
 fi

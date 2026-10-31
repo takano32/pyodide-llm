@@ -1,6 +1,6 @@
 // tests/ternary-forms.ts (T.231): the inner loops that were set against the one kernels/ took for the matrix product
 // on ternary weights (-1, 0, +1 times one scale a group of 128, as Prism ML's PQ2_0 and PTQ1_0 hold them).
-// tests/ternary-bench.mjs compiles this file and times each form beside the kernels of kernels/ (matmul_t2r and
+// tests/ternary-bench.ts compiles this file and times each form beside the kernels of kernels/ (matmul_t2r and
 // matmul_t2, and the int8 kernels on the same weights widened to int8); TASKS.md's T.231 has the table and the choice.
 // Not a kernel of the page: nothing here is shipped.
 //

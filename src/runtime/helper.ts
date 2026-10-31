@@ -1,6 +1,6 @@
 // helper.ts (T.93, stage 2): a thread that takes chunks of rows of the matrix multiplications that forward.ts hands
 // out, on the same shared WebAssembly memory. It holds no weights of its own: they are in the shared memory. A module
-// Web Worker and nothing else (T.367.5: Node's tests give it a worker's `self` first, tests/helper-node.mjs, and run
+// Web Worker and nothing else (T.367.5: Node's tests give it a worker's `self` first, tests/helper-node.ts, and run
 // this file as it is, or as a build wrote it).
 //
 // The coordinator (forward.ts, in the model's worker) publishes a phase in the control area at the start of the

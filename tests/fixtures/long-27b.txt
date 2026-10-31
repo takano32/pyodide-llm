@@ -135,9 +135,9 @@ Or with Docker: `docker build -t pyodide-llm . && docker run -p 8080:8080 pyodid
 Checks:
 
 - `python -m pytest tests -q`: the engine and the converter (native Python and NumPy).
-- `node tests/smoke.mjs`: the engine and the models in Node's Pyodide (after `make models`).
-- `node tests/forward-check.mjs`: the page's forward pass against NumPy.
-- `npm run build && node tests/e2e.mjs [model] [chromium|firefox]`: the page in a real browser (Playwright).
+- `node tests/smoke.ts`: the engine and the models in Node's Pyodide (after `make models`).
+- `node tests/forward-check.ts`: the page's forward pass against NumPy.
+- `npm run build && node tests/e2e.ts [model] [chromium|firefox]`: the page in a real browser (Playwright).
 
 Pushing to `main` deploys to GitHub Pages. [AGENTS.md](AGENTS.md) (in Japanese) holds the decisions, measurements
 and pitfalls, and [TODO.md](TODO.md) the tasks.
@@ -268,7 +268,7 @@ Fable は残す。ただし呼ぶのは下の「Fable に回すもの」だけ�
 
 ### 3. 「見た目」と「訪問者に見える文」の判断
 
-描画のタスク（T75・T76・T88）を Fable に寄せていたのは、見た目の判断のため。今日、**CI で画面を撮って持ち主が見る仕組み**（`preview.yml`・`tests/screenshots.mjs`）ができたので、これは Opus でよい。決まりはそのまま: コミットの前にスマホ幅と PC 幅の画面を撮って持ち主に見せる、訪問者に見える日本語は先に文面を出す。
+描画のタスク（T75・T76・T88）を Fable に寄せていたのは、見た目の判断のため。今日、**CI で画面を撮って持ち主が見る仕組み**（`preview.yml`・`tests/screenshots.ts`）ができたので、これは Opus でよい。決まりはそのまま: コミットの前にスマホ幅と PC 幅の画面を撮って持ち主に見せる、訪問者に見える日本語は先に文面を出す。
 
 ### 4. レビュー担当が「OK」を出しやすくなる
 

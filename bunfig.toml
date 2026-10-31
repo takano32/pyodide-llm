@@ -1,2 +1,2 @@
-# T.584: the tools of tests/ run with Bun too (the owner, 2026-10-25); see tests/bun-preload.mjs
-preload = ["./tests/bun-preload.mjs"]
+# T.584: the tools of tests/ run with Bun too (the owner, 2026-10-25); see tests/bun-preload.ts
+preload = ["./tests/bun-preload.ts"]

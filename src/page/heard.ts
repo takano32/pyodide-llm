@@ -3,7 +3,7 @@
 // the reports of a load carry its number, contracts/messages.ts), and whether it ends a piece of the worker's work
 // (T.172: a load ends with ready, the benchmark with bench, the page's path with paths, a text with done, any of them
 // with error; the others come in the middle of one, and read as an end they gave the run button back while the worker
-// was busy). Pure: Node imports this file as it is (tests/page-parts-check.mjs).
+// was busy). Pure: Node imports this file as it is (tests/page-parts-check.ts).
 import type { FromWorker } from "../runtime/contracts/messages.ts";
 
 const ENDS: readonly FromWorker["type"][] = ["ready", "bench", "paths", "done", "error"];

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# tests/slow_in_browser.sh (T.538): the page on a slow line and on one that stops (tests/slow-check.mjs), from the site of
+# tests/slow_in_browser.sh (T.538): the page on a slow line and on one that stops (tests/slow-check.ts), from the site of
 # this checkout built on the runner, and from that of another commit (BEFORE) on the same runner by turns: a branch's
 # check before and after, which slow.yml (the deployed site) cannot give. After tests.yml has made the models, the
 # kernels and the build (not only_extra):
 #
-#   node tests/ci.mjs run tests.yml minutes=120 extra="bash tests/slow_in_browser.sh" \
+#   node tests/ci.ts run tests.yml minutes=120 extra="bash tests/slow_in_browser.sh" \
 #     --grep "^(slow|stall|the |through|console|ok|FAILED|---)" --minutes 130 --ref <branch>
 #
 #   CASES   scenario:rate:queue:model, spaced (default: 0.15 Mbps as one deep queue, which fell back before T.538 (the
@@ -35,7 +35,7 @@ for one in $cases; do
   for site in "${sites[@]}"; do
     echo "--- ${site%%=*}: $scenario at $rate bytes a second, $queue, $model"
     # (the exit of the site after alone: the one before is what is compared with)
-    if ! timeout 1500 node tests/slow-check.mjs "$scenario" --dist "${site#*=}" --rate "$rate" --queue "$queue" --model "$model"; then
+    if ! timeout 1500 node tests/slow-check.ts "$scenario" --dist "${site#*=}" --rate "$rate" --queue "$queue" --model "$model"; then
       [ "${site%%=*}" = before ] || status=1
     fi
   done

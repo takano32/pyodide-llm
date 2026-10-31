@@ -25,7 +25,7 @@ export type Adapter = Made & { info?: Info };
 // T.366: what is hashed is WGSL as a device is given it, and nothing of this file's JavaScript: a maker counts by the
 // texts it makes, never by its own source (String(maker), until T.366: a formatter, a bundler or a new parameter changed
 // every device's key). A maker's texts are those of every choice its text branches on (a form, a feature), with one
-// set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.mjs holds that
+// set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.ts holds that
 // every piece of text of the shaders gpu.ts runs reaches the hash, and that the key does not move with the source.
 // T.379.1: which texts those are, each maker's choices and their order is the catalogue's (engine.ts: the rows of every
 // model's shaders, and those of a model of ternary weights alone), which the worker takes its shaders from as well.

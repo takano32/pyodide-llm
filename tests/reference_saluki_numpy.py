@@ -26,7 +26,7 @@
 # given (the environment: "0.03,1e-4", reference_27b.py's for Bonsai; without, the numbers alone), and every broken
 # run then has to be past them.
 # SAVE_LOGITS=<a directory>: the logits, keys and values of "float32" and "as 8 bits round" (reference_27b.py's
-# save_run()), which tests/page-27b.mjs compare reads.
+# save_run()), which tests/page-27b.ts compare reads.
 #
 # made-up: a small GGUF of the same kind (tests/test_kept.py's: ten types by the layer, three value heads to a key
 # head, a classifier of its own) in <directory>/gguf with its original's files, ids in the driver's form, and this
@@ -338,7 +338,7 @@ def main(gguf, work):
 
 def made_up(directory):
     """<directory>/gguf: a small GGUF of the kind with its original's config.json and tokenizer (what tests/page_saluki.py
-    convert and tests/page-27b.mjs convert take); <directory>: ids of two texts in the driver's form and this file's own
+    convert and tests/page-27b.ts convert take); <directory>: ids of two texts in the driver's form and this file's own
     pass over the GGUF, as SAVE_LOGITS leaves it, with f32/fork-<i>.single the float32 run's logits (the place of
     llama.cpp with float32 activations: the comparison's other reference, here the same engine)."""
     from test_kept import Model

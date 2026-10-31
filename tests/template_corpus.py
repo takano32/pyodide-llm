@@ -15,7 +15,7 @@
 # as None, strftime_now, raise_exception, tojson, the generation tag) and by the reader. The reader may refuse (the page then has no format for ?hf=); what it
 # must not do is read a template and write another text than Jinja: any such is DIFFERENT and the exit status is 1.
 # --before: the same with another copy of the converter (src/python/llama2_convert.py of another tree: main's is under
-# .tmp/unchanged/<commit> once `node tests/unchanged.mjs sizes` or any of its checks has run, tests/other-tree.mjs),
+# .tmp/unchanged/<commit> once `node tests/unchanged.ts sizes` or any of its checks has run, tests/other-tree.ts),
 # and what changed between the two is listed: a change of the reader is to move templates from refused to the same,
 # and nothing else.
 #

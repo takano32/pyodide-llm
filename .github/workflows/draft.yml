@@ -1,5 +1,5 @@
 # T.100, stage 1: how often a small model's drafts would be accepted by a larger one of the same vocabulary
-# (tests/draft_check.mjs), on T.85's texts. The development machine has not the memory for the pairs. By hand only;
+# (tests/draft_check.ts), on T.85's texts. The development machine has not the memory for the pairs. By hand only;
 # the tables go to the summary.
 name: Drafts for speculative decoding
 
@@ -51,8 +51,8 @@ jobs:
             source=$(python3 tests/hf_fetch.py "$id" downloads)
             python3 tests/perplexity_prepare.py "$source" "prepared/$id" int8
           done
-          node tests/wikipedia.mjs ${{ matrix.language }} text.txt
+          node tests/wikipedia.ts ${{ matrix.language }} text.txt
 
       - name: Measure
         shell: bash  # with pipefail: a failure must not hide behind tee
-        run: node tests/draft_check.mjs prepared/${{ matrix.small }} prepared/${{ matrix.large }} text.txt 1500 256 | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/draft_check.ts prepared/${{ matrix.small }} prepared/${{ matrix.large }} text.txt 1500 256 | tee -a "$GITHUB_STEP_SUMMARY"

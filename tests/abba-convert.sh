@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # T.359 review: the page's conversion speed, this tree against origin/main's, in one job, each round running one side
 # twice and the order swapped every round (now base base now, base now now base, ...: T.409), for each dtype:
-# tests/profile-convert.mjs on the same model directory.
+# tests/profile-convert.ts on the same model directory.
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
-# The base tree is a copy of origin/main's that tests/other-tree.mjs makes (T.430: not `git fetch --depth 1`, which cut
+# The base tree is a copy of origin/main's that tests/other-tree.ts makes (T.430: not `git fetch --depth 1`, which cut
 # the history of a whole clone behind the commit; a copy, as this script edits its tool), with this tree's node_modules
 # and kernels. A .tmp/base left by an earlier run is used as it is (the origin/main of then): rm -rf .tmp/base for today's. PROFILE=0 times both without cProfile.
 # T.374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
@@ -16,35 +16,35 @@
 set -u
 dir=$1; rounds=${2:-4}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
-  base=$(node --input-type=module -e 'import { otherTree } from "./tests/other-tree.mjs"; console.log(otherTree("origin/main").folder)') &&
+  base=$(node --input-type=module -e 'import { otherTree } from "./tests/other-tree.ts"; console.log(otherTree("origin/main").folder)') &&
     cp -a "$base" .tmp/base && rm -f .tmp/base/done &&
-  # (the built kernels are where each tree keeps them: tests/tree.mjs)
-  cp -r node_modules .tmp/base/ && mkdir -p "$(node tests/tree.mjs --root .tmp/base built)" &&
-    cp "$(node tests/tree.mjs built)"/*kernel* "$(node tests/tree.mjs --root .tmp/base built)"/ ||  # (T.430: the blocks' kernels too, since T.363.5)
+  # (the built kernels are where each tree keeps them: tests/tree.ts)
+  cp -r node_modules .tmp/base/ && mkdir -p "$(node tests/tree.ts --root .tmp/base built)" &&
+    cp "$(node tests/tree.ts built)"/*kernel* "$(node tests/tree.ts --root .tmp/base built)"/ ||  # (T.430: the blocks' kernels too, since T.363.5)
     { rm -rf .tmp/base; echo "abba-convert: the base tree could not be made"; exit 1; }  # (T.430: not left half made)
 fi
-# T.374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs): where the buffers lie is the
+# T.374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.ts): where the buffers lie is the
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
 # (before T.374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
 # this job; between jobs the same comparison moved by more than that (TASKS.md's T.374.2.1): one job is not a verdict.
 # T.409: and, under it, the control of this job (one side twice in each round), which a difference has to be outside of
 # (the standard error takes the four runs of a tree in two rounds as apart, and the two of one round are nearer: it is a
 # little small, which the control makes up for).
-if ! grep -q LAYOUT .tmp/base/tests/profile-convert.mjs; then
+if ! grep -q LAYOUT .tmp/base/tests/profile-convert.ts; then
   sed -i -e 's|^const convert = py.pyimport("llama2_convert");$|py.runPython(`layout_before = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[0])})`);\n&|' \
-    -e 's|^py.globals.set("conversion", conversion);$|py.runPython(`layout_beside = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[1])})`);\n&|' .tmp/base/tests/profile-convert.mjs
-  grep -c layout_ .tmp/base/tests/profile-convert.mjs | grep -qx 2 || { echo "abba-convert: the base tree's tool could not be given a layout"; exit 1; }
+    -e 's|^py.globals.set("conversion", conversion);$|py.runPython(`layout_beside = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[1])})`);\n&|' .tmp/base/tests/profile-convert.ts
+  grep -c layout_ .tmp/base/tests/profile-convert.ts | grep -qx 2 || { echo "abba-convert: the base tree's tool could not be given a layout"; exit 1; }
 fi
 # PROFILE=0 (the time without cProfile): the base tree's tool may not know it (run the profiled comparison first)
-if [ "${PROFILE:-}" = 0 ]; then sed -i 's/began = time.perf_counter(); profiler.enable()")/profiler.enable(); profiler.disable(); began = time.perf_counter()")/' .tmp/base/tests/profile-convert.mjs; fi
+if [ "${PROFILE:-}" = 0 ]; then sed -i 's/began = time.perf_counter(); profiler.enable()")/profiler.enable(); profiler.disable(); began = time.perf_counter()")/' .tmp/base/tests/profile-convert.ts; fi
 mkdir -p .tmp/abba; : > .tmp/abba/lines
 # (what a run says: its MB/s, or with START=1 its start's ms)
 if [ -n "${START:-}" ]; then measure='s/^the start: \([0-9]*\) ms.*/\1/p'; else measure='s/.*(\([0-9]*\) MB\/s).*/\1/p'; fi
 run() { # tree name dtype round
-  (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n "$measure" | head -1 | sed "s|^|$2 $3 $4 |") >> .tmp/abba/lines
+  (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.ts "$OLDPWD/$dir" "$3" 2>&1 | sed -n "$measure" | head -1 | sed "s|^|$2 $3 $4 |") >> .tmp/abba/lines
 }
 # T.409: each round runs one side twice (now base base now, then base now now base): the two runs of one tree in a
-# round are the control, what a measurement moves by itself within this job (tests/compare-engines.mjs's "one side twice")
+# round are the control, what a measurement moves by itself within this job (tests/compare-engines.ts's "one side twice")
 for r in $(seq 1 "$rounds"); do
   for d in $dtypes; do
     if [ $((r % 2)) = 1 ]; then run . now "$d" "$r"; run .tmp/base base "$d" "$r"; run .tmp/base base "$d" "$r"; run . now "$d" "$r"

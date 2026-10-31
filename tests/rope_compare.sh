@@ -6,12 +6,12 @@
 # alone, as on the page (the engine makes the RoPE tables from them). For CI (tests.yml's extra=, after `make kernels`:
 # the development machine runs no model of gigabytes):
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/rope_compare.sh hf-ternary-bonsai-1.7b" --ref <branch> --grep "^rope|written by|kernels, "
+#   node tests/ci.ts run tests.yml extra="bash tests/rope_compare.sh hf-ternary-bonsai-1.7b" --ref <branch> --grep "^rope|written by|kernels, "
 #   bash tests/rope_compare.sh [<id of the list> = hf-ternary-bonsai-1.7b] [tokens = 1500] [languages = "ja en"]
 #
-# The perplexity is tests/perplexity.mjs's first row (the page's own path) on the first <tokens> tokens of T.85's
+# The perplexity is tests/perplexity.ts's first row (the page's own path) on the first <tokens> tokens of T.85's
 # articles (the beginning of the first: Mount Fuji, 富士山), a context of 512 begun anew from the entry's BOS. The
-# writing is tests/write.mjs's: greedy, then as the page samples with seeds 1 and 2 (WRITE_TOKENS tokens, 48).
+# writing is tests/write.ts's: greedy, then as the page samples with seeds 1 and 2 (WRITE_TOKENS tokens, 48).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 id="${1:-hf-ternary-bonsai-1.7b}"
@@ -25,7 +25,7 @@ model=$(python3 tests/hf_fetch.py "$id" "$dir" | tail -1)
 python3 tests/perplexity_prepare.py "$model" "$dir/made" "$dtype" | cut -c1-200
 python3 tests/write_options.py "$id" "$dir/small" > "$dir/page.json"
 # the two sets of options: the page's (the conversion's under the entry's) and the same with the conversion's own
-# scaling put back, each as tests/perplexity.mjs reads it (<out>.json beside <out>.bin) and as tests/write.mjs does
+# scaling put back, each as tests/perplexity.ts reads it (<out>.json beside <out>.bin) and as tests/write.ts does
 python3 - "$dir" <<'PYTHON'
 import json, os, sys
 from pathlib import Path
@@ -45,9 +45,9 @@ for name, scaling, said in (("entry", ours, "the entry's"), ("conversion", their
     print(f"rope: {said} options say rope_scaling {json.dumps(scaling)}, bos {options['bos']}, dtype {options['dtype']}")
 PYTHON
 for language in $languages; do
-  node tests/wikipedia.mjs "$language" "$dir/$language.txt"
+  node tests/wikipedia.ts "$language" "$dir/$language.txt"
   for which in conversion entry; do
-    node tests/perplexity.mjs "$dir/$which" "$tokens" "$dir/$language.txt" --file --rows=0 | tee "$dir/$which.$language.txt"
+    node tests/perplexity.ts "$dir/$which" "$tokens" "$dir/$language.txt" --file --rows=0 | tee "$dir/$which.$language.txt"
   done
   node - "$id" "$language" "$dir" <<'NODE'
 const fs = require("node:fs");
@@ -59,7 +59,7 @@ console.log(`rope: ${id}, ${language}: perplexity ${theirs.toFixed(3)} with the 
 NODE
 done
 for which in conversion entry; do
-  SEEDS="${SEEDS:-1 2}" node tests/write.mjs "$dir/$which" "$dir/$which.page.json" "${WRITE_TOKENS:-48}"
+  SEEDS="${SEEDS:-1 2}" node tests/write.ts "$dir/$which" "$dir/$which.page.json" "${WRITE_TOKENS:-48}"
 done
 rm -rf "$dir"
 echo "rope: $id done"

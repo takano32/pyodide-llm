@@ -2,17 +2,17 @@
 # tests/page_gemma3.sh (T.261): a Gemma 3 on the page's forward pass (src/runtime/forward.js on the int8 kernels), for
 # CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide) and, for the 270M, the development machine:
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/page_gemma3.sh" --ref <branch> --grep "gemma3:|perplexity|thread"
-#   node tests/ci.mjs run tests.yml extra="bash tests/page_gemma3.sh hf:unsloth/gemma-3-1b-it@5b11413a10db4e486ef16a20101fd028f8f2499c" runner=ubuntu-24.04-arm --ref <branch> ...
+#   node tests/ci.ts run tests.yml extra="bash tests/page_gemma3.sh" --ref <branch> --grep "gemma3:|perplexity|thread"
+#   node tests/ci.ts run tests.yml extra="bash tests/page_gemma3.sh hf:unsloth/gemma-3-1b-it@5b11413a10db4e486ef16a20101fd028f8f2499c" runner=ubuntu-24.04-arm --ref <branch> ...
 #
 # The model as ?hf= opens it (tests/hf_fetch.py: the repository's safetensors, config.json and tokenizer; an id of the
 # list once the list has one), converted the way the page converts it (tests/perplexity_prepare.py), then
 #   - its perplexity on 1500 tokens of English Wikipedia and of Japanese Wikipedia (T.85's articles; three times the
 #     window of 512 positions its local layers attend): the float32 and the int8 weights in native NumPy, and the int8
-#     weights on the kernels with 7-bit and 8-bit activations (tests/perplexity.mjs --file);
+#     weights on the kernels with 7-bit and 8-bit activations (tests/perplexity.ts --file);
 #   - the software threads: the logits of a greedy run and of a prompt in blocks the same to the bit with 1, 2, 4 and
 #     8 threads, after a thread that stops in the middle of its work, and the tokens a second of each count
-#     (tests/threads-check.mjs).
+#     (tests/threads-check.ts).
 # A second word says which parts to run, "float32 int8 kernels threads" when left out; a third the languages, "en ja";
 # a fourth the number of tokens (1500).
 set -euo pipefail
@@ -29,7 +29,7 @@ fi
 mkdir -p "$dir"
 echo "gemma3: $id on $(node -p 'require("os").cpus()[0].model') ($(nproc) logical cores)"
 model=$(python tests/hf_fetch.py "$id" "$dir" | tail -1)
-for language in $languages; do node tests/wikipedia.mjs "$language" "$dir/$language.txt"; done
+for language in $languages; do node tests/wikipedia.ts "$language" "$dir/$language.txt"; done
 if has float32; then
   python tests/perplexity_prepare.py "$model" "$dir/float32" float32 2>&1 | tail -1 | cut -c1-200
   for language in $languages; do
@@ -49,10 +49,10 @@ for language in $languages; do
   fi
   if has kernels; then
     echo "gemma3: the kernels, $language"
-    node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/$language.txt" --file $numpy
+    node tests/perplexity.ts "$dir/int8" "$tokens" "$dir/$language.txt" --file $numpy
   fi
 done
 if has threads; then
   echo "gemma3: the software threads of $id"
-  node tests/threads-check.mjs "$dir/int8" --rounds 3 --positions 64
+  node tests/threads-check.ts "$dir/int8" --rounds 3 --positions 64
 fi

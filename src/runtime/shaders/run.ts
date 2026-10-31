@@ -18,7 +18,7 @@ import type { BlockPacking } from "./common.ts";
 // What the GPU does is the CPU's sampling (kernels/kernel.ts's penalize() and sample(), the engine's generate()),
 // token for token: the same random number (the CPU draws them, in order, one a sampled token: randoms[sampled]) picks
 // the same token but where a float32 sum in another order moves a border (likecpu.ts's sampleLikeCpu is that CPU in
-// JavaScript; tests/smoke.mjs holds it to the kernel, /benchmark/'s check holds SAMPLE to it). Their forms:
+// JavaScript; tests/smoke.ts holds it to the kernel, /benchmark/'s check holds SAMPLE to it). Their forms:
 //   - the penalty: MLC LLM's apply_penalty_inplace (a thread a token of the window, the logit divided where positive
 //     and multiplied where not; mlc_llm/compiler_pass/attach_logit_processor.py, Apache-2.0), with the CPU's window
 //     (the latest REPETITION_WINDOW tokens of the history, the prompt and BOS in it) and its once for each distinct

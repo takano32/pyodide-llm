@@ -1,0 +1,75 @@
+// Where the time of one token goes, in the forward pass of src/runtime/forward.js (the page's, since T.93), measured in
+// Node: every kernel call is wrapped and timed (performance.now() resolves well below a microsecond here, and a
+// token makes about a hundred calls), and the calls are summed by kind. What the wrapping itself costs is the
+// difference between the wrapped and the plain run, and is shown. The classifier is the difference between a
+// token with logits and one without. (Until T.93 this measured the Python forward, ctypes calls included: those
+// numbers are in AGENTS.md and kernels/README.md. Replacing kernels by functions that do nothing, as it did then,
+// leaves NaN in the activations and slows what follows: that is why this one times the calls instead.)
+//
+//   node tests/profile.ts [model id ...] [--positions 64] [--from 16]
+//
+// --from: the position the timed tokens start at. The KV cache is filled up to it first (with forwardMany, T.108), so
+// that the attention of a long context shows (T.109).
+import fs from "node:fs";
+import { pyodideWithEngine } from "./engine.ts";
+import { MODELS } from "../src/models.ts";
+import { built, runtimeUrl } from "./tree.ts";
+const { compileKernels, createForward, weightsMemory } = await import(runtimeUrl("forward.js"));
+
+const root = new URL("../", import.meta.url).pathname;
+const args = process.argv.slice(2);
+const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
+const positions = option("--positions", 64), from = option("--from", 16);
+const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
+const kernels = compileKernels(fs.readFileSync(built("simdkernel_plain.wasm")), fs.readFileSync(built("simdkernel_relaxed_plain.wasm")));
+// the kinds of kernel calls, and the kernel names that go into each
+const KINDS = { "matmuls": ["matmul_q8r", "matmul_q8", "matmul_q6r", "matmul_q6", "matmul_f32"], "quantizing the input": ["quantize_x"],
+  "attention": ["attention"], "norms": ["rmsnorm", "layernorm"], "rope, activation, adds": ["rope", "swiglu", "gelu", "geglu", "add_inplace", "add_columns"] };
+const kindOf = Object.fromEntries(Object.entries(KINDS).flatMap(([kind, names]) => names.map((name) => [name, kind])));
+function timing(sums) {
+  return (exports) => Object.fromEntries(Object.entries(exports).map(([name, f]) => [name, typeof f !== "function" || !kindOf[name] ? f : (...a) => {
+    const t = performance.now();
+    const result = f(...a);
+    sums[kindOf[name]] += performance.now() - t;
+    return result;
+  }]));
+}
+
+const { pyodide: py } = await pyodideWithEngine();
+console.log(`| model | ms per token | classifier | ${Object.keys(KINDS).join(" | ")} | JS between the calls | timing's own cost |\n|---|---:|---:|${"---:|".repeat(Object.keys(KINDS).length)}---:|---:|`);
+for (const id of ids.length ? ids : ["llm-jp-3-150m", "tiny-lm", "stories15M"]) {
+  const entry = MODELS.find((m) => m.id === id);
+  const checkpoint = fs.readFileSync(root + entry.checkpoint);
+  const { memory, base } = weightsMemory(checkpoint.length);
+  new Uint8Array(memory.buffer).set(checkpoint, base);
+  py.FS.writeFile("tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
+  let plan;
+  const outside = { size: checkpoint.length, read: (o, l) => new Uint8Array(memory.buffer, base + o, l).slice(),
+    start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } };
+  py.globals.set("OUTSIDE", outside);
+  py.globals.set("OPTIONS", py.toPy(entry.options));
+  py.runPython(`from llama2_numpy import Llama\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
+  // one engine per run, fresh; the KV cache of positions 0..from-1 warms up, from.. is timed
+  const run = (wrap, needLogits = true, timedFromHere = () => {}) => {
+    const engine = createForward({ memory, base, size: checkpoint.length, kernels, plan, wrap });
+    engine.forwardMany(new Array(from - 8).fill(1), 0);
+    for (let pos = from - 8; pos < from; pos++) engine.forward(1, pos, needLogits);
+    timedFromHere();  // what the warm-up added to the sums goes
+    const began = performance.now();
+    for (let pos = from; pos < from + positions; pos++) engine.forward(1, pos, needLogits);
+    return (performance.now() - began) / positions;
+  };
+  const best = (f) => Math.min(f(), f(), f());
+  const plain = best(() => run(undefined)), withoutLogits = best(() => run(undefined, false));
+  let sums, timed = Infinity;
+  for (let r = 0; r < 3; r++) {
+    const these = Object.fromEntries(Object.keys(KINDS).map((kind) => [kind, 0]));
+    const t = run(timing(these), true, () => Object.keys(these).forEach((kind) => { these[kind] = 0; }));
+    if (t < timed) [timed, sums] = [t, these];
+  }
+  const per = Object.fromEntries(Object.entries(sums).map(([kind, ms]) => [kind, ms / positions]));
+  const inKernels = Object.values(per).reduce((a, b) => a + b, 0);
+  const share = (ms) => `${ms.toFixed(2)} (${((ms / plain) * 100).toFixed(0)}%)`;
+  console.log(`| ${entry.name} | ${plain.toFixed(2)} | ${share(plain - withoutLogits)} | ${Object.keys(KINDS).map((kind) => share(per[kind])).join(" | ")} | ` +
+    `${share(Math.max(0, plain - inKernels))} | ${(timed - plain).toFixed(2)} |`);
+}

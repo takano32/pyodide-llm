@@ -1,6 +1,6 @@
 // src/page/thought.ts (T.520): an answer's thought, as the page folds it above the answer: where it ends, and the one
 // line its fold says. It imports nothing and reads nothing of a page: Node imports this file as it is
-// (tests/page-parts-check.mjs).
+// (tests/page-parts-check.ts).
 
 const THOUGHT_OPENS = "<think>", THOUGHT_CLOSES = "</think>";
 /** T.520: what was written, as the thought (null: none; its marks and the white space around it left out), whether the

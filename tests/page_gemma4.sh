@@ -3,8 +3,8 @@
 # 64-bit memory: the E2B's int8 is 5.2 GB), for CI (tests.yml's extra=, after `make kernels` and with the suite's
 # pyodide). The development machine runs none of it (10.2 GB of safetensors):
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=170 extra="bash tests/page_gemma4.sh" --ref <branch> --grep "gemma4:|Perplexity|kernels,|page:|answers"
-#   node tests/ci.mjs run tests.yml only_extra=true runner=ubuntu-24.04-arm minutes=170 extra="bash tests/page_gemma4.sh '' 'speed answers'" --ref <branch> ...
+#   node tests/ci.ts run tests.yml only_extra=true minutes=170 extra="bash tests/page_gemma4.sh" --ref <branch> --grep "gemma4:|Perplexity|kernels,|page:|answers"
+#   node tests/ci.ts run tests.yml only_extra=true runner=ubuntu-24.04-arm minutes=170 extra="bash tests/page_gemma4.sh '' 'speed answers'" --ref <branch> ...
 #
 # With only_extra=true it installs what it needs (numpy, jinja2: the converter reads the template with it; the npm
 # packages, the kernels).
@@ -14,23 +14,23 @@
 # converter's options alone), then the parts the second word names ("perplexity speed answers float32" when left out):
 #   perplexity  the int8 weights on the kernels with 7-bit and 8-bit activations, 1500 tokens of English and of Japanese
 #               Wikipedia (T.85's articles: past the window of 512 of its local layers), read from the file into
-#               forward.js's memory (tests/perplexity.mjs --file: the table of every layer's input in that memory too)
+#               forward.js's memory (tests/perplexity.ts --file: the table of every layer's input in that memory too)
 #   speed       tokens a second with 1, 2 and 4 threads, the logits the same to the bit with each, a prompt in blocks,
-#               what forward.js placed against footprint(), and that no GPU is started (tests/page-27b.mjs speed)
+#               what forward.js placed against footprint(), and that no GPU is started (tests/page-27b.ts speed)
 #   answers     twelve questions (six Japanese, six English), greedy and with two seeds as generation_config.json samples
 #               (temperature 1, top-p 0.95, top-k 64), up to TOKENS tokens (300) in the format of the model's template
-#               (tests/answers.mjs): what it writes, whether it stops, the language of the answer
+#               (tests/answers.ts): what it writes, whether it stops, the language of the answer
 #   float32     the float32 conversion in native NumPy (tests/perplexity_native.py, 18.6 GB mapped): the original's
 #               perplexity, which transformers computes (tests/reference_gemma4.py holds the two together)
 #   against     (T.529, not of the default parts) the model against the original's safetensors (AGAINST, hf:<repository>@
 #               <revision>; E2B's where none is said), both converted to int8: the page's engine's logits at the same
-#               ids (tests/logits.mjs, AGAINST_TOKENS of each language, 96), the largest difference, the most likely token,
+#               ids (tests/logits.ts, AGAINST_TOKENS of each language, 96), the largest difference, the most likely token,
 #               the KL and the perplexity of each; the two checkpoints row by row; and the control, the safetensors' with its
 #               scales rounded to float16 as a Q8_0 holds them (what that rounding alone moves)
 # The first word is the model (hf:<repository>@<revision>, or an entry of the list: hf-gemma-4-e2b takes a GGUF's
 # weights from T.529), the third the languages ("en ja").
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=170 extra="bash tests/page_gemma4.sh hf-gemma-4-e2b 'against perplexity answers'" --ref <branch> --grep "gemma4:|Perplexity|kernels,|page:|answers"
+#   node tests/ci.ts run tests.yml only_extra=true minutes=170 extra="bash tests/page_gemma4.sh hf-gemma-4-e2b 'against perplexity answers'" --ref <branch> --grep "gemma4:|Perplexity|kernels,|page:|answers"
 set -euo pipefail
 id="${1:-hf:google/gemma-4-E2B-it@3e22461f65e89153144f8adb70e3b8c2cc9845a7}"
 [ -n "$id" ] || id="hf:google/gemma-4-E2B-it@3e22461f65e89153144f8adb70e3b8c2cc9845a7"
@@ -54,7 +54,7 @@ echo "gemma4: $id on $(lscpu | sed -n 's/^Model name: *//p' | head -1) ($(uname 
 began=$SECONDS
 model=$(python tests/hf_fetch.py "$id" "$dir" | tail -1)
 echo "gemma4: fetched in $((SECONDS - began)) s: $(du -shL "$model" | cut -f1)"
-for language in $languages; do node tests/wikipedia.mjs "$language" "$dir/$language.txt"; done
+for language in $languages; do node tests/wikipedia.ts "$language" "$dir/$language.txt"; done
 began=$SECONDS
 # (an entry of the list: its options under the converter's, as the worker merges them; T.529)
 entry=(); case "$id" in hf:*) ;; *) entry=(--entry "$id") ;; esac
@@ -63,12 +63,12 @@ echo "gemma4: converted to int8 in $((SECONDS - began)) s (native Python); the c
 if has perplexity; then
   for language in $languages; do
     echo "gemma4: the kernels, $language"
-    said node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/$language.txt" --file --wide
+    said node tests/perplexity.ts "$dir/int8" "$tokens" "$dir/$language.txt" --file --wide
   done
 fi
 if has speed; then
   echo "gemma4: the speed of $id"
-  said node tests/page-27b.mjs "$dir/int8" speed --threads 1,2,4 --positions 24 --rounds 2 --entry none
+  said node tests/page-27b.ts "$dir/int8" speed --threads 1,2,4 --positions 24 --rounds 2 --entry none
 fi
 if has answers; then
   # the page's options and the model's format (the converter's template, else the one the template writes without thinking)
@@ -85,14 +85,14 @@ generation = {"temperature": 1.0, "topp": 0.95, "top_k": 64, "repetition_penalty
 print(f"gemma4: the format {json.dumps(template)}, bos {options['bos']}, stops {options['stop_tokens']}")
 EOF
   # (Node 24's V8 reads a 64-bit memory above 4 GiB wrongly in Liftoff's code on arm64: AGENTS.md, the pitfalls of the
-  # kernels. page-27b.mjs sets --no-liftoff itself where it must; answers.mjs does not, and its logits were NaN there)
+  # kernels. page-27b.ts sets --no-liftoff itself where it must; answers.ts does not, and its logits were NaN there)
   liftoff=; [ "$(uname -m)" = aarch64 ] && liftoff=--no-liftoff
-  GREEDY=1 SEEDS="1 2" said node $liftoff tests/answers.mjs "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
+  GREEDY=1 SEEDS="1 2" said node $liftoff tests/answers.ts "$dir/int8" "$dir/page.json" "${TOKENS:-300}"
 fi
 if has against; then
   # T.529: the model of the first word (an entry that takes a GGUF's weights) against the original's safetensors
   # converted the same way (AGAINST: the original, hf:<repository>@<revision>): the page's engine's logits at the same
-  # ids, one token at a time (tests/logits.mjs, 7-bit activations), the largest difference, how often the most likely
+  # ids, one token at a time (tests/logits.ts, 7-bit activations), the largest difference, how often the most likely
   # token agrees and the mean KL. Two int8 of the same model differ by the rounding of Q8_0's scales (float16) alone
   against="${AGAINST:-hf:google/gemma-4-E2B-it@3e22461f65e89153144f8adb70e3b8c2cc9845a7}"
   began=$SECONDS
@@ -154,7 +154,7 @@ header = list(struct.unpack("<7i", (out / f"{name}.bin").open("rb").read(28)))
 (out / f"{name}.page.json").write_text(json.dumps({"id": name, "options": options, "header": header}, ensure_ascii=False))
 EOF
     for language in $languages; do
-      TEXT="$dir/$language.txt" TOKENS="${AGAINST_TOKENS:-96}" OUT="$dir/$out.$language" said node tests/logits.mjs "$dir/$out" "$dir/$out.page.json"
+      TEXT="$dir/$language.txt" TOKENS="${AGAINST_TOKENS:-96}" OUT="$dir/$out.$language" said node tests/logits.ts "$dir/$out" "$dir/$out.page.json"
     done
   done
   for language in $languages; do

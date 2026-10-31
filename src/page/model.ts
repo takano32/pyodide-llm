@@ -1,7 +1,7 @@
 // src/page/model.ts (T.378.5): the model the page has, and how far its load has come. The owner of that: the other
 // parts of the page's script read these by the names they import (a static import of src/ is a live binding), and say
 // what happened to the functions below; none of them sets one. Nothing of a page is read here (no element, no address,
-// no storage): Node imports this file as it is (tests/page-parts-check.mjs).
+// no storage): Node imports this file as it is (tests/page-parts-check.ts).
 import { DEFAULT_MODEL, MODELS } from "../models.ts";
 
 export type Model = typeof MODELS[number];

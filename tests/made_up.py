@@ -1,5 +1,5 @@
 # Made-up models for the tests and their tools, in one place (T.357.2). Nothing here reads pytest or conftest.py, so that a
-# tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.mjs, tests/forward-check.mjs) import it as
+# tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.ts, tests/forward-check.ts) import it as
 # it is: whoever imports it has put the engine's Python on sys.path first (tests/tree.py's python_folder()).
 #
 # The file of the engine: one maker, checkpoint(), which lays a model out by the engine's own rows (engine/layout.py)
@@ -701,13 +701,13 @@ BIASES = ("bq", "bk", "bv", "bo", "b1", "b2", "ln_att_bias", "ln_ffn_bias", "ln_
 
 
 def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
-    """The values of the made-up models the GPU is checked on (tests/gpu-check.mjs), of one stream in file order: a
+    """The values of the made-up models the GPU is checked on (tests/gpu-check.ts), of one stream in file order: a
     matrix is 0.3 N; the weight of a norm is 1 + 0.03 N, a bias 0.3 N (T.154, T.187: around 0 as the matrices are, or
     the biases of every layer are nearly the same and 8 bits hide a GPU that reads layer 0's in every layer).
     outliers (T.226): that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T.92), so that
     the engine takes their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread,
     2 spread, ... (mod dim: the T.232 review's spread of 37 puts some in every group of 128 of a dim of 256).
-    calm (T.226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check/models.mjs.
+    calm (T.226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check/models.ts.
     ternary (T.232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
     times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are."""
     rng = np.random.default_rng(seed)

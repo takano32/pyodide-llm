@@ -1,6 +1,6 @@
 # perplexity_prepare.py
 # A Hugging Face model converted the way the page converts it (the conduct of a conversion, fed the file in order),
-# for tests/perplexity.mjs and tests/perplexity_native.py (T.85): <out>.bin, <out>.tokenizer.bin and <out>.json,
+# for tests/perplexity.ts and tests/perplexity_native.py (T.85): <out>.bin, <out>.tokenizer.bin and <out>.json,
 # the options the page would give Llama(). convert_hf.py does not say those options; the page's path does.
 #
 #   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|int6|float32] [--entry <id>] [--blocks]

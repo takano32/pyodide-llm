@@ -1,6 +1,6 @@
 # Screenshots of the page as a branch has it, before it goes out (AGENTS.md: a drawing task shows a phone-width and
 # a desktop-width screenshot to the owner first). Builds the site with its smallest model only, serves it from the
-# runner and runs tests/screenshots.mjs in Chromium. By hand only: pick the branch when running it.
+# runner and runs tests/screenshots.ts in Chromium. By hand only: pick the branch when running it.
 name: Preview screenshots
 
 on:
@@ -60,15 +60,15 @@ jobs:
           npx playwright-core install --with-deps chromium
 
       - name: Take the screenshots
-        run: node tests/screenshots.mjs screenshots
+        run: node tests/screenshots.ts screenshots
 
-      # T.134: /benchmark/ of this branch, every section in Chromium (tests/bench-check.mjs serves dist/ itself)
+      # T.134: /benchmark/ of this branch, every section in Chromium (tests/bench-check.ts serves dist/ itself)
       - name: The benchmark page
         shell: bash
         env:
           MODEL: ${{ inputs.model || 'stories260K' }}
           QUERY: ${{ inputs.query }}
-        run: node tests/bench-check.mjs --dist chromium --model "$MODEL" --size 64 --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/bench-check.ts --dist chromium --model "$MODEL" --size 64 --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T.227's review: the GPU section's worker served with its layer check's line cut to 1e-12, so that every layer
       # verdict is WRONG (no runner makes one): the report must hold them under "Warnings", the worst first (the model
@@ -77,21 +77,21 @@ jobs:
       - name: The benchmark's report with the GPU's check WRONG
         if: always()
         shell: bash
-        run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 --run model,gpu --wrong | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/bench-check.ts --dist chromium --model stories260K --size 64 --run model,gpu --wrong | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T.214: the model section where the browser does not say its memory (Safari, Firefox): the round without the
       # kernels is a row that says why, and never loads
       - name: The benchmark's model section without deviceMemory
         if: always()
         shell: bash
-        run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 --run model --unsaid | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/bench-check.ts --dist chromium --model stories260K --size 64 --run model --unsaid | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T.173: the page-memory section, on a limit the runner holds well below its own, and a tab ended in the middle of
       # it played by loading the page again (never Run all: it may end a phone's tab)
       - name: The benchmark's page memory
         if: always()
         shell: bash
-        run: node tests/page-memory-check.mjs --dist | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/page-memory-check.ts --dist | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T.173's review: the tab ended by the kernel for its memory, as a phone's jetsam or low-memory killer ends it (no
       # error in the page): the whole browser in a cgroup of 2 GiB with no swap, the section asked for its 4 GiB. The
@@ -104,7 +104,7 @@ jobs:
           sudo mkdir -p /sys/fs/cgroup/page-memory
           echo 2G | sudo tee /sys/fs/cgroup/page-memory/memory.max
           echo $$ | sudo tee /sys/fs/cgroup/page-memory/cgroup.procs
-          node tests/page-memory-check.mjs --dist --ended 2048 | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/page-memory-check.ts --dist --ended 2048 | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T.262: a step of its own, so that the limit is the install's alone (apt's time-outs are set by the build's step)
       - name: Install Firefox and WebKit for the offline runs
@@ -120,7 +120,7 @@ jobs:
         run: |
           failed=0
           for browser in chromium firefox webkit; do
-            E2E_OFFLINE=1 E2E_ARTIFACTS=offline node tests/e2e.mjs stories260K "$browser" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            E2E_OFFLINE=1 E2E_ARTIFACTS=offline node tests/e2e.ts stories260K "$browser" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
           done
           exit $failed
 

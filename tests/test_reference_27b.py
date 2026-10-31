@@ -103,7 +103,7 @@ def test_a_job_that_fails_ends_the_pass():
 # ------------------------------------------------------------------------------------------- the review of T.237
 def test_the_roundings_of_the_page_are_what_the_converter_makes_of_a_row():
     """The page's 8-bit rounding (Safari) is llama2_convert.quantize() on the activation (which quantize_x is to the bit,
-    smoke.mjs); the 7-bit one (relaxed SIMD) is the same with 63."""
+    smoke.ts); the 7-bit one (relaxed SIMD) is the same with 63."""
     import llama2_convert
     from reference_27b import as_page
     rng = np.random.default_rng(7)

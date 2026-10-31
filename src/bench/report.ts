@@ -48,7 +48,7 @@ export function reportUrl(markdown: string, environment: Environment, summary?: 
     : summary && !reportTooLong(summary, environment) ? summary : TOO_LONG;
   return issueUrl(body, environment);
 }
-/** reportUrl() as GitHub's login gets it (tests/bench.mjs) */
+/** reportUrl() as GitHub's login gets it (tests/bench.ts) */
 export const loginUrl = (markdown: string, environment: Environment, summary?: string): string => throughLogin(reportUrl(markdown, environment, summary));
 
 /** T.185: the report the link holds where the whole is too long: the top of the report as it is (the machine's line and

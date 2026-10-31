@@ -85,7 +85,7 @@ worker.onmessage = ({ data }) => {
       }
     }
     aloneOnReady = undefined;
-    // for tests/e2e.mjs: how long each part of the load took, and the WebAssembly memory then (T.84). Not shown
+    // for tests/e2e.ts: how long each part of the load took, and the WebAssembly memory then (T.84). Not shown
     (window as any).__ready = data;
     // once: every round of the benchmark loads the model again and reports ready too (T.96: the second request
     // ended the first round's threads under its coordinator, which then waited for ever)
@@ -191,7 +191,7 @@ worker.onmessage = ({ data }) => {
     aloneOnReady = undefined;  // (T.156: the load on the CPU did not come to ready)
     // the console keeps where it happened, for a failed run's record (T.82's artifacts, T.96)
     // (T.156's review: the worker's word that it loads a model on the GPU alone again on the CPU is no error of its own,
-    // and has no memory or stack to say: tests/e2e.mjs counted it as a console error)
+    // and has no memory or stack to say: tests/e2e.ts counted it as a console error)
     if (data.reloading) console.warn(data.message);
     else console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
     // (a round that failed ends the benchmark; T.156: a model the worker loads again on the CPU is not ready)

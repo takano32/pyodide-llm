@@ -2,7 +2,7 @@
 # T.253 and T.254: a model of the list that is a Llama to the engine, against transformers itself, on the original's
 # safetensors. PyTorch is not on the development machine, so this runs in CI:
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/reference_llama.sh hf-granite-4.2-3b" --ref <branch> --grep "reference:"
+#   node tests/ci.ts run tests.yml extra="bash tests/reference_llama.sh hf-granite-4.2-3b" --ref <branch> --grep "reference:"
 #   python tests/reference_llama.py <directory for the downloads> [--only=made-up] [<id of the list> ...] [--positions=96]
 #                                   [--weak] [--layers=N] [--gguf]
 #

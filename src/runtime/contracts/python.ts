@@ -9,10 +9,10 @@
 // behind held a model's weights). The engine's and the converter's windows (src/python/llama2_numpy.py,
 // llama2_convert.py) and the conduct (convert/conduct.py) are read through such proxies, by the names below.
 //
-// The other end is Python, which no compiler reads with this: tests/contracts-check.mjs holds every name of
+// The other end is Python, which no compiler reads with this: tests/contracts-check.ts holds every name of
 // EngineWindow, ConverterWindow and ConductModule to a name of that module's file, and the members of Llama to
 // src/python/engine/. The values (what a call takes and gives) are held by what runs the worker on the real Python:
-// tests/smoke.mjs, tests/worker-fetches-check.mjs, the browsers.
+// tests/smoke.ts, tests/worker-fetches-check.ts, the browsers.
 import type { Stats } from "./messages.ts";
 import type { Dtype, Form } from "./form.ts";
 import type { Tensor, TensorName } from "./plan.ts";
@@ -111,5 +111,5 @@ export type Pyodide = {
   // Emscripten's module: its memory, which only grows
   _module?: { HEAPU8?: { length: number } };
 };
-// pyodide.mjs, as the loader imports it
+// pyodide.ts, as the loader imports it
 export type PyodideModule = { loadPyodide(): Promise<Pyodide> };

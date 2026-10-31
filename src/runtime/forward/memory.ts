@@ -100,7 +100,7 @@ const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size
 /** T.622: a token's frame (frameArrays()) as footprint() counts it from the header and the form: the kinds' arrays, a
  * rotated basis's, and the scales of a group of 32 activations by the most any packing of the model's takes (the
  * dtype's, and those of the kinds its form gives rows). The engine makes its own from the plan (createForward()'s
- * frame): tests/frame-check.mjs holds the two to each other, array by array */
+ * frame): tests/frame-check.ts holds the two to each other, array by array */
 export function frameOf(header: Header, options: Footprint = {}, kinds: Kinds = LAYER_KINDS): Framed[] {
   const { dtype = "float32", rotated = null } = options;
   const sizes = sizesOfForm(header, options, kinds), { q: qDim, kv: kvDim } = sizes.widths;
@@ -111,7 +111,7 @@ export function frameOf(header: Header, options: Footprint = {}, kinds: Kinds = 
 }
 /** T.115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T.130). An upper bound, a little above what createForward allocates
- * (tests/forward-check.mjs holds the two together).
+ * (tests/forward-check.ts holds the two together).
  * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6", "ternary"). int8: the int8
  * kernels compute on the weights (not with ?without=int8, which widens them to float32); relaxed: with relaxed SIMD
  * (an int32 correction a group, T.197); halfKV: the keys and values may be float16 (an int8 model, not ?without=kv16;

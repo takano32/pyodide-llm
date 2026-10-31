@@ -11,7 +11,7 @@
 # T.517: an original with no safetensors at all (LINE's japanese-large-lm 1.7B instruction-sft has only PyTorch's
 # pytorch_model.bin) has its pickle read without PyTorch (only the globals that rebuild tensors, as convert_hf.py) and
 # written beside it as model.safetensors, the tensors as they are stored, so that gguf_check.py reads one kind.
-# HF_ENDPOINT: another hub than huggingface.co (tests/fetching-check.mjs's, on this machine).
+# HF_ENDPOINT: another hub than huggingface.co (tests/fetching-check.ts's, on this machine).
 import json
 import os
 import struct

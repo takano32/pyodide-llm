@@ -1,13 +1,13 @@
 # by_layer_logits.py (the review of T.253): the page's engine against transformers over the whole depth of a model that no
-# runner holds in float32 (Granite 4.2 8B: 35 GB). tests/logits.mjs saves the page's engine's logits (int8, 7-bit
+# runner holds in float32 (Granite 4.2 8B: 35 GB). tests/logits.ts saves the page's engine's logits (int8, 7-bit
 # activations, a token at a time) at the positions of a text; this computes transformers' for the very same ids a layer at
 # a time (reference_llama.ByLayer, in float32) and holds the two to each other: the largest and the mean difference of a
 # logit, how many positions have the same most likely token, and the Kullback-Leibler distance of the engine's
 # next-token distribution from transformers' (nats a position). A conversion that is wrong somewhere in the depth shows
 # here as a whole as the quantization noise (what the 3B, which fits, shows) is a few tenths of a logit.
 #
-#   (in CI: tests.yml's extra=, after tests/write.sh with WRITER=logits.mjs has saved the engine's logits)
-#   OUT=.tmp/engine TEXT=.tmp/ja.txt TOKENS=96 WRITER=logits.mjs bash tests/write.sh hf-granite-4.2-8b
+#   (in CI: tests.yml's extra=, after tests/write.sh with WRITER=logits.ts has saved the engine's logits)
+#   OUT=.tmp/engine TEXT=.tmp/ja.txt TOKENS=96 WRITER=logits.ts bash tests/write.sh hf-granite-4.2-8b
 #   bash tests/reference_llama.sh --run tests/by_layer_logits.py hf-granite-4.2-8b .tmp/engine
 import argparse
 import json
@@ -36,7 +36,7 @@ def log_softmax(rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model")
-    parser.add_argument("engine", help="the OUT of tests/logits.mjs: OUT.ids.json and OUT.logits.f32")
+    parser.add_argument("engine", help="the OUT of tests/logits.ts: OUT.ids.json and OUT.logits.f32")
     parser.add_argument("--directory", default=str(HERE.parent / ".tmp" / "by-layer"))
     args = parser.parse_args()
     entry = next(entry for entry in format_check.entries() if entry["id"] == args.model)

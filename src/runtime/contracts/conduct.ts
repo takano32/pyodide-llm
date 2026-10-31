@@ -3,8 +3,8 @@
 //
 // The conduct is Python's (src/python/convert/conduct.py: a generator that asks for a file, a part of one, a stream,
 // and ends). The worker answers it (src/runtime/worker/conduct.ts: the loop, and an answerer for where the files are,
-// huggingface.co or a folder of the visitor's disk); the tools answer it from a folder (tests/conducting.mjs).
-// A request comes as a tuple, its kind first. tests/contracts-check.mjs holds the kinds and their lengths here to
+// huggingface.co or a folder of the visitor's disk); the tools answer it from a folder (tests/conducting.ts).
+// A request comes as a tuple, its kind first. tests/contracts-check.ts holds the kinds and their lengths here to
 // the tuples conduct.py yields and to the answers of both answerers.
 
 // which repository a file is asked of: the model's, or the one it names for its vocabulary (T.136)

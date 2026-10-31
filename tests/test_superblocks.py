@@ -256,7 +256,7 @@ def test_the_ten_types_are_the_tables_and_a_gguf_says_them_by_ggmls_numbers():
 
 
 def test_what_is_read_of_blocks_made_the_same_everywhere_is_the_fixtures():
-    """tests/fixtures/superblocks.json, which tests/smoke.mjs asks of the readers inside Pyodide (integers of 32 bits):
+    """tests/fixtures/superblocks.json, which tests/smoke.ts asks of the readers inside Pyodide (integers of 32 bits):
     it is what the readers of this (64-bit) NumPy read. Written by `python tests/test_superblocks.py`."""
     assert json.loads(FIXTURE.read_text())["read"] == read_of_the_cases()
 

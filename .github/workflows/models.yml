@@ -4,7 +4,7 @@
 #
 #   gh workflow run models.yml -f models="hf:Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1"
 name: Models by name
-# what the run tried, so that runs can be told apart in the list of runs and in tests/ci.mjs (T.142)
+# what the run tried, so that runs can be told apart in the list of runs and in tests/ci.ts (T.142)
 run-name: "Models: ${{ inputs.models }} · ${{ inputs.browser }} · ${{ inputs.os }}"
 
 on:
@@ -41,7 +41,7 @@ on:
         description: 'model ids chosen after the answer in the same page, one after another (a visitor changing models)'
         required: false
       bench:
-        description: 'run tests/bench-browser.mjs (?bench=1, the console kept) instead of tests/e2e.mjs'
+        description: 'run tests/bench-browser.ts (?bench=1, the console kept) instead of tests/e2e.ts'
         type: boolean
         default: false
       long:
@@ -78,7 +78,7 @@ jobs:
             *) npx playwright-core install --with-deps "${{ inputs.browser }}" ;;
           esac
 
-      # the ids local and hf open files of this checkout through the folder button (tests/e2e.mjs): stories260K and
+      # the ids local and hf open files of this checkout through the folder button (tests/e2e.ts): stories260K and
       # its tokenizer, and for hf the files tests/make_hf_fixture.py writes from them with NumPy (a Python of its
       # own: macOS's refuses pip)
       - name: Set up Python
@@ -116,9 +116,9 @@ jobs:
             echo "### $model" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             if [ "${{ inputs.bench }}" = "true" ]; then
-              node tests/bench-browser.mjs "$model" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+              node tests/bench-browser.ts "$model" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
             else
-              node tests/e2e.mjs "$model" "${{ inputs.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+              node tests/e2e.ts "$model" "${{ inputs.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
             fi
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
@@ -127,7 +127,7 @@ jobs:
       - name: One table of every run
         if: always()
         shell: bash
-        run: node tests/summary.mjs results.jsonl >> "$GITHUB_STEP_SUMMARY"
+        run: node tests/summary.ts results.jsonl >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the results and what the failed runs left
         if: always()

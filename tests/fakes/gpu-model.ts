@@ -1,5 +1,5 @@
 // tests/fakes/gpu-model.ts (T.465.3, moved out of tests/gpu-forms-check.ts)
-// A made-up model opened on the stand-in WebGPU (tests/fakes/webgpu.mjs) as the model's GPU worker opens one (openDevice,
+// A made-up model opened on the stand-in WebGPU (tests/fakes/webgpu.ts) as the model's GPU worker opens one (openDevice,
 // handed, upload, block.ts's prepare), with the dispatches of the checks that choose its forms answered as the shaders
 // would (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's): the prompt's attention, the
 // quantization, every tiled form and its texts of llama.cpp's blocks, and (T.465.3) a token's attention. For the checks
@@ -10,8 +10,8 @@
 // The same as the worker's: the plan as forward/gpuside.ts hands one (tests/fakes/gpu-plans.ts's), the device's
 // options of each form. Simpler: a fallback adapter that the plan allows (forms.ts and tokenattention.ts time each right
 // one by a pair of one pass there: every pass of a timing would be answered too), whose timing is no device's.
-import { runtimeUrl } from "../tree.mjs";
-import { standIn } from "./webgpu.mjs";
+import { runtimeUrl } from "../tree.ts";
+import { standIn } from "./webgpu.ts";
 import { MODELS, planned, plausible } from "./gpu-plans.ts";
 import { gpuAnswers } from "./gpu-answers.ts";
 

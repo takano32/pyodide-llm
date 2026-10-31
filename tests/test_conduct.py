@@ -3,7 +3,7 @@
 # Pyodide. And (T.374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
 #
 # Held to four things. The requests of the worker itself, for the 20 repositories and the 10 folders of
-# tests/worker-fetches-check.mjs (tests/fixtures/conversion-cases.json is that check's record of them,
+# tests/worker-fetches-check.ts (tests/fixtures/conversion-cases.json is that check's record of them,
 # conversion-fetches.json what was asked): line by line, with the converter's stand-in of that check. A conversion made
 # with no conduct at all (direct(): the files read whole, a Conversion fed in one piece), for the real converter on real
 # files of the same 30 kinds: the checkpoint, the options and the tokenizer.bin. What every conduct's requests must be
@@ -86,7 +86,7 @@ def expected_of(name):
 
 @pytest.mark.parametrize("case", CASES, ids=NAMES)
 def test_a_conduct_asks_what_the_worker_asks(case, monkeypatch):
-    """The 20 repositories of worker-fetches-check.mjs: the same requests in the same order (the file, the range), the
+    """The 20 repositories of worker-fetches-check.ts: the same requests in the same order (the file, the range), the
     same things handed to the converter, the same end. The hub is given what only the answerer decides: how the line
     cuts a stream into parts, and that a server does not say the size of a file."""
     stand_in = StandIn().into(monkeypatch)
@@ -285,7 +285,7 @@ def test_the_folders_are_the_ones_the_worker_was_handed():
 
 @pytest.mark.parametrize("case", FOLDERS, ids=FOLDER_NAMES)
 def test_a_conduct_reads_of_a_folder_what_the_worker_reads(case, monkeypatch):
-    """The folders of worker-fetches-check.mjs, whose record began as what the worker's own steps for a folder read
+    """The folders of worker-fetches-check.ts, whose record began as what the worker's own steps for a folder read
     (before T.374.2.2 gave the folder to the conduct): the same files and ranges in the same order, the same things
     handed to the converter, the same end. All the conduct is handed of a folder is the name of its weights."""
     stand_in = StandIn().into(monkeypatch)

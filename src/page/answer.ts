@@ -1,6 +1,6 @@
 // src/page/answer.ts (T.378.5): the answer that is being written. The owner of that: the other parts read these by the
 // names they import and say what happened to the two functions below; none of them sets one. It imports nothing but a type and
-// reads nothing of a page: Node imports this file as it is (tests/page-parts-check.mjs).
+// reads nothing of a page: Node imports this file as it is (tests/page-parts-check.ts).
 import type { Sampled } from "../runtime/contracts/messages.ts";
 
 export let generating = false;

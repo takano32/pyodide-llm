@@ -123,7 +123,7 @@ def test_matches_the_definition_and_sentencepiece_itself(dummy, gemma, tied):
 
 @pytest.mark.parametrize("dummy", [False, True])
 def test_the_cases_of_the_smoke_test_are_the_real_tokenizers(dummy):
-    """tests/spelled_bpe_cases.py's file, made by hand, which tests/smoke.mjs reads inside Pyodide: the engine's ids
+    """tests/spelled_bpe_cases.py's file, made by hand, which tests/smoke.ts reads inside Pyodide: the engine's ids
     of its texts are the tokenizers library's and the definition's, and the number the smoke test holds Pyodide's to
     is theirs."""
     spec, specials = spelled_bpe_cases.spec(dummy), spelled_bpe_cases.SPECIALS

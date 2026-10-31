@@ -37,7 +37,7 @@ def at(address, count, kind):
 
 def kernels_in_numpy(calls=None, vocab=VOCAB):
     """The two sampling kernels as simdkernel.so has them (kernels/kernel/sample.ts: addresses and counts in, a token
-    or -1 out), computed by NumpySampler: ctypes cannot load the WebAssembly ones here (tests/smoke.mjs holds those to
+    or -1 out), computed by NumpySampler: ctypes cannot load the WebAssembly ones here (tests/smoke.ts holds those to
     NumPy in Pyodide). What is left to differ is KernelSampler's own: the ring of the latest tokens, the addresses,
     the random numbers, greedy and the refusal."""
     reference = NumpySampler()
@@ -320,7 +320,7 @@ def unwrapped():
     """tests/unchanged_recorder.py puts its own functions around the class's names to write down what they return: what
     these two tests look at (which function a name is, whose frame calls it) is then the recorder's."""
     if Llama.generate is not generation.generate:
-        pytest.skip("the names of the class are wrapped (the recorder of tests/unchanged.mjs)")
+        pytest.skip("the names of the class are wrapped (the recorder of tests/unchanged.ts)")
 
 
 def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeypatch):

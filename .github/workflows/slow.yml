@@ -1,4 +1,4 @@
-# T.118: the page on a slow line and on one that stops (tests/slow-check.mjs, a throttling proxy of its own), in
+# T.118: the page on a slow line and on one that stops (tests/slow-check.ts, a throttling proxy of its own), in
 # Chromium, against the deployed site. By hand only.
 name: Slow line
 
@@ -56,4 +56,4 @@ jobs:
           MODEL: ${{ inputs.model }}
           QUEUE: ${{ inputs.queue }}
           BUFFER: ${{ inputs.buffer }}
-        run: node tests/slow-check.mjs "$SCENARIO" "$SITE" --rate "$RATE" --model "$MODEL" --queue "$QUEUE" --buffer "$BUFFER" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/slow-check.ts "$SCENARIO" "$SITE" --rate "$RATE" --model "$MODEL" --queue "$QUEUE" --buffer "$BUFFER" | tee -a "$GITHUB_STEP_SUMMARY"

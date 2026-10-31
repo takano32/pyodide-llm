@@ -192,7 +192,7 @@ fn main(@builtin(local_invocation_index) t: u32) {
 // text sums by them), the thread's number (thread_id), and the workgroup's first row (row_base), after leaving where
 // the dispatch's workgroups go past the rows. The text of this part's fusedMatVec and of matvec.ts's mulMatVec, which
 // go on from row_base each its own way; "@compute @workgroup_size(WG_SIZE)" stands before it in both (a maker of WGSL
-// is known by that line in its own source: tests/shader-makers.mjs). params is either one's uniform (rows)
+// is known by that line in its own source: tests/shader-makers.ts). params is either one's uniform (rows)
 const mulMatVecMain = (subgroups: boolean): string => /* wgsl */ `fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(workgroup_id) wg_id: vec3<u32>,
@@ -445,7 +445,7 @@ ${ROW_RMS}
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
 // way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
 // other line is the int8 text's: one maker, fusedDp4aMatVec, makes both from DP4A_WEIGHTS' rows below (the device's
-// key holds the texts it makes, never its source), and tests/gpu-choice-check.mjs holds which lines differ.
+// key holds the texts it makes, never its source), and tests/gpu-choice-check.ts holds which lines differ.
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
 // 8: the loop fusedDp4aMatVec is. For 2-bit weights ORT has the same template's n_bits == 2 path, whose reads are this

@@ -15,11 +15,11 @@
 // IQ2_S 22, IQ4_XS 23, IQ1_M 29). A row is whole blocks: n is a multiple of 256. tab: sb_tables's area. Every address
 // may be above 4 GiB on a 64-bit memory (the 27B's weights are): the loads are v128.load, load64_zero, load32_zero and
 // load64_lane, which V8's Liftoff on arm64 reads right there (T.233: it does not read load32_splat and load32_lane
-// right; tests/blocks-check.mjs runs every kernel as Liftoff alone compiles it).
+// right; tests/blocks-check.ts runs every kernel as Liftoff alone compiles it).
 //
 // No line of llama.cpp is here. The blocks are read as src/python/convert/superblocks.py reads them (T.362), from the
-// forms of ggml/src/ggml-common.h's block_* structs, and tests/blocks-check.mjs holds every type's reading here to
-// that reader's (to the bit, through tests/blocks-model.mjs). What is taken from llama.cpp's own kernels (ggml/src/ggml-cpu/arch/x86/quants.c at the commit
+// forms of ggml/src/ggml-common.h's block_* structs, and tests/blocks-check.ts holds every type's reading here to
+// that reader's (to the bit, through tests/blocks-model.ts). What is taken from llama.cpp's own kernels (ggml/src/ggml-cpu/arch/x86/quants.c at the commit
 // 4413a192410fad1f054e9216114087a3e01527a0 of https://github.com/ggml-org/llama.cpp, MIT, Copyright (c) 2023-2026
 // The ggml authors) is one idea: a weight's sign goes onto its activation, and the grid's magnitudes are the unsigned
 // side of the dot product. The codebooks are llama.cpp's tables (src/python/convert/grids.py has them and their
@@ -51,7 +51,7 @@
 //   lane k & 3 += (G[k] xs[k] + G[k + 4] xs[k + 4]) F - (M[k] xs[k] + M[k + 4] xs[k + 4]) Fm
 // and the four lanes are added in order at the end of the row. The integers are the same however they are summed
 // (with relaxed SIMD or without, a token or four, the signs on the activations or on the weights), and the float32
-// steps are written in this order everywhere: tests/blocks-check.mjs follows them with Math.fround.
+// steps are written in this order everywhere: tests/blocks-check.ts follows them with Math.fround.
 //
 // The token's kernel has T.363.1's form "rb3" (docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md): the magnitudes
 // |W| are the 7-bit side of the relaxed dot product and the activations its signed side in all their 8 bits, each

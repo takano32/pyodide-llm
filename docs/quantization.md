@@ -25,7 +25,7 @@ stays coherent. int4 cost +16.8% and was rejected.
 
 The kernels also quantize the input of each matrix product, per group of 32. Where the browser has relaxed SIMD
 (Chrome, Edge, Firefox), they use 7 bits, which makes int8 about 30% faster. Measured on the first 1,499 tokens
-of three Japanese Wikipedia articles (`node tests/perplexity.mjs`):
+of three Japanese Wikipedia articles (`node tests/perplexity.ts`):
 
 | llm-jp-3-150m | perplexity |
 |---|---:|

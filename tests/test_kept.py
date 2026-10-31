@@ -492,7 +492,7 @@ class Places:
 def test_saluki_27b_is_laid_out_with_its_blocks_kept_and_its_classifier_lands_past_4_gib():
     """The header the converter makes of the real file's head (tests/saluki_form.py's, the classifier first in the
     file), without the 7.9 GB: the form it writes is the one T.363.2 sized, the checkpoint 7,956,712,492 bytes, and the
-    first bytes fed, which end inside a block, are written where the classifier is. tests/smoke.mjs asks the same inside
+    first bytes fed, which end inside a block, are written where the classifier is. tests/smoke.ts asks the same inside
     Pyodide, whose NumPy has integers of 32 bits."""
     sink = Places()
     stream = Kept(saluki_form.header(), 0, saluki_form.CONFIG, "int8", 4096, sink=sink)

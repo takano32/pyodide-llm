@@ -97,7 +97,7 @@ KNOWN = {
 # the same relation, so the same exactness (the lenient rule let a token of another kind in front of the real <s> pass).
 # T.233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format. T.252's review: and Hermes 3, whose real template puts
 # nothing in front where the converter's BOS (<|begin_of_text|>, which its card's example code puts there) cost its English
-# answers 13 to 15% (tests/chat_nll.py, tests/chat_fluency.mjs): the lenient rule let the page's one more token pass for it
+# answers 13 to 15% (tests/chat_nll.py, tests/chat_fluency.ts): the lenient rule let the page's one more token pass for it
 # T.335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
 # T.337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
 # T.255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's

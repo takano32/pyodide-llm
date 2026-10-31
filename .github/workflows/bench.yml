@@ -1,4 +1,4 @@
-# /benchmark/ (T.134) in every browser the runners offer (tests/bench-check.mjs): every section once, the Markdown of
+# /benchmark/ (T.134) in every browser the runners offer (tests/bench-check.ts): every section once, the Markdown of
 # each browser in the summary. It took the place of gpu.yml (T.94) and opfs.yml (T.137). The runners have no GPU and are
 # not the owner's devices: this shows that the page works everywhere (the shaders agree with JavaScript on a software
 # adapter, every piece of the file reads back right, the forward pass gives finite numbers); the speeds that count are
@@ -134,7 +134,7 @@ jobs:
           failed=0
           for try in $(seq 1 "$TIMES"); do
             echo "=== try $try of $TIMES"
-            node tests/bench-check.mjs "${where[@]}" $BROWSERS --model "$MODEL" --size "$SIZE" --run "$SECTIONS" --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY" || { failed=$((failed + 1)); echo "=== try $try FAILED"; }
+            node tests/bench-check.ts "${where[@]}" $BROWSERS --model "$MODEL" --size "$SIZE" --run "$SECTIONS" --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY" || { failed=$((failed + 1)); echo "=== try $try FAILED"; }
           done
           echo "=== $failed of $TIMES tries failed"
           [ "$failed" = 0 ]

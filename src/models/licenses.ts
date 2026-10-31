@@ -1,8 +1,8 @@
-// The license of every source of the list, as its model card names it (tests/models-check.mjs holds the list to it).
+// The license of every source of the list, as its model card names it (tests/models-check.ts holds the list to it).
 
 // Where each model comes from, and under which license (T.87). A model of this site names its source with
 // `source`; one fetched from Hugging Face is its `hf.repo`. The page lists them from here, and
-// tests/models-check.mjs fails when a model has no license, so a new model cannot be added without one.
+// tests/models-check.ts fails when a model has no license, so a new model cannot be added without one.
 const APACHE = "Apache License 2.0";
 const MIT = "MIT License";
 const LLAMA_32 = "Llama 3.2 Community License";

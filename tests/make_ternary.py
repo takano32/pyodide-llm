@@ -1,6 +1,6 @@
 # make_ternary.py
 # T.230, T.231: made-up ternary models as files, for the checks of forward.js that take a model by its files
-# (tests/forward-check.mjs, tests/threads-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
+# (tests/forward-check.ts, tests/threads-check.ts: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). The real ternary models are far too large to be built with the site, so
 # these stand in: random Hugging Face tensors whose matrices are made ternary (every group of 128 along a row is -d, 0
 # and +d of one d of its own, about a third each, as Prism ML's Ternary Bonsai models are), converted the way the page
@@ -17,7 +17,7 @@
 # rotated: hybrid said to be in a rotated basis (T.237: blocks of 128 with random signs), as the 27B's file is: the
 #   engine turns every matrix's input before it is quantized and laid out for the ternary kernels, and the
 #   embedding's rows back.
-# large (T.620): qwen3 a model's width, for timing (tests/threads-compare.mjs --prompt): dim 1024, an FFN of 3072, 8 layers,
+# large (T.620): qwen3 a model's width, for timing (tests/threads-compare.ts --prompt): dim 1024, an FFN of 3072, 8 layers,
 #   16 heads of 64 and 8 of keys, a classifier of its own (about 100 million values, 26 MB ternary). Its numbers
 #   are no model's: only how long its matrices take.
 # rotated-tied: the same with the embedding as the classifier too (no output matrix: what version 2 of Prism ML's

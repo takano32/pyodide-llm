@@ -1,5 +1,5 @@
 {
- "_": "The files of real repositories of huggingface.co (the names its API listed on 2026-10-13, T504's survey of the 500 most downloaded GGUF repositories), and the file tests/repository-check.mjs expects the page to open each by: written by hand, from reading the names. null: the owner's sentence.",
+ "_": "The files of real repositories of huggingface.co (the names its API listed on 2026-10-13, T504's survey of the 500 most downloaded GGUF repositories), and the file tests/repository-check.ts expects the page to open each by: written by hand, from reading the names. null: the owner's sentence.",
  "Qwen/Qwen2.5-7B-Instruct-GGUF": {
   "takes": "qwen2.5-7b-instruct-q3_k_m.gguf",
   "files": [

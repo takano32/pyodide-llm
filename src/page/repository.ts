@@ -1,6 +1,6 @@
 // src/page/repository.ts (T.505.3): what the page makes of a repository of huggingface.co nobody has looked at, before
 // the worker hears of it: which of its files is the model. Nothing of the page is read here (no element, no address):
-// tests/repository-check.mjs imports this file as it is, in Node, and tests/worker-fetches-check.mjs makes the models
+// tests/repository-check.ts imports this file as it is, in Node, and tests/worker-fetches-check.ts makes the models
 // it hands the worker by these very functions.
 //
 // A repository with model.safetensors (or the index of its shards) is opened as it always was. One without is looked
@@ -19,7 +19,7 @@ const INDEX = `${SAFETENSORS}.index.json`;
 // quantization lost. The floats come after Q8_0: the same int8 at two to four times the fetch (and before them the two
 // types a ternary model is published in whole, T.235: the same weights again, at an eighth of the float's fetch). The rest follow by what
 // they keep of a weight; the variants with larger embeddings (_L, _XL) after the plain one of the same bits.
-// tests/repository-check.mjs has the second copy of this order.
+// tests/repository-check.ts has the second copy of this order.
 export const QUANTIZATIONS = [
   ["Q8_0"], ["PQ2_0"], ["PTQ1_0"], ["F16", "FP16"], ["BF16"], ["F32", "FP32"],
   ["Q6_K"], ["Q6_K_L"], ["Q6_K_XL"], ["Q5_K_M"], ["Q5_K_L"], ["Q5_K_XL"], ["Q4_K_M"],

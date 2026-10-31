@@ -2,7 +2,7 @@
 // (src/runtime/gpu.ts) may run, but for a prompt's tiles (key.ts's devicePromptForms: those a device can make). One
 // list, which three read: the device's key hashes its texts in its order (key.ts's deviceKey), the worker takes each
 // shader it compiles from it by name (ENGINE.SAMPLE, ENGINE.flashTile(shape): gpu/*.ts import no shader of a part),
-// and the checks walk it (tests/shaders-catalogue-check.mjs, tests/device-key-check.mjs, the net's shaders).
+// and the checks walk it (tests/shaders-catalogue-check.ts, tests/device-key-check.ts, the net's shaders).
 // A part of src/runtime/shaders.ts, which is the window. It holds no WGSL of its own, and no line of another project.
 //
 // A row is a text, or a maker with one set of arguments: one of the choices its text branches on (a form, a feature,

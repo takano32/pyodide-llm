@@ -1,7 +1,7 @@
 // tests/saluki-forms.ts (T.363.1): the forms that were set against one another for the matrix product on the weights
 // of Underdog Saluki 27B as its GGUF holds them: llama.cpp's blocks of 256 weights ("super-blocks": IQ2_XXS, IQ3_S,
 // Q2_K, IQ1_M here; convert/superblocks.py has what each is, docs/notes/t361-saluki-2026-10-13.md the table).
-// tests/saluki-kernel-bench.mjs compiles this file and times each form beside the kernels of kernels/ (matmul_t2r on
+// tests/saluki-kernel-bench.ts compiles this file and times each form beside the kernels of kernels/ (matmul_t2r on
 // ternary weights, matmul_q8r on int8); docs/notes/t363.1-saluki-kernel-forms-2026-10-13.md has the table and the
 // choice. Not a kernel of the page: nothing here is shipped, and kernels/kernel.ts names none of it.
 //
@@ -44,7 +44,7 @@
 // of four values (IQ3_S), with no grid and a term to take away (Q2_K), and with a grid of -1, 0, 1 shifted by an
 // eighth (IQ1_M).
 //
-// tab: the tables, laid out by tests/saluki-kernel-bench.mjs (the grids are convert/grids.py's):
+// tab: the tables, laid out by tests/saluki-kernel-bench.ts (the grids are convert/grids.py's):
 //   0      IQ2_XXS's grid: 256 entries of 8 magnitudes
 //   2048   the signs of 8 weights by their 7-bit index: 128 entries of 8 bytes, 0xff a minus (the eighth sign makes
 //          the number of minus signs even)

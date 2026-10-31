@@ -1,7 +1,7 @@
 # tests/saluki_form.py (T.363.2): the header and the form of Underdog Saluki 27B's checkpoint as the page will hold it,
 # its matrices in the blocks the GGUF has them in (llama.cpp's K- and i-quantized types, a type to a tensor: a layer of
 # a stack, in the engine's rows), for what sizes such a file and lays it out. No weights, and nothing of pytest or of
-# the converter is imported: tests/smoke.mjs reads this inside Pyodide, whose NumPy has integers of 32 bits.
+# the converter is imported: tests/smoke.ts reads this inside Pyodide, whose NumPy has integers of 32 bits.
 #
 # How many tensors of each role are of each type is the real file's (docs/notes/t361-saluki-2026-10-13.md, section 2;
 # the roles the note sums up as "others" follow from its totals by type). Which layer has which is not: the types of

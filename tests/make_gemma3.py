@@ -1,7 +1,7 @@
 # make_gemma3.py
 # T.261: a made-up Gemma 3 (a norm behind the attention and the FFN, a GELU in the FFN's gate, layers that attend a
 # window with a base of RoPE of their own) as files, for the checks of forward.js that take a model by its files
-# (tests/forward-check.mjs, tests/threads-check.mjs, tests/gpu-hybrid-check.mjs: <out>.bin, <out>.tokenizer.bin and
+# (tests/forward-check.ts, tests/threads-check.ts, tests/gpu-hybrid-check.ts: <out>.bin, <out>.tokenizer.bin and
 # <out>.json, as tests/perplexity_prepare.py writes them). The real ones are too large to be built with the site (the
 # smallest is 0.3 GB as int8), so this one stands in: random Hugging Face tensors (tests/made_up.py's gemma3_model)
 # converted the way the page converts them (llama2_convert.Conversion), with rows of whole groups of 32 for the int8

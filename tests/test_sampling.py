@@ -126,7 +126,7 @@ def samplers(calls=None):
 def test_a_sampler_reads_the_settings_once_a_generation(which):
     """Not at every token (T.359.7): drawing() takes what it needs of the value, and the draws read none of it."""
     if which == "NumPy" and NumpySampler.drawing.__module__ != "engine.sampler":
-        pytest.skip("NumpySampler.drawing is wrapped, and the wrapper reads two settings itself (the recorder of tests/unchanged.mjs)")
+        pytest.skip("NumpySampler.drawing is wrapped, and the wrapper reads two settings itself (the recorder of tests/unchanged.ts)")
     sampling = Counted(temperature=0.8, topp=0.9, repetition_penalty=1.2, top_k=20, min_p=0.05, presence_penalty=0.5)
     draw = samplers()[which].drawing(sampling, np.random.default_rng(3))
     assert sorted(sampling.reads) == sorted(DEFAULTS)  # each once
@@ -153,7 +153,7 @@ def recording_kernels():
 
 def test_the_kernels_are_handed_each_setting_in_its_place():
     """KernelSampler's own: which setting goes where in a kernel's arguments (the kernels themselves are held to NumPy
-    in tests/smoke.mjs). The repetition penalty over the history and with no presence, the presence penalty over what
+    in tests/smoke.ts). The repetition penalty over the history and with no presence, the presence penalty over what
     was written and with a penalty of 1, the rest to sample()."""
     calls, kernels = recording_kernels()
     sampler = KernelSampler(kernels, VOCAB)

@@ -5,7 +5,7 @@
 // (T.367.5: the WGSL is no module handed round any more. Every module of this worker takes the names it uses from the
 // shaders' parts, src/runtime/shaders/<part>.ts, as it takes its neighbours': linked into the worker's file, with
 // nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.ts's, the same
-// text the model's worker reads its key from: tests/dist-check.mjs holds the two built files to one key.)
+// text the model's worker reads its key from: tests/dist-check.ts holds the two built files to one key.)
 // (T.379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf } from "../shaders/run.ts";
@@ -112,7 +112,7 @@ const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (pla
 //   model.tokens   tokenforms.ts  a token's buffers and pipelines (tokens.ts's tokenBuffers() declares them, T.466)
 //   model.tokenAttention  tokenattention.ts  the attention of a token chosen here, and what each one tried came to
 //   model.tokenForm  tokenforms.ts  the form of a token's layer chosen here, its ms a step and what each form came to
-// (tests/gpu-modules-check.mjs holds every field read to one its owner declares, and every write to its owner)
+// (tests/gpu-modules-check.ts holds every field read to one its owner declares, and every write to its owner)
 let model: Model | null = null;
 let stopping = false;  // a stop was asked: start() ends at its next step
 let lost: string | null = null;  // why the device was lost, once it is

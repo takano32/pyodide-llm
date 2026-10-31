@@ -53,7 +53,7 @@ jobs:
       # checks run in tests.yml, every night (its schedule) and on a branch with full=true: a commit on main that this
       # suite cannot tell apart is checked by the next full suite.
       # T.384: a test of this suite takes seconds (the longest about half a minute), and the job has 30 minutes: with the
-      # suite's own limit of 30 minutes a test that stood still was cut by the job before tests/limited.mjs could say
+      # suite's own limit of 30 minutes a test that stood still was cut by the job before tests/limited.ts could say
       # where it stood (run 38055812702, the second time after worker-fetches-check's last line).
       - name: Tests (the light suite)
         env:
@@ -67,7 +67,7 @@ jobs:
         # never drop the old copy of, or two that would put each other's copy out, is not deployed)
         run: |
           npm run build
-          node tests/dist-check.mjs
+          node tests/dist-check.ts
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

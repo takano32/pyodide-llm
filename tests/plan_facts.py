@@ -1,7 +1,7 @@
 # plan_facts.py (T.375.2)
 # Small made-up models whose architecture is a record of facts (engine/layout.py's LAYOUTS), each as what an engine
 # outside Python is handed (the checkpoint and the plan: engine/plan.py's forward_plan(), as Llama(external=) makes it)
-# and what the reference in NumPy answers for a few tokens. tests/plan-facts-check.mjs runs forward.ts on them.
+# and what the reference in NumPy answers for a few tokens. tests/plan-facts-check.ts runs forward.ts on them.
 #   python tests/plan_facts.py <the root of a tree> <a folder to write into>     -> the cases, as JSON; the files in the folder
 # Beside the five architectures there are, three whose facts are no architecture's pair: every one of the table has
 # LayerNorms with GPT-2's FFN or RMSNorms with a gated one, so that an engine that read one fact for the other, or

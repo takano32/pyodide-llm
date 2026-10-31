@@ -10,8 +10,8 @@
 #   (T.534: transformers' logits of test_qwen35.py's made-up models, for the unit tests: fixture() below)
 #   python tests/reference_qwen35.py <directory> --model=4B [--from=gguf] [--text=<file>] [--minutes=40]
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
-#   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh --model=4B" --ref <branch> --grep "qwen35"
+#   node tests/ci.ts run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
+#   node tests/ci.ts run tests.yml extra="bash tests/reference_qwen35.sh --model=4B" --ref <branch> --grep "qwen35"
 #
 # Two parts, and a third by itself, every line of the log beginning with "qwen35:".
 #   made-up: tiny random models of transformers' own class (Qwen3_5ForCausalLM), which hold what the real 0.8B does
@@ -371,7 +371,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
 # ------------------------------------------------------------------------- a model past the runner's memory (T.245)
 LARGE = {"4B": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
                 "gguf": ("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf")}}
-WINDOW, TOKENS = 512, 1500  # tests/perplexity.mjs's
+WINDOW, TOKENS = 512, 1500  # tests/perplexity.ts's
 
 
 def prepared(source, out):

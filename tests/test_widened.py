@@ -163,7 +163,7 @@ def test_the_types_are_the_tables_and_a_gguf_says_them_by_ggmls_numbers():
 
 
 def test_what_is_read_of_blocks_made_the_same_everywhere_is_the_fixtures():
-    """tests/fixtures/superblocks.json's "widened", which tests/smoke.mjs asks of the readers inside Pyodide (integers
+    """tests/fixtures/superblocks.json's "widened", which tests/smoke.ts asks of the readers inside Pyodide (integers
     of 32 bits). Written by `python tests/test_widened.py`."""
     assert json.loads(FIXTURE.read_text())["widened"] == read_of_the_cases()
 

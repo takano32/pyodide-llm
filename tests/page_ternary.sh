@@ -4,21 +4,21 @@
 # int8 kernels: how T.235 ran it), for CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide: the
 # development machine runs no model of gigabytes):
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/page_ternary.sh" --ref <branch> --grep "ternary|perplexity|thread|converted"
+#   node tests/ci.ts run tests.yml extra="bash tests/page_ternary.sh" --ref <branch> --grep "ternary|perplexity|thread|converted"
 #   bash tests/page_ternary.sh [<id of the list> = hf-ternary-bonsai-1.7b] [en | ja] [the parts, e.g. "convert perplexity"]
 #
 # The parts (all of them by default):
-#   convert     the page's conversion of the GGUF to either dtype in Pyodide, under cProfile (tests/profile-convert.mjs)
+#   convert     the page's conversion of the GGUF to either dtype in Pyodide, under cProfile (tests/profile-convert.ts)
 #   ptq1_0      the same of a PTQ1_0 file of the same weights, made here, and the checkpoint the same byte for byte
 #   perplexity  on 1500 tokens of Wikipedia (T.85's articles, English or Japanese: the first 1500 tokens of the three
 #               joined, which is the beginning of the first article, Mount Fuji or 富士山: the review of T.230 ran them
 #               one by one and got this run's numbers for the first): the float32 of the file's values and
 #               the int8 weights in native NumPy (widened to float32 they are past Pyodide), then both dtypes on the
-#               kernels (tests/perplexity.mjs --file). The ternary dtype in NumPy is the float32 row: its first logits
+#               kernels (tests/perplexity.ts --file). The ternary dtype in NumPy is the float32 row: its first logits
 #               are held to the float32 file's to the bit here
-#   compare     the logits of the two dtypes on the same 256 tokens (tests/ternary-compare.mjs)
+#   compare     the logits of the two dtypes on the same 256 tokens (tests/ternary-compare.ts)
 #   threads     the logits the same to the bit with 1, 2, 4 and 8 threads, and the tokens a second of each count, the
-#               two dtypes one after the other in one process (tests/threads-check.mjs)
+#               two dtypes one after the other in one process (tests/threads-check.ts)
 set -euo pipefail
 id="${1:-hf-ternary-bonsai-1.7b}"
 language="${2:-en}"
@@ -26,13 +26,13 @@ parts="${3:-convert ptq1_0 perplexity compare threads}"
 dir="${RUNNER_TEMP:-.tmp}/ternary"
 has() { [[ " $parts " == *" $1 "* ]]; }
 model=$(python tests/hf_fetch.py "$id" "$dir" | tail -1)
-node tests/wikipedia.mjs "$language" "$dir/$language.txt"
+node tests/wikipedia.ts "$language" "$dir/$language.txt"
 text="$dir/$language.txt"
 echo "ternary: $id, $(node -p 'require("os").cpus()[0].model') ($(uname -m)), Wikipedia ($language)"
 if has convert; then
   for dtype in ternary int8; do
     echo "ternary: the conversion to $dtype"
-    node tests/profile-convert.mjs "$model" "$dtype" | head -12 | cut -c1-200
+    node tests/profile-convert.ts "$model" "$dtype" | head -12 | cut -c1-200
   done
 fi
 dtypes="int8 ternary"
@@ -52,7 +52,7 @@ if has ptq1_0; then
   done
   python tests/make_ptq1_0.py "$gguf" "$dir/ptq/model-PTQ1_0.gguf"
   echo "ternary: the conversion of the PTQ1_0 file to ternary"
-  node tests/profile-convert.mjs "$dir/ptq" ternary | head -12 | cut -c1-200
+  node tests/profile-convert.ts "$dir/ptq" ternary | head -12 | cut -c1-200
   python tests/perplexity_prepare.py "$dir/ptq" "$dir/from-ptq" ternary --entry "$id" 2>&1 | tail -1 | cut -c1-200
   cmp "$dir/from-ptq.bin" "$dir/ternary.bin"
   echo "ternary: the PTQ1_0 file of the same weights converts to the same ternary checkpoint, byte for byte ($(stat -c %s "$dir/ptq/model-PTQ1_0.gguf") bytes of GGUF)"
@@ -93,13 +93,13 @@ rm -f "$dir/float32.bin"
 if has perplexity; then
   int8=$(python tests/perplexity_native.py "$dir/int8" 1500 "$text")
   echo "ternary: perplexity of the int8 weights, NumPy: $int8"
-  node tests/perplexity.mjs "$dir/int8" 1500 "$text" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$int8")"
-  node tests/perplexity.mjs "$dir/ternary" 1500 "$text" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$float32")"
+  node tests/perplexity.ts "$dir/int8" 1500 "$text" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$int8")"
+  node tests/perplexity.ts "$dir/ternary" 1500 "$text" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$float32")"
 fi
 if has compare; then
-  node tests/ternary-compare.mjs "$dir/ternary" "$dir/int8" "$text" 256
+  node tests/ternary-compare.ts "$dir/ternary" "$dir/int8" "$text" 256
 fi
 if has threads; then
   echo "ternary: the software threads, the ternary dtype and then int8"
-  node tests/threads-check.mjs "$dir/ternary" "$dir/int8" --rounds 3 --positions 32
+  node tests/threads-check.ts "$dir/ternary" "$dir/int8" --rounds 3 --positions 32
 fi
