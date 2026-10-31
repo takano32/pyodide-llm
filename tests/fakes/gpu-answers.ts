@@ -167,6 +167,52 @@ export async function gpuAnswers() {
       const [out] = called("gelu", bound(entries, 0), bound(entries, 1), bound(entries, 2));
       bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
     }) as Model,
+    // ---- T.465.6.4: the kinds of layers that keep a state (gpu_answers.py's): an LFM2's SHORT_CONV (mixed, taps, rows,
+    // out, Conv, step) and CONV_STATE (mixed, rows, Conv, step); a Qwen3.5's DELTA_GATES (x, wb, wa, dtBias, decay, work,
+    // Gates, step: a workgroup a value head), DELTA_CONV and DELTA_CONV_STATE (as the two above), DELTA_NET (conv, work,
+    // state, out, Delta, step: a workgroup a value head); SWIGLU (gate, up, Size, step)
+    shortConv: ((entries, x, y) => {
+      if (x * 64 < words(entries, 4)[0] || y < words(entries, 5)[0]) return;
+      const [out] = called("short_conv", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3), bound(entries, 4), bound(entries, 5));
+      bound(entries, 3).set(out.subarray(0, bound(entries, 3).length));
+    }) as Model,
+    convState: ((entries, x) => {
+      if (x * 64 < words(entries, 2)[0]) return;
+      const [rows] = called("conv_state", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3));
+      bound(entries, 1).set(rows.subarray(0, bound(entries, 1).length));
+    }) as Model,
+    deltaGates: ((entries, x, y) => {
+      if (x < words(entries, 6)[1] || y < words(entries, 7)[0]) return;
+      const [work] = called("delta_gates", ...[0, 1, 2, 3, 4, 5, 6, 7].map((b) => bound(entries, b)));
+      bound(entries, 5).set(work.subarray(0, bound(entries, 5).length));
+    }) as Model,
+    deltaConv: ((entries, x, y) => {
+      if (x * 64 < words(entries, 4)[0] || y < words(entries, 5)[0]) return;
+      const [out] = called("delta_conv", ...[0, 1, 2, 3, 4, 5].map((b) => bound(entries, b)));
+      bound(entries, 3).set(out.subarray(0, bound(entries, 3).length));
+    }) as Model,
+    deltaConvState: ((entries, x) => {
+      if (x * 64 < words(entries, 2)[0]) return;
+      const [rows] = called("delta_conv_state", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
+      bound(entries, 1).set(rows.subarray(0, bound(entries, 1).length));
+    }) as Model,
+    deltaNet: ((entries, x) => {
+      if (x < words(entries, 4)[1]) return;
+      const [state, out] = called("delta_net", ...[0, 1, 2, 3, 4, 5].map((b) => bound(entries, b)));
+      bound(entries, 2).set(state.subarray(0, bound(entries, 2).length));
+      bound(entries, 3).set(out.subarray(0, bound(entries, 3).length));
+    }) as Model,
+    // (and a Qwen3.5's gate of its attending layers' output: OUTPUT_GATE, x in place, the gate, Size, step)
+    outputGate: ((entries, x, y) => {
+      if (x * 64 < words(entries, 2)[0] || y < words(entries, 3)[0]) return;
+      const [out] = called("output_gate", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
+      bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
+    }) as Model,
+    swiglu: ((entries, x, y) => {
+      if (x * 64 < words(entries, 2)[0] || y < words(entries, 3)[0]) return;
+      const [gate] = called("swiglu", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
+      bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
+    }) as Model,
     // TOKEN_ROPE: the rows (2), the matrix's Params (3), then q, the keys, the values, the angles and the step (5 to 9)
     tokenRope: ((entries, x) => {
       if (x < 1) return;

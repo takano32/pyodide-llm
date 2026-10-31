@@ -401,3 +401,141 @@ def dp4a_rope(weights, scales, xq, xs, params, keys, values, angles, step, packi
     rows, q_rows, kv_rows, size, turned = int(words[0]), *(int(w) for w in words[6:10])
     made = np.frombuffer(dp4a("write", weights, scales, xq, xs, params, np.zeros(rows, dtype=np.float32).tobytes(), packing), dtype=np.float32).astype(np.float64)
     return rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step)
+
+
+# ---- T.465.6.4: the kinds of layers that keep a state: an LFM2's convolution layers (SHORT_CONV, CONV_STATE) and a
+# Qwen3.5's linear-attention layers (DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET), and the gate of SWIGLU,
+# each as shaders/steps.ts has it (the sums in float64)
+
+def u32s(raw):
+    return np.frombuffer(bytes(raw), dtype=np.uint32)
+
+
+def f32s(raw):
+    return np.frombuffer(bytes(raw), dtype=np.float32)
+
+
+def short_conv(mixed, taps, rows, out, conv, step):
+    """SHORT_CONV: each token's channel c the sum over taps of the tap's weight times h = B × z of the token that many
+    before it (the rows of the tokens before the block where it reaches before), times C -> out, as bytes"""
+    dim, count, at = (int(w) for w in u32s(conv)[:3])
+    tokens = int(u32s(step)[0])
+    m, w, r, o = f32s(mixed).astype(np.float64), f32s(taps).astype(np.float64), f32s(rows).astype(np.float64), f32s(out).copy()
+
+    def moved(t, c):
+        if t < 0:
+            return r[at + (count + t) * dim + c]
+        return m[t * 3 * dim + c] * m[t * 3 * dim + 2 * dim + c]
+
+    for token in range(tokens):
+        first = token + 1 - count
+        for c in range(dim):
+            total = sum(w[at + j * dim + c] * moved(first + j, c) for j in range(count))
+            o[token * dim + c] = m[token * 3 * dim + dim + c] * total
+    return o.tobytes()
+
+
+def conv_state(mixed, rows, conv, step):
+    """CONV_STATE: the last taps of h = B × z (the block's tokens, then the rows before where the block is shorter) into
+    the rows -> the rows, as bytes"""
+    dim, count, at = (int(w) for w in u32s(conv)[:3])
+    tokens = int(u32s(step)[0])
+    m, r = f32s(mixed).astype(np.float64), f32s(rows).copy()
+    before = r.copy()
+    for j in range(count):
+        t = tokens + j - count
+        for c in range(dim):
+            r[at + j * dim + c] = before[at + (j + tokens) * dim + c] if t < 0 else m[t * 3 * dim + c] * m[t * 3 * dim + 2 * dim + c]
+    return r.tobytes()
+
+
+def delta_gates(x, wb, wa, dt_bias, decay, work, gates, step):
+    """DELTA_GATES: each value head's beta (sigmoid of wb · x) and decay (exp(decay × softplus(wa · x + dtBias))) of each
+    token -> work, as bytes"""
+    dim, heads, at = (int(w) for w in u32s(gates)[:3])
+    tokens = int(u32s(step)[0])
+    v, b, a = f32s(x).astype(np.float64), f32s(wb).astype(np.float64), f32s(wa).astype(np.float64)
+    bias, dec, out = f32s(dt_bias).astype(np.float64), f32s(decay).astype(np.float64), f32s(work).copy()
+    for token in range(tokens):
+        row = v[token * dim: (token + 1) * dim]
+        for h in range(heads):
+            weights = slice((at + h) * dim, (at + h + 1) * dim)
+            s = float(a[weights] @ row) + bias[at + h]
+            softplus = s if s > 20.0 else math.log(1.0 + math.exp(s))
+            out[token * 2 * heads + h] = 1.0 / (1.0 + math.exp(-float(b[weights] @ row)))
+            out[token * 2 * heads + heads + h] = math.exp(dec[at + h] * softplus)
+    return out.tobytes()
+
+
+def delta_conv(mixed, taps, rows, out, conv, step):
+    """DELTA_CONV: each channel's causal convolution over the taps (the rows before the block where it reaches before),
+    through SiLU, into q (the first keys), k (the next keys) and v (the rest), each block of its own -> out, as bytes"""
+    n, count, at, keys, batch = (int(w) for w in u32s(conv)[:5])
+    tokens = int(u32s(step)[0])
+    m, w, r, o = f32s(mixed).astype(np.float64), f32s(taps).astype(np.float64), f32s(rows).astype(np.float64), f32s(out).copy()
+    for token in range(tokens):
+        first = token + 1 - count
+        for c in range(n):
+            total = sum(w[at + j * n + c] * (r[at + (count + first + j) * n + c] if first + j < 0 else m[(first + j) * n + c]) for j in range(count))
+            value = total / (1.0 + math.exp(-total))
+            if c < keys:
+                o[token * keys + c] = value
+            elif c < 2 * keys:
+                o[(batch + token) * keys + c - keys] = value
+            else:
+                o[2 * batch * keys + token * (n - 2 * keys) + c - 2 * keys] = value
+    return o.tobytes()
+
+
+def delta_conv_state(mixed, rows, conv, step):
+    """DELTA_CONV_STATE: the last taps of the convolution's input into the rows -> the rows, as bytes"""
+    n, count, at = (int(w) for w in u32s(conv)[:3])
+    tokens = int(u32s(step)[0])
+    m, r = f32s(mixed).astype(np.float64), f32s(rows).copy()
+    before = r.copy()
+    for j in range(count):
+        t = tokens + j - count
+        r[at + j * n: at + (j + 1) * n] = before[at + (j + tokens) * n: at + (j + tokens + 1) * n] if t < 0 else m[t * n: (t + 1) * n]
+    return r.tobytes()
+
+
+def delta_net(conv, work, state, out, delta, step):
+    """DELTA_NET: each value head's state (key_dim rows of value_dim, the CPU's, from at) through the block's tokens by the
+    delta rule: delta = (v - Σ k[i] × (S[i] × decay)) × beta, S[i] = S[i] × decay + k[i] × delta, out = Σ q[i] × S[i]
+    -> (the state, out), as bytes"""
+    key_heads, value_heads, kd, vd, batch, at = (int(w) for w in u32s(delta)[:6])
+    tokens = int(u32s(step)[0])
+    c, g = f32s(conv).astype(np.float64), f32s(work).astype(np.float64)
+    s, o = f32s(state).copy(), f32s(out).copy()
+    keys, read = key_heads * kd, value_heads * vd
+    for h in range(value_heads):
+        key = h // (value_heads // key_heads)
+        base = at + h * kd * vd
+        S = s[base: base + kd * vd].astype(np.float64).reshape(kd, vd)
+        for t in range(tokens):
+            q = c[t * keys + key * kd: t * keys + (key + 1) * kd]
+            k = c[(batch + t) * keys + key * kd: (batch + t) * keys + (key + 1) * kd]
+            v = c[2 * batch * keys + t * read + h * vd: 2 * batch * keys + t * read + (h + 1) * vd]
+            beta, decay = g[t * 2 * value_heads + h], g[t * 2 * value_heads + value_heads + h]
+            d = (v - k @ (S * decay)) * beta
+            S = S * decay + np.outer(k, d)
+            o[t * read + h * vd: t * read + (h + 1) * vd] = q @ S
+        s[base: base + kd * vd] = S.reshape(-1)
+    return s.tobytes(), o.tobytes()
+
+
+def swiglu(gate, up, size, step):
+    """SWIGLU: each token's n values of gate, silu(gate) × up, in place -> gate, as bytes"""
+    n, tokens = int(u32s(size)[0]), int(u32s(step)[0])
+    g, u = f32s(gate).copy(), f32s(up).astype(np.float64)
+    v = g[: tokens * n].astype(np.float64)
+    g[: tokens * n] = v / (1.0 + np.exp(-v)) * u[: tokens * n]
+    return g.tobytes()
+
+
+def output_gate(x, gate, size, step):
+    """OUTPUT_GATE: each token's n values of x times sigmoid of the gate's, in place -> x, as bytes"""
+    n, tokens = int(u32s(size)[0]), int(u32s(step)[0])
+    out, g = f32s(x).copy(), f32s(gate).astype(np.float64)
+    out[: tokens * n] = out[: tokens * n].astype(np.float64) / (1.0 + np.exp(-g[: tokens * n]))
+    return out.tobytes()
