@@ -94,12 +94,14 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
     for (const [, scales] of matrix.layers) floats(scales, (matrix.rows * matrix.n) / GROUP, small);
   }
   for (const table of [plan.tokens.classifier, plan.tokens.embedding].filter(Boolean)) floats(table.at[1], (table.rows * table.n) / GROUP, small);
-  for (const vector of Object.values(plan.vectors) as { at: number; size: number }[]) floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * (i % 7));
+  // (each vector its own values, T.465.6.2's review: vectors of one size all alike let one be read for another, a norm's
+  // weight for the other's or one bias for another, and the check passed)
+  (Object.values(plan.vectors) as { at: number; size: number }[]).forEach((vector, k) => floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * ((i + 3 * k) % 7) + 0.02 * k));
   floats(plan.tokens.final, DIM, (i) => 1 + 0.01 * (i % 5));
   // (T.465.6.2: a LayerNorm's final bias, small; GPT-2's learned positions as large as a row of the embedding, ±0.5:
   // positions of 1e-2 left out of a token's pass passed the check)
   if (plan.tokens.finalBias) floats(plan.tokens.finalBias, DIM, (i) => 0.01 * ((i % 9) - 4));
-  if (plan.tokens.positions) floats(plan.tokens.positions, CONTEXT * DIM, (i) => 50 * small(i) - 1);
+  if (plan.tokens.positions) floats(plan.tokens.positions, CONTEXT * DIM, (i) => 100 * small(i) - 1.5);
   const half = plan.headSize / 2;
   // (and a Gemma 3's local layers' own, where the plan has them: of another base, any whose angles differ)
   for (const [at, f, base] of [[plan.cos, Math.cos, 10000], [plan.sin, Math.sin, 10000], [plan.localCos, Math.cos, 100], [plan.localSin, Math.sin, 100]] as const) {
