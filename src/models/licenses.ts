@@ -46,7 +46,7 @@ export const LICENSES: Record<string, string> = {
   "HuggingFaceTB/SmolLM2-1.7B-Instruct": APACHE, "HuggingFaceTB/SmolLM3-3B": APACHE, "ggml-org/SmolLM3-3B-GGUF": APACHE,
   // T.132 (2026-09-26)
   "Qwen/Qwen2.5-3B-Instruct": QWEN_RESEARCH, "sbintuitions/sarashina2.2-3b-instruct-v0.1": MIT,
-  "Qwen/Qwen2.5-7B-Instruct": APACHE, "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5": SWALLOW,
+  "Qwen/Qwen2.5-7B-Instruct": APACHE, "elyza/ELYZA-Shortcut-1.0-Qwen-7B": APACHE, "mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf": APACHE, "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5": SWALLOW,
   "llm-jp/llm-jp-4-8b-instruct": APACHE,
   // T.126
   "rinna/japanese-gpt-1b": MIT,
