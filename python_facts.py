@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE / "src" / "python"))
 from engine import layout as L  # noqa: E402
 
 # (a small model of each kind of the layers that keep a state, whose rows the facts are read from: an architecture of
-# such layers has no rows without them)
+# such layers has no rows without them; a new kind of them is a line here too, or this fails by its name)
 KINDS = {"linear": {"every": 2, "key_heads": 1, "value_heads": 1, "key_dim": 32, "value_dim": 32, "conv": 4},
          "convolution": {"layers": "ca", "taps": 3}}
 

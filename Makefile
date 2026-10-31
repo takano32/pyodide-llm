@@ -27,6 +27,12 @@ public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
 	cp $(TOKENIZERS) tiny-lm.LICENSE.txt public/models/
 	touch $@
 
+# The Python that makes a model: the two windows and every part under them (T.434: the families' files and the
+# engine's parts were not named, and a change to one of them left the old models in place)
+MODEL_PYTHON = src/python/llama2_convert.py src/python/llama2_numpy.py \
+	$(wildcard src/python/convert/*.py src/python/convert/families/*.py src/python/engine/*.py)
+# (defined before the rules that name it: make expands a rule's prerequisites as it reads the rule; T.628.1's review)
+
 # The WASM SIMD kernels that llama2_numpy.py loads with ctypes, compiled by AssemblyScript (no binary is committed).
 # T.628.1: and the facts of the Python that the TypeScript reads before any Python runs (python_facts.py), made here
 # because everything that runs the TypeScript makes the kernels first (the deploy: `make models kernels`, then the checks)
@@ -49,11 +55,6 @@ src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kerne
 # them first (package.json).
 python:
 	python3 python_archive.py
-
-# The Python that makes a model: the two windows and every part under them (T.434: the families' files and the
-# engine's parts were not named, and a change to one of them left the old models in place)
-MODEL_PYTHON = src/python/llama2_convert.py src/python/llama2_numpy.py \
-	$(wildcard src/python/convert/*.py src/python/convert/families/*.py src/python/engine/*.py)
 
 # int8, 3.5x smaller than float32 (quantize.py)
 %.bin:	%.f32 quantize.py $(MODEL_PYTHON)
