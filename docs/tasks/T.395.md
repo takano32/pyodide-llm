@@ -1,0 +1,4 @@
+### T.395 [バグ][CPU] 温度・top-p・繰り返しの罰の値を検査していない — 状態: 完了（2026-10-10、T.359.7 から。前からある。規模 小）
+- 負の温度、範囲の外の top-p、0 以下の罰は断られずに標本抽出へ進む。T.359.7 で検査の場所は 1 つ（`Sampling.__post_init__`）になった。断る文は訪問者に見える（URL で渡したとき）ので、文面は持ち主に見せてから。
+- **結果（2026-10-31）**: `Sampling.__post_init__` が 6 つの設定を全部見る: 温度・top_k・presence は 0 以上、繰り返しの罰は 0 より大きい、topp と min_p は 0〜1、温度・罰・presence は有限。比べを「範囲の内なら通す」の形に書き、NaN はどの設定でも断られる（前は `presence_penalty` の NaN が通っていた）。断りの文は今の文を伸ばした 1 文「temperature, top_k and presence_penalty are 0 or more, repetition_penalty is more than 0, and topp and min_p are from 0 to 1.」（**取りまとめ役の決め**: 今の文の形のまま足した。区切りのまとめで持ち主に見せる）。`tests/test_sampling.py` に壊し方 13 と端 5。壊し方: topp の検査を外すと 3 つ落ちる。軽い組を通した。CI を省いた。訳: Python だけの変更で、軽い組が pytest と smoke を回す。
+- レビュー（Sonnet low、reviewer、2026-10-31、T.395）: must-fix なし。ページの設定と URL は `LIMITS` で範囲の外と NaN を先に落とし、一覧の `generation` にも新しく断られる値は無い（だから訪問者がこの文を見る場面はほぼ無い）、topp 0 は「なし」のまま残すのが正しい、と確かめた。入れなかった勧め: 文にどの値が悪いかを添える（文面は持ち主: 区切りのまとめに）。
