@@ -19,10 +19,16 @@
 #   blocks         (jobs.ts's BLOCK_TYPES, T.628.3) of convert/superblocks.py's SUPERBLOCKS, in its order: llama.cpp's
 #                  number of each type of block the kernels multiply, and a block's bytes (engine/dtypes.py's BLOCKS)
 #   converter      (kept.ts's CONVERTER, T.628.4) convert/version.py's CONVERTER: the version of what the converter makes
+#   madeup         (benchmark/madeup.ts, T.628.5) the plan engine/plan.py's forward_plan() makes for /benchmark/'s
+#                  made-up model, an int8 Llama of MADEUP's header (the CPU section runs it without Pyodide): its
+#                  header, its file's bytes and the plan, the bytes of its RoPE tables in base64, the classifier under
+#                  the embedding's name alone (the engine reads that one of a shared classifier)
 #   quantized      (kept.ts, T.628.3) engine/dtypes.py's QUANTIZED: the dtypes a kept conversion may be of
 #   bytes          (src/models/memory.ts's ratios, T.628.3) the bytes of each of those of a row of WEIGHTS weights,
 #                  its values and its scales: a ratio of two is a ratio of whole numbers
+import base64
 import json
+import struct
 import sys
 from pathlib import Path
 
@@ -33,6 +39,8 @@ from convert.version import CONVERTER  # noqa: E402
 from convert.superblocks import SUPERBLOCKS  # noqa: E402
 from engine import dtypes as D  # noqa: E402
 from engine import layout as L  # noqa: E402
+import llama2_convert  # noqa: E402
+import llama2_numpy  # noqa: E402
 
 # (a small model of each kind of the layers that keep a state, whose rows the facts are read from: an architecture of
 # such layers has no rows without them; a new kind of them is a line here too, or this fails by its name)
@@ -55,7 +63,44 @@ def architectures():
 def facts():
     return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS),
             "blocks": {name: [ggml, size] for name, (ggml, size, _) in SUPERBLOCKS.items()},
-            "converter": CONVERTER, "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED}}
+            "converter": CONVERTER, "madeup": madeup(), "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED}}
+
+
+# /benchmark/'s made-up model: Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and
+# values) with two layers, a vocabulary of 32000 and a context of 64
+MADEUP = [2048, 8192, 2, 32, 8, 32000, 64]
+
+
+class Planned(Exception):
+    """The plan is in hand: no engine is built."""
+
+
+class External:
+    """forward.js as far as the plan, for Llama(external=): the file's size, read(offset, length) of it (its header, and
+    the final norm's weight Llama looks at for outlier channels: ones, so none), and start(plan), which keeps it."""
+
+    def __init__(self, size, header):
+        self.size, self.header, self.plan = size, header, None
+
+    def read(self, offset, length):
+        return struct.pack("<7i", *self.header) if offset == 0 else struct.pack(f"<{length // 4}f", *[1.0] * (length // 4))
+
+    def start(self, plan):
+        self.plan = plan
+        raise Planned()
+
+
+def madeup():
+    size = llama2_convert.checkpoint_size(MADEUP, "int8", dict(llama2_numpy.FORM))
+    external = External(size, MADEUP)
+    try:
+        llama2_numpy.Llama(None, b"", dtype="int8", external=external)
+    except Planned:
+        pass
+    plan = dict(external.plan)
+    plan["tensors"] = {name: tensor for name, tensor in plan["tensors"].items() if name != "wcls"}
+    plan["derived"] = {name: base64.b64encode(bytes(value)).decode() for name, value in plan["derived"].items()}
+    return {"header": MADEUP, "size": size, "plan": plan}
 
 
 # (a row that is whole groups of every dtype's)
