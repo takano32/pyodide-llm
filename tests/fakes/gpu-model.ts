@@ -29,10 +29,11 @@ const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 // "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
 // those of w2's two layers (the one matrix of rows of 256: dim is 128), the plan's codebooks the converter's after the
 // checkpoint; spoil.block: a maker of a block type's model, given the right one and the type
-// (a model in place of the right one: of the attention, of its f16 or subgroups texts alone (halves), of the quantization;
+// (a model in place of the right one: of the attention, of its f16 or subgroups texts alone (halves), of the quantization,
+// of a token's attention by parts (vec) and of their reduce;
 // form and block: makers given the right one, and the block's type)
 type Answer = (entries: unknown[], x: number, y: number) => void;
-type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
+type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null };
 export async function opened({ model = "llama", features = [], spoil = {}, weights = null }: Opened = {}) {
   const answers = await gpuAnswers();
@@ -67,6 +68,13 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
       // (spoil.halves: the f16 or subgroups texts alone, the device's first option)
       if (!shape.none) answers.add(ENGINE.flashTile(shape), ((half || subgroups) && spoil.halves) || spoil.attention || flashTile(plan.headSize));
     }
+  }
+  // (T.465.3: a token's attention, llama.cpp's decode form with subgroups and without: tokenattention.ts's candidates)
+  for (const subgroups of [false, true]) {
+    const shape = flashVecShape({ headSize: plan.headSize, subgroups, threads: limits.threads, subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize });
+    if (shape.none) continue;
+    answers.add(ENGINE.flashVec(shape), spoil.vec ?? answers.flashVec(plan.headSize));
+    answers.add(ENGINE.flashVecReduce(shape), spoil.reduce ?? answers.flashVecReduce);
   }
   answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
   // (spoil.form: a maker of each form's model, given the right one)
