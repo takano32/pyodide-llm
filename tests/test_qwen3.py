@@ -101,7 +101,7 @@ def test_the_conversion_tells_the_engine_about_the_norms_and_the_heads(head_size
 
 def test_a_model_without_them_keeps_the_options_it_always_had():
     """No qk_norm key where there are no norms: what a conversion of every model before T.124 gives stays the same
-    (a saved conversion is used again only while its options are what the converter gives, kept.js's CONVERTER)."""
+    (a saved conversion is used again only while its options are what the converter gives, convert/version.py's CONVERTER)."""
     settings, weights = synthetic_weights()
     tensors, published = hugging_face(settings, weights, True)
     assert "qk_norm" not in conversion(tensors, published, settings).options

@@ -178,7 +178,7 @@ class Conversion:
         self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
         # the form: bias and arch always (as since T.64 and T.65), the rest only where it is not the default, so that
-        # the options of every model before T.124 stay what they were (kept.js's CONVERTER)
+        # the options of every model before T.124 stay what they were (convert/version.py's CONVERTER)
         self.options.update({key: value for key, value in self.stream.form.items()
                              if key in ("bias", "arch") or value != FORM[key]})
         if template:
