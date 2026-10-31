@@ -15,7 +15,7 @@
 // tests/write.ts; a model of this site is copied in. The text, if none is given, is the beginning of three Japanese
 // Wikipedia articles (tests/wikipedia.ts: fetched when this runs).
 // tests/write.sh runs it too (WRITER=start_check.ts, with <out> and the JSON as it gives them; its TOKENS is
-// --tokens, and STARTS, WINDOW and TEXT stand for the flags): an 8B is fetched and converted there, and takes 2 tokens
+// --tokens, and STARTS, START_WINDOW and TEXT stand for the flags): an 8B is fetched and converted there, and takes 2 tokens
 // a second (one thread), so 512 tokens in windows of 256 under four starts is a quarter of an hour.
 import fs from "node:fs";
 import path from "node:path";
@@ -34,7 +34,8 @@ for (let i = 0; i < args.length; i++) {
   else named.push(args[i]);
 }
 const [id, pageFile, tokensGiven] = named;  // tests/write.sh's order: <out>, the JSON, TOKENS
-const value = (name, fallback) => given[name] ?? process.env[name.toUpperCase()] ?? fallback;
+// the environment's name of a flag (T.632: not WINDOW, which GNU screen sets to the number of its window: 0 in the first)
+const value = (name, fallback, variable = name.toUpperCase()) => given[name] ?? process.env[variable] ?? fallback;
 const site = MODELS.find((entry) => entry.id === id);
 const model = site ?? (fs.existsSync(`${id}.json`) &&
   { id: path.basename(id), checkpoint: path.resolve(`${id}.bin`), tokenizer: path.resolve(`${id}.tokenizer.bin`),
@@ -66,7 +67,9 @@ pyodide.globals.set("FROM_FILE", fromFile);
 pyodide.globals.set("OPTIONS", pyodide.toPy(options));
 pyodide.globals.set("TEXT", text);
 pyodide.globals.set("TOKENS", Number(given.tokens ?? tokensGiven ?? process.env.TOKENS ?? "1500"));
-pyodide.globals.set("WINDOW", Number(value("window", "512")));
+const windowTokens = Number(value("window", "512", "START_WINDOW"));
+if (!(Number.isInteger(windowTokens) && windowTokens >= 64)) throw new Error(`a window of ${windowTokens} tokens: it is 64 at least (--window or START_WINDOW)`);
+pyodide.globals.set("WINDOW", windowTokens);
 pyodide.globals.set("STARTS_JSON", JSON.stringify(starts));  // (a null of JavaScript is no None in Python)
 const result = JSON.parse(pyodide.runPython(`
 import json, math, time
