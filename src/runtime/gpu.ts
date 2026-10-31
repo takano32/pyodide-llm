@@ -73,7 +73,7 @@ import { generate, prompt, keysOf } from "./gpu/requests.ts";
 import { open, take, start, stop } from "./gpu/start.ts";
 import type { ToGpu } from "./contracts/gpu/protocol.ts";
 
-// (pure: tests/gpu-choice-check.mjs holds the rounding of the keys and values to what a device may choose)
+// (pure: tests/gpu-choice-check.ts holds the rounding of the keys and values to what a device may choose)
 export { heldFloats };
 
 onmessage = ({ data }: MessageEvent<ToGpu>) => {

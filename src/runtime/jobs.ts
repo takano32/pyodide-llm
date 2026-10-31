@@ -47,7 +47,7 @@ const BLOCK_BYTES = 16384;
 // again at every use)
 const THREE = 3;
 
-/** T.101: which arguments of each kernel are addresses (usize in kernels/*.ts; tests/forward-check.mjs holds this
+/** T.101: which arguments of each kernel are addresses (usize in kernels/*.ts; tests/forward-check.ts holds this
  * table to the source). On a 64-bit memory the kernels take them as BigInt. */
 export const ADDRESSES = {
   matmul_f32: [0, 1, 2], quantize_x: [0, 1, 2], quantize6_x: [0, 1, 2], ternary_x: [0, 1, 2], interleave: [0, 1],
@@ -68,7 +68,7 @@ export const ADDRESSES = {
 // called and is not in that table is a type error, where it was a Number for an address on a 64-bit memory.)
 export type Kernel = (...args: (number | bigint)[]) => unknown;
 // T.477: each kernel's arguments by their names in kernels/*.ts (an address a Number here: addressed() makes it a BigInt
-// on a 64-bit memory). A second copy of the source's, which tests/forward-check.mjs holds to it name by name; a call
+// on a 64-bit memory). A second copy of the source's, which tests/forward-check.ts holds to it name by name; a call
 // of a kernel with an argument too many or too few is a type error
 type Arguments = {
   rmsnorm: [out: number, x: number, w: number, n: number, eps: number];

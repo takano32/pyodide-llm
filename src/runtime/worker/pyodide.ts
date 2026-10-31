@@ -133,7 +133,7 @@ function watchArrivals() {
 // Loads Pyodide and NumPy of version in named steps. Each step says its name, and ends in an error rather than
 // never: loadPyodide() does not fail when a fetch of its files fails, it waits for ever (AGENTS.md), and a phone that
 // stopped at "Loading Pyodide" said nothing else. It ends when nothing has arrived for QUIET_SECONDS (T.118), however
-// long it takes while bytes keep coming. importer(url) imports pyodide.mjs (tests/worker-check.mjs gives its own).
+// long it takes while bytes keep coming. importer(url) imports pyodide.ts (tests/worker-check.ts gives its own).
 // T.129 (2), the owner's choice (2026-09-28): loadPackage fetches NumPy's wheel without integrity (checkIntegrity:
 // false). A fetch with integrity settles only once its whole body is in, so watchArrivals() counted none of the wheel
 // until its end, and where the prefetch had not put it in the HTTP cache (no lock, another shape of it, a CDN that said
@@ -164,7 +164,7 @@ export async function pyodideSteps(version: string, importer: (url: string) => P
   try {
     // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
     const numpy = prefetchNumpy(base);
-    const { loadPyodide } = await step("the loader", importer(`${base}pyodide.mjs`));
+    const { loadPyodide } = await step("the loader", importer(`${base}pyodide.ts`));
     const loaded = await step("the runtime", loadPyodide());
     // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice. One
     // that stopped is not waited for past a quiet spell (T.118): loadPackage then fetches the wheel itself

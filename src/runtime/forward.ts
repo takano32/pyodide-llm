@@ -4,7 +4,7 @@
 // did until T.93 retired it, in the same order with the same kernels. What it saves is the Python between the
 // kernel calls (about 100 per token): 1.15 to 1.26 times the speed on int8 (T.93, stage 1a).
 //
-// A plain ES module: the worker imports it, and so does Node (tests/smoke.mjs).
+// A plain ES module: the worker imports it, and so does Node (tests/smoke.ts).
 //
 //   const kernels = compileKernels(plainBytes, relaxedBytes);   // simdkernel_plain.wasm, simdkernel_relaxed_plain.wasm
 //   const { memory, base } = weightsMemory(size);              // then write the checkpoint at base

@@ -13,7 +13,7 @@
 //
 // Both sides are TypeScript and are held to these by tsc: the page's by ModelWorker, below, the worker's (T.368.3) by
 // what its receiver takes (MessageEvent<ToWorker>) and by `satisfies` at every postMessage().
-// tests/worker-modules-check.mjs still holds the kinds and the keys the worker posts and reads to these types: it says
+// tests/worker-modules-check.ts still holds the kinds and the keys the worker posts and reads to these types: it says
 // a key that is in the type and written nowhere, and a postMessage() without its `satisfies`, which tsc does not.
 import type { Dtype } from "./form.ts";
 import type { Options } from "./python.ts";
@@ -149,7 +149,7 @@ export type Ready = {
   notKept?: string;
   keptMiss?: string;
   template?: string;
-  // T.385: of a conversion, how each stored type that has a kernel's reader was read ("kernel" or "NumPy": tests/e2e.mjs)
+  // T.385: of a conversion, how each stored type that has a kernel's reader was read ("kernel" or "NumPy": tests/e2e.ts)
   widened?: Record<string, "kernel" | "NumPy">;
 };
 export type Token = { type: "token"; load?: undefined; text: string };

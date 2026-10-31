@@ -3,20 +3,20 @@
 # this checkout, built and served on the runner: for a branch, which no deployed site has. On a CI runner only (it
 # fetches 7.9 GB, and the page takes 8 GiB of memory and keeps 7.96 GB in the browser's profile):
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=100 extra="bash tests/saluki_in_browser.sh chromium" \
+#   node tests/ci.ts run tests.yml only_extra=true minutes=100 extra="bash tests/saluki_in_browser.sh chromium" \
 #     --grep "^(saluki|ready|generated|again|ok|FAILED|-|isolated|wide|plain|no-relaxed|widened|chromium|firefox)" --minutes 110 --ref <branch>
 #
 # Once the entry is deployed, models.yml does the same against the site (models=hf-underdog-saluki-27b twice=true
 # timeout=4200), and browsers.yml's group saluki-27b every week.
 #
-# First the small model of the same kind (tests/blocks-in-browser.mjs, a minute: the bundled worker, the kernels of the
+# First the small model of the same kind (tests/blocks-in-browser.ts, a minute: the bundled worker, the kernels of the
 # blocks from _astro/, every kind of memory), so that a broken path fails before the large download. Then
-# tests/e2e.mjs with a profile on disk (E2E_TWICE: the conversion kept in the origin private file system and loaded
+# tests/e2e.ts with a profile on disk (E2E_TWICE: the conversion kept in the origin private file system and loaded
 # from it on the second visit), and what its status line must say of this model.
 #   $1        the browser (chromium; firefox)
 #   ENTRY     the entry (hf-underdog-saluki-27b, which answers at once; -thinking)
 #   SMALL     the visits of the small model ("" for all; none)
-#   E2E_TIMEOUT, E2E_QUERY  as tests/e2e.mjs takes them (4200 s; nothing)
+#   E2E_TIMEOUT, E2E_QUERY  as tests/e2e.ts takes them (4200 s; nothing)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 browser=${1:-chromium}
@@ -33,14 +33,14 @@ echo "saluki: the site built and $browser installed in $((SECONDS - began)) s"
 
 if [ "${SMALL-}" != none ]; then
   # shellcheck disable=SC2086
-  node tests/blocks-in-browser.mjs "$browser" ${SMALL-}
+  node tests/blocks-in-browser.ts "$browser" ${SMALL-}
 fi
 
 out=.tmp/keep/saluki-browser
 mkdir -p "$out"
 status=0
 E2E_TWICE=1 E2E_TIMEOUT=${E2E_TIMEOUT:-4200} E2E_RESULTS="$out/results.jsonl" E2E_ARTIFACTS="$out/artifacts" E2E_CONSOLE="$out/console.txt" \
-  node tests/e2e.mjs "$entry" "$browser" || status=1
+  node tests/e2e.ts "$entry" "$browser" || status=1
 # what the page said and measured, as the run's own lines
 node -e '
   const fs = require("fs");

@@ -93,7 +93,7 @@ export const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>
 // the converter's BOS is <|endoftext|> (QWEN3_OWN_BOS below, and what config.json names). A Qwen3 of 8 billion
 // parameters is much worse with it in front: its own answers to five questions are 178% higher in perplexity (Qwen3 8B,
 // plain text 144%; Shisa V2.1's fine-tune of it 67% and 54%), where Qwen's 0.6B and 1.7B are 1 to 4% off and CAT-Thinking
-// 8B (Qwen3 Swallow's, continued on Japanese text) 0.4% (tests/answer_check.mjs, tests/start_check.mjs). For those the BOS
+// 8B (Qwen3 Swallow's, continued on Japanese text) 0.4% (tests/answer_check.ts, tests/start_check.ts). For those the BOS
 // is the format's own first token, <|im_start|> (151644), and the formats begin after it (as Qwen3.5's, T.236): the page
 // sends the very IDs the real template makes. The answer stops at <|im_end|>, at <|endoftext|> and at the mark of a new turn
 export const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] };
@@ -211,7 +211,7 @@ export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "py
 // converter's BOS until then (the note on QWEN25, above): the converter alone begins a Qwen with the template's
 // <|im_start|> now, as QWEN3_FROM_IM_START does by hand. What it costs is the
 // model's: QWEN3_FROM_IM_START (above) says which are worse for it. Where a model of this family is added,
-// tests/start_check.mjs and tests/answer_check.mjs say whether this BOS is one it can bear
+// tests/start_check.ts and tests/answer_check.ts say whether this BOS is one it can bear
 export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 // T.235 (the owner, 2026-10-11): a plain RoPE, whatever config.json's rope_scaling says. The engine makes the RoPE tables
 // of a file that has none (every dtype of the page: int8, 6-bit, ternary) from the options, and an entry's options win

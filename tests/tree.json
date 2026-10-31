@@ -1,5 +1,5 @@
 {
-  "about": "What tests/tree.mjs and tests/tree.py look for in a tree (T.367.1). No folder of the project is written here: a kind of file is where its anchor is found, by looking at the tree that is asked about. \"either\" (T.368.1): the endings that are one name to a kind, so that a file asked for as x.js is found as x.ts where the tree has that, and the other way.",
+  "about": "What tests/tree.ts and tests/tree.py look for in a tree (T.367.1). No folder of the project is written here: a kind of file is where its anchor is found, by looking at the tree that is asked about. \"either\" (T.368.1): the endings that are one name to a kind, so that a file asked for as x.js is found as x.ts where the tree has that, and the other way.",
   "anchors": {
     "runtime": "forward.js",
     "python": "llama2_numpy.py",

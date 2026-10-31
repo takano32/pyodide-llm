@@ -1,5 +1,5 @@
 # The prompt on the GPU (T.135; by default since T.148) against the CPU and NumPy, in Chromium-family browsers with WebGPU
-# on a software adapter (SwiftShader: the runners have no GPU): tests/gpu-check.mjs on the models this workflow builds
+# on a software adapter (SwiftShader: the runners have no GPU): tests/gpu-check.ts on the models this workflow builds
 # (the site's int8 models and a made-up one with grouped-query attention). It shows that the numbers are right; the
 # speeds that count are the owner's devices'. The page refuses a fallback adapter such as SwiftShader (T.148): the
 # page itself on it with the tests' flag, models.yml with query "gpuTest=on". By hand, and every night (T.193, below).
@@ -17,7 +17,7 @@
 # not on the development machine):
 #
 #   gh workflow run gpu-prompt.yml [-f models="synthetic tiny-lm"] [-f real="hf-qwen3-0.6b"] [-f forms="TF.js"] [--ref <branch>]
-#   node tests/ci.mjs run gpu-prompt.yml real=hf-qwen2.5-0.5b-instruct --ref <branch>
+#   node tests/ci.ts run gpu-prompt.yml real=hf-qwen2.5-0.5b-instruct --ref <branch>
 #
 # T.193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): two suites of what
 # runs when models= and real= are not given. Light, the default: Chromium only with the made-up model "synthetic", and
@@ -28,14 +28,14 @@
 # T.241's review (the full suite took 38 minutes on Chrome and 42 on Edge in main's run 36902097346, 23 on Edge before T.241:
 # SwiftShader compiles a model's shaders in each of its 14 runs, 5 to 7 s, and Chromium, Chrome and Edge run the same
 # SwiftShader): "made-up" is every made-up model on Dawn; on Chromium all but those that only change the numbers a form is
-# held to (DAWN_ONLY in tests/gpu-check/models.mjs); on Chrome and Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds
+# held to (DAWN_ONLY in tests/gpu-check/models.ts); on Chrome and Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds
 # with a NaN or an infinity run on Dawn's made-up models and Chromium's three: the input nan= (gpu-check's --nan) chooses
 # otherwise. Chrome and Edge now take 8 to 9 minutes, Chromium 16 to 27 (the runners differ), Dawn 14 (run 36913812366).
 #
-#   node tests/ci.mjs run gpu-prompt.yml full=true --ref <branch>
+#   node tests/ci.ts run gpu-prompt.yml full=true --ref <branch>
 #
 # T.225's review: the Dawn job also runs /benchmark/'s checks on devices that round a float32 to a float16 toward zero (as
-# Direct3D does) and, in the full suite, away from zero and in every conversion (tests/rounding-check.mjs), when models=
+# Direct3D does) and, in the full suite, away from zero and in every conversion (tests/rounding-check.ts), when models=
 # and real= are not given: lavapipe's own rounding is the nearest, and a check that rests on it was WRONG on the owner's PC.
 name: The prompt on the GPU
 
@@ -51,7 +51,7 @@ on:
         required: false
         default: false
       models:
-        description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: tests/gpu-check/models.mjs madeUpOn; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
+        description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: tests/gpu-check/models.ts madeUpOn; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
         required: false
       real:
         description: 'T.183: ids of Hugging Face models of src/models.ts, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'
@@ -136,7 +136,7 @@ jobs:
           # T.193: the suite's models when none are given: "synthetic" alone (light) or every made-up one (full)
           [ "$SUITE" = full ] && suite=made-up || suite=synthetic
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-$suite}"
-          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
   dawn:
@@ -196,17 +196,17 @@ jobs:
           # gpu-check's default)
           [ "$SUITE" = full ] && suite="" || suite=made-up
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
-          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
       # T.225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
       # lets a device (§15.7.6): Direct3D, which Chrome on Windows runs, rounds toward zero, where lavapipe's own is the
-      # nearest (tests/rounding.mjs). About half a minute a rounding and subgroup width; with the models of the default only
+      # nearest (tests/rounding.ts). About half a minute a rounding and subgroup width; with the models of the default only
       - name: The benchmark's checks on devices that round to a float16 toward zero and away from it, on Dawn
         if: inputs.models == '' && inputs.real == ''
         shell: bash
         run: |
           export VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
           [ "$SUITE" = full ] && roundings="toward-zero away everything" || roundings="toward-zero"
-          node tests/rounding-check.mjs .tmp/dawn/node_modules/webgpu $roundings 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/rounding-check.ts .tmp/dawn/node_modules/webgpu $roundings 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"

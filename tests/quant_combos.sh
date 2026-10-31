@@ -7,16 +7,16 @@
 # For each form, on the same runner (tests/small_models.sh's measures, T.511.5):
 #   1. the checkpoint's bytes;
 #   2. the nats per character of the beginning of Wikipedia's 富士山 and of its Mount Fuji (CHARACTERS characters each,
-#      3000; tests/start_check.mjs from the page's BOS, windows of 512; the perplexity beside them);
-#   3. the dozen questions of tests/answers.mjs, greedy and the entry's sampling with SEEDS ("1 2"; "" for greedy alone),
+#      3000; tests/start_check.ts from the page's BOS, windows of 512; the perplexity beside them);
+#   3. the dozen questions of tests/answers.ts, greedy and the entry's sampling with SEEDS ("1 2"; "" for greedy alone),
 #      TOKENS tokens (400);
-# and then 4. the speed of the forms in turn, ROUNDS rounds (3), the order turned round each round: tests/page-27b.mjs
+# and then 4. the speed of the forms in turn, ROUNDS rounds (3), the order turned round each round: tests/page-27b.ts
 #   speed (forward.js and its software threads on a shared memory): a token at a time on THREADS (1,4), POSITIONS (64)
 #   positions from the BOS, and a prompt of PROMPT tokens (256) in blocks of 16 on the most threads. One process a
 #   form a round (a process holds one model): the forms are read against each other within the job, on its one CPU.
 # STEPS="text answers speed" (the default): which of 2 to 4 to run.
 #
-#   node tests/ci.mjs run tests.yml only_extra=true extra="npm ci && make kernels python && bash tests/quant_combos.sh hf-shisa-v2.1c-lfm2-350m int8 int6 shisa-v2.1c-lfm2-350m.Q4_K_M.gguf" --grep "quant_combos|start_check|answers|page:" --ref <branch>
+#   node tests/ci.ts run tests.yml only_extra=true extra="npm ci && make kernels python && bash tests/quant_combos.sh hf-shisa-v2.1c-lfm2-350m int8 int6 shisa-v2.1c-lfm2-350m.Q4_K_M.gguf" --grep "quant_combos|start_check|answers|page:" --ref <branch>
 #
 # Exit: the number of forms that failed.
 set -uo pipefail
@@ -34,7 +34,7 @@ echo "quant_combos $id: $(node -e 'const os = require("os"); console.log(`${os.c
 if [[ $steps == *" text "* ]]; then
   for language in ja en; do
     title=$([ $language = ja ] && echo 富士山 || echo "Mount Fuji")
-    node tests/wikipedia.mjs $language "$room/whole-$language.txt" "$title"
+    node tests/wikipedia.ts $language "$room/whole-$language.txt" "$title"
     node -e 'const fs = require("fs"); const [from, to, n] = process.argv.slice(1); fs.writeFileSync(to, fs.readFileSync(from, "utf8").slice(0, Number(n)));' \
       "$room/whole-$language.txt" "$room/text-$language.txt" "${CHARACTERS:-3000}"
     echo "quant_combos: the $language text is $(node -e 'console.log([...require("fs").readFileSync(process.argv[1], "utf8")].length)' "$room/text-$language.txt") characters, sha256 $(sha256sum "$room/text-$language.txt" | cut -c1-16)"
@@ -78,11 +78,11 @@ for form in "$@"; do
     if [[ $steps == *" text "* ]]; then
       for language in ja en; do
         echo "quant_combos $id $form: the $language text"
-        node tests/start_check.mjs "$out" "$out.page.json" --starts bos --tokens 100000 --window 512 --text "$room/text-$language.txt"
+        node tests/start_check.ts "$out" "$out.page.json" --starts bos --tokens 100000 --window 512 --text "$room/text-$language.txt"
       done
     fi
     if [[ $steps == *" answers "* ]]; then
-      GREEDY=1 SEEDS="${SEEDS-1 2}" node tests/answers.mjs "$out" "$out.page.json" "${TOKENS:-400}"
+      GREEDY=1 SEEDS="${SEEDS-1 2}" node tests/answers.ts "$out" "$out.page.json" "${TOKENS:-400}"
     fi
   )
   if [ $? -ne 0 ]; then
@@ -103,8 +103,8 @@ if [[ $steps == *" speed "* ]]; then
     fi
     for form in "${order[@]}"; do
       echo "quant_combos $id $form: speed, round $round"
-      node tests/page-27b.mjs "$room/$form" speed --entry "$id" --threads "${THREADS:-1,4}" --positions "${POSITIONS:-64}" --rounds 1 --prompts "${PROMPT:-256}" \
-        || echo "quant_combos $id $form: page-27b.mjs speed said FAILED (read its lines)"
+      node tests/page-27b.ts "$room/$form" speed --entry "$id" --threads "${THREADS:-1,4}" --positions "${POSITIONS:-64}" --rounds 1 --prompts "${PROMPT:-256}" \
+        || echo "quant_combos $id $form: page-27b.ts speed said FAILED (read its lines)"
     done
   done
 fi

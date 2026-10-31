@@ -1,8 +1,8 @@
 # page_saluki.py (T.364.2): Underdog Saluki 27B converted as the page will convert it, its blocks kept as they are
 # (Conversion(..., blocks=True) by the conduct of a conversion, T.363.3), by the native Python of a CI runner, into a
-# file: the checkpoint (7.96 GB) that tests/page-27b.mjs runs on the page's forward pass. tests/page_saluki.sh runs it;
+# file: the checkpoint (7.96 GB) that tests/page-27b.ts runs on the page's forward pass. tests/page_saluki.sh runs it;
 # the development machine does not (the GGUF is 7.9 GB). What is converted and how it is asked are the list's two
-# entries' (T.364.3: listed_entries()), which tests/page-27b.mjs takes with --as (a form more beside them, and the dry
+# entries' (T.364.3: listed_entries()), which tests/page-27b.ts takes with --as (a form more beside them, and the dry
 # stage's without their options).
 #
 #   python tests/page_saluki.py folder <the directory with the GGUF> <a directory for the original's files>

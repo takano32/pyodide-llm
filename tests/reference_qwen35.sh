@@ -2,7 +2,7 @@
 # tests/reference_qwen35.sh (T.229): what tests/reference_qwen35.py needs, and the run itself, for CI (tests.yml's
 # extra=; the development machine has no PyTorch):
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
+#   node tests/ci.ts run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
 #
 # transformers at the commit the engine's formulas were read from (llama2_numpy.py, above linear_form()); numpy,
 # tokenizers and pytest (the unit tests' helpers) are the workflow's own.
@@ -26,7 +26,7 @@ case " $* " in
       free -m | sed 's/^/qwen35: /'
     fi
     mkdir -p "$dir"
-    node tests/wikipedia.mjs en "$dir/en.txt"
+    node tests/wikipedia.ts en "$dir/en.txt"
     python tests/reference_qwen35.py "$dir" "--text=$dir/en.txt" "$@"
     ;;
   *)

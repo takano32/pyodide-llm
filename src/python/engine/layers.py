@@ -72,7 +72,7 @@ def gelu_erf(x):
     the polynomial is 1 - erf(z) (none of erf's 1 is subtracted where x is negative and the GELU small), so
     gelu(x) = x * (1 - h) for x >= 0 and x * h below, h = poly(t) exp(-z * z) / 2. z is taken as 9 past 9 (|x| past
     12.7, where h is below 1e-36 either way), so that exp's argument stays above -87, where the kernel's two exps are
-    the same to the bit. In float32, step by step as the kernel takes them (tests/smoke.mjs holds the two together)."""
+    the same to the bit. In float32, step by step as the kernel takes them (tests/smoke.ts holds the two together)."""
     x = np.asarray(x, dtype=np.float32)
     z = np.minimum(np.abs(x) * np.float32(0.7071067811865476), np.float32(9.0))
     t = np.float32(1.0) / (np.float32(1.0) + np.float32(0.3275911) * z)

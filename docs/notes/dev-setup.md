@@ -85,7 +85,7 @@ PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-arm64 npx playwright-core install 
 ldd ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell | grep "not found"   # 何も出なければよい
 ```
 
-  a1-free では足りない共有ライブラリは無かった。起動するとき（`tests/e2e.mjs`）はこの変数は要らない。
+  a1-free では足りない共有ライブラリは無かった。起動するとき（`tests/e2e.ts`）はこの変数は要らない。
 - **`systemd-run --user --scope -p MemoryMax=…`** は SSH のセッションで使えた（linger なし）。
 
 ## 2. リポジトリと生成物
@@ -141,10 +141,10 @@ deploy.yml と同じものが全部通れば用意できている。
 ```sh
 .venv/bin/python -m pytest tests -q    # CI と同じ 478 件（2026-09-26、T.144。system の python3 では 62 件が skip: 上の 1 の venv の節）
 for t in bench summary-check models-check ladder-check kept-check coi-js-check; do node tests/$t.mjs; done
-node tests/smoke.mjs
-node tests/forward-check.mjs --rounds 1 --positions 128
-node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
-node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --wide
+node tests/smoke.ts
+node tests/forward-check.ts --rounds 1 --positions 128
+node tests/forward-check.ts stories260K tiny-lm --rounds 1 --positions 128 --plain
+node tests/forward-check.ts stories260K tiny-lm --rounds 1 --positions 128 --wide
 npm run build
 ```
 

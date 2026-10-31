@@ -64,7 +64,7 @@ const STALLED_MS = 10000;
  * worker's reckoning from navigator.deviceMemory, 4 GB where the browser does not say; none handed in: no limit).
  * gpuRemembered: what the page kept of the GPU's shaders on an earlier visit ({ key, matrices, attention },
  * gpu.js). */
-/** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
+/** wrap (tests/profile.ts only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
 /** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T.120) */
 /** clock (tests only, T.199): the time the engine reads, in ms (a made-up one slows a block of its choice): the threads'

@@ -3,13 +3,13 @@
 # for a person to read. For CI (tests.yml's extra=, after `make kernels`: the development machine runs no model of
 # gigabytes):
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/write.sh hf-japanese-gpt2-xsmall hf-eurollm-1.7b-instruct" --grep "written by|write.sh" --ref <branch>
+#   node tests/ci.ts run tests.yml extra="bash tests/write.sh hf-japanese-gpt2-xsmall hf-eurollm-1.7b-instruct" --grep "written by|write.sh" --ref <branch>
 #
 # Each model is fetched at the revision the list pins (tests/hf_fetch.py), converted to int8 as the page converts it
 # (tests/perplexity_prepare.py) and given the options and the format the page gives it (tests/write_options.py); then
-# tests/write.mjs writes TOKENS tokens (32), and with SEEDS="1 2" also as the page samples. What was fetched and converted goes before the next model (an 8B's GGUF
+# tests/write.ts writes TOKENS tokens (32), and with SEEDS="1 2" also as the page samples. What was fetched and converted goes before the next model (an 8B's GGUF
 # and its int8 are 18 GB, so on /mnt where a runner has one). A model that fails says so and the next one runs; the
-# exit status is the number that failed. WRITER=degenerate.mjs runs tests/degenerate.mjs in its place (how often it comes apart, over
+# exit status is the number that failed. WRITER=degenerate.ts runs tests/degenerate.ts in its place (how often it comes apart, over
 # many SEEDS and a few PROMPTS: T.249's review).
 set -uo pipefail
 cd "$(dirname "$0")/.."

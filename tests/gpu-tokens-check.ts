@@ -30,7 +30,7 @@
 // gpu-start-check.ts's.
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
-import { runtimeUrl } from "./tree.mjs";
+import { runtimeUrl } from "./tree.ts";
 import { opened, blockMade } from "./fakes/gpu-model.ts";
 import { gpuAnswers } from "./fakes/gpu-answers.ts";
 

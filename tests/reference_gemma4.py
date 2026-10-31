@@ -9,7 +9,7 @@
 #   pip install safetensors jinja2 "transformers @ git+https://github.com/huggingface/transformers@2126f65b0ab267e113e78a002447fc7094de83d5"
 #   python tests/reference_gemma4.py <directory for the download> [--only=made-up|real|fetch] [--model=E2B] [--positions=96]
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=150 extra="bash tests/reference_gemma4.sh" --ref <branch> --grep "gemma4:"
+#   node tests/ci.ts run tests.yml only_extra=true minutes=150 extra="bash tests/reference_gemma4.sh" --ref <branch> --grep "gemma4:"
 #
 # Three parts, every line of the log beginning with "gemma4:".
 #   made-up: tiny random models of transformers' own class (Gemma4ForCausalLM) with a window of 8 positions, which the

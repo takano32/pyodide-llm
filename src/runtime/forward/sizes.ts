@@ -7,7 +7,7 @@
 //   sizesOfPlan()  says again what the plan says (nothing is worked out a second time, T.375.2)
 //   sizesOfForm()  works it out as Python does: which layer is of which kind and each kind's widths are the kinds' own
 //                  (layers(), widths()), the gate is the architecture's line (architectures.ts)
-// tests/plan-keys-check.mjs holds the two together for Python's plans: the same Sizes either way.
+// tests/plan-keys-check.ts holds the two together for Python's plans: the same Sizes either way.
 import { architectureOf } from "./architectures.ts";
 import type { Kinds } from "./kinds.ts";
 import type { Header } from "./memory.ts";

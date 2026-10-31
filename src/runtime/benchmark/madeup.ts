@@ -9,7 +9,7 @@
 // Pyodide, so T.628.5: python_facts.py makes it at build time, of the header there (python_facts.py's MADEUP), and
 // writes it into src/runtime/built/facts/madeup.ts (the classifier under the embedding's name alone, the RoPE tables'
 // bytes in base64). What the section chooses for itself is laid over it here: kv_start, its context (Python's plan
-// grows the keys and values from 256). tests/plan-keys-check.mjs still holds it to the plan Python makes.
+// grows the keys and values from 256). tests/plan-keys-check.ts still holds it to the plan Python makes.
 import { PYTHON_MADEUP } from "../built/facts/madeup.ts";
 import type { Plan, Tensor } from "../contracts/plan.ts";
 

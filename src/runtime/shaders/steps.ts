@@ -62,7 +62,7 @@ import { GROUP, STEP } from "./common.ts";
 // logits then rests on the next norm's 0 × inf (a NaN) and on T.195's rule for logits that are all -inf (refused: no token
 // over -3.4e38; some -inf among finite ones are tokens that cannot be drawn, which no scale of one infinity makes).
 // lavapipe and SwiftShader do both, so the review's mutants that keep an infinity as it is ("no-or", "no-select") pass
-// every layer's round there: the scale word is tested alone (tests/gpu-check.mjs's quantizerProbe), and this word makes
+// every layer's round there: the scale word is tested alone (tests/gpu-check.ts's quantizerProbe), and this word makes
 // the way short and independent of what a device does with an infinity. (4) The word is chosen by a comparison of integers and stored as an
 // integer: no float of the device's is asked whether it is a NaN. In a prompt's block (the same QUANTIZE) the keys
 // and values written back are NaN then. The GPU's next step finds them (by the above), and forward.ts looks at the

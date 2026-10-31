@@ -9,7 +9,7 @@
 # tokenizer_config.json, chat_template.jinja where that has no template, and the tokenizer the converter takes. The
 # conversion made for that writes nothing and is let go.
 #
-#   python3 tests/hf_fetch.py <model id, or hf:<owner>/<repository>@<revision> (as tests/e2e.mjs takes it)> <directory>
+#   python3 tests/hf_fetch.py <model id, or hf:<owner>/<repository>@<revision> (as tests/e2e.ts takes it)> <directory>
 import json
 import subprocess
 import sys

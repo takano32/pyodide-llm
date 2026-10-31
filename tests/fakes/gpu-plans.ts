@@ -1,7 +1,7 @@
-// tests/fakes/gpu-plans.ts (T.465.1, moved out of tests/unchanged-gpusteps.mjs)
+// tests/fakes/gpu-plans.ts (T.465.1, moved out of tests/unchanged-gpusteps.ts)
 // Made-up models as the model's GPU worker (src/runtime/gpu/) is handed them: a plan as forward/gpuside.ts hands one (a
 // Started) over a memory it lays out, small (dim 128, heads of 16). For the checks that run that worker's parts on
-// tests/fakes/webgpu.mjs: unchanged-gpusteps.mjs and gpu-forms-check.ts.
+// tests/fakes/webgpu.ts: unchanged-gpusteps.ts and gpu-forms-check.ts.
 //
 //   const { plan, bytes, cache } = planned(MODELS.llama, direct)
 //

@@ -1,6 +1,6 @@
 # make_qwen35.py
 # T.229: a made-up Qwen3.5 (hybrid attention) as files, for the checks of forward.js that take a model by its files
-# (tests/forward-check.mjs, tests/threads-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as
+# (tests/forward-check.ts, tests/threads-check.ts: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). No real model of the kind is small enough to be built with the site, so
 # this one stands in: random Hugging Face tensors (tests/made_up.py's qwen35_model) converted the way the page
 # converts them (llama2_convert.Conversion), with rows of whole groups of 32 for the int8 kernels, two value heads to

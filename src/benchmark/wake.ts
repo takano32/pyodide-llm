@@ -8,7 +8,7 @@
 // ("hidden for N s"), so that a reader knows which numbers were taken on a device put away. T.173's page-memory
 // section stops by itself when the page is hidden (benchmark.astro), as before.
 //
-// A plain module with its document, navigator and clock handed in, so that tests/wake.mjs runs it in Node alone.
+// A plain module with its document, navigator and clock handed in, so that tests/wake.ts runs it in Node alone.
 
 /** Starts counting and holding the screen on; `stop()` lets the lock go and ends the count. `hidden()` is the
  * milliseconds hidden so far, over every run of this page (a report holds the sections of every run). */

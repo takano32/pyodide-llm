@@ -187,7 +187,7 @@ export function matmul_sbr_tile(xout: usize, xq: usize, xs: usize, w: usize, tab
 // scratch: n + n / 4 + n / 64 bytes of the caller's own (of one thread at a time): W, an int32 S for each 16 weights,
 // a float32 F for each block.
 /** out[0..3] = the four lanes of the relaxed dot product of the 16 bytes at a by the 16 at b. Where they are the sums of
- * the products of signed bytes for every a and b (tests/blocks-check.mjs's signedDots() asks), matmul_sbw_tile is right. */
+ * the products of signed bytes for every a and b (tests/blocks-check.ts's signedDots() asks), matmul_sbw_tile is right. */
 export function signed_dots(out: usize, a: usize, b: usize): void {
   v128.store(out, i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(a), v128.load(b), i32x4.splat(0)));
 }

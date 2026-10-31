@@ -62,15 +62,15 @@ jobs:
             fi
             for setting in $order; do
               echo "round $round, $setting"
-              # to a file first: a pipe that closes early would end e2e.mjs before it records the run
-              E2E_QUERY="$setting" node tests/e2e.mjs "${{ matrix.model }}" chromium "$SITE" > run.log 2>&1 || true
+              # to a file first: a pipe that closes early would end e2e.ts before it records the run
+              E2E_QUERY="$setting" node tests/e2e.ts "${{ matrix.model }}" chromium "$SITE" > run.log 2>&1 || true
               head -2 run.log
             done
           done
 
       - name: The table
         if: always()
-        run: node tests/fetch-table.mjs results.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/fetch-table.ts results.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the results
         if: always()

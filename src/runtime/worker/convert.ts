@@ -33,7 +33,7 @@ let llama2_convert: ConverterWindow | undefined, keptModule: typeof Kept | undef
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
 // (T.99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
 // would be no way to use a model. The page lists what is kept and deletes it.
-// Returns what the page needs of it, or { miss } with why nothing kept could be used (for tests/e2e.mjs).
+// Returns what the page needs of it, or { miss } with why nothing kept could be used (for tests/e2e.ts).
 async function loadConverted(model: Remote, signal: AbortSignal, id: number) {
   let kept;
   try {

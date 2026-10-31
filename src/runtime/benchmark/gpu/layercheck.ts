@@ -183,7 +183,7 @@ const sameAs = (got: Left, other: Left, added: number) => {
 };
 // What the check says of a form from what the GPU left of it (got: the stream h, the cache's keys and values as float16 bits,
 // on DP4A the quantized vectors, and the stages' q, att and g), in plain JavaScript: the reference, the lines and the
-// words (tests/layer-check.mjs gives it a device that is JavaScript too). normsApart: what the DP4A fused form with the
+// words (tests/layer-check.ts gives it a device that is JavaScript too). normsApart: what the DP4A fused form with the
 // norms apart left, for the fused form to be held to (within a few ulp), by the attention (T.224: the prompt's tiles or
 // flash_attn_vec, whose sums go in another order): the one with them apart puts what it left (got) there. Returns the verdict
 function judgeLayer(shape: LayerShape, pos: number, data: CheckData, form: Pick<Form, "dp4a" | "fused" | "normApart" | "attention">, got: Left, normsApart: Record<string, Left>): Verdict {

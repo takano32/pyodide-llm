@@ -1,8 +1,8 @@
 # ternary (T.230): the weights of a ternary model as they are, two bits each, groups of 128 with a float32 scale each
 # (llama2_numpy.pack_ternary), and the two GGUF types that hold such weights (PQ2_0, PTQ1_0). Nothing is rounded on the
 # way: the NumPy engine widens a ternary checkpoint to exactly what a float32 checkpoint of the same values holds, so
-# the logits of the two are the same to the bit. The kernels (forward.js) are held to NumPy by tests/forward-check.mjs
-# and tests/smoke.mjs.
+# the logits of the two are the same to the bit. The kernels (forward.js) are held to NumPy by tests/forward-check.ts
+# and tests/smoke.ts.
 import itertools
 import json
 import struct

@@ -1,6 +1,6 @@
 # make_hf_fixture.py
 # The files Hugging Face would publish for stories260K, made from the llama2.c checkpoint and tokenizer of this
-# directory: model.safetensors, config.json, tokenizer.model (sentencepiece) and settings.json. tests/e2e.mjs opens
+# directory: model.safetensors, config.json, tokenizer.model (sentencepiece) and settings.json. tests/e2e.ts opens
 # them through the folder button, and the page has to convert them back and write the same story.
 #
 #   python3 tests/make_hf_fixture.py <directory> [F32|BF16]

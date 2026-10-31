@@ -7,7 +7,7 @@
 #   python tests/reference_spark.py <directory for the download> [--only=made-up|real|fetch] [--model=1.7B[,4B]] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more)
 #
-#   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_spark.sh" --ref <branch> --grep "spark:"
+#   node tests/ci.ts run tests.yml only_extra=true extra="bash tests/reference_spark.sh" --ref <branch> --grep "spark:"
 #
 # Three parts, every line of the log beginning with "spark:".
 #   made-up: tiny random models of the model's own class (Spark2_5ForCausalLM, from its modeling_spark.py at the fixed

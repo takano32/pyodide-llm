@@ -2,7 +2,7 @@
 # The public names of the two Python windows (llama2_convert, llama2_numpy), as one JSON object: for each name its kind and
 # its signature (functions, classes' __init__ and public methods, with whether it is a static or class method), or a hash
 # of a constant's repr. The tests reach only the names they use; a name a split leaves behind (or a method that falls off
-# a class) breaks the page, not the tests. tests/unchanged.mjs runs this on both trees.
+# a class) breaks the page, not the tests. tests/unchanged.ts runs this on both trees.
 #   python tests/unchanged_exports.py <the root of a tree>
 import hashlib
 import importlib

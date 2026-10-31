@@ -174,9 +174,9 @@ Or with Docker: `docker build -t pyodide-llm . && docker run -p 8080:8080 pyodid
 Checks:
 
 - `python -m pytest tests -q`: the engine and the converter (native Python and NumPy).
-- `node tests/smoke.mjs`: the engine and the models in Node's Pyodide (after `make models`).
-- `node tests/forward-check.mjs`: the page's forward pass against NumPy.
-- `npm run build && node tests/e2e.mjs [model] [chromium|firefox]`: the page in a real browser (Playwright).
+- `node tests/smoke.ts`: the engine and the models in Node's Pyodide (after `make models`).
+- `node tests/forward-check.ts`: the page's forward pass against NumPy.
+- `npm run build && node tests/e2e.ts [model] [chromium|firefox]`: the page in a real browser (Playwright).
 
 Pushing to `main` deploys to GitHub Pages. [AGENTS.md](AGENTS.md) (in Japanese) holds the decisions, measurements
 and pitfalls, and [TASKS.md](TASKS.md) the tasks.

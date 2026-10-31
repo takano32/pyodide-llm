@@ -1,5 +1,5 @@
 // The float16 of the cache: a float32 to a half and back in JavaScript, and what a device may round a key or a value to
-// (WGSL leaves the direction to it, T.225): pure, and tested in Node (tests/gpu-choice-check.mjs, tests/layer-check.mjs).
+// (WGSL leaves the direction to it, T.225): pure, and tested in Node (tests/gpu-choice-check.ts, tests/layer-check.ts).
 // (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
 
 // float32 to float16's bits, rounded to the nearest (ties to even), as a cache holds its keys and values

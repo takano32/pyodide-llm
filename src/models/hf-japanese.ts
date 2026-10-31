@@ -168,7 +168,7 @@ export const HF_JAPANESE: Entry[] = [
   // embedding), and its instruction-sft. The safetensors: mmnga's Q8_0 GGUFs of both (2023-09) hold the very values,
   // but q, k and v of a head in turns as Hugging Face has them (gguf_check.py tensors, run 38731171773), stockmark's
   // case of T.249. Their BOS is <s> (1), not the 1.7B's </s>: on the page's engine the first 1500 tokens of three Japanese
-  // articles cost 3.0 to 3.2% more after <s> than after nothing, and 8.2 to 8.6% more after </s> (start_check.mjs,
+  // articles cost 3.0 to 3.2% more after <s> than after nothing, and 8.2 to 8.6% more after </s> (start_check.ts,
   // run 38736521555; nothing in front is no choice of the page's)
   { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "LINE japanese-large-lm 3.6B", note: "日本語 · fetches 7.2 GB → int8 4.0 GB",
     hf: hf("line-corporation/japanese-large-lm-3.6b", "3ffb24daf746a96f715ff6b5e161c694b510ff03", "spiece.model"), download: 7237638964,
@@ -215,8 +215,8 @@ export const HF_JAPANESE: Entry[] = [
   // repetition_penalty=1.05 or larger to be useful").
   // Shisa's BOS is QWEN3_FROM_IM_START's: with <|endoftext|> in front its own answers to five questions were 67% higher in
   // perplexity, the likeliest next token differed at one in four, and all five answers written again parted within the
-  // first 12 tokens (the first hedged where the real IDs answer); plain text 54% higher (the review, tests/answer_check.mjs
-  // and tests/start_check.mjs).
+  // first 12 tokens (the first hedged where the real IDs answer); plain text 54% higher (the review, tests/answer_check.ts
+  // and tests/start_check.ts).
   // CAT-Thinking's GGUF is mmnga-o's: mradermacher's Q8_0 has 256 tensors 0.1 to 0.4% from the nearest of the original's
   // (tests/gguf_check.py tensors: not the pinned original's weights). The original was uploaded in float32 on 2026-05-28
   // and "converted to bf16 from float32" on 2026-05-29 (the pinned revision holds the bf16): mradermacher's GGUF is of

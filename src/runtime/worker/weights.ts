@@ -563,7 +563,7 @@ export async function gpuOnlyReady(model: Listed, id: number, engine: Engine | u
 // Python buffer on the way would stay: Pyodide's memory never shrinks). sink is what the converter calls
 // (llama2_convert.Writer), weights what sink.open() made (weightsBuffer), bytes its size; release() lets go of it once
 // (T.145: a conversion that failed after sink.open() left a Python buffer of the model's size behind with
-// ?without=kernels). Out of convert() so that tests/worker-sink-check.mjs can follow sink.open() to footprint().
+// ?without=kernels). Out of convert() so that tests/worker-sink-check.ts can follow sink.open() to footprint().
 export function checkpointSink(keep?: Keeper) {
   const into = {
     weights: undefined, bytes: 0,

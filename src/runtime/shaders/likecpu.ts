@@ -9,7 +9,7 @@ import { REPETITION_WINDOW } from "./run.ts";
 type History = { slice(start: number): Iterable<number> };
 
 // The CPU's sampling in JavaScript (kernels/kernel.ts's penalize() and sample(), as the engine's generate() calls
-// them): what SAMPLE is held to (/benchmark/'s check), and itself held to the kernel (tests/smoke.mjs). logits: a
+// them): what SAMPLE is held to (/benchmark/'s check), and itself held to the kernel (tests/smoke.ts). logits: a
 // Float32Array, changed in place by the penalty as the kernel changes them. history: BOS, the prompt and the sampled
 // tokens, the token fed last. T.274: presence, the kernel's presence penalty (taken off each after the penalty). T.546:
 // written, how many of the history's latest were sampled, of which the presence penalty's window is (the engine's
@@ -71,7 +71,7 @@ export function walkLikeCpu(logits: ArrayLike<number>, temperature: number, topp
     }
   }
   // kernel.ts's exp(): four at a time (vexp) holds x at -87 at least, the last count % 4 one by one (fexp) are 0 under
-  // it. Only a random number of 0 draws such a token (tests/smoke.mjs found one: T.151's review round)
+  // it. Only a random number of 0 draws such a token (tests/smoke.ts found one: T.151's review round)
   const simd = probs.length - (probs.length % 4);
   probs.forEach((x, k) => (probs[k] = x < -87 ? (k < simd ? f(Math.exp(-87)) : 0) : f(Math.exp(x))));
   let total = 0, top = 0;

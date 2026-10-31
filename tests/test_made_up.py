@@ -227,7 +227,7 @@ def test_a_model_as_files_has_the_context_and_the_metadata_it_was_given(tmp_path
 
 
 def test_the_maker_needs_nothing_of_the_test_suite():
-    """A tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.mjs) import it with the engine's
+    """A tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.ts) import it with the engine's
     Python on the path and nothing else: no pytest, no conftest.py."""
     from tree import python_folder
     said = subprocess.run([sys.executable, "-c", f"""

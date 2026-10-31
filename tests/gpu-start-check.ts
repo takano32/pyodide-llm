@@ -18,9 +18,9 @@
 // answered, and timed, never compared), a checkpoint in stretches, and a ternary or blocks model on the GPU alone.
 //   node tests/gpu-start-check.ts
 import assert from "node:assert/strict";
-import { runtimeUrl } from "./tree.mjs";
+import { runtimeUrl } from "./tree.ts";
 import { made } from "./fakes/gpu-model.ts";
-import { fresh } from "./fresh.mjs";
+import { fresh } from "./fresh.ts";
 
 const start_ = await import(runtimeUrl("gpu/start.ts"));
 // (what the worker posts to the page: the worker's global's postMessage, as gpu-model.ts set it)
@@ -92,7 +92,7 @@ async function started(options = {}, on = (device, lose) => {}) {
   // T.465.6.5: a model on the GPU alone: open() before the checkpoint comes, take() of its stretches (the whole of it at
   // once here), then start(): ready, every form chosen, a token's too, every dispatch answered (a prompt's rows from the
   // ids, EMBED_ROWS, and its RoPE among them)
-  // (a start.ts of its own each: what open() and take() keep is a worker's, which a load has anew, tests/fresh.mjs)
+  // (a start.ts of its own each: what open() and take() keep is a worker's, which a load has anew, tests/fresh.ts)
   const alone = async () => {
     posted.length = 0;
     const { plan, memory, answers } = await made({ sane: true, direct: true });

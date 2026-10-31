@@ -8,7 +8,7 @@
 #   python tests/reference_gemma3.py <directory for the download> [--only=made-up|real|fetch] [--model=270M[,1B]] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more)
 #
-#   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh" --ref <branch> --grep "gemma3:"
+#   node tests/ci.ts run tests.yml only_extra=true extra="bash tests/reference_gemma3.sh" --ref <branch> --grep "gemma3:"
 #
 # Three parts, every line of the log beginning with "gemma3:".
 #   made-up: tiny random models of transformers' own class (Gemma3ForCausalLM) with a window of 8 positions, which the 80

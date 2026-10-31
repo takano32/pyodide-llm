@@ -4,7 +4,7 @@
 // copied): the speed is an average of what each report adds, weighted by the time it covers so that it forgets the
 // speed of about 10 seconds ago (a weight of 1 − e^(−seconds / 10)), and nothing is said for the first 3 seconds, nor
 // while nothing arrived for 10 seconds, nor while the speed is not known. Pure: the clock is the caller's, and Node
-// imports this file as it is (tests/page-parts-check.mjs).
+// imports this file as it is (tests/page-parts-check.ts).
 import type { Arriving } from "./model.ts";
 
 const MEMORY = 10, FIRST = 3, STILL = 10;  // seconds

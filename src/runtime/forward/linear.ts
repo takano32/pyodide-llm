@@ -31,7 +31,7 @@ const kept = (sizes: Sizes, count: number) => {
 
 // T.271.2: the widest key dim and value dim the GPU's delta rule takes (a thread a value of a head, its state's column in
 // the thread's own memory): shaders/steps.ts's DELTA_THREADS, a second copy here (no shader's text comes into this
-// module's chunk), which tests/gpu-part-check.mjs holds to it
+// module's chunk), which tests/gpu-part-check.ts holds to it
 export const DELTA_MOST = 128;
 
 export const linear: Kind = {

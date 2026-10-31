@@ -185,7 +185,7 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
       // what it is and what is said of it, whatever was thrown (failure.ts reads them all: a sentence for the reader,
       // the memory that ran out, T.90, an error of this site's own that crossed Python, a runtime that did not load)
       const failure = failureOf(err);
-      // where it happened goes to the page's console (T.96): tests/e2e.mjs keeps the console of a failed run
+      // where it happened goes to the page's console (T.96): tests/e2e.ts keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: failure.message,
                     stack: String(failure.stack), weights: weightsBytes(), pyodide: failure.kind === "runtime",
                     ...(failure.kind === "memory" && { memory: true, heap: heapBytes() }) } satisfies Failed);

@@ -26,7 +26,7 @@ const ATTRIBUTES = ["align", "start"];
 
 const escaped = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** marked's options and the renderer's parts that say what they read as text. Separate, so that Node can try it with the
- * real marked and no DOMPurify (tests/markdown-check.mjs). */
+ * real marked and no DOMPurify (tests/markdown-check.ts). */
 export function markedFor(marked: MarkedModule) {
   const reader = new marked.Marked({ gfm: true, breaks: true });
   const said = ({ raw }: Token) => escaped(raw);

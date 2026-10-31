@@ -2,12 +2,12 @@
 # tests/page_27b.sh (T.233): Ternary Bonsai 2 27B on the page's forward pass, held to its references, on a CI runner
 # (never on the development machine: it fetches 5.95 GB and makes a checkpoint of 7.66 GB). On demand, not nightly:
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=180 extra="bash tests/page_27b.sh" \
+#   node tests/ci.ts run tests.yml only_extra=true minutes=180 extra="bash tests/page_27b.sh" \
 #     --grep "^(fork|f32|reference|runner|page|pyodide):" --minutes 190 --ref <branch>
 #   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" ...
 # On x86-64 or arm64 (runner=ubuntu-24.04-arm: twice as fast for the fork and the page). Liftoff, the first compiler of the
 # V8 of Node 24 (13.6) on arm64, reads v128.load32_splat above 4 GiB at the address's low 32 bits (the review of T.230 and
-# T.231; fixed in V8 14.3, Chrome 143): where tests/page-27b.mjs's canary says so it sets --no-liftoff, and what it then
+# T.231; fixed in V8 14.3, Chrome 143): where tests/page-27b.ts's canary says so it sets --no-liftoff, and what it then
 # computes is the model's (the numbers equal x86-64's to four digits: the review of T.233); where the canary says so even
 # then, it refuses, and ANYWAY=1 runs page and speed all the same: the comparison then says whether that engine computed
 # the model. LONG_TOKENS=600 (with LONG_ROWS below 600) makes a short pass through the whole of a stage, a check of the
@@ -30,7 +30,7 @@
 #   pq2        the PQ2_0 file of the same weights (7.21 GB) converted the same way: the same checkpoint, byte for byte
 #   pyodide    the page's conversion itself, in Pyodide (NumPy with 32-bit integers, the kernels' quantizer), into a
 #              64-bit shared memory: the checkpoint's sha256 against the native file's (and of the PQ2_0 file after pq2)
-#   page       tests/page-27b.mjs compare: forward.js against the references, and the engine broken on purpose in the
+#   page       tests/page-27b.ts compare: forward.js against the references, and the engine broken on purpose in the
 #              ways that need no other checkpoint (signs of the rotated basis, the embedding's rows not turned back)
 #   breaks     the conversion broken on purpose (the output matrices' columns in llama.cpp's order of value heads; a
 #              PTQ1_0 block read in the order of its bytes), each through the comparison of the first text: it must fail
@@ -42,10 +42,10 @@
 #              of 5,987 tokens (tests/fixtures/long-27b.txt) through the fork (reference_27b.sh's long stage: 1.5 to 2.7
 #              hours at its speed) and through the page's forward pass with a context of LONG_CONTEXT (8192: the header's
 #              4 bytes), the logits of some 40 positions held to the fork's and the growth over the floor of the first ones
-#              looked at (page-27b.mjs's long mode, which has the lines); the memory after the checkpoint against
+#              looked at (page-27b.ts's long mode, which has the lines); the memory after the checkpoint against
 #              footprint() at that context, and the tokens a second as the prompt grows. long-fork and long-page are its
 #              two halves (LONG_REFERENCES=<a run's id>: the fork's rows an earlier run kept, tests.yml keeps them a week).
-#              The page's half on arm64 too: page-27b.mjs turns Liftoff off where V8 reads load32_splat wrongly
+#              The page's half on arm64 too: page-27b.ts turns Liftoff off where V8 reads load32_splat wrongly
 # The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of
 # the same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
 set -euo pipefail
@@ -75,28 +75,28 @@ if has dry; then
   python -m pip install -q pytest  # (tests/page_27b.py takes its made-up Bonsai and GGUF vocabulary from the unit tests, which import pytest)
   python tests/page_27b.py made-up "$dry"
   # (the widths of the made-up model's signs are 128, 256 and 384)
-  node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines none --broken embedding,sign-128-5,sign-384-all
+  node tests/page-27b.ts "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines none --broken embedding,sign-128-5,sign-384-all
   # (T.358: a negative test: lines of 100 must let the broken engine through, so the tool says "NOT CAUGHT — FAILED" and
   # ends with 1. Both are asked for: 0 would be lines that caught it, and 1 alone is any failure of the tool as well)
   code=0
-  node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines 100,100,100 --broken embedding --texts 1 | tee "$dry/negative.log" || code=$?
+  node tests/page-27b.ts "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines 100,100,100 --broken embedding --texts 1 | tee "$dry/negative.log" || code=$?
   { [ "$code" = 1 ] && grep -q "NOT CAUGHT — FAILED" "$dry/negative.log"; } || { echo "page: dry: the run with lines of 100 ended with $code, and not by letting the broken engine through — FAILED"; exit 1; }
   echo "page: dry: lines of 100 let the broken engine through, as they must: the NOT CAUGHT above is this negative test's, and expected"
   # (the long mode on the made-up model's own context: the same files as the fork's, made by the engine's NumPy forward pass, and
   # the engine broken on purpose, which must be caught by lines the right one passes)
-  node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --lines none --broken embedding
+  node tests/page-27b.ts "$dry/page" long "$dry" --entry none --wide --threads 2 --lines none --broken embedding
   # (with a context the header does not say: the 4 bytes changed in memory, as the 27B's run changes them to 8192)
-  node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --context 2048 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
-  node tests/page-27b.mjs "$dry/page" speed --entry none --wide
-  node tests/page-27b.mjs "$dry/page" memory --entry none --wide
-  # T.374.4: the two conversions (by the conduct of a conversion: tests/conducting.py and tests/conducting.mjs), which only
+  node tests/page-27b.ts "$dry/page" long "$dry" --entry none --wide --threads 2 --context 2048 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
+  node tests/page-27b.ts "$dry/page" speed --entry none --wide
+  node tests/page-27b.ts "$dry/page" memory --entry none --wide
+  # T.374.4: the two conversions (by the conduct of a conversion: tests/conducting.py and tests/conducting.ts), which only
   # the stages on the real model reached: a small ternary GGUF of each type with its original's files, natively and in
   # Pyodide, to the same checkpoint, tokenizer.bin and options, as the stages convert, pq2 and pyodide hold the 27B's
   python tests/page_27b.py convert "$dry/gguf-PTQ1_0" "$dry/native" --context 512
   python tests/page_27b.py convert "$dry/gguf-PQ2_0" "$dry/from-pq2" --context 512
   cmp "$dry/from-pq2.bin" "$dry/native.bin" && cmp "$dry/from-pq2.tokenizer.bin" "$dry/native.tokenizer.bin" && cmp "$dry/from-pq2.json" "$dry/native.json"
   for kind in PTQ1_0 PQ2_0; do
-    node tests/page-27b.mjs "$dry/pyodide" convert "$dry/gguf-$kind" --context 512 | tee "$dry/pyodide.log"
+    node tests/page-27b.ts "$dry/pyodide" convert "$dry/gguf-$kind" --context 512 | tee "$dry/pyodide.log"
     [ "$(sed -n 's/^pyodide: sha256 of the checkpoint //p' "$dry/pyodide.log")" = "$(sha256sum "$dry/native.bin" | cut -d' ' -f1)" ] \
       || { echo "page: dry: the conversion of the $kind file in Pyodide is not the native one's checkpoint — FAILED"; exit 1; }
     [ "$(sed -n 's/^pyodide: sha256 of tokenizer.bin //p' "$dry/pyodide.log")" = "$(sha256sum "$dry/native.tokenizer.bin" | cut -d' ' -f1)" ] \
@@ -214,7 +214,7 @@ if has pq2; then
 fi
 if has pyodide; then
   for source in "$folder" ${pq2_folder:-}; do
-    node tests/page-27b.mjs "$work/pyodide" convert "$source" --context "$context" | tee "$work/pyodide.log"
+    node tests/page-27b.ts "$work/pyodide" convert "$source" --context "$context" | tee "$work/pyodide.log"
     got=$(sed -n 's/^pyodide: sha256 of the checkpoint //p' "$work/pyodide.log")
     if [ "$got" = "$(cat "$work/page.sha256")" ]; then
       echo "pyodide: the page's conversion of $(basename "$(ls "$source"/*.gguf)") in Pyodide is the native conversion's checkpoint, byte for byte"
@@ -240,25 +240,25 @@ if has page; then
   # to 0.17, T.238's review: less than the rounding of the activations moves the page's forward pass from the reference
   # it is compared with, 0.13 to 0.24, so this comparison does not see them (run 36952311034); the engine's NumPy forward
   # pass against the float32 fork does, tests/reference_27b.py, and the signs it reads are the ones the plan hands on)
-  node tests/page-27b.mjs "$work/page" compare "$work" ${ANYWAY:+--anyway} \
+  node tests/page-27b.ts "$work/page" compare "$work" ${ANYWAY:+--anyway} \
     --broken "${BROKEN:-embedding,sign-17408-17407,sign-5120-2560,sign-6144-all}" --weak "${WEAK:-sign-17408-0,sign-6144-0}" || status=1
 fi
 if has breaks; then
   for broken in tiled order; do
     python tests/page_27b.py convert "$folder" "$work/broken" --context "$context" --broken "$broken"
-    node tests/page-27b.mjs "$work/broken" compare "$work" --texts 0 --expect-failure || status=1
+    node tests/page-27b.ts "$work/broken" compare "$work" --texts 0 --expect-failure || status=1
     rm "$work/broken.bin"
   done
 fi
 if has speed; then
-  node tests/page-27b.mjs "$work/page" speed --threads "${THREADS:-1,2,4}" ${ANYWAY:+--anyway} || status=1
+  node tests/page-27b.ts "$work/page" speed --threads "${THREADS:-1,2,4}" ${ANYWAY:+--anyway} || status=1
 fi
 if has memory; then
-  node tests/page-27b.mjs "$work/page" memory ${ANYWAY:+--anyway} || status=1
+  node tests/page-27b.ts "$work/page" memory ${ANYWAY:+--anyway} || status=1
 fi
 if has long || has long-page; then
   # (the context is the header's 4 bytes: the checkpoint made for 4096 serves; no second conversion of 7.66 GB)
-  node tests/page-27b.mjs "$work/page" long "$work" --context "${LONG_CONTEXT:-8192}" ${LONG_LINES:+--lines "$LONG_LINES"} ${LONG_TOKENS:+--prefix} ${ANYWAY:+--anyway} || status=1
+  node tests/page-27b.ts "$work/page" long "$work" --context "${LONG_CONTEXT:-8192}" ${LONG_LINES:+--lines "$LONG_LINES"} ${LONG_TOKENS:+--prefix} ${ANYWAY:+--anyway} || status=1
 fi
 if has write; then
   questions=${QUESTIONS:-}
@@ -267,7 +267,7 @@ if has write; then
     printf '%s\n' "これからの流行りを3つ挙げてください。" "What is 17 times 24?" "日本でいちばん高い山と、その高さを教えてください。" > "$questions"
   fi
   # PICK="0,1,2": only these (from 0) of the questions, so that the dozen of tests/fixtures/questions-12.txt (the review of T.233: the
-  # six Japanese and six English of tests/answers.mjs) may be split over runs of a runner each; lines that begin with # are no questions
+  # six Japanese and six English of tests/answers.ts) may be split over runs of a runner each; lines that begin with # are no questions
   index=-1
   while IFS= read -r question; do
     [ -n "$question" ] || continue
@@ -275,7 +275,7 @@ if has write; then
     index=$((index + 1))
     if [ -n "${PICK:-}" ] && [[ ",$PICK," != *",$index,"* ]]; then continue; fi
     echo "page: question $index"
-    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} ${ANYWAY:+--anyway} < /dev/null || status=1
+    node tests/page-27b.ts "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} ${ANYWAY:+--anyway} < /dev/null || status=1
   done < "$questions"
 fi
 exit $status

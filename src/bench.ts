@@ -1,5 +1,5 @@
 // The benchmark of T.45: what this browser does with this model, as a table someone can paste into an issue.
-// A plain module, so that Node can import it and test it (the page and tests/bench.mjs both use it).
+// A plain module, so that Node can import it and test it (the page and tests/bench.ts both use it).
 
 // T.353: this file is the window: every name it exported as one file, from the modules of bench/, a section each: rounds.js
 // (the rounds and their table), report.js (the issue's body and link, the short report, reading reports back), warnings.js

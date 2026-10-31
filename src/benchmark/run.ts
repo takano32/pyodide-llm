@@ -143,6 +143,6 @@ if (ended) {
   report();
 }
 (window as any).__benchmark.all = ALL;
-// ?run=all runs every section at once but the page memory, ?run=cpu,line those (tests/bench-check.mjs)
+// ?run=all runs every section at once but the page memory, ?run=cpu,line those (tests/bench-check.ts)
 const asked = parameters.get("run");
 if (asked) runSections((asked === "all" ? ALL : SECTIONS.filter((name) => asked.split(",").includes(name))).filter((name) => !(ended && name === "memory")));

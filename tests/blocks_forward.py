@@ -3,7 +3,7 @@
 # stack), each as what an engine outside Python is handed (the checkpoint and the plan, as Llama(external=) makes it)
 # and what the engine in NumPy answers for a few tokens, twice: as it is (float32 activations), and with the
 # activations every block matrix reads rounded as the kernels round them (quantize_x: 8 bits, a scale for each 32),
-# which is what forward.ts computes but for the order of its float32 sums. tests/blocks-forward-check.mjs runs
+# which is what forward.ts computes but for the order of its float32 sums. tests/blocks-forward-check.ts runs
 # forward.ts on them.
 #   python tests/blocks_forward.py <the root of a tree> <a folder to write into>     -> the cases, as JSON; the files in the folder
 # The blocks are random bytes (any bytes are blocks: tests/made_up.py's drawn_blocks()); what they read as, by the

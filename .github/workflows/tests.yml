@@ -11,7 +11,7 @@ name: Tests
 # and --wide, gpu-default-check, threads-check). An empty full= is the default, light (a dispatch fills an empty input
 # with its default: T.192).
 #
-#   node tests/ci.mjs run tests.yml [full=true] [extra="node tests/profile.mjs"] [runner=ubuntu-24.04-arm] --ref <branch>
+#   node tests/ci.ts run tests.yml [full=true] [extra="node tests/profile.ts"] [runner=ubuntu-24.04-arm] --ref <branch>
 #
 # T.238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
 # like tests/reference_27b.sh, which builds another program and fetches a model of its own), and minutes= is the job's
@@ -29,7 +29,7 @@ on:
         required: false
         default: false
       extra:
-        description: 'more shell commands to run after the tests (optional), e.g. node tests/profile.mjs --from 4000'
+        description: 'more shell commands to run after the tests (optional), e.g. node tests/profile.ts --from 4000'
         required: false
         default: ''
       runner:
@@ -42,7 +42,7 @@ on:
         required: false
         default: false
       updated:
-        description: 'T.441: also run tests/updated-in-browser.mjs in the three engines, as the nightly run does'
+        description: 'T.441: also run tests/updated-in-browser.ts in the three engines, as the nightly run does'
         type: boolean
         required: false
         default: false
@@ -94,12 +94,12 @@ jobs:
 
       - name: Build the site
         if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
-        # (and what was built, as the deploy holds it: tests/dist-check.mjs)
+        # (and what was built, as the deploy holds it: tests/dist-check.ts)
         run: |
           npm run build
-          node tests/dist-check.mjs
+          node tests/dist-check.ts
 
-      # T.441: a page left open across a deployment (tests/updated-in-browser.mjs: 39 cases, the model page's and
+      # T.441: a page left open across a deployment (tests/updated-in-browser.ts: 39 cases, the model page's and
       # /benchmark/'s), in the three engines, on the site just built: nightly, as nothing else runs it on a schedule
       - name: Install the browsers (nightly)
         if: ${{ (github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true') && !(inputs.only_extra == true || inputs.only_extra == 'true') }}
@@ -113,7 +113,7 @@ jobs:
         timeout-minutes: 45
         run: |
           failed=0
-          for engine in chromium firefox webkit; do node tests/updated-in-browser.mjs "$engine" || failed=1; done
+          for engine in chromium firefox webkit; do node tests/updated-in-browser.ts "$engine" || failed=1; done
           exit "$failed"
 
       - name: More

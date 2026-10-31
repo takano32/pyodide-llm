@@ -20,7 +20,7 @@ export async function pageMemory(): Promise<Result> {
   // T.173's review: a page hidden (another app, the screen locked) or left (a reload, another page) stops the run in
   // the event itself, and the memory is let go at once: a phone ends a hidden page far sooner, so a tab ended then is
   // no limit, and a page left is no tab ended. The run's own finally removes the mark in the microtasks right after
-  // the event, before the page can be put away (tests/page-memory-check.mjs reloads a page in the middle of a run),
+  // the event, before the page can be put away (tests/page-memory-check.ts reloads a page in the middle of a run),
   // so only a tab that ends with no such event leaves its mark.
   let hide: () => void = () => {};
   const hidden = new Promise<void>((resolve) => (hide = () => resolve()));

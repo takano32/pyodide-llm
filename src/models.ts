@@ -62,5 +62,5 @@ export const MODELS = LISTED.map((entry) => ({ entry, key: [Object.keys(GROUPS).
 /** T.511.6 (the owner, 2026-10-15): the model a first visit opens, and the one the page falls back on. Shisa V2.1c LFM2
  * 350M answers questions (18 of T.511.5's 21 facts, tiny-lm none), for a first visit's 379 MB fetched from Hugging Face
  * and converted in the browser (kept for the next visit). It stays where the list's order puts it. Under 500 MB, so it
- * is started unasked (tests/models-check.mjs holds both). */
+ * is started unasked (tests/models-check.ts holds both). */
 export const DEFAULT_MODEL = MODELS[MODELS.findIndex(({ id }) => id === "hf-shisa-v2.1c-lfm2-350m")];

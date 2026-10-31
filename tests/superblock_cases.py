@@ -1,6 +1,6 @@
 # tests/superblock_cases.py (T.362): blocks of llama.cpp's K- and i-quantized types that are the same bytes on every
 # machine, and one number for what a reader reads of them. tests/fixtures/superblocks.json has the numbers of a 64-bit
-# NumPy, which pytest holds the readers to (tests/test_superblocks.py); tests/smoke.mjs asks the same of the readers
+# NumPy, which pytest holds the readers to (tests/test_superblocks.py); tests/smoke.ts asks the same of the readers
 # inside Pyodide, whose NumPy has integers of 32 bits. Neither pytest nor the converter is imported here.
 import hashlib
 

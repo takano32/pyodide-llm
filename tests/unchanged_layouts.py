@@ -1,6 +1,6 @@
 # unchanged_layouts.py (T.357)
 # What a tree says of a checkpoint's file, over a grid of made-up headers, forms and dtypes, as one JSON object: the
-# record tests/unchanged.mjs compares between two trees (its kind "layouts"). The order of a file's tensors is written
+# record tests/unchanged.ts compares between two trees (its kind "layouts"). The order of a file's tensors is written
 # down in four places that must agree (the converter's layout(), the engine's *_tensors(), conversion_plan() and
 # external_tensors(), which reads the engine's order), and its sizes in a fifth (checkpoint_dtype()); the unit tests
 # walk the branches of the models they make and no others. Here every one of them answers for the same grid, through

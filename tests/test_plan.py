@@ -1,7 +1,7 @@
 """engine/plan.py (T.359.5): the plan Python hands forward.js, made from a header, a form, a dtype and how the model is
 run, with no model and no weights: every test here but the last makes no Llama. The last holds Llama to handing
 ExternalForward what forward_plan() makes of the same facts. (That the plan's keys are the ones forward.js reads is
-tests/plan-keys-check.mjs's, and that their values are what they were is the net's kind "layouts".)"""
+tests/plan-keys-check.ts's, and that their values are what they were is the net's kind "layouts".)"""
 import math
 
 import numpy as np

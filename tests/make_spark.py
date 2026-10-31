@@ -1,8 +1,8 @@
 # make_spark.py
 # T.342: a made-up Spark-X2.5 (three local layers of every four that turn their whole heads by a base of their own, the
 # others a quarter of each head; a gate of each head's output; the exact GELU in the FFN's gate) as files, for the checks
-# of forward.js that take a model by its files (tests/forward-check.mjs, tests/threads-check.mjs,
-# tests/gpu-hybrid-check.mjs: <out>.bin, <out>.tokenizer.bin and <out>.json, as tests/perplexity_prepare.py writes them).
+# of forward.js that take a model by its files (tests/forward-check.ts, tests/threads-check.ts,
+# tests/gpu-hybrid-check.ts: <out>.bin, <out>.tokenizer.bin and <out>.json, as tests/perplexity_prepare.py writes them).
 # The real ones are too large to be built with the site (the smaller is 1.8 GB as int8), so this one stands in: random
 # Hugging Face tensors (tests/made_up.py's spark_model) converted the way the page converts them (llama2_convert.Conversion),
 # with rows of whole groups of 32 for the int8 kernels, and values a tenth of a standard deviation (a stream through 12

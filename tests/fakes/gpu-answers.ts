@@ -1,5 +1,5 @@
 // tests/fakes/gpu-answers.ts (T.465.1)
-// The engine's shaders answered for tests/fakes/webgpu.mjs's answer: a dispatch of a pipeline whose WGSL is named here
+// The engine's shaders answered for tests/fakes/webgpu.ts's answer: a dispatch of a pipeline whose WGSL is named here
 // has its output written as that shader would write it, so that the model's GPU worker can choose its forms (gpu/forms.ts
 // checks each candidate's output before it takes it) on a device that runs no shader. For the checks that run those
 // parts: gpu-forms-check.ts, gpu-tokens-check.ts. What a shader computes is tests/gpu_answers.py's, in NumPy (the owner's, 2026-10-31:
@@ -17,11 +17,11 @@
 // pipeline of no WGSL named here is not answered (its output stays as it was written).
 import fs from "node:fs";
 import { loadPyodide } from "pyodide";
-import { placePython, treeOf, runtimeUrl } from "../tree.mjs";
+import { placePython, treeOf, runtimeUrl } from "../tree.ts";
 const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.ts"));
 const { CODEBOOK_BYTES } = await import(runtimeUrl("shaders/prompt.ts"));
 
-// what the stand-in device (tests/fakes/webgpu.mjs) hands an answer: a binding's buffer (its bytes in data), or a part of one
+// what the stand-in device (tests/fakes/webgpu.ts) hands an answer: a binding's buffer (its bytes in data), or a part of one
 type Buffer = { size: number; data: Uint8Array };
 type Entry = { binding: number; resource: Buffer | { buffer: Buffer; offset?: number; size?: number } };
 type Model = (entries: Entry[], x: number, y: number) => void;

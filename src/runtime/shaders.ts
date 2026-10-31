@@ -18,8 +18,8 @@
 // which the key hashes and the model's worker takes them from) and key.ts (the device's key). Each is a static import
 // (T.367.3: a bundler links them).
 // T.367.5: who reads the window. /benchmark/'s GPU worker (benchmark/gpu/device.ts), which measures with nearly all of
-// them and fetches this module when its section runs; and the tools (the net's shaders section, tests/gpu-check.mjs,
-// tests/smoke.mjs and others), to which shaders.ts is the name of all the WGSL there is. The model's GPU worker does
+// them and fetches this module when its section runs; and the tools (the net's shaders section, tests/gpu-check.ts,
+// tests/smoke.ts and others), to which shaders.ts is the name of all the WGSL there is. The model's GPU worker does
 // not: its modules take the shaders they run from the catalogue (shaders/engine.ts's ENGINE, T.379.1) and the other
 // names they use from the parts (gpu/*.ts), linked into the worker's own file without /benchmark/'s shaders, and the
 // model's worker takes the device's key from shaders/key.ts.

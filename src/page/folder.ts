@@ -1,5 +1,5 @@
 // src/page/folder.ts (T.374.2.2): the model the page makes of a folder of the visitor's disk that holds what Hugging Face
-// publishes. Nothing of the page is read here (no element, no address): tests/worker-fetches-check.mjs makes the
+// publishes. Nothing of the page is read here (no element, no address): tests/worker-fetches-check.ts makes the
 // folders it hands the worker by this very function, in Node.
 
 // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a

@@ -1,6 +1,6 @@
 # The engine with its weights outside Python (T.93): Llama(external=...) must describe every tensor exactly where
 # the NumPy engine reads it, for every architecture and dtype, so that src/runtime/forward.js computes on the same numbers.
-# The forward pass itself runs in JavaScript: tests/smoke.mjs checks it against the NumPy one.
+# The forward pass itself runs in JavaScript: tests/smoke.ts checks it against the NumPy one.
 import numpy as np
 import pytest
 from conftest import pack_tokenizer, qwen35_model, synthetic_weights, tiny_vocab

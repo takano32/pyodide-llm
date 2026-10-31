@@ -13,7 +13,7 @@
 # (a replay) and with float32 keys and values, so that what stands between it and the engine's float32 forward pass is
 # float32's rounding and not the rounding of the activations (a few tenths of a logit: the fork's own paths differ by that).
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=150 extra="bash tests/reference_27b.sh" \
+#   node tests/ci.ts run tests.yml only_extra=true minutes=150 extra="bash tests/reference_27b.sh" \
 #     --grep "^(fork|f32|reference|runner):" --minutes 170 --ref <branch>
 #
 # STAGES (default "fork f32 numpy"): which of the three run; SECONDS_FOR_FORK, SECONDS_FOR_F32: after how long the fork

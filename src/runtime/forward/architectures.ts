@@ -6,7 +6,7 @@
 // forward/alone.ts: the worker as a conversion begins, /benchmark/, the tools), where no Python runs yet. T.628.1: so the
 // facts that size a model are Python's (src/python/engine/layout.py's LAYOUTS), written into src/runtime/built/facts/architectures.ts
 // before anything runs (python_facts.py: `make kernels`, a build's and the development server's start), and read here;
-// tests/plan-keys-check.mjs still holds every line to what Python's plans of that architecture say.
+// tests/plan-keys-check.ts still holds every line to what Python's plans of that architecture say.
 //
 // A line says only what the form does not: which layers keep a state is the form's (its "linear", its "convolution":
 // the kinds of forward/kinds.ts read them), and a bias or a norm of the heads weighs nothing here.

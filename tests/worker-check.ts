@@ -1,0 +1,580 @@
+// T.129: where fetching and loading meet in src/runtime/worker.js, run as it is in a vm context on made-up fetches, streams
+// and a clock that goes a hundred times as fast: the parts of this site's models (download()), the ranges of
+// huggingface.co (fetchRange(), inOrder(), refused()), the count of what arrives while Pyodide loads (watchArrivals()),
+// the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()). (T.464: the memory of the weights, what
+// is thrown and is no Error, and a stop that arrives during a run are tests/worker-memory-check.ts's.) The review
+// of T.97, T.118 and T.119 (2026-09-26) had a bench like this and did not keep it; what it found is T.129's (1) to (7).
+// Node only, no Pyodide, a few seconds:
+//
+//   node tests/worker-check.ts
+//
+// A slow or stopped line is played by the made-up fetches (a body that comes a chunk at a time, one that stops, one
+// that breaks), on the fast clock: 30 seconds of the worker's are 0.3 s here. The Cache API is a made-up one that does
+// what the specification says of put() (the review of T.129, 2026-10-01). What it cannot see: the Service Worker
+// (public/coi.js) between the worker and the network, a connection that is really stopped by an abort (the made-up
+// fetch only says its signal aborted), a browser's own limits (a 64-bit memory's size: tests/mem64-limit.mjs of the
+// probe branch asked Chromium and Firefox), and the queue of a real line (a version asked for while the model's parts
+// fill it: tests/slow-check.ts, slow.yml, sees a line with a queue, by its own proxy).
+import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
+import fs from "node:fs";
+import { cacheStorage } from "./fakes/cache.ts";
+import { runtimeUrl } from "./tree.ts";
+const forward = await import(runtimeUrl("forward.js"));
+import { workerHarness, siteRoot } from "./worker-harness.ts";
+
+// the made-up network, clock, messages and context (tests/worker-harness.ts, T.357: the conversion's fetch list uses them too)
+const { SCALE, MiB, PART, realNow, sleep, clock, bytesOf, body, requests, messages, fetchStandIn, navigatorStandIn, context, run, failure, fresh, partOf } = workerHarness();
+const at = runtimeUrl("worker.js");
+// a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
+setTimeout(() => {
+  console.error("worker-check: still waiting after 180 s");
+  process.exit(1);
+}, 180000).unref();
+const quiet = run("QUIET_SECONDS");
+let passed = 0;
+const ok = (line) => {
+  passed++;
+  console.log(`ok: ${line}`);
+};
+
+// ---- download(): the parts of this site's models (T.97, T.129 (3) and (4))
+{
+  const model = { checkpoint: "m", bytes: 2 * PART + 1000 };
+  const whole = (part) => [part * PART, Math.min(model.bytes, (part + 1) * PART)];
+  const written = () => {
+    const into = new Uint8Array(model.bytes);
+    return { into, write: (offset, chunk) => into.set(chunk, offset) };
+  };
+  const plain = (url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal }), { status: 200 });
+  const download = (signal = new AbortController().signal) => context.download(model, signal, 1);
+
+  // all parts come: the bytes are the file's, and the header is its first 28
+  fresh(plain);
+  {
+    const source = download(), { into, write } = written();
+    await source.into(write);
+    assert.deepEqual(into, bytesOf(0, model.bytes));
+    assert.deepEqual([...await source.header], [...bytesOf(0, 28)]);
+    ok("the parts of a model come whole");
+  }
+
+  // (4) a part the server failed (5xx) is fetched again, and one it refused (404) is not
+  for (const [status, times, final] of [[503, 1, false], [500, 2, false], [408, 1, false], [404, 1, true], [403, 1, true]]) {
+    fresh((url, init, n) => (partOf(url) === 1 && n < times ? new Response("", { status }) : plain(url, init)));
+    const source = download(), { into, write } = written();
+    const failed = await failure(source.into(write));
+    const tries = requests.filter((r) => partOf(r.url) === 1).length;
+    if (final) {
+      assert.ok(failed, `a part answered ${status} was taken as a success`);
+      assert.match(failed.error.message, new RegExp(`part 1 of m: ${status}`));
+      assert.equal(tries, 1, `a part answered ${status} was fetched ${tries} times: the answer is the same the next time`);
+    } else {
+      assert.equal(failed, undefined, `a part answered ${status} ${times} time(s) failed the download: ${failed?.error.message}`);
+      assert.deepEqual(into, bytesOf(0, model.bytes));
+      assert.equal(tries, times + 1);
+    }
+  }
+  ok("a part the server failed (5xx, 408) is fetched again, one it refused (4xx) once");
+
+  // (4) three failures: the error says which part
+  fresh((url, init) => (partOf(url) === 2 ? new Response("", { status: 502 }) : plain(url, init)));
+  {
+    const failed = await failure(download().into(written().write));
+    assert.match(failed?.error.message ?? "", /Part 2 of m failed three times: .*502/);
+    assert.equal(requests.filter((r) => partOf(r.url) === 2).length, 3);
+  }
+  // a body that breaks three times: the browser's words, and which part
+  fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, breakAt: partOf(url) === 0 ? 3 * MiB : undefined }), { status: 200 }));
+  {
+    const failed = await failure(download().into(written().write));
+    assert.match(failed?.error.message ?? "", /Part 0 of m failed three times: Error in input stream/);
+  }
+  ok("the third failure of a part says which part");
+
+  // (4) a body that breaks once: fetched again, the bytes are right, and the progress never goes back
+  fresh((url, init, n) => new Response(body(...whole(partOf(url)), {
+    signal: init.signal, delay: partOf(url) === 1 ? 0 : 50, breakAt: partOf(url) === 1 && n === 0 ? PART + 5 * MiB : undefined,
+  }), { status: 200 }));
+  {
+    const source = download(), { into, write } = written();
+    await source.into(write);
+    assert.deepEqual(into, bytesOf(0, model.bytes));
+    const told = messages.filter((m) => m.type === "progress").map((m) => m.received);
+    assert.ok(told.length > 3);
+    told.forEach((received, i) => assert.ok(i === 0 || received >= told[i - 1], `the progress went back: ${told.slice(0, i + 1).join(", ")}`));
+    assert.equal(told.at(-1), model.bytes);
+  }
+  ok("a part that broke is fetched again, and the progress does not go back meanwhile");
+
+  // (3) a part that failed for good stops the other connections: none fetches another part, and the ones in flight are
+  // aborted (before, they fetched the rest of the model until the next load)
+  {
+    const many = { checkpoint: "m", bytes: 12 * PART };
+    fresh((url, init) => {
+      const part = partOf(url);
+      return part === 3 ? new Response("", { status: 404 })
+        : new Response(body(part * PART, (part + 1) * PART, { signal: init.signal, delay: 100 }), { status: 200 });
+    });
+    const source = context.download(many, new AbortController().signal, 1);
+    const failed = await failure(source.into(() => {}));
+    assert.ok(failed);
+    await sleep(3000);  // what would have come meanwhile
+    const later = requests.filter((r) => r.at > failed.at);
+    assert.deepEqual(later.map((r) => partOf(r.url)), [], "parts were fetched after one had failed for good");
+    const flying = requests.filter((r) => partOf(r.url) !== 3);
+    assert.ok(flying.length >= 7 && flying.every((r) => r.signal.aborted), "the parts in flight were not aborted");
+    assert.equal(Math.max(...requests.map((r) => partOf(r.url))), 7, "a part past the first eight was asked for");
+  }
+  ok("a part that failed for good stops the other connections");
+
+  // (3) a write the memory refused is not fetched again, and stops the rest; the body that was being read is let go of
+  {
+    const letGo = [];
+    fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 20, cancelled: () => letGo.push(partOf(url)) }), { status: 200 }));
+    const source = download();
+    const failed = await failure(source.into((offset) => {
+      if (offset >= PART) throw new RangeError("Invalid typed array length: 4188160");
+    }));
+    assert.equal(failed?.error.name, "RangeError");
+    assert.deepEqual(requests.map((r) => partOf(r.url)).sort(), [0, 1, 2], "a write the memory refused was fetched again");
+    assert.ok(requests.every((r) => r.signal.aborted || partOf(r.url) === 0));
+    assert.ok(letGo.length >= 1, "the body of the part that failed was left open");
+  }
+  ok("a write the memory refused is not fetched again");
+
+  // (3, the review) chunks that came before there was a memory (the download starts long before Pyodide is there, so
+  // this is the usual order) and that the memory then refuses: the rest of the model is not fetched either
+  {
+    const many = { checkpoint: "m", bytes: 12 * PART };
+    fresh((url, init) => new Response(body(partOf(url) * PART, (partOf(url) + 1) * PART, { signal: init.signal, delay: 100 }), { status: 200 }));
+    const source = context.download(many, new AbortController().signal, 1);
+    await sleep(500);  // chunks are queued meanwhile
+    let writes = 0;  // (only the first write fails: what comes after it would stop the download by itself)
+    const failed = await failure(source.into(() => {
+      if (writes++ === 0) throw new RangeError("Invalid typed array length: 4188160");
+    }));
+    assert.equal(failed?.error.name, "RangeError");
+    await sleep(3000);
+    assert.deepEqual(requests.filter((r) => r.at > failed.at).map((r) => partOf(r.url)), [], "parts were fetched after the queued chunks were refused");
+    assert.ok(requests.every((r) => r.signal.aborted), "the parts in flight were not aborted");
+  }
+  ok("queued chunks that the memory refuses stop the download");
+
+  // (3, the review) a GPU's worker that takes no more of the weights (forward.js's room(), T.156) is no more cured by
+  // fetching the part again than a memory that refuses: the part is not asked for three times
+  run("gpuOnlyNow = { room: () => Promise.reject(new Error('the GPU took no weights for 60 s')) }");
+  try {
+    fresh(plain);
+    const failed = await failure(download().into(written().write));
+    assert.match(failed?.error.message ?? "", /^the GPU took no weights/, "the part was fetched again where the GPU took no weights");
+    assert.equal(requests.length, 3, `${requests.length} requests for 3 parts`);
+  } finally {
+    run("gpuOnlyNow = undefined");
+  }
+  ok("a GPU that takes no more of the weights is not fetched again");
+
+  // the load's signal is let go of once the download is over, whichever way it ends
+  fresh(plain);
+  {
+    const load = new AbortController(), source = download(load.signal);
+    await source.into(written().write);
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, "a download that ended kept a listener on the load's signal");
+  }
+  fresh((url, init) => (partOf(url) === 1 ? new Response("", { status: 404 }) : plain(url, init)));
+  {
+    const load = new AbortController();
+    assert.ok(await failure(download(load.signal).into(written().write)));
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, "a download that failed kept a listener on the load's signal");
+  }
+  ok("a download lets go of the load's signal");
+
+  // (3) the load stops the download where it failed without it (weightsBuffer() said no)
+  fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 200 }), { status: 200 }));
+  {
+    const source = download();
+    await sleep(100);
+    source.stop(new Error("no memory for this model"));
+    assert.ok(requests.length === 3 && requests.every((r) => r.signal.aborted));
+    const failed = await failure(source.into(() => {}));
+    assert.ok(failed);
+  }
+  // and a cancelled load stops it too, without a word more
+  fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 200 }), { status: 200 }));
+  {
+    const load = new AbortController(), source = download(load.signal);
+    await sleep(100);
+    load.abort();
+    const failed = await failure(source.into(() => {}));
+    assert.equal(failed?.error.name, "AbortError");
+    assert.equal(requests.length, 3);
+    assert.ok(!messages.some((m) => m.type === "progress" && m.received === model.bytes));
+  }
+  ok("the load stops a download it does not want any more");
+
+  // ---- the Cache API (T.97's finding, and T.129's inner abort and reader.cancel() beside the copy that goes in as the part
+  // streams): a Cache that does what the specification says of put(), which reads the body to its end and, where it
+  // breaks, stores nothing and rejects. A part that came whole is kept for the next visit; none that did not
+  {
+    const { map: kept, caches, stored } = cacheStorage();
+    context.caches = caches;
+    const partsKept = async () => {
+      await sleep(2000);  // the copies go in as the parts stream, and a little after
+      return [...kept].map(([key, bytes]) => [partOf(key.split("?")[0]), bytes.length]).sort();
+    };
+    const keyOf = (part) => `${new URL(`models/m.${String(part).padStart(3, "0")}`, siteRoot()).href}?bytes=${model.bytes}`;
+    const expectKept = async (parts, what) => {
+      assert.deepEqual(await partsKept(), parts.map((part) => [part, whole(part)[1] - whole(part)[0]]), what);
+      for (const part of parts) assert.deepEqual(kept.get(keyOf(part)), bytesOf(...whole(part)), `${what}: the copy of part ${part} is not the file's`);
+    };
+    try {
+      // a part whose body broke once comes again, and one whole copy is kept
+      kept.clear();
+      fresh((url, init, n) => new Response(body(...whole(partOf(url)), { signal: init.signal, breakAt: partOf(url) === 1 && n === 0 ? PART + 5 * MiB : undefined }), { status: 200 }));
+      {
+        const { into, write } = written();
+        await download().into(write);
+        assert.deepEqual(into, bytesOf(0, model.bytes));
+        await expectKept([0, 1, 2], "a part that broke once");
+      }
+      // a part whose body ends short without an error is no whole: not kept, fetched again
+      kept.clear();
+      stored.length = 0;
+      fresh((url, init, n) => {
+        const [from, to] = whole(partOf(url));
+        return new Response(body(from, partOf(url) === 1 && n === 0 ? from + 3 * MiB : to, { signal: init.signal }), { status: 200 });
+      });
+      {
+        const { into, write } = written();
+        await download().into(write);
+        assert.deepEqual(into, bytesOf(0, model.bytes));
+        await expectKept([0, 1, 2], "a part that ended short");
+        assert.equal(requests.filter((r) => partOf(r.url) === 1).length, 2);
+        // (T.495: and never stored short on the way: the next try's whole copy writes over a short one, so what is kept at
+        // the end does not say it; fetchPart()'s check of the length breaks the copy's body, and put() stores nothing)
+        assert.deepEqual(stored.filter(([key]) => partOf(key.split("?")[0]) === 1).map(([, bytes]) => bytes), [whole(1)[1] - whole(1)[0]],
+          "the part that ended short was stored as a copy before its whole one");
+      }
+      // a copy that is short (kept before T.97's check) is not read again after it failed
+      kept.clear();
+      kept.set(keyOf(1), bytesOf(PART, PART + 3 * MiB));
+      fresh(plain);
+      {
+        const { into, write } = written();
+        await download().into(write);
+        assert.deepEqual(into, bytesOf(0, model.bytes));
+        await expectKept([0, 1, 2], "a short copy");
+        assert.equal(requests.filter((r) => partOf(r.url) === 1).length, 1, "the short copy was not left for the network's answer");
+      }
+      // a load cancelled, or a write refused, while parts stream: no part that did not come whole is kept
+      kept.clear();
+      fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 200 }), { status: 200 }));
+      {
+        const load = new AbortController(), source = download(load.signal);
+        await sleep(300);
+        load.abort();
+        await failure(source.into(() => {}));
+        assert.deepEqual(await partsKept(), [], "a cancelled load kept parts that did not come whole");
+      }
+      kept.clear();
+      fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 20 }), { status: 200 }));
+      {
+        const failed = await failure(download().into((offset) => {
+          if (offset >= PART) throw new RangeError("Invalid typed array length: 4188160");
+        }));
+        assert.equal(failed?.error.name, "RangeError");
+        assert.deepEqual(await partsKept(), [], "a refused write kept parts that did not come whole");
+      }
+    } finally {
+      context.caches = undefined;
+    }
+  }
+  ok("the Cache API keeps the parts that came whole, and none that did not");
+}
+
+// ---- huggingface.co: fetchRange(), inOrder(), refused() (T.112, T.119, T.129 (3) and (5))
+{
+  const HF = "https://huggingface.co/owner/repo/resolve/0123456789abcdef0123456789abcdef01234567/model.safetensors";
+  let size = 3 * PART + 12345;
+  const ranged = (init, { delay = 0 } = {}) => {
+    const [, from, to] = /bytes=(\d+)-(\d+)/.exec(init.headers.Range);
+    const end = Math.min(size, Number(to) + 1);
+    return new Response(body(Number(from), end, { signal: init.signal, delay }),
+      { status: 206, headers: { "Content-Range": `bytes ${from}-${end - 1}/${size}` } });
+  };
+  const fed = () => {
+    const into = new Uint8Array(size);
+    let at = 0;
+    return { into, feed: (bytes) => { into.set(bytes, at); at += bytes.length; }, at: () => at };
+  };
+
+  fresh((url, init) => ranged(init));
+  {
+    const { into, feed, at } = fed(), load = new AbortController();
+    await context.inOrder(HF, 0, size, feed, load.signal);
+    assert.equal(at(), size);
+    assert.deepEqual(into, bytesOf(0, size));
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, "a file that came kept a listener on the load's signal");
+  }
+  ok("a file of huggingface.co comes whole and in order");
+
+  // (3) a range that failed for good (or a feed the converter refused) stops the rest, and the connections that wait for
+  // room are woken: nothing is fetched afterwards (a file of about twenty parts, whose bodies are made as they are read)
+  size = 40 * PART;
+  for (const [name, routing, feeding] of [
+    ["a range answered 404", (url, init) => (/bytes=(\d+)/.exec(init.headers.Range)[1] === String(PART) ? new Response("", { status: 404 }) : ranged(init, { delay: 100 })), undefined],
+    ["a feed the converter refused", (url, init) => ranged(init, { delay: 20 }), (bytes, n) => { if (n === 2) throw new Error("not a safetensors file"); }],
+  ]) {
+    fresh(routing);
+    let n = 0;
+    const load = new AbortController();
+    const failed = await failure(context.inOrder(HF, 0, size, (bytes) => feeding?.(bytes, n++), load.signal));
+    assert.ok(failed, `${name}: inOrder() did not fail`);
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, `${name}: a call that failed kept a listener on the load's signal`);
+    await sleep(3000);
+    assert.deepEqual(requests.filter((r) => r.at > failed.at).map((r) => r.range), [], `${name}: ranges were fetched afterwards`);
+    assert.ok(requests.every((r) => r.signal.aborted || r.range.startsWith(`bytes=${PART}-`)), `${name}: ranges in flight were not aborted`);
+  }
+  ok("a range that failed for good, or a feed refused, stops the other connections");
+
+  // (5) 429 is refused at once in its own words, 408 and 5xx are asked again
+  for (const [status, times, words] of [[429, 1, /fewer requests for a while.*owner\/repo/], [401, 1, /no public repository/],
+    [408, 3, /answered 408/], [503, 3, /answered 503/]]) {
+    fresh(() => new Response("", { status }));
+    const failed = await failure(context.fetchRange(HF, 0, 100, new AbortController().signal));
+    assert.match(failed?.error.message ?? "", words, `${status}: ${failed?.error.message}`);
+    assert.equal(requests.length, times, `${status} was asked ${requests.length} times, not ${times}`);
+  }
+  fresh((url, init, n) => (n === 0 ? new Response("", { status: 408 }) : ranged(init)));
+  assert.deepEqual(new Uint8Array((await context.fetchRange(HF, 0, 100, new AbortController().signal)).bytes), bytesOf(0, 100));
+  // (T.380.1) a line that dropped is no refusal: nothing says that another try is answered the same, so it is tried
+  // again, three times in all, and what is thrown at the end is the browser's own error
+  fresh((url, init, n) => {
+    if (n === 0) throw new TypeError("Failed to fetch");
+    return ranged(init);
+  });
+  assert.deepEqual(new Uint8Array((await context.fetchRange(HF, 0, 100, new AbortController().signal)).bytes), bytesOf(0, 100));
+  assert.equal(requests.length, 2, "a range whose line dropped once was not asked for again");
+  fresh(() => { throw new TypeError("Failed to fetch"); });
+  const dropped = await failure(context.fetchRange(HF, 0, 100, new AbortController().signal));
+  assert.deepEqual([dropped?.error.name, dropped?.error.message, requests.length], ["TypeError", "Failed to fetch", 3]);
+  ok("429 is told as a limit to wait for, 408 and a line that dropped are asked again");
+
+  // T.112, and T.374.3 (a head's later pieces begin where the bytes in hand end, not at the file's first byte): a server
+  // that answers a range request with the whole file (200). What was asked for is cut out of it as it streams past,
+  // wherever it begins; the rest is not read; the size said is the file's
+  size = 3 * PART + 12345;
+  for (const [begin, end] of [[0, 100], [2 * MiB, 8 * MiB], [5, 6], [size - 7, size], [size - 7, size + 100]]) {
+    let read = 0;
+    fresh((url, init) => {
+      const whole = body(0, size, { signal: init.signal }), reader = whole.getReader();
+      const counted = new ReadableStream({
+        async pull(controller) {
+          const { done, value } = await reader.read();
+          if (done) return controller.close();
+          read += value.length;
+          controller.enqueue(value);
+        },
+        cancel: (reason) => reader.cancel(reason),
+      }, { highWaterMark: 0 });
+      return new Response(counted, { status: 200, headers: { "Content-Length": String(size) } });
+    });
+    const got = await context.fetchRange(HF, begin, end, new AbortController().signal);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].range, `bytes=${begin}-${end - 1}`);
+    assert.deepEqual(new Uint8Array(got.bytes), bytesOf(begin, Math.min(end, size)), `the bytes ${begin} to ${end} of a file that came whole are not the file's`);
+    assert.equal(got.total, size, "a file that came whole did not say its size");
+    assert.ok(read <= Math.min(end, size) + 2 * MiB, `${read} bytes were read of a file that came whole for its bytes ${begin} to ${end}`);
+  }
+  ok("a range answered with the whole file is cut out of it, wherever it begins, and the rest is not read");
+}
+
+// ---- watchArrivals() (T.118, T.129 (6))
+{
+  fresh((url, init) => new Response(body(0, 3 * MiB, { signal: init.signal, delay: 1000 }), { status: 200 }));
+  const plain = context.fetch;
+  const watch = run("watchArrivals()");
+  assert.notEqual(context.fetch, plain);
+  const res = await context.fetch("https://cdn.jsdelivr.net/pyodide/v1.0.0/full/pyodide.asm.wasm");
+  assert.equal(res.status, 200);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  assert.deepEqual(bytes, bytesOf(0, 3 * MiB));
+  assert.equal(watch.arrived, 1 + 3 * MiB, "the body's bytes were not counted");
+  const quietSpell = watch.quiet(quiet), began = clock.now();
+  await quietSpell.promise;
+  assert.ok(clock.now() - began >= quiet * 1000);
+  watch.stop();
+  assert.equal(context.fetch, plain);
+  ok("what arrives while Pyodide loads is counted, and nothing for 30 s is a stop");
+
+  // (the review) a worker that was frozen (a phone switched to another app) or busy for longer than the 30 seconds has
+  // run no tick, and tells nothing of the line: the silence is counted in the ticks that ran, not in the clock's
+  // seconds. Here the event loop is held for 45 seconds of the worker's clock in the middle of the spell
+  {
+    const watch = run("watchArrivals()"), spell = watch.quiet(quiet);
+    let stopped = false;
+    spell.promise.then(() => { stopped = true; });
+    await sleep(3000);
+    for (const until = realNow() + 45000 / SCALE; realNow() < until;);
+    await sleep(2000);
+    assert.equal(stopped, false, "a worker that was frozen was told its line had stopped");
+    await Promise.race([spell.promise, sleep(120000)]);  // (the ticks left to run: a line that stopped is found all the same)
+    assert.equal(stopped, true, "a line that stopped after the freeze was not found");
+    watch.stop();
+  }
+  ok("a freeze of the worker is no stop of the line");
+
+  // (6) a browser that would not make the counting stream or Response: the responses come as they were, counted once
+  // (before, the wrapper threw, and every fetch of the load failed)
+  for (const [name, stand] of [["TransformStream", class {
+    constructor() {
+      throw new TypeError("no TransformStream here");
+    }
+  }], ["Response", class extends Response {
+    constructor(content, init) {
+      if (content instanceof ReadableStream) throw new TypeError("no Response of a stream here");
+      super(content, init);
+    }
+  }]]) {
+    const made = context[name];
+    context[name] = stand;
+    try {
+      fresh((url, init) => new Response(body(0, MiB, { signal: init.signal }), { status: 200 }));
+      const watch = run("watchArrivals()");
+      const res = await context.fetch("https://cdn.jsdelivr.net/pyodide/v1.0.0/full/python_stdlib.zip");
+      assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytesOf(0, MiB), name);
+      assert.equal(watch.arrived, 1, name);
+      watch.stop();
+    } finally {
+      context[name] = made;
+    }
+  }
+  ok("a browser that cannot count a body still gets it");
+}
+
+// ---- the version of Pyodide and its steps (T.118, T.129 (1) and (2))
+{
+  const JSDELIVR = "https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest";
+  // (1) data.jsdelivr.com that never answers: given up after QUIET_SECONDS, as a step of Pyodide's
+  fresh(() => "hang");
+  {
+    const began = clock.now();
+    const failed = await failure(Promise.race([context.resolvePyodideVersion(""),
+      sleep(120000).then(() => { throw new Error("still waiting for the version after 120 s"); })]));
+    assert.equal(failed.error.kind, "runtime", "the page would not try again without the service worker");
+    assert.match(failed.error.message, /did not answer in 30 seconds/);
+    assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000,
+      `the version was given up after ${(failed.at - began) / 1000} s, not ${quiet} to ${quiet + 10}`);
+  }
+  // (1) a network that fails at once is told as it is, not as a wait of 30 seconds
+  fresh(() => Promise.reject(new TypeError("Failed to fetch")));
+  {
+    const began = clock.now();
+    const failed = await failure(context.resolvePyodideVersion(""));
+    assert.equal(failed?.error.message, "Failed to fetch");
+    assert.ok(failed.error.kind !== "runtime" && failed.at - began < 1000);
+  }
+  fresh(() => new Response(JSON.stringify({ version: "314.0.7" }), { status: 200 }));
+  assert.equal(await context.resolvePyodideVersion(""), "314.0.7");
+  fresh(() => new Response(JSON.stringify({ version: "../evil" }), { status: 200 }));
+  assert.match((await failure(context.resolvePyodideVersion("")))?.error.message ?? "", /Unexpected Pyodide version/);
+  fresh(() => "hang");
+  assert.equal(await context.resolvePyodideVersion("?pyodide=0.29.4"), "0.29.4");
+  assert.equal(requests.length, 0);
+  ok("the version of Pyodide is given up after 30 s without an answer");
+
+  // (2) pyodideSteps(): loadPackage("numpy") is asked to fetch without integrity (the owner's choice, 2026-09-28), so
+  // the wheel's bytes are counted as they come even where the prefetch did not read it. The stand-in loadPackage acts
+  // as Pyodide's: with integrity its fetch settles only at the end of the body (counted as one arrival then), without
+  // it the body is read through the worker's (counting) fetch as it comes.
+  const base = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
+  const wheel = "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl";
+  const lock = new Response(JSON.stringify({ packages: { numpy: { file_name: wheel } } }), { status: 200 });
+  const asked = [];
+  const steps = ({ lockAnswer = () => lock.clone(), wheelDelay = 500, stall = false } = {}) => {
+    fresh((url, init) => (url === `${base}pyodide-lock.json` ? lockAnswer()
+      : url === base + wheel ? new Response(body(0, 2 * MiB, { signal: init.signal, delay: wheelDelay, stall }), { status: 200 })
+      : new Response("", { status: 404 })));
+    const loadPackage = async (names, options = {}) => {
+      asked.push(options);
+      if (options.checkIntegrity !== false) {
+        // what an integrity fetch shows the page while the wheel comes: nothing, then one arrival at its end
+        await sleep(2 * wheelDelay);
+        return;
+      }
+      await (await context.fetch(base + wheel)).arrayBuffer();
+    };
+    return run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: async () => ({ loadPackage, version: "314.0.7" }) }));
+  };
+  for (const [name, answers] of [["read ahead", {}], ["no lock", { lockAnswer: () => new Response("", { status: 404 }) }],
+    ["a lock of another shape", { lockAnswer: () => new Response("{}", { status: 200 }) }]]) {
+    // a slow line: the wheel's two chunks come 20 s apart (40 s in all, past QUIET_SECONDS); NumPy is waited for
+    asked.length = 0;
+    const slow = await failure(steps({ ...answers, wheelDelay: 20000 }));
+    assert.equal(slow, undefined, `${name}: NumPy on a slow line was given up: ${slow?.error.message}`);
+    assert.deepEqual(asked.map((options) => options.checkIntegrity), [false], `${name}: NumPy was fetched with integrity`);
+    // a wheel that stops: given up after QUIET_SECONDS of nothing, as a step of Pyodide's
+    const began = clock.now();
+    const failed = await failure(steps({ ...answers, stall: true }));
+    assert.match(failed?.error.message ?? "", /"NumPy" got nothing from the network for 30 seconds/, name);
+    assert.equal(failed.error.kind, "runtime");
+    assert.ok(failed.at - began < (2 * quiet + 20) * 1000, `${name}: a stopped NumPy was given up after ${(failed.at - began) / 1000} s`);
+  }
+  assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
+  ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
+
+  // (3) T.397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
+  // name (no version here), with the integrity check loadPackage has by default. Whatever goes wrong, it answers false
+  // and throws nothing: the conversion goes on and the converter's own reader reads what it can.
+  {
+    fresh(() => new Response("", { status: 404 }));
+    const calls = [], warned = [];
+    const warn = context.console.warn;
+    context.console.warn = (...said) => warned.push(said.join(" "));
+    const pyodide = (loadPackage, pyimport = () => ({ destroy() {} })) => ({
+      loadPackage: (...given) => { calls.push(given); return loadPackage(); }, pyimport,
+    });
+    assert.equal(await context.templatePackage(pyodide(async () => {})), true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], "jinja2");
+    assert.notEqual(calls[0][1]?.checkIntegrity, false, "jinja2 was fetched without its integrity check");
+    assert.equal(warned.length, 0);
+    // two asks for one Pyodide while the first is on its way share one load (watchArrivals() wraps fetch and puts back
+    // the one it found: two overlapping would leave the first's wrapper on every fetch), and a load that failed is tried again
+    const once = pyodide(async () => {});
+    const [first, second] = [context.templatePackage(once), context.templatePackage(once)];
+    assert.equal(first, second, "a second load of jinja2 beside the first");
+    assert.equal(await first, true);
+    assert.equal(calls.length, 2);
+    const failing = pyodide(() => Promise.reject(new Error("the CDN said no")));
+    assert.equal(await context.templatePackage(failing), false);
+    assert.equal(await context.templatePackage(failing), false);
+    assert.equal(calls.length, 4, "a load that failed was not tried again");
+    warned.length = 0;
+    assert.equal(await context.templatePackage(pyodide(() => Promise.reject(new Error("the CDN said no")))), false);
+    assert.match(warned.pop(), /jinja2 did not load \(.*the CDN said no.*\): chat templates are read by the converter's own reader/);
+    // a package loadPackage says nothing about but that is not there (it writes its failures to the console only)
+    assert.equal(await context.templatePackage(pyodide(async () => {}, () => { throw new Error("No module named 'jinja2'"); })), false);
+    assert.match(warned.pop(), /No module named/);
+    assert.equal(await context.templatePackage({}), false, "a Pyodide without loadPackage");
+    warned.pop();
+    // one that never comes is given up after the quiet spell, not waited for
+    const began = clock.now();
+    assert.equal(await context.templatePackage(pyodide(() => new Promise(() => {}))), false);
+    assert.match(warned.pop(), /nothing arrived for 30 seconds/);
+    assert.ok(clock.now() - began >= quiet * 1000 && clock.now() - began < (quiet + 10) * 1000,
+      `jinja2 was given up after ${(clock.now() - began) / 1000} s`);
+    assert.equal(context.fetch, fetchStandIn, "the load of jinja2 left the counting fetch behind");
+    context.console.warn = warn;
+    // convert() asks for it where it first places the converter, and has waited for it before the converter is imported.
+    // That block runs in no check here (the converter is a stand-in in them): its text is read, and tests/e2e.ts fails
+    // a conversion in a browser that did not ask the CDN for the wheel (T.367.2: tests/python-archive-check.ts runs
+    // the block, converter(), on a stand-in of Pyodide: the order of what it asks for and imports)
+    const converts = fs.readFileSync(runtimeUrl("worker/convert.js"), "utf8");
+    assert.match(converts, /if \(!llama2_convert\) \{[^]*?const jinja = templatePackage\(pyodide\);[^]*?await jinja;\s*llama2_convert = pyodide\.pyimport\("llama2_convert"\);/,
+      "convert() no longer loads jinja2 before it imports the converter");
+    ok("jinja2 is asked of Pyodide by its name, and a conversion goes on where it does not come (T.397)");
+  }
+}
+
+console.log(`worker-check: ${passed} checks passed`);

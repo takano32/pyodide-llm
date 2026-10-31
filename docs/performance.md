@@ -59,7 +59,7 @@ browser and system: [kernels/README.md](../kernels/README.md).
 
 ## Where a token goes
 
-`node tests/profile.mjs`, the JavaScript forward pass, one thread, the first development machine:
+`node tests/profile.ts`, the JavaScript forward pass, one thread, the first development machine:
 
 | model | ms per token | matrix products | of which the classifier |
 |---|---:|---:|---:|
@@ -69,7 +69,7 @@ browser and system: [kernels/README.md](../kernels/README.md).
 
 Attention grows with the position: in llm-jp-3-150m it is 2% of a token at position 16, 48% at 2000, 65% at 4000.
 
-Around the forward pass, Python chooses each token (`node tests/overhead.mjs`, the CI's x86-64 and arm64 runners,
+Around the forward pass, Python chooses each token (`node tests/overhead.ts`, the CI's x86-64 and arm64 runners,
 one thread, 128 tokens): what a generated token costs outside `forward.js` is 0.31-0.35 ms for llm-jp-3-150m (4% of
 the token) and 0.24-0.35 ms for tiny-lm (16-20%), most of it the sampling kernel (measured before that kernel's
 speed-up below). A call from Python into
@@ -113,7 +113,7 @@ alone reaches.
 
 ## The tokenizer
 
-Before the first token, Python encodes the prompt. `node tests/encode-bench.mjs` compares the engine's `encode()`
+Before the first token, Python encodes the prompt. `node tests/encode-bench.ts` compares the engine's `encode()`
 with an earlier version in one Pyodide (CI's x86-64 runner, an AMD EPYC 7763, and its arm64 runner; ms for a text
 of about 64 tokens, x86-64 / arm64):
 

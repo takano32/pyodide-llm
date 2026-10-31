@@ -1,7 +1,7 @@
-"""tests/tree.py (T.367.1): where in a tree what is, for the Python tools: tests/tree.mjs's way in Python (the kinds,
+"""tests/tree.py (T.367.1): where in a tree what is, for the Python tools: tests/tree.ts's way in Python (the kinds,
 the search and what stops it from taking the wrong file are said there). No place is written down: a kind's folder is
-where its anchor (tests/tree.json, which tests/tree.mjs reads too) is found in the tree that is asked about;
-tests/tree-check.mjs holds the two to the same answers.
+where its anchor (tests/tree.json, which tests/tree.ts reads too) is found in the tree that is asked about;
+tests/tree-check.ts holds the two to the same answers.
 
     from tree import python_folder
     sys.path.insert(0, python_folder())          this tree's Python sources, wherever they are

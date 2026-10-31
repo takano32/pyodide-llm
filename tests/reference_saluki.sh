@@ -7,7 +7,7 @@
 # logits of every position, both one token at a time and as one batch, and its tokens a second (the only speed on a
 # CPU anyone has for this file). docs/notes/t361-saluki-2026-10-13.md has what the file is and how it is to be held.
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=40 extra="bash tests/reference_saluki.sh" \
+#   node tests/ci.ts run tests.yml only_extra=true minutes=40 extra="bash tests/reference_saluki.sh" \
 #     --grep "^(llama|saluki|runner):" --minutes 50 --ref <branch>
 # Five to seven minutes on a runner of 4 logical cores and 16 GB, x86-64 or arm64 (runner=ubuntu-24.04-arm): the file
 # in 40 s, the build in 70 s, llama.cpp at 0.93 to 1.35 tokens a second (T.361's runs).

@@ -3,7 +3,7 @@
 //
 // Python makes it in one place (src/python/engine/plan.py's forward_plan(), a dict; Llama(external=) hands it to
 // start(plan), which is forward.ts's external()), and createForward() (src/runtime/forward/engine.ts) reads it. The two
-// ends are in two languages, so no compiler holds them together: tests/plan-keys-check.mjs does, and it holds the keys
+// ends are in two languages, so no compiler holds them together: tests/plan-keys-check.ts does, and it holds the keys
 // written here to Python's too (a key added or dropped on one side alone fails the light suite).
 //
 // A key that is added: plan.py's dict, this file, and whatever reads it in forward/ (AGENTS.md, "計画を値にして渡すとき").

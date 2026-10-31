@@ -9,7 +9,7 @@
 // area: the words of that answer are src/runtime/jobs.ts's constants (GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED), which
 // the plan carries as words. They are numbers there, and stay that.
 //
-// Both ends are JavaScript still, which no compiler reads: tests/plan-keys-check.mjs holds the plans' keys written
+// Both ends are JavaScript still, which no compiler reads: tests/plan-keys-check.ts holds the plans' keys written
 // (forward/) to the keys read (gpu/) and to these types, and the messages' kinds and keys to ToGpu and FromGpu.
 
 import type { Activation, LayerKind, TensorName } from "../plan.ts";
@@ -82,7 +82,7 @@ export type Tables = { classifier: Table; embedding: Table | null };
 // the words of the control area a request is answered in (jobs.ts's GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED)
 export type Words = { done: number; failed: number; beat: number; wanted: number };
 
-// What the tests ask for (the page's ?gpuTest=: fallback, always, quick, only; tests/gpu-check.mjs: the rest). Nothing
+// What the tests ask for (the page's ?gpuTest=: fallback, always, quick, only; tests/gpu-check.ts: the rest). Nothing
 // of it is set for a visitor.
 export type Force = {
   fallback?: boolean;

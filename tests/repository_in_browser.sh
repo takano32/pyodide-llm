@@ -5,7 +5,7 @@
 # a page of each browser read the list of a repository's files (its API, under the service worker), and that the page
 # then takes the best GGUF there, converts it, answers, and loads it from what the browser kept on the second visit.
 #
-#   node tests/ci.mjs run tests.yml only_extra=true minutes=40 extra="bash tests/repository_in_browser.sh firefox webkit" \
+#   node tests/ci.ts run tests.yml only_extra=true minutes=40 extra="bash tests/repository_in_browser.sh firefox webkit" \
 #     --grep "^(repository|ready|opened|status|again|ok|FAILED|-|chromium|firefox|webkit)" --minutes 50 --ref <branch>
 #
 #   $@          the browsers (chromium firefox webkit)
@@ -29,7 +29,7 @@ status=0
 for browser in "$@"; do
   log="$out/$browser.txt"
   E2E_TWICE=1 E2E_TIMEOUT=${E2E_TIMEOUT:-900} E2E_RESULTS="$out/results.jsonl" E2E_ARTIFACTS="$out/artifacts" E2E_CONSOLE="$out/console-$browser.txt" \
-    node tests/e2e.mjs "hf:$repository" "$browser" 2>&1 | tee "$log" || status=1
+    node tests/e2e.ts "hf:$repository" "$browser" 2>&1 | tee "$log" || status=1
   if ! grep -q "^opened: .*$takes" "$log"; then
     echo "repository: $browser did not open $repository by $takes — FAILED"
     status=1

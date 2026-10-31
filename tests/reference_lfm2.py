@@ -7,7 +7,7 @@
 #   python tests/reference_lfm2.py <directory for the download> [--only=made-up|real|fetch] [--model=350M[,230M,...]] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more)
 #
-#   node tests/ci.mjs run tests.yml extra="bash tests/reference_lfm2.sh" --ref <branch> --grep "lfm2:"
+#   node tests/ci.ts run tests.yml extra="bash tests/reference_lfm2.sh" --ref <branch> --grep "lfm2:"
 #
 # Three parts, every line of the log beginning with "lfm2:".
 #   made-up: tiny random models of transformers' own class (Lfm2ForCausalLM), which hold what the real 350M does not:

@@ -20,7 +20,7 @@
 #
 # The tools: perplexity_prepare.py, fixed_outputs.py, format_check.py (and through it write_options.py, start_check.py
 # and conversions_compare.py), hf_fetch.py, reference_llama.py, reference_qwen35.py, reference_lfm2.py, page_27b.py.
-# The Node tools have the same in tests/conducting.mjs. Tested alone by tests/test_conducting.py.
+# The Node tools have the same in tests/conducting.ts. Tested alone by tests/test_conducting.py.
 import sys
 import urllib.error
 from pathlib import Path

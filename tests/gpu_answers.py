@@ -1,6 +1,6 @@
 # gpu_answers.py (T.465.1)
 # What the engine's shaders compute, in NumPy, for the stand-in WebGPU device of the checks that run the model's GPU
-# worker without a GPU (tests/fakes/webgpu.mjs's answer; tests/fakes/gpu-answers.ts hands each dispatch's buffers
+# worker without a GPU (tests/fakes/webgpu.ts's answer; tests/fakes/gpu-answers.ts hands each dispatch's buffers
 # here, in Pyodide, and writes back what these return). The owner's (2026-10-31): Python where it can be, JavaScript the
 # bridge alone. Each is the arithmetic its shader means, on the engine's own Python where there is one (engine.packing:
 # the int8 quantization quantize_x reproduces, the ternary codes), in float64 sums stored as float32.
