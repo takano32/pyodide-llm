@@ -68,7 +68,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.x'
+          # (T.630: 3.14, not 3.x: 3.15's unicodedata is Unicode 17, and the real tokenizers (0.23.3) splits the letters
+          # new in it as Unicode 16 has them: the full suite's every-code-point tests split 4,657 of them otherwise. Back
+          # to 3.x once tokenizers knows Unicode 17)
+          python-version: '3.14'
 
       - name: Set up Node.js
         uses: actions/setup-node@v7

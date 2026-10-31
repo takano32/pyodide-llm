@@ -638,6 +638,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 - **並べて走らせた CI の run は、ログの中の ID で突き合わせる**（`ci.ts` の出力の頭の「started … run <ID>」）。
 - **CI のブラウザと apt の入れる手順には、手順の期限と apt の time-out を付ける**（apt が止まってジョブの 120 分を使った）。apt を走らせる手順は `timeout-minutes: 20` と `bash tests/apt-timeouts.sh`（`tests/workflows-check.ts` が見る）。手順の期限が止めたら 1 回走らせ直す。
 - **デプロイが落ちた後の直しが記録と文書だけなら、デプロイは走らない**（`paths-ignore`）。2026-10-24、台帳の目次が古くて T.571 のデプロイが軽い組で落ち、目次だけを直して push しても本番は古いままだった: `gh workflow run deploy.yml --ref main` で回す。台帳を直したら push の前に `python tests/ledger.py --check`。
+- **`setup-python` の `3.x` は出たばかりの版になる**（T.630: 2026-10 に 3.15・Unicode 17 になり、本物の tokenizers（Unicode 16）と全符号位置で比べる試験が 4,657 字で落ちた）。全部の組の `tests.yml` は 3.14 に留めてある。毎晩が急に落ちたら、まず道具の版（Python・tokenizers・Playwright）が動いていないかを見る。
 - **手動のワークフローの入力を空で渡しても「空」にはならない**（既定の値になる）。**空を「全部」の印にしない**（`only=all`）。手順が飛ばされたジョブも success になるので、分数か手順の結論を見る。
 - **ワークフローやシェルの中の `'`**: `run:` の `node -e '…'` の中にアポストロフィを書かない（コメントにも。`workflows-check` が `run:` を `bash -n` で読む）。`case` の中の `"${x:-it's}"` は後の引用符を飲み込み、`bash -n` は通る。**手動のワークフローに触ったら、その入力の形で 1 回 dispatch する。**
 - **取得は長さを確かめる**（Python の `read(量)` は接続が早く閉じても黙って短いものを返す）。**CI の取得が変換の途中で「ファイルが短い」と落ちたら、まず取得の長さを疑う**。`download(optional=True)` は 4xx を全部「無い」にするので、段取りの答え手は 404 だけを「無い」と読む。
