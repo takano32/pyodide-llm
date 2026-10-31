@@ -194,6 +194,8 @@ page_modules() {
   # as the shaders would (tests/fakes/gpu-answers.ts): every form right, and each check refusing an answer a little off
   # (about 15 s)
   node tests/gpu-forms-check.ts
+  # T.465.3: the same of a generated token's forms: its attention (tokenattention.ts) (about 6 s)
+  node tests/gpu-tokens-check.ts
   # T.357.3: the parts of the tool that checks the GPU in CI (tests/gpu-check.mjs, which runs there alone), each by itself
   # on made-up numbers: its measures, which made-up models an engine runs, a model's verdict and its steps' for runs as
   # they should be and wrong in one thing each, the tables, that the harness is a module whose imports are files of this
