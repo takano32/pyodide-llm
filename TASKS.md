@@ -165,7 +165,6 @@
 - T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
-- T.629 [整理][遠隔試験] 試験と道具の `.mjs` を Python か TypeScript に移す — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1430,9 +1429,3 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
-
-### T.629 [整理][遠隔試験] 試験と道具の `.mjs` を Python か TypeScript に移す — 状態: 進行中（T.629.1 は済んだ: 下。前の状態: 未着手、2026-10-31、持ち主「TypeScript を優先して JavaScript はなるべく使わない」。規模 大）
-- 計算・比べの参照・作り物・判定・表の 2 つ目の写しは Python に（Node の試験からは Pyodide で呼ぶ: T.465.1 の形）。製品の TypeScript を走らせる台と、ブラウザを動かす道具は `.ts` に（Node 24 と bun がそのまま走らせる）。取りかかるときに `tests/*.mjs` の一覧を作って子タスクに分ける。道具が `.mjs` の名前で呼び合う所（`tests/suite.sh`・ワークフロー・`tree.mjs` を import する全部・網が相手の木の同じ名前を走らせる所）を先に数える: 網は相手の木にも当たるので、名前を替えると古い木と比べられなくなる所がある。
-- **T.629.1 の結果（2026-10-31）**: `tests/` の `.mjs` 180 個を全部 `.ts` に名前を替えた（中は JavaScript のまま、型は付けていない: Node 24 と bun が型を消して走らせる）。名前を言う所は道具で書き直した（`tests/`・`.github/`・`src/` のコメント・`kernels/`・`Makefile`・`package.json`・`bunfig.toml`・AGENTS.md・dev-setup・`docs/*.md`・`.claude/agents/`。`docs/tasks/` と TASKS.md の記録はそのまま）。手で直した所: `serving-check` は道具を `.ts` で探す、`dist-same-check` の正規表現、網は相手の木のベンチの道具を `.ts` か `.mjs` で、`write.sh` の既定 `write.ts`（レビューから: 実行の時に組む名前）。残した `.mjs`: `astro.config.mjs`・`kernels/wasm64.mjs`（試験でない）。手元: 軽い組（Node 582 秒・bun 486 秒）、全部の `.ts` の `node --check`、網。CI: 全部の組（run 41181037404）と GPU（41183635270）は落ちたが、落ち方は main の毎晩と同じ（`test_bytebpe` の 7 つ、GPU の検査の「NaN logits taken as null」）。どちらも別に直す（下）。
-- レビュー（Sonnet low、reviewer、2026-10-31、T.629.1）: must-fix 1 つ（直した）: `tests/write.sh` の既定の道具の名前が `write.mjs` のまま（実行の時に組む名前で、置き換えも軽い組も見なかった）。tsconfig のプログラムは `tests/` を含まないので型検査に影響しない、拡張子で数える検査は無い、と確かめた。入れた勧め: dev-setup の例と `.claude/agents/` の `ci.mjs`。
-- **残り**（子タスク）: 計算・比べの参照・作り物・判定を道具ごとに Python に（T.465.1 の形）。取りかかるときに道具の一覧から順を決める。
