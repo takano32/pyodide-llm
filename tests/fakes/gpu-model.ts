@@ -37,13 +37,14 @@ const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/prompt.t
 type Answer = (entries: unknown[], x: number, y: number) => void;
 type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; headNorm?: Answer; normAdd?: Answer; bias?: Answer; layerNorm?: Answer; gelu?: Answer;
   SHORT_CONV?: Answer; CONV_STATE?: Answer; DELTA_GATES?: Answer; DELTA_CONV?: Answer; DELTA_CONV_STATE?: Answer; DELTA_NET?: Answer; SWIGLU?: Answer;
-  OUTPUT_GATE?: Answer; TAKE_OUTLIERS?: Answer; TERNARY_COLUMNS?: Answer; fused?: (right: Answer, output: string) => Answer;
+  OUTPUT_GATE?: Answer; TAKE_OUTLIERS?: Answer; TERNARY_COLUMNS?: Answer; embedBlocks?: Answer; fused?: (right: Answer, output: string) => Answer;
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 // (T.465.6.5, outliers: the final norm's outlier channels, T.92's, 3, 40 and 77: a classifier multiplied apart)
-type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean };
+// (T.465.6.5, blocks: a type of llama.cpp's blocks by a matrix's name, or "classifier" for the table: the wide Llama's)
+type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean; blocks?: Record<string, string> };
 // (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
 // check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
-export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false }: Opened = {}) {
+export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {} }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
@@ -59,7 +60,9 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   if (weights === "ternary") Object.assign(plan.tokens.classifier, { packing: "ternary", ternary: true });
   // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T.465.2's review)
   if (Array.isArray(weights)) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
-  const codebooks = Array.isArray(weights) && weights.some((type) => type.startsWith("IQ")) ? answers.codebooks() : null;
+  for (const [name, packing] of Object.entries(blocks)) Object.assign(name === "classifier" ? plan.tokens.classifier : plan.matrices[name], { packing });
+  const types = [...(Array.isArray(weights) ? weights : []), ...Object.values(blocks)];
+  const codebooks = types.some((type) => type.startsWith("IQ")) ? answers.codebooks() : null;
   const memory = { buffer: new SharedArrayBuffer(bytes + (codebooks?.length ?? 0)) };
   new Uint8Array(memory.buffer).forEach((_, i, all) => { all[i] = (i * 131 + 7 * (i >> 8) + 89) & 255; });
   if (codebooks) {
@@ -72,17 +75,20 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
     plausible(plan, memory);
     // (T.465.6.5: the outlier channels of the final norm as large as a model's, 9 times the others: make_ternary.py's)
     if (outliers) for (const c of plan.tokens.channels) new Float32Array(memory.buffer, plan.tokens.final, plan.dim)[c] *= 9;
-    if (Array.isArray(weights)) {
-      const { rows, n, layers } = plan.matrices.w2;
-      weights.forEach((packing, l) => {
-        const view = new Uint8Array(memory.buffer, layers[l][0], (rows * n) / 256 * BLOCK_READS[packing].bytes);
-        for (let at = 0, i = 0; at < view.length; at += BLOCK_READS[packing].bytes, i++) BLOCK_WEIGHTS[packing].scale(view, at, 0x1400 | (i * 37 % 1024));
-      });
+    // (each block of a matrix of blocks, of every layer, and of a table of blocks)
+    const drawnScales = (packing, at, rows, n) => {
+      const view = new Uint8Array(memory.buffer, at, (rows * n) / 256 * BLOCK_READS[packing].bytes);
+      for (let byte = 0, i = 0; byte < view.length; byte += BLOCK_READS[packing].bytes, i++) BLOCK_WEIGHTS[packing].scale(view, byte, 0x1400 | (i * 37 % 1024));
+    };
+    if (Array.isArray(weights)) weights.forEach((packing, l) => drawnScales(packing, plan.matrices.w2.layers[l][0], plan.matrices.w2.rows, plan.matrices.w2.n));
+    for (const [name, packing] of Object.entries(blocks)) {
+      if (name === "classifier") drawnScales(packing, plan.tokens.classifier.at[0], plan.tokens.classifier.rows, plan.tokens.classifier.n);
+      else for (const [at] of plan.matrices[name].layers) drawnScales(packing, at, plan.matrices[name].rows, plan.matrices[name].n);
     }
   }
   // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text (the model's
   // own forms: a copy of device.ts's ownOf, which is not exported, of the weights asked for)
-  const own = weights === "ternary" ? "ternary" : Array.isArray(weights) ? "blocks" : null;
+  const own = weights === "ternary" ? "ternary" : types.length ? "blocks" : null;
   const { subgroupMinSize: subgroupMin, subgroupMaxSize: subgroupMax } = adapter.info;
   const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
     subgroupMin, subgroupMax };
@@ -103,6 +109,8 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // (T.465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
   answers.add(ENGINE.EMBED, spoil.embed ?? answers.embed);
   answers.add(ENGINE.EMBED_TERNARY, answers.embedTernary);
+  // (T.465.6.5: a token's row of a table of each type of llama.cpp's blocks)
+  for (const packing of BLOCK_PACKINGS) answers.add(ENGINE.embedBlocks({ weights: packing, rows: false }), spoil.embedBlocks ?? answers.embedBlocks({ weights: packing }));
   for (const input of ["norm", "plain"]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
       for (const subgroups of [false, true]) {

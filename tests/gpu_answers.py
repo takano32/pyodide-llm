@@ -575,3 +575,22 @@ def ternary_columns(table, scales, picked, dst, outliers):
             total += values[k] * ((code - 1) * s[row * (n // 128) + channel // 128])
         out[row] += total
     return out.tobytes()
+
+
+# ---- T.465.6.5: a token's row of a table of llama.cpp's blocks (embedBlocks: the state's token's), by the converter's
+# reader; and the rows of a prompt's ids (embedBlocks with rows, EMBED_ROWS and EMBED_ROWS_TERNARY: a model on the GPU
+# alone embeds its prompt's tokens itself)
+
+def block_row(table, row, n, packing):
+    """a row of a table of blocks as float32: the converter's reader (convert/superblocks.py)"""
+    _, size, read = SUPERBLOCKS[packing]
+    per = n // 256 * size
+    return read(bytes(table)[row * per: (row + 1) * per]).astype(np.float32)
+
+
+def embed_blocks(table, state, n, first, rows, packing):
+    """embedBlocks: the state's token's row of a table of blocks of a type -> the row, as bytes; None outside the piece"""
+    row = int(u32s(state)[4]) - first
+    if rows and not 0 <= row < rows:
+        return None
+    return block_row(table, row, n, packing).tobytes()
