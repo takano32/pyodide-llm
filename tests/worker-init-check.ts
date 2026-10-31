@@ -66,7 +66,7 @@ function started() {
   const first = run("runtimeAsked")("?hfParts=16", starts);
   assert.equal(run("runtimeAsked")("?hfParts=16", starts), first, "runtimeAsked() starts the runtime once: a second load waits on the same promise");
   await first;
-  assert.deepEqual(asked.loader, [`https://cdn.jsdelivr.net/pyodide/v${VERSION}/full/pyodide.ts`], "Pyodide's loader by its URL, of the version jsDelivr said");
+  assert.deepEqual(asked.loader, [`https://cdn.jsdelivr.net/pyodide/v${VERSION}/full/pyodide.mjs`], "Pyodide's loader by its URL, of the version jsDelivr said");
   // (the options are the vm's object: compared as text)
   assert.equal(JSON.stringify(asked.packages), JSON.stringify([["numpy", { checkIntegrity: false }]]), "NumPy, fetched without integrity (the owner's choice, 2026-09-28)");
   assert.deepEqual(asked.unpacked, [[ARCHIVE.length, "zip"]], "engine.zip, unpacked whole");
