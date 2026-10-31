@@ -30,7 +30,7 @@ for id in "$@"; do
     python3 tests/write_options.py "$id" "$room/small" > "$room/$id.page.json"
     converted=$SECONDS
     rm -rf "$room/downloads"
-    node "tests/${WRITER:-write.mjs}" "$room/$id" "$room/$id.page.json" "${TOKENS:-32}"
+    node "tests/${WRITER:-write.ts}" "$room/$id" "$room/$id.page.json" "${TOKENS:-32}"
     echo "write.sh $id: fetching $((fetched - began)) s, converting $((converted - fetched)) s, writing $((SECONDS - converted)) s"
   )
   # (not `( … ) || …`: bash ignores set -e in everything a || tests)

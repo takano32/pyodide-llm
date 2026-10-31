@@ -140,7 +140,7 @@ deploy.yml と同じものが全部通れば用意できている。
 
 ```sh
 .venv/bin/python -m pytest tests -q    # CI と同じ 478 件（2026-09-26、T.144。system の python3 では 62 件が skip: 上の 1 の venv の節）
-for t in bench summary-check models-check ladder-check kept-check coi-js-check; do node tests/$t.mjs; done
+for t in bench summary-check models-check ladder-check kept-check coi-js-check; do node tests/$t.ts; done
 node tests/smoke.ts
 node tests/forward-check.ts --rounds 1 --positions 128
 node tests/forward-check.ts stories260K tiny-lm --rounds 1 --positions 128 --plain
