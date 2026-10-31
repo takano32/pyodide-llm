@@ -7,6 +7,8 @@
 #
 # The same as the shaders: what each writes, from the bindings as they lay out. Simpler: the whole output whatever the
 # workgroups dispatched, and none of a form's tiles, f16 or subgroups.
+import math
+
 import numpy as np
 
 from engine.packing import quantize as quantized, unpack_ternary
@@ -98,3 +100,158 @@ def tiled(packing, stored, scales, x, xs, y, rows, n, x_stride, y_stride, add, t
         product = w @ values
         y[t * y_stride: t * y_stride + rows] = (y[t * y_stride: t * y_stride + rows] if add else 0) + product
     return y.astype(np.float32).tobytes()
+
+
+# ---- T.465.4: a generated token's step (gpu/tokens.ts's passes): its row of the embedding, the fused matrices of its
+# layer, and the sampler. Each takes the bytes of its bindings and returns the bytes of what it writes.
+
+def embed(table, scales, state, n, first, rows):
+    """EMBED: the state's token's row of an int8 table (groups of 32 with a float32 scale each), a piece of rows from
+    first (rows 0: the whole table) -> the row, float32, as bytes; None where the token is not in the piece"""
+    token = int(np.frombuffer(bytes(state), dtype=np.uint32)[4])
+    row = token - first
+    if rows and row >= rows:
+        return None
+    values = np.frombuffer(bytes(table), dtype=np.int8)[row * n: (row + 1) * n].astype(np.float32)
+    d = np.frombuffer(bytes(scales), dtype=np.float32)[row * n // GROUP: (row + 1) * n // GROUP]
+    return (values * np.repeat(d, GROUP)).astype(np.float32).tobytes()
+
+
+def fused(norm, output, weights, scales, x, params, norm_weight, dst):
+    """fusedMatVec (shaders/fused.ts): the rows of an int8 matrix (float32 scales a group of 32 of a row) times x, x
+    through the norm first where norm (its weight at params' normAt, the scale of x's mean square and eps), into dst:
+    "write" (as they are), "add" (to what is there), "swiglu" and "geglu" (the rows params' second after them are up's).
+    -> dst, as bytes. (The "rope" write is fused_rope's.)"""
+    rows, words, per_row, second, eps, norm_at = row_params(params)
+    n = per_row * GROUP
+    v = np.frombuffer(bytes(x), dtype=np.float32)[:n].astype(np.float64)
+    scale = 1.0
+    if norm:
+        scale = 1.0 / math.sqrt(float(np.mean(v * v)) + eps)
+        v = v * np.frombuffer(bytes(norm_weight), dtype=np.float32)[norm_at: norm_at + n]
+    sums = matrix(weights, scales, per_row, rows + (second if output in ("swiglu", "geglu") else 0)) @ v * scale
+    out = np.frombuffer(bytes(dst), dtype=np.float32).astype(np.float64).copy()
+    value = sums[:rows]
+    if output == "write":
+        out[:rows] = value
+    elif output == "add":
+        out[:rows] += value
+    elif output in ("swiglu", "geglu"):
+        up = sums[second: second + rows]
+        out[:rows] = (value / (1.0 + np.exp(-value)) if output == "swiglu"
+                      else 0.5 * value * (1.0 + np.tanh(np.clip(0.7978845608028654 * (value + 0.044715 * value ** 3), -9.010913, 9.010913)))) * up
+    else:
+        raise ValueError(f"gpu_answers: no answer for the fused output {output}")
+    return out.astype(np.float32).tobytes()
+
+
+def fused_rope(norm, weights, scales, x, params, norm_weight, keys, values, angles, step):
+    """fusedMatVec's "rope" write: its rows (q's, then k's, then v's) as fused() makes them, q's and k's turned by RoPE
+    at the step's position (the first `turned` values of a head, in pairs), q into q, the keys and values into the cache
+    at the position as float16 pairs -> (q, the keys, the values), as bytes"""
+    words = np.frombuffer(bytes(params), dtype=np.uint32)
+    q_rows, kv_rows, size, turned = (int(w) for w in words[6:10])
+    rows = int(words[0])
+    made = np.frombuffer(fused(norm, "write", weights, scales, x, params, norm_weight, np.zeros(rows, dtype=np.float32).tobytes()), dtype=np.float32).astype(np.float64)
+    return rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step)
+
+
+def rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step):
+    """write_pair's (shaders/fused.ts), of rows q, k and v one after the other: -> (q, the keys, the values) as bytes"""
+    pos = int(np.frombuffer(bytes(step), dtype=np.uint32)[1])
+    table = np.frombuffer(bytes(angles), dtype=np.float32).astype(np.float64)
+    half = size // 2
+    cos, sin = table[pos * size: pos * size + half], table[pos * size + half: pos * size + size]
+
+    def turn(rows):
+        out = rows.copy()
+        for at in range(0, len(rows), size):
+            for i in range(0, min(turned, size), 2):
+                c, s = cos[i // 2], sin[i // 2]
+                v0, v1 = rows[at + i], rows[at + i + 1]
+                out[at + i], out[at + i + 1] = v0 * c - v1 * s, v0 * s + v1 * c
+        return out
+
+    q = turn(made[:q_rows]).astype(np.float32)
+    k = turn(made[q_rows: q_rows + kv_rows])
+    v = made[q_rows + kv_rows: q_rows + 2 * kv_rows]
+    cache_k = np.frombuffer(bytes(keys), dtype=np.float16).copy()
+    cache_v = np.frombuffer(bytes(values), dtype=np.float16).copy()
+    cache_k[pos * kv_rows: (pos + 1) * kv_rows] = k.astype(np.float16)
+    cache_v[pos * kv_rows: (pos + 1) * kv_rows] = v.astype(np.float16)
+    return q.tobytes(), cache_k.tobytes(), cache_v.tobytes()
+
+
+def row_params(params):
+    """the fused matrices' Params: rows, words of a row, groups of a row, up's rows after gate's, eps, the norm's start"""
+    words = np.frombuffer(bytes(params), dtype=np.uint32)
+    return int(words[0]), int(words[1]), int(words[2]), int(words[3]), float(np.frombuffer(bytes(params), dtype=np.float32)[4]), int(words[5])
+
+
+def matrix(weights, scales, per_row, rows):
+    """rows of an int8 matrix with a float32 scale a group of 32, as float64 [rows][per_row * 32]"""
+    n = per_row * GROUP
+    w = np.frombuffer(bytes(weights), dtype=np.int8)[: rows * n].astype(np.float64).reshape(rows, n)
+    s = np.frombuffer(bytes(scales), dtype=np.float32)[: rows * per_row].astype(np.float64).reshape(rows, per_row)
+    return w * np.repeat(s, GROUP, axis=1)
+
+
+WINDOW = 64  # the State's recent tokens (shaders/run.ts's REPETITION_WINDOW, the CPU's)
+
+
+def sample(logits, state, chosen, randoms, settings):
+    """SAMPLE (shaders/sample.ts): the repetition penalty on the distinct tokens of the state's window, the presence
+    penalty on those of them sampled (both into the logits, in place), then the token: the largest logit at temperature
+    0, else the CPU's draw (engine.sampler's NumpySampler, with the run's random number of this step); into chosen and
+    the state, as finish() writes them (a stop token: stopped). A step whose logits hold a NaN or +inf, or none over
+    -3.4e38: not_finite and stopped, nothing chosen. -> (the logits, the state, chosen), as bytes"""
+    from engine.sampler import NumpySampler, Sampling
+    words = np.frombuffer(bytes(state), dtype=np.uint32).copy()
+    out = np.frombuffer(bytes(logits), dtype=np.float32).copy()
+    picks = np.frombuffer(bytes(chosen), dtype=np.uint32).copy()
+    unit = np.frombuffer(bytes(settings), dtype=np.uint32)
+    reals = np.frombuffer(bytes(settings), dtype=np.float32)
+    vocab, stops, top_k = int(unit[0]), int(unit[1]), int(unit[2])
+    presence, temperature, topp, penalty, min_p = (float(reals[i]) for i in range(3, 8))
+    stop = set(int(t) for t in unit[8: 8 + stops])
+    if words[7]:
+        return out.tobytes(), words.tobytes(), picks.tobytes()
+    history, written = int(words[6]), int(words[2])
+    recent = words[8: 8 + WINDOW]
+    window, latest = min(history, WINDOW), min(written, WINDOW)
+    for t in range(window):
+        token = int(recent[t])
+        if token in (int(r) for r in recent[:t]) or token >= vocab:
+            continue
+        value = out[token]
+        if penalty != 1.0:
+            value = value / np.float32(penalty) if value > 0 else value * np.float32(penalty)
+        if any(int(recent[j]) == token and (history - 1 - j) % WINDOW < latest for j in range(window)):
+            value = value - np.float32(presence)
+        out[token] = value
+    view = out[:vocab]
+    if np.isnan(view).any() or np.isposinf(view).any() or not (view > -3.4e38).any():
+        words[3], words[7] = 1, 1
+        return out.tobytes(), words.tobytes(), picks.tobytes()
+    if temperature == 0.0:
+        token = int(np.argmax(view))
+    else:
+        r = float(np.frombuffer(bytes(randoms), dtype=np.float32)[int(words[5])])
+
+        class Given:
+            def random(self):
+                return r
+        draw = NumpySampler().drawing(Sampling(temperature=temperature, topp=topp, top_k=top_k, min_p=min_p), Given())
+        token = draw(view.copy(), [], [])
+    at = int(words[5])
+    picks[at] = token
+    words[5] = at + 1
+    if token in stop:
+        words[7] = 1
+    else:
+        words[4] = token
+        words[1] += 1
+        words[8 + history % WINDOW] = token
+        words[6] = history + 1
+        words[2] += 1
+    return out.tobytes(), words.tobytes(), picks.tobytes()
