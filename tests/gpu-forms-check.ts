@@ -1,8 +1,8 @@
-// tests/gpu-forms-check.mjs (T.465.1): the model's GPU worker choosing a prompt's forms (src/runtime/gpu/forms.ts), on a
+// tests/gpu-forms-check.ts (T.465.1): the model's GPU worker choosing a prompt's forms (src/runtime/gpu/forms.ts), on a
 // device that runs no shader (tests/fakes/webgpu.mjs) and answers the checks' dispatches as the shaders would
-// (tests/fakes/gpu-answers.mjs, whose arithmetic is tests/gpu_answers.py's in NumPy). forms.ts takes a candidate only once its output on made-up numbers is JavaScript's;
+// (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's in NumPy). forms.ts takes a candidate only once its output on made-up numbers is JavaScript's;
 // nothing ran it without a GPU (T.465: five breaks of a review passed the light suite), as nothing wrote the answers.
-// A made-up Llama (tests/fakes/gpu-plans.mjs) on two devices (none of shader-f16 and subgroups, and both), packed
+// A made-up Llama (tests/fakes/gpu-plans.ts) on two devices (none of shader-f16 and subgroups, and both), packed
 // int8 dot both times, each a fallback adapter (a pair of one pass times a form there: the timing is not what is held):
 //   - chooseAttention(): the first option of the device is checked and taken (its record m.forms, with nothing tried yet);
 //   - chooseMatrices(): every form the device makes is checked right (none "wrong"), the right ones timed, one taken;
@@ -11,12 +11,12 @@
 //     one of fifty codes "not quantize_x's" (a packed form: the float ones read no codes); an answer that leaves y as it was is wrong too.
 // Not held here: the tiles' workgroups (an answer writes the whole output whatever was dispatched: CI's gpu-check holds
 // those), ternary and llama.cpp's blocks (T.465.2), a token's forms (T.465.3, T.465.4).
-//   node tests/gpu-forms-check.mjs
+//   node tests/gpu-forms-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
 import { standIn } from "./fakes/webgpu.mjs";
-import { MODELS, planned } from "./fakes/gpu-plans.mjs";
-import { gpuAnswers } from "./fakes/gpu-answers.mjs";
+import { MODELS, planned } from "./fakes/gpu-plans.ts";
+import { gpuAnswers } from "./fakes/gpu-answers.ts";
 
 // (the worker's global, as a worker has it)
 globalThis.self = globalThis;
@@ -51,18 +51,23 @@ async function opened({ features = [], spoil = {} } = {}) {
   for (const half of [false, true]) {
     for (const subgroups of [false, true]) {
       const shape = flashShape({ headSize: plan.headSize, half, subgroups, ...limits });
-      if (!shape.none) answers.add(ENGINE.flashTile(shape), spoil.attention ?? flashTile(plan.headSize));
+      // (spoil.halves: the f16 or subgroups texts alone, the device's first option)
+      if (!shape.none) answers.add(ENGINE.flashTile(shape), ((half || subgroups) && spoil.halves) || spoil.attention || flashTile(plan.headSize));
     }
   }
   answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
-  for (const form of devicePromptForms(device, m.own)) answers.add(form.code, spoil.form ?? tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8" }));
+  // (spoil.form: a maker of each form's model, given the right one)
+  for (const form of devicePromptForms(device, m.own)) {
+    const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
+    answers.add(form.code, spoil.form ? spoil.form(right) : right);
+  }
   return { m, answers };
 }
 // (the models, for the cases that spoil one: the same Pyodide as every answerer's)
 const { flashTile, quantize, tiled } = await gpuAnswers();
 // a model off by a little where spoiled() says, after the right one wrote
-const off = (model, spoiled) => (entries) => {
-  model(entries);
+const off = (model, spoiled) => (entries, x, y) => {
+  model(entries, x, y);
   spoiled(entries);
 };
 const output = (entries, binding) => {
@@ -97,14 +102,11 @@ for (const features of [[], ["shader-f16", "subgroups"]]) {
 }
 {
   // a form off in one row of y
-  const { m } = await opened();
-  await forms_.chooseAttention(m);
-  const [form] = devicePromptForms(m.device, m.own).filter(({ none }) => !none);
-  const { m: spoilt } = await opened({ spoil: { form: off(tiled({ packed: form.packed, packing: "int8" }), (entries) => { output(entries, 3)[7] *= 1.01; }) } });
+  const { m: spoilt } = await opened({ spoil: { form: (right) => off(right, (entries) => { output(entries, 3)[7] *= 1.01; }) } });
   await forms_.chooseAttention(spoilt);
   await assert.rejects(forms_.chooseMatrices(spoilt), /no tiled shader is right on this GPU \(.*: wrong: products .* from JavaScript's/, "a form off in one row");
   // y left as it was: the product never written
-  const { m: idle } = await opened({ spoil: { form: () => {} } });
+  const { m: idle } = await opened({ spoil: { form: () => () => {} } });
   await forms_.chooseAttention(idle);
   await assert.rejects(forms_.chooseMatrices(idle), /wrong: products/, "a form that writes nothing");
 }
@@ -124,4 +126,30 @@ for (const features of [[], ["shader-f16", "subgroups"]]) {
   assert.ok(!m.forms.form.packed, "a float form taken");
 }
 console.log("ok: each check bites: an attention, a form and a quantization a little off are refused, and a form that writes nothing");
+
+// and takes what is a little off inside its line (T.465.1's review: a line drawn too tight passed): the attention off by
+// 0.1% of the largest value in one head (its line 0.4%), a form's one row off by 3e-5 of itself (the float forms' line
+// 1e-4 of a row's size), the quantized codes off by one in one of 400 (1% of them may differ)
+{
+  const { m } = await opened({ spoil: { attention: off(flashTile(16), (entries) => { output(entries, 3)[16] += 0.004; }),
+    quantize: off(quantize, (entries) => {
+      const { resource } = entries.find((entry) => entry.binding === 1), buffer = resource.buffer ?? resource;
+      for (let i = 0; i < buffer.size; i += 400) buffer.data[i] = (buffer.data[i] + (buffer.data[i] < 128 ? -1 : 1)) & 255;
+    }) } });
+  await forms_.chooseAttention(m);
+  assert.equal(m.forms.attention.name, "llama.cpp flash attention tiles", "an attention inside its line");
+  await forms_.chooseMatrices(m);
+  assert.deepEqual(m.forms.tried.filter(({ none }) => none), [], "codes a little off, inside the line: every form right");
+  const { m: near } = await opened({ spoil: { form: (right) => off(right, (entries) => { output(entries, 3)[7] *= 1 + 3e-5; }) } });
+  await forms_.chooseAttention(near);
+  await forms_.chooseMatrices(near);
+  assert.deepEqual(near.forms.tried.filter(({ none }) => none), [], "a row a little off, inside the line: right");
+}
+// a device's first attention wrong: the next one taken (the f16 and subgroups texts off, the plain tiles right)
+{
+  const { m } = await opened({ features: ["shader-f16", "subgroups"], spoil: { halves: off(flashTile(16), (entries) => { output(entries, 3)[16] += 0.05; }) } });
+  await forms_.chooseAttention(m);
+  assert.equal(m.forms.attention.name, "llama.cpp flash attention tiles", "the plain tiles, after the f16 ones were wrong");
+}
+console.log("ok: what is a little off inside its line is taken, and a device's first attention wrong gives the next one");
 console.log("gpu-forms-check: ok");

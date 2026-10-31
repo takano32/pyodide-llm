@@ -33,7 +33,7 @@ const { upload, uploadLayers, uploadRest, tablesOn, routed } = await import(at("
 const block_ = await import(at("gpu/block.js"));
 const tokens_ = await import(at("gpu/tokens.js"));
 
-import { DIM, HIDDEN, HEAD, VOCAB, KV_DIM, LINEAR, MODELS, ALONE, planned } from "./fakes/gpu-plans.mjs";
+import { DIM, HIDDEN, HEAD, VOCAB, KV_DIM, LINEAR, MODELS, ALONE, planned } from "./fakes/gpu-plans.ts";
 
 const hash = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const random = (bytes) => Uint8Array.from({ length: bytes }, (_, i) => (i * 131 + 7 * (i >> 8) + 89) & 255);

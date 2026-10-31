@@ -1,7 +1,7 @@
-// tests/fakes/gpu-plans.mjs (T.465.1, moved out of tests/unchanged-gpusteps.mjs)
+// tests/fakes/gpu-plans.ts (T.465.1, moved out of tests/unchanged-gpusteps.mjs)
 // Made-up models as the model's GPU worker (src/runtime/gpu/) is handed them: a plan as forward/gpuside.ts hands one (a
 // Started) over a memory it lays out, small (dim 128, heads of 16). For the checks that run that worker's parts on
-// tests/fakes/webgpu.mjs: unchanged-gpusteps.mjs and gpu-forms-check.mjs.
+// tests/fakes/webgpu.mjs: unchanged-gpusteps.mjs and gpu-forms-check.ts.
 //
 //   const { plan, bytes, cache } = planned(MODELS.llama, direct)
 //
@@ -16,7 +16,11 @@ export const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 // go once the net's other tree is never one before 351fc6cb)
 /** A plan as forward/gpuside.ts hands one (a Started), over a memory it lays out: kinds, every layer's kind; more, the
  * model's own; matrices and vectors, [rows, n, of] and [size, of] by name. */
-export function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }, direct = false) {
+// a made-up model: every layer's kind, its matrices [rows, n, the kind of the layers it is in] and vectors [size, kind]
+// by name, and the plan's keys of its own (positions: a GPT-2's table of learned positions)
+type Made = { kinds: string[]; matrices: Record<string, (number | string | undefined)[]>; vectors: Record<string, (number | string | undefined)[]>;
+  more?: Record<string, unknown> & { positions?: boolean } };
+export function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }: Made, direct = false) {
   let next = 4096;
   const take = (bytes) => { const here = next; next += Math.ceil(bytes / 256) * 256; return here; };
   const count = (of) => (of ? kinds.filter((kind) => kind === of).length : kinds.length);
