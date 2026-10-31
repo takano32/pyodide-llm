@@ -55,8 +55,12 @@ class Sampling:
 
     def __post_init__(self):
         object.__setattr__(self, "top_k", int(self.top_k))
-        if self.top_k < 0 or not 0.0 <= self.min_p <= 1.0 or self.presence_penalty < 0.0:
-            raise ValueError("top_k and presence_penalty are 0 or more, and min_p is from 0 to 1.")
+        # (T.395: every one of them, and written so that a NaN fails each: a comparison with a NaN is false)
+        if not (self.temperature >= 0.0 and math.isfinite(self.temperature) and 0.0 <= self.topp <= 1.0
+                and self.repetition_penalty > 0.0 and math.isfinite(self.repetition_penalty) and self.top_k >= 0
+                and 0.0 <= self.min_p <= 1.0 and self.presence_penalty >= 0.0 and math.isfinite(self.presence_penalty)):
+            raise ValueError("temperature, top_k and presence_penalty are 0 or more, repetition_penalty is more than 0, "
+                             "and topp and min_p are from 0 to 1.")
 
     def beyond(self, known):
         """The settings a sampler that knows only those named would have to know as well, to draw as these say: the
