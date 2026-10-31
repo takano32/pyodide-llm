@@ -2,7 +2,7 @@
 // The engine's shaders answered for tests/fakes/webgpu.mjs's answer: a dispatch of a pipeline whose WGSL is named here
 // has its output written as that shader would write it, so that the model's GPU worker can choose its forms (gpu/forms.ts
 // checks each candidate's output before it takes it) on a device that runs no shader. For the checks that run those
-// parts: gpu-forms-check.ts. What a shader computes is tests/gpu_answers.py's, in NumPy (the owner's, 2026-10-31:
+// parts: gpu-forms-check.ts, gpu-tokens-check.ts. What a shader computes is tests/gpu_answers.py's, in NumPy (the owner's, 2026-10-31:
 // Python where it can be): this is the bridge alone, which reads a dispatch's bindings, hands their bytes to Python in
 // Pyodide and writes back what it returns.
 //
@@ -52,7 +52,7 @@ const pythonOf = () => (loaded ??= (async () => {
 
 // (T.465.3: a token's attention by parts, kept by its parts' buffer for the reduce that comes after: the process's, as
 // the one Pyodide is, so that a model of one answerer and the reduce of another meet)
-const reducing = new Map<ArrayBufferLike, Uint8Array>();
+const reducing = new Map<ArrayBufferLike, { out: Uint8Array; nwg: number; stats: number; size: number }>();
 
 export async function gpuAnswers() {
   const python = await pythonOf();
@@ -83,21 +83,30 @@ export async function gpuAnswers() {
       bound(entries, 3).set(out);
     },
     // T.465.3: a token's attention by llama.cpp's decode form (flashVec): q, the keys, the values, the parts, out, the params
-    // (heads, kv heads, scale, nwg, -, window), the step (1, the token's position), a workgroup for each head and part. The
+    // (heads, kv heads, scale, nwg, where the sums and largests start, window), the step (1, the token's position), a
+    // workgroup for each head and part, no more (T.465.3's review: those past the heads write into the parts' sums). The
     // token's output is the prompt's attention of one token (gpu_answers.py's flash_tile); with one part it goes to out,
-    // with more it is kept for the reduce (flashVecReduce: the parts, out, the params; a workgroup a head), which writes it
-    flashVec: (size: number): Model => (entries, x) => {
-      const [heads, kvHeads, , nwg, , window] = words(entries, 5), [, pos] = words(entries, 6);
-      if (x < heads * nwg) return;
-      const [out] = called("flash_tile", bound(entries, 0), bound(entries, 1), bound(entries, 2), heads, kvHeads, float(entries, 5, 2), window, 1, pos, size);
+    // with more it is kept for the reduce (flashVecReduce: the parts, out, the params; a workgroup a head), which writes
+    // it where the parts are that buffer, nwg and the sums' start as the decode had them, and the parts as large as nwg
+    // takes (T.465.3's review); a reduce of one part writes 0 (its parts were never written: no sum). ignoring: the window
+    // left out (a check's break: a form that reads every position)
+    flashVec: (size: number, { ignoring = false } = {}): Model => (entries, x) => {
+      const [heads, kvHeads, , nwg, stats, window] = words(entries, 5), [, pos] = words(entries, 6);
+      if (x !== heads * nwg) return;
+      const [out] = called("flash_tile", bound(entries, 0), bound(entries, 1), bound(entries, 2), heads, kvHeads, float(entries, 5, 2), ignoring ? 0 : window, 1, pos, size);
       if (nwg === 1) bound(entries, 4).set(out.subarray(0, bound(entries, 4).length));
-      else reducing.set(bound(entries, 3).buffer, out);
+      else reducing.set(bound(entries, 3).buffer, { out, nwg, stats, size });
     },
     flashVecReduce: ((entries, x) => {
-      const [heads] = words(entries, 2), kept = reducing.get(bound(entries, 0).buffer);
-      if (x < heads || !kept) return;
-      bound(entries, 1).set(kept.subarray(0, bound(entries, 1).length));
-      reducing.delete(bound(entries, 0).buffer);
+      const [heads, , , nwg, stats] = words(entries, 2), parts = bound(entries, 0), kept = reducing.get(parts.buffer);
+      if (x !== heads) return;
+      if (!kept) {
+        bound(entries, 1).fill(0);
+        return;
+      }
+      reducing.delete(parts.buffer);
+      if (nwg !== kept.nwg || stats !== kept.stats || stats !== heads * nwg * kept.size || parts.length < heads * nwg * (kept.size + 2) * 4) return;
+      bound(entries, 1).set(kept.out.subarray(0, bound(entries, 1).length));
     }) as Model,
     // QUANTIZE: x, its codes, their scales, the params (n, x's stride), the block (tokens)
     // (64 groups of 32 a workgroup across, a token a workgroup down)
