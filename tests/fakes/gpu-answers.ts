@@ -57,8 +57,11 @@ const reducing = new Map<ArrayBufferLike, { out: Uint8Array; nwg: number; stats:
 export async function gpuAnswers() {
   const python = await pythonOf();
   // what Python returns (bytes, or a tuple of them) as Uint8Arrays, and the proxies let go
+  // (T.465.6.5's review: None, which Pyodide hands back as undefined, is no result: an embedding's row outside its piece)
   const called = (name: string, ...args: unknown[]): Uint8Array[] => {
-    const result = python[name](...args), out = result.toJs();
+    const result = python[name](...args);
+    if (result === undefined || result === null) return [];
+    const out = result.toJs();
     result.destroy?.();
     return Array.isArray(out) ? out : [out];
   };

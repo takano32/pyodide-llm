@@ -21,8 +21,9 @@ export const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 type Made = { kinds: string[]; matrices: Record<string, (number | string | undefined)[]>; vectors: Record<string, (number | string | undefined)[]>;
   more?: Record<string, unknown> & { positions?: boolean } };
 export function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }: Made, direct = false) {
-  // (T.465.6.5: the widths of a model whose more says its own: the wide Llama's)
-  const dim = (more.dim as number | undefined) ?? DIM, hidden = (more.hidden as number | undefined) ?? HIDDEN;
+  // (T.465.6.5: the widths and the head of a model whose more says its own: the wide Llama's; T.465.6.5's review: RoPE's
+  // tables of its head, which a head of 16's overlapped)
+  const dim = (more.dim as number | undefined) ?? DIM, hidden = (more.hidden as number | undefined) ?? HIDDEN, head = (more.headSize as number | undefined) ?? HEAD;
   let next = 4096;
   const take = (bytes) => { const here = next; next += Math.ceil(bytes / 256) * 256; return here; };
   const count = (of) => (of ? kinds.filter((kind) => kind === of).length : kinds.length);
@@ -34,12 +35,12 @@ export function planned({ kinds, matrices, vectors, more: { positions, ...more }
     matrices: Object.fromEntries(Object.entries(matrices).map(([name, [rows, n, of]]) =>
       [name, { rows, n, packing: "int8", six: false, ternary: false, layers: Array.from({ length: count(of) }, () => [take(rows * n), take((rows * n / GROUP) * 4)]), ...(of ? { of } : {}) }])),
     vectors: Object.fromEntries(Object.entries(vectors).map(([name, [size, of]]) => [name, { at: take(count(of) * size * 4), size, ...(of ? { of } : {}) }])),
-    rows: take(BATCH * dim * 4), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4),
+    rows: take(BATCH * dim * 4), cos: take(CONTEXT * (head / 2) * 4), sin: take(CONTEXT * (head / 2) * 4),
     tokens: { classifier: { rows: VOCAB, n: dim, packing: "int8", six: false, ternary: false, at: [take(VOCAB * dim), take((VOCAB * dim / GROUP) * 4)] }, embedding: null, final: take(dim * 4),
       finalBias: 0, positions: 0, outliers: false, channels: [], ids: take(4096), most: MOST },
     staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, rotated: null, ...more,
   };
-  if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (HEAD / 2) * 4), localSin: take(CONTEXT * (HEAD / 2) * 4) });
+  if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (head / 2) * 4), localSin: take(CONTEXT * (head / 2) * 4) });
   if (positions) plan.tokens.positions = take(CONTEXT * dim * 4);
   if (plan.layerNorm) plan.tokens.finalBias = take(dim * 4);
   // (T.271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
