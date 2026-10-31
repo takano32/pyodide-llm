@@ -43,7 +43,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
   // one pass there, and every pass of a timing would be answered too)
-  const { device, adapter } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
+  const { device, adapter, lose } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
   for (const feature of features) device.features.add(feature);
   const { plan, bytes } = planned(MODELS[model]);
   plan.force = { fallback: true };
@@ -61,7 +61,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer)
   if (sane) plausible(plan, memory);
   // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text (the model's
-  // own forms: device.ts's ownOf, of the weights asked for)
+  // own forms: a copy of device.ts's ownOf, which is not exported, of the weights asked for)
   const own = weights === "ternary" ? "ternary" : Array.isArray(weights) ? "blocks" : null;
   const { subgroupMinSize: subgroupMin, subgroupMaxSize: subgroupMax } = adapter.info;
   const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
@@ -93,7 +93,8 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   answers.add(ENGINE.SAMPLE, spoil.sample ?? answers.sample);
   answers.add(ENGINE.RMSNORM, answers.rmsnorm);
   answers.add(ENGINE.NORM_QUANTIZE, spoil.normQuantize ?? answers.normQuantize);
-  // (the prompt's and a token's quantization: block.ts's pipeline of this text)
+  // (the prompt's and a token's quantization: block.ts's pipeline of this text. A rotated basis's ROTATE_QUANTIZE is not
+  // answered: no check here runs one, and its codes would stay 0)
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
   for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
     const right = answers.dp4a({ output });
@@ -109,7 +110,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
       answers.add(code, spoil.block ? spoil.block(block, packing) : block);
     }
   }
-  return { answers, device, adapter, plan, memory };
+  return { answers, device, adapter, plan, memory, lose };
 }
 export async function opened(options: Opened = {}) {
   const { answers, plan, memory } = await made(options);
