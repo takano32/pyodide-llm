@@ -55,6 +55,10 @@ def main(sources="src/python", out="src/runtime/built"):
         made = archive(sources, window, package)
         (out / name).write_bytes(made)
         print(f"{name}: {len(names(sources, window, package))} files, {len(made):,} bytes")
+    # (T.628.1: and the facts of the Python the TypeScript reads, beside the archives: a build's and the development
+    # server's start make them so, as `make kernels` does)
+    import python_facts
+    print(f"facts: {python_facts.write(out)}")
 
 
 if __name__ == "__main__":
