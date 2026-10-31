@@ -614,8 +614,8 @@ const aDevice = { cores: 8, memoryGB: 8, simd: true, relaxedSimd: true, memory64
 const aCpu = { backend: "SIMD kernels, int8, relaxed SIMD", shared: true, megabytes: 211, tokenMegabytes: 234, layerWeights: 121.6e6,
   rows: [1, 2, 4, 8].map((threads, i) => ({ threads, msPerToken: [11.2, 8.1, 7.6, 7.9][i], GBps: [18.9, 26.0, 27.8, 26.7][i], promptMsPerToken: [7.9, 4.6, 3.9, 4.4][i] })),
   ceilings: { read: [1, 2, 4, 8].map((threads, i) => ({ threads, GBps: [24.3, 31.2, 33.0, 32.1][i] })), dot: { GMACs: 44.2 }, dotRegisters: { GMACs: 61.5 }, fma: { GMACs: 17.3 } } };
-const MATVEC = ["widened (T134)", "packed int8 (T134)", "llama.cpp mul_mat_vec, 4 rows", "llama.cpp mul_mat_vec, 4 rows, subgroups", "llama.cpp MMVQ, 4 rows",
-  "llama.cpp MMVQ, 4 rows, subgroups", "ORT MatMulNBits, 8 rows", "ORT DP4A small M, 4 rows"];
+const MATVEC = ["widened (T134)", "packed int8 (T134)", "llama.cpp mul_mat_vec (engine), 4 rows", "llama.cpp mul_mat_vec (engine), 4 rows, subgroups", "llama.cpp MMVQ, 4 rows",
+  "llama.cpp MMVQ, 4 rows, subgroups", "ORT MatMulNBits, 8 rows", "ORT DP4A small M (engine), 4 rows"];
 const matVecChecks = ["widen", "packed", ...MATVEC.slice(2)];
 const aCheck = Object.fromEntries([...matVecChecks, "llama.cpp tiles 32×32, f16", "llama.cpp tiles 64×64, f16", "TF.js tiles 32×32, vec4", "ORT DP4A 64×64",
   "ORT DP4A 64×64, subgroups", "argmax", "a layer, llama.cpp, separate steps", "a layer, llama.cpp, fused (T150)", "a layer, DP4A, separate steps",
@@ -662,7 +662,7 @@ assert.deepEqual(aLines, [
   "Browser: SIMD yes, relaxed SIMD yes, 64-bit memory yes, cross-origin isolated yes, WebGPU in a worker yes, private file system yes",
   "CPU: 7.6 ms a token with 4 software threads, 27.8 GB/s (93% of reading alone); a prompt 31.2 G MAC/s with 4; ceilings: reading alone 33.0 GB/s, relaxed_dot 44.2 G MAC/s, f32 17.3 G MAC/s",
   "GPU: arm · valhall; packed int8 dot yes, shader-f16 yes, subgroups yes (16 wide); the check 20 of 20 ok",
-  "GPU, a token: llm-jp-3 150M 81.0 tok/s (0.50× the CPU); Llama 3.2 1B 54.4 tok/s (2.7× the CPU); the fastest matrix × vector of Llama 3.2 1B classifier ORT DP4A small M, 4 rows, 27.9 GB/s (58% of reading a buffer)",
+  "GPU, a token: llm-jp-3 150M 81.0 tok/s (0.50× the CPU); Llama 3.2 1B 54.4 tok/s (2.7× the CPU); the fastest matrix × vector of Llama 3.2 1B classifier ORT DP4A small M (engine), 4 rows, 27.9 GB/s (58% of reading a buffer)",
   "GPU, the fastest layer DP4A, fused (T175), 9 dispatches, 1.41 ms; generated 58.12 ms a token one a submission, 42.22 with 16 (1.4×)",
   "GPU, a prompt of 64 tokens: ORT DP4A 64×64, subgroups, 214 GFLOPS (4.3× the CPU)",
   "Storage: writes 283 MB/s in order, 233 far apart, 164 with a flush each piece; read back 2237 MB/s",
@@ -678,8 +678,8 @@ const withSteps = gpuSummary([...aSteps, stepsStep], aBaseline);
 assert.ok(withSteps.includes("GPU, where the time of a layer DP4A, fused (T175), the norms apart goes: 3.25 ms, the matrices alone 2.00, fusing adds 0.75, " +
   "the attention 0.25, the norms and quantizing 0.38, the chain -0.13"), withSteps.join("\n"));
 assert.ok(!gpuSummary([...aSteps, stepsStep], aBaseline, { lost: "gone" }).join().includes("where the time"));
-const wrongDp4a = gpuSummary(aSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: { ...aCheck, "ORT DP4A small M, 4 rows": { ok: false, worstRelative: 1 }, "ORT DP4A 64×64, subgroups": { ok: false, worstRelative: 1 } } } : s)), aBaseline);
-assert.ok(wrongDp4a[0].includes("the check 18 of 20 ok (ORT DP4A small M, 4 rows WRONG, ORT DP4A 64×64, subgroups WRONG)"), wrongDp4a[0]);
+const wrongDp4a = gpuSummary(aSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: { ...aCheck, "ORT DP4A small M (engine), 4 rows": { ok: false, worstRelative: 1 }, "ORT DP4A 64×64, subgroups": { ok: false, worstRelative: 1 } } } : s)), aBaseline);
+assert.ok(wrongDp4a[0].includes("the check 18 of 20 ok (ORT DP4A small M (engine), 4 rows WRONG, ORT DP4A 64×64, subgroups WRONG)"), wrongDp4a[0]);
 assert.ok(!wrongDp4a[1].includes("ORT DP4A small M") && !wrongDp4a[3].includes("ORT DP4A 64×64, subgroups"), wrongDp4a.join("\n"));
 // a GPU section with only its adapter and check (the fallback's), or with no check: no undefined, no NaN
 for (const lines of [gpuSummary(aSteps.slice(0, 2), {}), gpuSummary([{ name: "the adapter", result: {} }, { name: "the shaders against JavaScript", error: "lost" }], {}),

@@ -59,16 +59,17 @@ async function check(): Promise<Verdicts> {
   Object.assign(verdicts, await checkGeneration());
   return verdicts;
 }
-// T.149: every matrix × vector shader of its own (llama.cpp's and ONNX Runtime's) on 300 rows cut into chunks of 101 (a
-// workgroup's 4 or 8 rows and a part of them in each, and shape.first past 0), of widths 544 and 2080: 17 and 65 groups
-// of 32, a part of what llama.cpp's 64 groups a pass, ORT's 512 values a step and its DP4A's 32 groups a step take, and
-// 2080 more than one of them. x is 64 values longer than the width (a shader that takes the width from the buffer
+// T.149: every matrix × vector shader of its own (llama.cpp's and ONNX Runtime's) on 301 rows cut into chunks of 128 (a
+// workgroup's 4 or 8 rows and a part of them in the last, and shape.first past 0; T.624.2: the engine's texts bind y
+// from the chunk's first row on, which a binding takes on its alignment, 64 rows: it was 300 rows in chunks of 101),
+// of widths 544 and 2080: 17 and 65 groups of 32, a part of what llama.cpp's 64 groups a pass, ORT's 512 values a step
+// and its DP4A's 32 groups a step take, and 2080 more than one of them. x is 64 values longer than the width (a shader that takes the width from the buffer
 // reads them), and y holds a sentinel past the rows that must stay. The sums as checkTiled holds them: WGSL.TILED_LINE of
 // the sum of the |products| of the row (a wrong index or scale is off by about 1/sqrt(n) of it); the packed ones on the
 // vector quantized in JavaScript (as PACKED is checked), whose products are exact integers times the two scales
 const SENTINEL = 7.25;
 async function checkMatVec() {
-  const rows = 300, past = 16, verdicts: Verdicts = {};
+  const rows = 301, past = 16, verdicts: Verdicts = {};
   for (const shader of matVecShaders().filter((one) => one.code && !one.none)) {
     try {
       const kind = await kindOf(shader);
@@ -84,7 +85,7 @@ async function checkMatVec() {
         shared.device.queue.writeBuffer(io.y, 0, new Float32Array(rows + past).fill(SENTINEL));
         const owned: Owned[] = [];
         const got = await validated(async () => {
-          const m = matrix([rows, n], io, kind, { w, s }, { chunk: 101 });
+          const m = matrix([rows, n], io, kind, { w, s }, { chunk: 128 });
           owned.push(...m.owned);
           const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
           m.dispatches.forEach((d) => run(pass, d));

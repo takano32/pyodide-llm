@@ -27,9 +27,9 @@ import type { BlockPacking, Packing } from "./common.ts";
 const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write", "geglu"] as const;
 export type FusedInput = (typeof FUSED_INPUTS)[number];
 export type FusedOutput = (typeof FUSED_OUTPUTS)[number];
-// the rows a workgroup has, of the two forms a token's matrix takes: the model's worker dispatches by them, and
-// /benchmark/'s matrix × vector (matvec.ts) has the same. (T.391.4: here, so that this part reads nothing of matvec.ts,
-// which takes its lines of these two forms from this one)
+// the rows a workgroup has, of the two forms a token's matrix takes: the model's worker dispatches by them, and so does
+// /benchmark/, which runs these two texts (T.624.2) and matvec.ts's MMVQ form of the first. (T.391.4: here, so that
+// this part reads nothing of matvec.ts)
 export const MUL_MAT_VEC_ROWS = 4;  // llama.cpp's WEBGPU_MUL_MAT_VEC_LEGACY_Q_OUTPUTS_PER_WG
 export const ORT_DP4A_MATVEC_ROWS = 4;  // ORT's tile_size_n for DP4AMatMulNBitsSmallMProgram
 
@@ -190,9 +190,10 @@ fn main(@builtin(local_invocation_index) t: u32) {
 }`;
 // (T.391.4) mul_mat_vec's main() as far as the rows its workgroup has: the builtins (those of subgroups where the
 // text sums by them), the thread's number (thread_id), and the workgroup's first row (row_base), after leaving where
-// the dispatch's workgroups go past the rows. The text of this part's fusedMatVec and of matvec.ts's mulMatVec, which
-// go on from row_base each its own way; "@compute @workgroup_size(WG_SIZE)" stands before it in both (a maker of WGSL
-// is known by that line in its own source: tests/shader-makers.ts). params is either one's uniform (rows)
+// the dispatch's workgroups go past the rows. The text of this part's fusedMatVec and of matvec.ts's mulMatVec (the
+// MMVQ form alone since T.624.2), which go on from row_base each its own way; "@compute @workgroup_size(WG_SIZE)"
+// stands before it in both (a maker of WGSL is known by that line in its own source: tests/shader-makers.ts). params
+// is either one's uniform (rows)
 const mulMatVecMain = (subgroups: boolean): string => /* wgsl */ `fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(workgroup_id) wg_id: vec3<u32>,
@@ -534,20 +535,21 @@ const DP4A_WEIGHTS = {
 } satisfies Record<Packing, object>;
 // (a row for every packing, and no other: common.ts's Packing)
 export type FusedWeights = keyof typeof DP4A_WEIGHTS;
-// (T.391.4) ORT's loadSHMA of the DP4A form for small M, as this project has it (matvec.ts, above ortDp4aMatVec: a
-// scale of the vector a group of 32, loaded with a bound of its own): a thread's vec4<u32> of the quantized vector
-// into the workgroup's tile_A, and the scale of its group into scale_A. The text of this part's fusedDp4aMatVec and
-// of matvec.ts's ortDp4aMatVec; shape is the name each gives its uniform (words and perRow are read of it)
-const dp4aLoadVector = (shape: "params" | "uniforms"): string => /* wgsl */ `fn loadSHMA(kidx_v: u32, col: u32)
+// (T.391.4) ORT's loadSHMA of the DP4A form for small M, as this project has it (ORT's scale_A holds a scale for each
+// 128 of the vector, 8 a step: here one for each group of 32, 32 a step, loaded with a bound of its own, the tile's
+// bound being in 16s): a thread's vec4<u32> of the quantized vector into the workgroup's tile_A, and the scale of its
+// group into scale_A. (T.624.2: a maker of matvec.ts's ortDp4aMatVec's text too until /benchmark/ ran the engine's;
+// a text again, of fusedDp4aMatVec alone)
+const DP4A_LOAD_VECTOR = /* wgsl */ `fn loadSHMA(kidx_v: u32, col: u32)
 {
-    let K16 = ${shape}.words / 4u;
+    let K16 = params.words / 4u;
     let k_offset = kidx_v + col;
     if (k_offset >= K16) {
     return;
     }
 
     tile_A[col] = a[k_offset];
-    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < ${shape}.perRow)
+    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
     {
     // kidx_v - covers 16 values of k in input_a
     scale_A[col] = scales_a[kidx_v / 2u + col];
@@ -585,7 +587,7 @@ var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
 // what the reduction leaves: each row's sum (up's rows' after gate's), for the write
 var<workgroup> totals: array<f32, tile_size * MATRICES>;
 
-${dp4aLoadVector("params")}
+${DP4A_LOAD_VECTOR}
 
 @compute @workgroup_size(workgroup_size_x)
 fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
@@ -652,4 +654,4 @@ ${fusedWrite(output)}
 }`;
 };
 
-export { FUSED_INPUTS, FUSED_OUTPUTS, mulMatVecMain, dp4aLoadVector };
+export { FUSED_INPUTS, FUSED_OUTPUTS, mulMatVecMain };

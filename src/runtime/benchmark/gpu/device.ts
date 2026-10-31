@@ -34,14 +34,15 @@ export type Dispatch = [pipeline: GPUComputePipeline, group: GPUBindGroup | null
 // the vectors every matrix reads and writes (vectors())
 export type Vectors = { x: GPUBuffer; xq: GPUBuffer; xs: GPUBuffer; y: GPUBuffer; tokens: number; xStride: number; yStride: number; step: GPUBuffer };
 // what matrix() takes for a shader: one of the worker's own three, or a pipeline of a shader with code of its own
-export type Own = { pipeline: GPUComputePipeline; tile?: Tile; rows?: number; packed?: boolean };
+// (engine: the engine's text of a token's matrix, bound as the engine binds it: T.624.2)
+export type Own = { pipeline: GPUComputePipeline; tile?: Tile; rows?: number; packed?: boolean; engine?: boolean };
 export type Kind = "widen" | "packed" | "batched" | Own;
 // a shader of a prompt (promptShaders()) and of a matrix times a vector (matVecShaders()), as kindOf() takes either
-export type PromptShader = { name: string; kind: "batched"; code?: undefined; none?: undefined; tile?: undefined; packed?: undefined; half?: undefined; constants?: undefined } | (PromptForm & { kind?: undefined; rows?: undefined; check?: undefined });
-export type MatVecShader = { name: string; kind?: "widen" | "packed"; check?: string; none?: string; code?: string; rows?: number; packed?: boolean; constants?: undefined; tile?: undefined };
+export type PromptShader = { name: string; kind: "batched"; code?: undefined; none?: undefined; tile?: undefined; packed?: undefined; half?: undefined; constants?: undefined } | (PromptForm & { kind?: undefined; rows?: undefined; check?: undefined; engine?: undefined });
+export type MatVecShader = { name: string; kind?: "widen" | "packed"; check?: string; none?: string; code?: string; rows?: number; packed?: boolean; engine?: boolean; constants?: undefined; tile?: undefined };
 type Pipelines = { widen: GPUComputePipeline; packed: GPUComputePipeline | null; small: GPUComputePipeline; batched: GPUComputePipeline; argmax: GPUComputePipeline; empty: GPUComputePipeline };
 // the weights of a matrix on the GPU (placed()), and a matrix bound (matrix())
-export type Placed = { chunks: { w: GPUBuffer; s: GPUBuffer; shape: GPUBuffer; count: number }[]; owned: GPUBuffer[]; bytes: number };
+export type Placed = { chunks: { w: GPUBuffer; s: GPUBuffer; shape: GPUBuffer; first: number; count: number }[]; owned: GPUBuffer[]; bytes: number };
 export type Bound = { dispatches: Dispatch[]; owned: GPUBuffer[]; bytes: number };
 // what is destroyed after a scope (a buffer, or a query set by its own destroy)
 export type Owned = { destroy(): void };
@@ -177,7 +178,10 @@ function promptShaders(): PromptShader[] {
 }
 // T.149: the shaders of a matrix times one vector (a generated token's): T.134's two, then llama.cpp's mul_mat_vec (its
 // float form and its MMVQ one, each with the workgroup's reduction and, where subgroups are, with subgroupAdd) and
-// ONNX Runtime's MatMulNBits and DP4A for small M (shaders.ts). rows: the rows a workgroup takes
+// ONNX Runtime's MatMulNBits and DP4A for small M (shaders.ts). rows: the rows a workgroup takes. T.624.2: the float
+// mul_mat_vec and ORT's DP4A are the engine's own texts, what a generated token's matrices run (fusedMatVec and
+// fusedDp4aMatVec with the output "write", as the classifier's), named "(engine)": their numbers are not those of the
+// benchmark's copies before (the owner, 2026-10-31)
 function matVecShaders(): MatVecShader[] {
   const noPacked = shared.packed ? undefined : "no packed int8 dot here";
   const subgroups = shared.device.features.has("subgroups");
@@ -185,16 +189,19 @@ function matVecShaders(): MatVecShader[] {
   // check: the name of the shader's verdict in check() (T.134's two are checked on their own there)
   const shaders: MatVecShader[] = [{ name: "widened (T134)", kind: "widen", check: "widen" },
     { name: "packed int8 (T134)", kind: "packed", check: "packed", none: noPacked }];
-  for (const [form, isPacked] of [["mul_mat_vec", false], ["MMVQ", true]] satisfies [string, boolean][]) {
+  for (const isPacked of [false, true]) {
     for (const withSubgroups of subgroups ? [false, true] : [false]) {
-      shaders.push({ name: `llama.cpp ${form}, ${shared.WGSL.MUL_MAT_VEC_ROWS} rows${withSubgroups ? ", subgroups" : ""}`,
-        code: shared.WGSL.mulMatVec({ packed: isPacked, subgroups: withSubgroups }), rows: shared.WGSL.MUL_MAT_VEC_ROWS, packed: isPacked,
-        none: (isPacked && noPacked) || (withSubgroups && noSubgroupId) || undefined });
+      const rows = shared.WGSL.MUL_MAT_VEC_ROWS, which = `${rows} rows${withSubgroups ? ", subgroups" : ""}`;
+      shaders.push(isPacked
+        ? { name: `llama.cpp MMVQ, ${which}`, code: shared.WGSL.mulMatVec({ subgroups: withSubgroups }), rows, packed: true,
+            none: noPacked || (withSubgroups && noSubgroupId) || undefined }
+        : { name: `llama.cpp mul_mat_vec (engine), ${which}`, code: shared.WGSL.fusedMatVec({ input: "plain", output: "write", subgroups: withSubgroups }),
+            rows, packed: false, engine: true, none: (withSubgroups && noSubgroupId) || undefined });
     }
   }
   shaders.push({ name: `ORT MatMulNBits, ${shared.WGSL.ORT_MATVEC_ROWS} rows`, code: shared.WGSL.ortMatVec, rows: shared.WGSL.ORT_MATVEC_ROWS, packed: false });
-  shaders.push({ name: `ORT DP4A small M, ${shared.WGSL.ORT_DP4A_MATVEC_ROWS} rows`, code: shared.WGSL.ortDp4aMatVec,
-    rows: shared.WGSL.ORT_DP4A_MATVEC_ROWS, packed: true, none: noPacked });
+  shaders.push({ name: `ORT DP4A small M (engine), ${shared.WGSL.ORT_DP4A_MATVEC_ROWS} rows`, code: shared.WGSL.fusedDp4aMatVec({ output: "write", weights: "int8" }),
+    rows: shared.WGSL.ORT_DP4A_MATVEC_ROWS, packed: true, engine: true, none: noPacked });
   return shaders;
 }
 // what matrix() takes for a shader: "widen", "packed", "batched", or { pipeline, tile or rows, packed } of one with code
@@ -205,7 +212,7 @@ async function kindOf(shader: PromptShader | MatVecShader): Promise<Kind | undef
     tiledPipelines.set(shader.name, validated(() => shared.device.createComputePipelineAsync({ layout: "auto",
       compute: { module: shared.device.createShaderModule({ code: shader.code! }), entryPoint: "main", constants: shader.constants } })));
   }
-  return { pipeline: await tiledPipelines.get(shader.name)!, tile: shader.tile, rows: shader.rows, packed: shader.packed };
+  return { pipeline: await tiledPipelines.get(shader.name)!, tile: shader.tile, rows: shader.rows, packed: shader.packed, engine: shader.engine };
 }
 // the activations of the packed tiled shaders, quantized on the GPU (shaders/steps.ts's QUANTIZE): the first n values of
 // each of io's tokens, from io.x into io.xq and io.xs. One thread a group of 32, the tokens along y
@@ -229,14 +236,17 @@ function matrix([rows, n]: Shape, io: Vectors, kind: Kind = "widen", data?: Weig
   return { ...bound(held, io, kind), owned: held.owned, bytes: held.bytes };
 }
 // the weights of a matrix on the GPU, in chunks of rows that each fit a binding, with each chunk's Shape (T.149: placed
-// once and bound by every shader of a matrix × vector)
+// once and bound by every shader of a matrix × vector). T.624.2: a chunk's first row is a multiple of CHUNK_ROWS (the
+// engine's texts write their rows from y's binding on, which starts on a binding's alignment, 256 bytes at most)
+const CHUNK_ROWS = 64;
 function placed([rows, n]: Shape, io: Vectors, data?: Weights, { add = false, chunk }: { add?: boolean; chunk?: number } = {}): Placed {
   const words = n / 4, perRow = n / shared.GROUP, rowBytes = n;
-  const most = chunk ?? Math.max(1, Math.floor(Math.min(shared.device.limits.maxStorageBufferBindingSize, shared.device.limits.maxBufferSize) / rowBytes));
+  const fit = Math.floor(Math.min(shared.device.limits.maxStorageBufferBindingSize, shared.device.limits.maxBufferSize) / rowBytes);
+  const most = chunk ?? (fit >= rows ? rows : Math.max(CHUNK_ROWS, Math.floor(fit / CHUNK_ROWS) * CHUNK_ROWS));
   const chunks: Placed["chunks"] = [], owned: GPUBuffer[] = [];
   for (let first = 0; first < rows; first += most) {
     const count = Math.min(most, rows - first);
-    const w = buffer(count * rowBytes), s = buffer(count * perRow * 4), shape = buffer(32, UNIFORM | COPY_DST);
+    const w = buffer(count * rowBytes), s = buffer(count * perRow * 4), shape = buffer(48, UNIFORM | COPY_DST);
     owned.push(w, s, shape);
     if (data) {
       shared.device.queue.writeBuffer(w, 0, data.w, first * rowBytes, count * rowBytes);
@@ -245,24 +255,32 @@ function placed([rows, n]: Shape, io: Vectors, data?: Weights, { add = false, ch
       fill(w, count * rowBytes);
       shared.device.queue.writeBuffer(s, 0, floats(count * perRow, 0.002));
     }
-    // the batched and tiled shaders' shape goes on with the strides of the tokens and "add", the others read four
-    shared.device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.xStride ?? 0, io.yStride ?? 0, add ? 1 : 0, 0]));
-    chunks.push({ w, s, shape, count });
+    // the batched and tiled shaders' shape goes on with the strides of the tokens and "add", the others read four; the
+    // engine's Params (T.624.2) is 48 bytes, of which its "write" reads the first three (rows, words, perRow)
+    shared.device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.xStride ?? 0, io.yStride ?? 0, add ? 1 : 0, 0, 0, 0, 0, 0]));
+    chunks.push({ w, s, shape, first, count });
   }
   return { chunks, owned, bytes: matrixBytes([rows, n]) };
 }
 // the dispatches that multiply placed weights by x into y for a shader: [pipeline, bind group, workgroups x, y, z] each
 function bound({ chunks }: Pick<Placed, "chunks">, io: Vectors, kind: Kind = "widen"): { dispatches: Dispatch[] } {
-  const own = typeof kind === "object", tiled = own && Boolean(kind.tile), matVec = own && Boolean(kind.rows);
+  const own = typeof kind === "object", tiled = own && Boolean(kind.tile), matVec = own && Boolean(kind.rows), engine = own && Boolean(kind.engine);
   const { widen, packed: packedPipeline, batched } = pipelinesFor();
   const pipeline = (own ? kind.pipeline : { widen, packed: packedPipeline, batched }[kind])!;
   const quantized = own ? kind.packed : kind === "packed";
   const dispatches: Dispatch[] = [];
-  for (const { w, s, shape, count } of chunks) {
+  for (const { w, s, shape, first, count } of chunks) {
     const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: w } }, { binding: 1, resource: { buffer: s } },
-      { binding: 2, resource: { buffer: quantized ? io.xq : io.x } }, { binding: 3, resource: { buffer: io.y } },
-      { binding: 4, resource: { buffer: shape } }];
-    if (kind === "packed" || (matVec && quantized)) entries.push({ binding: 5, resource: { buffer: io.xs } });
+      { binding: 2, resource: { buffer: quantized ? io.xq : io.x } }];
+    if (engine) {
+      // T.624.2: the engine's bindings (fusedMatVec's and fusedDp4aMatVec's): 3 the Params, 4 the vector's scales (DP4A),
+      // 5 the output, from the chunk's first row on (the engine writes rows from 0 of its binding: no first)
+      entries.push({ binding: 3, resource: { buffer: shape } }, { binding: 5, resource: { buffer: io.y, offset: first * 4, size: count * 4 } });
+      if (quantized) entries.push({ binding: 4, resource: { buffer: io.xs } });
+    } else {
+      entries.push({ binding: 3, resource: { buffer: io.y } }, { binding: 4, resource: { buffer: shape } });
+    }
+    if (kind === "packed" || (matVec && quantized && !engine)) entries.push({ binding: 5, resource: { buffer: io.xs } });
     if (kind === "batched" || tiled) entries.push({ binding: 5, resource: { buffer: io.step } });
     if (tiled && quantized) entries.push({ binding: 6, resource: { buffer: io.xs } });
     const group = shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
