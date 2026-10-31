@@ -292,10 +292,12 @@ const tenth = (model, at) => (entries, x, y) => {
   }
 }
 // (SwiGLU of z and the delta rule's output, 10% off: the float forms' line sees it in the stream, 8e-3 of its change
-// against 2e-3; the DP4A forms', 2e-2, does not)
+// against 2e-3; the DP4A forms', 2e-2, mostly does not. The deploy of T.628.5: on a runner of CI the DP4A forms were
+// past their line too, and no form was taken: either is right, so long as the float form is wrong by its stream)
 {
   const m = await tokens({ model: "qwen35", spoil: { SWIGLU: tenth(swiglu, 0) } });
-  assert.match(Object.fromEntries(m.tokenForm.forms.map(({ name, none }) => [name, none]))[FLOAT] ?? "", /^wrong: the first layer's stream is/, "qwen35: SwiGLU off");
+  if (m.tokenForm) assert.match(Object.fromEntries(m.tokenForm.forms.map(({ name, none }) => [name, none]))[FLOAT] ?? "", /^wrong: the first layer's stream is/, "qwen35: SwiGLU off");
+  else assert.match(m.thrown ?? "", /no layer of a token is right on this GPU.*stream/s, "qwen35: SwiGLU off, every form wrong");
 }
 console.log("ok: an LFM2's convolution off or its rows not moved on, a Qwen3.5's delta rule's state, gates, convolution or rows off: no form right; SwiGLU off: a float form wrong");
 // T.465.6.5: a classifier with the final norm's outlier channels (T.92): an int8 one multiplied in floats on every form
