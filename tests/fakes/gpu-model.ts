@@ -33,7 +33,7 @@ const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 // of a token's attention by parts (vec) and of their reduce;
 // form and block: makers given the right one, and the block's type)
 type Answer = (entries: unknown[], x: number, y: number) => void;
-type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; headNorm?: Answer; normAdd?: Answer; bias?: Answer; fused?: (right: Answer, output: string) => Answer;
+type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; headNorm?: Answer; normAdd?: Answer; bias?: Answer; layerNorm?: Answer; gelu?: Answer; fused?: (right: Answer, output: string) => Answer;
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
 // (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
@@ -97,6 +97,9 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   answers.add(ENGINE.RMSNORM_ADD, spoil.normAdd ?? answers.rmsnorm({ add: true }));
   answers.add(ENGINE.ADD, spoil.bias ?? answers.bias);
   answers.add(ENGINE.TOKEN_ROPE, answers.tokenRope);
+  // (T.465.6.2: GPT-2's and GPT-NeoX's LayerNorms and GELU)
+  answers.add(ENGINE.LAYER_NORM, spoil.layerNorm ?? answers.layerNorm);
+  answers.add(ENGINE.GELU, spoil.gelu ?? answers.gelu);
   answers.add(ENGINE.NORM_QUANTIZE, spoil.normQuantize ?? answers.normQuantize);
   // (the prompt's and a token's quantization: block.ts's pipeline of this text. A rotated basis's ROTATE_QUANTIZE is not
   // answered: no check here runs one, and its codes would stay 0)

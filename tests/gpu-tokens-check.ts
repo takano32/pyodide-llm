@@ -17,8 +17,9 @@
 //     logits; off inside the line is right.
 //   - T.465.6.1: a Qwen3's and a Gemma 3's token (biases, the norms of the heads and RoPE apart; GEGLU, the norms behind,
 //     a window and a local layer's RoPE): every form right and every dispatch answered (answers.missed), and a head's
-//     norm, a bias or a norm behind off is wrong.
-// Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6.2 on).
+//     norm, a bias or a norm behind off is wrong. T.465.6.2: a GPT-2's and a GPT-NeoX's (LayerNorms with their biases,
+//     GELU, learned positions, the parallel residual) the same, and a LayerNorm or a GELU off is wrong.
+// Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6.3 on).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
@@ -28,7 +29,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
 const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
-const { flashVec, sample, embed, normQuantize, rmsnorm, bias } = await gpuAnswers();
+const { flashVec, sample, embed, normQuantize, rmsnorm, bias, layerNorm, gelu } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
 const off = (model, spoiled) => (entries, x, y) => {
@@ -110,7 +111,7 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
 // T.465.6.1: a Qwen3 (biases of q, k and v, norms of the heads: q, k and v written, then ADD, HEAD_NORM and TOKEN_ROPE)
 // and a Gemma 3 (GEGLU, the norms behind the attention and the FFN, a window and a local layer's own RoPE): every form
 // right, every dispatch of theirs answered
-for (const model of ["llama", "qwen3", "gemma3"]) {
+for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox"]) {
   const { m, answers } = await (async () => {
     const opening = await opened({ model, sane: true });
     await forms_.chooseAttention(opening.m);
@@ -122,7 +123,8 @@ for (const model of ["llama", "qwen3", "gemma3"]) {
   assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], `${model}: no form wrong`);
   assert.deepEqual(answers.missed, [], `${model}: every dispatch answered`);
   if (model === "llama") continue;
-  console.log(`ok: a ${model === "qwen3" ? "Qwen3" : "Gemma 3"}'s token: ${m.tokenForm.forms.map(({ name }) => name).join(", ")} checked right, every dispatch answered`);
+  const said = { qwen3: "Qwen3", gemma3: "Gemma 3", gpt2: "GPT-2", neox: "GPT-NeoX" }[model];
+  console.log(`ok: a ${said}'s token: ${m.tokenForm.forms.map(({ name }) => name).join(", ")} checked right, every dispatch answered`);
 }
 {
   // a Qwen3's head norm off in one value, a bias off, a Gemma 3's norm behind off: the forms wrong
@@ -138,11 +140,18 @@ for (const model of ["llama", "qwen3", "gemma3"]) {
     out[i] += share * peak(out);
   };
   for (const [model, spoil, what] of [["qwen3", { headNorm: bump(rmsnorm({ inPlace: true }), 0, 33) }, "a head's norm"], ["qwen3", { bias: bump(bias, 0, 33) }, "a bias"],
-    ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2, 1, 0.2) }, "a norm behind"]]) {
+    ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2, 1, 0.2) }, "a norm behind"],
+    // (T.465.6.2: a GPT-2's LayerNorm off in one value, a GPT-NeoX's GELU)
+    ["gpt2", { layerNorm: bump(layerNorm, 3, 1, 0.2) }, "a LayerNorm"], ["neox", { gelu: (entries, x, y) => {
+      // (the whole of it 10% off: one value of the 256 the down projection reads stayed under the DP4A forms' line)
+      gelu(entries, x, y);
+      const r = entries.find((entry) => entry.binding === 0).resource, buffer = r.buffer ?? r;
+      new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4).forEach((v, i, all) => { all[i] = v * 1.1; });
+    } }, "a GELU"]]) {
     const m = await tokens({ model, spoil });
     assert.match(m.thrown ?? "", /no layer of a token is right on this GPU/, `${model}: ${what} off`);
   }
-  console.log("ok: a Qwen3's head norm or bias off, a Gemma 3's norm behind off: no form right");
+  console.log("ok: a Qwen3's head norm or bias off, a Gemma 3's norm behind, a GPT-2's LayerNorm, a GPT-NeoX's GELU: no form right");
 }
 // each check bites
 {
