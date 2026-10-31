@@ -115,6 +115,12 @@ export async function gpuAnswers() {
       const [row] = called("embed", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows);
       if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
     }) as Model,
+    // (T.465.6.3) EMBED_TERNARY: as EMBED, of a ternary table
+    embedTernary: ((entries) => {
+      const [n, first, rows] = words(entries, 4);
+      const [row] = called("embed_ternary", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows);
+      if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
+    }) as Model,
     // fusedMatVec ({ norm, output }): the weights, their scales, x, the Params, the norm's weight (norm), then dst, or (rope)
     // q, the keys, the values, the angles and the step; a workgroup for every 4 rows (MUL_MAT_VEC_ROWS)
     fusedMatVec: ({ norm, output }: { norm: boolean; output: string }): Model => (entries, x, y) => {
@@ -173,16 +179,19 @@ export async function gpuAnswers() {
       bound(entries, 2).set(codes.subarray(0, bound(entries, 2).length));
       bound(entries, 3).set(scales.subarray(0, bound(entries, 3).length));
     }) as Model,
-    dp4a: ({ output }: { output: string }): Model => (entries, x, y) => {
+    // (T.465.6.3: weights, the matrix's packing: int8, ternary, or a type of llama.cpp's blocks, whose scales are in the
+    // blocks: binding 1 holds the codebooks of an IQ type, and nothing of a K type)
+    dp4a: ({ output, weights: packing = "int8" }: { output: string; weights?: string }): Model => (entries, x, y) => {
       const [rows] = words(entries, 3);
       if (x * y < Math.ceil(rows / 4)) return;
+      const scales = has(entries, 1) ? bound(entries, 1) : undefined;
       if (output === "rope") {
-        const [q, keys, values] = called("dp4a_rope", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 4), bound(entries, 3),
-          bound(entries, 6), bound(entries, 7), bound(entries, 8), bound(entries, 9));
+        const [q, keys, values] = called("dp4a_rope", bound(entries, 0), scales, bound(entries, 2), bound(entries, 4), bound(entries, 3),
+          bound(entries, 6), bound(entries, 7), bound(entries, 8), bound(entries, 9), packing);
         for (const [binding, made] of [[5, q], [6, keys], [7, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
         return;
       }
-      const [out] = called("dp4a", output, bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 4), bound(entries, 3), bound(entries, 5));
+      const [out] = called("dp4a", output, bound(entries, 0), scales, bound(entries, 2), bound(entries, 4), bound(entries, 3), bound(entries, 5), packing);
       bound(entries, 5).set(out.subarray(0, bound(entries, 5).length));
     },
     // SAMPLE: the logits, two scratch buffers, the state, chosen, the random numbers, the settings; one workgroup

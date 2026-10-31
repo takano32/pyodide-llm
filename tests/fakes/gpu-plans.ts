@@ -76,6 +76,12 @@ export const MODELS = {
 // T.565: the Qwen3.5 with its linear layers' states in bundles of one place each (as the 27B's go past what a phone's
 // GPU binds)
 MODELS["qwen35 (states in bundles)"] = { ...MODELS.qwen35, more: { linear: LINEAR, force: { stateBytes: LINEAR.valueHeads * LINEAR.keyDim * LINEAR.valueDim * 4 } } };
+// T.465.6.3: a Llama of 8 heads on 4 of keys and values (q 128 rows, k and v 64 each), for ternary weights: a ternary row is
+// whole groups of 128 (o reads q's width: the 32 above are a quarter of one), and takes 4 bytes of scales (a float32 a
+// group), so that the 32 rows of q, k and v above end off where a device binds a buffer (every 256 bytes) and a token's
+// layers are not joined (m.weights.unjoined); a real model's are far more
+MODELS["llama (8 heads)"] = { kinds: ["attention", "attention"],
+  matrices: { wq: [128, DIM], wk: [64, DIM], wv: [64, DIM], wo: [DIM, 128], ...ffn }, vectors: norms, more: { heads: 8, kvHeads: 4 } };
 // (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
 export const ALONE = ["llama", "qwen35", "rotated", "qwen35 (states in bundles)"];
 
@@ -90,10 +96,21 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
     for (let i = 0; i < n; i++) view[i] = value(i);
   };
   const small = (i: number) => 0.01 + 0.01 * (((i * 2654435761) >>> 0) % 1000) / 1000;
-  for (const matrix of Object.values(plan.matrices) as { rows: number; n: number; layers: [number, number][] }[]) {
-    for (const [, scales] of matrix.layers) floats(scales, (matrix.rows * matrix.n) / GROUP, small);
+  // (T.465.6.3: a ternary matrix's scales are float16s, one a group of 128: 1/64 to 1/32, as halves)
+  const halves = (at: number, n: number) => {
+    const view = new Uint16Array(memory.buffer, at, n);
+    for (let i = 0; i < n; i++) view[i] = 0x2400 + (((i * 2654435761) >>> 0) % 1024);
+  };
+  for (const matrix of Object.values(plan.matrices) as { rows: number; n: number; packing: string; layers: [number, number][] }[]) {
+    for (const [, scales] of matrix.layers) {
+      if (matrix.packing === "ternary") halves(scales, (matrix.rows * matrix.n) / (4 * GROUP));
+      else floats(scales, (matrix.rows * matrix.n) / GROUP, small);
+    }
   }
-  for (const table of [plan.tokens.classifier, plan.tokens.embedding].filter(Boolean)) floats(table.at[1], (table.rows * table.n) / GROUP, small);
+  for (const table of [plan.tokens.classifier, plan.tokens.embedding].filter(Boolean)) {
+    if (table.packing === "ternary") halves(table.at[1], (table.rows * table.n) / (4 * GROUP));
+    else floats(table.at[1], (table.rows * table.n) / GROUP, small);
+  }
   // (each vector its own values, T.465.6.2's review: vectors of one size all alike let one be read for another, a norm's
   // weight for the other's or one bias for another, and the check passed)
   (Object.values(plan.vectors) as { at: number; size: number }[]).forEach((vector, k) => floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * ((i + 3 * k) % 7) + 0.02 * k));
