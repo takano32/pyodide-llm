@@ -36,12 +36,14 @@ type Answer = (entries: unknown[], x: number, y: number) => void;
 type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; fused?: (right: Answer, output: string) => Answer;
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
-export async function opened({ model = "llama", features = [], spoil = {}, weights = null, sane = false }: Opened = {}) {
+// (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
+// check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
+export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
   // one pass there, and every pass of a timing would be answered too)
-  const { device } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
+  const { device, adapter } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
   for (const feature of features) device.features.add(feature);
   const { plan, bytes } = planned(MODELS[model]);
   plan.force = { fallback: true };
@@ -58,13 +60,12 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
   }
   // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer)
   if (sane) plausible(plan, memory);
-  const m = await device_.openDevice(plan);
-  device_.handed(memory, plan);
-  await upload(m);
-  await block_.prepare(m);
-  // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text
+  // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text (the model's
+  // own forms: device.ts's ownOf, of the weights asked for)
+  const own = weights === "ternary" ? "ternary" : Array.isArray(weights) ? "blocks" : null;
+  const { subgroupMinSize: subgroupMin, subgroupMaxSize: subgroupMax } = adapter.info;
   const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
-    subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize };
+    subgroupMin, subgroupMax };
   for (const half of [false, true]) {
     for (const subgroups of [false, true]) {
       const shape = flashShape({ headSize: plan.headSize, half, subgroups, ...limits });
@@ -74,7 +75,7 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
   }
   // (T.465.3: a token's attention, llama.cpp's decode form with subgroups and without: tokenattention.ts's candidates)
   for (const subgroups of [false, true]) {
-    const shape = flashVecShape({ headSize: plan.headSize, subgroups, threads: limits.threads, subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize });
+    const shape = flashVecShape({ headSize: plan.headSize, subgroups, threads: limits.threads, subgroupMin, subgroupMax });
     if (shape.none) continue;
     answers.add(ENGINE.flashVec(shape), spoil.vec ?? answers.flashVec(plan.headSize));
     answers.add(ENGINE.flashVecReduce(shape), spoil.reduce ?? answers.flashVecReduce);
@@ -92,14 +93,14 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
   answers.add(ENGINE.SAMPLE, spoil.sample ?? answers.sample);
   answers.add(ENGINE.RMSNORM, answers.rmsnorm);
   answers.add(ENGINE.NORM_QUANTIZE, spoil.normQuantize ?? answers.normQuantize);
+  // (the prompt's and a token's quantization: block.ts's pipeline of this text)
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
   for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
     const right = answers.dp4a({ output });
     answers.add(ENGINE.fusedDp4aMatVec({ output, weights: "int8" }), spoil.dp4a ? spoil.dp4a(right, output) : right);
   }
-  answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
   // (spoil.form: a maker of each form's model, given the right one)
-  for (const form of devicePromptForms(device, m.own)) {
+  for (const form of devicePromptForms(device, own)) {
     const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
     answers.add(form.code, spoil.form ? spoil.form(right) : right);
     // (T.465.2: and each text of a type of llama.cpp's blocks beside it)
@@ -108,6 +109,14 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
       answers.add(code, spoil.block ? spoil.block(block, packing) : block);
     }
   }
+  return { answers, device, adapter, plan, memory };
+}
+export async function opened(options: Opened = {}) {
+  const { answers, plan, memory } = await made(options);
+  const m = await device_.openDevice(plan);
+  device_.handed(memory, plan);
+  await upload(m);
+  await block_.prepare(m);
   return { m, answers };
 }
 
