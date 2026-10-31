@@ -150,7 +150,8 @@ export async function gpuAnswers() {
       bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
     }) as Model,
     // TOKEN_ROPE: the rows (2), the matrix's Params (3), then q, the keys, the values, the angles and the step (5 to 9)
-    tokenRope: ((entries) => {
+    tokenRope: ((entries, x) => {
+      if (x < 1) return;
       const [q, keys, values] = called("token_rope", bound(entries, 2), bound(entries, 3), bound(entries, 6), bound(entries, 7), bound(entries, 8), bound(entries, 9));
       for (const [binding, made] of [[5, q], [6, keys], [7, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
     }) as Model,
