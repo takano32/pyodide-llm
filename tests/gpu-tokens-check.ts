@@ -35,7 +35,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
 const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
-const { flashVec, sample, embed, normQuantize, rmsnorm, bias, layerNorm, gelu, shortConv, convState, deltaNet } = await gpuAnswers();
+const { flashVec, sample, embed, normQuantize, rmsnorm, bias, layerNorm, gelu, shortConv, convState, deltaNet, deltaGates, deltaConv, deltaConvState, swiglu } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
 const off = (model, spoiled) => (entries, x, y) => {
@@ -267,22 +267,33 @@ for (const types of [["Q2_K", "Q4_K"], ["IQ2_XXS", "IQ2_XS"], ["IQ2_S", "IQ3_XXS
   assert.match(off.m.thrown ?? "", /no layer of a token is right on this GPU/, "a product of blocks off");
 }
 console.log("ok: llama.cpp's blocks: a token of each of the ten types checked right, every dispatch answered; a product off is wrong");
+// (a model's output at binding at, all of it 10% off)
+const tenth = (model, at) => (entries, x, y) => {
+  model(entries, x, y);
+  const r = entries.find((entry) => entry.binding === at).resource, buffer = r.buffer ?? r;
+  new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4).forEach((v, i, all) => { all[i] = v * 1.1; });
+};
 // T.465.6.4: an LFM2's convolution off (its output 10%), its rows not moved on (CONV_STATE writing nothing), a Qwen3.5's
-// delta rule's state off (10%): no form right
+// delta rule's state off (10%), its gates or its convolution off (10%), its rows not moved on: no form right
 {
-  const tenth = (model, at) => (entries, x, y) => {
-    model(entries, x, y);
-    const r = entries.find((entry) => entry.binding === at).resource, buffer = r.buffer ?? r;
-    new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4).forEach((v, i, all) => { all[i] = v * 1.1; });
-  };
+
   for (const [model, spoil, what, said] of [["lfm2", { SHORT_CONV: tenth(shortConv, 3) }, "a convolution off", /stream|keys/],
     ["lfm2", { CONV_STATE: () => {} }, "its rows not moved on", /rows are not moved on by one/],
     // (its state: a scale of its output the norm of the value heads after it takes out)
-    ["qwen35", { DELTA_NET: tenth(deltaNet, 2) }, "a delta rule's state off", /state/]]) {
+    ["qwen35", { DELTA_NET: tenth(deltaNet, 2) }, "a delta rule's state off", /state/],
+    // (T.465.6.4's review: and each other shader of the kinds: the gates, the convolution, its rows moved on, SwiGLU apart)
+    ["qwen35", { DELTA_GATES: tenth(deltaGates, 5) }, "the gates off", /state|stream/], ["qwen35", { DELTA_CONV: tenth(deltaConv, 3) }, "the convolution off", /state|stream/],
+    ["qwen35", { DELTA_CONV_STATE: () => {} }, "its rows not moved on", /rows/]]) {
     const m = await tokens({ model, spoil });
     assert.match(m.thrown ?? "", /no layer of a token is right on this GPU/, `${model}: ${what}`);
     assert.match(m.thrown, said, `${model}: ${what}, said`);
   }
 }
-console.log("ok: an LFM2's convolution off or its rows not moved on, a Qwen3.5's delta rule's state off: no form right");
+// (SwiGLU of z and the delta rule's output, 10% off: the float forms' line sees it in the stream, 8e-3 of its change
+// against 2e-3; the DP4A forms', 2e-2, does not)
+{
+  const m = await tokens({ model: "qwen35", spoil: { SWIGLU: tenth(swiglu, 0) } });
+  assert.match(Object.fromEntries(m.tokenForm.forms.map(({ name, none }) => [name, none]))[FLOAT] ?? "", /^wrong: the first layer's stream is/, "qwen35: SwiGLU off");
+}
+console.log("ok: an LFM2's convolution off or its rows not moved on, a Qwen3.5's delta rule's state, gates, convolution or rows off: no form right; SwiGLU off: a float form wrong");
 console.log("gpu-tokens-check: ok");
