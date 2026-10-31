@@ -33,7 +33,8 @@ const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 // of a token's attention by parts (vec) and of their reduce;
 // form and block: makers given the right one, and the block's type)
 type Answer = (entries: unknown[], x: number, y: number) => void;
-type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; fused?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
+type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; fused?: (right: Answer, output: string) => Answer;
+  dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
 export async function opened({ model = "llama", features = [], spoil = {}, weights = null, sane = false }: Opened = {}) {
   const answers = await gpuAnswers();
@@ -79,7 +80,7 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
     answers.add(ENGINE.flashVecReduce(shape), spoil.reduce ?? answers.flashVecReduce);
   }
   // (T.465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
-  answers.add(ENGINE.EMBED, answers.embed);
+  answers.add(ENGINE.EMBED, spoil.embed ?? answers.embed);
   for (const input of ["norm", "plain"]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
       for (const subgroups of [false, true]) {
@@ -90,9 +91,12 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
   }
   answers.add(ENGINE.SAMPLE, spoil.sample ?? answers.sample);
   answers.add(ENGINE.RMSNORM, answers.rmsnorm);
-  answers.add(ENGINE.NORM_QUANTIZE, answers.normQuantize);
+  answers.add(ENGINE.NORM_QUANTIZE, spoil.normQuantize ?? answers.normQuantize);
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
-  for (const output of ["rope", "add", "swiglu", "write", "geglu"]) answers.add(ENGINE.fusedDp4aMatVec({ output, weights: "int8" }), answers.dp4a({ output }));
+  for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
+    const right = answers.dp4a({ output });
+    answers.add(ENGINE.fusedDp4aMatVec({ output, weights: "int8" }), spoil.dp4a ? spoil.dp4a(right, output) : right);
+  }
   answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
   // (spoil.form: a maker of each form's model, given the right one)
   for (const form of devicePromptForms(device, m.own)) {

@@ -110,7 +110,8 @@ def embed(table, scales, state, n, first, rows):
     first (rows 0: the whole table) -> the row, float32, as bytes; None where the token is not in the piece"""
     token = int(np.frombuffer(bytes(state), dtype=np.uint32)[4])
     row = token - first
-    if rows and row >= rows:
+    # (a token before the piece: u32's row wraps past rows, and nothing is written; T.465.4's review)
+    if rows and not 0 <= row < rows:
         return None
     values = np.frombuffer(bytes(table), dtype=np.int8)[row * n: (row + 1) * n].astype(np.float32)
     d = np.frombuffer(bytes(scales), dtype=np.float32)[row * n // GROUP: (row + 1) * n // GROUP]

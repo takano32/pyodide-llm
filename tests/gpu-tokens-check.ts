@@ -25,7 +25,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
 const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
-const { flashVec, fusedMatVec, dp4a, sample, quantize } = await gpuAnswers();
+const { flashVec, sample, embed, normQuantize } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
 const off = (model, spoiled) => (entries, x, y) => {
@@ -132,9 +132,42 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
     if (temperature(entries)) buffer.data.set(before);
   } } });
   assert.match(unpenalized.thrown ?? "", /the penalized logits are .* from JavaScript's/, "the penalty left off");
+  // (T.465.4's review) the head's logits off in row 0 (the check reads rows 0 and 95 of a vocabulary of 96): by 1% in a
+  // float form's classifier (its line 1e-3), by 50% in a DP4A form's (2e-2); the DP4A forms' stream off by 30% in an add;
+  // a code of the norm and quantizer's turned; a key's exponent bit at position 1 turned; the embedding's row twice
+  const verdicts = (m) => Object.fromEntries(m.tokenForm?.forms?.map(({ name, none }) => [name, none]) ?? []);
+  const said = (m) => `${m.thrown ?? ""} ${JSON.stringify(verdicts(m))}`;
+  const headOff = await tokens({ spoil: { fused: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] *= 1.01; }) : right),
+    dp4a: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] *= 1.5; }) : right) } });
+  assert.match(said(headOff), /the logits are .* \(line 0\.001\)/, "a float classifier off in row 0");
+  assert.match(said(headOff), /the logits are .* \(line 0\.02\)/, "a DP4A classifier off in row 0");
+  const dp4aOff = await tokens({ spoil: { dp4a: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1.3; }) : right) } });
+  assert.match(verdicts(dp4aOff)[DP4A] ?? "", /^wrong: the first layer's stream is .* \(line 0\.02\)/, "a DP4A form's stream off");
+  assert.equal(verdicts(dp4aOff)[FLOAT], undefined, "the float forms right");
+  const codes = await tokens({ spoil: { normQuantize: (entries, x, y) => {
+    normQuantize(entries, x, y);
+    const r = entries.find((entry) => entry.binding === 2).resource, data = (r.buffer ?? r).data;
+    data[0] = (256 - data[0]) & 255;
+  } } });
+  assert.match(verdicts(codes)[DP4A] ?? "", /^wrong:/, "a code of the norm and quantizer's turned");
+  assert.equal(verdicts(codes)[`${DP4A}, the norms apart`], undefined, "the norms apart: right (no NORM_QUANTIZE)");
+  const keyBit = await tokens({ spoil: { fused: (right, output) => (output === "rope" ? (entries, x, y) => {
+    right(entries, x, y);
+    const r = entries.find((entry) => entry.binding === 6).resource, halves = new Uint16Array((r.buffer ?? r).data.buffer);
+    halves[16 + 3] ^= 0x0400;
+  } : right) } });
+  assert.match(verdicts(keyBit)[FLOAT] ?? "", /^wrong: the first layer's keys are/, "a key's exponent bit turned");
+  const twice = await tokens({ spoil: { embed: (entries, x, y) => {
+    embed(entries, x, y);
+    const r = entries.find((entry) => entry.binding === 3).resource, buffer = r.buffer ?? r;
+    const row = new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4);
+    for (let i = 0; i < row.length; i++) row[i] *= 2;
+  } } });
+  // (the norm takes the row's scale out: what is left is the residual's, which the float forms' line sees)
+  assert.match(verdicts(twice)[FLOAT] ?? "", /^wrong: the first layer's stream is/, "the embedding's row twice");
   // off by 1e-5 of a value: inside the line
   const near = await tokens({ spoil: { fused: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1 + 1e-5; }) : right) } });
   assert.deepEqual(near.tokenForm.forms.filter(({ none }) => none), [], "off inside the line: right");
 }
-console.log("ok: each check bites: a token's stream off in one value, a greedy token not the largest logit, a sampled token the walk does not reach, the penalty left off; off inside the line is right");
+console.log("ok: each check bites: a token's stream off in one value (float and DP4A each), a greedy token not the largest logit, a sampled token the walk does not reach, the penalty left off, the logits off in a row (float and DP4A), a code of the quantizer, a key's bit, the embedding twice (a float form); off inside the line is right");
 console.log("gpu-tokens-check: ok");
