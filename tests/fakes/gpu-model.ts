@@ -120,10 +120,10 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // answered: no check here runs one, and its codes would stay 0)
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
   // (T.465.6.3: and of ternary weights and of each type of llama.cpp's blocks)
-  for (const weights of ["int8", "ternary", ...BLOCK_PACKINGS]) {
+  for (const packing of ["int8", "ternary", ...BLOCK_PACKINGS]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
-      const right = answers.dp4a({ output, weights });
-      answers.add(ENGINE.fusedDp4aMatVec({ output, weights }), spoil.dp4a ? spoil.dp4a(right, output) : right);
+      const right = answers.dp4a({ output, weights: packing });
+      answers.add(ENGINE.fusedDp4aMatVec({ output, weights: packing }), spoil.dp4a ? spoil.dp4a(right, output) : right);
     }
   }
   // (spoil.form: a maker of each form's model, given the right one)

@@ -184,6 +184,9 @@ export async function gpuAnswers() {
     dp4a: ({ output, weights: packing = "int8" }: { output: string; weights?: string }): Model => (entries, x, y) => {
       const [rows] = words(entries, 3);
       if (x * y < Math.ceil(rows / 4)) return;
+      // (T.465.6.3's review: as tiled's, an IQ type's text binds the codebooks, a K type's nothing there)
+      if (packing.startsWith("IQ") && !(has(entries, 1) && bound(entries, 1).length >= CODEBOOK_BYTES)) throw new Error(`gpu-answers: ${packing}'s token text without the codebooks bound`);
+      if (packing.endsWith("_K") && has(entries, 1)) throw new Error(`gpu-answers: ${packing}'s token text binds something where none is`);
       const scales = has(entries, 1) ? bound(entries, 1) : undefined;
       if (output === "rope") {
         const [q, keys, values] = called("dp4a_rope", bound(entries, 0), scales, bound(entries, 2), bound(entries, 4), bound(entries, 3),
