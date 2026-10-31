@@ -66,6 +66,7 @@ export const LICENSES: Record<string, string> = {
   "line-corporation/japanese-large-lm-1.7b-instruction-sft": APACHE, "mmnga/line-corp-japanese-large-lm-1.7b-instruction-sft-gguf": APACHE,
   "line-corporation/japanese-large-lm-3.6b": APACHE, "line-corporation/japanese-large-lm-3.6b-instruction-sft": APACHE,
   // T.250 (2026-10-01): the 8B ones
+  "weblab-GENIAC/Tanuki-8B-dpo-v1.0": APACHE, "team-hatakeyama-phase2/Tanuki-8B-dpo-v1.0-GGUF": APACHE,
   "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
   "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
   "cyberagent/CAT-Thinking-8B": APACHE, "mmnga-o/CAT-Thinking-8B-gguf": APACHE,
