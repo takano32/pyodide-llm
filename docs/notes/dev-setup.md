@@ -9,7 +9,7 @@ CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手
 - **git と gh**: `gh auth login`（持ち主がする。push とワークフローの起動に使う）。git の `user.name` と `user.email` は持ち主のもの。
 - **SSH の push**: エージェントのソケットは keychain が持つ。シェルを開き直した後や、エージェントの転送が切れて `Permission denied (publickey)` になったら、`. ~/.keychain/*-sh` を読んでから push する（csh 用の `*-csh` は bash では読まない）。2026-10-24、持ち主。
 - **Node 24**: `.nvmrc` の版。nvm などで。`npm` が付いてくる。
-- **Python 3**（3.14 で確かめた）と NumPy・pytest・tokenizers・regex・sentencepiece・jinja2: `pip install numpy pytest tokenizers regex sentencepiece jinja2`（deploy.yml と同じ。jinja2 は T.397 から: 変換器が書式を読むのに使い、無ければ自前の読み手で動いて、jinja2 を見る試験は skip になる）。ディストリビューションのパッケージでもよい。Ubuntu では venv に（下）。
+- **Python 3**（3.14 で確かめた）と NumPy・pytest・tokenizers・regex・sentencepiece・jinja2: `pip install numpy pytest tokenizers regex sentencepiece jinja2`（deploy.yml と同じ。jinja2 は T.397 から: 変換器が書式を読むのに使い、無ければ自前の読み手で動いて、jinja2 を見る試験は skip になる）。ディストリビューションのパッケージでもよい。Ubuntu では venv に（下）。 **`npm run build`・`npm run dev` も system の `python3` に NumPy を求める**（T.628: ビルドの始めに `python_facts.py` がエンジンと変換器の部品を import して、TypeScript が Pyodide の前に読む事実を書き出す）。
 - **wget**: `make models` がモデルを取る。
 - **Claude Code**。
 
