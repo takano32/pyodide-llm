@@ -50,7 +50,7 @@ for (const [address, is] of [
   [`${SITE}models/tok512.bin`, false],
   [SITE, false],                                      // the page
   [`${SITE}coi.js`, false],
-  ["https://cdn.jsdelivr.net/pyodide/v314.0.7/full/_astro/pyodide.ts", false],  // another site, whatever its path
+  ["https://cdn.jsdelivr.net/pyodide/v314.0.7/full/_astro/pyodide.mjs", false],  // another site, whatever its path
   ["https://huggingface.co/a/b/resolve/main/_astro/model.safetensors", false],
   ["http://takano32.github.io/pyodide-llm/_astro/worker.js", false],             // another origin (the scheme)
   ["http://localhost:8080/src/runtime/built/converter.zip", false],              // a development server's source
@@ -111,7 +111,7 @@ const probe = (fetch, more = {}) => ({ fetch, here, ...more });
   assert.deepEqual(delays, [10000], "a HEAD that is not answered is given up after ten seconds");
   // what is not of this build is not asked for at all: a model's part that is 404 is a missing part, as it was
   asked.length = 0;
-  for (const address of [`${SITE}models/tiny-lm.bin.000`, "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.ts", "file:///x/src/runtime/worker.js", SITE]) {
+  for (const address of [`${SITE}models/tiny-lm.bin.000`, "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs", "file:///x/src/runtime/worker.js", SITE]) {
     assert.equal(await gone(address, probe(status(404))), false, `${address} is not this build's to be gone`);
   }
   assert.equal(asked.length, 0, "nothing was asked of a server for them");

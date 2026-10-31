@@ -111,5 +111,5 @@ export type Pyodide = {
   // Emscripten's module: its memory, which only grows
   _module?: { HEAPU8?: { length: number } };
 };
-// pyodide.ts, as the loader imports it
+// pyodide.mjs, as the loader imports it
 export type PyodideModule = { loadPyodide(): Promise<Pyodide> };
