@@ -12,6 +12,8 @@ import { pyProxies } from "./fakes/pyodide.mjs";
 import { tokenClock } from "./fakes/token-clock.mjs";
 import { workers, ended, endedThen, READY } from "./fakes/worker.mjs";
 import { standIn } from "./fakes/webgpu.mjs";
+import { gpuAnswers, flashTile, quantize, tiled } from "./fakes/gpu-answers.mjs";
+import { MODELS, planned } from "./fakes/gpu-plans.mjs";
 
 let passed = 0;
 const ok = (name) => { passed++; console.log(`ok: ${name}`); };
@@ -357,5 +359,41 @@ ok("Pyodide's proxies: each counts how it was let go and refuses to be read afte
   assert.deepEqual([dispatched[1].code, dispatched[2], dispatched.slice(3)], ["WGSL", group, [3, 2, 1]], "a dispatch with its pipeline's WGSL and its bind group");
 }
 ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within its buffer, counted in a typed array's elements; a copy, a clear, a pipeline, a dispatch and a submission written down");
+
+// ---- T.465.1: the shaders' answers, each on numbers whose answer is known; a dispatch answered where its WGSL is named
+{
+  const made = (size, value) => ({ size, data: new Uint8Array(value ?? size) });
+  const filled = (array) => ({ size: array.byteLength, data: new Uint8Array(array.buffer) });
+  const entries = (...buffers) => buffers.map((buffer, binding) => ({ binding, resource: buffer }));
+  const f = (buffer) => new Float32Array(buffer.data.buffer);
+  // the attention: one position of one head attended is its value; two of the same key are their values' mean
+  const half = (x) => ({ 1: 0x3c00, 2: 0x4000, 3: 0x4200, 0: 0 })[x];
+  const keys = filled(new Uint16Array([half(1), half(1)])), values = filled(new Uint16Array([half(2), half(3)])), out = made(8);
+  const params = new ArrayBuffer(16);
+  new Uint32Array(params).set([1, 1, 0, 0]);
+  new Float32Array(params, 8, 1)[0] = 1;
+  flashTile(1)(entries(filled(new Float32Array([1, 1])), keys, values, out, filled(new Uint8Array(params)), filled(new Uint32Array([2, 0, 0, 0]))));
+  assert.deepEqual([...f(out)], [2, 2.5], "a token at 0 attends its own value; at 1 the mean of two of the same key");
+  // the quantization: quantize_x's codes and scale (the largest of a group of 32 is 127)
+  const x = filled(new Float32Array(32).map((_, i) => i - 16)), xq = made(32), xs = made(4);
+  quantize(entries(x, xq, xs, filled(new Uint32Array([32, 32, 0, 0])), filled(new Uint32Array([1, 0, 0, 0]))));
+  assert.deepEqual([new Int8Array(xq.data.buffer)[0], f(xs)[0]], [-127, Math.fround(16 / 127)]);
+  // a tiled form: y = W x, then y + W x where add (one row of 32 int8 weights of 2 by a scale of 0.5, x all ones)
+  const w = filled(new Int8Array(32).fill(2)), s = filled(new Float32Array([0.5])), ones = filled(new Float32Array(32).fill(1)), y = made(4);
+  const shape = (add) => filled(new Uint32Array([1, 8, 1, 0, 32, 1, add, 0]));
+  tiled({ packed: false, packing: "int8" })(entries(w, s, ones, y, shape(0), filled(new Uint32Array([1, 0, 0, 0]))));
+  tiled({ packed: false, packing: "int8" })(entries(w, s, ones, y, shape(1), filled(new Uint32Array([1, 0, 0, 0]))));
+  assert.equal(f(y)[0], 64, "32 and then 32 more");
+  // the answerer: a pipeline by its WGSL or itself; another is left alone
+  const answers = gpuAnswers(), said = [], pipeline = { code: "B" };
+  answers.add("A", () => said.push("A"));
+  answers.addPipeline(pipeline, () => said.push("B itself"));
+  for (const p of [{ code: "A" }, pipeline, { code: "C" }]) answers.answer(p, []);
+  assert.deepEqual([said, answers.seen], [["A", "B itself"], ["A", "B"]]);
+  // the plans: every attending layer's matrices with their int8 bytes and scales in the memory laid out
+  const { plan, bytes } = planned(MODELS.llama);
+  assert.ok(plan.matrices.wq.layers.every(([w8, scales]) => w8 < bytes && scales < bytes) && plan.layers === 2);
+}
+ok("the GPU's answers: the attention, the quantization and a tiled form on numbers whose answer is known, a dispatch answered by its WGSL or its pipeline; the made-up plans");
 
 console.log(`fakes-check: ${passed} passed`);
