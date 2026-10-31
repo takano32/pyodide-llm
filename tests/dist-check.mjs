@@ -185,7 +185,7 @@ export function distSaid(dist, tree = treeOf()) {
     if (unknown.length) said.push(`_astro/${name} reads ${unknown.join(", ")}, declared nowhere in it and no ambient name of the runtime (tests/types.mjs's AMBIENT): a declaration the bundler dropped, or a new ambient name to add there`);
   }
   // 4: the built files, once each, the same bytes
-  // (T.628.1: the modules written into it, src/runtime/built/facts/, is bundled as a neighbour is, and fetched by no name)
+  // (T.628.1: the modules written into it, src/runtime/built/facts/, are bundled as a neighbour is, and fetched by no name)
   const built = under(tree.built()).filter((file) => !file.startsWith("facts/"));
   for (const file of built) {
     const { name: stem, ext } = path.parse(file);

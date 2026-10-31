@@ -66,7 +66,8 @@ def bytes_of(name):
 
 
 HEAD = """// src/runtime/built/facts/{name}.ts: written by python_facts.py from the site's Python (T.628). Not to be edited, and
-// not committed (src/runtime/built/ is made): facts the TypeScript reads before any Python runs.
+// not committed (src/runtime/built/ is made): facts the TypeScript reads before any Python runs. One file of the runtime
+// imports it: a second one, of another bundle's graph, has the bundler write the chunk twice (python_facts.py's head).
 """
 
 
