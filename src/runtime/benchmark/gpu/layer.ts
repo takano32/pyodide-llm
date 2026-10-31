@@ -5,7 +5,7 @@ import { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC,
   readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.ts";
 import { toHalf } from "./halves.ts";
 import { LAYER_POS, LAYER_MOST, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
-  attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } from "./layerparts.ts";
+  attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS, plainProduct } from "./layerparts.ts";
 import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.ts";
 import type { Dispatch, Submission, Thrown, Timed } from "./device.ts";
 import type { AttentionPipes, Form, Grouping, LayerShape, MatrixKey, Step, Tried } from "./layerparts.ts";
@@ -165,7 +165,7 @@ async function layerSteps(): Promise<LayerStepsFound> {
     if (!items.length) return { ...result, forms: rows, steps: [] };
     // the matrices alone (on the plain matrix × vector of the forms' base, with their subgroups or not) and the floor
     // of a dispatch
-    const product = await compiled(forms[0].dp4a ? shared.WGSL.ortDp4aMatVec : shared.WGSL.mulMatVec({ packed: false, subgroups: forms[0].subgroups }));
+    const product = await compiled(plainProduct(forms[0]));
     const alone = await validated(async () => MATRIX_KEYS.map((key) => parts.ranges(key).map((range) => [parts.alone(forms[0], product, key, range)])));
     alone.forEach((units, i) => add({ step: units[0][0].step, kind: "alone", matrix: MATRIX_KEYS[i] }, units));
     const floor = parts.floor(pipelinesFor().small);

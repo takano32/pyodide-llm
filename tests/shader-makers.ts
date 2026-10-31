@@ -12,7 +12,7 @@ export const MAKERS_APART = {
   regTile: EITHER.map((half) => [half]),
   dp4a: EITHER.flatMap((subgroups) => ["int8", "ternary"].map((weights) => [{ subgroups, weights }])),
   fmaCeiling: EITHER.flatMap((half) => ["square", "affine"].map((shape) => [half, shape])),
-  mulMatVec: EITHER.flatMap((packed) => EITHER.map((subgroups) => [{ packed, subgroups }])),
+  mulMatVec: EITHER.map((subgroups) => [{ subgroups }]),
 };
 /** the exports of a shaders module that make WGSL: the functions whose own text holds a shader's entry point */
 export const makersOfWgsl = (module) => Object.keys(module).filter((name) => typeof module[name] === "function" && String(module[name]).includes("@compute")).sort();

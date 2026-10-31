@@ -115,15 +115,21 @@ const tokenForm = (): Form => {
   const dp4a = shared.packed && shared.layerVerdicts?.[`a layer, ${DP4A_TOKEN}`]?.ok === true;
   return { ...LAYER_KINDS.find((kind) => (dp4a ? kind.name === DP4A_TOKEN : kind.name === "llama.cpp, fused (T150)"))!, subgroups: false };
 };
+// T.624.2: a plain matrix × vector (the separate steps' products and a matrix alone): the engine's text of a token's
+// matrix that writes its rows as they are (the classifier's: fusedMatVec, or on DP4A fusedDp4aMatVec, with the output
+// "write"), bound as the engine binds it: 3 the Params (shapeOf), 4 the vector's scales (DP4A), 5 the output. (Until
+// then the benchmark's copies of the two, shaders/matvec.ts's mulMatVec and ortDp4aMatVec, whose output was at 3)
+const plainProduct = ({ dp4a, subgroups }: Pick<Form, "dp4a" | "subgroups">) => (dp4a
+  ? shared.WGSL.fusedDp4aMatVec({ output: "write", weights: "int8" }) : shared.WGSL.fusedMatVec({ input: "plain", output: "write", subgroups }));
 // what a form of the layer dispatches besides the attention, [key, WGSL] each (layer() and generate())
 const layerCodes = ({ dp4a, fused, normApart, subgroups }: Form): [PipeKey, string][] => {
   if (!dp4a) {
     const input = normApart ? "plain" : "norm";
     return fused ? [...(normApart ? [["norm", shared.WGSL.RMSNORM]] satisfies [PipeKey, string][] : []), ["qkv", shared.WGSL.fusedMatVec({ input, output: "rope", subgroups })],
       ["add", shared.WGSL.fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", shared.WGSL.fusedMatVec({ input, output: "swiglu", subgroups })]]
-      : [["norm", shared.WGSL.RMSNORM], ["rope", shared.WGSL.ROPE], ["swiglu", shared.WGSL.SWIGLU], ["product", shared.WGSL.mulMatVec({ packed: false, subgroups })]];
+      : [["norm", shared.WGSL.RMSNORM], ["rope", shared.WGSL.ROPE], ["swiglu", shared.WGSL.SWIGLU], ["product", plainProduct({ dp4a, subgroups })]];
   }
-  if (!fused) return [["quantize", shared.WGSL.QUANTIZE], ["norm", shared.WGSL.RMSNORM], ["rope", shared.WGSL.ROPE], ["swiglu", shared.WGSL.SWIGLU], ["product", shared.WGSL.ortDp4aMatVec]];
+  if (!fused) return [["quantize", shared.WGSL.QUANTIZE], ["norm", shared.WGSL.RMSNORM], ["rope", shared.WGSL.ROPE], ["swiglu", shared.WGSL.SWIGLU], ["product", plainProduct({ dp4a, subgroups })]];
   return [["quantize", shared.WGSL.QUANTIZE], normApart ? ["norm", shared.WGSL.RMSNORM] : ["normQuantize", shared.WGSL.NORM_QUANTIZE],
     ["qkv", shared.WGSL.fusedDp4aMatVec({ output: "rope", weights: "int8" })], ["add", shared.WGSL.fusedDp4aMatVec({ output: "add", weights: "int8" })], ["glu", shared.WGSL.fusedDp4aMatVec({ output: "swiglu", weights: "int8" })]];
 };
@@ -299,11 +305,12 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
     qkv: fusedParams(dim + 2 * kvDim, dim), o: fusedParams(dim, dim), gateUp: fusedParams(hidden, dim, hidden, dim), down: fusedParams(dim, hidden),
     // QUANTIZE's (n, xStride) of dim and of hidden
     quantize: [dim, hidden].map((n) => uniform(new Uint32Array([n, n, 0, 0]))) };
-  // the matrix × vector's Shape (rows, words, perRow, first) of each range the separate steps read, made once
+  // the matrix × vector's Params (rows, words, perRow, and the rest of the engine's 48 bytes, which its "write" does
+  // not read: T.624.2) of each range the separate steps read, made once
   const shapes = new Map<string, GPUBuffer>();
   const shapeOf = (rows: number, n: number) => {
     const key = `${rows},${n}`;
-    if (!shapes.has(key)) shapes.set(key, uniform(new Uint32Array([rows, n / 4, n / shared.GROUP, 0])));
+    if (!shapes.has(key)) shapes.set(key, uniform(new Uint32Array([rows, n / 4, n / shared.GROUP, 0, 0, 0, 0, 0, 0, 0, 0, 0])));
     return shapes.get(key)!;
   };
   const group: Grouping = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
@@ -318,7 +325,7 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
     const [qkvIn, oIn, gluIn, downIn] = v.quantized;
     const product = ({ w, s, n }: Held, first: number, rows: number, x: GPUBuffer, y: GPUBuffer, into: Quantized): Dispatch => [pipes.product, group(pipes.product, [
       [0, { buffer: w, offset: first * n, size: rows * n }], [1, { buffer: s, offset: first * n / 8, size: rows * n / 8 }],
-      [2, form.dp4a ? into.xq : x], [3, y], [4, shapeOf(rows, n)], ...(form.dp4a ? [[5, into.xs]] satisfies Entry[] : [])]),
+      [2, form.dp4a ? into.xq : x], [3, shapeOf(rows, n)], ...(form.dp4a ? [[4, into.xs]] satisfies Entry[] : []), [5, y]]),
       Math.ceil(rows / (form.dp4a ? shared.WGSL.ORT_DP4A_MATVEC_ROWS : shared.WGSL.MUL_MAT_VEC_ROWS)), 1];
     const quantize = (x: GPUBuffer, into: Quantized, n: number) => (form.dp4a ? [quantizing(pipes, group, x, into, u.quantize[n === dim ? 0 : 1], n, u.step)] : []);
     const add: Dispatch = [pipes.small, group(pipes.small, [[0, v.t], [1, v.h]]), 1, 1];
@@ -369,12 +376,12 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   // T.208: the attention alone on a cache of caches() (T.224: a form's, its dispatches)
   const attention = (form: Attending, pipes: AttentionPipes, cache: Cache) => attentionSteps(form, pipes, heads, cache, v, u, group);
   // T.202: a matrix of the layer alone on a range of ranges(key), into the scratch buffer (no RoPE, cache, add or
-  // SwiGLU after it): its plain matrix × vector (pipeline: mulMatVec, or ortDp4aMatVec reading the quantized vector
-  // the fused form reads), one dispatch over all its rows
+  // SwiGLU after it): its plain matrix × vector (pipeline: plainProduct's, on DP4A reading the quantized vector the
+  // fused form reads), one dispatch over all its rows
   const alone = (form: Pick<Form, "dp4a">, pipeline: GPUComputePipeline, key: MatrixKey, { w, s, rows, n }: Range) => {
     const input = v.quantized[MATRIX_KEYS.indexOf(key)];
     return named(`${MATRIX_NAMES[key]} alone`, "alone", [pipeline, group(pipeline, [
-      [0, w], [1, s], [2, form.dp4a ? input.xq : key === "down" ? v.g : v.xb], [3, v.scratch], [4, shapeOf(rows, n)], ...(form.dp4a ? [[5, input.xs]] satisfies Entry[] : [])]),
+      [0, w], [1, s], [2, form.dp4a ? input.xq : key === "down" ? v.g : v.xb], [3, shapeOf(rows, n)], ...(form.dp4a ? [[4, input.xs]] satisfies Entry[] : []), [5, v.scratch]]),
       Math.ceil(rows / (form.dp4a ? shared.WGSL.ORT_DP4A_MATVEC_ROWS : shared.WGSL.MUL_MAT_VEC_ROWS)), 1], key);
   };
   // T.202: a dispatch of one workgroup that adds a vector of dim into the scratch buffer (SMALL): what a step costs
@@ -414,6 +421,6 @@ function layerState({ dim, kvDim }: Pick<LayerShape, "dim" | "kvDim">, pos: numb
   return { h, norms, keys: cache(), values: cache() };
 }
 
-export { LAYER_POS, LAYER_MOST, EPS, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
+export { plainProduct, LAYER_POS, LAYER_MOST, EPS, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
   tokenForm, layerCodes, fusedLayer, attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS,
   layerAngles, ropeTable, layerState };
