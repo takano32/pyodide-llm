@@ -36,7 +36,6 @@
 - T.410 [仕様][変換] フォルダから index つきのシャードと `.gguf` を開くか — 未着手
 - T.416 [整理][文書] フォルダのボタンの説明（`src/pages/index.astro` の `title`）に候補の名前の 3 つ目の写しがある — 未着手
 - T.423 [整理][遠隔試験] `page_27b.py --broken tiled` と `reference_qwen35.py` の `large()` に安い試験が無い — 進行中
-- T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 進行中
 - T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 進行中
 - T.372 [バグ][描画] 答えの下の行で、種のボタンが `<summary>` の中にある — 未着手
 - T.275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 未着手
@@ -490,11 +489,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - `large()`（4B）は T.374.4 で `"bos": BOS` を渡す形に直したが、CI で回していない。次に Qwen3.5 に触る回に 1 回。
 - **(1) の結果（2026-10-25）**: `dry` の作り物の GGUF は linear の層の無い素の Qwen3 だった（`page.bin` だけが hybrid）ので、`--broken tiled` は 0 個の行列にしか印を付けず何も見なかった（手元で確かめた）。代わりに pytest `tests/test_reference_27b.py` の `test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf`: 回した基底の hybrid の作り物の GGUF（`rotated_qwen35_gguf()`、鍵の head 2・値の head 4、幅 256）に原本の `config.json`・`tokenizer.json` を並べ、`page_27b.convert()` を壊さずと `tiled` で回し、印が linear の層の数だけ付き、チェックポイントが違うことを見る。3 値は値が 3 つの重みが要るので int8 で（`convert()` に引数 `dtype` を足した: 既定は今までどおり `"ternary"`）。壊し方: `tiled()` が印を付けないと落ちる。CI を省いた。訳: 試験と道具の引数 1 つで、pytest で回した（14 通る）。
 - レビュー（Sonnet low、2026-10-25、T.423 (1)）: must-fix なし。`main()` は `dtype` を渡さず本物の段の呼び方は前のまま、軽い組の pytest が拾う。入れなかった勧め: tiled の出の行列の列が native の列の並べ替えに一致することまで見る（いまは「違う」だけ。同じ入力を 2 回変換するので違いの出る別の道は無い）。
-
-### T.446 [バグ][計測実行] `/benchmark/` の Storage の節が Windows の Playwright の WebKit で NotSupportedError — 状態: 進行中（2026-10-25 に文へ操作の名前を入れた（(1) は本線に）、(2) は次の `browsers.yml` の報告の後。前の状態: 未着手、2026-10-11、T.367.5 から。前からある。規模 小）
-- 「Storage: failed: NotSupportedError: Backend does not support this operation」（run 38116873499・38128420697・38132202030: 3 回とも）。道具は落とさない。どの操作（OPFS の同期のハンドルか、割り当ての見積もりか）が投げたかを節が言わないので、まず文に操作の名前を入れる。本物の Safari では未確認。
-- **(1) の結果（2026-10-25）**: `src/runtime/benchmark/storage.ts` の `run()` は、いまの操作を `doing` に持ち、失敗の文の後に「(while <操作>)」を付ける（フォルダを取る・ファイルを作る・開く・大きさを決める・順に書く・離して書く・進みの記録を開く・1 片ごとに flush・読み戻す・フォルダを消す）。`/benchmark/` の文は詳しくてよい（持ち主の決め）。確かめ: 軽い組を通しで（458 秒）、build、手元の Chromium の `bench-browser.mjs`。落ちる道は Windows の Playwright の WebKit だけなので、次の `browsers.yml`（週 1 回）の報告で操作が分かる。それを見て (2) 直すか、その操作の無いブラウザでの扱いを決める。レビュー（Sonnet low、2026-10-25、T.446 (1)）: must-fix なし（`info()` に古い操作は付かない、警告の語に響かない）。勧めを入れた: 1 つの名前にまとめていた呼びを分け（大きさ・flush・記録の書き直し）、閉じる所も名前を付けた。CI を省いた。訳: 失敗の文だけで、落ちる道は手元にも CI の 1 本にも無い（`browsers.yml` は本番を見る）。
-- **(2) の結果（2026-10-31）**: 待っていたのは `browsers.yml` の報告ではなく、手で回す `bench.yml`（週 1 回の組は `/benchmark/` を開かない）。`bench.yml os=windows-latest browsers=webkit run=storage`（run 41192897505）で操作が分かった: 「(while opening the file (createSyncAccessHandle))」。Windows の Playwright の WebKit の OPFS は呼び出しを持つのに断る。製品は困らない（`keep()` も `keeper()` も失敗を捕まえて Cache API か保存なしに倒れる）。`/benchmark/` の Storage の節は、その形の失敗を「呼び出しの無いブラウザ」と同じ「none」と読む（`src/benchmark/storage.ts`: 文に断りの全文を添える）。ブランチを建てた run 41193674635 で「#### Storage (not in this browser)」「sections: storage none」「0 of 1 tries failed」。
 
 ### T.449 [整理][その他] T.367.6 の気づき（`coi.js` の名残りと、見る CI の無さ） — 状態: 進行中（2026-10-25 に (1)(4) を直した。前の状態: 未着手、2026-10-11。規模 小。**`coi.js` に触るものは、ほかのサイトの応答と隔離のヘッダの外だけ**）
 - `lasting()` の `searchParams.has("v")` は、いま当たるファイルの無い名残り。訪問者がページの URL に `?v=…` と書くと、そのページは写しがネットに聞かずに答え続ける（次の activate まで）。
