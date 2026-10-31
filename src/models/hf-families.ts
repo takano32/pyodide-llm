@@ -211,6 +211,16 @@ export const HF_FAMILIES: Entry[] = [
     "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
   lfm2("hf-lfm2.5-1.2b-jp", "Liquid AI LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
     "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", {}),
+  // T.596.2: Liquid AI's LFM2.5 2.6B, the step above the 1.2B, which its card says always thinks before it answers (its
+  // template begins the answer with <think>). Another vocabulary than the smaller LFM2's (byte-level BPE of 124,894
+  // pieces, Llama 3's pattern): the BOS (<|startoftext|>), the stops and the specials are the converter's; the template
+  // is written out, as Liquid AI's calls macros. The sampling is the card's (temperature 0.1, top-k 50, penalty 1.1)
+  { group: "hf", id: "hf-lfm2.5-2.6b", name: "Liquid AI LFM2.5 2.6B", note: "thinks · 日本語 / English · fetches 2.9 GB (GGUF) → int8 3.0 GB",
+    ...ggufOf("LiquidAI/LFM2.5-2.6B-GGUF", "e7caca5d835a3901a8e0d63e94009429bafafdfc", "LFM2.5-2.6B-Q8_0.gguf",
+      "LiquidAI/LFM2.5-2.6B", "b212e75975bbda9676a94d3cb7b2ca25b65fed48"), download: 2874779648,
+    conversion: {}, options: {}, template: "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>",
+    generation: { steps: 0, temperature: 0.1, topp: 1.0, top_k: 50, repetition_penalty: 1.1 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.596.1: Liquid AI's LFM2 350M that translates English into Japanese and back. Its card says it works only with one
   // of two system messages, which name the direction: so two entries, one for each, with the same weights (shares).
   // The template is written out (Liquid AI's calls no macro, but the system message is the card's); the BOS
