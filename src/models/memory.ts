@@ -1,5 +1,5 @@
 // What a model takes once loaded, the dtype it is converted to, and what the page says of a device's memory.
-import { FACTS } from "../runtime/built/facts.ts";
+import { PYTHON_BYTES } from "../runtime/built/facts/bytes.ts";
 import type { Entry } from "./builders.ts";
 
 // T.90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it
@@ -29,10 +29,10 @@ export function modelBytes(entry: Entry): number | undefined {
 // group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
 // slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
 // (T.628.3: of Python's bytes of each, written by python_facts.py)
-export const SIX_OF_EIGHT = FACTS.bytes.int6 / FACTS.bytes.int8;
+export const SIX_OF_EIGHT = PYTHON_BYTES.int6 / PYTHON_BYTES.int8;
 // T.230: a ternary model keeps its weights as they are, two bits each: 32 bytes and a scale per group of 128 (T.533: a
 // float16, 2 bytes), against int8's 128 bytes and four scales, with no loss at all (int8 is the same weights widened)
-export const TERNARY_OF_EIGHT = FACTS.bytes.ternary / FACTS.bytes.int8;
+export const TERNARY_OF_EIGHT = PYTHON_BYTES.ternary / PYTHON_BYTES.int8;
 
 // T.133: Chromium's navigator.deviceMemory stops at 8: a device that says 8 has 8 GB or more, as many as it likes
 export const DEVICE_MEMORY_CAP = 8;
