@@ -15,7 +15,8 @@ from test_parts import VOCAB, Numbers, kernels_in_numpy, some_logits
 # the page's names (src/page/settings.ts sends them, the URL has them) and what each is when nobody says: a second
 # copy, on purpose. They are generate()'s keywords
 DEFAULTS = dict(temperature=0.0, topp=0.9, repetition_penalty=1.0, top_k=0, min_p=0.0, presence_penalty=0.0)
-REFUSAL = "top_k and presence_penalty are 0 or more, and min_p is from 0 to 1."
+REFUSAL = ("temperature, top_k and presence_penalty are 0 or more, repetition_penalty is more than 0, "
+           "and topp and min_p are from 0 to 1.")
 
 
 # ---------------------------------------------------------------------------------------------- the value alone
@@ -35,7 +36,14 @@ def test_a_value_cannot_be_changed_and_two_of_the_same_settings_are_one():
 
 
 @pytest.mark.parametrize("settings", [dict(top_k=-1), dict(min_p=1.5), dict(min_p=-0.1), dict(presence_penalty=-1.0),
-                                      dict(temperature=0.0, top_k=-3), dict(top_k=4, min_p=1.0001)])
+                                      dict(temperature=0.0, top_k=-3), dict(top_k=4, min_p=1.0001),
+                                      # T.395: the temperature, the nucleus and the repetition penalty too, and a NaN of
+                                      # any of them (which a plain "less than" lets through)
+                                      dict(temperature=-0.1), dict(topp=1.5), dict(topp=-0.1), dict(repetition_penalty=0.0),
+                                      dict(repetition_penalty=-1.0), dict(temperature=float("nan")), dict(topp=float("nan")),
+                                      dict(repetition_penalty=float("nan")), dict(min_p=float("nan")),
+                                      dict(presence_penalty=float("nan")), dict(temperature=float("inf")),
+                                      dict(repetition_penalty=float("inf")), dict(presence_penalty=float("inf"))])
 def test_what_a_setting_cannot_be_is_refused_where_the_value_is_made(settings):
     with pytest.raises(ValueError) as refused:
         Sampling(**settings)
@@ -43,7 +51,8 @@ def test_what_a_setting_cannot_be_is_refused_where_the_value_is_made(settings):
 
 
 def test_the_edges_are_taken():
-    for settings in (dict(top_k=0), dict(min_p=0.0), dict(min_p=1.0), dict(presence_penalty=0.0), dict(top_k=10 ** 6)):
+    for settings in (dict(top_k=0), dict(min_p=0.0), dict(min_p=1.0), dict(presence_penalty=0.0), dict(top_k=10 ** 6),
+                     dict(temperature=0.0), dict(topp=0.0), dict(topp=1.0), dict(repetition_penalty=1e-6), dict(temperature=5.0)):
         Sampling(**settings)
 
 
