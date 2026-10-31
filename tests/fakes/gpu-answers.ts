@@ -213,6 +213,19 @@ export async function gpuAnswers() {
       const [gate] = called("swiglu", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
       bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
     }) as Model,
+    // (T.465.6.5) a ternary classifier's outlier channels: TAKE_OUTLIERS (x, picked, Outliers: one workgroup) and
+    // TERNARY_COLUMNS (the table, its scales, picked, the logits, Outliers: 256 rows a workgroup)
+    takeOutliers: ((entries, x) => {
+      if (x < 1) return;
+      const [out, picked] = called("take_outliers", bound(entries, 0), bound(entries, 1), bound(entries, 2));
+      bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
+      bound(entries, 1).set(picked.subarray(0, bound(entries, 1).length));
+    }) as Model,
+    ternaryColumns: ((entries, x, y) => {
+      if (x * y * 256 < words(entries, 4)[1]) return;
+      const [out] = called("ternary_columns", ...[0, 1, 2, 3, 4].map((b) => bound(entries, b)));
+      bound(entries, 3).set(out.subarray(0, bound(entries, 3).length));
+    }) as Model,
     // TOKEN_ROPE: the rows (2), the matrix's Params (3), then q, the keys, the values, the angles and the step (5 to 9)
     tokenRope: ((entries, x) => {
       if (x < 1) return;

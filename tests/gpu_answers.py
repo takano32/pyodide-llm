@@ -540,3 +540,38 @@ def output_gate(x, gate, size, step):
     out, g = f32s(x).copy(), f32s(gate).astype(np.float64)
     out[: tokens * n] = out[: tokens * n].astype(np.float64) / (1.0 + np.exp(-g[: tokens * n]))
     return out.tobytes()
+
+
+# ---- T.465.6.5: a ternary classifier's outlier channels (shaders/run.ts): taken out of the normed stream before it is
+# quantized (TAKE_OUTLIERS), their columns of the table added to the logits after its matrix (TERNARY_COLUMNS)
+
+def outliers_of(raw):
+    """Outliers: the count, a piece's rows, the width, the channels"""
+    words = u32s(raw)
+    count = int(words[0])
+    return count, int(words[1]), int(words[2]), [int(c) for c in words[4: 4 + count]]
+
+
+def take_outliers(x, picked, outliers):
+    """TAKE_OUTLIERS: each channel's value into picked, and 0 in its place -> (x, picked), as bytes"""
+    count, _, _, channels = outliers_of(outliers)
+    out, values = f32s(x).copy(), f32s(picked).copy()
+    for k, channel in enumerate(channels):
+        values[k] = out[channel]
+        out[channel] = 0.0
+    return out.tobytes(), values.tobytes()
+
+
+def ternary_columns(table, scales, picked, dst, outliers):
+    """TERNARY_COLUMNS: each row's logit plus the picked values times the row's ternary weights of the channels (code
+    less one, times the row's scale of the channel's group of 128) -> dst, as bytes"""
+    count, rows, n, channels = outliers_of(outliers)
+    codes = np.frombuffer(bytes(table), dtype=np.uint8)
+    s, values, out = f32s(scales).astype(np.float64), f32s(picked).astype(np.float64), f32s(dst).copy()
+    for row in range(rows):
+        total = 0.0
+        for k, channel in enumerate(channels):
+            code = (int(codes[row * n // 4 + channel // 4]) >> (2 * (channel % 4))) & 3
+            total += values[k] * ((code - 1) * s[row * (n // 128) + channel // 128])
+        out[row] += total
+    return out.tobytes()

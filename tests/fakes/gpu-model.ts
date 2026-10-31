@@ -37,12 +37,13 @@ const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/prompt.t
 type Answer = (entries: unknown[], x: number, y: number) => void;
 type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; headNorm?: Answer; normAdd?: Answer; bias?: Answer; layerNorm?: Answer; gelu?: Answer;
   SHORT_CONV?: Answer; CONV_STATE?: Answer; DELTA_GATES?: Answer; DELTA_CONV?: Answer; DELTA_CONV_STATE?: Answer; DELTA_NET?: Answer; SWIGLU?: Answer;
-  OUTPUT_GATE?: Answer; fused?: (right: Answer, output: string) => Answer;
+  OUTPUT_GATE?: Answer; TAKE_OUTLIERS?: Answer; TERNARY_COLUMNS?: Answer; fused?: (right: Answer, output: string) => Answer;
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
-type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
+// (T.465.6.5, outliers: the final norm's outlier channels, T.92's, 3, 40 and 77: a classifier multiplied apart)
+type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean };
 // (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
 // check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
-export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false }: Opened = {}) {
+export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
@@ -51,6 +52,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   for (const feature of features) device.features.add(feature);
   const { plan, bytes } = planned(MODELS[model]);
   plan.force = { fallback: true };
+  if (outliers) Object.assign(plan.tokens, { outliers: true, channels: [3, 40, 77] });
   // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
   if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
   // (T.465.6.3: and its table, as a ternary checkpoint's: a token's classifier is read in the form's packing)
@@ -68,6 +70,8 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // and each block of w2's its float16 scales drawn small, as forms.ts's check draws them: BLOCK_WEIGHTS' scale())
   if (sane) {
     plausible(plan, memory);
+    // (T.465.6.5: the outlier channels of the final norm as large as a model's, 9 times the others: make_ternary.py's)
+    if (outliers) for (const c of plan.tokens.channels) new Float32Array(memory.buffer, plan.tokens.final, plan.dim)[c] *= 9;
     if (Array.isArray(weights)) {
       const { rows, n, layers } = plan.matrices.w2;
       weights.forEach((packing, l) => {
@@ -116,7 +120,8 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   answers.add(ENGINE.TOKEN_ROPE, answers.tokenRope);
   // (T.465.6.4: an LFM2's convolution layers, a Qwen3.5's linear-attention layers, SwiGLU apart)
   for (const [name, model] of [["SHORT_CONV", answers.shortConv], ["CONV_STATE", answers.convState], ["DELTA_GATES", answers.deltaGates],
-    ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["OUTPUT_GATE", answers.outputGate]]) {
+    ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["OUTPUT_GATE", answers.outputGate],
+    ["TAKE_OUTLIERS", answers.takeOutliers], ["TERNARY_COLUMNS", answers.ternaryColumns]]) {
     answers.add(ENGINE[name], spoil[name] ?? model);
   }
   // (T.465.6.2: GPT-2's and GPT-NeoX's LayerNorms and GELU)
