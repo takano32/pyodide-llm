@@ -44,7 +44,8 @@ export function planned({ kinds, matrices, vectors, more: { positions, ...more }
   if (plan.rotated === true) plan.rotated = { block: 32, signs: [...new Set([DIM, Q_DIM, HIDDEN])].map((width) => ({ width, at: take(width * 4) })) };
   // (T.210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
   if (direct) Object.assign(plan, { direct: true, tables: { classifier: plan.tokens.classifier, embedding: null } });
-  // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer)
+  // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer. KV_DIM's:
+  // a model whose more says other heads, the 8 heads', has a cache too small here, which no check reads)
   const cache = kinds.filter((kind) => kind === "attention").map(() => [take(CONTEXT * KV_DIM * 4), take(CONTEXT * KV_DIM * 4)]);
   return { plan, bytes: next, cache };
 }
