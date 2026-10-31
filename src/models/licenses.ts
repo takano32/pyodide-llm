@@ -59,6 +59,7 @@ export const LICENSES: Record<string, string> = {
   "utter-project/EuroLLM-1.7B-Instruct": APACHE, "mradermacher/EuroLLM-1.7B-Instruct-GGUF": APACHE,
   "llm-jp/llm-jp-3-1.8b-instruct3": APACHE, "mmnga/llm-jp-3-1.8b-instruct3-gguf": APACHE,
   "llm-jp/llm-jp-3-3.7b-instruct3": APACHE, "mmnga/llm-jp-3-3.7b-instruct3-gguf": APACHE,
+  "llm-jp/llm-jp-3-7.2b-instruct3": APACHE, "mmnga/llm-jp-3-7.2b-instruct3-gguf": APACHE,
   "shisa-ai/shisa-v2.1-llama3.2-3b": LLAMA_32, "mradermacher/shisa-v2.1-llama3.2-3b-GGUF": LLAMA_32,
   "cyberagent/CAT-Translate-3.3b": MIT,
   // T.517 (2026-10-15): the rest of LINE's japanese-large-lm (metadata and card body: Apache-2.0), and mmnga's Q8_0
