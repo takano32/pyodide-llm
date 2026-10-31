@@ -168,6 +168,8 @@
 - T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
+- T.628 [整理][その他] 製品の TypeScript のうち、モデルを狭めずに Python に移せる所の調べ — 未着手
+- T.629 [整理][遠隔試験] 試験と道具の `.mjs` を Python か TypeScript に移す — 未着手
 - T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 進行中
 <!-- 目次ここまで -->
 
@@ -1446,6 +1448,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
+
+### T.628 [整理][その他] 製品の TypeScript のうち、モデルを狭めずに Python に移せる所の調べ — 状態: 未着手（2026-10-31、持ち主「JavaScript ぜんぶなくしたいくらいだ」、選択肢で「製品も、狭まらない所まで」。規模 中）
+- `src/runtime/`・`src/page/`・`src/benchmark/`・`src/models/`・`src/bench/` の全部を、部品ごとに「Python に移せる・移すと何が狭まるか（コア数・メモリ・ブラウザ・準備完了までの時間・速さ）・ブラウザでしか動かない」で一覧にし、移せる所を子タスクに採番する。候補の見当: 変換の段取りの答え手と輪の残り（`worker/conduct.ts`）、読み込みの前の見積もり（`footprint()` などの写し: Pyodide の前に走るので、移すと Pyodide を待つ）、一覧の組み立て（`src/models/`: ページは Pyodide を読む前に一覧を出す）、ベンチの報告（`src/bench/`）。**動かさない所**: 1 トークンの forward（層の輪とスレッド）、WebGPU の Worker とシェーダ、ページの画面と Worker の始まり、wasm のカーネル。移すと準備完了が遅れる所は、前後を測って持ち主に見せる。
+
+### T.629 [整理][遠隔試験] 試験と道具の `.mjs` を Python か TypeScript に移す — 状態: 未着手（2026-10-31、持ち主「TypeScript を優先して JavaScript はなるべく使わない」。規模 大）
+- 計算・比べの参照・作り物・判定・表の 2 つ目の写しは Python に（Node の試験からは Pyodide で呼ぶ: T.465.1 の形）。製品の TypeScript を走らせる台と、ブラウザを動かす道具は `.ts` に（Node 24 と bun がそのまま走らせる）。取りかかるときに `tests/*.mjs` の一覧を作って子タスクに分ける。道具が `.mjs` の名前で呼び合う所（`tests/suite.sh`・ワークフロー・`tree.mjs` を import する全部・網が相手の木の同じ名前を走らせる所）を先に数える: 網は相手の木にも当たるので、名前を替えると古い木と比べられなくなる所がある。
 
 ### T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 状態: 進行中（2026-10-30。前の状態: 未着手、2026-10-30、T.488 から。規模 中。レビューは `shader-reviewer`）
 - **(1) 完了（2026-10-30、ブランチ `t.624-embed`）**: `EMBED` と `EMBED_ROWS` を `shaders/run.ts` の 1 つの作る関数 `embedInt8(block)` に（`embedTernary` と同じ形。窓口の名前は前のまま定数）。出す文は前と 1 字も違わない（前の文を書き出して `===` で比べた。頭の改行 1 つが要った）。手元: 型検査、`shaders-modules-check`・`shaders-catalogue-check`・`device-key-check`・`gpu-worker-parts-check`、網の `shaders`・`gpuworker`・`gpusteps` が同じ。**CI を省いた。訳: 装置に渡す文が 1 字も変わらない（網の `shaders` が言う）。** int8 と 3 値の 4 つを 1 つにするのは、輪の中が違う（4 個ずつと 16 個ずつ）ので寄せない。 **レビュー（Sonnet high、`shader-reviewer`、2026-10-30）: OK、コメントの直し 2 つを入れた。** 2 つの木の `run.ts` を import して、4 つの埋め込みの文と窓口の名前が全部 `===` で同じと確かめた。作る関数は窓口から出さないので `shader-makers.mjs` の数えに入らない。長い行の折り返しと、`embedInt8()` のどちらの呼びがどちらの文かの 1 行を足した。
