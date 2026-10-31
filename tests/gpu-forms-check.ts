@@ -17,71 +17,12 @@
 //   node tests/gpu-forms-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
-import { standIn } from "./fakes/webgpu.mjs";
-import { MODELS, planned } from "./fakes/gpu-plans.ts";
 import { gpuAnswers } from "./fakes/gpu-answers.ts";
+import { opened } from "./fakes/gpu-model.ts";
 
-// (the worker's global, as a worker has it)
-globalThis.self = globalThis;
-globalThis.postMessage = () => {};
-const device_ = await import(runtimeUrl("gpu/device.ts"));
-const { upload } = await import(runtimeUrl("gpu/weights.ts"));
-const block_ = await import(runtimeUrl("gpu/block.ts"));
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
-const { ENGINE } = await import(runtimeUrl("shaders/engine.ts"));
-const { flashShape } = await import(runtimeUrl("shaders/attention.ts"));
 const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 
-// a made-up Llama on the stand-in, its forms answered; spoil: a model to put in place of one ("attention", "form",
-// "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
-// those of w2's two layers (the one matrix of rows of 256: dim is 128), the plan's codebooks the converter's after the
-// checkpoint; spoil.block: a maker of a block type's model, given the right one and the type
-async function opened({ features = [], spoil = {}, weights = null } = {}) {
-  const answers = await gpuAnswers();
-  // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
-  // one pass there, and every pass of a timing would be answered too)
-  const { device } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
-  for (const feature of features) device.features.add(feature);
-  const { plan, bytes } = planned(MODELS.llama);
-  plan.force = { fallback: true };
-  // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
-  if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
-  // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T.465.2's review)
-  if (Array.isArray(weights)) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
-  const codebooks = Array.isArray(weights) && weights.some((type) => type.startsWith("IQ")) ? answers.codebooks() : null;
-  const memory = { buffer: new SharedArrayBuffer(bytes + (codebooks?.length ?? 0)) };
-  new Uint8Array(memory.buffer).forEach((_, i, all) => { all[i] = (i * 131 + 7 * (i >> 8) + 89) & 255; });
-  if (codebooks) {
-    new Uint8Array(memory.buffer).set(codebooks, bytes);
-    plan.codebooks = bytes;
-  }
-  const m = await device_.openDevice(plan);
-  device_.handed(memory, plan);
-  await upload(m);
-  await block_.prepare(m);
-  // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text
-  const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
-    subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize };
-  for (const half of [false, true]) {
-    for (const subgroups of [false, true]) {
-      const shape = flashShape({ headSize: plan.headSize, half, subgroups, ...limits });
-      // (spoil.halves: the f16 or subgroups texts alone, the device's first option)
-      if (!shape.none) answers.add(ENGINE.flashTile(shape), ((half || subgroups) && spoil.halves) || spoil.attention || flashTile(plan.headSize));
-    }
-  }
-  answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
-  // (spoil.form: a maker of each form's model, given the right one)
-  for (const form of devicePromptForms(device, m.own)) {
-    const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
-    answers.add(form.code, spoil.form ? spoil.form(right) : right);
-    // (T.465.2: and each text of a type of llama.cpp's blocks beside it)
-    for (const [packing, code] of Object.entries(form.blocks ?? {})) {
-      const block = tiled({ packed: true, packing, tile: form.tile });
-      answers.add(code, spoil.block ? spoil.block(block, packing) : block);
-    }
-  }
-  return { m, answers };
-}
 // (the models, for the cases that spoil one: the same Pyodide as every answerer's)
 const { flashTile, quantize, tiled } = await gpuAnswers();
 // a model off by a little where spoiled() says, after the right one wrote
