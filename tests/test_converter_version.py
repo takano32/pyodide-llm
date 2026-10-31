@@ -1,4 +1,4 @@
-"""CONVERTER (src/runtime/kept.js) goes up when what the converter makes of a model changes (T.116, T.369 review): a kept
+"""CONVERTER (src/python/convert/version.py, T.628.4; the page reads it as src/runtime/kept.ts's) goes up when what the converter makes of a model changes (T.116, T.369 review): a kept
 conversion of the old version is used otherwise, with the old options.
 
 tests/fixtures/converter-output.json holds the version and a digest of what the converter makes of three made-up models
@@ -9,11 +9,10 @@ not one a kept conversion would show (it is for the three models only), say so b
 only what the three models exercise (the net's `python` and tests/conversions_compare.py see the rest)."""
 import hashlib
 import json
-import re
 import sys
 from pathlib import Path
 
-from tree import python_folder, runtime_folder
+from tree import python_folder
 
 # (T.431: run as a script, --write, the Python of the site is on no path yet: conftest.py puts it there for pytest)
 sys.path.insert(0, python_folder(Path(__file__).resolve().parent.parent))
@@ -25,7 +24,8 @@ CHATML = "{% for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_e
 
 
 def version():
-    return int(re.search(r"export const CONVERTER = (\d+);", Path(runtime_folder(Path(__file__).resolve().parent.parent, "kept.ts")).read_text()).group(1))
+    from convert.version import CONVERTER
+    return CONVERTER
 
 
 def digest():
@@ -52,7 +52,7 @@ def test_a_change_of_what_the_converter_makes_comes_with_a_new_converter_version
     changed = digest() != recorded["digest"]
     assert not (changed and now == recorded["converter"]), (
         f"what the converter makes of the made-up models changed while CONVERTER is still {now}: raise CONVERTER in "
-        "src/runtime/kept.js, or, if no kept conversion would differ, write the digest again with "
+        "src/python/convert/version.py, or, if no kept conversion would differ, write the digest again with "
         "python3 tests/test_converter_version.py --write")
     assert now == recorded["converter"], (
         f"CONVERTER is {now} and tests/fixtures/converter-output.json is for {recorded['converter']}: write it again "
