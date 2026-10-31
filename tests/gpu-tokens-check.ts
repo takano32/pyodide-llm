@@ -128,14 +128,17 @@ for (const model of ["llama", "qwen3", "gemma3"]) {
   // a Qwen3's head norm off in one value, a bias off, a Gemma 3's norm behind off: the forms wrong
   // (value i of the output at binding at: of q, k and v written one after the other, 33 is k's second, which the check
   // reads as it is; q's error is spread by the attention)
-  const bump = (model, at, i = 1) => (entries, x, y) => {
+  // (T.465.6.1's review: an error of q is spread by the attention, o and the FFN, and fell under a form's line one run in
+  // five: the head norm's and the bias's go on a k row. The norm behind by 20% of the stream's largest: 5% left little
+  // over the DP4A forms' line)
+  const bump = (model, at, i = 1, share = 0.05) => (entries, x, y) => {
     model(entries, x, y);
     const r = entries.find((entry) => entry.binding === at).resource, buffer = r.buffer ?? r;
     const out = new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4);
-    out[i] += 0.05 * peak(out);
+    out[i] += share * peak(out);
   };
-  for (const [model, spoil, what] of [["qwen3", { headNorm: bump(rmsnorm({ inPlace: true }), 0) }, "a head's norm"], ["qwen3", { bias: bump(bias, 0, 33) }, "a bias"],
-    ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2) }, "a norm behind"]]) {
+  for (const [model, spoil, what] of [["qwen3", { headNorm: bump(rmsnorm({ inPlace: true }), 0, 33) }, "a head's norm"], ["qwen3", { bias: bump(bias, 0, 33) }, "a bias"],
+    ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2, 1, 0.2) }, "a norm behind"]]) {
     const m = await tokens({ model, spoil });
     assert.match(m.thrown ?? "", /no layer of a token is right on this GPU/, `${model}: ${what} off`);
   }

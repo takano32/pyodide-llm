@@ -59,7 +59,7 @@ export const MODELS = {
   llama: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: norms },
   qwen3: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn },
     vectors: { ...norms, bq: [Q_DIM], bk: [KV_DIM], bv: [KV_DIM], qNorm: [HEAD], kNorm: [HEAD] } },
-  gemma3: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: { ...norms, attentionPost: [DIM], ffnPost: [DIM] },
+  gemma3: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: { ...norms, attentionPost: [DIM], ffnPost: [DIM], qNorm: [HEAD], kNorm: [HEAD] },
     more: { activation: "gelu", windows: [4, 0], local: [0], localCos: true } },
   lfm2: { kinds: ["convolution", "attention", "convolution"], matrices: { ...attending("attention"), win: [3 * DIM, DIM, "convolution"], wout: [DIM, DIM, "convolution"], ...ffn },
     vectors: { ...norms, conv: [CONV_TAPS * DIM, "convolution"], qNorm: [HEAD, "attention"], kNorm: [HEAD, "attention"] }, more: { convolution: { taps: CONV_TAPS } } },
@@ -97,7 +97,7 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
   for (const vector of Object.values(plan.vectors) as { at: number; size: number }[]) floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * (i % 7));
   floats(plan.tokens.final, DIM, (i) => 1 + 0.01 * (i % 5));
   const half = plan.headSize / 2;
-  // (and a Gemma 3's local layers' own, base 100, where the plan has them)
+  // (and a Gemma 3's local layers' own, where the plan has them: of another base, any whose angles differ)
   for (const [at, f, base] of [[plan.cos, Math.cos, 10000], [plan.sin, Math.sin, 10000], [plan.localCos, Math.cos, 100], [plan.localSin, Math.sin, 100]] as const) {
     if (at) floats(at, CONTEXT * half, (i) => f(Math.floor(i / half) * base ** (-(i % half) / half)));
   }
