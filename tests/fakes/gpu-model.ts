@@ -41,17 +41,19 @@ type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Ans
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 // (T.465.6.5, outliers: the final norm's outlier channels, T.92's, 3, 40 and 77: a classifier multiplied apart)
 // (T.465.6.5, blocks: a type of llama.cpp's blocks by a matrix's name, or "classifier" for the table: the wide Llama's)
-type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean; blocks?: Record<string, string> };
+// (T.465.6.5, direct: a model on the GPU alone, its plan as forward/alone.ts makes one: its tables the checkpoint's)
+type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean; blocks?: Record<string, string>;
+  direct?: boolean };
 // (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
 // check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
-export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {} }: Opened = {}) {
+export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {}, direct = false }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
   // one pass there, and every pass of a timing would be answered too)
   const { device, adapter, lose } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
   for (const feature of features) device.features.add(feature);
-  const { plan, bytes } = planned(MODELS[model]);
+  const { plan, bytes } = planned(MODELS[model], direct);
   plan.force = { fallback: true };
   if (outliers) Object.assign(plan.tokens, { outliers: true, channels: [3, 40, 77] });
   // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
@@ -109,6 +111,9 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // (T.465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
   answers.add(ENGINE.EMBED, spoil.embed ?? answers.embed);
   answers.add(ENGINE.EMBED_TERNARY, answers.embedTernary);
+  // (T.465.6.5: a prompt's rows of a model on the GPU alone, and a prompt's RoPE)
+  answers.add(ENGINE.EMBED_ROWS, answers.embedRows);
+  answers.add(ENGINE.ROPE, answers.rope);
   // (T.465.6.5: a token's row of a table of each type of llama.cpp's blocks)
   for (const packing of BLOCK_PACKINGS) answers.add(ENGINE.embedBlocks({ weights: packing, rows: false }), spoil.embedBlocks ?? answers.embedBlocks({ weights: packing }));
   for (const input of ["norm", "plain"]) {

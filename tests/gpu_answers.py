@@ -594,3 +594,47 @@ def embed_blocks(table, state, n, first, rows, packing):
     if rows and not 0 <= row < rows:
         return None
     return block_row(table, row, n, packing).tobytes()
+
+
+def embed_rows(table, scales, ids, n, first, rows, count):
+    """EMBED_ROWS: each id's row of an int8 table into its row of x (a piece of rows from first; an id outside it writes
+    nothing: its row of x stays) -> x's rows written, and which, as (bytes, a list of the tokens written)"""
+    picks = u32s(ids)
+    out, written = [], []
+    for token in range(count):
+        row = int(picks[token]) - first
+        if rows and not 0 <= row < rows:
+            continue
+        values = np.frombuffer(bytes(table), dtype=np.int8)[row * n: (row + 1) * n].astype(np.float32)
+        d = f32s(scales)[row * n // GROUP: (row + 1) * n // GROUP]
+        out.append((values * np.repeat(d, GROUP)).astype(np.float32))
+        written.append(token)
+    return (np.concatenate(out) if out else np.zeros(0, dtype=np.float32)).tobytes(), written
+
+
+def rope(q, k, v, keys, values, angles, shape, step):
+    """ROPE (a prompt's block): each token's q turned in place (the first `turned` of each head, in pairs, by the block's
+    row of angles of the token), its k turned and v as it is into the cache at the step's position and the token, as
+    float16 pairs -> (q, the keys, the values), as bytes"""
+    heads, kv_heads, size, turned = (int(w) for w in u32s(shape)[:4])
+    tokens, pos = (int(w) for w in u32s(step)[:2])
+    table = f32s(angles).astype(np.float64)
+    qs, ks, vs = f32s(q).copy(), f32s(k).astype(np.float64), f32s(v)
+    cache_k, cache_v = np.frombuffer(bytes(keys), dtype=np.float16).copy(), np.frombuffer(bytes(values), dtype=np.float16).copy()
+    half, kv_dim = size // 2, kv_heads * size
+    for token in range(tokens):
+        cos, sin = table[token * size: token * size + half], table[token * size + half: (token + 1) * size]
+        for h in range(heads):
+            at = token * heads * size + h * size
+            for i in range(0, turned, 2):
+                v0, v1 = float(qs[at + i]), float(qs[at + i + 1])
+                qs[at + i], qs[at + i + 1] = v0 * cos[i // 2] - v1 * sin[i // 2], v0 * sin[i // 2] + v1 * cos[i // 2]
+        key = ks[token * kv_dim: (token + 1) * kv_dim].copy()
+        for at in range(0, kv_dim, 2):
+            if at % size < turned:
+                c, s = cos[(at % size) // 2], sin[(at % size) // 2]
+                key[at], key[at + 1] = key[at] * c - key[at + 1] * s, key[at] * s + key[at + 1] * c
+        row = (pos + token) * kv_dim
+        cache_k[row: row + kv_dim] = key.astype(np.float16)
+        cache_v[row: row + kv_dim] = vs[token * kv_dim: (token + 1) * kv_dim].astype(np.float16)
+    return qs.tobytes(), cache_k.tobytes(), cache_v.tobytes()
