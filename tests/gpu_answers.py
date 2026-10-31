@@ -10,6 +10,8 @@
 import numpy as np
 
 from engine.packing import quantize as quantized, unpack_ternary
+from convert.grids import codebooks as grids
+from convert.superblocks import SUPERBLOCKS
 
 GROUP = 32
 
@@ -58,9 +60,16 @@ def quantize(x, n, stride, tokens):
     return codes.tobytes(), scales.tobytes()
 
 
+def codebooks():
+    """(T.465.2) the codebooks of llama.cpp's IQ types as a checkpoint carries them (convert/grids.py's), as bytes"""
+    return grids()[0]
+
+
 def tiled(packing, stored, scales, x, xs, y, rows, n, x_stride, y_stride, add, tokens):
     """A tiled form of a prompt's matrices (shaders/prompt.ts's promptForms): rows of n weights (int8 with a float32 scale
-    a group of 32 of a row; ternary codes with one a group of 128), x float32 [tokens][x_stride] (xs None) or its int8
+    a group of 32 of a row; ternary codes with one a group of 128; T.465.2: blocks of a type of llama.cpp's, read by the
+    converter's own readers, convert/superblocks.py's, whose scales are in the blocks and whose codebooks are the ones
+    codebooks() gives: the check's are the plan's, which a check writes from there), x float32 [tokens][x_stride] (xs None) or its int8
     codes with their scales (packed: xs a float32 a group of 32), y float32 [tokens][y_stride]. -> y = W x, or y + W x
     where add, as bytes"""
     if packing == "int8":
@@ -69,10 +78,15 @@ def tiled(packing, stored, scales, x, xs, y, rows, n, x_stride, y_stride, add, t
     elif packing == "ternary":
         w = unpack_ternary(np.frombuffer(bytes(stored), dtype=np.uint8)[: rows * n // 4]).astype(np.float64).reshape(rows, n)
         per = 4 * GROUP
+    elif packing in SUPERBLOCKS:
+        _, size, read = SUPERBLOCKS[packing]
+        w = read(bytes(stored)[: rows * n // 256 * size]).astype(np.float64).reshape(rows, n)
+        per = None
     else:
         raise ValueError(f"gpu_answers: no answer for {packing}")
-    s = np.frombuffer(bytes(scales), dtype=np.float32)[: rows * n // per].astype(np.float64).reshape(rows, n // per)
-    w = w * np.repeat(s, per, axis=1)
+    if per:
+        s = np.frombuffer(bytes(scales), dtype=np.float32)[: rows * n // per].astype(np.float64).reshape(rows, n // per)
+        w = w * np.repeat(s, per, axis=1)
     y = np.frombuffer(bytes(y), dtype=np.float32).astype(np.float64).copy()
     if xs is None:
         values = np.frombuffer(bytes(x), dtype=np.float32).astype(np.float64)

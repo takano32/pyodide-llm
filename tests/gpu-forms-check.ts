@@ -1,16 +1,19 @@
 // tests/gpu-forms-check.ts (T.465.1): the model's GPU worker choosing a prompt's forms (src/runtime/gpu/forms.ts), on a
 // device that runs no shader (tests/fakes/webgpu.mjs) and answers the checks' dispatches as the shaders would
-// (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's in NumPy). forms.ts takes a candidate only once its output on made-up numbers is JavaScript's;
-// nothing ran it without a GPU (T.465: five breaks of a review passed the light suite), as nothing wrote the answers.
-// A made-up Llama (tests/fakes/gpu-plans.ts) on two devices (none of shader-f16 and subgroups, and both), packed
-// int8 dot both times, each a fallback adapter (a pair of one pass times a form there: the timing is not what is held):
-//   - chooseAttention(): the first option of the device is checked and taken (its record m.forms, with nothing tried yet);
-//   - chooseMatrices(): every form the device makes is checked right (none "wrong"), the right ones timed, one taken;
-//   - each check bites: an attention answered off by a little in one head is no attention, and with no other option the
-//     choice throws why; a form answered off in one row of y is "wrong", and the quantized activations off by one in
-//     one of fifty codes "not quantize_x's" (a packed form: the float ones read no codes); an answer that leaves y as it was is wrong too.
-// Not held here: the tiles' workgroups (an answer writes the whole output whatever was dispatched: CI's gpu-check holds
-// those), ternary and llama.cpp's blocks (T.465.2), a token's forms (T.465.3, T.465.4).
+// (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's in NumPy). forms.ts takes a candidate only once
+// its output on made-up numbers is JavaScript's; nothing ran it without a GPU (T.465: five breaks of a review passed the
+// light suite), as nothing wrote the answers. A made-up Llama (tests/fakes/gpu-plans.ts), packed int8 dot on every
+// device, each a fallback adapter (a pair of one pass times a form there: the timing is not what is held):
+//   - on two devices (none of shader-f16 and subgroups, and both): chooseAttention() checks and takes the device's first
+//     option, and chooseMatrices() checks every form the device makes right, times them and takes one;
+//   - each check bites: an attention off by a little in one head, a form off in one row of y or writing nothing, the
+//     quantized activations off by one in one of fifty codes (a packed form: the float ones read no codes); and takes
+//     what is off inside its line; a device's first attention wrong, the next one is taken;
+//   - T.465.2: a model's own forms: ternary weights (its forms checked right, one off in a row refused), and each of the
+//     ten types of llama.cpp's blocks (two a model, on w2's layers, the plan's codebooks the converter's): every form's
+//     text of each type checked right, the model's types alone compiled, a type's text off in a row refused by it.
+// Not held here: that the fastest form is taken (the timing's clock is the real one), a window's attention, the forms a
+// page remembers, a token's forms (T.465.3, T.465.4).
 //   node tests/gpu-forms-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
@@ -30,8 +33,10 @@ const { flashShape } = await import(runtimeUrl("shaders/attention.ts"));
 const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 
 // a made-up Llama on the stand-in, its forms answered; spoil: a model to put in place of one ("attention", "form",
-// "quantize") or null
-async function opened({ features = [], spoil = {} } = {}) {
+// "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
+// those of w2's two layers (the one matrix of rows of 256: dim is 128), the plan's codebooks the converter's after the
+// checkpoint; spoil.block: a maker of a block type's model, given the right one and the type
+async function opened({ features = [], spoil = {}, weights = null } = {}) {
   const answers = await gpuAnswers();
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
   // one pass there, and every pass of a timing would be answered too)
@@ -39,8 +44,16 @@ async function opened({ features = [], spoil = {} } = {}) {
   for (const feature of features) device.features.add(feature);
   const { plan, bytes } = planned(MODELS.llama);
   plan.force = { fallback: true };
-  const memory = { buffer: new SharedArrayBuffer(bytes) };
+  // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
+  if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
+  const codebooks = Array.isArray(weights) ? answers.codebooks() : null;
+  if (codebooks) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
+  const memory = { buffer: new SharedArrayBuffer(bytes + (codebooks?.length ?? 0)) };
   new Uint8Array(memory.buffer).forEach((_, i, all) => { all[i] = (i * 131 + 7 * (i >> 8) + 89) & 255; });
+  if (codebooks) {
+    new Uint8Array(memory.buffer).set(codebooks, bytes);
+    plan.codebooks = bytes;
+  }
   const m = await device_.openDevice(plan);
   device_.handed(memory, plan);
   await upload(m);
@@ -60,6 +73,11 @@ async function opened({ features = [], spoil = {} } = {}) {
   for (const form of devicePromptForms(device, m.own)) {
     const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
     answers.add(form.code, spoil.form ? spoil.form(right) : right);
+    // (T.465.2: and each text of a type of llama.cpp's blocks beside it)
+    for (const [packing, code] of Object.entries(form.blocks ?? {})) {
+      const block = tiled({ packed: true, packing, tile: form.tile });
+      answers.add(code, spoil.block ? spoil.block(block, packing) : block);
+    }
   }
   return { m, answers };
 }
@@ -152,4 +170,33 @@ console.log("ok: each check bites: an attention, a form and a quantization a lit
   assert.equal(m.forms.attention.name, "llama.cpp flash attention tiles", "the plain tiles, after the f16 ones were wrong");
 }
 console.log("ok: what is a little off inside its line is taken, and a device's first attention wrong gives the next one");
+
+// ---- T.465.2: a model's own forms: ternary weights, and llama.cpp's blocks (the ten types, two a model on w2's layers)
+{
+  const { m } = await opened({ weights: "ternary" });
+  await forms_.chooseAttention(m);
+  await forms_.chooseMatrices(m);
+  const made = devicePromptForms(m.device, m.own).filter(({ none }) => !none).map(({ name }) => name);
+  assert.ok(made.length > 0 && made.every((name) => name.endsWith(", ternary")), `a ternary model's own forms: ${made.join(", ")}`);
+  assert.deepEqual(m.forms.tried.filter(({ none }) => none), [], "ternary: every form right");
+  assert.ok(m.forms.form.ternary);
+  // (a ternary form off in one row: wrong)
+  const { m: spoilt } = await opened({ weights: "ternary", spoil: { form: (right) => off(right, (entries) => { output(entries, 3)[7] *= 1.01; }) } });
+  await forms_.chooseAttention(spoilt);
+  await assert.rejects(forms_.chooseMatrices(spoilt), /no tiled shader is right on this GPU \(.*, ternary: wrong: products/, "a ternary form off in one row");
+  console.log(`ok: ternary: ${made.join(", ")} checked right, ${m.forms.form.name} taken; one off in a row refused`);
+}
+const PAIRS_OF_TYPES = [["Q2_K", "Q4_K"], ["IQ2_XXS", "IQ2_XS"], ["IQ2_S", "IQ3_XXS"], ["IQ3_S", "IQ1_S"], ["IQ1_M", "IQ4_XS"]];
+for (const types of PAIRS_OF_TYPES) {
+  const { m } = await opened({ weights: types });
+  await forms_.chooseAttention(m);
+  await forms_.chooseMatrices(m);
+  assert.deepEqual(m.forms.tried.filter(({ none }) => none), [], `${types.join(" and ")}: every form right`);
+  assert.deepEqual(Object.keys(m.forms.form.blockPipelines).sort(), [...types].sort(), `${types.join(" and ")}: the texts of the model's types alone compiled`);
+  // (the second type's text off in one row: the form is wrong, said by that text)
+  const { m: spoilt } = await opened({ weights: types, spoil: { block: (right, packing) => (packing === types[1] ? off(right, (entries) => { output(entries, 3)[7] *= 1.01; }) : right) } });
+  await forms_.chooseAttention(spoilt);
+  await assert.rejects(forms_.chooseMatrices(spoilt), new RegExp(`wrong: its ${types[1]} text: products`), `${types[1]}'s text off in one row`);
+}
+console.log(`ok: llama.cpp's blocks: each of the ten types' texts checked right on the forms the device makes (${PAIRS_OF_TYPES.flat().join(", ")}), and each second of a pair off in a row refused by its text`);
 console.log("gpu-forms-check: ok");

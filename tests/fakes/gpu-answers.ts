@@ -86,6 +86,8 @@ export async function gpuAnswers() {
       bound(entries, 1).set(codes.subarray(0, bound(entries, 1).length));
       bound(entries, 2).set(scales.subarray(0, bound(entries, 2).length));
     }) as Model,
+    // (T.465.2: the codebooks of llama.cpp's IQ types, as a checkpoint carries them: what a plan's codebooks are to hold)
+    codebooks: () => called("codebooks")[0],
     // ("none" to Python is undefined: a null is jsnull there)
     // a tiled form: the weights, their scales, x (packed: its codes, their scales at binding 6), y, the shape (rows, n / 4,
     // -, -, x's stride, y's stride, add), the block (tokens)
