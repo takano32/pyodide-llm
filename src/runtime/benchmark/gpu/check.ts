@@ -85,7 +85,9 @@ async function checkMatVec() {
         shared.device.queue.writeBuffer(io.y, 0, new Float32Array(rows + past).fill(SENTINEL));
         const owned: Owned[] = [];
         const got = await validated(async () => {
-          const m = matrix([rows, n], io, kind, { w, s }, { chunk: 128 });
+          // (T.624.2's review: the engine's texts in chunks of 128, the binding's alignment; the others in chunks of 101, so
+          // that a shape.first that is no multiple of their 4 or 8 rows is still asked of them)
+          const m = matrix([rows, n], io, kind, { w, s }, { chunk: typeof kind === "object" && kind.engine ? 128 : 101 });
           owned.push(...m.owned);
           const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
           m.dispatches.forEach((d) => run(pass, d));

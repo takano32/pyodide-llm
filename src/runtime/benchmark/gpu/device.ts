@@ -274,8 +274,12 @@ function bound({ chunks }: Pick<Placed, "chunks">, io: Vectors, kind: Kind = "wi
       { binding: 2, resource: { buffer: quantized ? io.xq : io.x } }];
     if (engine) {
       // T.624.2: the engine's bindings (fusedMatVec's and fusedDp4aMatVec's): 3 the Params, 4 the vector's scales (DP4A),
-      // 5 the output, from the chunk's first row on (the engine writes rows from 0 of its binding: no first)
-      entries.push({ binding: 3, resource: { buffer: shape } }, { binding: 5, resource: { buffer: io.y, offset: first * 4, size: count * 4 } });
+      // 5 the output, from the chunk's first row on (the engine writes rows from 0 of its binding: no first) to the end of
+      // y: past the chunk's rows too, so that the check's sentinel there still sees a text that writes beyond them
+      // (T.624.2's review). The offset is the device's to align: a chunk cut at no multiple of its alignment is refused here
+      const align = shared.device.limits.minStorageBufferOffsetAlignment;
+      if ((first * 4) % align) throw new Error(`a chunk from row ${first}: the engine's output is bound there, and this device binds at multiples of ${align} bytes`);
+      entries.push({ binding: 3, resource: { buffer: shape } }, { binding: 5, resource: { buffer: io.y, offset: first * 4 } });
       if (quantized) entries.push({ binding: 4, resource: { buffer: io.xs } });
     } else {
       entries.push({ binding: 3, resource: { buffer: io.y } }, { binding: 4, resource: { buffer: shape } });
