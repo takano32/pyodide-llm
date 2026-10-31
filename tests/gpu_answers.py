@@ -288,6 +288,48 @@ def rmsnorm(x, weight, norm, step):
     return normed(x, weight, norm, tokens).tobytes()
 
 
+def rms_rows(x, weight, norm, step, across, out, add):
+    """(T.465.6) shaders/steps.ts's rmsNorm, each row of the dispatch (across a token: its x, from the Norm's fourth word
+    first rows on) normed: weight × (s × x), s the inverse root of the row's mean square and eps, into out (None: x
+    in place, HEAD_NORM's), added to what is there where add (RMSNORM_ADD's) -> what it wrote, as bytes"""
+    size, at, eps = norm_params(norm)
+    first = int(np.frombuffer(bytes(norm), dtype=np.uint32)[3])
+    tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
+    source = np.frombuffer(bytes(x), dtype=np.float32)
+    target = (source if out is None else np.frombuffer(bytes(out), dtype=np.float32)).copy()
+    w = np.frombuffer(bytes(weight), dtype=np.float32)[at: at + size]
+    for token in range(tokens):
+        for row in range(across):
+            start = (token * across + row + first) * size
+            values = source[start: start + size]
+            s = np.float32(1.0 / math.sqrt(float(np.mean(values.astype(np.float64) ** 2)) + eps))
+            written = (w * (s * values)).astype(np.float32)
+            target[start: start + size] = target[start: start + size] + written if add else written
+    return target.tobytes()
+
+
+def add(y, bias, shape, step):
+    """ADD: each token's row of y (n of the Bias, the dispatch's y a token) plus the bias at its start, or (byPos) the
+    bias's row of the token's position -> y, as bytes"""
+    n, at, by_pos = (int(w) for w in np.frombuffer(bytes(shape), dtype=np.uint32)[:3])
+    tokens, pos = (int(w) for w in np.frombuffer(bytes(step), dtype=np.uint32)[:2])
+    out = np.frombuffer(bytes(y), dtype=np.float32).copy()
+    b = np.frombuffer(bytes(bias), dtype=np.float32)
+    for token in range(tokens):
+        start = at + (pos + token) * by_pos
+        out[token * n: (token + 1) * n] += b[start: start + n]
+    return out.tobytes()
+
+
+def token_rope(rows, params, keys, values, angles, step):
+    """TOKEN_ROPE: the rows q, k and v as a matrix wrote them (rows of its Params), each pair as fused_rope's write ->
+    (q, the keys, the values), as bytes"""
+    words = np.frombuffer(bytes(params), dtype=np.uint32)
+    count, q_rows, kv_rows, size, turned = int(words[0]), *(int(w) for w in words[6:10])
+    made = np.frombuffer(bytes(rows), dtype=np.float32)[:count].astype(np.float64)
+    return rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step)
+
+
 def norm_quantize(x, weight, norm, step):
     """NORM_QUANTIZE: RMSNORM's values of each token quantized as QUANTIZE does -> (codes, scales), as bytes"""
     tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])

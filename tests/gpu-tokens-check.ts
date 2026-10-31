@@ -15,7 +15,10 @@
 //     gpu-plans.ts's plausible). Each check bites: the stream off in one value (a float form's text: the DP4A forms stay
 //     right), a greedy token not the largest logit, a sampled token the CPU's walk does not reach, the penalty left off the
 //     logits; off inside the line is right.
-// Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6).
+//   - T.465.6.1: a Qwen3's and a Gemma 3's token (biases, the norms of the heads and RoPE apart; GEGLU, the norms behind,
+//     a window and a local layer's RoPE): every form right and every dispatch answered (answers.missed), and a head's
+//     norm, a bias or a norm behind off is wrong.
+// Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6.2 on).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
@@ -25,7 +28,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
 const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
-const { flashVec, sample, embed, normQuantize } = await gpuAnswers();
+const { flashVec, sample, embed, normQuantize, rmsnorm, bias } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
 const off = (model, spoiled) => (entries, x, y) => {
@@ -103,6 +106,40 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
   assert.deepEqual(forms.map(({ name }) => name).sort(), [...FORMS].sort(), "every form right and timed");
   assert.ok(FORMS.includes(form.name));
   console.log(`ok: a Llama's token: ${FORMS.join(", ")} checked right on its first layer and head (greedy and sampled), ${form.name} taken`);
+}
+// T.465.6.1: a Qwen3 (biases of q, k and v, norms of the heads: q, k and v written, then ADD, HEAD_NORM and TOKEN_ROPE)
+// and a Gemma 3 (GEGLU, the norms behind the attention and the FFN, a window and a local layer's own RoPE): every form
+// right, every dispatch of theirs answered
+for (const model of ["llama", "qwen3", "gemma3"]) {
+  const { m, answers } = await (async () => {
+    const opening = await opened({ model, sane: true });
+    await forms_.chooseAttention(opening.m);
+    await forms_.chooseMatrices(opening.m);
+    blockMade(opening.m);
+    await tokenForms_.chooseTokens(opening.m);
+    return opening;
+  })();
+  assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], `${model}: no form wrong`);
+  assert.deepEqual(answers.missed, [], `${model}: every dispatch answered`);
+  if (model === "llama") continue;
+  console.log(`ok: a ${model === "qwen3" ? "Qwen3" : "Gemma 3"}'s token: ${m.tokenForm.forms.map(({ name }) => name).join(", ")} checked right, every dispatch answered`);
+}
+{
+  // a Qwen3's head norm off in one value, a bias off, a Gemma 3's norm behind off: the forms wrong
+  // (value i of the output at binding at: of q, k and v written one after the other, 33 is k's second, which the check
+  // reads as it is; q's error is spread by the attention)
+  const bump = (model, at, i = 1) => (entries, x, y) => {
+    model(entries, x, y);
+    const r = entries.find((entry) => entry.binding === at).resource, buffer = r.buffer ?? r;
+    const out = new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4);
+    out[i] += 0.05 * peak(out);
+  };
+  for (const [model, spoil, what] of [["qwen3", { headNorm: bump(rmsnorm({ inPlace: true }), 0) }, "a head's norm"], ["qwen3", { bias: bump(bias, 0, 33) }, "a bias"],
+    ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2) }, "a norm behind"]]) {
+    const m = await tokens({ model, spoil });
+    assert.match(m.thrown ?? "", /no layer of a token is right on this GPU/, `${model}: ${what} off`);
+  }
+  console.log("ok: a Qwen3's head norm or bias off, a Gemma 3's norm behind off: no form right");
 }
 // each check bites
 {
