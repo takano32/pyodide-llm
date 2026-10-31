@@ -19,6 +19,7 @@ import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { placePython, treeOf, runtimeUrl } from "../tree.mjs";
 const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.ts"));
+const { CODEBOOK_BYTES } = await import(runtimeUrl("shaders/prompt.ts"));
 
 // what the stand-in device (tests/fakes/webgpu.mjs) hands an answer: a binding's buffer (its bytes in data), or a part of one
 type Buffer = { size: number; data: Uint8Array };
@@ -95,6 +96,10 @@ export async function gpuAnswers() {
     tiled: ({ packed, packing, tile }: { packed: boolean; packing: string; tile: { rows: number; tokens: number } }): Model => (entries, x, down) => {
       const [rows, quarter, , , xStride, yStride, add] = words(entries, 4), [tokens] = words(entries, 5), y = bound(entries, 3);
       if (x * down < Math.ceil(rows / tile.rows) * Math.ceil(tokens / tile.tokens)) return;
+      // (T.465.2's review: an IQ type's text binds the codebooks where an int8 one binds its scales, and a K type's binds
+      // nothing there: the answer reads its own tables, so a binding missing or wrong would pass unseen otherwise)
+      if (packing.startsWith("IQ") && !(has(entries, 1) && bound(entries, 1).length >= CODEBOOK_BYTES)) throw new Error(`gpu-answers: ${packing}'s text without the codebooks bound`);
+      if (packing.endsWith("_K") && has(entries, 1)) throw new Error(`gpu-answers: ${packing}'s text binds something where none is`);
       const [out] = called("tiled", packing, bound(entries, 0), has(entries, 1) ? bound(entries, 1) : undefined, bound(entries, 2), packed ? bound(entries, 6) : undefined,
         y, rows, quarter * 4, xStride, yStride, add, tokens);
       y.set(out.subarray(0, y.length));
