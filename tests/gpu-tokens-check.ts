@@ -145,7 +145,12 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox"]) {
   for (const [model, spoil, what] of [["qwen3", { headNorm: bump(rmsnorm({ inPlace: true }), 0, 33) }, "a head's norm"], ["qwen3", { bias: bump(bias, 0, 33) }, "a bias"],
     ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2, 1, 0.2) }, "a norm behind"],
     // (T.465.6.2: a GPT-2's LayerNorm off in one value, a GPT-NeoX's GELU)
-    ["gpt2", { layerNorm: bump(layerNorm, 3, 1, 0.2) }, "a LayerNorm"], ["neox", { gelu: (entries, x, y) => {
+    ["gpt2", { layerNorm: (entries, x, y) => {
+      // (the whole of it 10% off: one value off by 20% of the largest fell under a form's line one run in a few)
+      layerNorm(entries, x, y);
+      const r = entries.find((entry) => entry.binding === 3).resource, buffer = r.buffer ?? r;
+      new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4).forEach((v, i, all) => { all[i] = v * 1.1; });
+    } }, "a LayerNorm"], ["neox", { gelu: (entries, x, y) => {
       // (the whole of it 10% off: one value of the 256 the down projection reads stayed under the DP4A forms' line)
       gelu(entries, x, y);
       const r = entries.find((entry) => entry.binding === 0).resource, buffer = r.buffer ?? r;
