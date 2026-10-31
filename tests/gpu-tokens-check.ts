@@ -296,4 +296,27 @@ const tenth = (model, at) => (entries, x, y) => {
   assert.match(Object.fromEntries(m.tokenForm.forms.map(({ name, none }) => [name, none]))[FLOAT] ?? "", /^wrong: the first layer's stream is/, "qwen35: SwiGLU off");
 }
 console.log("ok: an LFM2's convolution off or its rows not moved on, a Qwen3.5's delta rule's state, gates, convolution or rows off: no form right; SwiGLU off: a float form wrong");
+// T.465.6.5: a classifier with the final norm's outlier channels (T.92): an int8 one multiplied in floats on every form
+// (floatHead), a ternary one with the channels taken out before it is quantized (TAKE_OUTLIERS) and their columns added
+// after (TERNARY_COLUMNS): every form right, every dispatch answered; the columns not added, the channels taken but left
+// in the stream: wrong
+for (const [said, options] of [["int8", { outliers: true }], ["ternary", { model: "llama (8 heads)", weights: "ternary", outliers: true }]]) {
+  const { m, answers } = await tokensOf(options);
+  assert.equal(m.thrown, undefined, `${said} with outlier channels`);
+  assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], `${said} with outlier channels: no form wrong`);
+  assert.deepEqual(answers.missed, [], `${said} with outlier channels: every dispatch answered`);
+}
+// (the channels taken but left in the stream, counted twice: left out of both, they still come in through the product,
+// and only its rounding of their groups differs, under the line in some runs)
+const { takeOutliers } = await gpuAnswers();
+const leftIn = (entries, x, y) => {
+  const r = entries.find((entry) => entry.binding === 0).resource, buffer = r.buffer ?? r, before = buffer.data.slice();
+  takeOutliers(entries, x, y);
+  buffer.data.set(before);
+};
+for (const [spoil, what] of [[{ TERNARY_COLUMNS: () => {} }, "the columns not added"], [{ TAKE_OUTLIERS: leftIn }, "the channels left in the stream"]]) {
+  const { m } = await tokensOf({ model: "llama (8 heads)", weights: "ternary", outliers: true, spoil });
+  assert.match(m.thrown ?? "", /the logits are/, `a ternary classifier: ${what}`);
+}
+console.log("ok: classifiers with outlier channels, int8 and ternary: every form right, every dispatch answered; the columns not added or the channels left in the stream: wrong");
 console.log("gpu-tokens-check: ok");
