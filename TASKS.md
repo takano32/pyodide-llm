@@ -167,7 +167,7 @@
 - T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
-- T.628 [整理][その他] 製品の TypeScript のうち、モデルを狭めずに Python に移せる所の調べ — 未着手
+- T.628 [整理][その他] 製品の TypeScript のうち、モデルを狭めずに Python に移せる所の調べ — 進行中
 - T.629 [整理][遠隔試験] 試験と道具の `.mjs` を Python か TypeScript に移す — 未着手
 - T.624 [整理][WebGPU] 鍵の動かないシェーダの文の重なりを寄せる — 進行中
 <!-- 目次ここまで -->
@@ -1441,7 +1441,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
 
-### T.628 [整理][その他] 製品の TypeScript のうち、モデルを狭めずに Python に移せる所の調べ — 状態: 未着手（2026-10-31、持ち主「JavaScript ぜんぶなくしたいくらいだ」、選択肢で「製品も、狭まらない所まで」。規模 中）
+### T.628 [整理][その他] 製品の TypeScript のうち、モデルを狭めずに Python に移せる所の調べ — 状態: 進行中（調べは 2026-10-31 に済んだ: 下。子タスクを積んだ。前の状態: 未着手、2026-10-31、持ち主「JavaScript ぜんぶなくしたいくらいだ」、選択肢で「製品も、狭まらない所まで」。規模 中）
+- **調べの結果（2026-10-31、表は docs/notes/t628-survey-2026-10-31.md）**: **実行時に Python に移せる所はほとんど無い**。残りの TypeScript の大半は Pyodide の前（一覧・`footprint()` などの見積もり・保存の名前・サイトの部品の取得: T.68）か、Pyodide の無い所（ページの主スレッド・`/benchmark/` の節の Worker・GPU の Worker）で走る。実行時に移せる候補は変換の段取りの輪 `worker/conduct.ts` の `answered()` だけ（答え手と `ranges.ts` は残す: バイトは JavaScript のメモリに書く）。**いちばん安いのは、JavaScript と Python の写しをビルド時に Python から書き出すこと**（モデルを狭めず、準備完了も遅れず、突き合わせの検査も要らなくなる）。いま `src/` に `.json` の import は 1 つも無いので、始めるなら初めての形（`make python` の隣に書き出しの段を 1 つ）。
+- **子タスク**（取りまとめ役の決め、調べの勧めの順）: T.628.1 `forward/architectures.ts` を `LAYOUTS` から書き出す。T.628.2 `src/page/folder.ts` の `TOKENIZERS` を `conduct.py` から（門の文は今のまま組む: 文は変えない）。T.628.3 `jobs.ts` の `BLOCK_TYPES` と塊のバイト数、`kept.ts` の dtype の名前、`src/models/memory.ts` の比を `BLOCKS`・`DTYPES` から（`PACKED` の関数は TypeScript のまま）。T.628.4 `kept.ts` の `CONVERTER` の版を Python の変換器に置き、ビルドで TypeScript に渡す。T.628.5 `benchmark/madeup.ts` の計画をビルド時に素の Python の `forward_plan()` で。T.628.6（大）一覧 `src/models/` の項目を Python で書き、ビルドで JSON に（`models-check` などの道具と型も）。T.628.7 変換の段取りの輪 `answered()` を Python に（狭めない、変換の速さを前後で測る）。**勧めない**: `shaders/prompt.ts` の `IQ_WORDS`・`CODEBOOK_BYTES`（シェーダの文と端末の鍵に関わる）。
 - `src/runtime/`・`src/page/`・`src/benchmark/`・`src/models/`・`src/bench/` の全部を、部品ごとに「Python に移せる・移すと何が狭まるか（コア数・メモリ・ブラウザ・準備完了までの時間・速さ）・ブラウザでしか動かない」で一覧にし、移せる所を子タスクに採番する。候補の見当: 変換の段取りの答え手と輪の残り（`worker/conduct.ts`）、読み込みの前の見積もり（`footprint()` などの写し: Pyodide の前に走るので、移すと Pyodide を待つ）、一覧の組み立て（`src/models/`: ページは Pyodide を読む前に一覧を出す）、ベンチの報告（`src/bench/`）。**動かさない所**: 1 トークンの forward（層の輪とスレッド）、WebGPU の Worker とシェーダ、ページの画面と Worker の始まり、wasm のカーネル。移すと準備完了が遅れる所は、前後を測って持ち主に見せる。
 
 ### T.629 [整理][遠隔試験] 試験と道具の `.mjs` を Python か TypeScript に移す — 状態: 未着手（2026-10-31、持ち主「TypeScript を優先して JavaScript はなるべく使わない」。規模 大）
