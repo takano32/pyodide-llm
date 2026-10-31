@@ -191,6 +191,8 @@ export const LICENSES: Record<string, string> = {
   // License", and their LICENSE is Apache 2.0's text
   "XHToken/Spark-X2.5-1.7B": APACHE, "XHToken/Spark-X2.5-1.7B-GGUF": APACHE,
   "XHToken/Spark-X2.5-4B": APACHE, "XHToken/Spark-X2.5-4B-GGUF": APACHE,
+  "XHToken/Spark-X2.6-1.7B": APACHE, "XHToken/Spark-X2.6-1.7B-GGUF": APACHE,
+  "XHToken/Spark-X2.6-4B": APACHE, "XHToken/Spark-X2.6-4B-GGUF": APACHE,
 };
 
 // T.261.3: the notices a license asks whoever hosts the model to give, shown after the license on the line of the

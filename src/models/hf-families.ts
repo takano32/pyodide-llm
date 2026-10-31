@@ -3,7 +3,7 @@
 import {
   AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASK_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
   QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
-  QWEN3_THINKING_AFTER_START, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
+  QWEN3_THINKING_AFTER_START, SPARK26_THINKING, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
 } from "./formats.ts";
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
@@ -293,6 +293,19 @@ export const HF_FAMILIES: Entry[] = [
       "XHToken/Spark-X2.5-4B", "0bcb35678590218655dff3765b9e61c83b35e9c4"), 4375021152,
     "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark, languages: "日本語 / English / 中文" },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
+  // T.597.2: XHToken's Spark-X2.6, the next training of X2.5 (the same config.json, tokenizer and family): its template
+  // differs in the thinking form alone (SPARK26_THINKING). XHToken's own Q8_0 GGUFs. The cards name English and Chinese
+  // (T.537); both sizes answered the Japanese questions in Japanese (tests/answers.ts), so 日本語 first (T.539)
+  ...thinkingAndNot("hf-spark-x2.6-1.7b", "Spark-X2.6 1.7B",
+    ggufOf("XHToken/Spark-X2.6-1.7B-GGUF", "cdc3d8893fba4ce0687f1b49ce1e18b29cae96d0", "Spark-X2.6-1.7B-Q8_0.gguf",
+      "XHToken/Spark-X2.6-1.7B", "3b9c837215b1a216ba48bca05607c8c509fef0d4"), 1820113440,
+    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark, languages: "日本語 / English / 中文" },
+    { thinking: SPARK26_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
+  ...thinkingAndNot("hf-spark-x2.6-4b", "Spark-X2.6 4B",
+    ggufOf("XHToken/Spark-X2.6-4B-GGUF", "0e8aa39a34063946ce07bbaaff392093b11b6829", "Spark-X2.6-4B-Q8_0.gguf",
+      "XHToken/Spark-X2.6-4B", "d10f96e0abf4cb7ca0a06a442bc5cf55645fd74d"), 4375021824,
+    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark, languages: "日本語 / English / 中文" },
+    { thinking: SPARK26_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
   // T.597.1: an unofficial Japanese fine-tune of the 4B by one person (Atemoya, the maker of the Qwen3.5 0.8B Japanese SFT
   // v2.5): two merged LoRA stages, after which its card says no Chinese letters leak into its Japanese chat (18% before).
   // The original's tokenizer (but <unk>'s flag) and chat template; the card says to answer at once (enable_thinking

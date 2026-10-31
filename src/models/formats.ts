@@ -234,6 +234,11 @@ export const PLAIN_ROPE = { rope_scaling: {} };
 export const SPARK_THINKING = "<|System|>\nyou are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜>" +
   "<|User|>{prompt}<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|><think>";
 export const SPARK_AT_ONCE = SPARK_THINKING.replace(/<think>$/, "</think>");
+// T.597.2: Spark-X2.6's template is X2.5's but for thinking: then its system turn adds two sentences on the thinking
+// effort, at its default (high). The form at once is X2.5's (SPARK_AT_ONCE)
+export const SPARK26_THINKING = SPARK_THINKING.replace("you are a helpful assistant.", "you are a helpful assistant.\n" +
+  "`thinking_effort` guides on how much to think in your thinking channel (not including the response channel), " +
+  "supported values include `low` and `high`.\nNow the system is invoked with `thinking_effort=high`.");
 export const spark = { bos: 0, stop_tokens: [0, 1],
   specials: ["<｜start▁of▁sentence｜>", "<｜end▁of▁sentence｜>", "</tool_response>", "<tool_response>", "<|Developer|>",
     "<｜fim▁begin｜>", "</arg_value>", "</tool_call>", "<｜fim▁hole｜>", "<arg_value>", "<tool_call>", "<｜fim▁end｜>",
