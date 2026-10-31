@@ -16,6 +16,8 @@ name: Tests
 # T.238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
 # like tests/reference_27b.sh, which builds another program and fetches a model of its own), and minutes= is the job's
 # time limit (90 where it says nothing).
+# (T.628.8: only_extra makes no facts of the Python either: an extra that reads src/models.ts or the runtime begins with
+# `make kernels`, which writes them)
 # T.233: what the extra commands leave in .tmp/keep is kept with the run (an artifact, a week).
 on:
   schedule:
