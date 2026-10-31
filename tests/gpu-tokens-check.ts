@@ -5,8 +5,10 @@
 //     with subgroups (where the device has them) and without, and the prompt's tiles, each checked right at 40, 70, 300
 //     and 1100 positions (one part, two, and as many as the decode form takes, the reduce over them), timed, one taken
 //     (the decode form's parts and Params made with it); a model with a window (a Gemma 3) through it too. Each check
-//     bites: the decode form off a little in one head, or its reduce writing nothing (a token of more than one part reads
-//     nothing then), is wrong and the others are taken; off inside the line is right.
+//     bites: the decode form off a little in one head, its reduce writing nothing (a token of more than one part reads
+//     nothing then), or the window left out (a Gemma 3's check through its window), is wrong and the others are taken;
+//     off inside the line is right. The answers take the workgroups as many as the work's, no more, and the reduce reads
+//     the parts the decode wrote, of the nwg and sums' start it had.
 // Not held here: that the fastest is taken (the timing's clock is the real one), a token's layer (T.465.4).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
@@ -58,6 +60,12 @@ for (const [model, features] of [["llama", []], ["llama", ["subgroups"]], ["gemm
   // off by 0.1%: inside the line
   const near = await chosen({ spoil: { vec: off(flashVec(16), (out) => { out[16] += 0.001; }) } });
   assert.deepEqual(near.tokenAttention.attentions.filter(({ none }) => none), [], "off inside the line: right");
+  // (T.465.3's review) a decode form that reads every position, its window left out: wrong through the window of a
+  // Gemma 3's check, right for a Llama's, which has none
+  const blind = { spoil: { vec: flashVec(16, { ignoring: true }) } };
+  const gemma = await chosen({ model: "gemma3", ...blind }), llama = await chosen(blind);
+  assert.match(gemma.tokenAttention.attentions.find(({ name }) => name === VEC).none ?? "", /^wrong: .* at 300 positions through a window of 37/, "a window left out");
+  assert.deepEqual(llama.tokenAttention.attentions.filter(({ none }) => none), [], "no window: right");
 }
-console.log("ok: each check bites: the decode form a little off in a head, or its reduce writing nothing, is wrong and the tiles taken; off inside the line is right");
+console.log("ok: each check bites: the decode form a little off in a head, its reduce writing nothing, or its window left out, is wrong and the tiles taken; off inside the line is right");
 console.log("gpu-tokens-check: ok");
