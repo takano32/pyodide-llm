@@ -263,18 +263,25 @@ try {
     // (shaders.js's SAMPLE sets the State's not_finite word, gpu.js's generate() writes it after the ids, forward.js's
     // generateMany() reads it). The CPU's norm weights of layer 0 are made NaN (the GPU holds its own copy, uploaded as it
     // got ready), the prompt goes through the CPU (its keys and values are NaN then), and the GPU's step from there reads
-    // those up: its logits are NaN. Asked after everything else a run does, for the GPU stops. The weights go back
-    const refusal = (engine) => {
-      const t = plan.tensors.rms_att_weight;
-      if (t?.kind !== "f32") return { skipped: "the norm weights are not float32 here" };
-      const norm = new Float32Array(memory.buffer, base + t.offset, plan.dim), kept = norm.slice();
+    // those up: its logits are NaN. Asked after everything else a run does, for the GPU stops. The weights go back.
+    // T.244: a CPU that writes keys or values that are not finite into a float16 cache now says so (cache.ts's
+    // unfiniteBy()), and the step after them is the CPU's, which never asks the GPU: the NaN is put into the cache in
+    // place instead, after the CPU's prompt (where the last request for steps, seen.tokens, says the first attending
+    // layer's values are: as brokenValues() does), so that the GPU alone reads it
+    const refusal = (engine, seen) => {
+      const cache = seen.tokens?.cache;
+      if (!cache) return { skipped: "no request for steps on the GPU before, to say where the CPU's cache is" };
       engine.newGeneration();
       engine.gpuSide = "cpu";
-      norm.fill(NaN);
       engine.forwardMany(tokens.slice(0, -1), 0);
-      norm.set(kept);
       engine.gpuSide = null;
+      const place = cache.places[0], row = (at) => place.values + at * cache.row;
+      // (the last position of the prompt, which every layer reads, a window's too; a ring holds it twice)
+      const at = n - 1, cells = (place.ring ? [at % place.ring, at % place.ring + place.ring] : [at]).map((one) => (cache.half ? new Uint16Array(memory.buffer, row(one), 1) : new Float32Array(memory.buffer, row(one), 1)));
+      const kept = cells.map((cell) => cell[0]);
+      for (const cell of cells) cell[0] = cache.half ? 0x7e00 : NaN;
       const taken = engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 4, 0, 0.9, 1, [], []);
+      cells.forEach((cell, i) => { cell[0] = kept[i]; });
       return { taken: taken ?? null, status: engine.gpuStatus };
     };
     // T.241: the GPU's worker as forward.js is given it, with what forward.js posts seen on the way (seen.plan: the
@@ -456,7 +463,7 @@ try {
       }
       if (gpu && steps && out.steps && !out.steps.why) {
         if (nan) out.steps.brokenValues = timed("values", () => brokenValues(engine, seen));
-        out.steps.nanLogits = timed("logits", () => refusal(engine));
+        out.steps.nanLogits = timed("logits", () => refusal(engine, seen));
       } else if (gpu && nan) {
         // T.243 (the runs whose last request is not refusal()'s: either stops the GPU; T.241's review: where this browser
         // puts a NaN in this model's rows, NAN_ROUNDS)
