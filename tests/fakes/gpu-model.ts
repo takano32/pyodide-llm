@@ -112,6 +112,11 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   answers.add(ENGINE.RMSNORM_ADD, spoil.normAdd ?? answers.rmsnorm({ add: true }));
   answers.add(ENGINE.ADD, spoil.bias ?? answers.bias);
   answers.add(ENGINE.TOKEN_ROPE, answers.tokenRope);
+  // (T.465.6.4: an LFM2's convolution layers, a Qwen3.5's linear-attention layers, SwiGLU apart)
+  for (const [name, model] of [["SHORT_CONV", answers.shortConv], ["CONV_STATE", answers.convState], ["DELTA_GATES", answers.deltaGates],
+    ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["OUTPUT_GATE", answers.outputGate]]) {
+    answers.add(ENGINE[name], spoil[name] ?? model);
+  }
   // (T.465.6.2: GPT-2's and GPT-NeoX's LayerNorms and GELU)
   answers.add(ENGINE.LAYER_NORM, spoil.layerNorm ?? answers.layerNorm);
   answers.add(ENGINE.GELU, spoil.gelu ?? answers.gelu);

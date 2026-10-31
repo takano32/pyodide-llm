@@ -21,8 +21,11 @@
 //     GELU, learned positions, the parallel residual) the same, and a LayerNorm or a GELU off is wrong.
 //   - T.465.6.3: a ternary model's token (matrices and table ternary: its own forms) and a token of each of the ten types
 //     of llama.cpp's blocks (two on w2's layers a model): every form right, every dispatch answered, a product off wrong.
-// Not held here: that the fastest is taken (the timing's clock is the real one), an LFM2's and a Qwen3.5's layers
-// (T.465.6.4).
+//   - T.465.6.4: an LFM2's token (its convolution layers) and a Qwen3.5's (its linear-attention layers and the gate of
+//     its attending ones' output; and with its states in bundles): every form right, every dispatch answered, and the
+//     convolution, its moved rows or the delta rule's state off is wrong.
+// Not held here: that the fastest is taken (the timing's clock is the real one), T.465.6.5's (outlier channels, tables of
+// blocks, the prompt's rows of a model on the GPU alone, matrices of other packings apart).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
@@ -32,7 +35,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
 const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
-const { flashVec, sample, embed, normQuantize, rmsnorm, bias, layerNorm, gelu } = await gpuAnswers();
+const { flashVec, sample, embed, normQuantize, rmsnorm, bias, layerNorm, gelu, shortConv, convState, deltaNet } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
 const off = (model, spoiled) => (entries, x, y) => {
@@ -114,7 +117,7 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
 // T.465.6.1: a Qwen3 (biases of q, k and v, norms of the heads: q, k and v written, then ADD, HEAD_NORM and TOKEN_ROPE)
 // and a Gemma 3 (GEGLU, the norms behind the attention and the FFN, a window and a local layer's own RoPE): every form
 // right, every dispatch of theirs answered
-for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox"]) {
+for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox", "lfm2", "qwen35", "qwen35 (states in bundles)"]) {
   const { m, answers } = await (async () => {
     const opening = await opened({ model, sane: true });
     await forms_.chooseAttention(opening.m);
@@ -126,7 +129,7 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox"]) {
   assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], `${model}: no form wrong`);
   assert.deepEqual(answers.missed, [], `${model}: every dispatch answered`);
   if (model === "llama") continue;
-  const said = { qwen3: "Qwen3", gemma3: "Gemma 3", gpt2: "GPT-2", neox: "GPT-NeoX" }[model];
+  const said = { qwen3: "Qwen3", gemma3: "Gemma 3", gpt2: "GPT-2", neox: "GPT-NeoX", lfm2: "LFM2", qwen35: "Qwen3.5", "qwen35 (states in bundles)": "Qwen3.5 (its states in bundles)" }[model];
   console.log(`ok: a ${said}'s token: ${m.tokenForm.forms.map(({ name }) => name).join(", ")} checked right, every dispatch answered`);
 }
 {
@@ -264,4 +267,22 @@ for (const types of [["Q2_K", "Q4_K"], ["IQ2_XXS", "IQ2_XS"], ["IQ2_S", "IQ3_XXS
   assert.match(off.m.thrown ?? "", /no layer of a token is right on this GPU/, "a product of blocks off");
 }
 console.log("ok: llama.cpp's blocks: a token of each of the ten types checked right, every dispatch answered; a product off is wrong");
+// T.465.6.4: an LFM2's convolution off (its output 10%), its rows not moved on (CONV_STATE writing nothing), a Qwen3.5's
+// delta rule's state off (10%): no form right
+{
+  const tenth = (model, at) => (entries, x, y) => {
+    model(entries, x, y);
+    const r = entries.find((entry) => entry.binding === at).resource, buffer = r.buffer ?? r;
+    new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4).forEach((v, i, all) => { all[i] = v * 1.1; });
+  };
+  for (const [model, spoil, what, said] of [["lfm2", { SHORT_CONV: tenth(shortConv, 3) }, "a convolution off", /stream|keys/],
+    ["lfm2", { CONV_STATE: () => {} }, "its rows not moved on", /rows are not moved on by one/],
+    // (its state: a scale of its output the norm of the value heads after it takes out)
+    ["qwen35", { DELTA_NET: tenth(deltaNet, 2) }, "a delta rule's state off", /state/]]) {
+    const m = await tokens({ model, spoil });
+    assert.match(m.thrown ?? "", /no layer of a token is right on this GPU/, `${model}: ${what}`);
+    assert.match(m.thrown, said, `${model}: ${what}, said`);
+  }
+}
+console.log("ok: an LFM2's convolution off or its rows not moved on, a Qwen3.5's delta rule's state off: no form right");
 console.log("gpu-tokens-check: ok");
