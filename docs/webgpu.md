@@ -136,7 +136,7 @@ The shapes are taken from public implementations, and each file keeps their noti
 | Qwen2's biases of q, k and v, GPT-2's and GPT-NeoX's biases | llama.cpp's `binary` ADD (MIT) |
 | LayerNorm of GPT-2 and GPT-NeoX | llama.cpp's `row_norm` NORM (MIT), with the weight and the bias in the same dispatch as llama.cpp's Metal `kernel_norm_mul_add_f32` has them (MIT) |
 | GELU of GPT-2 and GPT-NeoX | llama.cpp's `unary` GELU (MIT) |
-| One token's matrix × vector (benchmark only) | llama.cpp's `mul_mat_vec`, ONNX Runtime's MatMulNBits (MIT) |
+| One token's matrix × vector (the benchmark's own: MMVQ, ONNX Runtime's MatMulNBits; it runs the engine's fused texts too) | llama.cpp's `mul_mat_vec`, ONNX Runtime's MatMulNBits (MIT) |
 | The sampling split over chunks of the vocabulary, in 4 dispatches (benchmark only) | MLC LLM's two-stage softmax (`chunk_lse`, `softmax_with_chunked_sum`; Apache-2.0) and llama.cpp's `argmax`, `soft_max` and `cumsum` (MIT). The order across chunks, the penalty applied only by the chunk that holds the token, and the draw in two stages without the nucleus are ours. |
 | One token's layer in 5 dispatches instead of 14 | built on llama.cpp's `mul_mat_vec` |
 | One token's RoPE and write into the cache, where a bias or a norm of a head comes first (Qwen2, Qwen3, GPT-2, GPT-NeoX: 7, 8 and 13 dispatches a layer) | ours: the lines of the fused write above, as a dispatch of their own (`TOKEN_ROPE`); the dispatches around it are the prompt's (the rows above), on one token's vectors |
