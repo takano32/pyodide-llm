@@ -35,7 +35,9 @@ const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/prompt.t
 // of a token's attention by parts (vec) and of their reduce;
 // form and block: makers given the right one, and the block's type)
 type Answer = (entries: unknown[], x: number, y: number) => void;
-type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; headNorm?: Answer; normAdd?: Answer; bias?: Answer; layerNorm?: Answer; gelu?: Answer; fused?: (right: Answer, output: string) => Answer;
+type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; embed?: Answer; normQuantize?: Answer; headNorm?: Answer; normAdd?: Answer; bias?: Answer; layerNorm?: Answer; gelu?: Answer;
+  SHORT_CONV?: Answer; CONV_STATE?: Answer; DELTA_GATES?: Answer; DELTA_CONV?: Answer; DELTA_CONV_STATE?: Answer; DELTA_NET?: Answer; SWIGLU?: Answer;
+  OUTPUT_GATE?: Answer; fused?: (right: Answer, output: string) => Answer;
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
 // (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
