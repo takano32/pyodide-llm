@@ -293,4 +293,13 @@ export const HF_FAMILIES: Entry[] = [
       "XHToken/Spark-X2.5-4B", "0bcb35678590218655dff3765b9e61c83b35e9c4"), 4375021152,
     "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark, languages: "日本語 / English / 中文" },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
+  // T.597.1: an unofficial Japanese fine-tune of the 4B by one person (Atemoya, the maker of the Qwen3.5 0.8B Japanese SFT
+  // v2.5): two merged LoRA stages, after which its card says no Chinese letters leak into its Japanese chat (18% before).
+  // The original's tokenizer (but <unk>'s flag) and chat template; the card says to answer at once (enable_thinking
+  // false), so that form alone, with the card's sampling for chat (the original's)
+  { group: "hf", id: "hf-spark-x2.5-4b-japanese", name: "Atemoya Spark-X2.5 4B Japanese", note: "answers at once · 日本語 / English · fetches 4.4 GB (GGUF) → int8 4.6 GB",
+    ...ggufOf("Takenoko12345678/Spark-X2.5-4B-Japanese-GGUF", "79fd825680c88ba3b4f823202f0ef94aa90ba006", "Spark-X2.5-4B-Japanese-Q8_0.gguf",
+      "Takenoko12345678/Spark-X2.5-4B-Japanese", "bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1"), download: 4375021120,
+    conversion: {}, options: spark, template: SPARK_AT_ONCE, generation: SPARK_SAMPLING.atOnce,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
 ];

@@ -112,11 +112,13 @@ KNOWN = {
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
           "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
           "hf-gemma-4-", "hf-spark-x2.5-", "hf-sarashina2.2-", "hf-cat-translate-")
-# T.233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
+# T.233: what an entry's format is the real template's with, besides enable_thinking (or that too, T.597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T.236's format of a Qwen3.5), not its default, "xhigh"
 # (T.364.3: and Underdog Saluki 27B's, whose template is the same one)
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"},
-                 "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"}}
+                 "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"},
+                 # T.597.1: the one form of an entry whose card says to answer at once (its name says no form)
+                 "hf-spark-x2.5-4b-japanese": {"enable_thinking": False}}
 # T.517: the format a model card writes where the repository has no chat template (LINE's japanese-large-lm
 # instruction-sft: the card's pipeline is given f"ユーザー: {input_text}\nシステム: " and adds nothing to it, through the
 # slow T5Tokenizer, which is the real sentencepiece of spiece.model). A second copy of the list's LINE_SFT, on purpose

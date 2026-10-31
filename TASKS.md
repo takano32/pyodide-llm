@@ -138,7 +138,7 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 未着手
+- T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 進行中
 - T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 未着手
 - T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 未着手
 - T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 未着手
@@ -1300,8 +1300,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
-### T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 状態: 未着手（2026-10-30、T.591 から。規模 小）
-- Takenoko12345678/Spark-X2.5-4B-Japanese @ bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1（spark2_5、Apache-2.0）。作り手の GGUF @ 79fd825680c88ba3b4f823202f0ef94aa90ba006（Q8_0 4.38 GB）。カードは中国語の混ざりを 18% → 0% と言う（一覧の Spark-X2.5 の弱み: AGENTS.md）。`tests/answers.mjs` の日本語の問いで確かめる。
+### T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 状態: 進行中（2026-10-30、T.591 から。規模 小）
+- **子タスクの番号**（取りまとめ役の決め: 作るものが別で、1 つずつ本線に入れられる）: T.597.1 Spark-X2.5 4B Japanese — 進行中、T.597.2 Spark-X2.6 1.7B・4B — 未着手。
+- **T.597.1**（2026-10-31）: `hf-spark-x2.5-4b-japanese`「Atemoya Spark-X2.5 4B Japanese」、すぐ答える形だけ（カードの使い方が `enable_thinking=False`）。トークナイザは原本の Spark-X2.5 と `<unk>` の special の印のほかは同じ、書式も同じ（`SPARK_AT_ONCE`・`spark` の options・`SPARK_SAMPLING.atOnce`）。`format_check.py` 9/9（`TEMPLATE_SAYS` に `enable_thinking: False`）。GGUF の run 41238270238: 290 テンソル、最悪 0.00814、語彙の違い 0。書かせた run 41238270438: int8 4,626,626,588 バイト、BOS 0 は無しより perplexity −74.90%（そのまま）。12 の問い × greedy と種 2 つ（600 トークン）: 止まり 20/24（切れた 4 は流行りと光合成の長い答え）、繰り返し 0、`<unk>` 0、日本語の問いに日本語で 11/12（残る 1 は英訳の問いで英語）。日本語は流暢だが事実を誤り（富士山の所在地、漱石の作品の名）、「标高」「每年」のような簡体字がときどき混ざる（カードの言う 0% には届かない）。CI を回した。訳: 4B の int8 は手元で動かさない（7B 級の決まりに準じ、GB 級のモデルの枝）。
+  - レビュー（Sonnet low、2026-10-31）: 項目・ライセンス・note・台帳は直すこと無し。台帳の `tests/answers.mjs` を `.ts` に直した（T.629.1 の名前）。
+- Takenoko12345678/Spark-X2.5-4B-Japanese @ bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1（spark2_5、Apache-2.0）。作り手の GGUF @ 79fd825680c88ba3b4f823202f0ef94aa90ba006（Q8_0 4.38 GB）。カードは中国語の混ざりを 18% → 0% と言う（一覧の Spark-X2.5 の弱み: AGENTS.md）。`tests/answers.ts` の日本語の問いで確かめる。
 - Spark-X2.6 4B・1.7B（2026-10-27、spark2_5）: 前分割と書式が X2.5 と同じかを見てから。違えば別の子タスク。
 
 ### T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
