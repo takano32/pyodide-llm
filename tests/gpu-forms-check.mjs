@@ -1,6 +1,6 @@
 // tests/gpu-forms-check.mjs (T.465.1): the model's GPU worker choosing a prompt's forms (src/runtime/gpu/forms.ts), on a
 // device that runs no shader (tests/fakes/webgpu.mjs) and answers the checks' dispatches as the shaders would
-// (tests/fakes/gpu-answers.mjs). forms.ts takes a candidate only once its output on made-up numbers is JavaScript's;
+// (tests/fakes/gpu-answers.mjs, whose arithmetic is tests/gpu_answers.py's in NumPy). forms.ts takes a candidate only once its output on made-up numbers is JavaScript's;
 // nothing ran it without a GPU (T.465: five breaks of a review passed the light suite), as nothing wrote the answers.
 // A made-up Llama (tests/fakes/gpu-plans.mjs) on two devices (none of shader-f16 and subgroups, and both), packed
 // int8 dot both times, each a fallback adapter (a pair of one pass times a form there: the timing is not what is held):
@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
 import { standIn } from "./fakes/webgpu.mjs";
 import { MODELS, planned } from "./fakes/gpu-plans.mjs";
-import { gpuAnswers, flashTile, quantize, tiled } from "./fakes/gpu-answers.mjs";
+import { gpuAnswers } from "./fakes/gpu-answers.mjs";
 
 // (the worker's global, as a worker has it)
 globalThis.self = globalThis;
@@ -32,7 +32,7 @@ const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 // a made-up Llama on the stand-in, its forms answered; spoil: a model to put in place of one ("attention", "form",
 // "quantize") or null
 async function opened({ features = [], spoil = {} } = {}) {
-  const answers = gpuAnswers();
+  const answers = await gpuAnswers();
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
   // one pass there, and every pass of a timing would be answered too)
   const { device } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
@@ -58,6 +58,8 @@ async function opened({ features = [], spoil = {} } = {}) {
   for (const form of devicePromptForms(device, m.own)) answers.add(form.code, spoil.form ?? tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8" }));
   return { m, answers };
 }
+// (the models, for the cases that spoil one: the same Pyodide as every answerer's)
+const { flashTile, quantize, tiled } = await gpuAnswers();
 // a model off by a little where spoiled() says, after the right one wrote
 const off = (model, spoiled) => (entries) => {
   model(entries);

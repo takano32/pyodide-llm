@@ -12,7 +12,7 @@ import { pyProxies } from "./fakes/pyodide.mjs";
 import { tokenClock } from "./fakes/token-clock.mjs";
 import { workers, ended, endedThen, READY } from "./fakes/worker.mjs";
 import { standIn } from "./fakes/webgpu.mjs";
-import { gpuAnswers, flashTile, quantize, tiled } from "./fakes/gpu-answers.mjs";
+import { gpuAnswers } from "./fakes/gpu-answers.mjs";
 import { MODELS, planned } from "./fakes/gpu-plans.mjs";
 
 let passed = 0;
@@ -360,8 +360,10 @@ ok("Pyodide's proxies: each counts how it was let go and refuses to be read afte
 }
 ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within its buffer, counted in a typed array's elements; a copy, a clear, a pipeline, a dispatch and a submission written down");
 
-// ---- T.465.1: the shaders' answers, each on numbers whose answer is known; a dispatch answered where its WGSL is named
+// ---- T.465.1: the shaders' answers (tests/gpu_answers.py through the bridge), each on numbers whose answer is known; a
+// dispatch answered where its WGSL is named
 {
+  const { flashTile, quantize, tiled } = await gpuAnswers();
   const made = (size, value) => ({ size, data: new Uint8Array(value ?? size) });
   const filled = (array) => ({ size: array.byteLength, data: new Uint8Array(array.buffer) });
   const entries = (...buffers) => buffers.map((buffer, binding) => ({ binding, resource: buffer }));
@@ -385,7 +387,7 @@ ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within it
   tiled({ packed: false, packing: "int8" })(entries(w, s, ones, y, shape(1), filled(new Uint32Array([1, 0, 0, 0]))));
   assert.equal(f(y)[0], 64, "32 and then 32 more");
   // the answerer: a pipeline by its WGSL or itself; another is left alone
-  const answers = gpuAnswers(), said = [], pipeline = { code: "B" };
+  const answers = await gpuAnswers(), said = [], pipeline = { code: "B" };
   answers.add("A", () => said.push("A"));
   answers.addPipeline(pipeline, () => said.push("B itself"));
   for (const p of [{ code: "A" }, pipeline, { code: "C" }]) answers.answer(p, []);
