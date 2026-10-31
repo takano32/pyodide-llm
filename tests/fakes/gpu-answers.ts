@@ -108,6 +108,34 @@ export async function gpuAnswers() {
       if (nwg !== kept.nwg || stats !== kept.stats || stats !== heads * nwg * kept.size || parts.length < heads * nwg * (kept.size + 2) * 4) return;
       bound(entries, 1).set(kept.out.subarray(0, bound(entries, 1).length));
     }) as Model,
+    // ---- T.465.4: a generated token's step (gpu_answers.py's embed, fused, fused_rope, sample)
+    // EMBED: the table, its scales, the state (its token), x, the shape (the row's width, the piece's first row and rows)
+    embed: ((entries) => {
+      const [n, first, rows] = words(entries, 4);
+      const [row] = called("embed", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows);
+      if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
+    }) as Model,
+    // fusedMatVec ({ norm, output }): the weights, their scales, x, the Params, the norm's weight (norm), then dst, or (rope)
+    // q, the keys, the values, the angles and the step; a workgroup for every 4 rows (MUL_MAT_VEC_ROWS)
+    fusedMatVec: ({ norm, output }: { norm: boolean; output: string }): Model => (entries, x, y) => {
+      const [rows] = words(entries, 3);
+      if (x * y < Math.ceil(rows / 4)) return;
+      const weight = norm ? bound(entries, 4) : undefined;
+      if (output === "rope") {
+        const [q, keys, values] = called("fused_rope", norm, bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3), weight,
+          bound(entries, 6), bound(entries, 7), bound(entries, 8), bound(entries, 9));
+        for (const [binding, made] of [[5, q], [6, keys], [7, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
+        return;
+      }
+      const [out] = called("fused", norm, output, bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3), weight, bound(entries, 5));
+      bound(entries, 5).set(out.subarray(0, bound(entries, 5).length));
+    },
+    // SAMPLE: the logits, two scratch buffers, the state, chosen, the random numbers, the settings; one workgroup
+    sample: ((entries, x) => {
+      if (x < 1) return;
+      const [logits, state, chosen] = called("sample", bound(entries, 0), bound(entries, 3), bound(entries, 4), bound(entries, 5), bound(entries, 6));
+      for (const [binding, made] of [[0, logits], [3, state], [4, chosen]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
+    }) as Model,
     // QUANTIZE: x, its codes, their scales, the params (n, x's stride), the block (tokens)
     // (64 groups of 32 a workgroup across, a token a workgroup down)
     quantize: ((entries, x, y) => {

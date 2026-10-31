@@ -12,7 +12,7 @@
 // one by a pair of one pass there: every pass of a timing would be answered too), whose timing is no device's.
 import { runtimeUrl } from "../tree.mjs";
 import { standIn } from "./webgpu.mjs";
-import { MODELS, planned } from "./gpu-plans.ts";
+import { MODELS, planned, plausible } from "./gpu-plans.ts";
 import { gpuAnswers } from "./gpu-answers.ts";
 
 // (the worker's global, as a worker has it)
@@ -34,8 +34,8 @@ const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 // form and block: makers given the right one, and the block's type)
 type Answer = (entries: unknown[], x: number, y: number) => void;
 type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
-type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null };
-export async function opened({ model = "llama", features = [], spoil = {}, weights = null }: Opened = {}) {
+type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
+export async function opened({ model = "llama", features = [], spoil = {}, weights = null, sane = false }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
@@ -55,6 +55,8 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
     new Uint8Array(memory.buffer).set(codebooks, bytes);
     plan.codebooks = bytes;
   }
+  // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer)
+  if (sane) plausible(plan, memory);
   const m = await device_.openDevice(plan);
   device_.handed(memory, plan);
   await upload(m);
@@ -76,6 +78,14 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
     answers.add(ENGINE.flashVec(shape), spoil.vec ?? answers.flashVec(plan.headSize));
     answers.add(ENGINE.flashVecReduce(shape), spoil.reduce ?? answers.flashVecReduce);
   }
+  // (T.465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
+  answers.add(ENGINE.EMBED, answers.embed);
+  for (const input of ["norm", "plain"]) {
+    for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
+      for (const subgroups of [false, true]) answers.add(ENGINE.fusedMatVec({ input, output, subgroups }), answers.fusedMatVec({ norm: input === "norm", output }));
+    }
+  }
+  answers.add(ENGINE.SAMPLE, answers.sample);
   answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
   // (spoil.form: a maker of each form's model, given the right one)
   for (const form of devicePromptForms(device, m.own)) {
@@ -88,4 +98,11 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
     }
   }
   return { m, answers };
+}
+
+// (T.465.4) the block's layers bound with the prompt's form chosen, and its cache made, as start.ts has them before a
+// token's forms are chosen
+export function blockMade(m: { forms: unknown }) {
+  block_.bindLayers(m);
+  block_.grow(m, 16);
 }

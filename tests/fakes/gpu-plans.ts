@@ -79,3 +79,27 @@ MODELS["qwen35 (states in bundles)"] = { ...MODELS.qwen35, more: { linear: LINEA
 // (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
 export const ALONE = ["llama", "qwen35", "rotated", "qwen35 (states in bundles)"];
 
+
+// T.465.4: numbers a model could have, into the memory a plan lays out (whose bytes are arbitrary where nothing writes:
+// a float32 of arbitrary bits may be NaN or 1e38, and a check's own reference is then NaN too): every int8 matrix's
+// and table's scales small (1e-2 to 2e-2), every vector near 1 (norms; a bias near 0 would be as good), and RoPE's
+// tables the cos and sin of a position's angles (base 10000). The int8 values stay the bytes they are.
+export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
+  const floats = (at: number, n: number, value: (i: number) => number) => {
+    const view = new Float32Array(memory.buffer, at, n);
+    for (let i = 0; i < n; i++) view[i] = value(i);
+  };
+  const small = (i: number) => 0.01 + 0.01 * (((i * 2654435761) >>> 0) % 1000) / 1000;
+  for (const matrix of Object.values(plan.matrices) as { rows: number; n: number; layers: [number, number][] }[]) {
+    for (const [, scales] of matrix.layers) floats(scales, (matrix.rows * matrix.n) / GROUP, small);
+  }
+  for (const table of [plan.tokens.classifier, plan.tokens.embedding].filter(Boolean)) floats(table.at[1], (table.rows * table.n) / GROUP, small);
+  for (const vector of Object.values(plan.vectors) as { at: number; size: number }[]) floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * (i % 7));
+  floats(plan.tokens.final, DIM, (i) => 1 + 0.01 * (i % 5));
+  const half = plan.headSize / 2;
+  for (const [at, f] of [[plan.cos, Math.cos], [plan.sin, Math.sin]] as const) {
+    floats(at, CONTEXT * half, (i) => f(Math.floor(i / half) * 10000 ** (-(i % half) / half)));
+  }
+}
+// (the layers a vector has a copy of: of its kind's, or all)
+const kindsOf = (plan, vector) => (vector.of ? plan.kinds.filter((kind) => kind === vector.of).length : plan.layers);
