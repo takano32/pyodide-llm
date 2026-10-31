@@ -24,6 +24,8 @@ const block_ = await import(runtimeUrl("gpu/block.ts"));
 const { ENGINE } = await import(runtimeUrl("shaders/engine.ts"));
 const { flashShape, flashVecShape } = await import(runtimeUrl("shaders/attention.ts"));
 const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
+const { BLOCK_PACKINGS } = await import(runtimeUrl("shaders/common.ts"));
+const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/prompt.ts"));
 
 // a made-up model on the stand-in (model: one of tests/fakes/gpu-plans.ts's MODELS, a Llama where not said), its forms answered; spoil: a model to put in place of one ("attention", "form",
 // "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
@@ -49,6 +51,8 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   plan.force = { fallback: true };
   // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
   if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
+  // (T.465.6.3: and its table, as a ternary checkpoint's: a token's classifier is read in the form's packing)
+  if (weights === "ternary") Object.assign(plan.tokens.classifier, { packing: "ternary", ternary: true });
   // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T.465.2's review)
   if (Array.isArray(weights)) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
   const codebooks = Array.isArray(weights) && weights.some((type) => type.startsWith("IQ")) ? answers.codebooks() : null;
@@ -58,8 +62,18 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
     new Uint8Array(memory.buffer).set(codebooks, bytes);
     plan.codebooks = bytes;
   }
-  // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer)
-  if (sane) plausible(plan, memory);
+  // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer; T.465.6.3:
+  // and each block of w2's its float16 scales drawn small, as forms.ts's check draws them: BLOCK_WEIGHTS' scale())
+  if (sane) {
+    plausible(plan, memory);
+    if (Array.isArray(weights)) {
+      const { rows, n, layers } = plan.matrices.w2;
+      weights.forEach((packing, l) => {
+        const view = new Uint8Array(memory.buffer, layers[l][0], (rows * n) / 256 * BLOCK_READS[packing].bytes);
+        for (let at = 0, i = 0; at < view.length; at += BLOCK_READS[packing].bytes, i++) BLOCK_WEIGHTS[packing].scale(view, at, 0x1400 | (i * 37 % 1024));
+      });
+    }
+  }
   // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text (the model's
   // own forms: a copy of device.ts's ownOf, which is not exported, of the weights asked for)
   const own = weights === "ternary" ? "ternary" : Array.isArray(weights) ? "blocks" : null;
@@ -82,6 +96,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   }
   // (T.465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
   answers.add(ENGINE.EMBED, spoil.embed ?? answers.embed);
+  answers.add(ENGINE.EMBED_TERNARY, answers.embedTernary);
   for (const input of ["norm", "plain"]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
       for (const subgroups of [false, true]) {
@@ -104,9 +119,12 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   // (the prompt's and a token's quantization: block.ts's pipeline of this text. A rotated basis's ROTATE_QUANTIZE is not
   // answered: no check here runs one, and its codes would stay 0)
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
-  for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
-    const right = answers.dp4a({ output });
-    answers.add(ENGINE.fusedDp4aMatVec({ output, weights: "int8" }), spoil.dp4a ? spoil.dp4a(right, output) : right);
+  // (T.465.6.3: and of ternary weights and of each type of llama.cpp's blocks)
+  for (const weights of ["int8", "ternary", ...BLOCK_PACKINGS]) {
+    for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
+      const right = answers.dp4a({ output, weights });
+      answers.add(ENGINE.fusedDp4aMatVec({ output, weights }), spoil.dp4a ? spoil.dp4a(right, output) : right);
+    }
   }
   // (spoil.form: a maker of each form's model, given the right one)
   for (const form of devicePromptForms(device, own)) {

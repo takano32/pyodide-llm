@@ -19,7 +19,10 @@
 //     a window and a local layer's RoPE): every form right and every dispatch answered (answers.missed), and a head's
 //     norm, a bias or a norm behind off is wrong. T.465.6.2: a GPT-2's and a GPT-NeoX's (LayerNorms with their biases,
 //     GELU, learned positions, the parallel residual) the same, and a LayerNorm or a GELU off is wrong.
-// Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6.3 on).
+//   - T.465.6.3: a ternary model's token (matrices and table ternary: its own forms) and a token of each of the ten types
+//     of llama.cpp's blocks (two on w2's layers a model): every form right, every dispatch answered, a product off wrong.
+// Not held here: that the fastest is taken (the timing's clock is the real one), an LFM2's and a Qwen3.5's layers
+// (T.465.6.4).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
@@ -223,4 +226,37 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox"]) {
   assert.deepEqual(near.tokenForm.forms.filter(({ none }) => none), [], "off inside the line: right");
 }
 console.log("ok: each check bites: a token's stream off in one value (float and DP4A each), a greedy token not the largest logit, a sampled token the walk does not reach, the penalty left off, the logits off in a row (float and DP4A), a code of the quantizer, a key's bit, the embedding twice (a float form); off inside the line is right");
+// T.465.6.3: a ternary model's token (its matrices and table ternary: EMBED_TERNARY, the DP4A forms' ternary product), and
+// each of the ten types of llama.cpp's blocks on w2's two layers (the DP4A product of each type: checkTokenBlocks' random
+// blocks, then the first layer): every form right, every dispatch answered, and the product off is wrong
+async function tokensOf(options) {
+  const opening = await opened({ sane: true, ...options });
+  await forms_.chooseAttention(opening.m);
+  await forms_.chooseMatrices(opening.m);
+  blockMade(opening.m);
+  await tokenForms_.chooseTokens(opening.m).catch((error) => { opening.m.thrown = error.message; });
+  return opening;
+}
+{
+  const { m, answers } = await tokensOf({ model: "llama (8 heads)", weights: "ternary" });
+  assert.equal(m.thrown, undefined, "a ternary model's token");
+  assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], "ternary: no form wrong");
+  assert.ok(m.tokenForm.forms.every(({ name }) => name.includes("ternary")), "its own forms");
+  assert.deepEqual(answers.missed, [], "ternary: every dispatch answered");
+  const off = await tokensOf({ model: "llama (8 heads)", weights: "ternary", spoil: { dp4a: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] += 0.3 * peak(out); }) : right) } });
+  assert.match(off.m.thrown ?? "", /no layer of a token is right on this GPU/, "a ternary product off");
+  console.log(`ok: a ternary model's token: ${m.tokenForm.forms.map(({ name }) => name).join(", ")} checked right, every dispatch answered; its product off is wrong`);
+}
+for (const types of [["Q2_K", "Q4_K"], ["IQ2_XXS", "IQ2_XS"], ["IQ2_S", "IQ3_XXS"], ["IQ3_S", "IQ1_S"], ["IQ1_M", "IQ4_XS"]]) {
+  const { m, answers } = await tokensOf({ weights: types });
+  assert.equal(m.thrown, undefined, `${types.join(" and ")}: a token`);
+  assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], `${types.join(" and ")}: no form wrong`);
+  assert.deepEqual(answers.missed, [], `${types.join(" and ")}: every dispatch answered`);
+}
+{
+  // (w2's product, the down projection, is the one matrix of blocks: its add off)
+  const off = await tokensOf({ weights: ["Q4_K", "IQ2_XXS"], spoil: { dp4a: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] += 0.3 * peak(out); }) : right) } });
+  assert.match(off.m.thrown ?? "", /no layer of a token is right on this GPU/, "a product of blocks off");
+}
+console.log("ok: llama.cpp's blocks: a token of each of the ten types checked right, every dispatch answered; a product off is wrong");
 console.log("gpu-tokens-check: ok");

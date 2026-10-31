@@ -118,6 +118,18 @@ def embed(table, scales, state, n, first, rows):
     return (values * np.repeat(d, GROUP)).astype(np.float32).tobytes()
 
 
+def embed_ternary(table, scales, state, n, first, rows):
+    """(T.465.6.3) EMBED_TERNARY: the state's token's row of a ternary table (16 codes a word, a float32 scale a group of
+    128: the GPU's, widened), a piece of rows from first -> the row, float32, as bytes; None where the token is not in it"""
+    token = int(np.frombuffer(bytes(state), dtype=np.uint32)[4])
+    row = token - first
+    if rows and not 0 <= row < rows:
+        return None
+    values = unpack_ternary(np.frombuffer(bytes(table), dtype=np.uint8)[row * n // 4: (row + 1) * n // 4]).astype(np.float32)
+    d = np.frombuffer(bytes(scales), dtype=np.float32)[row * n // (4 * GROUP): (row + 1) * n // (4 * GROUP)]
+    return (values * np.repeat(d, 4 * GROUP)).astype(np.float32).tobytes()
+
+
 def fused(norm, output, weights, scales, x, params, norm_weight, dst):
     """fusedMatVec (shaders/fused.ts): the rows of an int8 matrix (float32 scales a group of 32 of a row) times x, x
     through the norm first where norm (its weight at params' normAt, the scale of x's mean square and eps), into dst:
@@ -128,15 +140,15 @@ def fused(norm, output, weights, scales, x, params, norm_weight, dst):
     return product(norm, output, weights, scales, np.frombuffer(bytes(x), dtype=np.float32)[:n].astype(np.float64), params, norm_weight, dst)
 
 
-def product(norm, output, weights, scales, v, params, norm_weight, dst):
-    """fused()'s, of the vector v (float64) as it is read"""
+def product(norm, output, weights, scales, v, params, norm_weight, dst, packing="int8"):
+    """fused()'s, of the vector v (float64) as it is read (T.465.6.3: of a matrix of a packing: matrix()'s)"""
     rows, words, per_row, second, eps, norm_at = row_params(params)
     n = per_row * GROUP
     scale = 1.0
     if norm:
         scale = 1.0 / math.sqrt(float(np.mean(v * v)) + eps)
         v = v * np.frombuffer(bytes(norm_weight), dtype=np.float32)[norm_at: norm_at + n]
-    sums = matrix(weights, scales, per_row, rows + (second if output in ("swiglu", "geglu") else 0)) @ v * scale
+    sums = matrix(weights, scales, per_row, rows + (second if output in ("swiglu", "geglu") else 0), packing) @ v * scale
     out = np.frombuffer(bytes(dst), dtype=np.float32).astype(np.float64).copy()
     value = sums[:rows]
     if output == "write":
@@ -195,9 +207,18 @@ def row_params(params):
     return int(words[0]), int(words[1]), int(words[2]), int(words[3]), float(np.frombuffer(bytes(params), dtype=np.float32)[4]), int(words[5])
 
 
-def matrix(weights, scales, per_row, rows):
-    """rows of an int8 matrix with a float32 scale a group of 32, as float64 [rows][per_row * 32]"""
+def matrix(weights, scales, per_row, rows, packing="int8"):
+    """rows of a matrix as float64 [rows][per_row * 32]: int8 with a float32 scale a group of 32; T.465.6.3: ternary codes
+    (16 a word) with a float32 scale a group of 128 (the GPU's, widened from the file's float16s); llama.cpp's blocks by
+    the converter's readers, their scales inside (an IQ type's codebooks the converter's, which are the ones bound)"""
     n = per_row * GROUP
+    if packing == "ternary":
+        w = unpack_ternary(np.frombuffer(bytes(weights), dtype=np.uint8)[: rows * n // 4]).astype(np.float64).reshape(rows, n)
+        s = np.frombuffer(bytes(scales), dtype=np.float32)[: rows * n // (4 * GROUP)].astype(np.float64).reshape(rows, n // (4 * GROUP))
+        return w * np.repeat(s, 4 * GROUP, axis=1)
+    if packing in SUPERBLOCKS:
+        _, size, read = SUPERBLOCKS[packing]
+        return read(bytes(weights)[: rows * n // 256 * size]).astype(np.float64).reshape(rows, n)
     w = np.frombuffer(bytes(weights), dtype=np.int8)[: rows * n].astype(np.float64).reshape(rows, n)
     s = np.frombuffer(bytes(scales), dtype=np.float32)[: rows * per_row].astype(np.float64).reshape(rows, per_row)
     return w * np.repeat(s, GROUP, axis=1)
@@ -365,18 +386,18 @@ def norm_quantize(x, weight, norm, step):
     return codes.tobytes(), scales.tobytes()
 
 
-def dp4a(output, weights, scales, xq, xs, params, dst):
-    """fusedDp4aMatVec with an int8 matrix: its rows by the quantized vector (codes times their group's scale), written
-    as fused() writes -> dst, as bytes"""
+def dp4a(output, weights, scales, xq, xs, params, dst, packing="int8"):
+    """fusedDp4aMatVec: a matrix's rows (int8; T.465.6.3: ternary, llama.cpp's blocks: matrix()'s) by the quantized
+    vector (codes times their group's scale), written as fused() writes -> dst, as bytes"""
     rows, words, per_row, second, eps, norm_at = row_params(params)
     n = per_row * GROUP
     v = np.frombuffer(bytes(xq), dtype=np.int8)[:n].astype(np.float64) * np.repeat(np.frombuffer(bytes(xs), dtype=np.float32)[:per_row].astype(np.float64), GROUP)
-    return product(False, output, weights, scales, v, params, None, dst)
+    return product(False, output, weights, scales, v, params, None, dst, packing)
 
 
-def dp4a_rope(weights, scales, xq, xs, params, keys, values, angles, step):
+def dp4a_rope(weights, scales, xq, xs, params, keys, values, angles, step, packing="int8"):
     """fusedDp4aMatVec's "rope" write -> (q, the keys, the values), as bytes"""
     words = np.frombuffer(bytes(params), dtype=np.uint32)
     rows, q_rows, kv_rows, size, turned = int(words[0]), *(int(w) for w in words[6:10])
-    made = np.frombuffer(dp4a("write", weights, scales, xq, xs, params, np.zeros(rows, dtype=np.float32).tobytes()), dtype=np.float32).astype(np.float64)
+    made = np.frombuffer(dp4a("write", weights, scales, xq, xs, params, np.zeros(rows, dtype=np.float32).tobytes(), packing), dtype=np.float32).astype(np.float64)
     return rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step)
