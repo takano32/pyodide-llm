@@ -267,7 +267,7 @@ def test_the_conversion_tells_the_engine_what_the_file_cannot(model):
 
 def test_the_other_models_keep_the_options_they_always_had():
     """No "convolution" where there are no such layers: a saved conversion is used again only while its options are
-    what the converter gives (kept.js's CONVERTER)."""
+    what the converter gives (convert/version.py's CONVERTER)."""
     from conftest import qwen35_model, synthetic_weights
     from test_convert import hugging_face
     from test_qwen3 import conversion as plain

@@ -143,7 +143,7 @@ def test_a_packed_dtype_needs_rows_of_whole_groups_wherever_it_is_asked():
 
 # The order of each layout's file, written down a second time on purpose: every reader takes the order from the rows,
 # so a row moved by mistake still converts and reads back and no other unit test notices, while the files visitors
-# kept and the site's own models are in this order. A change here is a change of the format (kept.js's CONVERTER).
+# kept and the site's own models are in this order. A change here is a change of the format (convert/version.py's CONVERTER).
 ORDER = {
     "llama": "token_embedding_table rms_att_weight wq wk wv wo rms_ffn_weight w1 w2 w3 rms_final_weight freq_cis_real freq_cis_imag",
     "llama, its own classifier": "token_embedding_table rms_att_weight wq wk wv wo rms_ffn_weight w1 w2 w3 rms_final_weight "
