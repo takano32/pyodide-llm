@@ -172,6 +172,7 @@ export const LICENSES: Record<string, string> = {
   "LiquidAI/LFM2.5-1.2B-JP-202606": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF": LFM_OPEN,
   "LiquidAI/LFM2-350M-ENJP-MT": LFM_OPEN, "LiquidAI/LFM2-350M-ENJP-MT-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-2.6B": LFM_OPEN, "LiquidAI/LFM2.5-2.6B-GGUF": LFM_OPEN,
+  "Takenoko12345678/Spark-X2.5-4B-Japanese": APACHE, "Takenoko12345678/Spark-X2.5-4B-Japanese-GGUF": APACHE,
   // T.511.1: the cards of Shisa's 350M and of its GGUF have no license (no field, no LICENSE file): written is the license
   // of their base_model, Liquid AI's LFM2-350M-ENJP-MT (itself from LFM2-350M), whose card says lfm1.0 (the owner's
   // decision, 2026-10-15)
