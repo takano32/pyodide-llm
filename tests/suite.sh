@@ -190,6 +190,10 @@ page_modules() {
   # and computes nothing: device.js's record and its end, weights.js's (and a checkpoint that comes in stretches, for a
   # model on the GPU alone), block.js's (the cache grown, a block's dispatches and answer) (under a second)
   node tests/gpu-worker-parts-check.mjs
+  # T.465.1: forms.ts choosing a prompt's attention and tiled forms on that WebGPU, whose checks' dispatches are answered
+  # as the shaders would (tests/fakes/gpu-answers.mjs): every form right, and each check refusing an answer a little off
+  # (about 15 s)
+  node tests/gpu-forms-check.mjs
   # T.357.3: the parts of the tool that checks the GPU in CI (tests/gpu-check.mjs, which runs there alone), each by itself
   # on made-up numbers: its measures, which made-up models an engine runs, a model's verdict and its steps' for runs as
   # they should be and wrong in one thing each, the tables, that the harness is a module whose imports are files of this
