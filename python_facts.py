@@ -4,7 +4,8 @@
 # module of one constant, FACTS, which the runtime imports as it imports a neighbour): the copy that was written by hand twice, and held to Python by a check, is Python's now
 # (the owner, 2026-10-31: Python first, then TypeScript). Made by `make kernels` (before any check runs: the deploy's
 # light suite runs before the build), and by python_archive.py (a build's and the development server's start).
-# The same Python gives the same bytes.
+# The same Python gives the same bytes. It reads the engine's and the converter's modules, which import NumPy: the
+# python3 that runs it has NumPy (as `make models` needs it anyway).
 #
 #   python3 python_facts.py [the folder: src/runtime/built]
 #

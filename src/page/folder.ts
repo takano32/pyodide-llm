@@ -9,7 +9,7 @@ import { FACTS } from "../runtime/built/facts.ts";
 
 // The tokenizers a folder may come with: the conversion's own list, Python's (TOKENIZERS of
 // src/python/convert/conduct.py: which are tried, and in which order). This page asks for one of them before Pyodide is
-// there to say, so T.628.2: python_facts.py writes the list into src/runtime/built/facts.ts, read here
+// there to say: python_facts.py writes the list into src/runtime/built/facts.ts, read here (T.628.2)
 export const TOKENIZERS: readonly string[] = FACTS.tokenizers;
 const HF_IGNORED = ["tokenizer_config.json", "generation_config.json", "special_tokens_map.json", "model.safetensors.index.json"];
 export async function openHuggingFace(chosen: File[]) {
