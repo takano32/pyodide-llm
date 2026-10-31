@@ -181,6 +181,13 @@ export const HF_JAPANESE: Entry[] = [
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.593: ELYZA's Qwen2.5 7B Instruct taught to answer without its steps of reasoning: the same template as the
+  // Qwen2.5's (its system message and all), so the same BOS and format. The sampling of its card's example (0.6, 0.95)
+  { group: "hf", id: "hf-elyza-shortcut-1.0-qwen-7b", name: "ELYZA-Shortcut-1.0 Qwen 7B", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB",
+    ...ggufOf("mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf", "fc1fb43597cab7c9edbe71e41c109fadb83d3815", "ELYZA-Shortcut-1.0-Qwen-7B-Q8_0.gguf",
+      "elyza/ELYZA-Shortcut-1.0-Qwen-7B", "d33448648d9b1b7d69cbadb3f1a8d6fb4c8a01ee"), download: 8098525440,
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
   { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
     original: "Rakuten/RakutenAI-7B-chat",
