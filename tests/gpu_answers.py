@@ -308,6 +308,33 @@ def rms_rows(x, weight, norm, step, across, out, add):
     return target.tobytes()
 
 
+def layer_norm(x, weight, bias, norm, step, across, out):
+    """(T.465.6.2) LAYER_NORM: each row of the dispatch (across a token, its x) as the CPU's layernorm: weight × (s × (x
+    - mean)) + bias, s the inverse root of the variance and eps, in float32 -> out, as bytes"""
+    size, at, eps = norm_params(norm)
+    tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
+    source = np.frombuffer(bytes(x), dtype=np.float32)
+    target = np.frombuffer(bytes(out), dtype=np.float32).copy()
+    w = np.frombuffer(bytes(weight), dtype=np.float32)[at: at + size]
+    b = np.frombuffer(bytes(bias), dtype=np.float32)[at: at + size]
+    for row in range(tokens * across):
+        values = source[row * size: (row + 1) * size]
+        mean = np.float32(np.mean(values.astype(np.float64)))
+        s = np.float32(1.0 / math.sqrt(float(np.mean((values - mean).astype(np.float64) ** 2)) + eps))
+        target[row * size: (row + 1) * size] = (w * (s * (values - mean)) + b).astype(np.float32)
+    return target.tobytes()
+
+
+def gelu(gate, size, step):
+    """(T.465.6.2) GELU: each token's n values of gate, the tanh approximation (its argument clamped) -> gate, as bytes"""
+    n = int(np.frombuffer(bytes(size), dtype=np.uint32)[0])
+    tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
+    out = np.frombuffer(bytes(gate), dtype=np.float32).copy()
+    v = out[: tokens * n].astype(np.float64)
+    out[: tokens * n] = 0.5 * v * (1.0 + np.tanh(np.clip(0.7978845608028654 * (v + 0.044715 * v ** 3), -9.010913, 9.010913)))
+    return out.tobytes()
+
+
 def add(y, bias, shape, step):
     """ADD: each token's row of y (n of the Bias, the dispatch's y a token) plus the bias at its start, or (byPos) the
     bias's row of the token's position -> y, as bytes"""

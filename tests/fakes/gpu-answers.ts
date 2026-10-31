@@ -149,6 +149,18 @@ export async function gpuAnswers() {
       const [out] = called("add", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3));
       bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
     }) as Model,
+    // (T.465.6.2) LAYER_NORM: x, the weight, the bias, out, the Norm, the step (a workgroup a row across, a token down);
+    // GELU: the gate (in place), its Size (n), the step (64 values a workgroup across, a token down)
+    layerNorm: ((entries, x, y) => {
+      if (y < words(entries, 5)[0]) return;
+      const [out] = called("layer_norm", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 4), bound(entries, 5), x, bound(entries, 3));
+      bound(entries, 3).set(out.subarray(0, bound(entries, 3).length));
+    }) as Model,
+    gelu: ((entries, x, y) => {
+      if (x * 64 < words(entries, 1)[0] || y < words(entries, 2)[0]) return;
+      const [out] = called("gelu", bound(entries, 0), bound(entries, 1), bound(entries, 2));
+      bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
+    }) as Model,
     // TOKEN_ROPE: the rows (2), the matrix's Params (3), then q, the keys, the values, the angles and the step (5 to 9)
     tokenRope: ((entries, x) => {
       if (x < 1) return;
