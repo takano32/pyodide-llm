@@ -63,7 +63,7 @@ async function started(options = {}) {
 {
   // no attention right: unusable, with why
   const [said] = await started({ spoil: { attention: () => {} } });
-  assert.equal(said.type, "unusable", `unusable, not ${said.type}`);
+  assert.equal(said?.type, "unusable", `unusable, not ${said?.type ?? "nothing said"}`);
   assert.match(JSON.stringify(said), /no attention is right on this GPU/, "with why");
   assert.equal(closed, 1, "and the worker ended");
   console.log("ok: no attention right: unusable, with why");
