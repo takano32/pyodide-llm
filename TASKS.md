@@ -138,7 +138,6 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.595 [追加][モデル] llm-jp-3 7.2B instruct3 — 反映済み
 - T.596 [追加][モデル] LFM2-350M-ENJP-MT（日英の翻訳）と LFM2.5-2.6B — 進行中
 - T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 未着手
 - T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 未着手
@@ -1301,13 +1300,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
-
-### T.595 [追加][モデル] llm-jp-3 7.2B instruct3 — 状態: 反映済み（2026-10-30、T.591 から。規模 小）
-- llm-jp/llm-jp-3-7.2b-instruct3 @ cdd4c7f3296fdc7785423a864bd9a86ce4c15915。Q8_0: mmnga @ 368515ca…（7.751 GB）。一覧の llm-jp-3 3.7B と 8B（llm-jp-4）の間。
-- **実装（2026-10-31）**: `hf-japanese.ts` に項目 `hf-llm-jp-3-7.2b-instruct3`（mmnga の Q8_0、語彙は原本、一覧の llm-jp-3 3.7B instruct3 と同じ組: `llmJp`・`LLM_JP_INSTRUCT`・`sampled(1.1)`）。`licenses.ts` に 2 行（Apache-2.0、mmnga のカードも同じ）。`format_check.py` の `SYSTEM` に id を足した（カードの例が system の文を渡す: ほかの llm-jp の instruct と同じ）。
-- **確かめ**: `format_check.py` 9/9。GGUF は `gguf.yml` の run 41227255238 で原本と（291 のテンソル、相対の最大 0.00582、最も近い量子化とのずれ 0、語彙の違い 0: GGUF の後ろの 10 は詰め物。mmnga の imatrix は Q8_0 には効かない）。ページのエンジン（int8 8,204,337,180 バイト、64 ビット）で tests.yml の run 41227255494: 頭のトークンの perplexity（1500 トークン）は なし 10.898・`<s>`(1) +0.87%。差は小さいので本物の書式と同じ BOS 1 のまま。`answers.ts`（6 問 × greedy と種 2、400 トークン）は 12/12 止まり、日本語の問い 6/6 に日本語（かな 52〜82%）、繰り返し 0、`<unk>` 0。富士山・英語の 2 問は崩れない。流行りの問いは greedy で「未来の予測はできません」と断ってから例を挙げる。17 × 24 は日本語も英語も誤る（2206・40 など: モデルの力）。答えは短め（平均 101 トークン）、CI の 4 論理コアで 1 本に 8〜85 秒。
-- CI を回した。訳: 7B は手元で動かさない（AGENTS.md）。
-- レビュー（Sonnet low、2026-10-31）: 直すもの無し。リビジョンと `download` は HF と一致、ライセンスは両方のカードが Apache-2.0、項目は 3.7B instruct3 と同じ組、`SYSTEM` の id、note の 8.2 GB と台帳の数字は run のログと合う。
 
 ### T.596 [追加][モデル] LFM2-350M-ENJP-MT（日英の翻訳）と LFM2.5-2.6B — 状態: 進行中（2026-10-30、T.591 から。規模 小）
 - LiquidAI/LFM2-350M-ENJP-MT @ 80367784d525777ad7565b24534ba5810eeac59f（lfm2、354M、LFM Open License、likes 98）。GGUF: LiquidAI/LFM2-350M-ENJP-MT-GGUF @ 889c88c3d3681b4f342ae210a1d2a1369aba0e10（Q8_0 0.38 GB）。カードの system の文（訳す向き）を手書きの書式に: CAT-Translate の項目の形。スマホで使える翻訳のモデル（CAT-Translate 0.8B の約半分）。
