@@ -86,6 +86,8 @@ async function tokens(options = {}) {
   await tokenForms_.chooseTokens(m).catch((error) => { m.thrown = error.message; });
   return m;
 }
+// (the largest |value| of an output)
+const peak = (out) => out.reduce((most, value) => Math.max(most, Math.abs(value)), 0);
 // a model's output (binding at, a float32 array) off where spoiled() says, after the right one wrote
 const outputOff = (model, at, spoiled) => (entries, x, y) => {
   model(entries, x, y);
@@ -104,9 +106,10 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
 }
 // each check bites
 {
-  // the down projection's add off by 1% in one value (the float forms' line 2e-3 of the stream's change)
+  // the down projection's add off in one value by 1% of the stream's largest (the float forms' line 2e-3 of its change;
+  // one value scaled by 1% fell under it where the value was small)
   // (the float forms' text: the DP4A forms read their own, and stay right)
-  const off1 = await tokens({ spoil: { fused: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1.01; }) : right) } });
+  const off1 = await tokens({ spoil: { fused: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] += 0.01 * peak(out); }) : right) } });
   const verdict = (name) => off1.tokenForm.forms.find((tried) => tried.name === name);
   assert.match(verdict(FLOAT).none ?? "", /^wrong: the first layer's stream is .* of its change from JavaScript's/, "a stream off in one value");
   assert.equal(verdict(DP4A).none, undefined, "the DP4A forms right");
@@ -132,16 +135,17 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
     if (temperature(entries)) buffer.data.set(before);
   } } });
   assert.match(unpenalized.thrown ?? "", /the penalized logits are .* from JavaScript's/, "the penalty left off");
-  // (T.465.4's review) the head's logits off in row 0 (the check reads rows 0 and 95 of a vocabulary of 96): by 1% in a
-  // float form's classifier (its line 1e-3), by 50% in a DP4A form's (2e-2); the DP4A forms' stream off by 30% in an add;
+  // (T.465.4's review) the head's logits off in row 0 (the check reads rows 0 and 95 of a vocabulary of 96): by 1% of the
+  // largest logit in a float form's classifier (its line 1e-3 of it), by 10% in a DP4A form's (2e-2); the DP4A forms' stream off by 30% in an add;
   // a code of the norm and quantizer's turned; a key's exponent bit at position 1 turned; the embedding's row twice
   const verdicts = (m) => Object.fromEntries(m.tokenForm?.forms?.map(({ name, none }) => [name, none]) ?? []);
   const said = (m) => `${m.thrown ?? ""} ${JSON.stringify(verdicts(m))}`;
-  const headOff = await tokens({ spoil: { fused: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] *= 1.01; }) : right),
-    dp4a: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] *= 1.5; }) : right) } });
+  // (by a share of the largest logit, which the check's line is of: a row of a small logit scaled by 1% fell under it)
+  const headOff = await tokens({ spoil: { fused: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] += 0.01 * peak(out); }) : right),
+    dp4a: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] += 0.1 * peak(out); }) : right) } });
   assert.match(said(headOff), /the logits are .* \(line 0\.001\)/, "a float classifier off in row 0");
   assert.match(said(headOff), /the logits are .* \(line 0\.02\)/, "a DP4A classifier off in row 0");
-  const dp4aOff = await tokens({ spoil: { dp4a: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1.3; }) : right) } });
+  const dp4aOff = await tokens({ spoil: { dp4a: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] += 0.3 * peak(out); }) : right) } });
   assert.match(verdicts(dp4aOff)[DP4A] ?? "", /^wrong: the first layer's stream is .* \(line 0\.02\)/, "a DP4A form's stream off");
   assert.equal(verdicts(dp4aOff)[FLOAT], undefined, "the float forms right");
   const codes = await tokens({ spoil: { normQuantize: (entries, x, y) => {
