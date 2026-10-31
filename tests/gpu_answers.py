@@ -124,7 +124,13 @@ def fused(norm, output, weights, scales, x, params, norm_weight, dst):
     -> dst, as bytes. (The "rope" write is fused_rope's.)"""
     rows, words, per_row, second, eps, norm_at = row_params(params)
     n = per_row * GROUP
-    v = np.frombuffer(bytes(x), dtype=np.float32)[:n].astype(np.float64)
+    return product(norm, output, weights, scales, np.frombuffer(bytes(x), dtype=np.float32)[:n].astype(np.float64), params, norm_weight, dst)
+
+
+def product(norm, output, weights, scales, v, params, norm_weight, dst):
+    """fused()'s, of the vector v (float64) as it is read"""
+    rows, words, per_row, second, eps, norm_at = row_params(params)
+    n = per_row * GROUP
     scale = 1.0
     if norm:
         scale = 1.0 / math.sqrt(float(np.mean(v * v)) + eps)
@@ -255,3 +261,52 @@ def sample(logits, state, chosen, randoms, settings):
         words[6] = history + 1
         words[2] += 1
     return out.tobytes(), words.tobytes(), picks.tobytes()
+
+
+# ---- T.465.4: the DP4A forms of a token's layer: the norm with the quantizer (NORM_QUANTIZE), or apart (RMSNORM, then
+# QUANTIZE), and the matrix by the quantized vector (fusedDp4aMatVec: no norm on its read, T.150's writes)
+
+def norm_params(norm):
+    """Norm (device.ts's normShape): the size, the weight's start, eps"""
+    words = np.frombuffer(bytes(norm), dtype=np.uint32)
+    return int(words[0]), int(words[1]), float(np.frombuffer(bytes(norm), dtype=np.float32)[2])
+
+
+def normed(x, weight, norm, tokens):
+    """weight × (s × x) of each token's row, s the inverse root of its mean square and eps, in float32 as RMSNORM"""
+    size, at, eps = norm_params(norm)
+    rows = np.frombuffer(bytes(x), dtype=np.float32)[: tokens * size].reshape(tokens, size)
+    w = np.frombuffer(bytes(weight), dtype=np.float32)[at: at + size]
+    s = (1.0 / np.sqrt(np.mean(rows.astype(np.float64) ** 2, axis=1) + eps)).astype(np.float32)
+    return (w * (s[:, None] * rows)).astype(np.float32)
+
+
+def rmsnorm(x, weight, norm, step):
+    """RMSNORM: x, the weight, the Norm, the step (tokens) -> dst, as bytes"""
+    tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
+    return normed(x, weight, norm, tokens).tobytes()
+
+
+def norm_quantize(x, weight, norm, step):
+    """NORM_QUANTIZE: RMSNORM's values of each token quantized as QUANTIZE does -> (codes, scales), as bytes"""
+    tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
+    values = normed(x, weight, norm, tokens)
+    codes, scales = quantized(values.reshape(1, -1))
+    return codes.tobytes(), scales.tobytes()
+
+
+def dp4a(output, weights, scales, xq, xs, params, dst):
+    """fusedDp4aMatVec with an int8 matrix: its rows by the quantized vector (codes times their group's scale), written
+    as fused() writes -> dst, as bytes"""
+    rows, words, per_row, second, eps, norm_at = row_params(params)
+    n = per_row * GROUP
+    v = np.frombuffer(bytes(xq), dtype=np.int8)[:n].astype(np.float64) * np.repeat(np.frombuffer(bytes(xs), dtype=np.float32)[:per_row].astype(np.float64), GROUP)
+    return product(False, output, weights, scales, v, params, None, dst)
+
+
+def dp4a_rope(weights, scales, xq, xs, params, keys, values, angles, step):
+    """fusedDp4aMatVec's "rope" write -> (q, the keys, the values), as bytes"""
+    words = np.frombuffer(bytes(params), dtype=np.uint32)
+    rows, q_rows, kv_rows, size, turned = int(words[0]), *(int(w) for w in words[6:10])
+    made = np.frombuffer(dp4a("write", weights, scales, xq, xs, params, np.zeros(rows, dtype=np.float32).tobytes()), dtype=np.float32).astype(np.float64)
+    return rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step)

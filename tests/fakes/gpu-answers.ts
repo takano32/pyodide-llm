@@ -130,6 +130,31 @@ export async function gpuAnswers() {
       const [out] = called("fused", norm, output, bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3), weight, bound(entries, 5));
       bound(entries, 5).set(out.subarray(0, bound(entries, 5).length));
     },
+    // the DP4A forms: RMSNORM (x, the weight, dst, the Norm, the step), NORM_QUANTIZE (x, the weight, the codes, their
+    // scales, the Norm, the step; a workgroup a token), and fusedDp4aMatVec ({ output }: the weights, their scales, the
+    // codes, the Params, the codes' scales, then dst or (rope) q, the keys, the values, the angles and the step)
+    rmsnorm: ((entries) => {
+      const [out] = called("rmsnorm", bound(entries, 0), bound(entries, 1), bound(entries, 3), bound(entries, 4));
+      bound(entries, 2).set(out.subarray(0, bound(entries, 2).length));
+    }) as Model,
+    normQuantize: ((entries, x) => {
+      if (x < words(entries, 5)[0]) return;
+      const [codes, scales] = called("norm_quantize", bound(entries, 0), bound(entries, 1), bound(entries, 4), bound(entries, 5));
+      bound(entries, 2).set(codes.subarray(0, bound(entries, 2).length));
+      bound(entries, 3).set(scales.subarray(0, bound(entries, 3).length));
+    }) as Model,
+    dp4a: ({ output }: { output: string }): Model => (entries, x, y) => {
+      const [rows] = words(entries, 3);
+      if (x * y < Math.ceil(rows / 4)) return;
+      if (output === "rope") {
+        const [q, keys, values] = called("dp4a_rope", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 4), bound(entries, 3),
+          bound(entries, 6), bound(entries, 7), bound(entries, 8), bound(entries, 9));
+        for (const [binding, made] of [[5, q], [6, keys], [7, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
+        return;
+      }
+      const [out] = called("dp4a", output, bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 4), bound(entries, 3), bound(entries, 5));
+      bound(entries, 5).set(out.subarray(0, bound(entries, 5).length));
+    },
     // SAMPLE: the logits, two scratch buffers, the state, chosen, the random numbers, the settings; one workgroup
     sample: ((entries, x) => {
       if (x < 1) return;
