@@ -5,6 +5,7 @@
 // TypeScript of which only the types are erased (T.368.1: what runs is these lines). forward.ts and helper.ts import it, and a bundler links it into each (T.367.3: the two
 // then hold the same text because they are of one build).
 
+import { FACTS } from "./built/facts.ts";
 /** the control area: the first bytes of a shared memory, as 32-bit words (the helpers', then the GPU's: GPU_DONE) */
 export const CONTROL_BYTES = 8192;
 // GEN: the generation of the phase (odd while the coordinator rewrites the jobs); QUIT: the helpers end; COUNTER:
@@ -168,8 +169,8 @@ const kinds = <Name extends string>(table: Record<Name, Work>) => table;
 // ---- T.363.5: llama.cpp's blocks (kernels/blocks.ts; kernels/README.md, "llama.cpp's blocks"): 256 weights of a row in
 // a block of its type's bytes, the scales inside. A type is its number in a GGUF, which the kernels take as an argument:
 // BLOCK_TYPES has each by its name, with a block's bytes.
-export const BLOCK_TYPES = { Q2_K: [10, 84], Q4_K: [12, 144], IQ2_XXS: [16, 66], IQ2_XS: [17, 74], IQ3_XXS: [18, 98], IQ1_S: [19, 50],
-  IQ3_S: [21, 110], IQ2_S: [22, 82], IQ4_XS: [23, 136], IQ1_M: [29, 56] } as const;
+// (T.628.3: Python's, convert/superblocks.py's SUPERBLOCKS, written by python_facts.py)
+export const BLOCK_TYPES = FACTS.blocks;
 /** the weights of a block */
 export const BLOCK = 256;
 /** the bytes of the tables the blocks' kernels read (sb_tables() writes them, of the checkpoint's codebooks) */

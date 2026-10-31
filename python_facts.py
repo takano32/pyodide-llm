@@ -14,6 +14,11 @@
 #                  RoPE, a gated FFN, LayerNorms, the FFN's activation, local layers
 #   tokenizers     (src/page/folder.ts, T.628.2) convert/conduct.py's TOKENIZERS: the tokenizers a conversion tries, in
 #                  its order, which the page looks for in a folder before Pyodide is there
+#   blocks         (jobs.ts's BLOCK_TYPES, T.628.3) of convert/superblocks.py's SUPERBLOCKS, in its order: llama.cpp's
+#                  number of each type of block the kernels multiply, and a block's bytes (engine/dtypes.py's BLOCKS)
+#   quantized      (kept.ts, T.628.3) engine/dtypes.py's QUANTIZED: the dtypes a kept conversion may be of
+#   bytes          (src/models/memory.ts's ratios, T.628.3) the bytes of each of those of a row of WEIGHTS weights,
+#                  its values and its scales: a ratio of two is a ratio of whole numbers
 import json
 import sys
 from pathlib import Path
@@ -21,6 +26,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "src" / "python"))
 from convert import conduct  # noqa: E402
+from convert.superblocks import SUPERBLOCKS  # noqa: E402
+from engine import dtypes as D  # noqa: E402
 from engine import layout as L  # noqa: E402
 
 # (a small model of each kind of the layers that keep a state, whose rows the facts are read from: an architecture of
@@ -42,7 +49,18 @@ def architectures():
 
 
 def facts():
-    return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS)}
+    return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS),
+            "blocks": {name: [ggml, size] for name, (ggml, size, _) in SUPERBLOCKS.items()},
+            "quantized": list(D.QUANTIZED), "bytes": {name: bytes_of(name) for name in D.QUANTIZED}}
+
+
+# (a row that is whole groups of every dtype's)
+WEIGHTS = 1152
+
+
+def bytes_of(name):
+    dtype = D.DTYPES[name]
+    return sum(dtype.stored_bytes(WEIGHTS, dtype.group(WEIGHTS)))
 
 
 HEAD = """// src/runtime/built/facts.ts: written by python_facts.py from the site's Python (T.628.1). Not to be edited, and not
@@ -53,7 +71,7 @@ HEAD = """// src/runtime/built/facts.ts: written by python_facts.py from the sit
 def write(folder=HERE / "src" / "runtime" / "built"):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    text = HEAD + "export const FACTS = " + json.dumps(facts(), indent=1, sort_keys=True) + " as const;\n"
+    text = HEAD + "export const FACTS = " + json.dumps(facts(), indent=1) + " as const;\n"
     target = folder / "facts.ts"
     # (written only where it changes: a file its build reads is not made new for nothing)
     if not target.exists() or target.read_text() != text:

@@ -10,6 +10,7 @@
 // The manifest is written last in both: a folder without one is rubbish from a write that did not finish.
 // TypeScript of which only the types are erased (T.368.1): the worker imports it, and so does the page.
 
+import { FACTS } from "./built/facts.ts";
 import type { Options } from "./contracts/python.ts";
 
 // (T.368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
@@ -90,7 +91,7 @@ export async function replaced(model: Converted) {
   // again, for each visit in turn)
   // (T.363.5: and both of a model whose blocks are kept: with its blocks, and widened, which a load without the int8
   // kernels asks for: ?without=kernels, a browser without WebAssembly SIMD)
-  const names = [...keptNames(model), ...[false, true].flatMap((blocks) => ["int8", "int6", "ternary"].map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype, blocks } })))];
+  const names = [...keptNames(model), ...[false, true].flatMap((blocks) => FACTS.quantized.map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype, blocks } })))];
   const ids = model.shares ?? [model.id];
   return (await keptModels()).filter((kept) => ids.includes(kept.manifest.id) && !names.includes(kept.name));
 }
