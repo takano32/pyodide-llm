@@ -261,13 +261,14 @@ try {
     };
     // T.219 (2): the sampler's refusal of logits that are not finite numbers, end to end from the GPU's own forward pass
     // (shaders.js's SAMPLE sets the State's not_finite word, gpu.js's generate() writes it after the ids, forward.js's
-    // generateMany() reads it). The CPU's norm weights of layer 0 are made NaN (the GPU holds its own copy, uploaded as it
-    // got ready), the prompt goes through the CPU (its keys and values are NaN then), and the GPU's step from there reads
-    // those up: its logits are NaN. Asked after everything else a run does, for the GPU stops. The weights go back.
-    // T.244: a CPU that writes keys or values that are not finite into a float16 cache now says so (cache.ts's
-    // unfiniteBy()), and the step after them is the CPU's, which never asks the GPU: the NaN is put into the cache in
-    // place instead, after the CPU's prompt (where the last request for steps, seen.tokens, says the first attending
-    // layer's values are: as brokenValues() does), so that the GPU alone reads it
+    // generateMany() reads it, and the status line says why). The prompt goes through the CPU; then one value of its cache
+    // is made NaN in place (the first attending layer's, at the prompt's last position, which every layer reads, a
+    // window's too: both copies in a ring), so that the GPU, which takes the CPU's keys and values up for the step, reads
+    // it and its logits are NaN. Asked after everything else a run does, for the GPU stops; the value goes back.
+    // T.244: not by the CPU writing a NaN (its norm weights made NaN, as before): a float16 cache now says so
+    // (cache.ts's unfiniteBy()) and the step after it is the CPU's, which never asks the GPU. Where the cache is comes
+    // from the last request for steps (seen.tokens, as brokenValues() reads it): the places of then, which hold while
+    // the cache has not grown since, as the steps before this one leave it (they went past n + 4)
     const refusal = (engine, seen) => {
       const cache = seen.tokens?.cache;
       if (!cache) return { skipped: "no request for steps on the GPU before, to say where the CPU's cache is" };
