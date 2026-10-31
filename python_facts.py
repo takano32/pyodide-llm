@@ -1,7 +1,9 @@
 # python_facts.py (T.628.1)
 # The facts of the site's Python that its TypeScript reads before any Python runs (forward/memory.ts's footprint(), the
-# worker as a conversion begins, /benchmark/), written once from Python's own tables into src/runtime/built/facts.ts (a
-# module of one constant, FACTS, which the runtime imports as it imports a neighbour): the copy that was written by hand twice, and held to Python by a check, is Python's now
+# worker as a conversion begins, /benchmark/), written once from Python's own tables into src/runtime/built/facts/, a
+# module a section (<section>.ts, of one constant PYTHON_<SECTION>, which the runtime imports as it imports a neighbour:
+# T.628.3, a module of its own each, since one that the worker's entry and the forward chunk both read is bundled
+# twice, AGENTS.md's 「木と束」): the copy that was written by hand twice, and held to Python by a check, is Python's now
 # (the owner, 2026-10-31: Python first, then TypeScript). Made by `make kernels` (before any check runs: the deploy's
 # light suite runs before the build), and by python_archive.py (a build's and the development server's start).
 # The same Python gives the same bytes. It reads the engine's and the converter's modules, which import NumPy: the
@@ -63,20 +65,23 @@ def bytes_of(name):
     return sum(dtype.stored_bytes(WEIGHTS, dtype.group(WEIGHTS)))
 
 
-HEAD = """// src/runtime/built/facts.ts: written by python_facts.py from the site's Python (T.628.1). Not to be edited, and not
-// committed (src/runtime/built/ is made): the facts the TypeScript reads before any Python runs.
+HEAD = """// src/runtime/built/facts/{name}.ts: written by python_facts.py from the site's Python (T.628). Not to be edited, and
+// not committed (src/runtime/built/ is made): facts the TypeScript reads before any Python runs.
 """
 
 
 def write(folder=HERE / "src" / "runtime" / "built"):
-    folder = Path(folder)
+    folder = Path(folder) / "facts"
     folder.mkdir(parents=True, exist_ok=True)
-    text = HEAD + "export const FACTS = " + json.dumps(facts(), indent=1) + " as const;\n"
-    target = folder / "facts.ts"
-    # (written only where it changes: a file its build reads is not made new for nothing)
-    if not target.exists() or target.read_text() != text:
-        target.write_text(text)
-    return target
+    # (the one module of before T.628.3, gone)
+    (folder.parent / "facts.ts").unlink(missing_ok=True)
+    for name, value in facts().items():
+        text = HEAD.format(name=name) + f"export const PYTHON_{name.upper()} = " + json.dumps(value, indent=1) + " as const;\n"
+        target = folder / f"{name}.ts"
+        # (written only where it changes: a file its build reads is not made new for nothing)
+        if not target.exists() or target.read_text() != text:
+            target.write_text(text)
+    return folder
 
 
 if __name__ == "__main__":

@@ -237,7 +237,7 @@ const CASES = [
   proxy.destroy();
   assert.deepEqual(TOKENIZERS, candidates, `the tokenizers the page looks for in a folder (TOKENIZERS of src/page/folder.ts: ${TOKENIZERS.join(", ")}) are not ` +
     `the candidates of a conversion (TOKENIZERS of ${treeOf().folders.python}/convert/conduct.py: ${candidates.join(", ")}). The list is Python's, written by ` +
-    "python_facts.py into src/runtime/built/facts.ts: an old one (make kernels writes it anew)");
+    "python_facts.py into src/runtime/built/facts/: an old one (make kernels writes it anew)");
   const entry = hfEntry("owner/model", REVISION, { template: "{prompt}" });
   assert.deepEqual(entry.hf, { repo: "owner/model", revision: REVISION, weights: "model.safetensors", config: "config.json" },
     "the page names more of a repository nobody has looked at than its weights and its config.json: the candidates for its tokenizer are the conduct's to name");

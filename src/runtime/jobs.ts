@@ -5,7 +5,7 @@
 // TypeScript of which only the types are erased (T.368.1: what runs is these lines). forward.ts and helper.ts import it, and a bundler links it into each (T.367.3: the two
 // then hold the same text because they are of one build).
 
-import { FACTS } from "./built/facts.ts";
+import { PYTHON_BLOCKS } from "./built/facts/blocks.ts";
 /** the control area: the first bytes of a shared memory, as 32-bit words (the helpers', then the GPU's: GPU_DONE) */
 export const CONTROL_BYTES = 8192;
 // GEN: the generation of the phase (odd while the coordinator rewrites the jobs); QUIT: the helpers end; COUNTER:
@@ -170,7 +170,7 @@ const kinds = <Name extends string>(table: Record<Name, Work>) => table;
 // a block of its type's bytes, the scales inside. A type is its number in a GGUF, which the kernels take as an argument:
 // BLOCK_TYPES has each by its name, with a block's bytes.
 // (T.628.3: Python's, convert/superblocks.py's SUPERBLOCKS, written by python_facts.py)
-export const BLOCK_TYPES = FACTS.blocks;
+export const BLOCK_TYPES = PYTHON_BLOCKS;
 /** the weights of a block */
 export const BLOCK = 256;
 /** the bytes of the tables the blocks' kernels read (sb_tables() writes them, of the checkpoint's codebooks) */

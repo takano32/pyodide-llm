@@ -30,7 +30,7 @@ import { treeOf } from "./tree.mjs";
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
-const linked = windowed("forward.ts", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), more: ["jobs.ts", "built/facts.ts"] });  // (T.628.1: Python's facts, python_facts.py)
+const linked = windowed("forward.ts", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), more: ["jobs.ts", "built/facts/architectures.ts", "built/facts/blocks.ts"] });  // (T.628.1: Python's facts, python_facts.py)
 const modules = linked.there;
 const programs = new Map([...linked.files].map(([name, { program }]) => [name, program]));
 

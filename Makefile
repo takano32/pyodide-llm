@@ -36,10 +36,11 @@ MODEL_PYTHON = src/python/llama2_convert.py src/python/llama2_numpy.py \
 # The WASM SIMD kernels that llama2_numpy.py loads with ctypes, compiled by AssemblyScript (no binary is committed).
 # T.628.1: and the facts of the Python that the TypeScript reads before any Python runs (python_facts.py), made here
 # because everything that runs the TypeScript makes the kernels first (the deploy: `make models kernels`, then the checks)
-kernels:	src/runtime/built/simdkernel.so src/runtime/built/facts.ts
+kernels:	src/runtime/built/simdkernel.so src/runtime/built/facts/.made
 
-src/runtime/built/facts.ts:	python_facts.py $(MODEL_PYTHON)
+src/runtime/built/facts/.made:	python_facts.py $(MODEL_PYTHON)
 	python3 python_facts.py
+	touch $@
 
 # (every source is named here: one that is not leaves the old kernels in src/runtime/built/ when it changes, and the checks then
 # test those. kernel.ts is the window over kernel/*.ts, T.356; blocks.ts and blocks_relaxed.ts over blocks/*.ts, T.363.4)
