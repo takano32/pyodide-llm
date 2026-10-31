@@ -578,8 +578,8 @@ def ternary_columns(table, scales, picked, dst, outliers):
 
 
 # ---- T.465.6.5: a token's row of a table of llama.cpp's blocks (embedBlocks: the state's token's), by the converter's
-# reader; and the rows of a prompt's ids (embedBlocks with rows, EMBED_ROWS and EMBED_ROWS_TERNARY: a model on the GPU
-# alone embeds its prompt's tokens itself)
+# reader; and the rows of a prompt's int8 ids (EMBED_ROWS: a model on the GPU alone embeds its prompt's tokens itself;
+# EMBED_ROWS_TERNARY and embedBlocks with rows are not answered: no ternary or blocks model on the GPU alone is run)
 
 def block_row(table, row, n, packing):
     """a row of a table of blocks as float32: the converter's reader (convert/superblocks.py)"""

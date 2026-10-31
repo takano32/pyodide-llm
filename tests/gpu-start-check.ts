@@ -13,9 +13,9 @@
 //     device's key, nothing remembered, a form timed and none wrong or failed) and the error scopes all popped.
 //   - T.465.6.5: a model on the GPU alone (open(), take() of its checkpoint, start()): ready, every dispatch answered.
 // Not held here: a stop in the middle, the forms a page remembered and force.quick, the order of the steps, timeBlocks'
-// rounds of a device that is no fallback; of a model on the GPU alone, a checkpoint short or in stretches (the made-up
-// plan's layers are read from the memory handed over too: forward/alone.ts's gpuOnlyPlan() routes them from the
-// checkpoint's offsets, which this plan does not have).
+// rounds of a device that is no fallback; of a model on the GPU alone, the layers after the first where the checkpoint
+// routed them (the check compares the first layer and the tables only), the prompt's rows and RoPE (EMBED_ROWS, ROPE:
+// answered, and timed, never compared), a checkpoint in stretches, and a ternary or blocks model on the GPU alone.
 //   node tests/gpu-start-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";

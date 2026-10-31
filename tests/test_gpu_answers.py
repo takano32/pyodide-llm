@@ -4,7 +4,8 @@
 # gate after linear ones are never asked there. Held here in NumPy alone (the answers are the same Python the bridge calls):
 #   - the same numbers at another `at` give the same answer there (the convolutions' rows, the delta rule's state);
 #   - a block of two tokens is one token and then the next, its state carried (the convolutions and the delta rule);
-#   - OUTPUT_GATE and SWIGLU to their formulas.
+#   - OUTPUT_GATE and SWIGLU to their formulas; (T.465.6.5's review) the outlier channels, a prompt's rows and RoPE to
+#     numbers worked by hand.
 import numpy as np
 
 import gpu_answers as G
@@ -94,3 +95,26 @@ def test_output_gate_and_swiglu_to_their_formulas():
     # (a token past the step's are left as they were)
     once = floats(G.output_gate(f32(x), f32(g), u32(3, 0, 0, 0), u32(1, 0, 0, 0)))
     assert once[3:].tolist() == x[3:].tolist()
+
+
+# (T.465.6.5's review) the answers of the outlier channels, a prompt's rows and RoPE to numbers worked by hand
+def test_outliers_rows_and_rope_to_numbers_worked_by_hand():
+    # TAKE_OUTLIERS: channels 1 and 3 taken into picked, 0 in their places
+    x, picked = G.take_outliers(f32([1, 2, 3, 4]), f32([0, 0, 0, 0]), u32(2, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0))
+    assert floats(x).tolist() == [1, 0, 3, 0] and floats(picked).tolist() == [2, 4, 0, 0]
+    # TERNARY_COLUMNS: rows of 128 codes; row 0's code of channel 1 is 2 (+1), row 1's is 0 (-1); scales 2 and 3
+    table = np.full(2 * 128 // 4, 0x55, dtype=np.uint8)  # (every code 1: 0)
+    table[0] = 0x55 & ~0x0c | (2 << 2)  # row 0, channel 1: code 2
+    table[32] = 0x55 & ~0x0c | (0 << 2)  # row 1, channel 1: code 0
+    out = G.ternary_columns(table.tobytes(), f32([2, 3]), f32([5, 0]), f32([1, 1]), u32(1, 2, 128, 0, 1, 0, 0, 0, 0, 0, 0, 0))
+    assert floats(out).tolist() == [1 + 5 * 2, 1 - 5 * 3]
+    # EMBED_ROWS: ids 0 and 2 of a piece of 2 rows from row 0: row 0 written, id 2 outside the piece and not
+    rows, written = G.embed_rows(np.full(2 * 32, 1, dtype=np.int8).tobytes(), f32([0.5, 0.25]), u32(0, 2), 32, 0, 2, 2)
+    assert written == [0] and floats(rows).tolist() == [0.5] * 32
+    # ROPE: a head of 4 turned whole at a quarter turn (cos 0, sin 1), the key into the cache at pos + token, the value as it is
+    angles = f32([0, 0, 1, 1])  # (a token's cos of its 2 angles, then their sin)
+    q, keys, values = G.rope(f32([1, 0, 0, 1]), f32([1, 0, 0, 1]), f32([7, 8, 9, 10]), np.zeros(3 * 4, dtype=np.float16).tobytes(),
+                             np.zeros(3 * 4, dtype=np.float16).tobytes(), angles, u32(1, 1, 4, 4), u32(1, 2, 0, 0))
+    assert np.allclose(floats(q), [0, 1, -1, 0])
+    assert np.frombuffer(keys, dtype=np.float16)[8:].tolist() == [0, 1, -1, 0]
+    assert np.frombuffer(values, dtype=np.float16)[8:].tolist() == [7, 8, 9, 10]

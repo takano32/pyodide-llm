@@ -26,8 +26,8 @@
 //     convolution, its moved rows or the delta rule's state off is wrong.
 //   - T.465.6.5: classifiers with outlier channels (int8 and ternary), and a wide Llama of blocks on every matrix and its
 //     table (q, k and v apart, and joined): every form right, every dispatch answered, and their parts off wrong.
-// Not held here: that the fastest is taken (the timing's clock is the real one), the prompt's rows of a model on the GPU
-// alone (EMBED_ROWS, EMBED_ROWS_TERNARY, embedBlocks with rows: T.465.5's start of a model on the GPU alone is not run).
+// Not held here: that the fastest is taken (the timing's clock is the real one); a model on the GPU alone is
+// gpu-start-check.ts's.
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
