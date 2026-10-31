@@ -49,7 +49,7 @@ export const ANY_MOST = 46;
 export const AMBIENT = new Set(("AbortController Array ArrayBuffer Atomics BigInt BigInt64Array Boolean Date Error FileSystemFileHandle Float32Array Float64Array " +
   "Infinity Int32Array Int8Array JSON Map Math MessageChannel NaN Number Object PerformanceObserver Promise ReadableStream Response Set SharedArrayBuffer String Symbol " +
   "TextEncoder TransformStream URL URLSearchParams Uint16Array Uint32Array Uint8Array WeakMap WebAssembly Worker WritableStream clearInterval clearTimeout console crypto " +
-  "encodeURIComponent fetch globalThis navigator onmessage performance postMessage self setInterval setTimeout undefined").split(" "));
+  "atob encodeURIComponent fetch globalThis navigator onmessage performance postMessage self setInterval setTimeout undefined").split(" "));
 
 /** the names a text uses and neither declares nor imports (its types blanked first: a type's name is no name used) */
 export const ambient = (text, name) => [...namesOf(untyped(text, name)).free];

@@ -3,7 +3,7 @@
 // never reads, or reads and is never written, is said. Nothing else holds them: a key that is not there is undefined
 // without a word (`plan.rotary` spelled otherwise turns whole heads). T.375.2: the tests that run forward.js alone are
 // handed Python's own plan (tests/plans.mjs's planOf(), with a check's few settings over it: held to Python's keys
-// here), and the one plan that is written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts,
+// here), and /benchmark/'s made-up model's, which python_facts.py writes at build time (T.628.5; src/runtime/benchmark/madeup.ts,
 // which runs without Pyodide), is held here to the plan Python makes for the same header, value by value.
 //
 //   1. Python -> forward.js: the plan Llama(external=) hands start() (src/python/engine/external.py's ExternalForward), as
@@ -284,7 +284,7 @@ const returned = (fn) => {
   const [placed] = plansOf([{ header: cases[0].header, form: FORM, dtype: "int8" }]);
   held("the plan's keys, Python to tests/plans.mjs's planOf()", keys, new Set(Object.keys(planOf(placed))));
 
-  // T.375.2 (T.482): the one plan written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts: the CPU
+  // T.375.2 (T.482, T.628.5): /benchmark/'s made-up model's plan, written by python_facts.py at build time (src/runtime/benchmark/madeup.ts: the CPU
   // section runs without Pyodide), against the plan Python makes for its header as an int8 Llama: every key, and every
   // value but what the section chooses for itself (kv_start), the bytes of the tables (their names are compared) and
   // the classifier under its second name (Python has the shared table under "wcls" too)
