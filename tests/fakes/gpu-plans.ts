@@ -21,32 +21,35 @@ export const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 type Made = { kinds: string[]; matrices: Record<string, (number | string | undefined)[]>; vectors: Record<string, (number | string | undefined)[]>;
   more?: Record<string, unknown> & { positions?: boolean } };
 export function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }: Made, direct = false) {
+  // (T.465.6.5: the widths of a model whose more says its own: the wide Llama's)
+  const dim = (more.dim as number | undefined) ?? DIM, hidden = (more.hidden as number | undefined) ?? HIDDEN;
   let next = 4096;
   const take = (bytes) => { const here = next; next += Math.ceil(bytes / 256) * 256; return here; };
   const count = (of) => (of ? kinds.filter((kind) => kind === of).length : kinds.length);
   const places = kinds.map((kind, l) => kinds.slice(0, l).filter((other) => other === kind).length);
   const plan = {
-    dim: DIM, hidden: HIDDEN, layers: kinds.length, heads: HEADS, kvHeads: KV_HEADS, headSize: HEAD, turned: HEAD, unturned: [], seqLen: CONTEXT, kvStart: 8,
+    dim, hidden, layers: kinds.length, heads: HEADS, kvHeads: KV_HEADS, headSize: HEAD, turned: HEAD, unturned: [], seqLen: CONTEXT, kvStart: 8,
     eps: 1e-5, layerNorm: false, parallel: false, activation: "silu", windows: kinds.map(() => 0), local: [], localCos: 0, localSin: 0, kinds, places,
     convolution: null, linear: null, batch: BATCH,
     matrices: Object.fromEntries(Object.entries(matrices).map(([name, [rows, n, of]]) =>
       [name, { rows, n, packing: "int8", six: false, ternary: false, layers: Array.from({ length: count(of) }, () => [take(rows * n), take((rows * n / GROUP) * 4)]), ...(of ? { of } : {}) }])),
     vectors: Object.fromEntries(Object.entries(vectors).map(([name, [size, of]]) => [name, { at: take(count(of) * size * 4), size, ...(of ? { of } : {}) }])),
-    rows: take(BATCH * DIM * 4), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4),
-    tokens: { classifier: { rows: VOCAB, n: DIM, packing: "int8", six: false, ternary: false, at: [take(VOCAB * DIM), take((VOCAB * DIM / GROUP) * 4)] }, embedding: null, final: take(DIM * 4),
+    rows: take(BATCH * dim * 4), cos: take(CONTEXT * (HEAD / 2) * 4), sin: take(CONTEXT * (HEAD / 2) * 4),
+    tokens: { classifier: { rows: VOCAB, n: dim, packing: "int8", six: false, ternary: false, at: [take(VOCAB * dim), take((VOCAB * dim / GROUP) * 4)] }, embedding: null, final: take(dim * 4),
       finalBias: 0, positions: 0, outliers: false, channels: [], ids: take(4096), most: MOST },
     staging: take(1 << 20), force: {}, remembered: undefined, direct: false, words: { done: 3, failed: 2, beat: 0, wanted: 1 }, rotated: null, ...more,
   };
   if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (HEAD / 2) * 4), localSin: take(CONTEXT * (HEAD / 2) * 4) });
-  if (positions) plan.tokens.positions = take(CONTEXT * DIM * 4);
-  if (plan.layerNorm) plan.tokens.finalBias = take(DIM * 4);
+  if (positions) plan.tokens.positions = take(CONTEXT * dim * 4);
+  if (plan.layerNorm) plan.tokens.finalBias = take(dim * 4);
   // (T.271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
   if (plan.rotated === true) plan.rotated = { block: 32, signs: [...new Set([DIM, Q_DIM, HIDDEN])].map((width) => ({ width, at: take(width * 4) })) };
   // (T.210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
   if (direct) Object.assign(plan, { direct: true, tables: { classifier: plan.tokens.classifier, embedding: null } });
-  // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer. KV_DIM's:
-  // a model whose more says other heads, the 8 heads', has a cache too small here, which no check reads)
-  const cache = kinds.filter((kind) => kind === "attention").map(() => [take(CONTEXT * KV_DIM * 4), take(CONTEXT * KV_DIM * 4)]);
+  // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer, of the
+  // model's own keys: T.465.6.5, a model whose more says other heads)
+  const kvDim = plan.kvHeads * plan.headSize;
+  const cache = kinds.filter((kind) => kind === "attention").map(() => [take(CONTEXT * kvDim * 4), take(CONTEXT * kvDim * 4)]);
   return { plan, bytes: next, cache };
 }
 const ffn = { w1: [HIDDEN, DIM], w3: [HIDDEN, DIM], w2: [DIM, HIDDEN] };
@@ -83,6 +86,11 @@ MODELS["qwen35 (states in bundles)"] = { ...MODELS.qwen35, more: { linear: LINEA
 // layers are not joined (m.weights.unjoined); a real model's are far more
 MODELS["llama (8 heads)"] = { kinds: ["attention", "attention"],
   matrices: { wq: [128, DIM], wk: [64, DIM], wv: [64, DIM], wo: [DIM, 128], ...ffn }, vectors: norms, more: { heads: 8, kvHeads: 4 } };
+// T.465.6.5: a wide Llama (dim 256, an FFN of 512, 8 heads of 32 on 4 of keys and values), whose every matrix and table is
+// rows of 256 and more, which llama.cpp's blocks take (each matrix of its own type: q, k and v, gate and up apart)
+MODELS["llama (wide)"] = { kinds: ["attention", "attention"],
+  matrices: { wq: [256, 256], wk: [128, 256], wv: [128, 256], wo: [256, 256], w1: [512, 256], w3: [512, 256], w2: [256, 512] },
+  vectors: { attention: [256], ffn: [256] }, more: { dim: 256, hidden: 512, heads: 8, kvHeads: 4, headSize: 32, turned: 32 } };
 // (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
 export const ALONE = ["llama", "qwen35", "rotated", "qwen35 (states in bundles)"];
 
@@ -115,11 +123,11 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
   // (each vector its own values, T.465.6.2's review: vectors of one size all alike let one be read for another, a norm's
   // weight for the other's or one bias for another, and the check passed)
   (Object.values(plan.vectors) as { at: number; size: number }[]).forEach((vector, k) => floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * ((i + 3 * k) % 7) + 0.02 * k));
-  floats(plan.tokens.final, DIM, (i) => 1 + 0.01 * (i % 5));
+  floats(plan.tokens.final, plan.dim, (i) => 1 + 0.01 * (i % 5));
   // (T.465.6.2: a LayerNorm's final bias, small; GPT-2's learned positions as large as a row of the embedding, ±0.5:
   // positions of 1e-2 left out of a token's pass passed the check)
-  if (plan.tokens.finalBias) floats(plan.tokens.finalBias, DIM, (i) => 0.01 * ((i % 9) - 4));
-  if (plan.tokens.positions) floats(plan.tokens.positions, CONTEXT * DIM, (i) => 100 * small(i) - 1.5);
+  if (plan.tokens.finalBias) floats(plan.tokens.finalBias, plan.dim, (i) => 0.01 * ((i % 9) - 4));
+  if (plan.tokens.positions) floats(plan.tokens.positions, CONTEXT * plan.dim, (i) => 100 * small(i) - 1.5);
   const half = plan.headSize / 2;
   // (and a Gemma 3's local layers' own, where the plan has them: of another base, any whose angles differ)
   for (const [at, f, base] of [[plan.cos, Math.cos, 10000], [plan.sin, Math.sin, 10000], [plan.localCos, Math.cos, 100], [plan.localSin, Math.sin, 100]] as const) {

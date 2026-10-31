@@ -33,7 +33,7 @@ const { upload, uploadLayers, uploadRest, tablesOn, routed } = await import(at("
 const block_ = await import(at("gpu/block.js"));
 const tokens_ = await import(at("gpu/tokens.js"));
 
-import { DIM, HIDDEN, HEAD, VOCAB, KV_DIM, LINEAR, MODELS, ALONE, planned } from "./fakes/gpu-plans.ts";
+import { DIM, HIDDEN, HEAD, VOCAB, LINEAR, MODELS, ALONE, planned } from "./fakes/gpu-plans.ts";
 
 const hash = (text) => crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
 const random = (bytes) => Uint8Array.from({ length: bytes }, (_, i) => (i * 131 + 7 * (i >> 8) + 89) & 255);
@@ -115,7 +115,7 @@ for (const [model, made, packed, direct] of runs) {
       for (const half of [true, false]) {
         const places = cache.map(([keys, values], p) => ({ keys, values, ring: plan.windows[plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : []))[p]] ? 6 : 0 }));
         from = calls.length;
-        block_.keysIn(m, { places, row: KV_DIM * (half ? 2 : 4), half }, 3, 13);
+        block_.keysIn(m, { places, row: plan.kvHeads * plan.headSize * (half ? 2 : 4), half }, 3, 13);
         record(`${name}: the keys and values of 3 to 12 up, ${half ? "float16" : "float32"}`, since(from));
       }
     }

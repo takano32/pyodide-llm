@@ -24,8 +24,10 @@
 //   - T.465.6.4: an LFM2's token (its convolution layers) and a Qwen3.5's (its linear-attention layers and the gate of
 //     its attending ones' output; and with its states in bundles): every form right, every dispatch answered, and the
 //     convolution, its moved rows or the delta rule's state off is wrong.
-// Not held here: that the fastest is taken (the timing's clock is the real one), T.465.6.5's (outlier channels, tables of
-// blocks, the prompt's rows of a model on the GPU alone, matrices of other packings apart).
+//   - T.465.6.5: classifiers with outlier channels (int8 and ternary), and a wide Llama of blocks on every matrix and its
+//     table (q, k and v apart, and joined): every form right, every dispatch answered, and their parts off wrong.
+// Not held here: that the fastest is taken (the timing's clock is the real one), the prompt's rows of a model on the GPU
+// alone (EMBED_ROWS, EMBED_ROWS_TERNARY, embedBlocks with rows: T.465.5's start of a model on the GPU alone is not run).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
@@ -319,4 +321,27 @@ for (const [spoil, what] of [[{ TERNARY_COLUMNS: () => {} }, "the columns not ad
   assert.match(m.thrown ?? "", /the logits are/, `a ternary classifier: ${what}`);
 }
 console.log("ok: classifiers with outlier channels, int8 and ternary: every form right, every dispatch answered; the columns not added or the channels left in the stream: wrong");
+// T.465.6.5: a wide Llama (dim 256), of int8, and of llama.cpp's blocks on every matrix and its table: q, k and v each of
+// its own type (written apart, T.547.3.2), gate and up of two, o and down of others, the table of Q4_K (a token's row of
+// it, embedBlocks, and the classifier's text of its type); and q and k of one type with v of another, gate and up of one
+// (q and k joined, v apart). Every form right, every dispatch answered; the classifier of blocks off, its row off: wrong
+const APART = { wq: "Q4_K", wk: "IQ2_XXS", wv: "Q2_K", w1: "IQ3_S", w3: "IQ4_XS", w2: "Q4_K", wo: "IQ1_M", classifier: "Q4_K" };
+const JOINED = { wq: "Q4_K", wk: "Q4_K", wv: "IQ2_XXS", w1: "Q2_K", w3: "Q2_K", w2: "IQ2_S", wo: "IQ3_XXS", classifier: "IQ1_S" };
+for (const [said, blocks] of [["int8", {}], ["each matrix its own type", APART], ["q and k joined, v apart", JOINED]]) {
+  const { m, answers } = await tokensOf({ model: "llama (wide)", blocks });
+  assert.equal(m.thrown, undefined, `the wide Llama, ${said}`);
+  assert.deepEqual(m.tokenForm.forms.filter(({ none }) => none), [], `the wide Llama, ${said}: no form wrong`);
+  assert.deepEqual(answers.missed, [], `the wide Llama, ${said}: every dispatch answered`);
+}
+{
+  const head = await tokensOf({ model: "llama (wide)", blocks: APART, spoil: { dp4a: (right, output) => (output === "write" ? outputOff(right, 5, (out) => { out[0] += 0.1 * peak(out); }) : right) } });
+  // (the type's write text off: the random blocks' check of a token's matrices, checkTokenBlocks, refuses it first)
+  assert.match(head.m.thrown ?? "", /no layer of a token is right on this GPU \((the Q4_K text of a token's matrix is|.*the logits are)/, "the classifier of blocks off");
+  const { embedBlocks } = await gpuAnswers();
+  // (one value of the row off by the row's largest: a scale of all of it the norm takes out, and a model of blocks has only
+  // DP4A forms, whose line is wide)
+  const row = await tokensOf({ model: "llama (wide)", blocks: APART, spoil: { embedBlocks: outputOff(embedBlocks({ weights: "Q4_K" }), 3, (out) => { out[3] += peak(out); }) } });
+  assert.match(row.m.thrown ?? "", /no layer of a token is right on this GPU/, "a token's row of a table of blocks off");
+}
+console.log("ok: a wide Llama of int8 and of llama.cpp's blocks on every matrix and its table (q, k and v apart, and q and k joined): every form right, every dispatch answered; the classifier of blocks or its row off: wrong");
 console.log("gpu-tokens-check: ok");

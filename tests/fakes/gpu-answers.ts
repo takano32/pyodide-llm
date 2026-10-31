@@ -115,6 +115,12 @@ export async function gpuAnswers() {
       const [row] = called("embed", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows);
       if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
     }) as Model,
+    // (T.465.6.5) embedBlocks of a type (a token's: the table, the state, x, the shape; binding 1 none)
+    embedBlocks: ({ weights: packing }: { weights: string }): Model => (entries) => {
+      const [n, first, rows] = words(entries, 4);
+      const [row] = called("embed_blocks", bound(entries, 0), bound(entries, 2), n, first, rows, packing);
+      if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
+    },
     // (T.465.6.3) EMBED_TERNARY: as EMBED, of a ternary table
     embedTernary: ((entries) => {
       const [n, first, rows] = words(entries, 4);
