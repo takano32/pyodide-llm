@@ -11,12 +11,16 @@
 //   - no attention right: "unusable", with why, and the worker ended (its close()); the layers out of memory (the error
 //     scope start() pushes first) and the device lost: "unusable", with why. The ready message's fields (the adapter, the
 //     device's key, nothing remembered, a form timed and none wrong or failed) and the error scopes all popped.
-// Not held here: a model on the GPU alone (open(), take() and the stretches of its checkpoint), a stop in the middle, the
-// forms a page remembered and force.quick, the order of the steps, timeBlocks' rounds of a device that is no fallback.
+//   - T.465.6.5: a model on the GPU alone (open(), take() of its checkpoint, start()): ready, every dispatch answered.
+// Not held here: a stop in the middle, the forms a page remembered and force.quick, the order of the steps, timeBlocks'
+// rounds of a device that is no fallback; of a model on the GPU alone, a checkpoint short or in stretches (the made-up
+// plan's layers are read from the memory handed over too: forward/alone.ts's gpuOnlyPlan() routes them from the
+// checkpoint's offsets, which this plan does not have).
 //   node tests/gpu-start-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
 import { made } from "./fakes/gpu-model.ts";
+import { fresh } from "./fresh.mjs";
 
 const start_ = await import(runtimeUrl("gpu/start.ts"));
 // (what the worker posts to the page: the worker's global's postMessage, as gpu-model.ts set it)
@@ -83,6 +87,26 @@ async function started(options = {}, on = (device, lose) => {}) {
   assert.match(JSON.stringify(said), /no attention is right on this GPU/, "with why");
   assert.equal(closed - before, 1, "and the worker ended");
   console.log("ok: no attention right: unusable, with why");
+}
+{
+  // T.465.6.5: a model on the GPU alone: open() before the checkpoint comes, take() of its stretches (the whole of it at
+  // once here), then start(): ready, every form chosen, a token's too, every dispatch answered (a prompt's rows from the
+  // ids, EMBED_ROWS, and its RoPE among them)
+  // (a start.ts of its own each: what open() and take() keep is a worker's, which a load has anew, tests/fresh.mjs)
+  const alone = async () => {
+    posted.length = 0;
+    const { plan, memory, answers } = await made({ sane: true, direct: true });
+    const own = await fresh(runtimeUrl("gpu/start.ts"));
+    own.open(plan, new SharedArrayBuffer(8));
+    own.take({ type: "weights", offset: 0, bytes: new Uint8Array(memory.buffer).slice() });
+    await own.start(memory, plan);
+    return { said: posted.filter(({ type }) => type !== "progress"), answers };
+  };
+  const { said: [ready], answers } = await alone();
+  assert.equal(ready?.type, "ready", `a model on the GPU alone: ready, not ${JSON.stringify(ready).slice(0, 200)}`);
+  assert.ok(ready.tokens?.form && ready.tokensWhy === null, "its token's form");
+  assert.deepEqual(answers.missed, [], "every dispatch answered");
+  console.log("ok: a model on the GPU alone: ready with every form chosen (its first layer and tables read back), every dispatch answered");
 }
 {
   // (T.465.5's review) the device out of memory for the layers (the scope start() pushes first, opened with the device):

@@ -121,6 +121,19 @@ export async function gpuAnswers() {
       const [row] = called("embed_blocks", bound(entries, 0), bound(entries, 2), n, first, rows, packing);
       if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
     },
+    // (T.465.6.5) EMBED_ROWS: the table, its scales, the block's ids, x, the shape (the width, the piece's first row and
+    // rows): a workgroup a token down; ROPE (a prompt's block): q, k, v, the keys, the values, the angles, Rope, step
+    embedRows: ((entries, x, y) => {
+      const [n, first, rows] = words(entries, 4), x0 = bound(entries, 3);
+      // (the rows the piece holds, and the tokens they are of)
+      const [made, tokens] = called("embed_rows", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows, y) as unknown as [Uint8Array, number[]];
+      tokens.forEach((token, i) => x0.set(made.subarray(i * n * 4, (i + 1) * n * 4), token * n * 4));
+    }) as Model,
+    rope: ((entries, x) => {
+      if (x < words(entries, 7)[0]) return;
+      const [q, keys, values] = called("rope", ...[0, 1, 2, 3, 4, 5, 6, 7].map((b) => bound(entries, b)));
+      for (const [binding, made] of [[0, q], [3, keys], [4, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
+    }) as Model,
     // (T.465.6.3) EMBED_TERNARY: as EMBED, of a ternary table
     embedTernary: ((entries) => {
       const [n, first, rows] = words(entries, 4);
