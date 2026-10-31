@@ -211,6 +211,23 @@ export const HF_FAMILIES: Entry[] = [
     "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
   lfm2("hf-lfm2.5-1.2b-jp", "Liquid AI LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
     "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", {}),
+  // T.596.1: Liquid AI's LFM2 350M that translates English into Japanese and back. Its card says it works only with one
+  // of two system messages, which name the direction: so two entries, one for each, with the same weights (shares).
+  // The template is written out (Liquid AI's calls no macro, but the system message is the card's); the BOS
+  // (<|startoftext|>) is the converter's, and the sampling is the card's
+  ...(["Japanese", "English"] as const).map((to): Entry => ({
+    group: "hf", id: `hf-lfm2-350m-enjp-mt-to-${to.toLowerCase()}`,
+    name: `Liquid AI LFM2 350M ENJP-MT (${to === "Japanese" ? "English → Japanese" : "Japanese → English"})`,
+    note: `translates ${to === "Japanese" ? "English → 日本語" : "日本語 → English"} · fetches 379 MB (GGUF) → int8 399 MB`,
+    ...ggufOf("LiquidAI/LFM2-350M-ENJP-MT-GGUF", "889c88c3d3681b4f342ae210a1d2a1369aba0e10", "LFM2-350M-ENJP-MT-Q8_0.gguf",
+      "LiquidAI/LFM2-350M-ENJP-MT", "80367784d525777ad7565b24534ba5810eeac59f"), download: 379215648,
+    conversion: {}, shares: ["hf-lfm2-350m-enjp-mt-to-japanese", "hf-lfm2-350m-enjp-mt-to-english"], options: lfm2Old,
+    template: `<|im_start|>system\nTranslate to ${to}.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n`,
+    generation: { steps: 0, temperature: 0.5, topp: 1.0, min_p: 0.1, repetition_penalty: 1.05 },
+    prompt: to === "Japanese" ? "Mount Fuji is the highest mountain in Japan, and many people climb it in summer."
+      : "富士山は日本でいちばん高い山で、夏には多くの人が登ります。",
+    placeholder: to === "Japanese" ? "Type English text to translate into Japanese" : "英語に訳したい日本語の文を入力",
+  })),
   // T.511.1: Shisa.AI's LFM2 350M for Japanese chat (trained from Liquid AI's LFM2-350M-ENJP-MT, the translating one);
   // its card says it is the best at Japanese chat under 1B (Shaberi 4.51, the LFM2-350M's 3.76)
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",

@@ -50,7 +50,9 @@ SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人�
           **{id: LLM_JP_SYSTEM for id in ("hf-llm-jp-3-150m-instruct3", "hf-llm-jp-3-440m-instruct3",
                                           "hf-llm-jp-3-980m-instruct3", "hf-llm-jp-3.1-1.8b-instruct4",
                                           "hf-llm-jp-3-1.8b-instruct3", "hf-llm-jp-3-3.7b-instruct3",
-                                          "hf-llm-jp-3-7.2b-instruct3")}}
+                                          "hf-llm-jp-3-7.2b-instruct3")},
+          # T.596.1: the two system messages of the card, which name the direction
+          "hf-lfm2-350m-enjp-mt-to-japanese": "Translate to Japanese.", "hf-lfm2-350m-enjp-mt-to-english": "Translate to English."}
 # where transformers builds a slow tokenizer out of the tokenizer.model that is not the real one (2026-09-26,
 # transformers 5.16.1: sarashina's split "挙げてください" and "next", CAT-Translate's spell everything a character at a time
 # although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T.144)
