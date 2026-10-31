@@ -15,6 +15,12 @@ export async function storage(): Promise<Result> {
     if (info.error) return { status: "error", markdown: info.error };
     if (!info.result!.syncHandle) return { status: "none", markdown: "no private file system that a worker can write in place here" };
     const answer = await ask(w, { step: "run", mib: Number(($("size") as HTMLSelectElement).value) });
+    // T.446 (2): a browser whose private file system has the call but refuses it (Windows' Playwright WebKit: "NotSupportedError:
+    // Backend does not support this operation" as the file was opened) lacks the feature as one without the call does:
+    // no failure. The model page keeps its conversions in the Cache API there (kept.ts)
+    if (answer.error && /^NotSupportedError\b.*\(while opening the file \(createSyncAccessHandle\)\)$/.test(answer.error)) {
+      return { status: "none", markdown: `no private file system that a worker can write in place here: it refuses to open a file so (${answer.error})` };
+    }
     if (answer.error) return { status: "error", markdown: answer.error };
     const r = answer.result!, mb = (r.mib * 2 ** 20) / 1e6;
     const row = (name: string, t: number, flush?: number) => `| ${name} | ${fixed(t, 2)} | ${flush === undefined ? "" : fixed(flush, 2)} | ${fixed(mb / t, 0)} | ${fixed(mb / t / DOWNLOAD_MBPS, 0)}× |`;
