@@ -138,7 +138,6 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.596 [追加][モデル] LFM2-350M-ENJP-MT（日英の翻訳）と LFM2.5-2.6B — 進行中
 - T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 未着手
 - T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 未着手
 - T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 未着手
@@ -1300,21 +1299,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
-
-### T.596 [追加][モデル] LFM2-350M-ENJP-MT（日英の翻訳）と LFM2.5-2.6B — 状態: 進行中（2026-10-30、T.591 から。規模 小）
-- LiquidAI/LFM2-350M-ENJP-MT @ 80367784d525777ad7565b24534ba5810eeac59f（lfm2、354M、LFM Open License、likes 98）。GGUF: LiquidAI/LFM2-350M-ENJP-MT-GGUF @ 889c88c3d3681b4f342ae210a1d2a1369aba0e10（Q8_0 0.38 GB）。カードの system の文（訳す向き）を手書きの書式に: CAT-Translate の項目の形。スマホで使える翻訳のモデル（CAT-Translate 0.8B の約半分）。
-- LiquidAI/LFM2.5-2.6B @ b212e75975bbda9676a94d3cb7b2ca25b65fed48（lfm2、likes 859、ja の順位に入る）。GGUF @ e7caca5d835a3901a8e0d63e94009429bafafdfc（Q8_0 2.87 GB）。一覧の LFM2.5 1.2B の上の段。
-- 同じ作り手の LFM2-350M-PII-Extract-JP は JSON を書く道具なので入れない。
-- **子タスク（取りまとめ役の決め、2026-10-31）**: T.596.1 LFM2-350M-ENJP-MT（訳す向きごとに 2 項目）・T.596.2 LFM2.5-2.6B（カードが「いつも考えてから答える」と言う考える形: 書式の頭に `<think>`、語彙 128,000 で今の LFM2 と違うので変換器の読みも見る）。
-- **T.596.1 — 状態: 完了**。`hf-families.ts` に 2 項目 `hf-lfm2-350m-enjp-mt-to-japanese`・`-to-english`（名前「Liquid AI LFM2 350M ENJP-MT (English → Japanese)」「(Japanese → English)」、note は「translates English → 日本語」「translates 日本語 → English」（CAT-Translate の「translates 日本語 ⇄ English」の形に、レビューの勧め）、同じ重みを `shares` で分け合う）。カードが system の文 2 つ（「Translate to Japanese.」「Translate to English.」）のどちらかを必ず渡せと言うので、向きを項目に分け、書式は手書きの ChatML に system の文。BOS（`<|startoftext|>`）と止まり（1・7）は変換器、`specials` は LFM2 700M と同じ `lfm2Old`。標本抽出はカードの温度 0.5・top-p 1.0・min-p 0.1・罰 1.05。例の文と入力欄の文（「Type English text to translate into Japanese」「英語に訳したい日本語の文を入力」）は取りまとめ役の決め（区切りのまとめで見せる）。`licenses.ts` に 2 行（LFM Open License v1.0: カードは other・lfm1.0、LICENSE の 1 行目）。`format_check.py` の `SYSTEM` に 2 つの system の文。
-  - **確かめ**: `format_check.py` 2 項目とも 9/9。GGUF は `gguf.yml` の run 41232083188 で原本と（148 のテンソル、相対の最大 0.00662、最も近い量子化とのずれ 0、語彙の違い 0: GGUF の後ろの 1,136 は詰め物）。手元のページのエンジン（int8 398,982,172 バイト）: 頭のトークンの perplexity（日本語 1500 トークン）は なし 69.38・`<|startoftext|>` −69.87%（LFM2 350M と同じく BOS が大きく効く: 変換器の 1 のまま）。`answers.ts`（12 問 × greedy と種 2、300 トークン）は向きごとに 24/24 止まり、繰り返し 0、`<unk>` 0。問いに答えず、英→日は英語の問いを日本語に（「日本の首都はどこですか？一文で答えてください。」）、日→英は日本語の問いを英語に（「Which mountain is the highest in Japan?」）訳す。訳す向きと違う言語の文はそのまま返すか言い換える（英→日に日本語の問い: 10/12 が日本語のまま）。固有名の誤りが 1 つ（夏目漱石に「（ナタゴ）」）。
-  - CI を省いた（GGUF の突き合わせのほか）。訳: 350M は手元のページのエンジンで回せた。本番は `models.yml` で。
-  - レビュー（Sonnet low、2026-10-31）: 直すもの無し。リビジョン・`download`・ライセンス・`shares`・`min_p` の鍵・カードの標本抽出を確かめ、`template` を書き BOS を変換器に任せる形は LFM2 700M と同じで、LFM2 の BOS は書式の外の `<|startoftext|>` なので組の決まりに当たらない。文面の勧め 2 つ（note を CAT-Translate の形に、入力欄の文を「英語に訳したい日本語の文を入力」に）を入れた。
-  - 本番（デプロイ 41232894051 の後、`models.yml` の run 41234489931）: Chromium の 4 本で英→日は準備完了 14.7 秒・30.6 tok/s、日→英は 12.1 秒・38.2 tok/s。
-- **T.596.2 — 状態: 反映済み**。`hf-families.ts` に項目 `hf-lfm2.5-2.6b`（名前「Liquid AI LFM2.5 2.6B」、note は「thinks · 日本語 / English」: カードが 16 の言語に日本語を挙げ、いつも考えてから答える）。語彙が小さい LFM2 と違う（byte-level BPE 124,894 語片、Llama 3 の型）ので `specials` は書かず変換器に任せ、BOS（`<|startoftext|>`）と止まりも変換器。書式はマクロを呼ぶので手書き（`<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>`: 本物と同じく答えの頭に `<think>`）。標本抽出はカードと generation_config.json の温度 0.1・top-k 50・罰 1.1（top-p 1.0）。`licenses.ts` に 2 行（LFM Open License v1.0）。
-  - **確かめ**: `format_check.py` 9/9。GGUF は `gguf.yml` の run 41233062416 で原本と（266 のテンソル、相対の最大 0.00657、最も近い量子化とのずれ 0、語彙の違い 0: GGUF の後ろの 2,983 は詰め物）。ページのエンジン（int8 3,035,099,164 バイト、32 ビットに入る）で tests.yml の run 41233062440: 頭のトークンの perplexity（日本語 1500 トークン）は なし 34.24・`<|startoftext|>` +36.31%。素の文では BOS が損だが、本物の書式は BOS から始まり、書式の文は素の文と違う（落とし穴の「素の文の数字だけで BOS を替えない」）ので変換器の BOS のまま。`answers.ts`（6 問 × greedy と種 2、2000 トークン）は 12/12 止まり、12/12 が考えを自分で閉じた（考えは 88〜1,292 トークン、中央 488: 上限 3,584 の内）、繰り返し 0、`<unk>` 0。考えは英語、`</think>` の後の答えは日本語の問いに日本語（富士山、17 × 24 = 408 と途中の計算）。道具の「日本語で答えた」は考えも数えるので 0/6（かなは 7〜16%）だが、答えの部分は日本語。CI の 4 論理コアで 1 本に 22〜318 秒。
-  - CI を回した。訳: 2.6B の考える答えを 12 本書かせるのは手元の 2 コアでは長い。
-  - レビュー（Sonnet low、2026-10-31）: 直すもの無し。リビジョン・`download`・ライセンス・標本抽出（generation_config.json と同じ）・手書きの書式（本物の生成の頭 `<|im_start|>assistant\n<think>` と同じ）を確かめ、`<think>`・`</think>` は special でない追加のトークンで変換器の specials に入る（12/12 が `</think>` で考えを閉じた）。BOS を残す判断は AGENTS.md の決まりに合う。
 
 ### T.597 [追加][Spark X] Spark-X2.5 4B Japanese と Spark-X2.6 — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - Takenoko12345678/Spark-X2.5-4B-Japanese @ bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1（spark2_5、Apache-2.0）。作り手の GGUF @ 79fd825680c88ba3b4f823202f0ef94aa90ba006（Q8_0 4.38 GB）。カードは中国語の混ざりを 18% → 0% と言う（一覧の Spark-X2.5 の弱み: AGENTS.md）。`tests/answers.mjs` の日本語の問いで確かめる。
