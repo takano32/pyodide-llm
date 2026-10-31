@@ -13,7 +13,8 @@
 //     and the DP4A ones (the norm with the quantizer, and apart) each checked on the model's own first layer and head,
 //     greedy and sampled with the penalty, timed, one taken (the made-up memory's numbers ones a model could have:
 //     gpu-plans.ts's plausible). Each check bites: the stream off in one value (a float form's text: the DP4A forms stay
-//     right), a greedy token not the largest logit; off inside the line is right.
+//     right), a greedy token not the largest logit, a sampled token the CPU's walk does not reach, the penalty left off the
+//     logits; off inside the line is right.
 // Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
@@ -116,9 +117,24 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
     words[0] = (words[0] + 1) % 96;
   } } });
   assert.match(greedy.thrown ?? "", /the greedy token is \d+, the largest logit's \d+/, "a greedy token not the largest logit");
+  // sampled (temperature over 0): a token the CPU's walk does not reach, or the penalty left off the logits
+  const temperature = (entries) => { const r = entries.find((entry) => entry.binding === 6).resource; return new Float32Array((r.buffer ?? r).data.buffer)[4]; };
+  const walked = await tokens({ spoil: { sample: (entries, x, y) => {
+    sample(entries, x, y);
+    if (!temperature(entries)) return;
+    const chosen = entries.find((entry) => entry.binding === 4).resource, words = new Uint32Array((chosen.buffer ?? chosen).data.buffer);
+    words[0] = (words[0] + 48) % 96;
+  } } });
+  assert.match(walked.thrown ?? "", /the sampled token is \d+, the CPU's walk reaches/, "a sampled token the walk does not reach");
+  const unpenalized = await tokens({ spoil: { sample: (entries, x, y) => {
+    const logits = entries.find((entry) => entry.binding === 0).resource, buffer = logits.buffer ?? logits, before = buffer.data.slice();
+    sample(entries, x, y);
+    if (temperature(entries)) buffer.data.set(before);
+  } } });
+  assert.match(unpenalized.thrown ?? "", /the penalized logits are .* from JavaScript's/, "the penalty left off");
   // off by 1e-5 of a value: inside the line
   const near = await tokens({ spoil: { fused: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1 + 1e-5; }) : right) } });
   assert.deepEqual(near.tokenForm.forms.filter(({ none }) => none), [], "off inside the line: right");
 }
-console.log("ok: each check bites: a token's stream off in one value, a greedy token not the largest logit; off inside the line is right");
+console.log("ok: each check bites: a token's stream off in one value, a greedy token not the largest logit, a sampled token the walk does not reach, the penalty left off; off inside the line is right");
 console.log("gpu-tokens-check: ok");
