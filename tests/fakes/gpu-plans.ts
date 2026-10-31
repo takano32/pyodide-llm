@@ -97,8 +97,9 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
   for (const vector of Object.values(plan.vectors) as { at: number; size: number }[]) floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * (i % 7));
   floats(plan.tokens.final, DIM, (i) => 1 + 0.01 * (i % 5));
   const half = plan.headSize / 2;
-  for (const [at, f] of [[plan.cos, Math.cos], [plan.sin, Math.sin]] as const) {
-    floats(at, CONTEXT * half, (i) => f(Math.floor(i / half) * 10000 ** (-(i % half) / half)));
+  // (and a Gemma 3's local layers' own, base 100, where the plan has them)
+  for (const [at, f, base] of [[plan.cos, Math.cos, 10000], [plan.sin, Math.sin, 10000], [plan.localCos, Math.cos, 100], [plan.localSin, Math.sin, 100]] as const) {
+    if (at) floats(at, CONTEXT * half, (i) => f(Math.floor(i / half) * base ** (-(i % half) / half)));
   }
 }
 // (the layers a vector has a copy of: of its kind's, or all)

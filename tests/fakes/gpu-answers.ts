@@ -62,15 +62,15 @@ export async function gpuAnswers() {
     result.destroy?.();
     return Array.isArray(out) ? out : [out];
   };
-  const byCode = new Map<string, Model>(), byPipeline = new Map<Pipeline, Model>(), seen: string[] = [];
+  const byCode = new Map<string, Model>(), byPipeline = new Map<Pipeline, Model>(), seen: string[] = [], missed: string[] = [];
   return {
     add(code: string, model: Model) { byCode.set(code, model); },
     addPipeline(pipeline: Pipeline, model: Model) { byPipeline.set(pipeline, model); },
-    // (the WGSL texts dispatched that were answered, in order)
-    seen,
+    // (the WGSL texts dispatched that were answered, in order; T.465.6: and those that were not, which a check may hold empty)
+    seen, missed,
     answer(pipeline: Pipeline, entries: Entry[], x: number, y: number) {
       const model = byPipeline.get(pipeline) ?? byCode.get(pipeline.code);
-      if (!model) return;
+      if (!model) return void missed.push(pipeline.code);
       seen.push(pipeline.code);
       model(entries, x, y);
     },
@@ -133,9 +133,26 @@ export async function gpuAnswers() {
     // the DP4A forms: RMSNORM (x, the weight, dst, the Norm, the step), NORM_QUANTIZE (x, the weight, the codes, their
     // scales, the Norm, the step; a workgroup a token), and fusedDp4aMatVec ({ output }: the weights, their scales, the
     // codes, the Params, the codes' scales, then dst or (rope) q, the keys, the values, the angles and the step)
-    rmsnorm: ((entries) => {
-      const [out] = called("rmsnorm", bound(entries, 0), bound(entries, 1), bound(entries, 3), bound(entries, 4));
-      bound(entries, 2).set(out.subarray(0, bound(entries, 2).length));
+    // (T.465.6: the RMSNorm family, each row of the dispatch: RMSNORM into out, HEAD_NORM in place (x, the weight, the
+    // Norm, the step), RMSNORM_ADD added to out; a workgroup a row across, a token down)
+    rmsnorm: ({ inPlace = false, add = false } = {}): Model => (entries, x, y) => {
+      const [norm, step] = inPlace ? [2, 3] : [3, 4];
+      if (y < words(entries, step)[0]) return;
+      const [out] = called("rms_rows", bound(entries, 0), bound(entries, 1), bound(entries, norm), bound(entries, step), x, inPlace ? undefined : bound(entries, 2), add);
+      bound(entries, inPlace ? 0 : 2).set(out.subarray(0, bound(entries, inPlace ? 0 : 2).length));
+    },
+    // ADD (bias: add() is the answerer's own): y, the bias, the Bias (n, its start, by position), the step; 64 values a
+    // workgroup across, a token down
+    bias: ((entries, x, y) => {
+      const [n] = words(entries, 2);
+      if (x * 64 < n || y < words(entries, 3)[0]) return;
+      const [out] = called("add", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3));
+      bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
+    }) as Model,
+    // TOKEN_ROPE: the rows (2), the matrix's Params (3), then q, the keys, the values, the angles and the step (5 to 9)
+    tokenRope: ((entries) => {
+      const [q, keys, values] = called("token_rope", bound(entries, 2), bound(entries, 3), bound(entries, 6), bound(entries, 7), bound(entries, 8), bound(entries, 9));
+      for (const [binding, made] of [[5, q], [6, keys], [7, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
     }) as Model,
     normQuantize: ((entries, x) => {
       if (x < words(entries, 5)[0]) return;
