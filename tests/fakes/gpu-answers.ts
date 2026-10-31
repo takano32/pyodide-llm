@@ -50,6 +50,10 @@ const pythonOf = () => (loaded ??= (async () => {
   return py.pyimport("gpu_answers");
 })());
 
+// (T.465.3: a token's attention by parts, kept by its parts' buffer for the reduce that comes after: the process's, as
+// the one Pyodide is, so that a model of one answerer and the reduce of another meet)
+const reducing = new Map<ArrayBufferLike, Uint8Array>();
+
 export async function gpuAnswers() {
   const python = await pythonOf();
   // what Python returns (bytes, or a tuple of them) as Uint8Arrays, and the proxies let go
@@ -78,6 +82,23 @@ export async function gpuAnswers() {
       const [out] = called("flash_tile", bound(entries, 0), bound(entries, 1), bound(entries, 2), heads, kvHeads, float(entries, 4, 2), window, tokens, pos, size);
       bound(entries, 3).set(out);
     },
+    // T.465.3: a token's attention by llama.cpp's decode form (flashVec): q, the keys, the values, the parts, out, the params
+    // (heads, kv heads, scale, nwg, -, window), the step (1, the token's position), a workgroup for each head and part. The
+    // token's output is the prompt's attention of one token (gpu_answers.py's flash_tile); with one part it goes to out,
+    // with more it is kept for the reduce (flashVecReduce: the parts, out, the params; a workgroup a head), which writes it
+    flashVec: (size: number): Model => (entries, x) => {
+      const [heads, kvHeads, , nwg, , window] = words(entries, 5), [, pos] = words(entries, 6);
+      if (x < heads * nwg) return;
+      const [out] = called("flash_tile", bound(entries, 0), bound(entries, 1), bound(entries, 2), heads, kvHeads, float(entries, 5, 2), window, 1, pos, size);
+      if (nwg === 1) bound(entries, 4).set(out.subarray(0, bound(entries, 4).length));
+      else reducing.set(bound(entries, 3).buffer, out);
+    },
+    flashVecReduce: ((entries, x) => {
+      const [heads] = words(entries, 2), kept = reducing.get(bound(entries, 0).buffer);
+      if (x < heads || !kept) return;
+      bound(entries, 1).set(kept.subarray(0, bound(entries, 1).length));
+      reducing.delete(bound(entries, 0).buffer);
+    }) as Model,
     // QUANTIZE: x, its codes, their scales, the params (n, x's stride), the block (tokens)
     // (64 groups of 32 a workgroup across, a token a workgroup down)
     quantize: ((entries, x, y) => {
