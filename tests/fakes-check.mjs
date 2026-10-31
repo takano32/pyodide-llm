@@ -12,8 +12,8 @@ import { pyProxies } from "./fakes/pyodide.mjs";
 import { tokenClock } from "./fakes/token-clock.mjs";
 import { workers, ended, endedThen, READY } from "./fakes/worker.mjs";
 import { standIn } from "./fakes/webgpu.mjs";
-import { gpuAnswers } from "./fakes/gpu-answers.mjs";
-import { MODELS, planned } from "./fakes/gpu-plans.mjs";
+import { gpuAnswers } from "./fakes/gpu-answers.ts";
+import { MODELS, planned } from "./fakes/gpu-plans.ts";
 
 let passed = 0;
 const ok = (name) => { passed++; console.log(`ok: ${name}`); };
@@ -341,15 +341,17 @@ ok("Pyodide's proxies: each counts how it was let go and refuses to be read afte
   assert.throws(() => device.queue.writeBuffer(a, 24, new Uint32Array(4)), /past its buffer/);
   const encoder = device.createCommandEncoder();
   encoder.copyBufferToBuffer(a, 8, b, 4, 8);
-  assert.deepEqual([...new Uint32Array(b.data.buffer, 4, 2)], [2, 3], "a copy moves the bytes as it is encoded");
   encoder.clearBuffer(a, 8, 4);
-  assert.deepEqual([...new Uint32Array(a.data.buffer, 8, 2)], [0, 3], "a clear zeroes its range");
+  // (T.465.1's review: a command buffer does its work when it is submitted, in order: nothing yet)
+  assert.deepEqual([...new Uint32Array(b.data.buffer, 4, 2), ...new Uint32Array(a.data.buffer, 8, 2)], [0, 0, 2, 3], "nothing done as it is encoded");
   const pipeline = await device.createComputePipelineAsync({ compute: { module: device.createShaderModule({ code: "WGSL" }) } }), group = device.createBindGroup({ entries: [{ binding: 0, resource: { buffer: a } }] });
   const pass = encoder.beginComputePass();
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, group);
   pass.dispatchWorkgroups(3, 2, 1);
   device.queue.submit([encoder.finish()]);
+  assert.deepEqual([...new Uint32Array(b.data.buffer, 4, 2)], [2, 3], "a copy moves the bytes, before the clear after it");
+  assert.deepEqual([...new Uint32Array(a.data.buffer, 8, 2)], [0, 3], "a clear zeroes its range");
   const range = b.getMappedRange();
   new Uint8Array(range)[4] = 99;
   assert.equal(b.data[4], 2, "a mapped range is a copy");
@@ -358,7 +360,7 @@ ok("Pyodide's proxies: each counts how it was let go and refuses to be read afte
   const dispatched = calls.find(([what]) => what === "dispatch");
   assert.deepEqual([dispatched[1].code, dispatched[2], dispatched.slice(3)], ["WGSL", group, [3, 2, 1]], "a dispatch with its pipeline's WGSL and its bind group");
 }
-ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within its buffer, counted in a typed array's elements; a copy, a clear, a pipeline, a dispatch and a submission written down");
+ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within its buffer, counted in a typed array's elements; a copy, a clear, a pipeline, a dispatch and a submission written down, and a command buffer's work done as it is submitted");
 
 // ---- T.465.1: the shaders' answers (tests/gpu_answers.py through the bridge), each on numbers whose answer is known; a
 // dispatch answered where its WGSL is named
@@ -374,18 +376,21 @@ ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within it
   const params = new ArrayBuffer(16);
   new Uint32Array(params).set([1, 1, 0, 0]);
   new Float32Array(params, 8, 1)[0] = 1;
-  flashTile(1)(entries(filled(new Float32Array([1, 1])), keys, values, out, filled(new Uint8Array(params)), filled(new Uint32Array([2, 0, 0, 0]))));
+  flashTile(1)(entries(filled(new Float32Array([1, 1])), keys, values, out, filled(new Uint8Array(params)), filled(new Uint32Array([2, 0, 0, 0]))), 1, 1);
   assert.deepEqual([...f(out)], [2, 2.5], "a token at 0 attends its own value; at 1 the mean of two of the same key");
   // the quantization: quantize_x's codes and scale (the largest of a group of 32 is 127)
   const x = filled(new Float32Array(32).map((_, i) => i - 16)), xq = made(32), xs = made(4);
-  quantize(entries(x, xq, xs, filled(new Uint32Array([32, 32, 0, 0])), filled(new Uint32Array([1, 0, 0, 0]))));
+  quantize(entries(x, xq, xs, filled(new Uint32Array([32, 32, 0, 0])), filled(new Uint32Array([1, 0, 0, 0]))), 1, 1);
   assert.deepEqual([new Int8Array(xq.data.buffer)[0], f(xs)[0]], [-127, Math.fround(16 / 127)]);
   // a tiled form: y = W x, then y + W x where add (one row of 32 int8 weights of 2 by a scale of 0.5, x all ones)
   const w = filled(new Int8Array(32).fill(2)), s = filled(new Float32Array([0.5])), ones = filled(new Float32Array(32).fill(1)), y = made(4);
   const shape = (add) => filled(new Uint32Array([1, 8, 1, 0, 32, 1, add, 0]));
-  tiled({ packed: false, packing: "int8" })(entries(w, s, ones, y, shape(0), filled(new Uint32Array([1, 0, 0, 0]))));
-  tiled({ packed: false, packing: "int8" })(entries(w, s, ones, y, shape(1), filled(new Uint32Array([1, 0, 0, 0]))));
+  tiled({ packed: false, packing: "int8", tile: { rows: 4, tokens: 4 } })(entries(w, s, ones, y, shape(0), filled(new Uint32Array([1, 0, 0, 0]))), 1, 1);
+  tiled({ packed: false, packing: "int8", tile: { rows: 4, tokens: 4 } })(entries(w, s, ones, y, shape(1), filled(new Uint32Array([1, 0, 0, 0]))), 1, 1);
   assert.equal(f(y)[0], 64, "32 and then 32 more");
+  const none = made(4);
+  tiled({ packed: false, packing: "int8", tile: { rows: 4, tokens: 4 } })(entries(w, s, ones, none, shape(0), filled(new Uint32Array([1, 0, 0, 0]))), 0, 1);
+  assert.equal(f(none)[0], 0, "no workgroup dispatched: nothing written");
   // the answerer: a pipeline by its WGSL or itself; another is left alone
   const answers = await gpuAnswers(), said = [], pipeline = { code: "B" };
   answers.add("A", () => said.push("A"));

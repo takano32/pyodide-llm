@@ -8,16 +8,17 @@
 //
 //   It puts navigator.gpu on the global (an adapter that is a fallback where fallback is true, and the WGSL language
 //   features given), whose device every module of the worker then takes. lose(info) loses the device.
-//   T.465.1: answer(pipeline, entries, x, y, z), where given, is called at every dispatch as it is encoded, with the
-//   bind group's entries ({ binding, resource: a buffer or { buffer, offset, size } }): what a shader would write, a
-//   check of the worker's may write into the buffers' bytes (tests/fakes/gpu-answers.mjs).
+//   T.465.1: answer(pipeline, entries, x, y, z), where given, is called for every dispatch of a command buffer as it is
+//   submitted, with the bind group's entries ({ binding, resource: a buffer or { buffer, offset, size } }): what a
+//   shader would write, a check of the worker's may write into the buffers' bytes (tests/fakes/gpu-answers.ts).
 //
 // The same as WebGPU: a write's offset and size of a typed array count its elements, and only whole words go (it
 // throws on another); a write past its buffer throws; a copy moves the bytes; a mapped range is a copy of the bytes.
-// Simpler: no shader runs (a dispatch is written down, and the buffers stay as they were, but for what answer writes:
-// at the encoding, which is as early as the inputs written before it are there), a pipeline is its WGSL
-// ({ code }), a bind group its entries, a copy is done as it is encoded (nothing runs between the encoding and the
-// submission), and no error scope ever holds an error.
+// The same too (T.465.1's review): what a command buffer does (its copies, clears and the answers of its dispatches) is
+// done when it is submitted, in the order it was encoded (a command buffer never submitted does nothing; a write of the
+// queue between the encoding and the submission comes first), while calls writes each down as it is encoded.
+// Simpler: no shader runs (a dispatch is written down, and the buffers stay as they were, but for what answer writes),
+// a pipeline is its WGSL ({ code }), a bind group its entries, and no error scope ever holds an error.
 import assert from "node:assert/strict";
 
 export function standIn({ fallback = false, language = [], answer = null } = {}) {
@@ -45,7 +46,11 @@ export function standIn({ fallback = false, language = [], answer = null } = {})
         target.data.set(bytes.subarray(from * each, from * each + length), offset);
         calls.push(["write", target, offset, length, bytes.slice(from * each, from * each + length)]);
       },
-      submit() { calls.push(["submit"]); device.onSubmit?.(); },
+      submit(buffers = []) {
+        calls.push(["submit"]);
+        for (const buffer of buffers) for (const done of buffer.work ?? []) done();
+        device.onSubmit?.();
+      },
       onSubmittedWorkDone: async () => {},
     },
     createShaderModule: ({ code }) => ({ code }),
@@ -56,25 +61,27 @@ export function standIn({ fallback = false, language = [], answer = null } = {})
     },
     createBindGroup: ({ entries }) => ({ entries }),
     createCommandEncoder() {
+      // (what the command buffer does when it is submitted, in order)
+      const work = [];
       return {
         beginComputePass() {
           const pass = { setPipeline(pipeline) { pass.pipeline = pipeline; }, setBindGroup(index, group) { pass.group = group; },
             dispatchWorkgroups(x, y = 1, z = 1) {
-              calls.push(["dispatch", pass.pipeline, pass.group, x, y, z]);
-              answer?.(pass.pipeline, pass.group.entries, x, y, z);
+              const { pipeline, group } = pass;
+              calls.push(["dispatch", pipeline, group, x, y, z]);
+              if (answer) work.push(() => answer(pipeline, group.entries, x, y, z));
             }, end() {} };
           return pass;
         },
-        // (done as it is encoded: nothing here runs between the encoding and the submission)
         clearBuffer(target, offset = 0, size = target.size - offset) {
-          target.data.fill(0, offset, offset + size);
           calls.push(["clear", target, offset, size]);
+          work.push(() => target.data.fill(0, offset, offset + size));
         },
         copyBufferToBuffer(source, from, target, to, length) {
-          target.data.set(source.data.subarray(from, from + length), to);
           calls.push(["copy", source, from, target, to, length]);
+          work.push(() => target.data.set(source.data.subarray(from, from + length), to));
         },
-        finish: () => ({}),
+        finish: () => ({ work }),
       };
     },
     pushErrorScope() {}, popErrorScope: async () => null, destroy() { calls.push(["device gone"]); },
