@@ -94,6 +94,10 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
+      # T.628.8: src/models.ts reads Python's facts (python_facts.py writes src/runtime/built/facts/, which no checkout has)
+      - run: |
+          python3 -m pip install --quiet numpy
+          python3 python_facts.py
       - id: plan
         env:
           CANDIDATES: ${{ inputs.candidates }}
