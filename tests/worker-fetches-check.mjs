@@ -231,13 +231,13 @@ const CASES = [
 
 // ---- T.374.2.3: the candidates for a tokenizer are in one place, Python's (TOKENIZERS of src/python/convert/conduct.py). The
 // page names none for a repository nobody has looked at, and keeps one list of its own, for the folder it must look
-// into before there is a Pyodide to ask: that list is held to Python's here
+// into before there is a Pyodide to ask (T.628.2: written from Python's by python_facts.py), held to Python's here
 {
   const proxy = pyodide.runPython("list(convert.conduct.TOKENIZERS)"), candidates = proxy.toJs();
   proxy.destroy();
   assert.deepEqual(TOKENIZERS, candidates, `the tokenizers the page looks for in a folder (TOKENIZERS of src/page/folder.ts: ${TOKENIZERS.join(", ")}) are not ` +
-    `the candidates of a conversion (TOKENIZERS of ${treeOf().folders.python}/convert/conduct.py: ${candidates.join(", ")}). The list is Python's: edit src/page/folder.ts to say ` +
-    "the same names in the same order (its sentence for a folder without a tokenizer is made of them, and a visitor reads it)");
+    `the candidates of a conversion (TOKENIZERS of ${treeOf().folders.python}/convert/conduct.py: ${candidates.join(", ")}). The list is Python's, written by ` +
+    "python_facts.py into src/runtime/built/facts.ts: an old one (make kernels writes it anew)");
   const entry = hfEntry("owner/model", REVISION, { template: "{prompt}" });
   assert.deepEqual(entry.hf, { repo: "owner/model", revision: REVISION, weights: "model.safetensors", config: "config.json" },
     "the page names more of a repository nobody has looked at than its weights and its config.json: the candidates for its tokenizer are the conduct's to name");

@@ -11,12 +11,15 @@
 #   architectures  (forward/architectures.ts) of each of engine/layout.py's LAYOUTS: what sizes a model before it is
 #                  loaded: a learned table of positions, a gate of the attention's output (the rows wg or head_gate),
 #                  RoPE, a gated FFN, LayerNorms, the FFN's activation, local layers
+#   tokenizers     (src/page/folder.ts, T.628.2) convert/conduct.py's TOKENIZERS: the tokenizers a conversion tries, in
+#                  its order, which the page looks for in a folder before Pyodide is there
 import json
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "src" / "python"))
+from convert import conduct  # noqa: E402
 from engine import layout as L  # noqa: E402
 
 # (a small model of each kind of the layers that keep a state, whose rows the facts are read from: an architecture of
@@ -38,7 +41,7 @@ def architectures():
 
 
 def facts():
-    return {"architectures": architectures()}
+    return {"architectures": architectures(), "tokenizers": list(conduct.TOKENIZERS)}
 
 
 HEAD = """// src/runtime/built/facts.ts: written by python_facts.py from the site's Python (T.628.1). Not to be edited, and not

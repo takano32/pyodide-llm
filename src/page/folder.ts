@@ -5,10 +5,12 @@
 // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
 // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
 // context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
-// The tokenizers a folder may come with. The conversion's own list is Python's (TOKENIZERS of
-// src/python/convert/conduct.py: which are tried, and in which order); this page asks for one of them before Pyodide is
-// there to say, so it keeps the names too, and tests/worker-fetches-check.mjs holds the two lists to each other
-export const TOKENIZERS = ["tokenizer.json", "tokenizer.model", "spiece.model"];
+import { FACTS } from "../runtime/built/facts.ts";
+
+// The tokenizers a folder may come with: the conversion's own list, Python's (TOKENIZERS of
+// src/python/convert/conduct.py: which are tried, and in which order). This page asks for one of them before Pyodide is
+// there to say, so T.628.2: python_facts.py writes the list into src/runtime/built/facts.ts, read here
+export const TOKENIZERS: readonly string[] = FACTS.tokenizers;
 const HF_IGNORED = ["tokenizer_config.json", "generation_config.json", "special_tokens_map.json", "model.safetensors.index.json"];
 export async function openHuggingFace(chosen: File[]) {
   const named = (...names: string[]) => chosen.find(({ name }) => names.includes(name.toLowerCase()));
