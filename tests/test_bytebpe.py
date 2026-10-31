@@ -262,7 +262,13 @@ def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
               f"{unicodedata.unidata_version} split otherwise: " + ", ".join(f"U+{code:04X}" for code in unassigned[:20]))
     wrong = [code for code in wrong if code not in unassigned]
     shown = ", ".join(f"U+{code:04X} ({unicodedata.category(chr(code))})" for code in wrong[:40])
-    assert not wrong, f"{name}: {len(wrong)} code points split otherwise than the real one: {shown}"
+    # (T.630's review: the other way about, a Python whose Unicode is newer than the real one's, is said by its cause:
+    # nothing tells which Unicode the real tokenizers splits by, so its code points cannot be left out one by one)
+    newer = tuple(map(int, unicodedata.unidata_version.split("."))) > (16, 0, 0)
+    assert not wrong, (f"{name}: {len(wrong)} code points split otherwise than the real one: {shown}" +
+                       (f". Python's Unicode is {unicodedata.unidata_version}, newer than the 16.0.0 the real tokenizers was "
+                        "seen to split by (T.630): run these on a Python of Unicode 16 (CI's tests.yml keeps 3.14), or, where "
+                        "this tokenizers knows the new Unicode, they are wrong" if newer else ""))
 
 
 # T.215: SmolLM2's vocabulary has no piece for 21 bytes (0x04, 0x06, 0x13, 0x14, 0x16, 0x1D, 0xC0, 0xC1, 0xF1, 0xF2,
