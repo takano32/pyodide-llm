@@ -39,6 +39,11 @@ export function otherTree(before = "origin/main") {
     .map((name) => name.replace(/\/$/, "")).filter((name) => name === models || (!name.includes("/") && !name.startsWith(".") &&
       !["node_modules", "dist", "__pycache__"].includes(name)));
   for (const name of built) if (!fs.existsSync(path.join(folder, name))) fs.symlinkSync(path.join(root, name), path.join(folder, name));
+  // (T.628.1: the facts its TypeScript reads of its own Python, which `make kernels` writes there: the other tree's of
+  // its own Python, not this one's)
+  if (fs.existsSync(path.join(folder, "python_facts.py")) && !fs.existsSync(path.join(folder, "src", "runtime", "built", "facts"))) {
+    execFileSync(process.env.PYTHON ?? "python3", [path.join(folder, "python_facts.py")], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+  }
   return { commit, folder };
 }
 
