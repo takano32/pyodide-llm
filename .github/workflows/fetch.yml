@@ -33,6 +33,18 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # T.628.8: src/models.ts reads Python's facts (python_facts.py writes src/runtime/built/facts/, which no checkout has)
+      - name: Set up Python (for the facts)
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: The facts of the Python the list reads
+        shell: bash
+        run: |
+          python -m pip install --quiet numpy
+          python python_facts.py
+
       # T.262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
         timeout-minutes: 20
