@@ -405,7 +405,8 @@ def dp4a_rope(weights, scales, xq, xs, params, keys, values, angles, step, packi
 
 # ---- T.465.6.4: the kinds of layers that keep a state: an LFM2's convolution layers (SHORT_CONV, CONV_STATE) and a
 # Qwen3.5's linear-attention layers (DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET), and the gate of SWIGLU,
-# each as shaders/steps.ts has it (the sums in float64)
+# each as shaders/steps.ts has it (the sums in float64; np.exp: an infinity past float64's where WGSL's is too, not an
+# OverflowError). tests/test_gpu_answers.py holds what the checks do not reach
 
 def u32s(raw):
     return np.frombuffer(bytes(raw), dtype=np.uint32)
@@ -461,9 +462,9 @@ def delta_gates(x, wb, wa, dt_bias, decay, work, gates, step):
         for h in range(heads):
             weights = slice((at + h) * dim, (at + h + 1) * dim)
             s = float(a[weights] @ row) + bias[at + h]
-            softplus = s if s > 20.0 else math.log(1.0 + math.exp(s))
-            out[token * 2 * heads + h] = 1.0 / (1.0 + math.exp(-float(b[weights] @ row)))
-            out[token * 2 * heads + heads + h] = math.exp(dec[at + h] * softplus)
+            softplus = s if s > 20.0 else math.log1p(math.exp(s))
+            out[token * 2 * heads + h] = 1.0 / (1.0 + np.exp(-float(b[weights] @ row)))
+            out[token * 2 * heads + heads + h] = np.exp(dec[at + h] * softplus)
     return out.tobytes()
 
 
@@ -477,7 +478,7 @@ def delta_conv(mixed, taps, rows, out, conv, step):
         first = token + 1 - count
         for c in range(n):
             total = sum(w[at + j * n + c] * (r[at + (count + first + j) * n + c] if first + j < 0 else m[(first + j) * n + c]) for j in range(count))
-            value = total / (1.0 + math.exp(-total))
+            value = total / (1.0 + np.exp(-total))
             if c < keys:
                 o[token * keys + c] = value
             elif c < 2 * keys:
