@@ -46,8 +46,9 @@ async function opened({ features = [], spoil = {}, weights = null } = {}) {
   plan.force = { fallback: true };
   // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
   if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
-  const codebooks = Array.isArray(weights) ? answers.codebooks() : null;
-  if (codebooks) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
+  // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T.465.2's review)
+  if (Array.isArray(weights)) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
+  const codebooks = Array.isArray(weights) && weights.some((type) => type.startsWith("IQ")) ? answers.codebooks() : null;
   const memory = { buffer: new SharedArrayBuffer(bytes + (codebooks?.length ?? 0)) };
   new Uint8Array(memory.buffer).forEach((_, i, all) => { all[i] = (i * 131 + 7 * (i >> 8) + 89) & 255; });
   if (codebooks) {
