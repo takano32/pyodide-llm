@@ -1,0 +1,83 @@
+// tests/fakes/gpu-model.ts (T.465.3, moved out of tests/gpu-forms-check.ts)
+// A made-up model opened on the stand-in WebGPU (tests/fakes/webgpu.mjs) as the model's GPU worker opens one (openDevice,
+// handed, upload, block.ts's prepare), with the dispatches of the checks that choose its forms answered as the shaders
+// would (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's): the prompt's attention, the
+// quantization, every tiled form and its texts of llama.cpp's blocks, and (T.465.3) a token's attention. For the checks
+// that run those parts: gpu-forms-check.ts, gpu-tokens-check.ts.
+//
+//   const { m, answers } = await opened({ model, features, spoil, weights })
+//
+// The same as the worker's: the plan as forward/gpuside.ts hands one (tests/fakes/gpu-plans.ts's), the device's
+// options of each form. Simpler: a fallback adapter that the plan allows (forms.ts and tokenattention.ts time each right
+// one by a pair of one pass there: every pass of a timing would be answered too), whose timing is no device's.
+import { runtimeUrl } from "../tree.mjs";
+import { standIn } from "./webgpu.mjs";
+import { MODELS, planned } from "./gpu-plans.ts";
+import { gpuAnswers } from "./gpu-answers.ts";
+
+// (the worker's global, as a worker has it)
+globalThis.self = globalThis;
+globalThis.postMessage = () => {};
+const device_ = await import(runtimeUrl("gpu/device.ts"));
+const { upload } = await import(runtimeUrl("gpu/weights.ts"));
+const block_ = await import(runtimeUrl("gpu/block.ts"));
+const { ENGINE } = await import(runtimeUrl("shaders/engine.ts"));
+const { flashShape, flashVecShape } = await import(runtimeUrl("shaders/attention.ts"));
+const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
+
+// a made-up model on the stand-in (model: one of tests/fakes/gpu-plans.ts's MODELS, a Llama where not said), its forms answered; spoil: a model to put in place of one ("attention", "form",
+// "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
+// those of w2's two layers (the one matrix of rows of 256: dim is 128), the plan's codebooks the converter's after the
+// checkpoint; spoil.block: a maker of a block type's model, given the right one and the type
+// (a model in place of the right one: of the attention, of its f16 or subgroups texts alone (halves), of the quantization;
+// form and block: makers given the right one, and the block's type)
+type Answer = (entries: unknown[], x: number, y: number) => void;
+type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
+type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null };
+export async function opened({ model = "llama", features = [], spoil = {}, weights = null }: Opened = {}) {
+  const answers = await gpuAnswers();
+  const { flashTile, quantize, tiled } = answers;
+  // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
+  // one pass there, and every pass of a timing would be answered too)
+  const { device } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
+  for (const feature of features) device.features.add(feature);
+  const { plan, bytes } = planned(MODELS[model]);
+  plan.force = { fallback: true };
+  // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
+  if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
+  // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T.465.2's review)
+  if (Array.isArray(weights)) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
+  const codebooks = Array.isArray(weights) && weights.some((type) => type.startsWith("IQ")) ? answers.codebooks() : null;
+  const memory = { buffer: new SharedArrayBuffer(bytes + (codebooks?.length ?? 0)) };
+  new Uint8Array(memory.buffer).forEach((_, i, all) => { all[i] = (i * 131 + 7 * (i >> 8) + 89) & 255; });
+  if (codebooks) {
+    new Uint8Array(memory.buffer).set(codebooks, bytes);
+    plan.codebooks = bytes;
+  }
+  const m = await device_.openDevice(plan);
+  device_.handed(memory, plan);
+  await upload(m);
+  await block_.prepare(m);
+  // the attention's texts the device may make (forms.ts's options), the quantization, and every form's text
+  const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
+    subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize };
+  for (const half of [false, true]) {
+    for (const subgroups of [false, true]) {
+      const shape = flashShape({ headSize: plan.headSize, half, subgroups, ...limits });
+      // (spoil.halves: the f16 or subgroups texts alone, the device's first option)
+      if (!shape.none) answers.add(ENGINE.flashTile(shape), ((half || subgroups) && spoil.halves) || spoil.attention || flashTile(plan.headSize));
+    }
+  }
+  answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
+  // (spoil.form: a maker of each form's model, given the right one)
+  for (const form of devicePromptForms(device, m.own)) {
+    const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
+    answers.add(form.code, spoil.form ? spoil.form(right) : right);
+    // (T.465.2: and each text of a type of llama.cpp's blocks beside it)
+    for (const [packing, code] of Object.entries(form.blocks ?? {})) {
+      const block = tiled({ packed: true, packing, tile: form.tile });
+      answers.add(code, spoil.block ? spoil.block(block, packing) : block);
+    }
+  }
+  return { m, answers };
+}
