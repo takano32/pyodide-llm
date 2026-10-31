@@ -33,7 +33,7 @@ const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 // of a token's attention by parts (vec) and of their reduce;
 // form and block: makers given the right one, and the block's type)
 type Answer = (entries: unknown[], x: number, y: number) => void;
-type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
+type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Answer; reduce?: Answer; sample?: Answer; fused?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean };
 export async function opened({ model = "llama", features = [], spoil = {}, weights = null, sane = false }: Opened = {}) {
   const answers = await gpuAnswers();
@@ -82,10 +82,17 @@ export async function opened({ model = "llama", features = [], spoil = {}, weigh
   answers.add(ENGINE.EMBED, answers.embed);
   for (const input of ["norm", "plain"]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
-      for (const subgroups of [false, true]) answers.add(ENGINE.fusedMatVec({ input, output, subgroups }), answers.fusedMatVec({ norm: input === "norm", output }));
+      for (const subgroups of [false, true]) {
+        const right = answers.fusedMatVec({ norm: input === "norm", output });
+        answers.add(ENGINE.fusedMatVec({ input, output, subgroups }), spoil.fused ? spoil.fused(right, output) : right);
+      }
     }
   }
-  answers.add(ENGINE.SAMPLE, answers.sample);
+  answers.add(ENGINE.SAMPLE, spoil.sample ?? answers.sample);
+  answers.add(ENGINE.RMSNORM, answers.rmsnorm);
+  answers.add(ENGINE.NORM_QUANTIZE, answers.normQuantize);
+  answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
+  for (const output of ["rope", "add", "swiglu", "write", "geglu"]) answers.add(ENGINE.fusedDp4aMatVec({ output, weights: "int8" }), answers.dp4a({ output }));
   answers.addPipeline(m.block.quantize, spoil.quantize ?? quantize);
   // (spoil.form: a maker of each form's model, given the right one)
   for (const form of devicePromptForms(device, m.own)) {

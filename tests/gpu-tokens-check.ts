@@ -9,16 +9,22 @@
 //     nothing then), or the window left out (a Gemma 3's check through its window), is wrong and the others are taken;
 //     off inside the line is right. The answers take the workgroups as many as the work's, no more, and the reduce reads
 //     the parts the decode wrote, of the nwg and sums' start it had.
-// Not held here: that the fastest is taken (the timing's clock is the real one), a token's layer (T.465.4).
+//   - T.465.4, a token's layer (tokenforms.ts's chooseTokens()) of a Llama: the float forms (with subgroups and without)
+//     and the DP4A ones (the norm with the quantizer, and apart) each checked on the model's own first layer and head,
+//     greedy and sampled with the penalty, timed, one taken (the made-up memory's numbers ones a model could have:
+//     gpu-plans.ts's plausible). Each check bites: the stream off in one value (a float form's text: the DP4A forms stay
+//     right), a greedy token not the largest logit; off inside the line is right.
+// Not held here: that the fastest is taken (the timing's clock is the real one), the other models' layers (T.465.6).
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
-import { opened } from "./fakes/gpu-model.ts";
+import { opened, blockMade } from "./fakes/gpu-model.ts";
 import { gpuAnswers } from "./fakes/gpu-answers.ts";
 
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
-const { flashVec } = await gpuAnswers();
+const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
+const { flashVec, fusedMatVec, dp4a, sample, quantize } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
 const off = (model, spoiled) => (entries, x, y) => {
@@ -68,4 +74,51 @@ for (const [model, features] of [["llama", []], ["llama", ["subgroups"]], ["gemm
   assert.deepEqual(llama.tokenAttention.attentions.filter(({ none }) => none), [], "no window: right");
 }
 console.log("ok: each check bites: the decode form a little off in a head, its reduce writing nothing, or its window left out, is wrong and the tiles taken; off inside the line is right");
+// ---- T.465.4: a token's layer (tokenforms.ts's chooseTokens()): each form checked on the model's own first layer and
+// head (the memory's numbers a model could have: opened's sane), greedy and sampled
+// a Llama's prompt forms chosen and its block made, then a token's forms
+async function tokens(options = {}) {
+  const { m } = await opened({ sane: true, ...options });
+  await forms_.chooseAttention(m);
+  await forms_.chooseMatrices(m);
+  blockMade(m);
+  await tokenForms_.chooseTokens(m).catch((error) => { m.thrown = error.message; });
+  return m;
+}
+// a model's output (binding at, a float32 array) off where spoiled() says, after the right one wrote
+const outputOff = (model, at, spoiled) => (entries, x, y) => {
+  model(entries, x, y);
+  const { resource } = entries.find((entry) => entry.binding === at), buffer = resource.buffer ?? resource;
+  spoiled(new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4));
+};
+const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [FLOAT, `${FLOAT}, subgroups`, DP4A, `${DP4A}, the norms apart`];
+{
+  const m = await tokens({ features: ["subgroups"] });
+  assert.equal(m.thrown, undefined);
+  const { form, forms } = m.tokenForm;
+  assert.deepEqual(forms.filter(({ none }) => none), [], "a Llama's token: no form wrong");
+  assert.deepEqual(forms.map(({ name }) => name).sort(), [...FORMS].sort(), "every form right and timed");
+  assert.ok(FORMS.includes(form.name));
+  console.log(`ok: a Llama's token: ${FORMS.join(", ")} checked right on its first layer and head (greedy and sampled), ${form.name} taken`);
+}
+// each check bites
+{
+  // the down projection's add off by 1% in one value (the float forms' line 2e-3 of the stream's change)
+  // (the float forms' text: the DP4A forms read their own, and stay right)
+  const off1 = await tokens({ spoil: { fused: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1.01; }) : right) } });
+  const verdict = (name) => off1.tokenForm.forms.find((tried) => tried.name === name);
+  assert.match(verdict(FLOAT).none ?? "", /^wrong: the first layer's stream is .* of its change from JavaScript's/, "a stream off in one value");
+  assert.equal(verdict(DP4A).none, undefined, "the DP4A forms right");
+  // the sampler drawing the second most likely token where the most likely is asked: wrong
+  const greedy = await tokens({ spoil: { sample: (entries, x, y) => {
+    sample(entries, x, y);
+    const chosen = entries.find((entry) => entry.binding === 4).resource, words = new Uint32Array((chosen.buffer ?? chosen).data.buffer);
+    words[0] = (words[0] + 1) % 96;
+  } } });
+  assert.match(greedy.thrown ?? "", /the greedy token is \d+, the largest logit's \d+/, "a greedy token not the largest logit");
+  // off by 1e-5 of a value: inside the line
+  const near = await tokens({ spoil: { fused: (right, output) => (output === "add" ? outputOff(right, 5, (out) => { out[3] *= 1 + 1e-5; }) : right) } });
+  assert.deepEqual(near.tokenForm.forms.filter(({ none }) => none), [], "off inside the line: right");
+}
+console.log("ok: each check bites: a token's stream off in one value, a greedy token not the largest logit; off inside the line is right");
 console.log("gpu-tokens-check: ok");
