@@ -338,8 +338,9 @@ const reported = await page.evaluate(() => window.__ready ?? null).catch(() => n
 // the documents, is about 256 tokens: set that in the settings, as a visitor would. (Not with E2E_LONG: the 256
 // count the prompt too, and the long prompt is there to fill the context.) T.337: Agents-A1's format alone is 241
 // tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it. T.255: and for SmolLM3,
-// whose template's system turn is as long where it thinks.
-const tokens = /^hf-(agents-a1|smollm3)-/.test(id) ? "512" : "256";
+// whose template's system turn is as long where it thinks. T.604: and 768 for Lumi v2, whose template's default system
+// turn makes a prompt of 499.
+const tokens = /^hf-lumi-v2-/.test(id) ? "768" : /^hf-(agents-a1|smollm3)-/.test(id) ? "512" : "256";
 // (T.577: not where the query says steps=: the page read it from the URL, models.yml's query=gpuTest=on&steps=16 for a
 // GPU's steps on SwiftShader, which writes 256 tokens in more than the job's 30 minutes)
 const stepsSaid = /(^|&)steps=/.test(process.env.E2E_QUERY ?? "");
