@@ -138,7 +138,6 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 進行中
 - T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 未着手
 - T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 未着手
 - T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 未着手
@@ -1298,17 +1297,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
-
-### T.598 [追加][モデル] sarashina の梯子の残り（2.2 3B base・2 7B・2.1 1B） — 状態: 進行中（2026-10-30、T.591 から。規模 小）
-- **実装**（2026-11-01、1 つのタスクのまま: 3 つとも base の続きで 1 回のデプロイ）: `hf-sarashina2.1-1b`・`hf-sarashina2.2-3b`・`hf-sarashina2-7b`（「SB Intuitions sarashina2.1 1B」・「…sarashina2.2 3B」・「…sarashina2 7B」）。3 つとも Llama の形で、エンジンと変換器には触っていない。base の項目の形は一覧の sarashina2.2 1B と同じ（options なし、`sampled(1.1)`、「これからの流行りは」）。2.1 1B は mradermacher の Q8_0、2.2 3B は原本の safetensors 6.7 GB、2 7B（MHA）は QuantFactory の Q8_0。語彙はどれも原本の `tokenizer.model`。ライセンスは 2.2 3B と 2 7B が MIT、2.1 1B が Sarashina Model NonCommercial License Agreement（方針 8、`SARASHINA_NC`）。
-  - **道具の直し 2 つ**: (1) `tests/gguf_fetch.py` が、`pytorch_model.bin.index.json` で分かれた bfloat16 の原本（sarashina2 7B）を読む: 部品ごとに safetensors にし（bfloat16 は BF16 のビットのまま）、その索引を書く。`fetching-check` に作り物の 2 部品の場合を足した（bfloat16 を読み手から外す壊し方で落ちる）。(2) `tests/gguf_check.py` は、Llama の GGUF が RoPE の基数を書かないとき llama.cpp の既定 1e4 で比べる（変換器の `families/llama.py` と同じ。QuantFactory の 7B が書いていない）。
-  - GGUF の run 41254508128（2.1 1B: 最悪 0.00592、最近の参照 0、語彙の違い 0）と 41256387068（2 7B: 最悪 0.00638、0、0。1 回目 41254508128 は分かれた `.bin` を取れず、2 回目 41255259119 は基数の無い行で 1 つ違うと出た）。
-  - 書かせた run 41254508076（1B・3B）と 41254508322（7B）: int8 は 1,583,733,788・3,775,539,228・8,230,289,436 バイト。BOS 1 は無しより perplexity −0.96%・−0.67%・−0.51%（変換器の BOS のまま）。128 トークンを greedy と種 2 つで: どれも日本語のウェブの文を書く。greedy は 3 つとも同じ文を繰り返す（base のモデル。ページの既定は標本抽出の 1.1 の罰）、標本抽出の文は崩れない。CI を回した。訳: GB 級のモデルの枝（7B は手元で動かさない）。
-  - レビュー（Sonnet low、2026-11-01）: 直しなし。項目の形・ライセンス（LICENSE の頭の行）・int8 と取得の大きさはログに合う。`gguf_check.py` の既定は GGUF が書かないときだけで、原本が別の値なら違うと出る。7B の部品（約 10 GB）は 16 GB のランナーに 1 つずつ載る。
-- sbintuitions/sarashina2.2-3b @ 9a06e768a2156c21bccb96cf4c99ae4b98755577（llama、3.36B、mit、base）: base の Q8_0 は無く safetensors 6.71 GB から（`tokenizer.model`）。一覧の 0.5B・1B base の続き。
-- sbintuitions/sarashina2-7b @ 15b989b8a4eb6f68b990787fc1016def7dabf0bb（MHA、bin だけ）: QuantFactory/sarashina2-7b-GGUF（7.78 GB）を段 ② で（語彙は原本）。
-- sbintuitions/sarashina2.1-1b @ 30348c324bc3d1b7b33d9687ca20478b2e5b3dd9（Sarashina Model NonCommercial License: 方針 8 で入れてよい）。mradermacher の Q8_0 1.5 GB。
-- sarashina2-13b は int8 で上限を越える見込み（MHA、約 17.1 GB）: T.610 で。
 
 ### T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - cyberagent/calm2-7b-chat @ 3e110c7624ff7a940badebfd5f9a91569f98cc56（llama、MHA、apache-2.0、likes 77）。書式が無い: カードの `USER: …\nASSISTANT: ` を手書き。トークナイザは NFC と gpt2-digits（読める見込み）。Q8_0: TheBloke/calm2-7B-chat-GGUF（7.45 GB、2023 年: `gguf_check.py tensors` を必ず）。
