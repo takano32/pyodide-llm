@@ -66,6 +66,12 @@ export const CALM2 = "USER: {prompt}\nASSISTANT: ";
 // what was typed (T.138)
 export const RAKUTEN = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, " +
   "detailed, and polite answers to the user's questions. USER: {prompt:trim} ASSISTANT:";
+// T.600: RakutenAI 7B instruct's, which its card writes by hand and does not trim
+export const RAKUTEN_UNTRIMMED = RAKUTEN.replace("{prompt:trim}", "{prompt}");
+// T.600: Japanese StableLM Instruct Gamma 7B's card builds this prompt (a system sentence, then 指示 and 応答, each
+// with a space before its line break), after the BOS its tokenizer adds
+export const STABLELM_GAMMA = "以下は、タスクを説明する指示と、文脈のある入力の組み合わせです。要求を適切に満たす応答を書きなさい。" +
+  "\n\n### 指示: \n{prompt}\n\n### 応答: \n";
 // T.138: Swallow-MS's card always passes this system message, which its template puts in the user's turn; the template
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)

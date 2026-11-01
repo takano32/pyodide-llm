@@ -126,8 +126,15 @@ LINE_CARD = "ユーザー: {prompt}\nシステム: "
 # T.599: calm2-7b-chat's card gives "USER: …\nASSISTANT: " to its fast tokenizer, which adds nothing (a second copy of
 # the list's CALM2, on purpose)
 CALM2_CARD = "USER: {prompt}\nASSISTANT: "
+# T.600: two more cards' formats, through the fast tokenizer as each card runs it (second copies of the list's RAKUTEN,
+# without its trim, and STABLELM_GAMMA)
+RAKUTEN_CARD = ("A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, "
+                "detailed, and polite answers to the user's questions. USER: {prompt} ASSISTANT:")
+STABLELM_GAMMA_CARD = ("以下は、タスクを説明する指示と、文脈のある入力の組み合わせです。要求を適切に満たす応答を書きなさい。"
+                       "\n\n### 指示: \n{prompt}\n\n### 応答: \n")
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD,
-         "hf-calm2-7b-chat": CALM2_CARD}
+         "hf-calm2-7b-chat": CALM2_CARD, "hf-rakutenai-7b-instruct": RAKUTEN_CARD,
+         "hf-japanese-stablelm-instruct-gamma-7b": STABLELM_GAMMA_CARD}
 # the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
 CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF

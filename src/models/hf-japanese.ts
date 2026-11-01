@@ -1,8 +1,8 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
   ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
-  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, RAKUTEN, SARASHINA, SWALLOW_MS, TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp,
-  sarashina,
+  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
+  TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled } from "./sampling.ts";
 import { ggufOf, hf } from "./builders.ts";
@@ -139,6 +139,14 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: QWEN3_OWN_BOS, template: TINYSWALLOW, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
   // context of 4096 the page gives it
+  // T.600: the base model of RakutenAI 2.0 mini, from its safetensors (no GGUF of it). Its tokenizer carries the chat
+  // template of the instruct one, which the converter would read: the plain text instead, with the BOS and stops the
+  // converter takes (the pair, as T.369 wants)
+  { group: "hf", id: "hf-rakutenai-2.0-mini", name: "RakutenAI 2.0 mini", note: "日本語 / English · fetches 3.1 GB → int8 1.7 GB",
+    original: "Rakuten/RakutenAI-2.0-mini",
+    hf: hf("Rakuten/RakutenAI-2.0-mini", "3740b0473010eb05d59143858408358bead777ba", "tokenizer.model"), download: 3069389424,
+    conversion: {}, options: { bos: 1, stop_tokens: [1, 2] }, generation: sampled(1.1), template: "{prompt}",
+    prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB",
     original: "Rakuten/RakutenAI-2.0-mini-instruct",
     hf: { repo: "mmnga/RakutenAI-2.0-mini-instruct-gguf", revision: "9bd2900dd7bff11c248fb510d4297b3a88817b76", weights: "RakutenAI-2.0-mini-instruct-Q8_0.gguf",
@@ -229,6 +237,31 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "Rakuten/RakutenAI-7B-chat", revision: "7093167c61a0be6161cb68928c939c03fe0ab87d", tokenizer: "tokenizer.model" } }, download: 7835496736,
     conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
+  // mradermacher's Q8_0 GGUFs as the chat's
+  { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
+    ...ggufOf("mradermacher/RakutenAI-7B-instruct-GGUF", "3cc5940c04443a36791f79ffd8814cfb90d2ff97", "RakutenAI-7B-instruct.Q8_0.gguf",
+      "Rakuten/RakutenAI-7B-instruct", "eb48a29043cda2dba50c088556f0ee411badcf2e", "tokenizer.model"), download: 7835495936,
+    conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN_UNTRIMMED,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-rakutenai-7b", name: "RakutenAI 7B", note: "日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
+    ...ggufOf("mradermacher/RakutenAI-7B-GGUF", "1923f28f1f2fc603cd661999c93090a090296a0b", "RakutenAI-7B.Q8_0.gguf",
+      "Rakuten/RakutenAI-7B", "eb61524c1ab1a7c656457bd68be4a423371cbacb", "tokenizer.model"), download: 7835495872,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  // T.600: Stability AI's Japanese StableLM Gamma 7B (a Mistral 7B trained on Japanese), its instruct one in its card's
+  // format (STABLELM_GAMMA) and sampling, and its base one; Q8_0 GGUFs with the originals' vocabularies (the instruct one's
+  // of 2024-11: TheBloke's of 2023-10 holds the weights before Stability AI's update of 2024-01-24)
+  { group: "hf", id: "hf-japanese-stablelm-instruct-gamma-7b", name: "Stability AI Japanese StableLM Instruct Gamma 7B",
+    note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("featherless-ai-quants/stabilityai-japanese-stablelm-instruct-gamma-7b-GGUF", "91ce351b24bd0cf8cd4707d2b62bd20996364050",
+      "stabilityai-japanese-stablelm-instruct-gamma-7b-Q8_0.gguf",
+      "stabilityai/japanese-stablelm-instruct-gamma-7b", "bb4590d461327a6d63f52a5cdbaa64cfceabbb4a", "tokenizer.model"), download: 7695857856,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: STABLELM_GAMMA,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-japanese-stablelm-base-gamma-7b", name: "Stability AI Japanese StableLM Base Gamma 7B", note: "日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("mmnga/japanese-stablelm-base-gamma-7b-gguf", "9d14a6b269fcb8190ec9c8b2a29803d24803f800", "japanese-stablelm-base-gamma-7b-q8_0.gguf",
+      "stabilityai/japanese-stablelm-base-gamma-7b", "ffc474da0e4f5dbb9db54e96a94a22c081fc7fbf", "tokenizer.model"), download: 7695857280,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Science Tokyo Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
     original: "tokyotech-llm/Swallow-MS-7b-instruct-v0.1",
     hf: { repo: "mmnga/tokyotech-llm-Swallow-MS-7b-instruct-v0.1-gguf", revision: "cb9ab1c831cfdb8f56371f0ba94806df0fabd518", weights: "tokyotech-llm-Swallow-MS-7b-instruct-v0.1-Q8_0.gguf",

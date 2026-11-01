@@ -102,6 +102,11 @@ export const LICENSES: Record<string, string> = {
   "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": LLAMA_31,
   // T.125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
+  "Rakuten/RakutenAI-7B-instruct": APACHE, "Rakuten/RakutenAI-7B": APACHE, "Rakuten/RakutenAI-2.0-mini": APACHE,
+  "mradermacher/RakutenAI-7B-instruct-GGUF": APACHE, "mradermacher/RakutenAI-7B-GGUF": APACHE,
+  "stabilityai/japanese-stablelm-instruct-gamma-7b": APACHE, "stabilityai/japanese-stablelm-base-gamma-7b": APACHE,
+  "featherless-ai-quants/stabilityai-japanese-stablelm-instruct-gamma-7b-GGUF": APACHE,
+  "mmnga/japanese-stablelm-base-gamma-7b-gguf": APACHE,
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
   "mistralai/Mistral-7B-Instruct-v0.3": APACHE, "HuggingFaceH4/zephyr-7b-beta": MIT,
   "meta-llama/Llama-3.2-3B-Instruct": LLAMA_32, "unsloth/Llama-3.2-3B-Instruct": LLAMA_32,
