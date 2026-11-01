@@ -138,7 +138,7 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 未着手
+- T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 進行中
 - T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 未着手
 - T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 未着手
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
@@ -1293,10 +1293,15 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
-### T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+### T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 状態: 進行中（2026-11-01、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小）
 - DataPilot/ArrowCanaria-Llama-8B-RL-v0.1 @ 2b487b422b5a30dbe5f4127cd6b60a15d25ad226（llama、Llama-3.1-Swallow 8B v0.5 から）: mradermacher @ ec04d0610d5ef9a7d6c2e01e814023db6b3e7b9d（8.54 GB）。ライセンスはカードから（Llama 3.1 と Gemma の両方を言う）。
 - SousiOmine/Lumi-v2-llm-jp-4-8b @ 0af15b25d14de36972c39501e883da7f07efbe61（llama、Apache-2.0、llm-jp-4 8B base を ChatML で）: 作り手の GGUF @ 820b4d43d7f89097d77073437cc53f11579793b1（9.13 GB）。
 - 有名さは小さい（likes が少ない）ので、足すかは持ち主（T.591 の決め）。
+- **したこと**: 2 項目を `hf-japanese.ts` に（hf-arrowcanaria-llama-8b-rl・hf-lumi-v2-llm-jp-4-8b。T.591 の持ち主の決め「有名なものと梯子の残り」で足す）。ArrowCanaria は Llama 3 の書式（変換器が読む）とカードの推論の組（温度 0.7・top-p 0.9・罰 1.05）。Lumi は ChatML と考える形の書式（変換器が読む。system が無いとき書式が既定の長い system を書く: 本物どおり）、止まりは `<|return|>`（2）。Lumi の語彙に `<|im_start|>` のトークンは無く、ChatML は文字として読まれる。Lumi の note は「thinks」で始め、名前に「thinking」が無いので `models-check` の考える項目の一覧 `readThinking` に足した。ライセンス: ArrowCanaria は原本も GGUF もカードの「Llama 3.1 Community License and Gemma Terms of Use」、Lumi は Apache-2.0。作り手の表に DataPilot（組織）と SousiOmine（個人）。
+- **確かめ**: `format_check.py` は 2 つとも 9/9（`STRICT` に `hf-arrowcanaria-`。Lumi は入れない: 本物の書式は BOS を前に置かず、ページは BOS `<|startoftext|>` を前に置く。エンジンに「BOS なし」は無いので start_check で測る）。`gguf.yml` run 41310488436: ArrowCanaria は最悪 0.00754・`rope_freqs` の差 2.1e-8、Lumi は 0.0111、どちらも語彙の違い 0。書かせる run 41310488824（answers.ts の greedy と種 1、1500 トークンまで。170 分の期限で Lumi の start_check の前に切れた）:
+  - ArrowCanaria: int8 9.03 GB（64 ビット）。止まり 5/5、くり返し 0/5、日本語の問いは 3/3 日本語。富士山 3,776 m・408 と正しい（greedy は「富士山は厳密には山と言えず北岳を最高峰とする見方もある」と誤りを足す: モデルの力）。BOS `<|begin_of_text|>` は素の文で +2.51%（書式どおりで送る ID は本物と同じなので替えない）。
+  - Lumi: int8 9.66 GB（64 ビット）。止まり 5/5、考えの終わり 5/5、くり返し 0/5。**考えは英語で、答えは問いの言語**（日本語の問いには日本語で答える。かなの割合は考えも数えるので 0/3 と出る）。富士山 3,776 m・408・東京と正しい。答えは 78〜615 トークンに 227〜543 秒（既定の長い system の先読みを含む）。
+- CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
 
 ### T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - elyza/ELYZA-japanese-Llama-2-7b-instruct・-fast-instruct（2023、likes 75〜83、原本は bin だけ）: mmnga の q8_0（7.16・7.28 GB、GGUF v3）。古い GGUF なので `gguf_check.py tensors` を必ず（原本が bin なら `tests/gguf_fetch.py` の `torch_tensors()` の形で比べる）。fast は語彙を広げた形。
