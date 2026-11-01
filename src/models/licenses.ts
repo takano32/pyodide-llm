@@ -16,6 +16,8 @@ const QWEN_RESEARCH = "Qwen Research License Agreement";
 const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 // T.250: ELYZA's card says "Meta Llama 3 Community License" under License (its metadata: llama3)
 const LLAMA_3 = "Meta Llama 3 Community License";
+// T.601: rinna's youri (its card's metadata: llama2, Llama 2's community license)
+const LLAMA_2 = "Llama 2 Community License";
 // T.251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2)
 const MODIFIED_MIT = "Modified MIT License";
 // T.252: the cards of unsloth's copy and of bartowski's GGUF say llama3.1 (the license's own title: "Llama 3.1 Community
@@ -102,6 +104,9 @@ export const LICENSES: Record<string, string> = {
   "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": LLAMA_31,
   // T.125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
+  "rinna/llama-3-youko-8b-instruct": LLAMA_3, "rinna/llama-3-youko-8b": LLAMA_3,
+  "mradermacher/llama-3-youko-8b-instruct-GGUF": LLAMA_3, "mradermacher/llama-3-youko-8b-GGUF": LLAMA_3,
+  "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
   "Rakuten/RakutenAI-7B-instruct": APACHE, "Rakuten/RakutenAI-7B": APACHE, "Rakuten/RakutenAI-2.0-mini": APACHE,
   "mradermacher/RakutenAI-7B-instruct-GGUF": APACHE, "mradermacher/RakutenAI-7B-GGUF": APACHE,
   "stabilityai/japanese-stablelm-instruct-gamma-7b": APACHE, "stabilityai/japanese-stablelm-base-gamma-7b": APACHE,

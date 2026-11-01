@@ -111,7 +111,7 @@ KNOWN = {
 # T.400: and sarashina2.2 and CAT-Translate, whose tokenizer puts no <s> in front and no dummy prefix: <|user|> first
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
           "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
-          "hf-gemma-4-", "hf-spark-x2.5-", "hf-spark-x2.6-", "hf-sarashina2.2-", "hf-cat-translate-")
+          "hf-gemma-4-", "hf-spark-x2.5-", "hf-spark-x2.6-", "hf-llama-3-youko-", "hf-sarashina2.2-", "hf-cat-translate-")
 # T.233: what an entry's format is the real template's with, besides enable_thinking (or that too, T.597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T.236's format of a Qwen3.5), not its default, "xhigh"
 # (T.364.3: and Underdog Saluki 27B's, whose template is the same one)
@@ -134,7 +134,7 @@ STABLELM_GAMMA_CARD = ("以下は、タスクを説明する指示と、文脈�
                        "\n\n### 指示: \n{prompt}\n\n### 応答: \n")
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD,
          "hf-calm2-7b-chat": CALM2_CARD, "hf-rakutenai-7b-instruct": RAKUTEN_CARD,
-         "hf-japanese-stablelm-instruct-gamma-7b": STABLELM_GAMMA_CARD}
+         "hf-japanese-stablelm-instruct-gamma-7b": STABLELM_GAMMA_CARD, "hf-youri-7b-chat": LINE_CARD}
 # the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
 CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF

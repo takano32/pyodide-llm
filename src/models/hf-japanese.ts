@@ -237,6 +237,25 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "Rakuten/RakutenAI-7B-chat", revision: "7093167c61a0be6161cb68928c939c03fe0ab87d", tokenizer: "tokenizer.model" } }, download: 7835496736,
     conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.601: rinna's Llama 3 Youko 8B (Llama 3 8B trained on Japanese, Meta's tokenizer): the instruct one reads its own
+  // template (the BOS, then Llama 3's turns with no system turn) and samples as its card (0.6, 0.9, a penalty of 1.1);
+  // and the base one. mradermacher's Q8_0 GGUFs with the originals' vocabularies
+  { group: "hf", id: "hf-llama-3-youko-8b-instruct", name: "rinna Llama 3 Youko 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.1 GB",
+    ...ggufOf("mradermacher/llama-3-youko-8b-instruct-GGUF", "3574c58616493522c7d94e2fbe0309342ec4056b", "llama-3-youko-8b-instruct.Q8_0.gguf",
+      "rinna/llama-3-youko-8b-instruct", "681390a11903461d2066dbb68ab8bc7f66f3eb67"), download: 8540772032,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.1 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-llama-3-youko-8b", name: "rinna Llama 3 Youko 8B", note: "日本語 / English · fetches 8.5 GB (GGUF) → int8 9.1 GB",
+    ...ggufOf("mradermacher/llama-3-youko-8b-GGUF", "22d2d9dc444414874ab405308c0d99a5f631dcc3", "llama-3-youko-8b.Q8_0.gguf",
+      "rinna/llama-3-youko-8b", "6af890bc6294b8f311e25a1462fcd38554d95b8e"), download: 8540770592,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  // T.601: rinna's youri 7B chat (Llama 2 7B trained on Japanese, Llama 2's vocabulary: Japanese takes more tokens a
+  // letter). No chat template: its card's turns, which are LINE's (LINE_SFT), with its temperature of 0.5
+  { group: "hf", id: "hf-youri-7b-chat", name: "rinna youri 7B chat", note: "answers instructions · 日本語 / English · fetches 7.2 GB (GGUF) → int8 7.6 GB",
+    ...ggufOf("mradermacher/youri-7b-chat-GGUF", "689eb667771650908f76850f08919148380d109d", "youri-7b-chat.Q8_0.gguf",
+      "rinna/youri-7b-chat", "12c3e0e288efbdb525aa98abcab0c92d8445fcbc", "tokenizer.model"), download: 7161090816,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 }, template: LINE_SFT,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
   // mradermacher's Q8_0 GGUFs as the chat's
   { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
