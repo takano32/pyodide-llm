@@ -354,6 +354,7 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T.599](T.599.md) [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 2026-10-30
 - [T.600](T.600.md) [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 2026-10-30
 - [T.601](T.601.md) [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 2026-10-30
+- [T.602](T.602.md) [追加][モデル] Sakana AI の残り（TinySwallow 1.5B base・TAID-LLM 1.5B・Karamaru・EvoLLM-JP 7B） — 2026-10-30
 - [T.620](T.620.md) [性能][CPU] プロンプトの仕事の切り方: int6 の 1 行のバイト数と `quad` — 2026-10-30
 - [T.621](T.621.md) [整理][CPU] 仕事を位置の並びでなく `WORK` の記録の関数で組む — 2026-10-30
 - [T.622](T.622.md) [試験][CPU] `footprint()` の枠を数十バイトで見る試験と、壊し方の道具の段 — 2026-10-30
