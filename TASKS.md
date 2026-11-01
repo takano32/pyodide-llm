@@ -138,7 +138,6 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 進行中
 - T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 未着手
 - T.602 [追加][モデル] Sakana AI の残り（TinySwallow 1.5B base・TAID-LLM 1.5B・Karamaru・EvoLLM-JP 7B） — 未着手
 - T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 未着手
@@ -1296,16 +1295,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
-
-### T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 状態: 進行中（2026-10-30、T.591 から。規模 小）
-- **実装**（2026-11-01、1 つのタスクのまま）: 5 項目。`hf-rakutenai-7b-instruct`・`hf-rakutenai-7b`・`hf-rakutenai-2.0-mini`（「RakutenAI 7B instruct」・「RakutenAI 7B」・「RakutenAI 2.0 mini」）、`hf-japanese-stablelm-instruct-gamma-7b`・`hf-japanese-stablelm-base-gamma-7b`（「Stability AI Japanese StableLM Instruct Gamma 7B」・「… Base Gamma 7B」）。どれも Mistral の形で、エンジンと変換器には触っていない。語彙はどれも原本の `tokenizer.model`。
-  - **書式**: RakutenAI 7B instruct はトークナイザに書式が無く、カードが chat と同じ文を手で組む（詰めない）: `RAKUTEN_UNTRIMMED`（`RAKUTEN` の `{prompt:trim}` を `{prompt}` に。詰める形では前後に空白のある 2 つで 7/9）。StableLM Instruct Gamma はカードの `build_prompt()` の文（`STABLELM_GAMMA`、「指示: 」の後の空白も）とカードの標本抽出（1.0・0.95）。`format_check.py` の `CARDS` に 2 つ（fast のトークナイザで）: どちらも 9/9、StableLM の空白を 1 つ落とす壊し方で 0/9。base の 3 つは素の文。**RakutenAI 2.0 mini の base はトークナイザに instruct の chat template を持つ**ので、変換器に任せるとチャットの書式で送った: 項目に `template: "{prompt}"` と `bos`・止まり（組で）を書いた。
-  - **StableLM Instruct Gamma の GGUF**: TheBloke の Q8_0（2023-10-28）は原本と合わない（run 41263553405: 226 のテンソルが線の外）。原本は 2024-01-24 に重みを作り直している（「update」、部品の分け方も変わった）。作り直しの後の featherless の Q8_0（2024-11）は合う（run 41267658403: 最悪 0.00754、0、語彙の違い 0）ので、そちらにした。TheBloke の GGUF（作り直しの前の重み）で書かせると 5 問とも 300 トークンで止まらず繰り返し、featherless のでは greedy が 5/5 止まった。
-  - GGUF の run 41263553405: RakutenAI 7B instruct 最悪 0.00737・base 0.00737、StableLM base 0.00754、どれも最近の参照 0・語彙の違い 0。2.0 mini は原本の safetensors 3.1 GB から。
-  - 書かせた run 41263553453（RakutenAI 7B instruct）・41270888722（StableLM instruct、featherless）・41267612595（2 つの 7B base）・41274207626（2.0 mini、素の文にした後）: int8 は RakutenAI 7B 8,295,170,076、StableLM 8,147,714,076、2.0 mini 1,726,783,516 バイト。BOS 1 の効きは無しより RakutenAI 7B instruct +0.62%・base +3.18%、StableLM instruct +0.01%・base −0.64%、2.0 mini −1.94%（どれも変換器の BOS のまま: base の 7B の +3.18% はカードの `tokenizer()` も BOS を置く）。RakutenAI 7B instruct は 5 問 × greedy と種 1 つで止まり 5/5、日本語の問いに日本語で 3/3、17 × 24 = 408 を正しく。StableLM instruct は greedy が 5/5 止まり（温度 1.0 の種は 2 つが 300 トークンで切れた）、英語の問いに日本語で答えることがある。base の 3 つは日本語のウェブの文を書く。CI を回した。訳: GB 級のモデルの枝（7B は手元で動かさない）。
-  - レビュー（Sonnet low、2026-11-01）: 5 項目の形・ライセンス（featherless の写しも原本の Apache-2.0）・大きさ・台帳は合う。2.0 mini の base の素の書式は `bos`・止まりと組で規則どおり。T.125 のコメントが新しい項目の上に離れていたのを、自分の項目（2.0 mini instruct）の上に戻した。
-- stabilityai/japanese-stablelm-instruct-gamma-7b @ bb4590d461327a6d63f52a5cdbaa64cfceabbb4a と base @ ffc474da0e4f5dbb9db54e96a94a22c081fc7fbf（mistral、apache-2.0、likes 52）。トークナイザは sentencepiece の BPE を書き出した形（T.257 の道）。Q8_0: TheBloke（7.7 GB）。書式はカードの文を手書き。
-- Rakuten/RakutenAI-7B-instruct @ eb48a29043cda2dba50c088556f0ee411badcf2e と base @ eb61524c1ab1a7c656457bd68be4a423371cbacb（mistral、語彙 48,000）: 一覧の chat と同じ形で 1 行ずつ（7.84 GB）。RakutenAI-2.0-mini の base（mistral 1.5B、safetensors だけ）も一覧の instruct の隣に。
 
 ### T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - rinna/llama-3-youko-8b-instruct @ 681390a11903461d2066dbb68ab8bc7f66f3eb67 と base @ 6af890bc6294b8f311e25a1462fcd38554d95b8e（Llama 3、llama3 のライセンス）。mradermacher の Q8_0 8.54 GB。
