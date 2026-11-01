@@ -240,12 +240,12 @@ export const HF_JAPANESE: Entry[] = [
   // T.601: rinna's Llama 3 Youko 8B (Llama 3 8B trained on Japanese, Meta's tokenizer): the instruct one reads its own
   // template (the BOS, then Llama 3's turns with no system turn) and samples as its card (0.6, 0.9, a penalty of 1.1);
   // and the base one. mradermacher's Q8_0 GGUFs with the originals' vocabularies
-  { group: "hf", id: "hf-llama-3-youko-8b-instruct", name: "rinna Llama 3 Youko 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.1 GB",
+  { group: "hf", id: "hf-llama-3-youko-8b-instruct", name: "rinna Llama 3 Youko 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB",
     ...ggufOf("mradermacher/llama-3-youko-8b-instruct-GGUF", "3574c58616493522c7d94e2fbe0309342ec4056b", "llama-3-youko-8b-instruct.Q8_0.gguf",
       "rinna/llama-3-youko-8b-instruct", "681390a11903461d2066dbb68ab8bc7f66f3eb67"), download: 8540772032,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.1 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  { group: "hf", id: "hf-llama-3-youko-8b", name: "rinna Llama 3 Youko 8B", note: "日本語 / English · fetches 8.5 GB (GGUF) → int8 9.1 GB",
+  { group: "hf", id: "hf-llama-3-youko-8b", name: "rinna Llama 3 Youko 8B", note: "日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB",
     ...ggufOf("mradermacher/llama-3-youko-8b-GGUF", "22d2d9dc444414874ab405308c0d99a5f631dcc3", "llama-3-youko-8b.Q8_0.gguf",
       "rinna/llama-3-youko-8b", "6af890bc6294b8f311e25a1462fcd38554d95b8e"), download: 8540770592,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
