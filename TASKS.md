@@ -1302,6 +1302,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - GGUF の run 41290298687: TinySwallow base 最悪 0.00709、TAID 0.00755、Karamaru 0.00747、EvoLLM-JP-A 0.00792・v1 0.00749、どれも最近の参照 0・語彙の違い 0。
   - 書かせた run 41290582325（TinySwallow base・TAID・Karamaru）・41290600365（EvoLLM の 2 つ）: int8 は TinySwallow base 1,737,095,196、Karamaru 9,034,809,372、EvoLLM 8,147,714,076 バイト。BOS の効きは無しより TinySwallow base の `<|endoftext|>` −1.43%、Karamaru の `<|begin_of_text|>` −2.22%、EvoLLM-JP-A の `<s>` −0.21%・v1 +0.74%（どれも項目か変換器の BOS のまま）。TinySwallow base は「これからの流行りは」の続きを日本語で崩れずに書いた。Karamaru は 5 問 × greedy と種 1 つで止まり 5/5、どの問いにも江戸の言葉で答えた（英語の問いにも: 「某が生国日本の都は東京なり」）が、17 × 24 は誤り（greedy は 380 と言いかけて長い足し算を続けた）。EvoLLM-JP-A は止まり 5/5、17 × 24 は greedy で 408 と言った後に誤った説明を繰り返し、種 1 は空白だけ。EvoLLM-JP v1 は止まり 4/5、日本語の問いに日本語で答え、greedy で 17 × 24 = 408 を正しく計算した後に「[INST] …」と書き足した（種 1 は 428 と誤った）。
   - CI を回した。訳: 7〜8B の GGUF・変換・書かせるのと transformers の原本は手元で見られない（7B 級は手元で動かさない、手元に torch が無い）。
+  - レビュー（Sonnet low、2026-11-01）: 差分とカードの本文を照合した（ライセンス 4 つ・Karamaru の標本抽出・EvoLLM の書式の 2 つの写し・`bos` と `template` の組・取得の大きさと note）。直す所なし。
 - SakanaAI/TinySwallow-1.5B @ 535d1322…（qwen2、base: mmnga の Q8_0 1.647 GB）。一覧の instruct の隣。
 - SakanaAI/TAID-LLM-1.5B @ 2e649507…（qwen2: bartowski の Q8_0 1.646 GB）。
 - SakanaAI/Llama-3-Karamaru-v1 @ 17411929…（江戸時代の文体、ELYZA-JP 8B から、llama3 のライセンス: mradermacher の Q8_0 8.541 GB）。
