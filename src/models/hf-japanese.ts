@@ -1,7 +1,7 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
   ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
-  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, RAKUTEN, SARASHINA, SWALLOW_MS, TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp,
+  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, RAKUTEN, SARASHINA, SWALLOW_MS, TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp,
   sarashina,
 } from "./formats.ts";
 import { greedy, sampled } from "./sampling.ts";
@@ -175,6 +175,13 @@ export const HF_JAPANESE: Entry[] = [
     hf: hf("cyberagent/CAT-Translate-3.3b", "47e382331d005acd54a42cdf088a76aa88788e0c", "tokenizer.model"), download: 6711252920,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
+  // T.599: the top of CAT-Translate's ladder, a Mistral of CyberAgent's own with a template of its own (ChatML with a
+  // system turn, after <s>), which the converter reads, BOS and all; mradermacher's Q8_0 GGUF
+  { group: "hf", id: "hf-cat-translate-7b", name: "CyberAgent CAT-Translate 7B", note: "translates 日本語 ⇄ English · fetches 8.0 GB (GGUF) → int8 8.4 GB",
+    ...ggufOf("mradermacher/CAT-Translate-7b-GGUF", "cd7d970bc61657ad36b7f7f392c1bd9527dfe4ad", "CAT-Translate-7b.Q8_0.gguf",
+      "cyberagent/CAT-Translate-7b", "e36edfc6858a9a6ba41f8d9fa34427f3d8461eca"), download: 7955662016,
+    conversion: {}, options: {}, generation: greedy,
+    prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
   { group: "hf", id: "hf-llm-jp-3-3.7b-instruct3", name: "llm-jp-3 3.7B instruct3", note: "answers instructions · 日本語 / English · fetches 4.0 GB (GGUF) → int8 4.3 GB",
     ...ggufOf("mmnga/llm-jp-3-3.7b-instruct3-gguf", "7edef5a4f094ec8c1aed1e196c6a544675efbc2f", "llm-jp-3-3.7b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-3.7b-instruct3", "f5d5466a3316e0c898b4347ece6557a756921220"), download: 4022249856,
@@ -207,6 +214,13 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf", "fc1fb43597cab7c9edbe71e41c109fadb83d3815", "ELYZA-Shortcut-1.0-Qwen-7B-Q8_0.gguf",
       "elyza/ELYZA-Shortcut-1.0-Qwen-7B", "d33448648d9b1b7d69cbadb3f1a8d6fb4c8a01ee"), download: 8098525440,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.599: CyberAgent's calm2-7b-chat (Llama, every head with its own keys and values): TheBloke's Q8_0 GGUF of 2023
+  // with the original's vocabulary (NFC and one digit a piece), its card's turns (CALM2) and temperature 0.8
+  { group: "hf", id: "hf-calm2-7b-chat", name: "CyberAgent calm2 7B chat", note: "answers instructions · 日本語 / English · fetches 7.5 GB (GGUF) → int8 7.9 GB",
+    ...ggufOf("TheBloke/calm2-7B-chat-GGUF", "381297d42dd175be349ad277fd3437aebc1d07c9", "calm2-7b-chat.Q8_0.gguf",
+      "cyberagent/calm2-7b-chat", "3e110c7624ff7a940badebfd5f9a91569f98cc56"), download: 7450895200,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.8, topp: 1.0, repetition_penalty: 1.0 }, template: CALM2,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
   { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",

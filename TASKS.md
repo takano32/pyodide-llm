@@ -138,7 +138,7 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 未着手
+- T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 進行中
 - T.600 [追加][モデル] Japanese StableLM gamma 7B と RakutenAI-7B の instruct・base — 未着手
 - T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 未着手
 - T.602 [追加][モデル] Sakana AI の残り（TinySwallow 1.5B base・TAID-LLM 1.5B・Karamaru・EvoLLM-JP 7B） — 未着手
@@ -1298,7 +1298,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
-### T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+### T.599 [追加][モデル] CyberAgent calm2-7b-chat と CAT-Translate-7b — 状態: 進行中（2026-10-30、T.591 から。規模 小）
+- **実装**（2026-11-01、1 つのタスクのまま）: `hf-calm2-7b-chat`「CyberAgent calm2 7B chat」と `hf-cat-translate-7b`「CyberAgent CAT-Translate 7B」。エンジンと変換器には触っていない。
+  - **calm2**: TheBloke の Q8_0（2023 年）と原本の語彙（NFC と `gpt2-digits`）。chat template が無いので、カードのターン `USER: {prompt}\nASSISTANT: ` を手書きした（`CALM2`）。BOS と止まりは変換器の `<|endoftext|>`（0）。標本抽出はカードの温度 0.8（top-p 1.0、罰なし）。`format_check.py` は `CARDS` の文を tokenizer.json で読む道を足して 9/9（それまでは sentencepiece の LINE だけ）。末尾の空白を落とす壊し方で 0/9。
+  - **CAT-Translate 7B**: Mistral で、ほかの CAT-Translate と違う書式（`<s>` の後に既定の system のターンのある ChatML）。書式と BOS は変換器が読む（BOS 1、止まり 1 と 61763）。mradermacher の Q8_0。`format_check.py` 9/9（`STRICT` の `hf-cat-translate-`）。標本抽出はほかの CAT-Translate と同じ greedy。
+  - GGUF の run 41259846569: calm2 は最悪 0.00642、語彙の違い 0（GGUF は詰め物で 65024、原本は 65000）。CAT-Translate 7B は 0.00739、0。
+  - 書かせた run 41259846718（calm2）・41259846715（CAT-Translate 7B）: int8 は 7,885,832,220・8,422,028,316 バイト。BOS は、calm2 の `<|endoftext|>` が無しより perplexity +1.11%（カードは何も置かない。エンジンは BOS から始めるので変換器のまま: 差は小さい）、CAT-Translate 7B の `<s>` が −95.05%。calm2 は 12 の問いのうち 6 問 × greedy と種 2 つ（400 トークン）: 止まり 11/12、日本語の問いに日本語で 6/6、事実と計算を誤る（17 × 24 を 384・492 と書いた）。CAT-Translate 7B の greedy は富士山の文を「Mount Fuji is the highest mountain in Japan, and many people climb it in the summer.」と訳した。CI を回した。訳: GB 級のモデルの枝（7B は手元で動かさない）。
 - cyberagent/calm2-7b-chat @ 3e110c7624ff7a940badebfd5f9a91569f98cc56（llama、MHA、apache-2.0、likes 77）。書式が無い: カードの `USER: …\nASSISTANT: ` を手書き。トークナイザは NFC と gpt2-digits（読める見込み）。Q8_0: TheBloke/calm2-7B-chat-GGUF（7.45 GB、2023 年: `gguf_check.py tensors` を必ず）。
 - cyberagent/CAT-Translate-7b @ e36edfc6858a9a6ba41f8d9fa34427f3d8461eca（mistral、mit）: 一覧の CAT-Translate の梯子のいちばん上。トークナイザは T.257 で確かめた形。Q8_0: mmnga-o か mradermacher（7.96 GB）。書式は一覧の CAT-Translate と同じ組（T.400）。
 - CAT-Paws-8B（qwen3、エージェント向け）はカード自身が単発の問いには CAT-Thinking を勧めるので入れない。

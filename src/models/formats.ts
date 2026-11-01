@@ -59,6 +59,9 @@ export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large lang
 // that space. v0.3's [INST] and [/INST] are tokens of their own (3 and 4)
 export const MISTRAL = "[INST] {prompt} [/INST]";
 export const MISTRAL_V3 = "[INST] {prompt}[/INST]";
+// T.599: CyberAgent's calm2-7b-chat has no chat template: its card's turns, which put nothing in front (its tokenizer
+// adds no BOS) and end an answer with <|endoftext|>, the BOS and stop the converter takes
+export const CALM2 = "USER: {prompt}\nASSISTANT: ";
 // RakutenAI's (2.0 mini and 7B chat): no special tokens, a system sentence and USER / ASSISTANT; the template trims
 // what was typed (T.138)
 export const RAKUTEN = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, " +
