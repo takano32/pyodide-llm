@@ -1301,7 +1301,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **確かめ**: `format_check.py` は 2 つとも 9/9（`STRICT` に `hf-arrowcanaria-`。Lumi は入れない: 本物の書式は BOS を前に置かず、ページは BOS `<|startoftext|>` を前に置く。エンジンに「BOS なし」は無いので start_check で測る）。`gguf.yml` run 41310488436: ArrowCanaria は最悪 0.00754・`rope_freqs` の差 2.1e-8、Lumi は 0.0111、どちらも語彙の違い 0。書かせる run 41310488824（answers.ts の greedy と種 1、1500 トークンまで。170 分の期限で Lumi の start_check の前に切れた）:
   - ArrowCanaria: int8 9.03 GB（64 ビット）。止まり 5/5、くり返し 0/5、日本語の問いは 3/3 日本語。富士山 3,776 m・408 と正しい（greedy は「富士山は厳密には山と言えず北岳を最高峰とする見方もある」と誤りを足す: モデルの力）。BOS `<|begin_of_text|>` は素の文で +2.51%（書式どおりで送る ID は本物と同じなので替えない）。
   - Lumi: int8 9.66 GB（64 ビット）。止まり 5/5、考えの終わり 5/5、くり返し 0/5。**考えは英語で、答えは問いの言語**（日本語の問いには日本語で答える。かなの割合は考えも数えるので 0/3 と出る）。富士山 3,776 m・408・東京と正しい。答えは 78〜615 トークンに 227〜543 秒（既定の長い system の先読みを含む）。
+  - Lumi の BOS（run 41324788139、start_check だけを回し直した）: `<|startoftext|>` を前に置くと素の文で −1.90%（10.082 → 9.891）。本物の書式は BOS を置かないが、置くほうが良いので項目は変換器の BOS のまま（送る ID は本物より BOS の 1 つだけ多い）。
 - CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
+- 取りまとめ役の決め（訳）: Lumi のカードは標本抽出を言わないので、日本語のほかの項目と同じ `sampled(1.1)`（温度 0.7・top-p 0.9・罰 1.1）。書かせて 5/5 止まり、くり返し 0/5。
+- レビュー（Sonnet low、2026-11-01）: 直すものなし。確かめた: 4 つのリビジョンが HF の API の sha と同じ、`download` が `x-linked-size` と同じ、ライセンスは ArrowCanaria が原本も GGUF も `llama3.1`・`gemma`（カードの本文も）で Lumi が apache-2.0、ArrowCanaria の標本抽出がカードのコードと同じ、作り手の表と言語の語。`readThinking` は id を手で足す形だが、考える項目の数と上限の比べが漏れを落とす。指摘: Lumi の標本抽出はカードに無い（上の決めの行に書いた）。ログの数字は取りまとめ役がログ（9,034,809,372・9,664,741,404 バイト、+2.51%）と突き合わせた。
 
 ### T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - elyza/ELYZA-japanese-Llama-2-7b-instruct・-fast-instruct（2023、likes 75〜83、原本は bin だけ）: mmnga の q8_0（7.16・7.28 GB、GGUF v3）。古い GGUF なので `gguf_check.py tensors` を必ず（原本が bin なら `tests/gguf_fetch.py` の `torch_tensors()` の形で比べる）。fast は語彙を広げた形。
