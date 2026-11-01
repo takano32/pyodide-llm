@@ -1,6 +1,6 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
@@ -256,6 +256,32 @@ export const HF_JAPANESE: Entry[] = [
       "rinna/youri-7b-chat", "12c3e0e288efbdb525aa98abcab0c92d8445fcbc", "tokenizer.model"), download: 7161090816,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 }, template: LINE_SFT,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.602: Sakana AI's other models. TinySwallow 1.5B's base one (its tokenizer has Qwen2.5's chat template: the plain
+  // text, with the BOS and stops beside it), TAID-LLM 1.5B (English, Qwen2's template, which the converter reads),
+  // Karamaru (Llama-3-ELYZA-JP 8B taught to answer in the Japanese of the Edo period: its template's system turn, and its
+  // card's sampling) and EvoLLM-JP 7B's two (merges of Mistral 7B's, the card's format by hand: EVOLLM; mradermacher's GGUFs, whose cards
+  // name the originals' licenses: mmnga's say unknown)
+  { group: "hf", id: "hf-tinyswallow-1.5b", name: "Sakana AI TinySwallow 1.5B", note: "日本語 · fetches 1.6 GB (GGUF) → int8 1.7 GB",
+    ...ggufOf("mmnga/TinySwallow-1.5B-gguf", "717ac6b609f797f36cac88055beff8d8520f8d70", "TinySwallow-1.5B-Q8_0.gguf",
+      "SakanaAI/TinySwallow-1.5B", "535d1322615c9f8171c3d60b10ef6955cc896fe9"), download: 1646572992,
+    conversion: {}, options: QWEN3_OWN_BOS, generation: sampled(1.1), template: "{prompt}", prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "hf", id: "hf-taid-llm-1.5b", name: "Sakana AI TAID-LLM 1.5B", note: "answers instructions · English · fetches 1.6 GB (GGUF) → int8 1.7 GB",
+    ...ggufOf("bartowski/TAID-LLM-1.5B-GGUF", "df6449a56a02631100728078182ca5fe877d4dd3", "TAID-LLM-1.5B-Q8_0.gguf",
+      "SakanaAI/TAID-LLM-1.5B", "2e649507bc2da0c99fc6817731f3311e65c36964"), download: 1646091264,
+    conversion: {}, options: {}, generation: sampled(1.1) },
+  { group: "hf", id: "hf-llama-3-karamaru-v1", name: "Sakana AI Llama 3 Karamaru v1", note: "answers in the Japanese of the Edo period · 日本語 · fetches 8.5 GB (GGUF) → int8 9.0 GB",
+    ...ggufOf("mradermacher/Llama-3-Karamaru-v1-GGUF", "84ad8f4021eaa476e25d4f943504cddd4260f966", "Llama-3-Karamaru-v1.Q8_0.gguf",
+      "SakanaAI/Llama-3-Karamaru-v1", "17411929aa0ef76daa51e7c0d0b986d65c877a58"), download: 8540772576,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, top_k: 50, repetition_penalty: 1.1 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-evollm-jp-a-v1-7b", name: "Sakana AI EvoLLM-JP-A v1 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("mradermacher/EvoLLM-JP-A-v1-7B-GGUF", "028368384460dd87549e789955894c369a93772d", "EvoLLM-JP-A-v1-7B.Q8_0.gguf",
+      "SakanaAI/EvoLLM-JP-A-v1-7B", "a8b1356458c9883147c3aeffc1a2e51c99bfe70b", "tokenizer.model"), download: 7695858080,
+    conversion: {}, options: {}, generation: sampled(1.1), template: EVOLLM, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-evollm-jp-v1-7b", name: "Sakana AI EvoLLM-JP v1 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("mradermacher/EvoLLM-JP-v1-7B-GGUF", "a498d0ca5ec60a8ca0e48cfd177df004884b9351", "EvoLLM-JP-v1-7B.Q8_0.gguf",
+      "SakanaAI/EvoLLM-JP-v1-7B", "a7acd2604d3e9f0fca2987d2448ff5dc19778c21", "tokenizer.model"), download: 7695858048,
+    conversion: {}, options: {}, generation: sampled(1.1), template: EVOLLM, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
   // mradermacher's Q8_0 GGUFs as the chat's
   { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",

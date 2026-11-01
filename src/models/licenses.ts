@@ -18,6 +18,8 @@ const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 const LLAMA_3 = "Meta Llama 3 Community License";
 // T.601: rinna's youri (its card's metadata: llama2, Llama 2's community license)
 const LLAMA_2 = "Llama 2 Community License";
+// T.602: EvoLLM-JP v1 7B's card: "MICROSOFT RESEARCH LICENSE TERMS (due to the inclusion of the WizardMath model)"
+const MS_RESEARCH = "Microsoft Research License Terms";
 // T.251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2)
 const MODIFIED_MIT = "Modified MIT License";
 // T.252: the cards of unsloth's copy and of bartowski's GGUF say llama3.1 (the license's own title: "Llama 3.1 Community
@@ -110,6 +112,12 @@ export const LICENSES: Record<string, string> = {
   "rinna/llama-3-youko-8b-instruct": LLAMA_3, "rinna/llama-3-youko-8b": LLAMA_3,
   "mradermacher/llama-3-youko-8b-instruct-GGUF": LLAMA_3, "mradermacher/llama-3-youko-8b-GGUF": LLAMA_3,
   "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
+  // T.602
+  "SakanaAI/TinySwallow-1.5B": APACHE, "mmnga/TinySwallow-1.5B-gguf": APACHE,
+  "SakanaAI/TAID-LLM-1.5B": APACHE, "bartowski/TAID-LLM-1.5B-GGUF": APACHE,
+  "SakanaAI/Llama-3-Karamaru-v1": LLAMA_3, "mradermacher/Llama-3-Karamaru-v1-GGUF": LLAMA_3,
+  "SakanaAI/EvoLLM-JP-A-v1-7B": APACHE, "mradermacher/EvoLLM-JP-A-v1-7B-GGUF": APACHE,
+  "SakanaAI/EvoLLM-JP-v1-7B": MS_RESEARCH, "mradermacher/EvoLLM-JP-v1-7B-GGUF": MS_RESEARCH,
   "stabilityai/japanese-stablelm-instruct-gamma-7b": APACHE, "stabilityai/japanese-stablelm-base-gamma-7b": APACHE,
   "featherless-ai-quants/stabilityai-japanese-stablelm-instruct-gamma-7b-GGUF": APACHE,
   "mmnga/japanese-stablelm-base-gamma-7b-gguf": APACHE,

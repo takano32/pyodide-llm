@@ -76,6 +76,10 @@ export const STABLELM_GAMMA = "以下は、タスクを説明する指示と、�
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)
 export const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
+// T.602: EvoLLM-JP has no chat template, and its card renders its messages (with this system one) with
+// apply_chat_template under transformers 4.38.2, whose default for a LlamaTokenizer was Llama 2's format: the system in
+// the user's turn, the turn stripped, and no space after [/INST]
+export const EVOLLM = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲されていないアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST]";
 // zephyr's tokenizer puts a "▁" before the text after </s> (a legacy Llama tokenizer): the converter says so to the
 // engine (prefixed, T.308; until T.369 a space after </s> here made the same tokens)
 export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";
