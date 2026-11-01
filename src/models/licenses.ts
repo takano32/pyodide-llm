@@ -104,11 +104,12 @@ export const LICENSES: Record<string, string> = {
   "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": LLAMA_31,
   // T.125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
+  "Rakuten/RakutenAI-7B-instruct": APACHE, "Rakuten/RakutenAI-7B": APACHE, "Rakuten/RakutenAI-2.0-mini": APACHE,
+  "mradermacher/RakutenAI-7B-instruct-GGUF": APACHE, "mradermacher/RakutenAI-7B-GGUF": APACHE,
+  // T.601
   "rinna/llama-3-youko-8b-instruct": LLAMA_3, "rinna/llama-3-youko-8b": LLAMA_3,
   "mradermacher/llama-3-youko-8b-instruct-GGUF": LLAMA_3, "mradermacher/llama-3-youko-8b-GGUF": LLAMA_3,
   "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
-  "Rakuten/RakutenAI-7B-instruct": APACHE, "Rakuten/RakutenAI-7B": APACHE, "Rakuten/RakutenAI-2.0-mini": APACHE,
-  "mradermacher/RakutenAI-7B-instruct-GGUF": APACHE, "mradermacher/RakutenAI-7B-GGUF": APACHE,
   "stabilityai/japanese-stablelm-instruct-gamma-7b": APACHE, "stabilityai/japanese-stablelm-base-gamma-7b": APACHE,
   "featherless-ai-quants/stabilityai-japanese-stablelm-instruct-gamma-7b-GGUF": APACHE,
   "mmnga/japanese-stablelm-base-gamma-7b-gguf": APACHE,
