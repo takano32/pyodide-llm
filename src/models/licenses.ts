@@ -114,6 +114,9 @@ export const LICENSES: Record<string, string> = {
   "rinna/llama-3-youko-8b-instruct": LLAMA_3, "rinna/llama-3-youko-8b": LLAMA_3,
   "mradermacher/llama-3-youko-8b-instruct-GGUF": LLAMA_3, "mradermacher/llama-3-youko-8b-GGUF": LLAMA_3,
   "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
+  // T.605: ELYZA's card (metadata llama2; "Llama 2 is licensed under the LLAMA 2 Community License"), mmnga's the same
+  "elyza/ELYZA-japanese-Llama-2-7b-instruct": LLAMA_2, "mmnga/ELYZA-japanese-Llama-2-7b-instruct-gguf": LLAMA_2,
+  "elyza/ELYZA-japanese-Llama-2-7b-fast-instruct": LLAMA_2, "mmnga/ELYZA-japanese-Llama-2-7b-fast-instruct-gguf": LLAMA_2,
   // T.604
   "DataPilot/ArrowCanaria-Llama-8B-RL-v0.1": ARROWCANARIA, "mradermacher/ArrowCanaria-Llama-8B-RL-v0.1-GGUF": ARROWCANARIA,
   "SousiOmine/Lumi-v2-llm-jp-4-8b": APACHE, "SousiOmine/Lumi-v2-llm-jp-4-8b-GGUF": APACHE,

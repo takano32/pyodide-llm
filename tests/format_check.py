@@ -138,10 +138,16 @@ STABLELM_GAMMA_CARD = ("以下は、タスクを説明する指示と、文脈�
 # T.602: EvoLLM-JP's card renders its messages with apply_chat_template under transformers 4.38.2, whose default for a
 # LlamaTokenizer was Llama 2's format (a second copy of the list's EVOLLM, its system message the card's)
 EVOLLM_CARD = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲されていないアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST]"
+# T.605: ELYZA-japanese-Llama-2's card writes its tokenizer's bos_token and this, and encodes it without adding
+# anything (a second copy of the list's ELYZA_LLAMA2). Not STRICT: transformers 5 rebuilds their fast tokenizer to read
+# "<s>[INST]" as <s> "[" where their tokenizer.json itself (the tokenizers library, as the card's transformers 4.30)
+# reads <s> "▁[", the page's ids; checked by hand for both
+ELYZA_LLAMA2_CARD = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt} [/INST] "
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD,
          "hf-calm2-7b-chat": CALM2_CARD, "hf-rakutenai-7b-instruct": RAKUTEN_CARD,
          "hf-japanese-stablelm-instruct-gamma-7b": STABLELM_GAMMA_CARD, "hf-youri-7b-chat": LINE_CARD,
-         "hf-evollm-jp-a-v1-7b": EVOLLM_CARD, "hf-evollm-jp-v1-7b": EVOLLM_CARD}
+         "hf-evollm-jp-a-v1-7b": EVOLLM_CARD, "hf-evollm-jp-v1-7b": EVOLLM_CARD,
+         "hf-elyza-japanese-llama-2-7b-instruct": ELYZA_LLAMA2_CARD, "hf-elyza-japanese-llama-2-7b-fast-instruct": ELYZA_LLAMA2_CARD}
 # the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
 CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF

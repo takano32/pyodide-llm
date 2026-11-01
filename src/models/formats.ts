@@ -76,6 +76,8 @@ export const STABLELM_GAMMA = "以下は、タスクを説明する指示と、�
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)
 export const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
+// T.605: ELYZA-japanese-Llama-2's card writes Llama 2's turn with this system message after the BOS, and trims nothing
+export const ELYZA_LLAMA2 = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt} [/INST] ";
 // T.603: Lightblue's DeepSeek-R1 distills add <|im_end|> (151665) to DeepSeek's vocabulary as a special token, which the
 // real tokenizer reads as one wherever it is typed; the converter's specials are the ones the template writes, so the
 // entries write the whole list (the converter's, and that one)

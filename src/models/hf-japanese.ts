@@ -1,7 +1,7 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
   ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
-  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
+  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled } from "./sampling.ts";
@@ -255,6 +255,22 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/youri-7b-chat-GGUF", "689eb667771650908f76850f08919148380d109d", "youri-7b-chat.Q8_0.gguf",
       "rinna/youri-7b-chat", "12c3e0e288efbdb525aa98abcab0c92d8445fcbc", "tokenizer.model"), download: 7161090816,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 }, template: LINE_SFT,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.605: ELYZA's Llama 2 7B (2023), trained further on Japanese and taught to answer, and the fast one, whose
+  // vocabulary has 13,043 more pieces for Japanese. No chat template: their card's turn (ELYZA_LLAMA2). mmnga's GGUFs,
+  // the vocabulary of the originals (tokenizer.model; the fast one has tokenizer.json alone). The card's code is greedy;
+  // the fast one's generation_config.json samples at 0.6 and a top-p of 0.9
+  { group: "hf", id: "hf-elyza-japanese-llama-2-7b-instruct", name: "ELYZA-japanese-Llama-2 7B instruct",
+    note: "answers instructions · 日本語 / English · fetches 7.2 GB (GGUF) → int8 7.6 GB",
+    ...ggufOf("mmnga/ELYZA-japanese-Llama-2-7b-instruct-gguf", "2d708f9c52bde588049a494e95b986f5bedba76f", "ELYZA-japanese-Llama-2-7b-instruct-q8_0.gguf",
+      "elyza/ELYZA-japanese-Llama-2-7b-instruct", "48fa08b3098a23d3671e09565499a4cfbaff1923", "tokenizer.model"), download: 7161089920,
+    conversion: {}, options: {}, generation: sampled(1.1), template: ELYZA_LLAMA2,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-elyza-japanese-llama-2-7b-fast-instruct", name: "ELYZA-japanese-Llama-2 7B fast instruct",
+    note: "answers instructions · 日本語 / English · fetches 7.3 GB (GGUF) → int8 7.7 GB",
+    ...ggufOf("mmnga/ELYZA-japanese-Llama-2-7b-fast-instruct-gguf", "0f0072a80fd0bebc6a49ee2f970df726513c10c6", "ELYZA-japanese-Llama-2-7b-fast-instruct-q8_0.gguf",
+      "elyza/ELYZA-japanese-Llama-2-7b-fast-instruct", "89de33d1ad568855853196802aeaecd799c6586f"), download: 7274877600,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.0 }, template: ELYZA_LLAMA2,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.603: Lightblue's DeepSeek-R1 distills taught to think in the language they are asked in (the converter reads
   // their template and BOS, <｜begin▁of▁sentence｜>, as for DeepSeek's own; their specials are written: LIGHTBLUE_R1;
