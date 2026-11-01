@@ -114,7 +114,6 @@ export const LICENSES: Record<string, string> = {
   "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
   // T.602
   "SakanaAI/TinySwallow-1.5B": APACHE, "mmnga/TinySwallow-1.5B-gguf": APACHE,
-  "SakanaAI/TAID-LLM-1.5B": APACHE, "bartowski/TAID-LLM-1.5B-GGUF": APACHE,
   "SakanaAI/Llama-3-Karamaru-v1": LLAMA_3, "mradermacher/Llama-3-Karamaru-v1-GGUF": LLAMA_3,
   "SakanaAI/EvoLLM-JP-A-v1-7B": APACHE, "mradermacher/EvoLLM-JP-A-v1-7B-GGUF": APACHE,
   "SakanaAI/EvoLLM-JP-v1-7B": MS_RESEARCH, "mradermacher/EvoLLM-JP-v1-7B-GGUF": MS_RESEARCH,

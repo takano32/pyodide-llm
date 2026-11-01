@@ -257,20 +257,14 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 }, template: LINE_SFT,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.602: Sakana AI's other models. TinySwallow 1.5B's base one (its tokenizer has Qwen2.5's chat template: the plain
-  // text, with the BOS and stops beside it), TAID-LLM 1.5B (English, Qwen2's template, which the converter reads, and
-  // its generation_config.json's sampling),
-  // Karamaru (Llama-3-ELYZA-JP 8B taught to answer in the Japanese of the Edo period: its template's system turn, and its
-  // card's sampling) and EvoLLM-JP 7B's two (merges of Mistral 7B's, the card's format by hand: EVOLLM; mradermacher's GGUFs, whose cards
-  // name the originals' licenses: mmnga's say unknown)
+  // text, with the BOS and stops beside it), Karamaru (Llama-3-ELYZA-JP 8B taught to answer in the Japanese of the Edo
+  // period: its template's system turn, and its card's sampling) and EvoLLM-JP 7B's two (merges of Mistral 7B's, the
+  // card's format by hand: EVOLLM; mradermacher's GGUFs, whose cards name the originals' licenses: mmnga's say unknown).
+  // Not TAID-LLM 1.5B: transformers' original as much as the page's never stops and wanders off the question
   { group: "hf", id: "hf-tinyswallow-1.5b", name: "Sakana AI TinySwallow 1.5B", note: "日本語 · fetches 1.6 GB (GGUF) → int8 1.7 GB",
     ...ggufOf("mmnga/TinySwallow-1.5B-gguf", "717ac6b609f797f36cac88055beff8d8520f8d70", "TinySwallow-1.5B-Q8_0.gguf",
       "SakanaAI/TinySwallow-1.5B", "535d1322615c9f8171c3d60b10ef6955cc896fe9"), download: 1646572992,
     conversion: {}, options: QWEN3_OWN_BOS, generation: sampled(1.1), template: "{prompt}", prompt: "これからの流行りは", placeholder: JAPANESE },
-  { group: "hf", id: "hf-taid-llm-1.5b", name: "Sakana AI TAID-LLM 1.5B", note: "answers instructions · English · fetches 1.6 GB (GGUF) → int8 1.7 GB",
-    ...ggufOf("bartowski/TAID-LLM-1.5B-GGUF", "df6449a56a02631100728078182ca5fe877d4dd3", "TAID-LLM-1.5B-Q8_0.gguf",
-      "SakanaAI/TAID-LLM-1.5B", "2e649507bc2da0c99fc6817731f3311e65c36964"), download: 1646091264,
-    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.7, topp: 0.8, top_k: 20, repetition_penalty: 1.1 },
-    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-llama-3-karamaru-v1", name: "Sakana AI Llama 3 Karamaru v1", note: "answers in the Japanese of the Edo period · 日本語 · fetches 8.5 GB (GGUF) → int8 9.0 GB",
     ...ggufOf("mradermacher/Llama-3-Karamaru-v1-GGUF", "84ad8f4021eaa476e25d4f943504cddd4260f966", "Llama-3-Karamaru-v1.Q8_0.gguf",
       "SakanaAI/Llama-3-Karamaru-v1", "17411929aa0ef76daa51e7c0d0b986d65c877a58"), download: 8540772576,
