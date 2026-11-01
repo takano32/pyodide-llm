@@ -128,6 +128,8 @@ LINE_CARD = "ユーザー: {prompt}\nシステム: "
 CALM2_CARD = "USER: {prompt}\nASSISTANT: "
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD,
          "hf-calm2-7b-chat": CALM2_CARD}
+# the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
+CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T.136's first stage; T.144). A GGUF with the original's vocabulary (hf.vocabulary, T.136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -241,8 +243,8 @@ def main():
             # (T.517: no template to render where the card writes the format: the card's text, through the real sentencepiece)
             text = filled(CARDS[entry["id"]], prompt) if entry["id"] in CARDS else \
                 reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
-            if entry["id"] in SENTENCEPIECE or entry["id"] in CARDS and (folder / "spiece.model").exists():
-                model = "spiece.model" if entry["id"] in CARDS else "tokenizer.model"
+            if entry["id"] in SENTENCEPIECE or entry["id"] in CARDS_SPIECE:
+                model = "spiece.model" if entry["id"] in CARDS_SPIECE else "tokenizer.model"
                 encoded = lambda text: sentencepiece_ids(folder / model, text)
                 real = encoded(text)
             elif entry["id"] in CARDS:
