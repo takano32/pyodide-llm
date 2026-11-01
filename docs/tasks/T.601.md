@@ -1,0 +1,11 @@
+### T.601 [追加][モデル] rinna の Llama 系（llama-3-youko 8B・youri 7B） — 状態: 完了（2026-10-30、T.591 から。規模 小）
+- **実装**（2026-11-01、1 つのタスクのまま）: 3 項目。`hf-llama-3-youko-8b-instruct`・`hf-llama-3-youko-8b`（「rinna Llama 3 Youko 8B Instruct」・「rinna Llama 3 Youko 8B」、Llama 3、mradermacher の Q8_0 と原本の語彙）、`hf-youri-7b-chat`（「rinna youri 7B chat」、Llama 2、mradermacher の Q8_0 と原本の `tokenizer.model`）。エンジンと変換器には触っていない。ライセンスは youko が Llama 3、youri が新しく `LLAMA_2`（「Llama 2 Community License」: カードのメタデータ llama2）。
+  - **書式**: youko instruct は変換器が原本の chat template を読む（標本抽出はカードの 0.6・0.9・繰り返しの罰 1.1）。youri chat はトークナイザに書式が無く、カードの文が LINE の instruction-sft と同じ「ユーザー: {prompt}\nシステム: 」: `LINE_SFT` を使い回し、`format_check.py` の `CARDS` に `LINE_CARD`（9/9）。youko は `STRICT` に `"hf-llama-3-youko-"`（9/9）。標本抽出は youri がカードの 0.5・1.0。base は素の文と `sampled(1.1)`。
+  - GGUF の run 41275491639: youko instruct・base どちらも最悪 0.00745、youri 0.00869、語彙の違い 0。
+  - 書かせた run 41275491513（instruct と youri、base は 170 分の期限で `start_check` の途中で止まった）・41286735926（base）: int8 は youko 9,034,809,372、youri 7,581,483,036 バイト（note の「int8 9.0 GB」「7.6 GB」）。BOS の効きは無しより youko instruct の `<|begin_of_text|>` −0.17%、youri の `<s>` +1.16%（変換器の BOS 1 のまま: カードの `tokenizer()` も BOS を置く。calm2 と同じく区切りのまとめに）、youko base の `<|begin_of_text|>` +0.12%（どちらも Llama 3 の変換器の BOS のまま）。youko instruct は 5 問 × greedy と種 1 つで止まり 5/5、日本語の問いに日本語で 3/3、17 × 24 = 408 を正しく（富士山を「北アルプス」と言う誤りが 1 つ）。youri chat は止まり 5/5、日本語で 3/3 だが 17 × 24 を 376 と誤り、greedy の 1 つは同じ文を繰り返した（7B の Llama 2 の力）。youko base は「これからの流行りは」の続きを日本語で崩れずに書いた（48 トークン、種 1）。
+  - CI を回した。訳: 8B と 7B の GGUF・変換・書かせるのは手元で見られない（7B 級は手元で動かさない）。
+  - レビュー（Sonnet low、2026-11-01）: リビジョン・GGUF の大きさ（バイト単位）・ライセンス・標本抽出・bos と書式の組を HF の実物とカードに突き合わせて問題なし。licenses.ts の行が T.125 の Rakuten の行の間に入っていたのを、Rakuten の後ろに「// T.601」と移した。
+  - 本番（`models.yml` の run 41290722414、Chromium・4 論理コア）: Youko 8B Instruct は準備完了 122.7 秒・2.4 tok/s、Youko 8B 119.5 秒・2.5、youri 7B chat 90.8 秒・2.4。完了。
+- rinna/llama-3-youko-8b-instruct @ 681390a11903461d2066dbb68ab8bc7f66f3eb67 と base @ 6af890bc6294b8f311e25a1462fcd38554d95b8e（Llama 3、llama3 のライセンス）。mradermacher の Q8_0 8.54 GB。
+- rinna/youri-7b-chat @ 12c3e0e288efbdb525aa98abcab0c92d8445fcbc・-instruction・base（Llama 2、Q8_0 7.16 GB）: 語彙を日本語に広げていないので日本語は遅い（1 字あたりのトークンが多い）。入れるなら chat の 1 つ。
+- `<NL>` の置き換えが要る rinna の gpt-neox は T.617。
