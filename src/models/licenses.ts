@@ -27,6 +27,7 @@ const LFM_OPEN = "LFM Open License v1.0";
 // T.261.3: Google's terms for Gemma, as the cards of Gemma 3 name them ("**Terms of Use**: [Terms]", a link to
 // ai.google.dev/gemma/terms; their metadata: gemma). unsloth's copies and GGUFs have the same words
 const GEMMA = "Gemma Terms of Use";
+const SARASHINA_NC = "Sarashina Model NonCommercial License Agreement";
 export const LICENSES: Record<string, string> = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -54,6 +55,8 @@ export const LICENSES: Record<string, string> = {
   // from (the card's license is the original's)
   "rinna/japanese-gpt2-xsmall": MIT, "rinna/japanese-gpt2-medium": MIT,
   "sbintuitions/sarashina2.2-1b": MIT, "mradermacher/sarashina2.2-1b-GGUF": MIT,
+  "sbintuitions/sarashina2.2-3b": MIT, "sbintuitions/sarashina2-7b": MIT, "QuantFactory/sarashina2-7b-GGUF": MIT,
+  "sbintuitions/sarashina2.1-1b": SARASHINA_NC, "mradermacher/sarashina2.1-1b-GGUF": SARASHINA_NC,
   "stockmark/gpt-neox-japanese-1.4b": MIT,
   "line-corporation/japanese-large-lm-1.7b": APACHE, "mmnga/line-corp-japanese-large-lm-1.7b-gguf": APACHE,
   "utter-project/EuroLLM-1.7B-Instruct": APACHE, "mradermacher/EuroLLM-1.7B-Instruct-GGUF": APACHE,

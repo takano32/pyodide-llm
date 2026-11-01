@@ -95,6 +95,21 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/sarashina2.2-1b-GGUF", "9eaeb885b7b61d8ceb274bac21b9df4f42151e23", "sarashina2.2-1b.Q8_0.gguf",
       "sbintuitions/sarashina2.2-1b", "3bb836ad7475ba192926be66651e4730825df7da", "tokenizer.model"), download: 1498330464,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  // T.598: the rest of SB Intuitions' ladder of base models. sarashina2.2 3B from its safetensors (no Q8_0 of the base
+  // one), sarashina2.1 1B (the Sarashina Model NonCommercial License) and sarashina2 7B (heads all with their own keys
+  // and values; its original holds PyTorch's shards alone) from Q8_0 GGUFs with the originals' vocabularies
+  { group: "hf", id: "hf-sarashina2.1-1b", name: "SB Intuitions sarashina2.1 1B", note: "日本語 / English · fetches 1.5 GB (GGUF) → int8 1.6 GB",
+    ...ggufOf("mradermacher/sarashina2.1-1b-GGUF", "9f977c5c0615193a1b5fbcc2279a3e2496850ed1", "sarashina2.1-1b.Q8_0.gguf",
+      "sbintuitions/sarashina2.1-1b", "30348c324bc3d1b7b33d9687ca20478b2e5b3dd9", "tokenizer.model"), download: 1498330496,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "hf", id: "hf-sarashina2.2-3b", name: "SB Intuitions sarashina2.2 3B", note: "日本語 / English · fetches 6.7 GB → int8 3.8 GB",
+    original: "sbintuitions/sarashina2.2-3b",
+    hf: hf("sbintuitions/sarashina2.2-3b", "9a06e768a2156c21bccb96cf4c99ae4b98755577", "tokenizer.model"), download: 6711252920,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "hf", id: "hf-sarashina2-7b", name: "SB Intuitions sarashina2 7B", note: "日本語 / English · fetches 7.8 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("QuantFactory/sarashina2-7b-GGUF", "83d29cb7330a9067192b1a2986947388da144d1d", "sarashina2-7b.Q8_0.gguf",
+      "sbintuitions/sarashina2-7b", "15b989b8a4eb6f68b990787fc1016def7dabf0bb", "tokenizer.model"), download: 7775676416,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-gpt-neox-japanese-1.4b", name: "Stockmark gpt-neox-japanese 1.4B", note: "日本語 · fetches 2.9 GB → int8 1.6 GB",
     hf: hf("stockmark/gpt-neox-japanese-1.4b", "c8f1288a46ac11cf4445dfd18147605d9b692261"), download: 2852015168,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },

@@ -11,6 +11,8 @@
 # T.517: an original with no safetensors at all (LINE's japanese-large-lm 1.7B instruction-sft has only PyTorch's
 # pytorch_model.bin) has its pickle read without PyTorch (only the globals that rebuild tensors, as convert_hf.py) and
 # written beside it as model.safetensors, the tensors as they are stored, so that gguf_check.py reads one kind.
+# T.598: one sharded by pytorch_model.bin.index.json (sarashina2 7B) has each shard written so and an index of
+# safetensors for them; its bfloat16 tensors are written as BF16, the bits as they are.
 # HF_ENDPOINT: another hub than huggingface.co (tests/fetching-check.ts's, on this machine).
 import json
 import os
@@ -48,7 +50,16 @@ def fetch(original, gguf, out, either=False):
         try:
             index = json.loads(get(at("model.safetensors.index.json"), "model.safetensors.index.json").read_text())
         except urllib.error.HTTPError:
-            pickled(get(at("pytorch_model.bin"), "pytorch_model.bin"), out / "model.safetensors")
+            try:
+                pickled(get(at("pytorch_model.bin"), "pytorch_model.bin"), out / "model.safetensors")
+            except urllib.error.HTTPError:
+                bins = json.loads(get(at("pytorch_model.bin.index.json"), "pytorch_model.bin.index.json").read_text())
+                (out / "pytorch_model.bin.index.json").unlink()
+                written = {shard: shard.removesuffix(".bin") + ".safetensors" for shard in sorted(set(bins["weight_map"].values()))}
+                for shard, target in written.items():
+                    pickled(get(at(shard), shard), out / target)
+                index = {"weight_map": {name: written[shard] for name, shard in bins["weight_map"].items()}}
+                (out / "model.safetensors.index.json").write_text(json.dumps(index))
         else:
             for shard in sorted(set(index["weight_map"].values())):
                 get(at(shard), shard)
@@ -57,8 +68,8 @@ def fetch(original, gguf, out, either=False):
 
 
 def torch_tensors(path):
-    """{name: array} of PyTorch's zip checkpoint, without PyTorch: only the globals that rebuild float32 and float16
-    tensors unpickle. convert_hf.py's load_torch_pickle() in the form of LINE's 1.7B instruction-sft, which it does not
+    """{name: array} of PyTorch's zip checkpoint, without PyTorch: only the globals that rebuild float32, float16 and
+    bfloat16 (as uint16: its bits) tensors unpickle. convert_hf.py's load_torch_pickle() in the form of LINE's 1.7B instruction-sft, which it does not
     read: saved by DeepSpeed, every tensor is a view of one storage of 3.3 GB, which that reads again for each tensor
     (a runner of 16 GB was shut down, runs 38731171773 and 38732582106), and its state dict carries attributes (the
     _metadata of torch.save), which a plain dict cannot take (run 38735291103)."""
@@ -67,7 +78,7 @@ def torch_tensors(path):
     import numpy as np
     archive = zipfile.ZipFile(path)
     prefix = next(name for name in archive.namelist() if name.endswith("/data.pkl"))[:-len("data.pkl")]
-    readers = {"FloatStorage": np.float32, "HalfStorage": np.float16}
+    readers = {"FloatStorage": np.float32, "HalfStorage": np.float16, "BFloat16Storage": np.uint16}
     storages = {}
 
     class Held(dict):
@@ -98,10 +109,11 @@ def torch_tensors(path):
 
 
 def pickled(path, target):
-    """PyTorch's pickle at path as a safetensors file at target, each tensor in the type it is stored in (F16 or F32)."""
+    """PyTorch's pickle at path as a safetensors file at target, each tensor in the type it is stored in (F16, BF16 or
+    F32)."""
     import numpy as np
     tensors = {name: np.ascontiguousarray(tensor) for name, tensor in torch_tensors(path).items()}
-    kinds = {np.dtype(np.float32): "F32", np.dtype(np.float16): "F16"}
+    kinds = {np.dtype(np.float32): "F32", np.dtype(np.float16): "F16", np.dtype(np.uint16): "BF16"}
     header, at = {"__metadata__": {"format": "pt"}}, 0
     for name, tensor in tensors.items():
         header[name] = {"dtype": kinds[tensor.dtype], "shape": list(tensor.shape), "data_offsets": [at, at + tensor.nbytes]}
@@ -110,7 +122,7 @@ def pickled(path, target):
     with open(target, "wb") as file:
         file.write(struct.pack("<Q", len(encoded)) + encoded)
         for tensor in tensors.values():
-            file.write(tensor.tobytes())
+            file.write(tensor.data)
     path.unlink()
 
 

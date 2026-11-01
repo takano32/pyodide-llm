@@ -846,6 +846,9 @@ def gemma4_rope_factors(config):
 
 GEMMA3_DEFAULTS = {"attention.sliding_window_pattern": lambda layers: [layer % 6 < 5 for layer in range(layers)],
                    "rope.freq_base_swa": lambda layers: 10000.0}
+# T.598: a Llama's GGUF that writes no base of its RoPE (QuantFactory's sarashina2 7B, of 2024): llama.cpp takes 1e4,
+# as the converter does (families/llama.py's gguf_config)
+LLAMA_DEFAULTS = {"rope.freq_base": lambda layers: 10000.0}
 
 def rope_factors(config, width):
     """What llama.cpp writes as rope_freqs.weight: how many times slower each pair of a head turns under
@@ -891,6 +894,8 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             # of August 2025, writes neither): every sixth layer a full-attention one (src/llama-model.cpp's
             # set_swa_pattern(6) at 4413a192), and a base of 1e4 for the others
             ours, defaulted = GEMMA3_DEFAULTS[key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
+        if ours is None and arch == "llama" and key in LLAMA_DEFAULTS:
+            ours, defaulted = LLAMA_DEFAULTS[key](metadata.get(f"{arch}.block_count", 0)), " (not in the GGUF: llama.cpp's default)"
         # the GGUF writes floats as float32: 1e-6 of relative difference is its rounding
         if isinstance(ours, list) or isinstance(theirs, list):
             same = ours == theirs  # an LFM2's key-value heads, a number a layer (T.260)
