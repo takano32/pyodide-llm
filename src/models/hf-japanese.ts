@@ -278,6 +278,21 @@ export const HF_JAPANESE: Entry[] = [
       "abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1", "b0027a80acb4052482d4b55499100f568e937644"), download: 8098525568,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.7, topp: 0.8, top_k: 20, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.604: 2026's community 8Bs. DataPilot's ArrowCanaria (Llama 3.1 Swallow 8B v0.5 taught to chat, then GRPO: its
+  // template, its card's sampling) and SousiOmine's Lumi v2 (llm-jp-4 8B base taught ChatML with thinking: its template,
+  // whose default system turn it writes when there is none, and the maker's GGUF)
+  { group: "hf", id: "hf-arrowcanaria-llama-8b-rl", name: "DataPilot ArrowCanaria Llama 8B RL v0.1",
+    note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB",
+    ...ggufOf("mradermacher/ArrowCanaria-Llama-8B-RL-v0.1-GGUF", "ec04d0610d5ef9a7d6c2e01e814023db6b3e7b9d", "ArrowCanaria-Llama-8B-RL-v0.1.Q8_0.gguf",
+      "DataPilot/ArrowCanaria-Llama-8B-RL-v0.1", "2b487b422b5a30dbe5f4127cd6b60a15d25ad226"), download: 8540772256,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.05 },
+    prompt: "最近ちょっと疲れてるんだよね。何かリフレッシュできる方法ない？", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-lumi-v2-llm-jp-4-8b", name: "SousiOmine Lumi v2 llm-jp-4 8B",
+    note: "thinks before it answers · 日本語 / English · fetches 9.1 GB (GGUF) → int8 9.7 GB",
+    ...ggufOf("SousiOmine/Lumi-v2-llm-jp-4-8b-GGUF", "820b4d43d7f89097d77073437cc53f11579793b1", "Lumi-v2-llm-jp-4-8b-Q8_0.gguf",
+      "SousiOmine/Lumi-v2-llm-jp-4-8b", "0af15b25d14de36972c39501e883da7f07efbe61"), download: 9132701152,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
   // T.602: Sakana AI's other models. TinySwallow 1.5B's base one (its tokenizer has Qwen2.5's chat template: the plain
   // text, with the BOS and stops beside it), Karamaru (Llama-3-ELYZA-JP 8B taught to answer in the Japanese of the Edo
   // period: its template's system turn, and its card's sampling) and EvoLLM-JP 7B's two (merges of Mistral 7B's, the

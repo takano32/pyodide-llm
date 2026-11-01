@@ -14,6 +14,8 @@ const APACHE_GEMMA = "Apache License 2.0 (derived from Qwen), and the Gemma Term
 // llama3.3 and gemma: the words of the card are copied)
 const QWEN_RESEARCH = "Qwen Research License Agreement";
 const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
+// T.604: ArrowCanaria's card: "Llama 3.1 Community License + Gemma Terms of use License" (it is made from Swallow's)
+const ARROWCANARIA = "Llama 3.1 Community License and Gemma Terms of Use";
 // T.250: ELYZA's card says "Meta Llama 3 Community License" under License (its metadata: llama3)
 const LLAMA_3 = "Meta Llama 3 Community License";
 // T.601: rinna's youri (its card's metadata: llama2, Llama 2's community license)
@@ -112,6 +114,9 @@ export const LICENSES: Record<string, string> = {
   "rinna/llama-3-youko-8b-instruct": LLAMA_3, "rinna/llama-3-youko-8b": LLAMA_3,
   "mradermacher/llama-3-youko-8b-instruct-GGUF": LLAMA_3, "mradermacher/llama-3-youko-8b-GGUF": LLAMA_3,
   "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
+  // T.604
+  "DataPilot/ArrowCanaria-Llama-8B-RL-v0.1": ARROWCANARIA, "mradermacher/ArrowCanaria-Llama-8B-RL-v0.1-GGUF": ARROWCANARIA,
+  "SousiOmine/Lumi-v2-llm-jp-4-8b": APACHE, "SousiOmine/Lumi-v2-llm-jp-4-8b-GGUF": APACHE,
   // T.603
   "lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese": APACHE, "mradermacher/DeepSeek-R1-Distill-Qwen-7B-Japanese-GGUF": APACHE,
   "lightblue/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual": APACHE, "mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual-GGUF": APACHE,
