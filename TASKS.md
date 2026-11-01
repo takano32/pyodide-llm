@@ -1304,6 +1304,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - **道具の直し 2 つ**: (1) `tests/gguf_fetch.py` が、`pytorch_model.bin.index.json` で分かれた bfloat16 の原本（sarashina2 7B）を読む: 部品ごとに safetensors にし（bfloat16 は BF16 のビットのまま）、その索引を書く。`fetching-check` に作り物の 2 部品の場合を足した（bfloat16 を読み手から外す壊し方で落ちる）。(2) `tests/gguf_check.py` は、Llama の GGUF が RoPE の基数を書かないとき llama.cpp の既定 1e4 で比べる（変換器の `families/llama.py` と同じ。QuantFactory の 7B が書いていない）。
   - GGUF の run 41254508128（2.1 1B: 最悪 0.00592、最近の参照 0、語彙の違い 0）と 41256387068（2 7B: 最悪 0.00638、0、0。1 回目 41254508128 は分かれた `.bin` を取れず、2 回目 41255259119 は基数の無い行で 1 つ違うと出た）。
   - 書かせた run 41254508076（1B・3B）と 41254508322（7B）: int8 は 1,583,733,788・3,775,539,228・8,230,289,436 バイト。BOS 1 は無しより perplexity −0.96%・−0.67%・−0.51%（変換器の BOS のまま）。128 トークンを greedy と種 2 つで: どれも日本語のウェブの文を書く。greedy は 3 つとも同じ文を繰り返す（base のモデル。ページの既定は標本抽出の 1.1 の罰）、標本抽出の文は崩れない。CI を回した。訳: GB 級のモデルの枝（7B は手元で動かさない）。
+  - レビュー（Sonnet low、2026-11-01）: 直しなし。項目の形・ライセンス（LICENSE の頭の行）・int8 と取得の大きさはログに合う。`gguf_check.py` の既定は GGUF が書かないときだけで、原本が別の値なら違うと出る。7B の部品（約 10 GB）は 16 GB のランナーに 1 つずつ載る。
 - sbintuitions/sarashina2.2-3b @ 9a06e768a2156c21bccb96cf4c99ae4b98755577（llama、3.36B、mit、base）: base の Q8_0 は無く safetensors 6.71 GB から（`tokenizer.model`）。一覧の 0.5B・1B base の続き。
 - sbintuitions/sarashina2-7b @ 15b989b8a4eb6f68b990787fc1016def7dabf0bb（MHA、bin だけ）: QuantFactory/sarashina2-7b-GGUF（7.78 GB）を段 ② で（語彙は原本）。
 - sbintuitions/sarashina2.1-1b @ 30348c324bc3d1b7b33d9687ca20478b2e5b3dd9（Sarashina Model NonCommercial License: 方針 8 で入れてよい）。mradermacher の Q8_0 1.5 GB。
