@@ -1305,6 +1305,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - 7B Japanese: int8 8.57 GB（64 ビット）。種 1 は 5/5 止まり、くり返し 0/5。富士山 3,776 m・408 と正しく、日本語で考える。種では考えを空（`<think>\n\n</think>`）にして答える問いがある（モデルの動き）。BOS は +1.89%（書式どおりで送る ID は本物と同じなので替えない）。CI で約 1.9 tok/s。
   - ABEJA 7B: int8 8.57 GB。5/5 止まり、日本語の問いは 3/3 日本語で、どれも正しく自然。BOS `<|im_start|>`（書式の最初のトークン）は +3.81%（書式どおり）。
 - CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
+- レビュー（Sonnet low、2026-11-01）: 直すものなし。確かめた: `LIGHTBLUE_R1` の 13 は tokenizer.json の special でない追加のトークンの全部（`<｜User｜>`・`<｜Assistant｜>`・`<|EOT|>`・`<think>`・`</think>`・道具の 2 つ・fim の 4 つ・`<|repo_name|>`・`<|file_sep|>`）で、それに `<|im_end|>`。「36 more languages」はカードの言語 38 から日本語と英語を引いた数。mmnga の ABEJA のカードは apache-2.0。`STRICT` の名前の書き方がほかと違う（完全な id）のはそのまま: 接頭辞として効く。
 
 ### T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - DataPilot/ArrowCanaria-Llama-8B-RL-v0.1 @ 2b487b422b5a30dbe5f4127cd6b60a15d25ad226（llama、Llama-3.1-Swallow 8B v0.5 から）: mradermacher @ ec04d0610d5ef9a7d6c2e01e814023db6b3e7b9d（8.54 GB）。ライセンスはカードから（Llama 3.1 と Gemma の両方を言う）。
