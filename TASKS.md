@@ -138,7 +138,7 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 未着手
+- T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 進行中
 - T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 未着手
 - T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 未着手
 - T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 未着手
@@ -1294,11 +1294,17 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
-### T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+### T.603 [追加][モデル] Lightblue・ABEJA の Qwen 系（日本語で考える R1 Distill を含む） — 状態: 進行中（2026-11-01、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小）
 - lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese @ f5f497038d5da4221631058ff1e9b9563fe539d2（qwen2、Apache-2.0、日本語で考える）: mmnga の GGUF @ d5a63bd4cb76aec396fad7602a72352cc02e6006（8.10 GB）。BOS は DeepSeek-R1 Distill の項目の形（tokenizer_config の `bos_token`）を `start_check` で。
 - lightblue/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual @ 9c9c7b64e4d7e2154db8ee4cae0e015d7fac5e82: mradermacher @ 06eaa38aae801e83d2887cb2d06d4f84e8716f0e（1.89 GB）。スマホの考える形。
 - abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1 @ b0027a80acb4052482d4b55499100f568e937644: mmnga @ e9edf6f2d3a4890dac56d6dde158e388f7d2690c（8.10 GB）。
 - suzume-llama-3-8B（2024）は古いので入れない。
+- **したこと**: 3 項目を `hf-japanese.ts` に（hf-deepseek-r1-qwen-7b-japanese・hf-deepseek-r1-qwen-1.5b-multilingual・hf-abeja-qwen2.5-7b-japanese）。7B の Lightblue は mmnga でなく mradermacher の GGUF @ 5bf184bf…（mmnga のカードはライセンスを MIT と言う: 原本は Apache-2.0）。Lightblue の 2 つは DeepSeek の語彙に `<|im_end|>`（151665）を special として足していて、変換器はそれを specials に書かない: 項目の options に `LIGHTBLUE_R1`（`formats.ts`、specials の全部）。生成はカードの温度 0.5・top-p 1.0・罰 1.1、ABEJA は generation_config の 0.7・0.8・top-k 20・1.05。ライセンスは 6 つとも Apache-2.0。作り手の表に lightblue と abeja。
+- **確かめ**: `format_check.py` は 3 つとも 9/9（`STRICT` に 3 つの接頭辞）。`gguf.yml` run 41298205895: 最悪 0.00653・0.00686・0.00653、語彙の違い 0。書かせる run 41298205613（answers.ts の greedy と種 1、1500 トークンまで。start_check は none と BOS）:
+  - 1.5B Multilingual: int8 2.00 GB（32 ビット）。止まり 5/5（種）。greedy は日本語の問い 2 つで考えが終わらずくり返す（DeepSeek-R1 系は greedy を勧めない: ページは温度 0.5 で引く）。日本語の答えは中国語と英語が混ざる（1.5B の力）。17 × 24 は 408。BOS `<｜begin▁of▁sentence｜>` は素の文で −2.22%。
+  - 7B Japanese: int8 8.57 GB（64 ビット）。種 1 は 5/5 止まり、くり返し 0/5。富士山 3,776 m・408 と正しく、日本語で考える。種では考えを空（`<think>\n\n</think>`）にして答える問いがある（モデルの動き）。BOS は +1.89%（書式どおりで送る ID は本物と同じなので替えない）。CI で約 1.9 tok/s。
+  - ABEJA 7B: int8 8.57 GB。5/5 止まり、日本語の問いは 3/3 日本語で、どれも正しく自然。BOS `<|im_start|>`（書式の最初のトークン）は +3.81%（書式どおり）。
+- CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
 
 ### T.604 [追加][モデル] 2026 年のコミュニティの 8B（ArrowCanaria・Lumi） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
 - DataPilot/ArrowCanaria-Llama-8B-RL-v0.1 @ 2b487b422b5a30dbe5f4127cd6b60a15d25ad226（llama、Llama-3.1-Swallow 8B v0.5 から）: mradermacher @ ec04d0610d5ef9a7d6c2e01e814023db6b3e7b9d（8.54 GB）。ライセンスはカードから（Llama 3.1 と Gemma の両方を言う）。
