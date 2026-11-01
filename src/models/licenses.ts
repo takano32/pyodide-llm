@@ -112,6 +112,10 @@ export const LICENSES: Record<string, string> = {
   "rinna/llama-3-youko-8b-instruct": LLAMA_3, "rinna/llama-3-youko-8b": LLAMA_3,
   "mradermacher/llama-3-youko-8b-instruct-GGUF": LLAMA_3, "mradermacher/llama-3-youko-8b-GGUF": LLAMA_3,
   "rinna/youri-7b-chat": LLAMA_2, "mradermacher/youri-7b-chat-GGUF": LLAMA_2,
+  // T.603
+  "lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese": APACHE, "mradermacher/DeepSeek-R1-Distill-Qwen-7B-Japanese-GGUF": APACHE,
+  "lightblue/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual": APACHE, "mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual-GGUF": APACHE,
+  "abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1": APACHE, "mmnga/ABEJA-Qwen2.5-7b-Japanese-v0.1-gguf": APACHE,
   // T.602
   "SakanaAI/TinySwallow-1.5B": APACHE, "mmnga/TinySwallow-1.5B-gguf": APACHE,
   "SakanaAI/Llama-3-Karamaru-v1": LLAMA_3, "mradermacher/Llama-3-Karamaru-v1-GGUF": LLAMA_3,

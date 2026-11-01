@@ -1,6 +1,6 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
@@ -255,6 +255,28 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/youri-7b-chat-GGUF", "689eb667771650908f76850f08919148380d109d", "youri-7b-chat.Q8_0.gguf",
       "rinna/youri-7b-chat", "12c3e0e288efbdb525aa98abcab0c92d8445fcbc", "tokenizer.model"), download: 7161090816,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 }, template: LINE_SFT,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.603: Lightblue's DeepSeek-R1 distills taught to think in the language they are asked in (the converter reads
+  // their template and BOS, <｜begin▁of▁sentence｜>, as for DeepSeek's own; their specials are written: LIGHTBLUE_R1;
+  // their cards' temperature of 0.5 and repetition penalty of 1.1; mradermacher's GGUFs: mmnga's of the 7B says MIT
+  // where the original says Apache-2.0), and ABEJA's Qwen2.5 7B trained on Japanese (Qwen2.5's template, its
+  // generation_config.json's sampling)
+  { group: "hf", id: "hf-deepseek-r1-qwen-7b-japanese", name: "Lightblue DeepSeek-R1 Distill Qwen 7B Japanese",
+    note: "thinks before it answers · 日本語 · fetches 8.1 GB (GGUF) → int8 8.6 GB",
+    ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-7B-Japanese-GGUF", "5bf184bf1ef65f5ff18bc92aeb8e2305e76184b3", "DeepSeek-R1-Distill-Qwen-7B-Japanese.Q8_0.gguf",
+      "lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese", "f5f497038d5da4221631058ff1e9b9563fe539d2"), download: 8098525856,
+    conversion: {}, options: LIGHTBLUE_R1, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.1 },
+    prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-deepseek-r1-qwen-1.5b-multilingual", name: "Lightblue DeepSeek-R1 Distill Qwen 1.5B Multilingual",
+    note: "thinks before it answers · 日本語 / English and 36 more languages · fetches 1.9 GB (GGUF) → int8 2.0 GB",
+    ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual-GGUF", "06eaa38aae801e83d2887cb2d06d4f84e8716f0e", "DeepSeek-R1-Distill-Qwen-1.5B-Multilingual.Q8_0.gguf",
+      "lightblue/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual", "9c9c7b64e4d7e2154db8ee4cae0e015d7fac5e82"), download: 1894533312,
+    conversion: {}, options: LIGHTBLUE_R1, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.1 },
+    prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-abeja-qwen2.5-7b-japanese", name: "ABEJA Qwen2.5 7B Japanese v0.1", note: "answers instructions · 日本語 · fetches 8.1 GB (GGUF) → int8 8.6 GB",
+    ...ggufOf("mmnga/ABEJA-Qwen2.5-7b-Japanese-v0.1-gguf", "e9edf6f2d3a4890dac56d6dde158e388f7d2690c", "ABEJA-Qwen2.5-7b-Japanese-v0.1-Q8_0.gguf",
+      "abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1", "b0027a80acb4052482d4b55499100f568e937644"), download: 8098525568,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.7, topp: 0.8, top_k: 20, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.602: Sakana AI's other models. TinySwallow 1.5B's base one (its tokenizer has Qwen2.5's chat template: the plain
   // text, with the BOS and stops beside it), Karamaru (Llama-3-ELYZA-JP 8B taught to answer in the Japanese of the Edo

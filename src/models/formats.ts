@@ -76,6 +76,13 @@ export const STABLELM_GAMMA = "以下は、タスクを説明する指示と、�
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)
 export const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
+// T.603: Lightblue's DeepSeek-R1 distills add <|im_end|> (151665) to DeepSeek's vocabulary as a special token, which the
+// real tokenizer reads as one wherever it is typed; the converter's specials are the ones the template writes, so the
+// entries write the whole list (the converter's, and that one)
+export const LIGHTBLUE_R1 = {
+  specials: ["<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>", "<｜Assistant｜>", "</tool_call>", "<|file_sep|>",
+    "<tool_call>", "<|fim_pad|>", "</think>", "<｜User｜>", "<think>", "<|EOT|>", "<|im_end|>"],
+};
 // T.602: EvoLLM-JP has no chat template, and its card renders its messages (with this system one) with
 // apply_chat_template under transformers 4.38.2, whose default for a LlamaTokenizer was Llama 2's format: the system in
 // the user's turn, the turn stripped, and no space after [/INST]
