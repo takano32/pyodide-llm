@@ -143,7 +143,7 @@
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
 - T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
 - T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 候補
-- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 調べは済み
+- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 未着手
 - T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 未着手
 - T.612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 未着手
 - T.613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 未着手
@@ -1293,10 +1293,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
 ### T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- **持ち主の決め（2026-11-01、選択肢で「2 つとも足す」）**: instruct と fast-instruct の両方を足す。
 - elyza/ELYZA-japanese-Llama-2-7b-instruct・-fast-instruct（2023、likes 75〜83、原本は bin だけ）: mmnga の q8_0（7.16・7.28 GB、GGUF v3）。古い GGUF なので `gguf_check.py tensors` を必ず（原本が bin なら `tests/gguf_fetch.py` の `torch_tensors()` の形で比べる）。fast は語彙を広げた形。
 - 有名だが古い。足すかは T.303 と一緒に。
 
 ### T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 状態: 未着手（2026-10-30、T.591 から。規模 小。勧めは足さないか CPT の 1 つだけ）
+- **持ち主の決め（2026-11-01、選択肢で「3 つとも足す」）**: SFT v0.2・CPT v0.2・医療版の 3 つを足す（医療版は safetensors だけ）。
 - Qwen3-Swallow-8B SFT v0.2（mmnga-o の Q8_0 8.71 GB）・CPT v0.2（base の形、tatsuyaaaaaaa の Q8_0 8.71 GB）・Medical-Qwen3-Swallow-8B（safetensors だけ 16.4 GB）。一覧の RL v0.2 と中身が近い。
 
 ### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
@@ -1311,7 +1313,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CyberAgent open-calm（gpt_neox、bin だけ、CC-BY-SA、base だけ、7B は likes 205）: 2023 年の GGUF は `attn_qkv` が HF の並びのおそれ（T.306・T.517 と同じ）。
 - tiny-lm-chat（bin だけ 0.06 GB）: 変換すればサイトでいちばん小さいチャットのモデルになる。サイトのモデルを足すかは持ち主。
 
-### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 調べは済み、持ち主の判断待ち（2026-10-30、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小〜中）
+### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 未着手（持ち主が (B) に決めた、2026-11-01。前の状態: 調べは済み、持ち主の判断待ち、2026-10-30、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小〜中）
+- **持ち主の決め（2026-11-01、選択肢で「塊の GGUF のまま持つ（勧め）」）**: (B)。14B 級は K 量子化の GGUF を塊のまま持つ（Saluki の形: `blocks: true`・`loaded`・`rebuilt`）。どのモデルを足すかは 1 つずつ子タスクに。
 - **結果（`footprint()` で数えた。config は各原本の main、文脈は 4096（stockmark は 2048）、共有メモリ・relaxed・float16 の KV。手で回した `.tmp/t610.mjs`）**:
 
 | モデル | int8: ファイル + 後ろ = 全部 | int6: 全部 |
