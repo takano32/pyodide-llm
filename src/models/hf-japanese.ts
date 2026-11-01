@@ -137,8 +137,6 @@ export const HF_JAPANESE: Entry[] = [
     original: "SakanaAI/TinySwallow-1.5B-Instruct",
     hf: { repo: "SakanaAI/TinySwallow-1.5B-Instruct-GGUF", revision: "38c003aaf8be9d17af11dece1fbabeb873c567fa", weights: "tinyswallow-1.5b-instruct-q8_0.gguf" }, download: 1646573920,
     conversion: {}, options: QWEN3_OWN_BOS, template: TINYSWALLOW, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
-  // context of 4096 the page gives it
   // T.600: the base model of RakutenAI 2.0 mini, from its safetensors (no GGUF of it). Its tokenizer carries the chat
   // template of the instruct one, which the converter would read: the plain text instead, with the BOS and stops the
   // converter takes (the pair, as T.369 wants)
@@ -147,6 +145,8 @@ export const HF_JAPANESE: Entry[] = [
     hf: hf("Rakuten/RakutenAI-2.0-mini", "3740b0473010eb05d59143858408358bead777ba", "tokenizer.model"), download: 3069389424,
     conversion: {}, options: { bos: 1, stop_tokens: [1, 2] }, generation: sampled(1.1), template: "{prompt}",
     prompt: "これからの流行りは", placeholder: JAPANESE },
+  // T.125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
+  // context of 4096 the page gives it
   { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB",
     original: "Rakuten/RakutenAI-2.0-mini-instruct",
     hf: { repo: "mmnga/RakutenAI-2.0-mini-instruct-gguf", revision: "9bd2900dd7bff11c248fb510d4297b3a88817b76", weights: "RakutenAI-2.0-mini-instruct-Q8_0.gguf",
