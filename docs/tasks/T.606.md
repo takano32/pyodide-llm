@@ -1,0 +1,10 @@
+### T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 状態: 完了（2026-11-02、本番を確かめた。前の状態: 進行中、2026-11-02、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小。勧めは足さないか CPT の 1 つだけ）
+- **持ち主の決め（2026-11-01、選択肢で「3 つとも足す」）**: SFT v0.2・CPT v0.2・医療版の 3 つを足す（医療版は safetensors だけ）。
+- Qwen3-Swallow-8B SFT v0.2（mmnga-o の Q8_0 8.71 GB）・CPT v0.2（base の形、tatsuyaaaaaaa の Q8_0 8.71 GB）・Medical-Qwen3-Swallow-8B（safetensors だけ 16.4 GB）。一覧の RL v0.2 と中身が近い。
+- **したこと**: 3 つを考える形とすぐ答える形の 6 項目で `hf-families.ts` の RL v0.2 の後に（`thinkingAndNot()`、hf-qwen3-swallow-8b-sft・hf-qwen3-swallow-8b-cpt・hf-medical-qwen3-swallow-8b）。4 つのカードの chat_template と generation_config（温度 0.6・top-p 0.95・top-k 20）は RL と同じなので、書式・標本抽出・BOS（`QWEN3_OWN_BOS`）も RL と同じ。SFT は mmnga-o の Q8_0、CPT は tatsuyaaaaaaa の Q8_0（CPT のカードも考える形のチャットで使う）、医療版は safetensors だけ（RL v0.2 の上に医療を教えたもの）。語彙は原本から。ライセンスは Apache-2.0。
+- **確かめ**: `format_check.py` は 6 項目（と RL の 2 つ）とも 9/9。`gguf.yml` run 41366408793: SFT と CPT は最悪 0.00738、いちばん近い参照と 0、語彙の食い違い 0（q と k は HF の並び）。書かせる run（answers.ts の greedy と種 1、1500 トークンまで。start_check は none・151643・151644）: SFT 41366407742、CPT 41366435933、医療版 41366465780。
+  - 3 つとも int8 9,215,463,452 バイト（9.2 GB、64 ビット）。止まりは 5/5（医療版のすぐ答える形の流行りの問いだけ 1500 で切れた: 長い答え）。くり返し 0、`<unk>` 0。考える形は 5/5 で考えを終える（考えは英語で、答えは問いの言語）。富士山と 17 × 24 = 408 は 3 つとも greedy と種の全部で正しい。
+  - 頭のトークン（素の文）: SFT は `<|endoftext|>` +0.98%・`<|im_start|>` +0.47%、CPT は +1.13%・+0.59%、医療版は +0.33%・+0.16%（どれも none に対して）。取りまとめ役の決め（訳）: RL と同じ `<|endoftext|>` のまま。差は 1% 前後で、素の文の数字だけで替えない（AGENTS.md）。
+- CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
+- レビュー（Sonnet low、2026-11-02）: 直すものなし（リビジョン・ライセンス・取得のバイト数・note の大きさ・BOS・名前を HF の API と照らした）。
+- **本番**: 本線 a041b100、デプロイ 41379315044。`models.yml` 41380122511（Chromium、4 本）: SFT は準備完了 119.5 s・3.5 tok/s（考える形 116.4 s・3.5）、CPT は 125.0 s・3.6（112.2 s・3.5）、医療版は 219.8 s・3.6（202.7 s・3.5: safetensors 16.4 GB を取る）。

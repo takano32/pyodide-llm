@@ -138,7 +138,6 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 進行中
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
 - T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
 - T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 候補
@@ -1290,16 +1289,6 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
-
-### T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 状態: 進行中（2026-11-02、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小。勧めは足さないか CPT の 1 つだけ）
-- **持ち主の決め（2026-11-01、選択肢で「3 つとも足す」）**: SFT v0.2・CPT v0.2・医療版の 3 つを足す（医療版は safetensors だけ）。
-- Qwen3-Swallow-8B SFT v0.2（mmnga-o の Q8_0 8.71 GB）・CPT v0.2（base の形、tatsuyaaaaaaa の Q8_0 8.71 GB）・Medical-Qwen3-Swallow-8B（safetensors だけ 16.4 GB）。一覧の RL v0.2 と中身が近い。
-- **したこと**: 3 つを考える形とすぐ答える形の 6 項目で `hf-families.ts` の RL v0.2 の後に（`thinkingAndNot()`、hf-qwen3-swallow-8b-sft・hf-qwen3-swallow-8b-cpt・hf-medical-qwen3-swallow-8b）。4 つのカードの chat_template と generation_config（温度 0.6・top-p 0.95・top-k 20）は RL と同じなので、書式・標本抽出・BOS（`QWEN3_OWN_BOS`）も RL と同じ。SFT は mmnga-o の Q8_0、CPT は tatsuyaaaaaaa の Q8_0（CPT のカードも考える形のチャットで使う）、医療版は safetensors だけ（RL v0.2 の上に医療を教えたもの）。語彙は原本から。ライセンスは Apache-2.0。
-- **確かめ**: `format_check.py` は 6 項目（と RL の 2 つ）とも 9/9。`gguf.yml` run 41366408793: SFT と CPT は最悪 0.00738、いちばん近い参照と 0、語彙の食い違い 0（q と k は HF の並び）。書かせる run（answers.ts の greedy と種 1、1500 トークンまで。start_check は none・151643・151644）: SFT 41366407742、CPT 41366435933、医療版 41366465780。
-  - 3 つとも int8 9,215,463,452 バイト（9.2 GB、64 ビット）。止まりは 5/5（医療版のすぐ答える形の流行りの問いだけ 1500 で切れた: 長い答え）。くり返し 0、`<unk>` 0。考える形は 5/5 で考えを終える（考えは英語で、答えは問いの言語）。富士山と 17 × 24 = 408 は 3 つとも greedy と種の全部で正しい。
-  - 頭のトークン（素の文）: SFT は `<|endoftext|>` +0.98%・`<|im_start|>` +0.47%、CPT は +1.13%・+0.59%、医療版は +0.33%・+0.16%（どれも none に対して）。取りまとめ役の決め（訳）: RL と同じ `<|endoftext|>` のまま。差は 1% 前後で、素の文の数字だけで替えない（AGENTS.md）。
-- CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
-- レビュー（Sonnet low、2026-11-02）: 直すものなし（リビジョン・ライセンス・取得のバイト数・note の大きさ・BOS・名前を HF の API と照らした）。
 
 ### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
 - ArrowPro-7B-KUJIRA（likes 64）・Vecteus・Oumuamua-v2・Gleipnir（書式があるのは Vecteus だけ）、AXCXEPT の Qwen3-EZO-8B-beta・EZO-Llama-3.2-3B・llm-jp-3-3.7b-EZO、Aratako の Qwen3-8B-RP。古いか用途が狭い。NSFW を名乗るものは入れるかを持ち主が。
