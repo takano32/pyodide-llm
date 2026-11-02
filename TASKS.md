@@ -1294,6 +1294,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 状態: 候補（2026-10-30、T.591 から）
 - pfnet/Qwen3-1.7B-pfn-qfin @ 3e454cbe406cc778feb6f2e9bc4b4397e5cc98bf・Qwen2.5-1.5B-pfn-qfin（safetensors だけ、ライセンスはカード）。用途が狭い。PFN の主のモデルは T.614・T.615。
+- **調べ（2026-11-02、Opus medium）**: 2 つとも base（続きを書くモデル、書式は Qwen3 の chat_template を持つが card は素の文で使う）、金融の 4 億トークンで追加の学習、文脈 2048 で学習。ライセンスは PLaMo Community License（`license: other`）: 第 4 条が第三者に提供するとき「Built with PLaMo」をウェブサイトか UI に書くこと・作ったモデルの名前に「PLaMo」を入れることを求め、第 3 条の商用は PFN の登録と売上 10 億円以下が条件。**ページに表示を足すかはライセンスの話なので持ち主に**（T.278 の「Built with Llama」と同じ形の問い）。
 
 ### T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 状態: 候補（2026-10-30、T.591 から。規模 小〜中）
 - Fugaku-LLM/Fugaku-LLM-13B-instruct @ 847b9aac…（原本はゲート付き）: GGUF の見出しは gpt2・40 層・d 5184・head 144、語彙は sentencepiece の「llama」49,152。mmnga の Q8_0 14.28 GB（文脈 2048 なので入る見込み）。語彙は GGUF だけの道しかなく、その道は Unigram の点数を断る（AGENTS.md の「GGUF だけの変換」）: 読むなら GGUF の Unigram の語彙を受ける仕事が要る。
