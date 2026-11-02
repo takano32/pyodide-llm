@@ -138,7 +138,7 @@
 - T.585 [その他][運用] bun の未対応を上流（oven-sh/bun）に PR で出す — 未着手
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
-- T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 未着手
+- T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 進行中
 - T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 未着手
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
 - T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
@@ -1292,10 +1292,15 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
-### T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+### T.605 [追加][モデル] ELYZA の Llama 2 7B（instruct・fast-instruct） — 状態: 進行中（2026-11-02、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小）
 - **持ち主の決め（2026-11-01、選択肢で「2 つとも足す」）**: instruct と fast-instruct の両方を足す。
 - elyza/ELYZA-japanese-Llama-2-7b-instruct・-fast-instruct（2023、likes 75〜83、原本は bin だけ）: mmnga の q8_0（7.16・7.28 GB、GGUF v3）。古い GGUF なので `gguf_check.py tensors` を必ず（原本が bin なら `tests/gguf_fetch.py` の `torch_tensors()` の形で比べる）。fast は語彙を広げた形。
 - 有名だが古い。足すかは T.303 と一緒に。
+- **したこと**: 2 項目を `hf-japanese.ts` に（hf-elyza-japanese-llama-2-7b-instruct・hf-elyza-japanese-llama-2-7b-fast-instruct）。chat template は無く、カードの書き方（BOS の後に Llama 2 の `[INST] <<SYS>>…<</SYS>>` と ELYZA の system 文、`{prompt} [/INST] `、何も切らない）を `formats.ts` の `ELYZA_LLAMA2` に。重みは mmnga の 2023 年の Q8_0、語彙は原本から（instruct は `tokenizer.model`、fast は `tokenizer.json` だけ）。標本抽出: instruct のカードのコードは greedy なので、日本語のほかの項目と同じ `sampled(1.1)`（取りまとめ役の決め: greedy は 17 × 24 でくり返した）。fast は generation_config の温度 0.6・top-p 0.9。ライセンスは 4 つとも Llama 2 Community License（カードのメタデータ llama2 と本文）。作り手の表に 1 行（名前の ELYZA が作り手）。
+- **確かめ**: `format_check.py` は 2 つとも 9/9（`CARDS` に `ELYZA_LLAMA2_CARD`）。`STRICT` には入れない: transformers 5 は fast のトークナイザを作り直して `<s>[INST]` を `<s>` `[` と読み、実際の tokenizer.json（tokenizers で直に。カードの transformers 4.30 の読み方）と sentencepiece は `<s>` `▁[` と読む（ページと同じ）。手で 2 つとも確かめた。`gguf.yml` run 41357332298: 2 つとも最悪 0.00876、いちばん近い参照と 0、食い違い 0（q と k は回した並び）。書かせる run 41357332484（answers.ts の greedy と種 1、1500 トークンまで。start_check は none と BOS）:
+  - instruct: int8 7.58 GB（64 ビット）。止まり 5/5、くり返し 0/5（種）。日本語の問いは日本語で答え、英語の問いは英語で。事実の誤りが多い（greedy は日本一の山を「剣山 2291m」、17 × 24 を 398・1666 とくり返す。種は富士山 3,776 m と正しく、17 × 24 は 388）: 2023 年の 7B の力。BOS `<s>` は +0.55%（書式どおりなので替えない）。
+  - fast instruct: int8 7.70 GB。止まり 5/5、くり返し 0/5。greedy の 17 × 24 は 408 と正しく途中の式も書く（種は 398）。山は「北海道の恵庭岳」や「北海道の富士山」と誤る。BOS は −0.15%。
+- CI を回した。訳: GB 級のモデルの書かせと GGUF の比べは手元で見られない。
 
 ### T.606 [追加][モデル] Qwen3-Swallow の残りと医療版 — 状態: 未着手（2026-10-30、T.591 から。規模 小。勧めは足さないか CPT の 1 つだけ）
 - **持ち主の決め（2026-11-01、選択肢で「3 つとも足す」）**: SFT v0.2・CPT v0.2・医療版の 3 つを足す（医療版は safetensors だけ）。
