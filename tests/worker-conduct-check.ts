@@ -302,7 +302,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     globalThis.location ??= { search: "" };
     const { weighed } = await import("../src/page/address.ts"), { MODELS } = await import("../src/models.ts");
     const listed = MODELS.filter((entry) => entry.conversion?.blocks);
-    assert.deepEqual(listed.map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-llm-jp-3.1-13b-instruct4", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"]);
+    assert.deepEqual(listed.map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"]);
     fresh(kernel);
     for (const entry of listed) {
       const handed = weighed(entry);
