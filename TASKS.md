@@ -1323,7 +1323,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - MHA の 13B（int8 では越える見込み）: llm-jp-3.1-13b-instruct4（mmnga の IQ4_XS 7.43 GB @ 7809b3c6… なら塊で入る）・stockmark-13b(-instruct)（Q8_0 14.03 GB、文脈 2048）・Swallow-13b-instruct・ELYZA-13b-fast-instruct・sarashina2-13b。塊で入れるなら Saluki の形（`blocks: true`・`loaded`・`rebuilt`）。
 - calm3-22b-chat（likes 85）は Q4_K_M の塊（grapevine-AI）なら入るかもしれない: 同じ回に `footprint()` だけ出す。
 
-#### T.610.1 Qwen3-14B（Qwen の Q4_K_M を塊のまま） — 状態: 進行中（2026-11-02、Opus medium）
+#### T.610.1 Qwen3-14B（Qwen の Q4_K_M を塊のまま） — 状態: 完了（2026-11-02、Opus medium）
 - **子タスクの分け方（取りまとめ役の決め）**: 1 つのモデルを 1 つの子タスクに、勧めの順（GQA の 14B から）: T.610.1 Qwen3-14B、続けて shisa-v2.1-unphi4-14b・DeepSeek-R1-Distill-Qwen-14B-Japanese・ABEJA-Qwen3-14B・llm-jp-3.1-13b-instruct4（IQ4_XS）を取りかかる時に番号を採る。
 - **したこと**: 考える形とすぐ答える形の 2 項目を `hf-families.ts` の Qwen3 8B の後に（hf-qwen3-14b）。Qwen の Q4_K_M（9,001,752,960 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で。BOS と書式は 8B と同じ `<|im_start|>` から（start_check で確かめる）、標本抽出は thinkingAndNot の既定（カードと同じ）。`tests/quant_sizes.py hf-qwen3-14b Qwen3-14B-Q4_K_M.gguf`: 塊のまま 10,869,609,516 バイト（`loaded`）、Q4_K のまま残るのは埋め込み・q・k・o・w1・w3、v と w2 は半分の層が Q6_K なので束ごと int8 に、分類器も Q6_K で int8。int8 なら 16,615,567,388 で、上限を越える。
 - **確かめ**: `models-check`・`npm run types` は通る。`format_check.py` は 2 つとも 9/9。軽い組は手元で通る（584 秒）。
@@ -1332,6 +1332,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **頭のトークン（start_check、素の文）**: なし 10.719、`<|endoftext|>` 10.704（−0.14%）、`<|im_start|>` 10.814（+0.89%）。8B と違い、どれも 1% の内。**取りまとめ役の決め（訳）**: 項目は書式の最初のトークン `<|im_start|>` から（`QWEN3_FROM_IM_START`）のまま: 本物の `apply_chat_template` と同じ ID で、差は 1% の内。
 - CI を回した。訳: GB 級のモデルの変換と書かせは手元で見られない（7B 級以上は手元で動かさない）。
 - レビュー（Sonnet low、2026-11-02）: 直すものなし。`loaded`・並び・3 つの一覧・ライセンス・作り手の行・記録とログの一致を確かめた。format_check の直しが変わるのは塊を持つ 2 項目（14B と shisa-v2.1c-lfm2-350m-q4）だけで、固定値に当たらない（`conversions_compare.py` の shisa-q4 の options に `kinds` が出るのは狙いどおり）。「note に日本語が無い」の指摘は誤り: `thinkingAndNot()` が「日本語 / English」を付けている（一覧の note で確かめた）。
+- **本番**（デプロイ 41393434275、`models.yml` 41394980137、Chromium）: すぐ答える形は準備完了 136.6 秒・1.3 tok/s、考える形は 135.9 秒・1.3 tok/s（4 本）。
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。
