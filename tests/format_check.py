@@ -72,10 +72,10 @@ TOKENIZERS = {"hf-deepseek-r1-llama-8b", "hf-shisa-v2.1-unphi4-14b"}
 KNOWN = {
     # the real tokenizer.json puts no dummy space before the first piece ("A"), the page does ("▁A"): T.131, refused
     "hf-rakutenai-2.0-mini-instruct": {"why": "no dummy space before the first piece (T.131)", "first_piece": True},
-    # the page asks for the answer's channel at the end of the format (T.132): the real text with it is the page's
     # T.610.2: the real tokenizer's special tokens strip the spaces beside them (lstrip, rstrip); the list's format trims
     # the prompt, which leaves only the spaces beside a special token typed in it, kept by the page
     "hf-shisa-v2.1-unphi4-14b": {"why": "spaces beside a special token typed in the prompt (T.610.2)", "unstripped": True},
+    # the page asks for the answer's channel at the end of the format (T.132): the real text with it is the page's
     "hf-llm-jp-4-8b-instruct": {"why": "the page ends with <|channel|>final<|message|> (T.132)",
                                 "text": lambda text, prompt: text + "<|channel|>final<|message|>"},
     # the list's own ChatML has no system turn; the real template writes its default one
