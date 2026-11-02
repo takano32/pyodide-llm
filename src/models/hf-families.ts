@@ -8,7 +8,7 @@ import {
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.ts";
-import { gemma3, gemma4, ggufOf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
+import { gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
 export const HF_FAMILIES: Entry[] = [
@@ -26,6 +26,20 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf", "3fc755c6ab3780ebad6671130fc1b630bbd1575b", "Qwen3-Swallow-8B-RL-v0.2-Q8_0.gguf",
       "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2", "9218f4843b6f93369a0b0999d8f58d61487ea71c"), 8709519968,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
+  // T.606: the rest of Qwen3 Swallow 8B v0.2, the same template and card sampling as the RL one: the SFT one (mmnga-o's
+  // Q8_0), the CPT one (tatsuyaaaaaaa's Q8_0; its card asks it in chat with thinking as the others) and the medical one
+  // (taught medicine on top of the RL one: its safetensors alone)
+  ...thinkingAndNot("hf-qwen3-swallow-8b-sft", "Science Tokyo Qwen3 Swallow 8B SFT",
+    ggufOf("mmnga-o/Qwen3-Swallow-8B-SFT-v0.2-gguf", "70d77c73962e9e7571ee3c4f25324f270fcdbe53", "Qwen3-Swallow-8B-SFT-v0.2-Q8_0.gguf",
+      "tokyotech-llm/Qwen3-Swallow-8B-SFT-v0.2", "496cd5558fef4af1d426e96327d7a74681063280"), 8709519968,
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
+  ...thinkingAndNot("hf-qwen3-swallow-8b-cpt", "Science Tokyo Qwen3 Swallow 8B CPT",
+    ggufOf("tatsuyaaaaaaa/Qwen3-Swallow-8B-CPT-v0.2-gguf", "b7783aa6ea2fd09d5f8994634475c918e10d1bd9", "Qwen3-Swallow-8B-CPT-v0.2_Q8_0.gguf",
+      "tokyotech-llm/Qwen3-Swallow-8B-CPT-v0.2", "95c7dae19b632152dcf058df2f7b1a69fc79e36f"), 8709519616,
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
+  ...thinkingAndNot("hf-medical-qwen3-swallow-8b", "Science Tokyo Medical Qwen3 Swallow 8B",
+    { hf: hf("tokyotech-llm/Medical-Qwen3-Swallow-8B", "f9a3d4dc38270d39196a8c5b5e14f56088fd0876") }, 16381525680,
+    "fetches 16.4 GB → int8 9.2 GB", { generation: thinking }),
   { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Alibaba Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
     ...ggufOf("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 4280405600,

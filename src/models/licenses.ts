@@ -163,6 +163,10 @@ export const LICENSES: Record<string, string> = {
   // T.203 (T.136's fourth stage): Qwen3 and DeepSeek-R1 (the card's license is the original's)
   "unsloth/Qwen3-0.6B-GGUF": APACHE, "unsloth/Qwen3-1.7B-GGUF": APACHE, "Qwen/Qwen3-4B-GGUF": APACHE,
   "Qwen/Qwen3-8B-GGUF": APACHE, "mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf": APACHE,
+  // T.606: the cards and the GGUFs' metadata, apache-2.0
+  "tokyotech-llm/Qwen3-Swallow-8B-SFT-v0.2": APACHE, "mmnga-o/Qwen3-Swallow-8B-SFT-v0.2-gguf": APACHE,
+  "tokyotech-llm/Qwen3-Swallow-8B-CPT-v0.2": APACHE, "tatsuyaaaaaaa/Qwen3-Swallow-8B-CPT-v0.2-gguf": APACHE,
+  "tokyotech-llm/Medical-Qwen3-Swallow-8B": APACHE,
   "unsloth/Qwen3-4B-Instruct-2507-GGUF": APACHE, "unsloth/Qwen3-4B-Thinking-2507-GGUF": APACHE,
   "mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-GGUF": MIT,
   // T.235: both cards say apache-2.0. Their NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from Qwen3-1.7B,
