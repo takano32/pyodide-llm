@@ -1364,7 +1364,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CI を回した。訳: 10.9 GB の塊のモデルの変換と書かせ・GGUF と原本の比べは手元で見られない（7B 以上は手元で回さない）。
 - レビュー（Sonnet low、2026-11-02）: 直すべきものなし。直したほうがよいもの 3 つ: (1)・(2) 状態と本番の確かめはデプロイの後に書く（閉じる回に書く）、(3) `STRICT` の `hf-abeja-` は足したのでなくもとから当たると書く（直した）。
 - **本番**（デプロイ 41479976554、`models.yml` 41482294262、Chromium）: すぐ答える形は準備完了 336.4 秒・2.2 tok/s、考える形は 195.2 秒・2.2 tok/s（4 本）。
-#### T.610.5 llm-jp-3.1 13B instruct4（mmnga の Q4_K_M を塊のまま） — 状態: 進行中（2026-11-02、Opus medium）
+#### T.610.5 llm-jp-3.1 13B instruct4（mmnga の Q4_K_M を塊のまま） — 状態: 完了（2026-11-02、Opus medium）
 - **したこと**: すぐ答える形の 1 項目を `hf-japanese.ts` の ABEJA の 14B の後に（hf-llm-jp-3.1-13b-instruct4）。llm-jp-3.1 1.8B instruct4 の上の段（Llama の形、40 層、どの head も自分の鍵と値を持つ MHA、Apache-2.0、カードの言語は en と ja: note は「日本語 / English」）。options・書式・標本抽出は 1.8B と同じ `llmJp`・`LLM_JP_INSTRUCT`・`sampled(1.1)`。mmnga @ 7809b3c67450cc2f7dadf0f4fdc8bc56debc96bb の Q4_K_M（8,346,102,464 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で、`loaded` は 10,181,317,676（Q4_K のまま残るのは埋め込み・q・k・o・w1・w3、v と w2 は半分の層が Q6_K で束ごと int8、分類器も Q6_K で int8）。作り手の表は家族の行（llm-jp-3・llm-jp-4、名前の頭が作り手）で足りるので足していない。
 - **取りまとめ役の決め（訳）**: はじめ IQ4_XS を採り（`tests/quant_sizes.py` で分類器のほかの行列が全部 IQ4_XS のまま残り 7,586,542,636 バイト、Q4_K_M は 10,181,317,676。MHA で鍵と値が大きいのでメモリの小さいほうを: 台帳の T.610 の見込みも IQ4_XS）、書かせて遅かったので Q4_K_M に替えた。IQ4_XS は答えのステップに約 2.65 秒/トークン（run 41485078906: 258 トークンを 769 秒、短い英語の答え 7 トークンに 104 秒）で、Q4_K の 14B 級（T.610.4 の約 1.45 秒/トークン、7 トークンに 36 秒）の倍近い。Q4_K_M でも文脈 4096 の全部は約 14.2 GiB（10.18 GB + T.610 の表の後ろ 4.68 GiB）で 16 GiB に入る。速さは Q4_K_M の書かせで確かめる。
 - **IQ4_XS の書かせ（run 41485078906、5 問 × greedy と種 1、1500 トークンまで）**: 止まり 10/10、くり返し・`<unk>` は 0、日本語の問いに日本語で 3/3。greedy は富士山 3,776 m・東京・408 とも正しい。種 1 は「京都」と「816」（17 × 2 を先に掛けた）を書いた（引きの 1 つ: 温度 0.7）。
@@ -1376,6 +1376,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **頭のトークン（IQ4_XS、run 41485078613、`start_check.ts` の素の文 1500 トークン）**: なし 11.047、`<s>`（1）10.871（−1.60%）、`</s>`（2）11.025（−0.21%）。1.8B と同じ `<s>` のままにする。CPU の 4 本で 10,921 秒。
 - **道具の直し**: 最初の run 41485077511 は `gguf_check.py` が IQ4_XS を読めずに落ちた（型の名前の並べ替えで）。読める型に、変換器の `convert/superblocks.py` の読み手（`tests/fork_readers.py` が元の C と突き合わせているもの）で `SUPERBLOCKS` の型を足した。読みを誤れば相対は 1 の桁なので、照合に使える。
 - **レビュー（Sonnet low、2026-11-02）**: 直すべきものは無し。あるとよい点は 3 つ: (1) 14.2 GiB を `footprint()` と突き合わせる、(2) `gguf_check.py` の途中の import を上へ、(3) 持ち主の端末の一覧に 1 行。取りまとめ役の決め（訳）: (1) の 4.68 GiB は T.610 の表（`footprint()` から出した文脈 4096 の後ろ）の数で、項目の `loaded` を足しただけなのでそのまま。(2) は `SUPERBLOCKS` を `WIDEN` の後ろで足すために置いた所で、読む順の意味があるのでそのまま。(3) は 13B が 64 ビットのメモリの PC だけの項目（desktop only）で、Android の一覧には当たらないので足さない。
+- **本番**（デプロイ run 41526065968、`models.yml` run 41528201165、Chromium）: 準備完了 204.6 秒、256 トークンを 1.6 tok/s（4 本）。
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。
