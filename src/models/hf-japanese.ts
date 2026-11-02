@@ -2,7 +2,7 @@
 import {
   ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
-  TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp, sarashina,
+  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled } from "./sampling.ts";
 import { ggufOf, hf } from "./builders.ts";
@@ -407,6 +407,15 @@ export const HF_JAPANESE: Entry[] = [
       "shisa-ai/shisa-v2.1-qwen3-8b", "0b0fe7c76dac910510ccd04fc807fdbdbc2fc16e"), download: 8709519392,
     conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START,
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.610.2: Shisa V2.1's 14B, Phi-4 made into a Llama (its int8 passes the 16 GiB a page gets: T.610). mradermacher's
+  // Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to the original
+  // within 1e-3. Its format by hand, as the converter reads it but with the prompt trimmed (UNPHI4)
+  { group: "hf", id: "hf-shisa-v2.1-unphi4-14b", name: "Shisa V2.1 unphi4 14B", note: "answers instructions · 日本語 / English · 4-bit weights · fetches 8.9 GB (GGUF), kept mostly as it is: 10.7 GB",
+    ...ggufOf("mradermacher/shisa-v2.1-unphi4-14b-GGUF", "3f3044899c094d10d71e4a2c51c85c77cd330633", "shisa-v2.1-unphi4-14b.Q4_K_M.gguf",
+      "shisa-ai/shisa-v2.1-unphi4-14b", "fb2ae1891b6296fc2ecb4c2399912ef2caed4719"), download: 8890306688,
+    conversion: { dtype: "int8", blocks: true }, loaded: 10748285996, rebuilt: true, options: UNPHI4, template: UNPHI4_AFTER_START,
+    generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-cat-thinking-8b", name: "CyberAgent CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB",
     ...ggufOf("mmnga-o/CAT-Thinking-8B-gguf", "d1747e658749aa7a67858914f0a60a2364172c2b", "CAT-Thinking-8B-Q8_0.gguf",

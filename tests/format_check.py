@@ -62,7 +62,10 @@ SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct",
 # "H", "elloworld", Japanese is dropped) for a tokenizer_class LlamaTokenizerFast whose tokenizer.json is byte-level
 # (Llama 3's vocabulary under DeepSeek's names): the real template's text through the tokenizers library on
 # tokenizer.json itself, which is what a LlamaTokenizerFast was when the model came out
-TOKENIZERS = {"hf-deepseek-r1-llama-8b"}
+# T.610.2: also where the tokenizer_class is GPT2Tokenizer and transformers (5.16.1) builds it out of the vocabulary and the
+# merges with GPT-2's own split, not tokenizer.json's (Phi-4's, as tiktoken's cl100k): "\n\n" before a letter is then two
+# pieces where tokenizer.json, and the page, has one
+TOKENIZERS = {"hf-deepseek-r1-llama-8b", "hf-shisa-v2.1-unphi4-14b"}
 # T.145: the differences known, each with what it takes out of the comparison (the rest still counts, so a new break
 # in these models shows: two of them were 0/9 whatever else went wrong). One that no prompt needs any more is an error
 # too, to be taken out of here.
@@ -70,6 +73,9 @@ KNOWN = {
     # the real tokenizer.json puts no dummy space before the first piece ("A"), the page does ("▁A"): T.131, refused
     "hf-rakutenai-2.0-mini-instruct": {"why": "no dummy space before the first piece (T.131)", "first_piece": True},
     # the page asks for the answer's channel at the end of the format (T.132): the real text with it is the page's
+    # T.610.2: the real tokenizer's special tokens strip the spaces beside them (lstrip, rstrip); the list's format trims
+    # the prompt, which leaves only the spaces beside a special token typed in it, kept by the page
+    "hf-shisa-v2.1-unphi4-14b": {"why": "spaces beside a special token typed in the prompt (T.610.2)", "unstripped": True},
     "hf-llm-jp-4-8b-instruct": {"why": "the page ends with <|channel|>final<|message|> (T.132)",
                                 "text": lambda text, prompt: text + "<|channel|>final<|message|>"},
     # the list's own ChatML has no system turn; the real template writes its default one
@@ -210,10 +216,16 @@ def sentencepiece_ids(model_file, text):
     return ids + (model.encode(text[at:]) if at < len(text) else [])
 
 
-def tokenizers_ids(tokenizer_file, text):
-    """text as the tokenizers library reads it with tokenizer.json alone (nothing added: the template wrote the BOS)"""
+def tokenizers_ids(tokenizer_file, text, strip=True):
+    """text as the tokenizers library reads it with tokenizer.json alone (nothing added: the template wrote the BOS);
+    strip=False: its added tokens strip no spaces beside them, as the page's tokenizer (T.610.2)"""
     import tokenizers
-    return tokenizers.Tokenizer.from_file(str(tokenizer_file)).encode(text, add_special_tokens=False).ids
+    if strip:
+        return tokenizers.Tokenizer.from_file(str(tokenizer_file)).encode(text, add_special_tokens=False).ids
+    read = json.loads(Path(tokenizer_file).read_text())
+    for token in read["added_tokens"]:
+        token["lstrip"] = token["rstrip"] = False
+    return tokenizers.Tokenizer.from_str(json.dumps(read)).encode(text, add_special_tokens=False).ids
 
 
 def filled(template, prompt):
@@ -285,6 +297,8 @@ def main():
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
+                explained += 1
+            elif known.get("unstripped") and matches(tokenizers_ids(folder / "tokenizer.json", text, strip=False)):
                 explained += 1
             elif known.get("first_piece") and first_piece(reference.convert_ids_to_tokens(page[1:]),
                                                           reference.convert_ids_to_tokens(real)):

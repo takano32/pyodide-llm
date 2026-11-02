@@ -119,6 +119,11 @@ export const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>
 // is the format's own first token, <|im_start|> (151644), and the formats begin after it (as Qwen3.5's, T.236): the page
 // sends the very IDs the real template makes. The answer stops at <|im_end|>, at <|endoftext|> and at the mark of a new turn
 export const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] };
+// T.610.2: Phi-4's ChatML (Shisa V2.1 unphi4 14B), <|im_sep|> after the role. BOS the template's first token, <|im_start|>,
+// as the converter makes it, and its stops (<|endoftext|>, <|im_end|>); the prompt trimmed, since the real tokenizer's
+// special tokens strip the spaces beside them (lstrip, rstrip), which the page's tokenizer does not
+export const UNPHI4 = { bos: 100264, stop_tokens: [100257, 100265] };
+export const UNPHI4_AFTER_START = "user<|im_sep|>{prompt:trim}<|im_end|><|im_start|>assistant<|im_sep|>";
 export const QWEN3_THINKING_AFTER_START = CHATML_AFTER_START;
 export const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</think>\n\n`;
 // T.236: Qwen3.5's chat_template calls a macro (render_content, for the pictures of a message), which the converter's

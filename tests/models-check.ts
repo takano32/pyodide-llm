@@ -112,7 +112,7 @@ assert.match(memoryWarning(largest, 4), /needs about 7,500 MB of memory, and thi
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
 assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
-  ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-qwen3-14b-thinking", "hf-qwen3-14b"],
+  ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-shisa-v2.1-unphi4-14b", "hf-qwen3-14b-thinking", "hf-qwen3-14b"],
   "rebuilt is for a GGUF no check can hold to its original");
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
@@ -145,11 +145,11 @@ assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8),
     assert.equal(memoryWarning(entry, undefined), "");
   }
   assert.ok(thinks.template.endsWith("<think>\n") && answers.template === `${thinks.template}\n</think>\n\n`, "a Qwen3.5's two formats, no system turn");
-  assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", thinks.id, answers.id, "hf-qwen3-14b-thinking", "hf-qwen3-14b"], "the entries whose blocks are kept");
+  assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", thinks.id, answers.id, "hf-shisa-v2.1-unphi4-14b", "hf-qwen3-14b-thinking", "hf-qwen3-14b"], "the entries whose blocks are kept");
   // loaded: read before the note, of an entry that says it, and nothing of any other entry changed by it: each still
   // says its size by its file or by its note's words
   // (T.333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
-  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-qwen3-14b-thinking", "hf-qwen3-14b", thinks.id, answers.id].sort());
+  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", thinks.id, answers.id].sort());
   for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);
 }
 // T.333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the
