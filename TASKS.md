@@ -1353,7 +1353,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CI を回した。訳: 10.8 GB の塊のモデルの変換と書かせは手元で見られない（7B 以上は手元で回さない）。
 - レビュー（Sonnet low、2026-11-02）: 項目の欄・一覧の並び・記録の数はログと合う。should 2 つ: (1) `format_check.py` の `STRICT` に無い（BOS が 1 つ多くても通る）→ 足して回し 9/9・`--hf` 9/9 で完全に同じ。足したまま。(2) 状態と本番の確かめはデプロイの後に書く。
 - **本番**（デプロイ 41438809387、`models.yml` 41439860601、Chromium）: 準備完了 140.1 秒・1.2 tok/s（4 本）。
-#### T.610.4 ABEJA Qwen3 14B Agentic 256k v0.1（mmnga-o の Q4_K_M を塊のまま） — 状態: 進行中（2026-11-02、Opus medium）
+#### T.610.4 ABEJA Qwen3 14B Agentic 256k v0.1（mmnga-o の Q4_K_M を塊のまま） — 状態: 完了（2026-11-02、Opus medium）
 - **したこと**: Qwen3 14B と同じ 2 つの形（考える形・すぐ答える形）を `thinkingAndNot()` で `hf-japanese.ts` の CyberAgent の 14B の後に（hf-abeja-qwen3-14b-agentic-thinking・hf-abeja-qwen3-14b-agentic）。Qwen3-14B-Base を ABEJA がエージェント向けに続けて学ばせたもの（Qwen3 の 40 層・鍵と値の head 8、Apache-2.0、カードの言語は ja だけ: note は「日本語」）。mmnga-o @ 4bda31b7b9c3c7b170e06d98fcff28dd16d8a8dc の Q4_K_M（9,001,753,696 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で。`tests/quant_sizes.py`: 塊のまま 10,869,609,516 バイト（Qwen3 14B と同じ、`loaded`）。書式は Qwen3 のもの（`enable_thinking` も同じ）なので、options と書式は Qwen3 14B の項目と同じ `QWEN3_FROM_IM_START`・`QWEN3_THINKING_AFTER_START`・`QWEN3_AT_ONCE_AFTER_START`（BOS は start_check で確かめる）。標本抽出はカードが言う Qwen3 の値で、Qwen3 14B の項目と同じ既定。
 - **取りまとめ役の決め（訳）**: config.json の RoPE は yarn（factor 8、元の文脈 32768: 256k のため）。このモデルは yarn をかけて学んでいるので、Bonsai のように素の RoPE にはせず config のまま（transformers と同じ）。kishida の imatrix の Q4_K_M でなく、ダウンロードの多い mmnga-o のふつうの Q4_K_M を採った。
 - **確かめ**: `format_check.py` は 2 つとも 9/9、`--hf` も 9/9（9 つとも本物の ID と同じ。`STRICT` の接頭辞 `hf-abeja-` は T.603 の ABEJA Qwen2.5 7B のものがもとから当たる）。`models-check`・`npm run types`・`worker-conduct-check` は通る。
@@ -1363,6 +1363,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **考える形の答え（`answers.ts`、run 41440194669、同じ 5 問 × greedy と種 1、1500 トークンまで）**: 止まり 8/10（greedy の「流行り」は答えの途中で 1500 に届き、種 1 の 17 × 24 は考えが 1500 トークンで閉じなかった）、考えを閉じたのは 9/10（186〜886 トークン）、くり返し・`<unk>` は 0。**考えは日本語の問いでも英語で書き**（Qwen3 の考える形と同じ）、`</think>` の後の答えは日本語の問いに日本語で（全体のかなは英語の考えのぶん 0〜23% で、answers.ts の「日本語で答えた」は 1/3 と数える。答えの部分を読むと閉じた 5 つとも日本語）、英語の問いに英語で。富士山 3,776 m・東京・408 は閉じた答えのどれも正しい（種 1 の富士山の「東京都・山梨県・静岡県の県境」はモデル自身の誤り）。速さは約 0.68 tok/s（965 トークンを 1414 秒）。
 - CI を回した。訳: 10.9 GB の塊のモデルの変換と書かせ・GGUF と原本の比べは手元で見られない（7B 以上は手元で回さない）。
 - レビュー（Sonnet low、2026-11-02）: 直すべきものなし。直したほうがよいもの 3 つ: (1)・(2) 状態と本番の確かめはデプロイの後に書く（閉じる回に書く）、(3) `STRICT` の `hf-abeja-` は足したのでなくもとから当たると書く（直した）。
+- **本番**（デプロイ 41479976554、`models.yml` 41482294262、Chromium）: すぐ答える形は準備完了 336.4 秒・2.2 tok/s、考える形は 195.2 秒・2.2 tok/s（4 本）。
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。
