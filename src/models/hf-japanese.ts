@@ -1,11 +1,11 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
   ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
-  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
+  QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled, thinking } from "./sampling.ts";
-import { ggufOf, hf } from "./builders.ts";
+import { ggufOf, hf, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
 export const HF_JAPANESE: Entry[] = [
@@ -294,6 +294,16 @@ export const HF_JAPANESE: Entry[] = [
       "cyberagent/DeepSeek-R1-Distill-Qwen-14B-Japanese", "cc1ebcc1e37521c3f4f69145ce922ca8f01e4cd0"), download: 8988110464,
     conversion: { dtype: "int8", blocks: true }, loaded: 10801599532, rebuilt: true, options: {}, generation: thinking,
     prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
+  // T.610.4: ABEJA's Qwen3 14B trained further for agents (a context of 256k by its config's yarn, kept as it says), the
+  // two forms of Qwen3 14B's (its template is Qwen3's, enable_thinking and all) with its options and formats; its card
+  // says ja alone. mmnga-o's Q4_K_M with llama.cpp's blocks kept as they are; rebuilt as Qwen3 14B's
+  ...thinkingAndNot("hf-abeja-qwen3-14b-agentic", "ABEJA Qwen3 14B Agentic 256k v0.1",
+    ggufOf("mmnga-o/ABEJA-Qwen3-14B-Agentic-256k-v0.1-gguf", "4bda31b7b9c3c7b170e06d98fcff28dd16d8a8dc",
+      "ABEJA-Qwen3-14B-Agentic-256k-v0.1-Q4_K_M.gguf",
+      "abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1", "c18c202ab2deefede0e50eabb8f3ede832eb9cdb"), 9001753696,
+    "4-bit weights · fetches 9.0 GB (GGUF), kept mostly as it is: 10.9 GB",
+    { languages: "日本語", options: QWEN3_FROM_IM_START, conversion: { dtype: "int8", blocks: true }, loaded: 10869609516, rebuilt: true },
+    { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   { group: "hf", id: "hf-deepseek-r1-qwen-1.5b-multilingual", name: "Lightblue DeepSeek-R1 Distill Qwen 1.5B Multilingual",
     note: "thinks before it answers · 日本語 / English and 36 more languages · fetches 1.9 GB (GGUF) → int8 2.0 GB",
     ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual-GGUF", "06eaa38aae801e83d2887cb2d06d4f84e8716f0e", "DeepSeek-R1-Distill-Qwen-1.5B-Multilingual.Q8_0.gguf",
