@@ -141,7 +141,7 @@
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
 - T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
 - T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 候補
-- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 未着手
+- T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 進行中
 - T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 未着手
 - T.612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 未着手
 - T.613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 未着手
@@ -1302,7 +1302,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CyberAgent open-calm（gpt_neox、bin だけ、CC-BY-SA、base だけ、7B は likes 205）: 2023 年の GGUF は `attn_qkv` が HF の並びのおそれ（T.306・T.517 と同じ）。
 - tiny-lm-chat（bin だけ 0.06 GB）: 変換すればサイトでいちばん小さいチャットのモデルになる。サイトのモデルを足すかは持ち主。
 
-### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 未着手（持ち主が (B) に決めた、2026-11-01。前の状態: 調べは済み、持ち主の判断待ち、2026-10-30、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小〜中）
+### T.610 [調査][モデル] 13B〜14B を 16 GiB に入れられるか（Qwen3-14B ほか） — 状態: 進行中（2026-11-02、Opus medium: 子タスクに分けた。前の状態: 未着手、持ち主が (B) に決めた、2026-11-01。前の状態: 調べは済み、持ち主の判断待ち、2026-10-30、Opus medium。前の状態: 未着手、2026-10-30、T.591 から。規模 小〜中）
 - **持ち主の決め（2026-11-01、選択肢で「塊の GGUF のまま持つ（勧め）」）**: (B)。14B 級は K 量子化の GGUF を塊のまま持つ（Saluki の形: `blocks: true`・`loaded`・`rebuilt`）。どのモデルを足すかは 1 つずつ子タスクに。
 - **結果（`footprint()` で数えた。config は各原本の main、文脈は 4096（stockmark は 2048）、共有メモリ・relaxed・float16 の KV。手で回した `.tmp/t610.mjs`）**:
 
@@ -1323,6 +1323,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - MHA の 13B（int8 では越える見込み）: llm-jp-3.1-13b-instruct4（mmnga の IQ4_XS 7.43 GB @ 7809b3c6… なら塊で入る）・stockmark-13b(-instruct)（Q8_0 14.03 GB、文脈 2048）・Swallow-13b-instruct・ELYZA-13b-fast-instruct・sarashina2-13b。塊で入れるなら Saluki の形（`blocks: true`・`loaded`・`rebuilt`）。
 - calm3-22b-chat（likes 85）は Q4_K_M の塊（grapevine-AI）なら入るかもしれない: 同じ回に `footprint()` だけ出す。
 
+#### T.610.1 Qwen3-14B（Qwen の Q4_K_M を塊のまま） — 状態: 進行中（2026-11-02、Opus medium）
+- **子タスクの分け方（取りまとめ役の決め）**: 1 つのモデルを 1 つの子タスクに、勧めの順（GQA の 14B から）: T.610.1 Qwen3-14B、続けて shisa-v2.1-unphi4-14b・DeepSeek-R1-Distill-Qwen-14B-Japanese・ABEJA-Qwen3-14B・llm-jp-3.1-13b-instruct4（IQ4_XS）を取りかかる時に番号を採る。
+- **したこと**: 考える形とすぐ答える形の 2 項目を `hf-families.ts` の Qwen3 8B の後に（hf-qwen3-14b）。Qwen の Q4_K_M（9,001,752,960 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で。BOS と書式は 8B と同じ `<|im_start|>` から（start_check で確かめる）、標本抽出は thinkingAndNot の既定（カードと同じ）。`tests/quant_sizes.py hf-qwen3-14b Qwen3-14B-Q4_K_M.gguf`: 塊のまま 10,869,609,516 バイト（`loaded`）、Q4_K のまま残るのは埋め込み・q・k・o・w1・w3、v と w2 は半分の層が Q6_K なので束ごと int8 に、分類器も Q6_K で int8。int8 なら 16,615,567,388 で、上限を越える。
+- **確かめ**: `models-check`・`npm run types` は通る。`format_check.py` は 2 つとも 9/9。
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。

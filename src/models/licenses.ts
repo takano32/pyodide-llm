@@ -163,6 +163,8 @@ export const LICENSES: Record<string, string> = {
   // T.203 (T.136's fourth stage): Qwen3 and DeepSeek-R1 (the card's license is the original's)
   "unsloth/Qwen3-0.6B-GGUF": APACHE, "unsloth/Qwen3-1.7B-GGUF": APACHE, "Qwen/Qwen3-4B-GGUF": APACHE,
   "Qwen/Qwen3-8B-GGUF": APACHE, "mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf": APACHE,
+  // T.610.1
+  "Qwen/Qwen3-14B": APACHE, "Qwen/Qwen3-14B-GGUF": APACHE,
   // T.606: the cards and the GGUFs' metadata, apache-2.0
   "tokyotech-llm/Qwen3-Swallow-8B-SFT-v0.2": APACHE, "mmnga-o/Qwen3-Swallow-8B-SFT-v0.2-gguf": APACHE,
   "tokyotech-llm/Qwen3-Swallow-8B-CPT-v0.2": APACHE, "tatsuyaaaaaaa/Qwen3-Swallow-8B-CPT-v0.2-gguf": APACHE,

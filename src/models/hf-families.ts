@@ -21,6 +21,15 @@ export const HF_FAMILIES: Entry[] = [
       "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218"), 8709518112,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB",
     { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
+  // T.610.1: the 14B, whose int8 passes the 16 GiB a page gets (T.610): Alibaba's own Q4_K_M with llama.cpp's blocks kept
+  // as they are (as Underdog Saluki 27B's), the stacks with a layer of Q6_K widened to int8. rebuilt: four bits are not
+  // held to the original within 1e-3. Its BOS and format as the 8B's
+  ...thinkingAndNot("hf-qwen3-14b", "Alibaba Qwen3 14B",
+    ggufOf("Qwen/Qwen3-14B-GGUF", "530227a7d994db8eca5ab5ced2fb692b614357fd", "Qwen3-14B-Q4_K_M.gguf",
+      "Qwen/Qwen3-14B", "40c069824f4251a91eefaf281ebe4c544efd3e18"), 9001752960,
+    "4-bit weights · fetches 9.0 GB (GGUF), kept mostly as it is: 10.9 GB",
+    { options: QWEN3_FROM_IM_START, conversion: { dtype: "int8", blocks: true }, loaded: 10869609516, rebuilt: true },
+    { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   // Qwen3 Swallow's card gives one sampling, the thinking one, for both
   ...thinkingAndNot("hf-qwen3-swallow-8b", "Science Tokyo Qwen3 Swallow 8B RL",
     ggufOf("mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf", "3fc755c6ab3780ebad6671130fc1b630bbd1575b", "Qwen3-Swallow-8B-RL-v0.2-Q8_0.gguf",
