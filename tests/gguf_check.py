@@ -155,6 +155,13 @@ def widen_ptq1_0(raw):
 WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, widen_q5_0),
          Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0),
          PTQ1_0: (128, 28, widen_ptq1_0)}
+# T.610.5: the other super-blocks of 256 (the i-quants, Q2_K ...) by the converter's readers, which
+# tests/fork_readers.py holds to the C they were taken from: a reader that read them wrong would put a tensor in the
+# order of 1 from the original, so they measure a GGUF the page keeps in its blocks (llm-jp-3.1 13B's IQ4_XS)
+from convert.superblocks import SUPERBLOCKS  # noqa: E402
+for _name, (_ggml, _block, _read) in SUPERBLOCKS.items():
+    if _ggml not in WIDEN:
+        WIDEN[_ggml], BYTES[_ggml], TYPE_NAMES[_ggml] = (256, _block, _read), _block / 256, _name
 
 
 class Reader:
