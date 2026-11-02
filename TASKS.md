@@ -1364,6 +1364,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CI を回した。訳: 10.9 GB の塊のモデルの変換と書かせ・GGUF と原本の比べは手元で見られない（7B 以上は手元で回さない）。
 - レビュー（Sonnet low、2026-11-02）: 直すべきものなし。直したほうがよいもの 3 つ: (1)・(2) 状態と本番の確かめはデプロイの後に書く（閉じる回に書く）、(3) `STRICT` の `hf-abeja-` は足したのでなくもとから当たると書く（直した）。
 - **本番**（デプロイ 41479976554、`models.yml` 41482294262、Chromium）: すぐ答える形は準備完了 336.4 秒・2.2 tok/s、考える形は 195.2 秒・2.2 tok/s（4 本）。
+#### T.610.5 llm-jp-3.1 13B instruct4（mmnga の IQ4_XS を塊のまま） — 状態: 進行中（2026-11-02、Opus medium）
+- **したこと**: すぐ答える形の 1 項目を `hf-japanese.ts` の ABEJA の 14B の後に（hf-llm-jp-3.1-13b-instruct4）。llm-jp-3.1 1.8B instruct4 の上の段（Llama の形、40 層、どの head も自分の鍵と値を持つ MHA、Apache-2.0、カードの言語は en と ja: note は「日本語 / English」）。options・書式・標本抽出は 1.8B と同じ `llmJp`・`LLM_JP_INSTRUCT`・`sampled(1.1)`。mmnga @ 7809b3c67450cc2f7dadf0f4fdc8bc56debc96bb の IQ4_XS（7,433,554,880 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で、`loaded` は 7,586,542,636。作り手の表は家族の行（llm-jp-3・llm-jp-4、名前の頭が作り手）で足りるので足していない。
+- **取りまとめ役の決め（訳）**: Q4_K_M でなく IQ4_XS。`tests/quant_sizes.py` で、IQ4_XS は分類器（Q6_K）のほかの行列が全部 IQ4_XS のまま残り 7,586,542,636 バイト、Q4_K_M は v と w2 の半分の層が Q6_K で束ごと int8 に広がり 10,181,317,676（Q4_K_S も同じ）。MHA で鍵と値が大きい（T.610 の表で後ろが 4.68 GiB）ので、メモリの小さいほうを採った。台帳の T.610 の見込みも IQ4_XS。
+- **確かめ**: `format_check.py` は 9/9（llm-jp の家族と同じく、カードがいつも渡す system の文を `SYSTEM` に足した: 足す前は 0/9 で、違いは 1 文目だけ）、`--hf` は 9/9（9 つとも本物の ID と同じ）。`models-check`・`npm run types`・`worker-conduct-check` は通る。
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。

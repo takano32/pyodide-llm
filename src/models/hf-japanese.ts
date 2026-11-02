@@ -304,6 +304,16 @@ export const HF_JAPANESE: Entry[] = [
     "4-bit weights · fetches 9.0 GB (GGUF), kept mostly as it is: 10.9 GB",
     { languages: "日本語", options: QWEN3_FROM_IM_START, conversion: { dtype: "int8", blocks: true }, loaded: 10869609516, rebuilt: true },
     { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
+  // T.610.5: llm-jp-3.1's 13B instruct4, the next step of the 1.8B's ladder (every head its own keys and values, MHA: its
+  // int8 passes the 16 GiB a page gets, T.610), with the 1.8B's options, format and sampling. mmnga's IQ4_XS with
+  // llama.cpp's blocks kept as they are (every matrix stays IQ4_XS, where the Q4_K_M widens half of v and w2 to int8:
+  // 7.6 GB to 10.2); rebuilt: four bits are not held to the original within 1e-3
+  { group: "hf", id: "hf-llm-jp-3.1-13b-instruct4", name: "llm-jp-3.1 13B instruct4",
+    note: "answers instructions · 日本語 / English · 4-bit weights · fetches 7.4 GB (GGUF), kept mostly as it is: 7.6 GB",
+    ...ggufOf("mmnga/llm-jp-3.1-13b-instruct4-gguf", "7809b3c67450cc2f7dadf0f4fdc8bc56debc96bb", "llm-jp-3.1-13b-instruct4-IQ4_XS.gguf",
+      "llm-jp/llm-jp-3.1-13b-instruct4", "da86a55d7a754d1a45bc2d860f8548841a84f42f"), download: 7433554880,
+    conversion: { dtype: "int8", blocks: true }, loaded: 7586542636, rebuilt: true, options: llmJp, generation: sampled(1.1),
+    template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-deepseek-r1-qwen-1.5b-multilingual", name: "Lightblue DeepSeek-R1 Distill Qwen 1.5B Multilingual",
     note: "thinks before it answers · 日本語 / English and 36 more languages · fetches 1.9 GB (GGUF) → int8 2.0 GB",
     ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-Multilingual-GGUF", "06eaa38aae801e83d2887cb2d06d4f84e8716f0e", "DeepSeek-R1-Distill-Qwen-1.5B-Multilingual.Q8_0.gguf",

@@ -126,6 +126,8 @@ export const LICENSES: Record<string, string> = {
   "abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1": APACHE, "mmnga/ABEJA-Qwen2.5-7b-Japanese-v0.1-gguf": APACHE,
   // T.610.4: Apache-2.0 by both cards
   "abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1": APACHE, "mmnga-o/ABEJA-Qwen3-14B-Agentic-256k-v0.1-gguf": APACHE,
+  // T.610.5: Apache-2.0 by both cards
+  "llm-jp/llm-jp-3.1-13b-instruct4": APACHE, "mmnga/llm-jp-3.1-13b-instruct4-gguf": APACHE,
   // T.602
   "SakanaAI/TinySwallow-1.5B": APACHE, "mmnga/TinySwallow-1.5B-gguf": APACHE,
   "SakanaAI/Llama-3-Karamaru-v1": LLAMA_3, "mradermacher/Llama-3-Karamaru-v1-GGUF": LLAMA_3,
