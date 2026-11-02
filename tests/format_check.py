@@ -115,9 +115,10 @@ KNOWN = {
 # T.333: and Gemma 4, the same: <bos>, then the turn
 # T.343: and Spark-X2.5: its template writes <｜start▁of▁sentence｜> first, the BOS the converter takes off
 # T.400: and sarashina2.2 and CAT-Translate, whose tokenizer puts no <s> in front and no dummy prefix: <|user|> first
+# T.610.3: and CyberAgent's DeepSeek-R1 Distill Qwen 14B Japanese, the same as the Lightblue 7B's (9/9 exactly)
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
           "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
-          "hf-gemma-4-", "hf-spark-x2.5-", "hf-spark-x2.6-", "hf-llama-3-youko-", "hf-llama-3-karamaru-", "hf-deepseek-r1-qwen-7b-japanese", "hf-deepseek-r1-qwen-1.5b-multilingual", "hf-abeja-", "hf-sarashina2.2-", "hf-cat-translate-",
+          "hf-gemma-4-", "hf-spark-x2.5-", "hf-spark-x2.6-", "hf-llama-3-youko-", "hf-llama-3-karamaru-", "hf-deepseek-r1-qwen-7b-japanese", "hf-deepseek-r1-qwen-1.5b-multilingual", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-", "hf-sarashina2.2-", "hf-cat-translate-",
           "hf-arrowcanaria-")
 # (T.604: not Lumi v2: its real template writes ChatML as plain text, with no BOS in front, and the page puts its BOS
 # <|startoftext|> before that text; start_check measured what the BOS does, in TASKS.md's T.604)
