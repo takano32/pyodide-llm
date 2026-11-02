@@ -1344,6 +1344,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - CI を回した。訳: GB 級のモデルの変換と書かせ、llama.cpp との比べは手元で見られない。
 - レビュー（Sonnet low、2026-11-02）: 直すものは 1 つ: `format_check.py` の `KNOWN` で、新しい行が llm-jp-4 の行のコメントとその行の間に入っていた（上に動かした）。記録の「llama.cpp と同じ文」は標高の値しか確かめていないという疑い: ログを読むと文は 3 行目まで同じで 4 行目から分かれるので、記録をそう直した。書式は変換器の BOS・止まり・書式と同じで問いの trim だけが違うこと、`unstripped` は tokenizer.json の ID と比べるので特殊トークンの隣の空白のほかは隠さないこと、`TOKENIZERS` の訳、`loaded`・note・並び・一覧・ライセンス・作り手の行は合っている。
 - **本番**（デプロイ 41413809821、`models.yml` 41415593288、Chromium）: 準備完了 191.6 秒・1.4 tok/s（4 本）。
+#### T.610.3 CyberAgent DeepSeek-R1 Distill Qwen 14B Japanese（mmnga の Q4_K_M を塊のまま） — 状態: 進行中（2026-11-02、Opus medium）
+- **したこと**: 考える形の 1 項目を `hf-japanese.ts` の Lightblue の 7B の後に（hf-deepseek-r1-qwen-14b-japanese）。Qwen2 の 48 層・鍵と値の head 8、MIT、カードの言語は ja だけ（note は「日本語」）。mmnga @ a8f469dc6c0da43dcb8fe8cc0d6702c7ea51733c の Q4_K_M（8,988,110,464 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で。`tests/quant_sizes.py`: 塊のまま 10,801,599,532 バイト（`loaded`）、Q4_K のまま残るのは埋め込み・q・k・o・w1・w3（v・w2・分類器は Q6_K が混ざり int8）。BOS（tokenizer_config の `<｜begin▁of▁sentence｜>`）と書式は DeepSeek の distill と同じく変換器が読む（options は空）。標本抽出は generation_config.json の 0.6・0.95（`thinking`）。
+- **確かめ**: `format_check.py` は 9/9、`--hf` も 9/9（9 つとも本物の ID と同じ）。`models-check`・`npm run types`・`worker-conduct-check` は通る。
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。

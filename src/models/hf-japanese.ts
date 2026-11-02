@@ -4,7 +4,7 @@ import {
   QWEN3_FROM_IM_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, llmJp, sarashina,
 } from "./formats.ts";
-import { greedy, sampled } from "./sampling.ts";
+import { greedy, sampled, thinking } from "./sampling.ts";
 import { ggufOf, hf } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
@@ -282,6 +282,17 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-7B-Japanese-GGUF", "5bf184bf1ef65f5ff18bc92aeb8e2305e76184b3", "DeepSeek-R1-Distill-Qwen-7B-Japanese.Q8_0.gguf",
       "lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese", "f5f497038d5da4221631058ff1e9b9563fe539d2"), download: 8098525856,
     conversion: {}, options: LIGHTBLUE_R1, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.1 },
+    prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
+  // T.610.3: CyberAgent's DeepSeek-R1 Distill Qwen 14B trained on Japanese (its int8 passes the 16 GiB a page gets:
+  // T.610). mmnga's Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to
+  // the original within 1e-3. The converter reads the BOS and the template itself (as DeepSeek's own distills, in
+  // hf-classics.ts); the sampling of its generation_config.json
+  { group: "hf", id: "hf-deepseek-r1-qwen-14b-japanese", name: "CyberAgent DeepSeek-R1 Distill Qwen 14B Japanese",
+    note: "thinks before it answers · 日本語 · 4-bit weights · fetches 9.0 GB (GGUF), kept mostly as it is: 10.8 GB",
+    ...ggufOf("mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf", "a8f469dc6c0da43dcb8fe8cc0d6702c7ea51733c",
+      "cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-Q4_K_M.gguf",
+      "cyberagent/DeepSeek-R1-Distill-Qwen-14B-Japanese", "cc1ebcc1e37521c3f4f69145ce922ca8f01e4cd0"), download: 8988110464,
+    conversion: { dtype: "int8", blocks: true }, loaded: 10801599532, rebuilt: true, options: {}, generation: thinking,
     prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-deepseek-r1-qwen-1.5b-multilingual", name: "Lightblue DeepSeek-R1 Distill Qwen 1.5B Multilingual",
     note: "thinks before it answers · 日本語 / English and 36 more languages · fetches 1.9 GB (GGUF) → int8 2.0 GB",

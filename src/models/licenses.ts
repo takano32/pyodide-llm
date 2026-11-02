@@ -167,6 +167,8 @@ export const LICENSES: Record<string, string> = {
   "Qwen/Qwen3-14B": APACHE, "Qwen/Qwen3-14B-GGUF": APACHE,
   // T.610.2
   "shisa-ai/shisa-v2.1-unphi4-14b": MIT, "mradermacher/shisa-v2.1-unphi4-14b-GGUF": MIT,
+  // T.610.3
+  "cyberagent/DeepSeek-R1-Distill-Qwen-14B-Japanese": MIT, "mmnga/cyberagent-DeepSeek-R1-Distill-Qwen-14B-Japanese-gguf": MIT,
   // T.606: the cards and the GGUFs' metadata, apache-2.0
   "tokyotech-llm/Qwen3-Swallow-8B-SFT-v0.2": APACHE, "mmnga-o/Qwen3-Swallow-8B-SFT-v0.2-gguf": APACHE,
   "tokyotech-llm/Qwen3-Swallow-8B-CPT-v0.2": APACHE, "tatsuyaaaaaaa/Qwen3-Swallow-8B-CPT-v0.2-gguf": APACHE,
