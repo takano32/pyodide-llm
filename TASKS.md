@@ -1303,7 +1303,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし（小さな直し 1 つ: tok/s の下限を長い答えの数に）。リビジョン・`download`（7,695,857,344）・ライセンス・書式と `bos: 1`（変換器任せ）・標本抽出・note・台帳の数はログと合う。
 - **本番**（デプロイ run 41628273215、`models.yml` run 41630089643、Chromium）: 準備完了 112.3 秒、256 トークンで 3.9 tok/s（4 本）。
 
-#### T.607.3 nitky Oumuamua 7B instruct v2（mradermacher の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+#### T.607.3 nitky Oumuamua 7B instruct v2（mradermacher の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
 - **したこと**: 1 項目を `hf-japanese.ts` の Vecteus の後に（hf-oumuamua-7b-instruct-v2）。Mistral 7B の派生 15 個を Swallow-MS の日本語の語彙（42,800）の上でマージしたもの（Apache-2.0、カードは ja・en）。mradermacher @ b5ba02aa55bd31d2365354b492500229535bb592 の Q8_0（7,790,108,960 バイト）、語彙と config は原本 @ 315cee7d10fd84a130ab0973942ff76bb1582c49 の tokenizer.json。chat template が無く、カードの Llama 2 のターン（カードが勧める system の文）を `OUMUAMUA` に、`format_check.py` の `CARDS` に 2 つ目の写し。
 - **取りまとめ役の決め（訳）**: `[/INST]` の後に空白を置かない。カードの文は空白を書くが、カードのコードは `apply_chat_template`（transformers の Llama の既定の書式: 空白なし）で、その空白は答えの最初の語片が持つ。標本抽出はカードのコードの温度 0.1（top-p なし）。作り手の名は HF の名「nitky」（ほかの名を言わない個人）。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（カードのコードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き）。`models-check`・`npm run types` は通る。
@@ -1313,6 +1313,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **取りまとめ役の決め（訳）**: 書式と標本抽出（温度 0.1）はそのまま（書かせて崩れなかった）。
 - CI を回した。訳: 8 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 - **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（`licenses.ts` の 2 行の字下げ: 直した）。書式（`[/INST]` の後に空白なし）はカードのコードの読みとして妥当、リビジョン・標本抽出・note・名前・台帳の数はログと合う。`download` とライセンスは取りまとめ役が HF の API で確かめた（7,790,108,960、両カード apache-2.0）。
+- **本番**（デプロイ run 41636236199、`models.yml` run 41638197553、Chromium）: 準備完了 96.8 秒、256 トークンで 3.4 tok/s（4 本）。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
