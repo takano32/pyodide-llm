@@ -370,6 +370,14 @@ export const HF_JAPANESE: Entry[] = [
       "DataPilot/ArrowPro-7B-KUJIRA", "755e478ac9404cdd551126e20ea055dfa42ddd1d"), download: 7695857376,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: ARROWPRO,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.607.2: LocalNovelLLM-project's Vecteus v1, a Mistral 7B made to write novels (merges and LoRA on Japanese and
+  // English, NSFW too by its card). Its tokenizer's template (USER: … ASSISTANT:) by the converter, with the BOS; the
+  // card samples as transformers' default (1.0, no top-p). mmnga's Q8_0 with the original's vocabulary
+  { group: "hf", id: "hf-vecteus-v1", name: "LocalNovelLLM-project Vecteus v1", note: "writes stories · 日本語 / English · fetches 7.7 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("mmnga/Vecteus-v1-gguf", "59df491bb68ce3bc6879c3b292942e4c57274d9b", "Vecteus-v1-Q8_0.gguf",
+      "Local-Novel-LLM-project/Vecteus-v1", "d3375ec5f7e149916e44cb0d47c8bda30b986f50", "tokenizer.model"), download: 7695857344,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 1.0, repetition_penalty: 1.0 },
+    prompt: "猫が主人公の短い物語を書いてください。", placeholder: ASK_JAPANESE },
   // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
   // mradermacher's Q8_0 GGUFs as the chat's
   { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",

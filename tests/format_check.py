@@ -57,7 +57,10 @@ SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人�
 # transformers 5.16.1: sarashina's split "挙げてください" and "next", CAT-Translate's spell everything a character at a time
 # although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T.144)
 SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct", "hf-sarashina2.2-3b-instruct",
-                 "hf-cat-translate-0.8b", "hf-cat-translate-1.4b", "hf-cat-translate-3.3b"}
+                 "hf-cat-translate-0.8b", "hf-cat-translate-1.4b", "hf-cat-translate-3.3b",
+                 # T.607.2: Vecteus v1's (a tokenizer.model alone, legacy LlamaTokenizer): transformers' puts no dummy
+                 # prefix ("USER" where the real sentencepiece writes "▁US", "ER")
+                 "hf-vecteus-v1"}
 # T.252: where transformers (5.16.1) builds a tokenizer of sentencepiece's kind (a Metaspace pre-tokenizer: "Hello world" is
 # "H", "elloworld", Japanese is dropped) for a tokenizer_class LlamaTokenizerFast whose tokenizer.json is byte-level
 # (Llama 3's vocabulary under DeepSeek's names): the real template's text through the tokenizers library on
