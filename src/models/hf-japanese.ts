@@ -490,6 +490,15 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START,
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.607.5: AXCXEPT's Qwen3-EZO-8B-beta, Qwen3 8B trained further for multi-turn chat (its card: MT-Bench 9.08, JMT-Bench
+  // 8.87). Its chat template is an older copy of Qwen3's (the same one turn), its generation_config.json Qwen3's thinking
+  // sampling: twice as Qwen3 8B is, with the 8B's BOS (<|im_start|>) and formats. mradermacher's Q8_0 with the
+  // original's vocabulary
+  ...thinkingAndNot("hf-qwen3-ezo-8b-beta", "AXCXEPT Qwen3 EZO 8B beta",
+    ggufOf("mradermacher/Qwen3-EZO-8B-beta-GGUF", "1867b17511f6bb9659fc7b6f585cae4a62bdcac7", "Qwen3-EZO-8B-beta.Q8_0.gguf",
+      "AXCXEPT/Qwen3-EZO-8B-beta", "c7458182662d2fa15da5e41a17427319e6f265f5"), 8709519008,
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB",
+    { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   // T.610.2: Shisa V2.1's 14B, Phi-4 made into a Llama (its int8 passes the 16 GiB a page gets: T.610). mradermacher's
   // Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to the original
   // within 1e-3. Its format by hand, as the converter reads it but with the prompt trimmed (UNPHI4)
