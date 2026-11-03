@@ -590,6 +590,15 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - レビュー（Sonnet low、2026-11-03）: must-fix なし。リビジョン・取得の大きさ・ライセンス・始まりと RoPE・試験の一覧・記録の数がログと合う。「日本語」は T.539 の線を越えて妥当。直した: 「它」の数え方を答えごとに。
 - **本番**（デプロイ run 41715188511、`models.yml` run 41717389287、Chromium）: 準備完了 42.5 秒、255 トークンを 11.5 tok/s（2 本: ランナーごとに CPU が違うので 4B の 7.6 tok/s とは比べない）。
 
+#### T.286.5 Prism ML Bonsai 27B（1-bit、作り手の Q1_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **調べ（GGUF の頭を Range で）**: prism-ml/Bonsai-27B-gguf @ f10afb355f104535e3e3e98cf7ab7795c72bd292 の `Bonsai-27B-Q1_0.gguf`（3,803,452,480 バイト）。`qwen35`（64 層、4 層ごとに全位置の attention、dim 5120、FFN 17408、q の head 24・鍵と値の head 4・head 256、linear の層は鍵の head 16・値の head 48・次元 128、畳み込み 4、RoPE は head の 64 だけ回し base 1e7、eps 1e-6、文脈 262144）。テンソル 851 のうち Q1_0 が 498・F32 が 353 で、ほかの型は無い（広げる型も塊の型も無い）。埋め込みと分類器も Q1_0（共有でない）。linear の層のゲートの小さな行列 `ssm_alpha`・`ssm_beta` も Q1_0（ページは float32 に広げて持つ）。`prism.hadamard.*` が無いので回した基底ではない（カードも「architecture unchanged」）。語彙は 248,320、前分割 `qwen35`、`add_bos_token` 偽。
+- **原本**: カードの `base_model` は Qwen/Qwen3.6-27B。prism-ml/Bonsai-27B-unpacked @ d619b27283ac02b4199ced97a89419529dc0bfac が同じ重みの float16（12 個の部品で約 54 GB、ゲートなし）と config.json（`qwen3_5`、`Qwen3_5ForConditionalGeneration`）・tokenizer.json・chat_template.jinja を持つ。書式は Qwen3.5 のもの（考える形が既定、`enable_thinking` 偽で空の考え）。だから語彙と config はこの原本から、`rebuilt` は付けない（`gguf_check.py tensors` を原本に当てられる: 1.7B〜8B と同じ）。
+- **ライセンス**: 両カードとも apache-2.0。NOTICE.txt は「copyright 2026-present Prism ML, Inc. … built from Qwen3.6-27B, Copyright 2026 Alibaba Cloud … Apache 2.0」と、Ternary Bonsai と同じ「Created using Bonsai by Prism ML.」の頼み。
+- **大きさの見込み**: Q1_0 の重み 26,869,760,000 個（ゲートの小さな行列 23,592,960 個は float32）、3 値のチェックポイントは約 7.24 GB（Ternary Bonsai 2 27B と同じ）で 64 ビットのメモリ。
+- **したこと**: 2 項目（考える形とすぐ答える形、hf-bonsai-27b-thinking・hf-bonsai-27b）を `hf-families.ts` の Ternary Bonsai 2 27B の後に、`thinkingAndNot()` で（`options: qwen35`、`weights: "ternary"`、書式は `QWEN35_THINKING`・`QWEN35_AT_ONCE`）。標本抽出は `sampling.ts` の `BONSAI_27B_SAMPLING`。ライセンスの 2 行。`models-check` に 27B の節（どの端末でも 3 値、7.2 GB、`rebuilt` でない、2 つの形が 1 つの変換を分け合う、options は qwen35）。
+- **取りまとめ役の決め（訳）**: (1) 1.7B〜8B の `binaryBonsai()` でなく Qwen3.5 の形（`thinkingAndNot()`）で組む: 書式と BOS が Qwen3.5 のもの。(2) 標本抽出: 考える形はカードの組（温度 0.7・top-p 0.95・top-k 20。カードは考える形の組だけを言う）、すぐ答える形は Bonsai 2 27B と同じ Qwen3.5 の組（0.7・0.8・top-k 20・presence 1.5）。(3) note の言語は既定の「日本語 / English」（カードは言語を言わず、base_model の Qwen3.6 は多言語）: CI の書かせで決め直す。(4) RoPE は config のとおり（yarn は無い: rope_compare は要らない）。(5) Q1_0 の広げのカーネルは作らない: CI の page-27b.ts の convert で Pyodide の中の変換の速さを測ってから決める。
+- **確かめ（手元）**: `format_check.py` は 2 項目とも 9/9、`--hf` も 9/9（9 つとも本物の ID そのもの）。`models-check`・`npm run types` は通る。pytest 3,326 件。
+
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
 - (a) AMD の Zen 3・4 では int16 の和の形が 1.31〜1.36 倍、arm64 では 0.60 倍、Zen 5 では今の形が 3 倍（T.231 のレビュー）: CPU で選ぶ仕組みが要る。(b) BitNet 流の表を引く形（見積もり 0.28 命令 / 重み、今は 0.34）。(c) スケールを float16 で持つ（27B で 0.44 GiB 減る）。どれも測るまで分からない。
 

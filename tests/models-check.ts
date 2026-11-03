@@ -118,6 +118,15 @@ assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
+// T.286.5: the 1-bit Bonsai 27B, kept ternary as well (its Q1_0 is a ternary's values with no zero), the same
+// 7.2 GB; its original holds the same weights (not rebuilt: gguf.yml's candidates hold the GGUF to it), and its two
+// forms share one conversion
+const binary27 = byId("hf-bonsai-27b");
+for (const deviceMemory of [undefined, 4, 8]) assert.equal(weightsFor(binary27, undefined, deviceMemory), "ternary");
+assert.equal(modelBytes(binary27), 7.2e9);
+assert.ok(!binary27.rebuilt && binary27.original === binary27.hf.vocabulary.repo && binary27.download === 3803452480);
+assert.deepEqual(byId("hf-bonsai-27b-thinking").shares, ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]);
+for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(byId(id).options, qwen35, id);
 // T.364.3: Underdog Saluki 27B, its GGUF's blocks kept as they are whatever is asked and whatever the device says
 // (conversion.blocks beside the dtype of the rows that are no blocks: ?bits= changes nothing of it, where a ternary
 // model is widened; as int8 it is past every browser's memory). What it takes is the entry's own word (loaded: the

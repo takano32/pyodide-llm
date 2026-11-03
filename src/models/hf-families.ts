@@ -6,7 +6,7 @@ import {
   QWEN3_THINKING_AFTER_START, SPARK26_THINKING, SPARK_AT_ONCE, SPARK_THINKING, granite, lfm2Old, qwen35, spark,
 } from "./formats.ts";
 import {
-  AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
+  AGENTS_A1_SAMPLING, BONSAI_27B_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.ts";
 import { binaryBonsai, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
@@ -184,6 +184,17 @@ export const HF_FAMILIES: Entry[] = [
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.2 GB",
     { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
+  // T.286.5: Prism ML's 1-bit Bonsai 27B, a Qwen3.6 27B (a Qwen3.5 in its form, as Bonsai 2's) with every weight a
+  // sign times a scale of its 128 (Q1_0, the embedding and the classifier too): 3.8 GB to fetch, kept ternary as the
+  // smaller 1-bit Bonsai are (7.24 GB, on a 64-bit memory). Not in a rotated basis (its GGUF says no prism.hadamard).
+  // The vocabulary, config.json and template are its -unpacked original's, the same weights in float16
+  // (tests/gguf_check.py tensors holds the GGUF to them). Its template is a Qwen3.5's: the two formats and the BOS of
+  // one (qwen35). The sampling is its card's (BONSAI_27B_SAMPLING)
+  ...thinkingAndNot("hf-bonsai-27b", "Prism ML Bonsai 27B",
+    ggufOf("prism-ml/Bonsai-27B-gguf", "f10afb355f104535e3e3e98cf7ab7795c72bd292", "Bonsai-27B-Q1_0.gguf",
+      "prism-ml/Bonsai-27B-unpacked", "d619b27283ac02b4199ced97a89419529dc0bfac"), 3803452480,
+    "1-bit weights · fetches 3.8 GB (GGUF) → ternary 7.2 GB",
+    { options: qwen35, weights: "ternary" }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
   // T.364.3: Conway Research's Underdog Saluki 27B, the same Qwen3.8 27B at 2.3 bits a weight: a GGUF of llama.cpp's
   // K- and i-quantized blocks, ten types of them, a type to a matrix or to a layer of one (T.361). Kept as the file
   // has them (conversion.blocks, T.363: 7.96 GB, where int8 would be 30 GB) and multiplied by kernels of their own, on
