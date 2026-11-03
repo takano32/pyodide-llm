@@ -80,9 +80,9 @@ export const HF_FAMILIES: Entry[] = [
   // Japanese, unlike the 1.7B
   binaryBonsai("4B", "78f2c2bacd0904ffaba24b4873ed975e5818354a", "b2529e9641629dce5e6be5fa44492bc249f1a58a", 572270624,
     "fetches 572 MB (GGUF) → ternary 1.1 GB", true),
-  // T.286.4: the 1-bit Bonsai 8B, a Qwen3 8B: it begins at <|im_start|> as the ternary 8B does
+  // T.286.4: the 1-bit Bonsai 8B, a Qwen3 8B: it begins at <|im_start|> as the ternary 8B does, and answers Japanese
   binaryBonsai("8B", "48516770dd04643643e9f9019a2a349cf26c5dbd", "376f381570d6115bc03f82adcfa4af0c7672ae54", 1158654496,
-    "fetches 1.2 GB (GGUF) → ternary 2.2 GB", false, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+    "fetches 1.2 GB (GGUF) → ternary 2.2 GB", true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T.236: Qwen3.5 0.8B, the first of the list with hybrid attention (T.229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
