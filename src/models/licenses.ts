@@ -205,6 +205,7 @@ export const LICENSES: Record<string, string> = {
   "prism-ml/Ternary-Bonsai-1.7B-gguf": APACHE, "prism-ml/Ternary-Bonsai-1.7B-unpacked": APACHE,
   // T.286.2: the 1-bit Bonsai, Apache-2.0 by both cards
   "prism-ml/Bonsai-1.7B-gguf": APACHE, "prism-ml/Bonsai-1.7B-unpacked": APACHE,
+  "prism-ml/Bonsai-4B-gguf": APACHE, "prism-ml/Bonsai-4B-unpacked": APACHE,
   // T.246: the same of the 4B's and the 8B's cards and NOTICE.txt ("built from Qwen3-4B", "from Qwen3-8B")
   "prism-ml/Ternary-Bonsai-4B-gguf": APACHE, "prism-ml/Ternary-Bonsai-4B-unpacked": APACHE,
   "prism-ml/Ternary-Bonsai-8B-gguf": APACHE, "prism-ml/Ternary-Bonsai-8B-unpacked": APACHE,

@@ -527,7 +527,7 @@ def test_only_the_three_ternary_bonsai_of_the_list_name_a_rope():
     in a rotated basis, which the choice did not cover), nor any other entry whose config.json scales its RoPE."""
     options = listed_options()
     # (T.286.2: and the 1-bit Bonsai 1.7B, the same family, the choice carried to it by the maintainer: TASKS.md)
-    plain = {*BONSAI_ENTRIES.values(), "hf-bonsai-1.7b"}
+    plain = {*BONSAI_ENTRIES.values(), "hf-bonsai-1.7b", "hf-bonsai-4b"}
     assert {name for name, said in options.items() if "rope_scaling" in said} == plain
     assert all(options[name]["rope_scaling"] == {} for name in plain)
     larger = [name for name in options if name.startswith("hf-ternary-bonsai-2-27b")]

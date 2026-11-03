@@ -76,6 +76,9 @@ export const HF_FAMILIES: Entry[] = [
   // weight, held as ternary
   binaryBonsai("1.7B", "210a9e99f79cb184909d49595906526eb2b3dd9a", "a7f720bd688d7563714f3118edd97b83d06f0615", 248302272,
     "fetches 248 MB (GGUF) → ternary 457 MB"),
+  // T.286.3: the 1-bit Bonsai 4B, the Qwen3 4B's shape as the ternary 4B (heads wider than dim / heads)
+  binaryBonsai("4B", "78f2c2bacd0904ffaba24b4873ed975e5818354a", "b2529e9641629dce5e6be5fa44492bc249f1a58a", 572270624,
+    "fetches 572 MB (GGUF) → ternary 1.1 GB"),
   // T.236: Qwen3.5 0.8B, the first of the list with hybrid attention (T.229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which

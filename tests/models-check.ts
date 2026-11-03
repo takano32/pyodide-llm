@@ -211,11 +211,11 @@ for (const [size, tokens] of [["1.7b", QWEN3_OWN_BOS], ["4b", QWEN3_OWN_BOS], ["
   assert.deepEqual(byId(`hf-ternary-bonsai-${size}`).options, { ...tokens, rope_scaling: {} }, `Ternary Bonsai ${size}`);
 }
 assert.deepEqual(MODELS.filter((entry) => entry.options && "rope_scaling" in entry.options).map(({ id }) => id).sort(),
-  ["hf-bonsai-1.7b", "hf-ternary-bonsai-1.7b", "hf-ternary-bonsai-4b", "hf-ternary-bonsai-8b"],
+  ["hf-bonsai-1.7b", "hf-bonsai-4b", "hf-ternary-bonsai-1.7b", "hf-ternary-bonsai-4b", "hf-ternary-bonsai-8b"],
   "an entry names a RoPE of its own that the owner did not choose");
 // (T.286.2: the 1-bit Bonsai, the choice made for the ternary ones carried to the same family by the maintainer, after
 // tests/rope_compare.sh measured it the same way: TASKS.md)
-assert.deepEqual(byId("hf-bonsai-1.7b").options, { ...QWEN3_OWN_BOS, rope_scaling: {} }, "Bonsai 1.7B");
+for (const size of ["1.7b", "4b"]) assert.deepEqual(byId(`hf-bonsai-${size}`).options, { ...QWEN3_OWN_BOS, rope_scaling: {} }, `Bonsai ${size}`);
 for (const id of ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]) assert.deepEqual(byId(id).options, qwen35, id);
 assert.ok(!("rope_scaling" in qwen35) && !("rope_scaling" in QWEN3_OWN_BOS) && !("rope_scaling" in QWEN3_FROM_IM_START));
 // T.133: Chromium says at most 8 GB: a device at the cap may have any more, so six bits are not asked for there, and

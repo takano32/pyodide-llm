@@ -565,6 +565,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（248,302,272）・ライセンスは HF と合い、`bonsai()` が組むファイルの名は実在の名と合う。3 値の項目の式は寄せる前と同じ。`write_options.py` の直しは `weights` を持つ項目（3 値だけ）にしか効かず、int8 と塊の項目の options は変わらない。
 - **本番**（デプロイ run 41689979664、`models.yml` run 41691546399、Chromium）: 準備完了 24.5 秒、199 トークン（自分で止まった）で 16.6 tok/s（4 本）。Q1_0 の GGUF をページの中で変換した初めての本番。
 
+#### T.286.3 Prism ML Bonsai 4B（1-bit、作り手の Q1_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **したこと**: 1 項目を 1.7B の後に（hf-bonsai-4b、`binaryBonsai()`）。prism-ml/Bonsai-4B-gguf @ 78f2c2bacd0904ffaba24b4873ed975e5818354a の Q1_0（572,270,624 バイト）、語彙・config・書式は prism-ml/Bonsai-4B-unpacked @ b2529e9641629dce5e6be5fa44492bc249f1a58a（Apache-2.0、両カード）。素の RoPE の許す一覧（`models-check`・`test_gguf.py`）に足した。
+- **取りまとめ役の決め（訳）**: 1.7B と同じ形（English だけ、素の RoPE、BOS `<|endoftext|>`）。書かせと rope_compare で決め直す。note の大きさは 3 値の 4B と同じ「ternary 1.1 GB」の見込み（CI で確かめる）。
+- **確かめ**: `format_check.py` は 9/9、`--hf` も 9/9。`models-check`・`npm run types`・pytest の RoPE の試験は通る。
+
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
 - (a) AMD の Zen 3・4 では int16 の和の形が 1.31〜1.36 倍、arm64 では 0.60 倍、Zen 5 では今の形が 3 倍（T.231 のレビュー）: CPU で選ぶ仕組みが要る。(b) BitNet 流の表を引く形（見積もり 0.28 命令 / 重み、今は 0.34）。(c) スケールを float16 で持つ（27B で 0.44 GiB 減る）。どれも測るまで分からない。
 
