@@ -1364,6 +1364,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`・ライセンス（4 つとも apache-2.0）は HF と合い、chat template は llm-jp-3 3.7B instruct3 のものと同じ文（393 字）。Common のカードは llm-jp の system の文と 0.7・0.95・1.05 を渡す（Humanities のカードの使い方の節は取りまとめ役が読んで同じ）。名前と note も合う。
 - **本番**（デプロイ run 41665267824、`models.yml` run 41667255915、Chromium、同じランナーで続けて）: Common は準備完了 71.6 秒・6.7 tok/s、Humanities は 175.6 秒・6.8 tok/s（256 トークン、4 本）。同じ大きさで準備完了が 2.5 倍違う訳は未計測（300 秒より前に準備完了したのでステータス行の取得の速さがログに無い）。
 
+#### T.607.8 Aratako Qwen3 8B RP v0.1（Aratako の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の Qwen3 EZO 8B beta の後に（hf-qwen3-8b-rp-v0.1）。Qwen3 8B を日本語のロールプレイに向けて学習し直したもの（MIT、カードは ja）。作り手自身の Q8_0 @ ff4bdc6cb369912f59bf369d3f6d47677dd83abe（8,709,518,336 バイト）、語彙と config は原本 @ aacfb07d1a7293054ad47ac3de98644ab237b7bd の tokenizer.json。chat template は Qwen3 EZO 8B beta のものと同じ文（Qwen3 の古い版の写し）。
+- **取りまとめ役の決め（訳）**: 項目は 1 つ。カードのコードは `enable_thinking` を渡さず（書式は `<|im_start|>assistant\n` で終わる）、答えに考えが無いので、その書式（`QWEN3_THINKING_AFTER_START`: 変換器の読むものと同じ文）を BOS `<|im_start|>`（Qwen3 の 8B 系、T.607.5 と同じ）で。標本抽出はカードのコードの温度 0.5（top-p なし）。カードは役の設定を system のターンに書くが、ページは system を送らないので、プロンプトの例に役を書いた（「あなたは魔法学校の新入生「桜」です。…」）。note は新しい語「plays a role」、言語はカードの「日本語」。名前は作り手の HF の名「Aratako」。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（本物と同じ ID）、`--hf` も 9/9。`models-check` は通る。
+
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。

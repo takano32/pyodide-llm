@@ -521,6 +521,17 @@ export const HF_JAPANESE: Entry[] = [
       "AXCXEPT/Qwen3-EZO-8B-beta", "c7458182662d2fa15da5e41a17427319e6f265f5"), 8709519008,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB",
     { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
+  // T.607.8: Aratako's Qwen3 8B RP v0.1, Qwen3 8B tuned for role-play in Japanese (its card sets the character in the
+  // system turn, which the page does not send: the visitor sets it in the message). Its chat template is the one of
+  // Qwen3 EZO 8B beta (an older copy of Qwen3's); its card's code leaves enable_thinking out and answers at once, with no
+  // thought, so one entry with that format (the template's own, after <|im_start|>), the 8B's BOS, and the card's
+  // temperature 0.5 (no top-p). Aratako's own Q8_0 with the original's vocabulary
+  { group: "hf", id: "hf-qwen3-8b-rp-v0.1", name: "Aratako Qwen3 8B RP v0.1", note: "plays a role · 日本語 · fetches 8.7 GB (GGUF) → int8 9.2 GB",
+    ...ggufOf("Aratako/Qwen3-8B-RP-v0.1-GGUF", "ff4bdc6cb369912f59bf369d3f6d47677dd83abe", "Qwen3-8B-RP-v0.1-Q8_0.gguf",
+      "Aratako/Qwen3-8B-RP-v0.1", "aacfb07d1a7293054ad47ac3de98644ab237b7bd"), download: 8709518336,
+    conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_THINKING_AFTER_START,
+    generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 },
+    prompt: "あなたは魔法学校の新入生「桜」です。桜として、初めて会ったクラスメイトに自己紹介してください。", placeholder: ASK_JAPANESE },
   // T.610.2: Shisa V2.1's 14B, Phi-4 made into a Llama (its int8 passes the 16 GiB a page gets: T.610). mradermacher's
   // Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to the original
   // within 1e-3. Its format by hand, as the converter reads it but with the prompt trimmed (UNPHI4)

@@ -72,6 +72,8 @@ export const LICENSES: Record<string, string> = {
   "nitky/Oumuamua-7b-instruct-v2": APACHE, "mradermacher/Oumuamua-7b-instruct-v2-GGUF": APACHE,
   // T.607.2: Apache-2.0 by both cards
   "Local-Novel-LLM-project/Vecteus-v1": APACHE, "mmnga/Vecteus-v1-gguf": APACHE,
+  // T.607.8: MIT by both cards
+  "Aratako/Qwen3-8B-RP-v0.1": MIT, "Aratako/Qwen3-8B-RP-v0.1-GGUF": MIT,
   // T.304: Apache-2.0 by both cards
   "llm-jp/llm-jp-4.1-8b-thinking": APACHE, "llm-jp/llm-jp-4.1-8b-thinking-gguf": APACHE,
   // T.126
