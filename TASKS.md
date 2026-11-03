@@ -1331,6 +1331,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **したこと**: 2 項目を `hf-japanese.ts` の Shisa V2.1 Qwen3 8B の後に（hf-qwen3-ezo-8b-beta-thinking と hf-qwen3-ezo-8b-beta）。Qwen3 8B を複数のターンの会話に向けて学習し直したもの（Apache-2.0、カードは ja・en）。mradermacher @ 1867b17511f6bb9659fc7b6f585cae4a62bdcac7 の Q8_0（8,709,519,008 バイト）、語彙と config は原本 @ c7458182662d2fa15da5e41a17427319e6f265f5 の tokenizer.json。chat template は Qwen3 の古い版の写し（道具の呼び出しと `content` の扱いだけが違い、1 ターンは同じ文）なので、Qwen3 8B と同じ形: `thinkingAndNot()` に BOS `<|im_start|>`（`QWEN3_FROM_IM_START`）と書式 `QWEN3_THINKING_AFTER_START`・`QWEN3_AT_ONCE_AFTER_START`。
 - **取りまとめ役の決め（訳）**: 標本抽出は Qwen3 のカードの組（`thinking` と `atOnce`: generation_config.json の 0.6・0.95 は考える形の組と同じ）。作り手の名は会社の名「AXCXEPT」。BOS は頭のトークンの測りで決め直す。
 - **確かめ**: `format_check.py` は 2 つとも 9/9（STRICT: 本物と同じ ID）、`--hf` も 9/9。`models-check` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41639086576）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0074）、q と k は HF の並び（Qwen3 の GGUF のとおり）。語彙は tokenizer.json の 151,669 と同じ id で違う語片は 0（GGUF の後ろの 267 は vocab_size までの詰め物）。
+- **すぐ答える形の書かせ（`tests/answers.ts`、run 41639087746、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）・東京・17 × 24 = 408（2 回とも）が合う。日本語の問いは日本語で（かな 42〜71%）、英語の問いは英語で。約 2.7 tok/s（565 トークンに 207 秒）。int8 は 9,215,463,452 バイト（note の 9.2 GB と合う）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 12.154、`<|endoftext|>` 24.128（+98.5%）、`<|im_start|>` 12.392（+1.96%）。Qwen3 の 8B 系と同じ向き（`<|endoftext|>` が大きく悪い）なので、書式の最初のトークン `<|im_start|>` を BOS にする形のまま。
+- **考える形の書かせ（`tests/answers.ts`、run 41639088286、同じ組）**: 止まったのは 10/10、考えを自分で閉じたのは 10/10（考えは 135〜932 トークン、上限 3,584 に届かない）、繰り返し 0。富士山・東京・408 が合う。考えは英語で、答えは日本語の問いに日本語で（かなの割合が 2〜27% なのは英語の考えを数えるため: `</think>` の後は日本語）。約 1.7 tok/s（708 トークンに 409 秒）。
+- **取りまとめ役の決め（訳）**: 標本抽出（Qwen3 のカードの 2 組）と BOS・書式は Qwen3 8B のまま（書かせて崩れなかった）。考えが英語なのは Qwen3 8B と同じ形で、note は「日本語 / English」のまま。
+- CI を回した。訳: 9 GB の GGUF の照合と 9 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
