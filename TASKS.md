@@ -1298,7 +1298,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **本番**（デプロイ run 41581197844、`models.yml` run 41582708680、Chromium）: Qwen3 0.6B (thinking) は準備完了 17.5 秒・27.2 tok/s、llm-jp-3 150M は 5.1 秒・137.9 tok/s。
 - CI を省いた。訳: 触ったのは Python の生成の輪の印の選びとページの純な部品で、pytest・smoke・ページの部品の検査・実ブラウザが全部踏む。harmony の考えを実物で書かせるのは T.592.2 の CI。
 
-#### T.592.2 llm-jp-4 8B thinking（mmnga-o の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+#### T.592.2 llm-jp-4 8B thinking（mmnga-o の Q8_0） — 状態: 反映済み（2026-11-03、Opus medium）
 - **したこと**: 1 項目を `hf-japanese.ts` の llm-jp-4 8B instruct の後に（hf-llm-jp-4-8b-thinking、mmnga-o @ d10eb8c8470f89b2082e793a5ffa086a402a23fc の Q8_0 9,132,708,672 バイト、語彙と config は原本 @ fc7c15c262710016c19bcda4372a96ff68875846、Apache-2.0 は 2 つのカードから）。書式 `HARMONY_THINKING` は instruct の `HARMONY` に、本物の書式が既定で書く「Reasoning: medium」の行を足し、終わりを analysis のチャンネルを開く形に（T.592.1 でエンジンが追いページが畳む）。options `harmonyThinking` は `harmony` の止まりから `<|start|>`（10）と `<|end|>`（11）を外したもの（考えの後に final のチャンネルを書くため: [1, 2, 13]）。`models-check` の「考える項目」の数え方に、書式が analysis のチャンネルで終わる項目を足した。
 - **取りまとめ役の決め（訳）**: 標本抽出はカードが言わないので、考える項目の `thinking`（0.6・0.95・繰り返しの罰 1.0）。instruct の `sampled(1.1)` の繰り返しの罰は長い考えを曲げうる。書かせて読んで決め直す。
 - **GGUF と原本（`gguf.yml` の candidates、run 41581446145）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0111）、q と k は llama.cpp の回した並び。埋め込みの 1 行（195203「𕔆」）は Q8_0 の float16 の尺度の丸めだけ。語彙は 196,608 で、同じ id で違う語片が 13（ページは語彙を原本から取るので数えない）。
@@ -1308,6 +1308,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **実物で分かった直し**: モデルは final のチャンネルの頭を語の前に空白を置いて書く（`<|end|><|start|> assistant<|channel|> final<|message|> 答え`: 復号した文で）。ページの `thoughtOf()` は頭を印と語に分けて空白を飛ばしながら外す形にした（`thought.ts` の `past()`、`page-parts-check` に 3 例）。エンジンは考えの終わりを閉じる印の ID で見るので触らない。
 - **取りまとめ役の決め（訳）**: T.592.1 のレビューの「`THOUGHT_MARKS` と `MARKS` を突き合わせる検査」は足さない（印の種類は 2 つで、`answers.ts` は Python の表を読み、`page-parts-check` がページの表の両方の種類を踏む。種類を足す回に写しを並べて直す）。
 - CI を回した。訳: 9 GB の GGUF の取得と書かせは手元で回せない（7B 以上は手元で動かさない）。ページの直しは手元の部品の検査で。
+- **レビュー（Sonnet low、2026-11-03）**: 直すべきものは無し。取りまとめ役の決め（訳）: `past()` の例を足す点は、途中で切れた語と、頭が合って本文が続く例がもう 3 例にあるのでそのまま。`harmonyThinking` に「final は `<|return|>` で終わる」を書く点は、上のコメントがもう言う。`tests/fixed_outputs.py` の固定値は足さない（新しいアーキテクチャでも取り込みの道でもない: instruct と同じ Llama と GGUF の道で、手順 7 に当たらない）。
 ### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
 - **持ち主の決定（2026-11-03、選択肢で「すべて足します」）**: 挙げたものを全部足す（NSFW を名乗るものも、方針 8 のとおり note はカードに従う）。1 つのモデルを 1 つの子タスクに、取りかかる時に番号を採る。
 - ArrowPro-7B-KUJIRA（likes 64）・Vecteus・Oumuamua-v2・Gleipnir（書式があるのは Vecteus だけ）、AXCXEPT の Qwen3-EZO-8B-beta・EZO-Llama-3.2-3B・llm-jp-3-3.7b-EZO、Aratako の Qwen3-8B-RP。古いか用途が狭い。NSFW を名乗るものは入れるかを持ち主が。
