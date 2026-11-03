@@ -179,6 +179,14 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/shisa-v2.1-llama3.2-3b-GGUF", "b8cb9e4b9c90657829c0547f091e591a3d24849c", "shisa-v2.1-llama3.2-3b.Q8_0.gguf",
       "shisa-ai/shisa-v2.1-llama3.2-3b", "5f4f59bbe65834daf86a38efd06ff96f7c94c8c3"), download: 3421900096,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.607.6: AXCXEPT's EZO Llama 3.2 3B Instruct dpoE, Llama 3.2 3B Instruct tuned further on Japanese and English. It
+  // reads its chat template itself, as Llama 3.2 does (the same template); the sampling of its generation_config.json
+  // (0.6, top-p 0.9). mradermacher's Q8_0 with the original's vocabulary
+  { group: "hf", id: "hf-ezo-llama-3.2-3b-instruct-dpoe", name: "AXCXEPT EZO Llama 3.2 3B Instruct dpoE", note: "answers instructions · 日本語 / English · fetches 3.4 GB (GGUF) → int8 3.6 GB",
+    ...ggufOf("mradermacher/EZO-Llama-3.2-3B-Instruct-dpoE-GGUF", "65ba0474ccc3c07a4ca4c383e5f3c0f174a81f48", "EZO-Llama-3.2-3B-Instruct-dpoE.Q8_0.gguf",
+      "AXCXEPT/EZO-Llama-3.2-3B-Instruct-dpoE", "0b374d6e4b55192d833ec5b08ca842aaac4147eb"), download: 3421899936,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.0 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-cat-translate-3.3b", name: "CyberAgent CAT-Translate 3.3B", note: "translates 日本語 ⇄ English · fetches 6.7 GB → int8 3.8 GB",
     hf: hf("cyberagent/CAT-Translate-3.3b", "47e382331d005acd54a42cdf088a76aa88788e0c", "tokenizer.model"), download: 6711252920,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,

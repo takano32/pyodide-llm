@@ -1340,6 +1340,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（8,709,519,008）・ライセンスは HF と合い、chat template は Qwen3 8B のものと全文は違うが jinja2 で描いた 1 ターンは `enable_thinking` の既定でも偽でも同じ文。BOS の決め・標本抽出・note・名前・台帳の数はログと合う。
 - **本番**（デプロイ run 41650115576、`models.yml` run 41652375545、Chromium、すぐ答える形）: 準備完了 377.7 秒、256 トークンで 3.3 tok/s（4 本）。準備完了は Qwen3 Swallow 8B の 171.4 秒（T.606）の 2 倍ほどで、ほとんどが取得（ステータス行は 300 秒の時に 6,889 / 8,709 MB・23.9 MB/s: 8.7 GB をこの速さで約 364 秒）。
 
+#### T.607.6 AXCXEPT EZO Llama 3.2 3B Instruct dpoE（mradermacher の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の Shisa V2.1 の Llama 3.2 3B の後に（hf-ezo-llama-3.2-3b-instruct-dpoe）。Llama 3.2 3B Instruct を日本語と英語のデータで学習し直したもの（Llama 3.2 Community License、カードの法的通知も同じ）。mradermacher @ 65ba0474ccc3c07a4ca4c383e5f3c0f174a81f48 の Q8_0（3,421,899,936 バイト）、語彙と config は原本 @ 0b374d6e4b55192d833ec5b08ca842aaac4147eb の tokenizer.json。chat template は Llama 3.2 3B Instruct のものと同じ文（sha256 が同じ）で、書式と BOS は変換器が読む（Meta と Shisa の Llama 3.2 3B と同じ）。
+- **取りまとめ役の決め（訳）**: 標本抽出は generation_config.json の組（温度 0.6・top-p 0.9）。言語はカードの 9 つのうち「日本語 / English」（カードが日本語の仕事のためと言う）。名前はモデルの名が Llama で始まる（Llama のライセンスの求め）ので「AXCXEPT EZO Llama 3.2 3B Instruct dpoE」。カードの免責は研究と開発のためと言い、商用の利用を意図しないと書くが、ライセンスは Llama 3.2 のまま（方針 8: 一覧から外さない）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（変換器の書式、本物と同じ ID）、`--hf` も 9/9。`models-check`・`npm run types` は通る。
+
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。
