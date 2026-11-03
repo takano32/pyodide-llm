@@ -95,6 +95,8 @@ export const LIGHTBLUE_R1 = {
 // apply_chat_template under transformers 4.38.2, whose default for a LlamaTokenizer was Llama 2's format: the system in
 // the user's turn, the turn stripped, and no space after [/INST]
 export const EVOLLM = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲されていないアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST]";
+// T.607.1: ArrowPro-7B-KUJIRA's card writes Llama 2's turn by hand with its own system message, no space before [/INST]
+export const ARROWPRO = "[INST] <<SYS>>\nあなたは日本語を話す優秀なアシスタントです。回答には必ず日本語で答えてください。\n<</SYS>>\n\n{prompt}[/INST]";
 // zephyr's tokenizer puts a "▁" before the text after </s> (a legacy Llama tokenizer): the converter says so to the
 // engine (prefixed, T.308; until T.369 a space after </s> here made the same tokens)
 export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";

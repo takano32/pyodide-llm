@@ -1277,6 +1277,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
 - **持ち主の決定（2026-11-03、選択肢で「すべて足します」）**: 挙げたものを全部足す（NSFW を名乗るものも、方針 8 のとおり note はカードに従う）。1 つのモデルを 1 つの子タスクに、取りかかる時に番号を採る。
 - ArrowPro-7B-KUJIRA（likes 64）・Vecteus・Oumuamua-v2・Gleipnir（書式があるのは Vecteus だけ）、AXCXEPT の Qwen3-EZO-8B-beta・EZO-Llama-3.2-3B・llm-jp-3-3.7b-EZO、Aratako の Qwen3-8B-RP。古いか用途が狭い。NSFW を名乗るものは入れるかを持ち主が。
+- **子タスクの分け方（取りまとめ役の決め）**: 挙げた順に 1 つずつ。T.607.1 ArrowPro-7B-KUJIRA、T.607.2 Vecteus、T.607.3 Oumuamua-v2、T.607.4 Gleipnir、T.607.5 Qwen3-EZO-8B-beta、T.607.6 EZO-Llama-3.2-3B、T.607.7 llm-jp-3-3.7b-EZO、T.607.8 Qwen3-8B-RP（番号は取りかかる時に確かめ直す）。
+
+#### T.607.1 DataPilot ArrowPro 7B KUJIRA（mmnga の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の EvoLLM-JP の後に（hf-arrowpro-7b-kujira）。NTQAI の chatntq-ja-7b-v1.0（Mistral 7B、語彙 32,000）から会話とプロンプトの注入への強さに向けて作ったもの（Apache-2.0、カードは日本語で書かれ言語を言わない: note は「日本語」）。mmnga @ 257e00a4e425aa143494ae12c54b4f9429b713f8 の Q8_0（7,695,857,376 バイト）、語彙と config は原本 @ 755e478ac9404cdd551126e20ea055dfa42ddd1d の tokenizer.json。chat template が無く、カードが手で書く Llama 2 のターン（自分の system の文、`[/INST]` の前に空白なし）を `ARROWPRO` に、`format_check.py` の `CARDS` に 2 つ目の写し。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードの組（温度 1.0・top-p 0.95、繰り返しの罰なし）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（カードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き: EvoLLM と同じ）。`models-check`・`npm run types` は通る。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。

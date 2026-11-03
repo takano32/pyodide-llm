@@ -1,6 +1,6 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ARROWPRO, ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, harmonyThinking, llmJp, sarashina,
 } from "./formats.ts";
@@ -362,6 +362,14 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/EvoLLM-JP-v1-7B-GGUF", "a498d0ca5ec60a8ca0e48cfd177df004884b9351", "EvoLLM-JP-v1-7B.Q8_0.gguf",
       "SakanaAI/EvoLLM-JP-v1-7B", "a7acd2604d3e9f0fca2987d2448ff5dc19778c21", "tokenizer.model"), download: 7695858048,
     conversion: {}, options: {}, generation: sampled(1.1), template: EVOLLM, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.607.1: DataPilot's ArrowPro-7B-KUJIRA, from NTQAI's chatntq-ja-7b-v1.0 (Mistral 7B), made for chat and to hold
+  // against prompt injection. No chat template: its card's turn (ARROWPRO) and its sampling (1.0, top-p 0.95). mmnga's
+  // Q8_0 with the original's vocabulary
+  { group: "hf", id: "hf-arrowpro-7b-kujira", name: "DataPilot ArrowPro 7B KUJIRA", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
+    ...ggufOf("mmnga/DataPilot-ArrowPro-7B-KUJIRA-gguf", "257e00a4e425aa143494ae12c54b4f9429b713f8", "DataPilot-ArrowPro-7B-KUJIRA-Q8_0.gguf",
+      "DataPilot/ArrowPro-7B-KUJIRA", "755e478ac9404cdd551126e20ea055dfa42ddd1d"), download: 7695857376,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: ARROWPRO,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
   // mradermacher's Q8_0 GGUFs as the chat's
   { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",

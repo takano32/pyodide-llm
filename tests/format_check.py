@@ -154,11 +154,14 @@ EVOLLM_CARD = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲�
 # "<s>[INST]" as <s> "[" where their tokenizer.json itself (the tokenizers library, as the card's transformers 4.30)
 # reads <s> "▁[", the page's ids; checked by hand for both
 ELYZA_LLAMA2_CARD = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt} [/INST] "
+# T.607.1: ArrowPro-7B-KUJIRA's card writes this and encodes it with the BOS (a second copy of the list's ARROWPRO)
+ARROWPRO_CARD = "[INST] <<SYS>>\nあなたは日本語を話す優秀なアシスタントです。回答には必ず日本語で答えてください。\n<</SYS>>\n\n{prompt}[/INST]"
 CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-large-lm-3.6b-instruction-sft": LINE_CARD,
          "hf-calm2-7b-chat": CALM2_CARD, "hf-rakutenai-7b-instruct": RAKUTEN_CARD,
          "hf-japanese-stablelm-instruct-gamma-7b": STABLELM_GAMMA_CARD, "hf-youri-7b-chat": LINE_CARD,
          "hf-evollm-jp-a-v1-7b": EVOLLM_CARD, "hf-evollm-jp-v1-7b": EVOLLM_CARD,
-         "hf-elyza-japanese-llama-2-7b-instruct": ELYZA_LLAMA2_CARD, "hf-elyza-japanese-llama-2-7b-fast-instruct": ELYZA_LLAMA2_CARD}
+         "hf-elyza-japanese-llama-2-7b-instruct": ELYZA_LLAMA2_CARD, "hf-elyza-japanese-llama-2-7b-fast-instruct": ELYZA_LLAMA2_CARD,
+         "hf-arrowpro-7b-kujira": ARROWPRO_CARD}
 # the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
 CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
