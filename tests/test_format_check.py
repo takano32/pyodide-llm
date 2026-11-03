@@ -30,20 +30,25 @@ def test_another_format_is_not_the_same():
     assert not format_check.same_ids([], [IM_START])
 
 
-def test_the_families_whose_bos_is_the_formats_first_token_take_nothing_in_front():
-    # T.236's review: <|endoftext|> in front of <|im_start|> is what a Qwen3.5 was sent before its entries began at the
-    # format's own first token (it costs the model much on plain text and moves its own answers). same_ids lets that by
-    # (the extra token is not the real first one), the families of STRICT do not
+def test_nothing_may_stand_in_front_but_where_it_was_measured():
+    # T.312: exactly the real ids by default. <|endoftext|> in front of <|im_start|> is what a Qwen3.5 was sent before
+    # its entries began at the format's own first token (T.236: it costs the model much on plain text and moves its own
+    # answers), and what the 8B Qwen3s lost by (T.250's review); same_ids lets that by (the extra token is not the real
+    # first one), ids_match only for the entries of LENIENT (measured) and UNMEASURED (said, T.399)
     real, old_design = [IM_START, USER, NEWLINE], [ENDOFTEXT, IM_START, USER, NEWLINE]
-    # (T.254's review: and MiniCPM5, whose template writes its BOS <s> itself first, as the page does. T.252's review: and
-    # Hermes 3, whose <|begin_of_text|> in front of its ChatML cost its English answers 13 to 15%)
     for model_id in ("hf-qwen3.5-0.8b", "hf-qwen3.5-9b-thinking", "hf-granite-4.2-3b", "hf-minicpm5-1b-thinking", "hf-ternary-bonsai-2-27b",
-                     "hf-hermes-3-llama-3.2-3b", "hf-neohorse-1-4b", "hf-neohorse-1-9b-thinking", "hf-agents-a1-4b",
-                     "hf-smollm3-3b-thinking", "hf-smollm3-3b"):
+                     "hf-hermes-3-llama-3.2-3b", "hf-neohorse-1-4b", "hf-agents-a1-4b", "hf-smollm3-3b", "hf-qwen3-8b",
+                     "hf-shisa-v2.1-qwen3-8b", "hf-ternary-bonsai-8b", "hf-a-new-entry"):
         assert format_check.ids_match(model_id, real, real)
         assert not format_check.ids_match(model_id, old_design, real)
-    # elsewhere the page's BOS in front is let by (T.131), and the doubled one is not
-    assert format_check.ids_match("hf-qwen3-4b", old_design, real)
+        assert format_check.lenient(model_id) is None
+    # where it was measured to cost little, the page's BOS in front is let by (T.131), and the doubled one is not
+    for model_id in ("hf-qwen3-4b", "hf-qwen3-4b-thinking-2507", "hf-qwen2.5-coder-7b-instruct", "hf-eurollm-1.7b-instruct"):
+        assert format_check.ids_match(model_id, old_design, real)
+        assert format_check.lenient(model_id)
+    # every key names an entry or a family of the list's ids, and no entry is in both
+    assert not set(format_check.LENIENT) & set(format_check.UNMEASURED)
+    assert all(key.startswith("hf-") for key in {**format_check.LENIENT, **format_check.UNMEASURED})
     # --hf (T.269): the converter's BOS in front is what ?hf= sends for these families too
     assert format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real, alone=True)
     assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real)

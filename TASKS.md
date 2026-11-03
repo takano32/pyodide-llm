@@ -72,7 +72,7 @@
 - T.309 [文書][変換] ページの「開けるモデル」の文と README に、足した形を書く — 未着手
 - T.310 [運用][その他] ブランチとワークツリーの片付け、開発機の古いモデル — 未着手
 - T.311 [運用][計測実行] 持ち主の端末でまとめて見る手順を 1 枚に — 未着手
-- T.312 [運用][遠隔試験] `format_check.py` の既定を「前に 1 つ多い BOS を通さない」に — 未着手
+- T.312 [運用][遠隔試験] `format_check.py` の既定を「前に 1 つ多い BOS を通さない」に — 進行中
 - T.313 [性能][Bonsai][WebGPU] 3 値の GPU の残り（T.232 のレビューの案） — 未着手
 - T.314 [性能][CPU] 最初の位置（BOS）を丸めずに計算する（T.272 から。LFM2.5 の活性値の量子化の損のほぼ全部） — 未着手
 - T.316 [調査][MLX] Clef-Flash（Cloudflare、MLX の 4 ビット）を動かす: 全体と決めること — 未着手
@@ -425,6 +425,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.399 [調査][変換] T.369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 未着手（2026-10-10、T.369 から。規模 中）
 - T.369 は、頭のトークンか書式を変換器に任せていた一覧の 21 項目（Qwen2.5 の 8 つ・TinySwallow・Qwen3 の 4B 以下の 8 つ・Qwen3 Swallow 8B の 2 つ・EuroLLM・llm-jp-4）と Hermes 3 の止まりを、前の値に手で固定した（送る ID を動かさないため）。手書きの `bos` を持つ項目は 32 → 52、書式は 63 → 80 に増えた。固定を外せば変換器の答え（本物の `apply_chat_template` と同じ ID）になり、手書きが減る。**外す前に測る**: 項目ごとに、素の文・手書きの答え・モデル自身の答えの 3 つ（AGENTS.md の「頭のトークンの効きは…」）。Qwen3 の 4B 以下は `<|im_start|>` のほうが 8〜10% 悪かった記録がある（T.250）。外した項目は固定値（`fixed-outputs.json`）を書き直す。`CONVERTER` は上げなくてよい（項目の options を消すだけ）。CAT-Thinking と Bonsai 1.7B・4B も同じ表で。
+- **T.312 から**: `format_check.py` の `UNMEASURED` の 5 項目（EuroLLM 1.7B instruct・llm-jp-4 8B instruct・RakutenAI 7B chat・TinyLlama 1.1B chat・zephyr 7B beta）は、前に 1 つ多い BOS の効きをまだ測っていない。同じ表で測り、小さければ `LENIENT` に訳と数を書いて移し、大きければ項目を本物の ID に替える。
 
 ### T.400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: 反映済み（(1)・(2)・(5)。(3)・(4) は残る。2026-10-16、T.533 の `CONVERTER` 11 の回で本線に入れた。**レビュー（Sonnet low、2026-10-16）: OK、直しなし。** `conversions_compare`（134 のうち 124 が同じ）で変わったのは予定の 10 項目（Gemma 4 の 2 つの `?hf=` の止まり `[2,1]→[2,1,106]`、sarashina 5 つと CAT 3 つの `bos`・`prefixed: never`・書式）、tokenizer.bin は全部同じ、`format_check` は sarashina 1B instruct と CAT 0.8B で 9/9。覆す条件: 本番で sarashina instruct か CAT の答えが崩れたら `formats.js` の `sarashina` の `bos: 9` と `SARASHINA` を戻す）。前の見出し: レビュー前（(1)・(2)・(5)。2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T.533 の回で上げる。(3)・(4) は未着手。2026-10-10、T.369 から。規模 小〜中） **次の `CONVERTER` の回（T.533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。 **本番（models.yml run 38835683269、Chromium 156、`CONVERTER` 11）**: 既定の Shisa 13.5 秒・2 回目 3.5 秒、Ternary Bonsai 1.7B 15.3 秒・16.0 tok/s・3.8 秒、sarashina2.2 1B Instruct 29.5 秒・5.1 秒、CAT-Translate 0.8B 20.0 秒・4.3 秒。どれも答え、新しい版で OPFS に保存された。
 - (1) tokenizer.json の `Lowercase` の normalizer（T.265 は sentencepiece の道の `do_lower_case` だけ）。(2) エンジンは「最初の文にダミーの空白を付けない」を言えない: sarashina と CAT-Translate は `?hf=` で頭の BOS が残る。(3) 最初の文が空白で始まっていてもダミーの空白を付ける（Metaspace は付けない）。(4) `T5Tokenizer` の legacy の空白（比べる参照が無い）。(5) `bos_token_id` の鍵が無く書式も読めないモデルは、当て推量の BOS 1 が止まりに残る。
@@ -606,8 +607,14 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.311 [運用][計測実行] 持ち主の端末でまとめて見る手順を 1 枚に — 状態: 未着手（2026-10-02 の洗い出しで採番。実装が止まったときに。規模 小）
 - 「持ち主の端末でまとめて見るもの」の一覧が長くなった。PC・Android・iPhone ごとに、開くページ・押すもの・貼るものを 1 回で済む順に書き直す（2026-10-01 の持ち主の決まり）。
 
-### T.312 [運用][遠隔試験] `format_check.py` の既定を「前に 1 つ多い BOS を通さない」に — 状態: 未着手（2026-10-02、T.251・T.252 のレビューの案。規模 小〜中）
+### T.312 [運用][遠隔試験] `format_check.py` の既定を「前に 1 つ多い BOS を通さない」に — 状態: 進行中（2026-11-03、Opus medium、ブランチ `t.312-format-strict`。2026-10-02、T.251・T.252 のレビューの案。規模 小〜中）
 - 今の `STRICT` は、あとから損が見つかった系統の一覧（Qwen3.5・Granite・MiniCPM5・Ternary Bonsai 2・Hermes 3）で、どれも項目が本線に入ってから見つかった。既定を厳しくし、通すものを「測って損が無かった系統」（Qwen2.5 など）の一覧にする。
+- **したこと**: `format_check.py` は既定で本物と完全に同じ ID を求める（`STRICT` を消した）。前に 1 つ多い BOS を通すのは 2 つの表の項目だけ。`LENIENT` は頭のトークンの効きを測って小さかった項目と家族で、どれもコメントに記録のタスク番号と数を書いた（Qwen2.5 と Coder は T.131・T.252、Qwen3 の 4B 以下と Ternary Bonsai 1.7B・4B と CAT-Thinking と Qwen3 Swallow RL は T.250 のレビュー、1-bit Bonsai は T.286.2・T.286.3、Swallow の SFT・CPT・医療版は T.606、LINE は T.517、llm-jp-4 の考える形 2 つと Lumi は T.592・T.304・T.604、calm2・youri・Rakuten 7B instruct・StableLM・EvoLLM・ELYZA の Llama 2・ArrowPro・Vecteus・Oumuamua・Gleipnir は T.599〜T.607 の start_check、ELYZA-Shortcut は T.593、TinySwallow instruct は base の T.602）。`UNMEASURED` は測った記録の無い 5 項目で、行に「NOT MEASURED」と出して通す（下の見つけたこと）。どの項目の行も、前に 1 つ多いプロンプトの数と訳を言う。base の項目で書式が `{prompt}` だけのもの（RakutenAI 2.0 mini と TinySwallow 1.5B）は「書式なし」と読む（トークナイザが instruct の chat template を持つので、前の木でも 0/9 の DIFF だった）。`tests/test_format_check.py` の試験を既定が厳しい形に書き直した（表に無い項目・8B の Qwen3 の系統は落ち、表の項目は通り、2 つの表は重ならない）。
+- **数**（手元の `.venv`、transformers 5.16.1、全 197 項目）: 一覧として ok 146・known 8・書式なし 34・DIFF 0（exit 0）。前に 1 つ多い BOS で通したのは 53 項目で（known の 3 つも）、そのうち測っていない 5 つ。厳しくしただけの最初の回は DIFF 55 で、どれも前の BOS 1 つの違いか上の base の 2 つだった。`--hf` は ok 122・known 3・書式なし 45・DIFF 18（exit 1）で、`--hf` の道は変えていない（`?hf=` は項目の BOS を持てないので前の 1 つを今までどおり通す。DIFF は system の文がカードに要る llm-jp-3 の 9 つ・LFM2 の訳の 2 つ・ELYZA・Swallow-MS・Mistral v0.2 などの、`?hf=` が項目の直しを持たない分で、前からある: T.369 の回は DIFF 9 で、その後に項目が増えた）。
+- **効くか**: 捨ての編集で Shisa V2.1 Qwen3 8B の項目を T.250 の前の形（BOS `<|endoftext|>` と `<|im_start|>` から書く書式）に戻すと、新しい道具は DIFF 0/9・exit 1、前の道具（origin/main）は ok 9/9・exit 0。T.250 のレビューで素の文が +53.7% だった形を、前の既定は通していた。戻した。
+- **見つけたこと（持ち主へ）**: 前に 1 つ多い BOS を送るのに、その効きを測った記録が無い項目が 5 つ。項目は変えていない。`UNMEASURED` に入れて通し、測るのは T.399 に足した。(1) `hf-eurollm-1.7b-instruct`: 本物は `<|im_start|>` から、ページは前に `<s>`（T.369 のピン）。(2) `hf-llm-jp-4-8b-instruct`: 本物は `<|start|>` から、ページは前に `<|startoftext|>`（同じ家族の考える形は −0.74% と測ってあるが、instruct は測っていない）。(3) `hf-rakutenai-7b-chat`: 本物の書式は文字から、ページは前に `<s>`（カードのコードは BOS を置く: T.125。同じ作り手の 7B instruct は +0.62%）。(4) `hf-tinyllama-1.1b-chat`・(5) `hf-zephyr-7b-beta`: 本物は `<|user|>` から、ページは前に `<s>`。
+- **取りまとめ役の決め（訳）**: (a) 通す表は家族の接頭辞も使う。Qwen2.5 は 0.5B instruct・Coder の 3 つ・ELYZA-Shortcut（7B）で測ってあり、測っていない Qwen2.5 の 1.5B・3B・7B instruct と Coder 0.5B も家族で通す（依頼の例の Qwen2.5）。(b) ELYZA の Llama 2 の 2 つはカードが BOS を書くので本物も前に `<s>` を持つが、transformers 5 が `<s>[INST]` を誤って読むので参照の文には書かず、`LENIENT` に置いた（T.605 の測りもある）。(c) 測っていない 5 つは止めずに通して行で言う形にした（項目を変えない頼み。測るのは T.399）。(d) `--hf` の DIFF 18 は直していない（この回の外。前からの違い）。
+- CI を省いた。訳: `format_check.py` は手で回す道具で、どの組にも入っていない。手元の pytest（`-k format` の 6 件）・`models-check`・一覧と `--hf` の全項目で足りる。
 
 ### T.313 [性能][Bonsai][WebGPU] 3 値の GPU の残り（T.232 のレビューの案） — 状態: 未着手（2026-10-02。規模 小〜中）
 - (A) 外れ値の列の表（8 × 語彙の float32）を読み込みで 1 回作る（今は散らばった読みで 1.1〜2.2 ms、ステップの 1〜3% の見積もり）。(B) ORT の 2 ビットの表引きの形（256 語の表）を候補に足して端末に選ばせる（T.270 の行と同じ回に）。(C) T.270 の CPU の 3 値の行ができたら `cpuReadBytes()` を実測に替える（今は int8 の読みで見積もり、判断が GPU に寄る）。

@@ -14,8 +14,9 @@
 # prompts the ids are the real ones exactly, with no BOS of the page's in front (T.264).
 #
 # Needs the reference tools, which the page never uses: a venv with tests/requirements-reference.txt (docs/notes/dev-setup.md).
-# The first BOS may differ (the page always starts with it, T.131), unless it is the token the real IDs begin with
-# (same_ids). The other differences known are in KNOWN, each
+# The IDs must be the real ones exactly; one more BOS in front of them (the page always starts with one, T.131) is let
+# by only for LENIENT's entries, where what it does was measured, and UNMEASURED's, said on their line (T.312). The
+# other differences known are in KNOWN, each
 # taking out only its own difference, and anything else makes the exit status 1 (T.145). What a card always passes besides the prompt
 # (Swallow-MS's and llm-jp's system message) is in SYSTEM. Models with a sentencepiece tokenizer.model are compared
 # through transformers' slow tokenizer, which is not the real one for every model: for those of SENTENCEPIECE the
@@ -105,32 +106,62 @@ KNOWN = {
     "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T.249)",
                                  "text": lambda text, prompt: unicodedata.normalize("NFKC", text)},
 }
-# T.236 (its review): the families whose entries have the BOS be the format's own first token (<|im_start|>), so that the
-# page sends the real template's ids exactly, none before them. Everywhere else a BOS of the page's in front of the real
-# ids is let by (same_ids; the first BOS may differ, T.131): that let the design of before T.236, <|endoftext|> in front
-# of <|im_start|> (which costs a Qwen3.5 much, TASKS.md's T.236), pass for a Qwen3.5 as well, and same_ids still does (the
-# extra token is not the one the real ids begin with). T.253's Granite 4.2 are made the same way, and T.247's other sizes
-# of Qwen3.5 (a family, not a list of entries: the six of T.247 were not in the first one). T.254's review: MiniCPM5's template
-# writes its BOS (<s>, bos_token) itself as its first token, and the page puts that one first and writes the format after it:
-# the same relation, so the same exactness (the lenient rule let a token of another kind in front of the real <s> pass).
-# T.233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format. T.252's review: and Hermes 3, whose real template puts
-# nothing in front where the converter's BOS (<|begin_of_text|>, which its card's example code puts there) cost its English
-# answers 13 to 15% (tests/chat_nll.py, tests/chat_fluency.ts): the lenient rule let the page's one more token pass for it
-# T.335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
-# T.337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
-# T.255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's
-# T.364.3: and Underdog Saluki 27B, the same base model as Ternary Bonsai 2 27B's with the same template and options
-# T.261.3: and Gemma 3, whose template writes its <bos> first, the BOS the converter takes off and the page sends
-# T.333: and Gemma 4, the same: <bos>, then the turn
-# T.343: and Spark-X2.5: its template writes <｜start▁of▁sentence｜> first, the BOS the converter takes off
-# T.400: and sarashina2.2 and CAT-Translate, whose tokenizer puts no <s> in front and no dummy prefix: <|user|> first
-# T.610.3: and CyberAgent's DeepSeek-R1 Distill Qwen 14B Japanese, the same as the Lightblue 7B's (9/9 exactly)
-STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
-          "hf-agents-a1-", "hf-smollm3-", "hf-underdog-saluki-", "hf-gemma-3-",
-          "hf-gemma-4-", "hf-spark-x2.5-", "hf-spark-x2.6-", "hf-llama-3-youko-", "hf-llama-3-karamaru-", "hf-deepseek-r1-qwen-7b-japanese", "hf-deepseek-r1-qwen-1.5b-multilingual", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-", "hf-sarashina2.2-", "hf-cat-translate-",
-          "hf-arrowcanaria-")
-# (T.604: not Lumi v2: its real template writes ChatML as plain text, with no BOS in front, and the page puts its BOS
-# <|startoftext|> before that text; start_check measured what the BOS does, in TASKS.md's T.604)
+# T.312: the page's IDs must be the real ones exactly. One more BOS in front of the real IDs (the page always starts
+# with a token, T.131) passes only for the entries below, each where what that BOS does was measured and found small
+# (tests/start_check.py or .ts on plain text, tests/chat_nll.py on answers; the records in docs/tasks/). Before T.312
+# it passed everywhere but in a list of families found to lose by it after they were in the list (T.236's Qwen3.5,
+# Granite 4.2, MiniCPM5, Ternary Bonsai 2, Hermes 3, the 8B Qwen3s: up to +144% on plain text). A new entry that sends
+# one more token in front now fails until it is measured and put here. A prefix names a family measured on its sizes.
+LENIENT = {
+    # T.131: Qwen2.5 0.5B Instruct 23.30 with <|endoftext|>, 23.43 without (Japanese), 19.25 and 19.29 (English).
+    # T.252: Qwen2.5 Coder 1.5B, 3B, 7B, the answers +0.5%, +0.4%, +0.2% (KL 0.0025, 0.0009, 0.0012)
+    "hf-qwen2.5-": "Qwen2.5 and Qwen2.5 Coder: within 3% on plain text, +0.5% at most on answers (T.131, T.252)",
+    # T.593: ELYZA-Shortcut 1.0 Qwen 7B (a Qwen2.5 7B) +0.88% on plain text
+    "hf-elyza-shortcut-1.0-qwen-7b": "+0.88% on plain text (T.593)",
+    # T.602: TinySwallow 1.5B (the base) -1.43% on plain text; the instruct is the same model's distillation
+    "hf-tinyswallow-1.5b-instruct": "the base -1.43% on plain text (T.602)",
+    # T.250's review: the Qwen3s of 4B and below +5.4% at most on plain text (<|im_start|> in front is 5.5 to 10.2%
+    # worse), 0.6B +4.0% and 1.7B +1.5% on their own answers. Not the 8B ones (+144%: they begin at <|im_start|>)
+    **{f"hf-qwen3-{size}": "the Qwen3s of 4B and below: +5.4% at most on plain text (T.250's review)"
+       for size in ("0.6b", "1.7b", "4b")},
+    # T.250's review (and T.236: the 1.7B's answers KL 0.008): Ternary Bonsai 1.7B -1.5%, 4B -1.5% on plain text
+    "hf-ternary-bonsai-1.7b": "-1.5% on plain text (T.250's review, T.236)",
+    "hf-ternary-bonsai-4b": "-1.5% on plain text (T.250's review)",
+    # T.286.2, T.286.3: the 1-bit Bonsai 1.7B +0.29%, 4B +0.50% on plain text
+    "hf-bonsai-1.7b": "+0.29% on plain text (T.286.2)", "hf-bonsai-4b": "+0.50% on plain text (T.286.3)",
+    # T.250's review: Qwen3 Swallow 8B RL +3.3% on plain text; T.606: the SFT +0.98%, the CPT +1.13%, the medical +0.33%
+    "hf-qwen3-swallow-8b": "+3.3% at most on plain text (T.250's review, T.606)",
+    "hf-medical-qwen3-swallow-8b": "+0.33% on plain text (T.606)",
+    # T.250's review: CAT-Thinking 8B +3.5% on plain text, +0.4% on its own answers (KL 0.0045)
+    "hf-cat-thinking-8b": "+0.4% on its answers (T.250's review)",
+    # T.517: LINE's instruction-sft, 1.7B </s> better than none on plain text and -5.76% on the answers, 3.6B <s> chosen
+    "hf-japanese-large-lm-": "the BOS measured and chosen per size (T.517)",
+    # T.592.1, T.304, T.604: llm-jp-4 8B thinking -0.74%, llm-jp-4.1 8B thinking -7.08%, Lumi v2 -1.90% on plain text
+    "hf-llm-jp-4-8b-thinking": "-0.74% on plain text (T.592)", "hf-llm-jp-4.1-8b-thinking": "-7.08% on plain text (T.304)",
+    "hf-lumi-v2-llm-jp-4-8b": "-1.90% on plain text (T.604)",
+    # T.599, T.601: calm2 +1.11%, youri +1.16% on plain text
+    "hf-calm2-7b-chat": "+1.11% on plain text (T.599)", "hf-youri-7b-chat": "+1.16% on plain text (T.601)",
+    # T.600: RakutenAI 7B instruct +0.62%, StableLM instruct gamma +0.01% on plain text
+    "hf-rakutenai-7b-instruct": "+0.62% on plain text (T.600)",
+    "hf-japanese-stablelm-instruct-gamma-7b": "+0.01% on plain text (T.600)",
+    # T.602: EvoLLM-JP-A -0.21%, v1 +0.74%; T.605: ELYZA's Llama 2 instruct +0.55%, fast -0.15% on plain text
+    "hf-evollm-jp-": "-0.21% and +0.74% on plain text (T.602)",
+    # (their card writes the BOS itself, left out of ELYZA_LLAMA2_CARD below)
+    "hf-elyza-japanese-llama-2-7b-": "the card writes it; +0.55% and -0.15% on plain text (T.605)",
+    # T.607.1 to T.607.4: ArrowPro +1.13%, Vecteus +0.24%, Oumuamua +1.10%, Gleipnir -0.51% on plain text
+    "hf-arrowpro-7b-kujira": "+1.13% on plain text (T.607.1)", "hf-vecteus-v1": "+0.24% on plain text (T.607.2)",
+    "hf-oumuamua-7b-instruct-v2": "+1.10% on plain text (T.607.3)", "hf-umievo-gleipnir-7b": "-0.51% on plain text (T.607.4)",
+}
+# T.312: the entries that send one more token in front of the real IDs with nothing measured of it. Let by, so that the
+# check is still of the rest of their IDs, and said on their line; T.399 measures them (and the entries are left as
+# they are until then). Take one out of here when it is measured: to LENIENT, or its entry made exact.
+UNMEASURED = {
+    "hf-eurollm-1.7b-instruct": "<s> in front of the real <|im_start|> (T.369's pin, T.399)",
+    "hf-llm-jp-4-8b-instruct": "<|startoftext|> in front of the real <|start|> (T.369's pin, T.399)",
+    "hf-rakutenai-7b-chat": "<s> in front of the real text; its card adds the BOS (T.125), not measured (T.399)",
+    "hf-tinyllama-1.1b-chat": "<s> in front of the real <|user|>, not measured (T.399)",
+    "hf-zephyr-7b-beta": "<s> in front of the real <|user|>, not measured (T.399)",
+}
 # T.233: what an entry's format is the real template's with, besides enable_thinking (or that too, T.597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T.236's format of a Qwen3.5), not its default, "xhigh"
 # (T.364.3: and Underdog Saluki 27B's, whose template is the same one)
@@ -155,9 +186,9 @@ STABLELM_GAMMA_CARD = ("以下は、タスクを説明する指示と、文脈�
 # LlamaTokenizer was Llama 2's format (a second copy of the list's EVOLLM, its system message the card's)
 EVOLLM_CARD = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲されていないアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST]"
 # T.605: ELYZA-japanese-Llama-2's card writes its tokenizer's bos_token and this, and encodes it without adding
-# anything (a second copy of the list's ELYZA_LLAMA2). Not STRICT: transformers 5 rebuilds their fast tokenizer to read
-# "<s>[INST]" as <s> "[" where their tokenizer.json itself (the tokenizers library, as the card's transformers 4.30)
-# reads <s> "▁[", the page's ids; checked by hand for both
+# anything (a second copy of the list's ELYZA_LLAMA2, without the bos_token: in LENIENT). Not written here with it:
+# transformers 5 rebuilds their fast tokenizer to read "<s>[INST]" as <s> "[" where their tokenizer.json itself (the
+# tokenizers library, as the card's transformers 4.30) reads <s> "▁[", the page's ids; checked by hand for both
 ELYZA_LLAMA2_CARD = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt} [/INST] "
 # T.607.1: ArrowPro-7B-KUJIRA's card writes this and encodes it with the BOS (a second copy of the list's ARROWPRO)
 ARROWPRO_CARD = "[INST] <<SYS>>\nあなたは日本語を話す優秀なアシスタントです。回答には必ず日本語で答えてください。\n<</SYS>>\n\n{prompt}[/INST]"
@@ -275,7 +306,8 @@ def main():
         folder, made = converted(entry, directory)
         options = {**made.options, **({} if alone else entry.get("options", {}))}
         template = (None if alone else entry.get("template")) or made.options.get("template")
-        if not template:
+        # (T.312: a base model's entry whose format is what was typed, where its tokenizer has its instruct's template)
+        if not template or template == "{prompt}":
             print(f"none {entry['id']}: no format (what was typed is continued as it is)", flush=True)
             continue
         tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
@@ -289,7 +321,7 @@ def main():
             {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
         thinking = {**thinking, **({} if alone else TEMPLATE_SAYS.get(entry["id"], {}))}
         known = KNOWN.get(entry["id"], {})
-        same, explained, diffs, exact = 0, 0, [], 0
+        same, explained, diffs, exact, fronts = 0, 0, [], 0, set()
         for prompt in prompts:
             page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())))
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
@@ -312,7 +344,11 @@ def main():
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
-            matches = lambda real: ids_match(entry["id"], page, real, alone)
+            def matches(real, page=page, prompt=prompt):
+                # (T.312: the prompts that match only with one more BOS in front, said on the entry's line)
+                if page != real and ids_match(entry["id"], page, real, alone):
+                    fronts.add(prompt)
+                return ids_match(entry["id"], page, real, alone)
             exact += page == real
             if matches(real):
                 same += 1
@@ -332,6 +368,11 @@ def main():
         # T.264 (T.369): what ?hf= sends for a template the converter read is the real ids, none in front, where the
         # template begins with a token (said, not required: one that begins with text keeps the BOS in front)
         note += f", {exact} of them the real ids exactly" if alone else ""
+        # T.312: how many have one more BOS in front, and why that is let by (UNMEASURED's: not measured yet)
+        why = None if alone else lenient(entry["id"])
+        before = len(fronts)
+        note += (f", {before} with one more BOS in front"
+                 f"{' NOT MEASURED' if entry['id'] in UNMEASURED else ''}: {why}") if before and why else ""
         print(f"{verdict} {entry['id']}: {same}/{len(prompts)}{note} (format of {where})", flush=True)
         for diff in diffs[:3]:
             print("  ", diff)
@@ -363,11 +404,15 @@ def same_ids(page, real):
 
 
 def ids_match(model_id, page, real, alone=False):
-    """Whether the page's IDs are the real ones for this entry: exactly for the families of STRICT (their BOS is the
-    format's own first token: nothing may stand in front), else as same_ids() says. alone (--hf, T.269): what ?hf=
-    sends has the converter's BOS in front, never the entry's, so there same_ids() is all that can be asked (a Granite
-    4.2 opened so sends <s> and then the real IDs)."""
-    return page == real if model_id.startswith(STRICT) and not alone else same_ids(page, real)
+    """Whether the page's IDs are the real ones for this entry: exactly (T.312), or as same_ids() says for an entry of
+    LENIENT or UNMEASURED. alone (--hf, T.269): what ?hf= sends has the converter's BOS in front, never the entry's, so
+    there same_ids() is all that can be asked (a Granite 4.2 opened so sends <s> and then the real IDs)."""
+    return same_ids(page, real) if alone or lenient(model_id) else page == real
+
+
+def lenient(model_id):
+    """Why one more BOS in front is let by for this entry (T.312): LENIENT's or UNMEASURED's word, or None."""
+    return next((why for key, why in {**LENIENT, **UNMEASURED}.items() if model_id.startswith(key)), None)
 
 
 def first_piece(page, real):
