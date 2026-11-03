@@ -97,6 +97,10 @@ export const LIGHTBLUE_R1 = {
 export const EVOLLM = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲されていないアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST]";
 // T.607.1: ArrowPro-7B-KUJIRA's card writes Llama 2's turn by hand with its own system message, no space before [/INST]
 export const ARROWPRO = "[INST] <<SYS>>\nあなたは日本語を話す優秀なアシスタントです。回答には必ず日本語で答えてください。\n<</SYS>>\n\n{prompt}[/INST]";
+// T.607.3: Oumuamua-7b-instruct-v2's card: the Llama 2 turn with the system its card recommends, as the code on its
+// card writes it (apply_chat_template's default Llama template: " [/INST]" with no space after; the card's text puts the
+// space that the answer's first piece holds)
+export const OUMUAMUA = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt} [/INST]";
 // zephyr's tokenizer puts a "▁" before the text after </s> (a legacy Llama tokenizer): the converter says so to the
 // engine (prefixed, T.308; until T.369 a space after </s> here made the same tokens)
 export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";

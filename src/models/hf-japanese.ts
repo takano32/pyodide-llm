@@ -1,6 +1,6 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ARROWPRO, ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ARROWPRO, ASK_JAPANESE, OUMUAMUA, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
   TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, harmonyThinking, llmJp, sarashina,
 } from "./formats.ts";
@@ -378,6 +378,14 @@ export const HF_JAPANESE: Entry[] = [
       "Local-Novel-LLM-project/Vecteus-v1", "d3375ec5f7e149916e44cb0d47c8bda30b986f50", "tokenizer.model"), download: 7695857344,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 1.0, repetition_penalty: 1.0 },
     prompt: "猫が主人公の短い物語を書いてください。", placeholder: ASK_JAPANESE },
+  // T.607.3: nitky's Oumuamua 7B instruct v2, a merge of Mistral 7B models over Swallow-MS's Japanese vocabulary (42,800).
+  // No chat template: its card's turn (OUMUAMUA) and its sampling (temperature 0.1). mradermacher's Q8_0 with the
+  // original's vocabulary
+  { group: "hf", id: "hf-oumuamua-7b-instruct-v2", name: "nitky Oumuamua 7B instruct v2", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
+    ...ggufOf("mradermacher/Oumuamua-7b-instruct-v2-GGUF", "b5ba02aa55bd31d2365354b492500229535bb592", "Oumuamua-7b-instruct-v2.Q8_0.gguf",
+      "nitky/Oumuamua-7b-instruct-v2", "315cee7d10fd84a130ab0973942ff76bb1582c49"), download: 7790108960,
+    conversion: {}, options: {}, generation: { steps: 0, temperature: 0.1, topp: 1.0, repetition_penalty: 1.0 }, template: OUMUAMUA,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
   // mradermacher's Q8_0 GGUFs as the chat's
   { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
