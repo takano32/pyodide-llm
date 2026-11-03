@@ -60,8 +60,8 @@ export const LICENSES: Record<string, string> = {
   // T.607.1: Apache-2.0 by both cards
   "DataPilot/ArrowPro-7B-KUJIRA": APACHE, "mmnga/DataPilot-ArrowPro-7B-KUJIRA-gguf": APACHE,
   // T.607.3: Apache-2.0 by both cards
-"nitky/Oumuamua-7b-instruct-v2": APACHE, "mradermacher/Oumuamua-7b-instruct-v2-GGUF": APACHE,
-// T.607.2: Apache-2.0 by both cards
+  "nitky/Oumuamua-7b-instruct-v2": APACHE, "mradermacher/Oumuamua-7b-instruct-v2-GGUF": APACHE,
+  // T.607.2: Apache-2.0 by both cards
   "Local-Novel-LLM-project/Vecteus-v1": APACHE, "mmnga/Vecteus-v1-gguf": APACHE,
   // T.304: Apache-2.0 by both cards
   "llm-jp/llm-jp-4.1-8b-thinking": APACHE, "llm-jp/llm-jp-4.1-8b-thinking-gguf": APACHE,
