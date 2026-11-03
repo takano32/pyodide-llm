@@ -1288,6 +1288,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 5.553、`<s>` 5.615（+1.13%）。差は小さく、素の文だけでは替えない（AGENTS.md の教訓）ので、原本のトークナイザが置く `bos: 1` のまま。
 - **取りまとめ役の決め（訳）**: 標本抽出はカードの組のまま（書かせて崩れなかった）。
 - CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。書式はカードの `build_prompt` と 1 字まで同じ（`add_special_tokens=True` で BOS が前: `bos: 1` と合う）、リビジョン・ライセンス・`download`（7,695,857,376）・名前・note・台帳の数はログと合う。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
