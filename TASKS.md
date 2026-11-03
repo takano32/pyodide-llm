@@ -1283,6 +1283,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **したこと**: 1 項目を `hf-japanese.ts` の EvoLLM-JP の後に（hf-arrowpro-7b-kujira）。NTQAI の chatntq-ja-7b-v1.0（Mistral 7B、語彙 32,000）から会話とプロンプトの注入への強さに向けて作ったもの（Apache-2.0、カードは日本語で書かれ言語を言わない: note は「日本語」）。mmnga @ 257e00a4e425aa143494ae12c54b4f9429b713f8 の Q8_0（7,695,857,376 バイト）、語彙と config は原本 @ 755e478ac9404cdd551126e20ea055dfa42ddd1d の tokenizer.json。chat template が無く、カードが手で書く Llama 2 のターン（自分の system の文、`[/INST]` の前に空白なし）を `ARROWPRO` に、`format_check.py` の `CARDS` に 2 つ目の写し。
 - **取りまとめ役の決め（訳）**: 標本抽出はカードの組（温度 1.0・top-p 0.95、繰り返しの罰なし）。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（カードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き: EvoLLM と同じ）。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41604611593）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0079）、q と k は llama.cpp の回した並び。語彙は 32,000 で、tokenizer.json とも tokenizer.model とも同じ id で違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41604610372、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも誤り（26 と、途中で切れた計算: モデルの力）。日本語の問いは日本語で答え、英語の睡眠の問いにも日本語で答える（カードの system の文「必ず日本語で」どおり）、英語の首都の問いは英語で 1 文。温度 1.0 でも崩れない。約 1.7〜1.8 tok/s（本の長さの答え 692 トークンに 392 秒）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 5.553、`<s>` 5.615（+1.13%）。差は小さく、素の文だけでは替えない（AGENTS.md の教訓）ので、原本のトークナイザが置く `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードの組のまま（書かせて崩れなかった）。
+- CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
