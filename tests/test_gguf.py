@@ -523,11 +523,13 @@ def listed_options():
 
 
 def test_only_the_three_ternary_bonsai_of_the_list_name_a_rope():
-    """The entries that say a RoPE of their own are those three and no other: not Ternary Bonsai 2 27B (another model,
+    """The entries that say a RoPE of their own are those three (and T.286.2's 1-bit 1.7B) and no other: not Ternary Bonsai 2 27B (another model,
     in a rotated basis, which the choice did not cover), nor any other entry whose config.json scales its RoPE."""
     options = listed_options()
-    assert {name for name, said in options.items() if "rope_scaling" in said} == set(BONSAI_ENTRIES.values())
-    assert all(options[name]["rope_scaling"] == {} for name in BONSAI_ENTRIES.values())
+    # (T.286.2: and the 1-bit Bonsai 1.7B, the same family, the choice carried to it by the maintainer: TASKS.md)
+    plain = {*BONSAI_ENTRIES.values(), "hf-bonsai-1.7b"}
+    assert {name for name, said in options.items() if "rope_scaling" in said} == plain
+    assert all(options[name]["rope_scaling"] == {} for name in plain)
     larger = [name for name in options if name.startswith("hf-ternary-bonsai-2-27b")]
     assert len(larger) == 2 and all(set(options[name]) == {"bos", "stop_tokens", "specials"} for name in larger)
 
