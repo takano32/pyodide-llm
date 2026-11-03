@@ -1295,6 +1295,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **したこと**: 1 項目を `hf-japanese.ts` の ArrowPro の後に（hf-vecteus-v1）。Mistral-7B-v0.1 から小説を書くために作ったもの（Chat Vector のマージと LoRA、カードは日本語と英語、NSFW も書けると言う。Apache-2.0）。mmnga @ 59df491bb68ce3bc6879c3b292942e4c57274d9b の Q8_0（7,695,857,344 バイト）、語彙と config は原本 @ d3375ec5f7e149916e44cb0d47c8bda30b986f50 の tokenizer.model（tokenizer.json は無い）。書式はトークナイザの chat template（`USER: … ASSISTANT:`）を変換器が読む（`bos` も変換器: 文字で始まるので BOS が前）。作り手の名は組織の表示名「LocalNovelLLM-project」。
 - **取りまとめ役の決め（訳）**: note は「writes stories」（カードが小説を書くモデルと言う。新しい語）、言語はカードの「日本語 / English」。標本抽出は transformers の既定（カードは `do_sample=True` だけで generation_config.json に値が無い: 温度 1.0、top-p なし）。プロンプトの例は物語を頼む文「猫が主人公の短い物語を書いてください。」。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（前の BOS 1 つは緩い比べが通す形）、`--hf` も 9/9。transformers 5.16.1 は tokenizer.model から作るトークナイザにダミーの空白を置かず（「USER」を 1 片に、本物の sentencepiece は「▁US」「ER」）0/9 になったので、`format_check.py` の `SENTENCEPIECE` に足して本物の sentencepiece で比べる。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41615578259）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0076）、q と k は llama.cpp の回した並び。語彙は 32,000 で tokenizer.model と同じ id で違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41615579992、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 8/10（17 × 24 の 2 回が 1500 で切れ、greedy は繰り返し）、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも「割り切れない」と誤る（モデルの力）。日本語の問いは日本語で（かな 57〜70%）、英語の問いは英語で答える。温度 1.0・top-p なしでも崩れない。約 1.6〜1.9 tok/s（647 トークンに 348 秒）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 3.854、`<s>` 3.863（+0.24%）。差は小さいので、変換器が置く `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 標本抽出（transformers の既定）と note はそのまま（書かせて崩れなかった）。
+- CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
