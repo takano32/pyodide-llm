@@ -54,7 +54,7 @@
 - T.286 [追加][Bonsai] 1-bit Bonsai の一族（1.7B・4B・8B・27B） — 進行中
 - T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 未着手
 - T.289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 未着手
-- T.290 [運用][Bonsai] Safari（WebKit）で 3 値の 4B・8B を確かめ、note を直す — 未着手
+- T.290 [運用][Bonsai] Safari（WebKit）で 3 値の 4B・8B を確かめ、note を直す — 進行中
 - T.291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 未着手
 - T.292 [性能][CPU] Qwen3.5 の 7 ビットの活性値（日本語で +3%） — 未着手
 - T.293 [性能][WebGPU] 2 重の線と置き場の見直し — 未着手
@@ -585,8 +585,17 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 27B は 8 と言う端末に警告が出ないが実際は約 8.6 GB 要る（案: note に「16 GB」）。4 と言う端末の 4B は警告が出ない（footprint 2.66 GB、T.230 のレビュー）。設定の「Automatic keeps int8 unless it does not fit」は 3 値のモデルでは合わない。
 - **T.233 のレビューの数字**（`src/models.js` と `footprint()` を Node で出し直した）: ページが数える全体は文脈 4096 で 7.701 GiB = 8.269 GB（チェックポイント 7.662 GB + 後ろ 0.607 GB）、`PAGE_MEMORY` 0.3 GB を足して 8.57 GB。**警告の「needs about 8,000 MB」は note の 7.7 GB + 0.3 GB で、後ろの 0.6 GB を数えていない**。本番の Chromium（run 36962265758）の Worker の WebAssembly のメモリは合わせて 8,879 MB（Pyodide のヒープを含む。タブ全体は未計測）。`deviceMemory` が 4 以下の端末には警告が出る（1・2・4 で確かめた）。8 と言う端末には出ない（Chrome は 8 GB 以上をまとめて 8 と言うので、8 GB の機械と 32 GB の機械が見分けられない）。**文面の案**（持ち主が選ぶ。変えていない）: (a) note の終わりを「desktop only (needs 16 GB of memory) · Chrome and Firefox」にする（仕組みは変えない。勧め）。(b) 警告の数字を約 9,500 MB（チェックポイント 7.66 + 後ろ 0.61 + Pyodide 0.9 + ページ 0.3）に直す（8 と言う端末には出さない決まりのまま）。(c) 8 と言う端末にも「Ternary Bonsai 2 27B needs about 9.5 GB of memory; this browser reports 8 GB or more.」を出す（32 GB の PC にも出る）。`?bits=8` は取得の前に「needs about 35 GB … 16 GB at most」と断る（本番で確かめた）。
 
-### T.290 [運用][Bonsai] Safari（WebKit）で 3 値の 4B・8B を確かめ、note を直す — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 小）
+### T.290 [運用][Bonsai] Safari（WebKit）で 3 値の 4B・8B を確かめ、note を直す — 状態: 進行中（2026-10-02 の洗い出しで採番。規模 小）
 - 3 値で 4B・8B も 32 ビットのメモリに入る。CI の WebKit は 1.7B と 4B が通った（7.6・3.1 tok/s）。8B と macOS の WebKit、note の「Chrome and Firefox」。
+- **本番を CI の WebKit 27.2 で（2026-11-03、`models.yml`）**: 3 つとも準備完了して日本語で読める答えを書いた。どれも 32 ビットのメモリ（ステータス行に「64-bit memory」が無い）、SIMD kernels・ternary・relaxed SIMD・4 本。
+  - 8B・Linux（run 41706278711、AMD EPYC 7763・4 スレッド・17 GB）: 準備完了 50.0 秒、プロンプト 3.9 tok/s、答え 3.4 tok/s（232 トークン）。WebGPU は Worker に無い。
+  - 4B・macOS（run 41706282770、Apple M1 の仮想機・3 スレッド・8 GB）: 準備完了 52.1 秒、プロンプト 13.8 tok/s、答え 11.1 tok/s（176 トークンで自分で止まった）。
+  - 8B・macOS（同じ run）: 準備完了 73.3 秒、プロンプト 8.9 tok/s、答え 3.8 tok/s（232 トークン）。
+  - macOS の WebKit には Worker の WebGPU があるが、8 GB の機械では GPU に層を 2 重に置くとメモリが足りないと断り CPU のまま（「the layers on the GPU as well (1627 MB / 2559 MB) would not leave this device enough memory」）。正しい断り方。
+  - WebKit のメモリの線（落とし穴の T.506: 16 GB 以下の機械で 8 GB）には届かなかった。8B は 3 値で全部 3.3 GiB。
+- **note**: 今の note に「Chrome and Firefox」は無い（窓口の `devicesOf()` が 4 GiB を超える項目にだけ付け、4B は 1.1 GB・8B は 2.2 GB）。8B は「desktop only」が付く（2.2 GB + 0.3 GB が 2 GiB を超える）。だから note は直さない。本物の Safari（iPhone・Mac）は未確認。
+- CI を回した。訳: WebKit と macOS は手元で見られない（a1-free では Playwright の WebKit が動かない）。
+- 取りまとめ役の決め（訳）: note は変えない（上の通り、手で書かない決まりで既に正しい）。macOS は 4B と 8B を 1 つの run にまとめた（同じランナーで比べられ、待ちが 1 回で済む）。
 
 ### T.291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
 - 0.8B は今の設定で 12 の問いのうち 2〜3 しか考えを終えない（T.236 のレビュー）。案: 一覧から外す（勧め）、設定を替える（8/12 程度）、T.274 の後に presence penalty で（11/12）。2B・4B・9B は T.245・T.247 のレビューが測る。27B の考える形は 3 問とも終えた。**T.233 のレビューは T.236 のレビューの 12 の問い（日本語 6・英語 6）で見た: 考える形は 12 とも考えが終わり（29〜334 トークン、中央値 約 200）、答えは読める。すぐ答える形も 12 とも自分で止まった（8〜649 トークン）。arm64 の 4 本で 2.3〜2.4 tok/s**（run 36967278093・36967359414・36969052985）。小さな誤りは出る（「光合成」の読みを「こうせいせつ」・「こうせつ」と書く、漱石の作品に実在しない『葉枕』、中国語の語「监测」「干预」）が、経路の誤りではなく 27B の 3 値の質。
