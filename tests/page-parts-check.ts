@@ -359,6 +359,16 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(thoughtOf("<think>\nHm.\n</think>\n\nTokyo. </think> again", false), { thought: "Hm.", closed: true, answer: "Tokyo. </think> again" }, "a thought the model opened (Qwen3's thinking form): it ends at its first closing mark");
   assert.deepEqual(thoughtOf("\nso 17 × 4</think>\n</think>\n\n408.", true), { thought: "so 17 × 4", closed: true, answer: "408." }, "a thought the budget closed and the model closed once more");
   assert.deepEqual(thoughtOf("<think>\n\n</think>\n\nTokyo.", true),{ thought: "", closed: true, answer: "Tokyo." }, "an empty thought (its opening mark written again) before the answer");
+  // T.592.1: harmony's analysis channel, which the format opens, its <|end|>, and the final channel's message after it
+  const { opensThought } = await fresh("page/thought.ts");
+  assert.deepEqual(["…<|start|>assistant<|channel|>analysis<|message|>", "…<think>\n", "…<|start|>assistant<|channel|>final<|message|>", "Hello"].map(opensThought),
+    [true, true, false, false], "the formats that open a thought: <think> and the analysis channel, not the final one");
+  const final = "<|start|>assistant<|channel|>final<|message|>";
+  assert.deepEqual(thoughtOf("Let me see.", true), { thought: "Let me see.", closed: false, answer: "" }, "harmony's thought that goes on");
+  assert.deepEqual(thoughtOf(`Let me see.<|end|>${final}東京です。`, true), { thought: "Let me see.", closed: true, answer: "東京です。" }, "harmony's thought, closed, and its answer in the final channel");
+  assert.deepEqual(thoughtOf("Let me see.<|end|><|start|>assistant<|channel|>", true), { thought: "Let me see.", closed: true, answer: "" }, "the final channel's start while it is written is no answer yet");
+  assert.deepEqual(thoughtOf("Hm.<|end|>Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "an answer without the final channel's start is all answer");
+  assert.deepEqual(thoughtOf("Hm. <|end|> then </think> x", true).thought, "Hm.", "of two kinds the closing mark that comes first ends it");
   assert.deepEqual([thoughtLine(false), thoughtLine(true)], ["Thinking…", "Thought"], "while it goes on, and once it closed");
   assert.deepEqual([thoughtLine(true, { thought: 412, thought_cut: false }), thoughtLine(true, { thought: 1, thought_cut: false }),
     thoughtLine(true, { thought: 3000, thought_cut: true }), thoughtLine(false, { thought: 80, thought_cut: false }), thoughtLine(true, { thought: null, thought_cut: false })],

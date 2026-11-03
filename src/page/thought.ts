@@ -2,21 +2,34 @@
 // line its fold says. It imports nothing and reads nothing of a page: Node imports this file as it is
 // (tests/page-parts-check.ts).
 
-const THOUGHT_OPENS = "<think>", THOUGHT_CLOSES = "</think>";
+// T.592.1: the marks of every kind of thought: its opening and closing marks, and what a model writes after the closing
+// one before its answer. Harmony's (llm-jp-4's thinking forms) is its analysis channel, which the format opens, and
+// the answer its final channel's message. The engine follows the same (src/python/engine/generation.py' THOUGHT_MARKS)
+const MARKS = [{ opens: "<think>", closes: "</think>", answers: "" },
+  { opens: "<|channel|>analysis<|message|>", closes: "<|end|>", answers: "<|start|>assistant<|channel|>final<|message|>" }];
+/** T.592.1: whether a format leaves the answer inside a thought (the text sent ends in an opening mark). */
+export const opensThought = (sent: string) => MARKS.some(({ opens }) => sent.trimEnd().endsWith(opens));
 /** T.520: what was written, as the thought (null: none; its marks and the white space around it left out), whether the
- * thought has closed, and the answer after it. `opened`: the format left the answer in <think> (else the model may open
- * the thought itself, as Qwen3's thinking form does). The form is naidan's splitAssistantThinking() of
+ * thought has closed, and the answer after it. `opened`: the format left the answer in a thought (opensThought(); else
+ * the model may open the thought itself, as Qwen3's thinking form does). The form is naidan's splitAssistantThinking() of
  * src/logic/assistant-thinking.ts (852bdeab, MIT, Ryo Ota), where a format that ends in the opening mark has it put
  * before what was written: no line of it is copied. */
 export function thoughtOf(text: string, opened: boolean) {
   const begun = text.trimStart();
-  if (!opened && !begun.startsWith(THOUGHT_OPENS)) return { thought: null, closed: false, answer: text };
-  const body = begun.startsWith(THOUGHT_OPENS) ? begun.slice(THOUGHT_OPENS.length) : begun;
-  const end = body.indexOf(THOUGHT_CLOSES);
+  const own = MARKS.find(({ opens }) => begun.startsWith(opens));
+  if (!opened && !own) return { thought: null, closed: false, answer: text };
+  const body = own ? begun.slice(own.opens.length) : begun;
+  // (where the format opened it: the kind whose closing mark comes first, a mark not written yet after all the text)
+  const at = (closes: string) => { const end = body.indexOf(closes); return end < 0 ? body.length : end; };
+  const marks = own ?? MARKS.reduce((first, kind) => at(kind.closes) < at(first.closes) ? kind : first);
+  const end = body.indexOf(marks.closes);
   if (end < 0) return { thought: body.trimStart(), closed: false, answer: "" };
   // (a thought its budget closed may be closed by the model once more, right after: T.520's Qwen3.5 0.8B)
-  const answer = body.slice(end + THOUGHT_CLOSES.length).trimStart();
-  return { thought: body.slice(0, end).trim(), closed: true, answer: answer.startsWith(THOUGHT_CLOSES) ? answer.slice(THOUGHT_CLOSES.length).trimStart() : answer };
+  let answer = body.slice(end + marks.closes.length).trimStart();
+  if (answer.startsWith(marks.closes)) answer = answer.slice(marks.closes.length).trimStart();
+  // (what comes before the answer, or the start of it while it is being written)
+  answer = answer.startsWith(marks.answers) ? answer.slice(marks.answers.length).trimStart() : marks.answers.startsWith(answer) ? "" : answer;
+  return { thought: body.slice(0, end).trim(), closed: true, answer };
 }
 /** T.520: the one line a folded thought says: while it goes on, once it closed, and at the answer's end (stats: the
  * engine's count of its tokens and whether its budget closed it; thought null where the engine saw no marks). */

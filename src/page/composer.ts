@@ -5,6 +5,7 @@ import { fromTemplate, longest, model } from "./model.ts";
 import { answerBegan, generating } from "./answer.ts";
 import { settings } from "./settings.ts";
 import { message, showRun } from "./draw.ts";
+import { opensThought } from "./thought.ts";
 import { worker } from "./receiver.ts";
 
 // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key
@@ -42,8 +43,9 @@ $("composer").onsubmit = (event) => {
   // what src/models.ts says for this model, or what its own chat_template gave (T.73)
   const template = ((model as any).template ?? fromTemplate) as string | undefined;
   const sent = template ? filled(template, prompt.value) : prompt.value;
-  // T.556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in <think>
-  const drawn = { markdown: Boolean(template), thinking: Boolean(template) && /<think>\s*$/.test(sent) };
+  // T.556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in a thought
+  // (<think>, or harmony's analysis channel: T.592.1)
+  const drawn = { markdown: Boolean(template), thinking: Boolean(template) && opensThought(sent) };
   const how = answerBegan(message("model"), settings, longest, () => crypto.getRandomValues(new Uint32Array(1))[0], drawn);
   if (!how) return;  // (T.468.3: one is being written: the guard above keeps from here)
   showRun();

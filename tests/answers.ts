@@ -59,6 +59,7 @@ const sampling = { ...Object.fromEntries(Object.entries({ temperature, topp, rep
 pyodide.globals.set("SAMPLING", pyodide.toPy(sampling));
 const result = JSON.parse(pyodide.runPython(`
 import json, re, time
+from engine.generation import THOUGHT_MARKS
 llama = kernel_llama_file(CHECKPOINT, open("tokenizer.bin", "rb").read(), **OPTIONS)
 JAPANESE = re.compile(r"[\\u3040-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef]")
 KANA = re.compile(r"[\\u3040-\\u30ff]")
@@ -73,7 +74,9 @@ def judge(answer, text):
             "japanese": sum(1 for c in letters if KANA.match(c)) / len(letters) if letters else 0.0,
             # asked in Japanese: four letters of kana or kanji in what was typed (the format's own words are English)
             "asked_in_japanese": sum(1 for c in text if JAPANESE.match(c)) >= 4, "unk": "<unk>" in answer,
-            "thought": "</think>" in answer, "thinks": text.rstrip().endswith("<think>") or "<think>" in answer}
+            # (T.592.1: of every kind of thought the engine follows: <think>, harmony's analysis channel)
+            "thought": any(closes in answer for _, closes in THOUGHT_MARKS),
+            "thinks": any(text.rstrip().endswith(opens) or opens in answer for opens, _ in THOUGHT_MARKS)}
 
 def write(text, **sampling):
     ids = llama.tokenizer.encode(text, llama.specials)
@@ -99,7 +102,7 @@ console.log(`answers ${id}: ${prompts.length} questions x ${seeds.length} seeds$
   `${bare ? ", NO FORMAT (the bare question)" : ""}`);
 for (const row of result.rows) {
   console.log(`answers ${id}: [${row.kind}] ${JSON.stringify(prompts[row.prompt])} -> ${row.tokens} tokens in ${row.seconds.toFixed(0)} s, ` +
-    `${row.stopped ? "STOPPED (a stop token)" : `CUT at the budget of ${count}`}, ${row.thought ? "thought finished (</think>)" : row.thinks ? "thought not finished" : "no thought"}` +
+    `${row.stopped ? "STOPPED (a stop token)" : `CUT at the budget of ${count}`}, ${row.thought ? "thought finished (its closing mark)" : row.thinks ? "thought not finished" : "no thought"}` +
     `${row.thought_tokens === null ? "" : ` (${row.thought_tokens} tokens of thought${row.thought_cut ? ", CLOSED BY THE BUDGET" : ""})`}, ` +
     `${row.asked_in_japanese ? `${(row.japanese * 100).toFixed(0)}% of its letters kana (Japanese is about half, Chinese none)` : "asked in English"}${row.loop ? ", LOOPS" : ""}${row.unk ? ", <unk>" : ""}`);
   console.log(`answers ${id}: [${row.kind}] answer ${JSON.stringify(row.answer)}`);

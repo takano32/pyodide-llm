@@ -32,6 +32,10 @@ from engine.sampler import Sampling
 # T.520: the marks of a thought, in the formats of the list that think (Qwen3, Qwen3.5, DeepSeek-R1's distills, Granite
 # 4.2, SmolLM3, MiniCPM5, Spark-X...): a token each in their vocabularies.
 THOUGHT_OPENS, THOUGHT_CLOSES = "<think>", "</think>"
+# T.592.1: the marks of every kind of thought, the opening and the closing one. Harmony's (llm-jp-4's thinking forms)
+# is its analysis channel, which its format opens (three tokens: no model of the list opens it itself) and its <|end|>
+# closes; the answer is the final channel's message after it. The page folds the same (src/page/thought.ts' MARKS)
+THOUGHT_MARKS = ((THOUGHT_OPENS, THOUGHT_CLOSES), ("<|channel|>analysis<|message|>", "<|end|>"))
 
 
 def mark_of(model, mark):
@@ -45,6 +49,20 @@ def mark_of(model, mark):
     return tokens[0] if len(tokens) == 1 else None
 
 
+def thought_marks(model, prompt):
+    """T.592.1: the tokens of the marks of the thought a run follows (opens: None where the model cannot write it as one
+    token; closes: None where there is no thought to follow) and whether the prompt opened it: the first kind of
+    THOUGHT_MARKS that the prompt ends in the opening mark of (and the model has the closing one of), else the first
+    the model may open and close itself."""
+    for opening, closing in THOUGHT_MARKS:
+        if prompt.rstrip().endswith(opening) and (closes := mark_of(model, closing)) is not None:
+            return mark_of(model, opening), closes, True
+    for opening, closing in THOUGHT_MARKS:
+        if (closes := mark_of(model, closing)) is not None and (opens := mark_of(model, opening)) is not None:
+            return opens, closes, False
+    return None, None, False
+
+
 def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **settings):
     """Yield the text piece by piece, as it is generated. echo=False leaves the prompt out of it (an instruction
     wrapped in a template, which nobody wants to read back). settings: how the tokens are drawn, Sampling's by their
@@ -52,7 +70,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     refuses what it cannot be. None of them is read here: the samplers have them.
 
     thinking (T.520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought in its
-    vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>); once a thought
+    vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>, or in harmony's analysis channel: thought_marks()); once a thought
     has this many tokens and is still open, the closing mark is written in place of the next draws, as llama.cpp's
     reasoning budget does, and the model goes on to its answer. The stats say how long the thought was (thought: None
     where there was none) and whether the budget closed it (thought_cut).
@@ -73,9 +91,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
         raise ValueError(f"thinking is a number of tokens, 0 or more (not {thinking!r}).")
     # T.520: the thought, followed where the model has its closing mark: the token of each mark, whether a thought is
     # open (the format may have opened it), its tokens so far (None: no thought yet), and whether the budget closed it
-    closes = mark_of(model, THOUGHT_CLOSES)
-    opens = mark_of(model, THOUGHT_OPENS) if closes is not None else None
-    inside = closes is not None and prompt.rstrip().endswith(THOUGHT_OPENS)
+    opens, closes, inside = thought_marks(model, prompt)
     thought = 0 if inside else None
     cut = False
     rng = np.random.default_rng(seed)

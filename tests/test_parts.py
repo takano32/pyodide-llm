@@ -385,12 +385,12 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
         through = [(caller, further) for called, caller, further in calls if called is code]
         assert through and all(further is written for _, further in through), code.co_qualname
     # and generate() calls nothing of the engine's but those, the tokenizer, and the sampler once for how it draws
-    # (T.520: and mark_of(), for the two marks of a thought, once a generation too)
+    # (T.520: and thought_marks() for the marks of a thought, once a generation too: T.592.1)
     ours = {code.co_qualname for code, caller, _ in calls if caller is written and "/engine/" in code.co_filename}
     assert ours == {parts["forward"].__qualname__, parts["draw"].__qualname__, llama.sampler.drawing.__qualname__,
-                    "Tokenizer.decode", "mark_of"}, ours
+                    "Tokenizer.decode", "thought_marks"}, ours
     assert [code for code, caller, _ in calls if caller is written].count(llama.sampler.drawing.__code__) == 1
-    assert [code for code, caller, _ in calls if caller is written].count(generation.mark_of.__code__) <= 2
+    assert [code for code, caller, _ in calls if caller is written].count(generation.thought_marks.__code__) == 1
 
 
 # ------------------------------------------------------------------------------------- a dropped model is gone

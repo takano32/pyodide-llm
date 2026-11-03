@@ -100,3 +100,42 @@ def test_the_marks_are_the_vocabularys_not_only_the_specials():
     assert "".join(generation.generate(model, "a<think>", steps=40, echo=False, thinking=2)) == "xx</think>xy"
     assert (model.stats["thought"], model.stats["thought_cut"]) == (2, True)
     assert (generation.mark_of(model, "</think>"), generation.mark_of(stand_in_model([], []), "</think>")) == (201, None)
+
+
+class Harmony(Marked):
+    """Letters, with harmony's specials as one token each (llm-jp-4's), and no <think>."""
+    MARKS = {"<|channel|>": 300, "<|message|>": 301, "<|end|>": 302, "<|start|>": 303}
+
+    def decode(self, previous, token, bos=1):
+        return next((mark.encode() for mark, number in self.MARKS.items() if number == token), None) or chr(token).encode()
+
+
+def harmony_model(log, answers):
+    return stand_in_model(log, answers, tokenizer=Harmony(), specials=tuple(Harmony.MARKS))
+
+
+THINKS, ANSWERS = "<|start|>assistant<|channel|>analysis<|message|>", "<|start|>assistant<|channel|>final<|message|>"
+
+
+def test_harmonys_analysis_channel_is_a_thought_its_end_closes():
+    """T.592.1: harmony's thinking form opens the analysis channel in the format; the thought is what the model writes
+    there, <|end|> closes it (written in place of a draw at the budget), and the model goes on to its final channel."""
+    log = []
+    model = harmony_model(log, [X, X, X, 303, Y, 0])
+    text = "".join(generation.generate(model, "a" + THINKS, steps=80, echo=False, thinking=3))
+    assert text == "xxx<|end|><|start|>y"
+    assert (model.stats["thought"], model.stats["thought_cut"]) == (3, True)
+    assert generation.thought_marks(model, "a" + THINKS) == (None, 302, True)
+    # one that closes it itself is not touched
+    model = harmony_model([], [X, 302, Y, 0])
+    assert "".join(generation.generate(model, "a" + THINKS, steps=80, echo=False, thinking=3)) == "x<|end|>y"
+    assert (model.stats["thought"], model.stats["thought_cut"]) == (1, False)
+
+
+def test_harmonys_final_channel_is_no_thought():
+    """T.592.1: llm-jp-4 8B instruct's format asks for the final channel: no thought is followed, whatever the budget,
+    and the model's <|end|> is no mark (it cannot open the analysis channel as one token)."""
+    model = harmony_model([], [X, 302, X, 0])
+    assert "".join(generation.generate(model, "a" + ANSWERS, steps=80, echo=False, thinking=1)) == "x<|end|>x"
+    assert (model.stats["thought"], model.stats["thought_cut"]) == (None, False)
+    assert generation.thought_marks(model, "a" + ANSWERS) == (None, None, False)
