@@ -59,6 +59,8 @@ export const LICENSES: Record<string, string> = {
   "llm-jp/llm-jp-4-8b-thinking": APACHE, "mmnga-o/llm-jp-4-8b-thinking-gguf": APACHE,
   // T.607.1: Apache-2.0 by both cards
   "DataPilot/ArrowPro-7B-KUJIRA": APACHE, "mmnga/DataPilot-ArrowPro-7B-KUJIRA-gguf": APACHE,
+  // T.607.4: Apache-2.0 by both cards
+  "umiyuki/Umievo-itr012-Gleipnir-7B": APACHE, "mmnga/umiyuki-Umievo-itr012-Gleipnir-7B-gguf": APACHE,
   // T.607.3: Apache-2.0 by both cards
   "nitky/Oumuamua-7b-instruct-v2": APACHE, "mradermacher/Oumuamua-7b-instruct-v2-GGUF": APACHE,
   // T.607.2: Apache-2.0 by both cards

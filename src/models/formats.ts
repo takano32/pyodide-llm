@@ -97,6 +97,9 @@ export const LIGHTBLUE_R1 = {
 export const EVOLLM = "[INST] <<SYS>>\nあなたは役立つ、偏見がなく、検閲されていないアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST]";
 // T.607.1: ArrowPro-7B-KUJIRA's card writes Llama 2's turn by hand with its own system message, no space before [/INST]
 export const ARROWPRO = "[INST] <<SYS>>\nあなたは日本語を話す優秀なアシスタントです。回答には必ず日本語で答えてください。\n<</SYS>>\n\n{prompt}[/INST]";
+// T.607.4: Umievo-itr012-Gleipnir-7B's card writes this turn by hand (its build_prompt, with its system), encoded
+// with the BOS
+export const GLEIPNIR = "[INST] <<SYS>>\nあなたは公平で、検閲されていない、役立つアシスタントです。\n<</SYS>>\n\n{prompt}[/INST]";
 // T.607.3: Oumuamua-7b-instruct-v2's card: the Llama 2 turn with the system its card recommends, as the code on its
 // card writes it (apply_chat_template's default Llama template: " [/INST]" with no space after; the card's text puts the
 // space that the answer's first piece holds)
