@@ -1289,12 +1289,13 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
 
-#### T.592.1 harmony の考えを、エンジンが追いページが畳む — 状態: 進行中（2026-11-03、Opus medium）
+#### T.592.1 harmony の考えを、エンジンが追いページが畳む — 状態: 完了（2026-11-03、Opus medium）
 - **子タスクの分け方（取りまとめ役の決め）**: T.592.1 で考えの印の表を作り、T.592.2 で llm-jp-4 8B thinking（Q8_0）を足す。T.304（4.1 の Q4_K_M の塊）はその後に自分の番号で。
 - **したこと**: 考えの印を表に: エンジンの `THOUGHT_MARKS`（`engine/generation.py`: `<think>`…`</think>` と harmony の `<|channel|>analysis<|message|>`…`<|end|>`）と、どの種類を追うかを決める `thought_marks()`（プロンプトが開く印で終わる種類、無ければモデルが 1 トークンで開ける種類）。上限で閉じるのは種類の閉じる印（harmony は `<|end|>`）。ページの写し `src/page/thought.ts` の `MARKS`（閉じた後に答えの前に書くもの `answers`: harmony は `<|start|>assistant<|channel|>final<|message|>`、書いている途中の頭は答えに出さない）と、書式が考えを開くかの `opensThought()`（`composer.ts` の正規表現の代わり）。書式が開いた考えは、閉じる印が先に出た種類で読む。`tests/answers.ts` の「考えを終えた」も表の閉じる印で、smoke の作り物の印は表を差し替える形に。
 - **取りまとめ役の決め（訳）**: harmony の開く印は 3 トークンなので、モデルが自分で開く考えは追わない（考える形の書式は analysis のチャンネルを開いて終える: すぐ答える形の HARMONY が final を開くのと同じ形。本物の書式は `<|start|>assistant` で終わるので `format_check.py` の `KNOWN` に足すのは T.592.2）。上限で書くのは `<|end|>` だけ（final のチャンネルの頭はモデルが書く）。
 - **確かめ**: pytest の全部（3345 通る）、`test_thinking.py` に harmony の 2 つ（上限で `<|end|>`、自分で閉じた考え、final のチャンネルを開く書式では追わない）、smoke、`page-parts-check`（harmony の考えの 5 つ）、`page-modules-check`、`npm run types`、`models-check`。実ブラウザ（手元の Chrome、DevTools MCP）: llm-jp-3 150M が答え、Qwen3 0.6B (thinking) の考えが前のとおり畳まれる（「Thought for 137 tokens」）、コンソールに警告もエラーも無い。手元の Playwright の Chromium は版が合わず（入れると `$HOME` に書く）回していない。
 - **レビュー（Sonnet low、2026-11-03）**: 直すべきものは無し。あるとよい点 6 つのうち、`answer.ts` のコメントと `generate()` の説明の行の長さを直した。取りまとめ役の決め（訳）: 2 つの表（`THOUGHT_MARKS` と `MARKS`）を突き合わせる検査は T.592.2 で足すか決める（実物の harmony の文で、特殊トークンが文字のまま復号されるかも T.592.2 で見る）。harmony の考えの中に `</think>` の文字があると先に閉じたと読む端は、まれなのでそのまま。モデルが自分で開く道が harmony に当たらないのは表の形なのでそのまま。
+- **本番**（デプロイ run 41581197844、`models.yml` run 41582708680、Chromium）: Qwen3 0.6B (thinking) は準備完了 17.5 秒・27.2 tok/s、llm-jp-3 150M は 5.1 秒・137.9 tok/s。
 - CI を省いた。訳: 触ったのは Python の生成の輪の印の選びとページの純な部品で、pytest・smoke・ページの部品の検査・実ブラウザが全部踏む。harmony の考えを実物で書かせるのは T.592.2 の CI。
 ### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
 - **持ち主の決定（2026-11-03、選択肢で「すべて足します」）**: 挙げたものを全部足す（NSFW を名乗るものも、方針 8 のとおり note はカードに従う）。1 つのモデルを 1 つの子タスクに、取りかかる時に番号を採る。
