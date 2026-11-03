@@ -10,6 +10,8 @@
 //   node tests/page-27b.ts <out> write <prompt> [--tokens 1500] [--seed 1] [--threads 4]
 //   node tests/page-27b.ts <out> long <references> [--context 8192] [--threads 4] [--lines none | <logits>,<kl>,<growth>] [--broken <name>,...]
 //   node tests/page-27b.ts <out> convert <folder with config.json, the tokenizer and the GGUF> [--context 4096]
+//   node tests/page-27b.ts <out> starts <text file> [--heads <ids or none>] [--positions 128] [--window <tokens>] [--threads 4]
+//   node tests/page-27b.ts <out> chat [--heads <A's first token>,<the token put in front of it>] [--fidelity 24] [--format <id>] [--threads 4]
 //
 // <out>: what tests/page_27b.py convert (or tests/perplexity_prepare.py) wrote, <out>.bin, <out>.tokenizer.bin and
 // <out>.json (--wide: on a 64-bit memory whatever its size, as the 27B is). The engine gets the options the page's worker merges: the conversion's, then those of the list's entry
@@ -51,6 +53,19 @@
 //   at that context. The lines: the largest difference of a row past 127 positions at most LOGITS or GROWTH times the
 //   floor's largest, whichever is more; the KL likewise; a most likely token that differs only where the fork's own first
 //   two are no more than twice the row's largest difference apart. --lines none: the numbers alone.
+// starts (T.364.2): the same text after each of some first tokens (--heads), a token at a time, the perplexity of
+//   the text but its first token. --window (T.633): the text in windows of that many tokens, each begun again after the
+//   first token, as tests/start_check.ts measures (its windows of 512): a model too slow for start_check.ts's one thread.
+// chat (T.633): tests/chat_nll.py's two readings on the page's engine, for a model whose original does not fit a runner
+//   in transformers (the 27B's float16 is 54 GB): A is the page's ids (the entry's BOS, the first token of its format,
+//   then the format: [heads[0], ...the format's ids]), B the same with another token in front ([heads[1], ...A]).
+//   1. fluency, on the 24 answers written by hand (tests/fixtures/chat-answers.jsonl) and the end of their turn
+//   (<|im_end|>, the entry's last stop), in the form that answers at once: the mean nll of their tokens under A and B.
+//   2. fidelity, on the model's own greedy answers of 40 tokens, both ways (AGENTS.md: an answer is likelier in the
+//   context that wrote it, so each start writes and the other scores): the nll of A's answers and of B's answers under
+//   each, KL(A || B) along each, how often the most likely token is the same. The entry's form (--entry ...-thinking:
+//   the thinking form, and no fluency, as chat_nll.py). --fidelity N: N prompts, every other one of the 24 up to N
+//   (both languages). --format <id>: the format of that entry of the list, the options another's (a made-up model).
 // convert: the page's conversion (Pyodide, NumPy with 32-bit integers, the kernels' quantizer) of the GGUF into a
 //   64-bit shared memory through a sink, as the worker's checkpointSink has it, by the conduct of a conversion answered
 //   from the folder (T.374.4, tests/conducting.ts), the tensors fed 16 MiB at a time; the time (from the first of those on), the
@@ -142,11 +157,11 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact", "--quiet"];
+  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact", "--quiet", "--window", "--fidelity", "--format"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
-  if (!out || !["compare", "speed", "memory", "write", "long", "convert", "starts"].includes(mode)) {
-    console.error("usage: node tests/page-27b.ts <out> compare <references> | speed | memory | write <prompt> | long <references> | convert <folder> | starts <text file>");
+  if (!out || !["compare", "speed", "memory", "write", "long", "convert", "starts", "chat"].includes(mode)) {
+    console.error("usage: node tests/page-27b.ts <out> compare <references> | speed | memory | write <prompt> | long <references> | convert <folder> | starts <text file> | chat");
     process.exit(2);
   }
   const { pyodideWithEngine } = await import("./engine.ts");
@@ -302,6 +317,24 @@ if (isMainThread) {
     const ids = Array.from(py.runPython("llama.tokenizer.encode(TEXT, [])").toJs()).slice(0, Number(option("--positions", 128)));
     job.starts = option("--heads", `${options.bos},none`).split(",").map((head) => ({ head, ids: head === "none" ? ids : [Number(head), ...ids] }));
     job.text = { file: path.basename(third), tokens: ids.length };
+    job.window = Number(option("--window", ids.length));
+  }
+  if (mode === "chat") {
+    const formatted = option("--format", "") ? MODELS.find((model) => model.id === option("--format", "")) : entry;
+    if (!formatted?.template) throw new Error("chat needs an entry of the list with a format (--entry, or --format)");
+    const stops = options.stop_tokens ?? [];
+    const [first, other] = option("--heads", `${options.bos},${stops[0]}`).split(",").map(Number);
+    const end = stops[stops.length - 1];  // the end of a turn (<|im_end|> for a Qwen3.5's 248044, 248045, 248046)
+    const thinking = formatted.template.endsWith("<think>\n");
+    const encode = (text) => { py.globals.set("TEXT", text); return Array.from(py.runPython("llama.tokenizer.encode(TEXT, llama.specials)").toJs()); };
+    const pairs = fs.readFileSync(new URL("fixtures/chat-answers.jsonl", import.meta.url), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const fidelity = Number(option("--fidelity", pairs.length));
+    // (chat_nll.py's choice of prompts: every other one up to N, so that both languages are in it)
+    const chosen = fidelity >= pairs.length ? pairs : pairs.filter((_, i) => i % Math.max(1, Math.floor(pairs.length / fidelity)) === 0).slice(0, fidelity);
+    const headOf = (pair) => [first, ...encode(filled(formatted.template, pair.prompt))];
+    Object.assign(job, { first, other, end, thinking, form: formatted.id, tokens: 40, stops: [...new Set([...stops, end])],
+      fluency: thinking ? [] : pairs.map((pair) => ({ language: /[\u2e80-\uffff]/.test(pair.prompt) ? "ja" : "en", head: headOf(pair), answer: [...encode(pair.answer), end] })),
+      fidelity: chosen.map((pair) => ({ language: /[\u2e80-\uffff]/.test(pair.prompt) ? "ja" : "en", head: headOf(pair) })) });
   }
   if (mode === "write") {
     // generate() is Python's loop: Pyodide and the forward pass in one worker, as on the page
@@ -704,16 +737,22 @@ if (isMainThread) {
     // the same text after each first token: the mean of -log p of every token of the text but its first (which a run with
     // no token before it cannot predict), and of the second half of them alone
     const told = [];
-    for (const { head, ids } of job.starts) {
-      const engine = engineOf(null), lead = ids.length - job.text.tokens;
+    for (const { head, ids: all } of job.starts) {
+      const engine = engineOf(null), lead = all.length - job.text.tokens, text = all.slice(lead);
       await engine.setThreads(job.threads[0]);
       const surprise = [], began = performance.now();
-      for (let position = 0; position < ids.length - 1; position++) {
-        engine.forward(ids[position], position, true);
-        if (position >= lead) surprise.push(-logSoftmax(engine.logits())[ids[position + 1]]);
+      // (T.633: windows of job.window tokens, of 64 at least as start_check.ts's, each from position 0 after the head again)
+      for (let from = 0; from < text.length; from += job.window) {
+        const window = text.slice(from, from + job.window);
+        if (window.length < 64 && from > 0) break;
+        const ids = [...all.slice(0, lead), ...window];
+        for (let position = 0; position < ids.length - 1; position++) {
+          engine.forward(ids[position], position, true);
+          if (position >= lead) surprise.push(-logSoftmax(engine.logits())[ids[position + 1]]);
+        }
       }
       const mean = (list) => list.reduce((sum, value) => sum + value, 0) / list.length, late = surprise.slice(surprise.length >> 1);
-      say(`${job.text.file}, ${job.text.tokens} tokens after ${head === "none" ? "no token" : `token ${head}`}: ${mean(surprise).toFixed(4)} nats a token over ${surprise.length} ` +
+      say(`${job.text.file}, ${job.text.tokens} tokens${job.window < job.text.tokens ? ` in windows of ${job.window}` : ""} after ${head === "none" ? "no token" : `token ${head}`}: ${mean(surprise).toFixed(4)} nats a token over ${surprise.length} ` +
         `(a perplexity of ${Math.exp(mean(surprise)).toFixed(3)}), ${mean(late).toFixed(4)} over the last ${late.length} (${Math.exp(mean(late)).toFixed(3)}); ` +
         `${((performance.now() - began) / 1000).toFixed(0)} s on ${engine.threads} threads, ${cpu}`);
       told.push({ head, perplexity: Math.exp(mean(surprise)) });
@@ -721,6 +760,78 @@ if (isMainThread) {
       await engine.release();
     }
     say(`${job.text.file}: ` + told.slice(1).map(({ head, perplexity }) => `after ${head === "none" ? "no token" : `token ${head}`} the perplexity is ${((perplexity / told[0].perplexity - 1) * 100).toFixed(2)}% from that after ${told[0].head}`).join("; "));
+  }
+  if (job.mode === "chat") {
+    const engine = engineOf(null);
+    await engine.setThreads(job.threads[0]);
+    const began = performance.now();
+    let forwards = 0;
+    /** the log probabilities of the next token at every position of answer after prefix (from position 0) */
+    const scored = (prefix, answer) => {
+      const ids = [...prefix, ...answer], rows = [];
+      for (let position = 0; position < ids.length - 1; position++) {
+        engine.forward(ids[position], position, true);
+        forwards += 1;
+        if (position >= prefix.length - 1) rows.push(logSoftmax(engine.logits()));
+      }
+      return rows;
+    };
+    /** the greedy answer of job.tokens tokens after prefix, and the log probabilities it was drawn from */
+    const greedy = (prefix) => {
+      const written = [], rows = [];
+      for (let position = 0; position < prefix.length - 1; position++) { engine.forward(prefix[position], position, false); forwards += 1; }
+      let token = prefix[prefix.length - 1];
+      for (let position = prefix.length - 1; written.length < job.tokens; position++) {
+        engine.forward(token, position, true);
+        forwards += 1;
+        const row = logSoftmax(engine.logits());
+        rows.push(row);
+        token = argmax(row);
+        written.push(token);
+        if (job.stops.includes(token)) break;
+      }
+      return { written, rows };
+    };
+    const nll = (rows, answer) => answer.reduce((sum, token, i) => sum - rows[i][token], 0);
+    const kl = (a, b) => { let sum = 0; for (let i = 0; i < a.length; i++) sum += Math.exp(a[i]) * (a[i] - b[i]); return sum; };
+    const mean = (list) => list.reduce((sum, value) => sum + value, 0) / list.length;
+    const error = (list) => { const m = mean(list); return Math.sqrt(list.reduce((sum, value) => sum + (value - m) ** 2, 0) / (list.length - 1) / list.length); };
+    const A = (head) => head, B = (head) => [job.other, ...head];
+    say(`chat: A begins with ${job.first} and the format of ${job.form}${job.thinking ? " (thinking)" : ""}, B puts ${job.other} in front of it; the end of a turn ${job.end}; ${engine.threads} threads, ${cpu}`);
+    // 1. fluency
+    const rows = job.fluency.map(({ language, head, answer }) => ({ language, tokens: answer.length, A: nll(scored(A(head), answer), answer), B: nll(scored(B(head), answer), answer) }));
+    for (const language of rows.length ? ["ja", "en", null] : []) {
+      const part = rows.filter((row) => language === null || row.language === language), tokens = part.reduce((sum, row) => sum + row.tokens, 0);
+      const a = part.reduce((sum, row) => sum + row.A, 0) / tokens, b = part.reduce((sum, row) => sum + row.B, 0) / tokens;
+      const differences = part.map((row) => (row.B - row.A) / row.tokens);
+      say(`chat: fluency, ${language ?? "all"} (${part.length} answers written by hand, ${tokens} tokens): nll A ${a.toFixed(4)}, B ${b.toFixed(4)} (B - A ${(b - a).toFixed(4)}, ` +
+        `perplexity ${((Math.exp(b - a) - 1) * 100).toFixed(2)}%); B is worse on ${differences.filter((d) => d > 0).length} of ${part.length}; a pair's B - A ` +
+        `${mean(differences).toFixed(4)}, standard error ${error(differences).toFixed(4)}`);
+    }
+    // 2. fidelity, both ways
+    const own = { A: [], B: [] };
+    for (const { language, head } of job.fidelity) {
+      for (const [writer, scorer, from, to] of [["A", "B", A, B], ["B", "A", B, A]]) {
+        const { written, rows: theirs } = greedy(from(head)), ours = scored(to(head), written);
+        const [a, b] = writer === "A" ? [theirs, ours] : [ours, theirs];
+        own[writer].push({ language, tokens: written.length, A: nll(a, written) / written.length, B: nll(b, written) / written.length,
+          kl: mean(a.map((row, i) => kl(row, b[i]))), top1: mean(a.map((row, i) => (argmax(row) === argmax(b[i]) ? 1 : 0))) });
+      }
+    }
+    for (const writer of job.fidelity.length ? ["A", "B"] : []) {
+      const part = own[writer];
+      say(`chat: fidelity, ${job.thinking ? "thinking" : "at once"}, ${writer}'s own greedy answers (${part.length} prompts, ${job.tokens} tokens at most): nll under A ${mean(part.map((r) => r.A)).toFixed(4)}, ` +
+        `under B ${mean(part.map((r) => r.B)).toFixed(4)} (worse under B on ${part.filter((r) => r.B > r.A).length} of ${part.length}); KL(A || B) ${mean(part.map((r) => r.kl)).toFixed(4)} nats a token ` +
+        `(standard error ${error(part.map((r) => r.kl)).toFixed(4)}); the most likely token the same at ${(mean(part.map((r) => r.top1)) * 100).toFixed(1)}% of the positions`);
+    }
+    if (job.fidelity.length) {
+      const both = [...own.A, ...own.B];
+      say(`chat: fidelity, ${job.thinking ? "thinking" : "at once"}, both starts' answers (${both.length}): nll under A ${mean(both.map((r) => r.A)).toFixed(4)}, under B ${mean(both.map((r) => r.B)).toFixed(4)} ` +
+        `(B - A ${(mean(both.map((r) => r.B)) - mean(both.map((r) => r.A))).toFixed(4)}, a pair's standard error ${error(both.map((r) => r.B - r.A)).toFixed(4)})`);
+    }
+    say(`chat: ${forwards} tokens in ${((performance.now() - began) / 1000).toFixed(0)} s`);
+    engine.stopThreads();
+    await engine.release();
   }
   if (job.mode === "write") {
     const { pyodideWithEngine } = await import("./engine.ts");
