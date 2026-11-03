@@ -26,7 +26,12 @@
 # (reference_llama.float32_arithmetic, the embeddings widened before they go in): Granite 4.2 3B is 14.6 GB as float32,
 # more than a runner of 16 GB has. --thinking-arg: the template is given enable_thinking (Qwen3.5 always is): False for the
 # answers written by hand and for the form that answers at once, True for the thinking form (Granite 4.2, MiniCPM5).
-# --fidelity=N: the model's own answers for the first N prompts only (a greedy token of a 3B is a second or two here).
+# --fidelity=N: the model's own answers for the first N prompts only (a greedy token of a 3B is a second or two here);
+# 0 for none. --by-layer (T.399): a model a runner has not room for even as stored (llm-jp-4 8B is 17.2 GB in bfloat16)
+# a layer at a time (reference_llama.ByLayer, float32), the answers written by hand only (no fidelity: nothing generates
+# there; tests/answer_check.ts reads the model's own answers on the page's engine). --then=<text> (T.399): what the
+# page's format writes after the real template's generation prompt (llm-jp-4's harmony: the real one ends with
+# <|start|>assistant, the page's with <|channel|>final<|message|> after it), read by the tokenizer with nothing added.
 #
 # Qwen3.5 0.8B (CI's x86-64 runner, run 36935583881): 1. fluency A 2.0572, B 2.0494 nats a token over the 24 answers (B
 # 0.77% lower in perplexity, worse on 12 of 24, the pair's difference -0.0007 with a standard error of 0.027); 2. fidelity
@@ -51,6 +56,8 @@ arguments = [argument for argument in sys.argv[1:] if not argument.startswith("-
 target = arguments[0]
 bos, end = (int(arguments[1]), int(arguments[2])) if len(arguments) > 2 else (248044, 248046)
 stored = "--stored" in flags
+by_layer = "--by-layer" in flags
+then = next((flag.split("=", 1)[1].replace("\\n", "\n") for flag in flags if flag.startswith("--then=")), None)
 fidelity = int(next((flag.split("=", 1)[1] for flag in flags if flag.startswith("--fidelity=")), 1 << 30))
 # --format=<the turn, with {prompt} and \n> (T.517): a model with no chat template, whose card writes its format as a text
 # (LINE's japanese-large-lm instruction-sft: "ユーザー: {prompt}\nシステム: "), encoded with nothing added by the real
@@ -71,14 +78,19 @@ tokenizer = AutoTokenizer.from_pretrained(directory)
 configured = json.loads((directory / "config.json").read_text())
 hybrid = configured.get("model_type", "").startswith("qwen3_5")
 thinks = hybrid or "--thinking-arg" in flags
-if stored:
+if stored or by_layer:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import reference_llama
+if stored:
     reference_llama.float32_arithmetic()
     kept = getattr(torch, configured.get("dtype") or configured.get("torch_dtype") or "float32")
 else:
     kept = torch.float32
-model = (Qwen3_5ForConditionalGeneration if hybrid else AutoModelForCausalLM).from_pretrained(str(directory), dtype=kept).eval()
+if by_layer:
+    model = reference_llama.ByLayer(directory)
+    fidelity = 0
+else:
+    model = (Qwen3_5ForConditionalGeneration if hybrid else AutoModelForCausalLM).from_pretrained(str(directory), dtype=kept).eval()
 say(f"{target}: {type(model).__name__}, the BOS {bos}, the end of a turn {end}, weights held as {kept}"
     f"{', every product in float32' if stored else ''}{', enable_thinking said' if thinks else ''}")
 pairs = [json.loads(line) for line in PAIRS.read_text().splitlines()]
@@ -95,7 +107,8 @@ def head_of(prompt, thinking):
         return pieces.encode(written_format.replace("{prompt}", prompt))
     real =tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True, tokenize=True,
                                          **({"enable_thinking": thinking} if thinks else {}))
-    return [int(token) for token in (real["input_ids"] if hasattr(real, "keys") else real)]
+    ids = [int(token) for token in (real["input_ids"] if hasattr(real, "keys") else real)]
+    return ids + (tokenizer(then, add_special_tokens=False)["input_ids"] if then else [])
 
 
 def log_probs(prefix, answer):
@@ -112,12 +125,24 @@ def log_probs(prefix, answer):
 
 # ---- 1. fluency, on the answers written by hand
 rows = []
-for number, pair in enumerate(pairs):
-    head = head_of(pair["prompt"], False)
-    answer = tokenizer(pair["answer"], add_special_tokens=False)["input_ids"] + [end]
-    nll = lambda prefix: float(-log_probs(prefix, answer)[np.arange(len(answer)), answer].sum())
-    rows.append({"language": "ja" if any(ord(c) > 0x2E80 for c in pair["prompt"]) else "en", "tokens": len(answer),
-                 "A": nll(head), "B": nll([bos] + head)})
+heads = [head_of(pair["prompt"], False) for pair in pairs]
+answers = [tokenizer(pair["answer"], add_special_tokens=False)["input_ids"] + [end] for pair in pairs]
+say(f"the first prompt's head, A: {heads[0][:12]}{' ...' if len(heads[0]) > 12 else ''}; B has {bos} in front")
+if by_layer:
+    # (every answer under A and under B is a row of one batch through the layers: one reading of each layer's weights)
+    batch = [prefix + answer for head, answer in zip(heads, answers) for prefix in (head, [bos] + head)]
+    hidden = model.hidden(batch)
+    def scored(at, answer):
+        with torch.no_grad():
+            logits = model.logits(hidden[at][len(batch[at]) - len(answer) - 1:-1]).double()
+        return float(-torch.log_softmax(logits, -1)[torch.arange(len(answer)), torch.tensor(answer)].sum())
+for number, (pair, head, answer) in enumerate(zip(pairs, heads, answers)):
+    if by_layer:
+        a, b = scored(2 * number, answer), scored(2 * number + 1, answer)
+    else:
+        nll = lambda prefix: float(-log_probs(prefix, answer)[np.arange(len(answer)), answer].sum())
+        a, b = nll(head), nll([bos] + head)
+    rows.append({"language": "ja" if any(ord(c) > 0x2E80 for c in pair["prompt"]) else "en", "tokens": len(answer), "A": a, "B": b})
 for language in ("ja", "en", None):
     part = [row for row in rows if language is None or row["language"] == language]
     tokens = sum(row["tokens"] for row in part)
@@ -128,7 +153,7 @@ for language in ("ja", "en", None):
         f"{differences.mean():+.4f}, standard error {differences.std(ddof=1) / math.sqrt(len(part)):.4f}")
 
 # ---- 2. fidelity, on the model's own answers
-for form, thinking in (("at once", False), ("thinking", True)) if thinks else (("at once", False),):
+for form, thinking in ((("at once", False), ("thinking", True)) if thinks else (("at once", False),)) if fidelity else ():
     own = []
     # (the prompts are the pairs' in order, 12 Japanese and then 12 English: --fidelity=N takes every other one of them
     # up to N, so that both languages are in it)
