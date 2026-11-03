@@ -281,6 +281,20 @@ lfm2_goes_to_the_gpu() {
   node tests/gpu-hybrid-check.ts .tmp/made-up-lfm2-int8
 }
 part "an LFM2 where a GPU adapter is" lfm2_goes_to_the_gpu
+# T.315: forward.js on a made-up LFM2 (float32, int8, four taps), a Qwen3.5 (int8) and a ternary hybrid (Ternary Bonsai 2
+# 27B's shape) against NumPy, on a shared memory: the full suite's made-up checks of these, cut to what keeps a broken
+# convolution or linear-attention layer off the site. Eleven of the fifteen ways to break the LFM2's forward.js that
+# T.260's review tried were let through by this suite before and failed only the full one (about 18 seconds)
+made_up_forward() {
+  mkdir -p .tmp
+  python tests/make_lfm2.py .tmp/made-up-lfm2-float32 float32
+  python tests/make_lfm2.py .tmp/made-up-lfm2-int8 int8
+  python tests/make_lfm2.py .tmp/made-up-lfm2-four-int8 int8 four
+  python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
+  python tests/make_ternary.py .tmp/made-up-ternary-hybrid ternary hybrid
+  node tests/forward-check.ts .tmp/made-up-lfm2-float32 .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 .tmp/made-up-qwen35-int8 .tmp/made-up-ternary-hybrid --rounds 1 --positions 128
+}
+part "forward.js against NumPy, made-up LFM2, Qwen3.5 and ternary models" made_up_forward
 # T.261: a Gemma 3 was kept off the GPU here; T.261.4: its prompts are the GPU's now, its worker started with a plan of what
 # it has besides (a few seconds)
 gemma3_goes_to_the_gpu() {

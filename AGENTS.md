@@ -111,7 +111,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `tests/suite.sh` | `light`（デプロイと `tests.yml` の既定: pytest・Node の検査・smoke・型検査。build と `dist-check` はワークフローがその後に）と `full`（forward-check・gpu-default-check・threads-check・`STAGES=dry` の 27B など。毎晩と `full=true`）。`node` は全部 `tests/limited.ts`（期限）越し。手元では `PATH=<リポジトリ>/.venv/bin:$PATH bash tests/suite.sh light` |
+| `tests/suite.sh` | `light`（デプロイと `tests.yml` の既定: pytest・Node の検査・smoke・型検査・作り物の LFM2・Qwen3.5・3 値の hybrid の forward-check（T.315: 状態を持つ層の `forward.js` の誤りをデプロイの前に落とす、約 18 秒）。build と `dist-check` はワークフローがその後に）と `full`（forward-check・gpu-default-check・threads-check・`STAGES=dry` の 27B など。毎晩と `full=true`）。`node` は全部 `tests/limited.ts`（期限）越し。手元では `PATH=<リポジトリ>/.venv/bin:$PATH bash tests/suite.sh light` |
 | `tests/unchanged.ts`（と `unchanged-*.ts`・`unchanged_*.py`） | 守りの網（「設計の決まり」）。相手の木は `tests/other-tree.ts` の `otherTree()` |
 | `tests/tree.ts`・`tree.py`・`tree.json` | 木のどこに何があるかの 1 か所（`runtime()`・`python()`・`built()`・`served()`、在るかを聞くなら `{ maybe: true }`）。種類ごとの目印のファイルから探す。`x.js` と頼んでも `x.ts` が見つかる |
 | ソースを文として読む道具 | `imports.ts`（`windowed()`）・`names.ts`・`untyped.ts`・`contracts.ts`・`worker-source.ts`・`shaders-source.ts`（`oneSource()`）・`shader-makers.ts` |
