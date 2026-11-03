@@ -154,22 +154,25 @@ export const gemma4 = (size: string, revision: string, ggufRevision: string, dow
  * has not) */
 export const ternaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
   start: Partial<Entry> = {}): Entry =>
-  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "ternary weights", size, revision, originalRevision, download, sizes, start);
+  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "日本語 / English · ternary weights", size, revision, originalRevision, download, sizes, start,
+    { prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 /** T.286: Prism ML's 1-bit Bonsai (1.7B ...), every weight -1 or +1 times a scale of its 128: a Q1_0 GGUF
  * (convert/readers.py's q1_0, T.286.1), which the ternary dtype holds as it is. The rest as the ternary ones' above,
- * from its own -unpacked original */
+ * from its own -unpacked original, but English alone: the 1.7B's Japanese answers looped and named mountains that are
+ * not there (T.286.2, tests/answers.ts: no 日本語 by T.539), its English ones did not */
 export const binaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
   start: Partial<Entry> = {}): Entry =>
-  bonsai("Bonsai", "Bonsai", "Q1_0", "1-bit weights", size, revision, originalRevision, download, sizes, start);
+  bonsai("Bonsai", "Bonsai", "Q1_0", "English · 1-bit weights", size, revision, originalRevision, download, sizes, start,
+    { prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" });
 const bonsai = (repo: string, name: string, quantization: string, weights: string, size: string, revision: string,
-  originalRevision: string, download: number, sizes: string, { options = QWEN3_OWN_BOS, ...start }: Partial<Entry>): Entry => ({
+  originalRevision: string, download: number, sizes: string, { options = QWEN3_OWN_BOS, ...start }: Partial<Entry>,
+  asked: Pick<Entry, "prompt" | "placeholder">): Entry => ({
   group: "hf", id: `hf-${repo.toLowerCase()}-${size.toLowerCase()}`, name: `Prism ML ${name} ${size}`,
-  note: `answers at once · 日本語 / English · ${weights} · ${sizes}`,
+  note: `answers at once · ${weights} · ${sizes}`,
   ...ggufOf(`prism-ml/${repo}-${size}-gguf`, revision, `${repo}-${size}-${quantization}.gguf`,
     `prism-ml/${repo}-${size}-unpacked`, originalRevision), download,
   weights: "ternary", conversion: {}, options: { ...options, ...PLAIN_ROPE }, template: QWEN3_AT_ONCE, ...start,
-  generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
-  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
+  generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 }, ...asked });
 // Models that huggingface.co serves and this page converts itself (src/python/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
