@@ -70,9 +70,9 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     refuses what it cannot be. None of them is read here: the samplers have them.
 
     thinking (T.520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought in its
-    vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>, or in harmony's analysis channel: thought_marks()); once a thought
-    has this many tokens and is still open, the closing mark is written in place of the next draws, as llama.cpp's
-    reasoning budget does, and the model goes on to its answer. The stats say how long the thought was (thought: None
+    vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>, or in
+    harmony's analysis channel: thought_marks()); once a thought has this many tokens and is still open, the closing
+    mark is written in place of the next draws, as llama.cpp's reasoning budget does, and the model goes on to its answer. The stats say how long the thought was (thought: None
     where there was none) and whether the budget closed it (thought_cut).
 
     model: who writes, a Llama (whose generate() this is). Its parts are read off it as a run needs them and not

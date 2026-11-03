@@ -11,7 +11,7 @@ export let written = "";
 export let undrawn = 0;
 export let drawnAt: number | undefined = undefined;
 // T.556: whether the answer is drawn as Markdown (a model that answers in a format: not one that goes on from the prompt),
-// and whether it begins inside the model's thinking (a format that ends in <think>), which stays plain text
+// and whether it begins inside the model's thinking (a format that ends in a thought's opening mark), which stays plain text
 export let shape = { markdown: false, thinking: false };
 
 /** An answer begins: its bubble, and the settings it is written with (no more steps than the model's context holds).
