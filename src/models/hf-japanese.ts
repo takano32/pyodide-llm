@@ -415,6 +415,16 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-thinking", revision: "fc7c15c262710016c19bcda4372a96ff68875846", tokenizer: "tokenizer.json" } }, download: 9132708672,
     conversion: {}, options: harmonyThinking, generation: thinking, template: HARMONY_THINKING,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.304: llm-jp-4.1 8B thinking, of the same form, format and sampling as 4's. Its makers give a Q4_K_M and a BF16 alone
+  // (no Q8_0 yet: the owner's choice is to take the Q4_K_M now with llama.cpp's blocks kept as they are, and the Q8_0
+  // when there is one); rebuilt: four bits are not held to the original within 1e-3
+  { group: "hf", id: "hf-llm-jp-4.1-8b-thinking", name: "llm-jp-4.1 8B thinking",
+    note: "thinks before it answers · 日本語 / English · 4-bit weights · fetches 5.5 GB (GGUF), kept mostly as it is: 6.4 GB",
+    original: "llm-jp/llm-jp-4.1-8b-thinking",
+    hf: { repo: "llm-jp/llm-jp-4.1-8b-thinking-gguf", revision: "7e48aef0e5bd12168494267608deff5e18302884", weights: "llm-jp-4.1-8b-thinking-Q4_K_M.gguf",
+          vocabulary: { repo: "llm-jp/llm-jp-4.1-8b-thinking", revision: "7c19bc90e49b717381e4f474ee95964c05217a28", tokenizer: "tokenizer.json" } }, download: 5499918304,
+    conversion: { dtype: "int8", blocks: true }, loaded: 6418383916, rebuilt: true, options: harmonyThinking, generation: thinking,
+    template: HARMONY_THINKING, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
   // answers at once unless told to think (the other way round from Qwen3's); CAT-Thinking, from Qwen3 Swallow, which
   // thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS. CAT-Thinking's options are

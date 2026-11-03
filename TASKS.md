@@ -68,7 +68,7 @@
 - T.301 [描画][計測実行] /benchmark/ の Warnings の文面と残り — 未着手
 - T.302 [描画][モデル] 新しい項目の名前と note の文面をまとめて決める — 未着手
 - T.303 [運用][モデル] 一覧の整理: 残すか外すか、と設定 — 未着手
-- T.304 [追加][モデル] llm-jp-4.1 8B thinking — 未着手
+- T.304 [追加][モデル] llm-jp-4.1 8B thinking — 進行中
 - T.305 [追加][解析分割] BOS もダミーの空白も置かないモデル（h2o-danube3 など） — 候補
 - T.306 [追加][変換] 古い並びの GPT-NeoX の GGUF を読む — 候補
 - T.309 [文書][変換] ページの「開けるモデル」の文と README に、足した形を書く — 未着手
@@ -597,7 +597,9 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - 一覧は 118 項目。残すか決めるもの: japanese-gpt2 xsmall（`<unk>` を書く、T.267）、Pythia 14M と DistilGPT2（意味が通らない）、MiniCPM5（日本語なし）、Granite 4.2 8B、llm-jp-3 1.8B instruct3（3.1 の隣）、LFM2 700M と 1.2B Instruct、LFM2.5 350M（T.272: レビューの勧めは残す）、Hermes 3、SmolLM2 の base、Qwen3.5 9B、CAT-Translate 3.3B（取得 6.7 GB）。設定: Granite の温度（カードは 1.0 必須、レビューは 0.7）、Pythia 14M を deduped でよいか、DeepSeek 1.5B の手書きの options を外すか。方針 4 の「あとで減らす」の回。**LFM2 の材料（T.260 のレビュー）**: 700M は 836 MB・本番 31.3 tok/s・停止 21 / 24・平均 134 トークン（温度 0.3）、1.2B Instruct は 1.3 GB・21.7 tok/s・24 / 24・94 トークンで 1.2B JP（1.3 GB・21.3 tok/s・23 / 24・117）と大きさも速さも同じ。perplexity（Q8_0 の値、英語 / 日本語）は 700M 18.6 / 18.3、1.2B Instruct 14.7 / 17.7、1.2B JP 18.2 / 16.8、350M 73.1 / 34.7（後訓練で平文から外れた数字）、230M 27.1 / 28.6。**700M は大きさ 0.84 GB で 1.2B JP（1.3 GB）に perplexity が近く、速さは 1.5 倍**: 古い世代でも外す理由は見えない。1.2B Instruct は英語が最良。勧め: 5 つとも残す（どれも 1 行の項目で、取得は選んだ人だけ）。外すなら、同じ大きさの隣と質が重なる 1.2B Instruct（JP と大きさも速さも同じ）が先。
 - **材料（T.251・T.252 のレビュー、2026-10-02）**: **Pythia 14M と DistilGPT2**: ページの標本抽出（0.7・0.9・罰 1.1）で 192 の答え（64 seed × 3 の書き出し × 200 トークン）のうちループ（5 文字の窓の半分以上が既出）は 14M が 14（7.3%）・DistilGPT2 が 2（1.0%）で、同じ系統の前からの項目（Pythia 70M 15 = 7.8%、GPT-2 124M 1 = 0.5%）と同じ。意味の通らなさは中身（14M は英語の形で意味が通らない）。14M は int8 の損が +8.8%（DistilGPT2 +1.3%、0.7B 以上は ±0.5%）。**勧め: 両方残す**（14M は 16 MB・9 秒で開く梯子の端）。外すなら 14M だけ。**Hermes 3**: 直した後の答えは整う（勧め: 残す）。**SmolLM2 の base**: 同じ英語の文の perplexity が 15.8 と 11.4 で、DistilGPT2 の 44.1 より良い（勧め: 残す）。**DeepSeek 1.5B の手書きの options**: 外してよい（変わるのは `</think>` などが打ったときに特殊トークンになることと、BOS が止まりに入ることだけ）。
 
-### T.304 [追加][モデル] llm-jp-4.1 8B thinking — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: Q8_0 の GGUF を待つか、17.2 GB の原本から。規模 小〜中）
+### T.304 [追加][モデル] llm-jp-4.1 8B thinking — 状態: 進行中（2026-11-03、Opus medium。2026-10-02 の洗い出しで採番）
+- **したこと（2026-11-03）**: 1 項目を `hf-japanese.ts` の llm-jp-4 8B thinking の後に（hf-llm-jp-4.1-8b-thinking）。公式の `llm-jp/llm-jp-4.1-8b-thinking-gguf` @ 7e48aef0e5bd12168494267608deff5e18302884 の Q4_K_M（5,499,918,304 バイト）を `conversion: { dtype: "int8", blocks: true }`・`rebuilt` で、語彙と config は原本 @ 7c19bc90e49b717381e4f474ee95964c05217a28（Apache-2.0 は 2 つのカードから）。Q8_0 はまだどこにも無い（ほかの GGUF は masahiroid の Q4_K_M だけ）。`tests/quant_sizes.py`: 塊のまま 6,418,383,916 バイト（`loaded`）、Q4_K のまま残るのは埋め込み・q・k・o・w1・w3、v と w2 は半分の層が Q6_K で束ごと int8、分類器は Q8_0 で int8（int8 なら 9,664,741,404）。config は 4 と同じ形（違いは `eos_token_id` が [2, 13] なだけ）、書式の違いは道具の呼び出しの所だけなので、options・書式・標本抽出は 4 の thinking と同じ `harmonyThinking`・`HARMONY_THINKING`・`thinking`。
+- **確かめ**: `format_check.py` は 9/9 が `KNOWN` のとおり（4 の thinking と同じ形）、`--hf` は 9/9（9 つとも本物の ID と同じ）。`models-check`・`worker-conduct-check`・`npm run types` は通る。
 - **2026-10-08 の確かめ**: 公式の GGUF（`llm-jp/llm-jp-4.1-8b-thinking-gguf`@3afab819）が出ているが、BF16（17,185,773,280 バイト）と Q4_K_M だけで Q8_0 は無い。BF16 の GGUF は読める型だが、訪問者の取得が 17.2 GB になる。持ち主の判断（17.2 GB を取らせるか待つか、考えるチャンネルを見せるか）が出るまで飛ばす。
 - harmony の書式は手書き、止まりは [1, 2, 13]、考えるチャンネルを見せるか。
 

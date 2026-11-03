@@ -80,6 +80,8 @@ KNOWN = {
                                 "text": lambda text, prompt: text + "<|channel|>final<|message|>"},
     "hf-llm-jp-4-8b-thinking": {"why": "the page ends with <|channel|>analysis<|message|>, the thought (T.592.2)",
                                 "text": lambda text, prompt: text + "<|channel|>analysis<|message|>"},
+    "hf-llm-jp-4.1-8b-thinking": {"why": "the page ends with <|channel|>analysis<|message|>, the thought (T.304)",
+                                  "text": lambda text, prompt: text + "<|channel|>analysis<|message|>"},
     # the list's own ChatML has no system turn; the real template writes its default one
     "hf-smollm2-135m-instruct": {"why": "the list's ChatML, without the default system turn",
                                  "text": lambda text, prompt: re.sub(r"^<\|im_start\|>system\n.*?<\|im_end\|>\n", "", text, flags=re.S)},
