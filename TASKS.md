@@ -1315,7 +1315,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（`licenses.ts` の 2 行の字下げ: 直した）。書式（`[/INST]` の後に空白なし）はカードのコードの読みとして妥当、リビジョン・標本抽出・note・名前・台帳の数はログと合う。`download` とライセンスは取りまとめ役が HF の API で確かめた（7,790,108,960、両カード apache-2.0）。
 - **本番**（デプロイ run 41636236199、`models.yml` run 41638197553、Chromium）: 準備完了 96.8 秒、256 トークンで 3.4 tok/s（4 本）。
 
-#### T.607.4 umiyuki Umievo itr012 Gleipnir 7B（mmnga の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+#### T.607.4 umiyuki Umievo itr012 Gleipnir 7B（mmnga の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
 - **したこと**: 1 項目を `hf-japanese.ts` の Oumuamua の後に（hf-umievo-gleipnir-7b）。日本語の Mistral 7B 4 つ（Japanese-Starling-ChatV・Ninja-v1-RP-expressive-v2・Vecteus-v1・Japanese-Chat-Umievo-itr004）を進化的にマージしたもの（Apache-2.0、カードは ja）。mmnga @ 322aacfb4932771d2e7520a90c3b1558ffb5d7a6 の Q8_0（7,695,857,408 バイト）、語彙と config は原本 @ 5187cc9e441f3d876eda345f52f53eda949c5aee の tokenizer.json。chat template が無く、カードの `build_prompt`（自分の system の文、`[/INST]` の前に空白なし）を `GLEIPNIR` に、`format_check.py` の `CARDS` に 2 つ目の写し。config の `sliding_window` 4096 はページの文脈 4096 では効かない（Mistral の家族は読まない: ArrowPro・Vecteus と同じ）。
 - **取りまとめ役の決め（訳）**: 標本抽出はカードのコードの組（温度 1.0・top-p 0.95）。作り手の名は HF の名「umiyuki」（ほかの名を言わない個人）。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（カードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き）。`models-check`・`npm run types` は通る。
@@ -1325,6 +1325,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **取りまとめ役の決め（訳）**: 書式と標本抽出はカードの組のまま（書かせて崩れなかった）。
 - CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（7,695,857,408）・ライセンスは HF と合い、書式はカードの `build_prompt` と 1 字まで同じ、標本抽出もカードのコードと同じ。`sliding_window` の読みは妥当、台帳の数はログと合う（tok/s は長い答えの数: 短い答えは約 1.0）。
+- **本番**（デプロイ run 41646559429、`models.yml` run 41648749991、Chromium）: 準備完了 110.4 秒、256 トークンで 3.4 tok/s（4 本）。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
