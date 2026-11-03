@@ -423,7 +423,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 ### HF からの取得と変換
 
-- **HF から取得してブラウザの中で変換する（T.60）。** HF は CORS を許可し Range に 206 で応える。日本からは 1 回の要求に 1〜3 秒かかるので、**変換器はファイルの順に受け取る**（`Stream`）。読めるのは、Llama 構造（RoPE の縮めは llama3・linear・yarn。Mistral と Granite 4.2 は Llama として読む）・Qwen2・Qwen3・Qwen3.5・LFM2・Gemma 3・Gemma 4・Spark・GPT-2・GPT-NeoX、safetensors（分割も）か GGUF（Q8_0・3 値・K / i 量子化の塊）、Unigram か byte-level BPE か sentencepiece の BPE を書き出した形の `tokenizer.json` か sentencepiece のモデル。
+- **HF から取得してブラウザの中で変換する（T.60）。** HF は CORS を許可し Range に 206 で応える。日本からは 1 回の要求に 1〜3 秒かかるので、**変換器はファイルの順に受け取る**（`Stream`）。読めるのは、Llama 構造（RoPE の縮めは llama3・linear・yarn。Mistral と Granite 4.2 は Llama として読む）・Qwen2・Qwen3・Qwen3.5・LFM2・Gemma 3・Gemma 4・Spark・GPT-2・GPT-NeoX、safetensors（分割も）か GGUF（Q8_0・3 値・1 ビットの Q1_0・K / i 量子化の塊）、Unigram か byte-level BPE か sentencepiece の BPE を書き出した形の `tokenizer.json` か sentencepiece のモデル。
 - **取得は部品の大きさで決まる（T.107）、上限の低い回線では効かない（T.136）。** **最初の部品は 8 MiB で、その速さで残りを決める**（4 MB/s 以上で `deviceMemory` が 4 より大きければ 16 MiB）。米国の CI では 4 MiB 23 秒・8 MiB 11.3 秒・16 MiB 8.3 秒。並列数はほとんど効かない。日本の家の回線は 7.1〜9.4 MB/s（回線の上限）。HF は日本からも米国の CDN に 302 で振り向け、署名つきの URL は約 1 時間で切れる。
 - **変換は速く、律速は取得（T.89・T.123）。** 量子化はカーネル `quantize_x`（NumPy とバイト単位で同じ）、bf16・Q8_0・3 値の広げもカーネル（`widen_*`）、relaxed の補正は `int8_sums`。変換器には `readers` の 1 つで渡し、`kernel_readers(カーネルのパス)` が登録簿のカーネルのある型を全部作る。変換のスレッド化は取りやめた。
 - **byte-level BPE（T.63）。** HF は「順位がいちばん小さい merge」、エンジンは「スコア最大の対」なので、**スコアに −順位を書けば同じ結果**（`tokenizer.bin` の形式は変えずに済んだ）。前分割は手書きで、知っている型だけを受け付ける。

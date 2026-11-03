@@ -12,7 +12,7 @@ with a harness of a few lines of this file's own (the block structs, a float16 b
 
 T.362: and the readers of llama.cpp's own K- and i-quantized types (convert/superblocks.py: Q2_K, Q4_K, IQ1_S, IQ1_M,
 IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS; T.505.1: Q3_K, Q5_K, Q6_K and convert/readers.py's Q4_0, Q4_1, Q5_0, Q5_1
-and IQ4_NL, blocks of 32) against llama.cpp's C at the commit their tables were taken at. Its ggml-quants.c and
+and IQ4_NL, blocks of 32; T.286.1: its Q1_0, blocks of 128 signs) against llama.cpp's C at the commit their tables were taken at. Its ggml-quants.c and
 ggml-common.h are fetched (MIT, ggml authors), the dequantize_row_* are cut out by name and compiled with the fetched
 header, and
 
@@ -111,7 +111,9 @@ SUPERBLOCKS = {"Q2_K": ("q2_K", (80, 82)), "Q4_K": ("q4_K", (0, 2)), "IQ2_XXS": 
                "IQ1_M": ("iq1_m", ()), "IQ4_XS": ("iq4_xs", (0,)),
                # T.505.1: the K types that are read and never kept, and the types of blocks of 32
                "Q3_K": ("q3_K", (108,)), "Q5_K": ("q5_K", (0, 2)), "Q6_K": ("q6_K", (208,)), "Q4_0": ("q4_0", (0,)),
-               "Q4_1": ("q4_1", (0, 2)), "Q5_0": ("q5_0", (0,)), "Q5_1": ("q5_1", (0, 2)), "IQ4_NL": ("iq4_nl", (0,))}
+               "Q4_1": ("q4_1", (0, 2)), "Q5_0": ("q5_0", (0,)), "Q5_1": ("q5_1", (0, 2)), "IQ4_NL": ("iq4_nl", (0,)),
+               # T.286.1: Q1_0, a sign a value under a float16 scale (the 1-bit Bonsai's)
+               "Q1_0": ("q1_0", (0,))}
 # convert/grids.py's name of a grid -> (the header's, the bytes of an entry, the values as)
 GRIDS = {"IQ2XXS": ("iq2xxs_grid", 8, np.uint8), "IQ2XS": ("iq2xs_grid", 8, np.uint8), "IQ2S": ("iq2s_grid", 8, np.uint8),
          "IQ3XXS": ("iq3xxs_grid", 4, np.uint8), "IQ3S": ("iq3s_grid", 4, np.uint8), "IQ1S": ("iq1s_grid", 8, np.int8)}

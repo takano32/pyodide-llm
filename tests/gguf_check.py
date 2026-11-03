@@ -66,11 +66,13 @@ Q4_0, Q4_1, Q5_0, Q4_K, Q6_K = 2, 3, 6, 12, 14
 PQ2_0 = 142
 # T.230: its other ternary type, five values a byte in base 3 (Ternary Bonsai 2's smaller GGUF; llama2_convert.ptq1_0)
 PTQ1_0 = 143
+# T.286.1: ggml's Q1_0, a sign a value (the 1-bit Bonsai; convert.readers.q1_0)
+Q1_0 = 41
 TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16", Q4_0: "Q4_0", Q4_1: "Q4_1", Q5_0: "Q5_0",
-              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0", PTQ1_0: "PTQ1_0"}
+              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0", PTQ1_0: "PTQ1_0", Q1_0: "Q1_0"}
 # bytes per value: a block of 32 values (or a super-block of 256, or PQ2_0's and PTQ1_0's block of 128) and its scales
 BYTES = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32, Q4_0: 18 / 32, Q4_1: 20 / 32, Q5_0: 22 / 32, Q4_K: 144 / 256, Q6_K: 210 / 256,
-         PQ2_0: 34 / 128, PTQ1_0: 28 / 128}
+         PQ2_0: 34 / 128, PTQ1_0: 28 / 128, Q1_0: 18 / 128}
 
 
 def half(raw):
@@ -152,9 +154,17 @@ def widen_ptq1_0(raw):
     return (values.astype(np.float32) - 1) * half(blocks[:, 26:])
 
 
+def widen_q1_0(raw):
+    """Blocks of 128 in 18 bytes (ggml-common.h's block_q1_0): a float16 d, then 16 bytes of a bit a value, value j bit
+    j % 8 of byte j // 8 (the bits picked one by one here: the converter's reader unpacks them). +d where set, -d not."""
+    blocks = raw.reshape(-1, 18)
+    bits = (blocks[:, 2:, None] >> np.arange(8, dtype=np.uint8)) & 1
+    return np.where(bits.reshape(-1, 128) == 1, np.float32(1), np.float32(-1)) * half(blocks[:, :2])
+
+
 WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, widen_q5_0),
          Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0),
-         PTQ1_0: (128, 28, widen_ptq1_0)}
+         PTQ1_0: (128, 28, widen_ptq1_0), Q1_0: (128, 18, widen_q1_0)}
 # T.610.5: the other super-blocks of 256 (the i-quants, Q2_K ...) by the converter's readers, which
 # tests/fork_readers.py holds to the C they were taken from: a reader that read them wrong would put a tensor in the
 # order of 1 from the original, so they measure a GGUF the page keeps in its blocks (llm-jp-3.1 13B's IQ4_XS)

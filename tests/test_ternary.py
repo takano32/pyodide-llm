@@ -1,11 +1,12 @@
 # ternary (T.230): the weights of a ternary model as they are, two bits each, groups of 128 with a float32 scale each
-# (llama2_numpy.pack_ternary), and the two GGUF types that hold such weights (PQ2_0, PTQ1_0). Nothing is rounded on the
+# (llama2_numpy.pack_ternary), and the GGUF types that hold such weights (PQ2_0, PTQ1_0, and T.286.1's Q1_0 of signs). Nothing is rounded on the
 # way: the NumPy engine widens a ternary checkpoint to exactly what a float32 checkpoint of the same values holds, so
 # the logits of the two are the same to the bit. The kernels (forward.js) are held to NumPy by tests/forward-check.ts
 # and tests/smoke.ts.
 import itertools
 import json
 import struct
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,8 +16,10 @@ from test_external import Outside
 from test_gguf import bonsai_gguf, pq2_0_blocks, unigram, with_original
 
 import gguf_check
+import superblock_cases
 import llama2_convert
 from llama2_convert import Arrays, Conversion, Safetensors, checkpoint_size, gguf_read
+from convert.readers import q1_0
 from engine.layout import suited, tensor_rows
 from llama2_numpy import (NOT_TERNARY, TERNARY_GROUP, Llama, checkpoint_dtype, external_tensors, pack_ternary, ternary,
                           unpack_ternary)
@@ -42,6 +45,21 @@ def ptq1_0_blocks(values):
         out += bytes(byte([block[120 + 2 * n + m] for n in range(4)]) for m in range(2))
         out += scale.tobytes()
     return bytes(out), ((digits - 1).astype(np.float32) * d.astype(np.float32)[:, None]).reshape(values.shape)
+
+
+def q1_0_blocks(values):
+    """ggml's Q1_0 (T.286.1) as llama.cpp writes it (ggml-quants.c's quantize_row_q1_0_ref): per 128 values d = the
+    mean of their magnitudes as float16, and each value's sign alone, a set bit for one not below 0, value j in bit
+    j % 8 of byte j // 8, after d. Written bit by bit, apart from the reader's arithmetic. And what the block then
+    stands for: +d or -d."""
+    groups = values.reshape(-1, 128).astype(np.float32)
+    d = (np.abs(groups).sum(axis=1) / np.float32(128)).astype(np.float16)
+    out = bytearray()
+    for block, scale in zip(groups, d):
+        out += scale.tobytes()
+        out += bytes(sum(1 << bit for bit in range(8) if block[8 * byte + bit] >= 0) for byte in range(16))
+    signs = np.where(groups >= 0, np.float32(1), np.float32(-1))
+    return bytes(out), (signs * d.astype(np.float32)[:, None]).reshape(values.shape)
 
 
 def test_packing_is_lossless_and_32_bytes_a_group():
@@ -118,7 +136,45 @@ def test_ptq1_0_reads_every_byte_as_the_fork_does():
     assert np.array_equal(llama2_convert.ptq1_0(blob).reshape(values.shape), values)
 
 
-BLOCKS = {"PQ2_0": (pq2_0_blocks, 142), "PTQ1_0": (ptq1_0_blocks, 143)}
+def test_q1_0_reads_every_bit_of_every_byte_at_every_place_as_a_sign_of_its_scale():
+    """T.286.1: each byte value at each of the 16 places (256 blocks, block b's bytes all b, and once more each byte
+    alone in a block of 0s), under scales of float16 that are normal, subnormal, negative and 0: +d for a set bit, -d
+    for a clear one, in the order of the bits; and the same values as the reference reader of tests/gguf_check.py."""
+    blocks, expected = [], []
+    scales = [np.float16(0.0625), np.float16(6e-8), np.float16(-3.5), np.float16(0), np.float16(65504)]
+    for b in range(256):
+        for place in range(17):
+            bits = bytes([b] * 16) if place == 16 else bytes(b if p == place else 0 for p in range(16))
+            d = scales[(b + place) % len(scales)]
+            blocks.append(d.tobytes() + bits)
+            expected.append([np.float32(d) if bits[j // 8] >> (j % 8) & 1 else -np.float32(d) for j in range(128)])
+    got = q1_0(b"".join(blocks))
+    assert np.array_equal(got.view(np.uint32), np.array(expected, dtype=np.float32).reshape(-1).view(np.uint32))
+    reference = gguf_check.widen_q1_0(np.frombuffer(b"".join(blocks), dtype=np.uint8))
+    assert np.array_equal(reference.reshape(-1).view(np.uint32), got.view(np.uint32))
+    # and what the test's own writer makes of values comes back as their signs times the mean magnitude
+    values = np.random.default_rng(5).normal(size=(4, 256)).astype(np.float32)
+    blob, held = q1_0_blocks(values)
+    assert len(blob) == 8 * 18 and np.array_equal(np.sign(held), np.where(values >= 0, 1, -1))
+    assert np.array_equal(q1_0(blob).reshape(values.shape), held)
+
+
+FIXTURE = Path(__file__).parent / "fixtures" / "superblocks.json"
+
+
+def read_of_the_signs():
+    """What Q1_0's reader (NumPy's alone, no kernel) reads of tests/superblock_cases.py's blocks of it."""
+    with np.errstate(invalid="ignore"):  # (some of the float16 scales are infinities and NaNs)
+        return {"Q1_0": superblock_cases.digest(q1_0(superblock_cases.blocks("Q1_0", 18)))}
+
+
+def test_what_q1_0_reads_of_blocks_made_the_same_everywhere_is_the_fixtures():
+    """tests/fixtures/superblocks.json's "signs", which tests/smoke.ts asks of the reader inside Pyodide (integers of
+    32 bits). Written by `python tests/test_ternary.py`."""
+    assert json.loads(FIXTURE.read_text())["signs"] == read_of_the_signs()
+
+
+BLOCKS = {"PQ2_0": (pq2_0_blocks, 142), "PTQ1_0": (ptq1_0_blocks, 143), "Q1_0": (q1_0_blocks, 41)}
 
 
 def bonsai(kind, **more):
@@ -127,7 +183,7 @@ def bonsai(kind, **more):
     return bonsai_gguf(matrices=BLOCKS[kind], **more)
 
 
-@pytest.mark.parametrize("kind", ["PQ2_0", "PTQ1_0"])
+@pytest.mark.parametrize("kind", ["PQ2_0", "PTQ1_0", "Q1_0"])
 @pytest.mark.parametrize("dtype", ["ternary", "int8", "float32"])
 def test_a_ternary_gguf_is_the_safetensors_conversion(kind, dtype):
     """Either type, to ternary and to the other dtypes: the checkpoint of a safetensors file of the values the blocks
@@ -155,8 +211,9 @@ def test_a_ternary_gguf_is_the_safetensors_conversion(kind, dtype):
 
 def test_the_two_types_of_one_model_are_one_checkpoint():
     assert bonsai("PQ2_0")[3].keys() == bonsai("PTQ1_0")[3].keys()
+    # (Q1_0 holds the signs alone, another model of the same weights: not one of these two)
     checkpoints = []
-    for kind in BLOCKS:
+    for kind in ("PQ2_0", "PTQ1_0"):
         config, published, file, same = bonsai(kind)
         checkpoints.append(bytes(with_original(file, published, unigram(config["vocab_size"]), "tokenizer.json", "ternary").checkpoint))
     assert checkpoints[0] == checkpoints[1]
@@ -264,3 +321,7 @@ def test_no_shape_gives_two_dtypes_one_size():
             assert checkpoint_dtype(header, sizes["ternary"], form) == "ternary"
             tried += 1
     assert tried > 1000
+
+
+if __name__ == "__main__":
+    FIXTURE.write_text(json.dumps({**json.loads(FIXTURE.read_text()), "signs": read_of_the_signs()}, indent=1) + "\n")

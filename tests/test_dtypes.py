@@ -270,15 +270,15 @@ def test_the_stored_types_and_what_comes_from_their_table():
     # (T.505.1: and eight more that are read and never kept, blocks of 256 and of 32: name -> (ggml's id, values, bytes))
     widened = {"Q3_K": (11, 256, 110), "Q5_K": (13, 256, 176), "Q6_K": (14, 256, 210), "Q4_0": (2, 32, 18),
                "Q4_1": (3, 32, 20), "Q5_0": (6, 32, 22), "Q5_1": (7, 32, 24), "IQ4_NL": (20, 32, 18)}
-    assert list(SOURCES) == ["F32", "F16", "BF16", "Q8_0", "PQ2_0", "PTQ1_0", *blocks_of_256, *widened]
-    assert GGUF_TENSORS == {0: "F32", 1: "F16", 30: "BF16", 8: "Q8_0", 142: "PQ2_0", 143: "PTQ1_0",
+    assert list(SOURCES) == ["F32", "F16", "BF16", "Q8_0", "PQ2_0", "PTQ1_0", "Q1_0", *blocks_of_256, *widened]
+    assert GGUF_TENSORS == {0: "F32", 1: "F16", 30: "BF16", 8: "Q8_0", 142: "PQ2_0", 143: "PTQ1_0", 41: "Q1_0",
                             **{ggml: name for name, (ggml, _) in blocks_of_256.items()},
                             **{ggml: name for name, (ggml, _, _) in widened.items()}}
     assert [(source.values, source.size) for source in SOURCES.values()] == [
-        (1, 4), (1, 2), (1, 2), (32, 34), (128, 34), (128, 28), *[(256, size) for _, size in blocks_of_256.values()],
+        (1, 4), (1, 2), (1, 2), (32, 34), (128, 34), (128, 28), (128, 18), *[(256, size) for _, size in blocks_of_256.values()],
         *[(values, size) for _, values, size in widened.values()]]
     assert {name: source.kernel for name, source in SOURCES.items()} == {
-        "F32": None, "F16": None, "BF16": "widen_bf16", "Q8_0": "widen_q8_0", "PQ2_0": "widen_pq2_0", "PTQ1_0": "widen_ptq1_0",
+        "F32": None, "F16": None, "BF16": "widen_bf16", "Q8_0": "widen_q8_0", "PQ2_0": "widen_pq2_0", "PTQ1_0": "widen_ptq1_0", "Q1_0": None,
         **dict.fromkeys(blocks_of_256), **dict.fromkeys(widened)}
     assert source_of("a", "Q8_0") is SOURCES["Q8_0"]
     # (T.501: the refusal names the type, and no list of the ones that are read)

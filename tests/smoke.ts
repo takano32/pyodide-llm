@@ -528,8 +528,8 @@ for name, source in llama2_convert.SOURCES.items():
 import json, superblock_cases
 from convert.superblocks import SUPERBLOCKS
 with open("superblocks.json") as f:
-    # (T.505.1: "widened", the eight that are read and never kept, blocks of 256 and of 32)
-    read_natively, widened_natively = (lambda fixture: (fixture["read"], fixture["widened"]))(json.load(f))
+    # (T.505.1: "widened", the eight that are read and never kept, blocks of 256 and of 32. T.286.1: "signs", Q1_0's)
+    read_natively, widened_natively = (lambda fixture: (fixture["read"], {**fixture["widened"], **fixture["signs"]}))(json.load(f))
 assert set(read_natively) == set(SUPERBLOCKS) and not set(read_natively) & set(widened_natively), \
     f"the fixture has {sorted(read_natively)}, the readers are {sorted(SUPERBLOCKS)}"
 # (every type of ggml's that has no kernel to read it: F32 and F16 are NumPy's own, BF16 and Q8_0 have kernels)

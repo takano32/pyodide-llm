@@ -1,5 +1,5 @@
 # How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0, the
-# two ternary types, llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T.362, and its older types of
+# two ternary types and ggml's Q1_0 of signs (T.286.1), llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T.362, and its older types of
 # blocks of 32, T.505.1), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T.359): the GGUF's type id, the size of its
 # blocks, the refusal that lists what is read, and its reader on the kernels come from the entry.
 from typing import Callable, NamedTuple
@@ -76,6 +76,19 @@ def ptq1_0(raw):
     digits = np.concatenate([base3(blocks[:, :16], 5).reshape(-1, 80), base3(blocks[:, 16:24], 5).reshape(-1, 40),
                              base3(blocks[:, 24:26], 4).reshape(-1, 8)], axis=1)
     return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
+
+
+def q1_0(raw):
+    """ggml's Q1_0 (T.286.1: the 1-bit Bonsai's GGUFs, ggml type 41): blocks of 128 values in 18 bytes, a float16 scale
+    d and 16 bytes of one bit a value, value j in bit j % 8 of byte j // 8. A set bit is +d, a clear one -d: every value
+    is ternary (no 0), so the engine's ternary holds the block as it is, scale and all. The form is that of block_q1_0
+    and dequantize_row_q1_0() of llama.cpp (MIT; no line of it is copied), the same in upstream and in Prism ML's fork:
+    ggml/src/ggml-common.h#L180-L185 and ggml/src/ggml-quants.c#L419-L437 of
+    https://github.com/PrismML-Eng/llama.cpp/tree/5ea87ddad22541a37053c7ba92b02ec1923617c6"""
+    blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 18)
+    scales = np.ascontiguousarray(blocks[:, :2]).view(np.float16).astype(np.float32)
+    signs = np.unpackbits(blocks[:, 2:], axis=1, bitorder="little").view(np.int8) * np.int8(2) - np.int8(1)
+    return (signs * scales).reshape(-1)
 
 
 # ---- T.505.1: llama.cpp's types of blocks of 32 other than Q8_0, the older ones (a file of Q4_0 ...) and the ones it
@@ -163,7 +176,7 @@ class Source(NamedTuple):
 
 
 # (30 is BF16: Ternary Bonsai 2's two small matrices of the gates. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork
-# of llama.cpp. T.362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. T.505.1: its other three K
+# of llama.cpp, 41 ggml's Q1_0 (the 1-bit Bonsai's: NumPy's reader alone, T.286.1). T.362: the ten of convert/superblocks.py, blocks of 256, NumPy's readers alone. T.505.1: its other three K
 # types, which are read and never kept (WIDENED), and the five of blocks of 32 above. A refusal names none of them
 # (T.501, the owner's choice: it says the type is not read, and grows with nothing a type is added by). ggml's
 # other types are refused: docs/notes/t505-gguf-alone-2026-10-13.md says which and why)
@@ -174,6 +187,7 @@ SOURCES = {source.name: source for source in (
     Source("Q8_0", 8, 32, 34, q8_0, "widen_q8_0"),
     Source("PQ2_0", 142, 128, 34, pq2_0, "widen_pq2_0"),
     Source("PTQ1_0", 143, 128, 28, ptq1_0, "widen_ptq1_0"),
+    Source("Q1_0", 41, 128, 18, q1_0),
     *(Source(name, ggml, VALUES, size, read) for name, (ggml, size, read) in SUPERBLOCKS.items()),
     *(Source(name, ggml, VALUES, size, read) for name, (ggml, size, read) in WIDENED.items()),
     Source("Q4_0", 2, 32, 18, of_32(18, q4_0)),
