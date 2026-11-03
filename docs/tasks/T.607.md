@@ -1,0 +1,102 @@
+### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 完了（2026-11-03。2026-10-30 に T.591 から候補として）
+- **持ち主の決定（2026-11-03、選択肢で「すべて足します」）**: 挙げたものを全部足す（NSFW を名乗るものも、方針 8 のとおり note はカードに従う）。1 つのモデルを 1 つの子タスクに、取りかかる時に番号を採る。
+- ArrowPro-7B-KUJIRA（likes 64）・Vecteus・Oumuamua-v2・Gleipnir（書式があるのは Vecteus だけ）、AXCXEPT の Qwen3-EZO-8B-beta・EZO-Llama-3.2-3B・llm-jp-3-3.7b-EZO、Aratako の Qwen3-8B-RP。古いか用途が狭い。NSFW を名乗るものは入れるかを持ち主が。
+- **子タスクの分け方（取りまとめ役の決め）**: 挙げた順に 1 つずつ。T.607.1 ArrowPro-7B-KUJIRA、T.607.2 Vecteus、T.607.3 Oumuamua-v2、T.607.4 Gleipnir、T.607.5 Qwen3-EZO-8B-beta、T.607.6 EZO-Llama-3.2-3B、T.607.7 llm-jp-3-3.7b-EZO、T.607.8 Qwen3-8B-RP（番号は取りかかる時に確かめ直す）。
+- **済んだこと（2026-11-03）**: 8 つの子タスクで 10 項目を足した（T.607.5 は考える形とすぐ答える形の 2 つ、T.607.7 は Common と Humanities の 2 つ）。どれも GGUF を原本と突き合わせ、CI で書かせ、本番の Chromium で答えた。区切りのまとめで持ち主に見せる取りまとめ役の決め: note の新しい語「writes stories」（T.607.2）と「plays a role」（T.607.8）、作り手の名（LocalNovelLLM-project・nitky・umiyuki・AXCXEPT・Aratako）、T.607.6 の名前が Llama で始まらないこと、T.607.7 の 2 つを両方置くこと、T.607.3 の `[/INST]` の後の空白。
+
+#### T.607.1 DataPilot ArrowPro 7B KUJIRA（mmnga の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の EvoLLM-JP の後に（hf-arrowpro-7b-kujira）。NTQAI の chatntq-ja-7b-v1.0（Mistral 7B、語彙 32,000）から会話とプロンプトの注入への強さに向けて作ったもの（Apache-2.0、カードは日本語で書かれ言語を言わない: note は「日本語」）。mmnga @ 257e00a4e425aa143494ae12c54b4f9429b713f8 の Q8_0（7,695,857,376 バイト）、語彙と config は原本 @ 755e478ac9404cdd551126e20ea055dfa42ddd1d の tokenizer.json。chat template が無く、カードが手で書く Llama 2 のターン（自分の system の文、`[/INST]` の前に空白なし）を `ARROWPRO` に、`format_check.py` の `CARDS` に 2 つ目の写し。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードの組（温度 1.0・top-p 0.95、繰り返しの罰なし）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（カードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き: EvoLLM と同じ）。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41604611593）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0079）、q と k は llama.cpp の回した並び。語彙は 32,000 で、tokenizer.json とも tokenizer.model とも同じ id で違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41604610372、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも誤り（26 と、途中で切れた計算: モデルの力）。日本語の問いは日本語で答え、英語の睡眠の問いにも日本語で答える（カードの system の文「必ず日本語で」どおり）、英語の首都の問いは英語で 1 文。温度 1.0 でも崩れない。約 1.7〜1.8 tok/s（本の長さの答え 692 トークンに 392 秒）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 5.553、`<s>` 5.615（+1.13%）。差は小さく、素の文だけでは替えない（AGENTS.md の教訓）ので、原本のトークナイザが置く `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードの組のまま（書かせて崩れなかった）。
+- CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。書式はカードの `build_prompt` と 1 字まで同じ（`add_special_tokens=True` で BOS が前: `bos: 1` と合う）、リビジョン・ライセンス・`download`（7,695,857,376）・名前・note・台帳の数はログと合う。
+- **本番**（デプロイ run 41615165664、`models.yml` run 41617069594、Chromium）: 準備完了 92.1 秒、256 トークンを 3.5 tok/s（4 本、温度 1）。
+
+#### T.607.2 LocalNovelLLM-project Vecteus v1（mmnga の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の ArrowPro の後に（hf-vecteus-v1）。Mistral-7B-v0.1 から小説を書くために作ったもの（Chat Vector のマージと LoRA、カードは日本語と英語、NSFW も書けると言う。Apache-2.0）。mmnga @ 59df491bb68ce3bc6879c3b292942e4c57274d9b の Q8_0（7,695,857,344 バイト）、語彙と config は原本 @ d3375ec5f7e149916e44cb0d47c8bda30b986f50 の tokenizer.model（tokenizer.json は無い）。書式はトークナイザの chat template（`USER: … ASSISTANT:`）を変換器が読む（`bos` も変換器: 文字で始まるので BOS が前）。作り手の名は組織の表示名「LocalNovelLLM-project」。
+- **取りまとめ役の決め（訳）**: note は「writes stories」（カードが小説を書くモデルと言う。新しい語）、言語はカードの「日本語 / English」。標本抽出は transformers の既定（カードは `do_sample=True` だけで generation_config.json に値が無い: 温度 1.0、top-p なし）。プロンプトの例は物語を頼む文「猫が主人公の短い物語を書いてください。」。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（前の BOS 1 つは緩い比べが通す形）、`--hf` も 9/9。transformers 5.16.1 は tokenizer.model から作るトークナイザにダミーの空白を置かず（「USER」を 1 片に、本物の sentencepiece は「▁US」「ER」）0/9 になったので、`format_check.py` の `SENTENCEPIECE` に足して本物の sentencepiece で比べる。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41615578259）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0076）、q と k は llama.cpp の回した並び。語彙は 32,000 で tokenizer.model と同じ id で違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41615579992、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 8/10（17 × 24 の 2 回が 1500 で切れ、greedy は繰り返し）、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも「割り切れない」と誤る（モデルの力）。日本語の問いは日本語で（かな 57〜70%）、英語の問いは英語で答える。温度 1.0・top-p なしでも崩れない。約 1.8〜1.9 tok/s（長い答え: 647 トークンに 348 秒）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 3.854、`<s>` 3.863（+0.24%）。差は小さいので、変換器が置く `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 標本抽出（transformers の既定）と note はそのまま（書かせて崩れなかった）。
+- CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし（小さな直し 1 つ: tok/s の下限を長い答えの数に）。リビジョン・`download`（7,695,857,344）・ライセンス・書式と `bos: 1`（変換器任せ）・標本抽出・note・台帳の数はログと合う。
+- **本番**（デプロイ run 41628273215、`models.yml` run 41630089643、Chromium）: 準備完了 112.3 秒、256 トークンで 3.9 tok/s（4 本）。
+
+#### T.607.3 nitky Oumuamua 7B instruct v2（mradermacher の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の Vecteus の後に（hf-oumuamua-7b-instruct-v2）。Mistral 7B の派生 15 個を Swallow-MS の日本語の語彙（42,800）の上でマージしたもの（Apache-2.0、カードは ja・en）。mradermacher @ b5ba02aa55bd31d2365354b492500229535bb592 の Q8_0（7,790,108,960 バイト）、語彙と config は原本 @ 315cee7d10fd84a130ab0973942ff76bb1582c49 の tokenizer.json。chat template が無く、カードの Llama 2 のターン（カードが勧める system の文）を `OUMUAMUA` に、`format_check.py` の `CARDS` に 2 つ目の写し。
+- **取りまとめ役の決め（訳）**: `[/INST]` の後に空白を置かない。カードの文は空白を書くが、カードのコードは `apply_chat_template`（transformers の Llama の既定の書式: 空白なし）で、その空白は答えの最初の語片が持つ。標本抽出はカードのコードの温度 0.1（top-p なし）。作り手の名は HF の名「nitky」（ほかの名を言わない個人）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（カードのコードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き）。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41628562527）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0079）。埋め込みの 140 行は原本とは線の外で原本の Q8_0 とは同じ: どれもバイトの語片（`<0x01>` など）で大きさが中央値の 7e-4 ほど、float16 の尺度の丸め（T.145 の読み）。語彙は 42,800 で tokenizer.json とも tokenizer.model とも違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41628564644、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも誤り（774 と 789: モデルの力）。日本語の問いは日本語で（かな 59〜72%）、英語の問いは英語で答える。温度 0.1 で greedy とほぼ同じ文になり、崩れない。約 1.7 tok/s（350 トークンに 202 秒）。int8 は 8,247,246,876 バイト（note の 8.3 GB と合う）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 10.055、`<s>` 10.166（+1.10%）。差は小さいので、原本のトークナイザが置く `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 書式と標本抽出（温度 0.1）はそのまま（書かせて崩れなかった）。
+- CI を回した。訳: 8 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（`licenses.ts` の 2 行の字下げ: 直した）。書式（`[/INST]` の後に空白なし）はカードのコードの読みとして妥当、リビジョン・標本抽出・note・名前・台帳の数はログと合う。`download` とライセンスは取りまとめ役が HF の API で確かめた（7,790,108,960、両カード apache-2.0）。
+- **本番**（デプロイ run 41636236199、`models.yml` run 41638197553、Chromium）: 準備完了 96.8 秒、256 トークンで 3.4 tok/s（4 本）。
+
+#### T.607.4 umiyuki Umievo itr012 Gleipnir 7B（mmnga の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の Oumuamua の後に（hf-umievo-gleipnir-7b）。日本語の Mistral 7B 4 つ（Japanese-Starling-ChatV・Ninja-v1-RP-expressive-v2・Vecteus-v1・Japanese-Chat-Umievo-itr004）を進化的にマージしたもの（Apache-2.0、カードは ja）。mmnga @ 322aacfb4932771d2e7520a90c3b1558ffb5d7a6 の Q8_0（7,695,857,408 バイト）、語彙と config は原本 @ 5187cc9e441f3d876eda345f52f53eda949c5aee の tokenizer.json。chat template が無く、カードの `build_prompt`（自分の system の文、`[/INST]` の前に空白なし）を `GLEIPNIR` に、`format_check.py` の `CARDS` に 2 つ目の写し。config の `sliding_window` 4096 はページの文脈 4096 では効かない（Mistral の家族は読まない: ArrowPro・Vecteus と同じ）。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードのコードの組（温度 1.0・top-p 0.95）。作り手の名は HF の名「umiyuki」（ほかの名を言わない個人）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（カードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き）。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41636425602）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0077）、q と k は llama.cpp の回した並び。埋め込みの 140 行は原本とは線の外で原本の Q8_0 とは同じ（バイトの語片の小さな行: T.607.3 と同じ読み）。語彙は 32,000 で tokenizer.json とも tokenizer.model とも違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41636426205、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも誤り（828 と、誤った九九の表: モデルの力）。日本語の問いは日本語で（かな 58〜84%）、英語の問いは英語で答える。温度 1.0・top-p 0.95 でも崩れない。約 1.5〜1.6 tok/s（531 トークンに 343 秒）。int8 は 8,147,714,076 バイト（note の 8.2 GB と合う）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 3.410、`<s>` 3.393（−0.51%）。カードのコードどおり `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 書式と標本抽出はカードの組のまま（書かせて崩れなかった）。
+- CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（7,695,857,408）・ライセンスは HF と合い、書式はカードの `build_prompt` と 1 字まで同じ、標本抽出もカードのコードと同じ。`sliding_window` の読みは妥当、台帳の数はログと合う（tok/s は長い答えの数: 短い答えは約 1.0）。
+- **本番**（デプロイ run 41646559429、`models.yml` run 41648749991、Chromium）: 準備完了 110.4 秒、256 トークンで 3.4 tok/s（4 本）。
+
+#### T.607.5 AXCXEPT Qwen3 EZO 8B beta（mradermacher の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 2 項目を `hf-japanese.ts` の Shisa V2.1 Qwen3 8B の後に（hf-qwen3-ezo-8b-beta-thinking と hf-qwen3-ezo-8b-beta）。Qwen3 8B を複数のターンの会話に向けて学習し直したもの（Apache-2.0、カードは ja・en）。mradermacher @ 1867b17511f6bb9659fc7b6f585cae4a62bdcac7 の Q8_0（8,709,519,008 バイト）、語彙と config は原本 @ c7458182662d2fa15da5e41a17427319e6f265f5 の tokenizer.json。chat template は Qwen3 の古い版の写し（道具の呼び出しと `content` の扱いだけが違い、1 ターンは同じ文）なので、Qwen3 8B と同じ形: `thinkingAndNot()` に BOS `<|im_start|>`（`QWEN3_FROM_IM_START`）と書式 `QWEN3_THINKING_AFTER_START`・`QWEN3_AT_ONCE_AFTER_START`。
+- **取りまとめ役の決め（訳）**: 標本抽出は Qwen3 のカードの組（`thinking` と `atOnce`: generation_config.json の 0.6・0.95 は考える形の組と同じ）。作り手の名は会社の名「AXCXEPT」。BOS は頭のトークンの測りで決め直す。
+- **確かめ**: `format_check.py` は 2 つとも 9/9（STRICT: 本物と同じ ID）、`--hf` も 9/9。`models-check` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41639086576）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0074）、q と k は HF の並び（Qwen3 の GGUF のとおり）。語彙は tokenizer.json の 151,669 と同じ id で違う語片は 0（GGUF の後ろの 267 は vocab_size までの詰め物）。
+- **すぐ答える形の書かせ（`tests/answers.ts`、run 41639087746、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）・東京・17 × 24 = 408（2 回とも）が合う。日本語の問いは日本語で（かな 42〜71%）、英語の問いは英語で。約 2.7 tok/s（565 トークンに 207 秒）。int8 は 9,215,463,452 バイト（note の 9.2 GB と合う）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 12.154、`<|endoftext|>` 24.128（+98.5%）、`<|im_start|>` 12.392（+1.96%）。Qwen3 の 8B 系と同じ向き（`<|endoftext|>` が大きく悪い）なので、書式の最初のトークン `<|im_start|>` を BOS にする形のまま。
+- **考える形の書かせ（`tests/answers.ts`、run 41639088286、同じ組）**: 止まったのは 10/10、考えを自分で閉じたのは 10/10（考えは 135〜932 トークン、上限 3,584 に届かない）、繰り返し 0。富士山・東京・408 が合う。考えは英語で、答えは日本語の問いに日本語で（かなの割合が 2〜27% なのは英語の考えを数えるため: `</think>` の後は日本語）。約 1.7 tok/s（708 トークンに 409 秒）。
+- **取りまとめ役の決め（訳）**: 標本抽出（Qwen3 のカードの 2 組）と BOS・書式は Qwen3 8B のまま（書かせて崩れなかった）。考えが英語なのは Qwen3 8B と同じ形で、note は「日本語 / English」のまま。
+- CI を回した。訳: 9 GB の GGUF の照合と 9 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（8,709,519,008）・ライセンスは HF と合い、chat template は Qwen3 8B のものと全文は違うが jinja2 で描いた 1 ターンは `enable_thinking` の既定でも偽でも同じ文。BOS の決め・標本抽出・note・名前・台帳の数はログと合う。
+- **本番**（デプロイ run 41650115576、`models.yml` run 41652375545、Chromium、すぐ答える形）: 準備完了 377.7 秒、256 トークンで 3.3 tok/s（4 本）。準備完了は Qwen3 Swallow 8B の 171.4 秒（T.606）の 2 倍ほどで、ほとんどが取得（ステータス行は 300 秒の時に 6,889 / 8,709 MB・23.9 MB/s: 8.7 GB をこの速さで約 364 秒）。
+
+#### T.607.6 AXCXEPT EZO Llama 3.2 3B Instruct dpoE（mradermacher の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の Shisa V2.1 の Llama 3.2 3B の後に（hf-ezo-llama-3.2-3b-instruct-dpoe）。Llama 3.2 3B Instruct を日本語と英語のデータで学習し直したもの（Llama 3.2 Community License、カードの法的通知も同じ）。mradermacher @ 65ba0474ccc3c07a4ca4c383e5f3c0f174a81f48 の Q8_0（3,421,899,936 バイト）、語彙と config は原本 @ 0b374d6e4b55192d833ec5b08ca842aaac4147eb の tokenizer.json。chat template は Llama 3.2 3B Instruct のものと同じ文（sha256 が同じ）で、書式と BOS は変換器が読む（Meta と Shisa の Llama 3.2 3B と同じ）。
+- **取りまとめ役の決め（訳）**: 標本抽出は generation_config.json の組（温度 0.6・top-p 0.9）。言語はカードの 9 つのうち「日本語 / English」（カードが日本語の仕事のためと言う）。名前は作り手の名とモデル自身の名で「AXCXEPT EZO Llama 3.2 3B Instruct dpoE」（T.523・T.535 の形: 一覧の「Science Tokyo Llama 3.1 Swallow 8B Instruct」も作り手の名が Llama の前）。Llama のライセンスは派生モデルの名の頭に Llama を求めるが、作り手自身の名「EZO-Llama-3.2-3B-Instruct-dpoE」がそうしていないので、一覧の名で直すことはしない（Shisa の「Llama 3.2 Shisa V2.1 3B」はカードがその名を決めている）。区切りのまとめで持ち主に見せる。カードの免責は研究と開発のためと言い、商用の利用を意図しないと書くが、ライセンスは Llama 3.2 のまま（方針 8: 一覧から外さない）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（変換器の書式、本物と同じ ID）、`--hf` も 9/9。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41650364735）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0062）、q と k は llama.cpp の回した並び、`rope_freqs` は原本の llama3 の縮めから作る表と 1.4e-8。語彙は 128,256 で違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41650365037、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）・東京・17 × 24 = 408（2 回とも）が合う。富士山の場所や読み（「ふじやま」「三重県」）は誤る（3B の力）。日本語の問いは日本語で（かな 48〜59%、英語の語が混ざる）、英語の問いは英語で。約 3.7 tok/s（348 トークンに 93 秒）。int8 は 3,614,847,004 バイト（note の 3.6 GB と合う）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 21.850、`<|begin_of_text|>` 18.406（−15.8%）。変換器が書式から読む BOS 128000 のまま。
+- **取りまとめ役の決め（訳）**: 標本抽出（generation_config.json の組）と note はそのまま（書かせて崩れなかった）。
+- CI を回した。訳: GGUF の照合は原本の 6.4 GB の safetensors を取るので手元では重く、書かせと同じ run で回した（3B は手元でも動かせるが、ほかの子タスクと同じ道具の組で）。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（名前が Llama で始まらず、台帳の「Llama で始まる」は誤り）。台帳の文を直し、名前は作り手の名を頭に置く形のまま（取りまとめ役の決め: 上の訳）。リビジョン・`download`・ライセンス（両方 llama3.2、カードの法的通知も）・免責の扱い・標本抽出・note は合う。chat template の sha256 は取りまとめ役が 2 つの tokenizer_config.json から確かめた（同じ 5816fce1…）。
+- **本番**（デプロイ run 41656172765、`models.yml` run 41658228064、Chromium）: 準備完了 57.0 秒、256 トークンで 9.9 tok/s（4 本）。
+
+#### T.607.7 AXCXEPT llm-jp-3 3.7B instruct EZO の Common と Humanities（ineair の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 2 項目を `hf-japanese.ts` の llm-jp-3 3.7B instruct3 の後に（hf-llm-jp-3-3.7b-instruct-ezo-common・-humanities）。どちらも llm-jp-3-3.7b-instruct を日本語の Wikipedia と FineWeb から作った指示のデータで学習し直したもの（Apache-2.0: カードは元のモデルの条件に従うと言う。ja・en）。ineair の Q8_0（Common @ 31fe00046f1a04f12980d3e1f0d030c85b9a1cd7、Humanities @ 26cd20f98ba4217d5c9ca42b0e1b594371931f5c、どちらも 4,022,249,984 バイト）、語彙と config は原本（Common @ 8cd47420b77e96061f4b1fa1f006eec7b0ff4609、Humanities @ ade3da043ec830f0d4d54cfc0e9a91335dfe3f55）の tokenizer.json。chat template は llm-jp-3 の instruct のものと同じ文（sha256 が同じ）なので、書式 `LLM_JP_INSTRUCT` と止まり `llmJp` も同じ。カードは llm-jp の system の文を渡すので、`format_check.py` の `SYSTEM` に 2 つの id を足した。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードのコードの組（温度 0.7・top-p 0.95・繰り返しの罰 1.05）。名前は作り手の名を頭に「AXCXEPT llm-jp-3 3.7B instruct EZO Common」（名の llm-jp は元のモデルの作り手で、この作り手ではない）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 2 つとも 9/9（カードの system の文で本物と同じ ID）、`--hf` も 9/9（変換器の書式）。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41656493477、2 つ）**: どちらも通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0076）、q と k は llama.cpp の回した並び。埋め込みの 429 行は原本とは線の外で原本の Q8_0 とは同じ（使わない特殊トークンやバイトの語片など、大きさが中央値の 4e-4 ほどの行: T.607.3 と同じ読み）。語彙は tokenizer.json の 99,574 と同じ id で違う語片は 0（GGUF の後ろの 10 は vocab_size までの詰め物）。
+- **Humanities の書かせ（`tests/answers.ts`、run 41656495574、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。東京は合う（英語の 1 文を頼んでも「Tokyo」の 1 語）。日本でいちばん高い山を 2 回とも「奥穂高岳（3,190 m）」と誤り、17 × 24 も 2 回とも誤る（392 と 420）: 3.7B の力（元の llm-jp-3 3.7B instruct3 も事実を誤ることがある）。日本語の問いは日本語で（かな 59〜82%）、英語の問いは英語で。約 3.7 tok/s（363 トークンに 99 秒）。int8 は 4,256,280,604 バイト（note の 4.3 GB と合う）。頭のトークンはなし 12.174、`<s>` 11.965（−1.72%）: 変換器の `bos: 1` のまま。
+- **Common の書かせ（`tests/answers.ts`、run 41656493570、同じ組）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）と東京（「Tokyo」の 1 語）は合い、17 × 24 は 2 回とも誤る（39 と 392: モデルの力）。日本語の問いは日本語で（かな 57〜73%）、英語の問いは英語で。約 3.1 tok/s（219 トークンに 70 秒）。int8 は Humanities と同じ 4,256,280,604 バイト。頭のトークンはなし 12.066、`<s>` 11.829（−1.97%）: `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 書式と標本抽出（カードの組）はそのまま（2 つとも書かせて崩れなかった）。Humanities が富士山を誤るのは学習の向きと読み、一覧には両方を置く（どちらを残すかは区切りのまとめで持ち主に見せる）。
+- CI を回した。訳: 2 つの GGUF の照合は原本の 7.6 GB の safetensors を 2 つ取り、書かせは 4 GB の int8 を 2 つ作るので手元では重い（ほかの子タスクと同じ道具の組で）。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`・ライセンス（4 つとも apache-2.0）は HF と合い、chat template は llm-jp-3 3.7B instruct3 のものと同じ文（393 字）。Common のカードは llm-jp の system の文と 0.7・0.95・1.05 を渡す（Humanities のカードの使い方の節は取りまとめ役が読んで同じ）。名前と note も合う。
+- **本番**（デプロイ run 41665267824、`models.yml` run 41667255915、Chromium、同じランナーで続けて）: Common は準備完了 71.6 秒・6.7 tok/s、Humanities は 175.6 秒・6.8 tok/s（256 トークン、4 本）。同じ大きさで準備完了が 2.5 倍違う訳は未計測（300 秒より前に準備完了したのでステータス行の取得の速さがログに無い）。
+
+#### T.607.8 Aratako Qwen3 8B RP v0.1（Aratako の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
+- **したこと**: 1 項目を `hf-japanese.ts` の Qwen3 EZO 8B beta の後に（hf-qwen3-8b-rp-v0.1）。Qwen3 8B を日本語のロールプレイに向けて学習し直したもの（MIT、カードは ja）。作り手自身の Q8_0 @ ff4bdc6cb369912f59bf369d3f6d47677dd83abe（8,709,518,336 バイト）、語彙と config は原本 @ aacfb07d1a7293054ad47ac3de98644ab237b7bd の tokenizer.json。chat template は Qwen3 EZO 8B beta のものと同じ文（Qwen3 の古い版の写し）。
+- **取りまとめ役の決め（訳）**: 項目は 1 つ。カードのコードは `enable_thinking` を渡さず（書式は `<|im_start|>assistant\n` で終わる）、答えに考えが無いので、その書式（`QWEN3_THINKING_AFTER_START`: 変換器の読むものと同じ文）を BOS `<|im_start|>`（Qwen3 の 8B 系、T.607.5 と同じ）で。標本抽出はカードのコードの温度 0.5（top-p なし）。カードは役の設定を system のターンに書くが、ページは system を送らないので、プロンプトの例に役を書いた（「あなたは魔法学校の新入生「桜」です。…」）。note は新しい語「plays a role」、言語はカードの「日本語」。名前は作り手の HF の名「Aratako」。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 9/9（本物と同じ ID）、`--hf` も 9/9。`models-check` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41658895558）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0074）、q と k は HF の並び。語彙は tokenizer.json の 151,669 と同じ id で違う語片は 0（後ろの 267 は詰め物）。ジョブは 80 分（同じ大きさの T.607.5 は 12 分: 訳は未計測）。
+- **書かせ（`tests/answers.ts`、run 41658896844、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0、考えの印は 1 つも書かない（答えに考えが無いという読みと合う）。東京と 17 × 24 = 408（2 回とも）は合い、富士山は名を合わせて標高を 2 回とも「2,700 メートル」と誤る（モデルの力: 同じ元の Qwen3 EZO 8B beta は合った）。日本語の問いは日本語で（かな 48〜80%）、英語の問いは英語で。約 1.4 tok/s（258 トークンに 180 秒）。int8 は 9,215,463,452 バイト（note の 9.2 GB と合う）。役を演じる問い（項目のプロンプトの例）は道具の問いに無く、書かせていない。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 13.235、`<|endoftext|>` 17.778（+34.3%）、`<|im_start|>` 14.004（+5.82%）。Qwen3 の 8B 系と同じ向き（`<|endoftext|>` が大きく悪い）なので、書式の最初のトークン `<|im_start|>` を BOS にする形のまま。
+- **取りまとめ役の決め（訳）**: 書式・BOS・標本抽出（温度 0.5）はそのまま（書かせて崩れなかった）。
+- CI を回した。訳: 9 GB の GGUF の照合と 9 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
+- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（8,709,518,336）・ライセンス（MIT）は HF と合い、カードの使い方（`enable_thinking` を渡さず、役は system、温度 0.5 で top-p なし）と項目 1 つの読み・プロンプトの例・名前も合う。台帳の数はログと合う（10/10 は問い 5 つ × greedy と種 1）。
+- **本番**（デプロイ run 41673010877、`models.yml` run 41675401654、Chromium）: 準備完了 344.7 秒、59 トークン（自分で止まった）で 2.1 tok/s（4 本）。
