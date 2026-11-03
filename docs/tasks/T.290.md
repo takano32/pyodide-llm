@@ -1,0 +1,14 @@
+### T.290 [運用][Bonsai] Safari（WebKit）で 3 値の 4B・8B を確かめ、note を直す — 状態: 完了（2026-10-02 の洗い出しで採番。規模 小）
+- 3 値で 4B・8B も 32 ビットのメモリに入る。CI の WebKit は 1.7B と 4B が通った（7.6・3.1 tok/s）。8B と macOS の WebKit、note の「Chrome and Firefox」。
+- **本番を CI の WebKit 27.2 で（2026-11-03、`models.yml`）**: 3 つとも準備完了して日本語で読める答えを書いた。どれも 32 ビットのメモリ（ステータス行に「64-bit memory」が無い）、SIMD kernels・ternary・relaxed SIMD・4 本。
+  - 8B・Linux（run 41706278711、AMD EPYC 7763・4 スレッド・17 GB）: 準備完了 50.0 秒、プロンプト 3.9 tok/s、答え 3.4 tok/s（232 トークン）。WebGPU は Worker に無い。
+  - 4B・macOS（run 41706282770、Apple M1 の仮想機・ランナーの論理コア 3（ページは 4 本）・8 GB）: 準備完了 52.1 秒、プロンプト 13.8 tok/s、答え 11.1 tok/s（176 トークン: 上限の 256 より前に終わった）。
+  - 8B・macOS（同じ run）: 準備完了 73.3 秒、プロンプト 8.9 tok/s、答え 3.8 tok/s（232 トークン）。
+  - macOS の WebKit には Worker の WebGPU があるが、8 GB の機械では GPU に層を 2 重に置くとメモリが足りないと断り CPU のまま（「the layers on the GPU as well (1627 MB / 2559 MB) would not leave this device enough memory」）。正しい断り方。
+  - WebKit のメモリの線（落とし穴の T.506: 16 GB 以下の機械で 8 GB）には届かなかった。8B は 3 値で全部 3.3 GiB（文脈 4096 の見積もり、T.246: 実測でない）。
+- **note**: 今の note に「Chrome and Firefox」は無い（窓口の `devicesOf()` が 4 GiB を超える項目にだけ付け、4B は 1.1 GB・8B は 2.2 GB）。8B は「desktop only」が付く（2.2 GB + 0.3 GB が 2 GiB を超える）。だから note は直さない。本物の Safari（iPhone・Mac）は未確認。
+- CI を回した。訳: WebKit と macOS は手元で見られない（a1-free では Playwright の WebKit が動かない）。
+- 取りまとめ役の決め（訳）: 本物の Safari（iPhone・Mac）は「持ち主の端末でまとめて見るもの」に積んだ（端末でしか分からない: 2026-10-01 の決まり）。
+- 取りまとめ役の決め（訳）: note は変えない（上の通り、手で書かない決まりで既に正しい）。macOS は 4B と 8B を 1 つの run にまとめた（同じランナーで比べられ、待ちが 1 回で済む）。
+- レビュー（Sonnet low、2026-11-03）: must-fix なし。数はログと全部合い、note を直さない訳も `devicesOf()` で成り立つ。直した: macOS の「3 スレッド」をランナーの論理コアとページの本数に書き分け、4B の「自分で止まった」を「上限の 256 より前に終わった」に、3.3 GiB が見積もりであること。
+- **本番**: 上の run がそのまま本番（記録だけでデプロイは無い）。
