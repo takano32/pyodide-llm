@@ -1,7 +1,9 @@
 # write_options.py (T.249): what the page gives the engine for a Hugging Face model of the list, as JSON: the converter's
 # options (read with tokenizer_config.json and the chat template, so with the special tokens of the format) under the
 # entry's own, as the worker merges them, the format of one turn (the entry's, else the converter's) and the entry's
-# prompt. Only the small files and the heads of the weights are fetched (tests/format_check.py's converted()).
+# prompt. Only the small files and the heads of the weights are fetched (tests/format_check.py's converted()). T.286.2:
+# converted to the dtype the page keeps the model in (the entry's weights: a ternary Bonsai's options say ternary,
+# where they said int8 and tests/answers.ts refused the ternary checkpoint beside them).
 #
 #   python3 tests/write_options.py <model id> <directory for the downloads>
 import json
@@ -12,7 +14,7 @@ import format_check
 
 model_id, directory = sys.argv[1], Path(sys.argv[2])
 entry = next(entry for entry in format_check.entries() if entry["id"] == model_id)
-_, made = format_check.converted(entry, directory)
+_, made = format_check.converted(entry, directory, entry.get("weights", "int8"))
 options = {**made.options, **entry.get("options", {})}
 template = entry.get("template") or options.get("template")
 options.pop("template", None)

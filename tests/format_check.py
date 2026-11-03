@@ -197,7 +197,7 @@ def gguf(entry):
     return entry["hf"]["weights"].endswith(".gguf")
 
 
-def converted(entry, directory):
+def converted(entry, directory, dtype="int8"):
     """(the folder of the files transformers' reference reads, the conversion of the entry as the page makes it: its
     options, its tokenizer and its header, none of its weights).
     The conversion: by its conduct, which is answered with the small files and the heads of the weights (kept under
@@ -205,12 +205,13 @@ def converted(entry, directory):
     for the weights themselves. What it writes goes nowhere.
     The reference's files: of the repository the vocabulary comes from; of the entry's own where it names none; and
     for a GGUF that has its own vocabulary, of the original at ORIGINALS' revision. tokenizer.json and
-    special_tokens_map.json too: transformers reads them where they are."""
+    special_tokens_map.json too: transformers reads them where they are. dtype: what the conversion makes (the ids are
+    the same whatever it is; tests/write_options.py asks for the one the page keeps the model in)."""
     hf = entry["hf"]
     # (T.610.1: an entry whose blocks are kept as the page converts it, so its options say the rows' kinds)
     blocks = {"blocks": True} if entry.get("conversion", {}).get("blocks") else {}
     made = conducting.converted(conducting.Heads.of(hf, directory, between="__", remember=True), hf, weights=False,
-                                dtype="int8", sink=conducting.Nothing(), **blocks)
+                                dtype=dtype, sink=conducting.Nothing(), **blocks)
     original = hf.get("vocabulary") or ({"repo": entry["original"], "revision": ORIGINALS[entry["original"]]} if gguf(entry) else hf)
     reference = conducting.Fetched.of(original, directory, between="__", remember=True)
     for name in dict.fromkeys(["config.json", "tokenizer_config.json", "chat_template.jinja", "tokenizer.json",
