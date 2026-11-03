@@ -531,6 +531,24 @@ def test_value_heads_as_hugging_face_has_them_are_not_passed(tmp_path, capsys, m
     assert result["mismatches"] == 2 * len(TILED_TENSORS)
 
 
+def test_value_heads_alike_in_either_order_are_no_mismatch(tmp_path, capsys):
+    """T.286.5: where every value head has the same value (the 1-bit Bonsai 27B's dt_bias in some layers), tiling
+    changes nothing: the order is said as either, and is no mismatch (it was taken for Hugging Face's before)."""
+    from test_gguf import qwen35_gguf
+
+    def alike(tensors):
+        name = QWEN35 + "0.linear_attn.dt_bias"
+        return {**tensors, name: np.full_like(tensors[name], tensors[name][0])}
+
+    config, file, same = qwen35_gguf(n_layers=4, fold=alike, **TILED_MODELS["three to one (the 27B)"])
+    assert gguf_check.check_tensors(*qwen35_directory(tmp_path, config, file, same))
+    out = capsys.readouterr().out
+    result = json.loads(out.strip().splitlines()[-1])
+    assert result["mismatches"] == 0 and gguf_check.EITHER in result["orders"]
+    said = [line.split(" | ")[0][2:] for line in out.splitlines() if line.startswith("| blk.") and gguf_check.EITHER in line]
+    assert said == ["blk.0.ssm_dt.bias"]
+
+
 TILED_WRONG = {
     # the original's tensor changed, as (name in the original, the GGUF's tensor that must be past the line, the change)
     "two value heads of z swapped": ("0.linear_attn.in_proj_z.weight", "blk.0.attn_gate.weight", "heads"),

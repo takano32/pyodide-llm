@@ -382,6 +382,10 @@ VALUE_HEADS = {"attn_qkv.weight": (True, True, 0), "attn_gate.weight": (False, T
                "ssm_dt.bias": (False, False, 0), "ssm_a": (False, False, 0),
                "ssm_conv1d.weight": (True, True, 0), "ssm_out.weight": (False, True, 1)}
 TILED, UNTILED = "value heads tiled (llama.cpp's order)", "value heads as Hugging Face (not llama.cpp's order)"
+# T.286.5: a tensor whose value heads are the same in either order (the 1-bit Bonsai 27B's dt_bias or A_log in 18 of its
+# 48 linear-attention layers: every value head alike), which no order of the file can be told from, nor
+# read wrong by
+EITHER = "value heads the same in either order"
 
 
 def value_heads(name, config):
@@ -1018,7 +1022,8 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             if tile and values.shape == original.shape:
                 # T.245: and the value heads tiled, where a key head has more than one
                 moved = tiled(original, *tile)
-                way = TILED if relative(values, moved) < relative(values, original) else UNTILED
+                way = EITHER if np.array_equal(moved, original) else \
+                    TILED if relative(values, moved) < relative(values, original) else UNTILED
                 order = f"{order}, {way}" if order else way
                 orders.add(way)
                 if way == TILED:
