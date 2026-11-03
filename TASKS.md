@@ -1352,7 +1352,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（名前が Llama で始まらず、台帳の「Llama で始まる」は誤り）。台帳の文を直し、名前は作り手の名を頭に置く形のまま（取りまとめ役の決め: 上の訳）。リビジョン・`download`・ライセンス（両方 llama3.2、カードの法的通知も）・免責の扱い・標本抽出・note は合う。chat template の sha256 は取りまとめ役が 2 つの tokenizer_config.json から確かめた（同じ 5816fce1…）。
 - **本番**（デプロイ run 41656172765、`models.yml` run 41658228064、Chromium）: 準備完了 57.0 秒、256 トークンで 9.9 tok/s（4 本）。
 
-#### T.607.7 AXCXEPT llm-jp-3 3.7B instruct EZO の Common と Humanities（ineair の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+#### T.607.7 AXCXEPT llm-jp-3 3.7B instruct EZO の Common と Humanities（ineair の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
 - **したこと**: 2 項目を `hf-japanese.ts` の llm-jp-3 3.7B instruct3 の後に（hf-llm-jp-3-3.7b-instruct-ezo-common・-humanities）。どちらも llm-jp-3-3.7b-instruct を日本語の Wikipedia と FineWeb から作った指示のデータで学習し直したもの（Apache-2.0: カードは元のモデルの条件に従うと言う。ja・en）。ineair の Q8_0（Common @ 31fe00046f1a04f12980d3e1f0d030c85b9a1cd7、Humanities @ 26cd20f98ba4217d5c9ca42b0e1b594371931f5c、どちらも 4,022,249,984 バイト）、語彙と config は原本（Common @ 8cd47420b77e96061f4b1fa1f006eec7b0ff4609、Humanities @ ade3da043ec830f0d4d54cfc0e9a91335dfe3f55）の tokenizer.json。chat template は llm-jp-3 の instruct のものと同じ文（sha256 が同じ）なので、書式 `LLM_JP_INSTRUCT` と止まり `llmJp` も同じ。カードは llm-jp の system の文を渡すので、`format_check.py` の `SYSTEM` に 2 つの id を足した。
 - **取りまとめ役の決め（訳）**: 標本抽出はカードのコードの組（温度 0.7・top-p 0.95・繰り返しの罰 1.05）。名前は作り手の名を頭に「AXCXEPT llm-jp-3 3.7B instruct EZO Common」（名の llm-jp は元のモデルの作り手で、この作り手ではない）。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 2 つとも 9/9（カードの system の文で本物と同じ ID）、`--hf` も 9/9（変換器の書式）。`models-check`・`npm run types` は通る。
@@ -1362,6 +1362,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **取りまとめ役の決め（訳）**: 書式と標本抽出（カードの組）はそのまま（2 つとも書かせて崩れなかった）。Humanities が富士山を誤るのは学習の向きと読み、一覧には両方を置く（どちらを残すかは区切りのまとめで持ち主に見せる）。
 - CI を回した。訳: 2 つの GGUF の照合は原本の 7.6 GB の safetensors を 2 つ取り、書かせは 4 GB の int8 を 2 つ作るので手元では重い（ほかの子タスクと同じ道具の組で）。
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`・ライセンス（4 つとも apache-2.0）は HF と合い、chat template は llm-jp-3 3.7B instruct3 のものと同じ文（393 字）。Common のカードは llm-jp の system の文と 0.7・0.95・1.05 を渡す（Humanities のカードの使い方の節は取りまとめ役が読んで同じ）。名前と note も合う。
+- **本番**（デプロイ run 41665267824、`models.yml` run 41667255915、Chromium、同じランナーで続けて）: Common は準備完了 71.6 秒・6.7 tok/s、Humanities は 175.6 秒・6.8 tok/s（256 トークン、4 本）。同じ大きさで準備完了が 2.5 倍違う訳は未計測（300 秒より前に準備完了したのでステータス行の取得の速さがログに無い）。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
