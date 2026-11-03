@@ -8,7 +8,7 @@ import {
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_JA_SFT_SAMPLING, QWEN35_SAMPLING, SALUKI_SAMPLING, SPARK_SAMPLING, atOnce, graniteSampling, thinking,
 } from "./sampling.ts";
-import { gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
+import { binaryBonsai, gemma3, gemma4, ggufOf, hf, lfm2, miniCpm5, shisaLfm2, ternaryBonsai, thinkingAndNot } from "./builders.ts";
 import type { Entry } from "./builders.ts";
 
 export const HF_FAMILIES: Entry[] = [
@@ -72,6 +72,10 @@ export const HF_FAMILIES: Entry[] = [
     "fetches 1.1 GB (GGUF) → ternary 1.1 GB"),
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
     "fetches 2.2 GB (GGUF) → ternary 2.2 GB", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+  // T.286.2: and the 1-bit Bonsai 1.7B, the same Qwen3 1.7B with every weight a sign (Q1_0): fetched as 1.125 bits a
+  // weight, held as ternary
+  binaryBonsai("1.7B", "210a9e99f79cb184909d49595906526eb2b3dd9a", "a7f720bd688d7563714f3118edd97b83d06f0615", 248302272,
+    "fetches 248 MB (GGUF) → ternary 457 MB"),
   // T.236: Qwen3.5 0.8B, the first of the list with hybrid attention (T.229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which

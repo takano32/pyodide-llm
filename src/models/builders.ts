@@ -153,11 +153,20 @@ export const gemma4 = (size: string, revision: string, ggufRevision: string, dow
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */
 export const ternaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
-  { options = QWEN3_OWN_BOS, ...start }: Partial<Entry> = {}): Entry => ({
-  group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Prism ML Ternary Bonsai ${size}`,
-  note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
-  ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
-    `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
+  start: Partial<Entry> = {}): Entry =>
+  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "ternary weights", size, revision, originalRevision, download, sizes, start);
+/** T.286: Prism ML's 1-bit Bonsai (1.7B ...), every weight -1 or +1 times a scale of its 128: a Q1_0 GGUF
+ * (convert/readers.py's q1_0, T.286.1), which the ternary dtype holds as it is. The rest as the ternary ones' above,
+ * from its own -unpacked original */
+export const binaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
+  start: Partial<Entry> = {}): Entry =>
+  bonsai("Bonsai", "Bonsai", "Q1_0", "1-bit weights", size, revision, originalRevision, download, sizes, start);
+const bonsai = (repo: string, name: string, quantization: string, weights: string, size: string, revision: string,
+  originalRevision: string, download: number, sizes: string, { options = QWEN3_OWN_BOS, ...start }: Partial<Entry>): Entry => ({
+  group: "hf", id: `hf-${repo.toLowerCase()}-${size.toLowerCase()}`, name: `Prism ML ${name} ${size}`,
+  note: `answers at once · 日本語 / English · ${weights} · ${sizes}`,
+  ...ggufOf(`prism-ml/${repo}-${size}-gguf`, revision, `${repo}-${size}-${quantization}.gguf`,
+    `prism-ml/${repo}-${size}-unpacked`, originalRevision), download,
   weights: "ternary", conversion: {}, options: { ...options, ...PLAIN_ROPE }, template: QWEN3_AT_ONCE, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
