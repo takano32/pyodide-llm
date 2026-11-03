@@ -1020,7 +1020,9 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             original, order = as_llama_cpp_writes(target, original, arch)
             tile = value_heads(name, config) if arch == "qwen35" else None
             if tile and values.shape == original.shape:
-                # T.245: and the value heads tiled, where a key head has more than one
+                # T.245: and the value heads tiled, where a key head has more than one. (T.286.5: EITHER is said here
+                # alone: large() above, which takes the matrices in blocks, has no such test, and a large tensor whose
+                # value heads are all alike would be counted there as Hugging Face's order, as dt_bias was here)
                 moved = tiled(original, *tile)
                 way = EITHER if np.array_equal(moved, original) else \
                     TILED if relative(values, moved) < relative(values, original) else UNTILED

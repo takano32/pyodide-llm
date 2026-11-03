@@ -549,6 +549,43 @@ def test_value_heads_alike_in_either_order_are_no_mismatch(tmp_path, capsys):
     assert said == ["blk.0.ssm_dt.bias"]
 
 
+def test_value_heads_alike_in_some_key_heads_alone_have_an_order(tmp_path, capsys):
+    """T.286.5's review: where only some value heads are alike (those of the first key head), tiling moves the rest: the
+    order is the file's (tiled), not either."""
+    from test_gguf import qwen35_gguf
+
+    def some(tensors):
+        name = QWEN35 + "0.linear_attn.dt_bias"
+        w = tensors[name].copy()
+        w[:3] = w[0]
+        return {**tensors, name: w}
+
+    config, file, same = qwen35_gguf(n_layers=4, fold=some, **TILED_MODELS["three to one (the 27B)"])
+    assert gguf_check.check_tensors(*qwen35_directory(tmp_path, config, file, same))
+    out = capsys.readouterr().out
+    result = json.loads(out.strip().splitlines()[-1])
+    assert result["mismatches"] == 0 and gguf_check.EITHER not in result["orders"]
+    said = [line.split(" | ")[0][2:] for line in out.splitlines() if line.startswith("| blk.0.ssm_dt.bias ")]
+    assert said == ["blk.0.ssm_dt.bias"] and gguf_check.TILED in next(
+        line for line in out.splitlines() if line.startswith("| blk.0.ssm_dt.bias "))
+
+
+def test_value_heads_as_hugging_face_has_them_are_counted_beside_heads_alike(tmp_path, capsys):
+    """T.286.5's review: a GGUF in Hugging Face's order of value heads with one tensor whose heads are all alike: that
+    one is either, and every other is still a mismatch."""
+    from test_gguf import qwen35_gguf
+
+    def alike(tensors):
+        name = QWEN35 + "0.linear_attn.dt_bias"
+        return {**tensors, name: np.full_like(tensors[name], tensors[name][0])}
+
+    config, file, same = qwen35_gguf(n_layers=4, tile=False, fold=alike, **TILED_MODELS["three to one (the 27B)"])
+    assert not gguf_check.check_tensors(*qwen35_directory(tmp_path, config, file, same))
+    result = summary(capsys)
+    assert set(result["orders"]) == {"as Hugging Face", gguf_check.UNTILED, gguf_check.EITHER}
+    assert result["mismatches"] == 2 * len(TILED_TENSORS) - 1
+
+
 TILED_WRONG = {
     # the original's tensor changed, as (name in the original, the GGUF's tensor that must be past the line, the change)
     "two value heads of z swapped": ("0.linear_attn.in_proj_z.weight", "blk.0.attn_gate.weight", "heads"),

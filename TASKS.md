@@ -607,6 +607,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - 頭のトークン（`starts`、Wikipedia の富士山の日本語の頭 128 トークン）: `<|im_start|>` 36.137、`<|endoftext|>` 32.350（−10.48%）、なし 35.323（−2.25%）。**取りまとめ役の決め（訳）**: `qwen35` の `<|im_start|>` のまま。素の文の 128 トークンだけで BOS を替えない（AGENTS.md の教訓）。Qwen3.5 では `<|endoftext|>` が大きく悪かったので、この 27B だけ違うかは長い文と答えで測り直す価値がある（持ち主に見せる）。
   - 取りまとめ役の決め（訳）: 日本語の問いに崩れずに日本語で答えたので、note の「日本語 / English」はそのまま。
 - CI を回した。訳: 27B の取得（3.8 GB）と照合（原本 54 GB）、変換・書かせ・メモリは GB 級で手元では回さない。
+- **カードの標本抽出の文**（GGUF の README の「Generation Parameters」）: 表「Temperature 0.7・Top-p 0.95・Top-k 20」と「These are the settings used for all reported benchmark results (thinking mode).」、Quickstart の `--temp 0.7 --top-p 0.95 --top-k 20`。考える形の `BONSAI_27B_SAMPLING.thinking` と合う。すぐ答える形の組はカードに無い（GGUF の `general.sampling.*` と原本の generation_config.json は温度 1.0・top-p 0.95・top-k 20）。ワークツリーの `node tests/models-check.ts` は `python python_facts.py` の後に通る。
+- レビュー（Sonnet low、2026-11-03）: must-fix なし。gguf_check.py の EITHER は全 head が同じ値のときだけで、値の検査は外さない。入れた勧め: 一部の head だけ同じ場合（TILED と言う）と、順序を誤った層が EITHER の層と混ざる場合（ほかは mismatch に数える）の試験を `test_gguf_check.py` に（判定を「いつも EITHER」「ゆるい allclose」に壊すと 2 つとも落ちる）、large() の道に判定が無いことのコメント。
 
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
 - (a) AMD の Zen 3・4 では int16 の和の形が 1.31〜1.36 倍、arm64 では 0.60 倍、Zen 5 では今の形が 3 倍（T.231 のレビュー）: CPU で選ぶ仕組みが要る。(b) BitNet 流の表を引く形（見積もり 0.28 命令 / 重み、今は 0.34）。(c) スケールを float16 で持つ（27B で 0.44 GiB 減る）。どれも測るまで分からない。
