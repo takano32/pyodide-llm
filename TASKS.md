@@ -139,8 +139,6 @@
 - T.591 [調査][モデル] 有名で動かせる日本語のモデルを調べ尽くす — 進行中
 - T.592 [追加][モデル] llm-jp-4 8B thinking — 未着手
 - T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 候補
-- T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 候補
-- T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 候補
 - T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 未着手
 - T.612 [追加][モデル] gemma2 の家族（gemma-2-2b-jpn-it ほか） — 未着手
 - T.613 [追加][モデル] Gemma 3 4B・12B の言語の部分（まるごとの config） — 未着手
@@ -1285,22 +1283,14 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **持ち主の決定（2026-10-31、選択肢で）: 勧めの (1)〜(3)（T.592〜T.610）を足す。** 梯子の古いものを残すかは T.303 と一緒に。(4)(5)（T.611〜T.619）は今は足さない。
 
 ### T.592 [追加][モデル] llm-jp-4 8B thinking — 状態: 未着手（2026-10-30、T.591 から。規模 小）
+- **持ち主の決定（2026-11-03、選択肢で「考えを畳めるようにして足す（勧め）」）**: harmony の考え（`<|channel|>analysis` … `<|end|>`）をエンジンの考えの追い方（T.520 の上限と stats）とページの畳み方（`src/page/thought.ts`）が読めるようにしてから、T.592 と T.304（Q4_K_M の塊）を入れる。
 - llm-jp/llm-jp-4-8b-thinking @ fc7c15c262710016c19bcda4372a96ff68875846（llama、8.59B、文脈 65536、apache-2.0、harmony の書式、likes 52 で llm-jp でいちばん多い）。Q8_0: mmnga-o/llm-jp-4-8b-thinking-gguf @ d10eb8c8470f89b2082e793a5ffa086a402a23fc（9.133 GB）。
 - 一覧の llm-jp-4 8B instruct と同じ形（`HARMONY` の書式、止まり [1, 2, 13]）。考えは見せる（T.304 の持ち主の決め）。Swallow の順位表で一覧に無いものの上位。
 - **T.304（4.1 8B thinking）は今も Q8_0 が無い**（作り手は BF16 17.19 GB と Q4_K_M 5.50 GB だけ、masahiroid も Q4_K_M）。T.304 の決めのまま待つ。4.1 を Q4_K_M の塊（`rebuilt`）で入れる道は T.304 の持ち主の判断に足す。
 
 ### T.607 [追加][モデル] 2024 年の Mistral 7B の日本語のマージと EZO — 状態: 候補（2026-10-30、T.591 から。足す勧めは無い）
+- **持ち主の決定（2026-11-03、選択肢で「すべて足します」）**: 挙げたものを全部足す（NSFW を名乗るものも、方針 8 のとおり note はカードに従う）。1 つのモデルを 1 つの子タスクに、取りかかる時に番号を採る。
 - ArrowPro-7B-KUJIRA（likes 64）・Vecteus・Oumuamua-v2・Gleipnir（書式があるのは Vecteus だけ）、AXCXEPT の Qwen3-EZO-8B-beta・EZO-Llama-3.2-3B・llm-jp-3-3.7b-EZO、Aratako の Qwen3-8B-RP。古いか用途が狭い。NSFW を名乗るものは入れるかを持ち主が。
-
-### T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 状態: 候補（2026-10-30、T.591 から）
-- pfnet/Qwen3-1.7B-pfn-qfin @ 3e454cbe406cc778feb6f2e9bc4b4397e5cc98bf・Qwen2.5-1.5B-pfn-qfin（safetensors だけ、ライセンスはカード）。用途が狭い。PFN の主のモデルは T.614・T.615。
-- **調べ（2026-11-02、Opus medium）**: 2 つとも base（続きを書くモデル、書式は Qwen3 の chat_template を持つが card は素の文で使う）、金融の 4 億トークンで追加の学習、文脈 2048 で学習。ライセンスは PLaMo Community License（`license: other`）: 第 4 条が第三者に提供するとき「Built with PLaMo」をウェブサイトか UI に書くこと・作ったモデルの名前に「PLaMo」を入れることを求め、第 3 条の商用は PFN の登録と売上 10 億円以下が条件。**ページに表示を足すかはライセンスの話なので持ち主に**（T.278 の「Built with Llama」と同じ形の問い）。
-
-### T.609 [追加][モデル] Fugaku-LLM 13B と weblab-10b（取り込み元の問題） — 状態: 候補（2026-10-30、T.591 から。規模 小〜中）
-- Fugaku-LLM/Fugaku-LLM-13B-instruct @ 847b9aac…（原本はゲート付き）: GGUF の見出しは gpt2・40 層・d 5184・head 144、語彙は sentencepiece の「llama」49,152。mmnga の Q8_0 14.28 GB（文脈 2048 なので入る見込み）。語彙は GGUF だけの道しかなく、その道は Unigram の点数を断る（AGENTS.md の「GGUF だけの変換」）: 読むなら GGUF の Unigram の語彙を受ける仕事が要る。
-- matsuo-lab/weblab-10b-instruction-sft @ 112a5ad9…（gpt_neox、cc-by-nc-4.0、likes 74）: main は bin だけ、mmnga の GGUF は v1（読まない）。safetensors は変換の bot の PR `refs/pr/4` @ 3f4b5eeb74637041e7e50f9ac1907600c7a82c5a（fp16 21.4 GB）にだけある: PR のコミットを一覧のリビジョンにしてよいかは持ち主。
-- CyberAgent open-calm（gpt_neox、bin だけ、CC-BY-SA、base だけ、7B は likes 205）: 2023 年の GGUF は `attn_qkv` が HF の並びのおそれ（T.306・T.517 と同じ）。
-- tiny-lm-chat（bin だけ 0.06 GB）: 変換すればサイトでいちばん小さいチャットのモデルになる。サイトのモデルを足すかは持ち主。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
