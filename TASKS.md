@@ -1291,7 +1291,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。書式はカードの `build_prompt` と 1 字まで同じ（`add_special_tokens=True` で BOS が前: `bos: 1` と合う）、リビジョン・ライセンス・`download`（7,695,857,376）・名前・note・台帳の数はログと合う。
 - **本番**（デプロイ run 41615165664、`models.yml` run 41617069594、Chromium）: 準備完了 92.1 秒、256 トークンを 3.5 tok/s（4 本、温度 1）。
 
-#### T.607.2 LocalNovelLLM-project Vecteus v1（mmnga の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+#### T.607.2 LocalNovelLLM-project Vecteus v1（mmnga の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
 - **したこと**: 1 項目を `hf-japanese.ts` の ArrowPro の後に（hf-vecteus-v1）。Mistral-7B-v0.1 から小説を書くために作ったもの（Chat Vector のマージと LoRA、カードは日本語と英語、NSFW も書けると言う。Apache-2.0）。mmnga @ 59df491bb68ce3bc6879c3b292942e4c57274d9b の Q8_0（7,695,857,344 バイト）、語彙と config は原本 @ d3375ec5f7e149916e44cb0d47c8bda30b986f50 の tokenizer.model（tokenizer.json は無い）。書式はトークナイザの chat template（`USER: … ASSISTANT:`）を変換器が読む（`bos` も変換器: 文字で始まるので BOS が前）。作り手の名は組織の表示名「LocalNovelLLM-project」。
 - **取りまとめ役の決め（訳）**: note は「writes stories」（カードが小説を書くモデルと言う。新しい語）、言語はカードの「日本語 / English」。標本抽出は transformers の既定（カードは `do_sample=True` だけで generation_config.json に値が無い: 温度 1.0、top-p なし）。プロンプトの例は物語を頼む文「猫が主人公の短い物語を書いてください。」。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（前の BOS 1 つは緩い比べが通す形）、`--hf` も 9/9。transformers 5.16.1 は tokenizer.model から作るトークナイザにダミーの空白を置かず（「USER」を 1 片に、本物の sentencepiece は「▁US」「ER」）0/9 になったので、`format_check.py` の `SENTENCEPIECE` に足して本物の sentencepiece で比べる。`models-check`・`npm run types` は通る。
@@ -1301,6 +1301,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **取りまとめ役の決め（訳）**: 標本抽出（transformers の既定）と note はそのまま（書かせて崩れなかった）。
 - CI を回した。訳: 7 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし（小さな直し 1 つ: tok/s の下限を長い答えの数に）。リビジョン・`download`（7,695,857,344）・ライセンス・書式と `bos: 1`（変換器任せ）・標本抽出・note・台帳の数はログと合う。
+- **本番**（デプロイ run 41628273215、`models.yml` run 41630089643、Chromium）: 準備完了 112.3 秒、256 トークンで 3.9 tok/s（4 本）。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
