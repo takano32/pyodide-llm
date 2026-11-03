@@ -1307,6 +1307,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **したこと**: 1 項目を `hf-japanese.ts` の Vecteus の後に（hf-oumuamua-7b-instruct-v2）。Mistral 7B の派生 15 個を Swallow-MS の日本語の語彙（42,800）の上でマージしたもの（Apache-2.0、カードは ja・en）。mradermacher @ b5ba02aa55bd31d2365354b492500229535bb592 の Q8_0（7,790,108,960 バイト）、語彙と config は原本 @ 315cee7d10fd84a130ab0973942ff76bb1582c49 の tokenizer.json。chat template が無く、カードの Llama 2 のターン（カードが勧める system の文）を `OUMUAMUA` に、`format_check.py` の `CARDS` に 2 つ目の写し。
 - **取りまとめ役の決め（訳）**: `[/INST]` の後に空白を置かない。カードの文は空白を書くが、カードのコードは `apply_chat_template`（transformers の Llama の既定の書式: 空白なし）で、その空白は答えの最初の語片が持つ。標本抽出はカードのコードの温度 0.1（top-p なし）。作り手の名は HF の名「nitky」（ほかの名を言わない個人）。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（カードのコードの文と同じ ID）、`--hf` は書式なし（chat template が無いので `?hf=` は文の続き）。`models-check`・`npm run types` は通る。
+- **GGUF と原本（`gguf.yml` の candidates、run 41628562527）**: 通る。どのテンソルも原本を Q8_0 に丸めた最も近い値と同じ（線 1e-3 を越えるもの 0、いちばん大きい相対は 0.0079）。埋め込みの 140 行は原本とは線の外で原本の Q8_0 とは同じ: どれもバイトの語片（`<0x01>` など）で大きさが中央値の 7e-4 ほど、float16 の尺度の丸め（T.145 の読み）。語彙は 42,800 で tokenizer.json とも tokenizer.model とも違う語片は 0。
+- **書かせ（`tests/answers.ts`、run 41628564644、CI の 4 コア、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 10/10、繰り返し 0、`<unk>` 0。富士山（3,776 m）と東京は合い、17 × 24 は 2 回とも誤り（774 と 789: モデルの力）。日本語の問いは日本語で（かな 59〜72%）、英語の問いは英語で答える。温度 0.1 で greedy とほぼ同じ文になり、崩れない。約 1.7 tok/s（350 トークンに 202 秒）。int8 は 8,247,246,876 バイト（note の 8.3 GB と合う）。
+- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 10.055、`<s>` 10.166（+1.10%）。差は小さいので、原本のトークナイザが置く `bos: 1` のまま。
+- **取りまとめ役の決め（訳）**: 書式と標本抽出（温度 0.1）はそのまま（書かせて崩れなかった）。
+- CI を回した。訳: 8 GB の GGUF の照合と 8 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
