@@ -128,6 +128,7 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T.273](T.273.md) [性能][Bonsai][変換] 3 値の GGUF の変換をカーネルで（PTQ1_0・PQ2_0 → 3 値） — 2026-10-09
 - [T.274](T.274.md) [追加][Bonsai] サンプラに top-k・min-p・presence penalty を足す — 2026-10-09
 - [T.276](T.276.md) [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 2026-10-11
+- [T.286](T.286.md) [追加][Bonsai] 1-bit Bonsai の一族（1.7B・4B・8B・27B） — 2026-11-03
 - [T.287](T.287.md) [調査][Bonsai] 前の版 Ternary-Bonsai-27B（「2」でない）が開くか — 2026-11-03
 - [T.290](T.290.md) [運用][Bonsai] Safari（WebKit）で 3 値の 4B・8B を確かめ、note を直す — 2026-10-02
 - [T.299](T.299.md) [バグ][変換] `convert()` が早く失敗すると OPFS のハンドルと空のフォルダが残る — 2026-10-30

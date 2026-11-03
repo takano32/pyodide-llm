@@ -51,7 +51,8 @@
 - T.283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 未着手
 - T.284 [追加][Bonsai] 27B の画像の入力（mmproj） — 候補
 - T.285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 未着手
-- T.286 [追加][Bonsai] 1-bit Bonsai の一族（1.7B・4B・8B・27B） — 進行中
+- T.633 [調査][Bonsai] 1-bit の Bonsai 27B の頭のトークン（`<|endoftext|>` が素の文で −10.5%） — 未着手
+- T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 候補
 - T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 未着手
 - T.289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 未着手
 - T.291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 未着手
@@ -537,78 +538,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 小）
 - linear の層の状態を 2 重に持つ 288 MiB（T.229: 止まったスレッドの後のやり直しのため）、変換器が q の行列を丸ごと溜めてから割る約 252 MB。
 
-### T.286 [追加][Bonsai] 1-bit Bonsai の一族（1.7B・4B・8B・27B） — 状態: 進行中（2026-11-03、Opus medium。2026-10-02 の洗い出しで採番。調べから。規模 小〜中）
-- prism-ml の別の量子化。重みが ± だけなら 3 値の型に載る見込み（ファイルの形は未確認）。
-- **調べ（2026-11-03）**: prism-ml の Bonsai-1.7B-gguf・4B・8B（`qwen3`、作り手の `base_model` は `-unpacked`）と Bonsai-27B-gguf（`qwen35`、Qwen3.6-27B から）の重みは ggml の型 41 の Q1_0（1.7B は 248,302,272 バイト、8B は 1,158,654,496、27B は 3,803,452,480）。Q1_0 は 128 個の塊に float16 の尺度 d と 1 ビットの符号: 値は ±d だけで、ページの 3 値（128 個ごとの float16 の尺度と −1・0・+1）にそのまま損なく載る。型 41 は今の llama.cpp と Prism ML の fork で同じ形（同じ番号で 2 通りある Q2_0 とは違う）。1.7B の頭: Qwen3 の形、yarn（4 倍・元 8192）、BOS を足さない（`add_bos_token` 偽）、標本抽出の既定は温度 0.5・top-p 0.85・top-k 20。
-- **子タスクの分け方（取りまとめ役の決め）**: T.286.1 Q1_0 の読み手。続けてモデルを小さいほうから 1 つずつ（T.286.2 1.7B、T.286.3 4B、T.286.4 8B、T.286.5 27B: 番号は取りかかる時に確かめ直す）。
+### T.633 [調査][Bonsai] 1-bit の Bonsai 27B の頭のトークン（`<|endoftext|>` が素の文で −10.5%） — 状態: 未着手（2026-11-03、T.286.5 から。規模 小）
+- T.286.5 の CI（run 41707509798）で、Wikipedia の富士山の日本語の頭 128 トークンだけを測ると `<|im_start|>` 36.137、`<|endoftext|>` 32.350（−10.48%）、なし 35.323。素の文だけで BOS を替えない決まり（AGENTS.md）なので `<|im_start|>` のまま。
+- やること: `tests/start_check.ts`（1500 トークン）と `tests/chat_nll.py` で、素の文・手書きの答え・モデル自身の答えの 3 つを CI で測る。3 つとも `<|endoftext|>` が良ければ項目の options を替える（今あるモデルの答えが変わるので、替える前に数字を持ち主に見せる）。
 
-#### T.286.1 Q1_0 の読み手 — 状態: 完了（2026-11-03、Opus medium）
-- **したこと**: `convert/readers.py` に `q1_0()`（NumPy の `unpackbits` で符号を取り尺度を掛ける。llama.cpp の `block_q1_0` と `dequantize_row_q1_0` の形、MIT、行は写していない）と `SOURCES` の 1 行（型 41、128 個、18 バイト、カーネルなし）。参照の読み手 `tests/gguf_check.py` の `widen_q1_0`（ビットを 1 つずつ取る別の道）、`tests/fork_readers.py` の llama.cpp の C との比べに Q1_0、`tests/test_ternary.py` に作り手の書き方の作り物 `q1_0_blocks()`（llama.cpp の `quantize_row_q1_0_ref` の形: d は大きさの平均）と、3 値・int8・float32 への変換の試験（PQ2_0・PTQ1_0 と同じ組）、どのバイト値もどの位置も 5 種の尺度で読む試験、Pyodide の中の読みを見る fixture（`superblocks.json` の `signs`: smoke が読む）。`tests/test_dtypes.py` の型の表。
-- **取りまとめ役の決め（訳）**: カーネル（`widen_q1_0`）は作らない（NumPy の読みだけ）。1.7B〜8B は小さく、27B の変換の速さが要るなら 27B の子タスクで測ってから足す。
-- **確かめ**: pytest 3,350 件、smoke（Pyodide の中の読みが 64 ビットの NumPy と同じ）、`tests/fork_readers.py`（llama.cpp の C と 40,000 塊の乱数のバイトでビット単位に同じ）、軽い組（628 秒）。
-- CI を省いた。訳: 触ったのは変換器の読み手と試験だけで、pytest・smoke（Pyodide の中）・C との比べ・軽い組が全部を踏む。今ある項目の変換は変わらない（新しい型の行を足しただけ: `CONVERTER` は上げない）。実物の GGUF は次の子タスクで CI に。
-- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。読み手は `dequantize_row_q1_0` と同じ形（ビットの順・符号・先頭 2 バイトの尺度）、Pyodide の 32 ビットの整数でも値は変わらない。捨てのワークツリーで壊し方を 3 つ入れ、ビットの順の逆と符号の逆はそれぞれ 5 件、尺度の位置の取り違えは 9 件を `test_ternary.py` が落とした。`CONVERTER` を上げない判断と許諾の書き方も妥当。
-- **本番**（デプロイ run 41681328995）: デプロイの軽い組が通った。まだこの型を使う項目が無いので `models.yml` は回さない（初めての実物は T.286.2 の本番で）。
-
-#### T.286.2 Prism ML Bonsai 1.7B（1-bit、作り手の Q1_0） — 状態: 完了（2026-11-03、Opus medium）
-- **したこと**: 1 項目を `hf-families.ts` の Ternary Bonsai 8B の後に（hf-bonsai-1.7b）。項目を組む関数を `builders.ts` の `bonsai()` に寄せ、3 値の `ternaryBonsai()` と 1-bit の `binaryBonsai()` が呼ぶ（網の `models` は足した項目とライセンスのほかに違いなし）。prism-ml/Bonsai-1.7B-gguf @ 210a9e99f79cb184909d49595906526eb2b3dd9a の Q1_0（248,302,272 バイト）、語彙・config・書式は prism-ml/Bonsai-1.7B-unpacked @ a7f720bd688d7563714f3118edd97b83d06f0615（Apache-2.0、両カード）。ページは 3 値で持つ（`weights: "ternary"`）。
-- **取りまとめ役の決め（訳）**: 3 値の Bonsai と同じ形（BOS は `<|endoftext|>`、書式はすぐ答える形、標本抽出 0.5・0.85）。素の RoPE（`PLAIN_ROPE`）は 3 値の Bonsai への持ち主の決め（2026-10-11）を同じ一族に広げた: `tests/rope_compare.sh` で yarn と比べて決め直す（`models-check` と `tests/test_gguf.py` の許す一覧に足した: 後者を足し忘れて CI の軽い組で落ち、直した）。note の新しい語は「1-bit weights」、大きさは「fetches 248 MB (GGUF) → ternary 457 MB」（3 値の 1.7B と同じ大きさ: 下の RoPE の run で 457,345,212 バイト）。
-- **確かめ**: `format_check.py` は 9/9、`--hf` も 9/9。`models-check`・`npm run types` は通る。pytest 3,351 件。
-- **GGUF と原本（`gguf.yml` の candidates、run 41681725146）**: 通る（Q1_0 を読む初めての実物）。型は F32 と Q1_0 だけ、どのテンソルも -unpacked の float16 と相対 3.5e-5 以内（線 1e-3）、q と k は HF の並び（Qwen3 の GGUF のとおり）。語彙は 151,669 で違う語片は 0。
-- **RoPE（`tests/rope_compare.sh`、run 41682850540、CI の x86-64、3 値の道、1500 トークン）**: 素の RoPE のほうが低い（日本語 73.399、yarn は 78.003 で 6.27% 高い。英語 27.507、yarn は 28.177 で 2.44% 高い）。3 値の Bonsai と同じ向きなので、素の RoPE のまま（取りまとめ役の決めが測りで支えられた）。3 値で 457,345,212 バイト（3 値の 1.7B と同じ大きさ: note の 457 MB と合う）、1 本で 25.7 tok/s。
-- **道具の直し**: 同じ run の `tests/answers.ts` が「The checkpoint has 457345212 bytes, and its header asks for 1935387932 as int8」で落ちた。`tests/write_options.py` が項目の `weights` を読まず int8 の options を書いていた（`format_check.converted()` が int8 に決め打ち）: `converted()` に dtype の引数、`write_options.py` は項目の `weights` で変換する。手元で 1.7B を書かせて通った。
-- **書かせ（`tests/answers.ts`、run 41685623599、CI の 4 コア、3 値の道、1500 トークン、greedy と種 1、問い 5 つ）**: 止まったのは 9/10、`<unk>` 0。英語の 2 つの問い（東京、睡眠のこつ）はふつうに答え、17 × 24 = 408 は 2 回とも合う。日本語は崩れる: 富士山の問いに 2 回とも「山形山」と答えて繰り返し（種 1 は 1500 で切れた）、流行りの問いの greedy も同じ文を繰り返す。約 9 tok/s（236 トークンに 26 秒）。
-- **頭のトークン（`start_check.ts`、同じ run、1500 トークン）**: なし 72.364、`<|endoftext|>` 72.573（+0.29%）、`<|im_start|>` 75.738（+4.66%）。3 値の 1.7B と同じ `<|endoftext|>` のまま（差は小さい）。
-- **取りまとめ役の決め（訳）**: note の言語は「English」だけ（カードは言語を言わず、日本語の答えは崩れる: T.539 の「日本語」を足す線に届かない）。だから一覧では英語の側に並び、例のプロンプトとその下の文も英語の項目のもの（`bonsai()` が種類ごとに受ける）。3 値の 3 項目は前と同じ（値を JSON で比べて同じ）。
-- CI を回した。訳: 原本の 3.4 GB の float16 と並べる GGUF の照合と 1500 トークンの書かせは CI で（書かせの道具の直しは手元で 60 トークン回した）。
-- **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（248,302,272）・ライセンスは HF と合い、`bonsai()` が組むファイルの名は実在の名と合う。3 値の項目の式は寄せる前と同じ。`write_options.py` の直しは `weights` を持つ項目（3 値だけ）にしか効かず、int8 と塊の項目の options は変わらない。
-- **本番**（デプロイ run 41689979664、`models.yml` run 41691546399、Chromium）: 準備完了 24.5 秒、199 トークン（自分で止まった）で 16.6 tok/s（4 本）。Q1_0 の GGUF をページの中で変換した初めての本番。
-
-#### T.286.3 Prism ML Bonsai 4B（1-bit、作り手の Q1_0） — 状態: 完了（2026-11-03、Opus medium）
-- **したこと**: 1 項目を 1.7B の後に（hf-bonsai-4b、`binaryBonsai()`）。prism-ml/Bonsai-4B-gguf @ 78f2c2bacd0904ffaba24b4873ed975e5818354a の Q1_0（572,270,624 バイト）、語彙・config・書式は prism-ml/Bonsai-4B-unpacked @ b2529e9641629dce5e6be5fa44492bc249f1a58a（Apache-2.0、両カード）。素の RoPE の許す一覧（`models-check`・`test_gguf.py`）に足した。
-- **取りまとめ役の決め（訳）**: 1.7B と同じ形（English だけ、素の RoPE、BOS `<|endoftext|>`）。書かせと rope_compare で決め直す。note の大きさは 3 値の 4B と同じ「ternary 1.1 GB」の見込み（CI で確かめる）。
-- **確かめ**: `format_check.py` は 9/9、`--hf` も 9/9。`models-check`・`npm run types`・pytest の RoPE の試験は通る。
-- **GGUF と原本（`gguf.yml` の candidates、run 41690146899）**: 通る。型は F32 と Q1_0 だけ、どのテンソルも -unpacked の float16 と相対 4.8e-5 以内、q と k は HF の並び。語彙は 151,669 で違う語片は 0。
-- **RoPE の比べ（run 41690147060、EPYC 7763、3 値、1500 トークン）**: yarn は日本語 52.774・素 49.702（yarn が +6.18%）、英語 20.350・20.095（+1.27%）。素の RoPE のまま。
-- **書かせ（同じ run、`answers.ts` の 5 問 × greedy と種 1）**: 5/5 が自分で止まり、繰り返しは 0/5。日本語の 3 問はどれも日本語で答えた（かなが 46〜83%）。富士山は 3,776 m、17 × 24 は 408 と正しい。小さな崩れはある（「フート」、中国語の語「答案」、富士山の答えの最後の 1 文が 2 回）。英語は流暢。チェックポイントは 3 値で 1,069,018,852 バイト（note の「ternary 1.1 GB」で合う）、1 本で 4.2 tok/s。
-- **頭のトークン（同じ run、`start_check`、日本語 1500 トークン）**: なし 48.319、`<|endoftext|>` +0.50%、`<|im_start|>` +16.77%。`<|endoftext|>` のまま。
-- **取りまとめ役の決め（訳）**: T.539 の線（日本語の問いの半分以上に日本語で、崩れずに答える）を越えたので note に「日本語」を足し、プロンプトと入力欄の例も日本語に（3 値の Bonsai と同じ文）。`binaryBonsai()` に `japanese` の引数を足した。並びは日本語の側に移る。
-- **CI を回した。訳**: 4B の書かせと perplexity は GB 級で手元で回さない。
-- レビュー（Sonnet low、2026-11-03）: 指摘なし。リビジョン・取得の大きさ・ライセンス・1.7B の出力が変わらないこと・T.539 の線・試験の一覧・記録の数を見た。頭のトークンの数はレビュー担当の grep で拾えなかったが、ログの start_check の表にある（取りまとめ役が確かめた）。AGENTS.md の 1.7B の +6.27% は T.286.2 の run 41682850540 の数。
-- **本番**（デプロイ run 41700967574、`models.yml` run 41703218428、Chromium）: 準備完了 39.4 秒、143 トークンを 7.6 tok/s（4 本）。
-
-#### T.286.4 Prism ML Bonsai 8B（1-bit、作り手の Q1_0） — 状態: 完了（2026-11-03、Opus medium）
-- **したこと**: 1 項目を 4B の後に（hf-bonsai-8b、`binaryBonsai()`）。prism-ml/Bonsai-8B-gguf @ 48516770dd04643643e9f9019a2a349cf26c5dbd の Q1_0（1,158,654,496 バイト。リポジトリの `Bonsai-8B.gguf` は同じファイル: etag が同じ）、語彙・config・書式は prism-ml/Bonsai-8B-unpacked @ 376f381570d6115bc03f82adcfa4af0c7672ae54（Apache-2.0、両カード）。素の RoPE の許す一覧（`models-check`・`test_gguf.py`）に足した。
-- **取りまとめ役の決め（訳）**: 3 値の 8B と同じ始まり（BOS `<|im_start|>`、書式はその次から: `QWEN3_FROM_IM_START`・`QWEN3_AT_ONCE_AFTER_START`）と素の RoPE、English だけで始める。書かせ・rope_compare・start_check で決め直す。note の大きさは 3 値の 8B と同じ「ternary 2.2 GB」の見込み。
-- **確かめ**: `format_check.py` は 9/9、`--hf` も 9/9。`models-check`・`npm run types`・pytest の RoPE の試験は通る。
-- **GGUF と原本（`gguf.yml` の candidates、run 41701199253）**: 通る。399 テンソル、型は F32 と Q1_0 だけ、どのテンソルも -unpacked と相対 1.7e-8 以内（4B の 4.8e-5 より 3 桁小さい）、q と k は HF の並び。語彙は 151,669 で違う語片は 0。
-- **RoPE の比べ（run 41701200621、EPYC 9V74、3 値、1500 トークン）**: yarn は日本語 41.218・素 38.251（yarn が +7.76%）、英語 18.725・17.891（+4.66%）。素の RoPE のまま。
-- **書かせ（同じ run、`answers.ts` の 5 問 × greedy と種 1）**: 5/5 が自分で止まり、繰り返しは 0/5。日本語の 3 問はどれも日本語で答えた（かなは greedy の計算の問いが 19% で、ほかは 51〜65%: 計算の問いは式が多い）。17 × 24 は 408 と正しい。富士山は greedy で 3,776 m と正しく、種 1 は「8848メートル」と誤った。中国語の字「它」が富士山の答えに混ざる（greedy と種 1 に 1 回ずつ）。英語は流暢。チェックポイントは 3 値で 2,176,234,140 バイト（note の「ternary 2.2 GB」で合う）、1 本で 2.8 tok/s。
-- **頭のトークン（同じ run、`start_check`、日本語 1500 トークン）**: なし 36.525、`<|im_start|>` +4.06%、`<|endoftext|>` +35.99%。`<|im_start|>` のまま（書式の最初のトークンなので、なしはチャットでは選べない。3 値の 8B と同じ）。
-- **取りまとめ役の決め（訳）**: T.539 の線（日本語の問いの半分以上に日本語で、繰り返さずに答える）を越えたので note に「日本語」を足した（4B と同じ: `binaryBonsai()` の `japanese` を真に）。中国語の字の混ざりと事実の誤りはモデルの力で、4B にもある（「答案」）。並びは日本語の側に移る。
-- **CI を回した。訳**: 8B の書かせと perplexity は GB 級で手元で回さない。
-- レビュー（Sonnet low、2026-11-03）: must-fix なし。リビジョン・取得の大きさ・ライセンス・始まりと RoPE・試験の一覧・記録の数がログと合う。「日本語」は T.539 の線を越えて妥当。直した: 「它」の数え方を答えごとに。
-- **本番**（デプロイ run 41715188511、`models.yml` run 41717389287、Chromium）: 準備完了 42.5 秒、255 トークンを 11.5 tok/s（2 本: ランナーごとに CPU が違うので 4B の 7.6 tok/s とは比べない）。
-
-#### T.286.5 Prism ML Bonsai 27B（1-bit、作り手の Q1_0） — 状態: 進行中（2026-11-03、Opus medium）
-- **調べ（GGUF の頭を Range で）**: prism-ml/Bonsai-27B-gguf @ f10afb355f104535e3e3e98cf7ab7795c72bd292 の `Bonsai-27B-Q1_0.gguf`（3,803,452,480 バイト）。`qwen35`（64 層、4 層ごとに全位置の attention、dim 5120、FFN 17408、q の head 24・鍵と値の head 4・head 256、linear の層は鍵の head 16・値の head 48・次元 128、畳み込み 4、RoPE は head の 64 だけ回し base 1e7、eps 1e-6、文脈 262144）。テンソル 851 のうち Q1_0 が 498・F32 が 353 で、ほかの型は無い（広げる型も塊の型も無い）。埋め込みと分類器も Q1_0（共有でない）。linear の層のゲートの小さな行列 `ssm_alpha`・`ssm_beta` も Q1_0（ページは float32 に広げて持つ）。`prism.hadamard.*` が無いので回した基底ではない（カードも「architecture unchanged」）。語彙は 248,320、前分割 `qwen35`、`add_bos_token` 偽。
-- **原本**: カードの `base_model` は Qwen/Qwen3.6-27B。prism-ml/Bonsai-27B-unpacked @ d619b27283ac02b4199ced97a89419529dc0bfac が同じ重みの float16（12 個の部品で約 54 GB、ゲートなし）と config.json（`qwen3_5`、`Qwen3_5ForConditionalGeneration`）・tokenizer.json・chat_template.jinja を持つ。書式は Qwen3.5 のもの（考える形が既定、`enable_thinking` 偽で空の考え）。だから語彙と config はこの原本から、`rebuilt` は付けない（`gguf_check.py tensors` を原本に当てられる: 1.7B〜8B と同じ）。
-- **ライセンス**: 両カードとも apache-2.0。NOTICE.txt は「copyright 2026-present Prism ML, Inc. … built from Qwen3.6-27B, Copyright 2026 Alibaba Cloud … Apache 2.0」と、Ternary Bonsai と同じ「Created using Bonsai by Prism ML.」の頼み。
-- **大きさの見込み**: Q1_0 の重み 26,869,760,000 個（ゲートの小さな行列 23,592,960 個は float32）、3 値のチェックポイントは約 7.24 GB（Ternary Bonsai 2 27B と同じ）で 64 ビットのメモリ。
-- **したこと**: 2 項目（考える形とすぐ答える形、hf-bonsai-27b-thinking・hf-bonsai-27b）を `hf-families.ts` の Ternary Bonsai 2 27B の後に、`thinkingAndNot()` で（`options: qwen35`、`weights: "ternary"`、書式は `QWEN35_THINKING`・`QWEN35_AT_ONCE`）。標本抽出は `sampling.ts` の `BONSAI_27B_SAMPLING`。ライセンスの 2 行。`models-check` に 27B の節（どの端末でも 3 値、7.2 GB、`rebuilt` でない、2 つの形が 1 つの変換を分け合う、options は qwen35）。
-- **取りまとめ役の決め（訳）**: (1) 1.7B〜8B の `binaryBonsai()` でなく Qwen3.5 の形（`thinkingAndNot()`）で組む: 書式と BOS が Qwen3.5 のもの。(2) 標本抽出: 考える形はカードの組（温度 0.7・top-p 0.95・top-k 20。カードは考える形の組だけを言う）、すぐ答える形は Bonsai 2 27B と同じ Qwen3.5 の組（0.7・0.8・top-k 20・presence 1.5）。(3) note の言語は既定の「日本語 / English」（カードは言語を言わず、base_model の Qwen3.6 は多言語）: CI の書かせで決め直す。(4) RoPE は config のとおり（yarn は無い: rope_compare は要らない）。(5) Q1_0 の広げのカーネルは作らない: CI の page-27b.ts の convert で Pyodide の中の変換の速さを測ってから決める。
-- **確かめ（手元）**: `format_check.py` は 2 項目とも 9/9、`--hf` も 9/9（9 つとも本物の ID そのもの）。`models-check`・`npm run types` は通る。pytest 3,326 件。
-- **GGUF と原本（`gguf.yml` の candidates）**: 1 回目（run 41707509198）は値はどれも原本と相対 1.4e-7 以内（線 1e-3）なのに「18 mismatches」で落ちた。訳を Range で調べた（原本の小さなテンソルと GGUF の同じテンソル）: 18 は linear の層の `ssm_dt.bias`（13 層）と `ssm_a`（5 層）で、その層の 48 個の値が全部同じ（例: 層 2 の dt_bias は全部 −1.5）。だからどちらの並びでも同じテンソルで、`gguf_check.py` は差が等しいとき「Hugging Face の並び」と読んでいた。道具を直した: 並べ替えても同じテンソルは「value heads the same in either order」と言って数えない（`tests/test_gguf_check.py` に作り物の試験。直しを外すとこの試験が落ちる）。2 回目（run 41717761636）は通る: 型は F32 と Q1_0 だけ、0 mismatches、q と k は HF の並び、値の head は llama.cpp の並び。語彙は GGUF 248,320・tokenizer.json 248,070 で同じ番号の違いは 0（GGUF の後ろは詰め物）。
-- **ページの道（tests.yml の extra、run 41707509798、EPYC 7763、4 コア）**: `page-27b.ts` は `--entry` で今の 27B の道具がそのまま使えた（`page_27b.sh` は Ternary Bonsai 2 27B の fork と回した基底の比べなので回さない: 取りまとめ役の決め。この 27B の重みは原本と同じで、照合は上の gguf_check が持つ）。
-  - 変換: Pyodide の中で 160 秒（ファイルの 23.8 MB/s、ヒープは終わりに 854 MiB）、ネイティブで 169 秒、どちらも 7,242,233,884 バイトの 3 値（note の 7.2 GB と合う）。**取りまとめ役の決め（訳）**: Q1_0 の広げのカーネルは作らない。日本の家の回線（7〜9 MB/s）では取得のほうが遅く、変換はファイルの順に流れながら進む。
-  - 速さ: 1 本 0.60・4 本 1.34 tok/s、logits は本数でビット単位に同じ、プロンプトの塊も同じ。GPU の Worker は始まる（「prompts on the CPU while the GPU gets ready」）。
-  - メモリ: 文脈 4096 の終わりで後ろに 569.1 MiB、`footprint()` は 577.7 MiB、全部で 7.301 GiB。
-  - 書かせ（すぐ答える形、種 1、600 まで）: 3 問とも自分で止まった（342・323・126 トークン）。流行りの問いは「これからの」の意味を説明してから 3 つ（生成 AI、Web3、サステナブル）を日本語で、17 × 24 は 408（2 つの方法）、富士山は 3,776.8 m と正しいが、添えた座標は東京のもの。考える形（1500 まで）は 17 × 24 で 800 トークン考えて閉じ（考えは英語）、日本語で 408 と答えて止まった（1,020 トークン）。
-  - 頭のトークン（`starts`、Wikipedia の富士山の日本語の頭 128 トークン）: `<|im_start|>` 36.137、`<|endoftext|>` 32.350（−10.48%）、なし 35.323（−2.25%）。**取りまとめ役の決め（訳）**: `qwen35` の `<|im_start|>` のまま。素の文の 128 トークンだけで BOS を替えない（AGENTS.md の教訓）。Qwen3.5 では `<|endoftext|>` が大きく悪かったので、この 27B だけ違うかは長い文と答えで測り直す価値がある（持ち主に見せる）。
-  - 取りまとめ役の決め（訳）: 日本語の問いに崩れずに日本語で答えたので、note の「日本語 / English」はそのまま。
-- CI を回した。訳: 27B の取得（3.8 GB）と照合（原本 54 GB）、変換・書かせ・メモリは GB 級で手元では回さない。
-- **カードの標本抽出の文**（GGUF の README の「Generation Parameters」）: 表「Temperature 0.7・Top-p 0.95・Top-k 20」と「These are the settings used for all reported benchmark results (thinking mode).」、Quickstart の `--temp 0.7 --top-p 0.95 --top-k 20`。考える形の `BONSAI_27B_SAMPLING.thinking` と合う。すぐ答える形の組はカードに無い（GGUF の `general.sampling.*` と原本の generation_config.json は温度 1.0・top-p 0.95・top-k 20）。ワークツリーの `node tests/models-check.ts` は `python python_facts.py` の後に通る。
-- レビュー（Sonnet low、2026-11-03）: must-fix なし。gguf_check.py の EITHER は全 head が同じ値のときだけで、値の検査は外さない。入れた勧め: 一部の head だけ同じ場合（TILED と言う）と、順序を誤った層が EITHER の層と混ざる場合（ほかは mismatch に数える）の試験を `test_gguf_check.py` に（判定を「いつも EITHER」「ゆるい allclose」に壊すと 2 つとも落ちる）、large() の道に判定が無いことのコメント。
+### T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 状態: 候補（2026-11-03、T.286.5 から。持ち主の判断: 作るか。規模 中〜大）
+- 今の 1-bit の Bonsai（Q1_0）は 3 値の dtype（2 ビットと 128 個ごとの float16 の尺度）で持つので、メモリは取得の約 2 倍（27B は取得 3.8 GB → 7.2 GB、64 ビットのメモリ）。1 ビットの dtype（128 個ごとに 16 バイトと float16 の尺度、Q1_0 と同じ 18 バイト）とカーネルを作れば 27B は約 3.8 GB で 32 ビットのメモリに入り、読む量も半分（帯域の壁で速くなる見込み、未計測）。足す所は「物を足す手順」の「dtype（詰め方）を足す」とカーネル。GPU にも置くなら `PACKINGS`。
 
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
 - (a) AMD の Zen 3・4 では int16 の和の形が 1.31〜1.36 倍、arm64 では 0.60 倍、Zen 5 では今の形が 3 倍（T.231 のレビュー）: CPU で選ぶ仕組みが要る。(b) BitNet 流の表を引く形（見積もり 0.28 命令 / 重み、今は 0.34）。(c) スケールを float16 で持つ（27B で 0.44 GiB 減る）。どれも測るまで分からない。
