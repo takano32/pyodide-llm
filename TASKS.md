@@ -1340,7 +1340,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（8,709,519,008）・ライセンスは HF と合い、chat template は Qwen3 8B のものと全文は違うが jinja2 で描いた 1 ターンは `enable_thinking` の既定でも偽でも同じ文。BOS の決め・標本抽出・note・名前・台帳の数はログと合う。
 - **本番**（デプロイ run 41650115576、`models.yml` run 41652375545、Chromium、すぐ答える形）: 準備完了 377.7 秒、256 トークンで 3.3 tok/s（4 本）。準備完了は Qwen3 Swallow 8B の 171.4 秒（T.606）の 2 倍ほどで、ほとんどが取得（ステータス行は 300 秒の時に 6,889 / 8,709 MB・23.9 MB/s: 8.7 GB をこの速さで約 364 秒）。
 
-#### T.607.6 AXCXEPT EZO Llama 3.2 3B Instruct dpoE（mradermacher の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+#### T.607.6 AXCXEPT EZO Llama 3.2 3B Instruct dpoE（mradermacher の Q8_0） — 状態: 完了（2026-11-03、Opus medium）
 - **したこと**: 1 項目を `hf-japanese.ts` の Shisa V2.1 の Llama 3.2 3B の後に（hf-ezo-llama-3.2-3b-instruct-dpoe）。Llama 3.2 3B Instruct を日本語と英語のデータで学習し直したもの（Llama 3.2 Community License、カードの法的通知も同じ）。mradermacher @ 65ba0474ccc3c07a4ca4c383e5f3c0f174a81f48 の Q8_0（3,421,899,936 バイト）、語彙と config は原本 @ 0b374d6e4b55192d833ec5b08ca842aaac4147eb の tokenizer.json。chat template は Llama 3.2 3B Instruct のものと同じ文（sha256 が同じ）で、書式と BOS は変換器が読む（Meta と Shisa の Llama 3.2 3B と同じ）。
 - **取りまとめ役の決め（訳）**: 標本抽出は generation_config.json の組（温度 0.6・top-p 0.9）。言語はカードの 9 つのうち「日本語 / English」（カードが日本語の仕事のためと言う）。名前は作り手の名とモデル自身の名で「AXCXEPT EZO Llama 3.2 3B Instruct dpoE」（T.523・T.535 の形: 一覧の「Science Tokyo Llama 3.1 Swallow 8B Instruct」も作り手の名が Llama の前）。Llama のライセンスは派生モデルの名の頭に Llama を求めるが、作り手自身の名「EZO-Llama-3.2-3B-Instruct-dpoE」がそうしていないので、一覧の名で直すことはしない（Shisa の「Llama 3.2 Shisa V2.1 3B」はカードがその名を決めている）。区切りのまとめで持ち主に見せる。カードの免責は研究と開発のためと言い、商用の利用を意図しないと書くが、ライセンスは Llama 3.2 のまま（方針 8: 一覧から外さない）。書かせて読んで決め直す。
 - **確かめ**: `format_check.py` は 9/9（変換器の書式、本物と同じ ID）、`--hf` も 9/9。`models-check`・`npm run types` は通る。
@@ -1350,6 +1350,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **取りまとめ役の決め（訳）**: 標本抽出（generation_config.json の組）と note はそのまま（書かせて崩れなかった）。
 - CI を回した。訳: GGUF の照合は原本の 6.4 GB の safetensors を取るので手元では重く、書かせと同じ run で回した（3B は手元でも動かせるが、ほかの子タスクと同じ道具の組で）。
 - **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（名前が Llama で始まらず、台帳の「Llama で始まる」は誤り）。台帳の文を直し、名前は作り手の名を頭に置く形のまま（取りまとめ役の決め: 上の訳）。リビジョン・`download`・ライセンス（両方 llama3.2、カードの法的通知も）・免責の扱い・標本抽出・note は合う。chat template の sha256 は取りまとめ役が 2 つの tokenizer_config.json から確かめた（同じ 5816fce1…）。
+- **本番**（デプロイ run 41656172765、`models.yml` run 41658228064、Chromium）: 準備完了 57.0 秒、256 トークンで 9.9 tok/s（4 本）。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
