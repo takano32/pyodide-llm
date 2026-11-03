@@ -1352,6 +1352,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **レビュー（Sonnet low、2026-11-03）**: 指摘 1 つ（名前が Llama で始まらず、台帳の「Llama で始まる」は誤り）。台帳の文を直し、名前は作り手の名を頭に置く形のまま（取りまとめ役の決め: 上の訳）。リビジョン・`download`・ライセンス（両方 llama3.2、カードの法的通知も）・免責の扱い・標本抽出・note は合う。chat template の sha256 は取りまとめ役が 2 つの tokenizer_config.json から確かめた（同じ 5816fce1…）。
 - **本番**（デプロイ run 41656172765、`models.yml` run 41658228064、Chromium）: 準備完了 57.0 秒、256 トークンで 9.9 tok/s（4 本）。
 
+#### T.607.7 AXCXEPT llm-jp-3 3.7B instruct EZO の Common と Humanities（ineair の Q8_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **したこと**: 2 項目を `hf-japanese.ts` の llm-jp-3 3.7B instruct3 の後に（hf-llm-jp-3-3.7b-instruct-ezo-common・-humanities）。どちらも llm-jp-3-3.7b-instruct を日本語の Wikipedia と FineWeb から作った指示のデータで学習し直したもの（Apache-2.0: カードは元のモデルの条件に従うと言う。ja・en）。ineair の Q8_0（Common @ 31fe00046f1a04f12980d3e1f0d030c85b9a1cd7、Humanities @ 26cd20f98ba4217d5c9ca42b0e1b594371931f5c、どちらも 4,022,249,984 バイト）、語彙と config は原本（Common @ 8cd47420b77e96061f4b1fa1f006eec7b0ff4609、Humanities @ ade3da043ec830f0d4d54cfc0e9a91335dfe3f55）の tokenizer.json。chat template は llm-jp-3 の instruct のものと同じ文（sha256 が同じ）なので、書式 `LLM_JP_INSTRUCT` と止まり `llmJp` も同じ。カードは llm-jp の system の文を渡すので、`format_check.py` の `SYSTEM` に 2 つの id を足した。
+- **取りまとめ役の決め（訳）**: 標本抽出はカードのコードの組（温度 0.7・top-p 0.95・繰り返しの罰 1.05）。名前は作り手の名を頭に「AXCXEPT llm-jp-3 3.7B instruct EZO Common」（名の llm-jp は元のモデルの作り手で、この作り手ではない）。書かせて読んで決め直す。
+- **確かめ**: `format_check.py` は 2 つとも 9/9（カードの system の文で本物と同じ ID）、`--hf` も 9/9（変換器の書式）。`models-check`・`npm run types` は通る。
+
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
 - 足りないのは Mistral の Tekken の前分割だけ（大文字小文字の類の Split の型と ByteLevel、`ignore_merges` 真、GGUF の名前 `tekken`）: `spark2_5` の形で `STAGES` の段と `STAGED_PRETOKENIZERS`、`GGUF_PRETOKENIZERS` は実物と原本を突き合わせてから。本物の `tokenizers` と全符号位置で（AGENTS.md の「家族を足す」の 5）。

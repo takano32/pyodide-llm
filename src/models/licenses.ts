@@ -59,6 +59,9 @@ export const LICENSES: Record<string, string> = {
   "llm-jp/llm-jp-4-8b-thinking": APACHE, "mmnga-o/llm-jp-4-8b-thinking-gguf": APACHE,
   // T.607.1: Apache-2.0 by both cards
   "DataPilot/ArrowPro-7B-KUJIRA": APACHE, "mmnga/DataPilot-ArrowPro-7B-KUJIRA-gguf": APACHE,
+  // T.607.7: Apache-2.0 by the cards (the originals' say they follow llm-jp-3-3.7b-instruct's)
+  "AXCXEPT/llm-jp-3-3.7b-instruct-EZO-Common": APACHE, "ineair/llm-jp-3-3.7b-instruct-EZO-Common-gguf": APACHE,
+  "AXCXEPT/llm-jp-3-3.7b-instruct-EZO-Humanities": APACHE, "ineair/llm-jp-3-3.7b-instruct-EZO-Humanities-gguf": APACHE,
   // T.607.6: the Llama 3.2 Community License by both cards (its card's legal notice too)
   "AXCXEPT/EZO-Llama-3.2-3B-Instruct-dpoE": LLAMA_32, "mradermacher/EZO-Llama-3.2-3B-Instruct-dpoE-GGUF": LLAMA_32,
   // T.607.5: Apache-2.0 by both cards

@@ -202,6 +202,20 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mmnga/llm-jp-3-3.7b-instruct3-gguf", "7edef5a4f094ec8c1aed1e196c6a544675efbc2f", "llm-jp-3-3.7b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-3.7b-instruct3", "f5d5466a3316e0c898b4347ece6557a756921220"), download: 4022249856,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.607.7: AXCXEPT's two EZO of llm-jp-3 3.7B instruct, tuned further on instructions made from Japanese Wikipedia and
+  // FineWeb (Common for general use, Humanities for the humanities). The chat template of llm-jp-3's instruct (the same
+  // text), so its format and stops; the sampling of their cards' code (0.7, top-p 0.95, a penalty of 1.05). ineair's Q8_0
+  // with the original's vocabulary
+  { group: "hf", id: "hf-llm-jp-3-3.7b-instruct-ezo-common", name: "AXCXEPT llm-jp-3 3.7B instruct EZO Common", note: "answers instructions · 日本語 / English · fetches 4.0 GB (GGUF) → int8 4.3 GB",
+    ...ggufOf("ineair/llm-jp-3-3.7b-instruct-EZO-Common-gguf", "31fe00046f1a04f12980d3e1f0d030c85b9a1cd7", "llm-jp-3-3.7b-instruct-EZO-Common-Q8_0.gguf",
+      "AXCXEPT/llm-jp-3-3.7b-instruct-EZO-Common", "8cd47420b77e96061f4b1fa1f006eec7b0ff4609"), download: 4022249984,
+    conversion: {}, options: llmJp, generation: { steps: 0, temperature: 0.7, topp: 0.95, repetition_penalty: 1.05 }, template: LLM_JP_INSTRUCT,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-llm-jp-3-3.7b-instruct-ezo-humanities", name: "AXCXEPT llm-jp-3 3.7B instruct EZO Humanities", note: "answers instructions · 日本語 / English · fetches 4.0 GB (GGUF) → int8 4.3 GB",
+    ...ggufOf("ineair/llm-jp-3-3.7b-instruct-EZO-Humanities-gguf", "26cd20f98ba4217d5c9ca42b0e1b594371931f5c", "llm-jp-3-3.7b-instruct-EZO-Humanities-Q8_0.gguf",
+      "AXCXEPT/llm-jp-3-3.7b-instruct-EZO-Humanities", "ade3da043ec830f0d4d54cfc0e9a91335dfe3f55"), download: 4022249984,
+    conversion: {}, options: llmJp, generation: { steps: 0, temperature: 0.7, topp: 0.95, repetition_penalty: 1.05 }, template: LLM_JP_INSTRUCT,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.595: the next step of llm-jp-3's instruct3 ladder, with every head its own keys and values (MHA)
   { group: "hf", id: "hf-llm-jp-3-7.2b-instruct3", name: "llm-jp-3 7.2B instruct3", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.2 GB",
     ...ggufOf("mmnga/llm-jp-3-7.2b-instruct3-gguf", "368515ca8b89be62ee58cbdfbc225c762564c0c2", "llm-jp-3-7.2b-instruct3-Q8_0.gguf",
