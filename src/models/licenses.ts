@@ -55,6 +55,8 @@ export const LICENSES: Record<string, string> = {
   "Qwen/Qwen2.5-3B-Instruct": QWEN_RESEARCH, "sbintuitions/sarashina2.2-3b-instruct-v0.1": MIT,
   "Qwen/Qwen2.5-7B-Instruct": APACHE, "elyza/ELYZA-Shortcut-1.0-Qwen-7B": APACHE, "mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf": APACHE, "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5": SWALLOW,
   "llm-jp/llm-jp-4-8b-instruct": APACHE,
+  // T.592.2: Apache-2.0 by both cards
+  "llm-jp/llm-jp-4-8b-thinking": APACHE, "mmnga-o/llm-jp-4-8b-thinking-gguf": APACHE,
   // T.126
   "rinna/japanese-gpt-1b": MIT,
   // T.249 (2026-10-01): the Japanese ones of T.248's survey that open as they are, and the Q8_0 GGUFs they are taken

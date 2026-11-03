@@ -52,6 +52,12 @@ export const TRANSLATE = "Translate the following Japanese text into English.\n\
 export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
   "message.<|end|><|start|>user<|message|>{prompt}<|end|><|start|>assistant<|channel|>final<|message|>";
+// T.592.2: llm-jp-4's thinking form, the same harmony with the reasoning effort its template says by default
+// (medium), which opens the analysis channel, the thought (T.592.1: the engine follows it to its <|end|>, and the page
+// folds it); the model then writes the final channel's start and its answer. Its template ends at
+// "<|start|>assistant" and leaves the channel to the model (format_check.py's KNOWN)
+export const HARMONY_THINKING = HARMONY.replace("\n\n# Valid channels", "\n\nReasoning: medium\n\n# Valid channels")
+  .replace("<|channel|>final<|message|>", "<|channel|>analysis<|message|>");
 // T.125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
 // four prompts, where the prompt has no space at either end: some templates trim it, the page does not). These
 // models come with a sentencepiece tokenizer.model, which the engine reads (their tokenizer.json is a BPE of
@@ -272,4 +278,7 @@ export const spark = { bos: 0, stop_tokens: [0, 1],
     "</arg_key>", "<|System|>", "<arg_key>", "</think>", "<System>", "<|Tool|>", "<|User|>", "<think>", "<|Bot|>", "<User>",
     "<Bot>", "<unk>"] };
 export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
+// T.592.2: where it thinks, its <|end|> (11) closes the thought and <|start|> (10) begins the final channel after it:
+// neither stops, and a turn ends with <|return|> (2) or <|call|> (13)
+export const harmonyThinking = { ...harmony, stop_tokens: [1, 2, 13] };
 export const llmJp = { stop_tokens: [1, 2, 7] };

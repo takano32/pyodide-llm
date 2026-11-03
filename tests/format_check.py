@@ -78,6 +78,8 @@ KNOWN = {
     # the page asks for the answer's channel at the end of the format (T.132): the real text with it is the page's
     "hf-llm-jp-4-8b-instruct": {"why": "the page ends with <|channel|>final<|message|> (T.132)",
                                 "text": lambda text, prompt: text + "<|channel|>final<|message|>"},
+    "hf-llm-jp-4-8b-thinking": {"why": "the page ends with <|channel|>analysis<|message|>, the thought (T.592.2)",
+                                "text": lambda text, prompt: text + "<|channel|>analysis<|message|>"},
     # the list's own ChatML has no system turn; the real template writes its default one
     "hf-smollm2-135m-instruct": {"why": "the list's ChatML, without the default system turn",
                                  "text": lambda text, prompt: re.sub(r"^<\|im_start\|>system\n.*?<\|im_end\|>\n", "", text, flags=re.S)},

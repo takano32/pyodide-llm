@@ -1,8 +1,8 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
-  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, llmJp, sarashina,
+  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, harmonyThinking, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled, thinking } from "./sampling.ts";
 import { ggufOf, hf, thinkingAndNot } from "./builders.ts";
@@ -405,6 +405,15 @@ export const HF_JAPANESE: Entry[] = [
     hf: { repo: "mmnga-o/llm-jp-4-8b-instruct-gguf", revision: "7ae4da12cee2f109509cb8e1d01cf8a0f1a5fbc1", weights: "llm-jp-4-8b-instruct-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-instruct", revision: "098f2b2cf33021eba19a6d3582aa3d071ccc0aff", tokenizer: "tokenizer.json" } }, download: 9132708384,
     conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T.592.2: llm-jp-4 8B thinking, the instruct's sibling that thinks in harmony's analysis channel (T.592.1), with the
+  // reasoning effort its template says by default (medium) and the sampling of the entries that think (its card names
+  // none)
+  { group: "hf", id: "hf-llm-jp-4-8b-thinking", name: "llm-jp-4 8B thinking", note: "thinks before it answers · 日本語 / English · fetches 9.1 GB (GGUF) → int8 9.7 GB",
+    original: "llm-jp/llm-jp-4-8b-thinking",
+    hf: { repo: "mmnga-o/llm-jp-4-8b-thinking-gguf", revision: "d10eb8c8470f89b2082e793a5ffa086a402a23fc", weights: "llm-jp-4-8b-thinking-Q8_0.gguf",
+          vocabulary: { repo: "llm-jp/llm-jp-4-8b-thinking", revision: "fc7c15c262710016c19bcda4372a96ff68875846", tokenizer: "tokenizer.json" } }, download: 9132708672,
+    conversion: {}, options: harmonyThinking, generation: thinking, template: HARMONY_THINKING,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
   // answers at once unless told to think (the other way round from Qwen3's); CAT-Thinking, from Qwen3 Swallow, which

@@ -47,7 +47,8 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
 {
   // entries with one form only, whose template the converter reads from the original and ends with "<think>\n" (T.604)
   const readThinking = ["hf-lumi-v2-llm-jp-4-8b"];
-  const thinking = MODELS.filter((entry) => /\(thinking\)|Thinking|DeepSeek-R1/.test(entry.name) || /<think>\s*$/.test(entry.template ?? "") || readThinking.includes(entry.id));
+  // (T.592.2: or harmony's analysis channel, which llm-jp-4's thinking form opens)
+  const thinking = MODELS.filter((entry) => /\(thinking\)|Thinking|DeepSeek-R1/.test(entry.name) || /(<think>|<\|channel\|>analysis<\|message\|>)\s*$/.test(entry.template ?? "") || readThinking.includes(entry.id));
   assert.ok(thinking.length >= 27, `only ${thinking.length} entries that think were found`);
   for (const entry of MODELS) {
     assert.equal(entry.generation?.thinking, thinking.includes(entry) ? 4096 - 512 : undefined, `${entry.id}: the budget of a thought`);
