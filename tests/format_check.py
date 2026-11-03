@@ -111,7 +111,8 @@ KNOWN = {
 # (tests/start_check.py or .ts on plain text, tests/chat_nll.py on answers; the records in docs/tasks/). Before T.312
 # it passed everywhere but in a list of families found to lose by it after they were in the list (T.236's Qwen3.5,
 # Granite 4.2, MiniCPM5, Ternary Bonsai 2, Hermes 3, the 8B Qwen3s: up to +144% on plain text). A new entry that sends
-# one more token in front now fails until it is measured and put here. A prefix names a family measured on its sizes.
+# one more token in front now fails until it is measured and put here. A key is an entry's id, or, ending with "-", a
+# family measured on some of its sizes (only Qwen2.5's: every hf-qwen2.5- entry the list gets is let by, measured or not)
 LENIENT = {
     # T.131: Qwen2.5 0.5B Instruct 23.30 with <|endoftext|>, 23.43 without (Japanese), 19.25 and 19.29 (English).
     # T.252: Qwen2.5 Coder 1.5B, 3B, 7B, the answers +0.5%, +0.4%, +0.2% (KL 0.0025, 0.0009, 0.0012)
@@ -122,20 +123,25 @@ LENIENT = {
     "hf-tinyswallow-1.5b-instruct": "the base -1.43% on plain text (T.602)",
     # T.250's review: the Qwen3s of 4B and below +5.4% at most on plain text (<|im_start|> in front is 5.5 to 10.2%
     # worse), 0.6B +4.0% and 1.7B +1.5% on their own answers. Not the 8B ones (+144%: they begin at <|im_start|>)
-    **{f"hf-qwen3-{size}": "the Qwen3s of 4B and below: +5.4% at most on plain text (T.250's review)"
-       for size in ("0.6b", "1.7b", "4b")},
+    **{f"hf-qwen3-{size}{form}": "the Qwen3s of 4B and below: +5.4% at most on plain text (T.250's review)"
+       for size in ("0.6b", "1.7b", "4b") for form in ("", "-thinking")},
+    # (T.250's review: the 2507s were measured on their own, Instruct -1.2%, Thinking +0.3% on plain text)
+    "hf-qwen3-4b-instruct-2507": "-1.2% on plain text (T.250's review)",
+    "hf-qwen3-4b-thinking-2507": "+0.3% on plain text (T.250's review)",
     # T.250's review (and T.236: the 1.7B's answers KL 0.008): Ternary Bonsai 1.7B -1.5%, 4B -1.5% on plain text
     "hf-ternary-bonsai-1.7b": "-1.5% on plain text (T.250's review, T.236)",
     "hf-ternary-bonsai-4b": "-1.5% on plain text (T.250's review)",
     # T.286.2, T.286.3: the 1-bit Bonsai 1.7B +0.29%, 4B +0.50% on plain text
     "hf-bonsai-1.7b": "+0.29% on plain text (T.286.2)", "hf-bonsai-4b": "+0.50% on plain text (T.286.3)",
     # T.250's review: Qwen3 Swallow 8B RL +3.3% on plain text; T.606: the SFT +0.98%, the CPT +1.13%, the medical +0.33%
-    "hf-qwen3-swallow-8b": "+3.3% at most on plain text (T.250's review, T.606)",
-    "hf-medical-qwen3-swallow-8b": "+0.33% on plain text (T.606)",
+    **{f"hf-qwen3-swallow-8b{kind}{form}": "+3.3% at most on plain text (T.250's review, T.606)"
+       for kind in ("", "-sft", "-cpt") for form in ("", "-thinking")},
+    **{f"hf-medical-qwen3-swallow-8b{form}": "+0.33% on plain text (T.606)" for form in ("", "-thinking")},
     # T.250's review: CAT-Thinking 8B +3.5% on plain text, +0.4% on its own answers (KL 0.0045)
     "hf-cat-thinking-8b": "+0.4% on its answers (T.250's review)",
     # T.517: LINE's instruction-sft, 1.7B </s> better than none on plain text and -5.76% on the answers, 3.6B <s> chosen
-    "hf-japanese-large-lm-": "the BOS measured and chosen per size (T.517)",
+    **{f"hf-japanese-large-lm-{size}-instruction-sft": "the BOS measured and chosen per size (T.517)"
+       for size in ("1.7b", "3.6b")},
     # T.592.1, T.304, T.604: llm-jp-4 8B thinking -0.74%, llm-jp-4.1 8B thinking -7.08%, Lumi v2 -1.90% on plain text
     "hf-llm-jp-4-8b-thinking": "-0.74% on plain text (T.592)", "hf-llm-jp-4.1-8b-thinking": "-7.08% on plain text (T.304)",
     "hf-lumi-v2-llm-jp-4-8b": "-1.90% on plain text (T.604)",
@@ -145,9 +151,10 @@ LENIENT = {
     "hf-rakutenai-7b-instruct": "+0.62% on plain text (T.600)",
     "hf-japanese-stablelm-instruct-gamma-7b": "+0.01% on plain text (T.600)",
     # T.602: EvoLLM-JP-A -0.21%, v1 +0.74%; T.605: ELYZA's Llama 2 instruct +0.55%, fast -0.15% on plain text
-    "hf-evollm-jp-": "-0.21% and +0.74% on plain text (T.602)",
+    "hf-evollm-jp-a-v1-7b": "-0.21% on plain text (T.602)", "hf-evollm-jp-v1-7b": "+0.74% on plain text (T.602)",
     # (their card writes the BOS itself, left out of ELYZA_LLAMA2_CARD below)
-    "hf-elyza-japanese-llama-2-7b-": "the card writes it; +0.55% and -0.15% on plain text (T.605)",
+    "hf-elyza-japanese-llama-2-7b-instruct": "the card writes it; +0.55% on plain text (T.605)",
+    "hf-elyza-japanese-llama-2-7b-fast-instruct": "the card writes it; -0.15% on plain text (T.605)",
     # T.607.1 to T.607.4: ArrowPro +1.13%, Vecteus +0.24%, Oumuamua +1.10%, Gleipnir -0.51% on plain text
     "hf-arrowpro-7b-kujira": "+1.13% on plain text (T.607.1)", "hf-vecteus-v1": "+0.24% on plain text (T.607.2)",
     "hf-oumuamua-7b-instruct-v2": "+1.10% on plain text (T.607.3)", "hf-umievo-gleipnir-7b": "-0.51% on plain text (T.607.4)",
@@ -306,7 +313,8 @@ def main():
         folder, made = converted(entry, directory)
         options = {**made.options, **({} if alone else entry.get("options", {}))}
         template = (None if alone else entry.get("template")) or made.options.get("template")
-        # (T.312: a base model's entry whose format is what was typed, where its tokenizer has its instruct's template)
+        # (T.312: a base model's entry whose format is what was typed, where its tokenizer has its instruct's template.
+        # Whether the entry is a base model is not looked at: any entry whose format is "{prompt}" alone reads so)
         if not template or template == "{prompt}":
             print(f"none {entry['id']}: no format (what was typed is continued as it is)", flush=True)
             continue
@@ -412,7 +420,8 @@ def ids_match(model_id, page, real, alone=False):
 
 def lenient(model_id):
     """Why one more BOS in front is let by for this entry (T.312): LENIENT's or UNMEASURED's word, or None."""
-    return next((why for key, why in {**LENIENT, **UNMEASURED}.items() if model_id.startswith(key)), None)
+    return next((why for key, why in {**LENIENT, **UNMEASURED}.items()
+                 if model_id == key or key.endswith("-") and model_id.startswith(key)), None)
 
 
 def first_piece(page, real):

@@ -46,11 +46,22 @@ def test_nothing_may_stand_in_front_but_where_it_was_measured():
     for model_id in ("hf-qwen3-4b", "hf-qwen3-4b-thinking-2507", "hf-qwen2.5-coder-7b-instruct", "hf-eurollm-1.7b-instruct"):
         assert format_check.ids_match(model_id, old_design, real)
         assert format_check.lenient(model_id)
-    # every key names an entry or a family of the list's ids, and no entry is in both
+    # a key that is an id is that entry only (the review: "hf-qwen3-4b" let the 2507s by too, as a prefix); one that
+    # ends with "-" is a family
+    assert format_check.lenient("hf-qwen3-4b") != format_check.lenient("hf-qwen3-4b-instruct-2507")
+    assert format_check.lenient("hf-qwen3-4b-new") is None and format_check.lenient("hf-zephyr-7b-beta-2") is None
+    assert format_check.lenient("hf-qwen2.5-14b-instruct")
+    # no entry is in both
     assert not set(format_check.LENIENT) & set(format_check.UNMEASURED)
-    assert all(key.startswith("hf-") for key in {**format_check.LENIENT, **format_check.UNMEASURED})
+    assert not format_check.ids_match("hf-qwen3-4b", [IM_START, IM_START, USER, NEWLINE], real)
     # --hf (T.269): the converter's BOS in front is what ?hf= sends for these families too
     assert format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real, alone=True)
     assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real)
     assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1, 2] + real, real, alone=True)
-    assert not format_check.ids_match("hf-qwen3-4b", [IM_START, IM_START, USER, NEWLINE], real)
+
+
+def test_every_key_names_an_entry_or_a_family_of_the_list():
+    # (T.312's review) an id gone from the list, or misspelt, fails here: src/models.ts read by Node, as main() does
+    ids = [entry["id"] for entry in format_check.entries()]
+    for key in {**format_check.LENIENT, **format_check.UNMEASURED}:
+        assert any(i.startswith(key) for i in ids) if key.endswith("-") else key in ids, key
