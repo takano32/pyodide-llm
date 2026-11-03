@@ -416,7 +416,7 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: harmonyThinking, generation: thinking, template: HARMONY_THINKING,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.304: llm-jp-4.1 8B thinking, of the same form, format and sampling as 4's. Its makers give a Q4_K_M and a BF16 alone
-  // (no Q8_0 yet: the owner's choice is to take the Q4_K_M now with llama.cpp's blocks kept as they are, and the Q8_0
+  // (no Q8_0 yet: the owner's choice of 2026-10-31 is to take the Q4_K_M now with llama.cpp's blocks kept as they are, and the Q8_0
   // when there is one); rebuilt: four bits are not held to the original within 1e-3
   { group: "hf", id: "hf-llm-jp-4.1-8b-thinking", name: "llm-jp-4.1 8B thinking",
     note: "thinks before it answers · 日本語 / English · 4-bit weights · fetches 5.5 GB (GGUF), kept mostly as it is: 6.4 GB",
