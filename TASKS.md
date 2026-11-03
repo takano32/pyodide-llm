@@ -1338,7 +1338,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **取りまとめ役の決め（訳）**: 標本抽出（Qwen3 のカードの 2 組）と BOS・書式は Qwen3 8B のまま（書かせて崩れなかった）。考えが英語なのは Qwen3 8B と同じ形で、note は「日本語 / English」のまま。
 - CI を回した。訳: 9 GB の GGUF の照合と 9 GB の int8 の書かせは手元（7B 級を動かさない）で見られない。
 - **レビュー（Sonnet low、2026-11-03）**: 指摘なし。リビジョン・`download`（8,709,519,008）・ライセンスは HF と合い、chat template は Qwen3 8B のものと全文は違うが jinja2 で描いた 1 ターンは `enable_thinking` の既定でも偽でも同じ文。BOS の決め・標本抽出・note・名前・台帳の数はログと合う。
-- **本番**（デプロイ run 41650115576、`models.yml` run 41652375545、Chromium、すぐ答える形）: 準備完了 377.7 秒、256 トークンで 3.3 tok/s（4 本）。準備完了は Qwen3 Swallow 8B の 171.4 秒（T.606）の 2 倍ほどで、取得の速さの揺れと読む（同じ大きさ・同じ道）。
+- **本番**（デプロイ run 41650115576、`models.yml` run 41652375545、Chromium、すぐ答える形）: 準備完了 377.7 秒、256 トークンで 3.3 tok/s（4 本）。準備完了は Qwen3 Swallow 8B の 171.4 秒（T.606）の 2 倍ほどで、ほとんどが取得（ステータス行は 300 秒の時に 6,889 / 8,709 MB・23.9 MB/s: 8.7 GB をこの速さで約 364 秒）。
 
 ### T.611 [追加][解析分割] Tekken の前分割（Mistral-Nemo-Japanese 12B） — 状態: 未着手（2026-10-30、T.591 から。規模 小〜中）
 - 開くもの: cyberagent/Mistral-Nemo-Japanese-Instruct-2408 @ 8591f78522a5d651209fc9f354c848508db7a3eb（mistral、12.25B、apache-2.0、この組でいちばんダウンロードが多い。Q8_0 は QuantFactory か mmnga で 13.02 GB、KV 込み約 13.8 GB の見込み）と shisa-v2-mistral-nemo-12b。
