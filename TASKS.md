@@ -672,6 +672,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **落ちることを見た**: 捨てのワークツリーで (1) `forward/convolution.ts` の `clear()` を空にした（状態を位置 0 で消さない）。新しい part が落ちた: 「made-up-lfm2-float32: … a second run from 0 DIFFERS from the first (a state left behind) — FAIL」。(2) `forward/linear.ts` の `clear()` からデルタ則の状態を消す行を外した。made-up-qwen35-int8 と made-up-ternary-hybrid の両方が「a second run from 0 DIFFERS from the first (a state left behind) — FAILED」で落ちた。どちらも戻した。
 - 取りまとめ役の決め（訳）: 勧めの「足す」にした。訳: 18 秒ほどの延びは、壊れた LFM2 が本番に 1 日出る費用より安い。取り消すのは part の 1 行で済む。Qwen3.5 と 3 値は、足しても 4 秒なので同じ判断で int8 の 1 つずつに絞って足した（3 値の hybrid は Qwen3.5 の linear の層と 3 値の行列の両方を踏む）。
 - CI を省いた。訳: 触ったのは `tests/suite.sh` の軽い組の 1 つの part だけで、手元で軽い組を通しで回して通り、壊し方 2 つが落ちるのも手元で見た。デプロイの軽い組が同じ part を回す。
+- レビュー（Sonnet low、2026-11-03）: must-fix なし。`bash -n` が通り、part の形も引数も全部の組と同じ。レビュー担当が同じ 5 つを回して 16.5 秒で通った。入れた勧め: フォルダの名前に「made-up」が要る（forward-check が名前で作り物の線を選ぶ）ことを part の上のコメントに。秒には forward-check がいつも回す作り物 2 つも入る。
 
 ### T.316 [調査][MLX] Clef-Flash（Cloudflare、MLX の 4 ビット）を動かす: 全体と決めること — 状態: 未着手（2026-10-02、持ち主「これ動かすのにはどんな実装が足りない？実装はまだしなくていい」「[MLX] として採番しておこう」。調べだけ済み）
 - **何か**: `mlx-community/clef-flash-4bit`（リビジョン `d9ec324f7992383bdfb7a0b4eed8b4b9d10f81be`、Apache-2.0、取得 5.95 GB）。原本は `Cloudflare/clef-flash`（`17f0b0ad64efb65d273590632833508766b2aae6`、bf16、18.8 GB）。**チャットのモデルではない**: 状態（文や JSON、画像、動画）と、型のついた問い（`noul`・`choice`・`score`）の一覧を渡すと、各問いの選択肢ごとの確率を 1 回の forward で返す。文は書かない。

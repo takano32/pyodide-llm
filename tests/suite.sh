@@ -285,6 +285,8 @@ part "an LFM2 where a GPU adapter is" lfm2_goes_to_the_gpu
 # 27B's shape) against NumPy, on a shared memory: the full suite's made-up checks of these, cut to what keeps a broken
 # convolution or linear-attention layer off the site. Eleven of the fifteen ways to break the LFM2's forward.js that
 # T.260's review tried were let through by this suite before and failed only the full one (about 18 seconds)
+# (the folders' names must hold "made-up": forward-check holds a made-up model to its own lines by that, and a real
+# model's lines would fail these)
 made_up_forward() {
   mkdir -p .tmp
   python tests/make_lfm2.py .tmp/made-up-lfm2-float32 float32
