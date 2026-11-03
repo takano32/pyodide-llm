@@ -578,6 +578,11 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - レビュー（Sonnet low、2026-11-03）: 指摘なし。リビジョン・取得の大きさ・ライセンス・1.7B の出力が変わらないこと・T.539 の線・試験の一覧・記録の数を見た。頭のトークンの数はレビュー担当の grep で拾えなかったが、ログの start_check の表にある（取りまとめ役が確かめた）。AGENTS.md の 1.7B の +6.27% は T.286.2 の run 41682850540 の数。
 - **本番**（デプロイ run 41700967574、`models.yml` run 41703218428、Chromium）: 準備完了 39.4 秒、143 トークンを 7.6 tok/s（4 本）。
 
+#### T.286.4 Prism ML Bonsai 8B（1-bit、作り手の Q1_0） — 状態: 進行中（2026-11-03、Opus medium）
+- **したこと**: 1 項目を 4B の後に（hf-bonsai-8b、`binaryBonsai()`）。prism-ml/Bonsai-8B-gguf @ 48516770dd04643643e9f9019a2a349cf26c5dbd の Q1_0（1,158,654,496 バイト。リポジトリの `Bonsai-8B.gguf` は同じファイル: etag が同じ）、語彙・config・書式は prism-ml/Bonsai-8B-unpacked @ 376f381570d6115bc03f82adcfa4af0c7672ae54（Apache-2.0、両カード）。素の RoPE の許す一覧（`models-check`・`test_gguf.py`）に足した。
+- **取りまとめ役の決め（訳）**: 3 値の 8B と同じ始まり（BOS `<|im_start|>`、書式はその次から: `QWEN3_FROM_IM_START`・`QWEN3_AT_ONCE_AFTER_START`）と素の RoPE、English だけで始める。書かせ・rope_compare・start_check で決め直す。note の大きさは 3 値の 8B と同じ「ternary 2.2 GB」の見込み。
+- **確かめ**: `format_check.py` は 9/9、`--hf` も 9/9。`models-check`・`npm run types`・pytest の RoPE の試験は通る。
+
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
 - (a) AMD の Zen 3・4 では int16 の和の形が 1.31〜1.36 倍、arm64 では 0.60 倍、Zen 5 では今の形が 3 倍（T.231 のレビュー）: CPU で選ぶ仕組みが要る。(b) BitNet 流の表を引く形（見積もり 0.28 命令 / 重み、今は 0.34）。(c) スケールを float16 で持つ（27B で 0.44 GiB 減る）。どれも測るまで分からない。
 
