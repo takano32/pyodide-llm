@@ -367,6 +367,9 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(thoughtOf("Let me see.", true), { thought: "Let me see.", closed: false, answer: "" }, "harmony's thought that goes on");
   assert.deepEqual(thoughtOf(`Let me see.<|end|>${final}東京です。`, true), { thought: "Let me see.", closed: true, answer: "東京です。" }, "harmony's thought, closed, and its answer in the final channel");
   assert.deepEqual(thoughtOf("Let me see.<|end|><|start|>assistant<|channel|>", true), { thought: "Let me see.", closed: true, answer: "" }, "the final channel's start while it is written is no answer yet");
+  assert.deepEqual(thoughtOf(" Hm.<|end|><|start|> assistant<|channel|> final<|message|> Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "T.592.2: the final channel's start with a space before its words, as llm-jp-4 8B thinking writes it");
+  assert.deepEqual(thoughtOf("Hm.<|end|><|start|> assist", true), { thought: "Hm.", closed: true, answer: "" }, "T.592.2: a word of the final channel's start, half written");
+  assert.deepEqual(thoughtOf("Hm.<|end|><|start|> user", true), { thought: "Hm.", closed: true, answer: "<|start|> user" }, "T.592.2: another turn's start is no final channel");
   assert.deepEqual(thoughtOf("Hm.<|end|>Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "an answer without the final channel's start is all answer");
   assert.deepEqual(thoughtOf("Hm. <|end|> then </think> x", true).thought, "Hm.", "of two kinds the closing mark that comes first ends it");
   assert.deepEqual([thoughtLine(false), thoughtLine(true)], ["Thinking…", "Thought"], "while it goes on, and once it closed");

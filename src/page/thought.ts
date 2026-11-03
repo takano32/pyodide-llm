@@ -27,9 +27,19 @@ export function thoughtOf(text: string, opened: boolean) {
   // (a thought its budget closed may be closed by the model once more, right after: T.520's Qwen3.5 0.8B)
   let answer = body.slice(end + marks.closes.length).trimStart();
   if (answer.startsWith(marks.closes)) answer = answer.slice(marks.closes.length).trimStart();
-  // (what comes before the answer, or the start of it while it is being written)
-  answer = answer.startsWith(marks.answers) ? answer.slice(marks.answers.length).trimStart() : marks.answers.startsWith(answer) ? "" : answer;
-  return { thought: body.slice(0, end).trim(), closed: true, answer };
+  return { thought: body.slice(0, end).trim(), closed: true, answer: past(answer, marks.answers) };
+}
+/** T.592.2: the answer after what a model writes before it (`answers`), "" while that is being written, and all of it where
+ * it is not there. Each mark and word of it may follow a space (llm-jp-4 8B thinking writes
+ * "<|start|> assistant<|channel|> final<|message|> "). */
+function past(answer: string, answers: string) {
+  let rest = answer;
+  for (const part of answers.match(/<\|[^|]*\|>|[^<]+/g) ?? []) {
+    rest = rest.trimStart();
+    if (!rest.startsWith(part)) return part.startsWith(rest) ? "" : answer;
+    rest = rest.slice(part.length);
+  }
+  return rest.trimStart();
 }
 /** T.520: the one line a folded thought says: while it goes on, once it closed, and at the answer's end (stats: the
  * engine's count of its tokens and whether its budget closed it; thought null where the engine saw no marks). */
