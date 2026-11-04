@@ -48,10 +48,13 @@ export const TRANSLATE = "Translate the following Japanese text into English.\n\
 // token here made the same tokens: the same IDs as the real Jinja and tokenizers for four prompts, T.132). A turn ends
 // with <|return|> (2), <|end|> (11) or <|call|> (13), and a new message would start with <|start|> (10). The BOS is
 // <|startoftext|> (1), which the real tokenizer begins a text with and the template does not write: said here (harmony)
-// since T.369, for the converter alone begins with the template's <|start|> now (T.264)
+// since T.369, for the converter alone begins with the template's <|start|> now (T.264). T.399 (the owner's choice,
+// 2026-11-04): the instruct begins with that <|start|> (10) as the real template does, and its format is what follows
+// it (HARMONY_AFTER_START, harmonyFromStart): <|startoftext|> in front cost the hand-written answers 3.64% (19 of 24)
 export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
   "message.<|end|><|start|>user<|message|>{prompt}<|end|><|start|>assistant<|channel|>final<|message|>";
+export const HARMONY_AFTER_START = HARMONY.slice("<|start|>".length);
 // T.592.2: llm-jp-4's thinking form, the same harmony with the reasoning effort its template says by default
 // (medium), which opens the analysis channel, the thought (T.592.1: the engine follows it to its <|end|>, and the page
 // folds it); the model then writes the final channel's start and its answer. Its template ends at
@@ -290,4 +293,6 @@ export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|sta
 // T.592.2: where it thinks, its <|end|> (11) closes the thought and <|start|> (10) begins the final channel after it:
 // neither stops, and a turn ends with <|return|> (2) or <|call|> (13)
 export const harmonyThinking = { ...harmony, stop_tokens: [1, 2, 13] };
+// T.399: the instruct's, from the template's first token (HARMONY_AFTER_START); the stops are harmony's
+export const harmonyFromStart = { ...harmony, bos: 10 };
 export const llmJp = { stop_tokens: [1, 2, 7] };

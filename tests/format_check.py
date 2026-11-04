@@ -168,10 +168,8 @@ LENIENT = {
 # T.312: the entries that send one more token in front of the real IDs with nothing measured of it. Let by, so that the
 # check is still of the rest of their IDs, and said on their line; T.399 measures them (and the entries are left as
 # they are until then). Take one out of here when it is measured: to LENIENT, or its entry made exact.
-UNMEASURED = {
-    # T.399 measured it (+3.64% on handwritten answers, 19 of 24 worse): whether the entry is made exact is the owner's
-    "hf-llm-jp-4-8b-instruct": "<|startoftext|> in front of the real <|start|>: +3.64% on answers, not yet decided (T.399)",
-}
+# Empty since T.399 (llm-jp-4 8B instruct, the last, was measured and made exact: the owner's choice, 2026-11-04)
+UNMEASURED = {}
 # T.233: what an entry's format is the real template's with, besides enable_thinking (or that too, T.597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T.236's format of a Qwen3.5), not its default, "xhigh"
 # (T.364.3: and Underdog Saluki 27B's, whose template is the same one)

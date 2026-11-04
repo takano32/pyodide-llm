@@ -1,8 +1,8 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ARROWPRO, ASK_JAPANESE, GLEIPNIR, OUMUAMUA, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ARROWPRO, ASK_JAPANESE, GLEIPNIR, OUMUAMUA, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY_AFTER_START, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
-  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmony, harmonyThinking, llmJp, sarashina,
+  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmonyFromStart, harmonyThinking, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled, thinking } from "./sampling.ts";
 import { ggufOf, hf, thinkingAndNot } from "./builders.ts";
@@ -458,7 +458,7 @@ export const HF_JAPANESE: Entry[] = [
     original: "llm-jp/llm-jp-4-8b-instruct",
     hf: { repo: "mmnga-o/llm-jp-4-8b-instruct-gguf", revision: "7ae4da12cee2f109509cb8e1d01cf8a0f1a5fbc1", weights: "llm-jp-4-8b-instruct-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-instruct", revision: "098f2b2cf33021eba19a6d3582aa3d071ccc0aff", tokenizer: "tokenizer.json" } }, download: 9132708384,
-    conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
+    conversion: {}, options: harmonyFromStart, generation: sampled(1.1), template: HARMONY_AFTER_START,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.592.2: llm-jp-4 8B thinking, the instruct's sibling that thinks in harmony's analysis channel (T.592.1), with the
   // reasoning effort its template says by default (medium) and the sampling of the entries that think (its card names
