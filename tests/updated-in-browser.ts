@@ -332,6 +332,7 @@ const CASES = {
       const said = await answered(page);
       console.log(`  the page: ${JSON.stringify({ ...said, text: said.text.slice(0, 60) })}`);
       expect(name, said.error === undefined && said.text.length > 0, `an error was shown, or nothing written: ${said.error}`);
+      expect(name, /prompts on the CPU \(the GPU's worker did not start/.test(said.status), `the status line does not say the GPU's worker did not start: ${said.status}`);
       if (how === 404) await saysSlower(name, page, said.status);
       else saysNothing(name, said.status);
     }, { swiftShader: true })])),

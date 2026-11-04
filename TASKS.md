@@ -106,7 +106,7 @@
 - T.103 [性能][その他] WebNN でブラウザの NPU や GPU を使う — 保留
 - T.104 [性能][CPU] WebAssembly の FP16（f16x8）で活性値を半精度にする — 保留
 - T.489 [整理][その他] T.380.1 の後の残り — 持ち主の文面待ち
-- T.491 [整理][WebGPU] T.380.3 の後の残り — 未着手
+- T.491 [整理][WebGPU] T.380.3 の後の残り — 進行中
 - T.502 [整理][その他] T.363（Saluki のエンジン）の後の残り — 進行中
 - T.505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 進行中
 - T.506 [不具合][遠隔試験] WebKit 27.2 で 4 GB を越えるモデルが、断られずに黙って止まる — 調べは完了
@@ -1009,12 +1009,17 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **持ち主の文面**: フォールバックのアダプタを言う文が 2 つある（`gpuOnlyUnfit()` の「a fallback adapter」は訪問者に出ない側: 出る側の文に寄せてよいか）。4 の倍数でない head の文も 2 つ。`/benchmark/` のラウンドの読み込みは WebGPU があっても「no WebGPU in a worker here」になる（ページに出るかは未確認）。`gpuOnlyUnfit()` の文は訪問者にもコンソールにも出ない: GPU だけに置けなかった訳を知る手段が無い（出すなら文面）。
 - ページのスクリプトの共有の塊 `path.*.js` に `REASONS` の全 39 項目が入る（使うのは 3 項目、数 KB）。`worker/timing.ts` の 3 つの訳と `worker/load.ts` の 2 つは表の外（エンジンに言わせれば入る）。`shaders/run.ts` の `samplingSettings()` が「more than N stop tokens」を自分でも投げる（届かない）。`REASONS.quiet()` の秒の二重割りを見る試験が無い（180 秒の見張りを走らせる試験が無い）。`isLate(error)` を読む 5 か所は手元で走らない。訳を 1 つ足す場所は 3 か所（表・使う所・文を固定する試験の `SAID`）。
 
-### T.491 [整理][WebGPU] T.380.3 の後の残り — 状態: 未着手（2026-10-12、T.377・T.382 とそのレビューから。規模 小）
+### T.491 [整理][WebGPU] T.380.3 の後の残り — 状態: 進行中（2026-11-04、Opus medium: 試験の部分はブランチ `t.491-gpu-updated`。残りは持ち主の文面と動きの判断待ち。前の状態: 未着手、2026-10-12、T.377・T.382 とそのレビューから。規模 小）
 - **見直し（2026-10-30）**: AGENTS.md の T.371 の場合の数の行は蒸留（T.569）で無くなっていた。固まった GPU の Worker を CPU で読み直す形と GPU だけの道の打ち切りは訳の文（持ち主）か動きの変更、残る試験（始まらない Worker の GPU だけの道を `updated-in-browser.mjs` で）は CI の実ブラウザの回: この順の後ろで取りかかる。
 - **固まった GPU の Worker**（`error` も出さず数えも進めない）は今も 60 秒で読み込みが失敗する（CPU に読み直す形にするなら訳の文が要る: 今ある `REASONS.quiet` か新しい文か = 文面）。そのとき保存した変換の読みは `room()` の失敗を「保存が読めない」と読み、保存が正しくても変換し直しに行く（読みだけ）。
 - GPU の Worker が始まらなかった GPU だけのモデルは、最初の読み込みを最後まで走らせてから CPU で読み直す（GB 級の変換では無駄が大きい。打ち切るなら `weights.ts` が「読み直し」を投げる形。今の形は T.156 の「GPU が生成中に落ちた」道と同じ流れ）。訪問者には「Downloading …」が 2 回出る見込み（未確認）。
 - **試験**: 始まらない Worker の GPU だけの道を実ブラウザで見る案（`tests/updated-in-browser.mjs` に SwiftShader の起動の引数と、`tiny-lm&gpuTest=only` で `gpu` の塊を 404・500 にする場合 2 つ。期待は「ready が 60 秒より速い」「答えが出る」。CI は `tests.yml only_extra=true`。レビューの手元の版は本線の木の `.tmp/t380.3-review/uib.mjs`: リポジトリには無い）。`weights.ts` と本物の `gpuside` を 1 本で結ぶ試験は無い（別々の検査が見る）。保存した変換の読み（`loadConverted`）を vm で走らせる試験が無い。`gpuBytes()` と `tokensUnfit()` の、今ある 5 行では効く入力が無い検査（T.487）はそのまま。gpu-check の台は `worker/weights.ts` の `gpuOnlyBuffer` を通らない（通るのは本番の `gpuTest=only`）。
 - AGENTS.md の T.371 の場合の数（4 つ）を 5 つに。
+- **試験の部分（2026-11-04、Opus medium、ブランチ `t.491-gpu-updated`）**: `tests/updated-in-browser.ts` に場合を 2 つ（「a model on the GPU alone whose GPU's worker is gone from the start …」と「… answered 500 …」）。SwiftShader の WebGPU の Chromium（e2e の gpuTest と同じ引数）を、その場合が頼んだときだけ別に開く（ほかの場合の Chromium はそのまま）。`tiny-lm&gpuTest=only` で `gpu` の塊を 404（HEAD も 404）か 500 にして、見るもの: GPU の Worker が頼まれた（Chromium で頼まれなければ落ちる。ほかのブラウザは「SAW NOTHING」）、コンソールに「the model was on the GPU alone, and is loaded again on the CPU」、準備完了が 60 秒より速い、答えが出てエラーが無い、ステータス行が「prompts on the CPU (the GPU's worker did not start …」を言う、404 では最後に `SLOWER`・500 では言わない。**今の動きを写しただけで製品は触っていない**。
+  - **結果**（CI の run 41887686369、Chromium 156.0.8078.4）: 2 つとも ok。準備完了は 404 で 4.9 秒・500 で 4.7 秒（Pyodide を CDN から取る時間を含む）。ステータス行は「SB Intuitions tiny-lm 29M · SIMD kernels, int8, relaxed SIMD, 4 threads, prompts on the CPU (the GPU's worker did not start (an error)) · Pyodide 314.0.7」に、404 では「 · the site was updated: reload for full speed」。**壊し方**: 同じ run で、期待するコンソールの文の「CPU」を「GPU」に替えた版が 2 つとも落ちた（「the model was not loaded again on the CPU after the GPU alone」）。ステータス行の「prompts on the CPU (the GPU's worker did not start」の断言は、この run のログの行を見てから足した（CI では回していない: 次の毎晩の組が回す）。
+  - **CI を回した。訳: WebGPU（SwiftShader）の道で、手元では回さない**（`tests.yml` の軽い組 + `extra=` で `updated-in-browser.ts chromium "GPU alone"` と壊し方）。手元は `node --check` と軽い組（791 秒で通った。手元の Playwright の Chromium は `playwright-core` の版と合わず、入れると `$HOME` に書くので回していない）。
+  - **取りまとめ役の決め（訳）**: (1) SwiftShader の Chromium は別のブラウザにした（全部の場合に引数を足すと、今ある GPU の 2 つの場合とほかの場合の動きが変わりうる）。(2) 毎晩の組（3 つのブラウザ）にそのまま入る: Firefox と WebKit では GPU の Worker が頼まれず「SAW NOTHING」で通る。(3) 「Downloading …」が 2 回出るかは見ていない（今の動きの写しに要らない）。
+  - **製品の誤りは見つかっていない**。持ち主待ちのまま触っていないもの: 固まった GPU の Worker を CPU で読み直す形（訳の文 = 文面）と、GPU だけの道の最初の読み込みの打ち切り（動き）。AGENTS.md の T.371 の場合の数の行は蒸留で無くなっている（見直しのとおり）。
 
 ### T.502 [整理][その他] T.363（Saluki のエンジン）の後の残り — 状態: 進行中（2026-10-25、Opus medium。前の状態: 未着手、2026-10-13、T.363.2〜.5 とそのレビューから。規模 小〜中）
 - **子タスクの番号**（取りまとめ役の決め: 下の項目は互いに関わらない）: T.502.1 道具の古いコメント 2 つ（`kernels-in-browser.mjs` の頭、`ci.mjs` の `--ref`） — 完了。T.502.2 `forward/engine.ts`（845 行・58 KB、目安を越えた。T.502 を積んだ 2026-10-13 は 733 行・49.4 KB: その後の GPU の回（T.547・T.558・T.565 など）と T.371 で伸びた）から塊の部分を `forward/blocks.ts` に — 完了。T.502.3 `kinds` に塊でない型を書いた形を、エンジンを作るときに断るか `footprint()` が数えるか — 持ち主の文面待ち。T.502.4 Python の小さな断り（変換器の zip の無い所の塊の行、`kind_named` の混ざった並び、`tiled` と回した基底） — 持ち主の文面待ち。T.502.5 試験の穴（Granite・GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で、`blocks-forward-check` の 14 秒、束ねた worker の塊のカーネル） — 完了。T.502.6 T.502.5 の試験の残り（GPT-2・NeoX の形の K 量子化の GGUF を `blocks=True` で、作り物の幅を 256 の倍数に） — 完了（ブランチ `t.502-blocks-tests`）。
