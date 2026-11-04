@@ -158,16 +158,19 @@ LENIENT = {
     # T.607.1 to T.607.4: ArrowPro +1.13%, Vecteus +0.24%, Oumuamua +1.10%, Gleipnir -0.51% on plain text
     "hf-arrowpro-7b-kujira": "+1.13% on plain text (T.607.1)", "hf-vecteus-v1": "+0.24% on plain text (T.607.2)",
     "hf-oumuamua-7b-instruct-v2": "+1.10% on plain text (T.607.3)", "hf-umievo-gleipnir-7b": "-0.51% on plain text (T.607.4)",
+    # T.399: on handwritten answers (tests/chat_nll.py), the real IDs against the entry's with one more BOS in front:
+    # EuroLLM -7.76% and zephyr -11.80% (the BOS better), RakutenAI chat +1.02% and TinyLlama +0.51% (within the SE)
+    "hf-eurollm-1.7b-instruct": "-7.76% on handwritten answers (T.399)",
+    "hf-zephyr-7b-beta": "-11.80% on handwritten answers (T.399)",
+    "hf-rakutenai-7b-chat": "+1.02% on handwritten answers; its card adds the BOS (T.399, T.125)",
+    "hf-tinyllama-1.1b-chat": "+0.51% on handwritten answers (T.399)",
 }
 # T.312: the entries that send one more token in front of the real IDs with nothing measured of it. Let by, so that the
 # check is still of the rest of their IDs, and said on their line; T.399 measures them (and the entries are left as
 # they are until then). Take one out of here when it is measured: to LENIENT, or its entry made exact.
 UNMEASURED = {
-    "hf-eurollm-1.7b-instruct": "<s> in front of the real <|im_start|> (T.369's pin, T.399)",
-    "hf-llm-jp-4-8b-instruct": "<|startoftext|> in front of the real <|start|> (T.369's pin, T.399)",
-    "hf-rakutenai-7b-chat": "<s> in front of the real text; its card adds the BOS (T.125), not measured (T.399)",
-    "hf-tinyllama-1.1b-chat": "<s> in front of the real <|user|>, not measured (T.399)",
-    "hf-zephyr-7b-beta": "<s> in front of the real <|user|>, not measured (T.399)",
+    # T.399 measured it (+3.64% on handwritten answers, 19 of 24 worse): whether the entry is made exact is the owner's
+    "hf-llm-jp-4-8b-instruct": "<|startoftext|> in front of the real <|start|>: +3.64% on answers, not yet decided (T.399)",
 }
 # T.233: what an entry's format is the real template's with, besides enable_thinking (or that too, T.597.1): Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T.236's format of a Qwen3.5), not its default, "xhigh"
