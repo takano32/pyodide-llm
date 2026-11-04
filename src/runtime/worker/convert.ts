@@ -8,7 +8,8 @@ import { pyodide, llama2_numpy, pythonKernels, blockKernels } from "./runtime.ts
 import { switchesNow } from "./request.ts";
 import { adopted } from "./loaded.ts";
 import { since, took } from "./clock.ts";
-import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
+import { pythonBuffer, automaticBits, weightsBuffer, checkpointSink, runsPacked, tableInMemoryFromNow, blocksWidenedNow } from "./weights.ts";
+import { gpuOnlyPossible, weightsRoom, weightsDrained } from "./alone.ts";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
 import { templatePackage, placePython } from "./pyodide.ts";

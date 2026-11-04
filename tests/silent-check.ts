@@ -226,8 +226,10 @@ const SAID = {
     "console.warn(`kernels: the kernels of a shared memory did not compile (${told(error)}): one thread`);",
   ],
   "src/runtime/worker/load.ts": ["console.warn(`threads: the software threads did not start (${told(error)}): one thread`);"],
-  "src/runtime/worker/weights.ts": [
+  "src/runtime/worker/pool.ts": [
     "console.warn(`memory: no shared memory for this model (${told(error)}): a memory that is not shared, and one thread`);",
+  ],
+  "src/runtime/worker/alone.ts": [
     "console.warn(`engine: the engine of a model that failed as it was built could not be let go of (${told(error)}): its threads and GPU's worker may stay`);",
   ],
   // (forward.ts's parts and the page's read no failure.ts: the caught value in its own words)

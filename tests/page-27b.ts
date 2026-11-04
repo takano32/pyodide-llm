@@ -190,9 +190,9 @@ if (isMainThread) {
   // is this file with those 4 bytes changed; the memory is made for it and the engine reads it from there)
   const asksContext = args.includes("--context") && Number(option("--context", 0)) !== header[6];
   if (asksContext) header[6] = Number(option("--context", 0));
-  // what the worker asks footprint() with (worker/weights.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
+  // what the worker asks footprint() with (worker/pool.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
   // (Python and its tokenizer first: a form with kinds of its own has the weights of the file's dtype counted by Python,
-  // worker/weights.ts's forwardOptions(), T.363.5. The memory of the weights is made after Pyodide's, as on the page)
+  // worker/pool.ts's forwardOptions(), T.363.5. The memory of the weights is made after Pyodide's, as on the page)
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: args.includes("--wide") || size > 3 * GiB });
   py.globals.set("HEADER", py.toPy(header));
   py.globals.set("OPTIONS", py.toPy(options));

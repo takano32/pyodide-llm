@@ -388,7 +388,7 @@ const ok = (line) => {
 }
 
 // ---- T.378.3 (T.156's path, which nothing ran outside a browser): the GPU stops under a run of a model that is on the GPU
-// alone. The page is told so in the owner's words, the model is on the CPU from now on (weights.js's own list, which
+// alone. The page is told so in the owner's words, the model is on the CPU from now on (alone.js's own list, which
 // worker.js tells by onCpuFromNow), and the load the page last asked for is asked for again, by its own message. A
 // run that fails with the GPU going on is an error like any other, and loads nothing.
 {

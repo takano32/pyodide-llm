@@ -6,7 +6,7 @@
 import { root } from "./request.ts";
 import { Failure, failureOf, told } from "../failure.ts";
 import { since } from "./clock.ts";
-import { weightsRoom } from "./weights.ts";
+import { weightsRoom } from "./alone.ts";
 import { innerAbort, worthRetrying, inOrder } from "./ranges.ts";
 import type { Thrown } from "../failure.ts";
 import type { Write } from "./weights.ts";

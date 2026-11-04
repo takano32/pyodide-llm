@@ -305,7 +305,7 @@ const CASES = {
     }])),
   // T.491: a model on the GPU alone (?gpuTest=only: tiny-lm, whatever its size) whose GPU's worker does not start. The
   // load goes on to its end, the GPU's side says the worker did not start, and the model is loaded again on the CPU
-  // (worker/weights.ts's gpuOnlyReady()): it is ready well before the 60 s a worker that says nothing is waited for,
+  // (worker/alone.ts's gpuOnlyReady()): it is ready well before the 60 s a worker that says nothing is waited for,
   // and answers; where the worker is gone the status line says the site was updated, where it failed otherwise not
   ...Object.fromEntries([["gone from the start, with the worker that names it", 404, 404], ["answered 500 (the worker is there)", 500, undefined]].map(([what, how, head]) =>
     [`model page, a model on the GPU alone whose GPU's worker is ${what}`, Object.assign(async (context, name) => {

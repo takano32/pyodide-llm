@@ -14,7 +14,7 @@
 
 import { pyodide } from "./runtime.ts";
 import { fileSize, refused, fetchRange, inOrder } from "./ranges.ts";
-import { weightsRoom } from "./weights.ts";
+import { weightsRoom } from "./alone.ts";
 import { failureOf } from "../failure.ts";
 import type { Hf } from "../contracts/messages.ts";
 import type { Answerer, Feed, Progress, Request, Where } from "../contracts/conduct.ts";

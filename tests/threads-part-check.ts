@@ -32,7 +32,7 @@ const jobOf = (rows, count = 1) => {
 };
 
 /** The part and its stand-ins. spawn: false for none; late: the threads come up only when started.release() is called;
- * refused: from the thread of that number on, none starts (its worker's error: weights.ts's spawnThread rejects so) */
+ * refused: from the thread of that number on, none starts (its worker's error: alone.ts's spawnThread rejects so) */
 function made({ spawn = true, sharedMemory = true, stalledMs = 40, late = false, refused = Infinity } = {}) {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: sharedMemory });
   const beside = { memory, started: 0, ended: 0, ran: [], gpuGettingReady: false, onRun: null, waiting: [] };

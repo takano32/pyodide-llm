@@ -1,5 +1,5 @@
 // T.439: what the model's worker tells the page where it goes on, slower, without a file of its build that is gone
-// (src/runtime/worker/outdated.js), by itself and where weights.js hands it a worker's error.
+// (src/runtime/worker/outdated.js), by itself and where alone.js hands it a worker's error.
 //
 //   node tests/worker-outdated-check.ts        (Node only, under a second)
 //
@@ -11,9 +11,9 @@
 //   that is not of a build (a development server, Node), a worker's script that threw; that it is told once a
 //   worker, that failures at the same time share one HEAD, that nothing is asked where nothing needs asking, and that
 //   a "no" is not kept (a deployment may come later in the visit);
-// - weights.js in the worker's vm (tests/worker-harness.ts): a software thread that does not start fails as it did
+// - alone.js in the worker's vm (tests/worker-harness.ts): a software thread that does not start fails as it did
 //   (the engine goes on with fewer), a GPU's worker is handed to forward.js as it was (its onerror is forward.js's to
-//   set), and each hands its error event to outdated.js with weights.js's own address.
+//   set), and each hands its error event to outdated.js with alone.js's own address.
 // It does not see: runtime.js's init() (Pyodide comes from its CDN: the kernels' and forward.js's catches are read as
 // text by tests/updated-check.ts, and run in tests/updated-in-browser.ts), the page (tests/page-parts-check.ts),
 // a browser.
@@ -185,13 +185,13 @@ console.log("worker-outdated-check: a module that failed is told where the modul
 }
 console.log("worker-outdated-check: a worker that did not start is told where it says nothing and the module that made it is answered 404; one HEAD for failures at once; a no is not kept");
 
-// ---- weights.js in the worker's vm: what it does with a worker that does not start is what it did, and beside that
-// the error event goes to outdated.js with weights.js's own address. Whether that address is gone is the stand-in's
+// ---- alone.js in the worker's vm: what it does with a worker that does not start is what it did, and beside that
+// the error event goes to outdated.js with alone.js's own address. Whether that address is gone is the stand-in's
 // to say here (in a vm the modules are files, of no build: updated.js's gone() itself is the part above)
 // (the Worker is tests/fakes/worker.ts's: worker.fail(event) as a browser tells a worker's error)
 const { Worker: WorkerStandIn, made: workersMade } = workers();
 const turn = () => new Promise((resolve) => setImmediate(resolve));
-const weightsUrl = runtimeUrl("worker/weights.js").href ?? String(runtimeUrl("worker/weights.js"));
+const aloneUrl = runtimeUrl("worker/alone.js").href ?? String(runtimeUrl("worker/alone.js"));
 function harness(isGone) {
   const made = workerHarness();
   workersMade.length = 0;
@@ -203,8 +203,8 @@ function harness(isGone) {
   return { ...made, asked };
 }
 for (const [isGone, event, told, askedFor] of [
-  [true, {}, UPDATED, [weightsUrl]],                                   // it did not load, and this build is gone
-  [false, {}, [], [weightsUrl]],                                       // it did not load: a 500, a dropped line, offline
+  [true, {}, UPDATED, [aloneUrl]],                                   // it did not load, and this build is gone
+  [false, {}, [], [aloneUrl]],                                       // it did not load: a 500, a dropped line, offline
   [true, { message: "Uncaught SyntaxError: x" }, [], []],              // its script threw: no missing file
 ]) {
   const what = `a worker's error ${JSON.stringify(event)}, the build ${isGone ? "gone" : "there"}`;
@@ -221,7 +221,7 @@ for (const [isGone, event, told, askedFor] of [
     assert.equal(failure?.message, event.message ?? "a software thread did not start", `${what}: the thread's start fails as it did (the engine goes on with fewer)`);
     await turn();
     assert.deepEqual(JSON.parse(JSON.stringify(messages)), told, `${what}: what the page is told of a software thread`);
-    assert.deepEqual(asked, askedFor, `${what}: weights.js's own address is what is asked for`);
+    assert.deepEqual(asked, askedFor, `${what}: alone.js's own address is what is asked for`);
     // ... and one that starts says nothing at all
     const { run: runAgain, messages: none, asked: nothing } = harness(true);
     const started = runAgain("spawnThread")(data);
@@ -290,5 +290,5 @@ for (const throwing of ["layerWeightsOf", "gpuOnlyWeights"]) {
   assert.equal(workersMade.length, throwing === "layerWeightsOf" ? 0 : 1, "the header's reckoning before the worker is opened, its writer after");
   cases += 1;
 }
-console.log("worker-outdated-check: weights.js fails a thread's start and hands on the GPU's worker as it did, and hands each one's error to outdated.js with its own address");
+console.log("worker-outdated-check: alone.js fails a thread's start and hands on the GPU's worker as it did, and hands each one's error to outdated.js with its own address");
 console.log(`worker-outdated-check: ok (${cases} cases)`);

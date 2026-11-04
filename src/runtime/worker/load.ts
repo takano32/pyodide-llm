@@ -6,7 +6,9 @@ import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeRead
 import { threadsRequest, root, switchesNow } from "./request.ts";
 import { llama, engineNow, adopted, letGo } from "./loaded.ts";
 import { since, took, secondsSoFar, loadStarted } from "./clock.ts";
-import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes, runsPacked, rowsReady } from "./weights.ts";
+import { pythonBuffer, weightsBuffer, loadBegan, runsPacked, rowsReady } from "./weights.ts";
+import { weightsDrained, gpuOnlyReady } from "./alone.ts";
+import { weightsBytes } from "./pool.ts";
 import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
 import { convert, converter } from "./convert.ts";

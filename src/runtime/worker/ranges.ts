@@ -4,7 +4,7 @@
 
 import { hfPartBytes, hfConnections } from "./runtime.ts";
 import { breathe } from "./clock.ts";
-import { weightsRoom } from "./weights.ts";
+import { weightsRoom } from "./alone.ts";
 import { Failure, failureOf } from "../failure.ts";
 
 // T.129 (3): an AbortController of one download or fetch in order, which also stops where signal (the load's) does.

@@ -4,7 +4,7 @@
 import { forwardModule } from "./runtime.ts";
 import { threadsRequest, threadsFound } from "./request.ts";
 import { llama, engineNow } from "./loaded.ts";
-import { memoryShared } from "./weights.ts";
+import { memoryShared } from "./pool.ts";
 import type { Paths, PathThreads, Status, ToWorker } from "../contracts/messages.ts";
 import type { Llama } from "../contracts/python.ts";
 import type { Side } from "../forward.ts";

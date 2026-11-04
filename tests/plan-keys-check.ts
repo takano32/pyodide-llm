@@ -409,8 +409,8 @@ const returned = (fn) => {
     typedAs(`contracts/gpu/protocol.ts's ${type}, to the kinds the other side tells apart`, new Set(declared.keys()), told(receivers));
     for (const [kind, keys] of declared) if (sent.has(kind)) typedAs(`contracts/gpu/protocol.ts's ${type}, the keys of "${kind}"`, keys, sent.get(kind).keys, more[kind]);
   };
-  // (the model's worker opens the GPU's worker of a model on the GPU alone, with forward.js's plan: worker/weights.js)
-  messages("forward.js (and worker/weights.js)", "ToGpu", [...writers, ...treesOf(["worker/weights.js"])], "worker", treesOf(["gpu.js"]));
+  // (the model's worker opens the GPU's worker of a model on the GPU alone, with forward.js's plan: worker/alone.js)
+  messages("forward.js (and worker/alone.js)", "ToGpu", [...writers, ...treesOf(["worker/alone.js"])], "worker", treesOf(["gpu.js"]));
   messages("the GPU's worker", "FromGpu", readers, "owner", treesOf(["forward/gpuside.js"]),
     { ready: Object.fromEntries(["form", "attention", "forms", "remembered"].map((key) => [key, "gpu/forms.js's formsSaid(), spread in"])) });
 }

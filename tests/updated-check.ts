@@ -265,7 +265,7 @@ const LATER = {
     ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],
     ['named(import.meta.url, () => import("../kept.ts"))', "said"],
   ],
-  "src/runtime/worker/weights.ts": [
+  "src/runtime/worker/alone.ts": [
     ['new Worker(new URL("../helper.ts", import.meta.url)', "slower: a software thread that does not start leaves fewer threads"],
     ['new Worker(new URL("../gpu.ts", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
@@ -379,7 +379,7 @@ for (const name of sources) {
 }
 // (T.368.7: the file by either ending: it was looked for as updated.js alone, which no import says any more)
 const knows = (name) => /updated\.(js|ts)|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
-for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.ts", "src/runtime/gpu/device.ts"]) {
+for (const name of ["src/runtime/worker/alone.ts", "src/runtime/gpu.ts", "src/runtime/gpu/device.ts"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
 }
 // and neither does anything on a token's, a block's or a submit's path: the engine, its threads, the GPU's worker, the

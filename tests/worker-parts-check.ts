@@ -15,7 +15,7 @@
 //                the memory and engine forward.js makes: the model built is adopted, the one before it let go of first,
 //                a model whose GPU failed on it alone is loaded again; and timing.js's page path tells the count it found
 //
-// What these parts are still bound to: loaded.js to runtime.js's pyodide (the collector is Python's). weights.js's own
+// What these parts are still bound to: loaded.js to runtime.js's pyodide (the collector is Python's). pool.js's and alone.js's
 // (the memory kept from model to model, the model on the GPU alone, the models back on the CPU) is held where its
 // stand-ins are: tests/worker-sink-check.ts. worker.js's own (the run going on, the stop): tests/worker-memory-check.ts.
 //
@@ -294,7 +294,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
 
   // T.156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
   // alone is tests/worker-sink-check.ts's to make: here the model is said to be on it as its engine is built, and its
-  // GPU to have failed.) load() asks weights.js with the engine it just adopted, and loads again where the answer is no
+  // GPU to have failed.) load() asks alone.js with the engine it just adopted, and loads again where the answer is no
   let ended = 0;
   context.stand.direct = { lost: "the GPU could not be opened (a test)", end: async () => { ended += 1; } };
   context.stand.asBuilt = (made) => { if (made.n === 3) run("gpuOnlyNow = stand.direct"); };
@@ -383,7 +383,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     messages.splice(0, messages.length, ...messages.filter((message) => message.type !== "error"));
   }
 
-  // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks weights.js
+  // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks alone.js
   // with the engine that is the model's (not undefined, not the one before): the GPU that failed loads it again
   {
     let converts = 0, ended2 = 0;

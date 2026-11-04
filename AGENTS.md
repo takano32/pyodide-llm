@@ -90,7 +90,7 @@
 | `python_archive.py` | Pyodide に置く Python を zip 2 つに（`src/runtime/built/engine.zip`・`converter.zip`）。窓口のファイルとパッケージのフォルダの `*.py` を歩く。同じソースからは同じバイト |
 | `convert_hf.py`・`quantize.py`・`Makefile` | ビルドの入口。`make models`（全モデルを取得・変換・量子化して `public/models/` に 8 MiB の部品で）、`make kernels`、`make python`、`make run`。モデルを作り直す依存は `MODEL_PYTHON`（窓口 2 つと `convert/`・`convert/families/`・`engine/` の `*.py` の全部） |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）。窓口 `kernel.ts` と中身の `kernel/`（`matmul`・`quantize`・`attention`・`halves`・`activations`・`stateful`・`sample`・`math`）、`kernel_relaxed.ts`・`six.ts`・`ternary.ts`・`binary.ts`・`ceilings*.ts`・`wasm64.mjs`・`build.py`。**`blocks.ts`・`blocks_relaxed.ts` は別のモジュール（`blockkernel_*.wasm`）の窓口**で、中身は `blocks/`（`types`・`token`・`tile`・`row`）: llama.cpp の塊を詰めたまま掛ける。制約と実測は `kernels/README.md` |
-| `src/runtime/worker.ts` と `worker/` | モデルの Web Worker。持ち主の `runtime.ts`（Pyodide・カーネル・forward・URL の旗・WebGPU）・`request.ts`・`loaded.ts`・`weights.ts`（重みの置き場）と、`pyodide.ts`・`sources.ts`（サイトの部品）・`ranges.ts`（HF の Range）・`conduct.ts`（段取りに答える輪と答え手）・`convert.ts`・`load.ts`・`timing.ts`・`clock.ts`・`outdated.ts` |
+| `src/runtime/worker.ts` と `worker/` | モデルの Web Worker。持ち主の `runtime.ts`（Pyodide・カーネル・forward・URL の旗・WebGPU）・`request.ts`・`loaded.ts`・`pool.ts`（使い回すメモリと見積もりの橋）・`alone.ts`（GPU だけのモデルとエンジンの Worker）・`weights.ts`（重みの置き方と変換の書き口）と、`pyodide.ts`・`sources.ts`（サイトの部品）・`ranges.ts`（HF の Range）・`conduct.ts`（段取りに答える輪と答え手）・`convert.ts`・`load.ts`・`timing.ts`・`clock.ts`・`outdated.ts` |
 | `src/runtime/forward.ts` と `forward/` | 1 トークンの forward（JavaScript が自前の `WebAssembly.Memory` の上でカーネルを呼ぶ）。`engine.ts`（`createForward()`）・`blocks.ts`（塊のカーネルの表と符号つきのタイルの用意）・`staging.ts`（GPU の書き戻しの鍵と値を見てキャッシュへ）・`kinds.ts`（層の種類の表 `LAYER_KINDS`）と `attention.ts`・`linear.ts`・`convolution.ts`・`ffn.ts`・`cache.ts`（KV）・`perlayer.ts`・`control.ts`・`threads.ts`・`gpufit.ts`（GPU が何を持てるか）・`gpuside.ts`・`choice.ts`・`paths.ts`・`sizes.ts`・`architectures.ts`・`memory.ts`（`footprint()`）・`alone.ts`・`reasons.ts` |
 | `src/runtime/jobs.ts`・`helper.ts` | 制御領域の語・カーネルの番地 `ADDRESSES`・仕事の種類の表 `WORK`（`KIND`）・詰め方の表 `PACKED`・`runner()` / ソフトウェアスレッド（Node の試験は `tests/helper-node.ts`） |
 | `src/runtime/gpu.ts` と `gpu/` | モデルのページの GPU の Worker。`device.ts`・`weights.ts`・`forms.ts`・`block.ts`（プロンプトのブロック）・`tokenattention.ts`・`tokens.ts`・`tokenforms.ts`（生成のステップ）・`requests.ts`・`start.ts`、層の種類の表 `kinds.ts`（`GPU_KINDS`）と種類ごとの `attention.ts`・`linear.ts`・`convolution.ts`、詰め方ごとの行の形の表 `packings.ts`（`PACKINGS`） |
@@ -198,7 +198,7 @@
 | `worker/runtime.ts` | 訪問で 1 回決まるもの（Pyodide・エンジンの Python・カーネル・forward・URL の旗・アダプタ） |
 | `worker/request.ts` | ページがいまの読み込みに頼んだもの（何も import しない） |
 | `worker/loaded.ts` | 読み込んだモデルとエンジン（`adopted()`・`letGo()`） |
-| `worker/weights.ts` | 使い回すメモリ・GPU だけのモデル・CPU に戻したモデル・層ごとの埋め込みの表を読むファイル（`rowsNow`） |
+| `worker/pool.ts`・`worker/alone.ts`・`worker/weights.ts` | 使い回すメモリといまのモデルのメモリ（`pooled()`・`weightsInPython()`）/ GPU だけのモデル・CPU に戻したモデル・読み込み中のモデルの鍵（`aloneBegan()`）/ 層ごとの埋め込みの表を読むファイル（`rowsNow`）・表をメモリに持つモデル・塊を広げる読み込み。向きは weights → alone → pool |
 | `forward/threads.ts`・`forward/gpuside.ts` | スレッドと本数の検索 / GPU の Worker・どちらに回すか・測り直し |
 | `forward/control.ts`・`forward/cache.ts` | 制御領域の語と待ち / KV のキャッシュ |
 | `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録（`m.weights`・`m.block`・`m.forms`・`m.tokens`: **持ち主のファイルがリテラルで作り、その鍵が宣言**。別の部品の記録には代入しない。層の種類が作る物は種類のファイルの閉包の中にあり、`m.block.kinds`・`m.tokens.kinds` に置くのは `block.ts`・`tokens.ts`） |
@@ -246,7 +246,7 @@
 - **JavaScript が投げるものは 3 つ**: (a) 素の `new Error("文")` は読む人への文。(b) 種類か「やり直しても同じ」かサーバの答えを誰かが読むなら `new Failure(種類, 文, { again, status, cause })`（`failure.ts` の `KINDS`。**種類で見分け、クラスで見分けない**: 束ごとに写しがある）。**エラーに後からプロパティを書かない**。(c) よそが投げたもの（回線の TypeError、PythonError、`JsException`、Error でない ExitStatus）を読むのは **`failureOf()` の 1 か所**。取り消しは `signal.aborted` で見分ける。**Python を通ると種類は落ちる**ので、状態に聞く（`gpuOnlyLost()`）。
 - **失敗を捕まえて黙る catch** を書いたら 3 つのどれか（`silent-check`）: **言う**（`console.warn` で「何が失敗したか (訳): 何が代わりになったか」の 1 行）、**投げ直す**、**残す**（表 `SILENT` に訳つき）。訪問者に見える文は catch のために作らない。**`console.error` は使わない**（e2e が落ちる）。**正常な訪問でコンソールに 1 行も増やさない**。取り消しで拒否される Promise の `.catch(() => {})` は外さない。
 - **Worker の知らせで「空いた」と読むのは、仕事の終わりの知らせだけ**（`ready`・`bench`・`done`・`error`: 含む一覧）。ページが何かを覚える知らせには読み込みの id（`load`）を付ける。
-- **エンジンができる前の GPU の Worker の失敗**は `worker/weights.ts` が聞いて、エンジンを作った直後に渡す。固まった Worker は 60 秒で読み込みの失敗。
+- **エンジンができる前の GPU の Worker の失敗**は `worker/alone.ts` が聞いて、エンジンを作った直後に渡す。固まった Worker は 60 秒で読み込みの失敗。
 
 ### 試験の作り
 

@@ -39,7 +39,8 @@
 import { pyodide, runtimeAsked } from "./worker/runtime.ts";
 import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.ts";
 import { llama, engineNow } from "./worker/loaded.ts";
-import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.ts";
+import { weightsBytes } from "./worker/pool.ts";
+import { gpuOnlyLost, onCpuFromNow } from "./worker/alone.ts";
 import { failureOf } from "./failure.ts";
 import { since, breathe } from "./worker/clock.ts";
 import { load, threadsNow, heapBytes } from "./worker/load.ts";

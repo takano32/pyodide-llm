@@ -507,7 +507,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
     gpuContext.console = console;
   }
-  // (5) T.378.3: what weights.js holds of a model on the GPU alone is its own; the others say what happened and ask.
+  // (5) T.378.3: what alone.js holds of a model on the GPU alone is its own; the others say what happened and ask.
   // The GPU is lost under the model (forward.js says so to the place's onLost): gpuOnlyLost() says why, to worker.js;
   // the next load begins with no model on the GPU alone (the reason does not outlive the model); a model said to be on
   // the CPU from now on (worker.js, where a run failed under it) goes there by its key, and another model does not
@@ -626,6 +626,6 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     ask("forwardModule = stand.forward");
     await ask("loadBegan({ id: 'the next load' })");
   }
-  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T.156's review); what weights.js holds of it is told and asked (T.378.3); " +
+  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T.156's review); what alone.js holds of it is told and asked (T.378.3); " +
     "a GPU's worker that fails before the engine is built is waited for no longer, and the model goes on to the CPU (T.377)");
 }

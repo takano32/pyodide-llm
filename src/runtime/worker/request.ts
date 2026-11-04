@@ -24,7 +24,7 @@ export let threadsRequest: ThreadsAsked | undefined;
 export let gpuRequest: GpuAsked | undefined;
 // the URL of the site's root, which the page hands with a load (T.367.3): models/ is under it
 export let root: string | undefined;
-// T.242: the switches of each load the page says will follow on the model of its init, or undefined (weights.ts's pooledWeights())
+// T.242: the switches of each load the page says will follow on the model of its init, or undefined (pool.ts's pooledWeights())
 export let loadsAhead: string[][] | undefined;
 // the benchmark's rounds are running (T.45); see worker.ts's bench message
 export let benching = false;
