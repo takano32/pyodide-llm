@@ -670,13 +670,14 @@ NEOX_NAMES = {"gpt_neox.embed_in.weight": "token_embd.weight", "embed_out.weight
 CONV1D = ("attn_qkv", "attn_output", "ffn_up", "ffn_down")  # GPT-2's matrices, which llama.cpp stores as (out, in)
 
 
-def other_gguf(tensors, config, split=True, transposed=True):
+def other_gguf(tensors, config, split=True, transposed=True, matrices=(q8_0_blocks, 8)):
     """A GGUF v3 of a GPT-2's or GPT-NeoX's Hugging Face tensors the way llama.cpp writes one (checked on the real
     files by Range, T.136's third stage): GPT-2's Conv1D matrices turned to (out, in) and a copy of the embedding as
     output.weight, GPT-NeoX's query_key_value (and its bias) as all of q, then k, then v; Q8_0 matrices (GPT-2's
     positions F32), F32 vectors. Returns the file and, under the Hugging Face names, the values it stands for.
     split=False, transposed=False: those two left as Hugging Face has them, as a GGUF of 2023 has GPT-NeoX's
-    query_key_value (stockmark's, T.250's review): the same values in an order the reader does not read."""
+    query_key_value (stockmark's, T.250's review): the same values in an order the reader does not read. matrices:
+    what makes a matrix's blocks and their ggml type, as gguf_file()'s (T.502: llama.cpp's K-quantized blocks)."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     neox = config["model_type"] == "gpt_neox"
     arch = "gptneox" if neox else "gpt2"
@@ -720,8 +721,8 @@ def other_gguf(tensors, config, split=True, transposed=True):
     blobs, offset, same = [], 0, {}
     for gguf, (name, value) in stored.items():
         if value.ndim == 2 and gguf != "position_embd.weight":
-            blob, held = q8_0_blocks(np.ascontiguousarray(value))
-            type_ = 8
+            make, type_ = matrices
+            blob, held = make(np.ascontiguousarray(value))
         else:
             blob, held, type_ = np.ascontiguousarray(value, np.float32).tobytes(), value.astype(np.float32), 0
         if name is not None:  # back to the Hugging Face tensor these values stand for

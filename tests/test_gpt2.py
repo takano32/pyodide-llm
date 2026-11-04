@@ -17,30 +17,31 @@ from llama2_numpy import Llama
 DIM, HEADS, LAYERS, HIDDEN, VOCAB, POSITIONS = 32, 4, 2, 64, 320, 24
 
 
-def gpt2_model(seed=0, shared=True):
-    """Random Hugging Face tensors of a tiny GPT-2, and its config.json."""
+def gpt2_model(seed=0, shared=True, dim=DIM, hidden=HIDDEN):
+    """Random Hugging Face tensors of a tiny GPT-2, and its config.json. dim, hidden: wider ones (T.502: rows of whole
+    blocks of 256, as llama.cpp's K-quantized types need)."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
-    tensors = {"transformer.wte.weight": normal(VOCAB, DIM), "transformer.wpe.weight": normal(POSITIONS, DIM),
-               "transformer.ln_f.weight": (1.0 + normal(DIM) * 0.1).astype(np.float32),
-               "transformer.ln_f.bias": normal(DIM)}
+    tensors = {"transformer.wte.weight": normal(VOCAB, dim), "transformer.wpe.weight": normal(POSITIONS, dim),
+               "transformer.ln_f.weight": (1.0 + normal(dim) * 0.1).astype(np.float32),
+               "transformer.ln_f.bias": normal(dim)}
     for layer in range(LAYERS):
         prefix = f"transformer.h.{layer}."
-        tensors[prefix + "ln_1.weight"] = (1.0 + normal(DIM) * 0.1).astype(np.float32)
-        tensors[prefix + "ln_1.bias"] = normal(DIM)
-        tensors[prefix + "ln_2.weight"] = (1.0 + normal(DIM) * 0.1).astype(np.float32)
-        tensors[prefix + "ln_2.bias"] = normal(DIM)
-        tensors[prefix + "attn.c_attn.weight"] = normal(DIM, 3 * DIM)   # Conv1D: x @ W
-        tensors[prefix + "attn.c_attn.bias"] = normal(3 * DIM)
-        tensors[prefix + "attn.c_proj.weight"] = normal(DIM, DIM)
-        tensors[prefix + "attn.c_proj.bias"] = normal(DIM)
-        tensors[prefix + "mlp.c_fc.weight"] = normal(DIM, HIDDEN)
-        tensors[prefix + "mlp.c_fc.bias"] = normal(HIDDEN)
-        tensors[prefix + "mlp.c_proj.weight"] = normal(HIDDEN, DIM)
-        tensors[prefix + "mlp.c_proj.bias"] = normal(DIM)
+        tensors[prefix + "ln_1.weight"] = (1.0 + normal(dim) * 0.1).astype(np.float32)
+        tensors[prefix + "ln_1.bias"] = normal(dim)
+        tensors[prefix + "ln_2.weight"] = (1.0 + normal(dim) * 0.1).astype(np.float32)
+        tensors[prefix + "ln_2.bias"] = normal(dim)
+        tensors[prefix + "attn.c_attn.weight"] = normal(dim, 3 * dim)   # Conv1D: x @ W
+        tensors[prefix + "attn.c_attn.bias"] = normal(3 * dim)
+        tensors[prefix + "attn.c_proj.weight"] = normal(dim, dim)
+        tensors[prefix + "attn.c_proj.bias"] = normal(dim)
+        tensors[prefix + "mlp.c_fc.weight"] = normal(dim, hidden)
+        tensors[prefix + "mlp.c_fc.bias"] = normal(hidden)
+        tensors[prefix + "mlp.c_proj.weight"] = normal(hidden, dim)
+        tensors[prefix + "mlp.c_proj.bias"] = normal(dim)
     if not shared:
-        tensors["lm_head.weight"] = normal(VOCAB, DIM)
-    config = dict(model_type="gpt2", n_embd=DIM, n_head=HEADS, n_layer=LAYERS, n_inner=HIDDEN,
+        tensors["lm_head.weight"] = normal(VOCAB, dim)
+    config = dict(model_type="gpt2", n_embd=dim, n_head=HEADS, n_layer=LAYERS, n_inner=hidden,
                   n_positions=POSITIONS, vocab_size=VOCAB, activation_function="gelu_new",
                   tie_word_embeddings=shared)
     return tensors, config

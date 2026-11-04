@@ -379,6 +379,55 @@ def test_a_granites_q_which_the_conversion_scales_is_widened_and_the_rest_kept()
     assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
 
 
+
+def converted_both(file, config, kept="int8"):
+    """A GGUF of another family converted keeping its blocks (with the dtype kept) and widened to float32."""
+    vocabulary = unigram(config["vocab_size"])
+    header, base = llama2_convert.gguf_weights(file, json.dumps(config))
+    made = {}
+    for blocks, dtype in ((True, kept), (False, "float32")):
+        conversion = Conversion(header, base, json.dumps(config), vocabulary, "tokenizer.json", dtype=dtype,
+                                max_seq_len=1 << 20, start=base, blocks=blocks)
+        for start in range(base, len(file), 5000):
+            conversion.feed(file[start:start + 5000])
+        conversion.finish()
+        made[blocks] = conversion
+    read = lambda conversion: Llama(bytes(conversion.checkpoint), bytes(conversion.tokenizer), **conversion.options)
+    return made, logits(read(made[True])), logits(read(made[False]))
+
+
+def test_a_gpt2s_matrices_which_llama_cpp_transposes_are_widened_and_its_table_kept():
+    """T.502: a GPT-2's GGUF holds its Conv1D matrices turned to (out, in), which the reader says ("transposed") and
+    the plan transposes back: no move of whole rows (stays()), so every one of them is widened, and only the table of
+    the tokens (shared with the classifier) stays as its blocks. On a GPT-2 of rows of whole blocks of 256 (dim 256,
+    an FFN of 512). Both float32, as the Granite's above: the logits are the widened conversion's, to the bit."""
+    from test_gguf import other_gguf
+    from test_gpt2 import gpt2_model
+    tensors, config = gpt2_model(dim=256, hidden=512)
+    file, _ = other_gguf(tensors, config, matrices=blocks_of("IQ2_XS", scale=0x1400))
+    made, ours, theirs = converted_both(file, config, kept="float32")
+    assert made[True].options["arch"] == "gpt2"
+    assert made[True].options["kinds"] == {"token_embedding_table": "IQ2_XS"} and "tiled" not in made[True].options
+    assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
+
+
+@pytest.mark.parametrize("rotary_pct, parallel", [(0.25, True), (1.0, False)])
+def test_a_neoxs_matrices_are_kept_and_its_q_k_and_v_moved_as_bytes(rotary_pct, parallel):
+    """T.502: a GPT-NeoX's GGUF holds query_key_value as all of q, then k, then v (the reader's "split"), and the plan
+    takes each a head after the other: moves of whole rows, so every matrix stays as its blocks, the classifier of its
+    own too, and the rows of q, k and v are moved as bytes. The logits are the widened conversion's, to the bit."""
+    from test_gguf import other_gguf
+    from test_neox import neox_model
+    tensors, config = neox_model(rotary_pct, parallel, dim=256, hidden=512)
+    file, _ = other_gguf(tensors, config, matrices=blocks_of("IQ2_XS", scale=0x1400))
+    made, ours, theirs = converted_both(file, config)
+    assert made[True].options["arch"] == "neox"
+    assert made[True].options["kinds"] == dict.fromkeys(
+        ("token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2", "wcls"), "IQ2_XS")
+    moved = {name.split(".")[-2] for name, orders in made[True].stream.stay.items() if orders is not None}
+    assert moved == {"query_key_value"}, moved
+    assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
+
 # ---- the parts
 CASES = {
     "a Llama's q, turned in the file and turned by the plan": (dict(turned=4), ("permute", 4), 8),

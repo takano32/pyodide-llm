@@ -19,31 +19,32 @@ DIM, HEADS, LAYERS, HIDDEN, VOCAB, POSITIONS = 32, 4, 2, 64, 320, 24
 HEAD = DIM // HEADS
 
 
-def neox_model(rotary_pct=0.25, parallel=True, seed=0):
-    """Random Hugging Face tensors of a tiny GPT-NeoX, and its config.json."""
+def neox_model(rotary_pct=0.25, parallel=True, seed=0, dim=DIM, hidden=HIDDEN):
+    """Random Hugging Face tensors of a tiny GPT-NeoX, and its config.json. dim, hidden: wider ones (T.502: rows of
+    whole blocks of 256, as llama.cpp's K-quantized types need)."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
-    tensors = {"gpt_neox.embed_in.weight": normal(VOCAB, DIM), "embed_out.weight": normal(VOCAB, DIM),
-               "gpt_neox.final_layer_norm.weight": (1.0 + normal(DIM) * 0.1).astype(np.float32),
-               "gpt_neox.final_layer_norm.bias": normal(DIM)}
+    tensors = {"gpt_neox.embed_in.weight": normal(VOCAB, dim), "embed_out.weight": normal(VOCAB, dim),
+               "gpt_neox.final_layer_norm.weight": (1.0 + normal(dim) * 0.1).astype(np.float32),
+               "gpt_neox.final_layer_norm.bias": normal(dim)}
     for layer in range(LAYERS):
         p = f"gpt_neox.layers.{layer}."
         for norm in ("input_layernorm", "post_attention_layernorm"):
-            tensors[p + norm + ".weight"] = (1.0 + normal(DIM) * 0.1).astype(np.float32)
-            tensors[p + norm + ".bias"] = normal(DIM)
-        tensors[p + "attention.query_key_value.weight"] = normal(3 * DIM, DIM)
-        tensors[p + "attention.query_key_value.bias"] = normal(3 * DIM)
-        tensors[p + "attention.dense.weight"] = normal(DIM, DIM)
-        tensors[p + "attention.dense.bias"] = normal(DIM)
-        tensors[p + "mlp.dense_h_to_4h.weight"] = normal(HIDDEN, DIM)
-        tensors[p + "mlp.dense_h_to_4h.bias"] = normal(HIDDEN)
-        tensors[p + "mlp.dense_4h_to_h.weight"] = normal(DIM, HIDDEN)
-        tensors[p + "mlp.dense_4h_to_h.bias"] = normal(DIM)
+            tensors[p + norm + ".weight"] = (1.0 + normal(dim) * 0.1).astype(np.float32)
+            tensors[p + norm + ".bias"] = normal(dim)
+        tensors[p + "attention.query_key_value.weight"] = normal(3 * dim, dim)
+        tensors[p + "attention.query_key_value.bias"] = normal(3 * dim)
+        tensors[p + "attention.dense.weight"] = normal(dim, dim)
+        tensors[p + "attention.dense.bias"] = normal(dim)
+        tensors[p + "mlp.dense_h_to_4h.weight"] = normal(hidden, dim)
+        tensors[p + "mlp.dense_h_to_4h.bias"] = normal(hidden)
+        tensors[p + "mlp.dense_4h_to_h.weight"] = normal(dim, hidden)
+        tensors[p + "mlp.dense_4h_to_h.bias"] = normal(dim)
         # transformers ignores these two, and so must the converter
         tensors[p + "attention.masked_bias"] = normal(1)
-        tensors[p + "attention.rotary_emb.inv_freq"] = normal(HEAD // 2)
-    config = dict(model_type="gpt_neox", hidden_size=DIM, num_attention_heads=HEADS, num_hidden_layers=LAYERS,
-                  intermediate_size=HIDDEN, max_position_embeddings=POSITIONS, vocab_size=VOCAB,
+        tensors[p + "attention.rotary_emb.inv_freq"] = normal(dim // HEADS // 2)
+    config = dict(model_type="gpt_neox", hidden_size=dim, num_attention_heads=HEADS, num_hidden_layers=LAYERS,
+                  intermediate_size=hidden, max_position_embeddings=POSITIONS, vocab_size=VOCAB,
                   rotary_pct=rotary_pct, rotary_emb_base=10000.0, use_parallel_residual=parallel,
                   hidden_act="gelu", tie_word_embeddings=False)
     return tensors, config
