@@ -22,7 +22,7 @@
 //     and rows of 2560 and of 2592 bytes (the read ahead of a quad of rows up to 10 KB, and none past it).
 //   quantize_x: the scales and bytes of the scalar steps (the largest |x| over 127 or 63, round half to even, plus the bias)
 //   at both biases, a group of zeros, a group at the ends.
-// Rows of 13, groups of 1 to 9, 80 and 81; the scales of every size (a zero and a subnormal among them); rows of one
+// Rows of 13, groups of 1 to 9, 12, 13, 80 and 81; the scales of every size (a zero and a subnormal among them); rows of one
 // end of int8 against activations of one end (the largest sums) beside random ones.
 import fs from "node:fs";
 import v8 from "node:v8";
@@ -124,7 +124,9 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
   if (end > memory.buffer.byteLength) throw new Error("int8-check's memory is too small");
   const ranges = [[0, rows], [0, 1], [0, 3], [rows - 1, rows], [1, 6], [3, 8], [5, 5], [4, 12]];
 
-  for (const ng of [1, 2, 3, 4, 5, 6, 7, 8, 9, 80, most]) {
+  // (12 and 13: three passes of every lane, where groups 4..11 are taken in another order than one at a time would; below 8
+  // groups a lane holds at most one or two and some wrong orders give the same numbers)
+  for (const ng of [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 80, most]) {
     const n = ng * 32;
     // the weights: int8 (-128 too) and int6 (4 v, v in -32..31), rows 0 and 1 at the ends, row 2 alternating
     const w8 = Int8Array.from({ length: rows * n }, () => (next() & 255) - 128);
