@@ -24,7 +24,8 @@ from engine.layout import suited, tensor_rows
 from llama2_numpy import (NOT_TERNARY, TERNARY_GROUP, Llama, checkpoint_dtype, external_tensors, pack_ternary, ternary,
                           unpack_ternary)
 
-DTYPES = ("float32", "float16", "int8", "int6", "ternary")
+# (T.634: and binary, one bit a weight, which every shape whose rows suit ternary suits too)
+DTYPES = ("float32", "float16", "int8", "int6", "ternary", "binary")
 
 
 def ptq1_0_blocks(values):
@@ -300,14 +301,14 @@ def test_a_ternary_file_is_told_apart_by_its_size(header, form):
     assert len(set(sizes.values())) == len(DTYPES), sizes
     for dtype, size in sizes.items():
         assert checkpoint_dtype(header, size, form) == dtype
-    # two bits and a quarter a weight: under a third of six bits
-    assert sizes["ternary"] < sizes["int6"] / 3
+    # two bits and a quarter a weight: under a third of six bits; T.634: binary, one bit and a quarter, under ternary
+    assert sizes["ternary"] < sizes["int6"] / 3 and sizes["binary"] < sizes["ternary"]
 
 
 def test_no_shape_gives_two_dtypes_one_size():
     """checkpoint_dtype() tells the dtypes of one header apart by the file's size alone: over many shapes whose rows are
     whole groups of 128 (so that ternary is possible), with and without the biases and the norms of the heads, small
-    and large vocabularies and contexts, no two of the five have one size."""
+    and large vocabularies and contexts, no two of the six (T.634: binary too) have one size."""
     tried = 0
     for dim, hidden, layers, heads, vocab, context in itertools.product(
             (128, 256, 1024), (128, 384, 4096), (1, 2, 12), (1, 2, 8), (1, 300, 150000, -300, -150000), (1, 512, 1 << 18)):
@@ -319,6 +320,7 @@ def test_no_shape_gives_two_dtypes_one_size():
             sizes = sizes_of(header, form)
             assert len(set(sizes.values())) == len(DTYPES), (header, form, sizes)
             assert checkpoint_dtype(header, sizes["ternary"], form) == "ternary"
+            assert checkpoint_dtype(header, sizes["binary"], form) == "binary"
             tried += 1
     assert tried > 1000
 

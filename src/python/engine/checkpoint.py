@@ -132,14 +132,14 @@ def outlier_columns(classifier, channels):
 
 
 def checkpoint_dtype(header, size, form=None):
-    """"float32", "float16", "int8", "int6" or "ternary": what a checkpoint file of size bytes with this header (7
+    """"float32", "float16", "int8", "int6", "ternary" or "binary": what a checkpoint file of size bytes with this header (7
     ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
     form: what the file cannot say either (FORM, taken out of a model's options): the tensors differ with it.
     T.363: one of the five whatever kinds the form gives the rows: how the others are stored. Where every matrix has
-    a kind of its own, int8, int6 and ternary are one size (float32 vectors, no tables), and the answer is "int8".
+    a kind of its own, int8, int6, ternary and binary are one size (float32 vectors, no tables), and the answer is "int8".
     """
     form = form_of(form)
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
@@ -161,8 +161,9 @@ def checkpoint_dtype(header, size, form=None):
     for name in PACKED:
         # T.98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6).
         # T.230: 32 bytes and a scale per group of 128 (only rows of whole groups can be ternary; T.533: the scale a
-        # float16, PQ2_0's). No other dtype of the same header has this size: with M values in the matrices and V in
-        # the vectors it is 0.265625 M + 4 V, int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and
+        # float16, PQ2_0's). T.634: binary, 16 bytes and a float16 scale per group of 128 (Q1_0's 18). No other dtype of
+        # the same header has this size: with M values in the matrices and V in the vectors it is 0.265625 M + 4 V
+        # (binary 0.140625 M + 4 V), int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and
         # float16 (2 M + 2 V and the RoPE tables) would need 2 V > 1.7 M, vectors as large as the matrices
         # (tests/test_ternary.py tries shapes)
         if suited(rows, name):
