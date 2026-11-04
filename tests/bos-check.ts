@@ -21,6 +21,10 @@
 // begins with text is not checked here (a text that the model's template begins with a token cannot be told from
 // the entry: tests/format_check.py). What this does not see: a bos that names the wrong token of the right kind, and
 // a format whose text the vocabulary reads otherwise.
+// So it is more a net that says a change than a finder of errors: FIRST copies the list's own (bos, repository) pairs,
+// and a bos taken off fails on the key, not on (b); the mark twice is met only where the converter's BOS or the
+// entry's stands in front of a mark (a format that begins with a role is not), and a bos that names another token of
+// the right kind passes. The texts of the rows were held to the real tokenizers on 2026-11-04 (TASKS.md's T.401)
 //
 //   node tests/bos-check.ts
 import assert from "node:assert/strict";
@@ -141,7 +145,12 @@ for (const entry of checked) {
   assert.ok(unpaired([changed], first).said.length > 0, `${entry.id} with its bos ${bos !== undefined ? "taken off" : "made its mark"} is not said`);
   broken += 1;
 }
-// a continuation's bos on a chat model's entry with no template
-const chat = MODELS.find((entry) => entry.options?.bos !== undefined && entry.template);
-assert.ok(unpaired([{ ...chat!, template: undefined }]).said.length > 0, "a bos with no template is not said");
-console.log(`bos-check: ${checked.length} formats that begin with a mark or a role, ${FIRST.length} rows; ${broken} broken entries said`);
+// and every chat entry that writes both, with its template taken off (its bos left alone): the entries of a
+// continuation that write "{prompt}" with their bos (RakutenAI 2.0 mini, TinySwallow 1.5B) are what (a) lets through
+const chats = MODELS.filter((entry) => entry.options?.bos !== undefined && entry.template &&
+  ![JAPANESE, STORY].includes(entry.placeholder ?? ""));
+for (const entry of chats) {
+  assert.ok(unpaired([{ ...entry, template: undefined }]).said.length > 0, `${entry.id} with its template taken off is not said`);
+}
+console.log(`bos-check: ${checked.length} formats that begin with a mark or a role, ${FIRST.length} rows; ` +
+  `${broken} entries said with their bos broken, ${chats.length} with their template taken off`);
