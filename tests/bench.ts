@@ -87,7 +87,7 @@ const pageText = (page) => [new URL(`../src/pages/${page}`, import.meta.url),
 assert.ok(pageText("index.astro").length > fs.readFileSync(new URL("../src/pages/index.astro", import.meta.url), "utf8").length + 40000, "src/page/ has the model page's script");
 assert.ok(pageText("benchmark.astro").length > fs.readFileSync(new URL("../src/pages/benchmark.astro", import.meta.url), "utf8").length + 40000, "src/benchmark/ has /benchmark/'s script");
 for (const page of ["index.astro", "benchmark.astro"]) {
-  assert.ok(/roundsHere\(.*\(navigator as any\)\.deviceMemory\)/.test(pageText(page)),
+  assert.ok(/roundsHere\(.*\(navigator as [^)]*\)\.deviceMemory\)/.test(pageText(page)),
     `${page} asks for the rounds through roundsHere()`);
 }
 assert.ok(/if \(round\.skip !== undefined\) \{\s*rows\.push\(\{ name: round\.name, without: round\.without, skip: round\.skip \}\);\s*continue;/
