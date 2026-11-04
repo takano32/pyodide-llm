@@ -27,7 +27,8 @@ import { GROUP, BLOCK_PACKINGS } from "./shaders/common.ts";
 import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
   SHARED_PER_LOOP, GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING,
   GLOBAL_CEILING } from "./shaders/bench.ts";
-import { REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE, tfjsTile, ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, IQ_WORDS, CODEBOOK_BYTES, readsGrid, dp4a,
+import { BLOCK_READS, BLOCK_WEIGHTS, IQ_WORDS, CODEBOOK_BYTES, readsGrid } from "./shaders/superblocks.ts";
+import { REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE, tfjsTile, ternaryValues, dp4a,
   promptForms, quantizedLikeCpu, TILED_LINE, tiledOff } from "./shaders/prompt.ts";
 import { QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE,
   SWIGLU, GELU, RMSNORM_ADD, GEGLU, SHORT_CONV, CONV_STATE,

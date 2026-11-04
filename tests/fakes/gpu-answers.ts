@@ -19,7 +19,7 @@ import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { placePython, treeOf, runtimeUrl } from "../tree.ts";
 const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.ts"));
-const { CODEBOOK_BYTES } = await import(runtimeUrl("shaders/prompt.ts"));
+const { CODEBOOK_BYTES } = await import(runtimeUrl("shaders/superblocks.ts"));
 
 // what the stand-in device (tests/fakes/webgpu.ts) hands an answer: a binding's buffer (its bytes in data), or a part of one
 type Buffer = { size: number; data: Uint8Array };

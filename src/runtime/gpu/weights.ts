@@ -6,7 +6,7 @@
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, spreadIn, widenIn, widenedHalves, readBack,
   validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
-import { CODEBOOK_BYTES } from "../shaders/prompt.ts";
+import { CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, CODES, packingAt, packingsOf, spreadBits } from "./packings.ts";
 import type { Model, Open, Bound } from "./device.ts";

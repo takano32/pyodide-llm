@@ -4,7 +4,8 @@
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
 // a bundler links them).
-import { GET_BYTE_I32, BLK_READ, BLOCK_READS } from "./prompt.ts";
+import { GET_BYTE_I32 } from "./prompt.ts";
+import { BLK_READ, BLOCK_READS } from "./superblocks.ts";
 import type { BlockPacking } from "./common.ts";
 
 // ---- T.151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
@@ -248,7 +249,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTernary(true);
 
-// ---- T.547.3.6: the embedding's row of a token from a table of llama.cpp's blocks (prompt.ts's BLOCK_READS: a text a
+// ---- T.547.3.6: the embedding's row of a token from a table of llama.cpp's blocks (superblocks.ts's BLOCK_READS: a text a
 // type), as EMBED's: bindings 0 the table's blocks (1, an IQ type's codebooks: its helpers bind them), 2 the state, 3 dst,
 // 4 the row's width and (T.209) the piece's first row and rows. A thread a group of 32 at a time: each half's values
 // times its scale, less its min, as the matrices' BLK takes them (prompt.ts). T.547.3.7, rows: EMBED_ROWS's, the rows of

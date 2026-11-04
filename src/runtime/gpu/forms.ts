@@ -4,7 +4,8 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
-import { ternaryValues, BLOCK_READS, BLOCK_WEIGHTS, CODEBOOK_BYTES, tiledOff } from "../shaders/prompt.ts";
+import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
+import { BLOCK_READS, BLOCK_WEIGHTS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";

@@ -25,7 +25,7 @@ const { ENGINE } = await import(runtimeUrl("shaders/engine.ts"));
 const { flashShape, flashVecShape } = await import(runtimeUrl("shaders/attention.ts"));
 const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 const { BLOCK_PACKINGS } = await import(runtimeUrl("shaders/common.ts"));
-const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/prompt.ts"));
+const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/superblocks.ts"));
 
 // a made-up model on the stand-in (model: one of tests/fakes/gpu-plans.ts's MODELS, a Llama where not said), its forms answered; spoil: a model to put in place of one ("attention", "form",
 // "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,

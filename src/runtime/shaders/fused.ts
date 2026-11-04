@@ -16,7 +16,8 @@
  * specific language governing permissions and limitations under the License.
  */
 import { BLOCK_PACKINGS, GROUP, STEP } from "./common.ts";
-import { TERNARY_PACKED, BLOCK_COMMON, BLOCK_READS, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
+import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
+import { BLOCK_COMMON, BLOCK_READS } from "./superblocks.ts";
 import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
 import type { BlockPacking, Packing } from "./common.ts";
 
@@ -485,7 +486,7 @@ ${ROW_RMS}
 //   word       a vec4<u32> of 16 packed int8, of the word at an index of b
 //   own, reads (T.547.2.4, llama.cpp's blocks: the others' "" and null) what a thread makes of its vector's group once
 //              (the sums of its halves, which a block's mins take), and in the place of the lines above, a row's group
-//              read from its block and added to the row's sum (prompt.ts's BLOCK_COMMON's BLK, the tiles' own reading);
+//              read from its block and added to the row's sum (superblocks.ts's BLOCK_COMMON's BLK, the tiles' own reading);
 //              of up's row too where the output has two matrices (swiglu, geglu). T.547.3.3: a row a type of prompt.ts's
 //              BLOCK_READS, its reading of a block its own (blockRows)
 // (T.547.3.3: a type's row: its blocks' bytes the step from a block to the next)
