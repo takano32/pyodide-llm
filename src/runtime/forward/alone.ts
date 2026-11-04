@@ -270,14 +270,14 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const binds = Math.min(maxStorageBufferBindingSize, maxBufferSize);
   // (a joined matrix's parts start where the device binds: the values a row's bytes on, the scales four bytes a group.
   // T.634.3: the bytes on the GPU, the packing it is held as there's: binary's are ternary's codes, twice its own)
-  const onGpu = PACKED[held.as];
+  const heldOnGpu = PACKED[held.as];
   const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim];
-  if (!own.length && starts.some((weights) => onGpu.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return REASONS.aloneStarts;
+  if (!own.length && starts.some((weights) => heldOnGpu.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return REASONS.aloneStarts;
   // (T.271.4: and a Qwen3.5's linear-attention layers' matrices, each one piece: a token's layer reads them whole)
   // (T.547.3.7's review: of rows of kinds of their own, by the widest of them: Saluki's are no wider than Q4_K's, 0.56 of a
   // byte a weight, and int8's count would keep it off a device that binds 128 MiB)
   const widest = own.length ? Math.max(...own.map((kind) => packingOf(kind)!.rowBytes(BLOCK) / BLOCK)) : 0;
-  const rowBytes = (weights: number) => (own.length ? Math.ceil(weights * widest) : onGpu.rowBytes(weights));
+  const rowBytes = (weights: number) => (own.length ? Math.ceil(weights * widest) : heldOnGpu.rowBytes(weights));
   if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...(linear ? [linear.mixed * dim, linear.read * dim] : [])]
     .some((weights) => rowBytes(weights) > binds)) return REASONS.alonePast;
   // (T.573: nor a linear-attention layer whose state alone is past a buffer: the GPU binds a place's state whole)
