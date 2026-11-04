@@ -112,7 +112,7 @@
 - T.505 [追加][変換] GGUF を URL とフォルダからそのまま開く — 進行中
 - T.506 [不具合][遠隔試験] WebKit 27.2 で 4 GB を越えるモデルが、断られずに黙って止まる — 調べは完了
 - T.508 [整理][変換] T.505.3 の残り — 持ち主の文面待ち
-- T.509 [整理][解析分割] T.257 の残り — 未着手
+- T.509 [整理][解析分割] T.257 の残り — 進行中
 - T.510 [整理][Gemma4] T.261.1・T.261.2 の残り — 進行中
 - T.511 [調査][モデル] スマホのユーザ向けに一覧を見直す（小さい ELYZA を含む） — 進行中
 - T.513 [性能][モデル] 量子化を組み合わせて、スマホ向けのモデルをもっと軽くする — 調べまで済み
@@ -1077,9 +1077,17 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 - **小さな直し**: 一覧の API を worker の init と並べて聞く（いまは直列: `?hf=` の訪問がその往復ぶん遅れる、未計測）。シートの Open の後、一覧を待つ最大 10 秒のあいだ画面に何も出ない。トップが 1,000 ファイルを越えるリポジトリは一覧が切れる。`&file=` に長さの上限が無い。`threadsKey`・`gpuKey` がファイルで分かれない。
 - **確かめていないもの**: 空でない恒等の `precompiled_charsmap` を持つ sentencepiece の GGUF を断りすぎていないか（実物の Mistral の GGUF の頭で）。`pre` の無い実物の GGUF の断り。GB 級の GGUF を `?hf=` で。オフラインの 2 回目の訪問。本物の Safari。
 
-### T.509 [整理][解析分割] T.257 の残り — 状態: 未着手（2026-10-14、レビューと実装の気づき。どれも今ある実物では起きていない）
+### T.509 [整理][解析分割] T.257 の残り — 状態: 進行中（レビュー待ち。はじめの 2 項目を実装した: 2026-11-04、Opus medium、ブランチ `t.509-rejections`。3 項目目からは残す）。前の状態: 未着手（2026-10-14、レビューと実装の気づき。どれも今ある実物では起きていない）
 - **行の無い追加のトークンを落とす（`with_a_row()`）とき、その語が書式・BOS・止まりに使われていても断らない**: 落とした special を chat_template が書くと、文字として刻まれる。直し: 落とす id が `bos`・止まり・書式に出るなら断る。byte-level の道にも当たる（前は「The tokenizer has N pieces…」で断っていたモデルが開く）。
 - **語片の点数 = 最初の merge の順位、の読みが本物と違いうる語彙を、変換器は黙って通す**（同じ語片を作る対の順位が離れているとき。作り物で 30,027 文中 63 文。Gemma・CAT-Translate の実物は 0）。直し: `merged_by_text()` の中で、その形を見つけたら断る。
+- **はじめの 2 項目の結果（2026-11-04）**:
+  - **(1) 行の無い追加のトークン**: `Conversion.__init__` が `with_a_row()` の落とした語を `{id: 文字}` で `start()` に渡し、`start()` が書式（`beginning()`）と止まりを決めた後で見る。落とした語が (a) config.json の `bos_token_id` か tokenizer_config.json の `bos_token`、(b) `eos_token_id`（数か並び）か `eos_token`、(c) 1 ターンを描いた書式か答えの後の文（`answer_end()`）に出るなら、この順で断る。sentencepiece のモデルの道は落とさないので空。GGUF の道は渡さない。**断りの文（新しい、訪問者に見える。持ち主に見せる）**: 「This tokenizer.json has {text} past the model's vocabulary of {vocab_size}, and every text begins with it.」「… and the answers stop at it.」「… and the chat format writes it.」（例: 「This tokenizer.json has <seen> past the model's vocabulary of 320, and the answers stop at it.」）。今ある断りの順は変えていない（「The tokenizer has N pieces…」は `tokenizer_bin()` で前のまま先）。
+  - **(2) 同じ点数の語片の merge が離れる形**: `merged_by_text()` の最後に `read_otherwise(merges)`。ほかの語片の最初の merge より後に来る merge m を集め、m と 1 つの語片を分け合う隣の merge n（n の右が m の左か、n の左が m の右）で、merges は n を先に、エンジンは m を先に選ぶ組の 3 語片の文を、両方の読み（`joined()`: 順位の小さい対から、同じなら左から）で合わせ、違う文が 1 つでもあれば今ある文「This tokenizer.json merges its pieces in a way the engine does not know.」で断る（文は使い回し: 新しい文なし）。**取りまとめ役の決め（訳）**: 「離れている」だけで断ると Gemma 3・Gemma 4 の 87 語片（同じ点数の改行・空白・タブの並び。局所の食い違いは 1,218 組）まで断る。だから食い違う組を実際の文で読み合わせ、違ったときだけ断る形にした。3 語片より長い文でしか違わない形は探さない（作り物の 4・16・64 個ずつは 3 語片の文で全部見つかる）。
+  - **見つけたこと**: 前の作り物 `tied=4`（点数を 4 個ずつ同じ、T.257 で「4000 文で 0」とした形）も本物と違う文を持っていた（「 they the abab」: エンジンは「▁they / ▁the▁abab」、本物は「▁they▁the / ▁abab」。乱数の文が踏まなかっただけ）。だから `tied=4` の形は今は断る側の試験にし、通る側の「同じ点数で merge の離れる形」は Gemma の形（同じ点数の改行の並び 16 語片、`RUNS`）にした。**google/gemma-4-E2B-it の今の main の tokenizer.json は、前からの検査（割り方が merge に無い 267 組）で断られる**（一覧は前のリビジョン 3e22461f を名指すので当たらない。`?hf=` で main を開くと断られる: この変更の前から）。
+  - **速さ**: Gemma 4 の tokenizer.json で `read_otherwise()` は約 0.9 秒（a1-free のネイティブ、`tokenizer_json_pieces()` 全体は 3.3 秒）。Pyodide の中は未計測。CAT-Translate は 0.07 秒（食い違う merge が無く、先で抜ける）。
+  - **試験**: `tests/test_spelled_bpe.py` に、断る作り物（(1) 7 通り: 書き出した BPE で BOS・止まり・書式の 5 つ、byte-level で止まり・書式の 2 つ、文を丸ごと比べる。(2) 4・16・64 個ずつ × 2 つの形で断り、検査を外すと名指された文を本物と違う ID に読むこと）と、断らない形（Gemma の形の `RUNS` を本物の tokenizers と 4000 文余りで同じ ID、行のある同じファイルは変換できる）。**壊し方 4 つ**（戻して確かめた、`PYTHONDONTWRITEBYTECODE=1`）: (1) の断りを外す → 新しい試験が落ちた、(2) で食い違う merge を集めない → 新しい試験が落ちた、(2) の先の比べを逆にする → 落ちた、(2) で読み合わせずに食い違う組があれば断る → Gemma の形の 3 つの試験と新しい試験が落ちた。pytest 3357 passed・8 skipped、`make python`、smoke ok。実物の `tests/tokenizer_json_check.py`: Gemma 4（3e22461f）を `--planes 17` で 2,333,403 文 0 wrong、Gemma 3（unsloth 23cf460f）と CAT-Translate 7B は BMP で 234,579 文・234,185 文 0 wrong。
+  - **CI を省いた。訳: 触ったのは変換器の Python だけで、pytest・smoke・実物の tokenizer.json の比べ・`conversions_compare.py` が手元で全部踏む（WebGPU・GB 級・ブラウザごとの違いに触らない）。**
+  - **`CONVERTER` は上げない**: 変換器の出すもの（チェックポイントと options）は、断るようになった形のほかは変わらない（`conversions_compare.py`: 一覧の 199 項目のすべてが options・tokenizer.bin・送る ID とも origin/main と同じ、断られる項目なし）。軽い組（`MemoryMax=5G`）は 675 秒で通った。
 - 今あるエンジンの `encode_bpe` は点数 −1e9 の語片（合併させないはずのもの）も最後に合併しうる（`pair()` の線が −1e10: llama2.c の形。書式のトークンは specials で先に切るので普段は当たらない）。`sentencepiece_options()` は `add_dummy_prefix` を読まない（Gemma 3 の tokenizer.model を読むと頭に空白が付く: いまは tokenizer.json を読むので当たらない）。
 - special が数千あるとき（Gemma 3 は 6,408）: 切り分けが `<` 1 つに約 88 µs（HTML の多い 4,000 字で 32 ms）、変換のあいだのヒープが 36 → 291 MiB、options の JSON が約 100 KB。T.261 で、スマホで気になる大きさかを見る。
 - Gemma の GGUF の語彙（`tokenizer.ggml.model: llama`、user-defined の語片が空白でつづってある）は今も断る（一覧は語彙を原本から取るので要らない）。Metaspace の前分割の tokenizer.json は今までどおり断る。CAT-Translate 7B を一覧に足すのは別の子タスク（Q8_0 の GGUF を `gguf_check.py` に通す所から）。

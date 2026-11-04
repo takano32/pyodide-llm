@@ -30,8 +30,12 @@ WORDS = ("the quick brown fox jumps over lazy dog and then there other think thi
 # what a random text is drawn from: letters and pieces that the merges join in more ways than one, spaces, a line
 # break (a byte piece: the model's vocabulary has no such character) and a character it lacks
 DRAWN = ["a", "b", "a", "b", "th", "e", "the", " ", "n", "o", "r", "s", "日", "本", "語", "学", "の", "。", "\n", "ab", "ba", "é", "  "]
-# the shapes: (a dummy prefix, a Gemma's pre_tokenizer, how many neighbouring scores are made one)
-SHAPES = [(True, False, 1), (False, True, 1), (False, False, 1), (False, True, 4)]
+# a Gemma's pieces of one score (its user-defined runs of line breaks, spaces and tabs): their merges are in the order of
+# their left parts' length, the ways to make one such piece no longer next to each other, and still read as the
+# merges read them (convert.tokenizer's read_otherwise())
+RUNS = tuple("\n" * length for length in range(1, 17))
+# the shapes: (a dummy prefix, a Gemma's pre_tokenizer, pieces of the best score besides the model's own)
+SHAPES = [(True, False, ()), (False, True, ()), (False, False, ()), (False, True, RUNS)]
 MODELS = {}
 
 
@@ -50,12 +54,13 @@ def model(dummy):
     return MODELS[dummy]
 
 
-def written_out(dummy, gemma=False, tied=1, added=()):
+def written_out(dummy, gemma=False, tied=1, added=(), runs=()):
     """(the tokenizer.json of the model as transformers writes one out, sentencepiece's own reading of the model).
     tied: so many neighbouring scores are one score, as a Gemma's are here and there: the merges of pieces of one score
     are in the order of their left part's length, those of one piece no longer next to each other. added: added tokens
     that are not special, as a Gemma 3's are: pieces of the model (its user-defined ones, of the best score), here
-    after its own, and added tokens of the file besides."""
+    after its own, and added tokens of the file besides. runs: pieces of the best score too, as a Gemma 4's runs are,
+    that are no added tokens."""
     read = spm.SentencePieceProcessor(model_proto=model(dummy))
     vocab = {read.id_to_piece(id): id for id in range(read.get_piece_size())}
     scores = {piece: read.get_score(id) // tied for piece, id in vocab.items()}
@@ -64,6 +69,9 @@ def written_out(dummy, gemma=False, tied=1, added=()):
     tokens = [token(id, read.id_to_piece(id), True) for id in range(3)]
     for content in added:
         tokens.append(token(vocab.setdefault(content, len(vocab)), content, False))
+        scores[content] = 0.0
+    for content in runs:
+        vocab.setdefault(content, len(vocab))
         scores[content] = 0.0
     merges = []
     for piece, score in scores.items():
@@ -96,25 +104,26 @@ def random_texts(count, seed=1):
     return ["".join(rng.choice(DRAWN) for _ in range(rng.randint(1, 40))) for _ in range(count)]
 
 
-@pytest.mark.parametrize("dummy, gemma, tied", SHAPES)
-def test_matches_the_real_tokenizer(dummy, gemma, tied):
-    spec, _ = written_out(dummy, gemma, tied)
+@pytest.mark.parametrize("dummy, gemma, runs", SHAPES)
+def test_matches_the_real_tokenizer(dummy, gemma, runs):
+    spec, _ = written_out(dummy, gemma, runs=runs)
     (engine, options), real = engine_of(spec), real_of(spec)
     assert options == {"tokenizer_kind": "bpe", "prefixed": "every" if dummy else "never"}
-    texts = [*TEXTS, *WORDS, " ".join(WORDS), "", "▁", "a▁▁b", "é", "\x00", "🙂 and 🙂", "a" * 50, "ab" * 40, "aba" * 30, *random_texts(4000)]
+    texts = [*TEXTS, *WORDS, " ".join(WORDS), "", "▁", "a▁▁b", "é", "\x00", "🙂 and 🙂", "a" * 50, "ab" * 40, "aba" * 30,
+             *("\n" * length for length in range(1, 40)), "a\n\n\nb\n the\n\n", *random_texts(4000)]
     wrong = [text for text in texts if engine.encode(text) != real.encode(text, add_special_tokens=False).ids]
     assert not wrong, f"{len(wrong)} of {len(texts)} texts differ, as {wrong[0]!r}"
     # and the merges did something: a word of the corpus is a piece or two, not its letters
     assert len(engine.encode("the quick brown fox")) < 12
 
 
-@pytest.mark.parametrize("dummy, gemma, tied", SHAPES[:3])
-def test_matches_the_definition_and_sentencepiece_itself(dummy, gemma, tied):
+@pytest.mark.parametrize("dummy, gemma, runs", SHAPES[:3])
+def test_matches_the_definition_and_sentencepiece_itself(dummy, gemma, runs):
     """Three more readings of the same text: the definition, written out here; sentencepiece's of the model the file was
     written from (the pieces and the scores themselves: what the file's merges stand for); and, since the file gives
     the engine other scores than the model's own file does, the engine's of the model's own file (the model's dummy
     prefix by hand, which that path does not read)."""
-    spec, sentencepiece = written_out(dummy, gemma, tied)
+    spec, sentencepiece = written_out(dummy, gemma)
     engine, _ = engine_of(spec)
     texts = [text for text in [*TEXTS, *WORDS, *random_texts(1500, seed=2)] if text]
     assert [engine.encode(text) for text in texts] == [by_the_definition(spec, text) for text in texts]
@@ -136,12 +145,12 @@ def test_the_cases_of_the_smoke_test_are_the_real_tokenizers(dummy):
 
 
 def test_the_scores_are_minus_the_rank_of_the_first_merge_that_makes_a_piece():
-    spec, _ = written_out(False, True, 4)
+    spec, _ = written_out(False, True, runs=RUNS)
     merges, vocab = spec["model"]["merges"], spec["model"]["vocab"]
     made = [left + right for left, right in merges]
     assert len(set(made)) < len(merges), "a piece is made in more ways than one"
     assert any(made.index(text) + made.count(text) < len(made) - made[::-1].index(text) for text in set(made)), \
-        "and the ways to make one piece are not all next to each other (the tied scores)"
+        "and the ways to make one piece are not all next to each other (the runs of one score)"
     pieces = list(tokenizer_json_pieces(spec))
     for text, score, matchable in pieces:
         if text in made:
@@ -246,6 +255,27 @@ def test_refuses_what_the_engine_would_not_follow():
                   {**spec, "pre_tokenizer": {"type": "Whitespace"}}):
         with pytest.raises(ValueError, match="splits text in a way the engine does not know"):
             tokenizer_json_options(other)
+
+
+def test_refuses_scores_the_merges_would_not_follow(monkeypatch):
+    """T.509: where neighbouring scores are made one (four, sixteen, 64 of them), the merges of one piece are no longer
+    next to each other, and the engine, which joins the pair whose piece's first merge comes first, reads some texts
+    otherwise than the merges do: refused, with the words of the merges the engine does not follow. The Gemma's runs
+    of one score are read (test_matches_the_real_tokenizer), and so is the file the converter was refused, read
+    without the check: the text the check names is one the real tokenizer reads otherwise."""
+    import convert.tokenizer as converting
+    for tied in (4, 16, 64):
+        for dummy, gemma in ((False, True), (True, False)):
+            spec, _ = written_out(dummy, gemma, tied)
+            with pytest.raises(ValueError, match="merges its pieces in a way the engine does not know"):
+                list(tokenizer_json_pieces(spec))
+        spec, _ = written_out(False, True, tied)
+        text = converting.read_otherwise(spec["model"]["merges"]).replace("▁", " ")
+        with monkeypatch.context() as patched:
+            patched.setattr(converting, "read_otherwise", lambda merges: None)
+            engine, _ = engine_of(spec)
+        assert engine.encode(text) != real_of(spec).encode(text, add_special_tokens=False).ids, (tied, text)
+    assert converting.read_otherwise(written_out(False, True, runs=RUNS)[0]["model"]["merges"]) is None
 
 
 def test_a_byte_level_bpe_is_read_as_it_was():
@@ -357,6 +387,35 @@ def test_an_added_token_past_the_models_last_row_is_left_out():
     other["model"]["vocab"]["one more"] = 320
     with pytest.raises(ValueError, match="but the model has a vocabulary of"):
         vocabulary_conversion(json.dumps(other).encode(), "tokenizer.json", 320)
+
+
+def test_an_added_token_past_the_models_last_row_that_the_model_uses_is_refused():
+    """T.509: a token left out for having no row is refused where the model uses it: a BOS or a stop token config.json
+    or tokenizer_config.json names, or one its chat template writes (spelled out letter by letter, the token being no
+    special of the engine's). In a sentencepiece BPE written out and in a byte-level BPE alike; one nothing uses is
+    left out as before (test_an_added_token_past_the_models_last_row_is_left_out)."""
+    from made_up_tokenizers import byte_level
+    spec, _ = written_out(False, True)
+    size = len(spec["model"]["vocab"])
+    token = lambda id, content, special: {**spec["added_tokens"][0], "id": id, "content": content, "special": special}
+    spec["added_tokens"] += [token(size, "<image_soft_token>", True), token(size + 1, "<seen>", False)]
+    other, ids = byte_level(("<|im_end|>",), ("<seen>",))
+    writes = lambda mark: json.dumps({"chat_template": "{% for message in messages %}{{ message['content'] }}" + mark + "{% endfor %}"})
+    cases = [(spec, size, "<image_soft_token>", "every text begins with it", None, {"bos_token_id": size}),
+             (spec, size, "<seen>", "every text begins with it", json.dumps({"bos_token": "<seen>"}), {}),
+             (spec, size, "<seen>", "the answers stop at it", None, {"eos_token_id": [2, size + 1]}),
+             (spec, size, "<image_soft_token>", "the answers stop at it", json.dumps({"eos_token": "<image_soft_token>"}), {}),
+             (spec, size, "<seen>", "the chat format writes it", writes("<seen>"), {}),
+             (other, 319, "<seen>", "the answers stop at it", json.dumps({"eos_token": "<seen>"}), {}),
+             (other, 318, "<|im_end|>", "the chat format writes it", writes("<|im_end|>"), {})]
+    for tokenizer, rows, text, use, described, config in cases:
+        said = f"This tokenizer.json has {text} past the model's vocabulary of {rows}, and {use}."
+        with pytest.raises(ValueError) as refused:
+            vocabulary_conversion(json.dumps(tokenizer).encode(), "tokenizer.json", rows, described, **config)
+        assert str(refused.value) == said
+    # and where the token has its row, the same files convert
+    assert vocabulary_conversion(json.dumps(other).encode(), "tokenizer.json", 320, writes("<|im_end|>")).options["specials"] == ["<|im_end|>", "<seen>"]
+    assert ids["<seen>"] == 319
 
 
 def test_a_gemmas_turn_begins_with_its_bos_and_ends_at_its_end_of_turn():

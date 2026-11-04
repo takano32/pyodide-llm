@@ -163,8 +163,62 @@ def merged_by_text(pieces, merges):
     named = {(left, right) for left, right in merges}
     if any(" " in piece for piece in pieces) or not all(left in pieces and right in pieces and left + right in pieces for left, right in named) \
             or any(piece[:cut] in pieces and piece[cut:] in pieces and (piece[:cut], piece[cut:]) not in named
-                   for piece in pieces for cut in range(1, len(piece))):
+                   for piece in pieces for cut in range(1, len(piece))) \
+            or read_otherwise(merges):
         raise ValueError("This tokenizer.json merges its pieces in a way the engine does not know.")
+
+
+def read_otherwise(merges):
+    """T.509: a text the engine's BPE reads otherwise than the merges do, or None. The engine joins the pair whose piece
+    has the best score, minus the rank of the first merge that makes the piece (tokenizer_json_bpe_pieces()); the
+    merges join the pair of the lowest rank. The two choose one pair wherever the merges of a piece are next to each
+    other, as a sentencepiece model's are where no two pieces have one score. Where they are not (pieces of one score:
+    the extractor puts their merges in the order of their left parts' length), a merge m that comes after another
+    piece's first merge can stand next to a merge n of that piece in a text (n's right part is m's left one, or n's
+    left part m's right one) that the merges join first and the engine after m: held to the three pieces' text, read
+    both ways. A Gemma's runs of line breaks, spaces and tabs (87 pieces of one score) are read alike, and a
+    made-up vocabulary of four neighbouring scores made one is not (tests/test_spelled_bpe.py). Only those three
+    pieces: a longer text that would be read otherwise, where every text of three is read alike, is not looked for."""
+    first, starts = {}, [False] * len(merges)
+    for rank, (left, right) in enumerate(merges):
+        if left + right not in first:
+            first[left + right], starts[rank] = rank, True
+    before, count = [], 0  # before[rank]: how many pieces' first merges come before it
+    for start in starts:
+        before.append(count)
+        count += start
+    # the merges m (u, v) that come after another piece's first merge, by u and by v
+    by_left, by_right = {}, {}
+    for rank, (left, right) in enumerate(merges):
+        if before[rank] > before[first[left + right]] + 1:
+            by_left.setdefault(left, []).append(rank)
+            by_right.setdefault(right, []).append(rank)
+    if not by_left:
+        return None
+    texts = set()
+    for rank, (left, right) in enumerate(merges):  # n
+        for late in by_left.get(right, ()):  # n is (x, u): the text x u v
+            if rank < late and first[left + right] > first[merges[late][0] + merges[late][1]]:
+                texts.add(left + right + merges[late][1])
+        for late in by_right.get(left, ()):  # n is (v, w): the text u v w
+            if rank < late and first[left + right] > first[merges[late][0] + merges[late][1]]:
+                texts.add(merges[late][0] + left + right)
+    ranks = {(left, right): rank for rank, (left, right) in reversed(list(enumerate(merges)))}
+    engines = lambda left, right: first[left + right] if (left, right) in ranks else None
+    merges_own = lambda left, right: ranks.get((left, right))
+    return next((text for text in sorted(texts) if joined(text, engines) != joined(text, merges_own)), None)
+
+
+def joined(text, rank):
+    """text's characters joined by BPE: the pair of the lowest rank(left, right) first (None: no merge), the first of
+    equal ones"""
+    pieces = list(text)
+    while True:
+        best = min(((rank(left, right), at) for at, (left, right) in enumerate(zip(pieces, pieces[1:]))
+                    if rank(left, right) is not None), default=None)
+        if best is None:
+            return pieces
+        pieces[best[1]:best[1] + 2] = [pieces[best[1]] + pieces[best[1] + 1]]
 
 
 def prefixed_texts(tokenizer):

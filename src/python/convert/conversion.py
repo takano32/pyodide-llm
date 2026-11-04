@@ -66,7 +66,10 @@ class Conversion:
             if not last and written_out(parsed) and prefixed_texts(parsed):
                 raise Later("This tokenizer.json writes out a sentencepiece model, whose own file is read first.")
             options = tokenizer_json_options(parsed)
-            pieces = with_a_row(list(tokenizer_json_pieces(parsed)), parsed, vocab_size)
+            every = list(tokenizer_json_pieces(parsed))
+            pieces = with_a_row(every, parsed, vocab_size)
+            # (T.509: the added tokens past the model's last row, which start() holds to what the model uses)
+            dropped = {id: text for id, (text, _, _) in enumerate(every[len(pieces):], len(pieces))}
             self.tokenizer = tokenizer_bin(pieces, vocab_size, spaces=options["tokenizer_kind"] != "bytebpe",
                                            charsmap=tokenizer_json_charsmap(parsed))
             added = [token for token in parsed.get("added_tokens", []) if token.get("id", 0) < vocab_size]
@@ -81,14 +84,14 @@ class Conversion:
             # prefix has none after a special token either (T.400: its "never" over a legacy tokenizer's "wanting")
             own = sentencepiece_options(tokenizer)
             options = {**own, **described_options(described(tokenizer_config)), **({"prefixed": "never"} if own.get("prefixed") else {})}
-            specials, added = sentencepiece_specials(tokenizer), []
+            specials, added, dropped = sentencepiece_specials(tokenizer), [], {}
         # T.143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
         # another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
         # in tokenizer_config.json (T.138's review: perplexity 2.5 to 2.7 times higher with the former)
         named = config_token(described(tokenizer_config), "bos_token")
         bos = next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials,
-                   chat_template, added, bos, readers, blocks)
+                   chat_template, added, bos, readers, blocks, dropped=dropped)
 
     @classmethod
     def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None, blocks=False):
@@ -123,13 +126,15 @@ class Conversion:
         return self
 
     def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None,
-              specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False, headless=None):
+              specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False, headless=None,
+              dropped=None):
         """sink and quantize_rows: see Writer, readers: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
         tokenizer's special tokens, the ones a chat template writes between the turns. chat_template: the text of
         chat_template.jinja, where there is one (T.127). added: the added tokens that are not special, one token
         wherever they are written (T.143). bos: the id of the BOS the tokenizer names, where it names one (T.143).
         headless (T.505.2): what to refuse a model with whose template begins with no token of its own (a GGUF that
-        names no BOS: nothing else says what its texts begin with)."""
+        names no BOS: nothing else says what its texts begin with). dropped (T.509): {id: text} of the added tokens a
+        tokenizer.json has past the model's last row, which convert.tokenizer's with_a_row() leaves out."""
         own = self.config.get("bos_token_id", 1)
         # (the BOS the tokenizer names and config.json's, where each says one: the 1 of a config.json that has no such
         # key is a guess, T.264)
@@ -170,6 +175,19 @@ class Conversion:
         closing = ids[max(marks, key=len).encode("utf-8")] if marks else None
         if closing is not None and closing != head and closing not in stop:
             stop.append(closing)
+        # T.509: an added token past the model's last row is left out (with_a_row()), which is right only where nothing
+        # of the model's uses it: a BOS or a stop token of no row, or one the format writes (spelled out letter by letter
+        # then, the token being no special of the engine's), is a model that would convert and then write nonsense
+        tokens = {"bos_token": config_token(described(tokenizer_config), "bos_token"),
+                  "eos_token": config_token(described(tokenizer_config), "eos_token")}
+        for id, text in (dropped or {}).items():
+            uses = [("every text begins with it", ("bos_token_id" in self.config and id == own) or (bool(text) and text == tokens["bos_token"])),
+                    ("the answers stop at it", id in (eos if isinstance(eos, list) else [eos]) or (bool(text) and text == tokens["eos_token"])),
+                    ("the chat format writes it", bool(text) and (text in (template or "") or text in (end or "")))]
+            use = next((use for use, said in uses if said), None)
+            if use:
+                raise ValueError(f"This tokenizer.json has {text} past the model's vocabulary of "
+                                 f"{self.config['vocab_size']}, and {use}.")
         bos = bos if head is None else head
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = (Kept if blocks else Stream)(header, int(base), self.config, dtype, int(max_seq_len),
