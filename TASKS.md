@@ -51,7 +51,7 @@
 - T.283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 未着手
 - T.284 [追加][Bonsai] 27B の画像の入力（mmproj） — 候補
 - T.285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 未着手
-- T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 候補
+- T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 未着手
 - T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 未着手
 - T.289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 未着手
 - T.291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 未着手
@@ -442,6 +442,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - 取りまとめ役の決め（訳）: (a) 素の文はページのエンジン（int8）で測った（T.600・T.604 と同じ。送る ID がページのもの）。(b) 7B・8B の自身の答えは transformers で書かせず、ページのエンジンの `answer_check.ts` だけ（1 層ずつの道は生成しない）。(c) 英語だけのモデル（TinyLlama・zephyr）は素の文と自身の答えを英語で（`answer_check.ts` の問いは英語の 5 つ）。(d) `format_check.py` と項目は変えていない（頼みのとおり）。
   - レビュー（Sonnet low、2026-11-04）: 直す所なし。`ByLayer` の位置合わせ（答えの各トークンを予測する位置、右の詰め物は因果の mask の外、埋め込みと重みは float32）、`--then` の ID、記録の数とログの一致、勧めが決まりに合うことを確かめた。SE の倍率の言い過ぎ 2 つを直した。気づき（直さない）: `--by-layer` をふつうの道と突き合わせたのは TinyLlama（Llama の形）だけで、zephyr・Rakuten（Mistral）と llm-jp-4 は未確認（zephyr の向きは 2/24 ではっきりしている。llm-jp-4 の文は短く窓の外に出ない）。
   - **`format_check.py` に（2026-11-04）**: 4 つ（EuroLLM・zephyr・RakutenAI chat・TinyLlama）を `UNMEASURED` から `LENIENT` に、手書きの答えの数と。llm-jp-4 8B instruct は持ち主の判断まで `UNMEASURED` に残す（行の訳に数）。取りまとめ役の決め（訳）: 4 つは前の BOS を残す勧めで、残すなら通すのが筋（項目は替えない、検査だけ）。CI を省いた。訳: 検査の表だけで、`tests/test_format_check.py` が手元で鍵を見る。
+  - **持ち主の決め（2026-11-04、選択肢で）**: llm-jp-4 8B instruct は「本物に寄せる」（`bos` を `<|start|>` にして書式をその次から。固定値と `format_check.py` も直し、考える形も同じ 3 つで測る）。
 
 ### T.400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: 反映済み（(1)・(2)・(5)。(3)・(4) は残る。2026-10-16、T.533 の `CONVERTER` 11 の回で本線に入れた。**レビュー（Sonnet low、2026-10-16）: OK、直しなし。** `conversions_compare`（134 のうち 124 が同じ）で変わったのは予定の 10 項目（Gemma 4 の 2 つの `?hf=` の止まり `[2,1]→[2,1,106]`、sarashina 5 つと CAT 3 つの `bos`・`prefixed: never`・書式）、tokenizer.bin は全部同じ、`format_check` は sarashina 1B instruct と CAT 0.8B で 9/9。覆す条件: 本番で sarashina instruct か CAT の答えが崩れたら `formats.js` の `sarashina` の `bos: 9` と `SARASHINA` を戻す）。前の見出し: レビュー前（(1)・(2)・(5)。2026-10-16、Opus medium、ブランチ `t540-converter-round`。`CONVERTER` は T.533 の回で上げる。(3)・(4) は未着手。2026-10-10、T.369 から。規模 小〜中） **次の `CONVERTER` の回（T.533）に (1)・(2)・(5) を乗せる**（2026-10-15、持ち主「変換器の版が変わりそうなタスクは優先しようよ」。(2) は持ち主が選択肢で「乗せて本物に合わせる」: 一覧の sarashina 2 つと CAT-Translate 0.8B の送る ID も本物に合わせる。入れる前に書かせて読む・頭のトークンの効きを測る）。 **持ち主（2026-10-16、選択肢）: 「6 つとも本物に合わせる」**（sarashina2.2 の instruct 3 つと CAT-Translate 3 つも、書式を共有しているので本物と同じ ID を送る。CAT の使い方の外の問いの崩れは止める理由にしない）。 **本番（models.yml run 38835683269、Chromium 156、`CONVERTER` 11）**: 既定の Shisa 13.5 秒・2 回目 3.5 秒、Ternary Bonsai 1.7B 15.3 秒・16.0 tok/s・3.8 秒、sarashina2.2 1B Instruct 29.5 秒・5.1 秒、CAT-Translate 0.8B 20.0 秒・4.3 秒。どれも答え、新しい版で OPFS に保存された。
 - (1) tokenizer.json の `Lowercase` の normalizer（T.265 は sentencepiece の道の `do_lower_case` だけ）。(2) エンジンは「最初の文にダミーの空白を付けない」を言えない: sarashina と CAT-Translate は `?hf=` で頭の BOS が残る。(3) 最初の文が空白で始まっていてもダミーの空白を付ける（Metaspace は付けない）。(4) `T5Tokenizer` の legacy の空白（比べる参照が無い）。(5) `bos_token_id` の鍵が無く書式も読めないモデルは、当て推量の BOS 1 が止まりに残る。
@@ -555,7 +556,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 小）
 - linear の層の状態を 2 重に持つ 288 MiB（T.229: 止まったスレッドの後のやり直しのため）、変換器が q の行列を丸ごと溜めてから割る約 252 MB。
 
-### T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 状態: 候補（2026-11-03、T.286.5 から。持ち主の判断: 作るか。規模 中〜大）
+### T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 状態: 未着手（2026-11-04、持ち主が選択肢で「作る」。前の状態: 候補、2026-11-03、T.286.5 から。規模 中〜大）
 - 今の 1-bit の Bonsai（Q1_0）は 3 値の dtype（2 ビットと 128 個ごとの float16 の尺度）で持つので、メモリは取得の約 2 倍（27B は取得 3.8 GB → 7.2 GB、64 ビットのメモリ）。1 ビットの dtype（128 個ごとに 16 バイトと float16 の尺度、Q1_0 と同じ 18 バイト）とカーネルを作れば 27B は約 3.8 GB で 32 ビットのメモリに入り、読む量も半分（帯域の壁で速くなる見込み、未計測）。足す所は「物を足す手順」の「dtype（詰め方）を足す」とカーネル。GPU にも置くなら `PACKINGS`。
 
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）
@@ -835,6 +836,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - **`CONVERTER` は上げない**: 変換器の出すもの（チェックポイントの形・options・tokenizer.bin）は safetensors の経路と同じで、違うのは int8 の値の丸め（T.74 と同じ見方）。取り込み元が変わるので保存の名前（`keptName`）が変わり、訪問者の保存した変換は取り直しになる（古い保存は `replaced()` が消す）。int4.yml と draft.yml の Pythia は原本を名指しにした（Q8_0 と比べないように、段 ② と同じ）。
   - レビュー（Sonnet low、2026-11-04）: must-fix なし。エンジンの読み（(−点数, 左の位置) の heap）と本物の読み（対の最小の順位）の模し方、`before[rank] > before[first]+1` の絞り、落とした id の集め方と断りの順を確かめた。should 2 つを直した（見逃しの記録、Pyodide の中の秒）。気づき（直さない）: 書式の判定 `text in template` は部分文字列なので、1〜2 字の追加のトークンなら書式の別の語に当たって誤って断りうる（実物の追加のトークンは `<…>` の形）。
   - **本番**（Chromium 156、デプロイ run 41762062708、`models.yml` run 41763266895）: Gemma 3 270M（書き出した BPE の tokenizer.json を HF から変換）が準備完了 19.4 秒、70.4 tok/s で答えた。
+  - 持ち主の決め（2026-11-04、選択肢で）: 断りの文 3 つはこのまま。
   - **CI で回すもの（本線に入れた後）**: models.yml で Pythia 70M・410M・1B と GPT-2 を Chromium で本番に（準備完了の秒と tok/s、答えること）、browsers.yml の huggingface の small と large（固定値と Pythia の梯子）。
 - **段 ③ の残りの調べ（2026-09-27、Opus medium。実装はしない）**:
   - **DeepSeek-R1 Distill Qwen 1.5B**（3.55 GB → Q8_0 1.89 GB）: 前分割の名前（GGUF の `deepseek-r1-qwen`）は、段 ② の形（語彙と config を原本から）なら問題にならない（GGUF の語彙を読まない）。BOS は一覧の項目の options（151646）が勝つので GGUF にしても同じ。**残る問題はライセンス**: Q8_0 のある GGUF のうち、unsloth のカードは apache-2.0（原本は MIT）、bartowski・lmstudio-community・brittlewis12 はカードにライセンスが無い（段 ② の決まりで使わない）。カードが MIT なのは Mungert/DeepSeek-R1-Distill-Qwen-1.5B-GGUF の `DeepSeek-R1-Distill-Qwen-1.5B-q8_0.gguf`（1,894,531,904 B、bartowski と同じ大きさ、`base_model` をカードに書いていない）だけ。替えるなら先に `gguf.yml` の `candidates` にかける（未計測）。**→ レビューで直した**: MIT のカードは Mungert だけではない（下のレビューの行）。
