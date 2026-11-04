@@ -26,4 +26,6 @@ for dtype in ternary binary; do
   echo "binary: $dtype is $(stat -c %s "$dir/$dtype.bin") bytes"
 done
 echo "binary: $(df -h "$dir" | tail -1)"
-node --expose-gc tests/binary-same-check.ts "$dir/ternary" "$dir/binary" --positions "$positions"
+# (each model in a process of its own: a runner of 16 GB does not hold the 27B twice, and a process it ends writes no core)
+ulimit -c 0
+node tests/binary-same-check.ts "$dir/ternary" "$dir/binary" --positions "$positions" --apart
