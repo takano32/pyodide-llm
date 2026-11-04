@@ -140,6 +140,7 @@
 - T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
+- T.635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 未着手
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -469,7 +470,8 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
   - **(3) の結果（2026-11-04、コミット `T.400: Put no dummy prefix before a first text with a space after a Metaspace`）**: 変換器の `metaspaced()` が tokenizer.json の Metaspace（`prepend_scheme` が always か first、古い `add_prefix_space`、`Sequence` の中も）を見て options に `spaced: true`（unigram の道だけ: 書き出した sentencepiece の BPE は Metaspace を持たない）。エンジンの `Tokenizer(spaced=)` は、最初の文が空白で始まるときダミーの空白を付けない（後の文は今までの `prefixed` のまま）。`tokenizer.model` の道は sentencepiece と同じく付けたまま（legacy の Llama も）。**試験**（`tests/test_prefixed.py`）: Metaspace の always・first・古い形・`Sequence` の中の 4 つで、最初の文が空白 1 つ・2 つ・無し、特殊トークンをまたぐ 6 つの文を本物の `tokenizers` と全部の ID で、Prepend の normalizer は付ける側で同じく、`tokenizer.model` は本物の `sentencepiece` と legacy の有無の 3 つで。壊し方（エンジンが `spaced` を読まない）で 4 つが落ちた。pytest 3376 passed、smoke。
   - **`conversions_compare.py`（一覧の 199 項目、本線 `2a4ea867` と）**: 「199 of 199 entries the same in everything」。一覧の unigram の項目は sentencepiece のモデル（rinna・LINE ほか）か llm-jp の Replace の normalizer（`every`）か `never`（sarashina・CAT）で、Metaspace の tokenizer.json は無い: options も tokenizer.bin も送る ID も変わらない。だから `format_check.py` は回していない（変わる項目が無い）。当たるのは `?hf=` で開く Metaspace の unigram のリポジトリの、空白で始まる最初の文だけ。
   - **CI**: CI を回した。訳: transformers との比べは手元で回さない（検証手順 7）。`reference_qwen35.sh --only=real`（run 41864568958、軽い組も）: logits の最大の差 1.96e-04（一度に）・1.78e-04（1 つずつ）、最尤 96/96。sentencepiece 系の家族の参照は回していない（一覧に変わる項目が無い）。
-  - **気づき（採番していない）**: 「▁」をどこにも足さない tokenizer.json（Metaspace の `prepend_scheme: never`、空白を「▁」に替えるだけの normalizer）でも、エンジンは最初の文にダミーの空白を付ける（本物は付けない。`prefixed` が False になり `never` と言わないため）。一覧に当たる項目は無い。
+  - **気づき（T.635 に採番）**: 「▁」をどこにも足さない tokenizer.json（Metaspace の `prepend_scheme: never`、空白を「▁」に替えるだけの normalizer）でも、エンジンは最初の文にダミーの空白を付ける（本物は付けない。`prefixed` が False になり `never` と言わないため）。一覧に当たる項目は無い。
+  - レビュー（Sonnet low、2026-11-04）: (3) は直す所なし。本物の Metaspace（空白を▁にしてから、▁で始まらなければ前に付ける）と always・first・never・旧 `add_prefix_space`・`Sequence` の中、`prefixed` との組み（always は特殊トークンの後が `wanting`、first は付けない、`Prepend` は every）、`tokenizer.model` の道は付けたまま、options に載るのは always と first のときだけで `FORM`・`footprint()` に触れないことを読み、`test_prefixed.py`・`test_tokenizer.py` の 80 件を回した。should 2 つ: Metaspace を持つ BPE は `spaced` を読まないことを AGENTS.md に書き足した、気づきを T.635 に採番した。もう 1 つの「T.634.2 のレビューの行は実装者の自己評価」は取りまとめ役の読みで当たらない（その行は別のレビュー担当の結果を取りまとめ役が頼んで写したもの）。
   - **気づき（採番していない）**: `reference_llama.py` の ID の比べは、sarashina と CAT-Translate では transformers 5 のトークナイザが本物でないので落ちる（`format_check.py` のように `SENTENCEPIECE` の項目は本物の sentencepiece と比べるとよい）。
 
 ### T.401 [試験][変換] 変換の始まりを見る試験と道具が足りない — 状態: 未着手（(3) は 2026-10-25、(2) は 2026-10-30 に本線に入れた: 下。(1)(5) が残る。前の状態: 未着手、2026-10-10、T.369 から。規模 小）
@@ -1342,3 +1344,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
+
+
+### T.635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 状態: 未着手（2026-11-04、T.400 (3) の気づきとレビューから。規模 小）
+- Metaspace の `prepend_scheme: never` や、空白を「▁」に替えるだけの normalizer の tokenizer.json は、本物は最初の文に「▁」を足さないのに、エンジンは足す。エンジンには `prefixed="never"` があり、`prefixed_texts()` は never の Metaspace を偽にしているので、変換器がそのとき `prefixed: "never"` を言えばほぼ同じ形で直る。一覧に当たる項目は無い（`?hf=` だけ）。`tests/test_prefixed.py` が今は 2 つの場合を本物との比べから外しているので、それを戻して本物と ID 列で比べる。変換器の出す options が変わるので、次に `CONVERTER` を上げる回に。
