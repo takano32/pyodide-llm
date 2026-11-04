@@ -8,21 +8,9 @@ from convert.template import config_token, model_answer_end, model_turn
 from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Kept, Stream
-from convert.gguf import gguf_model, gguf_read, gguf_tokenizer, rope_freqs_values
-from convert.tokenizer import (Later, described_options, piece_ids, prefixed_texts, sentencepiece_charsmap,
-                               sentencepiece_options, sentencepiece_pieces, sentencepiece_specials, tokenizer_bin,
-                               tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces, with_a_row,
-                               written_out)
-
-
-def described(tokenizer_config):
-    """A tokenizer_config.json, read: its text, its bytes or the dict itself. {} for none and for one that is no JSON
-    or no object."""
-    try:
-        config = json.loads(tokenizer_config) if isinstance(tokenizer_config, (str, bytes)) else tokenizer_config
-    except ValueError:
-        config = None
-    return config if isinstance(config, dict) else {}
+from convert.gguf import gguf_model, gguf_read, rope_freqs_values
+from convert.tokenizer import piece_ids
+from convert.vocabulary import described, gguf_vocabulary, vocabulary_of  # noqa: F401 (described: the window's)
 
 
 class Conversion:
@@ -56,42 +44,10 @@ class Conversion:
             header = json.loads(header)
         except ValueError:
             raise ValueError("This is not a safetensors file.") from None
-        vocab_size = self.config["vocab_size"]
         tokenizer = bytes(tokenizer.to_py() if hasattr(tokenizer, "to_py") else tokenizer)
-        if tokenizer_name.lower().endswith(".json"):
-            try:
-                parsed = json.loads(tokenizer)
-            except ValueError:
-                raise ValueError("tokenizer.json is not JSON.") from None
-            if not last and written_out(parsed) and prefixed_texts(parsed):
-                raise Later("This tokenizer.json writes out a sentencepiece model, whose own file is read first.")
-            options = tokenizer_json_options(parsed)
-            every = list(tokenizer_json_pieces(parsed))
-            pieces = with_a_row(every, parsed, vocab_size)
-            # (T.509: the added tokens past the model's last row, which start() holds to what the model uses)
-            dropped = {id: text for id, (text, _, _) in enumerate(every[len(pieces):], len(pieces))}
-            self.tokenizer = tokenizer_bin(pieces, vocab_size, spaces=options["tokenizer_kind"] != "bytebpe",
-                                           charsmap=tokenizer_json_charsmap(parsed))
-            added = [token for token in parsed.get("added_tokens", []) if token.get("id", 0) < vocab_size]
-            specials = [token["content"] for token in added if token.get("special")]
-            # T.143: the added tokens it does not call special are read as one token wherever they are too, by the real
-            # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T.215's finding)
-            added = [token["content"] for token in added if not token.get("special")]
-        else:
-            pieces = list(sentencepiece_pieces(tokenizer))
-            self.tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(tokenizer))
-            # (T.265, T.308) and what only tokenizer_config.json says of a sentencepiece model. A model with no dummy
-            # prefix has none after a special token either (T.400: its "never" over a legacy tokenizer's "wanting")
-            own = sentencepiece_options(tokenizer)
-            options = {**own, **described_options(described(tokenizer_config)), **({"prefixed": "never"} if own.get("prefixed") else {})}
-            specials, added, dropped = sentencepiece_specials(tokenizer), [], {}
-        # T.143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
-        # another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
-        # in tokenizer_config.json (T.138's review: perplexity 2.5 to 2.7 times higher with the former)
-        named = config_token(described(tokenizer_config), "bos_token")
-        bos = next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials,
-                   chat_template, added, bos, readers, blocks, dropped=dropped)
+        vocabulary = vocabulary_of(tokenizer, tokenizer_name, self.config["vocab_size"], tokenizer_config, last)
+        self.start(header, base, vocabulary, dtype, max_seq_len, start, sink, quantize_rows, chat_template, readers,
+                   blocks)
 
     @classmethod
     def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, readers=None, blocks=False):
@@ -119,22 +75,22 @@ class Conversion:
             del config["bos_token_id"]
         if not callable(dtype):
             dtype_of(dtype)
-        self.tokenizer, options, tokenizer_config, specials, added = gguf_tokenizer(metadata, config["vocab_size"])
+        vocabulary = gguf_vocabulary(metadata, config["vocab_size"])
         self.base = base
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials,
-                   added=added, readers=readers, blocks=blocks, headless=None if named else nameless.format("BOS"))
+        self.start(header, base, vocabulary, dtype, max_seq_len, base, sink, quantize_rows, readers=readers,
+                   blocks=blocks, headless=None if named else nameless.format("BOS"))
         return self
 
-    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None,
-              specials=(), chat_template=None, added=(), bos=None, readers=None, blocks=False, headless=None,
-              dropped=None):
-        """sink and quantize_rows: see Writer, readers: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
-        tokenizer's special tokens, the ones a chat template writes between the turns. chat_template: the text of
-        chat_template.jinja, where there is one (T.127). added: the added tokens that are not special, one token
-        wherever they are written (T.143). bos: the id of the BOS the tokenizer names, where it names one (T.143).
-        headless (T.505.2): what to refuse a model with whose template begins with no token of its own (a GGUF that
-        names no BOS: nothing else says what its texts begin with). dropped (T.509): {id: text} of the added tokens a
-        tokenizer.json has past the model's last row, which convert.tokenizer's with_a_row() leaves out."""
+    def start(self, header, base, vocabulary, dtype, max_seq_len, start, sink=None, quantize_rows=None,
+              chat_template=None, readers=None, blocks=False, headless=None):
+        """vocabulary: convert/vocabulary.py's Vocabulary. sink and quantize_rows: see Writer, readers: see Stream.
+        checkpoint is None with a sink: the bytes went there. chat_template: the text of chat_template.jinja, where
+        there is one (T.127). headless (T.505.2): what to refuse a model with whose template begins with no token of
+        its own (a GGUF that names no BOS: nothing else says what its texts begin with)."""
+        self.tokenizer = vocabulary.tokenizer
+        options, tokenizer_config, specials, added, bos, dropped = (vocabulary.options, vocabulary.described,
+                                                                    vocabulary.specials, vocabulary.added,
+                                                                    vocabulary.bos, vocabulary.dropped)
         own = self.config.get("bos_token_id", 1)
         # (the BOS the tokenizer names and config.json's, where each says one: the 1 of a config.json that has no such
         # key is a guess, T.264)

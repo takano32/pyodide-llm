@@ -47,4 +47,5 @@ from convert.tokenizer import (UNMATCHABLE, prefixed_texts, pretokenizer_name,  
                                sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces)
 from convert.conversion import Conversion  # noqa: F401
-from convert.conversion import described  # noqa: F401
+from convert.vocabulary import (VOCABULARIES, Vocabulary, described, gguf_vocabulary,  # noqa: F401
+                                vocabulary_of)
