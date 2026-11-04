@@ -7,7 +7,7 @@
 // a bundler links them).
 import { BLOCK_PACKINGS, GROUP, STEP } from "./common.ts";
 import type { BlockPacking, Packing } from "./common.ts";
-import { BLOCK_COMMON, BLOCK_READS } from "./superblocks.ts";
+import { BLOCK_COMMON, SUPERBLOCKS } from "./superblocks.ts";
 
 // (T.368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
 // tiled shader a device may run (promptForms): its text, the overrides of its pipeline, whether it reads packed int8
@@ -15,7 +15,7 @@ import { BLOCK_COMMON, BLOCK_READS } from "./superblocks.ts";
 type RegTile = { m: number; n: number };
 export type Tile = { rows: number; tokens: number; threads: number };
 // (T.547.2.3: blocks, the form's texts for a model's matrices of llama.cpp's blocks beside the int8 ones code is for:
-// T.547.3.3, a text a type of BLOCK_READS)
+// T.547.3.3, a text a type of SUPERBLOCKS)
 export type PromptForm = { name: string; tile: Tile; packed: boolean; half: boolean; ternary?: boolean; code: string; blocks?: Record<BlockPacking, string>;
   constants?: { WORKGROUP_SIZE_M: number; WORKGROUP_SIZE_N: number }; none: string | undefined };
 // T.547.2.3: the shaders a model has of its own, besides every model's: a model of ternary weights, or of int8 weights
@@ -481,10 +481,10 @@ const blockLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `
 // T.232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
 // is changed for them there). (T.379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
 // `ternary` until then.)
-// T.547.2.3, T.547.3.3, weights of llama.cpp's blocks (a row of BLOCK_READS): the blocks of 256 as the checkpoint holds
+// T.547.2.3, T.547.3.3, weights of llama.cpp's blocks (a row of SUPERBLOCKS): the blocks of 256 as the checkpoint holds
 // them (the loader turns a group of 32 into packed int8 and keeps the row's scales and mins of its halves; no scales apart)
 export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
-  const ternary = weights === "ternary", blocks = Object.hasOwn(BLOCK_READS, weights) ? BLOCK_READS[weights as BlockPacking] : null;
+  const ternary = weights === "ternary", blocks = Object.hasOwn(SUPERBLOCKS, weights) ? SUPERBLOCKS[weights as BlockPacking] : null;
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 ${TILE_SHAPE}
@@ -625,7 +625,7 @@ ${(blocks ? blockLines : dp4aLines)(false)}`}
 // T.232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
 // T.547.2.3, blocks: the forms of a model of int8 matrices and llama.cpp's blocks, ORT's DP4A alone, each with a text a
-// type of BLOCK_READS beside (T.547.3.3: Q4_K's alone until then)
+// type of SUPERBLOCKS beside (T.547.3.3: Q4_K's alone until then)
 // (blocks: the other forms would widen every block to floats); none where there is no packed int8 dot
 export const promptForms = ({ half, subgroups, packed, memory, threads, own = null }: DeviceForms): PromptForm[] => {
   const past = ({ threads: wanted }: Tile, bytes: number) => (wanted > threads ? `${wanted} threads, the device ${threads}`

@@ -17,7 +17,7 @@
  */
 import { BLOCK_PACKINGS, GROUP, STEP } from "./common.ts";
 import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
-import { BLOCK_COMMON, BLOCK_READS } from "./superblocks.ts";
+import { BLOCK_COMMON, SUPERBLOCKS } from "./superblocks.ts";
 import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
 import type { BlockPacking, Packing } from "./common.ts";
 
@@ -488,10 +488,10 @@ ${ROW_RMS}
 //              (the sums of its halves, which a block's mins take), and in the place of the lines above, a row's group
 //              read from its block and added to the row's sum (superblocks.ts's BLOCK_COMMON's BLK, the tiles' own reading);
 //              of up's row too where the output has two matrices (swiglu, geglu). T.547.3.3: a row a type of prompt.ts's
-//              BLOCK_READS, its reading of a block its own (blockRows)
+//              SUPERBLOCKS, its reading of a block its own (blockRows)
 // (T.547.3.3: a type's row: its blocks' bytes the step from a block to the next)
 const blockRow = (packing: BlockPacking) => {
-  const { bytes, helpers, code } = BLOCK_READS[packing];
+  const { bytes, helpers, code } = SUPERBLOCKS[packing];
   return {
     bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' blocks, ${bytes} bytes each`,
     unpacking: BLOCK_COMMON + helpers + code,

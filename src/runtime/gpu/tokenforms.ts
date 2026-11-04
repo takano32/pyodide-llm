@@ -10,7 +10,7 @@ import { chooseTokenAttention } from "./tokenattention.ts";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
 import { GROUP } from "../shaders/common.ts";
 import { quantizedLikeCpu } from "../shaders/prompt.ts";
-import { CODEBOOK_BYTES, BLOCK_READS, BLOCK_WEIGHTS } from "../shaders/superblocks.ts";
+import { CODEBOOK_BYTES, SUPERBLOCKS } from "../shaders/superblocks.ts";
 import { ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
@@ -217,7 +217,7 @@ async function tableRows(m: Model) {
 }
 // T.547.3.6 (T.547.3.3's review): a token's matrix of each type of llama.cpp's blocks the model has (its matrices' and its
 // classifier's), the type's "write" text (fusedDp4aMatVec: every output's reads the weights alike) against JavaScript's
-// on random blocks (each block's float16 scales drawn small, BLOCK_WEIGHTS' scale, an IQ type's of the model's
+// on random blocks (each block's float16 scales drawn small, SUPERBLOCKS' scale, an IQ type's of the model's
 // codebooks): 37 rows (a part of a workgroup's rows) of 768 weights (three blocks: every group of a block), a quantized
 // vector given as the CPU quantizes it (quantizedLikeCpu). Why one is wrong, or null; the first layer's check (checkTokens)
 // holds the rest of a layer
@@ -234,7 +234,7 @@ async function checkTokenBlocks(m: Model) {
   };
   try {
     for (const type of types) {
-      const { bytes } = BLOCK_READS[type], { scale, weights } = BLOCK_WEIGHTS[type];
+      const { bytes, scale, weights } = SUPERBLOCKS[type];
       const blocks = new Uint8Array((rows * n) / 256 * bytes).map(() => (Math.random() * 256) | 0);
       for (let at = 0; at < blocks.length; at += bytes) scale(blocks, at, ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0));
       const w = weights(blocks, codebooks ?? undefined), x = Float32Array.from({ length: n }, () => Math.random() * 2 - 1), { xq, xs } = quantizedLikeCpu(x);

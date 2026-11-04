@@ -5,7 +5,7 @@
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
-import { BLOCK_READS, BLOCK_WEIGHTS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
+import { SUPERBLOCKS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";
@@ -249,7 +249,7 @@ function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, pipeline: 
 // (shaders/prompt.ts's ternaryValues)
 // T.547.2.3, a form with a Q4_K text beside (blocks): that text too, on rows of 768 weights (three blocks of 256, every
 // group of a block: eight of the activations' groups of 32, each its own s and m) of random bytes (any bytes are blocks)
-// with d and dmin of 2^-12 to 2^-11 and either sign, against JavaScript's on the weights they read as (BLOCK_WEIGHTS: d s q
+// with d and dmin of 2^-12 to 2^-11 and either sign, against JavaScript's on the weights they read as (SUPERBLOCKS' weights: d s q
 // - dmin m, each times a scale of 1)
 async function checkForm(m: Model, form: Tiled) {
   const wrong = await checkWith(m, form, form.pipeline, form.ternary ? "ternary" : "int8");
@@ -263,14 +263,14 @@ async function checkForm(m: Model, form: Tiled) {
 }
 // the weights of the check: their bytes as a matrix of the packing holds them, what they read as (w, by the scale of
 // each `scaled` of them: s), and the bytes of a row
-// (T.547.3.3: of a type of llama.cpp's blocks by its line of BLOCK_READS: its bytes, where its float16 scales are, and
+// (T.547.3.3: of a type of llama.cpp's blocks by its line of SUPERBLOCKS: its bytes, where its float16 scales are, and
 // JavaScript's reading)
 // (T.547.3.4: an IQ type's of the model's codebooks, which its text binds where an int8 one binds scales: grids)
 function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking, codebooks: Uint8Array<ArrayBuffer> | null) {
   const random = (bytes: number) => new Uint8Array(bytes).map(() => (Math.random() * 256) | 0);
   if (packing !== "int8" && packing !== "ternary") {
-    const { bytes } = BLOCK_READS[packing], { scale, weights } = BLOCK_WEIGHTS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
-    // (each float16 scale of a block drawn small: T.547.3.5, where the type has them, BLOCK_WEIGHTS' scale)
+    const { bytes, scale, weights } = SUPERBLOCKS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
+    // (each float16 scale of a block drawn small: T.547.3.5, where the type has them, SUPERBLOCKS' scale)
     const drawn = () => ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0);
     for (let at = 0; at < stored.length; at += bytes) scale(stored, at, drawn());
     return { n, stored, w: weights(stored, codebooks ?? undefined), s: new Float32Array(rows).fill(1), scaled: n, scales: null,

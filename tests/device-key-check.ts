@@ -86,13 +86,24 @@ function* namesIn(node) {
     if (n.type === "Identifier" && !skipped.has(n)) yield n;
   }
 }
+// T.642.1: what of a declaration is JavaScript the checks compare with, no text of a shader: of the one table of
+// llama.cpp's blocks, each type's scale and weights beside its WGSL. What is under them reaches no key: its names are
+// not followed (the functions it calls are of the rest of the file) and its pieces are the rest of the file's
+const ANSWERS = { SUPERBLOCKS: ["scale", "weights"] };
+const answers = new Set();
+for (const [name, keys] of Object.entries(ANSWERS)) {
+  assert.ok(declared.has(name), `${name} is no declaration of the shaders' modules any more: this check's list of the JavaScript in a table of texts`);
+  const found = [...under(declared.get(name))].filter((n) => (n.type === "ObjectProperty" || n.type === "ObjectMethod") && !n.computed && keys.includes(n.key.name));
+  assert.ok(found.length >= keys.length, `${name} has none of ${keys.join(", ")}: this check's list of the JavaScript in a table of texts`);
+  for (const property of found) for (const n of under(property)) answers.add(n);
+}
 /** the top-level names a declaration's source reaches, itself among them */
 function reached(names) {
   const found = new Set();
   const walk = (name) => {
     if (found.has(name) || !declared.has(name)) return;
     found.add(name);
-    for (const n of namesIn(declared.get(name))) walk(n.name);
+    for (const n of namesIn(declared.get(name))) if (!answers.has(n)) walk(n.name);
   };
   names.forEach(walk);
   return found;
@@ -101,10 +112,11 @@ function reached(names) {
 function pieces(name) {
   const found = [];
   for (const n of under(declared.get(name))) {
-    if (n.type === "TemplateElement") found.push({ name, at: n.start, says: n.value.raw, insert: "~" });
-    if (n.type === "StringLiteral") found.push({ name, at: n.start + 1, says: n.value, insert: "~" });
+    const answer = answers.has(n);
+    if (n.type === "TemplateElement") found.push({ name, at: n.start, says: n.value.raw, insert: "~", answer });
+    if (n.type === "StringLiteral") found.push({ name, at: n.start + 1, says: n.value, insert: "~", answer });
     // (a number: a digit more before it; 0x…, a float and a BigInt are not written so in what the shaders are made of)
-    if (n.type === "NumericLiteral") found.push({ name, at: n.start, says: source.slice(n.start, n.end), insert: /^[1-9]\d*$/.test(source.slice(n.start, n.end)) ? "1" : null });
+    if (n.type === "NumericLiteral") found.push({ name, at: n.start, says: source.slice(n.start, n.end), insert: /^[1-9]\d*$/.test(source.slice(n.start, n.end)) ? "1" : null, answer });
   }
   return found;
 }
@@ -144,8 +156,8 @@ const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).include
 // TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row)
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
 // (T.547.2.3: and those for Q4_K blocks: dp4a's branch and (T.547.2.4) DP4A_WEIGHTS' row, and what only they write)
-// (T.547.3.3: of every type of BLOCK_READS: what they share and each one's reading)
-const Q4K_BRANCHES = ["dp4a", "BLOCK_COMMON", "BLOCK_READS", "blockLines", "DP4A_WEIGHTS", "blockRow", "blockRows", "fusedDp4aMatVec", "K_BITS", "IQ_GRID", "IQ_SEVEN", "IQ_WORDS", "IQ_BIND", "IQ_SIGNS", "IQ_EIGHT", "IQ_FOUR", "IQ_SHIFTED", "IQ_NL", "BLK_F16", "BLK_READ", "BLK_DOT", "embedBlocks"];
+// (T.547.3.3: of every type of SUPERBLOCKS (T.642.1): what they share and each one's reading)
+const Q4K_BRANCHES = ["dp4a", "BLOCK_COMMON", "SUPERBLOCKS", "blockLines", "DP4A_WEIGHTS", "blockRow", "blockRows", "fusedDp4aMatVec", "K_BITS", "IQ_GRID", "IQ_SEVEN", "IQ_WORDS", "IQ_BIND", "IQ_SIGNS", "IQ_EIGHT", "IQ_FOUR", "IQ_SHIFTED", "IQ_NL", "BLK_F16", "BLK_READ", "BLK_DOT", "embedBlocks"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
 // What gpu.js takes of the shaders (T.379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
@@ -237,7 +249,7 @@ for (const name of declared.keys()) {
   const ternaryOnly = !general.has(name);
   for (const piece of pieces(name)) {
     if (piece.insert === null) continue;
-    if (!engine.has(name)) {
+    if (!engine.has(name) || piece.answer) {
       counted.apart.push(piece);
       continue;
     }

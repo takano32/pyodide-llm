@@ -142,7 +142,7 @@ try {
     // T.209: what a third of a table is in bytes on the GPU (T.232: a ternary weight is a quarter of a byte)
     // (T.547.3.6: a table's rows in its packing's bytes, llama.cpp's blocks' too: the classifier in three pieces, and no
     // piece of the embedding smaller than the 64 rows a piece starts at a multiple of)
-    const rowBytesOf = (kind) => (wgsl.BLOCK_PACKINGS.includes(kind) ? (plan.dim / 256) * wgsl.BLOCK_READS[kind].bytes : ternary ? plan.dim / 4 : plan.dim);
+    const rowBytesOf = (kind) => (wgsl.BLOCK_PACKINGS.includes(kind) ? (plan.dim / 256) * wgsl.SUPERBLOCKS[kind].bytes : ternary ? plan.dim / 4 : plan.dim);
     const kinds = c.options.kinds ?? {}, embeddingKind = kinds.token_embedding_table, classifierKind = kinds.wcls ?? embeddingKind;
     const tablePieceBytes = Math.max(Math.ceil((plan.vocab_size * rowBytesOf(classifierKind)) / 3), 64 * rowBytesOf(embeddingKind));
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));

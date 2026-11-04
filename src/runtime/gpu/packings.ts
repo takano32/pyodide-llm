@@ -5,7 +5,7 @@
 import { GROUP } from "../shaders/common.ts";
 import { sixValues } from "../shaders/steps.ts";
 import { ternaryValues } from "../shaders/prompt.ts";
-import { BLOCK_READS, BLOCK_WEIGHTS, readsGrid } from "../shaders/superblocks.ts";
+import { SUPERBLOCKS } from "../shaders/superblocks.ts";
 import { BLOCK_PACKINGS } from "../shaders/common.ts";
 import type { BlockPacking } from "../shaders/common.ts";
 import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
@@ -34,10 +34,10 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
   grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number>; on: GpuPacking; spread: boolean };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
-// (T.547.3.3: llama.cpp's blocks of a type of superblocks.ts's BLOCK_READS, as the checkpoint holds them)
+// (T.547.3.3: llama.cpp's blocks of a type of superblocks.ts's SUPERBLOCKS, as the checkpoint holds them)
 const blocks = (packing: BlockPacking): HeldAs => {
-  const { bytes } = BLOCK_READS[packing], { weights } = BLOCK_WEIGHTS[packing], row = (n: number) => (n / 256) * bytes;
-  return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, grid: readsGrid(packing), values: weights, on: packing, spread: false };
+  const { bytes, codebooks, weights } = SUPERBLOCKS[packing], row = (n: number) => (n / 256) * bytes;
+  return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, grid: codebooks, values: weights, on: packing, spread: false };
 };
 // T.634.3: binary (jobs.ts's PACKED's binary, llama2_numpy.pack_binary): a group of 128 weights in 16 bytes, weight
 // 64 h + 4 c + p at bit 4 h + p of byte c, set for +1. On the GPU it is ternary's codes (PQ2_0's order: weight j's code,
@@ -72,7 +72,7 @@ export const packingAt = ({ packing, packings }: Packed, place: number): GpuPack
 export const packingsOf = ({ packing, packings }: Packed): GpuPacking[] => (packing === "layers" ? [...new Set(packings!)] : [packing]);
 // T.634.3: whether a packing is multiplied by ternary's shaders on the GPU (ternary, and binary as its codes)
 export const asTernary = (packing: GpuPacking) => PACKINGS[packing].on === "ternary";
-// T.547.3.3: whether a packing is one of llama.cpp's blocks the GPU reads (a type of BLOCK_READS)
+// T.547.3.3: whether a packing is one of llama.cpp's blocks the GPU reads (a type of SUPERBLOCKS)
 export const isBlock = (packing: GpuPacking): packing is BlockPacking => (BLOCK_PACKINGS as readonly string[]).includes(packing);
 // T.547.3.3: the types of llama.cpp's blocks the matrices have, in BLOCK_PACKINGS' order (the texts a model compiles)
 export const blocksOf = (matrices: Record<string, Packed>): BlockPacking[] =>

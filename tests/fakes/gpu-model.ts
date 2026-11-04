@@ -25,7 +25,7 @@ const { ENGINE } = await import(runtimeUrl("shaders/engine.ts"));
 const { flashShape, flashVecShape } = await import(runtimeUrl("shaders/attention.ts"));
 const { devicePromptForms } = await import(runtimeUrl("shaders/key.ts"));
 const { BLOCK_PACKINGS } = await import(runtimeUrl("shaders/common.ts"));
-const { BLOCK_READS, BLOCK_WEIGHTS } = await import(runtimeUrl("shaders/superblocks.ts"));
+const { SUPERBLOCKS } = await import(runtimeUrl("shaders/superblocks.ts"));
 
 // a made-up model on the stand-in (model: one of tests/fakes/gpu-plans.ts's MODELS, a Llama where not said), its forms answered; spoil: a model to put in place of one ("attention", "form",
 // "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
@@ -72,15 +72,15 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
     plan.codebooks = bytes;
   }
   // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer; T.465.6.3:
-  // and each block of w2's its float16 scales drawn small, as forms.ts's check draws them: BLOCK_WEIGHTS' scale())
+  // and each block of w2's its float16 scales drawn small, as forms.ts's check draws them: SUPERBLOCKS' scale())
   if (sane) {
     plausible(plan, memory);
     // (T.465.6.5: the outlier channels of the final norm as large as a model's, 9 times the others: make_ternary.py's)
     if (outliers) for (const c of plan.tokens.channels) new Float32Array(memory.buffer, plan.tokens.final, plan.dim)[c] *= 9;
     // (each block of a matrix of blocks, of every layer, and of a table of blocks)
     const drawnScales = (packing, at, rows, n) => {
-      const view = new Uint8Array(memory.buffer, at, (rows * n) / 256 * BLOCK_READS[packing].bytes);
-      for (let byte = 0, i = 0; byte < view.length; byte += BLOCK_READS[packing].bytes, i++) BLOCK_WEIGHTS[packing].scale(view, byte, 0x1400 | (i * 37 % 1024));
+      const view = new Uint8Array(memory.buffer, at, (rows * n) / 256 * SUPERBLOCKS[packing].bytes);
+      for (let byte = 0, i = 0; byte < view.length; byte += SUPERBLOCKS[packing].bytes, i++) SUPERBLOCKS[packing].scale(view, byte, 0x1400 | (i * 37 % 1024));
     };
     if (Array.isArray(weights)) weights.forEach((packing, l) => drawnScales(packing, plan.matrices.w2.layers[l][0], plan.matrices.w2.rows, plan.matrices.w2.n));
     for (const [name, packing] of Object.entries(blocks)) {
