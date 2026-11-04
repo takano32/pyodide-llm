@@ -178,7 +178,8 @@ def read_otherwise(merges):
     left part m's right one) that the merges join first and the engine after m: held to the three pieces' text, read
     both ways. A Gemma's runs of line breaks, spaces and tabs (87 pieces of one score) are read alike, and a
     made-up vocabulary of four neighbouring scores made one is not (tests/test_spelled_bpe.py). Only those three
-    pieces: a longer text that would be read otherwise, where every text of three is read alike, is not looked for."""
+    pieces, so a vocabulary that reads a text of four pieces or more otherwise, and every text of three alike, can get
+    through (the review of T.509: 8 of 150 random vocabularies of a, b and c, none of the real ones)."""
     first, starts = {}, [False] * len(merges)
     for rank, (left, right) in enumerate(merges):
         if left + right not in first:
