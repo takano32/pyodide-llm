@@ -17,11 +17,12 @@ export function modelBytes(entry: Entry): number | undefined {
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
   if (entry.loaded) return entry.loaded;
-  const found = /(int8|ternary) ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
+  // (T.634.2: "1-bit N MB" for a binary model, as int8 that over BINARY_OF_EIGHT)
+  const found = /(int8|ternary|1-bit) ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
   if (!found) return undefined;
   const said = Number(found[2]) * (found[3] === "GB" ? 1e9 : 1e6), asked = entry.conversion?.dtype;
-  if (found[1] === "ternary" && !["int8", "int6"].includes(asked!)) return said;
-  const int8 = found[1] === "ternary" ? said / TERNARY_OF_EIGHT : said;
+  if (found[1] !== "int8" && !["int8", "int6"].includes(asked!)) return said;
+  const int8 = found[1] === "ternary" ? said / TERNARY_OF_EIGHT : found[1] === "1-bit" ? said / BINARY_OF_EIGHT : said;
   return asked === "int6" ? int8 * SIX_OF_EIGHT : int8;
 }
 
@@ -33,6 +34,8 @@ export const SIX_OF_EIGHT = PYTHON_BYTES.int6 / PYTHON_BYTES.int8;
 // T.230: a ternary model keeps its weights as they are, two bits each: 32 bytes and a scale per group of 128 (T.533: a
 // float16, 2 bytes), against int8's 128 bytes and four scales, with no loss at all (int8 is the same weights widened)
 export const TERNARY_OF_EIGHT = PYTHON_BYTES.ternary / PYTHON_BYTES.int8;
+// T.634.2: a binary one, one bit each: 16 bytes and a float16 scale per group of 128
+export const BINARY_OF_EIGHT = PYTHON_BYTES.binary / PYTHON_BYTES.int8;
 
 // T.133: Chromium's navigator.deviceMemory stops at 8: a device that says 8 has 8 GB or more, as many as it likes
 export const DEVICE_MEMORY_CAP = 8;
@@ -74,7 +77,8 @@ export function memoryWarning(entry: Entry, deviceMemory: number | undefined): s
  * exactly (footprint()). The words in the order the notes have them, after everything else. */
 export function devicesOf(entry: Entry) {
   const bytes = modelBytes(entry);
-  return [memoryWarning(entry, 4) && "desktop only", bytes! > 2 ** 32 && "Chrome and Firefox"].filter(Boolean);
+  // (T.634.2: or an entry whose forward pass at the context passes it, its weights alone within: wide)
+  return [memoryWarning(entry, 4) && "desktop only", (entry.wide || bytes! > 2 ** 32) && "Chrome and Firefox"].filter(Boolean);
 }
 /** What the page says when the worker ran out of memory (heap: the size of its WebAssembly memory then). */
 export function memoryFailure(entry: Entry, heap: number | undefined, detail: string | undefined): string {

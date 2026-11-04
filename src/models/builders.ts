@@ -11,7 +11,8 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 // (source: the repository it was built from, checkpoint, tokenizer and bytes), or one of Hugging Face converted in the
 // page (hf, original: the repository whose model it is, download, conversion, shares, weights: the dtype it keeps where
 // it names one, loaded: its bytes once loaded where the note cannot say them, rebuilt: its weights are not the
-// original's), the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
+// original's; T.634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not),
+// the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
 // opens with
 export type Entry = {
   group?: "site" | "original" | "hf";
@@ -30,6 +31,7 @@ export type Entry = {
   weights?: Dtype;
   loaded?: number;
   rebuilt?: boolean;
+  wide?: boolean;
   options: Options;
   template?: string;
   generation: Sampled;
@@ -154,28 +156,29 @@ export const gemma4 = (size: string, revision: string, ggufRevision: string, dow
  * has not) */
 export const ternaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
   start: Partial<Entry> = {}): Entry =>
-  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "日本語 / English · ternary weights", size, revision, originalRevision, download, sizes, start,
+  bonsai("Ternary-Bonsai", "Ternary Bonsai", "PQ2_0", "ternary", "日本語 / English · ternary weights", size, revision, originalRevision, download, sizes, start,
     { prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 /** T.286: Prism ML's 1-bit Bonsai (1.7B ...), every weight -1 or +1 times a scale of its 128: a Q1_0 GGUF
- * (convert/readers.py's q1_0, T.286.1), which the ternary dtype holds as it is. The rest as the ternary ones' above,
+ * (convert/readers.py's q1_0, T.286.1), which the binary dtype holds as it is (T.634.2: one bit a weight, Q1_0's 18
+ * bytes a group of 128; the ternary dtype before, twice that). The rest as the ternary ones' above,
  * from its own -unpacked original. The card says English alone; `japanese` is for a size that answered tests/answers.ts's
  * Japanese questions in Japanese without breaking (T.539: the 4B, T.286.3). The 1.7B's Japanese answers looped and
  * named mountains that are not there (T.286.2) */
 export const binaryBonsai = (size: string, revision: string, originalRevision: string, download: number, sizes: string,
   japanese: boolean, start: Partial<Entry> = {}): Entry =>
   japanese
-    ? bonsai("Bonsai", "Bonsai", "Q1_0", "日本語 / English · 1-bit weights", size, revision, originalRevision, download, sizes, start,
+    ? bonsai("Bonsai", "Bonsai", "Q1_0", "binary", "日本語 / English · 1-bit weights", size, revision, originalRevision, download, sizes, start,
       { prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE })
-    : bonsai("Bonsai", "Bonsai", "Q1_0", "English · 1-bit weights", size, revision, originalRevision, download, sizes, start,
+    : bonsai("Bonsai", "Bonsai", "Q1_0", "binary", "English · 1-bit weights", size, revision, originalRevision, download, sizes, start,
       { prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" });
-const bonsai = (repo: string, name: string, quantization: string, weights: string, size: string, revision: string,
+const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, weights: string, size: string, revision: string,
   originalRevision: string, download: number, sizes: string, { options = QWEN3_OWN_BOS, ...start }: Partial<Entry>,
   asked: Pick<Entry, "prompt" | "placeholder">): Entry => ({
   group: "hf", id: `hf-${repo.toLowerCase()}-${size.toLowerCase()}`, name: `Prism ML ${name} ${size}`,
   note: `answers at once · ${weights} · ${sizes}`,
   ...ggufOf(`prism-ml/${repo}-${size}-gguf`, revision, `${repo}-${size}-${quantization}.gguf`,
     `prism-ml/${repo}-${size}-unpacked`, originalRevision), download,
-  weights: "ternary", conversion: {}, options: { ...options, ...PLAIN_ROPE }, template: QWEN3_AT_ONCE, ...start,
+  weights: dtype, conversion: {}, options: { ...options, ...PLAIN_ROPE }, template: QWEN3_AT_ONCE, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 }, ...asked });
 // Models that huggingface.co serves and this page converts itself (src/python/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece

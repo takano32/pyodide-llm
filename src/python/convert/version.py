@@ -15,6 +15,8 @@
 # page sends the ids of apply_chat_template), lower case for a sentencepiece model that asks for it (T.265), the dummy
 # prefix after a special token (T.308), the templates jinja2 reads and the reader did not (T.397, and T.269's), and
 # qk_norm said by a Llama's file alone. 11: a ternary group's scale a float16, PQ2_0's own (T.533: 34 bytes a group of
-# 128, not 36; a ternary model's kept conversion of 10 is fetched and converted again).
+# 128, not 36; a ternary model's kept conversion of 10 is fetched and converted again). 12: the binary dtype (T.634.2:
+# one bit a weight, the 1-bit Bonsai's Q1_0 kept as it is, where they were ternary: their ternary conversions of 11,
+# twice the size, would stay beside the binary ones otherwise, kept.ts's replaced() keeping every bits of a source).
 # (the page reads it before any Python runs, src/runtime/kept.ts's CONVERTER: python_facts.py writes it there)
-CONVERTER = 11
+CONVERTER = 12

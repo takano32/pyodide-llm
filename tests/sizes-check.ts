@@ -263,4 +263,20 @@ const KINDS = { attention: plain, echo };
   assert.deepEqual(gpuHoles(tensors), [[at, at + q4k + int8 + (8 * 256 / 32) * 4]], "a stack of layers of their own kinds is one stretch, to its last layer's scales' end");
   console.log("ok: the GPU's bytes of rows of kinds of their own by each row and layer, and a stack of them one stretch of the checkpoint");
 }
+// T.634.2: the 1-bit Bonsai as binary checkpoints (python's checkpoint_size() of their headers), with their forward pass at
+// 4096 positions on a shared memory: the 1.7B to the 8B fit a 32-bit memory, the 27B passes it (its entries say so: wide,
+// tests/models-check.ts), as ternary did. A change of footprint() or of the sizes that moves the 27B under 4 GiB is told
+// here, for the entries' wide to be taken off
+{
+  const { needsWide } = await import(runtimeUrl("forward/memory.js"));
+  const LINEAR = { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 };
+  for (const [name, header, form, bytes, wide] of [["1.7B", [2048, 6144, 28, 16, 8, 151936, 4096], { qk_norm: true, head_dim: 128 }, 242434076, false],
+    ["8B", [4096, 12288, 36, 32, 8, -151936, 4096], { qk_norm: true, head_dim: 128 }, 1153011740, false],
+    ["27B", [5120, 17408, 64, 24, 4, -248320, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR }, 3883513884, true]]) {
+    const options = { ...form, dtype: "binary", shared: true, halfKV: true };
+    const after = footprint(header, bytes, { ...options, halfKV: keysInHalf(header, bytes, options) });
+    assert.equal(needsWide(bytes, after), wide, `the 1-bit Bonsai ${name}: ${((bytes + after) / 2 ** 30).toFixed(2)} GiB with its forward pass`);
+  }
+  console.log("ok: T.634.2, the 1-bit Bonsai as binary: the 27B's forward pass past a 32-bit memory, the smaller ones' within");
+}
 console.log("sizes-check: ok");

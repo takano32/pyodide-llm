@@ -25,27 +25,33 @@ const lines = py.runPython(`
 import gc, numpy as np
 vocabulary = open("tokenizer.bin", "rb").read()
 assert TERNARY["options"]["dtype"] == "ternary" and BINARY["options"]["dtype"] == "binary", (TERNARY["options"]["dtype"], BINARY["options"]["dtype"])
+# (T.634.2: one model at a time, its logits kept, so that a 27B's two checkpoints, 7.2 and 3.9 GB, are not in memory together)
+def run(given, disable, tokens):
+    m = kernel_llama_file(given["file"], vocabulary, **dict(given["options"], disable=disable))
+    backend, out = m.backend, [np.asarray(m.forward(token, pos), dtype=np.float32).copy() for pos, token in enumerate(tokens)]
+    block = None
+    if m.forward_many is not None:
+        m.forward_many(tokens[:-1], 0)
+        block = np.asarray(m.forward(tokens[-1], len(tokens) - 1), dtype=np.float32).copy()
+    m.release(); del m; gc.collect()
+    return backend, out, block
 lines = []
 for label, disable in (("relaxed SIMD", ()), ("without relaxed SIMD", ("relaxed",))):
-    a = kernel_llama_file(TERNARY["file"], vocabulary, **dict(TERNARY["options"], disable=disable))
-    b = kernel_llama_file(BINARY["file"], vocabulary, **dict(BINARY["options"], disable=disable))
-    assert "binary" in b.backend or "ternary" not in b.backend, b.backend
     rng = np.random.default_rng(634)
-    tokens = [a.bos] + rng.integers(3, a.vocab_size, POSITIONS - 1).tolist()
-    for pos, token in enumerate(tokens):
-        x, y = (np.asarray(m.forward(token, pos), dtype=np.float32).copy() for m in (a, b))
+    tokens = None
+    probe = kernel_llama_file(BINARY["file"], vocabulary, **dict(BINARY["options"], disable=disable))
+    tokens = [probe.bos] + rng.integers(3, probe.vocab_size, POSITIONS - 1).tolist()
+    probe.release(); del probe; gc.collect()
+    (a_backend, a, a_block), (b_backend, b, b_block) = run(TERNARY, disable, tokens), run(BINARY, disable, tokens)
+    assert "binary" in b_backend, b_backend
+    for pos, (x, y) in enumerate(zip(a, b)):
         if not np.array_equal(x.view(np.uint32), y.view(np.uint32)):
             raise AssertionError(f"{label}: the logits at position {pos} differ, by {float(np.abs(x - y).max())} at most")
-    # (and a block: the prompt's tiles, from position 0 again)
-    blocks = a.forward_many is not None and b.forward_many is not None
-    if blocks:
-        for m in (a, b):
-            m.forward_many(tokens[:-1], 0)
-        x, y = (np.asarray(m.forward(tokens[-1], len(tokens) - 1), dtype=np.float32).copy() for m in (a, b))
-        if not np.array_equal(x.view(np.uint32), y.view(np.uint32)):
-            raise AssertionError(f"{label}: the logits after a block differ, by {float(np.abs(x - y).max())} at most")
-    lines.append(f"binary-same-check: {b.backend} and {a.backend} ({label}): the logits the same to the bit at {len(tokens)} positions{' and after a block of ' + str(len(tokens) - 1) if blocks else ''}")
-    a.release(); b.release(); del a, b; gc.collect()
+    blocks = a_block is not None and b_block is not None
+    if blocks and not np.array_equal(a_block.view(np.uint32), b_block.view(np.uint32)):
+        raise AssertionError(f"{label}: the logits after a block differ, by {float(np.abs(a_block - b_block).max())} at most")
+    greedy = [int(x.argmax()) for x in b]
+    lines.append(f"binary-same-check: {b_backend} and {a_backend} ({label}): the logits the same to the bit at {len(tokens)} positions{' and after a block of ' + str(len(tokens) - 1) if blocks else ''} (the most likely at the first eight: {greedy[:8]})")
 lines
 `).toJs();
 for (const line of lines) console.log(line);

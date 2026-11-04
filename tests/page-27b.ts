@@ -157,7 +157,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact", "--quiet", "--window", "--fidelity", "--format"];
+  const VALUED = ["--dtype", "--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context", "--as", "--prompts", "--heads", "--exact", "--quiet", "--window", "--fidelity", "--format"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
   if (!out || !["compare", "speed", "memory", "write", "long", "convert", "starts", "chat"].includes(mode)) {
@@ -173,7 +173,8 @@ if (isMainThread) {
     : MODELS.find((model) => model.id === asked);
   if (drafted && !entry) throw new Error(`no entry ${drafted}`);
   if (mode === "convert") {
-    await convert(out, third, Number(option("--context", entry?.conversion?.max_seq_len ?? 4096)), pyodideWithEngine, args.includes("--blocks"));
+    // (T.634.2: the dtype the entry keeps, --dtype another: the 1-bit Bonsai 27B's binary, and its ternary of before)
+    await convert(out, third, Number(option("--context", entry?.conversion?.max_seq_len ?? 4096)), pyodideWithEngine, args.includes("--blocks"), option("--dtype", entry?.weights ?? "ternary"));
     process.exit(0);
   }
   const converted = JSON.parse(fs.readFileSync(`${out}.json`, "utf8"));
@@ -196,7 +197,7 @@ if (isMainThread) {
   py.globals.set("HEADER", py.toPy(header));
   py.globals.set("OPTIONS", py.toPy(options));
   const counted = options.kinds ? { weights: py.runPython("import llama2_numpy\nllama2_numpy.dtype_weights(HEADER, OPTIONS['dtype'], OPTIONS)") } : {};
-  const forwardOptions = { ...options, ...counted, int8: true, relaxed: true, halfKV: ["int8", "int6", "ternary"].includes(options.dtype), shared: true, outliers: 8, gpu: false };
+  const forwardOptions = { ...options, ...counted, int8: true, relaxed: true, halfKV: ["int8", "int6", "ternary", "binary"].includes(options.dtype), shared: true, outliers: 8, gpu: false };
   const after = footprint(header, size, forwardOptions), wide = needsWide(size, after) || args.includes("--wide"), halfKeys = keysInHalf(header, size, forwardOptions);
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
     `${(after / GiB).toFixed(3)} GiB after it (${((size + after) / GiB).toFixed(2)} GiB in all), a ${wide ? "64" : "32"}-bit memory, keys and values in ${halfKeys ? "float16" : "float32"}`);
@@ -864,7 +865,7 @@ if (isMainThread) {
 }
 
 /** The page's conversion in Pyodide, into a memory of forward.js through a sink (worker/weights.js's checkpointSink) */
-async function convert(out, folder, context, pyodideWithEngine, blocks = false) {
+async function convert(out, folder, context, pyodideWithEngine, blocks = false, dtype = "ternary") {
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: true });
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");
   const quantizeRows = numpy.kernel_quantizer("simdkernel.so");
@@ -905,7 +906,7 @@ async function convert(out, folder, context, pyodideWithEngine, blocks = false) 
     },
     reading(ms) { reading += ms; },
   });
-  const conversion = converted(py, hf, { ...(blocks ? { dtype: "int8", blocks: true } : { dtype: "ternary" }), max_seq_len: context, sink, quantize_rows: quantizeRows, readers }, answerer);
+  const conversion = converted(py, hf, { ...(blocks ? { dtype: "int8", blocks: true } : { dtype }), max_seq_len: context, sink, quantize_rows: quantizeRows, readers }, answerer);
   const seconds = (performance.now() - began) / 1000;
   console.log(`pyodide: converted in ${seconds.toFixed(0)} s (${(size / 1e6 / seconds).toFixed(1)} MB/s of the file, ${(reading / 1000).toFixed(0)} s of them reading it), ` +
     `Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB at the end, the process's largest resident set ${(process.resourceUsage().maxRSS / 1024).toFixed(0)} MiB`);

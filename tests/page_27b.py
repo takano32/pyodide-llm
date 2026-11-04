@@ -71,7 +71,8 @@ def tiled(header, config):
 
 
 def convert(folder, out, context, broken, dtype="ternary"):
-    # (dtype: the 27B's own, ternary; T.423's test converts a made-up model of float values to int8)
+    # (dtype: the 27B's own, ternary; T.423's test converts a made-up model of float values to int8; T.634.2: the 1-bit
+    # Bonsai 27B's, binary, --dtype)
     # (the folder as tests/hf_fetch.py makes it: the first .gguf by its name, with the original's files beside it)
     peak = own_memory()
 
@@ -173,8 +174,8 @@ if __name__ == "__main__":
     arguments = sys.argv[1:]
     named = lambda name, default: arguments[arguments.index(name) + 1] if name in arguments else default
     if arguments[:1] == ["convert"]:
-        convert(arguments[1], arguments[2], int(named("--context", 4096)), named("--broken", ""))
+        convert(arguments[1], arguments[2], int(named("--context", 4096)), named("--broken", ""), named("--dtype", "ternary"))
     elif arguments[:1] == ["made-up"]:
         made_up(arguments[1])
     else:
-        sys.exit("usage: python tests/page_27b.py convert <folder> <out> [--context N] [--broken tiled|order] | made-up <directory>")
+        sys.exit("usage: python tests/page_27b.py convert <folder> <out> [--context N] [--broken tiled|order] [--dtype binary] | made-up <directory>")

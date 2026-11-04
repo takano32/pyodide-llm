@@ -73,16 +73,16 @@ export const HF_FAMILIES: Entry[] = [
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
     "fetches 2.2 GB (GGUF) → ternary 2.2 GB", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T.286.2: and the 1-bit Bonsai 1.7B, the same Qwen3 1.7B with every weight a sign (Q1_0): fetched as 1.125 bits a
-  // weight, held as ternary
+  // weight, held as binary (T.634.2: the same 1.125 bits; ternary before, twice that)
   binaryBonsai("1.7B", "210a9e99f79cb184909d49595906526eb2b3dd9a", "a7f720bd688d7563714f3118edd97b83d06f0615", 248302272,
-    "fetches 248 MB (GGUF) → ternary 457 MB", false),
+    "fetches 248 MB (GGUF) → 1-bit 242 MB", false),
   // T.286.3: the 1-bit Bonsai 4B, the Qwen3 4B's shape as the ternary 4B (heads wider than dim / heads); it answers
   // Japanese, unlike the 1.7B
   binaryBonsai("4B", "78f2c2bacd0904ffaba24b4873ed975e5818354a", "b2529e9641629dce5e6be5fa44492bc249f1a58a", 572270624,
-    "fetches 572 MB (GGUF) → ternary 1.1 GB", true),
+    "fetches 572 MB (GGUF) → 1-bit 566 MB", true),
   // T.286.4: the 1-bit Bonsai 8B, a Qwen3 8B: it begins at <|im_start|> as the ternary 8B does, and answers Japanese
   binaryBonsai("8B", "48516770dd04643643e9f9019a2a349cf26c5dbd", "376f381570d6115bc03f82adcfa4af0c7672ae54", 1158654496,
-    "fetches 1.2 GB (GGUF) → ternary 2.2 GB", true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+    "fetches 1.2 GB (GGUF) → 1-bit 1.2 GB", true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T.236: Qwen3.5 0.8B, the first of the list with hybrid attention (T.229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
@@ -185,16 +185,17 @@ export const HF_FAMILIES: Entry[] = [
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.2 GB",
     { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
   // T.286.5: Prism ML's 1-bit Bonsai 27B, a Qwen3.6 27B (a Qwen3.5 in its form, as Bonsai 2's) with every weight a
-  // sign times a scale of its 128 (Q1_0, the embedding and the classifier too): 3.8 GB to fetch, kept ternary as the
-  // smaller 1-bit Bonsai are (7.24 GB, on a 64-bit memory). Not in a rotated basis (its GGUF says no prism.hadamard).
+  // sign times a scale of its 128 (Q1_0, the embedding and the classifier too): 3.8 GB to fetch, kept binary as the
+  // smaller 1-bit Bonsai are (T.634.2: 3.88 GB, ternary's 7.24 before; with its forward pass at 4096 positions 4.18 GiB,
+  // past a 32-bit memory still: wide). Not in a rotated basis (its GGUF says no prism.hadamard).
   // The vocabulary, config.json and template are its -unpacked original's, the same weights in float16
   // (tests/gguf_check.py tensors holds the GGUF to them). Its template is a Qwen3.5's: the two formats and the BOS of
   // one (qwen35). The sampling is its card's (BONSAI_27B_SAMPLING)
   ...thinkingAndNot("hf-bonsai-27b", "Prism ML Bonsai 27B",
     ggufOf("prism-ml/Bonsai-27B-gguf", "f10afb355f104535e3e3e98cf7ab7795c72bd292", "Bonsai-27B-Q1_0.gguf",
       "prism-ml/Bonsai-27B-unpacked", "d619b27283ac02b4199ced97a89419529dc0bfac"), 3803452480,
-    "1-bit weights · fetches 3.8 GB (GGUF) → ternary 7.2 GB",
-    { options: qwen35, weights: "ternary" }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
+    "1-bit weights · fetches 3.8 GB (GGUF) → 1-bit 3.9 GB",
+    { options: qwen35, weights: "binary", wide: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
   // T.364.3: Conway Research's Underdog Saluki 27B, the same Qwen3.8 27B at 2.3 bits a weight: a GGUF of llama.cpp's
   // K- and i-quantized blocks, ten types of them, a type to a matrix or to a layer of one (T.361). Kept as the file
   // has them (conversion.blocks, T.363: 7.96 GB, where int8 would be 30 GB) and multiplied by kernels of their own, on

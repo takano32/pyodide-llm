@@ -3,6 +3,7 @@
 //   node tests/models-check.ts
 import assert from "node:assert/strict";
 import { DEFAULT_MODEL, GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
+import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
 import { HF_JAPANESE } from "../src/models/hf-japanese.ts";
@@ -118,12 +119,21 @@ assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
-// T.286.5: the 1-bit Bonsai 27B, kept ternary as well (its Q1_0 is a ternary's values with no zero), the same
-// 7.2 GB; its original holds the same weights (not rebuilt: gguf.yml's candidates hold the GGUF to it), and its two
-// forms share one conversion
+// T.286.5: the 1-bit Bonsai 27B; T.634.2: kept binary, one bit a weight as its Q1_0 has them, 3.9 GB (ternary's 7.2
+// before), and a ninth of int8's then some where ?bits=8 asks for int8; its original holds the same weights (not
+// rebuilt: gguf.yml's candidates hold the GGUF to it), and its two forms share one conversion. Its forward pass at 4096
+// positions passes a 32-bit memory (4.18 GiB with its checkpoint: footprint()), so its note says Chrome and Firefox
+// although its weights alone are under 4 GiB (wide)
 const binary27 = byId("hf-bonsai-27b");
-for (const deviceMemory of [undefined, 4, 8]) assert.equal(weightsFor(binary27, undefined, deviceMemory), "ternary");
-assert.equal(modelBytes(binary27), 7.2e9);
+for (const deviceMemory of [undefined, 4, 8]) assert.equal(weightsFor(binary27, undefined, deviceMemory), "binary");
+assert.equal(modelBytes(binary27), 3.9e9);
+assert.equal(modelBytes({ ...binary27, conversion: { dtype: "int8" } }), 3.9e9 / BINARY_OF_EIGHT);
+assert.ok(binary27.wide && /Chrome and Firefox/.test(binary27.note), binary27.note);
+// (and the smaller 1-bit Bonsai: binary, their notes' 1-bit sizes; T.634.2)
+for (const [size, bytes] of [["1.7b", 242e6], ["4b", 566e6], ["8b", 1.2e9]]) {
+  const entry = byId(`hf-bonsai-${size}`);
+  assert.deepEqual([weightsFor(entry, undefined, 8), modelBytes(entry), Boolean(entry.wide)], ["binary", bytes, false], entry.id);
+}
 assert.ok(!binary27.rebuilt && binary27.original === binary27.hf.vocabulary.repo && binary27.download === 3803452480);
 assert.deepEqual(byId("hf-bonsai-27b-thinking").shares, ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]);
 for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(byId(id).options, qwen35, id);
@@ -160,7 +170,7 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   // says its size by its file or by its note's words
   // (T.333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
   assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", thinks.id, answers.id].sort());
-  for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);
+  for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary|1-bit) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);  // (T.634.2: 1-bit, a binary one's)
 }
 // T.333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the
 // int8 checkpoint without the table of every layer's inputs, which stays in the kept file (loaded, a second time here:
@@ -304,11 +314,14 @@ for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
 // Every note ends with them where the rule says, and with nothing of them where it does not: "desktop only" where a
 // device that says 4 GB is warned (memoryWarning()), "Chrome and Firefox" where what is loaded passes 4 GiB
 {
+  assert.deepEqual(MODELS.filter((entry) => entry.wide).map(({ id }) => id), ["hf-bonsai-27b-thinking", "hf-bonsai-27b"], "the entries said to pass a 32-bit memory by their forward pass (T.634.2)");
   const DEVICES = /( · desktop only)?( · Chrome and Firefox)?$/;
   for (const entry of MODELS) {
     const [, desktop, browsers] = DEVICES.exec(entry.note);
     assert.equal(Boolean(desktop), memoryWarning(entry, 4) !== "", `${entry.id}: "desktop only" where a 4 GB device is warned, and only there`);
-    assert.equal(Boolean(browsers), modelBytes(entry) > 2 ** 32, `${entry.id}: "Chrome and Firefox" where it loads more than 4 GiB, and only there`);
+    // (T.634.2: or where its forward pass at the context passes 4 GiB with it, which its entry says: wide, the 1-bit Bonsai
+    // 27B's 4.18 GiB)
+    assert.equal(Boolean(browsers), Boolean(entry.wide) || modelBytes(entry) > 2 ** 32, `${entry.id}: "Chrome and Firefox" where it loads more than 4 GiB, and only there`);
     assert.equal(entry.note.split(/ · desktop only| · Chrome and Firefox/).length, 1 + Boolean(desktop) + Boolean(browsers), `${entry.id}: the words once each, at the note's end`);
   }
   // no part of the list writes them itself (the rule adds them; written by hand, a note would say them twice)
