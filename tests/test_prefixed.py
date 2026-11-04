@@ -111,3 +111,58 @@ def test_the_engine_takes_the_new_options_and_refuses_none_of_the_converters():
     options, _ = converted(data, "tokenizer.model", {"bos_token_id": ids["<s>"]}, do_lower_case=True, tokenizer_class="LlamaTokenizer",
                            chat_template="<|user|>{{ messages[0].content }}")
     assert {"lowercase", "prefixed", "template"} <= set(options) and set(options) - {"template"} <= taken
+
+
+FIRST_SPACED = [  # T.400 (3): (what tokenizer.json says, whether the first text that begins with a space goes without "▁")
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": False}}, True),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": False}}, True),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": True}}, True),  # (before prepend_scheme)
+    ({"pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}]}}, True),
+    ({"normalizer": {"type": "Sequence", "normalizers": [{"type": "Prepend", "prepend": "▁"}, SPACES]}}, False),
+]
+# (and two that say no "▁" at all, where the engine still puts one before the first text: not T.400 (3)'s, see TASKS.md)
+NOT_SPACED = [{"normalizer": {"type": "Sequence", "normalizers": [SPACES]}}, {}]
+
+
+@pytest.mark.parametrize("said", NOT_SPACED)
+def test_no_metaspace_is_not_spaced(said):
+    from convert.tokenizer import metaspaced
+    assert not metaspaced({**UNIGRAM, **said}) and "spaced" not in llama2_convert.tokenizer_json_options({**UNIGRAM, **said})
+
+
+@pytest.mark.parametrize("said, spaced", FIRST_SPACED)
+def test_a_metaspace_puts_no_prefix_before_a_first_text_that_begins_with_a_space(said, spaced):
+    """T.400 (3): the tokenizers library's Metaspace puts "▁" before a stretch of text only where it does not begin with
+    one already, the first stretch too; a Prepend normalizer puts it before every one. The converter says the first as
+    spaced, and the engine's ids are the real ones for the whole text, a first text with a space, two, or none."""
+    from convert.tokenizer import metaspaced
+    assert metaspaced({**UNIGRAM, **said}) == spaced
+    options = llama2_convert.tokenizer_json_options({**UNIGRAM, **said})
+    assert options.get("spaced", False) == spaced and ("spaced" in options) == spaced
+    tokenizers = pytest.importorskip("tokenizers")
+    real = tokenizers.Tokenizer.from_str(json.dumps({"version": "1.0", "truncation": None, "padding": None, "normalizer": None,
+                                                     "pre_tokenizer": None, "post_processor": None, "decoder": None,
+                                                     **UNIGRAM, **said,
+                                                     "added_tokens": [{**UNIGRAM["added_tokens"][0], "single_word": False, "lstrip": False,
+                                                                       "rstrip": False, "normalized": False}],
+                                                     "model": {**UNIGRAM["model"], "byte_fallback": False}}))
+    pieces = list(llama2_convert.tokenizer_json_pieces({**UNIGRAM, **said}))
+    engine = Tokenizer(llama2_convert.tokenizer_bin(pieces, len(pieces)), len(pieces), kind="unigram",
+                       **{key: options[key] for key in ("prefixed", "spaced") if key in options})
+    for text in (" hello world", "  hello", " hello<sp>world", "hello world", "hello<sp> world", " hello<sp> world"):
+        assert engine.encode(text, ("<sp>",)) == real.encode(text, add_special_tokens=False).ids, (text, said)
+    # and a first text with a space has its "▁" from the space alone (the Prepend's two: "▁", "▁hello")
+    assert real.encode(" hello", add_special_tokens=False).ids == ([3] if spaced else [2, 3])
+
+
+def test_sentencepiece_itself_puts_its_prefix_before_a_first_text_with_a_space():
+    """T.400 (3): a tokenizer.model is read as sentencepiece reads it (spaced not said): "▁" before the first text
+    whatever it begins with, also for a legacy Llama tokenizer ("wanting" after a special token only)."""
+    spm = pytest.importorskip("sentencepiece")
+    data, ids = sentencepiece()
+    real = spm.SentencePieceProcessor(model_proto=data)
+    for described in ({"tokenizer_class": "LlamaTokenizer", "legacy": True}, {"tokenizer_class": "LlamaTokenizer", "legacy": False}, {}):
+        options, engine = converted(data, "tokenizer.model", **described)
+        assert "spaced" not in options, described
+        for text in (" hello", "hello", " hello world"):
+            assert engine.encode(text) == real.encode(text), (text, described)

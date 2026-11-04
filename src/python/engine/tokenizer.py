@@ -283,7 +283,7 @@ class Tokenizer:
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
-                 collapse=False, unknown=None, lowercase=False, prefixed=False):
+                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False):
         self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
         # T.265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
         # do_lower_case, with a vocabulary that has no capital Latin letter, each of which was <unk> without it)
@@ -297,6 +297,10 @@ class Tokenizer:
         if prefixed not in (False, "every", "wanting", "never"):
             raise ValueError(f"Unsupported prefixed: {prefixed!r} (the stretches of text the dummy prefix stands before: every, wanting or never)")
         self.prefixed = prefixed
+        # T.400 (3): a Metaspace pre-tokenizer (a tokenizer.json's) puts no "▁" before the first text either where that
+        # text begins with a space already (the space is its "▁"); sentencepiece itself puts it there whatever the text
+        # begins with (a tokenizer.model's, the engine's way where spaced is not said)
+        self.spaced = spaced
         self.cuts = {}  # cut()'s, of the specials it was last asked for
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
@@ -360,7 +364,8 @@ class Tokenizer:
                     # sentencepiece's dummy prefix: the model saw every text start with a space (but not the
                     # text after a special token, unless its tokenizer puts one there as well: prefixed, T.308;
                     # and a model without the prefix saw none, T.257)
-                    if self.prefixed != "never" and (first or self.prefixed == "every" or (self.prefixed and not part.startswith(" "))):
+                    if self.prefixed != "never" and ((first and not (self.spaced and part.startswith(" "))) or self.prefixed == "every"
+                                                    or (self.prefixed and not part.startswith(" "))):
                         part = " " + part
                     tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
             first = False

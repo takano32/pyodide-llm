@@ -113,7 +113,7 @@ class Llama:
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
-                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, tiled=None,
+                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, spaced=False, tiled=None,
                  local=None, wide=None, double=None, softcap=0.0, kv_shared=None, per_layer=0):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
@@ -169,7 +169,7 @@ class Llama:
         tiled (T.363): wout's columns are in llama.cpp's order of the value heads (FORM's), as a GGUF's blocks have them.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
-        whole (Llama 3). lowercase (T.265) and prefixed (T.308): the tokenizer's, see Tokenizer.
+        whole (Llama 3). lowercase (T.265), prefixed (T.308) and spaced (T.400): the tokenizer's, see Tokenizer.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         kernels is the path of simdkernel.so: the sampling runs on it (penalize, sample). The forward pass on the
         kernels is public/forward.js's (external, below); without external, NumPy computes the forward pass.
@@ -185,7 +185,7 @@ class Llama:
         """
         # how the text is read: the tokenizer's own settings (the tokenizer is made last, below)
         reading = dict(kind=tokenizer_kind, nfkc=nfkc, nfc=nfc, pretokenizer=pretokenizer, ignore_merges=ignore_merges,
-                       collapse=collapse, unknown=unknown, lowercase=lowercase, prefixed=prefixed)
+                       collapse=collapse, unknown=unknown, lowercase=lowercase, prefixed=prefixed, spaced=spaced)
         if external is not None:
             head = external.read(0, 28)
             checkpoint = bytes(head.to_py() if hasattr(head, "to_py") else head)

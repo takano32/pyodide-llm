@@ -109,7 +109,8 @@ def tokenizer_json_options(tokenizer):
     lowered = {"lowercase": True} if '"Lowercase"' in normalizers else {}
     if tokenizer_kind_of(tokenizer) != "BPE":
         prefixed = prefixed_texts(tokenizer)
-        return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {}), **lowered}
+        return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {}), **lowered,
+                **({"spaced": True} if metaspaced(tokenizer) else {})}
     if written_out(tokenizer):
         return written_out_options(tokenizer)
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
@@ -241,6 +242,20 @@ def prefixed_texts(tokenizer):
         if kind == "Metaspace" and step.get("prepend_scheme", "always" if step.get("add_prefix_space", True) else "never") == "always":
             found.add("wanting")
     return "every" if "every" in found else "wanting" if found else False
+
+
+def metaspaced(tokenizer):
+    """T.400 (3): whether this tokenizer.json puts its dummy prefix with a Metaspace pre-tokenizer (prepend_scheme
+    "always" or "first"), which leaves a text that begins with a space as it is, the first text too (Llama(spaced=)).
+    sentencepiece's own model puts "▁" before the first text whatever it begins with, as the engine does unless told."""
+    steps = [tokenizer.get("normalizer") or {}, tokenizer.get("pre_tokenizer") or {}]
+    while steps:
+        step = steps.pop()
+        steps += [*(step.get("normalizers") or []), *(step.get("pretokenizers") or [])]
+        if step.get("type") == "Metaspace" and \
+                step.get("prepend_scheme", "always" if step.get("add_prefix_space", True) else "never") in ("always", "first"):
+            return True
+    return False
 
 
 def described_options(config):
