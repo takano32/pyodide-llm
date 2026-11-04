@@ -1,8 +1,8 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ARROWPRO, ASK_JAPANESE, GLEIPNIR, OUMUAMUA, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY_AFTER_START, HARMONY_THINKING, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  ARROWPRO, ASK_JAPANESE, GLEIPNIR, OUMUAMUA, CHATML, ELYZA, EUROLLM, EVOLLM, LIGHTBLUE_R1, HARMONY_AFTER_START, HARMONY_THINKING, HARMONY_THINKING_AFTER_START, JAPANESE, LINE_SFT, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
   QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, QWEN3_OWN_BOS, CALM2, ELYZA_LLAMA2, RAKUTEN, RAKUTEN_UNTRIMMED, SARASHINA, STABLELM_GAMMA, SWALLOW_MS,
-  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmonyFromStart, harmonyThinking, llmJp, sarashina,
+  TINYSWALLOW, TRANSLATE, UNPHI4, UNPHI4_AFTER_START, eurollm, harmonyFromStart, harmonyThinking, harmonyThinkingFromStart, llmJp, sarashina,
 } from "./formats.ts";
 import { greedy, sampled, thinking } from "./sampling.ts";
 import { ggufOf, hf, thinkingAndNot } from "./builders.ts";
@@ -467,7 +467,7 @@ export const HF_JAPANESE: Entry[] = [
     original: "llm-jp/llm-jp-4-8b-thinking",
     hf: { repo: "mmnga-o/llm-jp-4-8b-thinking-gguf", revision: "d10eb8c8470f89b2082e793a5ffa086a402a23fc", weights: "llm-jp-4-8b-thinking-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-thinking", revision: "fc7c15c262710016c19bcda4372a96ff68875846", tokenizer: "tokenizer.json" } }, download: 9132708672,
-    conversion: {}, options: harmonyThinking, generation: thinking, template: HARMONY_THINKING,
+    conversion: {}, options: harmonyThinkingFromStart, generation: thinking, template: HARMONY_THINKING_AFTER_START,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T.304: llm-jp-4.1 8B thinking, of the same form, format and sampling as 4's. Its makers give a Q4_K_M and a BF16 alone
   // (no Q8_0 yet: the owner's choice of 2026-10-31 is to take the Q4_K_M now with llama.cpp's blocks kept as they are, and the Q8_0

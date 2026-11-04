@@ -61,6 +61,9 @@ export const HARMONY_AFTER_START = HARMONY.slice("<|start|>".length);
 // "<|start|>assistant" and leaves the channel to the model (format_check.py's KNOWN)
 export const HARMONY_THINKING = HARMONY.replace("\n\n# Valid channels", "\n\nReasoning: medium\n\n# Valid channels")
   .replace("<|channel|>final<|message|>", "<|channel|>analysis<|message|>");
+// T.399: the thinking form of llm-jp-4 8B from the template's first token too (handwritten answers +9.88% with
+// <|startoftext|> in front, 22 of 24 worse); 4.1's entry keeps HARMONY_THINKING and the BOS in front (not measured)
+export const HARMONY_THINKING_AFTER_START = HARMONY_THINKING.slice("<|start|>".length);
 // T.125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
 // four prompts, where the prompt has no space at either end: some templates trim it, the page does not). These
 // models come with a sentencepiece tokenizer.model, which the engine reads (their tokenizer.json is a BPE of
@@ -295,4 +298,5 @@ export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|sta
 export const harmonyThinking = { ...harmony, stop_tokens: [1, 2, 13] };
 // T.399: the instruct's, from the template's first token (HARMONY_AFTER_START); the stops are harmony's
 export const harmonyFromStart = { ...harmony, bos: 10 };
+export const harmonyThinkingFromStart = { ...harmonyThinking, bos: 10 };
 export const llmJp = { stop_tokens: [1, 2, 7] };

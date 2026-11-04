@@ -142,8 +142,9 @@ LENIENT = {
     # T.517: LINE's instruction-sft, 1.7B </s> better than none on plain text and -5.76% on the answers, 3.6B <s> chosen
     **{f"hf-japanese-large-lm-{size}-instruction-sft": "the BOS measured and chosen per size (T.517)"
        for size in ("1.7b", "3.6b")},
-    # T.592.1, T.304, T.604: llm-jp-4 8B thinking -0.74%, llm-jp-4.1 8B thinking -7.08%, Lumi v2 -1.90% on plain text
-    "hf-llm-jp-4-8b-thinking": "-0.74% on plain text (T.592)", "hf-llm-jp-4.1-8b-thinking": "-7.08% on plain text (T.304)",
+    # T.304, T.604: llm-jp-4.1 8B thinking -7.08%, Lumi v2 -1.90% on plain text (T.399: llm-jp-4 8B thinking was
+    # -0.74% here, +9.88% on handwritten answers, and begins at the real <|start|> since)
+    "hf-llm-jp-4.1-8b-thinking": "-7.08% on plain text (T.304)",
     "hf-lumi-v2-llm-jp-4-8b": "-1.90% on plain text (T.604)",
     # T.599, T.601: calm2 +1.11%, youri +1.16% on plain text
     "hf-calm2-7b-chat": "+1.11% on plain text (T.599)", "hf-youri-7b-chat": "+1.16% on plain text (T.601)",
