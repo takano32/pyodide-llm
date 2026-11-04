@@ -15,6 +15,8 @@
 //   updated: reload for full speed", after what it said before, and still does with the next model of the visit;
 //   where the file failed otherwise (a 500, a dropped line, gone alone with the module that names it there) the line
 //   is what it was; a visit where nothing fails says nothing and asks no HEAD.
+// - (T.491) a model on the GPU alone (?gpuTest=only, on SwiftShader's WebGPU in a Chromium) whose GPU's worker is gone
+//   or answered 500 is loaded again on the CPU, ready before 60 s, and answers; the status line as above;
 // It does not see: a GPU at work (its worker is asked for wherever the browser's workers have WebGPU, and that it
 // does not start is all this needs; where they have none the case says that it saw nothing), a real deployment.
 //
@@ -57,6 +59,11 @@ const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
 const kind = playwright[channel ? "chromium" : engine];
 const browser = await kind.launch({ headless: true, channel });
 console.log(`${engine} ${browser.version()}`);
+// T.491: a Chromium whose workers have WebGPU without a GPU (SwiftShader, as tests/e2e.ts's gpuTest), for the cases of a
+// model on the GPU alone; launched once a case asks for it, and only a Chromium has it (elsewhere those cases see nothing)
+const SWIFTSHADER = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"];
+let gpuBrowser;
+const swiftShader = async () => (gpuBrowser ??= kind === playwright.chromium ? await kind.launch({ headless: true, channel, args: SWIFTSHADER }) : browser);
 
 // T.93: the first visit reloads once under the service worker; a wait the reload interrupts starts again
 const acrossReload = async (wait) => {
@@ -296,6 +303,38 @@ const CASES = {
       if (how === 404) await saysSlower(name, page, said.status);
       else saysNothing(name, said.status);
     }])),
+  // T.491: a model on the GPU alone (?gpuTest=only: tiny-lm, whatever its size) whose GPU's worker does not start. The
+  // load goes on to its end, the GPU's side says the worker did not start, and the model is loaded again on the CPU
+  // (worker/weights.ts's gpuOnlyReady()): it is ready well before the 60 s a worker that says nothing is waited for,
+  // and answers; where the worker is gone the status line says the site was updated, where it failed otherwise not
+  ...Object.fromEntries([["gone from the start, with the worker that names it", 404, 404], ["answered 500 (the worker is there)", 500, undefined]].map(([what, how, head]) =>
+    [`model page, a model on the GPU alone whose GPU's worker is ${what}`, Object.assign(async (context, name) => {
+      rule = (file, method) => (method === "HEAD" && built(file) ? head : family("gpu")(file) ? how : undefined);
+      const warnings = [];
+      context.on("console", (message) => { if (message.type() === "warning") warnings.push(message.text()); });
+      const started = Date.now();
+      const page = await modelPage(context, "tiny-lm&gpuTest=only");
+      await ready(page);
+      const took = Date.now() - started;
+      const status = await page.evaluate(() => document.getElementById("status-text").textContent);
+      console.log(`  ready in ${(took / 1000).toFixed(1)} s: ${status}`);
+      if (!requests.some((line) => line.startsWith("GET _astro/gpu."))) {
+        // (a Chromium was given SwiftShader: there the GPU's worker must be asked for)
+        expect(name, kind !== playwright.chromium, `no GPU's worker was asked for: the case saw nothing (${status})`);
+        console.log("  SAW NOTHING: this browser's workers asked for no GPU's worker");
+        return;
+      }
+      expect(name, warnings.some((line) => /the model was on the GPU alone, and is loaded again on the CPU/.test(line)),
+        `the model was not loaded again on the CPU after the GPU alone: ${JSON.stringify(warnings.filter((line) => /^gpu:/.test(line)))}`);
+      expect(name, took < 60000, `ready in ${took} ms, not before the 60 s a silent GPU's worker is waited for`);
+      // (the word of the update comes after one HEAD)
+      if (how === 404) await page.waitForFunction((slower) => document.getElementById("status-text").textContent.endsWith(slower), SLOWER, { timeout: 30000 }).catch(() => {});
+      const said = await answered(page);
+      console.log(`  the page: ${JSON.stringify({ ...said, text: said.text.slice(0, 60) })}`);
+      expect(name, said.error === undefined && said.text.length > 0, `an error was shown, or nothing written: ${said.error}`);
+      if (how === 404) await saysSlower(name, page, said.status);
+      else saysNothing(name, said.status);
+    }, { swiftShader: true })])),
   "model page, nothing gone": async (context, name) => {
     const page = await modelPage(context);
     await ready(page);
@@ -344,7 +383,7 @@ for (const [name, run] of Object.entries(CASES)) {
   if (only.length && !only.some((word) => name.includes(word))) continue;
   console.log(`- ${name}`);
   const before = failures.length;
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await (run.swiftShader ? await swiftShader() : browser).newContext({ viewport: { width: 390, height: 844 } });
   // (T.380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
   if (process.env.UPDATED_CONSOLE) context.on("console", (message) => { if (message.type() === "warning") console.log(`  console: ${message.text().slice(0, 300)}`); });
   const lines = [];
@@ -369,6 +408,7 @@ for (const [name, run] of Object.entries(CASES)) {
 fs.rmSync(fixture, { recursive: true, force: true });
 console.log(failures.length ? `FAILED\n${failures.map((line) => `- ${line}`).join("\n")}` : "updated-in-browser: ok");
 // (a browser's close() may never return, T.141: the process ends by itself)
+if (gpuBrowser && gpuBrowser !== browser) await closed(() => gpuBrowser.close());
 await closed(() => browser.close());
 server.close();
 await leave(failures.length ? 1 : 0);
