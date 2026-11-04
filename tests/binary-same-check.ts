@@ -15,34 +15,35 @@ import { pyodideWithEngine } from "./engine.ts";
 const args = process.argv.slice(2);
 const [ternary, binary] = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
 const positions = args.includes("--positions") ? Number(args[args.indexOf("--positions") + 1]) : 64;
-const { pyodide: py } = await pyodideWithEngine();
 const of = (out) => ({ file: path.resolve(`${out}.bin`), options: JSON.parse(fs.readFileSync(`${out}.json`, "utf8")) });
+// (T.634.2: a 64-bit memory where the ternary checkpoint passes 3 GiB, as the page gives the 1-bit Bonsai 27B)
+const { pyodide: py } = await pyodideWithEngine({ wide: fs.statSync(of(ternary).file).size > 3 * 2 ** 30 });
 py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${ternary}.tokenizer.bin`));
 py.globals.set("TERNARY", py.toPy(of(ternary)));
 py.globals.set("BINARY", py.toPy(of(binary)));
 py.globals.set("POSITIONS", positions);
 const lines = py.runPython(`
-import gc, numpy as np
+import gc, js, numpy as np
 vocabulary = open("tokenizer.bin", "rb").read()
 assert TERNARY["options"]["dtype"] == "ternary" and BINARY["options"]["dtype"] == "binary", (TERNARY["options"]["dtype"], BINARY["options"]["dtype"])
 # (T.634.2: one model at a time, its logits kept, so that a 27B's two checkpoints, 7.2 and 3.9 GB, are not in memory together)
-def run(given, disable, tokens):
+def run(given, disable, tokens=None):
     m = kernel_llama_file(given["file"], vocabulary, **dict(given["options"], disable=disable))
+    if tokens is None:
+        tokens = [m.bos] + np.random.default_rng(634).integers(3, m.vocab_size, POSITIONS - 1).tolist()
     backend, out = m.backend, [np.asarray(m.forward(token, pos), dtype=np.float32).copy() for pos, token in enumerate(tokens)]
     block = None
     if m.forward_many is not None:
         m.forward_many(tokens[:-1], 0)
         block = np.asarray(m.forward(tokens[-1], len(tokens) - 1), dtype=np.float32).copy()
     m.release(); del m; gc.collect()
-    return backend, out, block
+    if hasattr(js, "gc"):
+        js.gc()  # (node --expose-gc: the last model's memory let go before the next is read)
+    return backend, out, block, tokens
 lines = []
 for label, disable in (("relaxed SIMD", ()), ("without relaxed SIMD", ("relaxed",))):
-    rng = np.random.default_rng(634)
-    tokens = None
-    probe = kernel_llama_file(BINARY["file"], vocabulary, **dict(BINARY["options"], disable=disable))
-    tokens = [probe.bos] + rng.integers(3, probe.vocab_size, POSITIONS - 1).tolist()
-    probe.release(); del probe; gc.collect()
-    (a_backend, a, a_block), (b_backend, b, b_block) = run(TERNARY, disable, tokens), run(BINARY, disable, tokens)
+    a_backend, a, a_block, tokens = run(TERNARY, disable)
+    b_backend, b, b_block, _ = run(BINARY, disable, tokens)
     assert "binary" in b_backend, b_backend
     for pos, (x, y) in enumerate(zip(a, b)):
         if not np.array_equal(x.view(np.uint32), y.view(np.uint32)):

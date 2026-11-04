@@ -26,4 +26,4 @@ for dtype in ternary binary; do
   echo "binary: $dtype is $(stat -c %s "$dir/$dtype.bin") bytes"
 done
 echo "binary: $(df -h "$dir" | tail -1)"
-node tests/binary-same-check.ts "$dir/ternary" "$dir/binary" --positions "$positions"
+node --expose-gc tests/binary-same-check.ts "$dir/ternary" "$dir/binary" --positions "$positions"
