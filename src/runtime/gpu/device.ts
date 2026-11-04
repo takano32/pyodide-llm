@@ -12,7 +12,7 @@ import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
-import { PACKINGS, packingsOf, isBlock, asTernary, spread } from "./packings.ts";
+import { PACKINGS, packingsOf, isBlock, asTernary, spreadBits } from "./packings.ts";
 import type { FromGpu, GpuPacking, Matrices, Opened, Remembered, Started, Tables, Tokens as TokensPlan } from "../contracts/gpu/protocol.ts";
 import type { Own } from "../shaders/prompt.ts";
 import type { Weights } from "./weights.ts";
@@ -247,13 +247,13 @@ function copyIn(m: Model, target: GPUBuffer, address: number, bytes: number, off
   }
 }
 // T.634.3: bytes of binary weights of the shared memory at address (whole groups of 16) onto the GPU as ternary's codes,
-// twice as many (at offset of target), a CHUNK of codes at a time (packings.ts's spread)
+// twice as many (at offset of target), a CHUNK of codes at a time (packings.ts's spreadBits)
 let spreadOut: Uint8Array<ArrayBuffer> | undefined;
 function spreadIn(m: Model, target: GPUBuffer, address: number, bytes: number, offset = 0) {
   spreadOut ??= new Uint8Array(CHUNK);
   for (let done = 0; done < bytes; done += CHUNK / 2) {
     const n = Math.min(CHUNK / 2, bytes - done);
-    spread(new Uint8Array(m.memory.buffer, address + done, n), spreadOut);
+    spreadBits(new Uint8Array(m.memory.buffer, address + done, n), spreadOut);
     m.device.queue.writeBuffer(target, offset + 2 * done, spreadOut, 0, 2 * n);
   }
 }

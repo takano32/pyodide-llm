@@ -28,7 +28,7 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 //   grid      (T.547.3.4) whether its shaders read the codebooks, bound where an int8 matrix's scales are (the IQ types)
 //   on        (T.634.3) the packing it is on the GPU, whose shaders multiply it and whose bytes a read back is in: its
 //             own, but binary's, which goes up as ternary codes (spread)
-//   spread    (T.634.3) whether its bytes are spread on the CPU as they go up (binary's bits to ternary's codes: spread())
+//   spread    (T.634.3) whether its bytes are spread on the CPU as they go up (binary's bits to ternary's codes: spreadBits())
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
   grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number>; on: GpuPacking; spread: boolean };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
@@ -44,7 +44,7 @@ const blocks = (packing: BlockPacking): HeldAs => {
 // code 2 b (+1: 2, -1: 0), so a nibble's four codes are a table of 16 (CODES). The scales are ternary's, float16s.
 export const CODES = Uint8Array.from({ length: 16 }, (_, x) => [0, 1, 2, 3].reduce((byte, p) => byte | ((((x >> p) & 1) * 2) << (2 * p)), 0));
 /** whole groups of binary's bytes (16 a group) as ternary's codes (32 a group), into out (twice as long) */
-export function spread(bits: Uint8Array, out = new Uint8Array(bits.length * 2)) {
+export function spreadBits(bits: Uint8Array, out = new Uint8Array(bits.length * 2)) {
   for (let g = 0; g < bits.length; g += 16) {
     for (let c = 0; c < 16; c++) {
       const v = bits[g + c];

@@ -8,7 +8,7 @@ import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer,
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { CODEBOOK_BYTES } from "../shaders/prompt.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { PACKINGS, CODES, packingAt, packingsOf, spread } from "./packings.ts";
+import { PACKINGS, CODES, packingAt, packingsOf, spreadBits } from "./packings.ts";
 import type { Model, Open, Bound } from "./device.ts";
 import type { GpuPacking, Matrix, Started, Table, Tables, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { TensorName } from "../contracts/plan.ts";
@@ -335,7 +335,7 @@ function routedHalves(m: Open, [start, , target, at]: Route, from: number, to: n
 }
 // T.634.3: the bytes [from, to) of the checkpoint (bytes holds those from offset on) of a route of binary weights: byte
 // r of the route (r from its start) is two bytes of ternary's codes, at 32 (r >> 4) + (r & 15) and 16 bytes after
-// (packings.ts's spread). The whole groups of 16 bytes go up spread in one write; the bytes of a group a stretch begins or
+// (packings.ts's spreadBits). The whole groups of 16 bytes go up spread in one write; the bytes of a group a stretch begins or
 // ends in the middle of go a byte at a time (partialByte: each byte of the codes is one byte's of the checkpoint)
 function routedBits(m: Open, [start, , target, at]: Route, from: number, to: number, offset: number, bytes: Uint8Array) {
   const byteOf = (q: number) => {
@@ -346,7 +346,7 @@ function routedBits(m: Open, [start, , target, at]: Route, from: number, to: num
   let q = from;
   for (; q < to && (q - start) % 16; q++) byteOf(q);
   const whole = (to - q) & ~15;
-  if (whole) m.device.queue.writeBuffer(target, at + 2 * (q - start), spread(bytes.subarray(q - offset, q - offset + whole)));
+  if (whole) m.device.queue.writeBuffer(target, at + 2 * (q - start), spreadBits(bytes.subarray(q - offset, q - offset + whole)));
   for (q += whole; q < to; q++) byteOf(q);
 }
 // byte k (0, the low one, or 1) of the half whose float32 is at the byte offset at of target, widened and written
