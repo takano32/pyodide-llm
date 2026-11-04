@@ -2,7 +2,6 @@
 weights (one head's size) per layer after everything else, and the engine applies them. The file keeps the 7 int
 header, so the caller passes qk_norm=True, as it passes bias=True for a Qwen2. Some Qwen3 (0.6B, 4B) and some
 Llamas (MiniCPM5 1B) have heads of another size than dim / n_heads: head_dim, which the caller passes too."""
-import inspect
 import json
 import struct
 
@@ -14,6 +13,7 @@ from test_convert import converted, hugging_face, reader, safetensors_file, stre
 
 import llama2_convert
 from llama2_convert import Safetensors, has_qk_norm, permute_heads
+from engine.model import OPTIONS
 from llama2_numpy import FORM, Llama, checkpoint_dtype, form_of
 
 # head_size 16: q twice as wide as dim (Qwen3 0.6B's 16 heads of 128 in 1024); 4: half as wide
@@ -139,9 +139,9 @@ def test_heads_that_do_not_fill_dim_are_said_where_dim_over_heads_rounds_to_them
 def test_the_form_has_one_set_of_defaults():
     """T.144: FORM is what the file cannot say, with the value of a form that says nothing. Everything that takes it by
     its names must mean the same by nothing, or a model whose options leave one out is laid out two ways."""
-    # (T.359: layout() takes the form as it comes and reads it as everything else does, by form_of(); Llama names the keys)
-    parameters = inspect.signature(Llama.__init__).parameters
-    assert {key: parameters[key].default for key in FORM} == FORM
+    # (T.359: layout() takes the form as it comes and reads it as everything else does, by form_of(); T.639.1: and so
+    # does Llama, which takes every key of it and names none of their defaults)
+    assert set(FORM) <= set(OPTIONS)
     header = (64, 128, 2, 4, 2, 100, 32)
     assert llama2_convert.layout(*header) == llama2_convert.layout(*header, **FORM)
     assert form_of(None) == form_of({"tokenizer_kind": "bpe"}) == FORM

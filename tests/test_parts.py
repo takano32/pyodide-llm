@@ -590,3 +590,12 @@ def test_an_option_that_is_no_llamas_is_refused_by_its_name():
     for name in ("nonsense", "template", "tables", "kind"):
         with pytest.raises(TypeError, match=f"unexpected keyword argument '{name}'"):
             Llama(pack_checkpoint(config, weights), None, **{name: 1})
+
+
+def test_every_option_is_of_one_table():
+    """T.639.1: a Llama's options are the form's, the tokenizer's, the plan's and its own, and no name is of two."""
+    from engine.model import OPTIONS, OWN, PLANNED
+    from engine.layout import FORM
+    from engine.tokenizer import SETTINGS
+    assert len(OPTIONS) == len(set(OPTIONS)) == len(FORM) + len(SETTINGS) + len(PLANNED) + len(OWN) == 38
+    assert set(READING) == set(SETTINGS)

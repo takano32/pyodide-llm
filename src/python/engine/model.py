@@ -27,8 +27,8 @@ import struct
 
 import numpy as np
 
-from engine.tokenizer import BOS, Tokenizer
-from engine.layout import (ATTENDING, DOUBLE, GELU, GELU_ERF, NARROW, NARROW_KEPT, PARTLY, PROPORTIONAL, WIDE, WIDE_KEPT, Dims, file_size, layout_of, linear_form, linear_widths, local_layers,
+from engine.tokenizer import BOS, SETTINGS, Tokenizer
+from engine.layout import (ATTENDING, DOUBLE, GELU, GELU_ERF, NARROW, NARROW_KEPT, PARTLY, PROPORTIONAL, WIDE, WIDE_KEPT, Dims, FORM, file_size, form_of, layout_of, linear_form, linear_widths, local_layers,
                            check_shared_windows, stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
@@ -76,6 +76,17 @@ def convolution_states(convolution, layers, dim):
 STATEFUL_LAYERS = {"linear": ("linear_attention", linear_states), "convolution": ("short_convolution", convolution_states)}
 
 
+# T.639.1: what a Llama is given besides its two files, by whose it is, each in one table: the form's (engine/layout.py's
+# FORM, read by form_of()), the tokenizer's (engine/tokenizer.py's SETTINGS: the Tokenizer has their defaults), the plan's
+# (engine/plan.py's Settings, but for what the Llama makes of the others: MADE) and the Llama's own (OWN). A setting that
+# is added is a line of one of them and where it is read; a name that is in none of them is refused
+MADE = ("int8", "kv_start", "tables", "local_tables")
+PLANNED = {name: Settings._field_defaults[name] for name in Settings._fields if name not in MADE and name not in FORM}
+OWN = {"dtype": "float32", "rope_theta": 10000.0, "rope_scaling": None, "bos": BOS, "stop_tokens": (BOS,),
+       "specials": (), "kernels": None, "external": None}
+OPTIONS = (*FORM, *SETTINGS, *PLANNED, *OWN)
+
+
 class Llama:
     """A model: what its checkpoint holds, each row an attribute of its name, the tokenizer, and the parts it writes
     with. The forward pass is one of two: the reference in NumPy, which is this class's own (forward() and the
@@ -108,14 +119,9 @@ class Llama:
     token_block = staticmethod(lambda: 0)
     tiled = False  # T.363: FORM's "tiled", of a model made with it
 
-    def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
-                 tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
-                 rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
-                 disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
-                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
-                 convolution=None, unturned=(), kinds=None, lowercase=False, prefixed=False, spaced=False, tiled=None,
-                 local=None, wide=None, double=None, softcap=0.0, kv_shared=None, per_layer=0):
-        """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
+    def __init__(self, checkpoint, tokenizer, **options):
+        """checkpoint: llama2.c "legacy" format, a 7 int header then the weights. options: the settings below, by
+        their names (OPTIONS: the form's, the tokenizer's, the plan's and the Llama's own); any other is refused.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
         dtype="int6" (T.98) is int8 with six bits a value (pack6), and dtype="ternary" (T.230) two bits a value with a
@@ -183,9 +189,23 @@ class Llama:
         object with forward(token, pos, need_logits, logits) and backend. Python keeps the tokenizer, generate()
         and the sampling. The NumPy forward cannot run on weights it does not have: disable "kernels" without it.
         """
-        # how the text is read: the tokenizer's own settings (the tokenizer is made last, below)
-        reading = dict(kind=tokenizer_kind, nfkc=nfkc, nfc=nfc, pretokenizer=pretokenizer, ignore_merges=ignore_merges,
-                       collapse=collapse, unknown=unknown, lowercase=lowercase, prefixed=prefixed, spaced=spaced)
+        strange = [name for name in options if name not in OPTIONS]
+        if strange:
+            raise TypeError(f"Llama.__init__() got an unexpected keyword argument {strange[0]!r}")
+        # what the file cannot say (engine/layout.py's FORM, each with its default), and with it for every layer (does
+        # it keep a state: a linear-attention layer or a convolution one, its place in the stacks of its kind's
+        # tensors). The form is held to its architecture in the Dims: one without the layers its architecture has, or
+        # with another's, is refused
+        form = form_of(options)
+        arch, linear = form["arch"], form["linear"]
+        # how the text is read: the tokenizer's own settings, by the Tokenizer's names (the tokenizer is made last, below)
+        reading = {SETTINGS[name]: value for name, value in options.items() if name in SETTINGS}
+        # the plan's (Settings') and the Llama's own
+        planned = {name: options.get(name, default) for name, default in PLANNED.items()}
+        disable, rotary, parallel_residual, unturned, local, softcap = (planned[name] for name in (
+            "disable", "rotary", "parallel_residual", "unturned", "local", "softcap"))
+        own = {name: options.get(name, default) for name, default in OWN.items()}
+        dtype, rope_theta, rope_scaling, bos, stop_tokens, specials, kernels, external = own.values()
         if external is not None:
             head = external.read(0, 28)
             checkpoint = bytes(head.to_py() if hasattr(head, "to_py") else head)
@@ -196,7 +216,7 @@ class Llama:
         # negative vocab size is hacky way of signaling unshared weights. bit yikes.
         shared_weights = vocab_size > 0
         self.vocab_size = abs(vocab_size)
-        self.head_size = int(head_dim) or self.dim // self.n_heads
+        self.head_size = int(form["head_dim"]) or self.dim // self.n_heads
         dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
         self.q_dim, kv_dim = self.n_heads * self.head_size, self.n_kv_heads * self.head_size
 
@@ -226,27 +246,20 @@ class Llama:
 
         self.arch, self.parallel_residual = arch, parallel_residual
         # T.237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
-        self.rotated = rotated_form(rotated, rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
+        self.rotated = rotated_form(form["rotated"], rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
         if self.rotated is not None and not layout.rotatable:
             raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2, GPT-NeoX or LFM2 has one.")
         # (the signs and the block themselves, not this model: a function that held the model would be a cycle of
         # references, and the weights would then stay until a collection)
         signs, block = (self.rotated["signs"], self.rotated["block"]) if self.rotated else (None, None)
         self.turned = (lambda v: v) if self.rotated is None else (lambda v: rotate(v, signs[v.size], block))
-        self.rms_norm_eps = float(rms_norm_eps)
+        self.rms_norm_eps = float(planned["rms_norm_eps"])
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
         # T.255: the layers whose q and k go into the scores as their matrices (and norms) leave them
         self.unturned = unturned_layers(arch, n_layers, unturned)
         # T.261: the layers that attend a window of the last positions and have RoPE tables of their own (None: none)
         self.local = local_layers(arch, n_layers, local)
-        # what the file cannot say of itself (engine/layout.py's FORM; the rotated basis moves no tensor), and with it
-        # for every layer (does it keep a state: a linear-attention layer or a convolution one, its place in the stacks
-        # of its kind's tensors). The form is held to its architecture there: one without the layers its architecture
-        # has, or with another's, is refused
-        form = {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": linear,
-                "convolution": convolution, "kinds": kinds, "wide": wide, "double": double, "kv_shared": kv_shared,
-                "per_layer": per_layer}
         dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
         self.slots = dims.slots
         # T.331: for every layer that attends, by its place among them: the names of its attention's tensors are those
@@ -292,7 +305,7 @@ class Llama:
         self.per_layer = dims.per_layer
         # what the file holds: its rows
         self.rows = dims.rows()
-        if tiled:
+        if form["tiled"]:
             self.tiled = True
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None

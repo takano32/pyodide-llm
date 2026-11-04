@@ -269,6 +269,14 @@ class Charsmap:
         return b"".join(out).decode("utf-8")
 
 
+# T.639.1: the settings of the reading a model is given with its options (a Llama's, the converter's), each under the
+# name of the Tokenizer's argument it is: a setting that is added is a line here and an argument of the Tokenizer, whose
+# default is the default
+SETTINGS = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
+            "ignore_merges": "ignore_merges", "collapse": "collapse", "unknown": "unknown", "lowercase": "lowercase",
+            "prefixed": "prefixed", "spaced": "spaced"}
+
+
 class Tokenizer:
     """llama2.c's tokenizer.bin: sentencepiece pieces with their scores.
 

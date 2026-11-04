@@ -5,12 +5,12 @@ A sentencepiece tokenizer puts "▁" before the first text. Some put it before t
 before every such stretch ("every"), or before every one that does not begin with a space already ("wanting"). The
 list had a space written after each special token of three formats (zephyr's, EuroLLM's, llm-jp-4's) to say so.
 """
-import inspect
 import json
 
 import pytest
 
 import llama2_convert
+from engine.model import OPTIONS
 from llama2_numpy import Llama, Tokenizer
 from made_up_tokenizers import byte_level, converted, sentencepiece
 
@@ -104,8 +104,9 @@ def test_the_engine_knows_the_two_ways_and_no_other():
 
 
 def test_the_engine_takes_the_new_options_and_refuses_none_of_the_converters():
-    """What the converter says goes to Llama() as keywords (the worker spreads the options): each is one it takes."""
-    taken = set(inspect.signature(Llama.__init__).parameters)
+    """What the converter says goes to Llama() as keywords (the worker spreads the options): each is one it takes
+    (T.639.1: engine/model.py's OPTIONS, the names of its tables)."""
+    taken = set(OPTIONS)
     assert {"lowercase", "prefixed"} <= taken
     data, ids = sentencepiece()
     options, _ = converted(data, "tokenizer.model", {"bos_token_id": ids["<s>"]}, do_lower_case=True, tokenizer_class="LlamaTokenizer",
