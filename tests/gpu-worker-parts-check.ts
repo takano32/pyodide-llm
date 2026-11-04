@@ -395,8 +395,17 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     }
     return out;
   };
-  const BINARY = { wq: [Q_DIM, 256], wk: [KV_DIM, 256], wv: [KV_DIM, 256], wo: [DIM, 256], w1: [HIDDEN, 256], w3: [HIDDEN, 256], w2: [DIM, 256] };
-  const binary = (made) => ({ ...made, matrices: Object.fromEntries(Object.entries(made.matrices).map(([name, matrix]) => [name, { ...matrix, packing: "binary" }])) });
+  // (T.634.3's review: and a Qwen3.5's linear-attention layer's matrices, the 1-bit Bonsai 27B's form: layer 0 attends, layer
+  // 1 is linear, each matrix of the layers of its kind, of and places)
+  const BINARY = { wq: [Q_DIM, 256], wk: [KV_DIM, 256], wv: [KV_DIM, 256], wo: [DIM, 256], w1: [HIDDEN, 256], w3: [HIDDEN, 256], w2: [DIM, 256],
+    wqkv: [3 * Q_DIM, 256], wz: [2 * Q_DIM, 256], wout: [DIM, 384] };
+  const LINEAR = ["wqkv", "wz", "wout"], ATTENDING = ["wq", "wk", "wv", "wo"];
+  const binary = (made) => ({ ...made, kinds: ["attention", "linear"], places: [0, 0],
+    matrices: Object.fromEntries(Object.entries(made.matrices).map(([name, matrix]) => {
+      const of = LINEAR.includes(name) ? "linear" : ATTENDING.includes(name) ? "attention" : null;
+      return [name, { ...matrix, packing: "binary", ...(of ? { of, layers: matrix.layers.slice(0, 1) } : {}) }];
+    })) });
+  const placesOf = (name) => (LINEAR.includes(name) || ATTENDING.includes(name) ? 1 : LAYERS);
   {
     standIn({ language: ["packed_4x8_integer_dot_product"] });
     const { plan: made, bytes: size } = planned({}, BINARY);
@@ -407,7 +416,8 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     handed(shared, model.plan);
     await uploadLayers(model);
     for (const [name, [rows, n]] of Object.entries(BINARY)) {
-      for (let l = 0; l < LAYERS; l++) {
+      assert.equal(model.weights.matrices[name].pieces[0].layers.length, placesOf(name), `${name}: a layer of its kind's each`);
+      for (let l = 0; l < placesOf(name); l++) {
         const [values] = model.weights.matrices[name].pieces[0].layers[l], [valuesAt] = model.plan.matrices[name].layers[l];
         assert.equal(values.size ?? values.data.length, rows * n / 4, `${name}: ternary's codes, a quarter of a byte a weight`);
         assert.ok(same(values.data.subarray(0, rows * n / 4), codesOf(new Uint8Array(shared.buffer, valuesAt, rows * n / 8))), `${name} of layer ${l}: its bits as ternary's codes`);
@@ -423,7 +433,7 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     const a = await openDevice({ ...direct, tokens: true });
     const layersUp = await uploadLayers(a), tablesUp = tablesOn(a, direct.tables);
     const bits = a.weights.routes.filter(([, , , , kind]) => kind === "bits");
-    assert.equal(bits.length, Object.keys(BINARY).length * LAYERS + 1, "a route of bits for each binary matrix of each layer, and the table's");
+    assert.equal(bits.length, Object.keys(BINARY).reduce((sum, name) => sum + placesOf(name), 0) + 1, "a route of bits for each binary matrix of each layer of its kind, and the table's");
     assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, twice its bits, and its scales as the GPU holds them (float32)");
     assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , kind]) => sum + (stop - start) * (kind ? 2 : 1), 0), "every byte put up has a route, a bit's byte and a half's twice");
     for (const step of [[1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1], [1], [15], [17], [16]]) {

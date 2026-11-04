@@ -195,6 +195,13 @@ const KINDS = { attention: plain, echo };
   const narrow = { ...adapter, limits: { maxStorageBufferBindingSize: 8 * 2 ** 20, maxBufferSize: 8 * 2 ** 20 } };
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35", linear }, narrow), "a layer's matrices are past a buffer of this GPU");
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35" }, narrow), null, "(the same without its linear-attention layers)");
+  // (T.634.3's review: by their bytes on the GPU, the packing they are held as there's: binary's are ternary's codes, twice
+  // the checkpoint's. wqkv as ternary's codes is 3 MiB, past 2, and its bits 1.5 MiB, within)
+  const two = { ...adapter, packed: true, limits: { maxStorageBufferBindingSize: 2 * 2 ** 20, maxBufferSize: 2 * 2 ** 20 } };
+  for (const dtype of ["ternary", "binary"]) {
+    assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], dtype, { arch: "qwen35", linear }, two), "a layer's matrices are past a buffer of this GPU", `${dtype}: wqkv by its bytes on the GPU`);
+    assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], dtype, { arch: "qwen35" }, two), null, `${dtype}: (the same without its linear-attention layers)`);
+  }
   // (T.567: a linear-attention layer's taps are held twice on the GPU, as gpu/linear.ts makes them: the plan's vector of
   // them (taps × mixed) and the rows the convolution reads (taps × mixed, a place's): a tap more is 2 × mixed floats a layer,
   // of the three linear layers of four (one attending every four), mixed = 2 × 16 × 128 + 16 × 128)

@@ -319,6 +319,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       assert.deepEqual([held.stored(n), held.row(n), held.scales(n)], [PACKED[name].rowBytes(n), as.rowBytes(n), as.scale ? as.rowBytes(n) / 32 : 0], `${name}: a row of ${n} in the checkpoint and on the GPU`);
     }
     assert.deepEqual([held.scale, held.dot], [PACKED[name].scale, PACKED[name].gpu.dot], `${name}: a group's scale in the checkpoint, and the packed int8 dot`);
+    // (T.634.3's review: the packing on the GPU is PACKED's gpu.as, and a packing is spread on the CPU as it goes up where
+    // its bytes there are other than the checkpoint's and the GPU does not widen it: binary's, and no other)
+    assert.equal(held.on, PACKED[name].gpu.as ?? name, `${name}: the packing it is on the GPU`);
+    assert.equal(held.spread, held.stored(1024) !== held.row(1024) && !held.widened, `${name}: spread on the CPU as it goes up`);
   }
   assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, 0.140625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)
@@ -328,7 +332,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual(["int8", "int6", "ternary", "binary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 0.28125, 1.125, 1.125, 1.125, 1.125],
     "on the GPU: int6 widened to int8, ternary as it is (T.533: its scales widened to float32), binary spread to ternary (T.634.3); what the GPU does not take is counted as int8");
   assert.deepEqual(["int8", "int6", "ternary", "binary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, true, false, false, false], "the dtypes a model on the GPU alone may be of");
-  assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6],
+  assert.deepEqual(["int8", "int6", "ternary", "binary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6 * (1.125 / 0.140625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
   // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.ts)
   const { SIX_OF_EIGHT, TERNARY_OF_EIGHT } = await import("../src/models/memory.ts");

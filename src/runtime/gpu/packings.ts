@@ -26,8 +26,9 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 //             scale times is the row's weights; (T.547.2.4) a packing of no scales apart, its weights themselves (Q4_K's
 //             d s q - dmin m), which its one scale of 1 times is; (T.547.3.4) of an IQ type, of the codebooks too
 //   grid      (T.547.3.4) whether its shaders read the codebooks, bound where an int8 matrix's scales are (the IQ types)
-//   on        (T.634.3) the packing it is on the GPU, whose shaders multiply it and whose bytes a read back is in: its
-//             own, but binary's, which goes up as ternary codes (spread)
+//   on        (T.634.3) the packing it is on the GPU (jobs.ts's PACKED's gpu.as), whose shaders multiply it and whose
+//             bytes a read back is in: its own, but int6's, widened to int8 (WIDEN_SIX: no model of it is on the GPU
+//             alone, which alone reads back), and binary's, which goes up as ternary's codes (spread)
 //   spread    (T.634.3) whether its bytes are spread on the CPU as they go up (binary's bits to ternary's codes: spreadBits())
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
   grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number>; on: GpuPacking; spread: boolean };
@@ -58,7 +59,7 @@ export function spreadBits(bits: Uint8Array, out = new Uint8Array(bits.length * 
 const binaryValues = (bytes: Uint8Array) => Int8Array.from({ length: bytes.length * 8 }, (_, i) => (((bytes[((i >> 7) << 4) + ((i >> 2) & 15)] >> ((((i >> 6) & 1) << 2) | (i & 3))) & 1) << 1) - 1);
 export const PACKINGS: Record<GpuPacking, HeldAs> = {
   int8: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => n, scale: 4, widened: false, dot: false, grid: false, values: asBytes, on: "int8", spread: false },
-  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, grid: false, values: sixValues, on: "int6", spread: false },
+  int6: { row: (n) => n, scales: (n) => n / GROUP, stored: (n) => (n * 3) / 4, scale: 4, widened: true, dot: false, grid: false, values: sixValues, on: "int8", spread: false },
   ternary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 4, scale: 2, widened: false, dot: true, grid: false, values: ternaryValues, on: "ternary", spread: false },
   binary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 8, scale: 2, widened: false, dot: true, grid: false, values: binaryValues, on: "ternary", spread: true },
   ...(Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blocks(packing)] as const)) as Record<BlockPacking, HeldAs>),

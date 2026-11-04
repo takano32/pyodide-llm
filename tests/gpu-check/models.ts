@@ -216,6 +216,11 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // of 384), the gates' small matrices the stream as it is (T.271.1)
   "synthetic-qwen35-ternary-rotated": [{ ...TERNARY, layers: 4, qk_norm: false, arch: "qwen35", linear: QWEN35_LINEAR, rotated: ROTATED },
     { dtype: "ternary", arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR, rotated: ROTATED }],
+  // T.634.3's review: the 1-bit Bonsai 27B's form, small: the same Qwen3.5 of binary weights in its own basis (the 27B's
+  // is no rotated one), its linear layers' matrices (wqkv, wz, wout: of the layers of their kind) spread to ternary's
+  // codes as they go up, and on the GPU alone as its checkpoint comes
+  "synthetic-qwen35-binary": [{ ...BINARY, layers: 4, qk_norm: false, arch: "qwen35", linear: QWEN35_LINEAR },
+    { dtype: "binary", arch: "qwen35", head_dim: 32, rotary: 8, linear: QWEN35_LINEAR }],
   // T.574 (T.271.5's review): and in blocks of 1024 as the 27B's, which synthetic-ternary-rotated-1024 has of a Llama alone:
   // a linear layer's z and the FFN's width rotated over blocks two and three at a time (four layers: six went past the
   // f16 tile's line, T.271.5)
@@ -322,7 +327,10 @@ const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm",
   "synthetic-blocks-layers", "synthetic-iq2-layers", "synthetic-saluki-layers",
   // (T.547.3.6: the tables of blocks' shaders are synthetic-q4k-tied's and synthetic-saluki-tables'; on SwiftShader the
   // untied Q4_K tables' min-p took a token at its line that NumPy's set has not, run 40128589598)
-  "synthetic-q4k-tables", "synthetic-q2k-classifier"];
+  "synthetic-q4k-tables", "synthetic-q2k-classifier",
+  // (T.634.3: the binary ones' shaders are the ternary ones', what differs is how the weights go up: Dawn's every night,
+  // and anywhere they are named)
+  "synthetic-binary-untied", "synthetic-qwen35-binary"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 
 export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };
