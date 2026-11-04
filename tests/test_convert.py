@@ -186,6 +186,48 @@ def test_a_transform_nobody_wrote_is_refused():
         transformed(values, ("rows", 1, 4, 7), 2)
 
 
+# T.640.2: what each transform is, written a second time on purpose (the converter's table must not be read here):
+# a step, the shape of the Hugging Face tensor it is given, the shape it makes, whether a tensor with it goes piece by
+# piece, whether a row kept in a GGUF's blocks may come by it (stays()), and whether it turns back a tensor the reader
+# hands on transposed (stays() of a "transposed" one)
+TRANSFORM_FACTS = [
+    (("permute", 2), (4, 3), (4, 3), False, True, False),
+    (("permute", 1, 4), (4, 3), (4, 3), False, True, False),
+    (("transpose",), (3, 8), (8, 3), False, False, True),
+    (("heads", 3, 1, 2, 2), (12, 5), (4, 5), False, True, False),
+    (("heads", 3, 1, 2, 2), (12,), (4,), False, True, False),
+    (("part", 1, 3), (4, 9), (3, 4), False, False, True),
+    (("row", 1, 3), (9,), (3,), False, False, False),
+    (("rows", 1, 4, 6), (6, 2), (3, 2), False, False, False),
+    (("scale", 0.5), (4, 3), (4, 3), True, False, False),
+    (("one",), (4,), (4,), False, False, False),
+    (("decay",), (4,), (4,), False, False, False),
+    (("taps",), (5, 1, 3), (3, 5), False, False, False),
+]
+
+
+@pytest.mark.parametrize("step, given, made, piecewise, moves, turns_back", TRANSFORM_FACTS)
+def test_every_transform_says_its_shape_and_whether_it_goes_in_pieces_and_stays(step, given, made, piecewise, moves,
+                                                                                turns_back):
+    import numpy as np
+    from convert.plan import source_shape, transformed
+    from convert.stream import piecewise as in_pieces, stays
+    values = np.arange(np.prod(given), dtype=np.float32).reshape(given)
+    assert transformed(values, step, 2).shape == made
+    assert source_shape(made, step) == given
+    assert in_pieces(step) == piecewise
+    assert stays({"dtype": "IQ2_XS"}, step) == moves and not stays({"dtype": "F32"}, step)
+    assert stays({"dtype": "IQ2_XS", "transposed": True}, step) == turns_back
+    # (a step said alone or as a tuple of one: the same, but for pieces, which a tuple never goes in)
+    assert transformed(values, (step,), 2).shape == made and source_shape(made, (step,)) == given
+    assert stays({"dtype": "IQ2_XS"}, (step,)) == moves and not in_pieces((step,))
+
+
+def test_every_transform_has_its_facts_written_twice():
+    names = {step[0] for step, *_ in TRANSFORM_FACTS}
+    assert names == {"permute", "transpose", "heads", "part", "row", "rows", "scale", "one", "decay", "taps"}
+
+
 def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):
     """The file fed to Stream from its beginning to its end, chunk bytes at a time."""
     (size,) = struct.unpack("<Q", file[:8])
