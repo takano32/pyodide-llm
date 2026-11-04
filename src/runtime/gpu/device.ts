@@ -12,7 +12,7 @@ import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
 import { REASONS } from "../forward/reasons.ts";
-import { PACKINGS, packingsOf, isBlock } from "./packings.ts";
+import { PACKINGS, packingsOf, isBlock, asTernary, spread } from "./packings.ts";
 import type { FromGpu, GpuPacking, Matrices, Opened, Remembered, Started, Tables, Tokens as TokensPlan } from "../contracts/gpu/protocol.ts";
 import type { Own } from "../shaders/prompt.ts";
 import type { Weights } from "./weights.ts";
@@ -85,7 +85,8 @@ const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKING
 // (whether the model's weights are ternary: a ternary checkpoint's matrices are all ternary, llama2_numpy's dtype, and no
 // other model has a ternary one)
 // (T.547.3.1's review: a layer's of a stack whose layers are each of a packing of their own too)
-const ternaryPlan = (plan: { matrices: Matrices }) => Object.values(plan.matrices).some((matrix) => packingsOf(matrix).includes("ternary"));
+// (T.634.3: or binary, which goes up as ternary codes)
+const ternaryPlan = (plan: { matrices: Matrices }) => Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some(asTernary));
 // T.547.2.3: the shaders a model has of its own: ternary's, or (a matrix of llama.cpp's blocks among int8 ones) Q4_K's
 // (T.547.3.1: a layer's of a stack whose layers are each of a packing of their own too)
 // (T.547.3.6's review: and a table's, the classifier's or the embedding's, of a model whose matrices are no blocks)
@@ -245,6 +246,17 @@ function copyIn(m: Model, target: GPUBuffer, address: number, bytes: number, off
     m.device.queue.writeBuffer(target, offset + done, scratch, 0, n);
   }
 }
+// T.634.3: bytes of binary weights of the shared memory at address (whole groups of 16) onto the GPU as ternary's codes,
+// twice as many (at offset of target), a CHUNK of codes at a time (packings.ts's spread)
+let spreadOut: Uint8Array<ArrayBuffer> | undefined;
+function spreadIn(m: Model, target: GPUBuffer, address: number, bytes: number, offset = 0) {
+  spreadOut ??= new Uint8Array(CHUNK);
+  for (let done = 0; done < bytes; done += CHUNK / 2) {
+    const n = Math.min(CHUNK / 2, bytes - done);
+    spread(new Uint8Array(m.memory.buffer, address + done, n), spreadOut);
+    m.device.queue.writeBuffer(target, offset + 2 * done, spreadOut, 0, 2 * n);
+  }
+}
 // T.152's review (T.160): values float32 of the shared memory at address narrowed to float16 onto the GPU (at offset
 // of target, in bytes of float16), a CHUNK of them at a time: a float32 cache's keys and values going up
 let narrowed: Uint16Array<ArrayBuffer> | undefined;
@@ -323,5 +335,5 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
 }
 
 export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
-  describe, unusable, end, whyOf, buffer, uniform, normShape, copyIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
+  describe, unusable, end, whyOf, buffer, uniform, normShape, copyIn, spreadIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Open, Bound, Whole, Pass, Opening };

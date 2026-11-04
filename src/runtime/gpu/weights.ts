@@ -3,12 +3,12 @@
 // pieces (T.155), the layout of a token's joined matrices (T.152), and the widening of int6 (T.155) with its check.
 // (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, widenIn, widenedHalves, readBack,
+import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, spreadIn, widenIn, widenedHalves, readBack,
   validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { CODEBOOK_BYTES } from "../shaders/prompt.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { PACKINGS, packingAt, packingsOf } from "./packings.ts";
+import { PACKINGS, CODES, packingAt, packingsOf, spread } from "./packings.ts";
 import type { Model, Open, Bound } from "./device.ts";
 import type { GpuPacking, Matrix, Started, Table, Tables, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { TensorName } from "../contracts/plan.ts";
@@ -40,8 +40,9 @@ type Joined = { [joined: string]: [GPUBuffer, GPUBuffer | null, GpuPacking] };
 type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
 // T.156: a stretch of the checkpoint, [start, end), the buffer it goes to and the offset in it
 // (halves, T.533: a stretch of ternary's float16 scales, which go up widened to float32: the buffer's offset of the
-// stretch's first, and twice its bytes there)
-type Route = [number, number, GPUBuffer, number, boolean?];
+// stretch's first, and twice its bytes there; T.634.3, bits: a stretch of binary weights, which go up as ternary's
+// codes, twice its bytes there: routedBits)
+type Route = [number, number, GPUBuffer, number, ("halves" | "bits")?];
 // T.533: the bytes of a group's scale in the checkpoint: ternary's a float16, int8's (and int6's) a float32. The GPU
 // holds every one as a float32 (scaleBytes below count those), ternary's widened as they go up (scalesIn, routedHalves)
 // (T.547.2.1: the packing's, packings.ts)
@@ -180,14 +181,18 @@ async function uploadLayers(m: Open) {
           : [buffer(m, valueBytes, usage), perRow ? buffer(m, scaleBytes, usage) : null];
         // (T.547.3.4: an IQ type's binds the codebooks in their place)
         const scales = own ?? (PACKINGS[held.packing].grid ? grids : null);
-        const from = [valuesAt + piece.first * row, scalesAt + piece.first * perRow * heldScale(held)];
+        // (the checkpoint's bytes, stored(): T.634.3, binary's are half of what goes up)
+        const { stored, spread: spreads } = PACKINGS[held.packing], storedBytes = stored(piece.rows * matrix.n);
+        const from = [valuesAt + stored(piece.first * matrix.n), scalesAt + piece.first * perRow * heldScale(held)];
         if (!started) {
-          // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened)
-          routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0]);
-          if (own) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(held), own.buffer ?? own, own.offset ?? 0, heldScale(held) === 2]);
+          // (T.156: int8 alone, and T.232 ternary, whose bytes are the buffer's as they come; T.533: its scales widened;
+          // T.634.3: binary's spread to ternary's codes)
+          routes!.push([from[0], from[0] + storedBytes, values.buffer ?? values, values.offset ?? 0, spreads ? "bits" : undefined]);
+          if (own) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(held), own.buffer ?? own, own.offset ?? 0, heldScale(held) === 2 ? "halves" : undefined]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
-          if (PACKINGS[held.packing].widened) widen!.into(values, valuesAt + PACKINGS[held.packing].stored(piece.first * matrix.n), piece.rows * perRow);
+          if (PACKINGS[held.packing].widened) widen!.into(values, from[0], piece.rows * perRow);
+          else if (spreads) spreadIn(started, values.buffer ?? values, from[0], storedBytes, values.offset ?? 0);
           else copyIn(started, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
           if (own) scalesIn(started, held, own.buffer ?? own, from[1], scaleBytes, own.offset ?? 0);
         }
@@ -272,10 +277,11 @@ function tablePieces(m: Open, spec: Table, fill: (piece: TablePiece, valueBytes:
 function tablesOn(m: Open, tables: Tables) {
   const { routes } = m.weights;
   let bytes = 0;
-  m.weights.tables = tablesOf({ tables, tokens: null }, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
-    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + first * scalesOf(spec) * heldScale(spec)];
-    routes!.push([from[0], from[0] + valueBytes, values, 0]);
-    if (scaleBytes) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales!, 0, heldScale(spec) === 2]);
+  m.weights.tables = tablesOf({ tables, tokens: null }, (spec) => tablePieces(m, spec, ({ first, rows, values, scales }, valueBytes, scaleBytes) => {
+    const [valuesAt, scalesAt] = spec.at, { stored, spread: spreads } = PACKINGS[spec.packing];
+    const from = [valuesAt + stored(first * spec.n), scalesAt + first * scalesOf(spec) * heldScale(spec)];
+    routes!.push([from[0], from[0] + stored(rows * spec.n), values, 0, spreads ? "bits" : undefined]);
+    if (scaleBytes) routes!.push([from[1], from[1] + (scaleBytes / 4) * heldScale(spec), scales!, 0, heldScale(spec) === 2 ? "halves" : undefined]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
   // (the last of the routes are made: in the checkpoint's order, for routed() to find a stretch's)
@@ -294,9 +300,13 @@ function routed(m: Open, offset: number, bytes: Uint8Array) {
     else hi = mid;
   }
   for (let i = lo; i < routes!.length && routes![i][0] < end; i++) {
-    const [start, stop, target, at, halves] = routes![i];
-    if (halves) {
+    const [start, stop, target, at, kind] = routes![i];
+    if (kind === "halves") {
       routedHalves(m, routes![i], Math.max(start, offset), Math.min(stop, end), offset, bytes);
+      continue;
+    }
+    if (kind === "bits") {
+      routedBits(m, routes![i], Math.max(start, offset), Math.min(stop, end), offset, bytes);
       continue;
     }
     let a = Math.max(start, offset) - offset, here = at + (a + offset - start);
@@ -322,6 +332,22 @@ function routedHalves(m: Open, [start, , target, at]: Route, from: number, to: n
     p += 2 * whole;
   }
   if (p < to) partialHalf(m, target, place(p), 0, bytes[p - offset]);
+}
+// T.634.3: the bytes [from, to) of the checkpoint (bytes holds those from offset on) of a route of binary weights: byte
+// r of the route (r from its start) is two bytes of ternary's codes, at 32 (r >> 4) + (r & 15) and 16 bytes after
+// (packings.ts's spread). The whole groups of 16 bytes go up spread in one write; the bytes of a group a stretch begins or
+// ends in the middle of go a byte at a time (partialByte: each byte of the codes is one byte's of the checkpoint)
+function routedBits(m: Open, [start, , target, at]: Route, from: number, to: number, offset: number, bytes: Uint8Array) {
+  const byteOf = (q: number) => {
+    const r = q - start, place = at + 32 * (r >> 4) + (r & 15), v = bytes[q - offset];
+    partialByte(m, target, place, CODES[v & 15]);
+    partialByte(m, target, place + 16, CODES[v >> 4]);
+  };
+  let q = from;
+  for (; q < to && (q - start) % 16; q++) byteOf(q);
+  const whole = (to - q) & ~15;
+  if (whole) m.device.queue.writeBuffer(target, at + 2 * (q - start), spread(bytes.subarray(q - offset, q - offset + whole)));
+  for (q += whole; q < to; q++) byteOf(q);
 }
 // byte k (0, the low one, or 1) of the half whose float32 is at the byte offset at of target, widened and written
 // once both of its bytes are there
@@ -423,6 +449,7 @@ async function uploadTokens(m: Model, widen: Widen | null) {
   m.weights.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, packing, at: [valuesAt, scalesAt] } = spec;
     if (PACKINGS[packing].widened) widen!.into(values, valuesAt + PACKINGS[packing].stored(first * n), piece.rows * scalesOf(spec));
+    else if (PACKINGS[packing].spread) spreadIn(m, values, valuesAt + PACKINGS[packing].stored(first * n), PACKINGS[packing].stored(piece.rows * n));
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
     if (scaleBytes) scalesIn(m, spec, scales!, scalesAt + first * scalesOf(spec) * heldScale(spec), scaleBytes);
     bytes += valueBytes + scaleBytes;

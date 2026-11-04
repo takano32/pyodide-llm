@@ -9,7 +9,7 @@ import { productGroups, multiply } from "./forms.ts";
 import { GPU_KINDS, kindsOf, attendingOf } from "./kinds.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { isBlock } from "./packings.ts";
+import { isBlock, asTernary } from "./packings.ts";
 import type { Model } from "./device.ts";
 import type { Added, BlockStep, KindBlock, Product, Quantizing, State } from "./kinds.ts";
 import type { LayerKind, TensorName } from "../contracts/plan.ts";
@@ -170,7 +170,7 @@ async function prepare(m: Model) {
     // (T.547.3.7: from a table of llama.cpp's blocks, its type's rows of embedBlocks, which bind no scales, or an IQ
     // type's codebooks there)
     const embedded = tablesOf(plan).embedding.packing;
-    const rowsCode = isBlock(embedded) ? ENGINE.embedBlocks({ weights: embedded, rows: true }) : embedded === "ternary" ? ENGINE.EMBED_ROWS_TERNARY : ENGINE.EMBED_ROWS;
+    const rowsCode = isBlock(embedded) ? ENGINE.embedBlocks({ weights: embedded, rows: true }) : asTernary(embedded) ? ENGINE.EMBED_ROWS_TERNARY : ENGINE.EMBED_ROWS;
     embedRows = await within(validated(m, () => pipelineOf(m, rowsCode)), "compiling the embedding's rows");
     ids = buffer(m, B * 4, STORAGE | COPY_DST);
     embedGroups = m.weights.tables!.embedding.map((piece) => bind(m, embedRows!,

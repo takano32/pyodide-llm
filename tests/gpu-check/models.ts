@@ -73,6 +73,11 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 // which a second layer alone would not tell from 0 + size
 const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
+// T.634.3: the 1-bit Bonsai's form, a Qwen3 of binary weights (one bit a weight, every group of 128 the signs of its
+// values times a scale), which the GPU takes as ternary's codes (spread as they go up: gpu/packings.ts) and multiplies by
+// ternary's shaders
+const BINARY = { ...TERNARY, dtype: "binary" };
+const BINARY_OPTIONS = { ...TERNARY_OPTIONS, dtype: "binary" };
 // T.271.1: a rotated basis (T.237) as the options carry one: its block, and the signs of each width a matrix reads as
 // llama2_numpy.sign_bits() writes them (a bit a value, 1 for -1, the first value the highest bit of the first byte, in
 // hexadecimal), here drawn from a seed (a simple generator: what matters is that they are not all one sign)
@@ -286,6 +291,11 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // group), a hidden size of 1152 (w2's rows are 9 groups of 128, 36 of 32: a second pass of 4), and calm (T.226's review),
   // so that the packed lines also show a layer's weights read from another layer
   "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS],
+  // T.634.3: binary weights as the 1-bit Bonsai's (above): tied with outlier channels, and the review's untied form of
+  // the ternary ones (two groups a row, a classifier and an embedding apart, a token's matrix looping twice), each also on
+  // the GPU alone, whose checkpoint's bits go up as they come
+  "synthetic-binary": [{ ...BINARY, outliers: 8 }, BINARY_OPTIONS],
+  "synthetic-binary-untied": [{ ...BINARY, dim: 256, hidden: 1152, vocab: -320, outliers: 8, spread: 37, calm: true }, BINARY_OPTIONS],
   // T.271.1: the same in a rotated basis, as Ternary Bonsai 2 27B's file is (T.237): every matrix reads R of its input, which
   // the GPU turns as it quantizes it (ROTATE_QUANTIZE), and a token's embedded row is turned back (UNROTATE). No outlier
   // channels (the CPU uses none in a rotated basis). The first: several blocks to a row; the second: a classifier apart,

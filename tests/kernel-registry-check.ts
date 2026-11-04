@@ -297,7 +297,9 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     }
   }
   // T.375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
-  const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true }, binary: null };
+  const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true },
+    // (T.634.3: binary on the GPU as ternary's codes, spread as they go up: gpu/packings.ts)
+    binary: { as: "ternary", alone: true, dot: true } };
   for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU,
   GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T.547.2.3's Q4_K, as it is, by the packed int8 dot)
   GPU.Q2_K = { as: "Q2_K", alone: false, dot: true };              // (T.547.3.3: and Q2_K's, the same way)
@@ -323,9 +325,9 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { takes }]) => [name, takes])),
     { int8: "biased", int6: "biased", ternary: "interleaved", binary: "interleaved", ...Object.fromEntries(Object.keys(BLOCK_TYPES).map((name) => [name, "summed"])) }, "how each packing's kernels take the activations");
   assert.deepEqual(["IQ2_XXS", "Q4_K"].map(aloneTakes), [false, false], "no model of llama.cpp's blocks on the GPU alone");
-  assert.deepEqual(["int8", "int6", "ternary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 1.125, 1.125, 1.125, 1.125],
-    "on the GPU: int6 widened to int8, ternary as it is (T.533: its scales widened to float32); what the GPU does not take is counted as int8");
-  assert.deepEqual(["int8", "int6", "ternary", "binary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false, false], "the dtypes a model on the GPU alone may be of");
+  assert.deepEqual(["int8", "int6", "ternary", "binary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 0.28125, 1.125, 1.125, 1.125, 1.125],
+    "on the GPU: int6 widened to int8, ternary as it is (T.533: its scales widened to float32), binary spread to ternary (T.634.3); what the GPU does not take is counted as int8");
+  assert.deepEqual(["int8", "int6", "ternary", "binary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, true, false, false, false], "the dtypes a model on the GPU alone may be of");
   assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
   // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.ts)

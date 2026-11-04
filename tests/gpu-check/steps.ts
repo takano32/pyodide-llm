@@ -41,7 +41,7 @@ function unbound(c) {
   // (T.226: GPT-2's and GPT-NeoX's FFN has no gate: no w3, and w1 a buffer of its own)
   const joined = { wk: head * heads * dim, wv: head * (heads + kvHeads) * dim, ...(c.arch === "llama" ? { w3: hidden * dim } : {}) };
   for (const [name, weights] of Object.entries(joined)) {
-    const values = c.dtype === "ternary" ? weights / 4 : weights;
+    const values = c.dtype === "ternary" || c.dtype === "binary" ? weights / 4 : weights;  // (T.634.3: binary as ternary's codes)
     if (values % ALIGN || (values / GROUP) * 4 % ALIGN) return name;
   }
   return null;

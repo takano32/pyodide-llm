@@ -404,7 +404,8 @@ export const PACKED = packings({
   },
   // T.634: one bit a weight, set for +1, the layout of llama2_numpy.pack_binary (weight 64 h + 4 c + p of a group of
   // 128 at bit 4 h + p of its byte c), a float16 scale a group: its kernels take the activations as ternary's do (the
-  // same ready, so a matrix of each in one model reads one), and none of it is on the GPU yet
+  // same ready, so a matrix of each in one model reads one). T.634.3: on the GPU as ternary's codes, spread as they go
+  // up (gpu/packings.ts), which ternary's shaders multiply; on the GPU alone too, as ternary
   binary: {
     rowBytes: (n) => n / 8, scale: 2, takes: "interleaved",
     value: (U, at, i) => (((U[at + ((i >> 7) << 4) + ((i >> 2) & 15)] >> ((((i >> 6) & 1) << 2) | (i & 3))) & 1) << 1) - 1,
@@ -413,7 +414,7 @@ export const PACKED = packings({
       k.quantize_x(xq, xs, x, n, 0);
       k.interleave(xq, xs, n);
     },
-    group: 128, gpu: null,
+    group: 128, gpu: { as: "ternary", alone: true, dot: true },
   },
   Q2_K: { ...blocks(BLOCK_TYPES.Q2_K), gpu: { as: "Q2_K", alone: false, dot: true } }, Q4_K: { ...blocks(BLOCK_TYPES.Q4_K), gpu: { as: "Q4_K", alone: false, dot: true } }, IQ2_XXS: { ...blocks(BLOCK_TYPES.IQ2_XXS), gpu: { as: "IQ2_XXS", alone: false, dot: true } }, IQ2_XS: { ...blocks(BLOCK_TYPES.IQ2_XS), gpu: { as: "IQ2_XS", alone: false, dot: true } },
   IQ3_XXS: { ...blocks(BLOCK_TYPES.IQ3_XXS), gpu: { as: "IQ3_XXS", alone: false, dot: true } }, IQ1_S: { ...blocks(BLOCK_TYPES.IQ1_S), gpu: { as: "IQ1_S", alone: false, dot: true } }, IQ3_S: { ...blocks(BLOCK_TYPES.IQ3_S), gpu: { as: "IQ3_S", alone: false, dot: true } }, IQ2_S: { ...blocks(BLOCK_TYPES.IQ2_S), gpu: { as: "IQ2_S", alone: false, dot: true } },

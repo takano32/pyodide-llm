@@ -286,13 +286,17 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     // (T.533: ternary's scales are float16s there, which went up widened)
     !scalesOf(spec) ? ONE : PACKINGS[spec.packing].scale === 2 ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
       : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
-  const readBackRows = (spec: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
-    scalesOf(spec) ? scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec)) : ONE];
+  // (T.634.3: what is read back is the packing on the GPU's: binary's ternary codes)
+  const onGpu = (spec: Spec): Spec => ({ ...spec, packing: PACKINGS[spec.packing].on });
+  const readBackRows = (given: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => {
+    const spec = onGpu(given);
+    return [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))), scalesOf(spec) ? scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec)) : ONE];
+  };
   const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? planned.embedding ?? planned.classifier : planned.classifier);
   const tableRow = (name: "embedding" | "classifier") => (back.tableRows ? (r: number): Row => {
     const [bytes, scales] = back.tableRows![name].get(r)!;
     // (T.547.3.7: a table of blocks' one scale of 1, as inMemory's)
-    return [valuesOf(tableSpec(name), bytes), scalesOf(tableSpec(name)) ? scales : ONE];
+    return [valuesOf(onGpu(tableSpec(name)), bytes), scalesOf(tableSpec(name)) ? scales : ONE];
   } : inMemory(tableSpec(name), tableSpec(name).at));
   // T.271.1: a rotated basis's signs of a width (float32, Python's, each times 1 / sqrt(block)), and R x, as the CPU's
   // rotate (the matrices read it)

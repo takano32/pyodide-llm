@@ -381,6 +381,68 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
 }
 console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as float32s, from the shared memory and as the checkpoint of a model on the GPU alone comes in stretches of any size");
 
+// ---- weights.js, binary (T.634.3): a binary checkpoint (one bit a weight, llama2_numpy.pack_binary: weight 64 h + 4 c + p of
+// a group of 128 at bit 4 h + p of its byte c, set for +1) goes up as ternary's codes (PQ2_0's order, the weight + 1: 0 or
+// 2), which ternary's shaders multiply: twice its bytes on the GPU, from the shared memory and as a model on the GPU
+// alone's checkpoint comes in stretches of any size (a group a stretch cuts goes a byte at a time, each byte of the codes
+// one byte's of the checkpoint). The codes written out here weight by weight, apart from packings.ts's spread()
+{
+  const codesOf = (bits) => {
+    const out = new Uint8Array(bits.length * 2);
+    for (let i = 0; i < bits.length * 8; i++) {
+      const g = i >> 7, r = i & 127, bit = (bits[g * 16 + ((r >> 2) & 15)] >> ((((r >> 6) & 1) << 2) | (r & 3))) & 1;
+      out[g * 32 + (r >> 2)] |= (2 * bit) << (2 * (r & 3));
+    }
+    return out;
+  };
+  const BINARY = { wq: [Q_DIM, 256], wk: [KV_DIM, 256], wv: [KV_DIM, 256], wo: [DIM, 256], w1: [HIDDEN, 256], w3: [HIDDEN, 256], w2: [DIM, 256] };
+  const binary = (made) => ({ ...made, matrices: Object.fromEntries(Object.entries(made.matrices).map(([name, matrix]) => [name, { ...matrix, packing: "binary" }])) });
+  {
+    standIn({ language: ["packed_4x8_integer_dot_product"] });
+    const { plan: made, bytes: size } = planned({}, BINARY);
+    const shared = { buffer: new SharedArrayBuffer(size) };
+    new Uint8Array(shared.buffer).set(random(size));
+    const model = await openDevice(binary(made));
+    assert.equal(model.ternary, true, "a binary model is multiplied by ternary's shaders, with their device's key");
+    handed(shared, model.plan);
+    await uploadLayers(model);
+    for (const [name, [rows, n]] of Object.entries(BINARY)) {
+      for (let l = 0; l < LAYERS; l++) {
+        const [values] = model.weights.matrices[name].pieces[0].layers[l], [valuesAt] = model.plan.matrices[name].layers[l];
+        assert.equal(values.size ?? values.data.length, rows * n / 4, `${name}: ternary's codes, a quarter of a byte a weight`);
+        assert.ok(same(values.data.subarray(0, rows * n / 4), codesOf(new Uint8Array(shared.buffer, valuesAt, rows * n / 8))), `${name} of layer ${l}: its bits as ternary's codes`);
+      }
+    }
+  }
+  {
+    standIn({ language: ["packed_4x8_integer_dot_product"] });
+    const { plan: made, bytes: size } = planned({ tables: { classifier: { rows: 96, n: 256, packing: "binary", at: [0, 0] } } }, BINARY);
+    const direct = binary(made);
+    direct.tables.classifier.at = [size, size + 96 * 32];
+    const checkpoint = random(size + 96 * 32 + 96 * 2 * 2 + 64);
+    const a = await openDevice({ ...direct, tokens: true });
+    const layersUp = await uploadLayers(a), tablesUp = tablesOn(a, direct.tables);
+    const bits = a.weights.routes.filter(([, , , , kind]) => kind === "bits");
+    assert.equal(bits.length, Object.keys(BINARY).length * LAYERS + 1, "a route of bits for each binary matrix of each layer, and the table's");
+    assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, twice its bits, and its scales as the GPU holds them (float32)");
+    assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , kind]) => sum + (stop - start) * (kind ? 2 : 1), 0), "every byte put up has a route, a bit's byte and a half's twice");
+    for (const step of [[1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1], [1], [15], [17], [16]]) {
+      for (const [, , target] of a.weights.routes) target.data.fill(0);
+      a.weights.partial.clear();
+      for (let offset = 0, k = 0; offset < checkpoint.length; k++) {
+        const length = Math.min(step[k % step.length], checkpoint.length - offset);
+        routed(a, offset, checkpoint.subarray(offset, offset + length));
+        offset += length;
+      }
+      assert.equal(unwritten(a), false, `every word is whole once the checkpoint has come (stretches of ${step.slice(0, 3)}...)`);
+      for (const [start, stop, target, at] of bits) {
+        assert.ok(same(target.data.subarray(at, at + 2 * (stop - start)), codesOf(checkpoint.subarray(start, stop))), `the bits at ${start} are on the GPU as ternary's codes (stretches of ${step.slice(0, 3)}...)`);
+      }
+    }
+  }
+}
+console.log("gpu-worker-parts-check: a binary model's bits go up as ternary's codes, from the shared memory and as the checkpoint of a model on the GPU alone comes in stretches of any size");
+
 // ---- block.js: m.block, from the weights' record and a stand-in for the forms'
 gpu.calls.length = 0;
 // (forms.js makes m.forms once its checks have passed on a device that computes: here the test stands for it)

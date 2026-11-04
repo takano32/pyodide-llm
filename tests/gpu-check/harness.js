@@ -132,7 +132,8 @@ try {
   const results = [];
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
-    const plan = c.plan, ternary = c.dtype === "ternary";
+    // (T.634.3: a binary model is multiplied by ternary's shaders, its bits gone up as their codes)
+    const plan = c.plan, ternary = c.dtype === "ternary" || c.dtype === "binary";
     // (T.547.2.3: a model with Q4_K blocks among its matrices: its own tiles; T.547.2.4: and the steps of DP4A alone)
     // (T.547.3.1: a stack's layers among them)
     // (T.547.3.3: of any type of llama.cpp's blocks the GPU reads)
@@ -412,7 +413,7 @@ try {
       return [["a weight of the attention's norm (before q, k and v)", float(T.rms_att_weight, 7)],
         ["a weight of the FFN's norm (before gate and up)", float(T.rms_ffn_weight, plan.dim - 1)],
         // (T.533: a ternary matrix's scales are float16s, 2 bytes each)
-        ["a scale of w1 (before down)", w1?.scales ? base + w1.scales + ((last * rows + 3) * groups + 1) * (w1.kind === "ternary" ? 2 : 4) : 0, w1?.kind === "ternary"]]
+        ["a scale of w1 (before down)", w1?.scales ? base + w1.scales + ((last * rows + 3) * groups + 1) * (w1.kind === "ternary" || w1.kind === "binary" ? 2 : 4) : 0, w1?.kind === "ternary" || w1?.kind === "binary"]]
         .filter(([, address]) => last > 0 && address);
     };
     // (a float16's bits of the two numbers written: NaN and Infinity)

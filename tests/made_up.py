@@ -744,10 +744,10 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False, binary=False)
 def quantized(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, dtype="int8", outliers=0,
               calm=False, spread=7, valued=False, **form):
     """A made-up checkpoint of drawn()'s values in a quantized dtype (int8 as quantize.py writes one, int6 of T.98,
-    ternary of T.230) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
+    ternary of T.230, binary of T.634: the signs of drawn()'s values) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
     llama2_numpy.FORM's keys (arch, bias, qk_norm, head_dim ...). A negative vocab (the header's own way of saying so):
     a classifier apart from the embedding."""
-    tensor = drawn(seed, outliers, spread, calm, ternary=dtype == "ternary")
+    tensor = drawn(seed, outliers, spread, calm, ternary=dtype == "ternary", binary=dtype == "binary")
     # (T.547.2.3: valued, the form's rows of Q4_K blocks quantized from values: valued_blocks())
     blocks = valued_blocks(seed + 1, 0.1 if calm else 0.3) if valued else None
     return checkpoint((dim, hidden, layers, heads, kv_heads, vocab, seq_len), form, dtype, tensor=tensor, blocks=blocks), numbered(abs(vocab))

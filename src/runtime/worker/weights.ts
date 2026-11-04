@@ -412,9 +412,10 @@ const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undef
   Boolean(gpuAdapter) && (!gpuAdapter!.fallback || Boolean(gpuForce.fallback));
 // T.156: whether the page kept that the CPU was faster here than this model on the GPU alone (forward.ts's aloneHolds)
 // (dtype, T.232: the key is the one gpu.ts gave the verdict, a ternary model's its own)
-// (T.547.3.7: a model whose rows have kinds of their own, Saluki's blocks, by the key of a model of blocks)
+// (T.547.3.7: a model whose rows have kinds of their own, Saluki's blocks, by the key of a model of blocks; T.634.3: a
+// binary model's the ternary one's, whose shaders multiply its weights)
 const aloneKept = (dtype: Dtype, blocks = false) => Boolean(gpuAdapter) &&
-  forwardModule!.aloneHolds(gpuRequest?.remembered?.alone, gpuAdapter!.keys?.[dtype === "ternary" ? "ternary" : blocks ? "blocks" : "plain"], gpuRequest?.cpu);
+  forwardModule!.aloneHolds(gpuRequest?.remembered?.alone, gpuAdapter!.keys?.[dtype === "ternary" || dtype === "binary" ? "ternary" : blocks ? "blocks" : "plain"], gpuRequest?.cpu);
 // T.156: where a model goes ({ mode: "both" | "gpu" | "cpu", gpuRoom }, forward.ts's weightsPlace): the GPU alone only
 // for a Llama of int8 (T.232: or of ternary weights) the GPU's steps take (gpuOnlyUnfit), where the page and the device
 // may (gpuOnlyPossible)

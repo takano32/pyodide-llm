@@ -163,7 +163,7 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
     options = entry.options;
     text = (/日本語/.test(entry.note) ? TEXTS.japanese : TEXTS.english).repeat(3);
   }
-  if (!["int8", "int6", "ternary"].includes(options.dtype)) throw new Error(`${id} is ${options.dtype}: the GPU takes int8, int6 and ternary weights`);
+  if (!["int8", "int6", "ternary", "binary"].includes(options.dtype)) throw new Error(`${id} is ${options.dtype}: the GPU takes int8, int6, ternary and binary weights`);
   py.globals.set("OPTIONS", py.toPy(options));
   py.globals.set("TEXT", text ?? "");
   // (T.560: a made-up model's run may say its own count of tokens)
@@ -188,10 +188,10 @@ function caseOf(py, directory, id, options, reference, bytes) {
   py.runPython(`Llama(None, vocabulary, kernels="simdkernel.so", external=recorder, **OPTIONS).release()`);
   plan.kv_start = KV_START;
   // T.156: a Llama of int8 whose steps the GPU takes goes on the GPU alone too: where its tensors are from its header
-  // (T.226: Qwen2 and Qwen3 with it; T.232: and of ternary weights; T.271.4: and a Qwen3.5, whose form the GPU alone's plan
+  // (T.226: Qwen2 and Qwen3 with it; T.232: and of ternary weights, T.634.3 of binary ones; T.271.4: and a Qwen3.5, whose form the GPU alone's plan
   // is made with: options, in the case)
   let places;
-  if (["llama", "qwen35"].includes(options.arch ?? "llama") && ["int8", "ternary"].includes(options.dtype)) {
+  if (["llama", "qwen35"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {
     py.globals.set("HEADER", py.toPy([...new Int32Array(bytes.slice(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }
