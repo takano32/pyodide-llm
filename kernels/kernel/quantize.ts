@@ -217,3 +217,28 @@ export function ternary_x(out: usize, xs: usize, x: usize, n: i32): i32 {
   }
   return v128.any_true(bad) ? 1 : 0;
 }
+
+// T.634: the converter's binary() (llama2_numpy.py) in one pass, the same bytes: n float32 values (x), whole groups of
+// 128, to one bit a value (out, 16 bytes a group: the bit of value 64 h + 4 c + p at bit 4 h + p of byte c, set where
+// the value is not below 0) and the largest |value| of every group (xs). Returns 1 where a value is not plus or minus
+// its group's largest (the weights are not binary, or not a number), else 0. A lane's mask of four values (bitmask)
+// is the four bits p of a byte c.
+export function binary_x(out: usize, xs: usize, x: usize, n: i32): i32 {
+  let bad = i32x4.splat(0);
+  const zero = f32x4.splat(0);
+  for (let g = 0; g < n; g += 128) {
+    const p = x + (<usize>g << 2);
+    let largest = f32x4.splat(0);
+    for (let j: usize = 0; j < 512; j += 16) largest = f32x4.max(largest, f32x4.abs(v128.load(p + j)));
+    const scale = f32x4.splat(max<f32>(max<f32>(f32x4.extract_lane(largest, 0), f32x4.extract_lane(largest, 1)),
+                                      max<f32>(f32x4.extract_lane(largest, 2), f32x4.extract_lane(largest, 3))));
+    v128.store32_lane(xs + (<usize>(g >> 7) << 2), scale, 0);
+    const to = out + <usize>(g >> 3);
+    for (let c: usize = 0; c < 16; c++) {
+      const v0 = v128.load(p + (c << 4)), v1 = v128.load(p + (c << 4) + 256);  // values 4 c .. 4 c + 3 of each block of 64
+      store<u8>(to + c, <u8>(i32x4.bitmask(v128.not(f32x4.lt(v0, zero))) | (i32x4.bitmask(v128.not(f32x4.lt(v1, zero))) << 4)));
+      bad = v128.or(bad, v128.not(v128.and(f32x4.eq(f32x4.abs(v0), scale), f32x4.eq(f32x4.abs(v1), scale))));
+    }
+  }
+  return v128.any_true(bad) ? 1 : 0;
+}

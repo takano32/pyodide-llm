@@ -7,10 +7,10 @@
 // order of the binary's exports: the built files are the same to the byte as before the division). A new kernel is
 // written in the file of its kind and added to a line here; a new file of kernel/ is added to the Makefile's rule
 // too, or make kernels does not see it change.
-//   kernel/matmul.ts       the matrix products (float32, int8, 6 bits, ternary) and what they take beside the
+//   kernel/matmul.ts       the matrix products (float32, int8, 6 bits, ternary, binary) and what they take beside the
 //                          weights: the corrections' sums, interleave, the outliers' columns
 //   kernel/quantize.ts     numbers from one form to another: the stored forms widened to float32, float32
-//                          quantized to int8, six bits and ternary (the converter's, and quantize_x every token)
+//                          quantized to int8, six bits, ternary and binary (the converter's, and quantize_x every token)
 //   kernel/attention.ts    rope and attention over a cache of float32 or float16
 //   kernel/halves.ts       float16: the cache's keys and values to it and back, and whether they are finite
 //   kernel/activations.ts  a vector between the matrix products: the norms, gelu, swiglu, geglu (and its exact form,
@@ -36,3 +36,5 @@ export { penalize, sample } from "./kernel/sample";
 export { rotate, unrotate } from "./kernel/activations";
 export { geglu } from "./kernel/activations";
 export { geglu_erf } from "./kernel/activations";
+export { matmul_b1 } from "./kernel/matmul";
+export { binary_x } from "./kernel/quantize";

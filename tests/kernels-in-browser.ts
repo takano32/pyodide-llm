@@ -420,6 +420,75 @@ async function inPage({ plain, relaxed }) {
     }
   }
 
+  // ---- T.634: the binary products (kernels/binary.ts: weight 64 h + 4 c + p of a group at bit 4 h + p of its byte c, set
+  // for +1), of rows of 7 groups, to the bit: the ternary products' numbers for the same signs, written out here as theirs
+  {
+    const groupsB = 7, nB = groupsB * 128, ngB = nB / 32, base = extra + 4194304;
+    const wB = base, wsB = wB + rows * nB / 8, xqB = wsB + rows * groupsB * 2 + 64, xsB = xqB + nB, outB = xsB + ngB * 8 + 64;
+    const framesB = outB + rows * 4 + 4096, outsB = framesB + tokens * frame;
+    const bitsB = Uint8Array.from({ length: rows * nB }, () => next() & 1);
+    U.fill(0, wB, wB + rows * nB / 8);
+    bitsB.forEach((bit, j) => {
+      const i = j % nB;
+      U[wB + (j - i) / 8 + ((i >> 7) << 4) + ((i >> 2) & 15)] |= bit << ((((i >> 6) & 1) << 2) | (i & 3));
+    });
+    const swB = Float32Array.from({ length: rows * groupsB }, () => (1 + (next() % 1000)) / 1024);
+    new Uint16Array(memory.buffer).set(Array.from(swB, halfOf), wsB / 2);
+    const activationsB = (t) => Int8Array.from({ length: nB }, (_, j) => ((next() ^ (j * 23 + t * 11)) & 255) - 128);
+    const scalesB = () => Float32Array.from({ length: ngB }, () => f(1e-2 * (1 + (next() % 1000))));
+    const wantB = (a, sx) => Array.from({ length: rows }, (_, i) => {
+      const lanes = [0, 0, 0, 0];
+      for (let g = 0; g < groupsB; g++) {
+        for (let lane = 0; lane < 4; lane++) {
+          let sum = 0;
+          for (let j = g * 128 + lane * 32; j < g * 128 + lane * 32 + 32; j++) sum += (2 * bitsB[i * nB + j] - 1) * a[j];
+          lanes[lane] = f(lanes[lane] + f(f(sum * sx[g * 4 + lane]) * swB[i * groupsB + g]));
+        }
+      }
+      return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
+    });
+    const prepareB = (at, a, sx) => { I.set(a, at); F.set(sx, (at + nB) / 4); k.interleave(at, at + nB, nB); };
+    const aB = activationsB(0), sxB = scalesB(), expectedB = wantB(aB, sxB);
+    const productB = (name, call) => check(`${name} (7 groups a row)`, call, () => {
+      prepareB(xqB, aB, sxB);
+      F.fill(-7, outB / 4, outB / 4 + rows);
+      call();
+      return against((i) => F[outB / 4 + i], expectedB);
+    });
+    prepareB(xqB, aB, sxB);
+    await productB("matmul_b1", () => k.matmul_b1(outB, xqB, xsB, wB, wsB, nB, 0, rows, 2));
+    if (r) {
+      await productB("matmul_b1r", () => r.matmul_b1r(outB, xqB, xsB, wB, wsB, nB, 0, rows, 2));
+      const perTokenB = Array.from({ length: tokens }, (_, t) => { const at = activationsB(t + 1), sc = scalesB(); return { at, sc, expected: wantB(at, sc) }; });
+      await check("matmul_b1r_tile (7 groups a row)", () => r.matmul_b1r_tile(outsB, framesB, framesB + nB, wB, wsB, nB, 0, rows, tokens, 1024, frame, 2), () => {
+        perTokenB.forEach(({ at, sc }, t) => prepareB(framesB + t * frame, at, sc));
+        F.fill(-7, outsB / 4, outsB / 4 + tokens * 256);
+        r.matmul_b1r_tile(outsB, framesB, framesB + nB, wB, wsB, nB, 0, rows, tokens, 1024, frame, 2);
+        for (let t = 0; t < tokens; t++) {
+          const wrong = against((i) => F[(outsB + t * 1024) / 4 + i], perTokenB[t].expected);
+          if (wrong) return `token ${t} ${wrong}`;
+        }
+        return null;
+      });
+    }
+    // binary_x (the converter's): the bytes and scales of a matrix of binary values
+    const count = 40, x = outsB + tokens * 1024 + 4096, packed = x + count * 512, scales = packed + count * 16;
+    for (let g = 0; g < count; g++) {
+      const d = f(0.01 * (1 + (g % 7)));
+      for (let j = 0; j < 128; j++) F[x / 4 + g * 128 + j] = next() & 1 ? d : -d;
+    }
+    await check("binary_x", () => k.binary_x(packed, scales, x, count * 128), () => {
+      U.fill(0xAA, packed, packed + count * 16);
+      let bad = k.binary_x(packed, scales, x, count * 128) ? 1 : 0;
+      for (let g = 0; g < count; g++) for (let c = 0; c < 16; c++) {
+        let wanted = 0;
+        for (let bit = 0; bit < 8; bit++) wanted |= (F[x / 4 + g * 128 + 64 * (bit >> 2) + 4 * c + (bit & 3)] < 0 ? 0 : 1) << bit;
+        if (U[packed + g * 16 + c] !== wanted) bad++;
+      }
+      return bad ? `${bad} bytes wrong` : null;
+    });
+  }
+
   // ---- ternary_x (the converter's): the bytes and scales of a matrix of ternary values
   {
     const count = 40, x = extra + 65536, packed = x + count * 512, scales = packed + count * 32;
@@ -747,6 +816,11 @@ async function inPageHigh({ plain, relaxed, addresses }) {
       k.interleave(p.xq + t * 1024, p.xs + t * 1024, 128);
     }
   };
+  // (T.634: the same 128 weights of +1, one bit each)
+  const binary = (p, tokens) => {
+    ternary(p, tokens);
+    U.fill(0xFF, p.w, p.w + 16);
+  };
   const int8 = (p, tokens, bias) => {
     for (let i = 0; i < 128 * tokens; i++) I[p.w + i] = 2;
     for (let g = 0; g < 4 * tokens; g++) { F[p.ws / 4 + g] = 1; if (p.wc !== undefined) N[p.wc / 4 + g] = -64 * 2 * 32; }
@@ -773,6 +847,7 @@ async function inPageHigh({ plain, relaxed, addresses }) {
       },
       call: (p) => k.matmul_q6(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1) },
     { name: "matmul_t2", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 1), call: (p) => k.matmul_t2(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 3) },
+    { name: "matmul_b1", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => binary(p, 1), call: (p) => k.matmul_b1(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 2) },
     r && { name: "matmul_q8r", args: ["out", "xq", "xs", "w", "ws", "wc"], want: 768, setup: (p) => int8(p, 1, 64),
       call: (p) => r.matmul_q8r(p.out, p.xq, p.xs, p.w, p.ws, p.wc, 128, 0, 1) },
     r && { name: "matmul_q8r_tile", args: ["out", "xq", "xs", "w", "ws", "wc"], want: 768, setup: (p) => int8(p, 4, 64),
@@ -780,6 +855,9 @@ async function inPageHigh({ plain, relaxed, addresses }) {
     r && { name: "matmul_t2r", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 1), call: (p) => r.matmul_t2r(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 3) },
     r && { name: "matmul_t2r_tile", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 4),
       call: (p) => r.matmul_t2r_tile(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 4, 64, 1024, 3) },
+    r && { name: "matmul_b1r", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => binary(p, 1), call: (p) => r.matmul_b1r(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 2) },
+    r && { name: "matmul_b1r_tile", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => binary(p, 4),
+      call: (p) => r.matmul_b1r_tile(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 4, 64, 1024, 2) },
   ].filter(Boolean);
   const results = [];
   for (const c of cases) {

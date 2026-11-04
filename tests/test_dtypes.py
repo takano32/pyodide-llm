@@ -47,6 +47,18 @@ def ternary_rows(shape, seed=3):
     return (signs.reshape(*shape[:-1], -1, 128) * scales).reshape(shape)
 
 
+def binary_rows(shape, seed=3):
+    """T.634: binary values: every group of 128 along the row is -s and s (a group of zeros now and then: a scale of 0)."""
+    rng = np.random.default_rng(seed)
+    signs = rng.choice(np.float32([-1, 1]), shape)
+    scales = (0.05 + rng.random((*shape[:-1], shape[-1] // 128, 1))).astype(np.float16).astype(np.float32)
+    scales.reshape(-1)[::7] = 0
+    return (signs.reshape(*shape[:-1], -1, 128) * scales).reshape(shape)
+
+
+AS_THEY_ARE = {"ternary": ternary_rows, "binary": binary_rows}
+
+
 def close(got, expected, six):
     """tests/test_quantize.py's lines for the logits of an int8 model against its float32 original (random weights are
     a harsher test than trained ones). six: some rows are six bits, a step four times as coarse: the correlation
@@ -61,9 +73,9 @@ TOKENS = [1, 5, 7, 5, 2]
 
 # ---- the dtypes of a checkpoint
 def test_the_lists_of_dtypes_come_from_the_registry():
-    assert list(DTYPES) == ["float32", "float16", "int8", "int6", "ternary"]
-    assert (QUANTIZED, PACKED, EITHER) == (("int8", "int6", "ternary"), ("int6", "ternary"), ("int8", "int6"))
-    assert [DTYPES[name].short for name in DTYPES] == ["f32", "f16", "int8", "int6", "ternary"]
+    assert list(DTYPES) == ["float32", "float16", "int8", "int6", "ternary", "binary"]
+    assert (QUANTIZED, PACKED, EITHER) == (("int8", "int6", "ternary", "binary"), ("int6", "ternary", "binary"), ("int8", "int6"))
+    assert [DTYPES[name].short for name in DTYPES] == ["f32", "f16", "int8", "int6", "ternary", "binary"]
 
 
 def test_a_dtype_is_named_by_a_name_or_a_numpy_dtype_and_any_other_is_refused():
@@ -72,7 +84,7 @@ def test_a_dtype_is_named_by_a_name_or_a_numpy_dtype_and_any_other_is_refused():
     assert dtype_of(np.float32) == dtype_of(np.dtype("<f4")) == "float32"
     assert dtype_of(np.float16) == "float16" and dtype_of(np.int8) == "int8"
     for other in ("float64", "int4", np.int16, None):
-        with pytest.raises(ValueError, match="dtype must be float32, float16, int8, int6 or ternary, not"):
+        with pytest.raises(ValueError, match="dtype must be float32, float16, int8, int6, ternary or binary, not"):
             dtype_of(other)
     with pytest.raises(ValueError, match="dtype must be"):
         checkpoint_size([128, 256, 2, 4, 4, 320, 24], "float64")
@@ -84,7 +96,7 @@ def test_a_quantized_dtype_packs_what_it_says_it_stores_and_reads_it_back(name):
     for length in (128, 256) if name != "int8" else (128, 48, 20, 7):
         assert dtype.suits(length)
         group = dtype.group(length)
-        values = ternary_rows((5, length)) if name == "ternary" else np.random.default_rng(length).standard_normal((5, length)).astype(np.float32)
+        values = AS_THEY_ARE[name]((5, length)) if name in AS_THEY_ARE else np.random.default_rng(length).standard_normal((5, length)).astype(np.float32)
         packed, scales = dtype.pack(values)
         stored, scaled = dtype.stored_bytes(values.size, group)
         assert (packed.nbytes, scales.nbytes) == (stored, scaled) and scales.dtype == dtype.scale_type
@@ -93,9 +105,9 @@ def test_a_quantized_dtype_packs_what_it_says_it_stores_and_reads_it_back(name):
         # at most half a step of the kind away: a step is the group's largest over 127 (int8) or 31 (int6); none (ternary)
         steps = {"int8": 127.0, "int6": 31.0}
         largest = np.abs(values.reshape(-1, group)).max(axis=1, keepdims=True)
-        line = 0 if name == "ternary" else largest / steps[name] * 0.5 + 1e-6
+        line = 0 if name in AS_THEY_ARE else largest / steps[name] * 0.5 + 1e-6
         assert (np.abs(back - values).reshape(-1, group) <= line).all()
-    assert not DTYPES["int6"].suits(48) and not DTYPES["ternary"].suits(96) and DTYPES["float16"].suits(7)
+    assert not DTYPES["int6"].suits(48) and not DTYPES["ternary"].suits(96) and not DTYPES["binary"].suits(64) and DTYPES["float16"].suits(7)
 
 
 def test_the_bytes_of_a_row_are_its_kinds():
@@ -105,7 +117,7 @@ def test_the_bytes_of_a_row_are_its_kinds():
     wq = next(row for row in rows if row.name == "wq")
     count = 2 * 128 * 128
     sizes = {"float32": 4 * count, "float16": 2 * count, "int8": count + 4 * count // 32, "int6": count * 24 // 32 + 4 * count // 32,
-             "ternary": count * 32 // 128 + 2 * count // 128}
+             "ternary": count * 32 // 128 + 2 * count // 128, "binary": count * 16 // 128 + 2 * count // 128}
     for dtype, size in sizes.items():
         assert placed([wq], dtype)[0].size == size == llama2_convert.tensor_bytes(wq.shape, True, dtype)
     assert file_size(rows, "int8") == checkpoint_size([128, 256, 2, 4, 4, 320, 24], "int8")
@@ -118,14 +130,15 @@ MIXED = [
     ("one ternary among int8", "int8", {"w1": "ternary"}),
     ("an int8 embedding and a six-bit matrix in a float32 file", "float32", {"token_embedding_table": "int8", "wv": "int6"}),
     ("int8 matrices in a ternary file", "ternary", {name: "int8" for name in MATRICES if name != "w1"} | {"wcls": "int8"}),
+    ("one ternary among binary", "binary", {"w2": "ternary", "wcls": "int8"}),
 ]
 
 
 def weights_for(kinds, dtype, shared):
     config, weights = synthetic_weights(dim=128, hidden_dim=256, shared=shared)
     for name in MATRICES:
-        if kinds.get(name, dtype) == "ternary":
-            weights[name] = ternary_rows(weights[name].shape)
+        if kinds.get(name, dtype) in AS_THEY_ARE:
+            weights[name] = AS_THEY_ARE[kinds.get(name, dtype)](weights[name].shape)
     return config, weights
 
 
@@ -136,7 +149,7 @@ def test_a_file_of_several_kinds_is_written_and_read(name, dtype, kinds, shared)
     file that is of that kind throughout. The logits are those of the float32 file of the values each row was rounded
     to, to the bit (the line tests/test_int6.py and test_ternary.py hold a packed dtype to), and near the float32
     original's (the line tests/test_quantize.py holds int8 to)."""
-    if not shared and dtype == "ternary":
+    if not shared and dtype in AS_THEY_ARE:
         kinds = {**kinds, "token_embedding_table": "int8"}
     elif shared:
         kinds = {key: kind for key, kind in kinds.items() if key != "wcls"}
@@ -154,7 +167,7 @@ def test_a_file_of_several_kinds_is_written_and_read(name, dtype, kinds, shared)
     # one model for every kind the file has, each row compared with the model of its kind
     kinds_used = {kind_of(row, dtype) for row in rows} - {None}
     whole = {}
-    for kind in sorted(kinds_used - {"ternary"}):
+    for kind in sorted(kinds_used - set(AS_THEY_ARE)):
         whole[kind] = Llama(written(config, weights, kind), pack_tokenizer(tiny_vocab(config["vocab_size"])), dtype=kind)
     def widened(held):  # (an embedding that stays as it is stored until a row is read)
         return (held[0] * held[1]).reshape(-1, config["dim"]) if isinstance(held, tuple) else np.asarray(held, dtype=np.float32)
@@ -165,11 +178,11 @@ def test_a_file_of_several_kinds_is_written_and_read(name, dtype, kinds, shared)
         if row.name.startswith("freq_cis"):
             continue
         got = rounded[row.name] = widened(getattr(several, row.name))
-        if kind == "ternary":
-            assert np.array_equal(got, weights[row.name]), f"{row.name}: a ternary row is its values as they are"
+        if kind in AS_THEY_ARE:
+            assert np.array_equal(got, weights[row.name]), f"{row.name}: a {kind} row is its values as they are"
         else:
             assert np.array_equal(got, widened(getattr(whole[kind], row.name))), f"{row.name} is not read as {kind}"
-        assert (kind in ("float32", "ternary")) == np.array_equal(got, weights[row.name]), f"{row.name}: rounded, unless its kind holds it as it is"
+        assert (kind in ("float32", *AS_THEY_ARE)) == np.array_equal(got, weights[row.name]), f"{row.name}: rounded, unless its kind holds it as it is"
     vocabulary = pack_tokenizer(tiny_vocab(config["vocab_size"]))
     same, reference = Llama(pack_checkpoint(config, rounded), vocabulary), Llama(pack_checkpoint(config, weights), vocabulary)
     for pos, token in enumerate(TOKENS):

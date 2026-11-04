@@ -1,4 +1,4 @@
-// ternary-check.ts (T.230, T.231): the kernels of the ternary weights (kernels/ternary.ts; kernel.ts's interleave,
+// ternary-check.ts (T.230, T.231; T.634: and the binary ones, held to them): the kernels of the ternary weights (kernels/ternary.ts; kernel.ts's interleave,
 // matmul_t2 and ternary_x; kernel_relaxed.ts's matmul_t2r) against the same arithmetic written out here, value by
 // value. Node and the compiled kernels alone, under a second: the light suite runs it. On a 32-bit memory and on a
 // 64-bit one (the addresses through jobs.js's table).
@@ -282,5 +282,98 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     }
     checked += 6;
   }
+
+  // ---- T.634: the binary kernels (kernels/binary.ts: weight 64 h + 4 c + p of a group of 128 at bit 4 h + p of its byte
+  // c, set for +1) are the ternary ones' numbers to the bit for the same weights: the same signs written both ways, the
+  // same scales and activations. Rows of 1 to 9 groups, ranges anywhere, a row of all +1 and one of all -1 against
+  // activations at int8's ends (the largest sums), every count of tokens of the tile
+  {
+    const bw = base + 3 * 65536, bws = bw + rows * most * 16;
+    const frame = 2048, outFrame = 64, tokens = 9, frames = Math.ceil((bws + rows * most * 2) / 4096) * 4096 + 4096, outs = frames + tokens * frame, alone = outs + tokens * outFrame;
+    if (alone + 2 * rows * 4 > memory.buffer.byteLength) throw new Error("ternary-check's memory is too small for the binary kernels");
+    for (const groups of [1, 2, 3, 4, 5, 7, most]) {
+      const n = groups * 128, ng = n / 32;
+      const signs = Uint8Array.from({ length: rows * n }, () => next() & 1);
+      signs.fill(1, 0, n);  // row 0: all +1
+      signs.fill(0, n, 2 * n);  // row 1: all -1
+      U.fill(0, w, w + rows * groups * 32);
+      U.fill(0, bw, bw + rows * groups * 16);
+      signs.forEach((bit, j) => {
+        U[w + (j >> 2)] |= (2 * bit) << (2 * (j & 3));  // ternary's code: the weight + 1
+        const i = j % n, at = (j - i) / 8 + ((i >> 7) << 4) + ((i >> 2) & 15);
+        U[bw + at] |= bit << ((((i >> 6) & 1) << 2) | (i & 3));
+      });
+      for (let g = 0; g < rows * groups; g++) HF[bws / 2 + g] = HF[ws / 2 + g] = g % 11 === 7 ? 2 ** -20 * (1 + (next() % 1000)) : g % 13 === 5 ? 0 : 1e-3 * (1 + (next() % 1000));
+      for (let t = 0; t < tokens; t++) {
+        const at = frames + t * frame;
+        for (let j = 0; j < n; j++) I[at + j] = t === 0 ? (j & 1 ? 127 : -128) : t === 1 ? -128 : (next() & 255) - 128;
+        for (let g = 0; g < ng; g++) F[(at + most * 128) / 4 + g] = f(1e-2 * (1 + (next() % 1000)));
+        k.interleave(at, at + most * 128, n);
+      }
+      const same = (what, a, b) => {
+        if (a % 4 || b % 4) throw new Error(`ternary-check: ${what} reads its outputs off a float32's place`);
+        for (let i = 0; i < rows; i++) {
+          if (!Object.is(F[a / 4 + i], F[b / 4 + i])) throw new Error(`${what}${where} differs from ternary's at row ${i}, ${groups} groups: ${F[a / 4 + i]} against ${F[b / 4 + i]}`);
+        }
+        checked += 1;
+      };
+      for (let t = 0; t < 3; t++) {
+        const xq = frames + t * frame, xs = xq + most * 128;
+        for (const [name, binary, ternary] of [["matmul_b1r", r.matmul_b1r, r.matmul_t2r], ["matmul_b1", k.matmul_b1, k.matmul_t2]]) {
+          for (const [r0, r1] of [[0, rows], [0, 1], [rows - 1, rows], [3, 8], [5, 5]]) {
+            F.fill(-7, alone / 4, alone / 4 + 2 * rows);
+            binary(alone, xq, xs, bw, bws, n, r0, r1, 2);
+            ternary(alone + rows * 4, xq, xs, w, ws, n, r0, r1, 3);
+            same(`${name}, token ${t}, rows ${r0}..${r1}`, alone, alone + rows * 4);
+          }
+        }
+      }
+      for (const count of [1, 2, 3, 4, 5, 7, 8, tokens]) {
+        for (const [r0, r1] of [[0, rows], [2, 9], [rows - 1, rows]]) {
+          F.fill(-7, outs / 4, (outs + tokens * outFrame) / 4);
+          r.matmul_b1r_tile(outs, frames, frames + most * 128, bw, bws, n, r0, r1, count, outFrame, frame, 2);
+          for (let t = 0; t < tokens; t++) {
+            F.fill(-7, alone / 4, alone / 4 + rows);
+            if (t < count) r.matmul_t2r(alone, frames + t * frame, frames + t * frame + most * 128, w, ws, n, r0, r1, 3);
+            same(`matmul_b1r_tile, token ${t} of ${count}, rows ${r0}..${r1}`, outs + t * outFrame, alone);
+          }
+        }
+      }
+    }
+  }
+
+  // ---- binary_x (T.634): the bytes of llama2_numpy.pack_binary() and the largest |value| of a group, and its refusal
+  // of a value that is not plus or minus that (a 0 where the group is not all 0, half of it, a little more, a NaN)
+  {
+    const groups = 40, x = base + 65536, packed = x + groups * 512, scales = packed + groups * 16;
+    const make = () => {
+      for (let g = 0; g < groups; g++) {
+        const d = g === 3 ? 0 : f([1, 0.0078125, 3.0000002, 1e-30, 65504, 1.5e-5][g % 6] * (1 + (next() % 7)));
+        for (let j = 0; j < 128; j++) F[x / 4 + g * 128 + j] = g === 5 ? -0 : (next() & 1 ? d : -d);
+      }
+    };
+    make();
+    U.fill(0xAA, packed, packed + groups * 16);
+    if (k.binary_x(packed, scales, x, groups * 128) !== 0) throw new Error(`binary_x${where} refuses binary values`);
+    for (let g = 0; g < groups; g++) {
+      let largest = 0;
+      for (let j = 0; j < 128; j++) largest = Math.max(largest, Math.abs(F[x / 4 + g * 128 + j]));
+      if (F[scales / 4 + g] !== largest) throw new Error(`binary_x${where}: the scale of group ${g} is ${F[scales / 4 + g]}, not ${largest}`);
+      for (let c = 0; c < 16; c++) {
+        let want = 0;
+        for (let bit = 0; bit < 8; bit++) want |= (F[x / 4 + g * 128 + 64 * (bit >> 2) + 4 * c + (bit & 3)] < 0 ? 0 : 1) << bit;
+        if (U[packed + g * 16 + c] !== want) throw new Error(`binary_x${where}: byte ${c} of group ${g} is ${U[packed + g * 16 + c]}, not ${want}`);
+      }
+    }
+    for (const [at, spoil] of [[0, 0.5], [127, 1.0000001], [128 + 63, 2], [128 * 39 + 127, NaN], [128 * 7 + 5, -0.999999], [128 * 9 + 64 + 3, 0],
+      [128 * 9 + 32 + 1, 0.5], [128 * 9 + 64 + 6, 0.5], [128 * 9 + 96 + 11, 0.5], [128 * 9 + 14, 0.5], [128 * 39 + 127, 0.5]]) {
+      make();
+      const g = at >> 7;
+      for (let j = 0; j < 128; j++) F[x / 4 + g * 128 + j] = j % 2 ? 3 : -3;
+      F[x / 4 + at] = spoil * 3;
+      if (k.binary_x(packed, scales, x, groups * 128) !== 1) throw new Error(`binary_x${where} takes a value of ${spoil} times its group's scale at ${at}`);
+    }
+    checked += 7;
+  }
 }
-console.log(`ternary-check: interleave, matmul_t2r, matmul_t2 and ternary_x are their arithmetic to the bit (${checked} cases, on a 32-bit and a 64-bit memory)`);
+console.log(`ternary-check: interleave, matmul_t2r, matmul_t2 and ternary_x are their arithmetic to the bit, and matmul_b1r, matmul_b1, their tile and binary_x (T.634) the ternary ones' numbers for the same signs (${checked} cases, on a 32-bit and a 64-bit memory)`);

@@ -73,12 +73,12 @@ def made():
 def test_the_blocks_are_kinds_of_a_row_and_no_dtype_of_a_file():
     # (T.505.1: the converter reads three more types of blocks of 256, which no row is stored in: WIDENED)
     assert set(BLOCKS) == set(SIZES) == set(SUPERBLOCKS) == {name for name, source in SOURCES.items() if source.values == 256} - set(WIDENED)
-    assert list(DTYPES) == ["float32", "float16", "int8", "int6", "ternary"], "a file's dtypes are the five they were"
+    assert list(DTYPES) == ["float32", "float16", "int8", "int6", "ternary", "binary"], "a file's dtypes are the five they were and binary (T.634)"
     assert not set(BLOCKS) & (set(DTYPES) | set(QUANTIZED) | set(PACKED) | set(EITHER))
     assert set(KINDS) == set(DTYPES) | set(BLOCKS) | {"uint8"} and all(KINDS[name] is DTYPES[name] for name in DTYPES)
     for name in BLOCKS:
         # (the words are those of before the blocks: nobody is told a file may be of one)
-        with pytest.raises(ValueError, match=f"^dtype must be float32, float16, int8, int6 or ternary, not {name}.$"):
+        with pytest.raises(ValueError, match=f"^dtype must be float32, float16, int8, int6, ternary or binary, not {name}.$"):
             dtype_of(name)
 
 

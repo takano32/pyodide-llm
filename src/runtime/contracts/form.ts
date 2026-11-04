@@ -9,7 +9,7 @@
 // A key that is added here is added in layout.py's FORM first (AGENTS.md, "形式を変えるとき").
 
 // how a row of the file is stored (src/python/engine/dtypes.py's DTYPES; a file has one for its matrices)
-export type Dtype = "float32" | "float16" | "int8" | "int6" | "ternary";
+export type Dtype = "float32" | "float16" | "int8" | "int6" | "ternary" | "binary";
 
 // T.229: the linear-attention layers of a Qwen3.5 (layout.py's LINEAR): every "every"-th layer attends over all the
 // positions, the others keep a state of key_heads and value_heads heads of these sizes, after a convolution of conv taps

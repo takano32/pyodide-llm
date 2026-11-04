@@ -17,7 +17,7 @@ import type { Arch, Convolution, Linear } from "./form.ts";
 // weights a group with the scales inside; and "u8", the bytes of the codebooks a file with such rows carries. A stack
 // with a kind for each layer says "layers" and, under layers, each layer's kind and place, one after the other (a key
 // of such a stack alone)
-export type Stored = "f32" | "f16" | "int8" | "int6" | "ternary" | "u8" | "layers"
+export type Stored = "f32" | "f16" | "int8" | "int6" | "ternary" | "binary" | "u8" | "layers"
   | "Q2_K" | "Q4_K" | "IQ2_XXS" | "IQ2_XS" | "IQ3_XXS" | "IQ1_S" | "IQ3_S" | "IQ2_S" | "IQ4_XS" | "IQ1_M";
 export type Part = { kind: Stored; offset: number; group: number; scales: number };
 export type Tensor = { kind: Stored; offset: number; shape: number[]; group: number; scales: number; layers?: Part[] };

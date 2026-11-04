@@ -41,7 +41,7 @@ def load_kernels(path, without_relaxed=False):
         lib = ctypes.CDLL(path)
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32], quantize6_x=[p, p, p, i32],
-                          ternary_x=[p, p, p, i32],
+                          ternary_x=[p, p, p, i32], binary_x=[p, p, p, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32, ctypes.c_float], rope=[p, p, p, i32, i32, i32],
                           attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
                           attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32], from_f16=[p, p, i32], finite_f16=[p, i32],
@@ -54,7 +54,7 @@ def load_kernels(path, without_relaxed=False):
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
-            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16", "ternary_x") else None
+            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16", "ternary_x", "binary_x") else None
     except Exception:
         return None
     if without_relaxed:
@@ -73,7 +73,7 @@ def kernel_quantizer(path):
     """The packing of every quantized dtype (DTYPES' pack) on the SIMD kernels, for the converter's Writer:
     quantize_rows(float32 rows, the dtype's name) -> (the bytes of their values in rows of a group's, their float32
     scales), the same bytes as NumPy's and several times faster (T.89: int8, six times; T.98: int6, quantized and packed
-    in one pass; T.230: ternary, with the same refusal of values that are not ternary). Whole groups of 32 or more
+    in one pass; T.230: ternary, with the same refusal of values that are not ternary; T.634: binary, the same). Whole groups of 32 or more
     only: an int8 row of smaller groups is NumPy's (the Writer sees to it). None where the kernels cannot be loaded.
     Which kernel packs a dtype is its entry's packer."""
     kernels = load_kernels(path) if path else None
@@ -98,8 +98,14 @@ def kernel_quantizer(path):
         packed, scales = np.empty(groups * (group * bits // 8), dtype=stored_as), np.empty(groups, dtype=np.float32)
         if packer(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, *more):
             raise ValueError(refusal)
-        # (T.533: ternary's scales are float16s: the kernel's float32 ones, each the same number or a refusal)
-        return packed.reshape(groups, -1), halves_of(scales) if halved else scales
+        # (T.533: ternary's scales are float16s: the kernel's float32 ones, each the same number or a refusal; T.634:
+        # binary's too)
+        if not halved:
+            return packed.reshape(groups, -1), scales
+        try:
+            return packed.reshape(groups, -1), halves_of(scales)
+        except ValueError:
+            raise ValueError(refusal) from None
 
     return quantize_rows
 

@@ -757,6 +757,43 @@ for quantizer in (None, quantize_rows):
     stream.finish()
     outs.append(bytes(stream.out))
 assert outs[0] == outs[1], "ternary_x changed the ternary checkpoint"
+# T.634: and the binary dtype: binary_x is binary() to the byte (a group of zeros, scales of every size), refuses what
+# binary() refuses (a 0 among signs too), and a whole conversion of Q1_0 tensors is the same bytes with it as without
+bits = np.where(np.random.default_rng(15).standard_normal((96, 256)) < 0, -1.0, 1.0).astype(np.float32)
+ones = (bits.reshape(-1, 128) * (np.abs(np.random.default_rng(16).standard_normal((192, 1))) * 0.02).astype(np.float16).astype(np.float32)).reshape(96, 256)
+ones[2, 128:] = 0.0
+packed, scales = quantize_rows(ones, "binary")
+theirs = llama2_numpy.binary(ones)
+assert packed.shape == theirs[0].shape and np.array_equal(packed, theirs[0]) and np.array_equal(scales, theirs[1]), "binary_x is not binary()"
+for spoiled in (0.5, 2.0, 0.0, float("nan")):
+    wrong = ones.copy()
+    wrong[40, 3] = spoiled * np.abs(ones[40, :128]).max()
+    for pack in (llama2_numpy.binary, lambda rows: quantize_rows(rows, "binary")):
+        try:
+            pack(wrong)
+            raise AssertionError(f"a value of {spoiled} times its group's scale passed as binary")
+        except ValueError as error:
+            assert str(error) == llama2_numpy.NOT_BINARY
+q1_header, q1_file = {}, bytearray()
+for name, tensor in pq_tensors.items():
+    if tensor.ndim == 2:
+        count = tensor.size // 128
+        data = np.empty((count, 18), dtype=np.uint8)
+        data[:, :2] = (np.abs(rng.standard_normal(count)) * 0.01).astype(np.float16).view(np.uint8).reshape(-1, 2)
+        data[:, 2:] = rng.integers(0, 256, (count, 16), dtype=np.uint8)
+        data, kind = data.tobytes(), "Q1_0"
+    else:
+        data, kind = tensor.tobytes(), "F32"
+    q1_header[name] = {"dtype": kind, "shape": list(tensor.shape), "data_offsets": [len(q1_file), len(q1_file) + len(data)]}
+    q1_file += data
+outs = []
+for quantizer in (None, quantize_rows):
+    stream = llama2_convert.Stream(q1_header, 0, pq_config, "binary", 24, quantize_rows=quantizer)
+    for at in range(0, len(q1_file), 1000):
+        stream.feed(bytes(q1_file[at:at + 1000]))
+    stream.finish()
+    outs.append(bytes(stream.out))
+assert outs[0] == outs[1], "binary_x changed the binary checkpoint"
 # T.110: float32 to float16 as NumPy rounds it, and attention over a float16 cache the same to the bit as over the
 # float32 values it stands for (every head alone, and heads in two ranges)
 kernel = llama2_numpy.load_kernels("simdkernel.so")

@@ -135,7 +135,7 @@ const returned = (fn) => {
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
     neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true], gemma4: [true, false, true],
     spark: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
-  const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
+  const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary", "binary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
   assert.equal(plans.length, cases.length);

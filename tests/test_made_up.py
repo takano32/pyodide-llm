@@ -59,7 +59,7 @@ def test_a_llamas_file_is_llama2cs(settings):
 def test_the_file_is_the_one_the_engine_reads(name, dtype):
     header, form, options = MODELS[name]
     rows, asked, given = tensor_rows(header, form), [], {}
-    values = drawn(seed=3, ternary=dtype == "ternary")
+    values = drawn(seed=3, ternary=dtype == "ternary", binary=dtype == "binary")
 
     def tensor(row):
         asked.append(row.name)

@@ -51,7 +51,7 @@
 - T.283 [追加][モデル] BitNet b1.58（Microsoft の 3 値のモデル） — 未着手
 - T.284 [追加][Bonsai] 27B の画像の入力（mmproj） — 候補
 - T.285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 未着手
-- T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 未着手
+- T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 進行中
 - T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 未着手
 - T.289 [描画][Bonsai] 27B と 3 値のモデルのメモリの文面と警告 — 未着手
 - T.291 [追加][モデル] Qwen3.5 の考える形の項目をどうするか — 未着手
@@ -564,7 +564,12 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.285 [性能][Bonsai][CPU] 27B のメモリの小さな詰め — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 小）
 - linear の層の状態を 2 重に持つ 288 MiB（T.229: 止まったスレッドの後のやり直しのため）、変換器が q の行列を丸ごと溜めてから割る約 252 MB。
 
-### T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 状態: 未着手（2026-11-04、持ち主が選択肢で「作る」。前の状態: 候補、2026-11-03、T.286.5 から。規模 中〜大）
+### T.634 [性能][Bonsai][CPU] 1-bit の重みを 1 ビットのまま持つ dtype とカーネル — 状態: 進行中（2026-11-04、持ち主が選択肢で「作る」。前の状態: 候補、2026-11-03、T.286.5 から。規模 中〜大）
+- **子タスクの番号**（2026-11-04、取りまとめ役の決め: 1 つずつ確かめて本線に入れられる単位で。順もこの順）: T.634.1 ファイルの dtype `binary` とその CPU のカーネル（Python の詰め方・`DTYPES`・NumPy の読み・`checkpoint_dtype()`、カーネル `binary_x`・`matmul_b1`・`matmul_b1r`・`matmul_b1r_tile`、`jobs.ts` の `ADDRESSES`・`WORK`・`PACKED`、型。誰も頼まないので訪問者には何も変わらない） — 実装済み、本線の前。T.634.2 Q1_0 からの変換と一覧の項目（1-bit の Bonsai 5 項目の `weights: "binary"`、大きさの語と `loaded`、`CONVERTER` を上げる、保存の名前、Q1_0 を広げずに写す道を作るか、実物の 1.7B〜27B を CI で） — 未着手。T.634.3 GPU（binary を上げるときに 3 値の符号に広げて今の 3 値のシェーダで掛ける案。T.634.2 で 1-bit の Bonsai は GPU を使わなくなる: `PACKED` の `gpu` が null） — 未着手。
+- **T.634.1 の形（取りまとめ役の決め、訳）**: 1 つの群の 16 バイトは Q1_0 の並びでなく、カーネルが読む並び（重み 64 h + 4 c + p が c バイト目の 4 h + p ビット目、+1 で立つ）。1 バイトのシフトとマスクで 3 値の `interleave()` の面（64 個の塊の p 番目の面の c バイト目 = 活性値 4 c + p）と同じ並びの符号が出るので、3 値の活性値の用意（`quantize_x` と `interleave`、`takes: "interleaved"`）をそのまま使う。+1・−1 の符号 2 b（0 か 2）は 3 値の符号 w + 1 と同じ数なので、群の整数の和は 3 値のカーネルと同じ整数、その後の float32 の手順も同じ順: **同じ重みなら 3 値の道の logits とビット単位で同じ**（`tests/binary-same-check.ts`）。群に 1 回の 16 バイトの読みで 128 個（3 値は 2 回）。Q1_0 の並びのままにしなかった訳: カーネルがビットを広げる手順が増える（バイトを広げる swizzle と比べ）。変換は今も Q1_0 → float32 → 詰め直しで、並びの違いは詰めるときに 1 回。
+- **T.634.1 の確かめ（手元、2026-11-04）**: pytest 3,368 通った、smoke、軽い組（`MemoryMax=5G`、611 秒）が通った。新しい検査: `tests/ternary-check.ts` に binary のカーネルを 3 値のカーネルと同じ符号で（1〜9 群・行の範囲・タイルの 1〜9 トークン・32 ビットと 64 ビットと 4 GiB の上のメモリで、ビット単位）と `binary_x`（バイトと尺度、0・半分・少し大きい・NaN を断る）。`tests/binary-same-check.ts`（軽い組: 作り物の 1-bit の Qwen3 と回した基底の hybrid を binary と 3 値で、logits がビット単位で同じ、1 トークンずつとブロックの後、relaxed の有無）。forward-check の作り物の binary は NumPy から相対 0.031（線 0.5）、64 ビットのメモリでも。壊し方: 2 つ目の 64 個の塊に 1 つ目の符号を読ませた `matmul_b1r` は ternary-check が落とした（最初は出の番地が 4 の倍数でなく `undefined` どうしを比べて通っていた: 番地を揃え、揃わない番地を断る行を足した）。手元に Playwright のブラウザが無いので `kernels-in-browser.ts` は CI で。
+- **T.634.1 の CI**: CI を回した。訳: カーネルを足したので `kernels-in-browser.ts` を Chromium・Firefox・WebKit の各エンジンで（手元に無い）、速さ（`ternary-bench.ts --signs` で t2r・b1r・t2・b1 を同じプロセスで交互に）は x86-64 と arm64 のランナーで。
+- **T.634.1 の訪問者に見えうる文（持ち主に見せる。実装済み、変えるなら 1 行）**: (1) `NOT_BINARY`「These weights are not binary: a value is not the largest of its group of 128 or its negative.」（3 値の `NOT_TERNARY` の形）。(2) `DTYPES["binary"].unsuited`「Binary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows.」（3 値の文の語を替えた）。(3) dtype の断りの一覧が「… int6, ternary or binary, not …」に伸びる（登録簿から組まれる文）。どれも binary を頼む項目（T.634.2 から）か作り物でしか出ない。
 - 今の 1-bit の Bonsai（Q1_0）は 3 値の dtype（2 ビットと 128 個ごとの float16 の尺度）で持つので、メモリは取得の約 2 倍（27B は取得 3.8 GB → 7.2 GB、64 ビットのメモリ）。1 ビットの dtype（128 個ごとに 16 バイトと float16 の尺度、Q1_0 と同じ 18 バイト）とカーネルを作れば 27B は約 3.8 GB で 32 ビットのメモリに入り、読む量も半分（帯域の壁で速くなる見込み、未計測）。足す所は「物を足す手順」の「dtype（詰め方）を足す」とカーネル。GPU にも置くなら `PACKINGS`。
 
 ### T.288 [性能][Bonsai][CPU] 3 値のカーネルのほかの形 — 状態: 未着手（2026-10-02 の洗い出しで採番。規模 中）

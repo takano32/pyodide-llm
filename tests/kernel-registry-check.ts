@@ -45,8 +45,9 @@ const both = () => {
 // [kind, 1, 2, 3, 4, 5, 6, 7, 8, rows 9] and rows 20 to 30 what its kernel is handed. tile: of count 4 tokens, strides
 // 100 and 200. rowBytes: the bytes of a row n wide as the blocks count it (blockRows() before the table: float32 4 n,
 // ternary n / 4, any other n; T.620: int6 3 n / 4, 24 bytes a group of 32). tileRows: the rows a tile takes at once
-// (T.620: a prompt's chunks are cut in as many; 1 where not said). T: the ternary kernels' mask.
-const T = 3, B = 16;
+// (T.620: a prompt's chunks are cut in as many; 1 where not said). T: the ternary kernels' mask; W: the binary ones'
+// (T.634: binary n / 8).
+const T = 3, B = 16, W = 2;
 const KINDS = [
   ["matmul_q8r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { tile: ["matmul_q8r_tile", [1, 2, 3, 4, 5, 6, 7, 20, 30, 4, 100, 200]], rowBytes: (n) => n, tileRows: 4 }],
   ["matmul_q8", "plain", [1, 2, 3, 4, 5, 7, 20, 30], { rowBytes: (n) => n }],
@@ -65,6 +66,8 @@ const KINDS = [
   ["matmul_sbr", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, B], { tile: ["matmul_sbr_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, B]], rowBytes: (n) => (n / 256) * 66, a6: B, cold: true }],
   ["matmul_sb", "plain", [1, 2, 3, 4, 5, 7, 20, 30, B], { rowBytes: (n) => (n / 256) * 66, a6: B, cold: true }],
   ["matmul_sbw", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, B], { tile: ["matmul_sbw_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, B, 8]], rowBytes: (n) => (n / 256) * 66, a6: B, cold: true, kernel: "matmul_sbr" }],
+  ["matmul_b1r", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, W], { tile: ["matmul_b1r_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, W]], rowBytes: (n) => n / 8 }],
+  ["matmul_b1", "plain", [1, 2, 3, 4, 5, 7, 20, 30, W], { rowBytes: (n) => n / 8 }],
 ];
 const more = (name) => KINDS.find(([kind]) => kind === name)[3];
 const jobOf = (kind, said = {}) => [KIND[kind], 1, 2, 3, 4, 5, more(kind).a6 ?? 6, said.n ?? 7, 8, 9, said.count ?? 1, 100, 200, 300];
@@ -206,10 +209,12 @@ for name in QUANTIZED:
     if not dtype.rounds:
         rows = (rng.integers(-1, 2, (3, n)) * 0.5).astype(np.float32)
         rows[:, ::dtype.group(n)] = 0.5
+    if dtype.bits == 1:  # (T.634: binary, signs alone)
+        rows = np.where(rows < 0, -0.5, 0.5).astype(np.float32)
     packed, scales = dtype.pack(rows)
     packed = np.ascontiguousarray(packed).reshape(-1)
     values = dtype.unpack(packed)
-    assert len(values) == 3 * n and len(set(values.tolist())) > 2
+    assert len(values) == 3 * n and len(set(values.tolist())) > (1 if dtype.bits == 1 else 2)
     out[dtype.short] = {"group": dtype.group(n), "row": [dtype.stored_bytes(width, dtype.group(width))[0] for width in (128, 256, 1024)], "packed": packed.tolist(), "values": values.tolist(), "scale": dtype.scale}
 blocks = {name: {"short": kind.short, "group": kind.group(256), "row": [kind.stored_bytes(width, BLOCK)[0] for width in (256, 1024)], "scale": kind.scale, "type": SOURCES[name].ggml} for name, kind in BLOCKS.items()}
 from convert.grids import codebooks
@@ -263,6 +268,8 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     int6: { relaxed: "matmul_q6r", plain: "matmul_q6", sums: "six_sums", xs: 4, ready: [[["quantize_x", [1, 2, 3, 96, 64]]], [["quantize_x", [1, 2, 3, 96, 0]]]] },
     ternary: { relaxed: "matmul_t2r", plain: "matmul_t2", sums: null, xs: 8,
       ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
+    binary: { relaxed: "matmul_b1r", plain: "matmul_b1", sums: null, xs: 8,
+      ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
   };
   // T.363.5: llama.cpp's blocks, all alike: signed 8-bit activations and their sums either way, 16 bytes a group of 32
   const summed = [["quantize_x", [1, 2, 3, 96, 0]], ["sums_x", [2, 1, 96]]];
@@ -290,7 +297,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     }
   }
   // T.375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
-  const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
+  const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true }, binary: null };
   for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU,
   GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T.547.2.3's Q4_K, as it is, by the packed int8 dot)
   GPU.Q2_K = { as: "Q2_K", alone: false, dot: true };              // (T.547.3.3: and Q2_K's, the same way)
@@ -311,22 +318,22 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     }
     assert.deepEqual([held.scale, held.dot], [PACKED[name].scale, PACKED[name].gpu.dot], `${name}: a group's scale in the checkpoint, and the packed int8 dot`);
   }
-  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
+  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.265625, 0.140625, ...Object.values(BLOCK_TYPES).map(([, bytes]) => bytes / 256)], "the bytes of a weight: a group's values and its scale, over the group");
   // (the names the packings take the activations by: those of one name read what one ready() made)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { takes }]) => [name, takes])),
-    { int8: "biased", int6: "biased", ternary: "interleaved", ...Object.fromEntries(Object.keys(BLOCK_TYPES).map((name) => [name, "summed"])) }, "how each packing's kernels take the activations");
+    { int8: "biased", int6: "biased", ternary: "interleaved", binary: "interleaved", ...Object.fromEntries(Object.keys(BLOCK_TYPES).map((name) => [name, "summed"])) }, "how each packing's kernels take the activations");
   assert.deepEqual(["IQ2_XXS", "Q4_K"].map(aloneTakes), [false, false], "no model of llama.cpp's blocks on the GPU alone");
   assert.deepEqual(["int8", "int6", "ternary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 1.125, 1.125, 1.125, 1.125],
     "on the GPU: int6 widened to int8, ternary as it is (T.533: its scales widened to float32); what the GPU does not take is counted as int8");
-  assert.deepEqual(["int8", "int6", "ternary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false], "the dtypes a model on the GPU alone may be of");
+  assert.deepEqual(["int8", "int6", "ternary", "binary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false, false], "the dtypes a model on the GPU alone may be of");
   assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
   // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.ts)
   const { SIX_OF_EIGHT, TERNARY_OF_EIGHT } = await import("../src/models/memory.ts");
   assert.deepEqual([SIX_OF_EIGHT, TERNARY_OF_EIGHT], [weightBytes(PACKED.int6) / weightBytes(PACKED.int8), weightBytes(PACKED.ternary) / weightBytes(PACKED.int8)],
     "src/models/memory.ts's sizes of six bits and of ternary against int8 are the packings' (jobs.ts's PACKED is the owner: put memory.js right)");
-  assert.deepEqual(["int8", "int6", "ternary", "f32", "f16", "", undefined, "toString", "constructor"].map((name) => packingOf(name)),
-    [PACKED.int8, PACKED.int6, PACKED.ternary, null, null, null, null, null, null], "packingOf(): a packing's line by its name, null for anything else");
+  assert.deepEqual(["int8", "int6", "ternary", "binary", "f32", "f16", "", undefined, "toString", "constructor"].map((name) => packingOf(name)),
+    [PACKED.int8, PACKED.int6, PACKED.ternary, PACKED.binary, null, null, null, null, null, null], "packingOf(): a packing's line by its name, null for anything else");
   console.log("ok: each packing's jobs (relaxed and plain), corrections, activations made ready and bytes in xs; packingOf() knows the packings and nothing else");
 }
 
@@ -344,6 +351,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     int8: { sums: ["int8_sums", null], one: ["matmul_q8r", "matmul_q8"], block: ["matmul_q8r_tile", "matmul_q8"], bias: [64, 0], interleaved: false },
     int6: { sums: ["six_sums", null], one: ["matmul_q6r", "matmul_q6"], block: ["matmul_q6r", "matmul_q6"], bias: [64, 0], interleaved: false },
     ternary: { sums: [null, null], one: ["matmul_t2r", "matmul_t2"], block: ["matmul_t2r_tile", "matmul_t2"], bias: [0, 0], interleaved: true },
+    binary: { sums: [null, null], one: ["matmul_b1r", "matmul_b1"], block: ["matmul_b1r_tile", "matmul_b1"], bias: [0, 0], interleaved: true },
     float32: { sums: [null, null], one: ["matmul_f32", "matmul_f32"], block: ["matmul_f32", "matmul_f32"], bias: [null, null], interleaved: false },
   };
   const named = (said, start) => [...new Set(said.map(([name]) => name).filter((name) => name.startsWith(start) || name.endsWith(start)))];
@@ -469,6 +477,6 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     }
   }
   console.log(`ok: ${read} engines on made-up bytes: an embedding's row, the outlier channels' columns and a matrix widened to float32 are each weight as its packing reads it, times its group's scale`);
-  console.log(`ok: ${engines} engines (int8, int6, ternary and float32, with relaxed SIMD and without) ask of their kernels what the packing says: the corrections, a token's kernel and a block's, and every token of a block made ready in its frame`);
+  console.log(`ok: ${engines} engines (int8, int6, ternary, binary and float32, with relaxed SIMD and without) ask of their kernels what the packing says: the corrections, a token's kernel and a block's, and every token of a block made ready in its frame`);
 }
 await leave(0);

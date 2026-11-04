@@ -9,7 +9,11 @@
 // to the bit. G weights/s is rows x n a second; GB/s counts what a row reads of the weights (their scales and
 // corrections too).
 //
-//   node tests/ternary-bench.ts [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms t2r,q8r] [--no-prompt]
+//   node tests/ternary-bench.ts [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms t2r,q8r] [--no-prompt] [--signs]
+//
+// T.634: --signs makes every weight -1 or +1 (no 0, as the 1-bit Bonsai's Q1_0 has them), and adds the binary dtype's
+// kernels (b1r: matmul_b1r, b1: matmul_b1, one bit a weight, kernels/binary.ts) and their tile, which are then t2r's
+// numbers to the bit on the same weights: `--signs --forms t2r,b1r,t2,b1` times the two dtypes of one 1-bit model.
 //
 // Then a prompt of 16 tokens through the same matrices: the ternary tile (matmul_t2r_tile, a row against four tokens)
 // against the token's kernel for every token, and int8's tile (T.159) on the widened weights.
@@ -67,7 +71,13 @@ const FORMS = {
     run: (k, c, w, r0, r1) => k.matmul_h4r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   h2: { module: "forms", bytes: [32, 2, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_h2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  // T.634: the binary kernels (--signs alone)
+  b1r: { module: "tree", bytes: [16, 2, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_b1r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 16, c[N], r0, r1, 2) },
+  b1: { module: "plain", bytes: [16, 2, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_b1(c[OUT], c[XQ], c[XS], w, w + g128(c) * 16, c[N], r0, r1, 2) },
 };
+const signs = process.argv.includes("--signs"), BINARY = ["b1r", "b1"];
 // A prompt's tokens (T.108) through the same matrix: the token's kernel for every token, the rows in blocks that stay in
 // the first cache (jobs.js's way for a kernel without a tile), the ternary tile (matmul_t2r_tile), and int8's (T.159) on
 // the same weights widened. of: whose copies of the weights it reads
@@ -88,6 +98,8 @@ const PROMPTS = {
     run: (k, c, w, r0, r1) => k.matmul_p2r_tile(c[OUT], c[XQ], c[XS], w, 0, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
   "q8r tile": { module: "tree", of: "q8r", activations: "seven",
     run: (k, c, w, r0, r1) => k.matmul_q8r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
+  ...(signs ? { "b1r tile": { module: "tree", of: "b1r", activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_b1r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 16, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 2) } } : {}),
 };
 const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object.keys(ALL);
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm" };
@@ -131,7 +143,8 @@ const args = process.argv.slice(2);
 const text = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const rounds = Number(text("--rounds", 2)), turns = Number(text("--turns", 5)), megabytes = Number(text("--megabytes", 256));
 const shapes = text("--shapes", "2048x2048,6144x2048,2048x6144,5120x5120,17408x5120,5120x17408").split(",").map((shape) => shape.split("x").map(Number));
-const timed = text("--forms", NAMES.join(",")).split(",");
+const timed = text("--forms", NAMES.filter((form) => signs || !BINARY.includes(form)).join(",")).split(",");
+if (!signs && timed.some((form) => BINARY.includes(form))) throw new Error("b1r and b1 take binary weights: --signs");
 const prompts = !args.includes("--no-prompt");
 // the forms whose copies are made: those timed, and those the prompts read
 const needed = NAMES.filter((form) => timed.includes(form) || (prompts && Object.values(PROMPTS).some(({ of }) => of === form)));
@@ -184,7 +197,7 @@ for (const [rows, n] of shapes) {
   const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
   // the ternary weights (a third each, as the files have them) and their scales
   const tw = new Int8Array(rows * n), d = new Float32Array(groups);
-  for (let i = 0; i < tw.length; i++) tw[i] = (next() % 3) - 1;
+  for (let i = 0; i < tw.length; i++) tw[i] = signs ? (next() & 1 ? 1 : -1) : (next() % 3) - 1;
   // float16 numbers (T.533: the forms that keep them so read the same scales)
   for (let g = 0; g < groups; g++) d[g] = Math.f16round(0.005 + (next() % 4096) / 163840);
   // ---- each form's copy of the weights
@@ -230,6 +243,12 @@ for (const [rows, n] of shapes) {
       for (let j = 0; j < tw.length; j++) U[at + (j >> 7) * 34 + 2 + ((j & 127) >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
       for (let g = 0; g < groups; g++) new Float16Array(memory.buffer, at + g * 34, 1)[0] = d[g];
     },
+    b1r(at) {  // T.634: weight 64 h + 4 c + p of a group at bit 4 h + p of its byte c, set for +1
+      const scales = at + groups * 16;
+      U.fill(0, at, scales);
+      for (let j = 0; j < tw.length; j++) if (tw[j] > 0) U[at + (j >> 7) * 16 + ((j >> 2) & 15)] |= 1 << ((((j >> 6) & 1) << 2) | (j & 3));
+      new Float16Array(memory.buffer, scales, groups).set(d);
+    },
     q8r(at) {  // T.235's int8: -127, 0, 127 and float32(d / 127) a group of 32
       const scales = at + groups * 128, corrections = scales + groups * 16;
       for (let j = 0; j < tw.length; j++) I[at + j] = 127 * tw[j];
@@ -244,6 +263,7 @@ for (const [rows, n] of shapes) {
   writers.bc = writers.bs = writers.bx = writers.t2p = writers.t2c;
   writers.t2r = writers.t2 = writers.h2 = writers.h4r = writers.h2r;
   writers.q8 = writers.q8r;
+  writers.b1 = writers.b1r;
   const copies = {};
   for (const form of needed) {
     const stride = bytesOf(form, rows, n), first = firsts[form];
@@ -319,10 +339,11 @@ for (const [rows, n] of shapes) {
   const references = { t2r: reference(eight, whole, 1), c: reference(seven, whole, 1), q8r: reference(seven, over127, 127), q8: reference(eight, over127, 127) };
   references.t2 = references.bc = references.bs = references.bx = references.a = references.t2r;
   references.t2c = references.t2p = references.h2r = references.h4r = references.p2r = references.h2 = references.t2r;
+  references.b1r = references.b1 = references.t2r;
   Object.assign(c, { [N]: n, [ROWS]: rows });
   const set = (form) => Object.assign(c, { [FORM]: NAMES.indexOf(form), [FIRST]: firsts[form], [STRIDE]: bytesOf(form, rows, n),
     [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs, [COUNT]: 1 });
-  const errors = {}, ownOf = {}, SAME_AS_T2R = ["t2", "t2c", "t2p", "h2r", "h4r", "p2r", "h2"];
+  const errors = {}, ownOf = {}, SAME_AS_T2R = ["t2", "t2c", "t2p", "h2r", "h4r", "p2r", "h2", "b1r", "b1"];
   for (const form of timed) {
     set(form);
     for (const [slot, threads] of [[0, 1], [1, 4]]) {
@@ -400,7 +421,7 @@ for (const [rows, n] of shapes) {
     setPrompt("t2r, token by token");
     Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[0] });
     go();
-    for (const name of ["t2r tile", "h2r tile", "p2r tile"]) {
+    for (const name of ["t2r tile", "h2r tile", "p2r tile", ...(signs ? ["b1r tile"] : [])]) {
       setPrompt(name);
       Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[1] });
       go();

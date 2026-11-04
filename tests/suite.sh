@@ -297,6 +297,20 @@ made_up_forward() {
   node tests/forward-check.ts .tmp/made-up-lfm2-float32 .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 .tmp/made-up-qwen35-int8 .tmp/made-up-ternary-hybrid --rounds 1 --positions 128
 }
 part "forward.js against NumPy, made-up LFM2, Qwen3.5 and ternary models" made_up_forward
+# T.634: the binary dtype's kernels on forward.js: a made-up 1-bit model (a Qwen3, and a hybrid in a rotated basis) as
+# binary and as ternary is the same logits to the bit, a token at a time and after a block; and the binary one against
+# NumPy
+binary_same() {
+  mkdir -p .tmp
+  python tests/make_ternary.py .tmp/made-up-binary-qwen3 binary qwen3
+  python tests/make_ternary.py .tmp/made-up-binary-qwen3-ternary ternary qwen3 signs
+  python tests/make_ternary.py .tmp/made-up-binary-rotated binary rotated
+  python tests/make_ternary.py .tmp/made-up-binary-rotated-ternary ternary rotated signs
+  node tests/binary-same-check.ts .tmp/made-up-binary-qwen3-ternary .tmp/made-up-binary-qwen3
+  node tests/binary-same-check.ts .tmp/made-up-binary-rotated-ternary .tmp/made-up-binary-rotated
+  node tests/forward-check.ts .tmp/made-up-binary-qwen3 --rounds 1 --positions 64
+}
+part "a binary model on forward.js: the ternary one's logits to the bit" binary_same
 # T.261: a Gemma 3 was kept off the GPU here; T.261.4: its prompts are the GPU's now, its worker started with a plan of what
 # it has besides (a few seconds)
 gemma3_goes_to_the_gpu() {

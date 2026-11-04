@@ -31,7 +31,8 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 
-from engine.packing import NOT_TERNARY, TERNARY_GROUP, group32, quantize, six, ternary, unpack_ternary, unpacked6
+from engine.packing import (BINARY_GROUP, NOT_BINARY, NOT_TERNARY, TERNARY_GROUP, binary, group32, quantize, six, ternary,
+                            unpack_binary, unpack_ternary, unpacked6)
 
 
 class Dtype(NamedTuple):
@@ -115,6 +116,7 @@ def as_int8(raw):
 # int6 (T.98): six bits a value, 24 bytes a group of 32 (engine/packing.py's pack6).
 # ternary (T.230): two bits a value, 32 bytes a group of 128 (pack_ternary); the weights of a ternary model as they are.
 # T.533: its scale a float16, as PQ2_0 and PTQ1_0 have it (34 bytes a group of 128, not 36).
+# binary (T.634): one bit a value, 16 bytes a group of 128 (pack_binary) and a float16 scale: ggml's Q1_0's 18 bytes.
 DTYPES = {dtype.name: dtype for dtype in (
     Dtype("float32", "f32", itemsize=4),
     Dtype("float16", "f16", itemsize=2),
@@ -124,6 +126,9 @@ DTYPES = {dtype.name: dtype for dtype in (
     Dtype("ternary", "ternary", bits=2, scale=2, group=lambda length: TERNARY_GROUP, pack=ternary, unpack=unpack_ternary,
           packer="ternary_x", rounds=False, refusal=NOT_TERNARY,
           unsuited="Ternary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows."),
+    Dtype("binary", "binary", bits=1, scale=2, group=lambda length: BINARY_GROUP, pack=binary, unpack=unpack_binary,
+          packer="binary_x", rounds=False, refusal=NOT_BINARY,
+          unsuited="Binary weights need rows of whole groups of 128, an even number of them in each tensor, and this model has other rows."),
 )}
 # ---- llama.cpp's blocks (T.363)
 # A GGUF's K- and i-quantized types, kept as the file has them: 256 weights to a block of the row, its scales inside

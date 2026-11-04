@@ -40,8 +40,9 @@ import numpy as np  # noqa: F401
 
 from engine.tokenizer import (BOS, BYTE_CHARS, CharClasses, Charsmap, SPACES, STAGED, Tokenizer,  # noqa: F401
                               letter, mark, number, pretokenize)
-from engine.packing import (NOT_TERNARY, TERNARY_GROUP, group32, pack6, pack_ternary, quantize,  # noqa: F401
-                            quantize6, six, ternary, unpack6, unpack_ternary)
+from engine.packing import (BINARY_GROUP, NOT_BINARY, NOT_TERNARY, TERNARY_GROUP, binary, group32, pack6,  # noqa: F401
+                            pack_binary, pack_ternary, quantize, quantize6, six, ternary, unpack6, unpack_binary,
+                            unpack_ternary)
 from engine.dtypes import (BLOCKS, CODEBOOKS, DTYPES, EITHER, KINDS, PACKED, QUANTIZED, Dtype,  # noqa: F401
                            dtype_of)
 from engine.layout import (ATTENDING, CODES, CONVOLUTION, EVERY, FORM, GELU, GELU_ERF, LAYOUTS, LINEAR, MATRIX, PARTLY,  # noqa: F401

@@ -47,7 +47,7 @@ src/runtime/built/facts/.made:	python_facts.py $(MODEL_PYTHON)
 KERNEL_PARTS = kernels/kernel/matmul.ts kernels/kernel/quantize.ts kernels/kernel/attention.ts kernels/kernel/halves.ts \
 	kernels/kernel/activations.ts kernels/kernel/stateful.ts kernels/kernel/sample.ts kernels/kernel/math.ts \
 	kernels/blocks/types.ts kernels/blocks/token.ts kernels/blocks/tile.ts kernels/blocks/row.ts
-src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/blocks.ts kernels/blocks_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
+src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/blocks.ts kernels/blocks_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/binary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
 	python3 kernels/build.py src/runtime/built
 
 # The site's Python (src/python/) as two archives, engine.zip and converter.zip, which the worker fetches whole and

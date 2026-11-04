@@ -700,7 +700,7 @@ def uniform(seed, low=-0.2, high=0.2):
 BIASES = ("bq", "bk", "bv", "bo", "b1", "b2", "ln_att_bias", "ln_ffn_bias", "ln_final_bias")
 
 
-def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
+def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False, binary=False):
     """The values of the made-up models the GPU is checked on (tests/gpu-check.ts), of one stream in file order: a
     matrix is 0.3 N; the weight of a norm is 1 + 0.03 N, a bias 0.3 N (T.154, T.187: around 0 as the matrices are, or
     the biases of every layer are nearly the same and 8 bits hide a GPU that reads layer 0's in every layer).
@@ -709,7 +709,9 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
     2 spread, ... (mod dim: the T.232 review's spread of 37 puts some in every group of 128 of a dim of 256).
     calm (T.226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check/models.ts.
     ternary (T.232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
-    times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are."""
+    times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are.
+    binary (T.634): every group of 128 along a row of a matrix keeps the signs of all its values times one scale of its
+    own, which the binary dtype (and the ternary one) stores as they are."""
     rng = np.random.default_rng(seed)
 
     def tensor(row):
@@ -731,6 +733,10 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
             # (T.533: a float16, as PQ2_0 holds it: the ternary dtype keeps its scales so)
             d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float16).astype(np.float32)
             values = (np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32).reshape(row.shape)
+        if binary:
+            groups = values.reshape(-1, 128)
+            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float16).astype(np.float32)
+            values = (np.where(groups < 0, -1.0, 1.0) * d).astype(np.float32).reshape(row.shape)
         return values
     return tensor
 

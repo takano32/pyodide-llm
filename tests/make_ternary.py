@@ -6,7 +6,7 @@
 # and +d of one d of its own, about a third each, as Prism ML's Ternary Bonsai models are), converted the way the page
 # converts them (llama2_convert.Conversion), to the ternary dtype or to any other of the same values.
 #
-#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid | rotated | rotated-tied | large]
+#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6 | binary] [qwen3 | own | hybrid | rotated | rotated-tied | large] [signs]
 #
 # qwen3 (the default): the shape of Ternary Bonsai 1.7B in small, a Qwen3 (norms of the heads of q and k, heads that
 #   do not fill dim, grouped-query attention, the classifier shared with the embedding).
@@ -23,6 +23,9 @@
 # rotated-tied: the same with the embedding as the classifier too (no output matrix: what version 2 of Prism ML's
 #   rotated basis is for, `tied_output`, as the smaller models of a Qwen3.5 have it): one ternary table whose rows
 #   the engine turns back where it embeds and multiplies by the turned input where it classifies (T.237's review).
+# signs (T.634; binary says it too): every group of 128 keeps the signs of all its values, none of them 0, as the 1-bit
+#   Bonsai models are, which the binary dtype holds (and the ternary one, as the page held them before): the same
+#   model as binary and as ternary is the same numbers to the bit (tests/forward-check.ts --same).
 import json
 import sys
 from pathlib import Path
@@ -54,6 +57,20 @@ def ternarized(tensors, seed=5):
     return out
 
 
+def binarized(tensors, seed=5):
+    """T.634: the tensors with every matrix made binary: each group of 128 along a row the signs of its values times
+    one scale of its own (a float16), none of them 0."""
+    rng = np.random.default_rng(seed)
+    out = {}
+    for name, tensor in tensors.items():
+        if tensor.ndim == 2 and tensor.shape[1] % 128 == 0:
+            groups = tensor.reshape(-1, 128)
+            scales = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float16)
+            tensor = (np.where(groups < 0, -1.0, 1.0) * scales.astype(np.float32)).astype(np.float32).reshape(tensor.shape)
+        out[name] = tensor
+    return out
+
+
 def model(kind):
     """(the Hugging Face tensors, config.json, the context, the header's metadata)"""
     if kind in ("hybrid", "rotated", "rotated-tied"):
@@ -80,7 +97,8 @@ def model(kind):
 def main():
     out, dtype = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "ternary"
     tensors, config, seq_len, metadata = model(sys.argv[3] if len(sys.argv) > 3 else "qwen3")
-    files(out, ternarized(tensors), config, dtype, seq_len, VOCAB, metadata=metadata)
+    signs = dtype == "binary" or sys.argv[4:5] == ["signs"]
+    files(out, (binarized if signs else ternarized)(tensors), config, dtype, seq_len, VOCAB, metadata=metadata)
 
 
 if __name__ == "__main__":

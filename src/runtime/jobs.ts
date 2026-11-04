@@ -46,6 +46,8 @@ const BLOCK_BYTES = 16384;
 // T.231: the mask the ternary kernels take as an argument (kernels/ternary.ts: a constant written there would be made
 // again at every use)
 const THREE = 3;
+// T.634: and the binary kernels' (kernels/binary.ts)
+const TWO = 2;
 
 /** T.101: which arguments of each kernel are addresses (usize in kernels/*.ts; tests/forward-check.ts holds this
  * table to the source). On a 64-bit memory the kernels take them as BigInt. */
@@ -62,6 +64,8 @@ export const ADDRESSES = {
   // above only for a model with such rows: T.363.5)
   sb_tables: [0, 1], sums_x: [0, 1], sb_row: [0, 1, 2], matmul_sb: [0, 1, 2, 3, 4], matmul_sbr: [0, 1, 2, 3, 4],
   matmul_sbr_tile: [0, 1, 2, 3, 4], matmul_sbw_tile: [0, 1, 2, 3, 4, 12], signed_dots: [0, 1, 2],
+  // T.634: the binary weights' kernels
+  binary_x: [0, 1, 2], matmul_b1: [0, 1, 2, 3, 4], matmul_b1r: [0, 1, 2, 3, 4], matmul_b1r_tile: [0, 1, 2, 3, 4],
 };
 // (T.368.1, the types. A kernel takes numbers, its addresses as BigInt on a 64-bit memory, and what it returns is for
 // its caller to know: most return nothing. The kernels are the names of ADDRESSES and no other: a kernel that is
@@ -121,6 +125,10 @@ type Arguments = {
   matmul_sbr: [xout: number, xq: number, xs: number, w: number, tab: number, n: number, r0: number, r1: number, type: number];
   sums_x: [xs: number, xq: number, n: number];
   sb_tables: [area: number, codebooks: number];
+  binary_x: [out: number, xs: number, x: number, n: number];
+  matmul_b1: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, two: number];
+  matmul_b1r: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, two: number];
+  matmul_b1r_tile: [xout: number, xq: number, xs: number, wq: number, ws: number, n: number, r0: number, r1: number, count: number, os: number, frame: number, two: number];
 };
 export type Kernels = { [name in keyof typeof ADDRESSES]: (...args: Arguments[name]) => unknown };
 // a job as it is run: an array, or its view of the control area's table
@@ -283,6 +291,23 @@ export const WORK = kinds({
       : blocksTile(k)),
     warm: unwarmed,
   },
+  // out, xq, xs, w, scales, -, n: binary weights (T.634), one bit each, the activations interleaved as ternary's are:
+  // each number matmul_t2r's to the bit for the same weights. Its tile: a row against four tokens
+  matmul_b1r: {
+    from: "relaxed", rowBytes: (n) => n / 8,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_b1r(out, a, b, a4, a5, a7, r0, r1, TWO),
+    tile: (k) => (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as) => k.matmul_b1r_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, TWO),
+    warm: (k, { xq, xs, w, s, out }) => {
+      k.matmul_b1r(out, xq, xs, w, s, 128, 0, 1, TWO);
+      k.matmul_b1r_tile(out, xq, xs, w, s, 128, 0, 1, 4, 0, 0, TWO);  // one row and four tokens, all the same
+    },
+  },
+  // as matmul_b1r, without relaxed SIMD
+  matmul_b1: {
+    from: "plain", rowBytes: (n) => n / 8,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_b1(out, a, b, a4, a5, a7, r0, r1, TWO),
+    warm: (k, { xq, xs, w, s, out }) => { k.matmul_b1(out, xq, xs, w, s, 128, 0, 1, TWO); },
+  },
 });
 export type Kind = keyof typeof WORK;
 /** the number of each kind of job: its place in WORK */
@@ -376,6 +401,19 @@ export const PACKED = packings({
       k.interleave(xq, xs, n);
     },
     group: 128, gpu: { as: "ternary", alone: true, dot: true },
+  },
+  // T.634: one bit a weight, set for +1, the layout of llama2_numpy.pack_binary (weight 64 h + 4 c + p of a group of
+  // 128 at bit 4 h + p of its byte c), a float16 scale a group: its kernels take the activations as ternary's do (the
+  // same ready, so a matrix of each in one model reads one), and none of it is on the GPU yet
+  binary: {
+    rowBytes: (n) => n / 8, scale: 2, takes: "interleaved",
+    value: (U, at, i) => (((U[at + ((i >> 7) << 4) + ((i >> 2) & 15)] >> ((((i >> 6) & 1) << 2) | (i & 3))) & 1) << 1) - 1,
+    jobs: { relaxed: KIND.matmul_b1r, plain: KIND.matmul_b1 }, sums: null, xs: 8,
+    ready: (k) => (xq, xs, x, n) => {
+      k.quantize_x(xq, xs, x, n, 0);
+      k.interleave(xq, xs, n);
+    },
+    group: 128, gpu: null,
   },
   Q2_K: { ...blocks(BLOCK_TYPES.Q2_K), gpu: { as: "Q2_K", alone: false, dot: true } }, Q4_K: { ...blocks(BLOCK_TYPES.Q4_K), gpu: { as: "Q4_K", alone: false, dot: true } }, IQ2_XXS: { ...blocks(BLOCK_TYPES.IQ2_XXS), gpu: { as: "IQ2_XXS", alone: false, dot: true } }, IQ2_XS: { ...blocks(BLOCK_TYPES.IQ2_XS), gpu: { as: "IQ2_XS", alone: false, dot: true } },
   IQ3_XXS: { ...blocks(BLOCK_TYPES.IQ3_XXS), gpu: { as: "IQ3_XXS", alone: false, dot: true } }, IQ1_S: { ...blocks(BLOCK_TYPES.IQ1_S), gpu: { as: "IQ1_S", alone: false, dot: true } }, IQ3_S: { ...blocks(BLOCK_TYPES.IQ3_S), gpu: { as: "IQ3_S", alone: false, dot: true } }, IQ2_S: { ...blocks(BLOCK_TYPES.IQ2_S), gpu: { as: "IQ2_S", alone: false, dot: true } },

@@ -1,4 +1,4 @@
-# How the quantized dtypes pack a matrix's rows and unpack them, in NumPy: int8, six bits and ternary. What each of them
+# How the quantized dtypes pack a matrix's rows and unpack them, in NumPy: int8, six bits, ternary and binary. What each of them
 # is to a file (its group, its bytes, which of these functions are its own) is engine/dtypes.py's; this file reads
 # nothing of the engine.
 #
@@ -135,3 +135,43 @@ def halves_of(scales):
         raise ValueError(NOT_TERNARY)
     return halves
 
+
+
+# T.634: binary, one bit a weight. Every weight is -1 or +1 times the scale of its group of 128 along the row (a float16):
+# what the 1-bit Bonsai models are, and how their GGUFs hold them (ggml's Q1_0, 18 bytes a group: a float16 and 16 bytes
+# of signs), half of what ternary takes for the same weights. A group takes 16 bytes in an order of its own, the one the
+# kernels read (kernels/binary.ts): weight 64 h + 4 c + p (h 0 or 1, c 0..15, p 0..3) is bit 4 h + p of byte c, set for
+# +1. So a shift and a mask of the sixteen bytes leave the signs of weights 4 c + p of a block of 64 in byte c, the
+# planes interleave() lays the activations out in for ternary's kernels, and nothing is widened. The values are exactly
+# the file's, as ternary's are: a weight of 0 is refused, but in a group whose scale is 0 (all of it 0, held as +0).
+BINARY_GROUP = 128
+NOT_BINARY = "These weights are not binary: a value is not the largest of its group of 128 or its negative."
+
+
+def pack_binary(values):
+    """int8 values of -1 and 1, whole groups of 128 -> 16 bytes a group (uint8), weight 64 h + 4 c + p at bit 4 h + p of
+    byte c, set for 1."""
+    bits = (np.asarray(values, dtype=np.int8).reshape(-1, 2, 16, 4) > 0).transpose(0, 2, 1, 3).reshape(-1, 16, 8)
+    return np.packbits(bits, axis=-1, bitorder="little").reshape(-1, 16)
+
+
+def unpack_binary(packed):
+    """16 bytes a group -> its 128 int8 values, -1 and 1, one after the other."""
+    bits = np.unpackbits(np.asarray(packed, dtype=np.uint8).reshape(-1, 16, 1), axis=-1, bitorder="little")
+    signs = bits.reshape(-1, 16, 2, 4).transpose(0, 2, 1, 3).reshape(-1).view(np.int8)
+    return signs * np.int8(2) - np.int8(1)
+
+
+def binary(values):
+    """float32 values, whole rows of groups of 128 -> (16 bytes a group, float16 scales): each value's sign, and the
+    largest |value| of its group. Nothing is rounded: a value that is not plus or minus that scale is a ValueError
+    (NOT_BINARY: 0 is one, but where the whole group is), and so is a scale a float16 does not hold."""
+    groups = np.asarray(values, dtype=np.float32).reshape(-1, BINARY_GROUP)
+    scales = np.abs(groups).max(axis=1)
+    signs = np.where(groups < 0, np.int8(-1), np.int8(1))
+    if not np.array_equal(signs * scales[:, None], groups):
+        raise ValueError(NOT_BINARY)
+    try:
+        return pack_binary(signs), halves_of(scales)
+    except ValueError:
+        raise ValueError(NOT_BINARY) from None
