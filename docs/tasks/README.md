@@ -384,3 +384,4 @@ TASKS.md から移した、済んだタスクの本文（1 つに 1 ファイル
 - [T.630](T.630.md) [修正][遠隔試験] 全部の組の Python を 3.14 に留める（Unicode 17 と tokenizers） — 2026-10-31
 - [T.631](T.631.md) [修正][遠隔試験] gpu-tokens-check の SwiGLU の検査が、どの形も取らない回に落ちる — 2026-10-31
 - [T.632](T.632.md) [修正][計測実行] start_check.ts が GNU screen の WINDOW=0 を窓の長さに読む — 2026-10-31
+- [T.633](T.633.md) [調査][Bonsai] 1-bit の Bonsai 27B の頭のトークン（`<|endoftext|>` が素の文で −10.5%） — 2026-11-03
