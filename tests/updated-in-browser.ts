@@ -322,6 +322,9 @@ const CASES = {
         // (a Chromium was given SwiftShader: there the GPU's worker must be asked for)
         expect(name, kind !== playwright.chromium, `no GPU's worker was asked for: the case saw nothing (${status})`);
         console.log("  SAW NOTHING: this browser's workers asked for no GPU's worker");
+        // (it saw no GPU, but the page still came to its end: no error, and a status line)
+        expect(name, await page.evaluate(lastError) === undefined, `an error was shown: ${await page.evaluate(lastError)}`);
+        expect(name, status.trim() !== "", "the status line is empty");
         return;
       }
       expect(name, warnings.some((line) => /the model was on the GPU alone, and is loaded again on the CPU/.test(line)),
@@ -384,7 +387,18 @@ for (const [name, run] of Object.entries(CASES)) {
   if (only.length && !only.some((word) => name.includes(word))) continue;
   console.log(`- ${name}`);
   const before = failures.length;
-  const context = await (run.swiftShader ? await swiftShader() : browser).newContext({ viewport: { width: 390, height: 844 } });
+  // (T.491: a Chromium with SwiftShader that does not launch fails the case, and the run goes on to its end)
+  let held = browser;
+  if (run.swiftShader) {
+    try {
+      held = await swiftShader();
+    } catch (error) {
+      failures.push(`${name}: the Chromium with SwiftShader did not launch: ${String(error.message ?? error).split("\n")[0]}`);
+      console.log(`  FAILED ${failures.at(-1)}`);
+      continue;
+    }
+  }
+  const context = await held.newContext({ viewport: { width: 390, height: 844 } });
   // (T.380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
   if (process.env.UPDATED_CONSOLE) context.on("console", (message) => { if (message.type() === "warning") console.log(`  console: ${message.text().slice(0, 300)}`); });
   const lines = [];
