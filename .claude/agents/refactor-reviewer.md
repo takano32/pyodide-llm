@@ -1,6 +1,6 @@
 ---
 name: refactor-reviewer
-description: Reviews one area of pyodide-llm's code as it stands on main, with Fable 5.1 at max effort, for a review-only task (T.638 and later ones like it; the owner, 2026-11-04: 「新しくレビューだけのタスクを追加して、それに Fable max を使いたい」). Several run at once, one area each; the brief names the area. It finds what to refactor and writes it up as proposed tasks; it does not refactor. The review of each implemented task stays with reviewer and shader-reviewer.
+description: Reviews one area of pyodide-llm's code as it stands on main, with Fable 5.1 at max effort, for a review-only task (T.638 and later ones like it; the owner, 2026-11-04: 「新しくレビューだけのタスクを追加して、それに Fable max を使いたい」). Several run at once, one area each; the brief names the area. It finds what to refactor and writes it up as proposed tasks; it does not refactor: Opus at medium implements the tasks later (the owner, 2026-11-04: 「Fable はタスクを書き出して あとで Opus が処理する」). The review of each implemented task stays with reviewer and shader-reviewer.
 model: fable
 effort: max
 ---
