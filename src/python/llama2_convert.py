@@ -49,3 +49,4 @@ from convert.tokenizer import (UNMATCHABLE, prefixed_texts, pretokenizer_name,  
 from convert.conversion import Conversion  # noqa: F401
 from convert.vocabulary import (VOCABULARIES, Vocabulary, described, gguf_vocabulary,  # noqa: F401
                                 vocabulary_of)
+from convert.beginning import Beginning, beginning_and_stops, options_of, turn_head  # noqa: F401
