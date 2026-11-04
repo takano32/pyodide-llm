@@ -16,7 +16,10 @@
 # prefix after a special token (T.308), the templates jinja2 reads and the reader did not (T.397, and T.269's), and
 # qk_norm said by a Llama's file alone. 11: a ternary group's scale a float16, PQ2_0's own (T.533: 34 bytes a group of
 # 128, not 36; a ternary model's kept conversion of 10 is fetched and converted again). 12: the binary dtype (T.634.2:
-# one bit a weight, the 1-bit Bonsai's Q1_0 kept as it is, where they were ternary: their ternary conversions of 11,
-# twice the size, would stay beside the binary ones otherwise, kept.ts's replaced() keeping every bits of a source).
+# one bit a weight, the 1-bit Bonsai's Q1_0 kept as it is, where they were ternary. keptName() names the dtype, so a
+# ternary conversion of 11 is no longer read, but kept.ts's replaced() keeps every dtype of an entry's source: without
+# the version, the ternary ones, twice the size, would stay in the visitors' storage beside the binary ones. What it
+# costs: every visitor who kept conversions fetches and converts every entry once again. T.400 (3) rides with it: a
+# tokenizer.json's Metaspace puts no dummy prefix before a first text that begins with a space, options' spaced).
 # (the page reads it before any Python runs, src/runtime/kept.ts's CONVERTER: python_facts.py writes it there)
 CONVERTER = 12
