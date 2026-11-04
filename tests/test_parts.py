@@ -566,3 +566,27 @@ def test_the_numpy_forward_alone_computes_the_reference():
     expected = naive_logits(config, weights, tokens)
     for pos, token in enumerate(tokens):
         assert np.allclose(llama.forward(token, pos), expected[pos], rtol=1e-4, atol=1e-4), pos
+
+
+# (T.639.1: the second copy of the options a Llama hands its Tokenizer, by the Llama's name and the Tokenizer's)
+READING = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
+           "ignore_merges": "ignore_merges", "collapse": "collapse", "unknown": "unknown", "lowercase": "lowercase",
+           "prefixed": "prefixed", "spaced": "spaced"}
+
+
+def test_every_setting_of_the_tokenizer_reaches_it():
+    """A Llama makes its Tokenizer with what it was given of the reading: each setting, under the Tokenizer's name."""
+    config, weights = synthetic_weights()
+    told = {}
+    given = {name: f"<{name}>" for name in READING}
+    with mock.patch.object(engine.model, "Tokenizer", lambda data, vocab_size, **named: told.update(named)):
+        Llama(pack_checkpoint(config, weights), None, **given)
+    assert {name: told[setting] for name, setting in READING.items()} == given
+
+
+def test_an_option_that_is_no_llamas_is_refused_by_its_name():
+    """A mistyped option never quietly loads a model without it (and a name of the plan's or the Tokenizer's own is none)."""
+    config, weights = synthetic_weights()
+    for name in ("nonsense", "template", "tables", "kind"):
+        with pytest.raises(TypeError, match=f"unexpected keyword argument '{name}'"):
+            Llama(pack_checkpoint(config, weights), None, **{name: 1})
