@@ -250,6 +250,10 @@ part "the delta rule's kernels" node tests/delta-check.ts
 part "the convolution layer's kernel" node tests/conv-check.ts
 # T.230, T.231: the kernels of the ternary weights against the same arithmetic in JavaScript, to the bit (under a second)
 part "the ternary weights' kernels" node tests/ternary-check.ts
+# T.644.1: the int8 and int6 kernels every token of the default model takes (matmul_q8r, its tile, matmul_q6r, matmul_q8,
+# matmul_q6, their corrections and quantize_x) against the same arithmetic in JavaScript in the same order, to the bit
+# (under a second)
+part "the int8 kernels" node tests/int8-check.ts
 # T.363.4: the kernels of llama.cpp's blocks (Underdog Saluki's weights as its GGUF has them) against the same arithmetic
 # in JavaScript, to the bit, and the reading against the converter's own (one call of Python); every build, and each as
 # Liftoff alone and TurboFan alone compile it (about 4 seconds)
