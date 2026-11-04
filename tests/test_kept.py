@@ -379,7 +379,6 @@ def test_a_granites_q_which_the_conversion_scales_is_widened_and_the_rest_kept()
     assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
 
 
-
 def converted_both(file, config, kept="int8"):
     """A GGUF of another family converted keeping its blocks (with the dtype kept) and widened to float32."""
     vocabulary = unigram(config["vocab_size"])
