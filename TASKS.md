@@ -140,7 +140,6 @@
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
 - T.635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 未着手
-- T.636 [性能][変換] GPT-2 の GGUF の転置の行列も、塊のまま持つ — 進行中
 <!-- 目次ここまで -->
 
 ## 再開の所（2026-10-24、持ち主「どこかで一旦休憩」「claude -c で再起動したい」: Chrome DevTools MCP の設定を入れたため）
@@ -1347,7 +1346,3 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 
 ### T.635 [バグ][解析分割] 「▁」をどこにも足さない tokenizer.json で、エンジンが最初の文にダミーの空白を付ける — 状態: 未着手（2026-11-04、T.400 (3) の気づきとレビューから。規模 小）
 - Metaspace の `prepend_scheme: never` や、空白を「▁」に替えるだけの normalizer の tokenizer.json は、本物は最初の文に「▁」を足さないのに、エンジンは足す。エンジンには `prefixed="never"` があり、`prefixed_texts()` は never の Metaspace を偽にしているので、変換器がそのとき `prefixed: "never"` を言えばほぼ同じ形で直る。一覧に当たる項目は無い（`?hf=` だけ）。`tests/test_prefixed.py` が今は 2 つの場合を本物との比べから外しているので、それを戻して本物と ID 列で比べる。変換器の出す options が変わるので、次に `CONVERTER` を上げる回に。
-
-### T.636 [性能][変換] GPT-2 の GGUF の転置の行列も、塊のまま持つ — 状態: 進行中（2026-11-04、Opus medium、ブランチ `t.636-gpt2-blocks`。前の状態: 未着手、2026-11-04、T.502.6 の気づきとレビューから。規模 小）
-- `Conversion(blocks=True)` の `stays()` は見出しに `transposed` のあるテンソルを一律に通さないので、GPT-2 の K 量子化の GGUF は語の表のほかを全部 int8 に広げる。GGUF は (out, in) で持ち、読み手の `transposed` で HF の (in, out) に戻し、計画がまた転置するので、正味は行の恒等: `wo`・`w1`・`w2` は行の移動だけで、`c_attn` は `part` の行の切り出しで塊のまま残せる。誤りではなく広げすぎ。一覧に GPT-2 の K 量子化の項目は無いので急がない。試験は `tests/test_kept.py` の GPT-2 の試験の `kinds` の断言を塊の側に替える。変換器の出すものが変わるのは `blocks=True` の GPT-2 だけ（今の一覧には無い）。
-- **結果**（2026-11-04、Opus medium）: `convert/stream.py` の `stays()` は、見出しに `transposed` のあるテンソルを、計画の段が 1 つだけで `transpose` か `part` のときに通す（読み手の転置と打ち消し、行はファイルの行かその続いた範囲）。ほかの段と組んだ転置（`scale` など）と、段の無い転置は今までどおり広げる。`order()` は転置のテンソルの行の番号を (in, out) の 1 行にして計画の段に通す（`convert()` が値にすることを番号に）。`Kept` はファイルの形を新しい `held()` から取る（転置のテンソルの見出しは HF の (in, out)）。試験: `tests/test_kept.py` の GPT-2 の試験は行列の全部（wq・wk・wv・wo・w1・w2）と語の表が塊のまま、行を動かすのは `c_attn` だけ、logits は広げた変換とビット単位で同じ。`order()` の場合に GPT-2 の c_proj（恒等）と c_attn の k（`part`）、残らない場合に転置と `scale` の組。壊し方（`part` の行を 1 つずらす）: GPT-2 の試験と `order()` の k の場合の 2 つが落ちた。`tests/conversions_compare.py`: 一覧の 199 項目が全部同じ（Saluki など塊を持つ項目も。転置のテンソルを持つ項目は無い）。`CONVERTER` は上げない（一覧の出すものは変わらない）。守りの網（`python`・`layouts`）: `layouts` は同じ（2401）、`python` の違いは予定どおり名前を替えた GPT-2 の試験（gone と new）と足した 3 つの場合だけ（3373 → 3376、ほかの 3012 は同じ）。pytest（3357 passed）・軽い組が通る。CI を省いた。訳: 変換器の Python と pytest だけの回で、手元で全部回る。
