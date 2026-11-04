@@ -242,7 +242,7 @@ class Kept(Stream):
             if stay[0]:
                 info = self.tensors[name]
                 orders = [order(info, transform, self.head_size) for _, _, transform in targets]
-                same = len(orders) == 1 and np.array_equal(orders[0], np.arange(info["shape"][0]))
+                same = len(orders) == 1 and np.array_equal(orders[0], np.arange(held(info)[0]))
                 self.stay[name] = None if same else orders
 
     def shaped(self, config):
@@ -262,10 +262,11 @@ class Kept(Stream):
             self.done += source.values * ((self.first + raw.size) // source.size - self.first // source.size)
             self.first, self.pending = self.first + raw.size, bytearray()
         elif last:
-            rows = np.frombuffer(self.pending, dtype=np.uint8).reshape(info["shape"][0], -1)
+            shape = held(info)
+            rows = np.frombuffer(self.pending, dtype=np.uint8).reshape(shape[0], -1)
             for (index, first, _), moved in zip(targets, orders):
                 self.writer.copy(index, first, rows[moved])
-                self.done += moved.size * info["shape"][1]
+                self.done += moved.size * shape[1]
 
 
 # the roles of the rows a quantized file quantizes: the ones that may stay in a GGUF's blocks
@@ -276,9 +277,18 @@ def stays(info, transform):
     """Whether a tensor of the file can be its row's bytes as it is: in llama.cpp's blocks, and reaching the row by
     moves of whole rows alone (a row is whole blocks), with no value changed and nothing transposed. Value heads tiled
     along the columns (a Qwen3.5's ssm_out, by half a block) are no such move: they stay where they are, and the form
-    says so (kept_form()'s "tiled")."""
+    says so (kept_form()'s "tiled"). T.636: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in) and the reader
+    turns to Hugging Face's (in, out) ("transposed"), is turned back by its one step of the plan, a transpose or one
+    of c_attn's parts: its rows are the file's, or a run of them."""
     steps = () if transform is None else transform if isinstance(transform[0], tuple) else (transform,)
-    return info["dtype"] in BLOCKS and not info.get("transposed") and all(step[0] in ("permute", "heads") for step in steps)
+    if info.get("transposed"):
+        return info["dtype"] in BLOCKS and len(steps) == 1 and steps[0][0] in ("transpose", "part")
+    return info["dtype"] in BLOCKS and all(step[0] in ("permute", "heads") for step in steps)
+
+
+def held(info):
+    """The shape a tensor has in the file: the header's, but for one the reader says is transposed."""
+    return tuple(reversed(info["shape"])) if info.get("transposed") else tuple(info["shape"])
 
 
 def kept_form(plan, rows, tensors):
@@ -299,8 +309,10 @@ def kept_form(plan, rows, tensors):
 def order(info, transform, head_size):
     """The rows of a tensor of the file, by their numbers there, that its row of the checkpoint is made of, one after
     the other: what convert() does to the values (a GGUF's own order put back, then the plan's transform), done to the
-    numbers of the rows."""
-    rows = np.arange(info["shape"][0])
+    numbers of the rows. A transposed tensor's numbers are a row of the (in, out) the reader hands on (T.636)."""
+    rows = np.arange(held(info)[0])
+    if info.get("transposed"):
+        return transformed(rows[None, :], transform, head_size).ravel()
     if info.get("turned"):
         rows = unturned(rows, info["turned"])
     if info.get("split"):

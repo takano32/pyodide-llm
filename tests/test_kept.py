@@ -395,18 +395,22 @@ def converted_both(file, config, kept="int8"):
     return made, logits(read(made[True])), logits(read(made[False]))
 
 
-def test_a_gpt2s_matrices_which_llama_cpp_transposes_are_widened_and_its_table_kept():
-    """T.502: a GPT-2's GGUF holds its Conv1D matrices turned to (out, in), which the reader says ("transposed") and
-    the plan transposes back: no move of whole rows (stays()), so every one of them is widened, and only the table of
-    the tokens (shared with the classifier) stays as its blocks. On a GPT-2 of rows of whole blocks of 256 (dim 256,
-    an FFN of 512). Both float32, as the Granite's above: the logits are the widened conversion's, to the bit."""
+def test_a_gpt2s_matrices_which_llama_cpp_transposes_are_kept_and_c_attns_parts_cut_as_bytes():
+    """T.502, T.636: a GPT-2's GGUF holds its Conv1D matrices turned to (out, in), which the reader says ("transposed")
+    and the plan transposes back: the rows are the file's (wo, w1, w2) or a run of them (c_attn's part for q, k and
+    v), so every matrix stays as its blocks, with the table of the tokens (shared with the classifier). On a GPT-2 of
+    rows of whole blocks of 256 (dim 256, an FFN of 512). Both float32, as the Granite's above: the logits are the
+    widened conversion's, to the bit."""
     from test_gguf import other_gguf
     from test_gpt2 import gpt2_model
     tensors, config = gpt2_model(dim=256, hidden=512)
     file, _ = other_gguf(tensors, config, matrices=blocks_of("IQ2_XS", scale=0x1400))
     made, ours, theirs = converted_both(file, config, kept="float32")
     assert made[True].options["arch"] == "gpt2"
-    assert made[True].options["kinds"] == {"token_embedding_table": "IQ2_XS"} and "tiled" not in made[True].options
+    assert made[True].options["kinds"] == dict.fromkeys(
+        ("token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2"), "IQ2_XS") and "tiled" not in made[True].options
+    moved = {name.split(".")[-2] for name, orders in made[True].stream.stay.items() if orders is not None}
+    assert moved == {"c_attn"}, moved
     assert np.isfinite(ours).all() and np.ptp(ours) > 0 and np.array_equal(ours.view(np.uint32), theirs.view(np.uint32))
 
 
@@ -439,6 +443,8 @@ CASES = {
     "value heads tiled along the rows": (dict(tiled=[0, 4, 2, 4, 0]), None, 8),
     "value heads tiled along the columns": (dict(tiled=[0, 4, 2, 4, 1]), None, 8),
     "nothing": (dict(), None, 8),
+    "a GPT-2's c_proj, transposed in the file and by the plan": (dict(transposed=True), ("transpose",), 8),
+    "a GPT-2's k, a part of c_attn": (dict(transposed=True), ("part", 1, 3), 8, 48),
 }
 
 
@@ -450,6 +456,10 @@ def test_the_order_of_the_rows_is_what_the_conversion_does_to_the_values(case):
     info = {"shape": [count, 5], "dtype": "IQ2_XS", **marks}
     values = np.random.default_rng(1).standard_normal((count, 5)).astype(np.float32)
     back = values
+    if "transposed" in marks:
+        # (the header says Hugging Face's (in, out): the file's rows are its columns, which the reader turns)
+        info["shape"] = [5, count]
+        back = back.T
     if "turned" in marks:
         back = unturned(back, marks["turned"])
     if "split" in marks:
@@ -460,15 +470,16 @@ def test_the_order_of_the_rows_is_what_the_conversion_does_to_the_values(case):
     rows = order(info, transform, head)
     assert rows.ndim == 1 and np.array_equal(values[rows], expected)
     assert stays(info, transform)
-    if case in ("nothing", "value heads tiled along the columns", "a Llama's q, turned in the file and turned by the plan"):
+    if case in ("nothing", "value heads tiled along the columns", "a Llama's q, turned in the file and turned by the plan",
+                "a GPT-2's c_proj, transposed in the file and by the plan"):
         assert np.array_equal(rows, np.arange(count))
     else:
         assert not np.array_equal(rows, np.arange(len(rows)))
 
 
 @pytest.mark.parametrize("info, transform", [
-    ({"dtype": "Q8_0"}, None), ({"dtype": "F32"}, None), ({"dtype": "IQ2_XS", "transposed": True}, ("transpose",)),
-    ({"dtype": "IQ2_XS", "transposed": True}, None), ({"dtype": "IQ2_XS", "transposed": True}, ("permute", 4)),
+    ({"dtype": "Q8_0"}, None), ({"dtype": "F32"}, None), ({"dtype": "Q8_0", "transposed": True}, ("transpose",)),
+    ({"dtype": "IQ2_XS", "transposed": True}, None), ({"dtype": "IQ2_XS", "transposed": True}, (("transpose",), ("scale", 0.5))), ({"dtype": "IQ2_XS", "transposed": True}, ("permute", 4)),
     ({"dtype": "IQ2_XS"}, ("transpose",)), ({"dtype": "IQ2_XS"}, ("part", 0, 3)), ({"dtype": "IQ2_XS"}, ("scale", 0.5)),
     ({"dtype": "IQ2_XS"}, (("permute", 4), ("scale", 0.5))), ({"dtype": "IQ2_XS", "done": "one"}, ("one",)),
     ({"dtype": "IQ2_XS"}, ("decay",)), ({"dtype": "IQ2_XS"}, ("taps",))])
