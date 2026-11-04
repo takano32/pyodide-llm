@@ -5,6 +5,7 @@ import { MODELS } from "../models.ts";
 import { CPU_SPEED_KEY, USAGE_KEY, threadsKey as sharedThreadsKey } from "../bench.ts";
 import { fromUrl, parameters, requested } from "./address.ts";
 import { SAFETENSORS } from "./repository.ts";
+import type { Model } from "./model.ts";
 
 // T.93: the number of threads. ?threads=N fixes it (for measuring); else the worker finds it for this device and
 // model and this page remembers the answer, so that the next visit starts with it.
@@ -28,7 +29,7 @@ export const threadsFor = (entry: { id: string }) => {
 // T.148: what the GPU chose for a model on this device (its shaders: T.147 times them all the first time), for the next
 // visit: the worker's GPU compiles only those, where the adapter and browser are the same (gpu.ts's key)
 // (a model of ?hf= or of the visitor's folder: keptAs(), the review of T.148)
-export const gpuKey = (entry: any) => `gpu:${keptAs(entry)}`;
+export const gpuKey = (entry: Parameters<typeof keptAs>[0]) => `gpu:${keptAs(entry)}`;
 export const gpuFor = (entry: { id: string }) => {
   try {
     // (T.156: and the CPU's reading of the weights /benchmark/ measured here, which a model on the GPU alone is held against)
@@ -45,13 +46,13 @@ export const gpuFor = (entry: { id: string }) => {
 function remembered(): typeof MODELS[number] | undefined {
   try {
     const { id, kept } = JSON.parse(localStorage.getItem("model") ?? "{}");
-    const entry = MODELS.find((candidate) => candidate.id === id) as any;
+    const entry = MODELS.find((candidate) => candidate.id === id);
     return entry && ((entry.download ?? 0) <= 500e6 || kept) ? entry : undefined;
   } catch {
     return undefined;  // no storage (some private modes), or something else wrote there
   }
 }
-export function remember(entry: typeof MODELS[number] | undefined, kept = false) {
+export function remember(entry: Model | undefined, kept = false) {
   try {
     entry && entry.id !== "local" ? localStorage.setItem("model", JSON.stringify({ id: entry.id, kept })) : localStorage.removeItem("model");
   } catch {}

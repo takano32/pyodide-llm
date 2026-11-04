@@ -1,7 +1,7 @@
 // src/page/address.ts (T.355): what the page's address says: which model, how it is weighed (?bits=), whether to measure.
 import { weightsFor } from "../models.ts";
-import type { MODELS } from "../models.ts";
 import { SAFETENSORS, noteOf } from "./repository.ts";
+import type { Model, Unlisted } from "./model.ts";
 
 // A model that is in no list, named in the URL: ?hf=<owner>/<repository>[&revision=][&file=] is a Hugging Face model that
 // the page converts (whatever the converter refuses, it refuses in words; T.505.3: &file= names the file that is the
@@ -13,8 +13,8 @@ export const requested = parameters.get("model");
 export const benchmark = parameters.get("bench");
 // T.98: ?bits=6 converts a model of Hugging Face to six bits a weight, ?bits=8 to int8; without it, six bits only
 // where int8 would not fit (weightsFor). What the worker gets is the entry with that in its conversion.
-export const weighed = (entry: any) => {
-  const dtype = weightsFor(entry, parameters.get("bits"), (navigator as any).deviceMemory);
+export const weighed = <Of extends Model>(entry: Of) => {
+  const dtype = weightsFor(entry, parameters.get("bits"), (navigator as Navigator & { deviceMemory?: number }).deviceMemory);
   return dtype ? { ...entry, conversion: { ...entry.conversion, dtype } } : entry;
 };
 export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
@@ -30,17 +30,16 @@ export const FILE = /^(?=.{1,256}$)(?!\.+(\/|$))[\w.\-]+(\/(?!\.+(\/|$))[\w.\-]+
 // T.505.3: file is the file a link or the sheet names for the model (a GGUF, which needs nothing else of the repository).
 // With none it is model.safetensors, until the repository is looked at (repository.ts's looked(): one without
 // safetensors is opened by the best GGUF it has)
-export type Unlisted = typeof MODELS[number] & { note: string; download?: number; hf: { repo: string; revision: string; weights: string; config: string } };
 /** A model as one of a repository nobody listed, where it is one (and not a file of the disk, or of the list). */
-export const unlisted = (entry: typeof MODELS[number] | undefined) => ((entry as Partial<Unlisted> | undefined)?.hf?.repo && entry!.id === "local" ? (entry as Unlisted) : undefined);
+export const unlisted = (entry: Model | undefined) => ((entry as Partial<Unlisted> | undefined)?.hf?.repo && entry!.id === "local" ? (entry as Unlisted) : undefined);
 export function hfEntry(repository: string, revision: string, link: { template?: string; prompt?: string; file?: string } = {}): Unlisted {
   const common = { id: "local", options: {}, prompt: link.prompt ?? "", placeholder: "", template: link.template };
   const weights = link.file || SAFETENSORS;
   return { ...common, name: repository, note: noteOf(revision, weights),
     hf: { repo: repository, revision, weights, config: "config.json" },
-    conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } } as any;
+    conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } };
 }
-function named(): typeof MODELS[number] | undefined {
+function named(): Model | undefined {
   const repository = parameters.get("hf"), checkpoint = parameters.get("checkpoint"), tokenizer = parameters.get("tokenizer");
   const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
   // the revision goes into the file's address: only a name, as the sheet takes it (the review of T.88: a link with
@@ -51,8 +50,8 @@ function named(): typeof MODELS[number] | undefined {
     return hfEntry(repository, revision, { template: parameters.get("template") ?? undefined, prompt: parameters.get("prompt") ?? undefined, file });
   }
   if (checkpoint && tokenizer && [checkpoint, tokenizer].every((url) => /^https:\/\//.test(url))) {
-    return { ...common, name: new URL(checkpoint).pathname.split("/").pop(), note: new URL(checkpoint).hostname,
-      url: { checkpoint, tokenizer }, generation: { steps: 0, temperature: 0.0 }, prompt: parameters.get("prompt") ?? "Once upon a time" } as any;
+    return { ...common, name: new URL(checkpoint).pathname.split("/").pop()!, note: new URL(checkpoint).hostname,
+      url: { checkpoint, tokenizer }, generation: { steps: 0, temperature: 0.0 }, prompt: parameters.get("prompt") ?? "Once upon a time" };
   }
 }
 export const fromUrl = named();

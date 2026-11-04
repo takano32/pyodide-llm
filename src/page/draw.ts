@@ -1,6 +1,7 @@
 // src/page/draw.ts (T.355): what the page draws: the bubbles, the lines under an answer, the benchmark's table, the
 // status line, the round button.
 import { reportUrl } from "../bench.ts";
+import type { environmentOf } from "../bench.ts";
 import { chat, run, statusText } from "./dom.ts";
 import { parameters } from "./address.ts";
 import { benchmarking, gpuNote, gpuSaid, model, outdated, readyLine } from "./model.ts";
@@ -132,7 +133,7 @@ export function rows(element: Element, lines: string[]) {
   }
 }
 // T.76: the benchmark's bubble. The table is the Markdown's; the buttons under it are the way to send it on.
-export function showBench(benchRows: BenchRow[], environment: any, markdown: string) {
+export function showBench(benchRows: BenchRow[], environment: ReturnType<typeof environmentOf>, markdown: string) {
   const element = message("model bench");
   const bubble = element.firstElementChild!;
   bubble.textContent = "";

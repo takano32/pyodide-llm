@@ -21,7 +21,7 @@ import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts
 
 declare const __BUILD__: string;
 
-const loadedHow = (data: Ready) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
+const loadedHow = (data: Ready) => (model.hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : model.file ? "read" : "download");
 let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
 // T.156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
 let aloneOnReady: { load: number; alone: Alone } | undefined;
@@ -95,7 +95,7 @@ worker.onmessage = ({ data }) => {
       benchBegan();
       worker.postMessage({ type: "bench", model: weighed(model), load: loads,
         // T.214: where the browser does not say its memory, the round without the kernels is a row that says why
-        rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: model.prompt || "Once upon a time", steps: 64 });
+        rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as Navigator & { deviceMemory?: number }).deviceMemory), prompt: model.prompt || "Once upon a time", steps: 64 });
     }
     showSettings();
     // T.556: a model that answers in a format has its answers drawn as Markdown: its libraries are taken now (once a visit),
@@ -115,7 +115,7 @@ worker.onmessage = ({ data }) => {
     ]);
     $("load").classList.add("measured");
     showKept();
-    remember(model, (model as any).hf && !data.notKept);
+    remember(model, model.hf && !data.notKept);
   } else if (data.type === "gpu") {
     // T.148: the GPU is ready (or will not be): the status line says so, the load's breakdown says what it chose and
     // how long it took, and what it chose is kept for the next visit on this device

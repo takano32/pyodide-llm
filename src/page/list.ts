@@ -1,9 +1,9 @@
 // src/page/list.ts (T.355): the list of models in the select, and what this browser kept of them.
-import { GROUPS, MODELS } from "../models.ts";
+import { GROUPS, MODELS, type Remote } from "../models.ts";
 import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
-import { model } from "./model.ts";
+import { type Model, type Unlisted, model } from "./model.ts";
 import { forget, keptModels, outdated, serves } from "../runtime/kept.ts";
 
 // What the worker kept of its conversions (src/runtime/kept.ts: the origin private file system, or the Cache API): the
@@ -26,7 +26,7 @@ export async function showKept() {
   for (const one of models.filter((one) => outdated(one))) await forgotten(one);
   models = models.filter((one) => !outdated(one));
   for (const option of select.querySelectorAll("option")) {
-    const entry = MODELS.find(({ id }) => id === option.value) as any;
+    const entry = MODELS.find(({ id }) => id === option.value);
     if (entry?.hf) {
       // kept as it would be loaded now: under its bits (?bits=, or either the worker may choose), by this converter
       const found = models.some((one) => serves(one, weighed(entry)));
@@ -53,17 +53,18 @@ export async function showKept() {
 }
 // T.116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
 // must still be kept as it would be loaded now (its bits, this converter), or the default starts instead
-export async function stillKept(entry: any) {
+export async function stillKept(entry: Model) {
   if ((entry.download ?? 0) <= 500e6) return true;
   const models = await listed();
-  return models.some((one) => serves(one, weighed(entry)));
+  // (T.643.1: a model of more than 500 MB to fetch is one of Hugging Face: of the list, or of a repository nobody listed)
+  return models.some((one) => serves(one, weighed(entry as Remote | Unlisted)));
 }
 
 // three groups: what the site was built with, the unquantized originals, and what comes from Hugging Face
 for (const [group, label] of Object.entries(GROUPS)) {
   const options = document.createElement("optgroup");
   options.label = label;
-  for (const { id, name, note } of MODELS.filter((entry) => ((entry as any).group ?? "site") === group)) {
+  for (const { id, name, note } of MODELS.filter((entry) => (entry.group ?? "site") === group)) {
     options.append(new Option(`${name} — ${note}`, id));
   }
   if (group === "hf") {

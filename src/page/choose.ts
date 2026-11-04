@@ -2,10 +2,10 @@
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
 import { DEFAULT_MODEL, MODELS, memoryWarning } from "../models.ts";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
-import { FILE, REPOSITORY, REVISION, type Unlisted, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
+import { FILE, REPOSITORY, REVISION, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
 import { looked, unnamed } from "./repository.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
-import { type Model, chose, loads, model, opensWith } from "./model.ts";
+import { type Model, type Unlisted, chose, loads, model, opensWith } from "./model.ts";
 import { stillKept } from "./list.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
@@ -18,7 +18,7 @@ let local: Model | undefined = fromUrl;
 async function open(chosen: File[]) {
   if (chosen.some(({ name }) => name.toLowerCase().endsWith(".safetensors"))) {
     try {
-      local = (await openHuggingFace(chosen)) as any;
+      local = await openHuggingFace(chosen);
     } catch (error) {
       message("model error", String((error as Error).message ?? error));
       return;
@@ -30,7 +30,7 @@ async function open(chosen: File[]) {
     if (!opened) {
       return;
     }
-    local = opened as any;
+    local = opened;
   } catch (error) {
     message("model error", String((error as Error).message ?? error));
     return;
@@ -81,7 +81,7 @@ function nameInUrl(current: Model) {
   for (const name of ["model", "hf", "revision", "file", "checkpoint", "tokenizer", "template", "prompt"]) {
     url.searchParams.delete(name);
   }
-  const { hf, url: address, template } = current as any;
+  const { hf, url: address, template } = current;
   if (current.id !== "local") {
     url.searchParams.set("model", current.id);
   } else if (hf?.repo || address) {
@@ -96,10 +96,10 @@ function nameInUrl(current: Model) {
         url.searchParams.set("file", hf.weights);
       }
     } else {
-      url.searchParams.set("checkpoint", address.checkpoint);
-      url.searchParams.set("tokenizer", address.tokenizer);
+      url.searchParams.set("checkpoint", address!.checkpoint);
+      url.searchParams.set("tokenizer", address!.tokenizer);
     }
-    for (const [name, value] of [["template", template], ["prompt", current.prompt]]) {
+    for (const [name, value] of [["template", template], ["prompt", current.prompt]] as const) {
       if (value) {
         url.searchParams.set(name, value);
       }
@@ -197,10 +197,10 @@ select.onchange = () => {
   }
   const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
   // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
-  const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : ((chosen as any).download ?? 0);
+  const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : (chosen.download ?? 0);
   // T.90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
   const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
-                memoryWarning(weighed(chosen), (navigator as any).deviceMemory)].filter(Boolean);
+                memoryWarning(weighed(chosen), (navigator as Navigator & { deviceMemory?: number }).deviceMemory)].filter(Boolean);
   if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
     select.value = model.id;
     return;

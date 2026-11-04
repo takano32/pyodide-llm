@@ -11,7 +11,7 @@ import type { Sampled } from "../runtime/contracts/messages.ts";
 // T.274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
 // (the worker's contract has their names: one that is added is added there)
 type Settings = Sampled & { steps: number; temperature: number; topp: number; repetition_penalty: number };
-const defaults = (current: Model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
+const defaults = (current: Model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...current.generation });
 // The URL may set any of them (T.43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
 // (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=; T.520: &thinking=, the budget of a
 // thought in tokens, 0 for none). A value that is not a number, or outside what the field allows, is
@@ -25,7 +25,7 @@ for (const [name, [low, high]] of Object.entries(LIMITS)) {
   const given = parameters.get(name);
   const value = given === null ? NaN : Number(given);
   if (given !== null && Number.isFinite(value) && value >= low && value <= high) {
-    (fromLink as any)[name] = ["steps", "seed", "top_k", "thinking"].includes(name) ? Math.round(value) : value;
+    (fromLink as Record<string, number>)[name] = ["steps", "seed", "top_k", "thinking"].includes(name) ? Math.round(value) : value;
   }
 }
 const defaultsWithLink = (current: Model): Settings => ({ ...defaults(current), ...fromLink });

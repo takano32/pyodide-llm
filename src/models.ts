@@ -12,7 +12,7 @@ import { HF_FAMILIES } from "./models/hf-families.ts";
 import type { Entry } from "./models/builders.ts";
 
 export { filled } from "./models/filled.ts";
-export type { Entry } from "./models/builders.ts";
+export type { Entry, Generation, Remote, Site } from "./models/builders.ts";
 export { LICENSES, NOTICES } from "./models/licenses.ts";
 export { PAGE_MEMORY, modelBytes, SIX_OF_EIGHT, TERNARY_OF_EIGHT, DEVICE_MEMORY_CAP, weightsFor, memoryWarning, memoryFailure } from "./models/memory.ts";
 

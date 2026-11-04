@@ -3,8 +3,23 @@
 // what happened to the functions below; none of them sets one. Nothing of a page is read here (no element, no address,
 // no storage): Node imports this file as it is (tests/page-parts-check.ts).
 import { DEFAULT_MODEL, MODELS } from "../models.ts";
+import type { Generation, Remote } from "../models.ts";
+import type { Hf, OfTwoFiles, OfTwoUrls } from "../runtime/contracts/messages.ts";
+import type { Options } from "../runtime/contracts/python.ts";
 
-export type Model = typeof MODELS[number];
+// T.643.1: the kinds of model the page may have. An entry of the list (of this site or of Hugging Face); one of a
+// repository nobody listed, of ?hf= or of the sheet (address.ts's hfEntry(): what it will fetch is said once the
+// repository was looked at); a visitor's folder of a Hugging Face model (folder.ts's openHuggingFace()); two files of
+// the visitor's disk, a llama2.c checkpoint and its tokenizer.bin (openLegacy()); the same at two URLs (?checkpoint=
+// &tokenizer=, address.ts). What one kind has, the others say they have not (?: undefined), so that each is read by the
+// same names
+type Unread = { file?: undefined; tokenizerFile?: undefined; url?: undefined };
+// what a model of a visitor's files or a link has besides the worker's kind of it
+type Made = { note: string; options: Options; generation: Generation; prompt: string; placeholder: string; template?: string; group?: undefined;
+  download?: undefined; conversion?: undefined; weights?: undefined; loaded?: undefined; wide?: undefined };
+export type Unlisted = Omit<Remote, "download" | "hf"> & Unread & { download?: number; hf: { repo: string; revision: string; weights: string; config: string } };
+export type Folder = Omit<Remote, "download" | "hf"> & Unread & { download?: undefined; hf: Omit<Hf, "repo" | "revision"> & { repo?: undefined; revision?: undefined; files: File[]; weights: string } };
+export type Model = (typeof MODELS[number] & Unread) | Unlisted | Folder | (OfTwoFiles & Made) | (OfTwoUrls & Made & { tokenizerFile?: undefined });
 /** T.553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,
  * when the bytes last grew (ms of the page's clock), and the speed in bytes a second (none before two reports). */
 export type Arriving = { began: number; first: number; at: number; bytes: number; moved: number; speed?: number };

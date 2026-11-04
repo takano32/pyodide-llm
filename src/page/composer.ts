@@ -41,7 +41,7 @@ $("composer").onsubmit = (event) => {
   message("user", prompt.value);
   // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
   // what src/models.ts says for this model, or what its own chat_template gave (T.73)
-  const template = ((model as any).template ?? fromTemplate) as string | undefined;
+  const template = model.template ?? fromTemplate;
   const sent = template ? filled(template, prompt.value) : prompt.value;
   // T.556: the answer of such a model is drawn as Markdown, but for its thinking, where the format leaves it in a thought
   // (<think>, or harmony's analysis channel: T.592.1)

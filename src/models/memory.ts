@@ -1,6 +1,11 @@
 // What a model takes once loaded, the dtype it is converted to, and what the page says of a device's memory.
 import { PYTHON_BYTES } from "../runtime/built/facts/bytes.ts";
 import type { Entry } from "./builders.ts";
+import type { Dtype } from "../runtime/contracts/form.ts";
+
+// T.643.1: what is read here of a model: an entry of the list, or a model the page made of a visitor's files or a link
+// (src/page/model.ts's Model), whose kinds say no more of these than an entry's do
+type Weighed = Pick<Entry, "name" | "note" | "options" | "weights" | "wide"> & { bytes?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
 
 // T.90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it
 // loads a model that probably does not fit, and says what happened when it did not.
@@ -12,7 +17,7 @@ const megabytes = (bytes: number) => `${Math.round(bytes / 1e6).toLocaleString("
  * itself (T.364.3: one kept as its file has it, llama.cpp's blocks, whose note is worded for a visitor and whose size no
  * ?bits= changes), or the "int8 N MB" its note gives for a conversion ("ternary N MB" for a ternary model, T.230: four
  * times that as int8, where ?bits= asks for it). undefined when none says (a file of the visitor's). */
-export function modelBytes(entry: Entry): number | undefined {
+export function modelBytes(entry: Weighed): number | undefined {
   // a float16 original is widened to float32 when loaded, next to the file it came from: llm-jp-3 150M's 305 MB
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
@@ -47,7 +52,7 @@ export const DEVICE_MEMORY_CAP = 8;
  * worker (undefined): it knows the model's header once it converts, and with it what the forward pass needs, and
  * takes int6 where int8 would not fit a 32-bit memory and the browser has no 64-bit one (T.115, T.133).
  * undefined for a model that is not converted in the page. */
-export function weightsFor(entry: Entry, asked: string | null | undefined, deviceMemory: number | undefined) {
+export function weightsFor(entry: Weighed, asked: string | null | undefined, deviceMemory: number | undefined): Dtype | undefined {
   if (!entry.hf) return undefined;
   // a visitor's own files may come with settings that say it ({"conversion": {"dtype": ...}}): they win (T.119)
   if (entry.conversion?.dtype) return entry.conversion.dtype;
@@ -60,7 +65,7 @@ export function weightsFor(entry: Entry, asked: string | null | undefined, devic
 /** A sentence for a device that says it has less memory than twice what the model needs, or "". deviceMemory is
  * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. A device at the cap
  * has 8 GB or more, so it is warned only of a model that needs more than 8 GB (T.133). */
-export function memoryWarning(entry: Entry, deviceMemory: number | undefined): string {
+export function memoryWarning(entry: Weighed, deviceMemory: number | undefined): string {
   const bytes = modelBytes(entry);
   if (!deviceMemory || !bytes) return "";
   const capped = deviceMemory >= DEVICE_MEMORY_CAP;
@@ -75,13 +80,13 @@ export function memoryWarning(entry: Entry, deviceMemory: number | undefined): s
  * six bits there (weightsFor()), and six bits with what the forward pass keeps after them (the keys and values, the
  * corrections of relaxed SIMD) pass 4 GiB about where eight bits alone do; the list has no header to count it
  * exactly (footprint()). The words in the order the notes have them, after everything else. */
-export function devicesOf(entry: Entry) {
+export function devicesOf(entry: Weighed) {
   const bytes = modelBytes(entry);
   // (T.634.2: or an entry whose forward pass at the context passes it, its weights alone within: wide)
   return [memoryWarning(entry, 4) && "desktop only", (entry.wide || bytes! > 2 ** 32) && "Chrome and Firefox"].filter(Boolean);
 }
 /** What the page says when the worker ran out of memory (heap: the size of its WebAssembly memory then). */
-export function memoryFailure(entry: Entry, heap: number | undefined, detail: string | undefined): string {
+export function memoryFailure(entry: Weighed, heap: number | undefined, detail: string | undefined): string {
   const bytes = modelBytes(entry);
   return `This device ran out of memory for ${entry.name}` +
     (bytes ? ` (it needs about ${megabytes(bytes + PAGE_MEMORY)})` : "") +
