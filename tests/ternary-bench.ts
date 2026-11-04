@@ -98,9 +98,12 @@ const PROMPTS = {
     run: (k, c, w, r0, r1) => k.matmul_p2r_tile(c[OUT], c[XQ], c[XS], w, 0, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
   "q8r tile": { module: "tree", of: "q8r", activations: "seven",
     run: (k, c, w, r0, r1) => k.matmul_q8r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
-  ...(signs ? { "b1r tile": { module: "tree", of: "b1r", activations: "interleaved",
-    run: (k, c, w, r0, r1) => k.matmul_b1r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 16, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 2) } } : {}),
+  // (T.634: the binary tile, --signs alone: written here either way, so that the workers, which have no --signs in their
+  // argv, number the prompts as the main thread does)
+  "b1r tile": { module: "tree", of: "b1r", activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_b1r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 16, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 2) },
 };
+const PROMPTED = Object.keys(PROMPTS).filter((name) => signs || name !== "b1r tile");
 const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object.keys(ALL);
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
@@ -147,7 +150,7 @@ const timed = text("--forms", NAMES.filter((form) => signs || !BINARY.includes(f
 if (!signs && timed.some((form) => BINARY.includes(form))) throw new Error("b1r and b1 take binary weights: --signs");
 const prompts = !args.includes("--no-prompt");
 // the forms whose copies are made: those timed, and those the prompts read
-const needed = NAMES.filter((form) => timed.includes(form) || (prompts && Object.values(PROMPTS).some(({ of }) => of === form)));
+const needed = NAMES.filter((form) => timed.includes(form) || (prompts && PROMPTED.some((name) => PROMPTS[name].of === form)));
 fs.mkdirSync(work, { recursive: true });
 const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
   "--sharedMemory", "--maximumMemory", "65536"];
@@ -441,14 +444,14 @@ for (const [rows, n] of shapes) {
         go();
         return (performance.now() - t0) / calls;
       };
-      for (const name of Object.keys(PROMPTS)) time(name);
-      const speeds = Object.fromEntries(Object.keys(PROMPTS).map((name) => [name, []]));
+      for (const name of PROMPTED) time(name);
+      const speeds = Object.fromEntries(PROMPTED.map((name) => [name, []]));
       for (let r = 0; r < rounds; r++) {
-        const ms = Object.fromEntries(Object.keys(PROMPTS).map((name) => [name, []]));
-        for (let t = 0; t < turns; t++) for (const name of Object.keys(PROMPTS)) ms[name].push(time(name));
-        for (const name of Object.keys(PROMPTS)) speeds[name].push((rows * n * count) / median(ms[name]) / 1e6);
+        const ms = Object.fromEntries(PROMPTED.map((name) => [name, []]));
+        for (let t = 0; t < turns; t++) for (const name of PROMPTED) ms[name].push(time(name));
+        for (const name of PROMPTED) speeds[name].push((rows * n * count) / median(ms[name]) / 1e6);
       }
-      const cells = Object.keys(PROMPTS).map((name) => {
+      const cells = PROMPTED.map((name) => {
         promptTable.push({ n, threads, name, g: median(speeds[name]) });
         return `${name} ${median(speeds[name]).toFixed(1)}`;
       });
@@ -471,7 +474,7 @@ for (const threads of prompts ? [1, 4] : []) {
   const of = (name) => promptTable.filter((row) => row.threads === threads && row.name === name).map((row) => row.g);
   const base = of("t2r, token by token");
   console.log(`ternary-bench: a prompt of 16 tokens, ${threads} thread${threads > 1 ? "s" : ""}, all the shapes, G weights/s (against the token's kernel): ` +
-    Object.keys(PROMPTS).map((name) => `${name} ${geo(of(name)).toFixed(1)} (${geo(of(name).map((g, i) => g / base[i])).toFixed(2)}x)`).join(" | "));
+    PROMPTED.map((name) => `${name} ${geo(of(name)).toFixed(1)} (${geo(of(name).map((g, i) => g / base[i])).toFixed(2)}x)`).join(" | "));
 }
 Atomics.store(sync, GO, -1);
 Atomics.notify(sync, GO);
