@@ -137,6 +137,8 @@ def test_the_converter_refuses_what_is_no_plamo_vocabulary():
         plamo(jsonl(made + [["q", -1.0, "USER"]]), len(made) + 1, {}, True)
     with pytest.raises(ValueError, match="four decimals"):
         plamo(jsonl(made + [["q", -0.00015, "NORMAL"]]), len(made) + 1, {}, True)
+    with pytest.raises(ValueError, match="four decimals"):  # json.loads reads Infinity
+        plamo(jsonl(made).replace(b"\n", b"\n", 1) + b'["q", Infinity, "NORMAL"]\n', len(made) + 1, {}, True)
     with pytest.raises(ValueError, match="twice"):
         plamo(jsonl(made + [["ab", -1.0, "NORMAL"]]), len(made) + 1, {}, True)
     with pytest.raises(ValueError, match="not a line of JSON"):

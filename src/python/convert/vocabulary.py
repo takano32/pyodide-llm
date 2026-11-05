@@ -2,6 +2,7 @@
 # conversion (convert/conversion.py) reads the vocabulary first, and the rules of how a text begins and where an
 # answer stops (convert/beginning.py) read only this value.
 import json
+import math
 import struct
 from typing import NamedTuple
 
@@ -93,7 +94,7 @@ def plamo_rows(data):
             raise ValueError(f"tokenizer.jsonl has a line that is not [piece, score, kind]: {json.dumps(row)[:80]}")
         # the engine adds the scores up as round(score * 1e4) (engine.tokenizer's plamo_pieces()), of what tokenizer.bin
         # holds: a float32
-        if round(struct.unpack("<f", struct.pack("<f", row[1]))[0] * 1e4) != round(row[1] * 1e4):
+        if not math.isfinite(row[1]) or abs(row[1]) > 1e6 or round(struct.unpack("<f", struct.pack("<f", row[1]))[0] * 1e4) != round(row[1] * 1e4):
             raise ValueError(f"tokenizer.jsonl has a score that a float32 does not hold to four decimals: {row[1]!r}")
     # (PLaMo's own takes the last of two rows of one piece, the engine the first)
     if len({row[0] for row in rows}) < len(rows):
