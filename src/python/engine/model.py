@@ -40,6 +40,7 @@ from engine.sampler import KernelSampler, NumpySampler, greedy
 from engine.external import STEPS, ExternalForward
 from engine.plan import ATTENTION, Settings, forward_plan, layer_facts
 from engine import generation
+from engine.proxy import plain
 
 # The KV cache starts with room for this many positions and doubles when a run gets there: a context of 4096
 # tokens is 200 MB of cache for llm-jp-3-150m, which a short text should not have to pay for (and WebAssembly
@@ -220,7 +221,7 @@ class Llama:
         dtype, rope_theta, rope_scaling, bos, stop_tokens, specials, kernels, external = own.values()
         if external is not None:
             head = external.read(0, 28)
-            checkpoint = bytes(head.to_py() if hasattr(head, "to_py") else head)
+            checkpoint = bytes(plain(head))
             if "kernels" in tuple(str(name) for name in disable):
                 raise ValueError("Without the kernels the weights have to be in Python: load them there instead.")
         (self.dim, self.hidden_dim, self.n_layers, self.n_heads,
@@ -317,7 +318,7 @@ class Llama:
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
         self.w3 = None
         # a dict from Python, or a JavaScript object from the worker
-        rope_scaling = rope_scaling.to_py() if hasattr(rope_scaling, "to_py") else rope_scaling
+        rope_scaling = plain(rope_scaling)
         frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
         self.rope_magnitude = rope_magnitude(rope_scaling)
         # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads

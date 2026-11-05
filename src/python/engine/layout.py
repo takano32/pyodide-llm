@@ -33,6 +33,7 @@ import math
 from typing import Callable, NamedTuple, Optional
 
 from engine.dtypes import BLOCKS, BYTES, CODEBOOKS, KINDS, QUANTIZED, kind_named
+from engine.proxy import plain
 
 # ---- the form
 # The form of a checkpoint: what sets its tensors and sizes its forward pass besides the 7 ints of the header, which
@@ -68,7 +69,7 @@ def form_of(options=None):
     any others (the options of a model, a manifest's). Dicts from JavaScript are read too (a JsProxy). A key given as
     None (a JSON null, or JavaScript's undefined) says nothing, as head_size() reads "head_dim": null: it had
     checkpoint_dtype() fail on int(None) while footprint() counted dim / heads (the review of T.144)."""
-    options = options.to_py() if hasattr(options, "to_py") else (options or {})
+    options = plain(options) or {}
     return {key: default if options.get(key) is None else options[key] for key, default in FORM.items()}
 
 
@@ -83,7 +84,7 @@ def linear_form(linear, n_layers=None):
     enough for one full-attention layer."""
     if linear is None:
         return None
-    linear = linear.to_py() if hasattr(linear, "to_py") else linear
+    linear = plain(linear)
     numbers = {key: int(linear[key]) for key in LINEAR}
     if min(numbers.values()) < 1 or numbers["every"] < 2 or numbers["value_heads"] % numbers["key_heads"]:
         raise ValueError(f"These are not the numbers of linear-attention layers: {numbers}.")
@@ -109,7 +110,7 @@ def convolution_form(convolution, n_layers=None):
     as many as."""
     if convolution is None:
         return None
-    convolution = convolution.to_py() if hasattr(convolution, "to_py") else convolution
+    convolution = plain(convolution)
     layers, taps = str(convolution["layers"]), int(convolution["taps"])
     if not layers or set(layers) - set("ac") or taps < 2 or (n_layers is not None and len(layers) != n_layers):
         raise ValueError(f"These are not the convolution layers of a model: {layers!r} with {taps} taps.")
@@ -121,7 +122,7 @@ def kinds_form(kinds):
     dtype's or a block's), or a tuple of them, one for each layer of its stack}, from a dict of Python or of
     JavaScript (a list for the tuple): a file whose tensors are of several kinds (T.363) says here which, since its
     size cannot. None where there are none."""
-    kinds = kinds.to_py() if hasattr(kinds, "to_py") else kinds
+    kinds = plain(kinds)
     named = lambda kind: kind_named(kind) if isinstance(kind, str) else tuple(kind_named(one) for one in kind)
     return {str(name): named(kind) for name, kind in kinds.items()} if kinds else None
 
@@ -129,7 +130,7 @@ def kinds_form(kinds):
 def layer_list(layers, n_layers):
     """Layers by their numbers, sorted and each once, from a list of Python's or of JavaScript's; a ValueError for one
     that a model of n_layers layers has not (n_layers None: any)."""
-    layers = layers.to_py() if hasattr(layers, "to_py") else layers
+    layers = plain(layers)
     layers = tuple(sorted({int(layer) for layer in layers or ()}))
     if layers and (layers[0] < 0 or (n_layers is not None and layers[-1] >= n_layers)):
         raise ValueError(f"A model of {n_layers} layers has no layer {layers[0] if layers[0] < 0 else layers[-1]}.")
@@ -140,7 +141,7 @@ def wide_form(wide, n_layers=None):
     """T.331: the layers whose heads are of a size of their own, FORM's "wide", as {"layers": which they are, in order,
     "head_dim": the size of their heads}, from a dict of Python or of JavaScript. None for a model without any (a
     Gemma 4's full-attention layers: transformers' global_head_dim)."""
-    wide = wide.to_py() if hasattr(wide, "to_py") else wide
+    wide = plain(wide)
     if not wide:
         return None
     layers, head = layer_list(wide["layers"], n_layers), int(wide["head_dim"])
@@ -161,7 +162,7 @@ def shared_form(shared, n_layers=None):
     "from": the layer each reads, in the same order}, from a dict of Python or of JavaScript. None for a model without
     any (a Gemma 4's last num_kv_shared_layers). A layer is read from that comes before it and reads its own: what the
     shapes of the two have to agree on is the Dims' to see."""
-    shared = shared.to_py() if hasattr(shared, "to_py") else shared
+    shared = plain(shared)
     if not shared:
         return None
     pairs = sorted({int(layer): int(source) for layer, source in zip(shared["layers"], shared["from"])}.items())
@@ -558,7 +559,7 @@ def unturned_layers(arch, n_layers, layers):
     """The layers RoPE leaves alone (T.255) of a model of this architecture with n_layers layers, in order, from what
     its options say of them (a list of Python's or of JavaScript's, or nothing): a ValueError for an architecture
     that has no such layers, or for a layer the model has not."""
-    layers = layers.to_py() if hasattr(layers, "to_py") else layers
+    layers = plain(layers)
     layers = tuple(sorted({int(layer) for layer in layers or ()}))
     if layers and (not layout_of(arch).unturned or not 0 <= layers[0] <= layers[-1] < n_layers):
         raise ValueError("The layers RoPE leaves alone are layers of a Llama, and none of another architecture.")
@@ -577,7 +578,7 @@ def local_layers(arch, n_layers, local):
     where the others' is 1e6. The file is the same whichever layers they are, so the options say it, as they say the
     layers RoPE leaves alone. A ValueError for an architecture that has no such layers, for a layer the model has not,
     and for what is no window or no base."""
-    local = local.to_py() if hasattr(local, "to_py") else local
+    local = plain(local)
     if not local:
         return None
     layers = tuple(sorted({int(layer) for layer in local["layers"]}))

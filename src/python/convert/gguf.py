@@ -8,6 +8,7 @@ import struct
 import numpy as np
 
 from engine.layers import rope_frequencies, sign_bits
+from engine.proxy import plain
 from convert.readers import GGUF_TENSORS, SOURCES
 from convert.sources import ROTATED
 from convert.families import GGUF, family_of, named
@@ -52,7 +53,7 @@ GGUF_IGNORE_MERGES = ("llama-bpe", "smaug-bpe")
 def gguf_read(data):
     """(metadata, tensors, base) from the first bytes of a GGUF file: tensors maps each name to its ggml type,
     its shape (outermost first, as NumPy has it) and its offset from base, where the data begins."""
-    data = memoryview(data.to_py() if hasattr(data, "to_py") else data).cast("B")
+    data = memoryview(plain(data)).cast("B")
     at = 0
 
     def take(fmt):
@@ -335,7 +336,7 @@ def rope_freqs_values(head, tensors, base, metadata=None):
         return None
     if info["type"] != 0 or info["offset"] != 0:
         raise ValueError(NO_TABLE)
-    data = memoryview(head.to_py() if hasattr(head, "to_py") else head).cast("B")
+    data = memoryview(plain(head)).cast("B")
     size = 4 * math.prod(info["shape"])
     if len(data) < base + size:
         raise Incomplete()

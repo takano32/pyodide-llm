@@ -2,6 +2,7 @@
 import json
 
 from engine.dtypes import dtype_of
+from engine.proxy import plain
 from convert.config import check_config, normalize
 from convert.stream import Kept, Stream
 from convert.gguf import gguf_model, gguf_read, rope_freqs_values
@@ -40,7 +41,7 @@ class Conversion:
             header = json.loads(header)
         except ValueError:
             raise ValueError("This is not a safetensors file.") from None
-        tokenizer = bytes(tokenizer.to_py() if hasattr(tokenizer, "to_py") else tokenizer)
+        tokenizer = bytes(plain(tokenizer))
         vocabulary = vocabulary_of(tokenizer, tokenizer_name, self.config["vocab_size"], tokenizer_config, last)
         self.start(header, base, vocabulary, dtype, max_seq_len, start, sink, quantize_rows, chat_template, readers,
                    blocks)

@@ -32,6 +32,7 @@ from typing import Any, NamedTuple
 import numpy as np
 
 from engine.checkpoint import OUTLIER_CHANNELS, outlier_channels, outside
+from engine.proxy import plain
 from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
 from engine.layout import (ATTENDING, DOUBLE, NARROW, NARROW_KEPT, SINGLE, TABLE, WIDE, WIDE_KEPT, check_shared_windows, linear_widths, local_layers,
@@ -171,7 +172,7 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     classifier = held["wcls"]
     if int8 and rotated is None and classifier.kind in {DTYPES[name].short for name in QUANTIZED}:
         raw = read(held["rms_final_weight"].offset, dims.dim * 4)
-        weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
+        weight = np.frombuffer(bytes(plain(raw)), dtype=np.float32)
         channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, dims.dim))]
     return {"arch": dims.arch, "dim": dims.dim, "hidden_dim": dims.hidden_dim, "n_layers": dims.n_layers,
             "n_heads": dims.n_heads, "n_kv_heads": dims.n_kv_heads, "head_size": dims.head_size,

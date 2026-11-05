@@ -5,6 +5,7 @@ import numpy as np
 
 from engine.dtypes import BLOCKS, EITHER, dtype_of
 from engine.layout import CLASSIFIER, EMBEDDING, MATRIX, tensor_rows
+from engine.proxy import plain
 from convert.checkpoint import Writer, checkpoint_size
 from convert.readers import SOURCES, source_of
 from convert.sources import header_rotated
@@ -155,7 +156,7 @@ class Stream:
 
     def feed(self, data):
         """data: the next bytes of the file. Returns (values done, values in all)."""
-        data = memoryview(data.to_py() if hasattr(data, "to_py") else data).cast("B")
+        data = memoryview(plain(data)).cast("B")
         offset = 0
         while offset < len(data) and self.step < len(self.steps):
             begin, end, name, target = self.steps[self.step]

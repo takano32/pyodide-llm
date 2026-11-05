@@ -4,6 +4,7 @@ import json
 import math
 import struct
 
+from engine.proxy import plain
 from convert.readers import source_of
 
 ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T.237)
@@ -86,7 +87,7 @@ def joined_shards(headers):
     joined, at, lengths = {}, 0, []
     for text in headers:
         try:
-            header = json.loads(bytes(text.to_py() if hasattr(text, "to_py") else text).decode()
+            header = json.loads(bytes(plain(text)).decode()
                                 if not isinstance(text, str) else text)
         except ValueError:
             raise ValueError("A shard of this model is not a safetensors file.") from None

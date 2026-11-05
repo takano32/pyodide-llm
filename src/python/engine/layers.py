@@ -28,6 +28,7 @@ import math
 import numpy as np
 
 from engine.layout import linear_widths
+from engine.proxy import plain
 
 
 def partial_rope(heads, cos, sin, rotary):
@@ -301,7 +302,7 @@ def rotated_form(rotated, widths=()):
     matrices read, each of which has to be whole blocks and have its signs."""
     if rotated is None:
         return None
-    rotated = rotated.to_py() if hasattr(rotated, "to_py") else rotated
+    rotated = plain(rotated)
     block = int(rotated["block"])
     if block < 1 or block & (block - 1):
         raise ValueError(f"The block of a rotated basis is a power of two, not {block}.")
