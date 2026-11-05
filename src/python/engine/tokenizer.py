@@ -28,6 +28,7 @@ import math
 import re
 import struct
 import unicodedata
+from typing import Callable, NamedTuple, Optional
 
 BOS = 1  # beginning-of-sequence token, also what the model emits when a story is over
 
@@ -292,7 +293,11 @@ class Tokenizer:
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
                  collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False):
-        self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
+        if kind not in TOKENIZER_KINDS:
+            raise ValueError(f"Unsupported tokenizer kind: {kind!r} (the engine reads {', '.join(TOKENIZER_KINDS)})")
+        # T.639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
+        self.kind, (self.encoding, self.decoding, self.prefixes, self.spaces, made) = kind, TOKENIZER_KINDS[kind]
+        self.nfkc, self.nfc, self.pretokenizer = nfkc, nfc, pretokenizer
         # T.265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
         # do_lower_case, with a vocabulary that has no capital Latin letter, each of which was <unk> without it)
         self.lowercase = lowercase
@@ -336,24 +341,9 @@ class Tokenizer:
             self.index.setdefault(piece, i)
         # raw byte tokens look like b"<0x0A>"; they spell out whatever the vocabulary lacks
         self.byte_tokens = [self.index.get(b"<0x%02X>" % byte, byte + 3) for byte in range(256)]
-        # byte-level pieces are text, and the merging works on that text rather than on bytes
-        self.text_index = {}
-        if self.kind == "bytebpe":
-            for i, piece in enumerate(self.vocab):
-                self.text_index.setdefault(piece.decode("utf-8", "replace"), i)
-        # the Viterbi search's pieces as text, each the token index finds for it (the first of equal pieces), those
-        # it can match only, and how long such a piece that begins with two given characters can be (T.200)
-        self.pieces, self.reach = {}, {}
-        if self.kind == "unigram":
-            for piece, i in self.index.items():
-                try:
-                    text = piece.decode("utf-8")
-                except UnicodeDecodeError:
-                    continue  # no text encodes to it
-                if self.scores[i] > self.UNMATCHABLE:
-                    self.pieces[text] = i
-                    if len(text) > 1 and self.reach.get(text[:2], 0) < len(text):
-                        self.reach[text[:2]] = len(text)
+        self.text_index, self.pieces, self.reach = {}, {}, {}
+        if made:
+            made(self)
         self.unknown_score = min(score for score in self.scores if score > self.UNMATCHABLE) - 10.0
 
     def encode(self, text, specials=()):
@@ -365,17 +355,13 @@ class Tokenizer:
             if part in pieces:
                 tokens.append(self.index[pieces[part]])
             elif part and (part := self.normalized(part)):
-                if self.kind == "bytebpe":
-                    # no dummy prefix: a byte-level vocabulary spells the space out as a character of its own
-                    tokens += self.encode_bytebpe(part)
-                else:
-                    # sentencepiece's dummy prefix: the model saw every text start with a space (but not the
-                    # text after a special token, unless its tokenizer puts one there as well: prefixed, T.308;
-                    # and a model without the prefix saw none, T.257)
-                    if self.prefixed != "never" and ((first and not (self.spaced and part.startswith(" "))) or self.prefixed == "every"
-                                                    or (self.prefixed and not part.startswith(" "))):
-                        part = " " + part
-                    tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
+                # sentencepiece's dummy prefix: the model saw every text start with a space (but not the text after a
+                # special token, unless its tokenizer puts one there as well: prefixed, T.308; and a model without the
+                # prefix saw none, T.257). A byte-level vocabulary has none: it spells the space as a character
+                if self.prefixes and self.prefixed != "never" and ((first and not (self.spaced and part.startswith(" "))) or self.prefixed == "every"
+                                                                   or (self.prefixed and not part.startswith(" "))):
+                    part = " " + part
+                tokens += self.encoding(self, part)
             first = False
         return tokens
 
@@ -386,7 +372,7 @@ class Tokenizer:
         sentencepiece vocabulary's pieces spell U+2581 as a space (the converter's tokenizer_bin()), a special's
         among them (a Gemma 3's runs of U+2581)."""
         if specials not in self.cuts:
-            spelled = (lambda special: special) if self.kind == "bytebpe" else (lambda special: special.replace("\u2581", " "))
+            spelled = (lambda special: special.replace("\u2581", " ")) if self.spaces else (lambda special: special)
             self.cuts = {specials: (re.compile("(" + "|".join(re.escape(special) for special in specials) + ")"),
                                     {special: spelled(special).encode("utf-8") for special in specials})}
         return self.cuts[specials]
@@ -408,7 +394,7 @@ class Tokenizer:
             text = unicodedata.normalize("NFC", text)
         if self.collapse:
             text = re.sub(" {2,}", " ", text).strip(" ")
-        if self.kind != "bytebpe":
+        if self.spaces:
             # sentencepiece writes a space as U+2581, so one written in the text is a space too (after the collapse,
             # which sees spaces only; an nmt_ map made it one before). The pieces here spell it " " (T.216)
             text = text.replace("\u2581", " ")
@@ -488,6 +474,24 @@ class Tokenizer:
             tokens += [self.text_index[symbol] for symbol in symbols]
         return tokens
 
+    def text_pieces(self):
+        """byte-level pieces are text, and the merging works on that text rather than on bytes"""
+        for i, piece in enumerate(self.vocab):
+            self.text_index.setdefault(piece.decode("utf-8", "replace"), i)
+
+    def unigram_pieces(self):
+        """the Viterbi search's pieces as text, each the token index finds for it (the first of equal pieces), those
+        it can match only, and how long such a piece that begins with two given characters can be (T.200)"""
+        for piece, i in self.index.items():
+            try:
+                text = piece.decode("utf-8")
+            except UnicodeDecodeError:
+                continue  # no text encodes to it
+            if self.scores[i] > self.UNMATCHABLE:
+                self.pieces[text] = i
+                if len(text) > 1 and self.reach.get(text[:2], 0) < len(text):
+                    self.reach[text[:2]] = len(text)
+
     def encode_unigram(self, text):
         # Viterbi: best[j] is the best total score of any segmentation of text[:j]. The pieces that begin at i are
         # no longer than the reach of text[i:i + 2] (one character where no longer piece begins with those two) (T.200)
@@ -518,12 +522,17 @@ class Tokenizer:
         return tokens
 
     def decode(self, prev_token, token, bos=1):
+        return self.decoding(self, prev_token, token, bos)
+
+    def decode_bytes(self, prev_token, token, bos):
+        # back through the byte <-> character table; a piece that is not written in it (an added token such as
+        # <|im_end|>) is its own text
         piece = self.vocab[token]
-        if self.kind == "bytebpe":
-            # back through the byte <-> character table; a piece that is not written in it (an added token such
-            # as <|im_end|>) is its own text
-            text = piece.decode("utf-8", "replace")
-            return bytes(CHAR_BYTES[char] for char in text) if all(char in CHAR_BYTES for char in text) else piece
+        text = piece.decode("utf-8", "replace")
+        return bytes(CHAR_BYTES[char] for char in text) if all(char in CHAR_BYTES for char in text) else piece
+
+    def decode_pieces(self, prev_token, token, bos):
+        piece = self.vocab[token]
         # Following the first token, sentencepiece decoder strips the leading whitespace (the dummy prefix)
         if prev_token == bos and piece.startswith(b" ") and self.prefixed != "never":
             piece = piece[1:]
@@ -531,3 +540,20 @@ class Tokenizer:
         if len(piece) == 6 and piece.startswith(b"<0x") and piece.endswith(b">"):
             piece = bytes([int(piece[3:5], 16)])
         return piece
+
+
+class Kind(NamedTuple):
+    """T.639.4: one of the Tokenizer's kinds, which it takes apart once when it is made"""
+    encode: Callable  # (tokenizer, a stretch of normalized text) -> its tokens
+    decode: Callable  # (tokenizer, the token before, the token, bos) -> the token's bytes
+    prefixes: bool  # sentencepiece's dummy prefix may stand before a stretch of text (prefixed and spaced say where)
+    spaces: bool  # U+2581 is a space, in the text and in a special's spelling: the pieces spell it " " (T.216)
+    made: Optional[Callable]  # (tokenizer) makes the kind's own index of the pieces, once
+
+
+# the kinds a tokenizer.bin is read as (the converter's tokenizer_kind): a kind that is added is a row here and the
+# Tokenizer's methods it names
+TOKENIZER_KINDS = {
+    "bpe": Kind(Tokenizer.encode_bpe, Tokenizer.decode_pieces, True, True, None),
+    "unigram": Kind(Tokenizer.encode_unigram, Tokenizer.decode_pieces, True, True, Tokenizer.unigram_pieces),
+    "bytebpe": Kind(Tokenizer.encode_bytebpe, Tokenizer.decode_bytes, False, False, Tokenizer.text_pieces)}
