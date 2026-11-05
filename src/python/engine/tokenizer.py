@@ -30,6 +30,8 @@ import struct
 import unicodedata
 from typing import Callable, NamedTuple, Optional
 
+from engine.proxy import plain
+
 BOS = 1  # beginning-of-sequence token, also what the model emits when a story is over
 
 
@@ -338,7 +340,8 @@ class Tokenizer:
         # T649.1: where a "plamo" tokenizer cuts a text before its search, besides the <|plamo:…|> it writes: around a
         # run of so many spaces or more ({"spaces": n}) and of one character so many times or more ({"repeats": n}),
         # tokenizer_config.json's break_around_consecutive_spaces_threshold and break_around_repeated_chars_threshold
-        self.breaks = plamo_breaks(breaks or {})
+        # (T649.3: a dict of the page's options, a JsProxy in Pyodide: unwrapped as every other one, engine/proxy.py)
+        self.breaks = plamo_breaks(plain(breaks) or {})
         self.cuts = {}  # cut()'s, of the specials it was last asked for
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run

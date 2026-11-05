@@ -1108,6 +1108,19 @@ for dummy in (False, True):
         assert "merges its pieces" in str(error)
 f"T257: a sentencepiece BPE written out as a tokenizer.json: {len(read_ids)} texts read as natively, {sum(map(len, read_ids))} tokens"
 `));
+// T649.3: PLaMo's breaks (T649.1's option of the tokenizer, a dict) as the worker hands them to the engine: a JavaScript
+// object among the keyword arguments of Llama.callKwargs(), a proxy in Python, which the tokenizer took for a dict and
+// failed on (a TypeError, the first time a page loaded PLaMo 3 Translate)
+{
+  const llama = pyodide.pyimport("llama2_numpy").Llama.callKwargs(pyodide.runPython('read("tiny-lm.bin")'), pyodide.runPython('read("tiny-lm.tokenizer.bin")'),
+    { dtype: "int8", tokenizer_kind: "unigram", breaks: { spaces: 2, repeats: 4 } });
+  pyodide.globals.set("MADE", llama);
+  const pattern = pyodide.runPython("MADE.tokenizer.breaks.pattern");
+  pyodide.runPython("del MADE");
+  llama.destroy();
+  if (pattern !== "((.)\\2{3,}| {2,})") throw new Error(`T649.3: the breaks handed from JavaScript make ${pattern}`);
+  console.log("T649.3: PLaMo's breaks handed from JavaScript are read");
+}
 // T235: an entry's rope_scaling: {} (src/models/formats.ts's PLAIN_ROPE) as the worker hands it to the engine: a
 // JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
 // plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them
