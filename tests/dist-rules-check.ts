@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { builtModule, forwardUrl } from "./bundle.ts";
-import { ROOT, distSaid, families, familyOf, undeclared } from "./dist-check.ts";
+import { ROOT, SITE_BYTES, distSaid, families, familyOf, undeclared } from "./dist-check.ts";
 import { runtimeUrl, treeOf, RULE } from "./tree.ts";
 
 const scratch = path.join(fileURLToPath(new URL("..", import.meta.url)), ".tmp", "dist-rules-check", String(process.pid));
@@ -55,7 +55,7 @@ const family = familyOf(coi);
   };
   const right = build("right");
   assert.deepEqual(right.said, []);
-  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; 1 notices where their code is; the root holds nothing else, and no bytecode$/);
+  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; 1 notices where their code is; the root holds nothing else, and no bytecode; 0\.0 MiB in all$/);
   const wrong = (name, change, ...patterns) => {
     const { said } = build(name, change);
     assert.equal(said.length, patterns.length, `${name}: ${said.join(" | ")}`);
@@ -107,7 +107,15 @@ const family = familyOf(coi);
   wrong("no benchmark", { "benchmark/index.html": null }, /^dist\/benchmark\/index\.html is not there$/);
   assert.deepEqual(ROOT, ["_astro", "index.html", "benchmark", "coi.js", "coi-test", "models"]);
   assert.throws(() => distSaid(path.join(scratch, "right", "nothing"), treeOf(path.join(scratch, "right"), { ...RULE })), /no _astro\/ in it: npm run build/);
-  ok("a bundled tree's build: right, and wrong in twenty ways, each said in a line of its own");
+  // (T648.5) a site heavier than GitHub Pages takes: the right build held to a line of 100 bytes, and to its own weight
+  const weight = fs.readdirSync(path.join(scratch, "right", "dist"), { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
+    .reduce((sum, entry) => sum + fs.statSync(path.join(entry.parentPath, entry.name)).size, 0);
+  const heavy = distSaid(path.join(scratch, "right", "dist"), treeOf(path.join(scratch, "right"), { ...RULE }), 100).said;
+  assert.equal(heavy.length, 1, heavy.join(" | "));
+  assert.match(heavy[0], new RegExp(`^dist/ is ${weight.toLocaleString("en")} bytes \\(0\\.0 MiB\\), more than GitHub Pages's 0\\.0 MiB: something served has to go before a model comes in$`));
+  assert.deepEqual(distSaid(path.join(scratch, "right", "dist"), treeOf(path.join(scratch, "right"), { ...RULE }), weight).said, [], "a site of the line's weight is not too heavy");
+  assert.equal(SITE_BYTES, 1024 ** 3);
+  ok("a bundled tree's build: right, and wrong in twenty-one ways, each said in a line of its own");
 
   // ---- a module as a build wrote it
   const dist = path.join(scratch, "right", "dist");

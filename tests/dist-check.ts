@@ -31,6 +31,9 @@
 //      branch that reads it, and the bundled GPU worker's branches (ternary, int6, outlier columns) run on no GPU of
 //      CI's. File-wide, not by scope (the bundles use var, which tests/names.ts's scopes refuse): a name declared in
 //      one function and read in another is not seen.
+//  10. (T648.5) the whole of dist/ is at most SITE_BYTES, 1 GiB: GitHub Pages's limit of a site ("no larger than
+//      1 GB"), which the models nearly fill (about 1,005 MiB with Firefox's translation models): the next model to be
+//      served fails the deploy here, and something is taken out first (AGENTS.md).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -46,6 +49,8 @@ const ORIGIN = "https://site.test", BASE = "/pyodide-llm/";
 /** the chunks that are fetched only when they are used (dist-check's rule 6) */
 export const LAZY = ["forward", "kept", "key", "gpu", "shaders"];
 export const ROOT = ["_astro", "index.html", "benchmark", "coi.js", "coi-test", "models"];
+/** 10: what dist/ may weigh, in bytes */
+export const SITE_BYTES = 1024 ** 3;
 
 /** coi.js's own family(), from its text: the function as the Service Worker runs it, on this origin */
 export function familyOf(coi) {
@@ -111,7 +116,7 @@ export function undeclared(text) {
 }
 
 /** What is wrong with dist (a folder) as a build of tree, as lines; and what was looked at, in words. */
-export function distSaid(dist, tree = treeOf()) {
+export function distSaid(dist, tree = treeOf(), most = SITE_BYTES) {
   const astro = path.join(dist, "_astro");
   if (!fs.existsSync(astro)) throw new Error(`${dist}: no _astro/ in it: npm run build`);
   const files = fs.readdirSync(astro).sort();
@@ -201,7 +206,11 @@ export function distSaid(dist, tree = treeOf()) {
   // (T383: and no bytecode Python left beside a source, anywhere: the zips leave it out, and a build that copies a
   // folder of Python would serve it)
   for (const name of under(dist)) if (/(^|\/)__pycache__\/|\.pyc$/.test(name)) said.push(`${path.basename(dist)}/${name}: Python's bytecode is served`);
-  return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; ${notices} notices where their code is; the root holds nothing else, and no bytecode` };
+  // 10: the site's size
+  const weight = under(dist).reduce((sum, name) => sum + fs.statSync(path.join(dist, name)).size, 0);
+  const mib = (bytes) => `${(bytes / 2 ** 20).toFixed(1)} MiB`;
+  if (weight > most) said.push(`${path.basename(dist)}/ is ${weight.toLocaleString("en")} bytes (${mib(weight)}), more than GitHub Pages's ${mib(most)}: something served has to go before a model comes in`);
+  return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; ${notices} notices where their code is; the root holds nothing else, and no bytecode; ${mib(weight)} in all` };
 }
 
 /** The 192 made-up devices of tests/unchanged.ts's shaders section: the device's key of each, by a module's deviceKey() */

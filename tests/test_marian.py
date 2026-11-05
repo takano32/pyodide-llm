@@ -1,8 +1,9 @@
 # T648.1: engine/marian.py, the reader of Marian's binary model and binary shortlist (Firefox Translations' files).
 # A made-up model and shortlist are written here, as marian-dev's saveItems and BinaryShortlistGenerator lay them out
 # (the layouts are said in engine/marian.py), and read back; each way of breaking one is refused, by name. The real
-# files are read only where they are found (they are not in the repository, and CI has none): MARIAN_FILES names the
-# folders to look in (os.pathsep between), and the owner's checkout of bergamot-vs-shisa is looked in by default.
+# files are read only where they are found (they are not in the repository): MARIAN_FILES names the folders to look in
+# (os.pathsep between), and translations/ (make models fetches them there: T648.5) and the owner's checkout of
+# bergamot-vs-shisa are looked in by default.
 import math
 import os
 import struct
@@ -181,6 +182,9 @@ def test_a_broken_shortlist_is_refused():
 
 # ---- the real files, where they are found
 FOLDERS = [Path(folder) for folder in os.environ.get("MARIAN_FILES", "").split(os.pathsep) if folder]
+# (T648.5: and where make models fetches them, translations/: the light suite's runs, the deploy's and tests.yml's,
+# make the models first, so CI reads the three real models and shortlists there)
+FOLDERS.append(Path(__file__).resolve().parent.parent / "translations")
 FOLDERS.append(Path.home() / "GitHub" / "bergamot-vs-shisa" / "models")
 # a file is known by the end of its name and its size (ja-en's 3.0 and 3.1 have one name): the size, the items, and
 # what docs/notes/t648-firefox-translations-format-2026-11-05.md read of the settings

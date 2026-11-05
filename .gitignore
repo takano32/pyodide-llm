@@ -4,6 +4,7 @@
 *.f16
 tiny-lm/
 llm-jp-3-150m/
+translations/
 public/models/
 tiny-lm.LICENSE.txt
 *.wasm

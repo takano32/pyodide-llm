@@ -8,8 +8,9 @@
 --kernels runs every affine on the SIMD kernel affine_q8 (engine/translation.py's KernelAffine), which loads in
 Pyodide only: tests/translation-kernels.ts runs this check there with it.
 
-The models are not in the repository (policy 1) and CI has none: the check looks for them in MARIAN_FILES (folders,
-os.pathsep between) and the owner's checkout of bergamot-vs-shisa (its models/), by the end of the name and the size
+The models are not in the repository (policy 1): the check looks for them in MARIAN_FILES (folders, os.pathsep
+between), translations/ (make models fetches the three there: T648.5) and the owner's checkout of bergamot-vs-shisa
+(its models/), by the end of the name and the size
 (ja-en's 3.0 and 3.1 have one name), and leaves out a model it does not find (exit 0, saying so). The reference is
 tests/fixtures/translations.json: every one of the 100 sentences of bergamot-vs-shisa's data/sentences.jsonl through
 every model (the other direction's too: their nonsense is translated by the same steps), as fxtranslate's translate()
@@ -45,7 +46,7 @@ from engine.translation import Translator  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "translations.json"
 HOME = Path.home() / "GitHub" / "bergamot-vs-shisa"
-FOLDERS = [Path(folder) for folder in os.environ.get("MARIAN_FILES", "").split(os.pathsep) if folder] + [HOME / "models"]
+FOLDERS = [Path(folder) for folder in os.environ.get("MARIAN_FILES", "").split(os.pathsep) if folder] + [ROOT / "translations", HOME / "models"]
 SENTENCES = Path(os.environ.get("SENTENCES", HOME / "data" / "sentences.jsonl"))
 FXTRANSLATE = os.environ.get("FXTRANSLATE_PYTHON", str(HOME / ".venv" / "bin" / "python"))
 # a model -> (its file, the source's vocabulary, the target's): each a name's end and a size (tests/test_marian.py's)

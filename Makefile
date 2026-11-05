@@ -21,10 +21,22 @@ run:	models kernels node_modules
 # in parallel
 models:	public/models/.done
 
-public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
+public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS) translations/.done
 	rm -rf public/models && mkdir -p public/models
 	for f in $(CHECKPOINTS); do split -b 8388608 -d -a 3 $$f public/models/$$f. || exit 1; done
 	cp $(TOKENIZERS) tiny-lm.LICENSE.txt public/models/
+	# T648.5: the translation models as the checkpoints, a model and a shortlist in parts of 8 MiB, the vocabularies
+	# whole (as the tokenizers): public/models/translations/<model>/<the record's name>[.000…]
+	for d in translations/*/; do mkdir -p public/models/$$d && \
+		for f in $$d*.bin; do split -b 8388608 -d -a 3 $$f public/models/$$f. || exit 1; done && \
+		cp $$d*.spm public/models/$$d || exit 1; done
+	cp translations/LICENSE.txt public/models/translations/
+	touch $@
+
+# T648.5: Mozilla's Firefox Translations models, their vocabularies and shortlists (fetch_translations.py names each
+# file with its address, length and sha256, and makes a folder of each model: en-ja-3.0, ja-en-3.0, ja-en-3.1)
+translations/.done:	fetch_translations.py LICENSE
+	python3 fetch_translations.py translations
 	touch $@
 
 # The Python that makes a model: the two windows and every part under them (T434: the families' files and the
@@ -109,5 +121,5 @@ node_modules:	package-lock.json
 
 clean:
 	rm -f *.bin *.f32 *.f16 tiny-lm.LICENSE.txt
-	rm -rf public/models src/runtime/built dist .astro tiny-lm llm-jp-3-150m node_modules
+	rm -rf public/models src/runtime/built dist .astro tiny-lm llm-jp-3-150m translations node_modules
 
