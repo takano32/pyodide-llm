@@ -172,7 +172,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const { tables, spread } = blocked ? blockTables({ k, relaxed, alloc, memory, base, tensors: T, partsOf, signed: trying.signed }) : { tables: 0, spread: 0 };
   // T.641.2: the model's tensors by their names (tensors.ts): the address of a float32 copy, a matrix as the kernels
   // multiply by it
-  const { floats, matrix, scaleOf } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread });
+  const { floats, matrix, embedder, outlierColumns } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread });
 
   // ---- the activations: one frame per token, BATCH of them for a prompt (T.108). A frame holds what one token needs,
   // in the order it always had, and the next token's frame follows: every array of token t is t * S bytes after token
@@ -218,11 +218,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
   const positions = floats("positions");  // GPT-2's learned table of positions (0: the model has none)
   const embedding = T.token_embedding_table!;
-  const embeddingRows = embedding.kind === "f16" ? floats("token_embedding_table") : 0;
-  // (a packed table's rows are read a weight at a time: jobs.ts's PACKED says how; T.363.5: a row of llama.cpp's blocks
-  // by its kernel)
-  const embeddingPacked = packingOf(embedding.kind), embeddingRow = embeddingPacked?.row?.(k, tables), embeddingBytes = embeddingPacked?.rowBytes(dim) ?? 0;
-  const embeddingValue = embeddingPacked?.value;
+  // a token's row of the embedding table, written as float32 (tensors.ts: T.641.2)
+  const embedRow = embedder();
   // T.375.3: the norm of a layer's input, of the FFN's and the last one, chosen once: LayerNorms (GPT-2, GPT-NeoX; b:
   // their biases) or RMSNorms
   const norm: (out: number, input: number, w: number, b: number) => void = layerNorm
@@ -279,23 +276,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     return [width, floats(`signs.${width}`)] as const;
   })) : null;
 
-  // the outlier channels of the classifier's input (T.92): their columns in float32, multiplied apart (T.210: not of a
-  // classifier on the GPU alone, which is not here; T.226: the GPU multiplies a float classifier for a model with them,
-  // so such a model stays on the GPU alone and needs no columns)
+  // the outlier channels of the classifier's input (T.92): their columns in float32, multiplied apart (tensors.ts)
   const channels = plan.outliers ?? [];
-  let columns = 0, picked = 0;
-  if (channels.length && !direct) {
-    const t = (plan.shared_classifier ? T.token_embedding_table : T.wcls)!;
-    columns = alloc(channels.length * vocab * 4);
-    picked = alloc(channels.length * 4);
-    const groups = dim / t.group, values = base + t.offset, packing = packingOf(t.kind)!, value = packing.value!;
-    const scaleAt = scaleOf(packing, base + t.scales);
-    channels.forEach((c, i) => {
-      for (let v = 0; v < vocab; v++) {
-        F[columns / 4 + i * vocab + v] = Math.fround(value(U, values, v * dim + c) * scaleAt(v * groups + ((c / t.group) | 0)));
-      }
-    });
-  }
+  const { columns, picked } = outlierColumns(channels);
   // T.378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
@@ -390,18 +373,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // the embedding rows of tokens at positions pos0, pos0 + 1, ... into x, a frame apart (or into rows, stride apart)
   function embed(tokens: number[], pos0: number, rows = x, stride = S) {
     for (let t = 0; t < tokens.length; t++) {
-      const row = tokens[t] * dim, to = (rows + t * stride) / 4;
-      if (embeddingValue) {
-        const g = embedding.group, values = base + embedding.offset, scaleAt = scaleOf(embeddingPacked!, base + embedding.scales);
-        for (let i = 0; i < dim; i++) {
-          F[to + i] = Math.fround(embeddingValue(U, values, row + i) * scaleAt(((row + i) / g) | 0));
-        }
-      } else if (embeddingRow) {
-        embeddingRow(rows + t * stride, base + embedding.offset + tokens[t] * embeddingBytes, dim);
-      } else {
-        const from = embedding.kind === "f32" ? base + embedding.offset : embeddingRows;
-        F.copyWithin(to, from / 4 + row, from / 4 + row + dim);
-      }
+      embedRow(tokens[t], rows + t * stride);
       if (positions) k.add_inplace(rows + t * stride, positions + (pos0 + t) * D, dim);
       // T.237: the table of a rotated basis holds rotated rows
       if (rotated) k.unrotate(rows + t * stride, rows + t * stride, signs![dim], dim, rotated);

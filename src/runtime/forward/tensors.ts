@@ -141,5 +141,50 @@ export function tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread
     const w = floats(source);  // float32 as it is, or widened once (shared with the embedding when it is the same table)
     return { rows, n, kind: "f32", job: KIND.matmul_f32, ready: null, layer: (l) => [w + l * rows * n * 4] };
   }
-  return { floats, matrix, scaleOf };
+
+  // a token's row of the embedding table, as float32 at the address to: a packed table's read a weight at a time
+  // (jobs.ts's PACKED says how; T.363.5: a row of llama.cpp's blocks by its kernel), a float32 one copied, a float16 one
+  // copied from its widened copy, which this takes of the memory as it is made (the engine makes it once, where it
+  // always asked for that copy)
+  function embedder() {
+    const { dim } = plan, embedding = T.token_embedding_table!;
+    const embeddingRows = embedding.kind === "f16" ? floats("token_embedding_table") : 0;
+    const embeddingPacked = packingOf(embedding.kind), embeddingRow = embeddingPacked?.row?.(k, tables), embeddingBytes = embeddingPacked?.rowBytes(dim) ?? 0;
+    const embeddingValue = embeddingPacked?.value;
+    return (token: number, at: number) => {
+      const row = token * dim, to = at / 4;
+      if (embeddingValue) {
+        const { F, U } = room, g = embedding.group, values = base + embedding.offset, scaleAt = scaleOf(embeddingPacked!, base + embedding.scales);
+        for (let i = 0; i < dim; i++) {
+          F[to + i] = Math.fround(embeddingValue(U, values, row + i) * scaleAt(((row + i) / g) | 0));
+        }
+      } else if (embeddingRow) {
+        embeddingRow(at, base + embedding.offset + token * embeddingBytes, dim);
+      } else {
+        const from = embedding.kind === "f32" ? base + embedding.offset : embeddingRows;
+        room.F.copyWithin(to, from / 4 + row, from / 4 + row + dim);
+      }
+    };
+  }
+
+  // the outlier channels of the classifier's input (T.92): their columns in float32, multiplied apart, and where the
+  // channels of the input are put aside (0, 0: the model has none; T.210: not of a classifier on the GPU alone, which
+  // is not here; T.226: the GPU multiplies a float classifier for a model with them, so such a model stays on the GPU
+  // alone and needs no columns)
+  function outlierColumns(channels: number[]) {
+    if (!channels.length || direct) return { columns: 0, picked: 0 };
+    const { dim, vocab_size: vocab } = plan, t = (plan.shared_classifier ? T.token_embedding_table : T.wcls)!;
+    const columns = alloc(channels.length * vocab * 4);
+    const picked = alloc(channels.length * 4);
+    const groups = dim / t.group, values = base + t.offset, packing = packingOf(t.kind)!, value = packing.value!;
+    const scaleAt = scaleOf(packing, base + t.scales), { F, U } = room;
+    channels.forEach((c, i) => {
+      for (let v = 0; v < vocab; v++) {
+        F[columns / 4 + i * vocab + v] = Math.fround(value(U, values, v * dim + c) * scaleAt(v * groups + ((c / t.group) | 0)));
+      }
+    });
+    return { columns, picked };
+  }
+
+  return { floats, matrix, embedder, outlierColumns };
 }
