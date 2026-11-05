@@ -445,6 +445,8 @@ def window(change):
     def fault(llama, make):
         llama.window_kept = llama.local["window"]
         llama.local = {**llama.local, "window": change(llama.local["window"], llama.seq_len)}
+        # (the forward pass reads a layer's window off its facts, T.639.2)
+        llama.layers = [{**facts, "window": llama.local["window"]} if facts["local"] else facts for facts in llama.layers]
         return llama
     return fault
 
