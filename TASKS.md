@@ -139,6 +139,7 @@
 - T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T648 [追加][モデル] Firefox の翻訳モデル（Firefox Translations、旧 Bergamot）の日英を動かす — 進行中
+- T649 [追加][モデル] PLaMo 3 Translate（0.8B・2B・8B）を動かす — 未着手
 - T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 未着手
 - T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 未着手
 - T640 [リファクタリング][変換] 変換器のリファクタリング（T638.2 の案） — 未着手
@@ -1377,6 +1378,15 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **持ち主の決め（2026-11-05、選択肢で、T648.3 の後）**: (4) サイトに置くのは **3 本とも**（en-ja・ja-en 3.0・ja-en 3.1、語彙とショートリストも、約 150 MB: サイトは約 990 MB で目安の 1 GB にほぼ届く。一覧の項目も 3 つ）、(5) 項目の名前は**向きを名前に**: 「Mozilla Firefox Translations English → Japanese」「Mozilla Firefox Translations Japanese → English」（ja-en の 2 つの版を分ける語は取りまとめ役の案を区切りのまとめで見せる）、note は「日本語, English, translation only, 44 MB」の形。
   - **取りまとめ役の決め（順）**: T648.5（取得してサイトに置く）を T648.4（ページと一覧）より先に: ページの道がファイルの名前と置き場を読むため。
   - (3) のため T648.2 に、fxtranslate の各ステップの最尤と僅差を取れる道（wheel の API に無ければ fxtranslate の公開の Rust の文を読んで丸めと足す順を写す: MPL-2.0 で許諾文を残す）を入れる。
+
+### T649 [追加][モデル] PLaMo 3 Translate（0.8B・2B・8B）を動かす — 状態: 未着手（2026-11-05、持ち主「やはり使えるようにしたいので検討しよう」と PFN の公開の記事 https://www.preferred.jp/ja/blog/tech/plamo-3-translate-weight-release 。T614 の plamo3 の形の上に。規模 中〜大）
+- **何か**（2026-11-05 の取りまとめ役の調べ: 0.8B の `config.json`・`chat_template.jinja`・`generation_config.json`・`modeling_plamo.py`・`tokenization_plamo.py`・`LICENSE/ja` を読んだ。2B・8B は大きさだけ）: PFN と NICT の PLaMo 3 NICT を翻訳に特化させたもの、53 言語。重みは `pfnet/plamo-3-translate-{0.8b,2b,8b,31b}`（bfloat16、ゲートなし）と `-GGUF`（**Q2_K・Q3_K_M・Q4_0・Q4_K_M だけ、Q8_0 は無い**）ほか vLLM・MLX の量子化。リビジョン: 0.8b `cc8e88169807d5a272e8ff06db12eb0129b67f81`、2b `355637cc04db67195ba87a97da85eaf1d52a22e8`、8b `681bd55cf01f5412aab8881e6a4a276c948fabc1`、0.8b-GGUF `03891e907db8a43c97d3a7c75add125cc6d1f96a`。
+- **形（0.8B）**: `model_type: plamo3`（transformers に無い: `trust_remote_code` の `modeling_plamo.py`、T248 の「自前のコードが要るもの」）。16 層・幅 1536・head 16 × 128・**鍵と値の head 1**・FFN 6144（SwiGLU）・語彙 107,520・分類器は別（`tie_word_embeddings: false`）・RMSNorm eps 1e-6 で**重みに 1 を足す**（`offset`: 変換器で畳める）・埋め込みの倍率なし。**8 層に 1 つが全体の層**（`(l+1) % 8 == 0`、yarn ×256・底 1e6・元の文脈 4096）、ほかは窓 2048 の局所の層（底 1e4）: Gemma 3 の局所・全体の道（`convert/families/local.py`）と yarn の道が使える見込み。前後の norm と q・k の head の norm は T614 の読み（未確認: `modeling_plamo.py` の層を読んで決める）。
+- **大きさ**: 0.8B は bfloat16 1.78 GB → int8 約 0.9 GB（32 ビットに入る）、Q4_K_M の GGUF 573 MB。2B は bfloat16 5.76 GB → int8 約 2.9 GB、Q4_K_M 1.81 GB。8B は bfloat16 17.1 GB → int8 約 8.6 GB（64 ビット、desktop only）、Q4_K_M 5.28 GB。
+- **トークナイザ**: PLaMo 自身の `tokenizer.jsonl`（1 行に [語片, 点数, 種類]）と `tokenization_plamo.py`（Aho–Corasick で全部の語片を引き、点数を `round(score·1e4)` の整数にした Viterbi、`<0xNN>` のバイトの語片で落ちる）。unigram の読みに近いが、**点数を整数に丸めた同点の選び方**と前処理の有無を本物と全符号位置で合わせる要がある（T614 の「重いのは PLaMo 自身のトークナイザ」）。BOS 1（`<|plamo:bos|>`）、止まり [1, 16]。
+- **書式**: chat_template は翻訳の頼みの形だけ（system も道具も断る）: `<|plamo:bos|><|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input[<|plamo:key|>lang<|plamo:val|>{原文の言語}]<|plamo:msg|>{原文}<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>{訳文の言語}[<|plamo:key|>form<|plamo:val|>polite|plain]<|plamo:msg|>`。訳文の言語は必須、原文の言語・文脈・用語集・敬体と常体は任意。ページでは向きごとの項目に手書きの書式（T648 と同じく「英→日」「日→英」の項目）が素直。
+- **ライセンス**: PLaMo Community License（`license: other`）。第 4 条: 第三者に提供するときは**本契約の写しを渡し、「Built with PLaMo」をウェブサイトか UI か文書に書き、作ったモデルの名前に「PLaMo」を入れる**。第 3 条: 商用は PFN への登録と売上 10 億円以下。第 5 条: 生成物を公表するならこのモデルの生成物と明示。**T608 では持ち主が「Built with PLaMo」の表示の求めを訳に足さないと決めた**（2026-11-03）: その線を変えるかと表示の置き場は持ち主（方針 8 は「ライセンスで一覧から外さない」）。
+- **子タスクの案**（決めの後に番号を付ける）: (1) plamo3 の家族（T614: 変換器の `Family`、norm の 1 を畳む、局所と全体の層、yarn）と transformers のモデル自身のコードとの比べ（Spark-X2.5 の形: `reference_<家族>.py`）、(2) PLaMo のトークナイザの読み手（本物と全符号位置で）、(3) 一覧の項目（向きごとの書式、止まり、名前に「PLaMo」）とライセンスの表示、(4) GGUF の Q4_K_M を塊のまま持つか（Saluki の道。T513: 小さいモデルは int8 のほうが速い）を測って決める。
 
 ### T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 未着手（2026-11-05、T642.1 の CI で気づいた。規模 小）
 - 毎晩の main（run 41558881370・41741355606）と `full=true` のブランチ（T642.1 の 41929632184）で、`ubuntu-latest chromium` のジョブだけが 93 分で落ちる（`tests/gpu-check/engines.ts:64` の `page.waitForFunction: Timeout 5400000ms exceeded`、ログには途中の結果が出ない）。Chrome・Edge（約 8〜11 分）と Dawn（lavapipe、37〜51 分）は同じ作り物で通る。軽い組の Chromium は 10 分ほどで通る（41820927444）。作り物が増えた（T547 の塊の作り物・T574 の 27B の形・T558.1 の輪）ことで SwiftShader の Chromium が期限を越えたと読む（未確認: どの作り物で止まったかはログに出ない）。
