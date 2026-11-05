@@ -4,6 +4,7 @@ converts to is its own tests' (test_granite.py, test_smollm3.py, test_qwen35.py,
 test_neox.py, test_gguf.py), and the net's kinds "layouts" and "python" compare the answers between two trees."""
 import json
 import math
+from typing import NamedTuple
 
 import numpy as np
 import pytest
@@ -20,26 +21,76 @@ from llama2_convert import (FAMILIES, Family, Safetensors, architecture, check_c
                             gguf_model, normalize)
 from llama2_numpy import FORM, TABLE, Dims, tensor_rows
 
+# T640.3: what llama.cpp stores of a family otherwise than Hugging Face has it, marked in the tensor's entry of the
+# header, written a second time on purpose: a tensor's name after its layer (or its whole name outside the layers) and
+# the marks of its entry. A tensor of a family's table that is not in its family's marks has none
+TURNED = {f"{name}.{part}": {"turned": heads} for name, heads in (("attn_q", 8), ("attn_k", 2)) for part in ("weight", "bias")}
+QWEN35_MARKS = {**{name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "ffn_norm.weight",
+                                                     "post_attention_norm.weight", "attn_q_norm.weight",
+                                                     "attn_k_norm.weight")},
+                "ssm_a": {"done": "decay", "tiled": (0, 2, 2, 1, 0)},  # (a whole name, as ssm_dt.bias)
+                "ssm_conv1d.weight": {"shape": [64, 1, 8], "tiled": (16, 2, 2, 4, 0)},
+                "attn_qkv.weight": {"tiled": (16, 2, 2, 4, 0)}, "attn_gate.weight": {"tiled": (0, 2, 2, 4, 0)},
+                "ssm_alpha.weight": {"tiled": (0, 2, 2, 1, 0)}, "ssm_beta.weight": {"tiled": (0, 2, 2, 1, 0)},
+                "ssm_dt.bias": {"tiled": (0, 2, 2, 1, 0)}, "ssm_out.weight": {"tiled": (0, 2, 2, 4, 1)}}
+LFM2_MARKS = {"shortconv.conv.weight": {"shape": [64, 1, 8]}}
+GEMMA3_MARKS = {name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "post_attention_norm.weight",
+                                                   "ffn_norm.weight", "post_ffw_norm.weight", "attn_q_norm.weight",
+                                                   "attn_k_norm.weight")}
+GPT2_MARKS = {f"{name}.weight": {"shape": [8, 64], "transposed": True} for name in ("attn_qkv", "attn_output", "ffn_up", "ffn_down")}
+NEOX_MARKS = {f"attn_qkv.{part}": {"split": 8} for part in ("weight", "bias")}
+
+
+class Facts(NamedTuple):
+    title: str
+    arch: str
+    gguf: str | None  # the GGUF architecture
+    classifier: str
+    true: set  # the facts that are true of it (FLAGS)
+    # T640.5, of its GGUF (none where it has no GGUF): what stands before the Hugging Face names its table of
+    # llama.cpp's names gives, the rows of its layout that table has no name for, and the marks above
+    prefix: str | None = None
+    unnamed: set | None = None
+    marked: dict | None = None
+
+
+LLAMAS = {"free_heads", "scaled", "rotatable", "rms_norm"}
 # The table as it stands, written a second time on purpose (as the order of the rows is in test_layout.py): a
 # family's fact changed by mistake changes which models convert and how, and few of the facts have a test of their
-# own. model_type: (title, arch, GGUF architecture, classifier, the facts that are true of it)
+# own. By model_type, in the order of the table (the order the refusals name the titles in)
 FACTS = {
-    "llama": ("Llama", "llama", "llama", "lm_head.weight", {"free_heads", "scaled", "rotatable", "rms_norm"}),
-    "mistral": ("Mistral", "llama", None, "lm_head.weight", {"renamed", "free_heads", "scaled", "rotatable", "rms_norm"}),
-    "granite": ("Granite", "llama", "granite", "lm_head.weight", {"free_heads", "scaled", "rotatable", "rms_norm"}),
-    "smollm3": ("SmolLM3", "llama", "smollm3", "lm_head.weight", {"free_heads", "scaled", "rotatable", "rms_norm"}),
-    "qwen2": ("Qwen2", "llama", "qwen2", "lm_head.weight", {"free_heads", "scaled", "rotatable", "rms_norm"}),
-    "qwen3": ("Qwen3", "llama", "qwen3", "lm_head.weight", {"free_heads", "scaled", "rotatable", "rms_norm"}),
-    "qwen3_5_text": ("Qwen3.5", "qwen35", "qwen35", "lm_head.weight", {"free_heads", "rotatable", "rms_norm", "partly"}),
-    "qwen3_5": ("Qwen3.5", "qwen35", None, "lm_head.weight", {"renamed", "free_heads", "rotatable", "rms_norm", "partly"}),
-    "lfm2": ("LFM2", "lfm2", "lfm2", "lm_head.weight", {"rms_norm"}),
-    "gemma3_text": ("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}),
-    "gemma4_text": ("Gemma 4", "gemma4", "gemma4", "lm_head.weight", {"free_heads", "rms_norm"}),
-    "gemma4": ("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
-    "spark2_5": ("Spark-X2.5", "spark", "spark2_5", "lm_head.weight", {"free_heads", "rms_norm", "partly"}),
-    "gpt2": ("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}),
-    "gpt_neox": ("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}),
+    "llama": Facts("Llama", "llama", "llama", "lm_head.weight", LLAMAS, "", {"qk_norm"}, TURNED),
+    "mistral": Facts("Mistral", "llama", None, "lm_head.weight", {"renamed", *LLAMAS}),
+    "granite": Facts("Granite", "llama", "granite", "lm_head.weight", LLAMAS, "", {"qk_norm"}, TURNED),
+    "smollm3": Facts("SmolLM3", "llama", "smollm3", "lm_head.weight", LLAMAS, "", {"qk_norm"}, TURNED),
+    "qwen2": Facts("Qwen2", "llama", "qwen2", "lm_head.weight", LLAMAS, "", {"qk_norm"}, {}),
+    "qwen3": Facts("Qwen3", "llama", "qwen3", "lm_head.weight", LLAMAS, "", {"bias"}, {}),
+    "qwen3_5_text": Facts("Qwen3.5", "qwen35", "qwen35", "lm_head.weight", {"free_heads", "rotatable", "rms_norm", "partly"},
+                          "model.", set(), QWEN35_MARKS),
+    "qwen3_5": Facts("Qwen3.5", "qwen35", None, "lm_head.weight", {"renamed", "free_heads", "rotatable", "rms_norm", "partly"}),
+    "lfm2": Facts("LFM2", "lfm2", "lfm2", "lm_head.weight", {"rms_norm"}, "", set(), LFM2_MARKS),
+    "gemma3_text": Facts("Gemma 3", "gemma3", "gemma3", "lm_head.weight", {"free_heads", "rms_norm"}, "", set(), GEMMA3_MARKS),
+    "gemma4_text": Facts("Gemma 4", "gemma4", "gemma4", "lm_head.weight", {"free_heads", "rms_norm"}, "model.", set(), {}),
+    "gemma4": Facts("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
+    "spark2_5": Facts("Spark-X2.5", "spark", "spark2_5", "lm_head.weight", {"free_heads", "rms_norm", "partly"}, "", set(), {}),
+    "gpt2": Facts("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}, "", set(), GPT2_MARKS),
+    "gpt_neox": Facts("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}, "", set(), NEOX_MARKS),
 }
+
+
+def listed(titles):
+    """Titles as the refusals list them, "A, B and C", each once and in the order of FACTS (T640.5: the sentences are
+    made of the table's second copy here, not copied out with the titles in them)."""
+    titles = list(dict.fromkeys(titles))
+    return f"{', '.join(titles[:-1])} and {titles[-1]}"
+
+
+TITLES = [facts.title for facts in FACTS.values()]
+# the refusals: of a config.json no family takes, and of a GGUF no family reads
+SUPPORTED = listed(TITLES)
+GGUF_SUPPORTED = listed(facts.title for facts in FACTS.values() if facts.gguf)
+# the families that have one, by their GGUF architecture
+BY_GGUF = {facts.gguf: facts for facts in FACTS.values() if facts.gguf}
 FLAGS = ("renamed", "fixed_context", "free_heads", "scaled", "rotatable", "rms_norm", "partly")
 LINEAR = {"every": 4, "key_heads": 2, "value_heads": 4, "key_dim": 64, "value_dim": 128, "conv": 4}
 # a header and a form of every layout, with every row a layout can have (a classifier of its own, a Qwen2's biases
@@ -69,7 +120,7 @@ def test_the_table_is_the_model_types_the_converter_takes():
 
 @by_type
 def test_a_model_type_resolves_to_its_family_and_the_family_says_what_it_is(model_type):
-    title, arch, gguf, classifier, true = FACTS[model_type]
+    title, arch, gguf, classifier, true, *_ = FACTS[model_type]
     family = family_of({"model_type": model_type})
     assert family is FAMILIES[model_type]
     assert (family.title, family.arch, family.gguf, family.classifier) == (title, arch, gguf, classifier)
@@ -83,9 +134,7 @@ def test_an_unknown_model_type_is_refused_in_the_words_it_was():
         config = {**BASE, **({"model_type": model_type} if model_type else {})}
         with pytest.raises(ValueError) as refusal:
             check_config(normalize(config))
-        assert str(refusal.value) == (
-            f"This model cannot be converted: it is {said}, and only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, "
-            f"Qwen3.5, LFM2, Gemma 3, Gemma 4, Spark-X2.5, GPT-2 and GPT-NeoX models are supported.")
+        assert str(refusal.value) == f"This model cannot be converted: it is {said}, and only {SUPPORTED} models are supported."
         # (its layout and its plan are a Llama's until then: nothing else is asked of an unknown name)
         assert family_of(config) is LLAMA and architecture(config) == "llama"
 
@@ -193,15 +242,16 @@ def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(m
     by Hugging Face's names without what stands in front of them in a file ("transformer." of a GPT-2; a Qwen3.5's GGUF
     and a Gemma 4's are the language model saved alone, "model.")."""
     family = FAMILIES[model_type]
+    *_, prefix, unnamed, marked = FACTS[model_type]
     if family.gguf is None:
         # (a Gemma 4's whole model, T529: its GGUF is its language model's, gemma4_text)
-        assert model_type in ("mistral", "qwen3_5", "gemma4") and family.renamed
+        assert family.renamed and prefix is unnamed is marked is None
         return
     assert families.GGUF[family.gguf] == (model_type, family)
     header, form, rotary = LAYOUTS[family.arch]
-    form = {**form, "bias": False} if model_type == "qwen3" else {**form, "qk_norm": False} if model_type in ("llama", "qwen2", "granite", "smollm3") else form
+    form = {**form, **{row: False for row in unnamed}}
     rows = tensor_rows(header, form)
-    sources = family.sources(Dims(header, form), "model." if family.arch in ("qwen35", "gemma4") else "", rotary)
+    sources = family.sources(Dims(header, form), prefix, rotary)
     used = {sources[row.name][0] for row in rows if row.role != TABLE}
     whole, begun = gguf_targets(family)
     reached = lambda name: name in whole or any(name == begin or name.startswith(begin + ".") for begin in begun)
@@ -209,30 +259,6 @@ def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(m
     every = {name for name, _ in sources.values()}
     assert whole <= every
     assert all(any(name == begin or name.startswith(begin + ".") for name in every) for begin in begun)
-
-
-# T640.3: what llama.cpp stores of a family otherwise than Hugging Face has it, marked in the tensor's entry of the
-# header, written a second time on purpose: by the GGUF architecture, a tensor's name after its layer (or its whole
-# name outside the layers) and the marks of its entry. A tensor of a family's table that is not here has none
-MARKED = {
-    **{arch: {f"{name}.{part}": {"turned": heads} for name, heads in (("attn_q", 8), ("attn_k", 2))
-              for part in ("weight", "bias")} for arch in ("llama", "granite", "smollm3")},
-    "qwen35": {**{name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "ffn_norm.weight",
-                                                       "post_attention_norm.weight", "attn_q_norm.weight",
-                                                       "attn_k_norm.weight")},
-               "ssm_a": {"done": "decay", "tiled": (0, 2, 2, 1, 0)},  # (a whole name, as ssm_dt.bias)
-               "ssm_conv1d.weight": {"shape": [64, 1, 8], "tiled": (16, 2, 2, 4, 0)},
-               "attn_qkv.weight": {"tiled": (16, 2, 2, 4, 0)}, "attn_gate.weight": {"tiled": (0, 2, 2, 4, 0)},
-               "ssm_alpha.weight": {"tiled": (0, 2, 2, 1, 0)}, "ssm_beta.weight": {"tiled": (0, 2, 2, 1, 0)},
-               "ssm_dt.bias": {"tiled": (0, 2, 2, 1, 0)}, "ssm_out.weight": {"tiled": (0, 2, 2, 4, 1)}},
-    "lfm2": {"shortconv.conv.weight": {"shape": [64, 1, 8]}},
-    "gemma3": {name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "post_attention_norm.weight",
-                                                  "ffn_norm.weight", "post_ffw_norm.weight", "attn_q_norm.weight",
-                                                  "attn_k_norm.weight")},
-    "gpt2": {f"{name}.weight": {"shape": [8, 64], "transposed": True}
-             for name in ("attn_qkv", "attn_output", "ffn_up", "ffn_down")},
-    "gptneox": {f"attn_qkv.{part}": {"split": 8} for part in ("weight", "bias")},
-}
 
 
 def gguf_of_every_name(family):
@@ -247,7 +273,7 @@ def gguf_of_every_name(family):
 @pytest.mark.parametrize("arch", list(families.GGUF))
 def test_a_gguf_of_a_family_is_marked_where_llama_cpp_stores_it_otherwise(arch):
     """The marks of the header (the GGUF's shape put back, and what the plan undoes or leaves out: turned, split,
-    transposed, tiled, done) by the second copy above: a mark a family's table spells wrongly, or a norm it leaves
+    transposed, tiled, done) by the second copy of FACTS: a mark a family's table spells wrongly, or a norm it leaves
     unmarked, changes a GGUF's numbers and is caught here, not only by a model's test of its own."""
     _, family = families.GGUF[arch]
     key = lambda name: f"{arch}.{name}"
@@ -263,7 +289,7 @@ def test_a_gguf_of_a_family_is_marked_where_llama_cpp_stores_it_otherwise(arch):
     marks = {after(name): {mark: value for mark, value in header[target].items() if mark not in ("dtype", "data_offsets")
                            and not (mark == "shape" and value == tensors[name]["shape"])}
              for name in tensors for target in [family_target(family, name)]}
-    assert {name: marked for name, marked in marks.items() if marked} == MARKED.get(arch, {})
+    assert {name: marked for name, marked in marks.items() if marked} == BY_GGUF[arch].marked
 
 
 @pytest.mark.parametrize("arch", list(families.GGUF))
@@ -294,9 +320,8 @@ def family_target(family, name):
 def test_the_refusal_of_a_gguf_names_the_families_that_have_one():
     with pytest.raises(ValueError) as refusal:
         gguf_model({"general.architecture": "mamba"}, {}, 0)
-    assert str(refusal.value) == ("This GGUF holds a mamba: only Llama, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, "
-                                  "Gemma 3, Gemma 4, Spark-X2.5, GPT-2 and GPT-NeoX ones are supported.")
-    assert list(families.GGUF) == ["llama", "granite", "smollm3", "qwen2", "qwen3", "qwen35", "lfm2", "gemma3", "gemma4", "spark2_5", "gpt2", "gptneox"]
+    assert str(refusal.value) == f"This GGUF holds a mamba: only {GGUF_SUPPORTED} ones are supported."
+    assert list(families.GGUF) == list(BY_GGUF)
 
 
 def test_a_llama_with_a_little_more_is_the_llamas_record_but_for_that():
@@ -358,8 +383,9 @@ def test_a_family_put_into_the_table_converts(made_up):
     assert streamed(file, published, "float32", 4096)[0] == expected
     assert expected != converted(Safetensors(reader(file)), {**published, "model_type": "llama"}, "float32")
     # and the refusal of another model names it
-    with pytest.raises(ValueError, match="only Llama, Mistral, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, Gemma 3, Gemma 4, Spark-X2.5, GPT-2, GPT-NeoX and Twice models"):
+    with pytest.raises(ValueError) as refusal:
         check_config({**BASE, "model_type": "bert"})
+    assert str(refusal.value).endswith(f"only {listed([*TITLES, 'Twice'])} models are supported.")
 
 
 def test_a_family_put_into_the_table_reads_its_gguf(made_up):
