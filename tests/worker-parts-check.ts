@@ -13,7 +13,8 @@
 //
 //   load.js      a whole load of a model of the site to the ready it reports, on stand-ins of Pyodide, llama2_numpy and
 //                the memory and engine forward.js makes: the model built is adopted, the one before it let go of first,
-//                a model whose GPU failed on it alone is loaded again; and timing.js's page path tells the count it found
+//                a model whose GPU failed on it alone is loaded again; two files of the visitor's and two URLs, each to its
+//                ready (T641.4); and timing.js's page path tells the count it found
 //
 // What these parts are still bound to: loaded.js to runtime.js's pyodide (the collector is Python's). pool.js's and alone.js's
 // (the memory kept from model to model, the model on the GPU alone, the models back on the CPU) is held where its
@@ -384,6 +385,47 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     messages.splice(0, messages.length, ...messages.filter((message) => message.type !== "error"));
   }
 
+  // T641.4: the other two kinds of a llama2.c checkpoint's source, each to its ready: two files of the visitor's disk
+  // (read where they are: no request), and two URLs (?checkpoint=&tokenizer=: the checkpoint's size is what its server
+  // says to the first range request, and its bytes come in range requests). Their options are the files' own
+  // (localOptions(): the dtype the header and the size give), the status line says what is done with them
+  {
+    const kept = said.length;
+    const two = { id: "local", name: "Two files", bytes: BYTES, options: {}, file: new File([file], "model.bin"), tokenizerFile: new File([new Uint8Array(8)], "tok.bin") };
+    await load({ load: 64, model: two });
+    assert.deepEqual([of("error"), requests.length, of("status").map((s) => s.text), of("ready").map((r) => [r.load, r.overlapped]), built.at(-1).options.dtype, run("llama") === built.at(-1)],
+      [[], 0, ["Reading Two files..."], [[64, false]], "float32", true],
+      "two files of the visitor's: read without a request, said as read, ready, built with the dtype of their own");
+    assert.deepEqual(of("progress").at(-1), { type: "progress", load: 64, received: BYTES, total: BYTES }, "the reading of two files tells its progress to the end");
+
+    const CHECKPOINT = "https://elsewhere.test/m.bin", TOKENIZER = "https://elsewhere.test/tok.bin";
+    const ranged = (url, init) => {
+      if (url === TOKENIZER) return new Response(new Uint8Array(8), { status: 200 });
+      const [, begin, end] = /bytes=(\d+)-(\d+)/.exec(init.headers.Range).map(Number);
+      const last = Math.min(end, BYTES - 1);
+      return new Response(file.slice(begin, last + 1), { status: 206, headers: { "Content-Range": `bytes ${begin}-${last}/${BYTES}` } });
+    };
+    const urls = { id: "local", name: "Two URLs", options: {}, url: { checkpoint: CHECKPOINT, tokenizer: TOKENIZER } };
+    fresh(ranged);
+    await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 65, model: urls } });
+    await sleep(50);
+    assert.deepEqual([of("error"), of("status").map((s) => s.text), of("ready").map((r) => [r.load, r.overlapped]), built.at(-1).options.dtype, run("llama") === built.at(-1)],
+      [[], ["Downloading Two URLs..."], [[65, false]], "float32", true],
+      "two URLs: said as a download, ready, built with the dtype of their own");
+    assert.deepEqual([requests[0].url, requests[0].range, requests.some((r) => r.url === TOKENIZER), requests.every((r) => r.url === TOKENIZER || r.range)],
+      [CHECKPOINT, "bytes=0-27", true, true],
+      "two URLs: the header first, by a range request, then the tokenizer and the checkpoint's bytes in range requests");
+    assert.deepEqual(of("progress").at(-1), { type: "progress", load: 65, received: BYTES, total: BYTES }, "the download of two URLs tells its progress to the end");
+    // a server whose answer to the range request says a size no checkpoint has: the load fails before anything else is asked
+    fresh(() => new Response(new Uint8Array(20), { status: 206, headers: { "Content-Range": "bytes 0-19/20" } }));
+    await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 66, model: { ...urls, url: { ...urls.url } } } });
+    await sleep(50);
+    assert.deepEqual([of("error").at(-1)?.message, of("ready"), requests.some((r) => r.url === TOKENIZER)],
+      [`${CHECKPOINT} does not answer range requests, so its size is unknown.`, [], false], "a checkpoint at a URL of no size fails before its tokenizer is asked for");
+    messages.splice(0, messages.length, ...messages.filter((message) => message.type !== "error"));
+    assert.deepEqual(said.slice(kept).filter((line) => !/answered a range request with the whole file/.test(line)), [], "the two kinds said nothing on the console");
+  }
+
   // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks alone.js
   // with the engine that is the model's (not undefined, not the one before): the GPU that failed loads it again
   {
@@ -427,7 +469,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   }
   run("weightsPool = undefined; adopted({}); initialized = undefined;");
 }
-console.log("ok: load.js on stand-ins: a load to its ready, the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
+console.log("ok: load.js on stand-ins: a load to its ready (of the site, two files, two URLs), the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
 
 // ---- T380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
 // cannot be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)
