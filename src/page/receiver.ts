@@ -100,7 +100,7 @@ worker.onmessage = ({ data }) => {
     showSettings();
     // T.556: a model that answers in a format has its answers drawn as Markdown: its libraries are taken now (once a visit),
     // and an answer that was drawn as plain text meanwhile is drawn again once they come
-    if ((model as { template?: string }).template ?? fromTemplate) void markdownWanted().then((came) => came && answer && shape.markdown && drawNow());
+    if (model.template ?? fromTemplate) void markdownWanted().then((came) => came && answer && shape.markdown && drawNow());
     // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
     navigator.storage?.persist?.();
     // T.135, T.148: whether the prompts go through the GPU, or why not (and the same line in the console); it changes
