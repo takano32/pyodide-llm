@@ -37,7 +37,11 @@ const SARASHINA_NC = "Sarashina Model NonCommercial License Agreement";
 // T648.4: Mozilla's Firefox Translations models: mozilla/translations' README ("The models are released under the
 // MPL-2.0"), and the files' own LICENSE.txt this site serves beside them
 const MPL = "Mozilla Public License 2.0";
+// T649.3: PFN's license of PLaMo, as the cards of PLaMo 3 Translate name it ("released under the PLaMo Community
+// License"; their metadata: other, plamo-community-license), its text in the repositories' LICENSE/en and LICENSE/ja
+const PLAMO = "PLaMo Community License";
 export const LICENSES: Record<string, string> = {
+  "pfnet/plamo-3-translate-0.8b": PLAMO, "pfnet/plamo-3-translate-2b": PLAMO, "pfnet/plamo-3-translate-8b": PLAMO,
   "mozilla/translations": MPL,
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -280,4 +284,16 @@ export const LICENSES: Record<string, string> = {
 // original in About (the owner's choice, 2026-10-14: not in the note, which a phone cuts short). Gemma's Terms of Use
 // (section 3.1) ask for this one, word for word.
 const GEMMA_NOTICE = "Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms";
-export const NOTICES: Partial<Record<string, string>> = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE };
+// T649.3: and the PLaMo Community License's Article 4 (1)(ii), "Built with PLaMo" (the owner's T649 (1): here and in
+// the note of each of its entries)
+const PLAMO_NOTICE = "Built with PLaMo";
+export const NOTICES: Partial<Record<string, string>> = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE,
+  "pfnet/plamo-3-translate-0.8b": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b": PLAMO_NOTICE };
+// T649.3: where About's link of a license goes instead of the repository, for a license that asks for a copy of itself
+// to be given with the model (the PLaMo Community License's Article 4 (1)(i)): its English text in the repository, at
+// the revision the list pins (tests/models-check.ts holds them to the entries)
+export const LICENSE_TEXTS: Partial<Record<string, string>> = {
+  "pfnet/plamo-3-translate-0.8b": "https://huggingface.co/pfnet/plamo-3-translate-0.8b/blob/cc8e88169807d5a272e8ff06db12eb0129b67f81/LICENSE/en",
+  "pfnet/plamo-3-translate-2b": "https://huggingface.co/pfnet/plamo-3-translate-2b/blob/355637cc04db67195ba87a97da85eaf1d52a22e8/LICENSE/en",
+  "pfnet/plamo-3-translate-8b": "https://huggingface.co/pfnet/plamo-3-translate-8b/blob/681bd55cf01f5412aab8881e6a4a276c948fabc1/LICENSE/en",
+};

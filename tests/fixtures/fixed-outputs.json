@@ -66,5 +66,9 @@
   "hf-gemma-3-270m": {
     "prompt": "これからの流行りを3つ挙げてください。",
     "text": "これからの流行りを3つ挙げます。\n\n1.  **AIを活用"
+  },
+  "hf-plamo-3-translate-0.8b-en-ja": {
+    "prompt": "The weather is nice today. Let's go for a walk.",
+    "text": "今日はいい天気だ。散歩に行こう。"
   }
 }

@@ -300,3 +300,16 @@ export const harmonyThinking = { ...harmony, stop_tokens: [1, 2, 13] };
 export const harmonyFromStart = { ...harmony, bos: 10 };
 export const harmonyThinkingFromStart = { ...harmonyThinking, bos: 10 };
 export const llmJp = { stop_tokens: [1, 2, 7] };
+// T649.3: PLaMo 3 Translate's request (its chat_template.jinja: a translation of one text, no system turn), one
+// direction an entry. The BOS (<|plamo:bos|>, 1) is the entry's and the format begins after it, as the real
+// apply_chat_template(…, source_lang=…, target_lang=…) writes it (tests/format_check.py's TEMPLATE_SAYS holds the two
+// to it): the source's language said, so that the direction is the entry's whatever was typed (the 0.8B's twelve greedy
+// translations of T649.3 were the same with it and without); no form (polite or
+// plain: the model's own choice, as its card's examples leave it). What was typed is kept whole: the template
+// "preserves all text whitespace". The stops are generation_config.json's eos_token_id, <|plamo:bos|> and
+// <|plamo:tag|> (1, 16): the converter names the BOS alone (the tokenizer's eos_token is <|plamo:bos|>), and an
+// answer goes on after <|plamo:tag|> (T649.2)
+export const plamoTranslate = (source: string, target: string) =>
+  `<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>${source}<|plamo:msg|>{prompt}` +
+  `<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>${target}<|plamo:msg|>`;
+export const plamo = { bos: 1, stop_tokens: [1, 16] };

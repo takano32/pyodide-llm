@@ -1,6 +1,6 @@
 ---
 // One chat-like screen. Pyodide runs in src/runtime/worker.js; this page only draws what the worker reports.
-import { sources } from "../models.ts";
+import { LICENSE_TEXTS, sources } from "../models.ts";
 // the licenses of the models, one line per source, written at build time from src/models.ts (T87)
 const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt", "mozilla/translations": "models/translations/LICENSE.txt" };
 // T648.4: a source that is not a repository of Hugging Face, by where it is
@@ -80,7 +80,7 @@ const ELSEWHERE = { "mozilla/translations": "https://github.com/mozilla/translat
             {sources().map(({ repo, license, notice, names }) => (
               <li>
                 <a href={ELSEWHERE[repo] ?? `https://huggingface.co/${repo}`}>{repo}</a>{" "}
-                (<a href={LOCAL_LICENSE[repo] ?? ELSEWHERE[repo] ?? `https://huggingface.co/${repo}`}>{license}</a>): {names.join(", ")}
+                (<a href={LOCAL_LICENSE[repo] ?? LICENSE_TEXTS[repo] ?? ELSEWHERE[repo] ?? `https://huggingface.co/${repo}`}>{license}</a>): {names.join(", ")}
                 {notice && <>. {notice}</>}
               </li>
             ))}

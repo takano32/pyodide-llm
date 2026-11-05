@@ -64,6 +64,10 @@ NEW_TOKENS = 16
 # their own, an embedding scaled by sqrt(dim) folded into the table and the last norm), the 270M, from the list's GGUF
 # (llama.cpp's names, its norms with their 1, the layers said by llama.cpp's defaults) with the vocabulary of unsloth's
 # copy (a BPE written out as tokenizer.json). Its float32 checkpoint is 1.1 GB. 16 tokens stay inside one window
+# T649.3: a PLaMo 3 (plamo3: Gemma 3's layers with a SiLU gate, a full-attention layer in eight with yarn's tables, the
+# norms' constants folded in), PLaMo 3 Translate 0.8B, from the safetensors of the original with its own tokenizer.jsonl
+# (the plamo kind), translating its English prompt; it stops at <|plamo:tag|> before the 16 tokens. Its float32
+# checkpoint is 3.6 GB
 # {the id here: (the list's entry, the file of the original's weights)}
 SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors"),
                "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors"),
@@ -72,7 +76,8 @@ SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
           "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b",
           "hf-qwen3.5-0.8b-safetensors", "hf-qwen3.5-2b", "hf-qwen3.5-2b-safetensors", "hf-granite-4.2-3b",
-          "hf-minicpm5-1b", "hf-lfm2.5-350m", "hf-lfm2.5-350m-safetensors", "hf-gemma-3-270m"]
+          "hf-minicpm5-1b", "hf-lfm2.5-350m", "hf-lfm2.5-350m-safetensors", "hf-gemma-3-270m",
+          "hf-plamo-3-translate-0.8b-en-ja"]
 
 
 def entries():

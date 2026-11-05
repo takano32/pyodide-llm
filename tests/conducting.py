@@ -229,7 +229,8 @@ def listed(path, **more):
     """(the model, the Directory that answers for it) of what tests/hf_fetch.py prints for a model: a .gguf file that
     says everything itself (T74); a folder with the original's config.json and tokenizer and a GGUF linked beside
     them (T136's second stage: the first .gguf by its name); or a folder with model.safetensors, or with the shards
-    its index names. No tokenizer is named: the conduct's candidates, in its order. more: what Directory() takes."""
+    its index names. No tokenizer is named but a tokenizer.jsonl: the conduct's candidates, in its order. more: what
+    Directory() takes."""
     path = Path(path)
     if path.suffix == ".gguf":
         return {"weights": path.name}, Directory(path.parent, **more)
@@ -238,7 +239,10 @@ def listed(path, **more):
         # (any vocabulary that is not empty: the conduct then asks "vocabulary" for all but the weights, and the one
         # folder is both places)
         return {"weights": ggufs[0], "vocabulary": {"folder": path.name}}, Directory(path, **more)
-    return {"weights": "model.safetensors"}, Directory(path, **more)
+    # (T649.3: PLaMo's tokenizer.jsonl, which the conduct's candidates leave out and the list's entries name, is named
+    # where the folder has it)
+    named = {"tokenizer": "tokenizer.jsonl"} if (path / "tokenizer.jsonl").exists() else {}
+    return {"weights": "model.safetensors", **named}, Directory(path, **more)
 
 
 class Mapped:

@@ -79,6 +79,8 @@ const FIRST: Row[] = [
   { bos: 100256, text: "<|im_start|>", repos: ["ibm-granite/granite-4.2-3b", "ibm-granite/granite-4.2-8b"] },
   { bos: 100264, text: "<|im_start|>", repos: ["shisa-ai/shisa-v2.1-unphi4-14b"] },
   { bos: 10, text: "<|start|>", repos: ["llm-jp/llm-jp-4-8b-instruct", "llm-jp/llm-jp-4-8b-thinking"] },
+  // T649.3: PLaMo 3 Translate's template begins with its bos_token, <|plamo:bos|> (1), and the request after it
+  { bos: 1, text: "<|plamo:bos|>", repos: ["pfnet/plamo-3-translate-0.8b", "pfnet/plamo-3-translate-2b", "pfnet/plamo-3-translate-8b"] },
 ];
 
 const vocabularyOf = (entry: Entry) => entry.hf?.vocabulary?.repo ?? entry.hf?.repo ?? entry.source;

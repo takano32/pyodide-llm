@@ -2,7 +2,7 @@
 //
 //   node tests/models-check.ts
 import assert from "node:assert/strict";
-import { DEFAULT_MODEL, GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
+import { DEFAULT_MODEL, GROUPS, LICENSES, LICENSE_TEXTS, MODELS, NOTICES, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.ts";
 import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
@@ -57,6 +57,19 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
 }
 const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
 for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES names ${repo}, which no model uses`);
+// T649.3: a license's text in About is at the revision its entries pin, and the PLaMo Community License's entries say
+// "Built with PLaMo" in their note and on their line of About (its Article 4 (1)(ii); the owner's T649 (1)), with
+// PLaMo in their names (4 (1)(iii))
+for (const [repo, link] of Object.entries(LICENSE_TEXTS)) {
+  const pinned = MODELS.filter((entry) => entry.hf?.repo === repo);
+  assert.ok(pinned.length && pinned.every((entry) => link!.includes(`/blob/${entry.hf!.revision}/`)), `LICENSE_TEXTS: ${repo}'s text is not at its entries' revision`);
+}
+for (const entry of MODELS.filter((entry) => LICENSES[sourceOf(entry)!] === "PLaMo Community License")) {
+  assert.match(entry.note, /, Built with PLaMo( ·|$)/, entry.id);
+  assert.match(entry.name, /PLaMo/, entry.id);
+  assert.equal(NOTICES[sourceOf(entry)!], "Built with PLaMo", entry.id);
+  assert.ok(LICENSE_TEXTS[sourceOf(entry)!], entry.id);
+}
 const listed = sources();
 assert.equal(listed.length, used.size, "one line per source");
 assert.equal(listed.reduce((n, { names }) => n + names.length, 0),

@@ -177,7 +177,10 @@ UNMEASURED = {}
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"},
                  "hf-underdog-saluki-27b-thinking": {"reasoning_effort": "medium"},
                  # T597.1: the one form of an entry whose card says to answer at once (its name says no form)
-                 "hf-spark-x2.5-4b-japanese": {"enable_thinking": False}}
+                 "hf-spark-x2.5-4b-japanese": {"enable_thinking": False},
+                 # T649.3: PLaMo 3 Translate's request in the direction of each entry, the source's language said
+                 **{f"hf-plamo-3-translate-{size}-{source}-{target}": {"source_lang": source, "target_lang": target}
+                    for size in ("0.8b", "2b", "8b") for source, target in (("en", "ja"), ("ja", "en"))}}
 # T517: the format a model card writes where the repository has no chat template (LINE's japanese-large-lm
 # instruction-sft: the card's pipeline is given f"ユーザー: {input_text}\nシステム: " and adds nothing to it, through the
 # slow T5Tokenizer, which is the real sentencepiece of spiece.model). A second copy of the list's LINE_SFT, on purpose
@@ -257,7 +260,38 @@ def converted(entry, directory, dtype="int8"):
     for name in dict.fromkeys(["config.json", "tokenizer_config.json", "chat_template.jinja", "tokenizer.json",
                                "special_tokens_map.json", *candidates_of(hf)]):
         reference.path("weights", name)
+    # T649.3: a tokenizer of the repository's own code (auto_map: PLaMo's tokenization_plamo.py) and its file
+    module = own_code(reference.folder("weights"))
+    if module:
+        reference.path("weights", f"{module}.py")
     return reference.folder("weights"), made
+
+
+def own_code(folder):
+    """The module of a tokenizer that the repository writes itself (tokenizer_config.json's auto_map), where it has no
+    tokenizer.json for transformers to read without it, or None."""
+    config = folder / "tokenizer_config.json"
+    if not config.exists() or (folder / "tokenizer.json").exists():
+        return None
+    named = (json.loads(config.read_text()).get("auto_map") or {}).get("AutoTokenizer")
+    return named[0].split(".")[0] if named and named[0] else None
+
+
+def reference_of(folder):
+    """transformers' tokenizer of the folder. One of the repository's own code (T649.3: PLaMo's Plamo3Tokenizer) is
+    its class loaded from the file and read by its own from_pretrained, as AutoTokenizer(trust_remote_code=True)
+    would, without the copy of the code transformers keeps under $HOME. PLaMo's imports numba, which the venv has not:
+    PYTHONPATH names a folder of .tmp that has it (tests/plamo_tokenizer_check.py says how)."""
+    from transformers import AutoTokenizer
+    module = own_code(folder)
+    if not module:
+        return AutoTokenizer.from_pretrained(folder)
+    import importlib.util
+    named = json.loads((folder / "tokenizer_config.json").read_text())["auto_map"]["AutoTokenizer"][0]
+    spec = importlib.util.spec_from_file_location(module, folder / f"{module}.py")
+    code = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(code)
+    return getattr(code, named.split(".")[1]).from_pretrained(folder)
 
 
 def sentencepiece_ids(model_file, text):
@@ -296,7 +330,6 @@ def filled(template, prompt):
 
 def main():
     os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-    from transformers import AutoTokenizer
 
     arguments = sys.argv[1:]
     alone = "--hf" in arguments  # T143: the converter's options and format only, as ?hf= has them
@@ -322,7 +355,7 @@ def main():
             continue
         tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
                                            **{key: value for key, value in options.items() if key in accepted})
-        reference = AutoTokenizer.from_pretrained(folder)
+        reference = reference_of(folder)
         # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
         # (--hf, T253's review: what ?hf= gets is the template with nothing said of thinking, so the real one is asked with
         # nothing said either: a "(no thinking)" entry was held to enable_thinking=False in this mode, a form of the list's

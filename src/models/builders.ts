@@ -1,6 +1,6 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
-import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.ts";
-import { atOnce, sampled, thinking } from "./sampling.ts";
+import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, plamo, plamoTranslate } from "./formats.ts";
+import { atOnce, greedy, sampled, thinking } from "./sampling.ts";
 import type { Hf, OfHuggingFace, Sampled, Translation } from "../runtime/contracts/messages.ts";
 import type { Options } from "../runtime/contracts/python.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
@@ -228,3 +228,24 @@ const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, 
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
 export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json"): Remote["hf"] => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
+/** T649.3: PFN's PLaMo 3 Translate in one of its sizes, twice: English into Japanese and Japanese into English (the
+ * owner's T649 (1): its maker PFN in front and PLaMo in the name, as the PLaMo Community License asks of a model built
+ * with it, and "Built with PLaMo" in the note and on the line of its license in About). The original's bfloat16
+ * safetensors converted to int8 in the page (its GGUFs are 4 bits and below: T649.4) and its own tokenizer.jsonl
+ * (T649.1). The format is the request of its chat template, the BOS (1) in front (formats.ts's plamoTranslate); greedy,
+ * as every example of its card translates (do_sample=False, temperature 0). The two share their weights (shares). int8:
+ * the converted checkpoint's bytes in GB, as the note says them */
+export function plamo3Translate(size: string, revision: string, download: number, int8: string): Entry[] {
+  const repo = `pfnet/plamo-3-translate-${size.toLowerCase()}`, id = `hf-plamo-3-translate-${size.toLowerCase()}`;
+  const note = `日本語, English, translation only, fetches ${(download / 1e9).toFixed(1)} GB → int8 ${int8} GB, Built with PLaMo`;
+  const common: Omit<Common, "prompt" | "placeholder"> = { group: "hf", hf: hf(repo, revision, "tokenizer.jsonl"), download, conversion: {}, options: plamo,
+    shares: [`${id}-en-ja`, `${id}-ja-en`] };
+  return [
+    { ...common, id: `${id}-en-ja`, name: `PFN PLaMo 3 Translate ${size} English → Japanese`, note, generation: greedy,
+      template: plamoTranslate("en", "ja"), prompt: "The weather is nice today. Let's go for a walk.",
+      placeholder: "Type text to translate into Japanese (e.g. The weather is nice today.)" },
+    { ...common, id: `${id}-ja-en`, name: `PFN PLaMo 3 Translate ${size} Japanese → English`, note, generation: greedy,
+      template: plamoTranslate("ja", "en"), prompt: "今日はいい天気ですね。散歩に行きましょう。",
+      placeholder: "英語に訳す文を入力（例: 今日はいい天気ですね。）" },
+  ];
+}
