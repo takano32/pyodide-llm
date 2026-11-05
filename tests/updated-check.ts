@@ -421,6 +421,6 @@ assert.equal(readyStatus({ ...ready, outdated: true }), `${readyStatus({ ...read
 assert.ok(!readyStatus({ ...ready, outdated: false }).includes(SLOWER), "and says nothing of it where the page is not");
 assert.ok(/readyStatus\(\{[^}]*\boutdated\b[^}]*\}\)/.test(code("src/page/draw.ts")), "draw.ts hands readyStatus() the page's outdated");
 // and the page takes the worker's word as it comes: the owner's event, then the line drawn again
-assert.ok(/\} else if \(data\.type === "updated"\) \{\n(?:\s*\/\/[^\n]*\n)*\s*siteUpdated\(\);\n\s*showStatus\(\);\n/.test(fs.readFileSync(new URL("src/page/receiver.ts", root), "utf8")), "receiver.ts says siteUpdated() and draws the status line at the worker's { type: \"updated\" }");
+assert.ok(/\n  updated: \(\) => \{ siteUpdated\(\); showStatus\(\); \},\n/.test(fs.readFileSync(new URL("src/page/receiver.ts", root), "utf8")), "receiver.ts says siteUpdated() and draws the status line at the worker's { type: \"updated\" }");
 console.log(`updated-check: ${said} files asked for later say the update where they are gone, ${slower} are done without on a slower path and tell the page so where they are gone, ${quiet} cost nothing and say nothing; ${path_.length} files of the token's path know none of it`);
 console.log("updated-check: ok");

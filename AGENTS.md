@@ -188,7 +188,7 @@
 - **窓口の受け口**: worker・GPU の Worker・`/benchmark/` の GPU の Worker の窓口は、最上位で `onmessage` を置くより前に何も待たない（`tests/receivers-check.ts`、T.483）。`tsconfig.base.json` は `moduleDetection: force`（import の無いファイルもモジュール: 大域の名前に取り違えない）。
 - **`types.ts` が言うもの**: 宣言も import もせずに使う名前は `AMBIENT` のどれか（**新しいグローバルは `AMBIENT` に 1 つ足す**）、書かれた `any` は `ANY_MOST` まで。**`*-modules-check.ts` に残してあるもの**: import の輪と届かないファイル、import した名前を隠す局所、2 つの部品の同じ最上位の名前、持ち主の検査、型の余り、`satisfies` の書き忘れ。**規則を消すかどうかは、壊し方を本当に入れて決める**。
 - **型の書き方**: (1) 型は境目に書き、中は推論に任せる。部品が渡し合う物の型は読む側に書き、作る側が変数に当てるか戻り値の型を書く（**変数を通ったオブジェクトは余分な鍵を調べられない**）。(2) **型は閉じて書く**（索引の型は綴りの誤りを通す）。表の鍵を型にする（`keyof typeof ADDRESSES`）。(3) **worker の `postMessage()` には `postMessage({ … } satisfies Ready)`**。受け口は `MessageEvent<ToWorker>`。(4) **`!` は「引数で受けていない状態を当てにしている」の印**。(5) **文を変えずに型を当てる**（後から埋まる `let` は `let x!: T`）。関数を cast しない。`Object.assign`・`Object.fromEntries`・spread の中の配列は鍵を見ないので `satisfies` か戻り値の型を。caught value は `unknown`。(6) 文を読む試験（`tests/bench.ts`、`test_converter_version.py`）があるので、式の中に注釈を書かない所がある。
-- **型は片側しか守らない**（Python と試験の代役は読まれない: 試験の `.ts` は tsc のプログラムに入っていない）。だから線の両端を突き合わせる検査が型の鍵も読む（`plan-keys-check`・`worker-modules-check`・`worker-sink-check`・`contracts-check`: 「型にあって誰も書かない」「書いているのに型に無い」の両方で落ちる）。**教えないもの**: ページが新しい知らせを扱わないこと、値の型、同じ型の引数の取り違え、カーネルの引数の数と順。
+- **型は片側しか守らない**（Python と試験の代役は読まれない: 試験の `.ts` は tsc のプログラムに入っていない）。だから線の両端を突き合わせる検査が型の鍵も読む（`plan-keys-check`・`worker-modules-check`・`worker-sink-check`・`contracts-check`: 「型にあって誰も書かない」「書いているのに型に無い」の両方で落ちる）。**教えないもの**: 値の型、同じ型の引数の取り違え、カーネルの引数の数と順。
 
 ### 状態の持ち主
 
@@ -374,8 +374,8 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 ### worker の知らせ・計画の鍵・GPU の計画の鍵を足す
 
 1. 型の 1 か所: 知らせは `contracts/messages.ts`、計画は `contracts/plan.ts`、GPU の Worker とは `contracts/gpu/protocol.ts`、`/benchmark/` の節は `contracts/benchmark.ts`。
-2. 投げる所は `postMessage({ … } satisfies 型)`、ページは `receiver.ts` の受け口（**含む一覧**: 仕事の終わりの知らせかを決める）。`/benchmark/` の Worker に答えでない知らせを足すときは `ask()` の除く条件に。
-3. 忘れると: 型・書く側 → `worker-modules-check`・`plan-keys-check`、綴り → tsc、`satisfies` → `*-modules-check`。**ページが受け口を書かないことは誰も教えない**。読まない鍵をわざと足すときは `plan-keys-check` の `held()` の `unread` に訳を。
+2. 投げる所は `postMessage({ … } satisfies 型)`、ページは `receiver.ts` の表 `HEARD` に 1 行（T.643.2: 知らせの種類で閉じた表。読まない知らせも `() => {}` の行で「読まない」と言う。行が `"away"` を返すとページは去る: 後は何もしない）と、`heard.ts` の `ENDS`（**含む一覧**: 仕事の終わりの知らせかを決める）。`/benchmark/` の Worker に答えでない知らせを足すときは `ask()` の除く条件に。
+3. 忘れると: 型・書く側 → `worker-modules-check`・`plan-keys-check`、綴り → tsc、`satisfies` → `*-modules-check`。ページが行を書かない・知らない行を書く → tsc（`HEARD` の型）と `page-parts-check`（表の鍵を `FromWorker` と）。**`ENDS` に入れ忘れることは誰も教えない**。読まない鍵をわざと足すときは `plan-keys-check` の `held()` の `unread` に訳を。
 4. worker が Python の新しい欄を呼ぶなら `contracts/python.ts`（`contracts-check`）。
 
 ### 失敗の種類・GPU の訳・黙った catch・後から取るファイル

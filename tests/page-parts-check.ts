@@ -25,6 +25,7 @@
 import { fresh as made } from "./fresh.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { DEFAULT_MODEL, MODELS } from "../src/models.ts";
 
 let cases = 0;
@@ -416,12 +417,23 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   const kinds = [...contract("messages.ts").membersOf("FromWorker").keys()].sort();
   assert.deepEqual(kinds.filter((type) => endsWork({ type })), ["bench", "done", "error", "paths", "ready"],
     `of the reports (${kinds.join(", ")}), the ends of a piece of work`);
-  // (receiver.ts reads elements at its top, and Node cannot import it: its text asks the two, first and last)
-  const receiver = (await import("node:fs")).readFileSync(new URL("../src/page/receiver.ts", import.meta.url), "utf8");
+  // (receiver.ts reads elements at its top, and Node cannot import it: its text asks the two, first and last, and the
+  // row of the report's type between them)
+  const { literalKeys, treeOf, walk } = await import("./contracts.ts");
+  const receiverFile = fileURLToPath(new URL("../src/page/receiver.ts", import.meta.url));
+  const receiver = (await import("node:fs")).readFileSync(receiverFile, "utf8");
   const handler = receiver.slice(receiver.indexOf("worker.onmessage = ({ data }) => {"));
-  assert.ok(/^worker\.onmessage = \(\{ data \}\) => \{\n(\s*\/\/[^\n]*\n)*\s*if \(!ofThisLoad\(data, loads\)\) \{\n\s*return;/.test(handler), "receiver.ts passes over another load's report before anything else");
+  assert.ok(/^worker\.onmessage = \(\{ data \}\) => \{\n(\s*\/\/[^\n]*\n)*\s*if \(!ofThisLoad\(data, loads\)\) \{\n\s*return;\n\s*\}\n\s*if \(hear\(data\.type, data\) === "away"\) return;\n/.test(handler),
+    "receiver.ts passes over another load's report before anything else, then does what the row of its type says");
   assert.ok(/\n  if \(endsWork\(data\)\) \{\n/.test(handler), "receiver.ts gives the page back its buttons where a report ends a piece of work");
-  cases += 2;
+  // T.643.2: the rows of the table are the kinds of the contract, one each (tsc holds the same through the table's type;
+  // this holds it where the table's type were cast away)
+  let rows;
+  walk(treeOf(receiverFile, (file) => file).program, (node) => {
+    if (node.type === "VariableDeclarator" && node.id.name === "HEARD") rows = literalKeys(node.init);
+  });
+  assert.deepEqual([[...rows.keys].sort(), rows.unknown], [kinds, 0], "receiver.ts's HEARD has a row for every kind of report, and no other");
+  cases += 3;
 }
 {
   // T.468.2: lines.ts, the status line's words: a ready model's, and a load's as it fetches and converts

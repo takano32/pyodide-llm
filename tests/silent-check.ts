@@ -106,11 +106,11 @@ const SILENT = {
     ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T.371 is to say why there is one thread)"],
   ],
   "src/page/receiver.ts": [
-    ["worker.onmessage", "catch {}", `${STORAGE}the next visit weighs the GPU and the CPU again`],
-    ["worker.onmessage", "catch {}", `${STORAGE}the next visit times the shaders again`],
-    ["worker.onmessage", "catch {}", `${STORAGE}the next visit searches the threads again`],
-    ["worker.onmessage", "catch {}", `${STORAGE}the tokens are weighed as many`],
-    ["worker.onmessage", "catch {}", "no session storage here: no second try without the Service Worker, and the error is shown as it is"],
+    ["heardReady", "catch {}", `${STORAGE}the next visit weighs the GPU and the CPU again`],
+    ["heardGpu", "catch {}", `${STORAGE}the next visit times the shaders again`],
+    ["heardThreads", "catch {}", `${STORAGE}the next visit searches the threads again`],
+    ["heardDone", "catch {}", `${STORAGE}the tokens are weighed as many`],
+    ["heardError", "catch {}", "no session storage here: no second try without the Service Worker, and the error is shown as it is"],
   ],
   "src/page/remembered.ts": [
     ["threadsFor", "catch {}", `${STORAGE}search again`],
