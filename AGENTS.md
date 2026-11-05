@@ -320,7 +320,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 ### 層の種類（状態を持つ層）を足す
 
-**Python**: (a) `layout.py` に `Stateful(名前, parse, layers)` と行の関数、`FORM` に種類の名前の鍵。(b) `engine/model.py` に 1 トークン（`Llama` のメソッド）と状態を作る関数を書いて `STATEFUL_LAYERS` に 1 項（名前で持つ: メソッドを属性に置くと循環参照）。(c) 要るなら計画の鍵（`Llama` は FORM の鍵を `form_of()` で読む: T639.1）。付いてくるもの: 形の突き合わせ（`stateful_form()`）、置き場、`layers[l].kind`、位置 0 で状態を消すことと順でない位置の断り（`follow()`）。1 つの種類の層が 1 層だけのモデルは変換器が断る。
+**Python**: (a) `layout.py` に `Stateful(名前, parse, layers)` と行の関数、`FORM` に種類の名前の鍵。(b) `engine/model.py` に 1 トークン（`Llama` のメソッド）と状態を作る関数を書いて `STATEFUL_LAYERS` に 1 項（名前で持つ: メソッドを属性に置くと循環参照）。(c) 層の番号のほかに要る計画の鍵（`Llama` は FORM の鍵を `form_of()` で読む: T639.1）。付いてくるもの: 形の突き合わせ（`stateful_form()`）、置き場、`layers[l].kind`、計画の種類の名前の鍵（層の番号、無い種類は None: `forward_plan()` が `stateful_kinds()` から、T639.6。ページが読む鍵は `Plan` に足す: `plan-keys-check` が教える）、位置 0 で状態を消すことと順でない位置の断り（`follow()`）。1 つの種類の層が 1 層だけのモデルは変換器が断る。
 
 **JavaScript**（`createForward()` と `footprint()` には触らない）:
 1. `src/runtime/forward/<種類>.ts` に `export const <種類>: Kind`（手本は `convolution.ts`）: `frame(sizes)`、`make(core, count)`（`matrix("名前")`・`floats("名前")`、状態は `state()` の並びどおりに `room.alloc()`。`{ layer: (place) => (count, pos0) => { … }, clear() }` を返す）、`state(sizes, count)`、`layers(form, count)`、要れば `widths(form)`・`cached`。

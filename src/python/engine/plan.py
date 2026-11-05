@@ -36,7 +36,7 @@ from engine.proxy import plain
 from engine.dtypes import DTYPES, QUANTIZED
 from engine.layers import RMS_EPS, rotated_widths
 from engine.layout import (ATTENDING, DOUBLE, NARROW, NARROW_KEPT, SINGLE, TABLE, WIDE, WIDE_KEPT, check_shared_windows, linear_widths, local_layers,
-                           unturned_layers)
+                           stateful_kinds, unturned_layers)
 
 # the kind of a layer that attends over all the positions (and keeps keys and values); a layer that keeps a state in
 # their place is of the kind its architecture has (engine/layout.py's Stateful, by its name: "linear", "convolution")
@@ -181,12 +181,11 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             "rms_norm_eps": settings.rms_norm_eps,
             "shared_classifier": dims.shared, "int8": bool(int8),
             "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
-            # T229: a Qwen3.5's linear-attention layers (None: none)
-            "linear": dims.linear,
+            # T229, T260: the layers that keep a state, under their kind's name (a Qwen3.5's "linear", an LFM2's
+            # "convolution"): every kind of the table, None where the model has none of it (T639.6: from the table)
+            **{name: getattr(dims, name) for name in stateful_kinds()},
             # T255: the layers RoPE leaves alone
             "unturned": list(unturned_layers(dims.arch, dims.n_layers, settings.unturned)),
-            # T260: an LFM2's convolution layers (None: none)
-            "convolution": dims.convolution,
             # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
             "rotated": rotated["block"] if rotated else 0,
             # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
