@@ -328,12 +328,18 @@ const returned = (fn) => {
   const open = returned(functionNamed(writers, "gpuOnlyPlan"));
   const startKeys = literalKeys(start);
   // (T.568.4: and what it spreads of a name, `...numbers`: the keys of the literal that name starts from, the kinds' numbers
-  // as `const numbers = gpuKinds.reduce<KindNumbers>(…, { convolution: null, linear: null })` has them, every one)
+  // as `const numbers = gpuKinds.reduce<KindNumbers>(…, NO_KIND_NUMBERS)` has them, every one. T.641.3: a name it starts
+  // from is forward/kinds.ts's, made of the table: its keys as the module has them)
   for (const property of start.properties.filter((p) => p.type === "SpreadElement" && p.argument.type === "Identifier")) {
     let init;
     for (const { program } of writers) walk(program, (node) => { if (node.type === "VariableDeclarator" && node.id.name === property.argument.name) init = node.init; });
     assert.ok(init, `the GPU's plan spreads ${property.argument.name}, which tests/plan-keys-check.ts finds no declaration of`);
-    literalKeys(init.type === "CallExpression" ? init.arguments.findLast((argument) => argument.type === "ObjectExpression") : init, startKeys);
+    const from = init.type === "CallExpression" ? init.arguments[init.arguments.length - 1] : init;
+    if (from?.type === "Identifier") {
+      const kinds = await import(runtimeUrl("forward/kinds.js"));
+      assert.ok(kinds[from.name], `the GPU's plan spreads ${property.argument.name}, which starts from ${from.name}: no name of forward/kinds.ts`);
+      Object.keys(kinds[from.name]).forEach((key) => startKeys.add(key));
+    } else literalKeys(init.type === "CallExpression" ? init.arguments.findLast((argument) => argument.type === "ObjectExpression") : init, startKeys);
   }
   const written = new Set([...startKeys, ...literalKeys(open)]);
   const inside = {

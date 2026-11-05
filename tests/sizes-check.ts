@@ -209,6 +209,12 @@ const KINDS = { attention: plain, echo };
     const small = [64, 96, 4, 4, 2, 100, 32], mixed = 2 * 16 * 128 + 16 * 128;
     assert.equal(gpuBytes(small, { arch: "qwen35", linear: { ...linear, conv: 5 } }) - gpuBytes(small, { arch: "qwen35", linear }), 3 * 2 * mixed * 4,
       "a tap more of a Qwen3.5's three linear-attention layers: their taps and the rows they read");
+    // (T.641.3: and their matrices, a second copy of what kinds.ts's gpu.alone says: q, k and v as one (mixed), z and
+    // the output (read = 16 × 128 each); the attending layer's q, k, v, o and the gate of its output (q 64, kv 32); the
+    // FFN's three of every layer)
+    const read = 16 * 128;
+    assert.equal(layerWeightsOf(small, { arch: "qwen35", linear }), (2 * 64 + 2 * 32 + 64) * 64 + 3 * (mixed + 2 * read) * 64 + 4 * 3 * 96 * 64,
+      "the weights of a Qwen3.5's matrices: its attending layer's and its three linear-attention layers'");
   }
   // (T.573: and a place's state, bound whole: 16 value heads of 128 × 128 floats are 1 MiB, past a device that binds 512
   // KiB, where every matrix of this small header is within it: wqkv, 6144 rows of 64, is 384 KiB)

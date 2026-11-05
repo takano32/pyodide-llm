@@ -10,6 +10,7 @@ import { REASONS } from "./reasons.ts";
 import { gpuPacking } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
 import { kindOf } from "./gpufit.ts";
+import { NO_KIND_NUMBERS } from "./kinds.ts";
 import type { Answers } from "./choice.ts";
 import type { Control } from "./control.ts";
 import type { Direct } from "./alone.ts";
@@ -249,8 +250,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // T.154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
     // (T.568.4: the kinds' numbers, forward/kinds.ts's gpu.plan(): null for a kind the model has none of, every one of
-    // KindNumbers's: the plan's literal stays typed whole)
-    const numbers = gpuKinds.reduce<KindNumbers>((all, { plan }) => ({ ...all, ...plan }), { convolution: null, linear: null });
+    // KindNumbers's: the plan's literal stays typed whole. T.641.3: those nulls are the table's, kinds.ts's NO_KIND_NUMBERS)
+    const numbers = gpuKinds.reduce<KindNumbers>((all, { plan }) => ({ ...all, ...plan }), NO_KIND_NUMBERS);
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), activation, windows, local: locals, localCos, localSin,
       kinds, places, ...numbers,

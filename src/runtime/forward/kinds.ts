@@ -88,11 +88,16 @@ export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void; 
 //   matrices  its matrices the GPU takes besides every model's (q, k, v, o and the FFN's)
 //   vectors() its vectors the GPU reads, by the GPU's name: the plan's tensor and its floats a layer
 //   unfit()   why the GPU does not take its layers (null: it does)
-//   plan()    its numbers in the GPU's plan (Started's)
-//   alone     the GPU alone holds its state too, and a model of its layers may be on the GPU alone (T.271.4)
+//   plan()    its numbers in the GPU's plan (Started's: KindNumbers, under the kind's own name)
+//   alone     the GPU alone holds its state too, and a model of its layers may be on the GPU alone (T.271.4). T.641.3:
+//             what alone.ts counts and checks of such a layer before a model is loaded (gpuBytes(), gpuOnlyUnfit()):
+//     matrices()  the weights of each of its matrices a layer (the FFN's are every model's, alone.ts's)
+//     held()      the bytes it keeps on the GPU besides, a layer (its state, its rows, its vectors; none: 0)
+//     state()     the bytes of its state, which the GPU binds whole, a layer (none: 0)
+export type AloneLayers = { matrices(sizes: Sizes): Partial<Record<TensorName, number>>; held?(sizes: Sizes): number; state?(sizes: Sizes): number };
 export type OnGpu = {
   names: string[]; matrices?: TensorName[]; vectors?(sizes: Sizes): Record<string, [TensorName, number]>; unfit?(sizes: Sizes): string | null;
-  plan?(sizes: Sizes): Partial<KindNumbers>; alone?: boolean;
+  plan?(sizes: Sizes): Partial<KindNumbers>; alone?: AloneLayers;
 };
 export type Kind = {
   frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean; staged?(sizes: Sizes, count: number): number;
@@ -104,3 +109,7 @@ export type Kinds = Record<string, Kind>;
 
 // (the order is the order the kinds of a model are made in, and so of what they take of the memory)
 export const LAYER_KINDS: Record<LayerKind, Kind> = { attention, linear, convolution };
+
+// T.641.3: the GPU's plan's numbers of every kind of the table that has some (gpu.plan()), each null where a model has
+// no layer of that kind (gpuside.ts starts from these, and the kinds the model has write theirs over them)
+export const NO_KIND_NUMBERS = Object.fromEntries(Object.entries(LAYER_KINDS).flatMap(([name, { gpu }]) => (gpu?.plan ? [[name, null]] : []))) as KindNumbers;

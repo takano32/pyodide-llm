@@ -8,10 +8,10 @@ import { BETTER } from "./choice.ts";
 import { architectureOf } from "./architectures.ts";
 import type { Architecture } from "./architectures.ts";
 import { LAYER_KINDS } from "./kinds.ts";
-import { ATTENTION, sizesOfForm } from "./sizes.ts";
+import { ATTENTION, kindsHad, sizesOfForm } from "./sizes.ts";
 import { REASONS } from "./reasons.ts";
 import type { Header } from "./memory.ts";
-import type { Formed } from "./sizes.ts";
+import type { Formed, Sizes } from "./sizes.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
 import type { Force, GpuPacking, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
@@ -62,24 +62,29 @@ export const gpuWeightBytes = (stored: string | undefined) => {
   const held = PACKED[packingOf(stored)?.gpu?.as ?? "int8"];
   return weightBytes({ ...held, scale: held.scale ? 4 : 0 });
 };
-/** the weights of the layers' matrices, all of them: an attending layer's q, k, v and output (and T.271.4 the gate of
- * its output, a Qwen3.5's), a linear-attention layer's (T.271.4: q, k and v as one, z, and its output), and every
- * layer's FFN (three where it is gated, else GPT-2's two); how many layers attend; and the bytes of what a Qwen3.5's
- * linear-attention layers keep and read besides on the GPU (their states and rows, the gates' small matrices of
- * float32 and their vectors) */
+// T.641.3: the kinds of a model's layers that the GPU alone may hold (kinds.ts's gpu.alone, in the table's order), each
+// with the number of its layers: none of a kind that it may not (an LFM2's convolution layers: gpuOnlyUnfit() keeps
+// such a model off it, and gpuBytes() counts no matrix of theirs, as before)
+const aloneKinds = (sizes: Sizes) => kindsHad(sizes, LAYER_KINDS).flatMap(({ kind, count }) => {
+  const alone = LAYER_KINDS[kind as LayerKind].gpu?.alone;
+  return alone ? [{ alone, count }] : [];
+});
+/** the weights of the layers' matrices, all of them: those of each kind's layers (kinds.ts's gpu.alone: an attending
+ * layer's q, k, v and output, and T.271.4 the gate of its output, a Qwen3.5's; a linear-attention layer's q, k and v as
+ * one, z, and its output) and every layer's FFN (three where it is gated, else GPT-2's two); how many layers keep keys
+ * and values (the cache's kinds: those that attend); the bytes the kinds' layers keep and read besides on the GPU (a
+ * Qwen3.5's linear-attention layers' states and rows, the gates' small matrices of float32 and their vectors); and
+ * (T.547.3.7) each matrix's weights a layer and its layers, for a form whose rows have kinds of their own */
 const layersOf = (header: Header, form: Formed) => {
-  const [dim, hidden, layers] = header, sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim, linear } = sizes.widths;
-  const attending = sizes.kinds.filter((kind) => kind === ATTENTION).length, deltas = sizes.kinds.filter((kind) => kind === "linear").length;
-  const ffn = (architectureOf(form.arch ?? "llama").gatedFfn ? 3 : 2) * hidden * dim;
-  const attention = (2 * qDim + 2 * kvDim + (sizes.gate ? qDim : 0)) * dim, delta = linear ? (linear.mixed + 2 * linear.read) * dim : 0;
-  // (a linear-attention layer's: its state, its convolution's taps and (T.567) the rows they read, its vectors)
-  const numbers = form.linear, held = numbers && linear ? deltas * 4 * (numbers.value_heads * numbers.key_dim * numbers.value_dim + 2 * numbers.conv * linear.mixed +
-    2 * numbers.value_heads * dim + 2 * numbers.value_heads + numbers.value_dim) : 0;
-  // (T.547.3.7: each matrix's weights a layer and its layers, for a form whose rows have kinds of their own)
-  const roles: Record<string, [number, number]> = { wq: [qDim * dim, attending], wk: [kvDim * dim, attending], wv: [kvDim * dim, attending], wo: [qDim * dim, attending],
-    ...(sizes.gate ? { wg: [qDim * dim, attending] } : {}), ...(linear ? { wqkv: [linear.mixed * dim, deltas], wz: [linear.read * dim, deltas], wout: [linear.read * dim, deltas] } : {}),
-    w1: [hidden * dim, layers], w2: [hidden * dim, layers], ...(architectureOf(form.arch ?? "llama").gatedFfn ? { w3: [hidden * dim, layers] } : {}) };
-  return { weights: attending * attention + deltas * delta + layers * ffn, attending, held, roles };
+  const [dim, hidden, layers] = header, sizes = sizesOfForm(header, form, LAYER_KINDS), kinds = aloneKinds(sizes);
+  const roles: Record<string, [number, number]> = Object.fromEntries(kinds.flatMap(({ alone, count }) =>
+    Object.entries(alone.matrices(sizes)).map(([name, weights]): [string, [number, number]] => [name, [weights!, count]])));
+  roles.w1 = [hidden * dim, layers];
+  roles.w2 = [hidden * dim, layers];
+  if (architectureOf(form.arch ?? "llama").gatedFfn) roles.w3 = [hidden * dim, layers];
+  const attending = kindsHad(sizes, LAYER_KINDS).filter(({ kind }) => LAYER_KINDS[kind as LayerKind].cached).reduce((sum, { count }) => sum + count, 0);
+  const held = kinds.reduce((sum, { alone, count }) => sum + count * (alone.held?.(sizes) ?? 0), 0);
+  return { weights: Object.values(roles).reduce((sum, [weights, count]) => sum + weights * count, 0), attending, held, roles };
 };
 /** T.156: the bytes the GPU holds of a model with this header and form (FORM): its layers' matrices (as the GPU holds
  * their packing: gpuWeightBytes()), its two norms a layer, its own keys
@@ -105,8 +110,10 @@ export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & 
 
 // the layers' matrices of a Llama, which the GPU alone holds (T.156); T.271.4: and a Qwen3.5's (its linear-attention
 // layers' and the gate of its attending layers' output), each of the layers of its kind where some layers are of
-// another kind than attention (T.568.4: the kind of the model's whose tensors it is, kinds.ts's gpu.names)
-const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wqkv", "wz", "wout", "wg"];
+// another kind than attention (T.568.4: the kind of the model's whose tensors it is, kinds.ts's gpu.names). T.641.3:
+// every model's (gpufit.ts's too), then those of each kind the GPU alone may hold of its own (kinds.ts's gpu.matrices)
+const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3",
+  ...Object.values(LAYER_KINDS).flatMap(({ gpu }) => (gpu?.alone ? gpu.matrices ?? [] : []))];
 // T.210: and its tables, the embedding and a classifier of its own (wcls is the embedding's tensor where it is shared):
 // the GPU embeds a prompt's rows too (shaders.ts's EMBED_ROWS), and nothing of them is here
 const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
@@ -248,9 +255,10 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // T.375.5: by the model's facts, not by its architecture's name: RMSNorms, a gated FFN, no table of positions, and
   // every layer attending (which of the five architectures a Llama's alone are). T.271.4: or a Qwen3.5's linear-attention
   // layers, whose state the GPU keeps itself, and the gate of its attending layers' output, which a token's layer has
-  const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim, linear } = sizes.widths;
-  // (T.382: the architecture's line as it is, so that no fact of it is handed on by hand, and the one the sizes say)
-  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => kind !== ATTENTION && !LAYER_KINDS[kind as LayerKind].gpu?.alone) });
+  const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim } = sizes.widths;
+  // (T.382: the architecture's line as it is, so that no fact of it is handed on by hand, and the one the sizes say.
+  // T.641.3: a layer of a kind the GPU alone may not hold, kinds.ts's gpu.alone)
+  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), stateful: sizes.kinds.some((kind) => !LAYER_KINDS[kind as LayerKind].gpu?.alone) });
   if (facts) return facts;
   // T.271.1: nor a rotated basis whose blocks the GPU's shader does not take
   if (form.rotated && rotatedBlockUnfit(Number(form.rotated.block))) return REASONS.rotatedBlock;
@@ -273,16 +281,17 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   const heldOnGpu = PACKED[held.as];
   const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim];
   if (!own.length && starts.some((weights) => heldOnGpu.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return REASONS.aloneStarts;
-  // (T.271.4: and a Qwen3.5's linear-attention layers' matrices, each one piece: a token's layer reads them whole)
+  // (T.271.4: and a Qwen3.5's linear-attention layers' matrices, each one piece: a token's layer reads them whole.
+  // T.641.3: every matrix of the kinds' own, kinds.ts's gpu.alone: an attending layer's are within the joined ones above)
   // (T.547.3.7's review: of rows of kinds of their own, by the widest of them: Saluki's are no wider than Q4_K's, 0.56 of a
   // byte a weight, and int8's count would keep it off a device that binds 128 MiB)
   const widest = own.length ? Math.max(...own.map((kind) => packingOf(kind)!.rowBytes(BLOCK) / BLOCK)) : 0;
   const rowBytes = (weights: number) => (own.length ? Math.ceil(weights * widest) : heldOnGpu.rowBytes(weights));
-  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...(linear ? [linear.mixed * dim, linear.read * dim] : [])]
+  const kinds = aloneKinds(sizes);
+  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden), ...kinds.flatMap(({ alone }) => Object.values(alone.matrices(sizes)) as number[])]
     .some((weights) => rowBytes(weights) > binds)) return REASONS.alonePast;
   // (T.573: nor a linear-attention layer whose state alone is past a buffer: the GPU binds a place's state whole)
-  const numbers = form.linear;
-  if (numbers && 4 * numbers.value_heads * numbers.key_dim * numbers.value_dim > binds) return REASONS.aloneState;
+  if (kinds.some(({ alone }) => (alone.state?.(sizes) ?? 0) > binds)) return REASONS.aloneState;
   return null;
 }
 /** T.375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker

@@ -54,7 +54,23 @@ export const linear: Kind = {
       const { key_heads: keyHeads, value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: taps } = linearNumbers(sizes);
       return { linear: { keyHeads, valueHeads, keyDim, valueDim, taps } };
     },
-    alone: true,
+    // (T.641.3: on the GPU alone, its three matrices a layer; what a layer keeps besides: its state, its convolution's
+    // taps and (T.567) the rows they read, the gates' small matrices of float32 and their vectors; its state, which the
+    // GPU binds whole, T.573)
+    alone: {
+      matrices(sizes) {
+        const { mixed, read } = linearNumbers(sizes), { dim } = sizes;
+        return { wqkv: mixed * dim, wz: read * dim, wout: read * dim };
+      },
+      held(sizes) {
+        const { value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim, conv: taps, mixed } = linearNumbers(sizes);
+        return 4 * (valueHeads * keyDim * valueDim + 2 * taps * mixed + 2 * valueHeads * sizes.dim + 2 * valueHeads + valueDim);
+      },
+      state(sizes) {
+        const { value_heads: valueHeads, key_dim: keyDim, value_dim: valueDim } = linearNumbers(sizes);
+        return 4 * valueHeads * keyDim * valueDim;
+      },
+    },
   },
   // every every-th layer of a Qwen3.5 attends over all the positions, the others are these (layout.py's linear_layers())
   layers: ({ linear }, count) => (linear ? Array.from({ length: count }, (_, l) => (l + 1) % linear.every !== 0) : null),

@@ -27,8 +27,10 @@ import type { Layer } from "../contracts/plan.ts";
 
 export const attention: Kind = {
   // T.568.4: on the GPU (gpu/attention.ts): its matrices and vectors are an attending layer's (an LFM2's and a Qwen3.5's
-  // are some of its layers), and a Qwen3.5's gate of the output is a matrix of them besides
-  gpu: { names: ["wq", "wk", "wv", "wo", "wg", "bq", "bk", "bv", "qNorm", "kNorm"], matrices: ["wg"] },
+  // are some of its layers), and a Qwen3.5's gate of the output is a matrix of them besides. T.641.3: on the GPU alone
+  // too, its q, k, v and o (and the gate) a layer (its keys and values are the cache's, which alone.ts counts apart)
+  gpu: { names: ["wq", "wk", "wv", "wo", "wg", "bq", "bk", "bv", "qNorm", "kNorm"], matrices: ["wg"],
+    alone: { matrices: ({ dim, gate, widths: { q, kv } }) => ({ wq: q * dim, wk: kv * dim, wv: kv * dim, wo: q * dim, ...(gate ? { wg: q * dim } : {}) }) } },
   // a Qwen3.5's gate of the output beside q; and the scores of one token's attention, apart from its frame (tokens run
   // at once, each with scores of its own)
   frame: ({ gate, widths, seqLen, heads }) => ({ arrays: gate ? [["gate", widths.q * 4]] : [], apart: [["att", seqLen * heads * 4]] }),
