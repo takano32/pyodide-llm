@@ -63,7 +63,7 @@ def made_up():
         ("encoder_l1_self_Wq_QuantMultA", 0x0404, (1, 1), floats([[7.5]])),
         ("encoder_l1_self_bq", 0x0404, (1, 3), floats(BIAS)),
         ("none_QuantMultA", 0x0404, (1, 1), floats([[6.8115]])),
-        ("special:model.yml", 0x0101, (len(SETTINGS.encode()),), SETTINGS.encode()),
+        ("special:model.yml", 0x0101, (len(SETTINGS.encode()) + 1,), SETTINGS.encode() + b"\0"),  # (the real ones end with a NUL)
     ]
 
 

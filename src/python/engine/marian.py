@@ -161,7 +161,7 @@ def read_marian(data):
         raise ValueError(f"The Marian model is {size:,} bytes long where its heads say {at:,}.")
     if SETTINGS not in items or items[SETTINGS].kind != "int8":
         raise ValueError(f"The Marian model has no {SETTINGS} to say what it is.")
-    return Marian(version, settings(items[SETTINGS].values.tobytes().decode("utf-8")), items)
+    return Marian(version, settings(items[SETTINGS].values.tobytes().rstrip(b"\0").decode("utf-8")), items)  # (Marian ends it with a NUL)
 
 
 SCALAR = re.compile(r"(?P<key>[A-Za-z0-9_.-]+):(?: (?P<value>.*))?$")
