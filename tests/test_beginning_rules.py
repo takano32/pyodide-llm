@@ -92,4 +92,5 @@ def test_the_options():
 def test_the_kinds_of_tokenizer_files():
     assert vocabulary_kind("tokenizer.json") == "tokenizer.json" and vocabulary_kind("Tokenizer.JSON") == "tokenizer.json"
     assert vocabulary_kind("tokenizer.model") == "sentencepiece" and vocabulary_kind("spiece.model") == "sentencepiece"
-    assert set(VOCABULARIES) == {"tokenizer.json", "sentencepiece"}
+    assert vocabulary_kind("tokenizer.jsonl") == "tokenizer.jsonl"  # PLaMo's (T649.1)
+    assert set(VOCABULARIES) == {"tokenizer.json", "sentencepiece", "tokenizer.jsonl"}

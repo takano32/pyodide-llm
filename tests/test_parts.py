@@ -571,7 +571,7 @@ def test_the_numpy_forward_alone_computes_the_reference():
 # (T639.1: the second copy of the options a Llama hands its Tokenizer, by the Llama's name and the Tokenizer's)
 READING = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
            "ignore_merges": "ignore_merges", "collapse": "collapse", "unknown": "unknown", "lowercase": "lowercase",
-           "prefixed": "prefixed", "spaced": "spaced"}
+           "prefixed": "prefixed", "spaced": "spaced", "breaks": "breaks"}
 
 
 def test_every_setting_of_the_tokenizer_reaches_it():
@@ -597,5 +597,5 @@ def test_every_option_is_of_one_table():
     from engine.model import OPTIONS, OWN, PLANNED
     from engine.layout import FORM
     from engine.tokenizer import SETTINGS
-    assert len(OPTIONS) == len(set(OPTIONS)) == len(FORM) + len(SETTINGS) + len(PLANNED) + len(OWN) == 38
+    assert len(OPTIONS) == len(set(OPTIONS)) == len(FORM) + len(SETTINGS) + len(PLANNED) + len(OWN) == 39
     assert set(READING) == set(SETTINGS)

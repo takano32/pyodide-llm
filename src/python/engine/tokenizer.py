@@ -270,12 +270,31 @@ class Charsmap:
         return b"".join(out).decode("utf-8")
 
 
+# T649.1: what PLaMo's tokenizer cuts a text around before its search: every <|plamo:…|> written in it (whether its
+# vocabulary has that piece or not), the mark it writes at a cut (U+EE00, a character of the Private Use Area), and
+# what a character no piece begins with costs
+PLAMO_SPECIAL = re.compile(r"(<\|plamo:[^|\s]{,64}\|>)")
+PLAMO_CUT = "\uee00"
+PLAMO_UNKNOWN = 10_000_000
+
+
+def plamo_breaks(breaks):
+    """The pattern of the runs a "plamo" tokenizer cuts a text around (Tokenizer's breaks), or None: one character so
+    many times or more, then so many spaces or more, in that order (tokenization_plamo.py's)."""
+    unknown = set(breaks) - {"spaces", "repeats"}
+    if unknown:
+        raise ValueError(f"Unsupported breaks: {sorted(unknown)} (the runs a text is cut around: spaces, repeats)")
+    patterns = ([rf"(.)\2{{{breaks['repeats'] - 1},}}"] if breaks.get("repeats") is not None else []) + \
+               ([rf" {{{breaks['spaces']},}}"] if breaks.get("spaces") is not None else [])
+    return re.compile(f"({'|'.join(patterns)})") if patterns else None
+
+
 # T639.1: the settings of the reading a model is given with its options (a Llama's, the converter's), each under the
 # name of the Tokenizer's argument it is: a setting that is added is a line here and an argument of the Tokenizer, whose
 # default is the default
 SETTINGS = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
             "ignore_merges": "ignore_merges", "collapse": "collapse", "unknown": "unknown", "lowercase": "lowercase",
-            "prefixed": "prefixed", "spaced": "spaced"}
+            "prefixed": "prefixed", "spaced": "spaced", "breaks": "breaks"}
 
 
 class Tokenizer:
@@ -294,7 +313,7 @@ class Tokenizer:
     UNMERGED = -1e10  # llama2.c's line: "bpe" merges a pair that scores above it (an unmatchable piece's -1e9 too)
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
-                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False):
+                 collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False, breaks=None):
         if kind not in TOKENIZER_KINDS:
             raise ValueError(f"Unsupported tokenizer kind: {kind!r} (the engine reads {', '.join(TOKENIZER_KINDS)})")
         # T639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
@@ -316,6 +335,10 @@ class Tokenizer:
         # text begins with a space already (the space is its "▁"); sentencepiece itself puts it there whatever the text
         # begins with (a tokenizer.model's, the engine's way where spaced is not said)
         self.spaced = spaced
+        # T649.1: where a "plamo" tokenizer cuts a text before its search, besides the <|plamo:…|> it writes: around a
+        # run of so many spaces or more ({"spaces": n}) and of one character so many times or more ({"repeats": n}),
+        # tokenizer_config.json's break_around_consecutive_spaces_threshold and break_around_repeated_chars_threshold
+        self.breaks = plamo_breaks(breaks or {})
         self.cuts = {}  # cut()'s, of the specials it was last asked for
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
@@ -520,6 +543,49 @@ class Tokenizer:
             j = i
         return tokens
 
+    def plamo_pieces(self):
+        """T649.1: the unigram search's pieces (unigram_pieces()), and each token's score as PLaMo's search adds it up:
+        an integer, round(score * 1e4) (the scores are written with four decimals at most, and float32 holds them to
+        less than half of that last decimal: the converter checks)"""
+        self.unigram_pieces()
+        self.points = [round(score * 1e4) for score in self.scores]
+
+    def encode_plamo(self, text):
+        """T649.1: PLaMo's own tokenizer (tokenization_plamo.py's, which this takes the form of; none of its lines):
+        the text is cut around every <|plamo:…|> written in it, and then around the runs breaks says, and each stretch
+        between two cuts is searched alone (PLaMo writes U+EE00 at the cuts, a piece of score 0 that it then leaves
+        out: one written in the text is left out too). The search is a Viterbi of the integer scores (points) made from
+        the end of the stretch: at each place, the pieces that begin there are tried from the longest down, and one is
+        taken only where it is strictly better, so of equal totals the longest first piece wins (unigram's search,
+        made from the beginning, takes the longest last piece instead). A character no piece begins with costs
+        PLAMO_UNKNOWN, whatever it is, and is spelled in the bytes of its UTF-8."""
+        text = PLAMO_SPECIAL.sub(PLAMO_CUT + r"\1" + PLAMO_CUT, text)
+        if self.breaks is not None:
+            text = self.breaks.sub(PLAMO_CUT + r"\1" + PLAMO_CUT, text)
+        tokens = []
+        for stretch in text.split(PLAMO_CUT):
+            tokens += self.plamo_search(stretch)
+        return tokens
+
+    def plamo_search(self, text):
+        n, pieces, points, reach = len(text), self.pieces, self.points, self.reach
+        cost, taken = [0] * (n + 1), [None] * n  # the least cost from a place to the end, and (length, token) there
+        for i in range(n - 1, -1, -1):
+            best, take = None, None
+            for j in range(min(n, i + reach.get(text[i:i + 2], 1)), i, -1):
+                id = pieces.get(text[i:j])
+                if id is not None and (best is None or cost[j] - points[id] < best):
+                    best, take = cost[j] - points[id], (j - i, id)
+            if best is None or cost[i + 1] + PLAMO_UNKNOWN < best:
+                best, take = cost[i + 1] + PLAMO_UNKNOWN, (1, None)
+            cost[i], taken[i] = best, take
+        tokens, i = [], 0
+        while i < n:
+            length, id = taken[i]
+            tokens += [id] if id is not None else [self.byte_tokens[byte] for byte in text[i].encode("utf-8")]
+            i += length
+        return tokens
+
     def decode(self, prev_token, token, bos=1):
         return self.decoding(self, prev_token, token, bos)
 
@@ -533,7 +599,7 @@ class Tokenizer:
     def decode_pieces(self, prev_token, token, bos):
         piece = self.vocab[token]
         # Following the first token, sentencepiece decoder strips the leading whitespace (the dummy prefix)
-        if prev_token == bos and piece.startswith(b" ") and self.prefixed != "never":
+        if self.prefixes and prev_token == bos and piece.startswith(b" ") and self.prefixed != "never":
             piece = piece[1:]
         # Some tokens designate raw bytes, and look like b"<0x0A>"
         if len(piece) == 6 and piece.startswith(b"<0x") and piece.endswith(b">"):
@@ -555,4 +621,6 @@ class Kind(NamedTuple):
 TOKENIZER_KINDS = {
     "bpe": Kind(Tokenizer.encode_bpe, Tokenizer.decode_pieces, True, True, None),
     "unigram": Kind(Tokenizer.encode_unigram, Tokenizer.decode_pieces, True, True, Tokenizer.unigram_pieces),
-    "bytebpe": Kind(Tokenizer.encode_bytebpe, Tokenizer.decode_bytes, False, False, Tokenizer.text_pieces)}
+    "bytebpe": Kind(Tokenizer.encode_bytebpe, Tokenizer.decode_bytes, False, False, Tokenizer.text_pieces),
+    # T649.1: PLaMo's tokenizer.jsonl (the converter's plamo()): no dummy prefix, a space is a space
+    "plamo": Kind(Tokenizer.encode_plamo, Tokenizer.decode_pieces, False, False, Tokenizer.plamo_pieces)}
