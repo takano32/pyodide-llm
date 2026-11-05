@@ -551,5 +551,38 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.equal(progressLine({ ...progress, received: 0 }), "Tiny: 0.0 / 10.0 MB", "nothing yet, nothing converted: the bytes");
   cases += 8;
 }
+{
+  // T643.4: lines.ts, the load's breakdown, the GPU's line in it, and the line under an answer (which tests/e2e.ts reads
+  // with the expressions below: the second copy of them is here)
+  const { seconds, loadLines, gpuLine, onGpu, onGpuSampled, answerMeta } = await fresh("page/lines.ts");
+  assert.deepEqual([seconds(1.234), seconds(9.999), seconds(10), seconds(12.34)], ["1.23 s", "10.00 s", "10.0 s", "12.3 s"], "two decimals under 10 seconds, one above");
+  const ready = { seconds: { pyodide: 1.5, download: 2.25, construct: 0.5 }, overlapped: false, fromCache: false };
+  assert.deepEqual(loadLines(ready, {}), ["Pyodide 1.50 s · download 2.25 s", "Llama() 0.50 s"], "a model of the site");
+  assert.deepEqual(loadLines({ ...ready, overlapped: true }, { file: {} })[0], "Pyodide 1.50 s · read 2.25 s (at the same time)", "a file of the visitor's disk, fetched with Pyodide");
+  assert.deepEqual(loadLines({ ...ready, notKept: "no room" }, { hf: {} }), ["Pyodide 1.50 s · fetch and conversion 2.25 s", "not kept for the next visit: no room", "Llama() 0.50 s"],
+    "a model of Hugging Face, and why it is not kept");
+  assert.equal(loadLines({ ...ready, fromCache: true }, { hf: {} })[0], "Pyodide 1.50 s · from the cache of this browser 2.25 s", "a model of Hugging Face kept from a visit before");
+  const gpu = { seconds: 3, matrices: "DP4A", remembered: false, attention: "flash attention tiles" };
+  assert.equal(gpuLine(gpu), "WebGPU 3.00 s · DP4A · flash attention tiles", "the GPU's forms, timed now");
+  assert.equal(gpuLine({ ...gpu, remembered: true, tokens: "fused" }), "WebGPU 3.00 s · DP4A (remembered) · flash attention tiles · a token by fused", "remembered, and a token's form");
+  const done = { tokens: 60, prompt_tokens: 20, sampled: 41, tokens_per_second: 50.04, prompt_tokens_per_second: 200, first_token_seconds: 0.25, seconds: 1.2, threads: 1 };
+  assert.deepEqual([onGpu(done), onGpuSampled(done)], ["", ""], "nothing on the GPU, nothing said");
+  assert.deepEqual([onGpu({ ...done, gpuTokens: 20 }), onGpuSampled({ ...done, gpuSampled: 41 }), onGpu({ ...done, gpuTokens: 16 }), onGpuSampled({ ...done, gpuSampled: 40 })],
+    [" on WebGPU", " on WebGPU", " (16 on WebGPU)", " (40 on WebGPU)"], "all of them on the GPU, or how many");
+  // (a seed is said where the answer sampled alone: a greedy one written with a seed fixed has none)
+  const greedy = answerMeta(done, { seed: 7 }, "Tiny");
+  assert.deepEqual(greedy, { summary: "Tiny · 60 tokens · 50.0 tok/s · greedy",
+    breakdown: ["first token 0.25 s", "prompt 20 tokens · 200.0 tok/s", "generated 40 tokens · 50.0 tok/s · 1.20 s in all"], seed: undefined }, "a greedy answer on one thread");
+  const sampled = answerMeta({ ...done, threads: 4, gpuTokens: 20 }, { temperature: 0.7, seed: 42 }, "Tiny");
+  assert.deepEqual([sampled.summary, sampled.breakdown[1], sampled.seed], ["Tiny · 60 tokens · 50.0 tok/s · 4 threads · temp 0.7", "prompt 20 tokens on WebGPU · 200.0 tok/s", 42],
+    "a sampled answer on 4 threads, its prompt on the GPU, and its seed");
+  // (tests/e2e.ts's expressions: "tok/s" in the summary, the breakdown's lines of the prompt and of the tokens written)
+  for (const { summary, breakdown } of [greedy, sampled]) {
+    assert.ok(/tok\/s/.test(summary), summary);
+    assert.equal(breakdown.filter((t) => /^prompt \d/.test(t)).length, 1, "one line of the prompt");
+    assert.equal(breakdown.filter((t) => /^generated \d/.test(t)).length, 1, "one line of the tokens written");
+  }
+  cases += 13;
+}
 console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);

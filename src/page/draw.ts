@@ -11,7 +11,7 @@ import { markdownBroke } from "./markdown.ts";
 import type { Markdown } from "./markdown.ts";
 import { fixSeed } from "./settings.ts";
 import { readyStatus } from "./lines.ts";
-import type { BenchRow, Done } from "../runtime/contracts/messages.ts";
+import type { BenchRow } from "../runtime/contracts/messages.ts";
 
 // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
 const RUN_ICON = "M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z", STOP_ICON = "M7 7h10v10H7z";
@@ -205,17 +205,9 @@ export function meta(element: Element, text: string, breakdown: string[], seed?:
   element.append(line);
   chat.scrollTop = chat.scrollHeight;
 }
-export const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} s`;
 export function showStatus(note?: string) {
   if (gpuSaid(note)) console.info(`gpu: ${note}`);
   if (!readyLine || benchmarking) return;
   // (lines.ts: the words)
   statusText.textContent = readyStatus({ name: model.name, ...readyLine, gpuNote, gpuTest: parameters.get("gpuTest") === "on", outdated });
 }
-// T135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
-// makes the first logits, on the CPU)
-export const onGpu = (data: Done) => (!data.gpuTokens ? "" : data.gpuTokens >= data.prompt_tokens ? " on WebGPU"
-  : ` (${data.gpuTokens} on WebGPU)`);
-// T152: how many of the tokens it wrote the GPU sampled (the sampled steps: a stop token among them)
-export const onGpuSampled = (data: Done) => (!data.gpuSampled ? "" : data.gpuSampled >= data.sampled ? " on WebGPU"
-  : ` (${data.gpuSampled} on WebGPU)`);

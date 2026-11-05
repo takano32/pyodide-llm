@@ -12,16 +12,15 @@ import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answ
 import { markdownCame, markdownWanted } from "./markdown.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
-import { drawAnswer, message, meta, thoughtSaid, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
+import { drawAnswer, message, meta, thoughtSaid, rows, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { endsWork, ofThisLoad } from "./heard.ts";
-import { progressLine } from "./lines.ts";
+import { answerMeta, gpuLine, loadLines, progressLine } from "./lines.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Alone, Bench, Done, Failed, FromWorker, GpuChose, GpuSaid, ModelWorker, Progress, Ready, Threads, ThreadsCompared } from "../runtime/contracts/messages.ts";
 
 declare const __BUILD__: string;
 
-const loadedHow = (data: Ready) => (model.hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : model.file ? "read" : "download");
 let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
 // T156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
 let aloneOnReady: { load: number; alone: Alone } | undefined;
@@ -102,11 +101,7 @@ function heardReady(data: Ready) {
   showStatus(data.gpu);
   const load = $("load-stats");
   load.textContent = "";
-  rows(load, [
-    `Pyodide ${seconds(data.seconds.pyodide)} · ${loadedHow(data)} ${seconds(data.seconds.download)}${data.overlapped ? " (at the same time)" : ""}`,
-    ...(data.notKept ? [`not kept for the next visit: ${data.notKept}`] : []),
-    `Llama() ${seconds(data.seconds.construct)}`,
-  ]);
+  rows(load, loadLines(data, model));  // (lines.ts: the words)
   $("load").classList.add("measured");
   showKept();
   remember(model, model.hf && !data.notKept);
@@ -116,10 +111,8 @@ function heardGpu(data: GpuChose | GpuSaid) {
   // how long it took, and what it chose is kept for the next visit on this device
   showStatus(data.note);
   if (data.matrices) {
-    $("load-stats").append(Object.assign(document.createElement("div"), {
-      textContent: `WebGPU ${seconds(data.seconds)} · ${data.matrices}${data.remembered ? " (remembered)" : ""} · ${data.attention}` +
-        (data.tokens ? ` · a token by ${data.tokens}` : ""),
-    }));
+    // (lines.ts: the words)
+    $("load-stats").append(Object.assign(document.createElement("div"), { textContent: gpuLine(data) }));
     rememberGpu(model, data);
   }
 }
@@ -147,13 +140,9 @@ function heardDone(data: Done) {
   showStatus(data.gpu);  // T148: the prompts timed on either side may have moved the GPU's verdict
   // T156: how the page is used, for a model on the GPU alone
   rememberUsage(data.prompt_tokens, data.tokens - data.prompt_tokens);
-  // the settings this very answer was written with: with the seed the same text can be asked for again
-  const how = used.temperature ? `temp ${used.temperature}` : "greedy";
-  meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
-    `first token ${seconds(data.first_token_seconds)}`,
-    `prompt ${data.prompt_tokens} tokens${onGpu(data)} · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,
-    `generated ${data.tokens - data.prompt_tokens} tokens${onGpuSampled(data)} · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
-  ], used.temperature ? used.seed : undefined);
+  // the settings this very answer was written with: with the seed the same text can be asked for again (lines.ts: the words)
+  const { summary, breakdown, seed } = answerMeta(data, used, model.name);
+  meta(answer!, summary, breakdown, seed);
 }
 function heardError(data: Failed) {
   if (undrawn) drawNow();  // (T554: what the answer wrote before it failed)
