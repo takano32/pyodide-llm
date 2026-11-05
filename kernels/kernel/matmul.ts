@@ -273,3 +273,59 @@ export function add_columns(y: usize, rows: usize, a: usize, count: i32, n: i32)
     store<f32>(y + o, v);
   }
 }
+
+// ---- T648.3: Firefox Translations' int8 affine, as fxtranslate multiplies it (intgemm's int8shiftAlphaAll; the form
+// read from fxtranslate's scalar path, docs/notes/t648-firefox-translations-engines-2026-11-05.md; no line copied):
+// out (m, n) = x (m, k) times the int8 rows w (n, k: Marian's order of an intgemm8 matrix) plus the bias, each
+// activation quantized with the matrix's fixed alpha, not a scale of its own.
+// fxtranslate's activation is clamp(round_even(x · alpha), −127, 127) + 127 (0..254). Here it is s = the same less its
+// 127 (−127..127, into xq: m k bytes of the caller's), and the 127 comes back as an integer: shifts[j] = 127 Σ_k w[j, k]
+// (the caller's), so Σ_k s w + shifts[j] is fxtranslate's Σ_k (s + 127) w, the same integer. It is exact in int32:
+// |s w| ≤ 127 · 128, two of them added in int16 are within ±32,512, and the whole is within 254 · 128 · k, below 2**31
+// for k up to 66,051 (the caller keeps to that). It is turned into a float32 once and multiplied by unquant
+// (1 / (alpha · the weights' quantMult)), then the bias added (the one with the shift taken off: b − 127 · unquant · Σ w),
+// each a float32 operation: engine/translation.py's Affine, and so fxtranslate's numbers, to the bit. (A NaN of x is
+// an activation of 0 here and a NaN there: a NaN is broken on every path.)
+// Not relaxed: relaxed_dot_i8x16_i7x16's second factor is 7 bits, which neither the activations nor the weights are.
+// The rows of x are quantized once, then each row of w meets every row of x while it is in the cache.
+export function affine_q8(out: usize, x: usize, xq: usize, m: i32, k: i32, w: usize, n: i32, alpha: f32, shifts: usize, unquant: f32, bias: usize): void {
+  const a = f32x4.splat(alpha), floor = i8x16.splat(<i8>-127);
+  const k16 = k & ~15, k32 = k & ~31;
+  for (let i = 0; i < m; i++) {
+    const from = x + ((<usize>i * <usize>k) << 2), to = xq + <usize>i * <usize>k;
+    let c = 0;
+    for (; c < k16; c += 16) {
+      const p = from + (<usize>c << 2);
+      const q0 = i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v128.load(p), a)));
+      const q1 = i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v128.load(p, 16), a)));
+      const q2 = i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v128.load(p, 32), a)));
+      const q3 = i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v128.load(p, 48), a)));
+      // (the narrowings saturate to −128..127: then −127 below)
+      v128.store(to + <usize>c, i8x16.max_s(i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(q0, q1), i16x8.narrow_i32x4_s(q2, q3)), floor));
+    }
+    for (; c < k; c++) {
+      const q = i32x4.extract_lane(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.splat(load<f32>(from + (<usize>c << 2)) * alpha))), 0);
+      store<i8>(to + <usize>c, <i8>(q < -127 ? -127 : q > 127 ? 127 : q));
+    }
+  }
+  for (let j = 0; j < n; j++) {
+    const row = w + <usize>j * <usize>k;
+    const shift = load<i32>(shifts + (<usize>j << 2)), b = load<f32>(bias + (<usize>j << 2));
+    for (let i = 0; i < m; i++) {
+      const xr = xq + <usize>i * <usize>k;
+      let acc = i32x4.splat(0);
+      let c = 0;
+      for (; c < k32; c += 32) {
+        acc = i32x4.add(acc, dot32(v128.load(row + <usize>c), v128.load(xr + <usize>c), v128.load(row + <usize>c, 16), v128.load(xr + <usize>c, 16)));
+      }
+      if (c < k16) {
+        const r = v128.load(row + <usize>c), s = v128.load(xr + <usize>c);
+        acc = i32x4.add(acc, i32x4.extadd_pairwise_i16x8_s(i16x8.add(i16x8.extmul_low_i8x16_s(r, s), i16x8.extmul_high_i8x16_s(r, s))));
+        c += 16;
+      }
+      let sum = i32x4.extract_lane(acc, 0) + i32x4.extract_lane(acc, 1) + i32x4.extract_lane(acc, 2) + i32x4.extract_lane(acc, 3) + shift;
+      for (; c < k; c++) sum += <i32>load<i8>(row + <usize>c) * <i32>load<i8>(xr + <usize>c);
+      store<f32>(out + ((<usize>i * <usize>n + <usize>j) << 2), unquant * <f32>sum + b);
+    }
+  }
+}

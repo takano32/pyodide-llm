@@ -1,8 +1,9 @@
 # T648.2: Firefox Translations' models (Marian's transformer encoder and SSRU decoder, read by engine/marian.py)
 # translating in NumPy, greedily, so that each step comes to the same numbers as fxtranslate's int8 engine. It is the
-# reference the later kernels (T648.3) and the page (T648.4) are held to; nothing here is fast.
+# reference the kernel (T648.3: affine_q8, the same numbers to the bit) and the page (T648.4) are held to.
 #
 #     translator = Translator(read_marian(data), source, target)   source, target: engine.tokenizer.Tokenizer
+#     Translator(read_marian(data), source, target, kernels=load_kernels(path))   every affine on the kernel (Pyodide)
 #     translator.translate("こんにちは。")                           the text, as one unit (no sentences are cut)
 #     translator.greedy(translator.source_ids(text))                the target's ids, without </s>
 #     for logits in translator.steps(ids, forced): ...              each step's logits, the tokens being forced's
@@ -65,21 +66,51 @@ class Affine:
     unquant · Σ + (b − 127 · unquant · Σ_k W) with unquant = 1 / (qA · qB), each in float32."""
 
     def __init__(self, weight, alpha, bias=None):
-        rows = weight.values  # [N, K]: out rows of in (an intgemm8 matrix's file order, and an embedding's)
-        n, k = rows.shape
-        self.alpha = F(alpha)
-        self.unquant = F(1) / (self.alpha * F(weight.quant_mult))
-        sums = rows.sum(axis=1, dtype=np.int64).astype(F)  # (|Σ| ≤ 127 k: exact in float32)
-        raw = np.zeros(n, F) if bias is None else np.asarray(bias, F).reshape(n)
-        self.bias = raw - F(127) * self.unquant * sums
+        rows = self.prepared(weight, alpha, bias)
+        k = rows.shape[1]
         # the products' sums are integers of at most 254 · 127 · k: float32 adds them exactly in any order while that
         # is below 2**24 (k up to 520), float64 past it
         self.weight = np.ascontiguousarray(rows.T, F if 254 * 127 * k < EXACT else np.float64)  # [K, N]
+
+    def prepared(self, weight, alpha, bias):
+        """alpha, unquant and the bias with the shift taken off, which both affines use; the int8 rows, [N, K]."""
+        rows = weight.values  # [N, K]: out rows of in (an intgemm8 matrix's file order, and an embedding's)
+        n = rows.shape[0]
+        self.alpha = F(alpha)
+        self.unquant = F(1) / (self.alpha * F(weight.quant_mult))
+        self.sums = rows.sum(axis=1, dtype=np.int64)
+        raw = np.zeros(n, F) if bias is None else np.asarray(bias, F).reshape(n)
+        self.bias = raw - F(127) * self.unquant * self.sums.astype(F)  # (|Σ| ≤ 127 k: exact in float32)
+        return rows
 
     def __call__(self, x):
         q = np.clip(np.rint(x * self.alpha), -127, 127) + F(127)
         sums = (q.astype(self.weight.dtype) @ self.weight).astype(F)
         return self.unquant * sums + self.bias
+
+
+class KernelAffine(Affine):
+    """Affine on the SIMD kernel affine_q8 (T648.3): the same numbers to the bit, in one call a matrix. The kernel sums
+    in int32, exact while 254 · 128 · k is below 2**31 (k up to 66,051: Firefox's models are 2048 at most); the 127 of
+    the activations' shift comes back as the integer 127 Σ_k W of each row (shifts)."""
+
+    def __init__(self, weight, alpha, bias, kernel):
+        rows = self.prepared(weight, alpha, bias)
+        n, k = rows.shape
+        if 254 * 128 * k >= 1 << 31:
+            raise ValueError(f"An affine of {k} inputs is past the int32 sums of the kernel.")
+        self.kernel, self.n, self.k = kernel, n, k
+        self.rows = np.ascontiguousarray(rows, np.int8)
+        self.shifts = (127 * self.sums).astype(np.int32)
+        self.bias = np.ascontiguousarray(self.bias, F)
+
+    def __call__(self, x):
+        x = np.ascontiguousarray(x, F)
+        m = x.shape[0]
+        out, xq = np.empty((m, self.n), F), np.empty(m * self.k, np.int8)
+        self.kernel(out.ctypes.data, x.ctypes.data, xq.ctypes.data, m, self.k, self.rows.ctypes.data, self.n, self.alpha,
+                    self.shifts.ctypes.data, self.unquant, self.bias.ctypes.data)
+        return out
 
 
 def layer_norm(x, scale, bias):
@@ -102,8 +133,11 @@ class Translator:
     """A Marian transformer of Firefox Translations: a post-norm encoder of self-attention and ReLU FFNs, and a
     decoder of SSRU, attention on the source and FFN layers; greedy, without a shortlist."""
 
-    def __init__(self, model, source, target, functions=FLOAT_FUNCTIONS):
+    def __init__(self, model, source, target, functions=FLOAT_FUNCTIONS, kernels=None):
+        """kernels: engine.kernels.load_kernels()'s, whose affine_q8 then does every affine (T648.3: the same numbers),
+        or None for NumPy's."""
         self.source, self.target, self.functions = source, target, functions
+        product = (lambda *made: KernelAffine(*made, kernels["affine_q8"])) if kernels else Affine
         items, config = model.items, model.config
         alphas = {name[:-len(ALPHA)]: item for name, item in items.items() if name.endswith(ALPHA)}
 
@@ -111,7 +145,7 @@ class Translator:
             return np.asarray(items[name].values, F).reshape(-1)
 
         def affine(name, bias=None):
-            return Affine(items[name], floats(name + ALPHA)[0], None if bias is None else floats(bias))
+            return product(items[name], floats(name + ALPHA)[0], None if bias is None else floats(bias))
 
         def norm(name):
             return floats(name + "_ln_scale"), floats(name + "_ln_bias")
@@ -139,7 +173,7 @@ class Translator:
         # (ja-en's) and else decoder_Wemb_QuantMultA, an intgemm8 [1, 1] that is int8 / its quantMult (en-ja's)
         out = alphas["none"] if "none" in alphas else alphas["decoder_Wemb"]
         out_alpha = out.values[0, 0] if out.kind == "float32" else F(out.values[0, 0]) / F(out.quant_mult)
-        self.output = Affine(target_table, out_alpha, items["decoder_ff_logit_out_b"].values if "decoder_ff_logit_out_b" in items else None)
+        self.output = product(target_table, out_alpha, items["decoder_ff_logit_out_b"].values if "decoder_ff_logit_out_b" in items else None)
         # the positions: PE(t)[c] = sin(t f_c + o_c), f_c = 1e-4 ^ ((c mod D/2) / (D/2 − 1)), o_c = ⌊c / (D/2)⌋ π/2
         half = self.dim // 2
         column = np.arange(self.dim)

@@ -50,7 +50,8 @@ def load_kernels(path):
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32], geglu=[p, p, p, i32], geglu_erf=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float, ctypes.c_float],
-                          sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float])
+                          sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float],
+                          affine_q8=[p, p, p, i32, i32, p, i32, ctypes.c_float, p, ctypes.c_float, p])
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
@@ -58,7 +59,7 @@ def load_kernels(path):
     except Exception:
         return None
     # (T644.2: no relaxed SIMD here. The forward pass and its int8 products are forward.ts's, on kernels it compiles
-    # itself; Python's are the sampling's and the converter's, none of which is relaxed)
+    # itself; Python's are the sampling's, the converter's and the translations' affine (T648.3), none of which is relaxed)
     return kernels
 
 

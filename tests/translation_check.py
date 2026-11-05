@@ -3,6 +3,10 @@
 
     .venv/bin/python tests/translation_check.py [--only <model>] [--limit <n>]
     .venv/bin/python tests/translation_check.py --write     # fxtranslate's translations, again, into the fixture
+    node tests/translation-kernels.ts [--only <model>] [--limit <n>]   # T648.3: the same, its affines on the kernel
+
+--kernels runs every affine on the SIMD kernel affine_q8 (engine/translation.py's KernelAffine), which loads in
+Pyodide only: tests/translation-kernels.ts runs this check there with it.
 
 The models are not in the repository (policy 1) and CI has none: the check looks for them in MARIAN_FILES (folders,
 os.pathsep between) and the owner's checkout of bergamot-vs-shisa (its models/), by the end of the name and the size
@@ -34,6 +38,7 @@ sys.path.insert(0, python_folder(ROOT))
 import numpy as np  # noqa: E402
 
 from convert.tokenizer import sentencepiece_charsmap, sentencepiece_options, sentencepiece_pieces, tokenizer_bin  # noqa: E402
+from engine.kernels import load_kernels  # noqa: E402
 from engine.marian import read_marian  # noqa: E402
 from engine.tokenizer import Tokenizer  # noqa: E402
 from engine.translation import Translator  # noqa: E402
@@ -142,13 +147,13 @@ def write(names):
     print(f"wrote {FIXTURE.relative_to(ROOT)}: {', '.join(names)}, {len(sentences)} sentences each")
 
 
-def check(names, limit):
+def check(names, limit, kernels=None):
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     sentences = fixture["sentences"][:limit]
     failed = False
     for name in names:
         model, source, target = files(name)
-        translator = Translator(read_marian(model.read_bytes()), spm_tokenizer(source), spm_tokenizer(target))
+        translator = Translator(read_marian(model.read_bytes()), spm_tokenizer(source), spm_tokenizer(target), kernels=kernels)
         theirs = fixture["models"][name]["translations"]
         same, own, began = 0, [], time.perf_counter()
         for sentence, their in zip(sentences, theirs):
@@ -163,7 +168,7 @@ def check(names, limit):
             print(f"  {name} sentence {sentence['id']} ({sentence['src_lang']}): DIFFERENT\n    ours   {fx_text(translator, written)}\n"
                   f"    theirs {their}\n    {first_difference(translator, ids, their)}")
         seconds = (time.perf_counter() - began) / max(len(sentences), 1)
-        print(f"{name}: {same} of {len(sentences)} the same as fxtranslate's ({seconds:.2f} s a sentence)"
+        print(f"{name}{' (the kernel)' if kernels else ''}: {same} of {len(sentences)} the same as fxtranslate's ({seconds:.2f} s a sentence)"
               + (f"; the engine's own text writes the bytes of sentences {own}" if own else ""), flush=True)
     return failed
 
@@ -173,7 +178,13 @@ def main():
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--only", action="append", choices=list(MODELS))
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--kernels", action="store_true")
     arguments = parser.parse_args()
+    kernels = None
+    if arguments.kernels:
+        kernels = load_kernels(os.environ.get("TRANSLATION_KERNELS", "simdkernel.so"))
+        if not kernels:
+            sys.exit("--kernels: the SIMD kernels load in Pyodide only (node tests/translation-kernels.ts)")
     names = list(MODELS) if arguments.write else arguments.only or list(MODELS)  # (--write makes the whole fixture)
     missing = [name for name in names if files(name) is None]
     for name in missing:
@@ -184,7 +195,7 @@ def main():
             sys.exit("--write makes every model's translations: give MARIAN_FILES the missing ones")
         write(names)
         return
-    sys.exit(1 if check(names, arguments.limit) else 0)
+    sys.exit(1 if check(names, arguments.limit, kernels) else 0)
 
 
 if __name__ == "__main__":

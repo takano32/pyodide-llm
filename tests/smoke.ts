@@ -616,6 +616,41 @@ def rotated_kernels():
                 simd[name](there.ctypes.data, there.ctypes.data, scaled.ctypes.data, n, block)
                 assert np.array_equal(there.view(np.uint32), want.view(np.uint32)), f"{name} in place is not NumPy's (block {block}, {n} values)"
 rotated_kernels()
+# T648.3: Firefox Translations' int8 affine on the kernel (affine_q8) is engine/translation.py's NumPy one to the bit:
+# the models' widths (384, 512, 1536, 2048) and those with a rest of 1 to 3 (the tails of 16 and of 1), 520 and 521
+# (where NumPy's sums go from float32 to float64), one and several rows of x; the activations past ±127 / alpha (kept
+# to ±127), at the halves (rounded to the even), infinities, both zeros; the largest sum there is (q = 254 against
+# 127s, and against −128s, which intgemm does not write and the int32 sums hold all the same); nothing written past out
+def translation_affines():
+    from types import SimpleNamespace
+    from engine.translation import Affine, KernelAffine
+    rng = np.random.default_rng(6483)
+    for k in (384, 385, 386, 387, 512, 513, 520, 521, 1536, 1539, 2048, 2051, 1, 2, 15, 17, 31, 33):
+        n = 7
+        rows = rng.integers(-127, 128, (n, k)).astype(np.int8)
+        rows[0], rows[1], rows[2] = 127, -128, -127
+        weight = SimpleNamespace(values=rows, quant_mult=np.float32(rng.uniform(20, 120)))
+        bias = (rng.standard_normal(n) * 3).astype(np.float32)
+        alpha = np.float32(rng.choice([4.0, 2.5, 17.3125]))
+        x = (rng.standard_normal((5, k)) * 127 / alpha * rng.uniform(0.2, 2.0)).astype(np.float32)
+        x[0] = 1e6
+        x[1] = -np.float32(1e6) if k % 2 else np.inf
+        halves = (np.array([0.5, 1.5, 2.5, -0.5, -1.5, -2.5, 126.5, 127.5, -126.5, -127.5, 0.0, -0.0, -np.inf, 3e38], np.float32) / alpha).astype(np.float32)
+        x[2, :min(k, halves.size)] = halves[:k]
+        x[3] = (rng.integers(-400, 400, k) / 2 / alpha).astype(np.float32)  # a half everywhere, many past ±127
+        for m in (1, 2, 5):
+            for b in (bias, None):
+                want = Affine(weight, alpha, b)(x[:m])
+                on = KernelAffine(weight, alpha, b, simd["affine_q8"])
+                out = np.full((m * on.n + 3,), np.nan, np.float32)
+                xq = np.empty(m * k, np.int8)
+                xs = np.ascontiguousarray(x[:m])
+                simd["affine_q8"](out.ctypes.data, xs.ctypes.data, xq.ctypes.data, m, k, on.rows.ctypes.data, n, on.alpha,
+                                  on.shifts.ctypes.data, on.unquant, on.bias.ctypes.data)
+                assert np.array_equal(out[:m * n].view(np.uint32), want.reshape(-1).view(np.uint32)), f"affine_q8 is not Affine (k {k}, {m} rows)"
+                assert np.isnan(out[m * n:]).all(), f"affine_q8 wrote past out (k {k})"
+                assert np.array_equal(on(x[:m]).view(np.uint32), want.view(np.uint32)), f"KernelAffine is not Affine (k {k}, {m} rows)"
+translation_affines()
 # T136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
 # subnormals, both zeros) once, with every int8 (-128 and 127 included) across the blocks, in odd numbers of blocks
 q8_0 = kernel_readers["Q8_0"]

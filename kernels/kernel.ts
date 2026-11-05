@@ -8,7 +8,8 @@
 // written in the file of its kind and added to a line here; a new file of kernel/ is added to the Makefile's rule
 // too, or make kernels does not see it change.
 //   kernel/matmul.ts       the matrix products (float32, int8, 6 bits, ternary, binary) and what they take beside the
-//                          weights: the corrections' sums, interleave, the outliers' columns
+//                          weights: the corrections' sums, interleave, the outliers' columns; T648.3: the int8
+//                          affine of Firefox Translations' models (affine_q8)
 //   kernel/quantize.ts     numbers from one form to another: the stored forms widened to float32, float32
 //                          quantized to int8, six bits, ternary and binary (the converter's, and quantize_x every token)
 //   kernel/attention.ts    rope and attention over a cache of float32 or float16
@@ -38,3 +39,4 @@ export { geglu } from "./kernel/activations";
 export { geglu_erf } from "./kernel/activations";
 export { matmul_b1 } from "./kernel/matmul";
 export { binary_x } from "./kernel/quantize";
+export { affine_q8 } from "./kernel/matmul";

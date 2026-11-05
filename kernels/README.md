@@ -15,7 +15,7 @@ two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 
 | file | what is in it |
 |---|---|
-| `kernel/matmul.ts` | the matrix products without relaxed SIMD (`matmul_f32`, `matmul_q8`, `matmul_q6`, `matmul_t2`, `matmul_b1`) and what they take beside the weights: `int8_sums` and `six_sums` (the corrections of the relaxed products), `interleave` (the activations as the ternary products read them), `add_columns` (the classifier's outlier columns) |
+| `kernel/matmul.ts` | the matrix products without relaxed SIMD (`matmul_f32`, `matmul_q8`, `matmul_q6`, `matmul_t2`, `matmul_b1`) and what they take beside the weights: `int8_sums` and `six_sums` (the corrections of the relaxed products), `interleave` (the activations as the ternary products read them), `add_columns` (the classifier's outlier columns); `affine_q8` (T648.3: Firefox Translations' int8 affine as fxtranslate multiplies it, the activations quantized with the matrix's fixed alpha and summed exactly in int32; Python's `engine/translation.py` calls it) |
 | `kernel/quantize.ts` | numbers from one form to another: `widen_bf16`, `widen_q8_0`, `widen_pq2_0`, `widen_ptq1_0` (a checkpoint's stored forms to float32), `quantize_x` (the converter's int8, and the activations of every int8 product), `quantize6_x`, `ternary_x`, `binary_x` |
 | `kernel/attention.ts` | `rope`, `attention`, `attention_f16` |
 | `kernel/halves.ts` | float16: `to_f16`, `from_f16`, `finite_f16`, and the widening `attention_f16` reads the cache with |

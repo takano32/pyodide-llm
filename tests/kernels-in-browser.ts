@@ -554,6 +554,43 @@ async function inPage({ plain, relaxed }) {
     }
   }
 
+  // ---- T648.3: affine_q8, Firefox Translations' int8 affine (fxtranslate's numbers): each activation x · alpha rounded
+  // to the even and kept to ±127, the exact integer of (q + 127) times the weights (the kernel takes the 127 back as
+  // the rows' shifts), into a float32 once, times unquant, plus the bias. Rows of 385 and 2051 (rests of 1 and 3 after
+  // the 16s), one row of x and three, activations past ±127 / alpha and at the halves, weights of ±127 and −128
+  {
+    const n = 16, alpha = 2.5, unquant = f(1 / (2.5 * 81.25)), at = extra + 6291456;
+    const roundEven = (v) => { const r = Math.round(v); return Math.abs(v % 1) === 0.5 && r % 2 ? r - 1 : r; };
+    for (const [k8, m] of [[385, 1], [2051, 3]]) {
+      const w = at, shifts = w + ((n * k8 + 64) & ~15), bias = shifts + n * 4, x = bias + n * 4, xq = x + m * k8 * 4, out = xq + ((m * k8 + 64) & ~15);
+      const weights = Int8Array.from({ length: n * k8 }, (_, j) => (j < k8 ? 127 : j < 2 * k8 ? -128 : (next() % 255) - 127));
+      const xs = Float32Array.from({ length: m * k8 }, (_, j) =>
+        j % 97 === 0 ? 1e6 * (j & 1 ? -1 : 1) : j % 13 === 0 ? f((((next() % 400) - 200) + 0.5) / alpha) : f(((next() % 20001) / 10000 - 1) * 80));
+      const sums = Array.from({ length: n }, (_, j) => weights.subarray(j * k8, j * k8 + k8).reduce((s, v) => s + v, 0));
+      const biases = Float32Array.from({ length: n }, () => f((next() % 2001) / 1000 - 1));
+      const want = [];
+      for (let i = 0; i < m; i++) {
+        const q = Array.from({ length: k8 }, (_, c) => Math.min(127, Math.max(-127, roundEven(f(xs[i * k8 + c] * f(alpha))))) + 127);
+        for (let j = 0; j < n; j++) {
+          let acc = 0;
+          for (let c = 0; c < k8; c++) acc += q[c] * weights[j * k8 + c];
+          want.push(f(f(unquant * f(acc)) + biases[j]));
+        }
+      }
+      const call = () => {
+        I.set(weights, w); N.set(sums.map((v) => 127 * v), shifts / 4); F.set(biases, bias / 4); F.set(xs, x / 4);
+        k.affine_q8(out, x, xq, m, k8, w, n, alpha, shifts, unquant, bias);
+      };
+      await check(`affine_q8 (${m} of ${k8})`, call, () => {
+        F.fill(-7, out / 4, out / 4 + m * n + 4);
+        call();
+        for (let i = 0; i < m * n; i++) if (!Object.is(F[out / 4 + i], want[i])) return `output ${i}: ${F[out / 4 + i]} not ${want[i]}`;
+        for (let i = m * n; i < m * n + 4; i++) if (F[out / 4 + i] !== -7) return `wrote past the output`;
+        return null;
+      });
+    }
+  }
+
   // ---- geglu (T261: the gate of a Gemma 3's FFN, gelu(h1) * h3). Its exp is the kernels' own (vexp, four at a time),
   // which is not written out here: it is held to the engine's gelu of the same values (a bias of -0, which changes no
   // value and no zero's sign) times h3 in float32, to the bit, and to the formula in float64 within a millionth (where
