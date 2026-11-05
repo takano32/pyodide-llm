@@ -56,7 +56,7 @@ MODELS = {"0.8B": ("pfnet/plamo-3-translate-0.8b", "cc8e88169807d5a272e8ff06db12
           "2B": ("pfnet/plamo-3-translate-2b", "355637cc04db67195ba87a97da85eaf1d52a22e8", 2),
           "8B": ("pfnet/plamo-3-translate-8b", "681bd55cf01f5412aab8881e6a4a276c948fabc1", 4)}
 CODE = ["modeling_plamo.py"]
-FILES = ["config.json", "tokenizer_config.json", "special_tokens_map.json", "generation_config.json", "tokenizer.jsonl",
+FILES = ["config.json", "tokenizer_config.json", "special_tokens_map.json", "generation_config.json", "chat_template.jinja", "tokenizer.jsonl",
          "tokenization_plamo.py", *CODE]
 BOS = 1  # <|plamo:bos|>
 STOPS = (1, 16)  # generation_config.json's: <|plamo:bos|> and <|plamo:tag|>

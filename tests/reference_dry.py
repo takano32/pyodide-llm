@@ -131,7 +131,7 @@ def directories(work):
     tensors, config = made_up.plamo3_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, layers=9, pattern=4, spread=0.1)
     put(work / "plamo3" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
                                   "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
-                                  "generation_config.json": "{}", "special_tokens_map.json": "{}", "modeling_plamo.py": "",
+                                  "generation_config.json": "{}", "chat_template.jinja": "", "special_tokens_map.json": "{}", "modeling_plamo.py": "",
                                   "tokenization_plamo.py": "", "tokenizer.jsonl": "",
                                   "model.safetensors": made_up.safetensors_file(tensors)})
     for name, more in (("granite", dict(model_type="granite", attention_multiplier=0.3, embedding_multiplier=1.0, residual_multiplier=1.0,
