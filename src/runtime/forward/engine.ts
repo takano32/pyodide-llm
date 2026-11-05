@@ -5,22 +5,22 @@
 // the cache of the keys and values cache.ts's: each is chosen or made here once, and a token's path calls what it gave.
 // A module of src/runtime/forward.ts.
 
-import { BATCH, KIND, addressed, packingOf, runner } from "../jobs.ts";
+import { BATCH, addressed, packingOf, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
-import { growMemory, PAGE, align, frameArrays, frameBytes, halfToFloat } from "./memory.ts";
+import { growMemory, PAGE, align, frameArrays, frameBytes } from "./memory.ts";
 import { LAYER_KINDS } from "./kinds.ts";
 import { kindsHad, sizesOfPlan } from "./sizes.ts";
 import { keyValueCache } from "./cache.ts";
 import { gatedFfn, plainFfn } from "./ffn.ts";
 import { perLayer } from "./perlayer.ts";
-import { GPU_ALONE } from "./alone.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
 import { gpuFit } from "./gpufit.ts";
 import { gpuSide } from "./gpuside.ts";
 import { blockTables } from "./blocks.ts";
 import { stagingReader } from "./staging.ts";
-import type { Kernels, Packed, Packing, Ready } from "../jobs.ts";
+import { partsOf, tensorsOf } from "./tensors.ts";
+import type { Kernels } from "../jobs.ts";
 import type { Direct } from "./alone.ts";
 import type { Placed, Shape, Taken } from "./gpufit.ts";
 import type { CpuSide, GpuWorker, Side } from "./gpuside.ts";
@@ -28,7 +28,7 @@ import type { Spawn } from "./threads.ts";
 import type { Rows } from "./perlayer.ts";
 import type { Force, Remembered } from "../contracts/gpu/protocol.ts";
 import type { Core, Held, Kinds, Product, Room } from "./kinds.ts";
-import type { Derived, LayerKind, Part, Plan, Tensor, TensorName } from "../contracts/plan.ts";
+import type { Derived, LayerKind, Plan } from "../contracts/plan.ts";
 
 // ---- (T.368.4, the types)
 // The kernels of one build as modules (forward.ts's compileKernels()): relaxed: null where the browser has no relaxed
@@ -129,7 +129,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const sharedMemory = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer;
   const T = plan.tensors, derived: Derived = plan.derived ?? {};
   // T.363.5: how every tensor of the file is packed, a stack's layers each: the packings there are (jobs.ts's PACKED)
-  const partsOf = (t: Tensor): Part[] => t.layers ?? [t as Part];
   const packings = Object.values(T).flatMap(partsOf).map(({ kind }) => packingOf(kind)).filter((packing) => packing !== null);
   // the kernels of llama.cpp's blocks, of modules of their own, on this memory beside the others where the model has
   // rows of such a type; nowhere else
@@ -168,124 +167,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     get H() { return H; },
   };
 
-  const count = (t: Tensor) => t.shape.reduce((a, b) => a * b, 1);
   // T.363.5: the tables of the kernels of llama.cpp's blocks and the scratch of their signed tile (blocks.ts; 0 where the
   // model has no such rows)
   const { tables, spread } = blocked ? blockTables({ k, relaxed, alloc, memory, base, tensors: T, partsOf, signed: trying.signed }) : { tables: 0, spread: 0 };
-  // a float32 copy of a tensor: float16 converted; a packed one (int8, int6, ternary: jobs.ts's PACKED says how each
-  // weight is read) times the scale of its group (Math.fround is the float32 product NumPy computes); T.363.5: a stack
-  // whose layers are each of a kind of their own layer by layer, and rows of llama.cpp's blocks by their kernel
-  function widen(t: Tensor) {
-    const n = count(t), at = alloc(n * 4), parts = partsOf(t), each = n / parts.length, width = t.shape[t.shape.length - 1];
-    parts.forEach((part, l) => {
-      const to = at + l * each * 4, packing = packingOf(part.kind);
-      if (part.kind === "f32") {
-        F.copyWithin(to / 4, (base + part.offset) / 4, (base + part.offset) / 4 + each);
-      } else if (part.kind === "f16") {
-        for (let i = 0; i < each; i++) F[to / 4 + i] = halfToFloat(H[(base + part.offset) / 2 + i]);
-      } else if (packing?.row) {
-        const row = packing.row(k, tables), bytes = packing.rowBytes(width);
-        for (let r = 0; r < each / width; r++) row(to + r * width * 4, base + part.offset + r * bytes, width);
-      } else if (packing?.value) {
-        const g = part.group, values = base + part.offset, scaleAt = scaleOf(packing, base + part.scales);
-        for (let i = 0; i < each; i++) F[to / 4 + i] = Math.fround(packing.value(U, values, i) * scaleAt((i / g) | 0));
-      } else {
-        throw new Error(`This engine reads no weights stored as ${JSON.stringify(part.kind)}.`);
-      }
-    });
-    return at;
-  }
-  // T.533: the scale of group g of a packed tensor whose scales start at address scales: a float32, or a float16
-  // (ternary's: packing.scale says which), widened exactly. Of the views as they are when it is called
-  function scaleOf(packing: Packing, scales: number) {
-    return packing.scale === 2 ? (g: number) => halfToFloat(H[scales / 2 + g]) : (g: number) => F[scales / 4 + g];
-  }
-  const widened = new Map<string, number>();
-  // the address of a float32 tensor, widened once if the file does not hold float32
-  function floats(name: TensorName | keyof Derived) {
-    if (name in derived) {
-      if (!widened.has(name)) {
-        const bytes = derived[name as keyof Derived]!, at = alloc(bytes.length);
-        U.set(bytes, at);
-        widened.set(name, at);
-      }
-      return widened.get(name)!;
-    }
-    const t = T[name as TensorName];
-    if (!t) return 0;
-    if (t.kind === "f32") return base + t.offset;
-    if (!widened.has(name)) widened.set(name, widen(t));
-    return widened.get(name)!;
-  }
-  // a matrix: packed (values, scales, and the corrections of relaxed SIMD where its packing has them) when plan.int8,
-  // else float32. T.375.4: how a packing is multiplied is its line of jobs.ts's PACKED, read here once: the matrix keeps
-  // the kind of its job (with relaxed SIMD or without, as this engine runs) and what makes its input ready.
-  // T.375.3: made once for a name, as floats() widens once: what the engine names for the GPU's side and what a kind of
-  // layer takes for itself are the same thing
-  const matrices = new Map<TensorName, Held | null>();
-  function matrix(name: TensorName): Held | null {
-    if (!matrices.has(name)) matrices.set(name, made(name));
-    return matrices.get(name)!;
-  }
-  // (the activations as a packing's kernels take them: one function for a name, so that matrices packed alike in that
-  // are told by it)
-  const readies = new Map<string, Ready>();
-  const readyOf = (packing: Packing) => {
-    if (!readies.has(packing.takes)) readies.set(packing.takes, packing.ready(k, Boolean(relaxed)));
-    return readies.get(packing.takes)!;
-  };
-  function made(name: TensorName): Held | null {
-    const source: TensorName = plan.shared_classifier && name === "wcls" ? "token_embedding_table" : name;
-    const t = T[source];
-    if (!t) return null;
-    const [rows, n] = t.shape.slice(-2);
-    // T.363.5: a stack with a kind for each layer is its layers, each a matrix of its own (matmuls() takes the layer's)
-    if (t.layers) {
-      const layers = t.layers.map((part) => held({ ...part, shape: [rows, n] }, source, rows, n));
-      return { rows, n, kind: "layers", layers, layer: () => { throw new Error(`The matrix ${source} is its layers, each of a kind of its own.`); } };
-    }
-    return held(t, source, rows, n);
-  }
-  function held(t: Tensor, source: TensorName, rows: number, n: number): Held {
-    // (scaled: the bytes of a layer's scales, T.533: float16s for ternary; corrected: of its corrections, int32s)
-    const packing = packingOf(t.kind), scaled = rows * (n / t.group) * (packing?.scale ?? 4), corrected = rows * (n / t.group) * 4;
-    // T.156: on the GPU alone: where each layer's values and scales start in the checkpoint (what gpu.ts was opened
-    // with), for the plan the GPU's worker is started with; the CPU never multiplies by it (T.210: nor by the classifier)
-    if (direct && GPU_ALONE.includes(source)) {
-      // (T.486: gpuOnlyUnfit() keeps a model of float32 or float16 matrices off the GPU alone before it is loaded; one
-      // that came here anyway is said so, not read as a packing it has not)
-      if (!packing) throw new Error(`The matrix ${source} is of ${t.kind}, which is not on the GPU alone.`);
-      const rowBytes = packing.rowBytes(n);
-      return { rows, n, kind: t.kind as Packed, group: t.group, onGpu: true, layer: (l) => [t.offset + l * rows * rowBytes, t.scales + l * scaled] };
-    }
-    if (packing && plan.int8) {
-      const rowBytes = packing.rowBytes(n), values = base + t.offset, scales = base + t.scales, groups = count(t) / t.group;
-      // (T.363.5: llama.cpp's blocks: the tables and the type where the others have scales and corrections, and last
-      // the scratch of the signed tile, taken where there is one)
-      if (packing.tabled !== undefined) {
-        const type = packing.tabled, { jobs } = packing;
-        const job = !relaxed?.matmul_sbr ? jobs.plain : spread && jobs.signed !== undefined ? jobs.signed : jobs.relaxed;
-        return { rows, n, kind: t.kind as Packed, group: t.group, layer: (l) => [values + l * rows * rowBytes, tables, type, spread], job, ready: readyOf(packing) };
-      }
-      let corrections = 0;
-      if (relaxed && packing.sums) {
-        // relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, which this takes out again:
-        // dot(w, q - 64) = dot(w, q) - 64 * sum(w). -64 * sum of the group, an int32 (T.197: the kernels add it to the
-        // group's integer sum; before it the float32 scale * sum)
-        corrections = alloc(groups * 4);
-        // the same numbers as a sum in JavaScript, a kernel's speed (T.98, T.123: 7B spent 266 s here one value at a
-        // time). Groups of 32: relaxed runs only where every row is whole groups
-        k[packing.sums](corrections, values, groups);
-      }
-      // (a layer's values, scales and corrections: 0 where the packing has none)
-      const layer = (l: number) => [values + l * rows * rowBytes, scales + l * scaled, corrections && corrections + l * corrected];
-      return { rows, n, kind: t.kind as Packed, group: t.group, layer, job: relaxed ? packing.jobs.relaxed : packing.jobs.plain, ready: readyOf(packing) };
-    }
-    // (a layer of a stack that is float32 by itself: widened or taken as it is, where it is)
-    if (t !== T[source]) return { rows, n, kind: "f32", job: KIND.matmul_f32, ready: null, layer: ((w) => () => [w])(t.kind === "f32" ? base + t.offset : widen(t)) };
-    const w = floats(source);  // float32 as it is, or widened once (shared with the embedding when it is the same table)
-    return { rows, n, kind: "f32", job: KIND.matmul_f32, ready: null, layer: (l) => [w + l * rows * n * 4] };
-  }
+  // T.641.2: the model's tensors by their names (tensors.ts): the address of a float32 copy, a matrix as the kernels
+  // multiply by it
+  const { floats, matrix, scaleOf } = tensorsOf({ plan, base, room, k, relaxed, direct, tables, spread });
 
   // ---- the activations: one frame per token, BATCH of them for a prompt (T.108). A frame holds what one token needs,
   // in the order it always had, and the next token's frame follows: every array of token t is t * S bytes after token
