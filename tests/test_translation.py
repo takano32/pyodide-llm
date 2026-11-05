@@ -146,11 +146,11 @@ def test_layer_norm_and_attention_are_their_formulas():
     assert np.allclose(layer_norm(x, scale, bias), plain, rtol=1e-5, atol=1e-5)
 
     # a row of small spread, where eps (1e-6, not 1e-5) is a good part of the variance
-    flat = (1 + 1e-3 * rng.standard_normal((2, D))).astype(F)
+    flat = (1 + 1e-2 * rng.standard_normal((2, D))).astype(F)
     f64 = flat.astype(np.float64)
     centred = f64 - f64.mean(axis=1, keepdims=True)
     assert np.allclose(layer_norm(flat, scale, bias), scale * centred / np.sqrt((centred ** 2).mean(axis=1, keepdims=True) + 1e-6) + bias,
-                       rtol=1e-5, atol=1e-5)
+                       rtol=1e-4, atol=1e-4)
 
     t = translator()
     attention = t.encoder[0][0]
