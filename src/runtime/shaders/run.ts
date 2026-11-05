@@ -252,7 +252,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // ---- T.547.3.6: the embedding's row of a token from a table of llama.cpp's blocks (superblocks.ts's SUPERBLOCKS: a text a
 // type), as EMBED's: bindings 0 the table's blocks (1, an IQ type's codebooks: its helpers bind them), 2 the state, 3 dst,
 // 4 the row's width and (T.209) the piece's first row and rows. A thread a group of 32 at a time: each half's values
-// times its scale, less its min, as the matrices' BLK takes them (prompt.ts). T.547.3.7, rows: EMBED_ROWS's, the rows of
+// times its scale, less its min, as the matrices' BLK takes them (superblocks.ts's BLOCK_COMMON). T.547.3.7, rows: EMBED_ROWS's, the rows of
 // a prompt's block for a model on the GPU alone (binding 2 the block's ids, a workgroup a token, workgroup_id.y)
 export const embedBlocks = ({ weights, rows }: { weights: BlockPacking; rows: boolean }): string => {
   const { bytes, helpers, code } = SUPERBLOCKS[weights];

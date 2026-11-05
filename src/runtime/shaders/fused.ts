@@ -487,7 +487,7 @@ ${ROW_RMS}
 //   own, reads (T.547.2.4, llama.cpp's blocks: the others' "" and null) what a thread makes of its vector's group once
 //              (the sums of its halves, which a block's mins take), and in the place of the lines above, a row's group
 //              read from its block and added to the row's sum (superblocks.ts's BLOCK_COMMON's BLK, the tiles' own reading);
-//              of up's row too where the output has two matrices (swiglu, geglu). T.547.3.3: a row a type of prompt.ts's
+//              of up's row too where the output has two matrices (swiglu, geglu). T.547.3.3: a row a type of superblocks.ts's
 //              SUPERBLOCKS, its reading of a block its own (blockRows)
 // (T.547.3.3: a type's row: its blocks' bytes the step from a block to the next)
 const blockRow = (packing: BlockPacking) => {
