@@ -288,10 +288,12 @@ def unturned_faults(label, llama, tokens, whole, theirs, line, lined):
     Returns those it did not see."""
     held, middle = llama.unturned, llama.unturned[len(llama.unturned) // 2]
     spare = next(layer for layer in range(llama.n_layers) if layer not in held)
+    facts = llama.layers
 
     def left(unturned):
-        llama.unturned = unturned
-        return lambda: setattr(llama, "unturned", held)
+        # (the forward pass reads whether RoPE turns a layer off its facts, T.639.2)
+        llama.layers = [{**layer, "rope": layer["kind"] == "attention" and l not in unturned} for l, layer in enumerate(facts)]
+        return lambda: setattr(llama, "layers", facts)
 
     faults = [("every layer turned (read as a Llama)", lambda: left(()), True),
               (f"layer {middle} turned", lambda: left(tuple(layer for layer in held if layer != middle)), True),

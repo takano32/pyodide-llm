@@ -277,7 +277,7 @@ def test_a_shared_layer_keeps_no_keys_and_values_and_reads_its_sources():
     for pos, token in enumerate(TOKENS):
         llama.forward(token, pos)
     assert [keys is None for keys in llama.key_cache] == [False] * 4 + [True] * 4
-    assert [held for *_, held in llama.heads] == [0, 1, 2, 3, 1, 1, 1, 3]
+    assert [facts["reads"] for facts in llama.layers] == [0, 1, 2, 3, 1, 1, 1, 3]
     # what a shared layer's own k and v would make is read nowhere: changed, nothing moves
     changed = {**tensors, "model.layers.6.self_attn.k_proj.weight": tensors["model.layers.6.self_attn.k_proj.weight"] + 1.0,
                "model.layers.7.self_attn.v_proj.weight": tensors["model.layers.7.self_attn.v_proj.weight"] * 3.0}

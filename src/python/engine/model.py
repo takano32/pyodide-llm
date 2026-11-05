@@ -28,8 +28,8 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, SETTINGS, Tokenizer
-from engine.layout import (ATTENDING, DOUBLE, GELU, GELU_ERF, NARROW, NARROW_KEPT, PARTLY, PROPORTIONAL, WIDE, WIDE_KEPT, Dims, FORM, file_size, form_of, layout_of, linear_form, linear_widths, local_layers,
-                           check_shared_windows, stateful_kinds, unturned_layers)
+from engine.layout import (GELU, GELU_ERF, PARTLY, PROPORTIONAL, Dims, FORM, file_size, form_of, layout_of, linear_form, linear_widths, local_layers,
+                           stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
@@ -38,7 +38,7 @@ from engine.dtypes import QUANTIZED, dtype_of
 from engine.tensors import local_tables, read_rows, rope_tables
 from engine.sampler import KernelSampler, NumpySampler, greedy
 from engine.external import STEPS, ExternalForward
-from engine.plan import Settings, forward_plan
+from engine.plan import ATTENTION, Settings, forward_plan, layer_facts
 from engine import generation
 
 # The KV cache starts with room for this many positions and doubles when a run gets there: a context of 4096
@@ -74,6 +74,18 @@ def convolution_states(convolution, layers, dim):
 
 
 STATEFUL_LAYERS = {"linear": ("linear_attention", linear_states), "convolution": ("short_convolution", convolution_states)}
+
+
+def turned_heads(v, cos, sin, facts, partly):
+    """q or k of an attending layer as its heads, turned by RoPE as the layer's facts say (layer_facts()): not at all
+    (T.255: a layer RoPE leaves alone, or a model without RoPE), the first "rotary" values of every head (partly: a
+    GPT-NeoX's, T.331 a Gemma 4's full-attention layers', T.342 a Spark's) or the whole of every head (T.261: a local
+    layer always)."""
+    if not facts["rope"]:
+        return v.reshape(-1, facts["head"])
+    if partly and not facts["local"]:
+        return partial_rope(v.reshape(-1, facts["head"]), cos, sin, facts["rotary"])
+    return rope(v, cos, sin)
 
 
 # T.639.1: what a Llama is given besides its two files, by whose it is, each in one table: the form's (engine/layout.py's
@@ -262,24 +274,20 @@ class Llama:
         self.local = local_layers(arch, n_layers, local)
         dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
         self.slots = dims.slots
-        # T.331: for every layer that attends, by its place among them: the names of its attention's tensors are those
-        # of its width (WIDE's "_wide"), its place in their stacks, and the size of its heads; T.330: its place in the
-        # stacks of k and v (None: it reads another's keys and values) and the place among the attending layers whose
-        # keys and values it reads. And for every layer, the name of its FFN's (DOUBLE's "_double") and its place in
-        # theirs. Every layer of a model without such is ("", its place, head_size, its place, its place) and ("", l)
-        self.wide, self.double, self.shared = dims.wide, dims.double, dims.sharing
-        check_shared_windows(dims.sharing, self.local)  # (T.518)
-        attending, sources = dims.layers(ATTENDING), dict(zip(*dims.sharing.values())) if dims.sharing else {}
-        stacks = {per: dims.layers(per) for per in (NARROW, WIDE, NARROW_KEPT, WIDE_KEPT)}
-        self.heads = []
-        for l in attending:
-            named, per, kept, size = ("_wide", WIDE, WIDE_KEPT, dims.wide_head) if l in stacks[WIDE] else ("", NARROW, NARROW_KEPT, self.head_size)
-            self.heads.append((named, stacks[per].index(l), size, stacks[kept].index(l) if l in stacks[kept] else None,
-                               attending.index(sources.get(l, l))))
-        doubled = dims.layers(DOUBLE)
-        self.ffns = [("_double", doubled.index(l)) if l in doubled else ("", l - sum(d < l for d in doubled))
-                     for l in range(n_layers)]
+        self.wide = dims.wide  # (T.331: the wide heads' form, None of a model without)
+        if form["tiled"]:
+            self.tiled = True
         self.softcap = float(softcap or 0.0)
+        # the settings of the plan, but the RoPE tables (made below, once the rows are read)
+        settings = Settings(int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
+                            parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
+                            rotated=self.rotated, tiled=self.tiled, local=self.local, softcap=self.softcap)
+        # T.639.2: what every layer is (engine/plan.py's layer_facts(), the table the plan hands forward.js): its kind
+        # and place, its attention's width ("wide"), place in its stacks ("stack"), heads ("head") and keys and values
+        # ("kept", -1 where it reads another's: T.330; "reads"), whether and how RoPE turns it ("rope", "local",
+        # "window", "rotary"), and its FFN's width ("double") and place ("ffn"). Worked out here once, and read by the
+        # NumPy forward pass at every layer (layer_facts() refuses shared layers that attend another window: T.518)
+        self.layers = layer_facts(dims, settings)
         # the numbers of its layers that keep a state, under their kind's name: linear (T.229, a Qwen3.5's
         # linear-attention layers), convolution (T.260, an LFM2's convolution layers); None, of a model without
         for kind in stateful_kinds():
@@ -305,8 +313,6 @@ class Llama:
         self.per_layer = dims.per_layer
         # what the file holds: its rows
         self.rows = dims.rows()
-        if form["tiled"]:
-            self.tiled = True
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
         self.w3 = None
@@ -333,11 +339,8 @@ class Llama:
                                  f"{file_size(self.rows, stored)} as {stored}.")
             # forward.js's forward pass, and what else its engine offers, in the reference's places
             # (the plan is made here and handed over: nothing in Python keeps it)
-            outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, Settings(
-                int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
-                parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
-                rotated=self.rotated, tables=tables, tiled=self.tiled, local=self.local,
-                local_tables=self.local_cis, softcap=self.softcap)), external)
+            outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, settings._replace(
+                tables=tables, local_tables=self.local_cis)), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):
@@ -345,20 +348,20 @@ class Llama:
         else:
             # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T.93
             # (the linear-attention layers and the convolution layers have no keys and values)
-            attending = sum(not lines for lines, _ in self.slots)
-            if self.wide is None and self.shared is None:
-                self.key_cache = np.zeros((attending, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
+            attending = [facts for facts in self.layers if facts["kind"] == ATTENTION]
+            if dims.wide is None and dims.sharing is None:
+                self.key_cache = np.zeros((len(attending), self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
                 self.value_cache = np.zeros_like(self.key_cache)
             else:
                 # T.331: a layer's keys and values are of the size of its heads: one array for each; T.330: none for a
                 # layer that reads another's
-                self.key_cache = [np.zeros((self.n_kv_heads, min(KV_START, self.seq_len), size), dtype=np.float32)
-                                  if kept is not None else None for _, _, size, kept, _ in self.heads]
+                self.key_cache = [np.zeros((self.n_kv_heads, min(KV_START, self.seq_len), facts["head"]), dtype=np.float32)
+                                  if facts["kept"] >= 0 else None for facts in attending]
                 self.value_cache = [None if keys is None else np.zeros_like(keys) for keys in self.key_cache]
             if dims.stateful_kind is not None:
                 # their states (STATEFUL_LAYERS), each an attribute of its name. state_at: the next position
                 self.stateful, states = STATEFUL_LAYERS[dims.stateful_kind]
-                states = states(getattr(dims, dims.stateful_kind), n_layers - attending, dim)
+                states = states(getattr(dims, dims.stateful_kind), n_layers - len(attending), dim)
                 self.states = tuple(states)
                 for name, state in states.items():
                     setattr(self, name, state)
@@ -413,10 +416,9 @@ class Llama:
                 cache = getattr(self, name)
                 setattr(self, name, [layer if layer is None else grown(layer) for layer in cache] if isinstance(cache, list)
                         else grown(cache))
-        cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
-        # T.261: the local layers, where the model has such: their window and their own angles of this position
-        local = self.local and set(self.local["layers"])
-        tables = (cos, sin)
+        # the angles of this position: of the model's tables, and (T.261) of its local layers' own, where it has such
+        tables = (self.freq_cis_real[pos], self.freq_cis_imag[pos])
+        local = self.local_cis and (self.local_cis[0][pos], self.local_cis[1][pos])
         # (what the architecture is, as its Layout said when the model was made)
         layer_norm, gated_ffn, activation = self.layer_norm, self.gated_ffn, self.activation
         # the step of the layers that keep a state, where there are such (read off the model at every token, as a
@@ -428,18 +430,7 @@ class Llama:
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
         eps = self.rms_norm_eps
         norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w, eps))
-        # (size: the layer's heads', T.331)
-        heads_of = lambda v, c, s, size: v.reshape(-1, size)  # (q or k as they are)
-        whole = lambda v, c, s, size: rope(v, c, s)
-        if not self.turning:
-            turn = heads_of
-        elif self.partly:
-            # only the first self.rotary of every head are rotated, the rest go through untouched
-            turn = lambda v, c, s, size: partial_rope(v.reshape(-1, size), c, s, self.rotary)
-        else:
-            turn = whole
-        # T.255: a layer RoPE leaves alone, where the model has such
-        turns = [heads_of if l in self.unturned else turn for l in range(self.n_layers)] if self.unturned else None
+        partly = self.partly
 
         # Copy the token embedding into x, and (GPT-2) the row of this position
         x = self.embedding(token)
@@ -456,9 +447,10 @@ class Llama:
             x = unrotate(x, self.rotated["signs"][self.dim], self.rotated["block"])
 
         # Forward all the layers
-        for l, (lines, a) in enumerate(self.slots):
+        for l, facts in enumerate(self.layers):
+            a = facts["place"]  # (its place among the layers of its kind)
             xb = norm(x, self.rms_att_weight[l], self.ln_att_bias[l] if layer_norm else None)
-            if lines:  # T.229: a linear-attention layer, the a-th of them; T.260: or an LFM2's convolution layer
+            if facts["kind"] != ATTENTION:  # T.229: a linear-attention layer, the a-th of them; T.260: or an LFM2's convolution layer
                 attended = stateful(a, xb)
             else:
                 # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache (a: the layer's place
@@ -466,35 +458,28 @@ class Llama:
                 # (xr: what the matrices read of xb, itself but in a rotated basis, T.237; turned once for all of them)
                 xr = turned(xb)
                 # (T.331: the tensors of the layer's width, its place in their stacks and the size of its heads)
-                # (T.330: and its place in the stacks of k and v, None where it reads the keys and values at held)
-                named, at, size, kept, held = self.heads[a]
+                # (T.330: and its place in the stacks of k and v, -1 where it reads the keys and values at held)
+                named = "_wide" if facts["wide"] else ""
+                at, size, kept, held = facts["stack"], facts["head"], facts["kept"], facts["reads"]
                 wq, wo = getattr(self, "wq" + named), getattr(self, "wo" + named)
                 qv = wq[at] @ xr
-                if kept is not None:
+                if kept >= 0:
                     kv, vv = getattr(self, "wk" + named)[kept] @ xr, getattr(self, "wv" + named)[kept] @ xr
                 if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
                     qv, kv, vv = qv + self.bq[a], kv + self.bk[a], vv + self.bv[a]
                 q_norm = getattr(self, "q_norm" + named)
                 if q_norm is not None:  # Qwen3 normalizes every head of q and k
                     qv = head_norm(qv, q_norm[at], eps)
-                    if kept is not None:
+                    if kept >= 0:
                         kv = head_norm(kv, getattr(self, "k_norm" + named)[kept], eps)
-                if self.value_norm and kept is not None:  # T.331: a Gemma 4 normalizes every head of v, without a weight
+                if self.value_norm and kept >= 0:  # T.331: a Gemma 4 normalizes every head of v, without a weight
                     vv = head_norm(vv, np.ones(size, dtype=np.float32), eps)
-                if turns:
-                    turn = turns[l]
-                first, turning = 0, turn
-                if local:
-                    # a local layer attends the last window positions, this one among them, and turns by its own base
-                    here = l in local
-                    cos, sin = (self.local_cis[0][pos], self.local_cis[1][pos]) if here else tables
-                    first = max(0, pos + 1 - self.local["window"]) if here else 0
-                    # (T.331: and turns its whole head, where the others turn the model's part of theirs)
-                    if here:
-                        turning = whole
-                q = turning(qv, cos, sin, size).reshape(n_kv_heads, kv_mul, size)
-                if kept is not None:
-                    self.key_cache[held][:, pos] = turning(kv, cos, sin, size)
+                # a local layer attends the last window positions, this one among them, and turns by its own base
+                cos, sin = local if facts["local"] else tables
+                first = max(0, pos + 1 - facts["window"]) if facts["window"] else 0
+                q = turned_heads(qv, cos, sin, facts, partly).reshape(n_kv_heads, kv_mul, size)
+                if kept >= 0:
+                    self.key_cache[held][:, pos] = turned_heads(kv, cos, sin, facts, partly)
                     self.value_cache[held][:, pos] = vv.reshape(n_kv_heads, size)
 
                 # Multihead attention over all timesteps so far (or the last of them), all heads at once
@@ -523,7 +508,7 @@ class Llama:
                       self.ln_ffn_bias[l] if layer_norm else None)
             xr = turned(xb)
             # (T.331: the FFN of the layer's width, and its place in their stacks)
-            named, at = self.ffns[l]
+            named, at = "_double" if facts["double"] else "", facts["ffn"]
             w1, w2, w3 = (getattr(self, name + named) for name in ("w1", "w2", "w3")) if named else (self.w1, self.w2, self.w3)
             hb = w1[at] @ xr
             if gated_ffn:

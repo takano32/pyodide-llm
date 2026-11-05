@@ -79,9 +79,9 @@ def engine_states(llama, count):
     out = {}
     local = set(llama.local["layers"]) if llama.local else ()
     size_kept = getattr(llama, "window_kept", llama.local["window"] if llama.local else 0)
-    for l, (_, a) in enumerate(llama.slots):
-        _, _, size, kept, held = llama.heads[a]
-        if kept is None:
+    for l, facts in enumerate(llama.layers):
+        size, kept, held = facts["head"], facts["kept"], facts["reads"]
+        if kept < 0:
             continue
         order = np.concatenate([np.arange(0, size, 2), np.arange(1, size, 2)])  # the engine's index of Hugging Face's
         first = max(0, count - (size_kept - 1)) if l in local else 0
@@ -496,11 +496,11 @@ def table_times(factor):
 
 def shared_read_earlier(llama, make):
     """every shared layer reads the keys and values of the layer of its size made before the right one"""
-    made = [(held, size) for _, _, size, kept, held in llama.heads if kept is not None]
+    made = [(facts["reads"], facts["head"]) for facts in llama.layers if facts["kept"] >= 0]
     def earlier(held, size):
         return max(at for at, of in made if of == size and at < held)
-    llama.heads = [(named, at, size, kept, held if kept is not None else earlier(held, size))
-                   for named, at, size, kept, held in llama.heads]
+    llama.layers = [facts if facts["kept"] >= 0 else {**facts, "reads": earlier(facts["reads"], facts["head"])}
+                    for facts in llama.layers]
     return llama
 
 
