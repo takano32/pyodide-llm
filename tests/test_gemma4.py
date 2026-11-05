@@ -588,3 +588,13 @@ def test_a_gemma4_gguf_alone_is_refused_by_its_vocabulary():
     _, file, _ = gemma4_gguf(**GGUF_E2B)
     with pytest.raises(ValueError, match="This GGUF has a gemma4 vocabulary"):
         llama2_convert.Conversion.from_gguf(file, dtype="int8")
+
+
+def test_a_part_of_a_head_that_turns_no_pair_or_more_than_the_head_is_refused():
+    """The quarter of a full-attention layer's head that RoPE turns (partial_rotary_factor) must be a number above 0, at
+    most 1 and turn a pair at least, or it is no usable base of RoPE (T.640.4: asked after the two bases)."""
+    full = E2B["rope_parameters"]["full_attention"]
+    for part in (0, 1.5, 1e-3, True):
+        config = {**E2B, "rope_parameters": {**E2B["rope_parameters"], "full_attention": {**full, "partial_rotary_factor": part}}}
+        assert refusal(config) == "This model cannot be converted: its config.json has no usable base of RoPE.", part
+    check_config(normalize({**E2B, "rope_parameters": {**E2B["rope_parameters"], "full_attention": {**full, "partial_rotary_factor": 1.0}}}))
