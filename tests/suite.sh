@@ -229,6 +229,9 @@ page_modules() {
   # T.375.3: the parts the engine chooses as it is made, each by itself with stand-ins: the three kinds of layers, the two
   # FFNs and the cache of the keys and values (what goes out of a step, in what order and where; what position 0 clears)
   node tests/layer-parts-check.ts
+  # T.641.2: the readers of a model's tensors (forward/tensors.ts) by themselves, on a checkpoint the test writes by hand:
+  # every kind of the file widened, the matrices as the kernels take them, the embedding's rows, the outlier columns
+  node tests/tensors-check.ts
   # T.375.4: the two tables of jobs.ts (the kinds of jobs; how a matrix's weights are packed) by themselves, with kernels
   # that write down their calls: every kind's call, tile and blocks, the warm-up, and each packing against Python's
   # registry of the dtypes (under a second)
