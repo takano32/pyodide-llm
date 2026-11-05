@@ -25,9 +25,8 @@ two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 | `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
 
 A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.ts` fails when the
-window and the files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). **A new
-file goes into the Makefile's rule too** (`KERNEL_PARTS`): `make kernels` sees only the files named there, and the
-checks then test the old kernels (`tests/forward-check.ts` fails when a file of `kernel/` is not named there). `node tests/kernels-same.ts [--before <commit>]` builds this tree's kernels and
+window and the files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). The Makefile's rule
+reads its sources off the folder (`KERNEL_SOURCES`: every `.ts` of `kernels/` and of its folders), so a new file needs no line there. `node tests/kernels-same.ts [--before <commit>]` builds this tree's kernels and
 another commit's and says for every built file whether it is the same bytes, the same functions in another order,
 or different, and whether `src/runtime/built/`'s are this tree's. (The division itself changed the order of the functions in the
 five builds of `kernel.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their

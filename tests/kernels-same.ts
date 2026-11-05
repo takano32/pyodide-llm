@@ -12,8 +12,8 @@
 //                                             sorts the functions that are used as often as each other by their
 //                                             names, and AssemblyScript's name of a function begins with its file.
 //   DIFFERENT                                 with the exports whose code differs: exit 1
-// and public/'s built files must be this tree's (a kernel file the Makefile's rule does not name leaves them stale:
-// then the checks test old kernels), or exit 1.
+// and public/'s built files must be this tree's (kernels not made again after a change leave them stale: then the
+// checks test old kernels), or exit 1.
 // The functions are compared as Binaryen's text of them (wasm-dis), where a call names the function called by its
 // export, or by its own text where it has none (a function that calls itself: "itself"), and a type by what it is.
 import { execFileSync } from "node:child_process";
@@ -107,7 +107,7 @@ const kept = treeOf().folders.built;
 for (const file of fs.readdirSync(mine)) {
   const built = treeOf().built(file, { maybe: true });
   if (!fs.existsSync(built) || !fs.readFileSync(built).equals(fs.readFileSync(path.join(mine, file)))) {
-    console.log(`${kept}/${file}: ${fs.existsSync(built) ? "is not what this tree builds" : "is not there"}: make kernels (and is every file of kernels/ in the Makefile's rule?)`);
+    console.log(`${kept}/${file}: ${fs.existsSync(built) ? "is not what this tree builds" : "is not there"}: make kernels`);
     stale += 1;
   }
 }

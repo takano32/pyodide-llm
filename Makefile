@@ -42,12 +42,11 @@ src/runtime/built/facts/.made:	python_facts.py $(MODEL_PYTHON)
 	python3 python_facts.py
 	touch $@
 
-# (every source is named here: one that is not leaves the old kernels in src/runtime/built/ when it changes, and the checks then
-# test those. kernel.ts is the window over kernel/*.ts, T356; blocks.ts and blocks_relaxed.ts over blocks/*.ts, T363.4)
-KERNEL_PARTS = kernels/kernel/matmul.ts kernels/kernel/quantize.ts kernels/kernel/attention.ts kernels/kernel/halves.ts \
-	kernels/kernel/activations.ts kernels/kernel/stateful.ts kernels/kernel/sample.ts kernels/kernel/math.ts \
-	kernels/blocks/types.ts kernels/blocks/token.ts kernels/blocks/tile.ts kernels/blocks/row.ts
-src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/blocks.ts kernels/blocks_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/binary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
+# (every source of kernels/ is a prerequisite, read off the folder: a file the rule did not name left the old kernels in
+# src/runtime/built/ when it changed, and the checks then tested those, and nothing said so; T644.4. kernel.ts is the
+# window over kernel/*.ts, T356; blocks.ts and blocks_relaxed.ts over blocks/*.ts, T363.4)
+KERNEL_SOURCES = $(wildcard kernels/*.ts kernels/*/*.ts kernels/*.mjs) kernels/build.py
+src/runtime/built/simdkernel.so:	$(KERNEL_SOURCES) node_modules
 	python3 kernels/build.py src/runtime/built
 
 # The site's Python (src/python/) as two archives, engine.zip and converter.zip, which the worker fetches whole and

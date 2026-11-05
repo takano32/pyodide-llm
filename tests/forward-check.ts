@@ -256,7 +256,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   // (T356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
   // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
   // (T363.4: and blocks.ts and blocks_relaxed.ts are the windows over blocks/*.ts, two modules of their own.)
-  const source = {}, argumentsOf = {}, makefile = fs.readFileSync(`${root}Makefile`, "utf8");
+  const source = {}, argumentsOf = {};
   for (const [folder, windows, more] of [["kernel", ["kernel.ts"], ["kernels/kernel_relaxed.ts"]], ["blocks", ["blocks.ts", "blocks_relaxed.ts"], []]]) {
     const parts = fs.readdirSync(`${root}kernels/${folder}`).filter((file) => file.endsWith(".ts")).sort(), written = [];
     for (const file of [...parts.map((part) => `kernels/${folder}/${part}`), ...more]) {
@@ -276,10 +276,6 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
       const only = (a, b) => a.filter((name) => !b.includes(name)).join(", ") || "nothing";
       throw new Error(`kernels/${windows.join(" and ")} do not name the kernels of kernels/${folder}/: only the window has ${only(named, written)}; only the files have ${only(written, named)}`);
     }
-    // (and the Makefile's rule names every one of those files: make kernels does not see a file change that it does not
-    // name, and every check then runs the kernels of before)
-    const unnamed = [...parts.map((part) => `kernels/${folder}/${part}`), ...windows.map((file) => `kernels/${file}`)].filter((file) => !makefile.includes(file));
-    if (unnamed.length) throw new Error(`the Makefile's rule for the kernels does not name ${unnamed.join(", ")}`);
   }
   if (JSON.stringify(Object.keys(source).sort().map((n) => [n, source[n]])) !== JSON.stringify(Object.keys(ADDRESSES).sort().map((n) => [n, ADDRESSES[n]]))) {
     throw new Error("jobs.js's ADDRESSES is not the kernels' usize parameters");
