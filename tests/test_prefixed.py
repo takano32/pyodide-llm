@@ -34,6 +34,15 @@ def test_a_legacy_llama_tokenizer_prefixes_the_text_after_a_special_token():
         assert engine.encode("hello</s>hello", ("</s>",)) == [ids["▁hello"], ids["</s>"], ids["hello"]]
 
 
+def test_a_model_with_no_dummy_prefix_says_never_over_a_legacy_tokenizer_class():
+    """T.400 (sarashina2.2's, CAT-Translate): the model puts no dummy prefix anywhere, so its legacy LlamaTokenizer's "wanting" gives
+    way to "never" (convert/vocabulary.py's sentencepiece(); T.640.1's review: no test held this before)."""
+    data, ids = sentencepiece(dummy=False)
+    for described in ({"tokenizer_class": "LlamaTokenizer", "legacy": True}, {"tokenizer_class": "LlamaTokenizerFast"}):
+        options, engine = converted(data, "tokenizer.model", **described)
+        assert options["prefixed"] == "never", described
+
+
 UNIGRAM = {"added_tokens": [{"id": 1, "content": "<sp>", "special": True}],
            "model": {"type": "Unigram", "unk_id": 0,
                      "vocab": [["<unk>", 0.0], ["<sp>", 0.0], ["▁", -3.0], ["▁hello", -1.0], ["hello", -2.0], ["▁world", -1.5],
