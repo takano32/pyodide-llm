@@ -123,6 +123,10 @@ const returned = (fn) => {
     // every head's output and the exact GELU
     { name: "spark", header: [256, 768, 4, 4, 2, 2048, 320], form: { arch: "spark", head_dim: 128 },
       more: { local: { layers: [0, 1, 2], window: 96, rope_theta: 10000 }, rotary: 32 } },
+    // T649.2: a PLaMo 3: a Gemma 3's layers with a SiLU in the gate, one key head, yarn in the layers that attend all
+    { name: "plamo3", header: [256, 768, 8, 4, 1, -2048, 320], form: { arch: "plamo3", head_dim: 128 },
+      more: { local: { layers: [0, 1, 2, 3, 4, 5, 6], window: 96, rope_theta: 10000 },
+        rope_scaling: { rope_type: "yarn", factor: 256, original_max_position_embeddings: 64, beta_fast: 32, beta_slow: 1, truncate: false } } },
     // T363.5: a Qwen3.5 whose matrices are llama.cpp's blocks, a type for each layer of a stack (every type some
     // layer's), the embedding and the classifier each of one, and its output matrix in llama.cpp's order
     { name: "qwen35, of llama.cpp's blocks", header: [256, 768, 8, 4, 2, -2048, 320], more: { rotary: 32 },
@@ -134,7 +138,7 @@ const returned = (fn) => {
   // is added without a line here is held to Python's plan alone)
   const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
     neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true], gemma3: [true, false, true], gemma4: [true, false, true],
-    spark: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
+    spark: [true, false, true], plamo3: [true, false, true], "qwen35, of llama.cpp's blocks": [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary", "binary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());

@@ -55,6 +55,8 @@ class Facts(NamedTuple):
 
 
 LLAMAS = {"free_heads", "scaled", "rotatable", "rms_norm"}
+# the families that are no other's name and whose GGUF the converter does not read (yet)
+NO_GGUF_YET = {"plamo3"}
 # The table as it stands, written a second time on purpose (as the order of the rows is in test_layout.py): a
 # family's fact changed by mistake changes which models convert and how, and few of the facts have a test of their
 # own. By model_type, in the order of the table (the order the refusals name the titles in)
@@ -73,6 +75,7 @@ FACTS = {
     "gemma4_text": Facts("Gemma 4", "gemma4", "gemma4", "lm_head.weight", {"free_heads", "rms_norm"}, "model.", set(), {}),
     "gemma4": Facts("Gemma 4", "gemma4", None, "lm_head.weight", {"renamed", "free_heads", "rms_norm"}),
     "spark2_5": Facts("Spark-X2.5", "spark", "spark2_5", "lm_head.weight", {"free_heads", "rms_norm", "partly"}, "", set(), {}),
+    "plamo3": Facts("PLaMo 3", "plamo3", None, "lm_head.weight", {"free_heads", "scaled", "rms_norm"}),
     "gpt2": Facts("GPT-2", "gpt2", "gpt2", "lm_head.weight", {"fixed_context"}, "", set(), GPT2_MARKS),
     "gpt_neox": Facts("GPT-NeoX", "neox", "gptneox", "embed_out.weight", {"partly"}, "", set(), NEOX_MARKS),
 }
@@ -107,6 +110,7 @@ LAYOUTS = {
                                                  "kv_shared": {"layers": [4, 5], "from": [3, 2]}, "per_layer": 16}, 0),
     # (T341: a number for each layer, RoPE turning a part of some layers' heads and all of the others')
     "spark": ([256, 768, 4, 4, 2, -2048, 320], {"arch": "spark", "head_dim": 128}, (128, 128, 128, 32)),
+    "plamo3": ([256, 768, 8, 4, 1, -2048, 320], {"arch": "plamo3", "head_dim": 128}, 0),
 }
 BASE = {"hidden_size": 256, "intermediate_size": 768, "num_hidden_layers": 4, "num_attention_heads": 8, "vocab_size": 2048,
         "max_position_embeddings": 4096}
@@ -244,8 +248,9 @@ def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(m
     family = FAMILIES[model_type]
     *_, prefix, unnamed, marked = FACTS[model_type]
     if family.gguf is None:
-        # (a Gemma 4's whole model, T529: its GGUF is its language model's, gemma4_text)
-        assert family.renamed and prefix is unnamed is marked is None
+        # (a Gemma 4's whole model, T529: its GGUF is its language model's, gemma4_text; T649.2: a PLaMo 3's GGUF,
+        # llama.cpp's plamo3, is not read yet: T649.4's)
+        assert (family.renamed or model_type in NO_GGUF_YET) and prefix is unnamed is marked is None
         return
     assert families.GGUF[family.gguf] == (model_type, family)
     header, form, rotary = LAYOUTS[family.arch]

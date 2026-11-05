@@ -167,6 +167,8 @@ class Llama:
         layers are local ones (local, as a Gemma 3's: whole heads turned by a base of their own), the others turning
         the first rotary values of a head (as a GPT-NeoX's), that gates each head of its attention's output by a value
         of its own (head_gate), and whose FFN's activation is the exact GELU.
+        arch="plamo3" (T649.2): Preferred Networks' PLaMo 3, a Gemma 3 whose FFN's activation is a Llama's SiLU and
+        whose layers that attend all the positions turn by yarn's tables (rope_scaling: their magnitude is in them).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is engine/layout.py that says what is there.

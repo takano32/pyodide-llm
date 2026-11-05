@@ -544,6 +544,10 @@ LAYOUTS = {
     # GPT-NeoX's RoPE), a gate of each head's output and the exact GELU
     "spark": Layout(spark, rope=PARTLY, activation=GELU_ERF, local=True),
 }
+# T649.2: PLaMo 3, a Gemma 3's layers (a norm behind the attention and the FFN as well as in front, the norms of the
+# heads, local layers) with a Llama's SiLU in the gate, and yarn's magnitude in the tables of the layers that attend
+# all the positions
+LAYOUTS["plamo3"] = LAYOUTS["gemma3"]._replace(activation=SILU, yarn_magnitude=True)
 
 
 def layout_of(arch):

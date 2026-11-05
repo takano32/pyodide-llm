@@ -64,7 +64,7 @@ def held(llama, count, stepped, wrong=0.0):
                 layers.append(types.SimpleNamespace(conv_states=[pad(np.array(arrays[0]))]))
             else:
                 layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale)))
-    elif arch in ("gemma3", "gemma4", "spark"):
+    elif arch in ("gemma3", "gemma4", "spark", "plamo3"):
         for _, (kind, arrays) in sorted(sys.modules[f"reference_{arch}"].engine_states(llama, count).items()):
             layers.append(types.SimpleNamespace(keys=view(np.array(arrays[0])[None] * scale), values=view(np.array(arrays[1])[None] * scale),
                                                 is_sliding=kind == "sliding"))
@@ -223,6 +223,12 @@ class Spark2_5Config(Config):
     defaults = dict(tie_word_embeddings=True, hidden_act="gelu", headwise_attn_output_gate=True, gate_attn_act_mode="sigmoid")
 
 
+class Plamo3Config(Config):
+    """(T649.2) what reference_plamo3.py has of the model's own code, modeling_plamo.py's Plamo3Config"""
+    model_type = "plamo3"
+    defaults = dict(tie_word_embeddings=False, scale_embedding=False, linear_type="normal")
+
+
 class Gemma4Model(Model):
     """(T329.3) what reference_gemma4.py reads of transformers' modules: which layers share keys and values, how wide
     each FFN is (transformers' own rules: the last num_kv_shared_layers layers, twice as wide there where
@@ -318,7 +324,20 @@ def Spark2_5ForCausalLM(config):
     return Model(writable(tensors), json.loads(config.to_json_string()), config)
 
 
+def Plamo3ForCausalLM(config):
+    """(T649.2) what reference_plamo3.py has of the model's own code, modeling_plamo.py (its lm_head padded to 16 rows)"""
+    import made_up
+    tensors, _ = made_up.plamo3_model(dim=config.hidden_size, hidden_dim=config.intermediate_size, layers=config.num_hidden_layers,
+                                      pattern=config.sliding_window_pattern, n_heads=config.num_attention_heads,
+                                      n_kv_heads=config.num_key_value_heads, head_dim=config.head_dim, window=config.window_size,
+                                      vocab_size=config.vocab_size, seq_len=8, shared=config.tie_word_embeddings, padded=True,
+                                      eps=config.rms_norm_eps, theta=config.rope_theta, local_theta=config.rope_local_theta,
+                                      factor=config.rope_scaling_factor, original=config.initial_context_length)
+    return Model(writable(tensors), json.loads(config.to_json_string()), config)
+
+
 Lfm2ForCausalLM.from_pretrained = Gemma3ForCausalLM.from_pretrained = Spark2_5ForCausalLM.from_pretrained = Model.from_pretrained
+Plamo3ForCausalLM.from_pretrained = Model.from_pretrained
 Qwen3_5ForConditionalGeneration = Model
 
 
@@ -343,11 +362,11 @@ class AutoTokenizer:
         self.template, self.bos = said.get("chat_template"), said.get("bos_token")
 
     @classmethod
-    def from_pretrained(cls, directory):
+    def from_pretrained(cls, directory, **more):
         return cls(directory)
 
-    def __call__(self, text):
-        return {"input_ids": self.tokenizer.encode(text).ids}
+    def __call__(self, text, add_special_tokens=True):
+        return {"input_ids": self.tokenizer.encode(text, add_special_tokens=add_special_tokens).ids}
 
     def convert_ids_to_tokens(self, ids):
         return [self.tokenizer.id_to_token(int(token)) for token in ids]

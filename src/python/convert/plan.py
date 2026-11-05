@@ -77,6 +77,8 @@ TRANSFORMS = {
                        same_shape, piecewise=True),
     # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
     "one": Transform(lambda values, step, head_size: np.asarray(values, dtype=np.float32) + np.float32(1.0), same_shape),
+    # T649.2: PLaMo 3's RMSNorms multiply by c + weight, and c is 1/5 or 5^-1.5 behind the attention and the FFN
+    "plus": Transform(lambda values, step, head_size: np.asarray(values, dtype=np.float32) + np.float32(step[1]), same_shape),
     # g = -exp(A_log) * softplus(...): the factor, as llama.cpp's GGUF holds it too (ssm_a)
     "decay": Transform(lambda values, step, head_size: -np.exp(np.asarray(values, dtype=np.float32)), same_shape),
     # conv1d.weight is (channels, 1, taps): a row of all the channels for each tap, the oldest token's first
@@ -106,7 +108,8 @@ def transformed(values, transform, head_size):
     ("heads", parts, i, heads, rot): the i-th of the parts each head's rows are stacked in, with the halves of its
     first rot rows interleaved (GPT-NeoX's query_key_value: 3 parts; Qwen3.5's q_proj: q and its gate; 1 part: a k
     or a norm of which RoPE turns part). ("scale", c): every value times c (T253: a Granite's q). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
-    A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
+    A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. ("plus", c): every value plus
+    c (T649.2: a PLaMo 3's norms, stored around zero, whose c is not always 1). A tuple of transforms is
     one after the other. ("permute" and "heads" move whole rows and change no value: what a row kept in a GGUF's blocks
     may come by, T363.) ("rows", start, stop, total): rows start to stop of a tensor of total rows (T342: a Spark-X2.5's
     q_k_v_proj, q, k and v one after the other, which are not of one size). Each is a line of TRANSFORMS (T640.2).

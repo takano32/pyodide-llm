@@ -332,6 +332,45 @@ def spark_model(dim=32, hidden_dim=64, kinds="sssl", n_heads=4, n_kv_heads=2, he
     return tensors, config
 
 
+# ------------------------------------------------------------------------------------- PLaMo 3 (T649.2)
+def plamo3_model(dim=32, hidden_dim=64, layers=4, pattern=4, n_heads=4, n_kv_heads=1, head_dim=32, window=4, vocab_size=320,
+                 seq_len=24, shared=False, seed=0, eps=1e-6, theta=10000.0, local_theta=100.0, factor=4.0, original=512,
+                 padded=False, spread=0.3):
+    """Random Hugging Face tensors of a tiny PLaMo 3, with the names and shapes of pfnet/plamo-3-translate-0.8b's
+    model.safetensors (the layers under model.layers.layers; q, k and v in one matrix, qkv_proj; the gate and the up of
+    the FFN in one, gate_up_proj), and its config.json as Plamo3Config reads it: every pattern-th layer (counted from 1)
+    one that attends every position, the others a window; yarn of factor (1: none) from original positions in those
+    layers. Every norm's weight is stored around zero (the model adds 1, or 1/5 and 5^-1.5 behind the attention and the
+    FFN). The bounds of yarn's ramp fall inside a head of 32 at the bases said (the model's code asserts it). padded: an
+    lm_head of the vocabulary rounded up to 16 rows (the model's own; its logits past the vocabulary are cut)."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * spread).astype(np.float32)
+    p = "model.layers.layers.{}."
+    tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.norm.weight": normal(dim)}
+    for layer in range(layers):
+        at = p.format(layer)
+        for norm in ("pre_mixer_norm", "post_mixer_norm", "pre_mlp_norm", "post_mlp_norm"):
+            tensors[f"{at}{norm}.weight"] = normal(dim)
+        tensors[at + "mixer.qkv_proj.weight"] = normal((n_heads + 2 * n_kv_heads) * head_dim, dim)
+        tensors[at + "mixer.q_norm.weight"] = normal(head_dim)
+        tensors[at + "mixer.k_norm.weight"] = normal(head_dim)
+        tensors[at + "mixer.o_proj.weight"] = normal(dim, n_heads * head_dim)
+        tensors[at + "mlp.gate_up_proj.weight"] = normal(2 * hidden_dim, dim)
+        tensors[at + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        rows = (vocab_size + 15) // 16 * 16 if padded else vocab_size
+        tensors["lm_head.weight"] = normal(rows, dim)
+    config = dict(model_type="plamo3", architectures=["Plamo3ForCausalLM"], hidden_size=dim, intermediate_size=hidden_dim,
+                  num_hidden_layers=layers, num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim,
+                  window_size=window, sliding_window_pattern=pattern, max_position_embeddings=seq_len, rms_norm_eps=eps,
+                  vocab_size=vocab_size, tie_word_embeddings=shared, bos_token_id=1, eos_token_id=1, pad_token_id=3,
+                  rope_theta=theta, rope_local_theta=local_theta, rope_scaling_factor=factor, scale_embedding=False,
+                  linear_type="normal", image_feature_size=None, image_token_id=None, image_proj_type="linear")
+    if factor != 1:
+        config["initial_context_length"] = original
+    return tensors, config
+
+
 # ------------------------------------------------------------------------------------- Gemma 4 (T331)
 def gemma4_model(dim=32, hidden_dim=64, kinds="sslssl", n_heads=4, n_kv_heads=1, head_dim=16, wide_head=32, window=4,
                  vocab_size=320, seq_len=24, shared=True, seed=0, eps=1e-6, theta=1000000.0, local_theta=100.0,

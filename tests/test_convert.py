@@ -202,6 +202,7 @@ TRANSFORM_FACTS = [
     (("rows", 1, 4, 6), (6, 2), (3, 2), False, False, False),
     (("scale", 0.5), (4, 3), (4, 3), True, False, False),
     (("one",), (4,), (4,), False, False, False),
+    (("plus", 0.2), (4,), (4,), False, False, False),
     (("decay",), (4,), (4,), False, False, False),
     (("taps",), (5, 1, 3), (3, 5), False, False, False),
 ]
@@ -226,7 +227,7 @@ def test_every_transform_says_its_shape_and_whether_it_goes_in_pieces_and_stays(
 
 def test_every_transform_has_its_facts_written_twice():
     names = {step[0] for step, *_ in TRANSFORM_FACTS}
-    assert names == {"permute", "transpose", "heads", "part", "row", "rows", "scale", "one", "decay", "taps"}
+    assert names == {"permute", "transpose", "heads", "part", "row", "rows", "scale", "one", "plus", "decay", "taps"}
 
 
 def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):

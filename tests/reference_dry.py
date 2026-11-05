@@ -1,6 +1,6 @@
 # reference_dry.py
 # T357.4: the tools that hold the engine to transformers in CI (tests/reference_llama.py, tests/reference_qwen35.py,
-# tests/reference_lfm2.py, tests/reference_gemma3.py, T329.3's tests/reference_gemma4.py, T342's tests/reference_spark.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
+# tests/reference_lfm2.py, tests/reference_gemma3.py, T329.3's tests/reference_gemma4.py, T342's tests/reference_spark.py, T649.2's tests/reference_plamo3.py), run from their arguments to their exit where there is no torch: stand-ins for torch and
 # transformers (tests/reference_standin/) answer with the engine itself, on made-up models and made-up directories of
 # what Hugging Face publishes. Nothing is held to transformers here (CI does that, 10 to 50 minutes a tool); what this
 # shows in a quarter of a minute is that the tools still run: the made-up models, the conversions, the tokenizers'
@@ -52,6 +52,7 @@ import reference_gemma3  # noqa: E402
 import reference_gemma4  # noqa: E402
 import reference_lfm2  # noqa: E402
 import reference_llama  # noqa: E402
+import reference_plamo3  # noqa: E402
 import reference_qwen35  # noqa: E402
 import reference_spark  # noqa: E402
 import transformers  # noqa: E402  (the stand-in)
@@ -89,7 +90,7 @@ def put(folder, files):
 
 
 # the directories directories() makes, in the mark: a name more here and every checkout makes them again
-MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "llama")
+MADE = ("qwen35", "lfm2", "gemma3", "gemma4", "spark", "plamo3", "llama")
 
 
 def directories(work):
@@ -125,6 +126,14 @@ def directories(work):
                                  "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
                                  "generation_config.json": "{}", "configuration_spark.py": "", "modeling_spark.py": "",
                                  "model.safetensors": made_up.safetensors_file(tensors)})
+    # (T649.2) a PLaMo 3 whose window the long text here is past four times; its own code and tokenizer are the
+    # stand-in's (the files are there to be fetched; its tokenizer.jsonl is empty, which the converter refuses, so the engine's vocabulary is made up)
+    tensors, config = made_up.plamo3_model(vocab_size=VOCAB, seq_len=CONTEXT, window=64, layers=9, pattern=4, spread=0.1)
+    put(work / "plamo3" / "dry", {"config.json": json.dumps(config), "tokenizer.json": tokenizer_json(True),
+                                  "tokenizer_config.json": said(chat_template="{{ bos_token }}" + CHATML),
+                                  "generation_config.json": "{}", "special_tokens_map.json": "{}", "modeling_plamo.py": "",
+                                  "tokenization_plamo.py": "", "tokenizer.jsonl": "",
+                                  "model.safetensors": made_up.safetensors_file(tensors)})
     for name, more in (("granite", dict(model_type="granite", attention_multiplier=0.3, embedding_multiplier=1.0, residual_multiplier=1.0,
                                         logits_scaling=1.0)),
                        ("smollm3", dict(model_type="smollm3", no_rope_layer_interval=4, use_sliding_window=False))):
@@ -253,6 +262,13 @@ def parts(work):
                 fine + [("the same ids", 1), ("the two wrote the same", 1), (f"long: the engine ran {LONG} positions", 1),
                         (r"fault \(", spark), (r"noted \(", len(reference_spark.NOTED)),
                         (f"faults: {spark} of {spark} are past the line", 1)], {}))
+    plamo3 = len(reference_plamo3.FAULTS) + len(reference_plamo3.LONG_FAULTS)
+    out += [(f"plamo3 made-up, {name}", lambda name=name: reference_plamo3.made_up(name, reference_plamo3.MADE_UP[name]), right,
+             fine + [("the states after 80 positions", 1), ("the local layers", 1)], {}) for name in reference_plamo3.MADE_UP]
+    out.append(("plamo3 real, with the faults", lambda: reference_plamo3.real(work / "plamo3" / "dry", 96, "dry", True), right,
+                fine + [("a made-up vocabulary", 2), ("the two wrote the same", 1), (f"long: the engine ran {LONG} positions", 1),
+                        (r"fault \(", plamo3), (r"noted \(", len(reference_plamo3.NOTED)),
+                        (f"faults: {plamo3} of {plamo3} are past the line", 1)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
                 fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
@@ -274,6 +290,10 @@ def parts(work):
     out.append(("reference_spark.py --only=real --model=dry --positions=40 --no-faults",
                 main(reference_spark, str(work / "spark"), "--only=real", "--model=dry", "--positions=40", "--no-faults"), ("exit", 0),
                 ok + [("the states after 40 positions", 1), (r"fault \(", 0)], {}))
+    out.append(("reference_plamo3.py --only=made-up", main(reference_plamo3, str(work / "plamo3"), "--only=made-up"), ("exit", 0), ok, {}))
+    out.append(("reference_plamo3.py --only=real --model=dry --positions=40 --no-faults",
+                main(reference_plamo3, str(work / "plamo3"), "--only=real", "--model=dry", "--positions=40", "--no-faults"), ("exit", 0),
+                ok + [("the states after 40 positions", 1), (r"fault \(", 0)], {}))
     out.append(("reference_qwen35.py --only=fetch", main(reference_qwen35, str(work / "qwen35"), "--only=fetch"), ("returned", None), [], {}))
     out.append(("reference_lfm2.py --only=fetch --model=dry", main(reference_lfm2, str(work / "lfm2"), "--only=fetch", "--model=dry"),
                 ("returned", None), [], {}))
@@ -292,7 +312,7 @@ def parts(work):
         first = next(iter(reference_llama.MADE_UP))
         out.append((f"WRONG ({what}): llama made-up", llama_made_up(first, False), ("returned", True), said, wrong))
         for tool, name in ((reference_qwen35, "qwen35"), (reference_lfm2, "lfm2"), (reference_gemma3, "gemma3"), (reference_gemma4, "gemma4"),
-                           (reference_spark, "spark")):
+                           (reference_spark, "spark"), (reference_plamo3, "plamo3")):
             first = next(iter(tool.MADE_UP))
             out.append((f"WRONG ({what}): {name} made-up", lambda tool=tool, first=first: tool.made_up(first, tool.MADE_UP[first]),
                         ("returned", True), said, wrong))
@@ -302,12 +322,14 @@ def parts(work):
         out.append((f"WRONG ({what}): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): spark real", lambda: reference_spark.real(work / "spark" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): plamo3 real", lambda: reference_plamo3.real(work / "plamo3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     # the long pass alone: one line says FAILED, the long text's
     said, wrong = [("FAILED", 1), ("^[a-z0-9]+: long: .* FAILED", 1)], {"kept": 1e-2}
     out.append(("WRONG (the long pass 1e-2 off): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+    out.append(("WRONG (the long pass 1e-2 off): plamo3 real", lambda: reference_plamo3.real(work / "plamo3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (the long pass 1e-2 off): spark real", lambda: reference_spark.real(work / "spark" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (logits 1e-2 off): reference_lfm2.py --only=made-up", main(reference_lfm2, str(work / "lfm2"), "--only=made-up"),
                 ("exit", 1), [("^lfm2: FAILED$", 1)], {"logits": 1e-2}))
@@ -344,6 +366,13 @@ def main():
     reference_spark.BOS, reference_spark.SPECIALS = 1, [*reference_lfm2.SPECIALS, "<|startoftext|>"]
     reference_spark.code = lambda directory: (transformers.Spark2_5Config, transformers.Spark2_5ForCausalLM)
     reference_spark.code_directory = lambda directory: directory
+    # (T649.2: the PLaMo 3's own code is the stand-in's classes, its made-up models fetch nothing, and its long text is
+    # this one's, past the made-up window of 64)
+    reference_plamo3.MODELS["dry"] = ("made/plamo3", REVISION, None)
+    reference_plamo3.STOPS = (1, 7)
+    reference_plamo3.LONG, reference_plamo3.LONG_AT = LONG, (0, 1, 62, 63, 64, 65, 66, 200, 298, 299)
+    reference_plamo3.code = lambda directory: (transformers.Plamo3Config, transformers.Plamo3ForCausalLM)
+    reference_plamo3.code_directory = lambda directory: directory
     failed = []
     for name, call, must_end, must_hold, wrong in parts(work):
         if only and not any(part in name for part in only):

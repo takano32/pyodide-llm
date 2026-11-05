@@ -90,6 +90,10 @@ def cases(L):
         ("spark, heads wider than the stream and a classifier of its own", [64, 128, 4, 4, 1, -320, 48], {"arch": "spark", "head_dim": 32},
          {"local": {"layers": [1, 2], "window": 4, "rope_theta": 100.0}, "rotary": 8, "rope_theta": 5000.0}),
         ("the exact gelu", GROUPED, {"arch": "the exact gelu"}, {}),
+        # T649.2: a PLaMo 3 (a Gemma 3's layers but a SiLU in the gate, and yarn in the layers that attend all)
+        ("plamo3", [64, 128, 4, 4, 1, -320, 48], {"arch": "plamo3", "head_dim": 32},
+         {"local": {"layers": [0, 1, 2], "window": 3, "rope_theta": 100.0}, "rms_norm_eps": 1e-6,
+          "rope_scaling": {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 32}}),
         ("a gate of every head", GROUPED, {"arch": "a gate of every head", "head_dim": 32}, {}),
         ("norms behind", GROUPED, {"arch": "norms behind"}, {}),
         # T331.2: two layers of heads of 32 (the full-attention ones, of which RoPE turns 8 values by the angles of 32),
