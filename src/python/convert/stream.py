@@ -329,7 +329,7 @@ def left_to_do(transform, done):
     table of names and the plan would have drifted apart, and the values would go through changed once too often."""
     if not done:
         return transform
-    steps = () if transform is None else transform if isinstance(transform[0], tuple) else (transform,)
+    steps = steps_of(transform)
     left = tuple(step for step in steps if step[0] != done)
     if len(left) != len(steps) - 1:
         raise ValueError(f"A tensor of this GGUF comes with the step {done!r} done, which the conversion has not for it.")
