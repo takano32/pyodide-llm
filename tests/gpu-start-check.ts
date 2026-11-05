@@ -1,4 +1,4 @@
-// tests/gpu-start-check.ts (T.465.5): the model's GPU worker's start (src/runtime/gpu/start.ts's start()) whole, on the
+// tests/gpu-start-check.ts (T465.5): the model's GPU worker's start (src/runtime/gpu/start.ts's start()) whole, on the
 // stand-in device whose checks' dispatches are answered as the shaders would (tests/fakes/gpu-model.ts's made(): the
 // answers' arithmetic is tests/gpu_answers.py's, in NumPy). Nothing ran it without a GPU: every check of a form stood in
 // its way. A made-up Llama (its memory's numbers ones a model could have), the device a fallback adapter that the plan
@@ -11,7 +11,7 @@
 //   - no attention right: "unusable", with why, and the worker ended (its close()); the layers out of memory (the error
 //     scope start() pushes first) and the device lost: "unusable", with why. The ready message's fields (the adapter, the
 //     device's key, nothing remembered, a form timed and none wrong or failed) and the error scopes all popped.
-//   - T.465.6.5: a model on the GPU alone (open(), take() of its checkpoint, start()): ready, every dispatch answered.
+//   - T465.6.5: a model on the GPU alone (open(), take() of its checkpoint, start()): ready, every dispatch answered.
 // Not held here: a stop in the middle, the forms a page remembered and force.quick, the order of the steps, timeBlocks'
 // rounds of a device that is no fallback; of a model on the GPU alone, the layers after the first where the checkpoint
 // routed them (the check compares the first layer and the tables only), the prompt's rows and RoPE (EMBED_ROWS, ROPE:
@@ -41,7 +41,7 @@ async function started(options = {}, on = (device, lose) => {}) {
   device.popErrorScope = async () => (scopes.pop(), null);
   on(device, lose);
   await start_.start(memory, plan);
-  // (a "progress" after each step, which the page's watch reads as the worker being alive: T.135's GPU_QUIET_MS)
+  // (a "progress" after each step, which the page's watch reads as the worker being alive: T135's GPU_QUIET_MS)
   const steps = posted.filter(({ type }) => type === "progress").length;
   assert.ok(steps > 0, "a start says it is going on");
   return posted.filter(({ type }) => type !== "progress");
@@ -51,7 +51,7 @@ async function started(options = {}, on = (device, lose) => {}) {
   const [ready, ...more] = await started({ features: ["subgroups"] });
   assert.deepEqual(more, [], "one message");
   assert.equal(ready.type, "ready", `ready, not ${JSON.stringify(ready).slice(0, 300)}`);
-  // (T.465.5's review: a form the device does not make is said so, and every other is timed: none wrong, none failed)
+  // (T465.5's review: a form the device does not make is said so, and every other is timed: none wrong, none failed)
   assert.ok(ready.form && ready.attention && Array.isArray(ready.forms), "the prompt's forms");
   assert.ok(ready.forms.some(({ ms }) => Number.isFinite(ms)), "a form timed");
   assert.deepEqual(ready.forms.filter(({ none }) => none && !/shader-f16|subgroups|packed int8 dot|threads|bytes of workgroup memory/.test(none)), [], "no form wrong or failed");
@@ -89,7 +89,7 @@ async function started(options = {}, on = (device, lose) => {}) {
   console.log("ok: no attention right: unusable, with why");
 }
 {
-  // T.465.6.5: a model on the GPU alone: open() before the checkpoint comes, take() of its stretches (the whole of it at
+  // T465.6.5: a model on the GPU alone: open() before the checkpoint comes, take() of its stretches (the whole of it at
   // once here), then start(): ready, every form chosen, a token's too, every dispatch answered (a prompt's rows from the
   // ids, EMBED_ROWS, and its RoPE among them)
   // (a start.ts of its own each: what open() and take() keep is a worker's, which a load has anew, tests/fresh.ts)
@@ -109,7 +109,7 @@ async function started(options = {}, on = (device, lose) => {}) {
   console.log("ok: a model on the GPU alone: ready with every form chosen (its first layer and tables read back), every dispatch answered");
 }
 {
-  // (T.465.5's review) the device out of memory for the layers (the scope start() pushes first, opened with the device):
+  // (T465.5's review) the device out of memory for the layers (the scope start() pushes first, opened with the device):
   // unusable, the GPU not taking them
   const [said] = await started({}, (device) => {
     device.popErrorScope = async () => (scopes.pop() === "out-of-memory" ? { message: "out of memory" } : null);

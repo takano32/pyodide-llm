@@ -1,4 +1,4 @@
-// tests/markdown-check.ts (T.556): what src/page/markdown.ts makes of an answer's Markdown with the latest marked, as the
+// tests/markdown-check.ts (T556): what src/page/markdown.ts makes of an answer's Markdown with the latest marked, as the
 // page takes it (the latest version on jsDelivr, bundled there as one module), before DOMPurify. Node has no DOM, so
 // DOMPurify and the drawing are tests/markdown-in-browser.ts's.
 //
@@ -46,7 +46,7 @@ for (const text of ["&#60;img src=x onerror=alert(1)&#62;", "[x](javascript:aler
   "~~gone~~", "&#60;script&#62;", "&#60;div onclick=&#34;alert(1)&#34;&#62;", "&#62; quoted<br>&#62; twice", "<p>---</p>", "[ ] task", "[x] done", "[ref]"]) {
   assert.ok(said.includes(text), `said as text: ${text}, in ${said}`);
 }
-// ---- T.559: what DOMPurify is told: the elements and attributes of the lists and nothing beside them (its defaults let
+// ---- T559: what DOMPurify is told: the elements and attributes of the lists and nothing beside them (its defaults let
 // data-* and aria-* through whatever ALLOWED_ATTR says)
 {
   const told = [];

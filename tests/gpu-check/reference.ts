@@ -1,4 +1,4 @@
-// T.357.3: the references of tests/gpu-check.ts, a part of that tool: NumPy's answers for a model (the Python below,
+// T357.3: the references of tests/gpu-check.ts, a part of that tool: NumPy's answers for a model (the Python below,
 // in Pyodide, or in the native Python for a model of <prefix>.json) and the plan forward.js gets from Python, together
 // the case the harness runs. What it reads is given: the Pyodide (referencePython() makes it), the directory the
 // cases' checkpoints are written into, a model's id.
@@ -18,19 +18,19 @@ import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
 
 class Half(np.ndarray):
-    """T.153: a cache that keeps what is written into it rounded to float16 (the GPU's and the CPU's cache, T.110)"""
+    """T153: a cache that keeps what is written into it rounded to float16 (the GPU's and the CPU's cache, T110)"""
     def __setitem__(self, key, value):
         super().__setitem__(key, np.asarray(value, dtype=np.float32).astype(np.float16).astype(np.float32))
 
     def __array_wrap__(self, array, context=None, return_scalar=False):
-        # T.183: what is computed from the cache is a plain array (the attention's scores and output, then the residual
+        # T183: what is computed from the cache is a plain array (the attention's scores and output, then the residual
         # stream), or its later writes round as well: without this, stories15M's keys at 40 tokens were 7.8e-3 from
         # the review's engine that rounds the cache where it writes it (.tmp/t153-review/ref16), with it the same
         array = np.asarray(array).view(np.ndarray)
         return array[()] if return_scalar else array
 
 class Q8(np.ndarray):
-    """T.187: a layer's matrix whose product takes its input quantized to 8 bits a group of 32, as the CPU's quantize_x
+    """T187: a layer's matrix whose product takes its input quantized to 8 bits a group of 32, as the CPU's quantize_x
     makes it for matmul_q8 and the GPU's QUANTIZE for ORT's DP4A: the largest |value| / 127 the group's scale, each
     value times 1 / scale rounded half to even, in float32"""
     def __matmul__(self, x):
@@ -41,7 +41,7 @@ class Q8(np.ndarray):
         return np.asarray(self).view(np.ndarray) @ (np.rint(groups * inverse) * scale).reshape(x.shape)
 
 class H16(np.ndarray):
-    """T.562: a layer's matrix whose weights (weight × scale) are rounded to float16 once, and whose product takes its
+    """T562: a layer's matrix whose weights (weight × scale) are rounded to float16 once, and whose product takes its
     input rounded to float16, with float32 sums: the arithmetic of llama.cpp's f16 tiles (every weight × scale and
     activation in the workgroup's memory as f16, shaders/prompt.ts's regTile), rounded to the nearest as SwiftShader
     and lavapipe round"""
@@ -51,22 +51,22 @@ class H16(np.ndarray):
 
 def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=False):
     """NumPy's keys and values of the prompt's first count - 1 positions ([layers][positions][kv dim] each) and the
-    logits of its last token, and the tokens. half (T.153): the cache rounded to float16, and nothing else (made whole
-    at first, so that it never grows into an array of another class). q8 (T.187): the inputs of the layers' matrices
-    quantized to 8 bits (Q8). h16 (T.562): the layers' matrices and their inputs rounded to float16 (H16)"""
+    logits of its last token, and the tokens. half (T153): the cache rounded to float16, and nothing else (made whole
+    at first, so that it never grows into an array of another class). q8 (T187): the inputs of the layers' matrices
+    quantized to 8 bits (Q8). h16 (T562): the layers' matrices and their inputs rounded to float16 (H16)"""
     numpy = Llama(data, vocabulary, **options)
     if h16:
         for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name), dtype=np.float32).astype(np.float16).astype(np.float32).view(H16))
     if q8:
-        # (T.545: an LFM2's matrices in and out too; T.271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
+        # (T545: an LFM2's matrices in and out too; T271.2: a Qwen3.5's of q, k and v, of z and out, and its gate of the
         # attention's output)
         for name in ("wq", "wk", "wv", "wo", "w1", "w2", "w3", "win", "wout", "wqkv", "wz", "wg"):
             if getattr(numpy, name, None) is not None:
                 setattr(numpy, name, np.asarray(getattr(numpy, name)).view(Q8))
     if half:
-        # (T.545: of the attending layers alone, as the engine keeps them: an LFM2's convolution layers keep none)
+        # (T545: of the attending layers alone, as the engine keeps them: an LFM2's convolution layers keep none)
         numpy.key_cache = np.zeros((len(numpy.key_cache), numpy.n_kv_heads, numpy.seq_len, numpy.head_size), dtype=np.float32).view(Half)
         numpy.value_cache = np.zeros_like(numpy.key_cache).view(Half)
     if text:
@@ -84,7 +84,7 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=Fal
            "header": list(struct.unpack_from("<7i", data, 0)), "attending": len(numpy.key_cache)}
     if half:
         return out
-    # T.152: GEN greedy steps after the prompt: the ids, the logits of each step, the keys and values of their positions
+    # T152: GEN greedy steps after the prompt: the ids, the logits of each step, the keys and values of their positions
     greedy, rows = [], [np.array(logits, dtype=np.float32)]
     for step in range(${GEN}):
         greedy.append(int(np.argmax(rows[-1])))
@@ -94,7 +94,7 @@ def answer(data, vocabulary, text, count, options, half=False, q8=False, h16=Fal
             "greedyValues": b64(kv(numpy.value_cache, n, ${GEN}))}
 
 def answers(data, vocabulary, text, count, options):
-    """answer() and beside it: T.153, the keys and values of answer(half=True); T.187, its logits, and the keys, values
+    """answer() and beside it: T153, the keys and values of answer(half=True); T187, its logits, and the keys, values
     and logits of answer(half=True, q8=True) (the arithmetic of ORT's DP4A on the GPU: 8-bit inputs, the cache in
     float16)"""
     # (one engine at a time: Llama holds cycles, and Qwen3 0.6B widened to float32 is 2.4 GB)
@@ -104,7 +104,7 @@ def answers(data, vocabulary, text, count, options):
     gc.collect()
     eight = answer(data, vocabulary, text, count, options, half=True, q8=True)
     gc.collect()
-    # (T.562: and of answer(half=True, h16=True), the arithmetic of llama.cpp's f16 tiles)
+    # (T562: and of answer(half=True, h16=True), the arithmetic of llama.cpp's f16 tiles)
     halves = answer(data, vocabulary, text, count, options, half=True, h16=True)
     gc.collect()
     return {**exact, "keys16": rounded["keys"], "values16": rounded["values"], "logits16": rounded["logits"],
@@ -114,7 +114,7 @@ def answers(data, vocabulary, text, count, options):
 async function referencePython() {
   const { pyodide: py } = await pyodideWithEngine();
   py.runPython(PYTHON);
-  // the made-up models are tests/made_up.py's quantized() (T.357.2: the maker the unit tests have, laid out by the engine's
+  // the made-up models are tests/made_up.py's quantized() (T357.2: the maker the unit tests have, laid out by the engine's
   // rows): the forms of models.ts's SYNTHETIC are its arguments
   py.FS.writeFile("made_up.py", fs.readFileSync(path.join(root, "tests", "made_up.py")));
   py.runPython("import made_up");
@@ -140,7 +140,7 @@ function referenceCase(py, directory, id) {
     py.runPython(`data, vocabulary = made_up.quantized(**FORM)`);
     options = { dtype: "int8", ...engineOptions };
   } else if (id.endsWith(".json")) {
-    // T.153: NumPy's answer in the native Python ($PYTHON, python3 by default): Qwen3 0.6B widened to float32 is 2.4
+    // T153: NumPy's answer in the native Python ($PYTHON, python3 by default): Qwen3 0.6B widened to float32 is 2.4
     // GB, which with the file's copies went past Pyodide's 4 GB and a 7.5 GB scope of the development machine
     const prefix = id.slice(0, -".json".length);
     options = JSON.parse(fs.readFileSync(id, "utf8"));
@@ -166,7 +166,7 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
   if (!["int8", "int6", "ternary", "binary"].includes(options.dtype)) throw new Error(`${id} is ${options.dtype}: the GPU takes int8, int6, ternary and binary weights`);
   py.globals.set("OPTIONS", py.toPy(options));
   py.globals.set("TEXT", text ?? "");
-  // (T.560: a made-up model's run may say its own count of tokens)
+  // (T560: a made-up model's run may say its own count of tokens)
   const reference = py.runPython(`answers(data, vocabulary, TEXT, ${run.count ?? COUNT}, OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   const numpySeconds = (performance.now() - began) / 1000;
   return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, ...run };
@@ -187,8 +187,8 @@ function caseOf(py, directory, id, options, reference, bytes) {
   });
   py.runPython(`Llama(None, vocabulary, kernels="simdkernel.so", external=recorder, **OPTIONS).release()`);
   plan.kv_start = KV_START;
-  // T.156: a Llama of int8 whose steps the GPU takes goes on the GPU alone too: where its tensors are from its header
-  // (T.226: Qwen2 and Qwen3 with it; T.232: and of ternary weights, T.634.3 of binary ones; T.271.4: and a Qwen3.5, whose form the GPU alone's plan
+  // T156: a Llama of int8 whose steps the GPU takes goes on the GPU alone too: where its tensors are from its header
+  // (T226: Qwen2 and Qwen3 with it; T232: and of ternary weights, T634.3 of binary ones; T271.4: and a Qwen3.5, whose form the GPU alone's plan
   // is made with: options, in the case)
   let places;
   if (["llama", "qwen35"].includes(options.arch ?? "llama") && ["int8", "ternary", "binary"].includes(options.dtype)) {

@@ -1,4 +1,4 @@
-# conducting.py (T.374.4): what a tool that converts a model answers the conduct of a conversion with.
+# conducting.py (T374.4): what a tool that converts a model answers the conduct of a conversion with.
 #
 # Which files a model needs, in which order, which tokenizer is tried next and where the template comes from is the
 # conduct's (src/python/convert/conduct.py: a generator that asks), as it is for the page's worker. A tool says where the
@@ -207,7 +207,7 @@ def converted(answerer, hf, weights=True, **make):
     steps = conduct(hf, **make)
     try:
         request = next(steps)
-        # (T.415: a conduct that never ends fails past this many requests rather than hangs a tool; a real model's, of
+        # (T415: a conduct that never ends fails past this many requests rather than hangs a tool; a real model's, of
         # many shards, asks for a few dozen)
         for _ in range(10000):
             kind = request[0]
@@ -227,8 +227,8 @@ def converted(answerer, hf, weights=True, **make):
 
 def listed(path, **more):
     """(the model, the Directory that answers for it) of what tests/hf_fetch.py prints for a model: a .gguf file that
-    says everything itself (T.74); a folder with the original's config.json and tokenizer and a GGUF linked beside
-    them (T.136's second stage: the first .gguf by its name); or a folder with model.safetensors, or with the shards
+    says everything itself (T74); a folder with the original's config.json and tokenizer and a GGUF linked beside
+    them (T136's second stage: the first .gguf by its name); or a folder with model.safetensors, or with the shards
     its index names. No tokenizer is named: the conduct's candidates, in its order. more: what Directory() takes."""
     path = Path(path)
     if path.suffix == ".gguf":
@@ -243,7 +243,7 @@ def listed(path, **more):
 
 class Mapped:
     """The converter's sink (convert.checkpoint's Writer writes into it): the checkpoint goes straight into a file, a
-    memory map, never whole into memory (a float32 Qwen3 0.6B is 2.4 GB, T.124). size, header and dtype: what the
+    memory map, never whole into memory (a float32 Qwen3 0.6B is 2.4 GB, T124). size, header and dtype: what the
     converter opened it with."""
 
     def __init__(self, path):

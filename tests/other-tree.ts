@@ -1,10 +1,10 @@
-// other-tree.ts (T.346, T.354)
+// other-tree.ts (T346, T354)
 // Another commit's whole tree beside the working one, for the tools that compare the two: `git archive` of the commit
 // under .tmp/unchanged/<its hash>, made once. A file of another commit taken alone (`git show <commit>:<file>`) stops
 // working when that file becomes a window over others, so a comparison takes the tree.
 //   const { commit, folder } = otherTree("origin/main")
-// kernelSources() (T.356): the kernels' sources of this tree or of a commit, whole, for the tools that compile two
-// forms of the kernels side by side: kernel.ts is a window over kernel/*.ts since T.356 and was one file before.
+// kernelSources() (T356): the kernels' sources of this tree or of a commit, whole, for the tools that compile two
+// forms of the kernels side by side: kernel.ts is a window over kernel/*.ts since T356 and was one file before.
 //   kernelSources("tree", dir)   kernelSources("origin/main", dir)
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -39,7 +39,7 @@ export function otherTree(before = "origin/main") {
     .map((name) => name.replace(/\/$/, "")).filter((name) => name === models || (!name.includes("/") && !name.startsWith(".") &&
       !["node_modules", "dist", "__pycache__"].includes(name)));
   for (const name of built) if (!fs.existsSync(path.join(folder, name))) fs.symlinkSync(path.join(root, name), path.join(folder, name));
-  // (T.628.1: the facts its TypeScript reads of its own Python, which `make kernels` writes there: the other tree's of
+  // (T628.1: the facts its TypeScript reads of its own Python, which `make kernels` writes there: the other tree's of
   // its own Python, not this one's)
   if (fs.existsSync(path.join(folder, "python_facts.py")) && !fs.existsSync(path.join(folder, "src", "runtime", "built", "facts"))) {
     execFileSync(process.env.PYTHON ?? "python3", [path.join(folder, "python_facts.py")], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
@@ -49,7 +49,7 @@ export function otherTree(before = "origin/main") {
 
 /** The kernels' sources (kernels/ and its folders, the .ts files) of this tree (form "tree") or of a commit, copied
  * into dir, which is emptied first: what was compiled there before is of another form. Returns the files, as their
- * paths under kernels/. A commit of before T.356 gives kernel.ts as the one file it was, one after it the window and
+ * paths under kernels/. A commit of before T356 gives kernel.ts as the one file it was, one after it the window and
  * kernel/: `asc <dir>/kernel.ts` compiles either. */
 export function kernelSources(form, dir) {
   const from = path.join(form === "tree" ? root : otherTree(form).folder, "kernels");

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""python_archive.py (T.367.2): the site's Python as two archives, which the worker fetches whole and unpacks in Pyodide
+"""python_archive.py (T367.2): the site's Python as two archives, which the worker fetches whole and unpacks in Pyodide
 (src/runtime/worker/pyodide.ts): one request where there were fifteen, and nineteen for a conversion.
 
     python3 python_archive.py [<the folder of the sources> [<the folder to write into>]]     (src/python, src/runtime/built)
@@ -55,7 +55,7 @@ def main(sources="src/python", out="src/runtime/built"):
         made = archive(sources, window, package)
         (out / name).write_bytes(made)
         print(f"{name}: {len(names(sources, window, package))} files, {len(made):,} bytes")
-    # (T.628.1: and the facts of the Python the TypeScript reads, beside the archives: a build's and the development
+    # (T628.1: and the facts of the Python the TypeScript reads, beside the archives: a build's and the development
     # server's start make them so, as `make kernels` does)
     import python_facts
     print(f"facts: {python_facts.write(out)}")

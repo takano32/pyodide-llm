@@ -1,4 +1,4 @@
-// tests/repository-check.ts (T.505.3)
+// tests/repository-check.ts (T505.3)
 // What the page makes of a repository of huggingface.co nobody listed (src/page/repository.ts, and hfEntry() of
 // src/page/address.ts): which file of it is the model. Node imports the two as the modules they are; the list of a
 // repository's files is a made-up answer of the API, or the names of a real one (tests/fixtures/repository-files.json).
@@ -182,7 +182,7 @@ console.log("ok: safetensors first where a repository has them, else its best GG
       console.warn = quiet;
     }
   }
-  // T.508.1: a list of more than a page comes in pages, each naming the next in its Link header: followed to the end, up
+  // T508.1: a list of more than a page comes in pages, each naming the next in its Link header: followed to the end, up
   // to PAGES of them; a list not had whole (a later page that is no list, more pages, a next page elsewhere) is none
   {
     const paged = [];
@@ -211,7 +211,7 @@ console.log("ok: safetensors first where a repository has them, else its best GG
 }
 
 // ---- the address a file may be named in (&file=, and the sheet's field by the same pattern)
-// (T.508.4: FILE_MOST characters at the most, as the pattern says it)
+// (T508.4: FILE_MOST characters at the most, as the pattern says it)
 assert.equal(FILE.source.includes(`.{1,${FILE_MOST}}`), true, "FILE_MOST is not the length the pattern says");
 assert.ok(FILE.test(`${"a/".repeat(126)}m.gguf`.slice(-FILE_MOST)) && FILE.test("m".repeat(FILE_MOST - 5) + ".gguf"), "a name of FILE_MOST characters is no file of an address");
 assert.ok(!FILE.test("m".repeat(FILE_MOST - 4) + ".gguf"), "a name past FILE_MOST characters is taken for a file of an address");
@@ -235,7 +235,7 @@ console.log("ok: a file is named in an address by names with / between them, non
   const q8 = settled(pinned, listOf("m-Q8_0.gguf")), q4 = hfEntry("owner/model", REVISION, { file: "m-Q4_K_M.gguf" });
   assert.deepEqual(names(q8), [`owner/model@${REVISION}/m-Q8_0.gguf:int8:4096`, `owner/model@${REVISION}/m-Q8_0.gguf:int6:4096`]);
   assert.equal(new Set([pinned, q8, q4].map((model) => keptName(model))).size, 3, "two files of one repository share what is kept of one of them");
-  // a model of the list names its GGUF too, and is kept as before (T.136, T.203: its name is its repository's)
+  // a model of the list names its GGUF too, and is kept as before (T136, T203: its name is its repository's)
   const listed = { id: "hf-some-model", hf: { repo: "owner/model", revision: REVISION, weights: "m-Q8_0.gguf" } };
   assert.deepEqual(names(listed), [`owner/model@${REVISION}:int8:4096`, `owner/model@${REVISION}:int6:4096`], "a model of the list is kept under another name than it was: every visitor's conversion of it is fetched again");
   console.log("ok: a conversion of ?hf= is kept by its repository, revision and file; of model.safetensors and of the list, as it always was");

@@ -1,11 +1,11 @@
-// tests/page-parts-check.ts (T.378.5): the parts of the two pages' scripts that hold something, each by itself.
+// tests/page-parts-check.ts (T378.5): the parts of the two pages' scripts that hold something, each by itself.
 //
 // What the model page's script keeps has two owners, and /benchmark/'s one. The other parts say what happened, to a
 // function of the owner, and read what it holds by the names they import. The owners read nothing of a page (no
 // element, no address, no storage, no clock), so Node imports them as the modules they are (Node 24 takes the types
 // off a .ts file), with no browser, no worker and no model:
 //
-//   src/page/model.ts         the model the page has and how far its load has come (T.553: and the time its fetch has
+//   src/page/model.ts         the model the page has and how far its load has come (T553: and the time its fetch has
 //                             left, from the bytes said and the clock the caller hands over): each event changes what it says
 //                             and nothing else (the others are compared whole, before and after); events out of their
 //                             order do no harm; nothing of it can be assigned from outside
@@ -15,7 +15,7 @@
 //   src/benchmark/running.ts  the run of /benchmark/ that is going on: one at a time, its sections and the times it is told
 //   src/page/opening.ts       the model a visit opens with, in a process of its own for each address and storage (it
 //                             reads both as it loads, through address.ts and remembered.ts): the URL's first, then the
-//                             one remembered, then the default (T.511.6)
+//                             one remembered, then the default (T511.6)
 //
 // What these are still bound to: model.ts to src/models.ts (its DEFAULT_MODEL is what a visit starts with);
 // opening.ts to `location` and `localStorage` (stand-ins here). What the page draws of all this is the browsers' to
@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_MODEL, MODELS } from "../src/models.ts";
 
 let cases = 0;
-// (T.584: tests/fresh.ts, on Node and on Bun)
+// (T584: tests/fresh.ts, on Node and on Bun)
 const fresh = (file) => made(new URL(`../src/${file}`, import.meta.url));
 // every export that is no function: what the owner holds now
 const held = (module) => Object.fromEntries(Object.entries(module).filter(([, value]) => typeof value !== "function").map(([name, value]) =>
@@ -46,7 +46,7 @@ const unassignable = (module, what) => {
   for (const name of Object.keys(module)) assert.throws(() => { module[name] = 1; }, { name: "TypeError" }, `${what}: ${name} can be assigned from outside its module`);
   cases += 1;
 };
-// (T.511.6: the default is not the first of the list; second and third are two others)
+// (T511.6: the default is not the first of the list; second and third are two others)
 const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !== first);
 
 // ---- src/page/model.ts
@@ -89,9 +89,9 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   // the worker's error
   m.benchBegan();
   only(m, () => m.failed(false), { benchmarking: false }, "an error ends the benchmark, and a model that was ready still is");
-  assert.equal(m.takesPrompts(), true, "after a failed round the run button must not stay off (the review of T.76)");
+  assert.equal(m.takesPrompts(), true, "after a failed round the run button must not stay off (the review of T76)");
   only(m, () => m.failed(false), {}, "an error with nothing going on changes nothing");
-  only(m, () => m.failed(true), { ready: false }, "a model the worker loads again on the CPU is not ready (T.156)");
+  only(m, () => m.failed(true), { ready: false }, "a model the worker loads again on the CPU is not ready (T156)");
   assert.equal(m.takesPrompts(), false);
   only(m, () => m.becameReady({ ...ready, template: undefined, threads: 1, seq_len: 512 }), { ready: true, longest: 512, fromTemplate: undefined, readyLine: { backend: "SIMD kernels, int8", threads: 1, pyodide: "314.0.7" } },
     "ready again: a model that says no format has none (the one before it is gone)");
@@ -101,14 +101,14 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   }
   m.becameReady(ready);
 
-  // a model is chosen: nothing of the one before it holds (T.470: nor its context and format, which the next ready says:
+  // a model is chosen: nothing of the one before it holds (T470: nor its context and format, which the next ready says:
   // the first value of each till then)
   m.benchBegan();
   assert.equal(only(m, () => m.chose(first), { model: first, loads: 2, ready: false, benchmarking: false, readyLine: undefined, gpuNote: undefined, longest: 256, fromTemplate: undefined },
     "a choice: the model, its load's number, and nothing ready, measured or said of the one before"), 2, "chose() answers the load's number");
   assert.equal(m.takesPrompts(), false);
   assert.equal(only(m, () => m.chose(first), { loads: 3 }, "the same model chosen again is another load"), 3);
-  // ... and from then on the visit does not open with anything else (the review of T.116: a model chosen while the page
+  // ... and from then on the visit does not open with anything else (the review of T116: a model chosen while the page
   // looked at what is kept wins)
   assert.equal(only(m, () => m.opensWith(second), {}, "opening with a model after one was chosen changes nothing"), false, "and says so");
 
@@ -129,7 +129,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   }
 }
 {
-  // T.439: the worker's word that it runs slower for a file of this page's build that is gone. It is of the page, and of
+  // T439: the worker's word that it runs slower for a file of this page's build that is gone. It is of the page, and of
   // no model: whenever it comes (before a model is ready, during a benchmark, twice), and whatever comes after it
   // (another model, its ready, an error, a model loaded again on the CPU), it holds for the rest of the visit
   const m = await fresh("page/model.ts");
@@ -159,7 +159,7 @@ const first = DEFAULT_MODEL, [second, third] = MODELS.filter((entry) => entry !=
   cases += 2;
 }
 {
-  // T.553: the reports of a load's fetch, and the time it has left (remaining.ts: the clock is the caller's)
+  // T553: the reports of a load's fetch, and the time it has left (remaining.ts: the clock is the caller's)
   const m = await fresh("page/model.ts");
   const { secondsLeft, leftSaid, advanced } = await fresh("page/remaining.ts");
   // (receiver.ts says each report so)
@@ -214,7 +214,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   assert.deepEqual([drawn.length, settings], [1, { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 }], "the seed is drawn once, and the page's settings are not written to");
   only(a, () => a.idle(), { generating: false }, "idle: nothing is written any more; the bubble and its settings stay for the line under it");
   only(a, () => a.idle(), {}, "idle twice");
-  // T.468.3: none while one is being written, and nothing of that one changes
+  // T468.3: none while one is being written, and nothing of that one changes
   a.answerBegan(bubble, { ...settings, seed: 9 }, 4096, seed);  // (a fixed seed: none drawn for it)
   assert.equal(only(a, () => a.answerBegan({ bubble: "second" }, { ...settings, seed: 1 }, 4096, seed), {}, "a second answer while one is written changes nothing"),
     undefined, "and is not begun");
@@ -222,7 +222,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   a.idle();
   cases += 2;
 
-  // (each answer after the worker went idle, as the page asks: T.468.3)
+  // (each answer after the worker went idle, as the page asks: T468.3)
   const begin = (...args) => (a.idle(), a.answerBegan(...args));
   // a seed the visitor fixed is the seed, and none is drawn
   how = begin(bubble, { ...settings, seed: 7 }, 4096, seed);
@@ -237,7 +237,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
     assert.equal(begin(bubble, { ...settings, steps }, longest, seed).steps, sent, `${steps} steps asked of a context of ${longest}`);
     cases += 1;
   }
-  // settings the page has no field for go to the worker as they are (T.274)
+  // settings the page has no field for go to the worker as they are (T274)
   how = begin(bubble, { ...settings, top_k: 20, min_p: 0.05, presence_penalty: 1.5 }, 4096, seed);
   assert.deepEqual([how.top_k, how.min_p, how.presence_penalty], [20, 0.05, 1.5]);
   // the next answer's bubble replaces the last one's
@@ -247,7 +247,7 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   cases += 4;
 }
 {
-  // T.554: the tokens of an answer, drawn at once, then every 8 tokens or 32 ms; a new answer begins with nothing written
+  // T554: the tokens of an answer, drawn at once, then every 8 tokens or 32 ms; a new answer begins with nothing written
   const a = await fresh("page/answer.ts");
   a.answerBegan({}, { steps: 0, temperature: 0 }, 256, () => 1);
   assert.equal(only(a, () => a.wrote("A", 1000), { written: "A", undrawn: 1 }, "the first token"), true, "is drawn at once");
@@ -260,14 +260,14 @@ console.log(`page-parts-check: model.ts by itself: what a visit opens with, a ch
   assert.equal(a.wrote("x", 1041), false, "31 ms after a draw: not yet");
   assert.equal(a.wrote("y", 1042), true, "32 ms: drawn");
   a.drew(1042);
-  a.idle();  // (T.468.3: the next answer after the worker said this one's end)
+  a.idle();  // (T468.3: the next answer after the worker said this one's end)
   const bubble = {};
   only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1), { generating: true, answer: bubble, written: "", undrawn: 0, drawnAt: undefined }, "the next answer begins with nothing written or drawn");
   assert.equal(a.wrote("z", 0), true, "and its first token is drawn at once");
   cases += 2;
 }
 {
-  // T.556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
+  // T556: how an answer is drawn is said as it begins, a copy of what is handed over, and nothing of it stays to the next
   const a = await fresh("page/answer.ts");
   const drawn = { markdown: true, thinking: true }, bubble = {};
   only(a, () => a.answerBegan(bubble, { steps: 0, temperature: 0 }, 256, () => 1, drawn), { generating: true, answer: bubble, used: { steps: 0, temperature: 0 }, shape: { markdown: true, thinking: true } }, "an answer drawn as Markdown, in a thought");
@@ -318,7 +318,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   };
   const kept = (id, was = false) => JSON.stringify({ id, kept: was });
   assert.deepEqual((({ id, name, loads, recalled }) => ({ id, name, loads, recalled }))(opens("", null)), { id: first.id, name: first.name, loads: 1, recalled: null }, "a first visit (and a browser without storage) opens the default");
-  assert.equal(opens("", kept("tiny-lm")).id, "tiny-lm", "a visitor who chose tiny-lm before the default changed keeps it (T.511.6)");
+  assert.equal(opens("", kept("tiny-lm")).id, "tiny-lm", "a visitor who chose tiny-lm before the default changed keeps it (T511.6)");
   assert.deepEqual(opens("", kept(third.id)), { id: third.id, name: third.name, loads: 1, recalled: third.id }, "the model chosen on an earlier visit");
   assert.deepEqual(opens(`?model=${second.id}`, kept(third.id)), { id: second.id, name: second.name, loads: 1, recalled: null }, "the URL's model of the list before the one remembered");
   assert.deepEqual(opens("?model=no-such-model", kept(third.id)), { id: third.id, name: third.name, loads: 1, recalled: third.id }, "a name of no model: the one remembered");
@@ -326,7 +326,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   const fromLink = opens(`?hf=owner/name&model=${second.id}`, kept(third.id));
   assert.deepEqual([fromLink.id, fromLink.name, fromLink.repo, fromLink.recalled], ["local", "owner/name", "owner/name", null], "?hf= before everything");
   assert.deepEqual([fromLink.weights, fromLink.note], ["model.safetensors", "Hugging Face"], "?hf= with no file named is not opened by model.safetensors (until the page has looked at the repository)");
-  // T.505.3: &file= names the file that is the model, and &revision= the revision, both as names an address may hold
+  // T505.3: &file= names the file that is the model, and &revision= the revision, both as names an address may hold
   const named = opens("?hf=owner/name-GGUF&file=name-Q4_K_M.gguf&revision=v1.0", null);
   assert.deepEqual([named.id, named.repo, named.weights, named.note], ["local", "owner/name-GGUF", "name-Q4_K_M.gguf", "Hugging Face · v1.0 · name-Q4_K_M.gguf"], "?hf=&file= does not open the file it names");
   assert.equal(opens("?hf=owner/name&file=", null).weights, "model.safetensors", "an empty &file= names a file");
@@ -336,7 +336,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.equal(opens("", kept(large.id, false)).id, first.id, "a large model that was not kept is not started unasked");
   assert.equal(opens("", kept(large.id, true)).id, large.id, "one that was kept is (index.astro then looks whether it still is)");
   assert.equal(opens("", "not JSON").id, first.id, "something else under the name: the default");
-  // T.508.3: what the page keeps of a model (its threads, its GPU's shaders) is under keptAs(): a model of the list by
+  // T508.3: what the page keeps of a model (its threads, its GPU's shaders) is under keptAs(): a model of the list by
   // its id, one of ?hf= by its repository, revision and file (a repository's model.safetensors as it was), a folder's
   // by its name
   const keys = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", `
@@ -350,7 +350,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   cases += 1;
 }
 {
-  // T.643.3: remembered.ts's recall() and keep() are the page's only reads and writes of its storage, and the only two
+  // T643.3: remembered.ts's recall() and keep() are the page's only reads and writes of its storage, and the only two
   // that catch: a storage that is not there, one that throws as it is read or written, a text that is no JSON. What the
   // page keeps of a model stays under the names it had (a visitor's threads and GPU's forms are still read), and what
   // each thing stands in with where nothing is kept
@@ -383,7 +383,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
     out.session = [m.keep("a", "1", m.SESSION), m.recall("a", (text) => text, "otherwise", m.SESSION)];`);
   assert.deepEqual(by, { kept: true, read: "1", none: null, taken: [true, null], refused: [false, "otherwise"], gone: [false, "otherwise"], notJson: "otherwise",
     local: [false, "otherwise"], session: [false, "otherwise"] }, "recall() and keep() over a storage, one that refuses, none, and a text that is no JSON");
-  // the things the page keeps, under the names they had before T.643.3
+  // the things the page keeps, under the names they had before T643.3
   const things = run(`
     const store = made(false);
     globalThis.localStorage = store;
@@ -424,7 +424,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
     "gpu:tiny-lm": JSON.stringify({ key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k2", cpu: { gbPerSecond: 9 } } }),
     "benchmark:cpu": JSON.stringify({ gbPerSecond: 9 }), model: JSON.stringify({ id: "tiny-lm", kept: true }),
   }, "the names and texts the page keeps (a model of ?hf= by its repository; the GPU's forms keep the verdict of the GPU alone, and it theirs)");
-  assert.ok(things.threadsKey, "the threads' name is bench.ts's, which /benchmark/ reads (T.190)");
+  assert.ok(things.threadsKey, "the threads' name is bench.ts's, which /benchmark/ reads (T190)");
   assert.deepEqual(usage, { prompt: 10 * 0.8 + 1, written: 20 * 0.8 + 2 }, "the usage is added up, the older decayed (bench.ts's USAGE_DECAY)");
   assert.deepEqual(things.chose, { key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k0", cpu: { gbPerSecond: 9 } } },
     "what the GPU chose keeps the verdict of the GPU alone kept before it (and no more of the report than the forms)");
@@ -447,7 +447,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.ok(without.asked >= 9, "and it was asked");
 }
 {
-  // T.520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line
+  // T520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line
   const { thoughtOf, thoughtLine } = await fresh("page/thought.ts");
   const none = { thought: null, closed: false };
   assert.deepEqual(thoughtOf("Hello <think>", false), { ...none, answer: "Hello <think>" }, "an answer that does not begin with a thought is all answer");
@@ -457,7 +457,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(thoughtOf("<think>\nHm.\n</think>\n\nTokyo. </think> again", false), { thought: "Hm.", closed: true, answer: "Tokyo. </think> again" }, "a thought the model opened (Qwen3's thinking form): it ends at its first closing mark");
   assert.deepEqual(thoughtOf("\nso 17 × 4</think>\n</think>\n\n408.", true), { thought: "so 17 × 4", closed: true, answer: "408." }, "a thought the budget closed and the model closed once more");
   assert.deepEqual(thoughtOf("<think>\n\n</think>\n\nTokyo.", true),{ thought: "", closed: true, answer: "Tokyo." }, "an empty thought (its opening mark written again) before the answer");
-  // T.592.1: harmony's analysis channel, which the format opens, its <|end|>, and the final channel's message after it
+  // T592.1: harmony's analysis channel, which the format opens, its <|end|>, and the final channel's message after it
   const { opensThought } = await fresh("page/thought.ts");
   assert.deepEqual(["…<|start|>assistant<|channel|>analysis<|message|>", "…<think>\n", "…<|start|>assistant<|channel|>final<|message|>", "Hello"].map(opensThought),
     [true, true, false, false], "the formats that open a thought: <think> and the analysis channel, not the final one");
@@ -465,9 +465,9 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   assert.deepEqual(thoughtOf("Let me see.", true), { thought: "Let me see.", closed: false, answer: "" }, "harmony's thought that goes on");
   assert.deepEqual(thoughtOf(`Let me see.<|end|>${final}東京です。`, true), { thought: "Let me see.", closed: true, answer: "東京です。" }, "harmony's thought, closed, and its answer in the final channel");
   assert.deepEqual(thoughtOf("Let me see.<|end|><|start|>assistant<|channel|>", true), { thought: "Let me see.", closed: true, answer: "" }, "the final channel's start while it is written is no answer yet");
-  assert.deepEqual(thoughtOf(" Hm.<|end|><|start|> assistant<|channel|> final<|message|> Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "T.592.2: the final channel's start with a space before its words, as llm-jp-4 8B thinking writes it");
-  assert.deepEqual(thoughtOf("Hm.<|end|><|start|> assist", true), { thought: "Hm.", closed: true, answer: "" }, "T.592.2: a word of the final channel's start, half written");
-  assert.deepEqual(thoughtOf("Hm.<|end|><|start|> user", true), { thought: "Hm.", closed: true, answer: "<|start|> user" }, "T.592.2: another turn's start is no final channel");
+  assert.deepEqual(thoughtOf(" Hm.<|end|><|start|> assistant<|channel|> final<|message|> Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "T592.2: the final channel's start with a space before its words, as llm-jp-4 8B thinking writes it");
+  assert.deepEqual(thoughtOf("Hm.<|end|><|start|> assist", true), { thought: "Hm.", closed: true, answer: "" }, "T592.2: a word of the final channel's start, half written");
+  assert.deepEqual(thoughtOf("Hm.<|end|><|start|> user", true), { thought: "Hm.", closed: true, answer: "<|start|> user" }, "T592.2: another turn's start is no final channel");
   assert.deepEqual(thoughtOf("Hm.<|end|>Tokyo.", true), { thought: "Hm.", closed: true, answer: "Tokyo." }, "an answer without the final channel's start is all answer");
   assert.deepEqual(thoughtOf("Hm. <|end|> then </think> x", true).thought, "Hm.", "of two kinds the closing mark that comes first ends it");
   assert.deepEqual([thoughtLine(false), thoughtLine(true)], ["Thinking…", "Thought"], "while it goes on, and once it closed");
@@ -478,7 +478,7 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
 }
 console.log(`page-parts-check: thought.ts by itself: a thought, its end and its line`);
 
-// ---- T.411: folder.ts by itself: the models the page makes of the files of the visitor's disk (Node has File)
+// ---- T411: folder.ts by itself: the models the page makes of the files of the visitor's disk (Node has File)
 {
   const { openHuggingFace, openLegacy } = await fresh("page/folder.ts");
   const file = (name, size, text) => new File([text ?? new Uint8Array(size)], name);
@@ -504,7 +504,7 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   cases += 6;
 }
 {
-  // T.468.1: heard.ts, what the page reads of a report first: a late report of a cancelled load is passed over, and
+  // T468.1: heard.ts, what the page reads of a report first: a late report of a cancelled load is passed over, and
   // only the reports that end a piece of the worker's work give the page its buttons back. Every kind of report the
   // contract has (contracts/messages.ts's FromWorker) is asked, so a kind added there is asked too
   const { ofThisLoad, endsWork } = await fresh("page/heard.ts");
@@ -523,7 +523,7 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.ok(/^worker\.onmessage = \(\{ data \}\) => \{\n(\s*\/\/[^\n]*\n)*\s*if \(!ofThisLoad\(data, loads\)\) \{\n\s*return;\n\s*\}\n\s*if \(hear\(data\.type, data\) === "away"\) return;\n/.test(handler),
     "receiver.ts passes over another load's report before anything else, then does what the row of its type says");
   assert.ok(/\n  if \(endsWork\(data\)\) \{\n/.test(handler), "receiver.ts gives the page back its buttons where a report ends a piece of work");
-  // T.643.2: the rows of the table are the kinds of the contract, one each (tsc holds the same through the table's type;
+  // T643.2: the rows of the table are the kinds of the contract, one each (tsc holds the same through the table's type;
   // this holds it where the table's type were cast away)
   let rows;
   walk(treeOf(receiverFile, (file) => file).program, (node) => {
@@ -533,7 +533,7 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   cases += 3;
 }
 {
-  // T.468.2: lines.ts, the status line's words: a ready model's, and a load's as it fetches and converts
+  // T468.2: lines.ts, the status line's words: a ready model's, and a load's as it fetches and converts
   const { readyStatus, progressLine } = await fresh("page/lines.ts");
   const { SLOWER } = await fresh("runtime/updated.ts");
   const ready = { name: "Tiny", backend: "SIMD kernels, int8, relaxed SIMD", threads: 1, pyodide: "314.0.7", gpuTest: false, outdated: false };
@@ -546,7 +546,7 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   const progress = { name: "Tiny", received: 2.5e6, total: 10e6 };
   assert.equal(progressLine(progress), "Tiny: 2.5 / 10.0 MB", "what has arrived of how much");
   assert.equal(progressLine({ ...progress, perSecond: 1.25e6, converted: 0.237 }), "Tiny: 2.5 / 10.0 MB · 1.3 MB/s · 23 % converted",
-    "T.119: how fast, and the share converted apart (rounded down)");
+    "T119: how fast, and the share converted apart (rounded down)");
   assert.equal(progressLine({ ...progress, received: 0, converted: 0.5 }), "Tiny: 50 % converted", "a file of the visitor's disk: the share alone");
   assert.equal(progressLine({ ...progress, received: 0 }), "Tiny: 0.0 / 10.0 MB", "nothing yet, nothing converted: the bytes");
   cases += 8;

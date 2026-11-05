@@ -1,4 +1,4 @@
-// /benchmark/ (T.134) in real browsers: every section run once (?run=all), the Markdown printed, and a failure where a
+// /benchmark/ (T134) in real browsers: every section run once (?run=all), the Markdown printed, and a failure where a
 // result cannot be right. A feature a browser lacks (no WebGPU, no private file system in a worker) is no failure: the
 // page says so and goes on. The runners are not the owner's devices, so the numbers only show that the page works;
 // Playwright's Firefox runs under a debugger and its numbers are not Firefox's (AGENTS.md). Meant for CI.
@@ -6,10 +6,10 @@
 //   node tests/bench-check.ts [url of a site | --dist] [engine ...] [--model id] [--size MiB] [--run sections]
 //     engines: chromium firefox webkit chrome msedge (default: the first three)
 //     --dist serves dist/ (npm run build) itself, as tests/screenshots.ts does: a branch before it goes out
-//     --run the page's ?run= (default all; "gpu" alone: the GPU section takes minutes on SwiftShader, T.146)
-//     --unsaid hides navigator.deviceMemory from the page (T.214: the model section skips its NumPy round)
+//     --run the page's ?run= (default all; "gpu" alone: the GPU section takes minutes on SwiftShader, T146)
+//     --unsaid hides navigator.deviceMemory from the page (T214: the model section skips its NumPy round)
 //     --wrong (with --dist) serves the GPU section's worker with its layer check's line cut to 1e-12, so that every layer
-//       verdict is WRONG, as a device whose rounding differs from the check's would make them (T.227's review: no CI
+//       verdict is WRONG, as a device whose rounding differs from the check's would make them (T227's review: no CI
 //       runner makes a WRONG verdict, and nothing else tries the page's wiring of the report's warnings): the report must
 //       hold the WRONG rows under "#### Warnings", before the sections, and the link what fits of them. A change to a
 //       served file, in this test alone: the page has no flag for it
@@ -21,8 +21,8 @@ import { REPORT_LIMIT, TOO_LONG, pathTable } from "../src/bench.ts";
 import { closed, leave } from "./leave.ts";
 import { serving } from "./serving.ts";
 
-// T.180: the browsers' profiles, in the repository's .tmp/ (never $HOME or /tmp)
-// fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" and joined it made "D:\\D:\\a\\…" (T.181)
+// T180: the browsers' profiles, in the repository's .tmp/ (never $HOME or /tmp)
+// fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" and joined it made "D:\\D:\\a\\…" (T181)
 const PROFILES = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".tmp", "bench-check-profiles");
 
 const args = process.argv.slice(2);
@@ -31,9 +31,9 @@ const option = (name, value) => {
   return at >= 0 ? args.splice(at, 2)[1] : value;
 };
 const model = option("--model", "tiny-lm"), size = option("--size", "256"), sections = option("--run", "all");
-// T.184: more of the page's query, e.g. --query gpuTest=on (CI's fallback adapter taken as a GPU in the model section)
+// T184: more of the page's query, e.g. --query gpuTest=on (CI's fallback adapter taken as a GPU in the model section)
 const query = option("--query", "");
-// T.214: --unsaid hides navigator.deviceMemory from the page (as Safari and Firefox do not say it): the model section's
+// T214: --unsaid hides navigator.deviceMemory from the page (as Safari and Firefox do not say it): the model section's
 // round without the kernels must be a row that says why, and never load
 const unsaid = args.includes("--unsaid") ? args.splice(args.indexOf("--unsaid"), 1) : null;
 const dist = args.includes("--dist") ? args.splice(args.indexOf("--dist"), 1) : null;
@@ -42,8 +42,8 @@ if (wrong && !dist) {
   console.log("--wrong changes a file the page is served, so it needs --dist");
   process.exit(1);
 }
-// the layer check's line in src/runtime/benchmark/gpu/layercheck.js (T.353: in gpu.js before): a stream off by more than it is WRONG
-// (T.367.3.2: in a build the check is in the GPU section's worker as the bundler linked and printed it,
+// the layer check's line in src/runtime/benchmark/gpu/layercheck.js (T353: in gpu.js before): a stream off by more than it is WRONG
+// (T367.3.2: in a build the check is in the GPU section's worker as the bundler linked and printed it,
 // _astro/benchmark-gpu.<hash>.js, where the number is written .001; a build that serves the sources as they are has
 // benchmark/gpu/layercheck.js)
 const LAYER_LINE = /\bLAYER_LINE = (?:1e-3|0?\.001)\b/, NO_LINE = "LAYER_LINE = 1e-12";
@@ -51,7 +51,7 @@ const holdsTheLine = (name) => /^benchmark\/gpu\/layercheck\.js$|^_astro\/benchm
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
 if (dist) {
-  // dist/ as every tool serves it (T.391.6: tests/serving.ts; the folder's path read for Windows too, T.242), and
+  // dist/ as every tool serves it (T391.6: tests/serving.ts; the folder's path read for Windows too, T242), and
   // --wrong: the GPU section's worker with no line left for the layer check to hold (a rename of it fails here, loudly)
   server = await serving(undefined, { instead: ({ name, file }) => {
     if (!wrong || !file || !holdsTheLine(name)) return undefined;
@@ -69,7 +69,7 @@ const WEBGPU = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-web
 // the sections whose failure is this page's: the others depend on the runner (its GPU, its disk, its line), and what
 // they could not do is printed
 const OURS = ["device", "cpu", "model"];
-// T.177: every stage a section showed while it ran, as the page drew it (a watcher in the page from its start, so that a
+// T177: every stage a section showed while it ran, as the page drew it (a watcher in the page from its start, so that a
 // stage shown for a moment is seen too). A section of more than one stage that measured and never changed its stage
 // on the page would look frozen to a visitor: that fails (the page's own "starting" is not counted: the stages come from
 // the section). The browser's features are one quick stage, and a section
@@ -77,7 +77,7 @@ const OURS = ["device", "cpu", "model"];
 const STAGED = ["cpu", "model", "gpu", "storage", "line"];
 function watchStages() {
   const seen = (window.__stages = {});
-  // T.469: and the line over the sections (every text it showed) and each section's seconds as it last showed them
+  // T469: and the line over the sections (every text it showed) and each section's seconds as it last showed them
   const overall = (window.__overall = []), elapsed = (window.__elapsed = {});
   const look = () => {
     const line = document.getElementById("overall");
@@ -93,7 +93,7 @@ function watchStages() {
       const list = (seen[name] ??= []);
       if (list.at(-1) !== text) {
         list.push(text);
-        // T.242: and to the console as it comes, so that a page that went down says how far it had got
+        // T242: and to the console as it comes, so that a page that went down says how far it had got
         console.info(`stage of ${name}: ${text}`);
       }
     }
@@ -104,13 +104,13 @@ function watchStages() {
 }
 
 let failed = false;
-// T.181: a browser that does not start is passed over (a runner may lack Chrome or Edge), but none starting is no pass
+// T181: a browser that does not start is passed over (a runner may lack Chrome or Edge), but none starting is no pass
 let started = 0;
 for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"]) {
   const branded = ["chrome", "msedge"].includes(engine);
   const type = branded ? playwright.chromium : playwright[engine];
   console.log(`### ${engine}`);
-  // T.180: a profile on the disk, not the throwaway (off-the-record) one of browser.newContext(): Chromium keeps an
+  // T180: a profile on the disk, not the throwaway (off-the-record) one of browser.newContext(): Chromium keeps an
   // off-the-record profile's storage in memory, and on macOS' runner (7 GB) the model section's llm-jp-3 150M in the
   // cache and the storage section's 256 MiB no longer fit ("No space" at about 200 MB, 2026-09-27). A visitor's
   // browser keeps its storage on the disk, as this does. The profile is removed when the browser closes.
@@ -129,7 +129,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   if (unsaid) await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true }));
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error.message)));
-  // T.242: what the page and its workers said and which requests failed, printed where a section failed or the page
+  // T242: what the page and its workers said and which requests failed, printed where a section failed or the page
   // went down ("[object Object]" and "Load failed" alone did not say which fetch, of which worker, nor why)
   const heard = [];
   const hear = (line) => heard.push(`${((Date.now() - opened) / 1000).toFixed(1)} s ${line}`.slice(0, 600));
@@ -143,7 +143,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   let wentWrong = false;
   try {
     await page.goto(`${site}benchmark/?run=${sections}&model=${model}&size=${size}${query ? `&${query}` : ""}`);
-    // the first visit reloads once, when the service worker takes the page over (T.93): the wait starts again
+    // the first visit reloads once, when the service worker takes the page over (T93): the wait starts again
     for (;;) {
       try {
         await page.waitForFunction(() => window.__benchmark?.done, null, { timeout: 1200000 });
@@ -162,7 +162,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
       if ((result.status === "wrong" && !(wrong && name === "gpu")) || (result.status === "error" && OURS.includes(name))) failed = wentWrong = true;
     }
     if (wrong) {
-      // T.227's review: the verdicts every layer form gave, WRONG, are in the report's warnings, the worst first, before the
+      // T227's review: the verdicts every layer form gave, WRONG, are in the report's warnings, the worst first, before the
       // sections (what parseReport() reads is above them), and the link holds what fits of them: the whole, or the summary
       // with the first of them and a line of how many are left, or (nothing fits) the request to paste, never nothing
       const at = markdown.indexOf("\n#### Warnings\n"), end = markdown.indexOf("\n#### ", at + 1);
@@ -186,7 +186,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
       for (const problem of problems) console.log(`wrong: FAILED, ${problem}`);
       if (problems.length) failed = true;
     }
-    // T.184: the model page's own path, a line a row (CI's fallback adapter times the CPU sides only: the GPU's cells
+    // T184: the model page's own path, a line a row (CI's fallback adapter times the CPU sides only: the GPU's cells
     // say why), and none at all, or no row of it, is a failure of the model section
     if (results.model?.status === "ok") {
       const paths = results.model.data?.paths;
@@ -197,7 +197,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
       }
     }
     const stages = await page.evaluate(() => window.__stages);
-    // T.214: where the page is not told the memory, the round without the kernels is skipped in words and never loads
+    // T214: where the page is not told the memory, the round without the kernels is skipped in words and never loads
     if (unsaid && results.model?.status === "ok") {
       const rows = results.model.data?.rows ?? [];
       const plain = rows.find((row) => row.name === "without the kernels");
@@ -213,7 +213,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
       console.log(`model without deviceMemory: FAILED, the section is ${results.model?.status ?? "missing"}`);
       failed = true;
     }
-    // T.469: each section that ran says its seconds as the page's clock writes them, and where more than one ran, the
+    // T469: each section that ran says its seconds as the page's clock writes them, and where more than one ran, the
     // line over them said which ran, of how many, and its time in all, and ends with how many ran in how long
     const { overall, elapsed } = await page.evaluate(() => ({ overall: window.__overall, elapsed: window.__elapsed }));
     const ran = Object.keys(results), CLOCK = String.raw`(\d+ s|\d+ min \d\d s)`;
@@ -240,10 +240,10 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
       }
     }
     // the shaders against JavaScript are the GPU section's check of its own results: with an adapter they must run
-    // (and every tiled shader of T.146 among them: one the runner's adapter could not make fails here too)
+    // (and every tiled shader of T146 among them: one the runner's adapter could not make fails here too)
     const check = results.gpu?.data?.steps?.find((s) => s.name === "the shaders against JavaScript");
     if (check?.error || Object.values(check?.result ?? {}).some((v) => v.error)) failed = true;
-    // T.175: the numbers the layer's verdicts rest on, a line each (CI's logs are where they are read: the owner, 2026-09-27):
+    // T175: the numbers the layer's verdicts rest on, a line each (CI's logs are where they are read: the owner, 2026-09-27):
     // the stream's and the cache's differences, each quantized vector's scales and values off by 1, and the DP4A fused
     // form against the one with the norms apart (the ulp of the scales, the values off by 1, bit for bit or not)
     for (const [name, v] of Object.entries(check?.result ?? {})) {
@@ -254,12 +254,12 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
         (v.quantized ? `; ${v.quantized.map((q) => `${q.point}: ${q.wrong ?? `scales ${q.scale.toExponential(1)}, ${q.apart} of ${q.of} values off by 1`}`).join("; ")}` : "") +
         (apart ? `; against the norms apart: scales ${apart.ulps} ulp, ${apart.apart} values off by 1, stream ${apart.stream.toExponential(1)}, ${apart.bitForBit ? "bit for bit" : "not bit for bit"}` : "") +
         (name === "tokens on the GPU" ? `; ${v.tokens} tokens, layer ${v.layer}${v.problems ? `, ${v.problems.join(" / ")}` : ""}` : "") +
-        // T.225: how each stage of the layer held, and each step of the tokens (the worker's own lines)
+        // T225: how each stage of the layer held, and each step of the tokens (the worker's own lines)
         (v.stages ? `; ${v.stages}` : "") + (v.steps ? `; ${v.steps}` : "") +
-        // T.224: a token's attention, its worst head over the largest value, and where (the head's size, the positions)
+        // T224: a token's attention, its worst head over the largest value, and where (the head's size, the positions)
         (v.at ? `, worst ${v.worstRelative.toExponential(1)} at a head of ${v.at.headSize}, ${v.at.positions} positions` : ""));
     }
-    // T.157: after the CPU section, the GPU section's token table holds the GPU against it (and not the old estimate)
+    // T157: after the CPU section, the GPU section's token table holds the GPU against it (and not the old estimate)
     if (results.cpu?.status === "ok" && results.gpu?.data && !results.gpu.markdown.includes("The CPU (an estimate): each model's weights at the CPU section's fastest")) {
       console.log("the GPU section's token table does not hold the GPU against the CPU section");
       failed = true;
@@ -275,7 +275,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     for (const [at, line] of heard.entries()) if (at >= from || !line.includes(" console info: ")) console.log(`heard: ${line}`);
   }
   console.log("");
-  // T.141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
+  // T141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
   // Windows job sat 55 minutes after WebKit's report, 2026-09-27): give it 15 seconds and go on
   if (!(await closed(() => context.close()))) console.log(`${engine}: the browser did not close within 15 s; going on`);
   try {

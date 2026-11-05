@@ -1,5 +1,5 @@
-// The model section's table of the page's own path (T.184, T.190): its threads, its prompts and writing, and what it warns of.
-// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+// The model section's table of the page's own path (T184, T190): its threads, its prompts and writing, and what it warns of.
+// (T353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, times, tableCell } from "./cells.ts";
 import { REASONS } from "../runtime/forward/reasons.ts";
 import type { PathCell, PathThreads, Paths } from "../runtime/contracts/messages.ts";
@@ -7,11 +7,11 @@ import type { PathCell, PathThreads, Paths } from "../runtime/contracts/messages
 // what the worker answered of the page path (worker/timing.ts's timedPaths()), without the message's own keys
 type PathsFound = Omit<Paths, "type" | "load">;
 
-/** T.93: where the model page remembers the number of threads it found for a model on this device (localStorage).
- * T.190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */
+/** T93: where the model page remembers the number of threads it found for a model on this device (localStorage).
+ * T190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */
 export const threadsKey = (id: string, nav: Pick<Navigator, "hardwareConcurrency" | "userAgent"> & { deviceMemory?: number }) => `threads:${id}:${nav.hardwareConcurrency}:${nav.deviceMemory ?? ""}:${nav.userAgent}`;
 
-// the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T.227's
+// the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T227's
 // review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
 // sides were timed; and (src/runtime/worker/timing.ts) why a page that is not isolated has one thread, which is no failure
 const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
@@ -19,11 +19,11 @@ const searchNotEnded = (how: PathThreads) => `the search had not ended after ${h
 const gpuStopped = (gpu: { lost?: string }) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
 const NO_SHARED_MEMORY = "no shared memory here";
 
-/** T.190: how the page path's number of threads came about (worker/timing.js's timedPaths), in a few words */
+/** T190: how the page path's number of threads came about (worker/timing.js's timedPaths), in a few words */
 export function threadsHow(how: PathThreads | undefined): string {
   if (!how) return "";
   if (how.alone) return `: ${how.alone}`;
-  // T.190's review: a software thread that stopped after the count was found (T.120): the later times are one thread's
+  // T190's review: a software thread that stopped after the count was found (T120): the later times are one thread's
   const stopped = how.stopped ? `; ${STOPPED_WHILE_TIMED}` : "";
   if (how.unfinished) return `: ${searchNotEnded(how)}${stopped}`;
   if (how.remembered) return `, as the model page remembers${stopped}`;
@@ -31,7 +31,7 @@ export function threadsHow(how: PathThreads | undefined): string {
   return `${verdicts.length ? `, searched here (${verdicts.join(", ")})` : ""}${stopped}`;
 }
 
-/** T.190's review: the writing on each number of software threads (worker/timing.js's timedPaths: in turn, CPU only), the page's
+/** T190's review: the writing on each number of software threads (worker/timing.js's timedPaths: in turn, CPU only), the page's
  * marked; "" where there is one count or none. perCount: [{ threads, speed, low, high, unsteady }] */
 export function threadsLine(perCount: PathsFound["perCount"] = [], page?: number): string {
   if (perCount.length < 2) return "";
@@ -41,13 +41,13 @@ export function threadsLine(perCount: PathsFound["perCount"] = [], page?: number
   return `Writing on each number of software threads (CPU only): ${cells.join(" · ")}`;
 }
 
-/** T.184: the prompts the model page's path is timed on: one block of the GPU's (forward.js's GPU_BLOCK) and four; and
+/** T184: the prompts the model page's path is timed on: one block of the GPU's (forward.js's GPU_BLOCK) and four; and
  * the tokens it writes after a prompt */
 export const PATH_PROMPTS = [64, 256];
 export const PATH_WRITES = 64;
 
-/** T.184: why a GPU cell of the page path is empty, in a few words: "not here" (no WebGPU, no adapter), "not on a
- * fallback adapter" (the CPU in a GPU's place: the page refuses it, T.148, and CI's are all such, T.182), else the words of
+/** T184: why a GPU cell of the page path is empty, in a few words: "not here" (no WebGPU, no adapter), "not on a
+ * fallback adapter" (the CPU in a GPU's place: the page refuses it, T148, and CI's are all such, T182), else the words of
  * forward.js (a model the GPU does not take yet, too little memory, a failure). */
 export function gpuSkipped(why = ""): string {
   if (why === REASONS.noWebGpu || why === REASONS.noAdapter) return "not here";
@@ -55,15 +55,15 @@ export function gpuSkipped(why = ""): string {
   return why || "not measured";
 }
 
-/** T.184: the model page's own path on this device, as one table (the model section times it on its first load,
- * worker/timing.js's timedPaths and forward.js's timePrompts): prompts as the page chooses between the GPU and the CPU (T.148),
+/** T184: the model page's own path on this device, as one table (the model section times it on its first load,
+ * worker/timing.js's timedPaths and forward.js's timePrompts): prompts as the page chooses between the GPU and the CPU (T148),
  * on the CPU only and on the GPU only, how many times faster the GPU is, and the writing after a prompt. paths:
  * { threads, how (threadsHow()), perCount (threadsLine()), gpu: { seconds, matrices, attention, lost? } or { why },
  * status (the status line's words of the GPU),
  * rows: [{ what: "prompt" | "generation", tokens, chosen, cpu, gpu }] } where a cell is { speed, low, high, gpuTokens,
- * unsteady }, { same: "cpu" } (one path: timed once) or { skip: why }; or { error }. The writing's GPU cells (T.152: the
+ * unsteady }, { same: "cpu" } (one path: timed once) or { skip: why }; or { error }. The writing's GPU cells (T152: the
  * steps of a generation on the GPU) are timed where the GPU takes them, else the reason. A GPU that stopped while the sides were timed
- * (gpu.lost) leaves no ratio anywhere: its later times are no GPU's (T.157). */
+ * (gpu.lost) leaves no ratio anywhere: its later times are no GPU's (T157). */
 export function pathTable(paths: PathsFound | undefined, name = ""): string {
   const title = `**The model page's path**${name ? ` (${name})` : ""}`;
   if (!paths || paths.error) return `${title}: failed: ${tableCell(paths?.error ?? "no answer")}`;
@@ -85,7 +85,7 @@ export function pathTable(paths: PathsFound | undefined, name = ""): string {
     const spread = cell.low !== undefined ? ` (${rate(cell.low)}–${rate(cell.high)}${cell.unsteady ? ", unsteady" : ""})` : "";
     return `${rate(cell.speed)} tok/s${spread}`;
   };
-  // where the page's choice put the tokens: all on one side, or a part on the GPU (a GPU, then the CPU: T.148)
+  // where the page's choice put the tokens: all on one side, or a part on the GPU (a GPU, then the CPU: T148)
   const side = (cell: PathCell | undefined, tokens: number) => (cell?.gpuTokens === undefined || cell.same ? "" : cell.gpuTokens >= tokens ? ", GPU"
     : cell.gpuTokens > 0 ? `, GPU ${cell.gpuTokens} of ${tokens}` : ", CPU");
   const lines = [`${title}: ${facts.filter(Boolean).join(" · ")}`, "",
@@ -101,7 +101,7 @@ export function pathTable(paths: PathsFound | undefined, name = ""): string {
 }
 
 /**
- * T.227's review: what the model page's path says went wrong, as it says it in pathTable()'s first line, for warnings() to
+ * T227's review: what the model page's path says went wrong, as it says it in pathTable()'s first line, for warnings() to
  * list as the section's own (said). The GPU stopped while the sides were timed (forward.js gives a dozen reasons for
  * stopping it, and only some have "failed" in them: it said nothing, its worker stopped answering, its logits were not
  * finite), software threads that stopped or did not start, a search for their count that did not end. [] where none

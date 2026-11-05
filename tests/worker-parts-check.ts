@@ -1,4 +1,4 @@
-// tests/worker-parts-check.ts (T.378.3): the parts of the worker that hold something, each by itself.
+// tests/worker-parts-check.ts (T378.3): the parts of the worker that hold something, each by itself.
 //
 // What the worker's modules keep has owners (worker/request.js: what the page asked for with a load; worker/loaded.js:
 // the model loaded now; worker/runtime.js: what the visit finds once; each other module its own `let`s). The others say
@@ -26,7 +26,7 @@ import { runtimeUrl } from "./tree.ts";
 import { workerHarness } from "./worker-harness.ts";
 
 // ---- request.js, a fresh one for every case (a module is made once for a URL)
-// (T.584: tests/fresh.ts, on Node and on Bun)
+// (T584: tests/fresh.ts, on Node and on Bun)
 const request = () => fresh(runtimeUrl("worker/request.js"));
 const read = (r) => ({ threads: r.threadsRequest, gpu: r.gpuRequest, root: r.root, ahead: r.loadsAhead, benching: r.benching, switches: r.switchesNow() });
 {
@@ -97,7 +97,7 @@ const read = (r) => ({ threads: r.threadsRequest, gpu: r.gpuRequest, root: r.roo
 }
 console.log("ok: request.js by itself: a load's asking, the page's switches read once, the rounds' switches, the count the page path found; nothing assigned from outside");
 
-// ---- T.460: clock.js, the seconds of a load's parts: a load begins with none of the one before but Pyodide's
+// ---- T460: clock.js, the seconds of a load's parts: a load begins with none of the one before but Pyodide's
 {
   const clock = await fresh(runtimeUrl("worker/clock.js"));
   clock.took("pyodide", 3);
@@ -108,12 +108,12 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   clock.loadStarted();
   clock.took("download", 0.5);
   clock.took("construct", 0.25);
-  assert.deepEqual(clock.secondsSoFar(), { pyodide: 3, download: 0.5, construct: 0.25 }, "T.460: a site's model after it, without the conversion's seconds");
+  assert.deepEqual(clock.secondsSoFar(), { pyodide: 3, download: 0.5, construct: 0.25 }, "T460: a site's model after it, without the conversion's seconds");
 }
 console.log("ok: clock.js by itself: a load says its own parts' seconds and Pyodide's, none of the load before");
 
-// ---- T.463: runtime.js's placeKernels(), in the worker's context on a made-up network: the kernels Python loads with
-// ctypes written into Pyodide's file system, and their path where they came (T.644.2: the one module, none relaxed)
+// ---- T463: runtime.js's placeKernels(), in the worker's context on a made-up network: the kernels Python loads with
+// ctypes written into Pyodide's file system, and their path where they came (T644.2: the one module, none relaxed)
 {
   const { context, run, fresh } = workerHarness({ root: null });
   const written = [];
@@ -126,13 +126,13 @@ console.log("ok: clock.js by itself: a load says its own parts' seconds and Pyod
     const asked = [];
     fresh((url) => (asked.push(String(url).split("/").at(-1)), new Response(new Uint8Array(8), { status: came.some((name) => url.endsWith(name)) ? 200 : 500 })));
     await run("placeKernels()");
-    assert.deepEqual([written.map((p) => p.split("/").at(-1)), run("pythonKernels")], [came, path], `T.463: ${came.join(" and ") || "none"} came`);
-    assert.deepEqual(asked, ["simdkernel.so"], "T.644.2: one fetch, of simdkernel.so alone");
+    assert.deepEqual([written.map((p) => p.split("/").at(-1)), run("pythonKernels")], [came, path], `T463: ${came.join(" and ") || "none"} came`);
+    assert.deepEqual(asked, ["simdkernel.so"], "T644.2: one fetch, of simdkernel.so alone");
   }
 }
 console.log("ok: runtime.js's placeKernels(): simdkernel.so alone fetched, its path for Python where it came, none where it did not");
 
-// ---- T.490: runtime.js's compileKernelsHere(), in the worker's context on a made-up network: a shared build that does
+// ---- T490: runtime.js's compileKernelsHere(), in the worker's context on a made-up network: a shared build that does
 // not compile leaves the plain one (one thread), and says so; the plain one that does not compile leaves none (NumPy)
 {
   const { context, run, fresh } = workerHarness({ root: null });
@@ -152,7 +152,7 @@ console.log("ok: runtime.js's placeKernels(): simdkernel.so alone fetched, its p
     fresh(() => new Response(new Uint8Array(8), { status: 200 }));
     await run("compileKernelsHere()");
     assert.deepEqual([run("jsKernels"), run("sharedKernels"), said.length], [plain, shared, lines],
-      `T.490: ${refused.join(", ") || "nothing"} refused: the plain kernels, the shared ones, the lines said`);
+      `T490: ${refused.join(", ") || "nothing"} refused: the plain kernels, the shared ones, the lines said`);
     if (lines) assert.match(said[0], /^kernels: the kernels of a shared memory did not compile \(.*\): one thread$/);
   }
 }
@@ -174,7 +174,7 @@ console.log("ok: runtime.js's compileKernelsHere(): a shared build that does not
   // nothing loaded: nothing to let go of, and the collector is not run
   await run("letGo")(new AbortController().signal);
   assert.deepEqual(told, []);
-  // T.329.2.2 (review): a load that took the file of a table and was cancelled before the model was built (nothing adopted)
+  // T329.2.2 (review): a load that took the file of a table and was cancelled before the model was built (nothing adopted)
   // leaves the file open, which only one handle can have: the next load lets go of it all the same
   context.stand.reader = { close: () => told.push("the file of a table never built on let go of") };
   run("rowsNow = stand.reader");
@@ -189,8 +189,8 @@ console.log("ok: runtime.js's compileKernelsHere(): a shared build that does not
   assert.deepEqual(loaded(), ["first", { threads: 4 }]);
   assert.equal(run("engineNow()"), context.stand.made.outside.engine, "the engine is the one forward.js made, not a copy");
   // let go: Python's release first (it says what forward.js holds), the proxy, the two forgotten, the collector, and
-  // only then the wait for what release() returned (T.205: the GPU's worker)
-  // (T.329.2.2: and the file its table of every layer's inputs is read from, weights.js's, once the rest is let go of)
+  // only then the wait for what release() returned (T205: the GPU's worker)
+  // (T329.2.2: and the file its table of every layer's inputs is read from, weights.js's, once the rest is let go of)
   context.stand.reader = { close: () => told.push("first: the file of its table let go of") };
   run("rowsNow = stand.reader");
   let done = false;
@@ -287,13 +287,13 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   // the next model: the first is let go of before the second is built (two never have to fit), and the memory stays
   told.length = 0;
   context.stand.asBuilt = () => told.push("the next is built");
-  run("took('convert', 9)");  // (T.460: as a conversion before it would have left)
+  run("took('convert', 9)");  // (T460: as a conversion before it would have left)
   await load({ load: 2, model: model("second") });
   assert.deepEqual(told, ["llama 1: destroy", "python: import gc; gc.collect()", "the next is built"]);
-  assert.ok(!("convert" in of("ready")[0].seconds), "T.460: the next load's ready says none of the conversion's seconds before it");
+  assert.ok(!("convert" in of("ready")[0].seconds), "T460: the next load's ready says none of the conversion's seconds before it");
   assert.deepEqual([of("ready").length, of("ready")[0].load, run("llama") === built[1], run("engineNow()").n, of("ready")[0].seconds.download >= 0], [1, 2, true, 2, true]);
 
-  // T.156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
+  // T156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
   // alone is tests/worker-sink-check.ts's to make: here the model is said to be on it as its engine is built, and its
   // GPU to have failed.) load() asks alone.js with the engine it just adopted, and loads again where the answer is no
   let ended = 0;
@@ -306,7 +306,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.ok(said.some((line) => /the model was on the GPU alone, and is loaded again on the CPU/.test(line)), "the console did not say why the model is loaded again");
   context.stand.asBuilt = undefined;
 
-  // T.148: a GPU that gets ready after its model was let go of says nothing to the page (its line is of another engine)
+  // T148: a GPU that gets ready after its model was let go of says nothing to the page (its line is of another engine)
   let late;
   const before = engines;
   context.stand.gpuOf = (n) => (n === before + 1 ? new Promise((resolve) => { late = resolve; }) : undefined);
@@ -317,7 +317,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.deepEqual(of("gpu").map(({ load, note }) => [load, note]), [[6, "prompts on the CPU (a stand-in)"]], "the GPU of a model let go of told the page its line");
   context.stand.gpuOf = undefined;
 
-  // T.380.1: an engine with no GPU's side (no WebGPU in a worker here): the status line says the engine's own reason,
+  // T380.1: an engine with no GPU's side (no WebGPU in a worker here): the status line says the engine's own reason,
   // which is written once, where the engine can read it (forward/reasons.ts: the worker's entry cannot)
   context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "the engine's reason (a stand-in)", threads: 1 });
   await load({ load: 60, model: model("plain") });
@@ -325,7 +325,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     "the line of an engine without a GPU's side is the engine's reason, and no GPU is waited for");
   context.stand.engineOf = undefined;
 
-  // T.461: a Llama that throws as it is built (after external() built its engine) lets go of that engine: the load
+  // T461: a Llama that throws as it is built (after external() built its engine) lets go of that engine: the load
   // fails as it did, and the engine's threads and GPU's worker are let go of (release()), which nothing else would do
   {
     let released = 0;
@@ -334,19 +334,19 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     const errors = of("error").length;
     await load({ load: 70, model: model("refused") });
     context.stand.asBuilt = undefined;
-    assert.deepEqual([of("error").length - errors, released], [1, 1], "T.461: the load failed, and the engine its Llama threw over was let go of");
+    assert.deepEqual([of("error").length - errors, released], [1, 1], "T461: the load failed, and the engine its Llama threw over was let go of");
     // (its review: a release() that throws says so on the console, and the load's error is still what Python said)
     const before = said.length;
     context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", threads: 1, release: () => { throw new Error("a release that fails (a stand-in)"); } });
     context.stand.asBuilt = () => { throw new Error("a checkpoint Python refuses (a stand-in)"); };
     await load({ load: 71, model: model("refused") });
     context.stand.asBuilt = undefined;
-    assert.match(of("error").at(-1)?.message ?? "", /a checkpoint Python refuses/, "T.461: the error is Python's, not the release's");
-    assert.deepEqual(said.slice(before).filter((line) => line.startsWith("engine:")).length, 1, "T.461: the release that failed is said once");
+    assert.match(of("error").at(-1)?.message ?? "", /a checkpoint Python refuses/, "T461: the error is Python's, not the release's");
+    assert.deepEqual(said.slice(before).filter((line) => line.startsWith("engine:")).length, 1, "T461: the release that failed is said once");
     context.stand.engineOf = undefined;
   }
 
-  // T.380.2: software threads that do not start leave the model ready on one thread, as before, and the console is told
+  // T380.2: software threads that do not start leave the model ready on one thread, as before, and the console is told
   // why; threads that start say nothing
   {
     let stopped = 0;
@@ -361,7 +361,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     context.stand.engineOf = undefined;
   }
 
-  // T.380.2: two files of the visitor's, the second of which is no tokenizer.bin of the first: said with the last line
+  // T380.2: two files of the visitor's, the second of which is no tokenizer.bin of the first: said with the last line
   // of what the engine threw, Python's own with the exception's name (failure.ts's lastLine(); failureOf() would say
   // a ValueError without its name and another exception by its whole traceback: another sentence)
   {
@@ -404,8 +404,8 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       "a model of Hugging Face on the GPU alone whose GPU failed was not loaded again: converted twice, its GPU's worker ended, one ready, the engine of the second");
   }
 
-  // ---- timing.js with stand-ins: the page's path (T.184) on the model loaded now. What it tells request.js: the count
-  // the search ended on, which the rounds that follow load the model on (T.190)
+  // ---- timing.js with stand-ins: the page's path (T184) on the model loaded now. What it tells request.js: the count
+  // the search ended on, which the rounds that follow load the model on (T190)
   const generator = () => ({ next: () => ({ done: true }), destroy() {} });
   const engine = { gpuSampled: 0, lostThreads: false, searchLog: [], gpuStatus: "prompts on the CPU (a stand-in)", setThreads: async (count) => count };
   context.stand.loaded = { outside: { engine }, llama: { backend: "a stand-in's", bos: 1, seq_len: 256, destroy() {},
@@ -429,7 +429,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
 }
 console.log("ok: load.js on stand-ins: a load to its ready, the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
 
-// ---- T.380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
+// ---- T380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
 // cannot be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)
 {
   const begun = async (gpu) => {
@@ -457,5 +457,5 @@ console.log("ok: load.js on stand-ins: a load to its ready, the next model after
   assert.deepEqual(keyless.adapter, { fallback: false, limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, packed: false });
   assert.match(keyless.said.join("|"), /^gpu: no key of this device \([^|]+\): what the page kept of it is not used$/);
 }
-console.log("ok: T.380.2, an adapter that cannot be asked for and a device without a key are said on the console; no adapter at all is no failure and says nothing");
+console.log("ok: T380.2, an adapter that cannot be asked for and a device without a key are said on the console; no adapter at all is no failure and says nothing");
 console.log("worker-parts-check: ok");

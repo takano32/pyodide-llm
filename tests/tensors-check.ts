@@ -1,4 +1,4 @@
-// tests/tensors-check.ts (T.641.2): the readers of a model's tensors (src/runtime/forward/tensors.ts) by themselves,
+// tests/tensors-check.ts (T641.2): the readers of a model's tensors (src/runtime/forward/tensors.ts) by themselves,
 // with stand-ins for their neighbours: no engine, no model, no kernels, no Pyodide. A few pages of memory whose
 // checkpoint the test writes by hand, kernels that write down what they are asked, and made-up plans. Node only, well
 // under a second, in the light suite.

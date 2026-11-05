@@ -1,4 +1,4 @@
-// tests/sizes-check.ts (T.375.5): what sizes a model before it is loaded, each part by itself with stand-ins for its
+// tests/sizes-check.ts (T375.5): what sizes a model before it is loaded, each part by itself with stand-ins for its
 // neighbours: the table of the architectures (src/runtime/forward/architectures.ts), a model's sizes of its header and
 // form (sizes.ts's sizesOfForm(), kindsHad()), footprint() (memory.ts) with a table of kinds written here, and what
 // alone.ts answers of the GPU (gpuBytes(), layerWeightsOf(), gpuOnlyUnfit()) by the facts of the two tables. No engine,
@@ -127,7 +127,7 @@ const KINDS = { attention: plain, echo };
     assert.equal(keysInHalf(wide, size, { dtype, halfKV: true, shared: true }), false);
   }
   // a table of positions: no matrix (not among the weights that have corrections), widened of a packed file; and the
-  // RoPE tables Python makes of any file of a model without RoPE, and of a packed file of one with it; and (T.261) the
+  // RoPE tables Python makes of any file of a model without RoPE, and of a packed file of one with it; and (T261) the
   // two tables of the local layers, which no file has, of an architecture that may have such layers
   const lines = Object.entries(ARCHITECTURES).filter(([, { gate }]) => !gate);
   for (const [arch, { positions, rope, local }] of lines) {
@@ -149,7 +149,7 @@ const KINDS = { attention: plain, echo };
 // ---- the GPU: what it would hold, and whether a model goes on it alone, by the same facts
 {
   const header = [2048, 8192, 16, 32, 8, 128256, 4096], [dim, hidden, layers] = header;
-  // (T.271.4: and the gate of the attention's output, a matrix as wide as q, where the architecture has one)
+  // (T271.4: and the gate of the attention's output, a matrix as wide as q, where the architecture has one)
   for (const [arch, { gatedFfn, gate }] of Object.entries(ARCHITECTURES)) {
     const matrices = 2 * dim * dim + 2 * (dim / 4) * dim + (gatedFfn ? 3 : 2) * hidden * dim + (gate ? dim * dim : 0);
     assert.equal(layerWeightsOf(header, { arch }), layers * matrices, `${arch}: the weights of a layer's matrices, ${gatedFfn ? "three" : "two"} of the FFN`);
@@ -159,8 +159,8 @@ const KINDS = { attention: plain, echo };
   }
   assert.equal(layerWeightsOf(header, { head_dim: 128 }), layers * (2 * 4096 * dim + 2 * 1024 * dim + 3 * hidden * dim), "(by the head's size where the form says one)");
   const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 2 ** 31, maxBufferSize: 2 ** 32 } };
-  // by the architecture's facts: RMSNorms, a gated FFN, no table of positions (T.271.4: a gate of the attention's output
-  // is the GPU's alone too now, a Qwen3.5's; a Spark-X2.5's goes with its exact GELU). T.382: each fact by a reason of its
+  // by the architecture's facts: RMSNorms, a gated FFN, no table of positions (T271.4: a gate of the attention's output
+  // is the GPU's alone too now, a Qwen3.5's; a Spark-X2.5's goes with its exact GELU). T382: each fact by a reason of its
   // own, the first of them in aloneFactsUnfit()'s order (said to nobody but the tests: the worker reads yes or no)
   const POSITIONS = "a table of positions is not on the GPU alone yet",
     FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet",
@@ -171,11 +171,11 @@ const KINDS = { attention: plain, echo };
   }
   assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2", "gemma3", "spark"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)),
     [null, POSITIONS, FFN, null, null, ACTIVATION, ACTIVATION]);
-  // (T.487: the table's five lines never have one of these facts without another, so each is asked by itself here, of
+  // (T487: the table's five lines never have one of these facts without another, so each is asked by itself here, of
   // facts no architecture has: RMSNorms with GPT-2's FFN, LayerNorms with a gated one, a table of positions alone)
   const LLAMAS = { stateful: false, positions: false, gatedFfn: true, layerNorm: false, activation: "silu", local: false };
   assert.equal(aloneFactsUnfit(LLAMAS), null);
-  // (T.261: a GELU in the gate and local layers, which only a Gemma 3 has and has together; an activation nobody
+  // (T261: a GELU in the gate and local layers, which only a Gemma 3 has and has together; an activation nobody
   // named, or none, is no SiLU's either)
   for (const [fact, value, reason] of [["stateful", true, STATE], ["positions", true, POSITIONS], ["gatedFfn", false, FFN], ["layerNorm", true, NORMS],
     ["activation", "gelu", ACTIVATION], ["activation", "relu", ACTIVATION], ["activation", undefined, ACTIVATION], ["local", true, LOCAL]]) {
@@ -186,37 +186,37 @@ const KINDS = { attention: plain, echo };
     aloneFactsUnfit({ ...LLAMAS, positions: true, gatedFfn: false, layerNorm: true }), aloneFactsUnfit({ ...LLAMAS, gatedFfn: false, layerNorm: true })],
   [STATE, POSITIONS, FFN]);
   // and every layer attending: the form's layers that keep a state keep the model off it, whatever its name, but for a
-  // Qwen3.5's linear-attention layers (T.271.4: the GPU alone keeps their state itself)
+  // Qwen3.5's linear-attention layers (T271.4: the GPU alone keeps their state itself)
   const linear = { every: 4, key_heads: 16, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", linear }, adapter), null);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "qwen35", linear }, adapter), null);
-  // (T.271.4: their matrices are each one piece of what the device binds: a token's layer reads them whole)
+  // (T271.4: their matrices are each one piece of what the device binds: a token's layer reads them whole)
   // (wqkv: 6144 rows of 2048, 12 MiB, past 8; every other matrix of this header within it)
   const narrow = { ...adapter, limits: { maxStorageBufferBindingSize: 8 * 2 ** 20, maxBufferSize: 8 * 2 ** 20 } };
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35", linear }, narrow), "a layer's matrices are past a buffer of this GPU");
   assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], "int8", { arch: "qwen35" }, narrow), null, "(the same without its linear-attention layers)");
-  // (T.634.3's review: by their bytes on the GPU, the packing they are held as there's: binary's are ternary's codes, twice
+  // (T634.3's review: by their bytes on the GPU, the packing they are held as there's: binary's are ternary's codes, twice
   // the checkpoint's. wqkv as ternary's codes is 3 MiB, past 2, and its bits 1.5 MiB, within)
   const two = { ...adapter, packed: true, limits: { maxStorageBufferBindingSize: 2 * 2 ** 20, maxBufferSize: 2 * 2 ** 20 } };
   for (const dtype of ["ternary", "binary"]) {
     assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], dtype, { arch: "qwen35", linear }, two), "a layer's matrices are past a buffer of this GPU", `${dtype}: wqkv by its bytes on the GPU`);
     assert.equal(gpuOnlyUnfit([2048, 1024, 16, 32, 8, 128256, 4096], dtype, { arch: "qwen35" }, two), null, `${dtype}: (the same without its linear-attention layers)`);
   }
-  // (T.567: a linear-attention layer's taps are held twice on the GPU, as gpu/linear.ts makes them: the plan's vector of
+  // (T567: a linear-attention layer's taps are held twice on the GPU, as gpu/linear.ts makes them: the plan's vector of
   // them (taps × mixed) and the rows the convolution reads (taps × mixed, a place's): a tap more is 2 × mixed floats a layer,
   // of the three linear layers of four (one attending every four), mixed = 2 × 16 × 128 + 16 × 128)
   {
     const small = [64, 96, 4, 4, 2, 100, 32], mixed = 2 * 16 * 128 + 16 * 128;
     assert.equal(gpuBytes(small, { arch: "qwen35", linear: { ...linear, conv: 5 } }) - gpuBytes(small, { arch: "qwen35", linear }), 3 * 2 * mixed * 4,
       "a tap more of a Qwen3.5's three linear-attention layers: their taps and the rows they read");
-    // (T.641.3: and their matrices, a second copy of what kinds.ts's gpu.alone says: q, k and v as one (mixed), z and
+    // (T641.3: and their matrices, a second copy of what kinds.ts's gpu.alone says: q, k and v as one (mixed), z and
     // the output (read = 16 × 128 each); the attending layer's q, k, v, o and the gate of its output (q 64, kv 32); the
     // FFN's three of every layer)
     const read = 16 * 128;
     assert.equal(layerWeightsOf(small, { arch: "qwen35", linear }), (2 * 64 + 2 * 32 + 64) * 64 + 3 * (mixed + 2 * read) * 64 + 4 * 3 * 96 * 64,
       "the weights of a Qwen3.5's matrices: its attending layer's and its three linear-attention layers'");
   }
-  // (T.573: and a place's state, bound whole: 16 value heads of 128 × 128 floats are 1 MiB, past a device that binds 512
+  // (T573: and a place's state, bound whole: 16 value heads of 128 × 128 floats are 1 MiB, past a device that binds 512
   // KiB, where every matrix of this small header is within it: wqkv, 6144 rows of 64, is 384 KiB)
   const half = { ...adapter, limits: { maxStorageBufferBindingSize: 2 ** 19, maxBufferSize: 2 ** 19 } };
   assert.equal(gpuOnlyUnfit([64, 96, 4, 4, 2, 100, 32], "int8", { arch: "qwen35", linear }, half), "a layer's state is past a buffer of this GPU");
@@ -224,9 +224,9 @@ const KINDS = { attention: plain, echo };
     "(a device that binds 1 MiB takes it)");
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), STATE);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "a".repeat(16), taps: 3 } }, adapter), null, "(an LFM2 without a convolution layer has a Llama's facts)");
-  assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), null, "(T.271.1: a rotated basis is the GPU's, its packed forms')");
-  // (T.363.5's review: a model of llama.cpp's blocks says the dtype int8, so this line of gpuOnlyUnfit() alone kept it off
-  // the GPU alone; a form that names no kinds is as before. T.547.3.7: of kinds the GPU takes it goes, where the
+  assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), null, "(T271.1: a rotated basis is the GPU's, its packed forms')");
+  // (T363.5's review: a model of llama.cpp's blocks says the dtype int8, so this line of gpuOnlyUnfit() alone kept it off
+  // the GPU alone; a form that names no kinds is as before. T547.3.7: of kinds the GPU takes it goes, where the
   // browser has the packed int8 dot; a kind no packing has keeps it off)
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { w1: ["IQ2_XXS", "int8"] } }, { ...adapter, packed: true }), null, "rows as blocks the GPU takes, on the GPU alone");
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", kinds: { wcls: "Q4_K" } }, { ...adapter, packed: true }), null, "and one row of a kind of its own");
@@ -253,7 +253,7 @@ const KINDS = { attention: plain, echo };
   assert.equal(gpuOnlyUnfit([96, 200, 6, 4, 2, 500, 77], "int8", {}, adapter), "q, k and v or gate and up would not start where this GPU binds a buffer");
   console.log("ok: the GPU by the same lines: the matrices of a layer by the FFN's kind, a weight's bytes by how the GPU holds its packing, and a model on the GPU alone by its facts and its packing");
 }
-// ---- T.547.3.7's review: a form whose rows have kinds of their own, each row's and layer's bytes as its kind on the GPU, and
+// ---- T547.3.7's review: a form whose rows have kinds of their own, each row's and layer's bytes as its kind on the GPU, and
 // the stretch of the checkpoint a stack of layers of their own kinds is, from its first layer's values to its last's end
 {
   const { gpuHoles } = await import(runtimeUrl("forward/alone.js"));
@@ -269,7 +269,7 @@ const KINDS = { attention: plain, echo };
   assert.deepEqual(gpuHoles(tensors), [[at, at + q4k + int8 + (8 * 256 / 32) * 4]], "a stack of layers of their own kinds is one stretch, to its last layer's scales' end");
   console.log("ok: the GPU's bytes of rows of kinds of their own by each row and layer, and a stack of them one stretch of the checkpoint");
 }
-// T.634.2: the 1-bit Bonsai as binary checkpoints (python's checkpoint_size() of their headers), with their forward pass at
+// T634.2: the 1-bit Bonsai as binary checkpoints (python's checkpoint_size() of their headers), with their forward pass at
 // 4096 positions on a shared memory: the 1.7B to the 8B fit a 32-bit memory, the 27B passes it (its entries say so: wide,
 // tests/models-check.ts), as ternary did. A change of footprint() or of the sizes that moves the 27B under 4 GiB is told
 // here, for the entries' wide to be taken off
@@ -283,6 +283,6 @@ const KINDS = { attention: plain, echo };
     const after = footprint(header, bytes, { ...options, halfKV: keysInHalf(header, bytes, options) });
     assert.equal(needsWide(bytes, after), wide, `the 1-bit Bonsai ${name}: ${((bytes + after) / 2 ** 30).toFixed(2)} GiB with its forward pass`);
   }
-  console.log("ok: T.634.2, the 1-bit Bonsai as binary: the 27B's forward pass past a 32-bit memory, the smaller ones' within");
+  console.log("ok: T634.2, the 1-bit Bonsai as binary: the 27B's forward pass past a 32-bit memory, the smaller ones' within");
 }
 console.log("sizes-check: ok");

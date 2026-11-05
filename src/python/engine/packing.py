@@ -45,7 +45,7 @@ def quantize(values):
     return np.rint(groups * inverse[:, None]).astype(np.int8), scales
 
 
-# T.98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
+# T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
 # significant bits) and whose scale is a quarter: the same products as six bits and a whole scale, to the bit (a
 # power of two), and everything past the packing is int8. So the kernels widen a group straight into the int8 their
 # dot products take, with no offset to take out. A group of 32 takes 24 bytes: the four low bits of the six of
@@ -91,8 +91,8 @@ def unpacked6(packed):
     return unpack6(packed).reshape(-1)
 
 
-# T.230: ternary, two bits a weight. Every weight is -1, 0 or +1 times the scale of its group of 128 along the row (a
-# float16 from T.533, as the files have it: 34 bytes a group, 36 before): what Prism ML's Ternary Bonsai models are, and how their GGUFs hold them (PQ2_0: two bits a weight;
+# T230: ternary, two bits a weight. Every weight is -1, 0 or +1 times the scale of its group of 128 along the row (a
+# float16 from T533, as the files have it: 34 bytes a group, 36 before): what Prism ML's Ternary Bonsai models are, and how their GGUFs hold them (PQ2_0: two bits a weight;
 # PTQ1_0: five weights a byte in base 3). A group takes 32 bytes, in PQ2_0's own order: weight j is the code (weight +
 # 1: 0, 1 or 2) in byte j // 4 at bits 2 (j % 4). The kernels multiply the codes as they are (kernels/ternary.ts): a
 # shift of sixteen bytes and a mask give every fourth weight of 64, so nothing is widened, and nothing is kept for a
@@ -118,7 +118,7 @@ def ternary(values):
     """float32 values, whole rows of groups of 128 -> (32 bytes a group, float16 scales): each value's sign, and the
     largest |value| of its group. Nothing is rounded: a value that is neither 0 nor plus or minus that scale is a
     ValueError (the weights of a model that is not ternary, which int8 is for), and so is a scale a float16 does not
-    hold (T.533: PQ2_0's and PTQ1_0's are float16)."""
+    hold (T533: PQ2_0's and PTQ1_0's are float16)."""
     groups = np.asarray(values, dtype=np.float32).reshape(-1, TERNARY_GROUP)
     scales = np.abs(groups).max(axis=1)
     signs = np.sign(groups)
@@ -128,7 +128,7 @@ def ternary(values):
 
 
 def halves_of(scales):
-    """T.533: float32 scales -> the same numbers as float16, or a ValueError (NOT_TERNARY) where one is not a float16's."""
+    """T533: float32 scales -> the same numbers as float16, or a ValueError (NOT_TERNARY) where one is not a float16's."""
     with np.errstate(over="ignore"):
         halves = np.asarray(scales, dtype=np.float32).astype(np.float16)
     if not np.array_equal(halves.astype(np.float32), scales):
@@ -137,7 +137,7 @@ def halves_of(scales):
 
 
 
-# T.634: binary, one bit a weight. Every weight is -1 or +1 times the scale of its group of 128 along the row (a float16):
+# T634: binary, one bit a weight. Every weight is -1 or +1 times the scale of its group of 128 along the row (a float16):
 # what the 1-bit Bonsai models are, and how their GGUFs hold them (ggml's Q1_0, 18 bytes a group: a float16 and 16 bytes
 # of signs), half of what ternary takes for the same weights. A group takes 16 bytes in an order of its own, the one the
 # kernels read (kernels/binary.ts): weight 64 h + 4 c + p (h 0 or 1, c 0..15, p 0..3) is bit 4 h + p of byte c, set for

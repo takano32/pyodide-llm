@@ -1,8 +1,8 @@
-// tests/serving.ts (T.391.6)
+// tests/serving.ts (T391.6)
 // The site as a tool serves it to a browser from this machine: plain static files under the site's base and no special
 // headers, like GitHub Pages (the isolation is coi.js's work, and the page's first visit reloads once for it). One place
 // for it: six tools had a server of their own, and the copies had drifted (one read its folder with fileURLToPath for
-// Windows (T.242) and four with URL.pathname; one served what is outside the base; two had no type for .wasm).
+// Windows (T242) and four with URL.pathname; one served what is outside the base; two had no type for .wasm).
 //
 //   const site = await serving();                       // dist/ (npm run build) under /pyodide-llm/
 //   await page.goto(site.url);                          // "http://localhost:<port>/pyodide-llm/"
@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 export const DIST = new URL("../dist/", import.meta.url);
 export const BASE = "/pyodide-llm/";
 export const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
-  ".py": "text/plain", ".wasm": "application/wasm", ".zip": "application/x-zip-compressed" };  // (T.498: the Python zips, as GitHub Pages types them)
+  ".py": "text/plain", ".wasm": "application/wasm", ".zip": "application/x-zip-compressed" };  // (T498: the Python zips, as GitHub Pages types them)
 const typeOf = (name) => TYPES[path.extname(name)] ?? "application/octet-stream";
 const stat = (file) => {
   try {
@@ -43,7 +43,7 @@ const stat = (file) => {
 };
 
 export async function serving(folder = DIST, { base = BASE, instead } = {}) {
-  // fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" (T.181, T.242), and anywhere a space in it is "%20"
+  // fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" (T181, T242), and anywhere a space in it is "%20"
   const root = path.resolve(folder instanceof URL ? fileURLToPath(folder) : folder);
   const none = (res, status = 404) => {
     res.writeHead(status);
@@ -80,7 +80,7 @@ export async function serving(folder = DIST, { base = BASE, instead } = {}) {
   return {
     port,
     url: `http://localhost:${port}${base}`,
-    // the port is free when this resolves: a browser that did not close (T.141) may still hold a line open
+    // the port is free when this resolves: a browser that did not close (T141) may still hold a line open
     close: () => new Promise((resolve) => {
       server.close(resolve);
       server.closeAllConnections();

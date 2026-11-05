@@ -27,14 +27,14 @@ public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
 	cp $(TOKENIZERS) tiny-lm.LICENSE.txt public/models/
 	touch $@
 
-# The Python that makes a model: the two windows and every part under them (T.434: the families' files and the
+# The Python that makes a model: the two windows and every part under them (T434: the families' files and the
 # engine's parts were not named, and a change to one of them left the old models in place)
 MODEL_PYTHON = src/python/llama2_convert.py src/python/llama2_numpy.py \
 	$(wildcard src/python/convert/*.py src/python/convert/families/*.py src/python/engine/*.py)
-# (defined before the rules that name it: make expands a rule's prerequisites as it reads the rule; T.628.1's review)
+# (defined before the rules that name it: make expands a rule's prerequisites as it reads the rule; T628.1's review)
 
 # The WASM SIMD kernels that llama2_numpy.py loads with ctypes, compiled by AssemblyScript (no binary is committed).
-# T.628.1: and the facts of the Python that the TypeScript reads before any Python runs (python_facts.py), made here
+# T628.1: and the facts of the Python that the TypeScript reads before any Python runs (python_facts.py), made here
 # because everything that runs the TypeScript makes the kernels first (the deploy: `make models kernels`, then the checks)
 kernels:	src/runtime/built/simdkernel.so src/runtime/built/facts/.made
 
@@ -43,7 +43,7 @@ src/runtime/built/facts/.made:	python_facts.py $(MODEL_PYTHON)
 	touch $@
 
 # (every source is named here: one that is not leaves the old kernels in src/runtime/built/ when it changes, and the checks then
-# test those. kernel.ts is the window over kernel/*.ts, T.356; blocks.ts and blocks_relaxed.ts over blocks/*.ts, T.363.4)
+# test those. kernel.ts is the window over kernel/*.ts, T356; blocks.ts and blocks_relaxed.ts over blocks/*.ts, T363.4)
 KERNEL_PARTS = kernels/kernel/matmul.ts kernels/kernel/quantize.ts kernels/kernel/attention.ts kernels/kernel/halves.ts \
 	kernels/kernel/activations.ts kernels/kernel/stateful.ts kernels/kernel/sample.ts kernels/kernel/math.ts \
 	kernels/blocks/types.ts kernels/blocks/token.ts kernels/blocks/tile.ts kernels/blocks/row.ts
@@ -51,7 +51,7 @@ src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kerne
 	python3 kernels/build.py src/runtime/built
 
 # The site's Python (src/python/) as two archives, engine.zip and converter.zip, which the worker fetches whole and
-# unpacks in Pyodide (python_archive.py, T.367.2; no binary is committed). Built every time it is asked for: it takes a
+# unpacks in Pyodide (python_archive.py, T367.2; no binary is committed). Built every time it is asked for: it takes a
 # tenth of a second, and an archive older than its sources is then nowhere. `npm run build` and `npm run dev` build
 # them first (package.json).
 python:

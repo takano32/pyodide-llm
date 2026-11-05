@@ -1,4 +1,4 @@
-// src/page/repository.ts (T.505.3): what the page makes of a repository of huggingface.co nobody has looked at, before
+// src/page/repository.ts (T505.3): what the page makes of a repository of huggingface.co nobody has looked at, before
 // the worker hears of it: which of its files is the model. Nothing of the page is read here (no element, no address):
 // tests/repository-check.ts imports this file as it is, in Node, and tests/worker-fetches-check.ts makes the models
 // it hands the worker by these very functions.
@@ -17,7 +17,7 @@ const INDEX = `${SAFETENSORS}.index.json`;
 // there is one, else Q6_K, Q5_K_M, Q4_K_M). Each row: the spellings of one, in capitals. Every one of them is widened
 // and converted to int8 here, so what is gained by a smaller one is the fetch alone, and what is lost is what its
 // quantization lost. The floats come after Q8_0: the same int8 at two to four times the fetch (and before them the two
-// types a ternary model is published in whole, T.235: the same weights again, at an eighth of the float's fetch). The rest follow by what
+// types a ternary model is published in whole, T235: the same weights again, at an eighth of the float's fetch). The rest follow by what
 // they keep of a weight; the variants with larger embeddings (_L, _XL) after the plain one of the same bits.
 // tests/repository-check.ts has the second copy of this order.
 export const QUANTIZATIONS = [
@@ -42,7 +42,7 @@ export function quantization(name: string) {
 
 /** How long the list of a repository is waited for. */
 export const LISTING_SECONDS = 10;
-// T.508.1: the pages of a repository's list asked for at most (a thousand entries each)
+// T508.1: the pages of a repository's list asked for at most (a thousand entries each)
 export const PAGES = 10;
 export type Listed = { path: string; size?: number };
 // A GGUF this page may open: one file that is a model. Not a part of a model split over several files
@@ -84,7 +84,7 @@ export function settled<Of extends Entry>(entry: Of, files: Listed[]): Of {
 
 /** The files at the top of a repository at a revision, as huggingface.co lists them, or undefined where it does not say
  * (no such repository, a gated one, no line): the model is then opened as named, and whatever is wrong with it is said
- * by the worker, which meets the same answer. T.508.1: a list of more than a page (1,000 entries) comes in pages, each
+ * by the worker, which meets the same answer. T508.1: a list of more than a page (1,000 entries) comes in pages, each
  * naming the next in its Link header (which huggingface.co lets a page read), up to PAGES of them. A list not had whole
  * (a later page that is no list, more pages than that, a next page elsewhere) is none: a part of it would have
  * settled() say a file is not there that a page not read has. */

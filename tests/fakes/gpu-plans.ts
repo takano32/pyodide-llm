@@ -1,4 +1,4 @@
-// tests/fakes/gpu-plans.ts (T.465.1, moved out of tests/unchanged-gpusteps.ts)
+// tests/fakes/gpu-plans.ts (T465.1, moved out of tests/unchanged-gpusteps.ts)
 // Made-up models as the model's GPU worker (src/runtime/gpu/) is handed them: a plan as forward/gpuside.ts hands one (a
 // Started) over a memory it lays out, small (dim 128, heads of 16). For the checks that run that worker's parts on
 // tests/fakes/webgpu.ts: unchanged-gpusteps.ts and gpu-forms-check.ts.
@@ -12,7 +12,7 @@ export const Q_DIM = HEADS * HEAD, KV_DIM = KV_HEADS * HEAD, KV_ROW = KV_DIM * 2
 export const LINEAR = { keyHeads: 1, valueHeads: 2, keyDim: 16, valueDim: 16, taps: 4 }, KEYS = LINEAR.keyHeads * LINEAR.keyDim, READ = LINEAR.valueHeads * LINEAR.valueDim;
 export const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 
-// (T.547.1: a matrix's and a table's packing by name; six and ternary besides, which the trees before it read: they can
+// (T547.1: a matrix's and a table's packing by name; six and ternary besides, which the trees before it read: they can
 // go once the net's other tree is never one before 351fc6cb)
 /** A plan as forward/gpuside.ts hands one (a Started), over a memory it lays out: kinds, every layer's kind; more, the
  * model's own; matrices and vectors, [rows, n, of] and [size, of] by name. */
@@ -21,7 +21,7 @@ export const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 type Made = { kinds: string[]; matrices: Record<string, (number | string | undefined)[]>; vectors: Record<string, (number | string | undefined)[]>;
   more?: Record<string, unknown> & { positions?: boolean } };
 export function planned({ kinds, matrices, vectors, more: { positions, ...more } = {} }: Made, direct = false) {
-  // (T.465.6.5: the widths and the head of a model whose more says its own: the wide Llama's; T.465.6.5's review: RoPE's
+  // (T465.6.5: the widths and the head of a model whose more says its own: the wide Llama's; T465.6.5's review: RoPE's
   // tables of its head, which a head of 16's overlapped)
   const dim = (more.dim as number | undefined) ?? DIM, hidden = (more.hidden as number | undefined) ?? HIDDEN, head = (more.headSize as number | undefined) ?? HEAD;
   let next = 4096;
@@ -43,12 +43,12 @@ export function planned({ kinds, matrices, vectors, more: { positions, ...more }
   if (plan.localCos === true) Object.assign(plan, { localCos: take(CONTEXT * (head / 2) * 4), localSin: take(CONTEXT * (head / 2) * 4) });
   if (positions) plan.tokens.positions = take(CONTEXT * dim * 4);
   if (plan.layerNorm) plan.tokens.finalBias = take(dim * 4);
-  // (T.271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
+  // (T271.1: a rotated basis's signs of each width a matrix reads, in blocks of 32)
   if (plan.rotated === true) plan.rotated = { block: 32, signs: [...new Set([DIM, Q_DIM, HIDDEN])].map((width) => ({ width, at: take(width * 4) })) };
-  // (T.210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
+  // (T210: on the GPU alone, the tables come with the checkpoint, and a block embeds its tokens there)
   if (direct) Object.assign(plan, { direct: true, tables: { classifier: plan.tokens.classifier, embedding: null } });
   // (the CPU's cache a step's keys and values go up from: float32 rows, the widest, for each attending layer, of the
-  // model's own keys: T.465.6.5, a model whose more says other heads)
+  // model's own keys: T465.6.5, a model whose more says other heads)
   const kvDim = plan.kvHeads * plan.headSize;
   const cache = kinds.filter((kind) => kind === "attention").map(() => [take(CONTEXT * kvDim * 4), take(CONTEXT * kvDim * 4)]);
   return { plan, bytes: next, cache };
@@ -75,28 +75,28 @@ export const MODELS = {
     more: { linear: LINEAR } },
   gpt2: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: 0, activation: "gelu", positions: true } },
   neox: { kinds: ["attention", "attention"], ...gpt2, more: { layerNorm: true, turned: HEAD / 2, parallel: true, activation: "gelu" } },
-  // T.271.1: a Llama in a rotated basis (every matrix's input turned as it is quantized, a token's embedded row turned back)
+  // T271.1: a Llama in a rotated basis (every matrix's input turned as it is quantized, a token's embedded row turned back)
   rotated: { kinds: ["attention", "attention"], matrices: { ...attending(), ...ffn }, vectors: norms, more: { rotated: true } },
 };
-// T.565: the Qwen3.5 with its linear layers' states in bundles of one place each (as the 27B's go past what a phone's
+// T565: the Qwen3.5 with its linear layers' states in bundles of one place each (as the 27B's go past what a phone's
 // GPU binds)
 MODELS["qwen35 (states in bundles)"] = { ...MODELS.qwen35, more: { linear: LINEAR, force: { stateBytes: LINEAR.valueHeads * LINEAR.keyDim * LINEAR.valueDim * 4 } } };
-// T.465.6.3: a Llama of 8 heads on 4 of keys and values (q 128 rows, k and v 64 each), for ternary weights: a ternary row is
+// T465.6.3: a Llama of 8 heads on 4 of keys and values (q 128 rows, k and v 64 each), for ternary weights: a ternary row is
 // whole groups of 128 (o reads q's width: the 32 above are a quarter of one), and takes 4 bytes of scales (a float32 a
 // group), so that the 32 rows of q, k and v above end off where a device binds a buffer (every 256 bytes) and a token's
 // layers are not joined (m.weights.unjoined); a real model's are far more
 MODELS["llama (8 heads)"] = { kinds: ["attention", "attention"],
   matrices: { wq: [128, DIM], wk: [64, DIM], wv: [64, DIM], wo: [DIM, 128], ...ffn }, vectors: norms, more: { heads: 8, kvHeads: 4 } };
-// T.465.6.5: a wide Llama (dim 256, an FFN of 512, 8 heads of 32 on 4 of keys and values), whose every matrix and table is
+// T465.6.5: a wide Llama (dim 256, an FFN of 512, 8 heads of 32 on 4 of keys and values), whose every matrix and table is
 // rows of 256 and more, which llama.cpp's blocks take (each matrix of its own type: q, k and v, gate and up apart)
 MODELS["llama (wide)"] = { kinds: ["attention", "attention"],
   matrices: { wq: [256, 256], wk: [128, 256], wv: [128, 256], wo: [256, 256], w1: [512, 256], w3: [512, 256], w2: [256, 512] },
   vectors: { attention: [256], ffn: [256] }, more: { dim: 256, hidden: 512, heads: 8, kvHeads: 4, headSize: 32, turned: 32 } };
-// (T.156, T.271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
+// (T156, T271.4: on the GPU alone, its weights the checkpoint's as they come: a Llama's and a Qwen3.5's)
 export const ALONE = ["llama", "qwen35", "rotated", "qwen35 (states in bundles)"];
 
 
-// T.465.4: numbers a model could have, into the memory a plan lays out (whose bytes are arbitrary where nothing writes:
+// T465.4: numbers a model could have, into the memory a plan lays out (whose bytes are arbitrary where nothing writes:
 // a float32 of arbitrary bits may be NaN or 1e38, and a check's own reference is then NaN too): every int8 matrix's
 // and table's scales small (1e-2 to 2e-2), every vector near 1 (norms; a bias near 0 would be as good), and RoPE's
 // tables the cos and sin of a position's angles (base 10000). The int8 values stay the bytes they are.
@@ -106,7 +106,7 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
     for (let i = 0; i < n; i++) view[i] = value(i);
   };
   const small = (i: number) => 0.01 + 0.01 * (((i * 2654435761) >>> 0) % 1000) / 1000;
-  // (T.465.6.3: a ternary matrix's scales are float16s, one a group of 128: 1/64 to 1/32, as halves)
+  // (T465.6.3: a ternary matrix's scales are float16s, one a group of 128: 1/64 to 1/32, as halves)
   const halves = (at: number, n: number) => {
     const view = new Uint16Array(memory.buffer, at, n);
     for (let i = 0; i < n; i++) view[i] = 0x2400 + (((i * 2654435761) >>> 0) % 1024);
@@ -121,11 +121,11 @@ export function plausible(plan, memory: { buffer: ArrayBufferLike }) {
     if (table.packing === "ternary") halves(table.at[1], (table.rows * table.n) / (4 * GROUP));
     else floats(table.at[1], (table.rows * table.n) / GROUP, small);
   }
-  // (each vector its own values, T.465.6.2's review: vectors of one size all alike let one be read for another, a norm's
+  // (each vector its own values, T465.6.2's review: vectors of one size all alike let one be read for another, a norm's
   // weight for the other's or one bias for another, and the check passed)
   (Object.values(plan.vectors) as { at: number; size: number }[]).forEach((vector, k) => floats(vector.at, vector.size * kindsOf(plan, vector), (i) => 1 + 0.01 * ((i + 3 * k) % 7) + 0.02 * k));
   floats(plan.tokens.final, plan.dim, (i) => 1 + 0.01 * (i % 5));
-  // (T.465.6.2: a LayerNorm's final bias, small; GPT-2's learned positions as large as a row of the embedding, ±0.5:
+  // (T465.6.2: a LayerNorm's final bias, small; GPT-2's learned positions as large as a row of the embedding, ±0.5:
   // positions of 1e-2 left out of a token's pass passed the check)
   if (plan.tokens.finalBias) floats(plan.tokens.finalBias, plan.dim, (i) => 0.01 * ((i % 9) - 4));
   if (plan.tokens.positions) floats(plan.tokens.positions, CONTEXT * plan.dim, (i) => 100 * small(i) - 1.5);

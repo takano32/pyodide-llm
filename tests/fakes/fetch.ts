@@ -1,4 +1,4 @@
-// tests/fakes/fetch.ts (T.357.5; out of tests/worker-harness.ts, where T.129 wrote it)
+// tests/fakes/fetch.ts (T357.5; out of tests/worker-harness.ts, where T129 wrote it)
 // A stand-in for fetch(): a made-up network that writes down every request and answers it as the check says. For
 // the checks of what asks a server for something: the worker on its made-up network (tests/worker-harness.ts, which
 // hands this on as its own), what says "the site was updated" (updated-check.ts, worker-outdated-check.ts) and the

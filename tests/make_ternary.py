@@ -1,5 +1,5 @@
 # make_ternary.py
-# T.230, T.231: made-up ternary models as files, for the checks of forward.js that take a model by its files
+# T230, T231: made-up ternary models as files, for the checks of forward.js that take a model by its files
 # (tests/forward-check.ts, tests/threads-check.ts: <out>.bin, <out>.tokenizer.bin and <out>.json, as
 # tests/perplexity_prepare.py writes them). The real ternary models are far too large to be built with the site, so
 # these stand in: random Hugging Face tensors whose matrices are made ternary (every group of 128 along a row is -d, 0
@@ -10,20 +10,20 @@
 #
 # qwen3 (the default): the shape of Ternary Bonsai 1.7B in small, a Qwen3 (norms of the heads of q and k, heads that
 #   do not fill dim, grouped-query attention, the classifier shared with the embedding).
-# own: the same with a classifier of its own and a final norm with outlier channels (T.92), which a ternary classifier
+# own: the same with a classifier of its own and a final norm with outlier channels (T92), which a ternary classifier
 #   multiplies apart as an int8 one does.
-# hybrid: the shape of Ternary Bonsai 2 27B in small, a Qwen3.5 (T.229: Gated DeltaNet layers, three value heads to a
+# hybrid: the shape of Ternary Bonsai 2 27B in small, a Qwen3.5 (T229: Gated DeltaNet layers, three value heads to a
 #   key head) with a classifier of its own.
-# rotated: hybrid said to be in a rotated basis (T.237: blocks of 128 with random signs), as the 27B's file is: the
+# rotated: hybrid said to be in a rotated basis (T237: blocks of 128 with random signs), as the 27B's file is: the
 #   engine turns every matrix's input before it is quantized and laid out for the ternary kernels, and the
 #   embedding's rows back.
-# large (T.620): qwen3 a model's width, for timing (tests/threads-compare.ts --prompt): dim 1024, an FFN of 3072, 8 layers,
+# large (T620): qwen3 a model's width, for timing (tests/threads-compare.ts --prompt): dim 1024, an FFN of 3072, 8 layers,
 #   16 heads of 64 and 8 of keys, a classifier of its own (about 100 million values, 26 MB ternary). Its numbers
 #   are no model's: only how long its matrices take.
 # rotated-tied: the same with the embedding as the classifier too (no output matrix: what version 2 of Prism ML's
 #   rotated basis is for, `tied_output`, as the smaller models of a Qwen3.5 have it): one ternary table whose rows
-#   the engine turns back where it embeds and multiplies by the turned input where it classifies (T.237's review).
-# signs (T.634; binary says it too): every group of 128 keeps the signs of all its values, none of them 0, as the 1-bit
+#   the engine turns back where it embeds and multiplies by the turned input where it classifies (T237's review).
+# signs (T634; binary says it too): every group of 128 keeps the signs of all its values, none of them 0, as the 1-bit
 #   Bonsai models are, which the binary dtype holds (and the ternary one, as the page held them before): the same
 #   model as binary and as ternary is the same numbers to the bit (tests/forward-check.ts --same).
 import json
@@ -58,7 +58,7 @@ def ternarized(tensors, seed=5):
 
 
 def binarized(tensors, seed=5):
-    """T.634: the tensors with every matrix made binary: each group of 128 along a row the signs of its values times
+    """T634: the tensors with every matrix made binary: each group of 128 along a row the signs of its values times
     one scale of its own (a float16), none of them 0."""
     rng = np.random.default_rng(seed)
     out = {}

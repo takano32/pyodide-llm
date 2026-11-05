@@ -1,8 +1,8 @@
-// tests/gpu-alone-check.ts (T.450, with T.378.2): an engine of a model on the GPU alone (T.156's direct), made in Node:
+// tests/gpu-alone-check.ts (T450, with T378.2): an engine of a model on the GPU alone (T156's direct), made in Node:
 // forward.js's own createForward() with kernels that do nothing, a made-up model's plan (the native Python places its
 // tensors, as memory-check.ts has it) and a stand-in for the GPU's worker on this very thread, which answers a request
 // in the control area as it is posted. What it holds is what such an engine does and no test outside CI's GPU jobs saw
-// by what happens (T.378.1 held it by the syntax tree alone):
+// by what happens (T378.1 held it by the syntax tree alone):
 //   - no software thread is ever started for it, whatever count is asked or searched for, and its stopThreads() writes
 //     nothing to the control area (the same model not on the GPU alone, beside it, starts them: the check sees threads);
 //   - a prompt's blocks and a generation's steps go to the GPU (the tokens themselves: the GPU embeds them), and nothing
@@ -84,11 +84,11 @@ const tokens = (count) => Array.from({ length: count }, (_, i) => i % 100);
   assert.equal(await engine.release(), true);
   assert.deepEqual([beside.spawned, Atomics.load(beside.ctl, QUIT)], [0, 0]);
 }
-console.log("ok: T.450, an engine on the GPU alone starts no software thread whatever is asked, sends its blocks and steps to the GPU, and is lost where a token would run on the CPU");
+console.log("ok: T450, an engine on the GPU alone starts no software thread whatever is asked, sends its blocks and steps to the GPU, and is lost where a token would run on the CPU");
 
-// ---- T.558.3 (T.261.4.1's review): fromStaging() into a ring, by what the GPU's worker writes into the staging place. A
+// ---- T558.3 (T261.4.1's review): fromStaging() into a ring, by what the GPU's worker writes into the staging place. A
 // made-up Gemma 3 of three layers (plans.ts: the first two attend a window of 8, the last all positions) in a context
-// of 64, so that the two local layers keep their keys and values in a ring of 24 (T.510.1: each position at p mod 24 and
+// of 64, so that the two local layers keep their keys and values in a ring of 24 (T510.1: each position at p mod 24 and
 // p mod 24 + 24); its blocks go to a GPU that writes known float16s for every position, layer and column: 48 positions,
 // then 10. What the cache holds after (read through keysAndValues(), and where a step's request says the rings are) is
 // those, both copies of a ring alike over the ring's last 24 positions, and the ring knows the last position written
@@ -162,7 +162,7 @@ console.log("ok: T.450, an engine on the GPU alone starts no software thread wha
   assert.throws(() => engine.forward(5, 20), /too far back after 61/);
   assert.equal(await engine.release(), true);
 }
-console.log("ok: T.558.3, fromStaging() writes a block's keys and values into a window's ring at both of its places, and the ring's last position written");
+console.log("ok: T558.3, fromStaging() writes a block's keys and values into a window's ring at both of its places, and the ring's last position written");
 
 // ---- the same model with its weights in the memory: the threads are started (what the check above would see)
 {
@@ -174,7 +174,7 @@ console.log("ok: T.558.3, fromStaging() writes a block's keys and values into a 
   assert.deepEqual([Atomics.load(beside.ctl, QUIT), beside.ended, engine.threads], [1, 3, 1], "and stops them through the control area");
   assert.deepEqual([beside.started.plain, beside.started.relaxed, typeof beside.started.share], [empty, empty, "number"], "a thread is started with the two kernels this model runs on");
   assert.equal(await engine.release(), true);
-  // T.378.2: the kernels a thread starts with are chosen by the engine: no relaxed one where the model does not run on it
+  // T378.2: the kernels a thread starts with are chosen by the engine: no relaxed one where the model does not run on it
   const plain = made(false, planOf(p, { relaxed: false }));
   assert.equal(await plain.engine.setThreads(2), 2);
   assert.deepEqual([plain.beside.started.plain, plain.beside.started.relaxed], [empty, null], "a model that does not run on relaxed SIMD starts its threads without that kernel");
@@ -182,7 +182,7 @@ console.log("ok: T.558.3, fromStaging() writes a block's keys and values into a 
 }
 console.log("ok: the same model in the memory starts the threads it is asked for, with the kernels it runs on");
 
-// ---- T.375.2: what the GPU's worker is told of a model's layers is the plan's facts, and no architecture's name: how
+// ---- T375.2: what the GPU's worker is told of a model's layers is the plan's facts, and no architecture's name: how
 // many values of a head RoPE turns (none where the plan's layers say it turns none), the kind of the norms, and the
 // vectors that go with them
 {
@@ -199,7 +199,7 @@ console.log("ok: the same model in the memory starts the threads it is asked for
   assert.deepEqual(told, [["llama", 16, false, "attention ffn"],
     ["gpt2", 0, true, "attention ffn attentionBias ffnBias bq bk bv bo b1 b2"],
     ["neox", 16, true, "attention ffn attentionBias ffnBias bq bk bv bo b1 b2"]]);
-  // (T.375.5, T.484: a plan whose norms and FFN are no pair the GPU's layers are of, RMSNorms with GPT-2's FFN or
+  // (T375.5, T484: a plan whose norms and FFN are no pair the GPU's layers are of, RMSNorms with GPT-2's FFN or
   // LayerNorms with a gated one: the CPU's engine runs it by its facts, and the GPU's worker is not started to find out)
   const [llama, gpt2] = models;
   for (const [plan, size] of [[{ ...planOf(gpt2), layer_norm: false }, gpt2.size], [{ ...planOf(llama), layer_norm: true }, llama.size]]) {
@@ -213,9 +213,9 @@ console.log("ok: the same model in the memory starts the threads it is asked for
   assert.equal(still.beside.posted[0].plan.turned, 0, "a model RoPE turns no layer of: no value of a head is turned on the GPU");
   assert.equal(await still.engine.release(), true);
 }
-console.log("ok: T.375.2, the GPU's worker is told how much of a head RoPE turns and the kind of the norms from the plan's facts");
+console.log("ok: T375.2, the GPU's worker is told how much of a head RoPE turns and the kind of the norms from the plan's facts");
 
-// ---- T.375.3 (the review): the cache of the keys and values is the last thing in the memory, below it the places the
+// ---- T375.3 (the review): the cache of the keys and values is the last thing in the memory, below it the places the
 // GPU answers into, and the GPU is told where its keys and values are as they are now, after the cache grew. A cache
 // placed before the staging place, or addresses told as they were when the engine was made, leaves the GPU reading and
 // writing over what is not its own (it passed the whole light suite, and only gpu-default-check saw it)
@@ -230,7 +230,7 @@ console.log("ok: T.375.2, the GPU's worker is told how much of a head RoPE turns
   engine.generateMany(5, 104, [1, 2], 2, 4, 0, 0.9, 1, [], []);
   const [first, last] = beside.posted.filter((data) => data.type === "tokens").map(({ cache }) => cache);
   assert.ok(first && last, "the steps were asked of the GPU twice, with the cache's places");
-  // (T.261.4.2: each layer's place, its block a capacity of positions after the one before it)
+  // (T261.4.2: each layer's place, its block a capacity of positions after the one before it)
   const layers = 2, capacityOf = ({ places: [one, two] }) => (two.keys - one.keys) / last.row;
   assert.equal(capacityOf(first), 32, "the cache had grown to twice its start");
   assert.equal(capacityOf(last), 128, "and to the context after the larger prompt");
@@ -240,10 +240,10 @@ console.log("ok: T.375.2, the GPU's worker is told how much of a head RoPE turns
   assert.ok(last.places[0].keys > Math.max(started.staging, started.rows, started.tokens.ids), "the cache is placed after what the GPU answers into, where it can grow");
   assert.equal(await engine.release(), true);
 }
-console.log("ok: T.375.3, the cache of the keys and values grows in place after the GPU's places, and the GPU is told where it is as it is now");
+console.log("ok: T375.3, the cache of the keys and values grows in place after the GPU's places, and the GPU is told where it is as it is now");
 
-// ---- T.375.4: a model on the GPU alone is told where each layer's values and scales are in the checkpoint: a layer is
-// its rows of the packing's bytes (jobs.ts's PACKED: int8 a byte a weight, ternary a quarter; T.533: its scales float16s) after the one before
+// ---- T375.4: a model on the GPU alone is told where each layer's values and scales are in the checkpoint: a layer is
+// its rows of the packing's bytes (jobs.ts's PACKED: int8 a byte a weight, ternary a quarter; T533: its scales float16s) after the one before
 for (const dtype of ["int8", "ternary"]) {
   const [q] = plansOf([{ header: [128, 256, 2, 4, 4, 100, 128], form: FORM, dtype }]);
   const plan = planOf(q), { engine, beside } = made(true, plan, q.size), ternary = dtype === "ternary";
@@ -254,16 +254,16 @@ for (const dtype of ["int8", "ternary"]) {
     const t = plan.tensors[name], [rows, n] = t.shape.slice(-2);
     assert.equal(t.kind, dtype);
     assert.deepEqual(m, { rows, n, packing: dtype, layers: [0, 1].map((l) => [t.offset + l * rows * (ternary ? n / 4 : n), t.scales + l * rows * (n / t.group) * (ternary ? 2 : 4)]),
-      ...(name.startsWith("w") && "qkvo".includes(name[1]) ? { of: "attention" } : {}) }, `${dtype}: ${name}`);  // (T.545: the attending layers' matrices say so)
+      ...(name.startsWith("w") && "qkvo".includes(name[1]) ? { of: "attention" } : {}) }, `${dtype}: ${name}`);  // (T545: the attending layers' matrices say so)
   }
   assert.equal(await engine.release(), true);
 }
-console.log("ok: T.375.4, a model on the GPU alone, of int8 or of ternary weights: the GPU is told where every layer's values and scales are, a layer's rows of the packing's bytes apart");
-// T.486: a model of float32 weights is kept off the GPU alone before it is loaded (gpuOnlyUnfit()); an engine made of one
+console.log("ok: T375.4, a model on the GPU alone, of int8 or of ternary weights: the GPU is told where every layer's values and scales are, a layer's rows of the packing's bytes apart");
+// T486: a model of float32 weights is kept off the GPU alone before it is loaded (gpuOnlyUnfit()); an engine made of one
 // on it anyway says which matrix, and is not read as a packing it has not ("Cannot read properties of null")
 {
   const [f] = plansOf([{ header: [64, 128, 2, 4, 4, 100, 128], form: FORM, dtype: "float32" }]);
   assert.throws(() => made(true, planOf(f), f.size), /The matrix wq is of f32, which is not on the GPU alone\./);
 }
-console.log("ok: T.486, an engine of float32 weights on the GPU alone says which matrix the GPU does not take");
+console.log("ok: T486, an engine of float32 weights on the GPU alone says which matrix the GPU does not take");
 process.exit(0);

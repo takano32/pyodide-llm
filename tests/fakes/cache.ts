@@ -1,4 +1,4 @@
-// tests/fakes/cache.ts (T.357.5)
+// tests/fakes/cache.ts (T357.5)
 // A stand-in for the Cache API (a browser's `caches`), for the checks of what keeps copies in it: the service worker
 // (coi-js-check.ts), the kept conversions (kept-check.ts) and the site's models' parts (worker-check.ts).
 //
@@ -8,7 +8,7 @@
 //   cache      that one cache: put, match, keys, delete
 //   map        what it holds, address -> bytes: a check reads it, and may seed it (a Uint8Array or an ArrayBuffer)
 //   said       what was asked of it, in order: "open", "keys", "delete <address>", "delete the cache <name>"
-//   stored     every copy put() stored, in order: [address, its bytes' length] (T.495: a copy that was stored and
+//   stored     every copy put() stored, in order: [address, its bytes' length] (T495: a copy that was stored and
 //              written over later is gone from map, and seen here)
 //   broken     it does not open (a private window, storage turned off); stuck: the addresses whose copies cannot be
 //              deleted; unlisted: keys() fails

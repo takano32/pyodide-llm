@@ -1,12 +1,12 @@
-// shaders/superblocks.ts (T.642.1): llama.cpp's blocks of 256 weights on the GPU, one table of the types, SUPERBLOCKS: of
+// shaders/superblocks.ts (T642.1): llama.cpp's blocks of 256 weights on the GPU, one table of the types, SUPERBLOCKS: of
 // each, the WGSL that reads its blocks as the checkpoint holds them (with what every type shares: BLOCK_COMMON) and
 // JavaScript's reading of them (the checks' answer). The GPU's reader of the types src/python/convert/superblocks.py
-// reads for the converter. Moved out of prompt.ts (T.642.1): the prompt's DP4A tile (prompt.ts), a token's matrix
+// reads for the converter. Moved out of prompt.ts (T642.1): the prompt's DP4A tile (prompt.ts), a token's matrix
 // (fused.ts) and the embedding's rows (run.ts) take the texts from here, the GPU worker's checks the reading.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// A part takes its neighbours' names by static imports (T.367.3: a bundler links them).
+// A part takes its neighbours' names by static imports (T367.3: a bundler links them).
 import type { BlockPacking } from "./common.ts";
-// ---- T.547.2.3, T.547.3.3: llama.cpp's blocks of 256 weights (as src/python/convert/superblocks.py and
+// ---- T547.2.3, T547.3.3: llama.cpp's blocks of 256 weights (as src/python/convert/superblocks.py and
 // tests/blocks-model.ts read them) on the GPU, as the checkpoint holds them: a type a row of SUPERBLOCKS. A block is
 // eight groups of 32 weights (the activations' groups), each two halves of 16; a weight is a half's scale times its
 // small integer q, less the half's min (Q4_K: d s q - dmin m; Q2_K: d (sc & 15) q - dmin (sc >> 4)). So a row's group
@@ -31,7 +31,7 @@ fn blk_word(at: u32) -> u32 {
   }
   return (b[at / 4u] >> shift) | (b[at / 4u + 1u] << (32u - shift));
 }`;
-// (T.547.3.6: and what a matrix's text adds, which an embedded row's does not read)
+// (T547.3.6: and what a matrix's text adds, which an embedded row's does not read)
 const BLK_DOT = /* wgsl */ `
 // the sum of 16 packed int8
 fn blk_sum(a: vec4<u32>) -> i32 {
@@ -47,19 +47,19 @@ fn BLK(a0: vec4<u32>, w0: vec4<u32>, a1: vec4<u32>, w1: vec4<u32>, s: vec4<f32>,
   return f32(blk_dot(a0, w0)) * s.x + f32(blk_dot(a1, w1)) * s.z - s.y * sums.x - s.w * sums.y;
 }`;
 const BLOCK_COMMON = BLK_READ + BLK_DOT;
-// (T.547.3.5: the float16 scale at a byte, which every type reads but IQ1_M, whose d is in pieces)
+// (T547.3.5: the float16 scale at a byte, which every type reads but IQ1_M, whose d is in pieces)
 const BLK_F16 = /* wgsl */ `
 // the float16 at byte at
 fn blk_f16(at: u32) -> f32 {
   return unpack2x16float(blk_word(at)).x;
 }`;
-// (T.547.3.4: what the K types' readings share, which no IQ type reads)
+// (T547.3.4: what the K types' readings share, which no IQ type reads)
 const K_BITS = /* wgsl */ `
 // 16 values of 2 or 4 bits from byte at on, each the bits at shift of its byte
 fn blk_bits(at: u32, shift: u32, mask: u32) -> vec4<u32> {
   return vec4<u32>((blk_word(at) >> shift) & mask, (blk_word(at + 4u) >> shift) & mask, (blk_word(at + 8u) >> shift) & mask, (blk_word(at + 12u) >> shift) & mask);
 }`;
-// T.547.3.4: the IQ types read their values from the codebooks, which the checkpoint carries (the row "codebooks":
+// T547.3.4: the IQ types read their values from the codebooks, which the checkpoint carries (the row "codebooks":
 // convert/grids.py's codebooks(), a value a byte, each grid's entries one after the other, 8 or 4 values an entry) and the
 // GPU holds as they are, bound where the K types' texts bind nothing (binding 1, a matrix's scales of int8): an entry of
 // 8 is two words of packed int8 (DP4A's). IQ_WORDS: the word each grid begins at (codebooks()' places over 4; a second
@@ -75,7 +75,7 @@ const IQ_SEVEN = /* wgsl */ `
 fn iq_seven(bits: u32) -> u32 {
   return bits | ((countOneBits(bits) & 1u) << 7u);
 }`;
-// (T.547.3.5: in parts, each type's text the ones it reads: the binding, the signs' factors, and an entry of 8 with its
+// (T547.3.5: in parts, each type's text the ones it reads: the binding, the signs' factors, and an entry of 8 with its
 // signs (IQ2), of 4 (IQ3), of 8 shifted (IQ1), or IQ4NL's values (IQ4_XS))
 const IQ_BIND = /* wgsl */ `
 @group(0) @binding(1) var<storage, read> grid: array<u32>;`;
@@ -113,13 +113,13 @@ fn iq_nl(q: u32) -> u32 {
   }
   return out;
 }`;
-// T.547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.ts's read(): the weights,
+// T547.3.3: JavaScript's reading of each type's blocks (the checks' answer, tests/blocks-model.ts's read(): the weights,
 // float32 at each step), and where its float16 scales are (d and dmin: where a check draws them small)
 const halfAt = (bytes: Uint8Array, at: number) => {
   const bits = bytes[at] | (bytes[at + 1] << 8), sign = bits & 0x8000 ? -1 : 1, e = (bits >> 10) & 31, m = bits & 1023;
   return e === 31 ? (m ? NaN : sign * Infinity) : e === 0 ? sign * m * 2 ** -24 : sign * (1 + m / 1024) * 2 ** (e - 15);
 };
-// (T.547.3.4: of the IQ types of 8 values an entry: entryOf(p, entry) -> [the entry's first byte in the codebooks, its
+// (T547.3.4: of the IQ types of 8 values an entry: entryOf(p, entry) -> [the entry's first byte in the codebooks, its
 // signs, its scale s], for each of a block's 32 entries)
 const word = (bytes: Uint8Array, at: number) => (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16) | (bytes[at + 3] << 24)) >>> 0;
 const seven = (bits: number) => {
@@ -146,7 +146,7 @@ const at16 = (...offsets: number[]) => (block: Uint8Array, at: number, bits: num
     block[at + offset + 1] = bits >> 8;
   }
 };
-// (T.547.3.5: the weights of blocks of `bytes` each, a block's 256 by read(p, the codebooks as int8, its 256 of out))
+// (T547.3.5: the weights of blocks of `bytes` each, a block's 256 by read(p, the codebooks as int8, its 256 of out))
 const f = Math.fround;
 function readBlocks(blocks: Uint8Array, bytes: number, codebooks: Uint8Array, read: (p: number, grid: Int8Array, out: Float32Array) => void) {
   const out = new Float32Array((blocks.length / bytes) * 256), grid = new Int8Array(codebooks.buffer, codebooks.byteOffset, codebooks.length);
@@ -157,10 +157,10 @@ function readBlocks(blocks: Uint8Array, bytes: number, codebooks: Uint8Array, re
 // drawn float16 bits put where a block has its float16 scales; weights: the blocks' weights, float32 at each step)
 type Superblock = { bytes: number; helpers: string; codebooks: boolean; code: string;
   scale(block: Uint8Array, at: number, bits: number): void; weights(blocks: Uint8Array, codebooks?: Uint8Array): Float32Array };
-// Each type: its bytes, the WGSL its reading takes besides (helpers, T.547.3.4: the K types' K_BITS, or the IQ types'
-// IQ_GRID, which reads the codebooks: codebooks), its WGSL (code) and JavaScript's reading of its blocks (T.547.3.3:
+// Each type: its bytes, the WGSL its reading takes besides (helpers, T547.3.4: the K types' K_BITS, or the IQ types'
+// IQ_GRID, which reads the codebooks: codebooks), its WGSL (code) and JavaScript's reading of its blocks (T547.3.3:
 // scale and weights, the checks' answer, above). The key hashes the texts the makers make of code and helpers alone;
-// tests/device-key-check.ts holds that no piece of scale and weights moves a key (T.642.1: until then the two were
+// tests/device-key-check.ts holds that no piece of scale and weights moves a key (T642.1: until then the two were
 // two tables, BLOCK_READS and BLOCK_WEIGHTS).
 // Q4_K: 144 bytes. Bytes 0 to 3: d and dmin; 4 to 15: the 6-bit s and m of the eight groups (llama.cpp's
 // get_scale_min_k4: group g < 4 has s = byte g & 63 and m = byte g + 4 & 63, the others have their low four bits in byte
@@ -230,7 +230,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
       return out;
     },
   },
-  // T.547.3.4: IQ2_XXS, 66 bytes: d, then 8 bytes for each group of 32: four indices of 8 bits into the grid IQ2XXS, each
+  // T547.3.4: IQ2_XXS, 66 bytes: d, then 8 bytes for each group of 32: four indices of 8 bits into the grid IQ2XXS, each
   // 8 weights, and a word whose low 28 bits are their signs (7 bits each: IQ_GRID's iq_seven) and whose top four the
   // group's scale s; a weight is d (s + 1/2) / 4 times the grid's value, with its sign
   IQ2_XXS: { bytes: 66, helpers: BLK_F16 + IQ_GRID + IQ_SEVEN, codebooks: true, code: /* wgsl */ `
@@ -245,7 +245,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   let scale = blk_f16(block) * (0.5 + f32(blk_word(block + 6u + 8u * g) >> 28u)) * 0.25;
   return vec4<f32>(scale, 0.0, scale, 0.0);
 }`,
-    // (T.547.3.4: the IQ types', of the codebooks: d (s + 1/2) / 4 times the grid's value with its sign; the eighth sign
+    // (T547.3.4: the IQ types', of the codebooks: d (s + 1/2) / 4 times the grid's value with its sign; the eighth sign
     // of 7 their parity. No minimum: d's bytes alone take a drawn scale)
     scale: at16(0),
     weights: (blocks: Uint8Array, codebooks?: Uint8Array) => iqWeights(blocks, 66, (p, entry) => {
@@ -295,7 +295,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
       return [IQ_WORDS.IQ2S * 4 + 8 * index, blocks[p + 34 + entry], entry & 2 ? scales >> 4 : scales & 15];
     }, codebooks!),
   },
-  // T.547.3.5: IQ3_XXS, 98 bytes: d, qs[64] (a byte an index into the grid IQ3XXS, 4 weights), 8 words for the groups
+  // T547.3.5: IQ3_XXS, 98 bytes: d, qs[64] (a byte an index into the grid IQ3XXS, 4 weights), 8 words for the groups
   // of 32 as IQ2_XXS's (the signs of four groups of 8, the scale s); a weight is d (s + 1/2) / 2 times the grid's value,
   // with its sign
   IQ3_XXS: { bytes: 98, helpers: BLK_F16 + IQ_BIND + IQ_SIGNS + IQ_FOUR + IQ_SEVEN, codebooks: true, code: /* wgsl */ `
@@ -311,7 +311,7 @@ fn blk_scales(block: u32, g: u32) -> vec4<f32> {
   let scale = blk_f16(block) * (0.5 + f32(blk_word(block + 66u + 4u * g) >> 28u)) * 0.5;
   return vec4<f32>(scale, 0.0, scale, 0.0);
 }`,
-    // (T.547.3.5: and the rest of the IQ types, as convert/superblocks.py reads them)
+    // (T547.3.5: and the rest of the IQ types, as convert/superblocks.py reads them)
     scale: at16(0),
     weights: (blocks: Uint8Array, codebooks?: Uint8Array) => readBlocks(blocks, 98, codebooks!, (p, grid, out) => {
       const d = halfAt(blocks, p);

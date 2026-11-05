@@ -1,4 +1,4 @@
-// tests/contracts-check.ts (T.368.2): the reader of the contracts (tests/contracts.ts) on made-up texts, and what the
+// tests/contracts-check.ts (T368.2): the reader of the contracts (tests/contracts.ts) on made-up texts, and what the
 // files of src/runtime/contracts/ have to be for nothing of them to reach a browser.
 //
 //   node tests/contracts-check.ts          (light suite; Python is not run, nothing is built; under a second)
@@ -48,7 +48,7 @@ assert.deepEqual([...made.tuplesOf("Asked")], [["text", 3], ["done", 2], ["strea
 for (const [what, read] of [["a type that is not there", () => made.keysOf("Nowhere")], ["a type this file imports", () => made.keysOf("Elsewhere")],
   ["a Record's keys", () => made.keysOf("Listed")], ["the texts of an object type", () => made.literalsOf("Inner")],
   ["the members of a union without a tag", () => made.membersOf("Row")], ["the tuples of an object type", () => made.tuplesOf("Inner")],
-  // T.474: the types made of other types, whose keys this reader does not work out: refused where a check asks for them
+  // T474: the types made of other types, whose keys this reader does not work out: refused where a check asks for them
   ["an Omit's keys", () => made.keysOf("Left")], ["a Pick's keys", () => made.keysOf("Picked")], ["a Partial's keys", () => made.keysOf("Maybe")],
   ["a conditional type's keys", () => made.keysOf("Either")], ["a mapped type's keys", () => made.keysOf("Mapped")],
   ["the keys of an intersection with an Omit", () => made.keysOf("Joined")]]) {
@@ -93,7 +93,7 @@ assert.deepEqual(differing("x", set("a", "b"), set("a"), { b: "spread in" }), []
 assert.match(differing("x", set("a", "b"), set("a", "b"), { b: "spread in" })[0], /listed as written elsewhere/);
 assert.match(differing("x", set("a"), set("a"), { b: "spread in" })[0], /listed as written elsewhere/);
 
-// ---- T.368.2: the requests of a conduct are src/runtime/contracts/conduct.ts's Request, a tuple a kind. Three texts say
+// ---- T368.2: the requests of a conduct are src/runtime/contracts/conduct.ts's Request, a tuple a kind. Three texts say
 // them, in two languages, and no compiler reads two of them: the tuples src/python/convert/conduct.py yields (read here
 // as text: each `yield (...)` and `needed((...))`, its kind and how long it is), the answers of the worker's two answerers
 // and the two ends its loop knows (src/runtime/worker/conduct.js), and the tools' answerer (tests/conducting.ts).
@@ -143,12 +143,12 @@ assert.match(differing("x", set("a"), set("a"), { b: "spread in" })[0], /listed 
   console.log(`contracts-check: contracts/conduct.ts's ${requests.size} kinds of request are the ones conduct.py yields (each as long), the ${answerers.length} answerers answer and the loop ends on`);
 }
 
-// ---- T.368.3: what the worker has of Python (contracts/python.ts). The other end is read by no compiler with these
+// ---- T368.3: what the worker has of Python (contracts/python.ts). The other end is read by no compiler with these
 // types. What is held here is names, one way: every member a type says a module or an object has is a name its source
 // has, so one renamed or dropped there fails here; and every member is one the worker uses (a type that lists what
 // nothing calls is not what the worker has of it). What a call takes and gives is held by what runs the worker on the
 // real ones (the smoke test, worker-fetches-check, the browsers).
-// (T.368.4: what the worker has of forward.ts was held here the same way, 48 names of a file written by hand,
+// (T368.4: what the worker has of forward.ts was held here the same way, 48 names of a file written by hand,
 // contracts/forward-js.ts. forward.ts and forward/ are TypeScript now: the worker reads their own types, tsc holds both
 // ends, and that file and its part of this check are gone.)
 {
@@ -178,7 +178,7 @@ assert.match(differing("x", set("a"), set("a"), { b: "spread in" })[0], /listed 
 // ---- the files of src/runtime/contracts/: types alone (contract() refuses a value), and read as types alone
 const folder = path.dirname(runtime("contracts/plan.ts"));
 const files = fs.readdirSync(folder, { recursive: true }).map((name) => name.split(path.sep).join("/")).filter((name) => name.endsWith(".ts")).sort();
-// (T.368.7: benchmark.ts, /benchmark/'s page and its sections' workers: both ends are TypeScript, and tsc holds each to it)
+// (T368.7: benchmark.ts, /benchmark/'s page and its sections' workers: both ends are TypeScript, and tsc holds each to it)
 assert.deepEqual(files, ["benchmark.ts", "conduct.ts", "form.ts", "gpu/protocol.ts", "messages.ts", "plan.ts", "python.ts"], "the contracts are others now: say in AGENTS.md what holds each to its two ends");
 let types = 0;
 for (const name of files) types += contract(name).names.length;

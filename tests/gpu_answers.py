@@ -1,4 +1,4 @@
-# gpu_answers.py (T.465.1)
+# gpu_answers.py (T465.1)
 # What the engine's shaders compute, in NumPy, for the stand-in WebGPU device of the checks that run the model's GPU
 # worker without a GPU (tests/fakes/webgpu.ts's answer; tests/fakes/gpu-answers.ts hands each dispatch's buffers
 # here, in Pyodide, and writes back what these return). The owner's (2026-10-31): Python where it can be, JavaScript the
@@ -63,13 +63,13 @@ def quantize(x, n, stride, tokens):
 
 
 def codebooks():
-    """(T.465.2) the codebooks of llama.cpp's IQ types as a checkpoint carries them (convert/grids.py's), as bytes"""
+    """(T465.2) the codebooks of llama.cpp's IQ types as a checkpoint carries them (convert/grids.py's), as bytes"""
     return grids()[0]
 
 
 def tiled(packing, stored, scales, x, xs, y, rows, n, x_stride, y_stride, add, tokens):
     """A tiled form of a prompt's matrices (shaders/prompt.ts's promptForms): rows of n weights (int8 with a float32 scale
-    a group of 32 of a row; ternary codes with one a group of 128; T.465.2: blocks of a type of llama.cpp's, read by the
+    a group of 32 of a row; ternary codes with one a group of 128; T465.2: blocks of a type of llama.cpp's, read by the
     converter's own readers, convert/superblocks.py's, whose scales are in the blocks and whose codebooks are the ones
     codebooks() gives: the check's are the plan's, which a check writes from there), x float32 [tokens][x_stride] (xs None) or its int8
     codes with their scales (packed: xs a float32 a group of 32), y float32 [tokens][y_stride]. -> y = W x, or y + W x
@@ -102,7 +102,7 @@ def tiled(packing, stored, scales, x, xs, y, rows, n, x_stride, y_stride, add, t
     return y.astype(np.float32).tobytes()
 
 
-# ---- T.465.4: a generated token's step (gpu/tokens.ts's passes): its row of the embedding, the fused matrices of its
+# ---- T465.4: a generated token's step (gpu/tokens.ts's passes): its row of the embedding, the fused matrices of its
 # layer, and the sampler. Each takes the bytes of its bindings and returns the bytes of what it writes.
 
 def embed(table, scales, state, n, first, rows):
@@ -110,7 +110,7 @@ def embed(table, scales, state, n, first, rows):
     first (rows 0: the whole table) -> the row, float32, as bytes; None where the token is not in the piece"""
     token = int(np.frombuffer(bytes(state), dtype=np.uint32)[4])
     row = token - first
-    # (a token before the piece: u32's row wraps past rows, and nothing is written; T.465.4's review)
+    # (a token before the piece: u32's row wraps past rows, and nothing is written; T465.4's review)
     if rows and not 0 <= row < rows:
         return None
     values = np.frombuffer(bytes(table), dtype=np.int8)[row * n: (row + 1) * n].astype(np.float32)
@@ -119,7 +119,7 @@ def embed(table, scales, state, n, first, rows):
 
 
 def embed_ternary(table, scales, state, n, first, rows):
-    """(T.465.6.3) EMBED_TERNARY: the state's token's row of a ternary table (16 codes a word, a float32 scale a group of
+    """(T465.6.3) EMBED_TERNARY: the state's token's row of a ternary table (16 codes a word, a float32 scale a group of
     128: the GPU's, widened), a piece of rows from first -> the row, float32, as bytes; None where the token is not in it"""
     token = int(np.frombuffer(bytes(state), dtype=np.uint32)[4])
     row = token - first
@@ -141,7 +141,7 @@ def fused(norm, output, weights, scales, x, params, norm_weight, dst):
 
 
 def product(norm, output, weights, scales, v, params, norm_weight, dst, packing="int8"):
-    """fused()'s, of the vector v (float64) as it is read (T.465.6.3: of a matrix of a packing: matrix()'s)"""
+    """fused()'s, of the vector v (float64) as it is read (T465.6.3: of a matrix of a packing: matrix()'s)"""
     rows, words, per_row, second, eps, norm_at = row_params(params)
     n = per_row * GROUP
     scale = 1.0
@@ -208,7 +208,7 @@ def row_params(params):
 
 
 def matrix(weights, scales, per_row, rows, packing="int8"):
-    """rows of a matrix as float64 [rows][per_row * 32]: int8 with a float32 scale a group of 32; T.465.6.3: ternary codes
+    """rows of a matrix as float64 [rows][per_row * 32]: int8 with a float32 scale a group of 32; T465.6.3: ternary codes
     (16 a word) with a float32 scale a group of 128 (the GPU's, widened from the file's float16s); llama.cpp's blocks by
     the converter's readers, their scales inside (an IQ type's codebooks the converter's, which are the ones bound)"""
     n = per_row * GROUP
@@ -285,8 +285,8 @@ def sample(logits, state, chosen, randoms, settings):
     return out.tobytes(), words.tobytes(), picks.tobytes()
 
 
-# ---- T.465.4: the DP4A forms of a token's layer: the norm with the quantizer (NORM_QUANTIZE), or apart (RMSNORM, then
-# QUANTIZE), and the matrix by the quantized vector (fusedDp4aMatVec: no norm on its read, T.150's writes)
+# ---- T465.4: the DP4A forms of a token's layer: the norm with the quantizer (NORM_QUANTIZE), or apart (RMSNORM, then
+# QUANTIZE), and the matrix by the quantized vector (fusedDp4aMatVec: no norm on its read, T150's writes)
 
 def norm_params(norm):
     """Norm (device.ts's normShape): the size, the weight's start, eps"""
@@ -310,7 +310,7 @@ def rmsnorm(x, weight, norm, step):
 
 
 def rms_rows(x, weight, norm, step, across, out, add):
-    """(T.465.6) shaders/steps.ts's rmsNorm, each row of the dispatch (across a token: its x, from the Norm's fourth word
+    """(T465.6) shaders/steps.ts's rmsNorm, each row of the dispatch (across a token: its x, from the Norm's fourth word
     first rows on) normed: weight × (s × x), s the inverse root of the row's mean square and eps, into out (None: x
     in place, HEAD_NORM's), added to what is there where add (RMSNORM_ADD's) -> what it wrote, as bytes"""
     size, at, eps = norm_params(norm)
@@ -330,7 +330,7 @@ def rms_rows(x, weight, norm, step, across, out, add):
 
 
 def layer_norm(x, weight, bias, norm, step, across, out):
-    """(T.465.6.2) LAYER_NORM: each row of the dispatch (across a token, its x) as the CPU's layernorm: weight × (s × (x
+    """(T465.6.2) LAYER_NORM: each row of the dispatch (across a token, its x) as the CPU's layernorm: weight × (s × (x
     - mean)) + bias, s the inverse root of the variance and eps, in float32 -> out, as bytes"""
     size, at, eps = norm_params(norm)
     tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
@@ -347,7 +347,7 @@ def layer_norm(x, weight, bias, norm, step, across, out):
 
 
 def gelu(gate, size, step):
-    """(T.465.6.2) GELU: each token's n values of gate, the tanh approximation (its argument clamped) -> gate, as bytes"""
+    """(T465.6.2) GELU: each token's n values of gate, the tanh approximation (its argument clamped) -> gate, as bytes"""
     n = int(np.frombuffer(bytes(size), dtype=np.uint32)[0])
     tokens = int(np.frombuffer(bytes(step), dtype=np.uint32)[0])
     out = np.frombuffer(bytes(gate), dtype=np.float32).copy()
@@ -387,7 +387,7 @@ def norm_quantize(x, weight, norm, step):
 
 
 def dp4a(output, weights, scales, xq, xs, params, dst, packing="int8"):
-    """fusedDp4aMatVec: a matrix's rows (int8; T.465.6.3: ternary, llama.cpp's blocks: matrix()'s) by the quantized
+    """fusedDp4aMatVec: a matrix's rows (int8; T465.6.3: ternary, llama.cpp's blocks: matrix()'s) by the quantized
     vector (codes times their group's scale), written as fused() writes -> dst, as bytes"""
     rows, words, per_row, second, eps, norm_at = row_params(params)
     n = per_row * GROUP
@@ -403,7 +403,7 @@ def dp4a_rope(weights, scales, xq, xs, params, keys, values, angles, step, packi
     return rope_into(made, q_rows, kv_rows, size, turned, keys, values, angles, step)
 
 
-# ---- T.465.6.4: the kinds of layers that keep a state: an LFM2's convolution layers (SHORT_CONV, CONV_STATE) and a
+# ---- T465.6.4: the kinds of layers that keep a state: an LFM2's convolution layers (SHORT_CONV, CONV_STATE) and a
 # Qwen3.5's linear-attention layers (DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET), and the gate of SWIGLU,
 # each as shaders/steps.ts has it (the sums in float64; np.exp: an infinity past float64's where WGSL's is too, not an
 # OverflowError). tests/test_gpu_answers.py holds what the checks do not reach
@@ -542,7 +542,7 @@ def output_gate(x, gate, size, step):
     return out.tobytes()
 
 
-# ---- T.465.6.5: a ternary classifier's outlier channels (shaders/run.ts): taken out of the normed stream before it is
+# ---- T465.6.5: a ternary classifier's outlier channels (shaders/run.ts): taken out of the normed stream before it is
 # quantized (TAKE_OUTLIERS), their columns of the table added to the logits after its matrix (TERNARY_COLUMNS)
 
 def outliers_of(raw):
@@ -577,7 +577,7 @@ def ternary_columns(table, scales, picked, dst, outliers):
     return out.tobytes()
 
 
-# ---- T.465.6.5: a token's row of a table of llama.cpp's blocks (embedBlocks: the state's token's), by the converter's
+# ---- T465.6.5: a token's row of a table of llama.cpp's blocks (embedBlocks: the state's token's), by the converter's
 # reader; and the rows of a prompt's int8 ids (EMBED_ROWS: a model on the GPU alone embeds its prompt's tokens itself;
 # EMBED_ROWS_TERNARY and embedBlocks with rows are not answered: no ternary or blocks model on the GPU alone is run)
 

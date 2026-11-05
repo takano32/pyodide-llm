@@ -1,4 +1,4 @@
-"""GPT-2 (T.65): LayerNorm, GELU, learned positions, a bias on every projection, and an FFN of two matrices.
+"""GPT-2 (T65): LayerNorm, GELU, learned positions, a bias on every projection, and an FFN of two matrices.
 
 The reference here is written from the Hugging Face tensors themselves, the way transformers computes them, so
 it checks the converter (Conv1D is transposed, and c_attn holds q, k and v in one matrix) and the engine at once.
@@ -18,7 +18,7 @@ DIM, HEADS, LAYERS, HIDDEN, VOCAB, POSITIONS = 32, 4, 2, 64, 320, 24
 
 
 def gpt2_model(seed=0, shared=True, dim=DIM, hidden=HIDDEN):
-    """Random Hugging Face tensors of a tiny GPT-2, and its config.json. dim, hidden: wider ones (T.502: rows of whole
+    """Random Hugging Face tensors of a tiny GPT-2, and its config.json. dim, hidden: wider ones (T502: rows of whole
     blocks of 256, as llama.cpp's K-quantized types need)."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
@@ -91,7 +91,7 @@ def test_a_gpt2_converts_and_runs_like_transformers(shared):
 
 
 def test_the_conversion_tells_the_engine_the_architecture():
-    """The file cannot say it is a GPT-2: the options must (the lesson of T.72, applied here in T.77)."""
+    """The file cannot say it is a GPT-2: the options must (the lesson of T72, applied here in T77)."""
     import json
 
     import llama2_convert
@@ -122,7 +122,7 @@ def test_the_context_of_a_gpt2_is_its_table_of_positions():
 
 @pytest.mark.parametrize("activation", ["gelu_new", "gelu", "gelu_pytorch_tanh", "gelu_fast"])
 def test_the_activations_that_are_the_gelu_kernel_are_let_through(activation):
-    """T.126: gelu_fast (rinna/japanese-gpt-1b) is gelu_new's tanh approximation, written another way"""
+    """T126: gelu_fast (rinna/japanese-gpt-1b) is gelu_new's tanh approximation, written another way"""
     from llama2_convert import check_config, normalize
     _, config = gpt2_model()
     check_config(normalize({**config, "activation_function": activation}))

@@ -1,11 +1,11 @@
-// tests/shaders-modules-check.ts (T.351): what the type check does not hold of the names src/runtime/shaders.ts (the
+// tests/shaders-modules-check.ts (T351): what the type check does not hold of the names src/runtime/shaders.ts (the
 // window) and its modules (src/runtime/shaders/*.ts) hand one another. Node only, under a second:
 //
 //   node tests/shaders-modules-check.ts
 //
 // The window imports every name of every module and exports it; a module imports a neighbour's. /benchmark/'s GPU
 // worker reads the window as one object of names (shared.WGSL.<name>), and so do the tools (wgsl.<name>).
-// T.368.8: the shaders are TypeScript, and tsc (tests/types.ts) says what this check said before of a wrong name: a
+// T368.8: the shaders are TypeScript, and tsc (tests/types.ts) says what this check said before of a wrong name: a
 // name used and declared nowhere, a name exported twice, and a name of the window that /benchmark/'s worker reads and
 // the window has not. What is left here is what tsc, the build and Node all let pass, each with why:
 //   - a file of shaders/ that the window takes nothing of, and a module that takes from one after it or from itself
@@ -46,9 +46,9 @@ for (const part of parts) for (const name of part.given) {
 }
 console.log(`shaders-modules-check: each of the ${parts.length} modules of ${tree.folders.runtime}/shaders/ comes after those it takes from (${taken} names taken), and what one hands its neighbours is taken`);
 
-// ---- T.488: no name at the top of two modules. tests/shaders-source.ts's oneSource() puts every module in one text
+// ---- T488: no name at the top of two modules. tests/shaders-source.ts's oneSource() puts every module in one text
 // for the tools (the net's shaders, gpu-check): a const twice is a SyntaxError there and a function twice the second one,
-// where tsc and the build, a module each, see nothing (T.379.2: two modules had a PACKED)
+// where tsc and the build, a module each, see nothing (T379.2: two modules had a PACKED)
 const owners = new Map();
 for (const part of parts) {
   for (const node of part.program.body) {

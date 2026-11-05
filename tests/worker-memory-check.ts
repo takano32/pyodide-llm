@@ -1,9 +1,9 @@
-// T.464 (out of tests/worker-check.ts, which T.129 wrote): src/runtime/worker.js run as it is in a vm context on made-up
+// T464 (out of tests/worker-check.ts, which T129 wrote): src/runtime/worker.js run as it is in a vm context on made-up
 // fetches and a clock that goes a hundred times as fast, past where fetching and Pyodide's steps meet (those are
 // worker-check.ts's): a model past even a 64-bit memory (weightsBuffer()), and load() as far as the place of the
 // weights (what it stops where it ends before it); the shared memory of a worker told which loads follow on its one
-// model (T.242: /benchmark/'s model section); what is thrown and is no Error, told in words; and (T.357) a stop that
-// arrives while a made-up model writes (generate() and the stop message), (T.378.3) the GPU that stops under a run of a
+// model (T242: /benchmark/'s model section); what is thrown and is no Error, told in words; and (T357) a stop that
+// arrives while a made-up model writes (generate() and the stop message), (T378.3) the GPU that stops under a run of a
 // model on the GPU alone. Node only, no Pyodide, a few seconds:
 //
 //   node tests/worker-memory-check.ts
@@ -16,7 +16,7 @@ import { runtimeUrl, served } from "./tree.ts";
 const forward = await import(runtimeUrl("forward.js"));
 import { workerHarness } from "./worker-harness.ts";
 
-// the made-up network, clock, messages and context (tests/worker-harness.ts, T.357: the conversion's fetch list uses them too)
+// the made-up network, clock, messages and context (tests/worker-harness.ts, T357: the conversion's fetch list uses them too)
 const { PART, sleep, clock, body, requests, messages, fetchStandIn, context, run, failure, fresh, partOf } = workerHarness();
 const at = runtimeUrl("worker.js");
 // a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
@@ -56,7 +56,7 @@ const ok = (line) => {
   ok("a model past a 64-bit memory is refused before its weights come");
 
   // ---- load() as far as the weights' place: the parts that are on their way stop where the load ends before the
-  // weights have one (T.129 (3): the memory said no; the review: the runtime never came). A model of this site's kind
+  // weights have one (T129 (3): the memory said no; the review: the runtime never came). A model of this site's kind
   // with a Qwen2.5 32B's header, whose parts are made as they are read
   const HEADER = new Uint8Array(new Int32Array(QWEN32B).buffer);
   const big = { id: "big", name: "Big", checkpoint: "big", tokenizer: "big.tokenizer.bin", bytes: 34.8e9, options: { dtype: "int8", bias: true } };
@@ -79,7 +79,7 @@ const ok = (line) => {
   ok("a load that ends before its weights have a place stops what is fetched for it");
 }
 
-// ---- T.242: the shared memory of a worker that is told which loads follow on its one model (/benchmark/'s model
+// ---- T242: the shared memory of a worker that is told which loads follow on its one model (/benchmark/'s model
 // section) is made for the largest of them, without the gigabyte for a next model; each of those loads then fits it
 {
   const PAGE = 65536, pagesOf = (bytes) => Math.ceil(bytes / PAGE);
@@ -126,7 +126,7 @@ const ok = (line) => {
   ok("a worker told the loads that follow on its one model makes its shared memory for the largest of them");
 }
 
-// ---- T.242's review: the page's message to the worker's memory. The handler takes the loads that follow from the page's message
+// ---- T242's review: the page's message to the worker's memory. The handler takes the loads that follow from the page's message
 // (/benchmark/'s init says them; the model page's loads say none). A handler that forgot the last one's would make the model
 // page's memory without its gigabyte for the next model, or the benchmark's with one, and nothing else here sees the wiring:
 // the memory's own checks above set loadsAhead by hand
@@ -145,9 +145,9 @@ const ok = (line) => {
   ok("the loads that follow come from the page's message, and the next load that says none forgets them");
 }
 
-// ---- T.242's review: a browser that refuses the benchmark's memory (the model's alone, a small one). It is asked for less after
+// ---- T242's review: a browser that refuses the benchmark's memory (the model's alone, a small one). It is asked for less after
 // and never for more (a Windows WebKit that refused 45 MB was then asked for a gigabyte, the size its page went down in), and a
-// shared memory it gave at a lowered maximum must hold the loads the page said follow, as the one going on (T.130's guard)
+// shared memory it gave at a lowered maximum must hold the loads the page said follow, as the one going on (T130's guard)
 {
   const PAGE = 65536, RealMemory = WebAssembly.Memory, info = console.info;
   const refusing = (limit) => {
@@ -192,10 +192,10 @@ const ok = (line) => {
   ok("a browser that refuses the memory is asked for less and never for more, and a lowered one must hold the loads ahead too");
 }
 
-// ---- T.242's review: every load /benchmark/'s model section makes (the page's path, then each round that loads) fits the one memory
+// ---- T242's review: every load /benchmark/'s model section makes (the page's path, then each round that loads) fits the one memory
 // the worker made for the largest of them, for every model that page can take (the site's own) and each set of rounds (?full or
-// not; a browser that says its memory or one that does not, which skips the rounds that widen the weights, T.214). Another memory
-// would be a page's third (T.96), and the memory has no gigabyte over to hide a load that does not fit. The headers are of the
+// not; a browser that says its memory or one that does not, which skips the rounds that widen the weights, T214). Another memory
+// would be a page's third (T96), and the memory has no gigabyte over to hide a load that does not fit. The headers are of the
 // built models (make models; where there are none this says so and checks nothing)
 {
   const { MODELS } = await import("../src/models.ts");
@@ -253,7 +253,7 @@ const ok = (line) => {
   }
 }
 
-// ---- T.242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
+// ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
 {
   const told = context.told;
   assert.equal(told(new TypeError("Load failed")), "TypeError: Load failed");
@@ -286,7 +286,7 @@ const ok = (line) => {
     assert.equal(error?.message, said);
     assert.ok(!/\[object /.test(`${error.message} ${error.stack}`), error.stack);
   }
-  // T.380.1: what the handler tells the page of a failure is what failure.ts reads of it (tests/failure-check.ts has
+  // T380.1: what the handler tells the page of a failure is what failure.ts reads of it (tests/failure-check.ts has
   // every shape): its sentence, and its kind as the page's flags (pyodide: the runtime did not load; memory, with the
   // heap: it ran out), whatever was thrown
   for (const [thrown, said, pyodide, memory] of [
@@ -310,7 +310,7 @@ const ok = (line) => {
   run("initialized = undefined");
   ok("a thrown value that is no Error is told by its name and message, or its fields; a failure's kind is the page's flags");
 
-  // T.367.3.2: the site's root comes with a load, from the page, and models/ is asked for under it (the worker's own
+  // T367.3.2: the site's root comes with a load, from the page, and models/ is asked for under it (the worker's own
   // URL is under _astro/); a load that says none keeps the root it has. And the page says it with every init and load
   // (a load may reach the worker before the init does: src/page/choose.ts).
   {
@@ -344,8 +344,8 @@ const ok = (line) => {
   ok("a runtime of Pyodide's that ended as it started is told as a step that stopped");
 }
 
-// ---- T.357: a stop that arrives during a run stops it. Nothing ran generate() outside a browser: `stopped` spelled
-// otherwise in its loop is undefined, the loop writes to the end of the context, and both checks of the worker passed (T.350)
+// ---- T357: a stop that arrives during a run stops it. Nothing ran generate() outside a browser: `stopped` spelled
+// otherwise in its loop is undefined, the loop writes to the end of the context, and both checks of the worker passed (T350)
 {
   // a model that writes for ever (or `limit` pieces): to the worker, generate() is a Python generator (next, return, destroy)
   let written = 0, limit = Infinity, closed = 0, destroyed = 0;
@@ -387,7 +387,7 @@ const ok = (line) => {
   run("adopted({})");
 }
 
-// ---- T.378.3 (T.156's path, which nothing ran outside a browser): the GPU stops under a run of a model that is on the GPU
+// ---- T378.3 (T156's path, which nothing ran outside a browser): the GPU stops under a run of a model that is on the GPU
 // alone. The page is told so in the owner's words, the model is on the CPU from now on (alone.js's own list, which
 // worker.js tells by onCpuFromNow), and the load the page last asked for is asked for again, by its own message. A
 // run that fails with the GPU going on is an error like any other, and loads nothing.

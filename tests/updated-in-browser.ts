@@ -1,4 +1,4 @@
-// T.367.4: a page left open across a deployment, in a real browser. The build in dist/ is served as GitHub Pages serves
+// T367.4: a page left open across a deployment, in a real browser. The build in dist/ is served as GitHub Pages serves
 // it, and the server is told, while a page is open, which files of _astro/ are gone (404, as after a deployment),
 // which fail (500) and which drop the line; then the page is made to ask for a file it had not fetched yet.
 //
@@ -11,11 +11,11 @@
 //   a section's worker asks for;
 // - the same file failing in any other way keeps the words it had: a 500, a dropped line, a browser that is offline;
 // - a model that goes on without a file (the kernels, forward.js, a software thread, the GPU's worker: NumPy, fewer
-//   threads, the CPU) goes on and answers, and (T.439) where the file is gone its status line ends with "the site was
+//   threads, the CPU) goes on and answers, and (T439) where the file is gone its status line ends with "the site was
 //   updated: reload for full speed", after what it said before, and still does with the next model of the visit;
 //   where the file failed otherwise (a 500, a dropped line, gone alone with the module that names it there) the line
 //   is what it was; a visit where nothing fails says nothing and asks no HEAD.
-// - (T.491) a model on the GPU alone (?gpuTest=only, on SwiftShader's WebGPU in a Chromium) whose GPU's worker is gone
+// - (T491) a model on the GPU alone (?gpuTest=only, on SwiftShader's WebGPU in a Chromium) whose GPU's worker is gone
 //   or answered 500 is loaded again on the CPU, ready before 60 s, and answers; the status line as above;
 // It does not see: a GPU at work (its worker is asked for wherever the browser's workers have WebGPU, and that it
 // does not start is all this needs; where they have none the case says that it saw nothing), a real deployment.
@@ -35,13 +35,13 @@ import { closed, leave, scratch } from "./leave.ts";
 import { serving } from "./serving.ts";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);
-const repository = fileURLToPath(new URL("../", import.meta.url));  // (T.498: a path on Windows and with spaces too)
+const repository = fileURLToPath(new URL("../", import.meta.url));  // (T498: a path on Windows and with spaces too)
 
 // ---- the server: what becomes of a request is the case's rule(name under the site, method): undefined (served),
 // a status, or "drop" (the connection ends without an answer)
 let rule = () => undefined;
 const requests = [];
-// (T.391.6: the serving is tests/serving.ts's, and the rule is this tool's say in it)
+// (T391.6: the serving is tests/serving.ts's, and the rule is this tool's say in it)
 const server = await serving(undefined, { instead: ({ name, method }) => {
   const verdict = rule(name, method);
   requests.push(`${method} ${name}${verdict === undefined ? "" : ` -> ${verdict}`}`);
@@ -59,13 +59,13 @@ const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
 const kind = playwright[channel ? "chromium" : engine];
 const browser = await kind.launch({ headless: true, channel });
 console.log(`${engine} ${browser.version()}`);
-// T.491: a Chromium whose workers have WebGPU without a GPU (SwiftShader, as tests/e2e.ts's gpuTest), for the cases of a
+// T491: a Chromium whose workers have WebGPU without a GPU (SwiftShader, as tests/e2e.ts's gpuTest), for the cases of a
 // model on the GPU alone; launched once a case asks for it, and only a Chromium has it (elsewhere those cases see nothing)
 const SWIFTSHADER = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"];
 let gpuBrowser;
 const swiftShader = async () => (gpuBrowser ??= kind === playwright.chromium ? await kind.launch({ headless: true, channel, args: SWIFTSHADER }) : browser);
 
-// T.93: the first visit reloads once under the service worker; a wait the reload interrupts starts again
+// T93: the first visit reloads once under the service worker; a wait the reload interrupts starts again
 const acrossReload = async (wait) => {
   for (;;) {
     try {
@@ -121,7 +121,7 @@ const failures = [];
 const expect = (name, ok, what) => {
   if (!ok) failures.push(`${name}: ${what}`);
 };
-// T.439: the status line of a model that goes on without a file: with the sentence as its last part, after the line it
+// T439: the status line of a model that goes on without a file: with the sentence as its last part, after the line it
 // would have been (the model's name, how it runs, Pyodide's version), or without a word of it
 const shots = process.env.UPDATED_SHOTS;
 async function saysSlower(name, page, status) {
@@ -222,7 +222,7 @@ const CASES = {
     console.log(`  the page: ${JSON.stringify(said)}`);
     isSentence(name, said);
   },
-  // T.475: a model past 4 GB (here any, ?wide=on) on a page whose 64-bit kernels are gone is refused with the sentence,
+  // T475: a model past 4 GB (here any, ?wide=on) on a page whose 64-bit kernels are gone is refused with the sentence,
   // not with "no 64-bit WebAssembly memory" (the page is old, not the browser)
   "model page, the 64-bit kernels gone, and a model on a 64-bit memory": async (context, name) => {
     rule = (file, method) => (method === "HEAD" && built(file) ? 404 : family("simdkernel_plain64", "simdkernel_relaxed_plain64", "simdkernel_shared64", "simdkernel_relaxed_shared64")(file) ? 404 : undefined);
@@ -250,7 +250,7 @@ const CASES = {
     // and it is the page that is old, not the model: the next model of the visit says it too, though nothing fails now
     rule = () => undefined;
     await page.selectOption("#model", "tiny-lm");
-    // (T.583: the name has its maker before it since T.523, "SB Intuitions tiny-lm 29M": not at the line's start)
+    // (T583: the name has its maker before it since T523, "SB Intuitions tiny-lm 29M": not at the line's start)
     await page.waitForFunction(() => /\btiny-lm .* · Pyodide /.test(document.getElementById("status-text").textContent) && document.getElementById("run")?.disabled === false, null, { timeout: 180000 });
     await saysSlower(`${name} (the next model)`, page, await page.evaluate(() => document.getElementById("status-text").textContent));
   }),
@@ -303,7 +303,7 @@ const CASES = {
       if (how === 404) await saysSlower(name, page, said.status);
       else saysNothing(name, said.status);
     }])),
-  // T.491: a model on the GPU alone (?gpuTest=only: tiny-lm, whatever its size) whose GPU's worker does not start. The
+  // T491: a model on the GPU alone (?gpuTest=only: tiny-lm, whatever its size) whose GPU's worker does not start. The
   // load goes on to its end, the GPU's side says the worker did not start, and the model is loaded again on the CPU
   // (worker/alone.ts's gpuOnlyReady()): it is ready well before the 60 s a worker that says nothing is waited for,
   // and answers; where the worker is gone the status line says the site was updated, where it failed otherwise not
@@ -364,7 +364,7 @@ const CASES = {
   "benchmark, a section whose engine's module is answered 500": measuring("device", (name) => (family("forward")(name) ? 500 : undefined),
     (name, said) => isNot(name, said.markdown, /TypeError/)),
   "benchmark, a section whose kernels are gone": measuring("device", (name) => (family("simdkernel_plain", "simdkernel_relaxed_plain")(name) ? 404 : undefined), sentenceOfSection),
-  // T.475: the model section, whose worker goes on without its kernels (slower): its rounds would time that
+  // T475: the model section, whose worker goes on without its kernels (slower): its rounds would time that
   "benchmark, the model section whose kernels are gone": measuring("model", (name) => (family("simdkernel", "simdkernel_relaxed", "simdkernel_plain", "simdkernel_relaxed_plain", "simdkernel_shared", "simdkernel_relaxed_shared")(name) ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose kernels are gone": measuring("cpu", (name) => (/^_astro\/simdkernel/.test(name) ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose ceilings' loops are gone": measuring("cpu", (name) => (/^_astro\/ceilings/.test(name) ? 404 : undefined), sentenceOfSection),
@@ -372,7 +372,7 @@ const CASES = {
     (name, method) => (family("helper")(name) || (family("benchmark-sections")(name) && method === "HEAD") ? 404 : undefined), sentenceOfSection),
   "benchmark, the CPU section whose reading threads are gone, with the worker's own file": measuring("cpu",
     (name, method) => (family("benchmark-reader")(name) || (family("benchmark-sections")(name) && method === "HEAD") ? 404 : undefined), sentenceOfSection),
-  // (T.440: a file that did not come is said so, in built()'s words: no "no WebAssembly SIMD in this browser" any more)
+  // (T440: a file that did not come is said so, in built()'s words: no "no WebAssembly SIMD in this browser" any more)
   "benchmark, the CPU section whose kernels are answered 500": measuring("cpu", (name) => (/^_astro\/simdkernel/.test(name) ? 500 : undefined),
     (name, said) => {
       expect(name, said.status !== "none" && /Could not fetch simdkernel\S*: 500/.test(said.markdown), `the section said ${JSON.stringify(said.markdown.slice(0, 120))}`);
@@ -387,7 +387,7 @@ for (const [name, run] of Object.entries(CASES)) {
   if (only.length && !only.some((word) => name.includes(word))) continue;
   console.log(`- ${name}`);
   const before = failures.length;
-  // (T.491: a Chromium with SwiftShader that does not launch fails the case, and the run goes on to its end)
+  // (T491: a Chromium with SwiftShader that does not launch fails the case, and the run goes on to its end)
   let held = browser;
   if (run.swiftShader) {
     try {
@@ -399,7 +399,7 @@ for (const [name, run] of Object.entries(CASES)) {
     }
   }
   const context = await held.newContext({ viewport: { width: 390, height: 844 } });
-  // (T.380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
+  // (T380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
   if (process.env.UPDATED_CONSOLE) context.on("console", (message) => { if (message.type() === "warning") console.log(`  console: ${message.text().slice(0, 300)}`); });
   const lines = [];
   context.on("console", (message) => lines.push(`[${message.type()}] ${message.text().slice(0, 300)}`));
@@ -422,7 +422,7 @@ for (const [name, run] of Object.entries(CASES)) {
 }
 fs.rmSync(fixture, { recursive: true, force: true });
 console.log(failures.length ? `FAILED\n${failures.map((line) => `- ${line}`).join("\n")}` : "updated-in-browser: ok");
-// (a browser's close() may never return, T.141: the process ends by itself)
+// (a browser's close() may never return, T141: the process ends by itself)
 if (gpuBrowser && gpuBrowser !== browser) await closed(() => gpuBrowser.close());
 await closed(() => browser.close());
 server.close();

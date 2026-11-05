@@ -1,4 +1,4 @@
-// tests/shaders-catalogue-check.ts (T.379.1): the catalogue of the engine's shaders (src/runtime/shaders/engine.ts) by
+// tests/shaders-catalogue-check.ts (T379.1): the catalogue of the engine's shaders (src/runtime/shaders/engine.ts) by
 // itself: no GPU, no worker, no model. Node only, under a second:
 //
 //   node tests/shaders-catalogue-check.ts
@@ -18,10 +18,10 @@
 //     function itself (called with a model's numbers), and it cannot be written to by a name the rows do not have;
 //   - the key is the fold of these rows and of nothing else of the catalogue: computed here a second time from the
 //     rows (FNV-1a, the unit separator after each text) for eight made-up devices and their ternary models.
-//   - (T.379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.ts (the
+//   - (T379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.ts (the
 //     tiles', the benchmark's), each set of which makes a text of its own.
-//   - (T.379.2) a text declares nothing it does not use, and declares the struct of what it binds;
-//   - (T.499) a text calls nothing it does not declare that is not WGSL's own.
+//   - (T379.2) a text declares nothing it does not use, and declares the struct of what it binds;
+//   - (T499) a text calls nothing it does not declare that is not WGSL's own.
 // What a maker's text branches on that no row walks (a new parameter) is tests/device-key-check.ts's, which changes
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
@@ -36,10 +36,10 @@ const EITHER = [false, true];
 const BLOCK_TYPES = ["Q4_K", "Q2_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"];
 const ORDER = {
   engine: ["RMSNORM", "HEAD_NORM", "ADD", "ROPE", "SWIGLU", "QUANTIZE", "LAYER_NORM", "GELU", "EMBED", "EMBED_ROWS", "SAMPLE", "NORM_QUANTIZE", "TOKEN_ROPE", "WIDEN_SIX",
-    "RMSNORM_ADD", "GEGLU",  // (T.261.4: a Gemma 3's norms behind and its gate)
-    "SHORT_CONV", "CONV_STATE",  // (T.545: an LFM2's convolution layers)
-    "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T.271.2: a Qwen3.5's linear-attention layers and its output gate)
-    // (T.379.2: each maker's rows together; within a maker subgroups is the outer choice)
+    "RMSNORM_ADD", "GEGLU",  // (T261.4: a Gemma 3's norms behind and its gate)
+    "SHORT_CONV", "CONV_STATE",  // (T545: an LFM2's convolution layers)
+    "DELTA_GATES", "DELTA_CONV", "DELTA_CONV_STATE", "DELTA_NET", "OUTPUT_GATE",  // (T271.2: a Qwen3.5's linear-attention layers and its output gate)
+    // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
     ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
     ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),
     ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
@@ -50,12 +50,12 @@ const ORDER = {
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
     "fusedDp4aMatVec(output=geglu, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "ROTATE_QUANTIZE", "UNROTATE"],
-  // T.547.2.4: a model's of llama.cpp's blocks besides int8 (T.547.3.3: a type after another)
+  // T547.2.4: a model's of llama.cpp's blocks besides int8 (T547.3.3: a type after another)
   blocks: [...BLOCK_TYPES.flatMap((weights) => ["rope", "add", "swiglu", "write", "geglu"].map((output) => `fusedDp4aMatVec(output=${output}, weights=${weights})`)),
-    // (T.547.3.6: the embedding's row of a table of each type)
+    // (T547.3.6: the embedding's row of a table of each type)
     ...[false, true].flatMap((rows) => BLOCK_TYPES.map((weights) => `embedBlocks(weights=${weights}, rows=${rows})`))],
 };
-const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T.379.2 was). If that is meant, this list is to say the same";
+const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);
 assert.deepEqual(TERNARY_SHADERS.map(said), ORDER.ternary, `a ternary model's shaders: ${moved}`);
 assert.deepEqual(BLOCK_SHADERS.map(said), ORDER.blocks, `a model of blocks' shaders: ${moved}`);
@@ -75,7 +75,7 @@ for (const row of rows) {
   assert.equal(window[row.name], row.shader, `${what}: the row's shader is the one of that name (the window's)`);
   assert.equal(text, row.text(), `${what}: the same text twice`);
   assert.ok(typeof text === "string" && text.length > 100, `${what}: a text`);
-  // (T.379.2: a piece of text shaders share is no row: it is in the key by the texts that hold it)
+  // (T379.2: a piece of text shaders share is no row: it is in the key by the texts that hold it)
   assert.ok(/@compute/.test(text), `${what}: a row is a shader, with an entry point`);
   assert.ok(!seen.has(text), `${what} gives the text ${seen.get(text)} gives: an argument the maker does not take, or a row twice (and a text a device runs that the key does not hold?)`);
   seen.set(text, what);
@@ -98,7 +98,7 @@ for (const [name, givens] of makers) {
 }
 console.log(`shaders-catalogue-check: ${[...makers].map(([name, givens]) => `${name} × ${givens.length}`).join(", ")}: every combination of each maker's choices, one set of numbers`);
 
-// ---- (T.379.2) every maker of WGSL the window exports is walked by someone: the catalogue's rows (above), or the list
+// ---- (T379.2) every maker of WGSL the window exports is walked by someone: the catalogue's rows (above), or the list
 // of the makers apart (tests/shader-makers.ts: the prompt's tiles and the benchmark's own, which the net compares
 // with another commit's by the texts those arguments make). A maker in neither would be compared by its syntax tree
 // alone, and a branch of it by nothing; a maker in both is the catalogue's
@@ -113,8 +113,8 @@ for (const [name, givens] of Object.entries(MAKERS_APART)) {
 }
 console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} makers of WGSL, each the catalogue's (${makers.size}) or of the list apart (${Object.keys(MAKERS_APART).join(", ")})`);
 
-// ---- (T.379.2) what a text declares, it uses, and the type of what it binds is declared: every text a device is given
-// (the rows' and the tiles'), read as text (no WGSL compiler here: that a text compiles is CI's gpu-check). Until T.379.2
+// ---- (T379.2) what a text declares, it uses, and the type of what it binds is declared: every text a device is given
+// (the rows' and the tiles'), read as text (no WGSL compiler here: that a text compiles is CI's gpu-check). Until T379.2
 // a token's matrices declared the Step struct where no step was bound, and a constant only the norm's form read; a
 // declaration that comes back unused, or a struct dropped where it is bound, is said here. Names a piece of text
 // shared by two shaders gives both, of which one uses fewer, are listed (LEFT): taking them out is another text, and
@@ -122,13 +122,13 @@ console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} make
 const LEFT = { "flashVec(subgroups=true)": ["lanes_add4"],
   "flashVecReduce(subgroups=false)": ["shuffle_down", "shuffle_down4", "shuffle"], "flashVecReduce(subgroups=true)": ["shuffle_down", "shuffle_down4", "shuffle"] };
 const given = [...rows.map((row) => [said(row), row.text()]),
-  // (T.547.2.3: and a Q4_K model's, each with its Q4_K text)
+  // (T547.2.3: and a Q4_K model's, each with its Q4_K text)
   ...[null, "ternary", "blocks"].flatMap((own) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own)
     .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, own))
     .flatMap((form) => [[`the tile ${form.name}`, form.code], ...Object.entries(form.blocks ?? {}).map(([packing, code]) => [`the ${packing} text of ${form.name}`, code])]))];
 let declarations = 0;
 for (const [what, raw] of given) {
-  const text = raw.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");  // (T.499: both kinds of comment)
+  const text = raw.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");  // (T499: both kinds of comment)
   const unused = [];
   for (const found of text.matchAll(/^(?:@group\(0\) @binding\(\d+\) )?(?:(?:struct|const|fn|override|alias)\s+(\w+)|var(?:<[^>]*>)?\s+(\w+)\s*:)/gm)) {
     const declared = found[1] ?? found[2];
@@ -143,8 +143,8 @@ for (const [what, raw] of given) {
 }
 console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the tiles'): each of their ${declarations} declarations is used, and each struct that is bound is declared`);
 
-// ---- (T.499) and what a text calls is declared there or is WGSL's own: a piece of text that one shader's text left out
-// (a function its neighbour declares) is a text that does not compile, which the light suite did not see (T.391.4's
+// ---- (T499) and what a text calls is declared there or is WGSL's own: a piece of text that one shader's text left out
+// (a function its neighbour declares) is a text that does not compile, which the light suite did not see (T391.4's
 // four ways of breaking a text passed it; only the net's shaders and CI's devices fail it). By the text, as above: a
 // name before "(" (or a type's before its template's "<...>(") that the text does not declare as a fn, a struct or an alias
 const WGSL = new Set(["abs", "acos", "all", "any", "array", "asin", "atan", "atan2", "atomicAdd", "atomicLoad", "atomicMax", "atomicMin",
@@ -157,7 +157,7 @@ const WGSL = new Set(["abs", "acos", "all", "any", "array", "asin", "atan", "ata
   "binding", "builtin", "diagnostic", "group", "workgroup_size"]);
 let calls = 0;
 for (const [what, raw] of given) {
-  const text = raw.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");  // (T.499: both kinds of comment)
+  const text = raw.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");  // (T499: both kinds of comment)
   const own = new Set([...text.matchAll(/^(?:struct|fn|alias)\s+(\w+)/gm)].map((found) => found[1]));
   for (const found of text.matchAll(/\b(?:(array|vec[234]|mat[234]x[234]|bitcast|ptr|atomic)\s*<[^<>()]*(?:<[^<>()]*>[^<>()]*)?>|([A-Za-z_]\w*))\s*\(/g)) {
     const name = found[1] ?? found[2];
@@ -168,7 +168,7 @@ for (const [what, raw] of given) {
 }
 console.log(`shaders-catalogue-check: and each of their ${calls} calls is of a function they declare or of WGSL's`);
 
-// ---- (T.379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
+// ---- (T379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
 // its name is the one of the form's own name (read backwards, a ternary model was handed the int8 text under the
 // ternary name, and no local check said so)
 {

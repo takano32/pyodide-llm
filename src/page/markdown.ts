@@ -1,4 +1,4 @@
-// src/page/markdown.ts (T.556): an answer drawn as Markdown, by two libraries the page takes at run time, as the worker
+// src/page/markdown.ts (T556): an answer drawn as Markdown, by two libraries the page takes at run time, as the worker
 // takes Pyodide (policy 2): the latest version of each is resolved on jsDelivr when it is first wanted and imported from
 // there, and no version is written here (the owner, 2026-10-16: "人気あって更新されてるやつを常に最新で使う"). marked
 // (MIT) reads the Markdown, and DOMPurify (Apache-2.0 or MPL-2.0) lets through the elements below and nothing else.
@@ -7,7 +7,7 @@
 //
 // What is drawn: paragraphs, lists, bold, italic, headings, code (fenced and inline) and tables. HTML, links, images,
 // quotes, rules, strikethrough and task boxes are said as the text the model wrote (the recommendation the owner chose
-// for T.556: the text follows the visitor's prompt, so what it may put on the page is kept narrow). The form of drawing
+// for T556: the text follows the visitor's prompt, so what it may put on the page is kept narrow). The form of drawing
 // it block by block, the last one again as it grows, is naidan's src/components/block-markdown/ (852bdeab, MIT, Ryo
 // Ota): no line of it is copied.
 
@@ -45,7 +45,7 @@ export function markdownOf(marked: MarkedModule, purify: Purify): Markdown {
   const reader = markedFor(marked);
   return {
     blocks: (text) => reader.lexer(text),
-    // (T.559: and no data-* or aria-* either, which DOMPurify lets through beside ALLOWED_ATTR unless told not to)
+    // (T559: and no data-* or aria-* either, which DOMPurify lets through beside ALLOWED_ATTR unless told not to)
     html: (block, links) => purify.sanitize(reader.parser(Object.assign([block], { links })), { ALLOWED_TAGS: ELEMENTS, ALLOWED_ATTR: ATTRIBUTES,
       ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false, RETURN_DOM_FRAGMENT: true }),
   };

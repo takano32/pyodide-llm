@@ -1,6 +1,6 @@
-// src/page/first.ts (T.474, out of src/pages/index.astro's script, where tsc did not read it): the first load of the
+// src/page/first.ts (T474, out of src/pages/index.astro's script, where tsc did not read it): the first load of the
 // page, which index.astro names last, after every other part has run. A model chosen while this looks (the one kept
-// gone, the repository of ?hf= looked at) has started the worker itself, and wins: the review of T.116.
+// gone, the repository of ?hf= looked at) has started the worker itself, and wins: the review of T116.
 import { DEFAULT_MODEL } from "../models.ts";
 import { weighed } from "./address.ts";
 import { gpuFor, recalled, remember, threadsFor } from "./remembered.ts";
@@ -16,7 +16,7 @@ import type { ToWorker } from "../runtime/contracts/messages.ts";
     remember(undefined);
     show(model);
   }
-  // (T.505.3: a repository of ?hf= is looked at for the file that is its model, where the URL names none)
+  // (T505.3: a repository of ?hf= is looked at for the file that is its model, where the URL names none)
   if (await urlLooked() && loads === 1) {
     worker.postMessage({ type: "init", root, search: location.search, model: weighed(model), load: loads, threads: threadsFor(model), gpu: gpuFor(model) } satisfies ToWorker);
   }

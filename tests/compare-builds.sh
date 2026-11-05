@@ -1,19 +1,19 @@
 #!/bin/bash
-# tests/compare-builds.sh (T.367.5): what a change did to the forward pass as a visitor's browser runs it, with the
+# tests/compare-builds.sh (T367.5): what a change did to the forward pass as a visitor's browser runs it, with the
 # measure of no change beside it every time. Three builds: another commit's (main by default), this tree's (dist/, which
 # `npm run build` wrote), and this tree's built once more. Then tests/compare-engines.ts through the bundles, `times`
 # times over:
 #   the other commit's build against this tree's          what is asked
 #   this tree's second build against this tree's          the control: the same code on both sides
-# A ratio of the first that is inside what the control says of no difference is no difference (T.367.3.2: two builds of
-# one code were 1.4% apart on arm64 with 7 rounds; T.437: 15 rounds or more, and the control every time).
+# A ratio of the first that is inside what the control says of no difference is no difference (T367.3.2: two builds of
+# one code were 1.4% apart on arm64 with 7 rounds; T437: 15 rounds or more, and the control every time).
 #
 #   bash tests/compare-builds.sh [<commit> = origin/main] [<rounds> = 21] [<times> = 2] [model ids = tiny-lm llm-jp-3-150m]
-#   THREADS=2,4 bash tests/compare-builds.sh …    T.378.1, T.447: after each of those, the same two pairs WITH software threads
+#   THREADS=2,4 bash tests/compare-builds.sh …    T378.1, T447: after each of those, the same two pairs WITH software threads
 #                                                 (tests/threads-compare.ts: each build's forward and its own helper, that
 #                                                 many threads). compare-engines runs no software thread: a change of
 #                                                 forward/threads.js, helper.js or jobs.js is measured only here.
-#   PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh …    T.620: those two pairs alone, timing prompts (threads-compare's
+#   PROMPT=1 THREADS=2,4 bash tests/compare-builds.sh …    T620: those two pairs alone, timing prompts (threads-compare's
 #                                                 --prompt: the blocks of forwardMany, which no one-token run treads),
 #                                                 and models given by their files as well (<out>.bin, .tokenizer.bin,
 #                                                 .json: tests/make_ternary.py), which compare-engines does not take.
@@ -27,7 +27,7 @@ ref="${1:-origin/main}"; rounds="${2:-21}"; times="${3:-2}"; shift $(( $# < 3 ? 
 [ -d dist/_astro ] || { echo "compare-builds: no dist/_astro here: npm run build"; exit 1; }
 other=$(node -e "import('./tests/other-tree.ts').then((m) => process.stdout.write(m.otherTree(process.argv[1]).folder))" "$ref")
 # the other commit's build: its sources, this tree's packages and built files (kernels, archives: not what is measured;
-# a commit with T.433's plugin makes its archives again of its own sources as its build starts)
+# a commit with T433's plugin makes its archives again of its own sources as its build starts)
 [ -e "$other/node_modules" ] || ln -s "$PWD/node_modules" "$other/node_modules"
 mkdir -p "$other/src/runtime/built" && cp src/runtime/built/* "$other/src/runtime/built/"
 (cd "$other" && rm -rf dist && npx astro build > build.txt 2>&1) || { tail -20 "$other/build.txt"; echo "compare-builds: the build of $ref failed"; exit 1; }

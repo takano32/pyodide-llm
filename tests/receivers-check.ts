@@ -1,4 +1,4 @@
-// tests/receivers-check.ts (T.483, out of T.368.8's review): the three windows of a worker, the model's worker
+// tests/receivers-check.ts (T483, out of T368.8's review): the three windows of a worker, the model's worker
 // (src/runtime/worker.ts), its GPU worker (gpu.ts) and /benchmark/'s GPU worker (benchmark/gpu.ts), say at their heads
 // that nothing is awaited before their receiver is set: a module worker's first message is lost where its top level
 // waits before onmessage is there (AGENTS.md's pitfall: Node's worker_threads keep it, a browser does not; the page

@@ -1,4 +1,4 @@
-// forward/reasons.ts (T.380.1): why a model's prompts or answers are not on the GPU, or no longer: the one place each of
+// forward/reasons.ts (T380.1): why a model's prompts or answers are not on the GPU, or no longer: the one place each of
 // these reasons is written. One cause, one sentence (or one function that fills in its numbers).
 //
 // A reason is a value, not an error: nothing is thrown, the model runs on the CPU, and the reason is what the status
@@ -21,14 +21,14 @@
 // heads of a size that is no multiple of 4.
 export const REASONS = {
   // ---- what the model is: its prompts stay on the CPU (gpuFit()'s unfit())
-  linear: "linear-attention layers are not on the GPU yet",  // T.229
-  // T.271.1: a rotated basis whose blocks the GPU's shader does not take (a multiple of 32, at most 1024)
+  linear: "linear-attention layers are not on the GPU yet",  // T229
+  // T271.1: a rotated basis whose blocks the GPU's shader does not take (a multiple of 32, at most 1024)
   rotatedBlock: "a rotated basis of blocks of this size is not on the GPU",
-  // (T.375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
+  // (T375.2: a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
   stateful: "layers that keep a state are not on the GPU yet",
-  // (T.375.5, T.484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)
+  // (T375.5, T484: the GPU's layers are of two pairs, RMSNorms with a gated FFN and LayerNorms with GPT-2's FFN)
   pair: "this pair of norms and FFN is not on the GPU yet",
-  // (said wherever the memory is not a shared one: T.371, ?threads=1 on an isolated page reads this too)
+  // (said wherever the memory is not a shared one: T371, ?threads=1 on an isolated page reads this too)
   notIsolated: "the page is not cross-origin isolated",
   oneThread: "one thread was asked for",
   notShared: "the model's memory is not shared",
@@ -42,25 +42,25 @@ export const REASONS = {
   // ---- what the device is (the engine's side without a GPU; gpu/device.ts as it opens one; alone.ts)
   noWebGpu: "no WebGPU in a worker here",
   noAdapter: "no GPU adapter here",
-  // T.148: the CPU doing the GPU's work (SwiftShader, lavapipe)
+  // T148: the CPU doing the GPU's work (SwiftShader, lavapipe)
   fallback: "a fallback adapter: the CPU in the GPU's place",
-  // T.232: ternary weights are multiplied as packed int8 alone
+  // T232: ternary weights are multiplied as packed int8 alone
   packed: (weights: string) => `${weights} weights need the packed int8 dot product of WGSL, which this browser lacks`,
   // ---- a model on the GPU alone (alone.ts's gpuOnlyUnfit(): read as yes or no, and by the tests)
   aloneFallback: "a fallback adapter",
-  // (T.382: a fact of the model each, in aloneFactsUnfit()'s order; layers that keep a state are "stateful" above. A
+  // (T382: a fact of the model each, in aloneFactsUnfit()'s order; layers that keep a state are "stateful" above. A
   // model with one of these that is too large to hold twice (Pythia 6.9B, Qwen3.5 4B and 9B of the list) goes on the CPU
   // alone: the GPU alone has no steps made for them. The reasons are read as yes or no, and by the tests)
   alonePositions: "a table of positions is not on the GPU alone yet",
   aloneFfn: "an FFN without a gate is not on the GPU alone yet",
   aloneNorms: "LayerNorms are not on the GPU alone yet",
-  aloneActivation: "a gate of the FFN that is no SiLU's is not on the GPU alone yet",  // T.261
-  aloneLocal: "layers that attend a window are not on the GPU alone yet",  // T.261
+  aloneActivation: "a gate of the FFN that is no SiLU's is not on the GPU alone yet",  // T261
+  aloneLocal: "layers that attend a window are not on the GPU alone yet",  // T261
   aloneDtype: (dtype: string) => `${dtype} weights stay on the CPU`,
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",
   alonePast: "a layer's matrices are past a buffer of this GPU",
-  aloneState: "a layer's state is past a buffer of this GPU",  // T.573: a linear-attention layer's state matrices
+  aloneState: "a layer's state is past a buffer of this GPU",  // T573: a linear-attention layer's state matrices
   // ---- what stopped the GPU (gpuside.ts's stopGpu(): the prompts and the tokens go on on the CPU)
   quiet: (ms: number) => `the GPU said nothing for ${ms / 1000} s`,
   stalled: (ms: number) => `the GPU's worker stopped answering for ${ms / 1000} s`,
@@ -70,14 +70,14 @@ export const REASONS = {
   notTaken: "the GPU did not take a block or a step",
   blockFailed: "the GPU failed on a block of the prompt",  // (the GPU's worker said why in the console)
   tokenFailed: "the GPU failed on a token",  // (the same)
-  // T.243: a key or a value that is no finite number
+  // T243: a key or a value that is no finite number
   keysInBlock: (position: number) => notFiniteKV(`in a block of the prompt at position ${position}`),
   keysInStep: (position: number) => notFiniteKV(`in a step at position ${position}`),
-  // T.219
+  // T219
   logits: (position: number) => `the GPU computed logits that are not finite numbers (NaN or infinity) at position ${position}`,
   sampledFew: (sampled: number, count: number) => `the GPU sampled ${sampled} of ${count} tokens`,
   sampledOutside: (id: number, vocab: number) => `the GPU sampled ${id}, outside the vocabulary of ${vocab}`,
-  // T.156: /benchmark/'s CPU against a model on the GPU alone (GBps: its reading, undefined where it measured none;
+  // T156: /benchmark/'s CPU against a model on the GPU alone (GBps: its reading, undefined where it measured none;
   // the two times in ms, the usage in tokens)
   cpuFaster: (GBps: number | undefined, cpu: number, gpu: number, prompt: unknown, written: unknown) =>
     `the CPU as /benchmark/ measured it (${GBps?.toFixed(1)} GB/s): ${cpu.toFixed(0)} ms ` +

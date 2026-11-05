@@ -1,4 +1,4 @@
-// tests/reasons-check.ts (T.380.1): the table of why a model is not on the GPU (src/runtime/forward/reasons.ts), by
+// tests/reasons-check.ts (T380.1): the table of why a model is not on the GPU (src/runtime/forward/reasons.ts), by
 // itself: no engine, no worker, no GPU. Node only, under a second:
 //
 //   node tests/reasons-check.ts

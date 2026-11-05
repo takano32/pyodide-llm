@@ -1,4 +1,4 @@
-// gpu/packings.ts (T.547.2.1): how the model's GPU worker holds each packing a matrix or a table of its plan may be of
+// gpu/packings.ts (T547.2.1): how the model's GPU worker holds each packing a matrix or a table of its plan may be of
 // (contracts/gpu/protocol.ts's GpuPacking, jobs.ts's PACKED names), as one table: what device.ts, weights.ts and
 // tokenforms.ts compared the packing's name for. A packing the GPU takes is a line here (and its line of PACKED's gpu).
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
@@ -12,34 +12,34 @@ import type { GpuPacking, Matrix } from "../contracts/gpu/protocol.ts";
 
 // What a packing is to the GPU:
 //   row()     the bytes of a row of n weights on the GPU: a byte a weight (int8, and int6 widened), two bits (ternary:
-//             the codes as the checkpoint holds them, 16 weights a u32), or (T.547.2.3) Q4_K's blocks of 256 weights in
+//             the codes as the checkpoint holds them, 16 weights a u32), or (T547.2.3) Q4_K's blocks of 256 weights in
 //             144 bytes as the checkpoint holds them (n a multiple of 256: the CPU keeps a matrix as blocks only then)
-//   scales()  the float32 scales of the row on the GPU (T.547.2.2), in a buffer of their own: one with every GROUP bytes
+//   scales()  the float32 scales of the row on the GPU (T547.2.2), in a buffer of their own: one with every GROUP bytes
 //             of row() (a group's, whatever its packing: an int8 group of 32 weights, a ternary group of 128), or none
 //             where a block holds its own (Q4_K)
 //   stored()  the bytes of the row in the checkpoint (int6: 24 a group of 32)
-//   scale     the bytes of a group's scale in the checkpoint: a float32, or (T.533: ternary's) a float16, which goes up
+//   scale     the bytes of a group's scale in the checkpoint: a float32, or (T533: ternary's) a float16, which goes up
 //             widened to a float32; 0: none apart from the values (Q4_K)
-//   widened   whether its values are widened to int8 as they go up (int6, T.155: WIDEN_SIX)
+//   widened   whether its values are widened to int8 as they go up (int6, T155: WIDEN_SIX)
 //   dot       whether its shaders need WGSL's packed int8 dot (PACKED's gpu.dot: a device without it keeps the model on
 //             the CPU)
 //   values()  the bytes of a row as the checkpoint holds them, as its int8 values (the checks' answer), which a group's
-//             scale times is the row's weights; (T.547.2.4) a packing of no scales apart, its weights themselves (Q4_K's
-//             d s q - dmin m), which its one scale of 1 times is; (T.547.3.4) of an IQ type, of the codebooks too
-//   grid      (T.547.3.4) whether its shaders read the codebooks, bound where an int8 matrix's scales are (the IQ types)
-//   on        (T.634.3) the packing it is on the GPU (jobs.ts's PACKED's gpu.as), whose shaders multiply it and whose
+//             scale times is the row's weights; (T547.2.4) a packing of no scales apart, its weights themselves (Q4_K's
+//             d s q - dmin m), which its one scale of 1 times is; (T547.3.4) of an IQ type, of the codebooks too
+//   grid      (T547.3.4) whether its shaders read the codebooks, bound where an int8 matrix's scales are (the IQ types)
+//   on        (T634.3) the packing it is on the GPU (jobs.ts's PACKED's gpu.as), whose shaders multiply it and whose
 //             bytes a read back is in: its own, but int6's, widened to int8 (WIDEN_SIX: no model of it is on the GPU
 //             alone, which alone reads back), and binary's, which goes up as ternary's codes (spread)
-//   spread    (T.634.3) whether its bytes are spread on the CPU as they go up (binary's bits to ternary's codes: spreadBits())
+//   spread    (T634.3) whether its bytes are spread on the CPU as they go up (binary's bits to ternary's codes: spreadBits())
 export type HeldAs = { row(n: number): number; scales(n: number): number; stored(n: number): number; scale: 0 | 2 | 4; widened: boolean; dot: boolean;
   grid: boolean; values(bytes: Uint8Array, codebooks?: Uint8Array): ArrayLike<number>; on: GpuPacking; spread: boolean };
 const asBytes = (bytes: Uint8Array) => new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
-// (T.547.3.3: llama.cpp's blocks of a type of superblocks.ts's SUPERBLOCKS, as the checkpoint holds them)
+// (T547.3.3: llama.cpp's blocks of a type of superblocks.ts's SUPERBLOCKS, as the checkpoint holds them)
 const blocks = (packing: BlockPacking): HeldAs => {
   const { bytes, codebooks, weights } = SUPERBLOCKS[packing], row = (n: number) => (n / 256) * bytes;
   return { row, scales: () => 0, stored: row, scale: 0, widened: false, dot: true, grid: codebooks, values: weights, on: packing, spread: false };
 };
-// T.634.3: binary (jobs.ts's PACKED's binary, llama2_numpy.pack_binary): a group of 128 weights in 16 bytes, weight
+// T634.3: binary (jobs.ts's PACKED's binary, llama2_numpy.pack_binary): a group of 128 weights in 16 bytes, weight
 // 64 h + 4 c + p at bit 4 h + p of byte c, set for +1. On the GPU it is ternary's codes (PQ2_0's order: weight j's code,
 // the weight + 1, in byte j >> 2 at bits 2 (j & 3)), which ternary's shaders multiply as they are: byte c's low four bits
 // are weights 4 c to 4 c + 3, ternary's byte c, and its high four weights 64 + 4 c on, ternary's byte 16 + c. A bit b is the
@@ -65,15 +65,15 @@ export const PACKINGS: Record<GpuPacking, HeldAs> = {
   binary: { row: (n) => n / 4, scales: (n) => n / 4 / GROUP, stored: (n) => n / 8, scale: 2, widened: false, dot: true, grid: false, values: binaryValues, on: "ternary", spread: true },
   ...(Object.fromEntries(BLOCK_PACKINGS.map((packing) => [packing, blocks(packing)] as const)) as Record<BlockPacking, HeldAs>),
 };
-// T.547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
+// T547.3.1: the packing of a matrix's layer by its place (a stack whose layers are each of a packing of its own, packing
 // "layers": its packings'), and the packings a matrix has
 type Packed = Pick<Matrix, "packing" | "packings">;
 export const packingAt = ({ packing, packings }: Packed, place: number): GpuPacking => (packing === "layers" ? packings![place] : packing);
 export const packingsOf = ({ packing, packings }: Packed): GpuPacking[] => (packing === "layers" ? [...new Set(packings!)] : [packing]);
-// T.634.3: whether a packing is multiplied by ternary's shaders on the GPU (ternary, and binary as its codes)
+// T634.3: whether a packing is multiplied by ternary's shaders on the GPU (ternary, and binary as its codes)
 export const asTernary = (packing: GpuPacking) => PACKINGS[packing].on === "ternary";
-// T.547.3.3: whether a packing is one of llama.cpp's blocks the GPU reads (a type of SUPERBLOCKS)
+// T547.3.3: whether a packing is one of llama.cpp's blocks the GPU reads (a type of SUPERBLOCKS)
 export const isBlock = (packing: GpuPacking): packing is BlockPacking => (BLOCK_PACKINGS as readonly string[]).includes(packing);
-// T.547.3.3: the types of llama.cpp's blocks the matrices have, in BLOCK_PACKINGS' order (the texts a model compiles)
+// T547.3.3: the types of llama.cpp's blocks the matrices have, in BLOCK_PACKINGS' order (the texts a model compiles)
 export const blocksOf = (matrices: Record<string, Packed>): BlockPacking[] =>
   BLOCK_PACKINGS.filter((packing) => Object.values(matrices).some((matrix) => packingsOf(matrix).includes(packing)));

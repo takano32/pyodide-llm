@@ -1,4 +1,4 @@
-// unchanged-choices.ts (T.346 review)
+// unchanged-choices.ts (T346 review)
 // What forward.js decides without a browser, over a grid of made-up numbers, as one JSON object: the GPU or the CPU for a
 // block and a step (promptTimes, tokenTimes: BETTER, KEEP, TIMED), where the weights go (weightsPlace, gpuOnlyUnfit,
 // aloneVerdict), what the memory must hold (footprint, keysInHalf, gpuBytes, needsWide, automaticDtype, weightsMemory),

@@ -1,8 +1,8 @@
-# python_facts.py (T.628.1)
+# python_facts.py (T628.1)
 # The facts of the site's Python that its TypeScript reads before any Python runs (forward/memory.ts's footprint(), the
 # worker as a conversion begins, /benchmark/), written once from Python's own tables into src/runtime/built/facts/, a
 # module a section (<section>.ts, of one constant PYTHON_<SECTION>, which the runtime imports as it imports a neighbour:
-# T.628.3, a module of its own each, since one that the worker's entry and the forward chunk both read is bundled
+# T628.3, a module of its own each, since one that the worker's entry and the forward chunk both read is bundled
 # twice, AGENTS.md's 「木と束」): the copy that was written by hand twice, and held to Python by a check, is Python's now
 # (the owner, 2026-10-31: Python first, then TypeScript). Made by `make kernels` (before any check runs: the deploy's
 # light suite runs before the build), and by python_archive.py (a build's and the development server's start).
@@ -14,17 +14,17 @@
 #   architectures  (forward/architectures.ts) of each of engine/layout.py's LAYOUTS: what sizes a model before it is
 #                  loaded: a learned table of positions, a gate of the attention's output (the rows wg or head_gate),
 #                  RoPE, a gated FFN, LayerNorms, the FFN's activation, local layers
-#   tokenizers     (src/page/folder.ts, T.628.2) convert/conduct.py's TOKENIZERS: the tokenizers a conversion tries, in
+#   tokenizers     (src/page/folder.ts, T628.2) convert/conduct.py's TOKENIZERS: the tokenizers a conversion tries, in
 #                  its order, which the page looks for in a folder before Pyodide is there
-#   blocks         (jobs.ts's BLOCK_TYPES, T.628.3) of convert/superblocks.py's SUPERBLOCKS, in its order: llama.cpp's
+#   blocks         (jobs.ts's BLOCK_TYPES, T628.3) of convert/superblocks.py's SUPERBLOCKS, in its order: llama.cpp's
 #                  number of each type of block the kernels multiply, and a block's bytes (engine/dtypes.py's BLOCKS)
-#   converter      (kept.ts's CONVERTER, T.628.4) convert/version.py's CONVERTER: the version of what the converter makes
-#   madeup         (benchmark/madeup.ts, T.628.5) the plan engine/plan.py's forward_plan() makes for /benchmark/'s
+#   converter      (kept.ts's CONVERTER, T628.4) convert/version.py's CONVERTER: the version of what the converter makes
+#   madeup         (benchmark/madeup.ts, T628.5) the plan engine/plan.py's forward_plan() makes for /benchmark/'s
 #                  made-up model, an int8 Llama of MADEUP's header (the CPU section runs it without Pyodide): its
 #                  header, its file's bytes and the plan, the bytes of its RoPE tables in base64, the classifier under
 #                  the embedding's name alone (the engine reads that one of a shared classifier)
-#   quantized      (kept.ts, T.628.3) engine/dtypes.py's QUANTIZED: the dtypes a kept conversion may be of
-#   bytes          (src/models/memory.ts's ratios, T.628.3) the bytes of each of those of a row of WEIGHTS weights,
+#   quantized      (kept.ts, T628.3) engine/dtypes.py's QUANTIZED: the dtypes a kept conversion may be of
+#   bytes          (src/models/memory.ts's ratios, T628.3) the bytes of each of those of a row of WEIGHTS weights,
 #                  its values and its scales: a ratio of two is a ratio of whole numbers
 import base64
 import json
@@ -112,7 +112,7 @@ def bytes_of(name):
     return sum(dtype.stored_bytes(WEIGHTS, dtype.group(WEIGHTS)))
 
 
-HEAD = """// src/runtime/built/facts/{name}.ts: written by python_facts.py from the site's Python (T.628). Not to be edited, and
+HEAD = """// src/runtime/built/facts/{name}.ts: written by python_facts.py from the site's Python (T628). Not to be edited, and
 // not committed (src/runtime/built/ is made): facts the TypeScript reads before any Python runs. One file of the runtime
 // imports it: a second one, of another bundle's graph, has the bundler write the chunk twice (python_facts.py's head).
 """
@@ -121,7 +121,7 @@ HEAD = """// src/runtime/built/facts/{name}.ts: written by python_facts.py from 
 def write(folder=HERE / "src" / "runtime" / "built"):
     folder = Path(folder) / "facts"
     folder.mkdir(parents=True, exist_ok=True)
-    # (the one module of before T.628.3, gone)
+    # (the one module of before T628.3, gone)
     (folder.parent / "facts.ts").unlink(missing_ok=True)
     for name, value in facts().items():
         text = HEAD.format(name=name) + f"export const PYTHON_{name.upper()} = " + json.dumps(value, indent=1) + " as const;\n"

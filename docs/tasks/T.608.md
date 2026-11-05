@@ -1,4 +1,0 @@
-### T.608 [追加][モデル] PFN の小さい金融のモデル（Qwen3-1.7B-pfn-qfin） — 状態: 完了（2026-11-03、持ち主の決めで足さない）（前の状態: 候補（2026-10-30、T.591 から））
-- **持ち主の決定（2026-11-03、選択肢で「足さない（勧め）」）**: 足さない。用途の狭い base で、ライセンスが「Built with PLaMo」の表示と名前の「PLaMo」を求めるため。
-- pfnet/Qwen3-1.7B-pfn-qfin @ 3e454cbe406cc778feb6f2e9bc4b4397e5cc98bf・Qwen2.5-1.5B-pfn-qfin（safetensors だけ、ライセンスはカード）。用途が狭い。PFN の主のモデルは T.614・T.615。
-- **調べ（2026-11-02、Opus medium）**: 2 つとも base（続きを書くモデル、書式は Qwen3 の chat_template を持つが card は素の文で使う）、金融の 4 億トークンで追加の学習、文脈 2048 で学習。ライセンスは PLaMo Community License（`license: other`）: 第 4 条が第三者に提供するとき「Built with PLaMo」をウェブサイトか UI に書くこと・作ったモデルの名前に「PLaMo」を入れることを求め、第 3 条の商用は PFN の登録と売上 10 億円以下が条件。**ページに表示を足すかはライセンスの話なので持ち主に**（T.278 の「Built with Llama」と同じ形の問い）。

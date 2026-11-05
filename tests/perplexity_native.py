@@ -5,7 +5,7 @@
 #
 #   python3 tests/perplexity_native.py <out of tests/perplexity_prepare.py> <tokens> <text file> [--eps 1e-6]
 #
-# --eps: the epsilon of every RMSNorm in place of the one of the options (T.124: to measure what Qwen3's 1e-6 against
+# --eps: the epsilon of every RMSNorm in place of the one of the options (T124: to measure what Qwen3's 1e-6 against
 # the 1e-5 the engine had until then was worth)
 import json
 import sys
@@ -31,7 +31,7 @@ out, count, text = args[0], int(args[1]), Path(args[2]).read_text()
 options = json.loads(Path(f"{out}.json").read_text())
 llama = Llama(np.memmap(f"{out}.bin", dtype=np.uint8, mode="r"), Path(f"{out}.tokenizer.bin").read_bytes(), kernels=None,
               **{**options, **({"rms_norm_eps": eps} if eps else {})})
-# (T.452: a float32 file holds the RoPE tables the converter made of config.json, and the engine reads them, never the
+# (T452: a float32 file holds the RoPE tables the converter made of config.json, and the engine reads them, never the
 # options: where the options (an entry's, through perplexity_prepare.py --entry) say the scaling, its tables, as the page.
 # A float32 file whose converter put its own yarn or llama3 scaling in the options has its tables made anew by the same
 # formula: the same numbers, but for where the float64 of convert/plan.py is rounded to float32)

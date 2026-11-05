@@ -1,4 +1,4 @@
-// tests/worker-harness.ts (T.357, out of tests/worker-check.ts where T.129 wrote it)
+// tests/worker-harness.ts (T357, out of tests/worker-check.ts where T129 wrote it)
 // src/runtime/worker.js and its modules in a vm context whose global is its self, as in a worker, on a made-up network and
 // a clock of the test's: what the checks that run the worker in Node share (worker-check.ts: where fetching and loading
 // meet; worker-fetches-check.ts: what a conversion asks for).
@@ -9,7 +9,7 @@
 //                          told, and the first message the check sends is the worker's first
 //
 //   context, run(code)     the worker's global (the top level of every module is its own) and a line run in it. The line
-//                          is strict: a name it assigns that no module declares is a ReferenceError (T.378.3: what the
+//                          is strict: a name it assigns that no module declares is a ReferenceError (T378.3: what the
 //                          modules hold are their own `let`s, and a line written for a variable that is gone would
 //                          make a global nothing reads, without a word)
 //   fresh(route)           forgets the requests and the messages; route(url, init, n) answers the n-th request of that
@@ -35,7 +35,7 @@ import { treeOf } from "./tree.ts";
 export const strictly = (code) => `"use strict"; ${code}`;
 
 /** The site's root as these checks have it: the folder of what is served as it is, where models/ is. A worker whose
- * files a bundler links is told the root by the page with every load (T.367.3: its own URL is under _astro/, and
+ * files a bundler links is told the root by the page with every load (T367.3: its own URL is under _astro/, and
  * models/ is not beside it); the checks call load() and download() themselves, so the harness says it once, as the
  * page's first message would. A worker that finds models/ from its own file's URL (each file served as it is, beside
  * models/) has nothing to be told: the same folder either way, so a check's URLs are the same in both. */
@@ -47,14 +47,14 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
   const realNow = () => performance.now();
   // A timer that never fires before its time by performance.now(), as a browser's never does. Node's may: of 400
   // setTimeout(30) one or two fired after 28.2 to 29.9 ms on the development machine. A hundred times as fast, that
-  // millisecond is a tenth of the worker's second, and "given up after 30 seconds" was measured as 29.9 (T.386: a
+  // millisecond is a tenth of the worker's second, and "given up after 30 seconds" was measured as 29.9 (T386: a
   // run of CI fell on it). A timer that comes early waits for the rest.
   function timer(f, ms, args = [], again = false) {
     const handle = { real: null, due: realNow() + ms };
     const fire = () => {
       const left = handle.due - realNow();
       if (left > 0) { handle.real = setTimeout(fire, Math.ceil(left)); return; }
-      if (again) { handle.due = Math.max(handle.due + ms, realNow()); handle.real = setTimeout(fire, Math.max(0, handle.due - realNow())); }  // (T.437: the clock read again may be past due: no negative delay)
+      if (again) { handle.due = Math.max(handle.due + ms, realNow()); handle.real = setTimeout(fire, Math.max(0, handle.due - realNow())); }  // (T437: the clock read again may be past due: no negative delay)
       f(...args);
     };
     handle.real = setTimeout(fire, ms);
@@ -107,11 +107,11 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
   // Response, a promise of one, or "hang" (no answer until the request is aborted). Every request is written down.
   const { fetch: fetchStandIn, requests, answers } = madeUpNetwork({ now: clock.now });
 
-  // worker.js and its modules (T.350: tests/worker-source.ts makes scripts of them) in a vm context whose global is its
+  // worker.js and its modules (T350: tests/worker-source.ts makes scripts of them) in a vm context whose global is its
   // self, as in a worker
   const messages = [];
   // gpu: a WebGPU that gives no adapter (the worker asks for one as it begins: runtime.js's gpuAdapter is the check's to set),
-  // or (T.380.2) the check's own navigator.gpu
+  // or (T380.2) the check's own navigator.gpu
   const navigatorStandIn = { deviceMemory: 8, ...(gpu && { gpu: typeof gpu === "object" ? gpu : { requestAdapter: async () => null } }) };
   const context = vm.createContext({
     console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,

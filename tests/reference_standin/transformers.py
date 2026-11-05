@@ -1,4 +1,4 @@
-# A stand-in for transformers, for tests/reference_dry.py (T.357.4): the classes the reference tools ask for, answering
+# A stand-in for transformers, for tests/reference_dry.py (T357.4): the classes the reference tools ask for, answering
 # with the engine itself (the tensors converted by the converter), so that the tools run from their arguments to their
 # exit where there is no torch. Nothing is checked against transformers here: the engine is held to itself, and what
 # the dry run shows is that a tool's own steps, lines, verdicts and faults still work. CI holds the engine to the real
@@ -101,7 +101,7 @@ class Model:
         return out
 
     def embedding(self):
-        # (T.342: a Spark-X2.5's is model.embedding)
+        # (T342: a Spark-X2.5's is model.embedding)
         return next(value for key, value in self.tensors.items() if key.endswith(("embed_tokens.weight", "model.embedding.weight")))
 
     @property
@@ -218,13 +218,13 @@ class Gemma4TextConfig(Config):
 
 
 class Spark2_5Config(Config):
-    """(T.342) what reference_spark.py has of the model's own code, configuration_spark.py"""
+    """(T342) what reference_spark.py has of the model's own code, configuration_spark.py"""
     model_type = "spark2_5"
     defaults = dict(tie_word_embeddings=True, hidden_act="gelu", headwise_attn_output_gate=True, gate_attn_act_mode="sigmoid")
 
 
 class Gemma4Model(Model):
-    """(T.329.3) what reference_gemma4.py reads of transformers' modules: which layers share keys and values, how wide
+    """(T329.3) what reference_gemma4.py reads of transformers' modules: which layers share keys and values, how wide
     each FFN is (transformers' own rules: the last num_kv_shared_layers layers, twice as wide there where
     use_double_wide_mlp)"""
 
@@ -286,7 +286,7 @@ def Gemma3ForCausalLM(config):
 
 
 def Gemma4ForCausalLM(config):
-    """(T.329.3) as transformers' own: no k, v or their norms in a layer that reads another's"""
+    """(T329.3) as transformers' own: no k, v or their norms in a layer that reads another's"""
     import made_up
     kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in config.layer_types)
     rope = config.rope_parameters
@@ -305,7 +305,7 @@ def Gemma4ForCausalLM(config):
 
 
 def Spark2_5ForCausalLM(config):
-    """(T.342) what reference_spark.py has of the model's own code, modeling_spark.py"""
+    """(T342) what reference_spark.py has of the model's own code, modeling_spark.py"""
     import made_up
     kinds = "".join("s" if kind == "sliding_attention" else "l" for kind in config.layer_types)
     rope = config.rope_parameters

@@ -1,4 +1,4 @@
-// unchanged-gpusteps.ts (T.568.1)
+// unchanged-gpusteps.ts (T568.1)
 // What the model's GPU worker (src/runtime/gpu/) asks of a device for a few made-up models, as one JSON object of
 // hashes: every buffer it makes (their sizes and usages, counted), the shaders it compiles (counted), a prompt's blocks
 // (the writes with their bytes, the clears, the copies and the dispatches of three blocks, the second going on from the state the CPU
@@ -14,8 +14,8 @@
 //
 // The models: a Llama; a Qwen3 (biases of q, k and v, norms of the heads); a Gemma 3 (GEGLU, the norms behind, a
 // window and a local layer); an LFM2 (convolution layers around an attending one); a Qwen3.5 (two linear-attention
-// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T.271.1); the Qwen3.5 with its states in bundles (T.565, packed alone). Each
-// with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T.156, T.271.4). A step's keys and
+// layers and an attending one with the gate of its output); a GPT-2 and a GPT-NeoX (LayerNorms, biases, no gate); a Llama in a rotated basis (T271.1); the Qwen3.5 with its states in bundles (T565, packed alone). Each
+// with a packed tiled form and a float one; a Llama and a Qwen3.5 on the GPU alone too (T156, T271.4). A step's keys and
 // values going up from the CPU's cache (keysIn) besides, float16 and float32, a ring where a layer has a window.
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -61,7 +61,7 @@ for (const [model, made, packed, direct] of runs) {
       // then the rest from the shared memory)
       m = await device_.openDevice({ layers: plan.layers, matrices: plan.matrices, tables: plan.tables, force: {}, remembered: undefined, kinds: plan.kinds,
         places: plan.places, tokens: true });
-      // (T.626: a tree after it opens by the record's memory, null here, and takes the tables from open()'s plan; one
+      // (T626: a tree after it opens by the record's memory, null here, and takes the tables from open()'s plan; one
       // before it, by its second argument and from the record's plan, which is open()'s here: either reads its own)
       await uploadLayers(m, true);
       tablesOn(m, m.plan.tables);
@@ -110,7 +110,7 @@ for (const [model, made, packed, direct] of runs) {
     await block_.block(m, 2, 8, () => true, false, tokens(2), true);
     record(`${name}: a block of 2 at 8, from the GPU's own state`, since(from));
     // a step's keys and values up from the CPU's cache (requests.ts's generate()): float16 rows as they are, and float32 ones
-    // narrowed; a ring (T.510.1) for the windowed layers, the others' whole
+    // narrowed; a ring (T510.1) for the windowed layers, the others' whole
     if (!direct) {
       for (const half of [true, false]) {
         const places = cache.map(([keys, values], p) => ({ keys, values, ring: plan.windows[plan.kinds.flatMap((kind, l) => (kind === "attention" ? [l] : []))[p]] ? 6 : 0 }));
@@ -120,7 +120,7 @@ for (const [model, made, packed, direct] of runs) {
       }
     }
     if (packed) {
-      // (T.466: a token's attention and form are records of their own, m.tokenAttention and m.tokenForm; a tree before it
+      // (T466: a token's attention and form are records of their own, m.tokenAttention and m.tokenForm; a tree before it
       // reads them of m.tokens: both are set, and each tree reads its own)
       const chosen = { attention: { name: "the prompt's attention tiles", tiles: true, pipeline: attention.pipeline }, attentions: [], parts: undefined, params: undefined };
       m.tokens = { ...(await tokens_.tokenBuffers(m)), ...chosen, form: null, ms: undefined, forms: null };

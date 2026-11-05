@@ -1,4 +1,4 @@
-// plan-facts-check.ts (T.375.2)
+// plan-facts-check.ts (T375.2)
 // forward.ts reads what a model's layers are from the facts of Python's plan, and from no name of an architecture:
 // its own createForward() on the kernels (simdkernel_plain.wasm), for small made-up float32 models, against the
 // reference in NumPy (the native Python: tests/plan_facts.py makes each model, its plan and the reference's logits).
@@ -12,13 +12,13 @@
 // that read one of the two facts for the other would answer right for all of them; and the two made-up ones have
 // names forward.ts has never heard of.
 //
-// T.375.3: and the table of the kinds of layers is open. An LFM2's plan whose convolution layers are said to be of a
+// T375.3: and the table of the kinds of layers is open. An LFM2's plan whose convolution layers are said to be of a
 // kind forward.ts has not heard of, with that kind written here (outside the product, on what the engine hands a kind:
 // forward/kinds.ts's Core) and handed in beside the product's attention: NumPy's logits again, and the engine's own
 // rule for a kind that keeps a state (the positions in turn).
 //
 // For every model: the logits of every token one at a time are NumPy's (within LINE, and the same largest), and the same
-// again where the first tokens went through the layers as a prompt's block. T.484: LINE is 1e-5, not forward-check's
+// again where the first tokens went through the layers as a prompt's block. T484: LINE is 1e-5, not forward-check's
 // 1e-3 for float32: these made-up models are small, the right answers differ by at most 4.4e-7 (of 33 cases), and a
 // fact taken wrong moved them by less than 1e-3 (a RoPE of the wrong layers: AGENTS.md), which 1e-3 let through.
 //
@@ -45,12 +45,12 @@ try {
     { maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
   const bytes = (name) => new Uint8Array(fs.readFileSync(path.join(folder, name)));
   const PAGE = 65536, BASE = 64;
-  // T.375.3: a kind of layer of this file's own: an LFM2's short convolution (llama2_numpy's short_convolution() has the
+  // T375.3: a kind of layer of this file's own: an LFM2's short convolution (llama2_numpy's short_convolution() has the
   // rule), with nothing of forward/convolution.ts: its rows, its array of a token's frame, its step
   const OUTSIDE = "a kind written outside";
   let cleared = 0;
   const outside = {
-    // (T.375.5: what it says of a model's sizes, to the engine of the plan and to footprint() of the form: its array of
+    // (T375.5: what it says of a model's sizes, to the engine of the plan and to footprint() of the form: its array of
     // a token's frame, its rows, and which layers of a form are its own)
     frame: (sizes) => ({ arrays: [["gated", 3 * sizes.dim * 4]] }),
     state: (sizes, count) => [count * sizes.numbers.convolution.taps * sizes.dim * 4],
@@ -84,7 +84,7 @@ try {
     const wanted = new Float32Array(bytes(logits).buffer);
     assert.equal(wanted.length, tokens.length * vocab, `${name}: the reference's logits`);
     assert.deepEqual([plan.layer_norm, plan.gated_ffn, plan.activation], [facts.layer_norm, facts.gated_ffn, facts.activation], `${name}: the plan says the facts the reference computed by`);
-    // (T.261: and which layers are local ones, each by its two facts)
+    // (T261: and which layers are local ones, each by its two facts)
     assert.deepEqual(plan.layers.map(({ window, local }, l) => [l, window, local]).filter(([, window, local]) => window || local),
       facts.local.map((l) => [l, facts.window, true]), `${name}: the plan says the local layers the reference computed by`);
     const engine = () => {
@@ -117,7 +117,7 @@ try {
     const single = engine(), alone = [];
     tokens.forEach((token, pos) => { single.made.forward(token, pos, true); look(single.out, pos); alone.push(single.out.slice()); });
     single.made.release();
-    // T.329.2.2: a table of every layer's inputs not in the memory (the rest of the checkpoint after it as much lower),
+    // T329.2.2: a table of every layer's inputs not in the memory (the rest of the checkpoint after it as much lower),
     // its rows read from the file: the same logits to the bit, and every row read is the token's
     const hole = tableHole(plan.tensors);
     if (hole) {
@@ -143,9 +143,9 @@ try {
     const block = engine(), first = tokens.length - 3;
     block.made.forwardMany(tokens.slice(0, first), 0);
     tokens.slice(first).forEach((token, i) => { block.made.forward(token, first + i, true); look(block.out, first + i); });
-    // (T.375.3) a kind that keeps a state is cleared by position 0 and takes the positions in turn, whoever wrote it
+    // (T375.3) a kind that keeps a state is cleared by position 0 and takes the positions in turn, whoever wrote it
     if (kinds) {
-      // (T.375.5) footprint() asked with the same table sizes what this engine took: what the kind said of the form is
+      // (T375.5) footprint() asked with the same table sizes what this engine took: what the kind said of the form is
       // what it said of the plan, to the byte of the product's own convolution kind, and holds what was placed
       const header = [plan.dim, plan.hidden_dim, plan.n_layers, plan.n_heads, plan.n_kv_heads, plan.vocab_size, plan.seq_len];
       const form = { dtype: "float32", arch: plan.arch, head_dim: plan.head_size, convolution: plan.convolution };
@@ -183,6 +183,6 @@ try {
   fs.rmSync(folder, { recursive: true, force: true });
 }
 console.log(failed ? `plan-facts-check: FAILED (${failed})` : "plan-facts-check: ok");
-// (T.575: T.384's stand-still in process.exit() right after heavy work: 2 of 250 runs at once on the development machine,
+// (T575: T384's stand-still in process.exit() right after heavy work: 2 of 250 runs at once on the development machine,
 // one of them in a run of the light suite; a moment first, as worker-fetches-check's)
 setTimeout(() => process.stdout.write("", () => process.exit(failed ? 1 : 0)), 200);

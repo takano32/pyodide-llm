@@ -1,7 +1,7 @@
-// gpu/attention.ts (T.568.2): the attending layers on the GPU, a kind of gpu/kinds.ts's table: in a block q, k and v of
-// the normed stream (T.153: Qwen2's biases, Qwen3's norms of the heads; T.271.2: a Qwen3.5's gate of the output, of the
+// gpu/attention.ts (T568.2): the attending layers on the GPU, a kind of gpu/kinds.ts's table: in a block q, k and v of
+// the normed stream (T153: Qwen2's biases, Qwen3's norms of the heads; T271.2: a Qwen3.5's gate of the output, of the
 // same stream), RoPE into the GPU's own keys and values (block.ts's cache, an attending layer's by its place), the flash
-// attention, the gate, o; a token's step the same in a fused form (T.152, T.226), and the check of an attending first
+// attention, the gate, o; a token's step the same in a fused form (T152, T226), and the check of an attending first
 // layer. What they keep is the keys and values, which go back and forth with the CPU's as they are (block.ts's keysIn,
 // keysOut; tokens.ts's runTokens): no state is staged.
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
@@ -19,16 +19,16 @@ type HeadNorm = { group: GPUBindGroup; heads: number };
 
 export const attention: GpuKind = {
   cached: true,
-  // (T.271.3: a Qwen3.5's gate of the output, a matrix of the normed stream written as it is)
+  // (T271.3: a Qwen3.5's gate of the output, a matrix of the normed stream written as it is)
   matrices: (plan) => ({ qkv: ["wq", "wk", "wv"], ...(plan.matrices.wg ? { mix: ["wg"] } : {}), join: ["wo"] }),
   async block(m) {
     const { plan } = m, B = plan.batch, qDim = plan.heads * plan.headSize;
-    // T.271.2: the gate of a Qwen3.5's full-attention layers' output
+    // T271.2: the gate of a Qwen3.5's full-attention layers' output
     const outputGate = plan.matrices.wg ? { pipeline: await within(pipelineOf(m, ENGINE.OUTPUT_GATE), "the output's gate"), gated: buffer(m, B * qDim * 4) } : null;
     return {
       states: [],
-      // a layer's bind groups: q, k and v (T.153: a bias of each, Qwen2's, or the norm of every head of q and of k,
-      // Qwen3's, where the model has them; T.154: GPT-2's biases), the gate of the output, o and its bias
+      // a layer's bind groups: q, k and v (T153: a bias of each, Qwen2's, or the norm of every head of q and of k,
+      // Qwen3's, where the model has them; T154: GPT-2's biases), the gate of the output, o and its bias
       layer({ l, place, product, out, added }) {
         const b = m.block, V = m.weights.vectors!;
         const headNorm = (of: GPUBuffer, name: keyof Vectors, heads: number) =>
@@ -39,19 +39,19 @@ export const attention: GpuKind = {
         const gate = outputGate ? { into: product("wg", b.xb, outputGate.gated),
           group: bind(m, outputGate.pipeline, [b.xb, outputGate.gated, uniform(m, new Uint32Array([qDim, 0, 0, 0])), b.step]) } : null;
         const o = out("wo", b.xb), oBias = added(b.x, "bo"), flash = m.forms.attention;
-        // T.153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE; the attention over the
+        // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE; the attention over the
         // cache (block.ts's, as it is at the block: it grows), the gate, o
         return ({ pass, count, last, multiplied, quantized, biased, ffnNorm }) => {
           const cache = b.cache!;
           multiplied(q);
           multiplied(k);
           multiplied(v);
-          if (gate) multiplied(gate.into);  // (T.271.2: a Qwen3.5's gate of the output)
+          if (gate) multiplied(gate.into);  // (T271.2: a Qwen3.5's gate of the output)
           biases.forEach(biased);
           for (const head of headNorms) dispatch(pass, b.headNorm, head.group, head.heads, count);
           dispatch(pass, b.rope, cache.rope[place], count);
           if (last) return true;  // the keys and values are all a prompt's token leaves
-          // T.154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
+          // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
           if (plan.parallel) ffnNorm();
           dispatch(pass, flash.pipeline, cache.attention[place], plan.heads * Math.ceil(count / FLASH_Q_TILE));
           if (gate) dispatch(pass, outputGate!.pipeline, gate.group, Math.ceil(qDim / 64), count);
@@ -61,13 +61,13 @@ export const attention: GpuKind = {
           return false;
         };
       },
-      // T.226: a token's. A model whose q, k and v are not ready for RoPE as their matrix leaves them (T.153: Qwen2's
+      // T226: a token's. A model whose q, k and v are not ready for RoPE as their matrix leaves them (T153: Qwen2's
       // biases, Qwen3's norms of the heads) has the matrix write the three as they are into qkv (q's rows, then k's, then
       // v's), the prompt's ADD and HEAD_NORM change them there, and TOKEN_ROPE turns them into q and the cache. The biases
       // of a layer are one vector then, in the rows' order (one ADD for the three); k's heads are the rows after q's
       async tokens({ params, norm, layers }) {
         const kvDim = plan.kvHeads * plan.headSize, qkvRows = qDim + 2 * kvDim, { bq, bk, bv, qNorm } = plan.vectors;
-        // (T.261.4.2: the tiles' Params of each window the layers attend: 0 for every position, a Gemma 3's local layers')
+        // (T261.4.2: the tiles' Params of each window the layers attend: 0 for every position, a Gemma 3's local layers')
         const flashes = new Map<number, GPUBuffer>();
         const flashOf = (window: number) => {
           if (!flashes.has(window)) {
@@ -79,8 +79,8 @@ export const attention: GpuKind = {
           }
           return flashes.get(window)!;
         };
-        // (T.547.2.4: split, v apart from q and k, of two packings: written after them into qkv, weights.ts's tokensLayout;
-        // T.547.3.2: and k apart from q, written after it, where the two are of two packings too)
+        // (T547.2.4: split, v apart from q and k, of two packings: written after them into qkv, weights.ts's tokensLayout;
+        // T547.3.2: and k apart from q, written after it, where the two are of two packings too)
         const vAt = m.weights.together?.vAt ?? 0, kAt = m.weights.together?.kAt ?? 0, split = vAt > 0;
         const u = { flash: layers.map((_, l) => flashOf(plan.windows[l] ?? 0)), o: params(plan.dim, qDim),
           qkv: layers.map((at, l) => params(qkvRows, plan.dim, 0, at, turnedAt(plan, l))),
@@ -104,9 +104,9 @@ export const attention: GpuKind = {
           }
           biasShapes = layers.map((_, l) => uniform(m, new Uint32Array([qkvRows, l * qkvRows, 0, 0])));
         }
-        // (T.545.2: a layer's at its place among the attending layers, an LFM2's)
+        // (T545.2: a layer's at its place among the attending layers, an LFM2's)
         const headNorms = qNorm ? layers.map((_, l) => [0, plan.heads].map((first) => norm((qNorm.of ? plan.places[l] : l) * plan.headSize, plan.headSize, first))) : null;
-        // (T.271.3: a Qwen3.5's gate of its attending layers' output, from the normed stream: wg's Params a layer with its
+        // (T271.3: a Qwen3.5's gate of its attending layers' output, from the normed stream: wg's Params a layer with its
         // norm, OUTPUT_GATE's size)
         const gated = plan.matrices.wg ? { buffer: buffer(m, qDim * 4), params: layers.map((at) => params(qDim, plan.dim, 0, at)), size: uniform(m, new Uint32Array([qDim, 0, 0, 0])) } : null;
         return {
@@ -115,23 +115,23 @@ export const attention: GpuKind = {
             const g = m.tokens!, t = m.tokenAttention!, b = m.block, W = m.weights, V = W.vectors!, cache = b.cache!;
             const [o] = W.matrices.wo!.pieces, attended = plain(g.att, u.quantizeAttention, qDim);
             const added = (to: GPUBuffer, bias: GPUBuffer, shape: GPUBuffer, n: number): Pass => [b.add, bind(m, b.add, [to, bias, shape, g.step]), Math.ceil(n / 64), 1];
-            // where q, k and v go turned: q, and the cache at the Step's position (T.261.4.2: a local layer by its own table)
+            // where q, k and v go turned: q, and the cache at the Step's position (T261.4.2: a local layer by its own table)
             const turned: Entry[] = [[5, g.q], [6, cache.keys[place]], [7, cache.values[place]], [8, plan.local.includes(l) ? W.localAngleTable! : W.angleTable!], [9, g.step]];
             return [...normed.norm, ...normed.quantize,
-              // T.226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
-              // RoPE: as the CPU has it and a prompt's block (T.153), the biases, the norms of the heads of q and of k, RoPE
+              // T226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
+              // RoPE: as the CPU has it and a prompt's block (T153), the biases, the norms of the heads of q and of k, RoPE
               ...(split ? [...(kAt ? [matrix("qkv", W.matrices.wq!.pieces[0].layers[place], normed.input, u.q[l], qDim, [[5, { buffer: qkv!, offset: 0, size: qDim * 4 }]]),
                 matrix("qkv", W.matrices.wk!.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: kAt, size: kvDim * 4 }]])]
                 : [matrix("qkv", W.joined[l].qk, normed.input, u.qk[l], qDim + kvDim, [[5, qkv!]])]),
                 matrix("qkv", W.matrices.wv!.pieces[0].layers[place], normed.input, u.kv[l], kvDim, [[5, { buffer: qkv!, offset: vAt, size: kvDim * 4 }]])]
                 : [matrix("qkv", W.joined[l].qkv, normed.input, u.qkv[l], qkvRows, qkv ? [[5, qkv]] : turned)]),
-              // (T.271.3: a Qwen3.5's gate of the output, of the same normed stream)
+              // (T271.3: a Qwen3.5's gate of the output, of the same normed stream)
               ...(gated ? [matrix("mix", W.matrices.wg!.pieces[0].layers[place], normed.input, gated.params[l], qDim, [[5, gated.buffer]])] : []),
               ...(qkvBias ? [added(qkv!, qkvBias, biasShapes![l], qkvRows)] : []),
               ...(headNorms ? ([[V.qNorm!, plan.heads], [V.kNorm!, plan.kvHeads]] satisfies [GPUBuffer, number][]).map(([weights, heads], i): Pass =>
                 [b.headNorm, bind(m, b.headNorm, [qkv!, weights, headNorms[l][i], g.step]), heads, 1]) : []),
               ...(qkv ? [[rope!, bindAt(rope!, [[2, qkv], [3, u.qkv[l]], ...turned]), 1, 1]] satisfies Pass[] : []),
-              // T.154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which
+              // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which
               // q, k and v have read by now; a norm on the matrix's read would come too late: chooseTokens refuses the pair)
               ...(plan.parallel ? ffnNorm : []),
               ...attentionPasses(m, t.attention, { q: g.q, keys: cache.keys[place], values: cache.values[place], out: g.att, parts: t.parts, params: t.params,
@@ -141,9 +141,9 @@ export const attention: GpuKind = {
           },
         };
       },
-      // T.545.2: an attending first layer: its q, k and v, its attention over position 0 (the cache's row 0, random) and
-      // its own, o. As the CPU has it (forward.ts), the biases (Qwen2's; T.154's), then the norms of the heads of q and k
-      // (Qwen3's), then RoPE (all of a head, T.154: a part of it, or none); the first layer's of each, where the model has them
+      // T545.2: an attending first layer: its q, k and v, its attention over position 0 (the cache's row 0, random) and
+      // its own, o. As the CPU has it (forward.ts), the biases (Qwen2's; T154's), then the norms of the heads of q and k
+      // (Qwen3's), then RoPE (all of a head, T154: a part of it, or none); the first layer's of each, where the model has them
       first() {
         return {
           copies() {},
@@ -155,7 +155,7 @@ export const attention: GpuKind = {
               const weights = vectorOf(name);
               for (let at = 0; weights && at < x.length; at += headSize) x.set(rms(x.subarray(at, at + headSize), weights), at);
             }
-            // (T.261.4.2: a local layer's angles are of its own tables)
+            // (T261.4.2: a local layer's angles are of its own tables)
             const [cosAt, sinAt] = plan.local.includes(0) ? [plan.localCos, plan.localSin] : [plan.cos, plan.sin];
             const cos = floats(cosAt + pos * half * 4, half), sin = floats(sinAt + pos * half * 4, half);
             const turn = (vector: Float64Array) => {
@@ -181,7 +181,7 @@ export const attention: GpuKind = {
               const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
               for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
             }
-            // (T.271.3: a Qwen3.5's gate of the output, of the normed stream)
+            // (T271.3: a Qwen3.5's gate of the output, of the normed stream)
             if (plan.matrices.wg) {
               const gate = matmul("wg", xn);
               att.forEach((value, i) => { att[i] = value / (1 + Math.exp(-gate[i])); });

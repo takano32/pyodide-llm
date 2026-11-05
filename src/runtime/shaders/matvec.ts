@@ -1,19 +1,19 @@
-// shaders/matvec.ts (T.351): T.149's matrix times one vector in the forms of public implementations that the engine has
+// shaders/matvec.ts (T351): T149's matrix times one vector in the forms of public implementations that the engine has
 // no text of: llama.cpp's mul_mat_vec in its MMVQ form (the int8 dot) and ONNX Runtime's MatMulNBits, each under its
-// notice below. /benchmark/'s GPU section alone runs these two. (T.624.2: the other two forms T.149 measured, llama.cpp's
+// notice below. /benchmark/'s GPU section alone runs these two. (T624.2: the other two forms T149 measured, llama.cpp's
 // widened mul_mat_vec and ORT's DP4A for small M, were copies here of what the fused layer of a generated token,
 // fused.ts, is made from; /benchmark/ runs the engine's own texts of them now, fusedMatVec and fusedDp4aMatVec with the
 // output "write", and this part takes from fused.ts the start of mul_mat_vec's main() and the rows a workgroup has.
-// The engine's part reads nothing of this one: T.391.4.)
+// The engine's part reads nothing of this one: T391.4.)
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { MUL_MAT_VEC_ROWS, mulMatVecMain } from "./fused.ts";
 
-// ---- T.149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
-// section of /benchmark/ to measure beside WIDEN and PACKED and the engine's two forms (T.624.2). WIDEN and PACKED give
+// ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
+// section of /benchmark/ to measure beside WIDEN and PACKED and the engine's two forms (T624.2). WIDEN and PACKED give
 // a row a workgroup of 64 threads that read one u32 each at a time; on the owner's Android they read Llama 3.2 1B's
-// classifier at 27 to 36 GB/s but its w1 (16.8 MB) at 3.3 to 15.7 (T.134). These read more at once and give a
+// classifier at 27 to 36 GB/s but its w1 (16.8 MB) at 3.3 to 15.7 (T134). These read more at once and give a
 // workgroup several rows:
 //   mulMatVec({ subgroups }): llama.cpp's WebGPU mul_mat_vec (mul_mat_vec.wgsl with mul_mat_vec_q_acc.tmpl's MMVQ path
 //     for Q8_0): 256 threads for OUTPUTS_PER_WG rows, four threads to a group of 32 (two u32 of the weights against two

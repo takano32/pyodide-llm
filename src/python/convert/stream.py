@@ -30,7 +30,7 @@ def convert_weights(source, config, dtype, max_seq_len, out, progress=None, quan
 
 
 def piecewise(transform):
-    """Whether a tensor with this transform goes piece by piece, as it comes: one with none, and (T.261) one that is
+    """Whether a tensor with this transform goes piece by piece, as it comes: one with none, and (T261) one that is
     multiplied by a number and nothing else, whose every row is the same whatever piece it comes in (a Gemma's
     embedding, a table of 262,144 rows, which would otherwise be held whole in float32). Every other transform is
     given its whole tensor, as before: a tuple of steps too. Which transform is so is its line of TRANSFORMS."""
@@ -87,27 +87,27 @@ class Stream:
     header: the JSON of the file (its first 8 bytes say how long it is), base: where the tensors begin, start: the
     position in the file of the first byte that feed() will get. out: a buffer of checkpoint_size() bytes, or None
     to have one made (self.out). sink and quantize_rows: see Writer. readers: the readers of the stored types on
-    the SIMD kernels, by the type's name (convert/readers.py's kernel_readers(): bfloat16, T.123; GGUF's Q8_0, T.136; the
-    two ternary types, T.273), the same float32 as SOURCES' own, which read whatever type has none here.
+    the SIMD kernels, by the type's name (convert/readers.py's kernel_readers(): bfloat16, T123; GGUF's Q8_0, T136; the
+    two ternary types, T273), the same float32 as SOURCES' own, which read whatever type has none here.
     """
 
     def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None, quantize_rows=None,
                  readers=None):
         config = normalize(config)
         self.readers = readers or {}
-        # T.385: how each stored type that has a kernel's reader was widened, by its name: "kernel" or "NumPy"
+        # T385: how each stored type that has a kernel's reader was widened, by its name: "kernel" or "NumPy"
         # (a page's conversion without its reader is only slower, and said nowhere else)
         self.widened = {}
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
-        self.rotated = header_rotated(header)  # T.237: what checkpoint_form() asks
+        self.rotated = header_rotated(header)  # T237: what checkpoint_form() asks
         self.header = checkpoint_header(config, self, max_seq_len)
         self.head_size = head_size(config)
-        # what lays out the checkpoint and sizes the forward pass that the header does not say (T.115, T.124, T.144):
+        # what lays out the checkpoint and sizes the forward pass that the header does not say (T115, T124, T144):
         # the options say it, and the worker's footprint() reads it
         self.form = self.shaped(config)
         if callable(dtype):
-            # T.115: chosen once the header is known, from the size each quantized dtype would take (the worker's
+            # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
             sizes = {name: self.size(name) for name in EITHER}
             dtype = str(dtype(list(self.header), self.form, sizes))
@@ -138,7 +138,7 @@ class Stream:
         self.steps = []
         for name, info in sorted(self.tensors.items(), key=lambda item: item[1]["data_offsets"][0]):
             begin, end = info["data_offsets"]
-            # T.136: a table to check as it passes, not to convert (gguf_weights)
+            # T136: a table to check as it passes, not to convert (gguf_weights)
             target = wanted.get(name) or ("check" if info.get("rope_freqs") else None)
             self.steps.append((base + begin, base + end, name, target))
         self.position, self.step, self.pending, self.first = start, 0, bytearray(), 0
@@ -185,7 +185,7 @@ class Stream:
         if source.kernel:
             self.widened[source.name] = "NumPy" if reader is source.read else "kernel"
         shape = tuple(info["shape"])
-        # T.136's third stage: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in), is read in that shape
+        # T136's third stage: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in), is read in that shape
         stored = tuple(reversed(shape)) if info.get("transposed") else shape
         row = source.bytes(math.prod(stored[1:]) if len(stored) > 1 else int(stored[0]))
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes.
@@ -223,7 +223,7 @@ class Stream:
         return self.header
 
 
-# ---- T.363.3: a GGUF's blocks kept as they are
+# ---- T363.3: a GGUF's blocks kept as they are
 class Kept(Stream):
     """The same conversion with the tensors a GGUF holds in llama.cpp's blocks left the bytes they are, where they can
     be (kept_form()): the form says the kinds of those rows ("kinds"), and dtype how the others are stored. A row is whole
@@ -278,7 +278,7 @@ def stays(info, transform):
     """Whether a tensor of the file can be its row's bytes as it is: in llama.cpp's blocks, and reaching the row by
     moves of whole rows alone (a row is whole blocks), with no value changed and nothing transposed. Value heads tiled
     along the columns (a Qwen3.5's ssm_out, by half a block) are no such move: they stay where they are, and the form
-    says so (kept_form()'s "tiled"). T.636: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in) and the reader
+    says so (kept_form()'s "tiled"). T636: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in) and the reader
     turns to Hugging Face's (in, out) ("transposed"), is turned back by its one step of the plan, a transpose or one
     of c_attn's parts: its rows are the file's, or a run of them. Which transforms are so are TRANSFORMS' moves_rows
     and turns_back."""
@@ -311,7 +311,7 @@ def kept_form(plan, rows, tensors):
 def order(info, transform, head_size):
     """The rows of a tensor of the file, by their numbers there, that its row of the checkpoint is made of, one after
     the other: what convert() does to the values (a GGUF's own order put back, then the plan's transform), done to the
-    numbers of the rows. A transposed tensor's numbers are a row of the (in, out) the reader hands on (T.636)."""
+    numbers of the rows. A transposed tensor's numbers are a row of the (in, out) the reader hands on (T636)."""
     rows = np.arange(held(info)[0])
     if info.get("transposed"):
         return transformed(rows[None, :], transform, head_size).ravel()
@@ -325,7 +325,7 @@ def order(info, transform, head_size):
 
 
 def left_to_do(transform, done):
-    """transform without the step a GGUF's tensor comes with (gguf_model()'s "done", T.236: the 1 llama.cpp adds to a
+    """transform without the step a GGUF's tensor comes with (gguf_model()'s "done", T236: the 1 llama.cpp adds to a
     Qwen3.5's norms, its -exp(A_log)). A tensor said to come with a step the plan does not have for it is refused: the
     table of names and the plan would have drifted apart, and the values would go through changed once too often."""
     if not done:
@@ -345,13 +345,13 @@ def unturned(w, heads):
 
 def unsplit(w, heads):
     """GPT-NeoX's query_key_value (or its bias) as llama.cpp stores it, [all of q; all of k; all of v], back to
-    Hugging Face's order, q, k and v of the first head, then of the second, ... (T.136's third stage)."""
+    Hugging Face's order, q, k and v of the first head, then of the second, ... (T136's third stage)."""
     return w.reshape(3, heads, w.shape[0] // 3 // heads, -1).swapaxes(0, 1).reshape(w.shape)
 
 
 def untiled(w, first, key_heads, per, size, axis=0):
     """The value heads of a Qwen3.5's linear-attention layer as llama.cpp stores them where a key head has per (more
-    than one) of them, back to Hugging Face's order (T.245). Hugging Face holds them grouped by their key head: the per
+    than one) of them, back to Hugging Face's order (T245). Hugging Face holds them grouped by their key head: the per
     value heads of key head 0, then those of key head 1, ... llama.cpp writes them tiled, every key head's first value
     head, then every key head's second, ..., so that its broadcast of the key heads over the value heads is a plain
     repeat (conversion/qwen.py's _reorder_v_heads at dcd387a4): the value head at place j * key_heads + h of the GGUF

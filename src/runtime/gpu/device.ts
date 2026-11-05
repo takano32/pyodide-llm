@@ -1,12 +1,12 @@
 // What every part of the model's GPU worker stands on: what the parts share (the model's record, whether a stop was
 // asked, a device lost), the time a step may take, the device and why there is none, the worker's end, and buffers:
 // made, written from the shared memory, read back, bound and dispatched.
-// (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
-// (T.367.5: the WGSL is no module handed round any more. Every module of this worker takes the names it uses from the
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
+// (T367.5: the WGSL is no module handed round any more. Every module of this worker takes the names it uses from the
 // shaders' parts, src/runtime/shaders/<part>.ts, as it takes its neighbours': linked into the worker's file, with
 // nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.ts's, the same
 // text the model's worker reads its key from: tests/dist-check.ts holds the two built files to one key.)
-// (T.379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
+// (T379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
@@ -22,7 +22,7 @@ import type { TokenBuffers } from "./tokens.ts";
 import type { Chosen as TokenAttentionChosen } from "./tokenattention.ts";
 import type { TokenChoice } from "./tokenforms.ts";
 
-// T.368.6: the types of what the parts of this worker hand one another. They say the shapes as they are (the record's
+// T368.6: the types of what the parts of this worker hand one another. They say the shapes as they are (the record's
 // own notes are below, at model).
 //
 // What the adapter said of itself, where it says anything (adapter.info is missing in an older browser, which said
@@ -35,10 +35,10 @@ type Opening = Opened & { tokens: true };
 // the other modules. plan is start()'s: a model on the GPU alone is opened with another (Opening) before its
 // checkpoint comes, of which only what the two plans share is read (matrices, layers, force, remembered, whether
 // there are tokens; the tables through weights.ts's tablesOf()) until handed() puts start()'s in, with the memory
-// (null till then; T.626: what runs then takes the record as Open, below, whose type holds it to that). weights, block and forms are set by their owners before another module reads them, in start()'s
-// order; tokens, tokenAttention and tokenForm are set as a token's are chosen (T.466), with the form null (or the
-// records unset, T.467) where no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
-// tokensSaid()). T.479: the type says those three may be missing, and their readers take them once at their heads with `!`,
+// (null till then; T626: what runs then takes the record as Open, below, whose type holds it to that). weights, block and forms are set by their owners before another module reads them, in start()'s
+// order; tokens, tokenAttention and tokenForm are set as a token's are chosen (T466), with the form null (or the
+// records unset, T467) where no form of them is right here (the two that may meet it ask for the form: requests.ts's generate(), tokenforms.ts's
+// tokensSaid()). T479: the type says those three may be missing, and their readers take them once at their heads with `!`,
 // after the form's check where there is one
 type Base = {
   device: GPUDevice;
@@ -53,11 +53,11 @@ type Base = {
   adapter: Adapter;
   key: string;
   ternary: boolean;
-  // T.547.2.3: the shaders the model has of its own (ternary's, or Q4_K's beside int8), which its key holds
+  // T547.2.3: the shaders the model has of its own (ternary's, or Q4_K's beside int8), which its key holds
   own: Own;
 };
 type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens?: TokenBuffers; tokenAttention?: TokenAttentionChosen; tokenForm?: TokenChoice };
-// T.626: the record of a model, or of one on the GPU alone as it opens, before handed() puts start()'s plan and the
+// T626: the record of a model, or of one on the GPU alone as it opens, before handed() puts start()'s plan and the
 // memory in (its memory null till then says which): what runs then (start.ts's open(), and routed() as the checkpoint's
 // bytes come) takes this, and reads only what the two plans share where it is not told which
 type Open = Model | (Omit<Model, "plan" | "memory"> & { plan: Opening; memory: null });
@@ -70,7 +70,7 @@ type Bound = Whole | GPUBufferBinding;
 type Pass = [GPUComputePipeline, GPUBindGroup, number, number];
 // what is caught, as it is read: an Error's message, and within()'s late
 type Thrown = { message?: string } | null | undefined;
-// (T.479: what a caught value says, as the worker tells it: its message, else the value itself)
+// (T479: what a caught value says, as the worker tells it: its message, else the value itself)
 const whyOf = (error: unknown) => String((error as Thrown)?.message ?? error);
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
@@ -80,29 +80,29 @@ const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 
 const CHUNK = 8 << 20;
 
 
-// T.232: the bytes of a row of a matrix or a table ({ n, packing }) on the GPU (T.547.2.1: its packing's, packings.ts)
+// T232: the bytes of a row of a matrix or a table ({ n, packing }) on the GPU (T547.2.1: its packing's, packings.ts)
 const rowBytes = ({ n, packing }: { n: number; packing: GpuPacking }) => PACKINGS[packing].row(n);
 // (whether the model's weights are ternary: a ternary checkpoint's matrices are all ternary, llama2_numpy's dtype, and no
 // other model has a ternary one)
-// (T.547.3.1's review: a layer's of a stack whose layers are each of a packing of their own too)
-// (T.634.3: or binary, which goes up as ternary codes)
+// (T547.3.1's review: a layer's of a stack whose layers are each of a packing of their own too)
+// (T634.3: or binary, which goes up as ternary codes)
 const ternaryPlan = (plan: { matrices: Matrices }) => Object.values(plan.matrices).some((matrix) => packingsOf(matrix).some(asTernary));
-// T.547.2.3: the shaders a model has of its own: ternary's, or (a matrix of llama.cpp's blocks among int8 ones) Q4_K's
-// (T.547.3.1: a layer's of a stack whose layers are each of a packing of their own too)
-// (T.547.3.6's review: and a table's, the classifier's or the embedding's, of a model whose matrices are no blocks)
+// T547.2.3: the shaders a model has of its own: ternary's, or (a matrix of llama.cpp's blocks among int8 ones) Q4_K's
+// (T547.3.1: a layer's of a stack whose layers are each of a packing of their own too)
+// (T547.3.6's review: and a table's, the classifier's or the embedding's, of a model whose matrices are no blocks)
 const ownOf = (plan: { matrices: Matrices; tokens?: TokensPlan | null | true; tables?: Tables }): Own => {
   const tables = plan.tables ?? (plan.tokens === true ? null : plan.tokens);
   return ternaryPlan(plan) ? "ternary"
   : [...Object.values(plan.matrices), ...[tables?.classifier, tables?.embedding].filter((table) => table !== null && table !== undefined)]
     .some((matrix) => packingsOf(matrix).some(isBlock)) ? "blocks" : null;
 };
-// T.255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
+// T255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
 // and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
 const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (plan.unturned?.includes(l) ? 0 : plan.turned);
 
-// T.378.4: what the parts of this worker read and this one alone sets (a static import is the live binding: the others
+// T378.4: what the parts of this worker read and this one alone sets (a static import is the live binding: the others
 // take the names and read them, and say what happened where they have something to say: stopAsked(), handed(),
-// held()). They were the fields of one object, common, that any part could set (T.352)
+// held()). They were the fields of one object, common, that any part could set (T352)
 //
 // model is the record of what is on the GPU for the model. What openDevice() puts in it is this module's and is read
 // by all: the device, the plan and the shared memory, the buffers that live as long as the model (owned), and what
@@ -110,7 +110,7 @@ const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (pla
 //   model.weights  weights.ts   the layers' matrices and vectors and a token's tables, as buffers
 //   model.block    block.ts     the small steps' pipelines, a block's buffers and bind groups, the keys and values
 //   model.forms    forms.ts     the prompt's attention and tiled shader chosen here, and what each one tried came to
-//   model.tokens   tokenforms.ts  a token's buffers and pipelines (tokens.ts's tokenBuffers() declares them, T.466)
+//   model.tokens   tokenforms.ts  a token's buffers and pipelines (tokens.ts's tokenBuffers() declares them, T466)
 //   model.tokenAttention  tokenattention.ts  the attention of a token chosen here, and what each one tried came to
 //   model.tokenForm  tokenforms.ts  the form of a token's layer chosen here, its ms a step and what each form came to
 // (tests/gpu-modules-check.ts holds every field read to one its owner declares, and every write to its owner)
@@ -122,7 +122,7 @@ function stopAsked() {
   stopping = true;
 }
 // start() was asked: the shared memory the model's weights and requests are read from, and the plan that says where
-// (a model on the GPU alone was opened with another, before its checkpoint came: T.156)
+// (a model on the GPU alone was opened with another, before its checkpoint came: T156)
 function handed(memory: WebAssembly.Memory, plan: Started) {
   model!.memory = memory;
   model!.plan = plan;
@@ -135,12 +135,12 @@ function held(m: Model, buffers: GPUBuffer[]) {
 
 
 // The most a step of putting the model on the GPU may take: a shader's compilation, a check, the timing, a layer's
-// weights. SwiftShader took up to 90 s to compile llama.cpp's 64×64 tiles on the development machine (T.147), a GPU
+// weights. SwiftShader took up to 90 s to compile llama.cpp's 64×64 tiles on the development machine (T147), a GPU
 // compiles in far less; twice that is a GPU that hangs. The worker then gives the GPU up (the prompt stays on the
 // CPU), and says { type: "progress" } after every step meanwhile (forward.ts gives up a worker that says nothing for
 // longer than this: one the browser ended)
 const STEP_MS = 180000;
-// (T.380.1: a step past its time is a Failure of the kind "late": whoever tries one shader after another asks isLate()
+// (T380.1: a step past its time is a Failure of the kind "late": whoever tries one shader after another asks isLate()
 // of what it caught, and throws that on: it is not a shader that is wrong, it ends the whole attempt)
 const isLate = (error: unknown) => kindOf(error) === "late";
 function within<T>(promise: Promise<T>, what: string): Promise<T> {
@@ -158,25 +158,25 @@ function within<T>(promise: Promise<T>, what: string): Promise<T> {
 // none (say(why): unusable() by default) or the worker is stopping
 async function openDevice(plan: Started | Opening, say: (reason: string) => void = unusable): Promise<Model | void> {
     if (!self.navigator?.gpu) return say(REASONS.noWebGpu);
-    // the browser's own adapter (T.148, the review: "high-performance" would keep a laptop's second GPU awake for the
+    // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
     const adapter: Adapter | null = await navigator.gpu.requestAdapter();
     if (stopping) return end();
     if (!adapter) return say(REASONS.noAdapter);
-    // T.148: a fallback adapter is the CPU doing the GPU's work (SwiftShader, lavapipe): never faster than the CPU's
-    // own kernels, and its compilation of the shaders alone took 2 to 4 minutes (T.147). Refused before anything is
+    // T148: a fallback adapter is the CPU doing the GPU's work (SwiftShader, lavapipe): never faster than the CPU's
+    // own kernels, and its compilation of the shaders alone took 2 to 4 minutes (T147). Refused before anything is
     // made on it, but where a test asks for it (it is the only WebGPU of CI and of the development machine)
     const info: Info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
     if (fallback && !plan.force.fallback) return say(REASONS.fallback);
-    // T.232: ternary weights are multiplied as packed int8 alone (shaders/prompt.ts's TERNARY_PACKED; T.547.2.3: and Q4_K's
+    // T232: ternary weights are multiplied as packed int8 alone (shaders/prompt.ts's TERNARY_PACKED; T547.2.3: and Q4_K's
     // blocks, packings.ts's dot): said before anything goes up
     const ternary = ternaryPlan(plan), own = ownOf(plan);
     const dotted = Object.values(plan.matrices).flatMap(packingsOf).find((packing) => PACKINGS[packing].dot);
     if (dotted && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
       return say(REASONS.packed(dotted));
     }
-    // the largest buffer the device binds (T.155: a matrix larger than it goes in pieces, piecesOf)
+    // the largest buffer the device binds (T155: a matrix larger than it goes in pieces, piecesOf)
     const limit = Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize);
     // shader-f16 and subgroups where the adapter has them (a device refuses a feature it lacks), and the adapter's
     // workgroup memory and threads (the tiles and the attention size themselves by them)
@@ -187,9 +187,9 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
       requiredLimits: { maxStorageBufferBindingSize, maxBufferSize, maxComputeWorkgroupStorageSize, maxComputeInvocationsPerWorkgroup,
         maxComputeWorkgroupSizeX } });
     device.lost.then((info) => { lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
-    // T.148: what the page keeps of an earlier visit counts only for the same adapter and browser
-    // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T.148)
-    // (T.232: a ternary model's key holds its own shaders too; T.547.2.3: and a model of Q4_K blocks its own)
+    // T148: what the page keeps of an earlier visit counts only for the same adapter and browser
+    // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T148)
+    // (T232: a ternary model's key holds its own shaders too; T547.2.3: and a model of Q4_K blocks its own)
     const key = deviceKey(adapter, device, own);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
     model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, ternary, own } satisfies Made as unknown as Model;
@@ -211,8 +211,8 @@ function unusable(reason: string) {
   end();
 }
 
-// every buffer and the device let go (T.94: a model changed for another leaves nothing on the GPU), and this worker ends.
-// T.205: it says { type: "ended" } first, for src/runtime/forward/engine.ts's release() to read the next model after it. Every way out of
+// every buffer and the device let go (T94: a model changed for another leaves nothing on the GPU), and this worker ends.
+// T205: it says { type: "ended" } first, for src/runtime/forward/engine.ts's release() to read the next model after it. Every way out of
 // start() comes here (a stop in the middle of it at its next step), and a stop before or after start() at once
 function end() {
   if (model) {
@@ -246,7 +246,7 @@ function copyIn(m: Model, target: GPUBuffer, address: number, bytes: number, off
     m.device.queue.writeBuffer(target, offset + done, scratch, 0, n);
   }
 }
-// T.634.3: bytes of binary weights of the shared memory at address (whole groups of 16) onto the GPU as ternary's codes,
+// T634.3: bytes of binary weights of the shared memory at address (whole groups of 16) onto the GPU as ternary's codes,
 // twice as many (at offset of target), a CHUNK of codes at a time (packings.ts's spreadBits)
 let spreadOut: Uint8Array<ArrayBuffer> | undefined;
 function spreadIn(m: Model, target: GPUBuffer, address: number, bytes: number, offset = 0) {
@@ -257,7 +257,7 @@ function spreadIn(m: Model, target: GPUBuffer, address: number, bytes: number, o
     m.device.queue.writeBuffer(target, offset + 2 * done, spreadOut, 0, 2 * n);
   }
 }
-// T.152's review (T.160): values float32 of the shared memory at address narrowed to float16 onto the GPU (at offset
+// T152's review (T160): values float32 of the shared memory at address narrowed to float16 onto the GPU (at offset
 // of target, in bytes of float16), a CHUNK of them at a time: a float32 cache's keys and values going up
 let narrowed: Uint16Array<ArrayBuffer> | undefined;
 function narrowIn(m: Model, target: GPUBuffer, address: number, values: number, offset = 0) {
@@ -268,7 +268,7 @@ function narrowIn(m: Model, target: GPUBuffer, address: number, values: number, 
     m.device.queue.writeBuffer(target, offset + done * 2, narrowed, 0, n);
   }
 }
-// T.533: float16 scales of the shared memory at address (halves of them) widened to float32 onto the GPU (at offset of
+// T533: float16 scales of the shared memory at address (halves of them) widened to float32 onto the GPU (at offset of
 // target, in bytes), a CHUNK at a time: ternary's scales, which the checkpoint holds as float16s and the shaders read
 // as float32s (exactly: every finite half is a float32's). widenedHalves (the same of bytes as they come, routed())
 let widened: Float32Array<ArrayBuffer> | undefined;
@@ -324,8 +324,8 @@ function normShape(m: Model, size: number, at: number, eps: number, first = 0) {
   new Float32Array(shape, 8, 1)[0] = eps;
   return uniform(m, shape);
 }
-// (a buffer, or { buffer, offset, size }: a part of one, T.155's pieces of a matrix writing into their rows of the output)
-// (a buffer's binding is its place among them; T.547.2.3: null, none there: the scales of a matrix whose blocks hold them)
+// (a buffer, or { buffer, offset, size }: a part of one, T155's pieces of a matrix writing into their rows of the output)
+// (a buffer's binding is its place among them; T547.2.3: null, none there: the scales of a matrix whose blocks hold them)
 const bind = (m: Model, pipeline: GPUComputePipeline, buffers: (Bound | null)[]) => m.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
   entries: buffers.flatMap((buffer, binding) => (buffer ? [{ binding, resource: buffer.buffer ? buffer : { buffer } }] : [])) });
 function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, group: GPUBindGroup, x: number, y = 1, z = 1) {

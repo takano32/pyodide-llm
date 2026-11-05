@@ -1,4 +1,4 @@
-"""T.238: the parts of tests/reference_27b.py that can be checked without the 27B: how a PTQ1_0 block is read, and the
+"""T238: the parts of tests/reference_27b.py that can be checked without the 27B: how a PTQ1_0 block is read, and the
 one pass that serves every position (Conductor) against the engine's forward pass a position at a time."""
 import json
 import numpy as np
@@ -27,7 +27,7 @@ def test_a_ptq1_0_block_is_read_as_the_fork_packs_it():
 
 
 def test_the_bytes_of_a_block_hold_the_weights_the_survey_found():
-    """The places as T.228 read them from the fork: weights 0 to 15 are the first digits of qs[0..15], 16 to 31 their
+    """The places as T228 read them from the fork: weights 0 to 15 are the first digits of qs[0..15], 16 to 31 their
     second digits; 80 to 87 the first digits of qs[16..23]; 120 and 121 the first digits of qh[0] and qh[1]."""
     def block(byte_index, digit):
         # the bytes of zeros alone: five digits 1 are 121, ceil(121 * 256 / 243) = 128; four, shifted up, 120: 127
@@ -100,7 +100,7 @@ def test_a_job_that_fails_ends_the_pass():
     raise AssertionError("the error of a job was lost")
 
 
-# ------------------------------------------------------------------------------------------- the review of T.237
+# ------------------------------------------------------------------------------------------- the review of T237
 def test_the_roundings_of_the_page_are_what_the_converter_makes_of_a_row():
     """The page's 8-bit rounding (Safari) is llama2_convert.quantize() on the activation (which quantize_x is to the bit,
     smoke.ts); the 7-bit one (relaxed SIMD) is the same with 63."""
@@ -174,7 +174,7 @@ def test_the_signs_a_broken_run_is_given_differ_from_the_files_where_it_says():
 # ------------------------------------------------------------------------------------------- the reference reads a GGUF as the converter does
 def rotated_qwen35_gguf(tmp_path, shape):
     """A rotated Qwen3.5 GGUF as the 27B's is (a classifier of its own, the basis in the metadata, and where a key head has
-    more value heads than one the value heads of every tensor but the output matrix's columns tiled: T.245), written to a file."""
+    more value heads than one the value heads of every tensor but the output matrix's columns tiled: T245), written to a file."""
     import test_gguf
     from conftest import FOLDED, basis, folded
     from test_rotated import prism_metadata, widths_of
@@ -193,7 +193,7 @@ def rotated_qwen35_gguf(tmp_path, shape):
 
 
 def test_the_converters_tiled_break_reads_another_checkpoint_of_a_hybrid_gguf(tmp_path, capsys):
-    """T.423: tests/page_27b.py convert --broken tiled (the output matrices' columns read in llama.cpp's order of the value
+    """T423: tests/page_27b.py convert --broken tiled (the output matrices' columns read in llama.cpp's order of the value
     heads), which only the real 27B's stage ran, on a made-up rotated hybrid GGUF of more value heads than key heads, with
     its original's config.json and tokenizer.json beside it: the break marks the output matrices of the linear layers, and
     their checkpoint is another. (int8 of float values: the 27B's ternary needs values of three, which this one has not.)"""
@@ -250,7 +250,7 @@ def test_the_reference_reads_a_rotated_gguf_as_the_converter_does(tmp_path):
 
 
 def test_a_saved_run_holds_the_logits_keys_and_values_in_the_layout_forward_js_reads(tmp_path):
-    """T.233 compares forward.js's keysAndValues() ([layers that attend][positions][kv heads x head size]) with these."""
+    """T233 compares forward.js's keysAndValues() ([layers that attend][positions][kv heads x head size]) with these."""
     from reference_27b import save_run
     path, _, _ = rotated_qwen35_gguf(tmp_path, {})
     tokens = [1, 5, 7, 9, 11, 5]
@@ -269,13 +269,13 @@ def test_a_saved_run_holds_the_logits_keys_and_values_in_the_layout_forward_js_r
 
 
 def test_the_reference_reads_a_rotated_and_tiled_gguf_as_the_converter_does(tmp_path, monkeypatch):
-    """The same where a key head has two or three value heads, which llama.cpp tiles (T.245's reader against the reference's
+    """The same where a key head has two or three value heads, which llama.cpp tiles (T245's reader against the reference's
     grouped()), and the output matrix keeps its columns as the file holds them."""
     import pytest
     import test_gguf
     from test_rotated import run
     if not hasattr(test_gguf, "QWEN35_VALUE_HEADS"):
-        pytest.skip("T.245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
+        pytest.skip("T245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
     monkeypatch.delitem(test_gguf.QWEN35_VALUE_HEADS, "linear_attn.out_proj.weight")
     for name in ("two value heads to a key head", "three value heads to a key head (the 27B)"):
         path, file, config = rotated_qwen35_gguf(tmp_path, test_gguf.QWEN35_SHAPES[name])

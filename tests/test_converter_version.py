@@ -1,4 +1,4 @@
-"""CONVERTER (src/python/convert/version.py, T.628.4; the page reads it as src/runtime/kept.ts's) goes up when what the converter makes of a model changes (T.116, T.369 review): a kept
+"""CONVERTER (src/python/convert/version.py, T628.4; the page reads it as src/runtime/kept.ts's) goes up when what the converter makes of a model changes (T116, T369 review): a kept
 conversion of the old version is used otherwise, with the old options.
 
 tests/fixtures/converter-output.json holds the version and a digest of what the converter makes of three made-up models
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from tree import python_folder
 
-# (T.431: run as a script, --write, the Python of the site is on no path yet: conftest.py puts it there for pytest)
+# (T431: run as a script, --write, the Python of the site is on no path yet: conftest.py puts it there for pytest)
 sys.path.insert(0, python_folder(Path(__file__).resolve().parent.parent))
 import llama2_convert  # noqa: E402
 from made_up_tokenizers import byte_level, model, sentencepiece  # noqa: E402

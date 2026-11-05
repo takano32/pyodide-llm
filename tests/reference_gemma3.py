@@ -1,5 +1,5 @@
 # reference_gemma3.py
-# T.261: the engine's Gemma 3 (Google's text model: a norm behind the attention and the FFN as well as in front, a GELU
+# T261: the engine's Gemma 3 (Google's text model: a norm behind the attention and the FFN as well as in front, a GELU
 # in the FFN's gate, layers that attend a window of the last positions with a base of RoPE of their own) against
 # transformers itself. PyTorch is not on the development machine, so this runs in CI:
 #
@@ -316,7 +316,7 @@ def window(change):
     def fault(llama, make):
         llama.window_kept = llama.local["window"]
         llama.local = {**llama.local, "window": change(llama.local["window"], llama.seq_len)}
-        # (the forward pass reads a layer's window off its facts, T.639.2)
+        # (the forward pass reads a layer's window off its facts, T639.2)
         llama.layers = [{**facts, "window": llama.local["window"]} if facts["local"] else facts for facts in llama.layers]
         return llama
     return fault

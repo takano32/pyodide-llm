@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# T.359 review: the page's conversion speed, this tree against origin/main's, in one job, each round running one side
-# twice and the order swapped every round (now base base now, base now now base, ...: T.409), for each dtype:
+# T359 review: the page's conversion speed, this tree against origin/main's, in one job, each round running one side
+# twice and the order swapped every round (now base base now, base now now base, ...: T409), for each dtype:
 # tests/profile-convert.ts on the same model directory.
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
-# The base tree is a copy of origin/main's that tests/other-tree.ts makes (T.430: not `git fetch --depth 1`, which cut
+# The base tree is a copy of origin/main's that tests/other-tree.ts makes (T430: not `git fetch --depth 1`, which cut
 # the history of a whole clone behind the commit; a copy, as this script edits its tool), with this tree's node_modules
 # and kernels. A .tmp/base left by an earlier run is used as it is (the origin/main of then): rm -rf .tmp/base for today's. PROFILE=0 times both without cProfile.
-# T.374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
-# request of a stream brings), and a base of before T.374.2.1 calls the converter itself: against such a base, the
+# T374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
+# request of a stream brings), and a base of before T374.2.1 calls the converter itself: against such a base, the
 # difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <round> <MB/s>" line per run and the medians and ranges at the end.
-# T.401: START=1 compares the conversion's start instead (profile-convert's "the start: <ms> ms": the head, the
+# T401: START=1 compares the conversion's start instead (profile-convert's "the start: <ms> ms": the head, the
 # tokenizer, the chat template and jinja2's environment, before the first part), in ms: lower is faster, so "now against
-# base" above 0% is slower there. A base tree of before T.401 says no start, and is refused. Its tool loads no jinja2
+# base" above 0% is slower there. A base tree of before T401 says no start, and is refused. Its tool loads no jinja2
 # either (the converter draws a template with its own reader there): a start compared with one has that in it.
 set -u
 dir=$1; rounds=${2:-4}; shift 2 || true; dtypes=${*:-int8 float32}
@@ -20,14 +20,14 @@ if [ ! -d .tmp/base ]; then
     cp -a "$base" .tmp/base && rm -f .tmp/base/done &&
   # (the built kernels are where each tree keeps them: tests/tree.ts)
   cp -r node_modules .tmp/base/ && mkdir -p "$(node tests/tree.ts --root .tmp/base built)" &&
-    cp "$(node tests/tree.ts built)"/*kernel* "$(node tests/tree.ts --root .tmp/base built)"/ ||  # (T.430: the blocks' kernels too, since T.363.5)
-    { rm -rf .tmp/base; echo "abba-convert: the base tree could not be made"; exit 1; }  # (T.430: not left half made)
+    cp "$(node tests/tree.ts built)"/*kernel* "$(node tests/tree.ts --root .tmp/base built)"/ ||  # (T430: the blocks' kernels too, since T363.5)
+    { rm -rf .tmp/base; echo "abba-convert: the base tree could not be made"; exit 1; }  # (T430: not left half made)
 fi
-# T.374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.ts): where the buffers lie is the
+# T374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.ts): where the buffers lie is the
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
-# (before T.374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
-# this job; between jobs the same comparison moved by more than that (TASKS.md's T.374.2.1): one job is not a verdict.
-# T.409: and, under it, the control of this job (one side twice in each round), which a difference has to be outside of
+# (before T374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
+# this job; between jobs the same comparison moved by more than that (TASKS.md's T374.2.1): one job is not a verdict.
+# T409: and, under it, the control of this job (one side twice in each round), which a difference has to be outside of
 # (the standard error takes the four runs of a tree in two rounds as apart, and the two of one round are nearer: it is a
 # little small, which the control makes up for).
 if ! grep -q LAYOUT .tmp/base/tests/profile-convert.ts; then
@@ -43,7 +43,7 @@ if [ -n "${START:-}" ]; then measure='s/^the start: \([0-9]*\) ms.*/\1/p'; else 
 run() { # tree name dtype round
   (cd "$1" && LAYOUT=$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )),$(( (RANDOM * 32768 + RANDOM) % 2097152 + 1 )) node tests/profile-convert.ts "$OLDPWD/$dir" "$3" 2>&1 | sed -n "$measure" | head -1 | sed "s|^|$2 $3 $4 |") >> .tmp/abba/lines
 }
-# T.409: each round runs one side twice (now base base now, then base now now base): the two runs of one tree in a
+# T409: each round runs one side twice (now base base now, then base now now base): the two runs of one tree in a
 # round are the control, what a measurement moves by itself within this job (tests/compare-engines.ts's "one side twice")
 for r in $(seq 1 "$rounds"); do
   for d in $dtypes; do
@@ -53,7 +53,7 @@ for r in $(seq 1 "$rounds"); do
 done
 cat .tmp/abba/lines
 # (START=1: a base that says no start has nothing to be compared with)
-if [ -n "${START:-}" ] && ! grep -q '^base ' .tmp/abba/lines; then echo "abba-convert: the base tree's tool says no start (a tree of before T.401)"; exit 1; fi
+if [ -n "${START:-}" ] && ! grep -q '^base ' .tmp/abba/lines; then echo "abba-convert: the base tree's tool says no start (a tree of before T401)"; exit 1; fi
 [ -z "${START:-}" ] || echo "abba-convert: the start in ms: lower is faster (now against base above 0% is slower)"
 node -e '
 const rows = require("fs").readFileSync(".tmp/abba/lines", "utf8").trim().split("\n").map((l) => l.split(" "));  // (name dtype round MB/s)
@@ -66,7 +66,7 @@ for (const d of new Set(rows.map((r) => r[1]))) {
   const stat = (name) => { const v = rows.filter((r) => r[0] === name && r[1] === d).map((r) => +r[3]), m = v.reduce((a, b) => a + b, 0) / v.length; return [m, v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1) / v.length]; };
   const [bm, bv] = stat("base"), [nm, nv] = stat("now");
   console.log(d, "now against base:", ((nm / bm - 1) * 100).toFixed(2) + "%", "+-", (Math.sqrt(bv + nv) / bm * 100).toFixed(2) + "%");
-  // T.409: the control, the faster of the two runs of one tree in a round over the slower (each round has one side twice):
+  // T409: the control, the faster of the two runs of one tree in a round over the slower (each round has one side twice):
   // a difference of now against base inside these is no verdict
   const twice = [...new Set(rows.filter((r) => r[1] === d).map((r) => r[2]))].flatMap((round) => ["now", "base"].map((name) => rows.filter((r) => r[0] === name && r[1] === d && r[2] === round).map((r) => +r[3])))
     .filter((v) => v.length === 2 && Math.min(...v) > 0).map((v) => Math.max(...v) / Math.min(...v)).sort((a, b) => a - b);

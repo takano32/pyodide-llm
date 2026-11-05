@@ -1,4 +1,4 @@
-# A model's vocabulary, read (T.640.1): what each kind of tokenizer file gives the conversion, as one value. The
+# A model's vocabulary, read (T640.1): what each kind of tokenizer file gives the conversion, as one value. The
 # conversion (convert/conversion.py) reads the vocabulary first, and the rules of how a text begins and where an
 # answer stops (convert/beginning.py) read only this value.
 import json
@@ -25,7 +25,7 @@ class Vocabulary(NamedTuple):
     """tokenizer: the bytes of tokenizer.bin. options: the tokenizer's, as the engine gets them. described: the
     tokenizer_config.json, read (described()). specials: the tokenizer's special tokens, the ones a chat template
     writes between the turns. added: the added tokens that are not special, one token wherever they are written
-    (T.143). bos: the id of the BOS the tokenizer names, where it names one (T.143). dropped (T.509): {id: text} of the
+    (T143). bos: the id of the BOS the tokenizer names, where it names one (T143). dropped (T509): {id: text} of the
     added tokens a tokenizer.json has past the model's last row, which convert.tokenizer's with_a_row() leaves out."""
     tokenizer: bytes
     options: dict
@@ -37,15 +37,15 @@ class Vocabulary(NamedTuple):
 
 
 def named_bos(pieces, said):
-    """T.143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
+    """T143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
     another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
-    in tokenizer_config.json (T.138's review: perplexity 2.5 to 2.7 times higher with the former)"""
+    in tokenizer_config.json (T138's review: perplexity 2.5 to 2.7 times higher with the former)"""
     named = config_token(said, "bos_token")
     return next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
 
 
 def tokenizer_json(data, vocab_size, said, last):
-    """The vocabulary of a tokenizer.json (its bytes). last (T.257): see Conversion."""
+    """The vocabulary of a tokenizer.json (its bytes). last (T257): see Conversion."""
     try:
         parsed = json.loads(data)
     except ValueError:
@@ -55,14 +55,14 @@ def tokenizer_json(data, vocab_size, said, last):
     options = tokenizer_json_options(parsed)
     every = list(tokenizer_json_pieces(parsed))
     pieces = with_a_row(every, parsed, vocab_size)
-    # (T.509: the added tokens past the model's last row, which beginning_and_stops() holds to what the model uses)
+    # (T509: the added tokens past the model's last row, which beginning_and_stops() holds to what the model uses)
     dropped = {id: text for id, (text, _, _) in enumerate(every[len(pieces):], len(pieces))}
     tokenizer = tokenizer_bin(pieces, vocab_size, spaces=options["tokenizer_kind"] != "bytebpe",
                               charsmap=tokenizer_json_charsmap(parsed))
     added = [token for token in parsed.get("added_tokens", []) if token.get("id", 0) < vocab_size]
     specials = [token["content"] for token in added if token.get("special")]
-    # T.143: the added tokens it does not call special are read as one token wherever they are too, by the real
-    # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T.215's finding)
+    # T143: the added tokens it does not call special are read as one token wherever they are too, by the real
+    # tokenizers before it splits the text: Qwen3's <think>, Pythia's runs of 2 to 24 spaces (T215's finding)
     added = [token["content"] for token in added if not token.get("special")]
     return Vocabulary(tokenizer, options, said, specials, added, named_bos(pieces, said), dropped)
 
@@ -71,8 +71,8 @@ def sentencepiece(data, vocab_size, said, last):
     """The vocabulary of a sentencepiece model (its bytes)."""
     pieces = list(sentencepiece_pieces(data))
     tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(data))
-    # (T.265, T.308) and what only tokenizer_config.json says of a sentencepiece model. A model with no dummy
-    # prefix has none after a special token either (T.400: its "never" over a legacy tokenizer's "wanting")
+    # (T265, T308) and what only tokenizer_config.json says of a sentencepiece model. A model with no dummy
+    # prefix has none after a special token either (T400: its "never" over a legacy tokenizer's "wanting")
     own = sentencepiece_options(data)
     options = {**own, **described_options(said), **({"prefixed": "never"} if own.get("prefixed") else {})}
     return Vocabulary(tokenizer, options, said, sentencepiece_specials(data), [], named_bos(pieces, said), {})

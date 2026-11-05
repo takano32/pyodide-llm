@@ -1,4 +1,4 @@
-// tests/threads-compare.ts (T.378.1, T.447): two builds' forward pass WITH software threads, in one process, turn by turn.
+// tests/threads-compare.ts (T378.1, T447): two builds' forward pass WITH software threads, in one process, turn by turn.
 // tests/compare-engines.ts measures the page's path with no software thread; a change of the threads' part
 // (src/runtime/forward/threads.js), of helper.js or of jobs.js is not seen there. Here each side is a build's
 // _astro/forward.<hash>.js and its own _astro/helper.<hash>.js (what a browser runs: tests/bundle.ts), each on a shared
@@ -10,7 +10,7 @@
 // from position 0 after 8 that wake the threads. Each side is measured twice a round: the two of one side say how far
 // a measurement moves by itself, and the control (the same code built twice, on the two sides) what the tool says of
 // no difference: read a ratio against both.
-// T.620: --prompt times a prompt instead: `positions` tokens from position 0 in blocks of the engine's promptBlock
+// T620: --prompt times a prompt instead: `positions` tokens from position 0 in blocks of the engine's promptBlock
 // (forwardMany, no logits), as Python feeds one; the logits held to the bit are then those of the token after a prompt
 // as well. A model is an id of the list, or the files of one (<out>.bin, .tokenizer.bin, .json: tests/make_ternary.py,
 // tests/perplexity_prepare.py, quantize.py with that .json beside it): the ternary and six-bit dtypes have no model of
@@ -127,7 +127,7 @@ if (isMainThread) {
       seen.push(logits.slice());
       token = logits.indexOf(Math.max(...logits));
     }
-    // (T.620: and the logits of the token after a prompt, where the prompt's blocks are what is timed)
+    // (T620: and the logits of the token after a prompt, where the prompt's blocks are what is timed)
     if (prompt) {
       fed(engine, positions - 1);
       engine.forward(tokens[positions - 1], positions - 1, true);

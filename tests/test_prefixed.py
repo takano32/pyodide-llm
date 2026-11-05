@@ -1,4 +1,4 @@
-"""The dummy prefix before the text after a special token (T.308, T.369): what the converter reads of it in a
+"""The dummy prefix before the text after a special token (T308, T369): what the converter reads of it in a
 tokenizer.json and in a sentencepiece model's tokenizer_config.json, against the tokenizers library itself.
 
 A sentencepiece tokenizer puts "▁" before the first text. Some put it before the text after a special token too:
@@ -35,8 +35,8 @@ def test_a_legacy_llama_tokenizer_prefixes_the_text_after_a_special_token():
 
 
 def test_a_model_with_no_dummy_prefix_says_never_over_a_legacy_tokenizer_class():
-    """T.400 (sarashina2.2's, CAT-Translate): the model puts no dummy prefix anywhere, so its legacy LlamaTokenizer's "wanting" gives
-    way to "never" (convert/vocabulary.py's sentencepiece(); T.640.1's review: no test held this before)."""
+    """T400 (sarashina2.2's, CAT-Translate): the model puts no dummy prefix anywhere, so its legacy LlamaTokenizer's "wanting" gives
+    way to "never" (convert/vocabulary.py's sentencepiece(); T640.1's review: no test held this before)."""
     data, ids = sentencepiece(dummy=False)
     for described in ({"tokenizer_class": "LlamaTokenizer", "legacy": True}, {"tokenizer_class": "LlamaTokenizerFast"}):
         options, engine = converted(data, "tokenizer.model", **described)
@@ -79,7 +79,7 @@ def test_a_tokenizer_json_says_which_texts_are_prefixed(said, prefixed):
 @pytest.mark.parametrize("said, prefixed", DESCRIBED[:5])
 def test_the_prefix_after_a_special_token_is_the_real_tokenizers(said, prefixed):
     """The same descriptions through the tokenizers library itself: from the first special token on (what stands before
-    the first text is not T.308's), the engine's ids with what the converter says are the real ones, also where the
+    the first text is not T308's), the engine's ids with what the converter says are the real ones, also where the
     text after the token begins with a space or two, or with a newline."""
     tokenizers = pytest.importorskip("tokenizers")
     real = tokenizers.Tokenizer.from_str(json.dumps({"version": "1.0", "truncation": None, "padding": None, "normalizer": None,
@@ -114,7 +114,7 @@ def test_the_engine_knows_the_two_ways_and_no_other():
 
 def test_the_engine_takes_the_new_options_and_refuses_none_of_the_converters():
     """What the converter says goes to Llama() as keywords (the worker spreads the options): each is one it takes
-    (T.639.1: engine/model.py's OPTIONS, the names of its tables)."""
+    (T639.1: engine/model.py's OPTIONS, the names of its tables)."""
     taken = set(OPTIONS)
     assert {"lowercase", "prefixed"} <= taken
     data, ids = sentencepiece()
@@ -123,14 +123,14 @@ def test_the_engine_takes_the_new_options_and_refuses_none_of_the_converters():
     assert {"lowercase", "prefixed", "template"} <= set(options) and set(options) - {"template"} <= taken
 
 
-FIRST_SPACED = [  # T.400 (3): (what tokenizer.json says, whether the first text that begins with a space goes without "▁")
+FIRST_SPACED = [  # T400 (3): (what tokenizer.json says, whether the first text that begins with a space goes without "▁")
     ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always", "split": False}}, True),
     ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": False}}, True),
     ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": True}}, True),  # (before prepend_scheme)
     ({"pre_tokenizer": {"type": "Sequence", "pretokenizers": [{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}]}}, True),
     ({"normalizer": {"type": "Sequence", "normalizers": [{"type": "Prepend", "prepend": "▁"}, SPACES]}}, False),
 ]
-# (and two that say no "▁" at all, where the engine still puts one before the first text: not T.400 (3)'s, see TASKS.md)
+# (and two that say no "▁" at all, where the engine still puts one before the first text: not T400 (3)'s, see TASKS.md)
 NOT_SPACED = [{"normalizer": {"type": "Sequence", "normalizers": [SPACES]}}, {}]
 
 
@@ -142,7 +142,7 @@ def test_no_metaspace_is_not_spaced(said):
 
 @pytest.mark.parametrize("said, spaced", FIRST_SPACED)
 def test_a_metaspace_puts_no_prefix_before_a_first_text_that_begins_with_a_space(said, spaced):
-    """T.400 (3): the tokenizers library's Metaspace puts "▁" before a stretch of text only where it does not begin with
+    """T400 (3): the tokenizers library's Metaspace puts "▁" before a stretch of text only where it does not begin with
     one already, the first stretch too; a Prepend normalizer puts it before every one. The converter says the first as
     spaced, and the engine's ids are the real ones for the whole text, a first text with a space, two, or none."""
     from convert.tokenizer import metaspaced
@@ -166,7 +166,7 @@ def test_a_metaspace_puts_no_prefix_before_a_first_text_that_begins_with_a_space
 
 
 def test_sentencepiece_itself_puts_its_prefix_before_a_first_text_with_a_space():
-    """T.400 (3): a tokenizer.model is read as sentencepiece reads it (spaced not said): "▁" before the first text
+    """T400 (3): a tokenizer.model is read as sentencepiece reads it (spaced not said): "▁" before the first text
     whatever it begins with, also for a legacy Llama tokenizer ("wanting" after a special token only)."""
     spm = pytest.importorskip("sentencepiece")
     data, ids = sentencepiece()

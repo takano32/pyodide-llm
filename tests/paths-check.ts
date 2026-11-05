@@ -1,4 +1,4 @@
-// T.477: forward/paths.ts, what /benchmark/ times of the model page's own path (T.184, T.190), alone: no suite ran it
+// T477: forward/paths.ts, what /benchmark/ times of the model page's own path (T184, T190), alone: no suite ran it
 // before (worker/timing.ts's timedPaths() calls it only in a browser's /benchmark/). An engine that stands in for
 // forward.ts's (the members paths.ts reads: gpuReady, gpuWhyNot, gpuSide, gpuTokens, forwardMany, searching, threads,
 // setThreads) and a made-up clock (performance.now, which paths.ts reads, set here):

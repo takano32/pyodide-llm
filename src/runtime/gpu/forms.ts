@@ -1,6 +1,6 @@
 // The forms of a prompt's shaders on this device, checked against JavaScript, timed and chosen: the attention's tiles
-// and the matrices' tiled shaders (T.146, T.147), with how a matrix's pieces are bound and dispatched.
-// (T.352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T.367.3)
+// and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
@@ -18,11 +18,11 @@ import type { FlashShape } from "../shaders/attention.ts";
 import type { Tried } from "../contracts/gpu/protocol.ts";
 import type { TensorName } from "../contracts/plan.ts";
 
-// T.368.6: this module's record, m.forms: the prompt's attention chosen here (chooseAttention() makes the record with
+// T368.6: this module's record, m.forms: the prompt's attention chosen here (chooseAttention() makes the record with
 // it), the tiled shader chosen (chooseMatrices(): null until then, read with a ! after it), and what each tried came to.
 // A tiled shader is one of shaders/prompt.ts's forms with its pipeline, and whether it is the one the page remembered
 type Attention = { name: string; pipeline: GPUComputePipeline; shape: FlashShape };
-// (T.547.2.3: blockPipelines, the pipelines of the form's texts for matrices of llama.cpp's blocks, T.547.3.3: of each type
+// (T547.2.3: blockPipelines, the pipelines of the form's texts for matrices of llama.cpp's blocks, T547.3.3: of each type
 // the model has)
 type Tiled = PromptForm & { pipeline: GPUComputePipeline; blockPipelines: Partial<Record<BlockPacking, GPUComputePipeline>>; remembered?: boolean };
 type Forms = { attention: Attention; form: Tiled | null; tried: Tried[] };
@@ -30,15 +30,15 @@ type Forms = { attention: Attention; form: Tiled | null; tried: Tried[] };
 // The right tiled shaders are timed together, in turn, on the model's first layer (its seven matrices by a whole block,
 // with the quantizations of a packed one): a submission of n passes of the layer and one of 2n, their difference the
 // time of n passes (what a submission costs besides its work is in both and drops out: 2.6 to 8.4 ms waited for on
-// the owner's Android, T.134, where llm-jp-3 150M's gate by 64 tokens is 0.6 ms of work), n doubled until a submission
+// the owner's Android, T134, where llm-jp-3 150M's gate by 64 tokens is 0.6 ms of work), n doubled until a submission
 // of n takes TIMED_MS (at most MOST_PASSES), PAIRS pairs a shader, the shaders in turn within each round (a device that
-// warms up or is loaded meanwhile falls on all of them alike: T.168's review), the median of each shader's pairs. On a
+// warms up or is loaded meanwhile falls on all of them alike: T168's review), the median of each shader's pairs. On a
 // fallback adapter (the CPU in the GPU's place: its times are no GPU's) one pair of one pass
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 
-// the tiled shaders of T.146 this device can make (shaders/prompt.ts's promptForms)
-// (T.271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone;
-// T.547.2.3: a model's own forms, a ternary model's or a Q4_K one's, are packed ones too)
+// the tiled shaders of T146 this device can make (shaders/prompt.ts's promptForms)
+// (T271.1: a rotated basis turns a matrix's input as it quantizes it, ROTATE_QUANTIZE: the packed forms alone;
+// T547.2.3: a model's own forms, a ternary model's or a Q4_K one's, are packed ones too)
 const candidates = (m: Model) => devicePromptForms(m.device, m.own).filter((form) => form.packed || !m.plan.rotated);
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
@@ -52,7 +52,7 @@ async function chooseAttention(m: Model) {
     subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize };
   const tried: string[] = [];
   const nameOf = (option: { half: boolean; subgroups: boolean }) => `llama.cpp flash attention tiles${option.half ? ", f16" : ""}${option.subgroups ? ", subgroups" : ""}`;
-  // T.148: the one the page remembers for this adapter first (it was the first right one then: the other was wrong)
+  // T148: the one the page remembers for this adapter first (it was the first right one then: the other was wrong)
   const options = [{ half, subgroups }, { half: false, subgroups: false }].filter((o, i) => i === 0 || o.half !== half || o.subgroups !== subgroups)
     .sort((a, b) => ((nameOf(b) === m.remembered?.attention) as unknown as number) - ((nameOf(a) === m.remembered?.attention) as unknown as number));
   for (const option of options) {
@@ -67,7 +67,7 @@ async function chooseAttention(m: Model) {
       const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashTile(shape))), `compiling ${name}`);
       const wrong = await within(checkAttention(m, pipeline), `checking ${name}`);
       if (!wrong) {
-        // (T.378.4: this module's record, which it alone sets: the attention, then chooseMatrices()'s form and what
+        // (T378.4: this module's record, which it alone sets: the attention, then chooseMatrices()'s form and what
         // each one tried came to)
         m.forms = { attention: { name, pipeline, shape }, form: null, tried: [] };
         return;
@@ -88,7 +88,7 @@ async function chooseAttention(m: Model) {
 // memory are within 2^-10 of theirs (each rounded either way, WGSL leaves the direction to the device) and so the
 // output within about 1e-3 of the largest value (the sum of the weights is float32), while a wrong mask, head or
 // tile is off by a tenth and more.
-// T.261.4: a model with layers that attend a window (a Gemma 3's) has the check's tokens attend the last WINDOW
+// T261.4: a model with layers that attend a window (a Gemma 3's) has the check's tokens attend the last WINDOW
 // positions alone: the first tile of positions begins at 49 (61 - 13 + 1, where the first token's window does), each
 // row of a tile has a window of its own (one position on from the row before), and the positions before are not read
 const LINE = 4e-3, WINDOW = 13;
@@ -151,7 +151,7 @@ function halfToFloat(h: number) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
-// a form's pipelines: its text's, and (T.547.2.3) its text's of each type of llama.cpp's blocks the model has (T.547.3.3:
+// a form's pipelines: its text's, and (T547.2.3) its text's of each type of llama.cpp's blocks the model has (T547.3.3:
 // none of another type: a text a type is compiled only where it is read)
 const compiled = async (m: Model, form: PromptForm): Promise<Tiled> => {
   const pipeline = await within(validated(m, () => pipelineOf(m, form.code, form.constants)), `compiling ${form.name}`);
@@ -161,7 +161,7 @@ const compiled = async (m: Model, form: PromptForm): Promise<Tiled> => {
   }
   return { ...form, pipeline, blockPipelines };
 };
-// ---- the matrices: the tiled shaders of T.146 that this device can make (shaders/prompt.ts's promptForms), each checked on a
+// ---- the matrices: the tiled shaders of T146 that this device can make (shaders/prompt.ts's promptForms), each checked on a
 // small matrix against JavaScript (checkForm: subgroups, f16 rounding and drivers differ from device to device, and
 // only the device can say), the right ones timed on the model's own gate matrix by a whole block, and the fastest
 // taken. forms: what each came to (ms, or why not), for the console. plan.force.matrices (tests only): that form alone, untimed.
@@ -169,7 +169,7 @@ async function chooseMatrices(m: Model) {
   const { plan } = m;
   let forms = candidates(m);
   if (plan.force.matrices) forms = forms.filter((form) => form.name === plan.force.matrices);
-  // T.148: the shader the page remembers for this adapter, alone, where it is one this device still makes and it is
+  // T148: the shader the page remembers for this adapter, alone, where it is one this device still makes and it is
   // still right here (a driver may have changed under the same names): no other is compiled or timed. Else all of them
   const kept = !plan.force.matrices && forms.find((form) => !form.none && form.name === m.remembered?.matrices);
   if (kept) {
@@ -190,7 +190,7 @@ async function chooseMatrices(m: Model) {
   }
   const right: Tiled[] = [];
   for (const form of forms) {
-    if (plan.force.quick && right.length) break;  // T.148: the page's tests, the first right one untimed
+    if (plan.force.quick && right.length) break;  // T148: the page's tests, the first right one untimed
     if (form === kept) continue;  // wrong just now
     if (form.none) {
       m.forms.tried.push({ name: form.name, none: form.none });
@@ -219,9 +219,9 @@ const formsSaid = (m: Model) => ({ form: m.forms.form!.name, attention: m.forms.
 const threadsOf = (device: GPUDevice) => Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX);
 
 // layer l's matrix name by the tokens of from into to (added where add): a bind group of form and its rows for each
-// piece (T.155), which writes its rows of to (bound from its first row; a token's row of to is the whole matrix's)
-// (T.547.2.3: by the pipeline of the matrix's packing: a Q4_K matrix's is the form's Q4_K text's, which binds no scales;
-// T.547.3.1: the layer's, where each layer of the stack has a packing of its own)
+// piece (T155), which writes its rows of to (bound from its first row; a token's row of to is the whole matrix's)
+// (T547.2.3: by the pipeline of the matrix's packing: a Q4_K matrix's is the form's Q4_K text's, which binds no scales;
+// T547.3.1: the layer's, where each layer of the stack has a packing of its own)
 const productGroups = (m: Model, form: Tiled, name: TensorName, l: number, from: GPUBuffer, to: GPUBuffer, add?: boolean, owned = m.owned) => {
   const matrix = m.weights.matrices[name]!, { rows, n, pieces } = matrix, { xq, xs, step } = m.block;
   const packing = packingAt(matrix, l), pipeline = isBlock(packing) ? form.blockPipelines[packing]! : form.pipeline;
@@ -231,30 +231,30 @@ const productGroups = (m: Model, form: Tiled, name: TensorName, l: number, from:
       uniform(m, new Uint32Array([count, n / 4, n / GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), step, ...(form.packed ? [xs] : [])]) };
   });
 };
-// the workgroups of form for rows by count tokens: the tiles numbered over x, then y (as T.146's shaders number them),
-// by pipeline (T.547.2.3: the form's, or its Q4_K text's: one tile either way)
+// the workgroups of form for rows by count tokens: the tiles numbered over x, then y (as T146's shaders number them),
+// by pipeline (T547.2.3: the form's, or its Q4_K text's: one tile either way)
 function multiply(m: Model, pass: GPUComputePassEncoder, form: Tiled, pipeline: GPUComputePipeline, group: GPUBindGroup, rows: number, count: number) {
   const tiles = Math.ceil(rows / form.tile.rows) * Math.ceil(count / form.tile.tokens);
   const across = Math.min(tiles, m.device.limits.maxComputeWorkgroupsPerDimension);
   dispatch(pass, pipeline, group, across, Math.ceil(tiles / across));
 }
 
-// T.146's check (src/runtime/benchmark/gpu/check.ts's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
+// T146's check (src/runtime/benchmark/gpu/check.ts's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
 // of rows everywhere), 11 and 70 tokens (a part of a tile of tokens; two or one and a part), and 11 tokens whose x and
 // y are wider than the product (xStride 608, yStride 320), each product twice into the same y (the second added:
 // shape.add) against JavaScript's (shaders/prompt.ts's tiledOff). The reason it is wrong, or null
-// T.232, a ternary form: rows of 640 weights (5 groups of 128 with a scale each, 20 of the activations' groups of 32:
+// T232, a ternary form: rows of 640 weights (5 groups of 128 with a scale each, 20 of the activations' groups of 32:
 // a weight's scale holds for four steps of the width, and the next is another), the weights random bytes of codes (all
 // four codes, the one no file has too: every bit of a word matters), against JavaScript's on the codes' values
 // (shaders/prompt.ts's ternaryValues)
-// T.547.2.3, a form with a Q4_K text beside (blocks): that text too, on rows of 768 weights (three blocks of 256, every
+// T547.2.3, a form with a Q4_K text beside (blocks): that text too, on rows of 768 weights (three blocks of 256, every
 // group of a block: eight of the activations' groups of 32, each its own s and m) of random bytes (any bytes are blocks)
 // with d and dmin of 2^-12 to 2^-11 and either sign, against JavaScript's on the weights they read as (SUPERBLOCKS' weights: d s q
 // - dmin m, each times a scale of 1)
 async function checkForm(m: Model, form: Tiled) {
   const wrong = await checkWith(m, form, form.pipeline, form.ternary ? "ternary" : "int8");
   if (wrong) return wrong;
-  // (T.547.3.3: each type's text the model compiled)
+  // (T547.3.3: each type's text the model compiled)
   for (const [packing, pipeline] of Object.entries(form.blockPipelines) as [BlockPacking, GPUComputePipeline][]) {
     const blocks = await checkWith(m, form, pipeline, packing);
     if (blocks) return `its ${packing} text: ${blocks}`;
@@ -263,14 +263,14 @@ async function checkForm(m: Model, form: Tiled) {
 }
 // the weights of the check: their bytes as a matrix of the packing holds them, what they read as (w, by the scale of
 // each `scaled` of them: s), and the bytes of a row
-// (T.547.3.3: of a type of llama.cpp's blocks by its line of SUPERBLOCKS: its bytes, where its float16 scales are, and
+// (T547.3.3: of a type of llama.cpp's blocks by its line of SUPERBLOCKS: its bytes, where its float16 scales are, and
 // JavaScript's reading)
-// (T.547.3.4: an IQ type's of the model's codebooks, which its text binds where an int8 one binds scales: grids)
+// (T547.3.4: an IQ type's of the model's codebooks, which its text binds where an int8 one binds scales: grids)
 function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking, codebooks: Uint8Array<ArrayBuffer> | null) {
   const random = (bytes: number) => new Uint8Array(bytes).map(() => (Math.random() * 256) | 0);
   if (packing !== "int8" && packing !== "ternary") {
     const { bytes, scale, weights } = SUPERBLOCKS[packing], n = 768, stored = random((rows * n) / 256 * bytes);
-    // (each float16 scale of a block drawn small: T.547.3.5, where the type has them, SUPERBLOCKS' scale)
+    // (each float16 scale of a block drawn small: T547.3.5, where the type has them, SUPERBLOCKS' scale)
     const drawn = () => ((Math.random() * 1024) | 0) | 0x0c00 | (Math.random() < 0.5 ? 0x8000 : 0);
     for (let at = 0; at < stored.length; at += bytes) scale(stored, at, drawn());
     return { n, stored, w: weights(stored, codebooks ?? undefined), s: new Float32Array(rows).fill(1), scaled: n, scales: null,
@@ -281,7 +281,7 @@ function checkWeights(rows: number, packing: "int8" | "ternary" | BlockPacking, 
   const s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
   return { n, stored, w: ternary ? ternaryValues(stored as Uint8Array) : stored, s, scaled, scales: s, grids: null };
 }
-// (T.547.2.3's review: and Q4_K's on activations of one sign mostly, +0.5 on each: the sums of the groups that take the
+// (T547.2.3's review: and Q4_K's on activations of one sign mostly, +0.5 on each: the sums of the groups that take the
 // blocks' dmin m are large then, as a stream after SiLU's are)
 async function checkWith(m: Model, form: Tiled, pipeline: GPUComputePipeline, packing: "int8" | "ternary" | BlockPacking) {
   const { device } = m, { quantize } = m.block, rows = 300;

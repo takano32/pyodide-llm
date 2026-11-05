@@ -1,12 +1,12 @@
-// tests/worker-conduct-check.ts (T.374.2.1)
+// tests/worker-conduct-check.ts (T374.2.1)
 // The worker's side of a conversion's conduct (src/runtime/worker/conduct.js, and convert() of src/runtime/worker/convert.js
 // around it), alone: the conduct is a stand-in that plays a list of requests (a JavaScript generator behind the face
 // Pyodide gives a Python one: next(answer) and return(), each request a proxy to be destroyed), the network is
 // tests/worker-harness.ts's, a folder of the visitor's disk is stand-in Files that write down what is read of them
-// (T.374.2.2), and there is no Pyodide. What is seen of both answerers (huggingface.co's and a folder's): every kind of request answered with what it asks
+// (T374.2.2), and there is no Pyodide. What is seen of both answerers (huggingface.co's and a folder's): every kind of request answered with what it asks
 // for, a file that is not there answered with undefined (never null), the 404 of the file a conduct ends on thrown in
 // its own words, a stream's parts fed to the conversion itself, every other failure and a cancelled load ending the
-// loop with the generator closed and nothing left open, every proxy destroyed once, and (T.403) the file opened to keep the conversion in let go whatever ended it.
+// loop with the generator closed and nothing left open, every proxy destroyed once, and (T403) the file opened to keep the conversion in let go whatever ended it.
 //
 //   node tests/worker-conduct-check.ts
 //
@@ -36,7 +36,7 @@ function world({ gpu = false } = {}) {
   const played = { made: [], listed: [], steps: [] };
   let body;
   const conductStandIn = (listed, make) => {
-    // (T.407: a finally of the conduct's that throws as it is closed)
+    // (T407: a finally of the conduct's that throws as it is closed)
     const steps = generator(body(make, listed.value), { closing() { if (played.returnFails) throw new Error("the conduct would not be closed"); } });
     played.steps.push(steps);
     played.made.push(make);
@@ -44,7 +44,7 @@ function world({ gpu = false } = {}) {
   };
   const buffers = [];
   const kept = { open: 0, opened: 0, refused: 0, dropped: 0, finished: 0, keeps: [] };
-  // what the engine was made with: the options of each Llama (T.235)
+  // what the engine was made with: the options of each Llama (T235)
   const engines = [];
   context.stand = {
     // (the converter's window: asked for the kernels' readers alone)
@@ -100,7 +100,7 @@ function world({ gpu = false } = {}) {
   const conversion = (more = {}) => proxy("the conversion", {
     get options() { return readable("the options", { dtype: "int8", bos: 1, ...more }); },
     get tokenizer() { return proxy("the tokenizer", { getBuffer: () => ({ data: new Uint8Array(4), release() {} }) }); },
-    // (T.385: how each type with a kernel's reader was read)
+    // (T385: how each type with a kernel's reader was read)
     get widened() { return readable("the readers", { BF16: "kernel" }); } });
   const convert = (hf, play, { signal = new AbortController().signal, conversion: asked, options } = {}) => {
     body = play;
@@ -245,7 +245,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   w.run("pythonKernels = undefined");
   ok("the bits asked for, the context and the kernels' quantizer and readers go to the conduct; a conversion that ends early lets go of them");
 
-  // ---- T.363.5: a model whose conversion keeps its GGUF's blocks (conversion.blocks). The word goes to the conduct
+  // ---- T363.5: a model whose conversion keeps its GGUF's blocks (conversion.blocks). The word goes to the conduct
   // where the load runs on forward.ts's int8 kernels, with the kernels of the blocks fetched first, every build this
   // visit has kernels of; any other load converts it widened, as a model without the word, and fetches none of them
   const early = function* () {
@@ -295,7 +295,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   fresh(kernel);
   await w.convert(hf(), early, { conversion: blocks });
   assert.deepEqual(fetched().sort(), ["blockkernel_plain.wasm", "blockkernel_relaxed_plain.wasm"], "the next such load asks again");
-  // (T.364.3: the list's own entries of such a model, as the page hands them over (address.ts's weighed(): whatever the
+  // (T364.3: the list's own entries of such a model, as the page hands them over (address.ts's weighed(): whatever the
   // device says of its memory, their conversion is the entry's): the blocks kept, the other rows int8, in the context
   // the page cuts every conversion to)
   {
@@ -392,7 +392,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     assert.equal(w.buffers.at(-1).destroyed, 1);
     // a request nothing answers, and a conduct that ends without a word
     for (const [play, words] of [
-      // (T.407: what such a request brings is let go of all the same: a feed is a proxy of the conversion's)
+      // (T407: what such a request brings is let go of all the same: a feed is a proxy of the conversion's)
       [function* () { yield ["folder", "weights", "x", 0, 1, 0, 1, w.feeding(() => assert.fail("a request nothing answers was fed"))]; }, /asked for folder/],
       [function* () { yield ["text", "weights", "config.json"]; }, /ended without a word/],
     ]) {
@@ -415,7 +415,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
       assert.fail("a stream the converter refused a part of was ended as a whole one");
     });
     assert.equal(refusedPart.error.type, "ValueError");
-    // (T.404: the refused part goes to the converter once, and nothing after it)
+    // (T404: the refused part goes to the converter once, and nothing after it)
     assert.equal(fedParts.length, 2, `the converter was handed ${fedParts.length} parts, not 2 (one taken, then the refused one, once)`);
     assert.equal(w.played.steps.at(-1).returned, 1);
     w.allDestroyed();
@@ -476,7 +476,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   ok("a cancelled load (in the middle of a stream, while an answer waits, as it comes, once it is all there) sends the conduct nothing more, closes it and leaves nothing open");
 }
 
-// ---- T.403: the file opened to keep a conversion in as it comes (a model that may go on the GPU alone) is let go
+// ---- T403: the file opened to keep a conversion in as it comes (a model that may go on the GPU alone) is let go
 // whatever ended the conversion: its handle is the only one its file can have, and the next conversion of the model
 // got none (and was not kept) after one that ended before its weights came
 {
@@ -484,7 +484,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   w.context.crossOriginIsolated = true;
   w.run("sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; gpuAdapter = { fallback: false };");
   assert.equal(w.run("gpuOnlyPossible('int8')"), true, "the check's device may not put a model on the GPU alone: nothing is opened to keep it in");
-  // (T.375.5: and only a dtype whose packing may be there, which the worker asks forward.ts: no file is opened for another)
+  // (T375.5: and only a dtype whose packing may be there, which the worker asks forward.ts: no file is opened for another)
   assert.deepEqual(["ternary", "int6", "float32"].map((dtype) => w.run(`gpuOnlyPossible('${dtype}')`)), [true, false, false]);
   const endings = [
     ["a config.json that is not there", () => notFound(), function* () { yield ["text", "weights", "config.json"]; yield ["missing", "weights", "config.json"]; }, /has no config\.json/],
@@ -510,7 +510,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(w.kept.refused, 0, "a conversion found the file of an earlier one still open");
   assert.equal(w.kept.opened, endings.length + 1);
   // and where letting go of that file fails, the rest is let go all the same; what is thrown is what the conversion
-  // itself failed with (T.407)
+  // itself failed with (T407)
   w.kept.dropFails = true;
   w.fresh(() => new Response("", { status: 503 }));
   const failed = await w.convert(hf(), function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; });
@@ -519,9 +519,9 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(w.played.steps.at(-1).returned, 1, "the generator was left open where the kept file could not be let go");
   w.allDestroyed();
   assert.equal(w.buffers.at(-1).destroyed, 1, "the place of the weights was left behind where the kept file could not be let go");
-  ok("T.403: a conversion that ends before its weights come (a file that is not there, a refusal, a cancelled load) lets go of the file opened to keep it in: the next one opens it");
+  ok("T403: a conversion that ends before its weights come (a file that is not there, a refusal, a cancelled load) lets go of the file opened to keep it in: the next one opens it");
 
-  // T.380.2: where that file cannot be opened the conversion goes on as it did, without it, and the console is told why
+  // T380.2: where that file cannot be opened the conversion goes on as it did, without it, and the console is told why
   // (it was silent: a model on the GPU alone then read "there is no file system here", with nothing of the cause)
   w.kept.dropFails = false;
   w.kept.open = 1;  // (held by something else: OPFS gives a file one handle)
@@ -542,10 +542,10 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   } finally {
     console.warn = warn;
   }
-  ok("T.380.2: a file to keep a conversion in that cannot be opened is said on the console, and the conversion goes on without it");
+  ok("T380.2: a file to keep a conversion in that cannot be opened is said on the console, and the conversion goes on without it");
 }
 
-// ---- T.407: a conduct that throws as it is closed. Everything after it is let go of all the same, and what is thrown
+// ---- T407: a conduct that throws as it is closed. Everything after it is let go of all the same, and what is thrown
 // is what the conversion failed with; after a conversion that ended well, what closing it failed with
 {
   const w = world();
@@ -567,10 +567,10 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     w.allDestroyed();
     assert.equal(w.buffers.at(-1).destroyed, 1, `${name}: the place of the weights was left behind`);
   }
-  ok("T.407: a conduct that throws as it is closed: its proxy, the conversion and the kernels' two are let go of all the same, and the conversion's own failure (a cancelled load too) is what is thrown");
+  ok("T407: a conduct that throws as it is closed: its proxy, the conversion and the kernels' two are let go of all the same, and the conversion's own failure (a cancelled load too) is what is thrown");
 }
 
-// ---- T.411: two of the lettings go fail after a conversion that ended well: the first of them is what is thrown (the
+// ---- T411: two of the lettings go fail after a conversion that ended well: the first of them is what is thrown (the
 // order of convert.ts's finally), and the rest is let go of all the same
 {
   const w = world();
@@ -582,10 +582,10 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.match(failed?.error?.message ?? "", /would not be closed/, `the first failure of letting go (the conduct's return) is thrown: ${failed?.error?.message} was`);
   assert.equal(failing.destroyed, 1, "the conversion was not let go of");
   w.allDestroyed();
-  ok("T.411: where two of the lettings go fail after a conversion that ended well, the first is thrown, and everything is let go of");
+  ok("T411: where two of the lettings go fail after a conversion that ended well, the first is thrown, and everything is let go of");
 }
 
-// ---- T.411: a request of a kind that is a name every object has (its prototype's) is one nothing answers: the
+// ---- T411: a request of a kind that is a name every object has (its prototype's) is one nothing answers: the
 // answerers are looked up as their own keys (Object.hasOwn), not by `in`
 {
   const w = world();
@@ -595,10 +595,10 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     assert.match(failed?.error?.message ?? "", new RegExp(`asked for ${kind}, which nothing here answers`), `${kind}: ${failed?.error?.message ?? "no failure"}`);
   }
   w.allDestroyed();
-  ok("T.411: a request named as a prototype's name (toString, constructor) is refused as one nothing answers");
+  ok("T411: a request named as a prototype's name (toString, constructor) is refused as one nothing answers");
 }
 
-// ---- T.374.2.2: a folder of the visitor's disk answers the same conduct from its Files
+// ---- T374.2.2: a folder of the visitor's disk answers the same conduct from its Files
 {
   const w = world();
   const { MiB, bytesOf, requests, messages, fresh } = w;
@@ -653,7 +653,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     got.size = yield ["size", "weights", "MODEL.SAFETENSORS"];
     got.nothing = yield ["size", "weights", "empty.txt"];
     w.opened(make);
-    w.run("gpuOnlyNow = stand.direct");  // (a place whose room is waited for: T.156)
+    w.run("gpuOnlyNow = stand.direct");  // (a place whose room is waited for: T156)
     // (a stream that ends before its file does, as a shard's: what is read is to the end asked for)
     got.middle = [];
     yield ["stream", "weights", "tokenizer.model", 10, 50, 0, 40, w.feeding((part) => { got.middle.push(part.slice()); return 0.5; })];
@@ -692,7 +692,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     end = at + part.length;
   }
   assert.equal(end, SIZE, "the stream did not end at the end asked for");
-  assert.equal(rooms, 6, "the room of the weights is waited for once a part (T.156)");
+  assert.equal(rooms, 6, "the room of the weights is waited for once a part (T156)");
   assert.equal(got.middle.length, 1);
   equalBytes(got.middle[0], bytesOf(10, 50), "a stream that ends before its file is the bytes to the end asked for");
   assert.deepEqual(reads, ["text Config.JSON", "text Config.JSON", "bytes tokenizer.model", "range Model.safetensors 0-100", `range Model.safetensors ${SIZE - 10}-${SIZE}`,
@@ -701,7 +701,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.deepEqual(cancelled, [], "a stream that ended was cancelled");
   // the model as it is listed for Python: the names, and nothing of the Files
   assert.equal(JSON.stringify(w.played.listed), JSON.stringify([{ weights: "Model.safetensors" }]), "what Python is handed of a folder is the name of its weights");
-  // the progress: nothing arrives from a disk (0 of the size of the file, as before T.374.2.2), the share converted is the conduct's
+  // the progress: nothing arrives from a disk (0 of the size of the file, as before T374.2.2), the share converted is the conduct's
   const progress = messages.filter((m) => m.type === "progress");
   assert.ok(progress.length >= 1, "no progress was told of a folder");
   assert.ok(progress.every((m) => m.received === 0 && [40, SIZE].includes(m.total) && m.perSecond === undefined), `a folder's progress: ${JSON.stringify(progress[0])}`);
@@ -719,7 +719,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   ok("a folder answers every kind of request from its Files: by name whatever the case, a name it does not have with undefined, a range with the size, a stream as the disk gives it, a part a call, the room waited for after each");
   ok("a folder's progress says what it said (0 arrived of the file's size, the share converted), nothing is asked of the network, nothing is kept, Python is handed names alone");
 
-  // ---- a conduct that ends for want of a file: the folder's own words (T.427)
+  // ---- a conduct that ends for want of a file: the folder's own words (T427)
   {
     reads.length = 0;
     const lost = await w.convert(folder(), function* (make) {
@@ -807,7 +807,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   }
 }
 
-// ---- T.235: what the list says of a model wins over what its conversion says, made now or kept before
+// ---- T235: what the list says of a model wins over what its conversion says, made now or kept before
 {
   const w = world();
   const yarn = { rope_type: "yarn", factor: 4, original_max_position_embeddings: 8192 };
@@ -836,16 +836,16 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   w.run("adopted({})");
   assert.equal(await w.convert(hf(), () => assert.fail("a kept conversion was converted again"), { options: entry }), undefined);
   assert.equal(w.engines.length, made + 1);
-  assert.equal(w.run("llama !== undefined"), true, "the model built of a kept conversion is not the model loaded now (T.378.3: loaded.js adopts it)");
+  assert.equal(w.run("llama !== undefined"), true, "the model built of a kept conversion is not the model loaded now (T378.3: loaded.js adopts it)");
   const again = JSON.parse(JSON.stringify(w.engines.at(-1)));
   assert.deepEqual([again.rope_scaling, again.bos, again.rope_theta, again.template], [{}, 151643, 1000000, undefined],
     "a conversion kept before: the entry's RoPE over the manifest's yarn");
   assert.equal(await w.convert(hf(), () => assert.fail("a kept conversion was converted again")), undefined);
   assert.deepEqual(JSON.parse(JSON.stringify(w.engines.at(-1).rope_scaling)), yarn, "a kept conversion the list says nothing of keeps its own RoPE");
   w.kept.found = undefined;
-  ok("an entry's options (T.235: rope_scaling: {}) win over a conversion's, made now and kept before; without them the conversion's own stand");
+  ok("an entry's options (T235: rope_scaling: {}) win over a conversion's, made now and kept before; without them the conversion's own stand");
 }
 
 console.log(`worker-conduct-check: ${passed} checks passed`);
-// (T.384: not at once, as tests/worker-fetches-check.ts)
+// (T384: not at once, as tests/worker-fetches-check.ts)
 setTimeout(() => process.stdout.write("", () => process.exit(0)), 200);

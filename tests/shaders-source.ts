@@ -1,4 +1,4 @@
-// shaders-source.ts (T.351): src/runtime/shaders.js and its modules (src/runtime/shaders/*.js), read for the checks.
+// shaders-source.ts (T351): src/runtime/shaders.js and its modules (src/runtime/shaders/*.js), read for the checks.
 //
 // shaders.js is the window; the texts and their makers are in the modules it imports. The checks that read the shaders'
 // source (tests/device-key-check.ts, tests/shaders-modules-check.ts) take it from here:
@@ -30,7 +30,7 @@ export const keysOf = (pattern, what) => pattern.properties.map((property) => {
 });
 
 export function shaderParts(tree = treeOf()) {
-  // (T.368.5: the window by the name the tree has, shaders.ts or another commit's shaders.js: windowed() blanks the
+  // (T368.5: the window by the name the tree has, shaders.ts or another commit's shaders.js: windowed() blanks the
   // types of a file by the name it is asked for, and the parts have the window's ending)
   const window = path.basename(tree.runtime("shaders.js")), ending = path.extname(window);
   const { files, order } = windowed(window, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)) });

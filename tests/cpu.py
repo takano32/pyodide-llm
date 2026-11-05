@@ -1,4 +1,4 @@
-"""tests/cpu.py (T.494): the CPU a tool runs on, for its log: GitHub's runners are of several CPUs, and an only_extra
+"""tests/cpu.py (T494): the CPU a tool runs on, for its log: GitHub's runners are of several CPUs, and an only_extra
 run says nothing of its runner but what its tool says (AGENTS.md: read speeds CPU by CPU)."""
 from pathlib import Path
 

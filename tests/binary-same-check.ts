@@ -1,4 +1,4 @@
-// binary-same-check.ts (T.634): the same 1-bit model as the binary dtype and as the ternary one (the signs of every
+// binary-same-check.ts (T634): the same 1-bit model as the binary dtype and as the ternary one (the signs of every
 // weight and one scale of its group of 128, as the 1-bit Bonsai's Q1_0 has them, which the page held as ternary before),
 // both on the page's forward pass (src/runtime/forward.ts): the logits are the same to the bit, at every position, a
 // token at a time and in blocks (forward_many), with relaxed SIMD and without. kernels/binary.ts says why: a binary
@@ -7,7 +7,7 @@
 //
 //   node tests/binary-same-check.ts <out of tests/make_ternary.py: ternary ... signs> <the same model's: binary> [--positions 64] [--apart]
 //
-// --apart (T.634.2: the 27B, 7.2 and 3.9 GB, which a runner of 16 GB does not hold twice) reads each model in a process of
+// --apart (T634.2: the 27B, 7.2 and 3.9 GB, which a runner of 16 GB does not hold twice) reads each model in a process of
 // its own (this script again, with --side) and compares the logits they leave in files beside the binary checkpoint.
 //
 // The light suite runs it on tests/make_ternary.py's made-up models (a Qwen3 and a hybrid in a rotated basis).

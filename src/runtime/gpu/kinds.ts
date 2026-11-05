@@ -1,4 +1,4 @@
-// gpu/kinds.ts (T.568.2): the kinds of layers the model's GPU worker has a step for, as one table, and what a kind is to
+// gpu/kinds.ts (T568.2): the kinds of layers the model's GPU worker has a step for, as one table, and what a kind is to
 // the worker. (forward/kinds.ts's LAYER_KINDS is the CPU's table of the same kinds.)
 // (a module of the model's GPU worker, gpu.ts, which a bundler links it into)
 //
@@ -20,9 +20,9 @@ import type { Started, Vectors } from "../contracts/gpu/protocol.ts";
 // ---- a prompt's block
 // a matrix's product (a bind group and its rows for each piece, forms.ts's productGroups()), an input's quantization
 // (QUANTIZE's bind group and workgroups), a bias added (ADD's)
-// (T.547.2.3: and its pipeline: the form's, or its Q4_K text's for a matrix of Q4_K blocks)
+// (T547.2.3: and its pipeline: the form's, or its Q4_K text's for a matrix of Q4_K blocks)
 export type Product = { rows: number; group: GPUBindGroup; pipeline: GPUComputePipeline }[];
-// (T.271.1: its own pipeline: QUANTIZE, or ROTATE_QUANTIZE in a rotated basis, which block.ts's quantizing() picks)
+// (T271.1: its own pipeline: QUANTIZE, or ROTATE_QUANTIZE in a rotated basis, which block.ts's quantizing() picks)
 export type Quantizing = { pipeline: GPUComputePipeline; group: GPUBindGroup; x: number };
 export type Added = { group: GPUBindGroup; x: number };
 // What a kind's layer l is handed as block.ts binds it: its place among the layers of its kind, and
@@ -63,8 +63,8 @@ export type State = { buffer: GPUBuffer; bytes: number };
 //   bindAt()    a bind group of the bindings given (the fused shaders skip a binding where they read no norm)
 export type Stepping = {
   l: number; place: number;
-  // (T.547.3.3: weights, its values, scales and packing, by which a matrix of llama.cpp's blocks takes its type's pipeline;
-  // T.579: role, the key of the form's pipelines it takes, with the type after it for a matrix of blocks)
+  // (T547.3.3: weights, its values, scales and packing, by which a matrix of llama.cpp's blocks takes its type's pipeline;
+  // T579: role, the key of the form's pipelines it takes, with the type after it for a matrix of blocks)
   matrix(role: TokenRole, weights: Held, input: Entry[], params: GPUBuffer, count: number, output: Entry[]): Pass;
   plain(x: GPUBuffer, params: GPUBuffer, n: number): Omit<Feed, "norm">;
   joining(post: GPUBuffer | undefined, weights: Held, input: Entry[], params: GPUBuffer): Pass[];
@@ -113,10 +113,10 @@ export type First = {
 // What a kind is to the worker:
 //   cached    its layers keep keys and values on the GPU (block.ts's cache), which go back and forth with the CPU's
 //   widest()  the widest vector its layers quantize besides the stream, the attention's output and the FFN's
-//   matrices() its matrices of a token's step by the pipeline each takes (tokens.ts's tokenShape(), T.579): qkv, q, k
+//   matrices() its matrices of a token's step by the pipeline each takes (tokens.ts's tokenShape(), T579): qkv, q, k
 //             and v; mix, a matrix of the normed stream written as it is; write, of a vector of its own; join, the matrix
 //             whose output joins the stream (Stepping's joining()); and, but for qkv, the matrices a token's layer reads
-//             whole, one piece (weights.ts's tokensLayout(), T.642.2: of its plan's matrices alone, as a model on the
+//             whole, one piece (weights.ts's tokensLayout(), T642.2: of its plan's matrices alone, as a model on the
 //             GPU alone is opened)
 //   block()   what it makes once of a prompt's block (its shaders, its buffers: nothing of m.block yet), which says
 //             the state its layers keep (states: as the CPU stages them; none where they keep none), binds its layer l

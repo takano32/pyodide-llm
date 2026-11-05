@@ -1,16 +1,16 @@
-// T.129: where fetching and loading meet in src/runtime/worker.js, run as it is in a vm context on made-up fetches, streams
+// T129: where fetching and loading meet in src/runtime/worker.js, run as it is in a vm context on made-up fetches, streams
 // and a clock that goes a hundred times as fast: the parts of this site's models (download()), the ranges of
 // huggingface.co (fetchRange(), inOrder(), refused()), the count of what arrives while Pyodide loads (watchArrivals()),
-// the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()). (T.464: the memory of the weights, what
+// the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()). (T464: the memory of the weights, what
 // is thrown and is no Error, and a stop that arrives during a run are tests/worker-memory-check.ts's.) The review
-// of T.97, T.118 and T.119 (2026-09-26) had a bench like this and did not keep it; what it found is T.129's (1) to (7).
+// of T97, T118 and T119 (2026-09-26) had a bench like this and did not keep it; what it found is T129's (1) to (7).
 // Node only, no Pyodide, a few seconds:
 //
 //   node tests/worker-check.ts
 //
 // A slow or stopped line is played by the made-up fetches (a body that comes a chunk at a time, one that stops, one
 // that breaks), on the fast clock: 30 seconds of the worker's are 0.3 s here. The Cache API is a made-up one that does
-// what the specification says of put() (the review of T.129, 2026-10-01). What it cannot see: the Service Worker
+// what the specification says of put() (the review of T129, 2026-10-01). What it cannot see: the Service Worker
 // (public/coi.js) between the worker and the network, a connection that is really stopped by an abort (the made-up
 // fetch only says its signal aborted), a browser's own limits (a 64-bit memory's size: tests/mem64-limit.mjs of the
 // probe branch asked Chromium and Firefox), and the queue of a real line (a version asked for while the model's parts
@@ -23,7 +23,7 @@ import { runtimeUrl } from "./tree.ts";
 const forward = await import(runtimeUrl("forward.js"));
 import { workerHarness, siteRoot } from "./worker-harness.ts";
 
-// the made-up network, clock, messages and context (tests/worker-harness.ts, T.357: the conversion's fetch list uses them too)
+// the made-up network, clock, messages and context (tests/worker-harness.ts, T357: the conversion's fetch list uses them too)
 const { SCALE, MiB, PART, realNow, sleep, clock, bytesOf, body, requests, messages, fetchStandIn, navigatorStandIn, context, run, failure, fresh, partOf } = workerHarness();
 const at = runtimeUrl("worker.js");
 // a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
@@ -38,7 +38,7 @@ const ok = (line) => {
   console.log(`ok: ${line}`);
 };
 
-// ---- download(): the parts of this site's models (T.97, T.129 (3) and (4))
+// ---- download(): the parts of this site's models (T97, T129 (3) and (4))
 {
   const model = { checkpoint: "m", bytes: 2 * PART + 1000 };
   const whole = (part) => [part * PART, Math.min(model.bytes, (part + 1) * PART)];
@@ -161,7 +161,7 @@ const ok = (line) => {
   }
   ok("queued chunks that the memory refuses stop the download");
 
-  // (3, the review) a GPU's worker that takes no more of the weights (forward.js's room(), T.156) is no more cured by
+  // (3, the review) a GPU's worker that takes no more of the weights (forward.js's room(), T156) is no more cured by
   // fetching the part again than a memory that refuses: the part is not asked for three times
   run("gpuOnlyNow = { room: () => Promise.reject(new Error('the GPU took no weights for 60 s')) }");
   try {
@@ -212,7 +212,7 @@ const ok = (line) => {
   }
   ok("the load stops a download it does not want any more");
 
-  // ---- the Cache API (T.97's finding, and T.129's inner abort and reader.cancel() beside the copy that goes in as the part
+  // ---- the Cache API (T97's finding, and T129's inner abort and reader.cancel() beside the copy that goes in as the part
   // streams): a Cache that does what the specification says of put(), which reads the body to its end and, where it
   // breaks, stores nothing and rejects. A part that came whole is kept for the next visit; none that did not
   {
@@ -250,12 +250,12 @@ const ok = (line) => {
         assert.deepEqual(into, bytesOf(0, model.bytes));
         await expectKept([0, 1, 2], "a part that ended short");
         assert.equal(requests.filter((r) => partOf(r.url) === 1).length, 2);
-        // (T.495: and never stored short on the way: the next try's whole copy writes over a short one, so what is kept at
+        // (T495: and never stored short on the way: the next try's whole copy writes over a short one, so what is kept at
         // the end does not say it; fetchPart()'s check of the length breaks the copy's body, and put() stores nothing)
         assert.deepEqual(stored.filter(([key]) => partOf(key.split("?")[0]) === 1).map(([, bytes]) => bytes), [whole(1)[1] - whole(1)[0]],
           "the part that ended short was stored as a copy before its whole one");
       }
-      // a copy that is short (kept before T.97's check) is not read again after it failed
+      // a copy that is short (kept before T97's check) is not read again after it failed
       kept.clear();
       kept.set(keyOf(1), bytesOf(PART, PART + 3 * MiB));
       fresh(plain);
@@ -292,7 +292,7 @@ const ok = (line) => {
   ok("the Cache API keeps the parts that came whole, and none that did not");
 }
 
-// ---- huggingface.co: fetchRange(), inOrder(), refused() (T.112, T.119, T.129 (3) and (5))
+// ---- huggingface.co: fetchRange(), inOrder(), refused() (T112, T119, T129 (3) and (5))
 {
   const HF = "https://huggingface.co/owner/repo/resolve/0123456789abcdef0123456789abcdef01234567/model.safetensors";
   let size = 3 * PART + 12345;
@@ -347,7 +347,7 @@ const ok = (line) => {
   }
   fresh((url, init, n) => (n === 0 ? new Response("", { status: 408 }) : ranged(init)));
   assert.deepEqual(new Uint8Array((await context.fetchRange(HF, 0, 100, new AbortController().signal)).bytes), bytesOf(0, 100));
-  // (T.380.1) a line that dropped is no refusal: nothing says that another try is answered the same, so it is tried
+  // (T380.1) a line that dropped is no refusal: nothing says that another try is answered the same, so it is tried
   // again, three times in all, and what is thrown at the end is the browser's own error
   fresh((url, init, n) => {
     if (n === 0) throw new TypeError("Failed to fetch");
@@ -360,7 +360,7 @@ const ok = (line) => {
   assert.deepEqual([dropped?.error.name, dropped?.error.message, requests.length], ["TypeError", "Failed to fetch", 3]);
   ok("429 is told as a limit to wait for, 408 and a line that dropped are asked again");
 
-  // T.112, and T.374.3 (a head's later pieces begin where the bytes in hand end, not at the file's first byte): a server
+  // T112, and T374.3 (a head's later pieces begin where the bytes in hand end, not at the file's first byte): a server
   // that answers a range request with the whole file (200). What was asked for is cut out of it as it streams past,
   // wherever it begins; the rest is not read; the size said is the file's
   size = 3 * PART + 12345;
@@ -389,7 +389,7 @@ const ok = (line) => {
   ok("a range answered with the whole file is cut out of it, wherever it begins, and the rest is not read");
 }
 
-// ---- watchArrivals() (T.118, T.129 (6))
+// ---- watchArrivals() (T118, T129 (6))
 {
   fresh((url, init) => new Response(body(0, 3 * MiB, { signal: init.signal, delay: 1000 }), { status: 200 }));
   const plain = context.fetch;
@@ -452,7 +452,7 @@ const ok = (line) => {
   ok("a browser that cannot count a body still gets it");
 }
 
-// ---- the version of Pyodide and its steps (T.118, T.129 (1) and (2))
+// ---- the version of Pyodide and its steps (T118, T129 (1) and (2))
 {
   const JSDELIVR = "https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest";
   // (1) data.jsdelivr.com that never answers: given up after QUIET_SECONDS, as a step of Pyodide's
@@ -523,7 +523,7 @@ const ok = (line) => {
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
 
-  // (3) T.397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
+  // (3) T397: templatePackage(), jinja2 for the converter's reading of chat templates. Pyodide's own package by its
   // name (no version here), with the integrity check loadPackage has by default. Whatever goes wrong, it answers false
   // and throws nothing: the conversion goes on and the converter's own reader reads what it can.
   {
@@ -568,12 +568,12 @@ const ok = (line) => {
     context.console.warn = warn;
     // convert() asks for it where it first places the converter, and has waited for it before the converter is imported.
     // That block runs in no check here (the converter is a stand-in in them): its text is read, and tests/e2e.ts fails
-    // a conversion in a browser that did not ask the CDN for the wheel (T.367.2: tests/python-archive-check.ts runs
+    // a conversion in a browser that did not ask the CDN for the wheel (T367.2: tests/python-archive-check.ts runs
     // the block, converter(), on a stand-in of Pyodide: the order of what it asks for and imports)
     const converts = fs.readFileSync(runtimeUrl("worker/convert.js"), "utf8");
     assert.match(converts, /if \(!llama2_convert\) \{[^]*?const jinja = templatePackage\(pyodide\);[^]*?await jinja;\s*llama2_convert = pyodide\.pyimport\("llama2_convert"\);/,
       "convert() no longer loads jinja2 before it imports the converter");
-    ok("jinja2 is asked of Pyodide by its name, and a conversion goes on where it does not come (T.397)");
+    ok("jinja2 is asked of Pyodide by its name, and a conversion goes on where it does not come (T397)");
   }
 }
 

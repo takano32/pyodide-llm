@@ -1,8 +1,8 @@
-// tests/fakes/gpu-model.ts (T.465.3, moved out of tests/gpu-forms-check.ts)
+// tests/fakes/gpu-model.ts (T465.3, moved out of tests/gpu-forms-check.ts)
 // A made-up model opened on the stand-in WebGPU (tests/fakes/webgpu.ts) as the model's GPU worker opens one (openDevice,
 // handed, upload, block.ts's prepare), with the dispatches of the checks that choose its forms answered as the shaders
 // would (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's): the prompt's attention, the
-// quantization, every tiled form and its texts of llama.cpp's blocks, and (T.465.3) a token's attention. For the checks
+// quantization, every tiled form and its texts of llama.cpp's blocks, and (T465.3) a token's attention. For the checks
 // that run those parts: gpu-forms-check.ts, gpu-tokens-check.ts.
 //
 //   const { m, answers } = await opened({ model, features, spoil, weights })
@@ -28,7 +28,7 @@ const { BLOCK_PACKINGS } = await import(runtimeUrl("shaders/common.ts"));
 const { SUPERBLOCKS } = await import(runtimeUrl("shaders/superblocks.ts"));
 
 // a made-up model on the stand-in (model: one of tests/fakes/gpu-plans.ts's MODELS, a Llama where not said), its forms answered; spoil: a model to put in place of one ("attention", "form",
-// "quantize") or null. T.465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
+// "quantize") or null. T465.2: weights, its matrices' own: "ternary" (all of them), or two types of llama.cpp's blocks,
 // those of w2's two layers (the one matrix of rows of 256: dim is 128), the plan's codebooks the converter's after the
 // checkpoint; spoil.block: a maker of a block type's model, given the right one and the type
 // (a model in place of the right one: of the attention, of its f16 or subgroups texts alone (halves), of the quantization,
@@ -39,12 +39,12 @@ type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Ans
   SHORT_CONV?: Answer; CONV_STATE?: Answer; DELTA_GATES?: Answer; DELTA_CONV?: Answer; DELTA_CONV_STATE?: Answer; DELTA_NET?: Answer; SWIGLU?: Answer;
   OUTPUT_GATE?: Answer; TAKE_OUTLIERS?: Answer; TERNARY_COLUMNS?: Answer; embedBlocks?: Answer; fused?: (right: Answer, output: string) => Answer;
   dp4a?: (right: Answer, output: string) => Answer; form?: (right: Answer) => Answer; block?: (right: Answer, packing: string) => Answer };
-// (T.465.6.5, outliers: the final norm's outlier channels, T.92's, 3, 40 and 77: a classifier multiplied apart)
-// (T.465.6.5, blocks: a type of llama.cpp's blocks by a matrix's name, or "classifier" for the table: the wide Llama's)
-// (T.465.6.5, direct: a model on the GPU alone, its plan as forward/alone.ts makes one: its tables the checkpoint's)
+// (T465.6.5, outliers: the final norm's outlier channels, T92's, 3, 40 and 77: a classifier multiplied apart)
+// (T465.6.5, blocks: a type of llama.cpp's blocks by a matrix's name, or "classifier" for the table: the wide Llama's)
+// (T465.6.5, direct: a model on the GPU alone, its plan as forward/alone.ts makes one: its tables the checkpoint's)
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean; blocks?: Record<string, string>;
   direct?: boolean };
-// (T.465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
+// (T465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
 // check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
 export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {}, direct = false }: Opened = {}) {
   const answers = await gpuAnswers();
@@ -58,9 +58,9 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   if (outliers) Object.assign(plan.tokens, { outliers: true, channels: [3, 40, 77] });
   // (a ternary matrix in the place of an int8 one, which has room for it: a quarter of the bytes and its scales)
   if (weights === "ternary") for (const matrix of Object.values(plan.matrices)) Object.assign(matrix, { packing: "ternary", ternary: true });
-  // (T.465.6.3: and its table, as a ternary checkpoint's: a token's classifier is read in the form's packing)
+  // (T465.6.3: and its table, as a ternary checkpoint's: a token's classifier is read in the form's packing)
   if (weights === "ternary") Object.assign(plan.tokens.classifier, { packing: "ternary", ternary: true });
-  // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T.465.2's review)
+  // (no codebooks where no type is an IQ one: a Q4_K_M's plan has none, T465.2's review)
   if (Array.isArray(weights)) Object.assign(plan.matrices.w2, { packing: "layers", packings: weights });
   for (const [name, packing] of Object.entries(blocks)) Object.assign(name === "classifier" ? plan.tokens.classifier : plan.matrices[name], { packing });
   const types = [...(Array.isArray(weights) ? weights : []), ...Object.values(blocks)];
@@ -71,11 +71,11 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
     new Uint8Array(memory.buffer).set(codebooks, bytes);
     plan.codebooks = bytes;
   }
-  // (T.465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer; T.465.6.3:
+  // (T465.4, sane: numbers a model could have where a check computes with the model's own: a token's layer; T465.6.3:
   // and each block of w2's its float16 scales drawn small, as forms.ts's check draws them: SUPERBLOCKS' scale())
   if (sane) {
     plausible(plan, memory);
-    // (T.465.6.5: the outlier channels of the final norm as large as a model's, 9 times the others: make_ternary.py's)
+    // (T465.6.5: the outlier channels of the final norm as large as a model's, 9 times the others: make_ternary.py's)
     if (outliers) for (const c of plan.tokens.channels) new Float32Array(memory.buffer, plan.tokens.final, plan.dim)[c] *= 9;
     // (each block of a matrix of blocks, of every layer, and of a table of blocks)
     const drawnScales = (packing, at, rows, n) => {
@@ -101,20 +101,20 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
       if (!shape.none) answers.add(ENGINE.flashTile(shape), ((half || subgroups) && spoil.halves) || spoil.attention || flashTile(plan.headSize));
     }
   }
-  // (T.465.3: a token's attention, llama.cpp's decode form with subgroups and without: tokenattention.ts's candidates)
+  // (T465.3: a token's attention, llama.cpp's decode form with subgroups and without: tokenattention.ts's candidates)
   for (const subgroups of [false, true]) {
     const shape = flashVecShape({ headSize: plan.headSize, subgroups, threads: limits.threads, subgroupMin, subgroupMax });
     if (shape.none) continue;
     answers.add(ENGINE.flashVec(shape), spoil.vec ?? answers.flashVec(plan.headSize));
     answers.add(ENGINE.flashVecReduce(shape), spoil.reduce ?? answers.flashVecReduce);
   }
-  // (T.465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
+  // (T465.4: a token's step: its row of the embedding, every fused matrix's text, the sampler)
   answers.add(ENGINE.EMBED, spoil.embed ?? answers.embed);
   answers.add(ENGINE.EMBED_TERNARY, answers.embedTernary);
-  // (T.465.6.5: a prompt's rows of a model on the GPU alone, and a prompt's RoPE)
+  // (T465.6.5: a prompt's rows of a model on the GPU alone, and a prompt's RoPE)
   answers.add(ENGINE.EMBED_ROWS, answers.embedRows);
   answers.add(ENGINE.ROPE, answers.rope);
-  // (T.465.6.5: a token's row of a table of each type of llama.cpp's blocks)
+  // (T465.6.5: a token's row of a table of each type of llama.cpp's blocks)
   for (const packing of BLOCK_PACKINGS) answers.add(ENGINE.embedBlocks({ weights: packing, rows: false }), spoil.embedBlocks ?? answers.embedBlocks({ weights: packing }));
   for (const input of ["norm", "plain"]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
@@ -126,25 +126,25 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   }
   answers.add(ENGINE.SAMPLE, spoil.sample ?? answers.sample);
   answers.add(ENGINE.RMSNORM, answers.rmsnorm());
-  // (T.465.6: a Qwen3's norms of the heads, a Gemma 3's norms behind, a Qwen2's biases, RoPE apart from the matrix)
+  // (T465.6: a Qwen3's norms of the heads, a Gemma 3's norms behind, a Qwen2's biases, RoPE apart from the matrix)
   answers.add(ENGINE.HEAD_NORM, spoil.headNorm ?? answers.rmsnorm({ inPlace: true }));
   answers.add(ENGINE.RMSNORM_ADD, spoil.normAdd ?? answers.rmsnorm({ add: true }));
   answers.add(ENGINE.ADD, spoil.bias ?? answers.bias);
   answers.add(ENGINE.TOKEN_ROPE, answers.tokenRope);
-  // (T.465.6.4: an LFM2's convolution layers, a Qwen3.5's linear-attention layers, SwiGLU apart)
+  // (T465.6.4: an LFM2's convolution layers, a Qwen3.5's linear-attention layers, SwiGLU apart)
   for (const [name, model] of [["SHORT_CONV", answers.shortConv], ["CONV_STATE", answers.convState], ["DELTA_GATES", answers.deltaGates],
     ["DELTA_CONV", answers.deltaConv], ["DELTA_CONV_STATE", answers.deltaConvState], ["DELTA_NET", answers.deltaNet], ["SWIGLU", answers.swiglu], ["OUTPUT_GATE", answers.outputGate],
     ["TAKE_OUTLIERS", answers.takeOutliers], ["TERNARY_COLUMNS", answers.ternaryColumns]]) {
     answers.add(ENGINE[name], spoil[name] ?? model);
   }
-  // (T.465.6.2: GPT-2's and GPT-NeoX's LayerNorms and GELU)
+  // (T465.6.2: GPT-2's and GPT-NeoX's LayerNorms and GELU)
   answers.add(ENGINE.LAYER_NORM, spoil.layerNorm ?? answers.layerNorm);
   answers.add(ENGINE.GELU, spoil.gelu ?? answers.gelu);
   answers.add(ENGINE.NORM_QUANTIZE, spoil.normQuantize ?? answers.normQuantize);
   // (the prompt's and a token's quantization: block.ts's pipeline of this text. A rotated basis's ROTATE_QUANTIZE is not
   // answered: no check here runs one, and its codes would stay 0)
   answers.add(ENGINE.QUANTIZE, spoil.quantize ?? quantize);
-  // (T.465.6.3: and of ternary weights and of each type of llama.cpp's blocks)
+  // (T465.6.3: and of ternary weights and of each type of llama.cpp's blocks)
   for (const packing of ["int8", "ternary", ...BLOCK_PACKINGS]) {
     for (const output of ["rope", "add", "swiglu", "write", "geglu"]) {
       const right = answers.dp4a({ output, weights: packing });
@@ -155,7 +155,7 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
   for (const form of devicePromptForms(device, own)) {
     const right = tiled({ packed: form.packed, packing: form.ternary ? "ternary" : "int8", tile: form.tile });
     answers.add(form.code, spoil.form ? spoil.form(right) : right);
-    // (T.465.2: and each text of a type of llama.cpp's blocks beside it)
+    // (T465.2: and each text of a type of llama.cpp's blocks beside it)
     for (const [packing, code] of Object.entries(form.blocks ?? {})) {
       const block = tiled({ packed: true, packing, tile: form.tile });
       answers.add(code, spoil.block ? spoil.block(block, packing) : block);
@@ -172,7 +172,7 @@ export async function opened(options: Opened = {}) {
   return { m, answers };
 }
 
-// (T.465.4) the block's layers bound with the prompt's form chosen, and its cache made, as start.ts has them before a
+// (T465.4) the block's layers bound with the prompt's form chosen, and its cache made, as start.ts has them before a
 // token's forms are chosen
 export function blockMade(m: { forms: unknown }) {
   block_.bindLayers(m);

@@ -1,5 +1,5 @@
 // What the tables of /benchmark/ share: a number, a ratio, a cell's words, why there are no ratios, the threads' words.
-// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+// (T353: a part of src/bench.ts, which is the window that exports every name of these)
 
 const number = (value: number | null | undefined, digits = 1): string => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
 
@@ -22,7 +22,7 @@ export const timesFaster = (cpuMs: number | undefined, gpuMs: number | undefined
 // a step of the GPU section as the page keeps it (src/benchmark/gpu.ts): its name, and its result or why it has none
 export type Step<Result> = { name: string; result?: Result; error?: string };
 
-// what the GPU section knows of its device: a fallback adapter, and why it was lost (T.157)
+// what the GPU section knows of its device: a fallback adapter, and why it was lost (T157)
 export type Ratios = { fallback?: boolean | null; lost?: string };
 
 /** Why the GPU section shows no ratios at all, whatever the CPU: a lost device (its later times are no GPU's, and
@@ -38,7 +38,7 @@ export function noRatios({ fallback, lost }: Ratios = {}): string | undefined {
  * \| as a | in a cell). */
 export const tableCell = (text: unknown): string => String(text).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 
-/** Why a step of the GPU section has no table: it failed (T.227: in that word, as the rows say it, so that warnings()
+/** Why a step of the GPU section has no table: it failed (T227: in that word, as the rows say it, so that warnings()
  * lists it), or it was not run. */
 export const unmeasured = (error: string | undefined): string => (error ? `failed: ${error}` : "not measured");
 

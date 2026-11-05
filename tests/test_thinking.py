@@ -1,4 +1,4 @@
-# T.520: the budget of a thought in generate(), with the stand-ins of test_parts.py (no Llama, no weights).
+# T520: the budget of a thought in generate(), with the stand-ins of test_parts.py (no Llama, no weights).
 import pytest
 
 from engine import generation
@@ -6,7 +6,7 @@ from test_parts import Letters, stand_in_model
 
 
 class Marked(Letters):
-    """Letters, with the marks of a thought as one token each where they are specials (as T.143 makes them)."""
+    """Letters, with the marks of a thought as one token each where they are specials (as T143 makes them)."""
     MARKS = {"<think>": 200, "</think>": 201}
 
     def encode(self, text, specials=()):
@@ -118,7 +118,7 @@ THINKS, ANSWERS = "<|start|>assistant<|channel|>analysis<|message|>", "<|start|>
 
 
 def test_harmonys_analysis_channel_is_a_thought_its_end_closes():
-    """T.592.1: harmony's thinking form opens the analysis channel in the format; the thought is what the model writes
+    """T592.1: harmony's thinking form opens the analysis channel in the format; the thought is what the model writes
     there, <|end|> closes it (written in place of a draw at the budget), and the model goes on to its final channel."""
     log = []
     model = harmony_model(log, [X, X, X, 303, Y, 0])
@@ -133,7 +133,7 @@ def test_harmonys_analysis_channel_is_a_thought_its_end_closes():
 
 
 def test_harmonys_final_channel_is_no_thought():
-    """T.592.1: llm-jp-4 8B instruct's format asks for the final channel: no thought is followed, whatever the budget,
+    """T592.1: llm-jp-4 8B instruct's format asks for the final channel: no thought is followed, whatever the budget,
     and the model's <|end|> is no mark (it cannot open the analysis channel as one token)."""
     model = harmony_model([], [X, 302, X, 0])
     assert "".join(generation.generate(model, "a" + ANSWERS, steps=80, echo=False, thinking=1)) == "x<|end|>x"

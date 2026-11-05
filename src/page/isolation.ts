@@ -1,12 +1,12 @@
-// src/page/isolation.ts (T.355): the service worker (public/coi.js) and the one reload of a first visit.
+// src/page/isolation.ts (T355): the service worker (public/coi.js) and the one reload of a first visit.
 import { parameters } from "./address.ts";
 import { keep, recall } from "./remembered.ts";
 
 declare const __BUILD__: string;
 
 // ?v=<commit>, on the Service Worker's registration: a new deployment installs its own (the workers and the Python are
-// named by a hash of their text since T.367.3, and need none)
-// T.93 stage 3: cross-origin isolation, for the software threads of forward.ts. GitHub Pages cannot send the headers,
+// named by a hash of their text since T367.3, and need none)
+// T93 stage 3: cross-origin isolation, for the software threads of forward.ts. GitHub Pages cannot send the headers,
 // so a service worker (coi.js) adds them; it controls the page from the next load on, so the first visit reloads
 // once. Nothing else starts before that. If it cannot register, or the page is still not isolated after the
 // reload, the model runs on one thread as before. ?coi=off unregisters it (and stays on one thread).
@@ -20,7 +20,7 @@ export async function isolating(): Promise<boolean> {
       for (const registration of await navigator.serviceWorker.getRegistrations()) {
         await registration.unregister();
       }
-      // (T.507, T.522: a page that came through the worker has its headers, isolated, and the model's worker did not
+      // (T507, T522: a page that came through the worker has its headers, isolated, and the model's worker did not
       // start under them: it loads again without them. Not a page that is that load itself, where a browser still
       // gave it the headers. No mark in sessionStorage: the isolated page and the one without them do not share it)
       const loaded = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
@@ -33,7 +33,7 @@ export async function isolating(): Promise<boolean> {
     // Registered every time: with the same URL nothing changes, with a new ?v= the browser installs the new
     // version and it takes over (skipWaiting, claim). A visitor who was isolated already kept the old version for
     // ever when the page skipped this (2026-09-25: their fetches through it and the new worker did not agree).
-    // T.111: it keeps copies for offline use, on every visit (the owner, 2026-09-25). ?offline=off turns that off
+    // T111: it keeps copies for offline use, on every visit (the owner, 2026-09-25). ?offline=off turns that off
     // (remembered, so that every later visit registers the same one; it then throws the copies away), ?offline=on
     // back on.
     // (no storage: only the address says)

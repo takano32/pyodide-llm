@@ -1,7 +1,7 @@
-// tests/gpu-forms-check.ts (T.465.1): the model's GPU worker choosing a prompt's forms (src/runtime/gpu/forms.ts), on a
+// tests/gpu-forms-check.ts (T465.1): the model's GPU worker choosing a prompt's forms (src/runtime/gpu/forms.ts), on a
 // device that runs no shader (tests/fakes/webgpu.ts) and answers the checks' dispatches as the shaders would
 // (tests/fakes/gpu-answers.ts, whose arithmetic is tests/gpu_answers.py's in NumPy). forms.ts takes a candidate only once
-// its output on made-up numbers is JavaScript's; nothing ran it without a GPU (T.465: five breaks of a review passed the
+// its output on made-up numbers is JavaScript's; nothing ran it without a GPU (T465: five breaks of a review passed the
 // light suite), as nothing wrote the answers. A made-up Llama (tests/fakes/gpu-plans.ts), packed int8 dot on every
 // device, each a fallback adapter (a pair of one pass times a form there: the timing is not what is held):
 //   - on two devices (none of shader-f16 and subgroups, and both): chooseAttention() checks and takes the device's first
@@ -9,11 +9,11 @@
 //   - each check bites: an attention off by a little in one head, a form off in one row of y or writing nothing, the
 //     quantized activations off by one in one of fifty codes (a packed form: the float ones read no codes); and takes
 //     what is off inside its line; a device's first attention wrong, the next one is taken;
-//   - T.465.2: a model's own forms: ternary weights (its forms checked right, one off in a row refused), and each of the
+//   - T465.2: a model's own forms: ternary weights (its forms checked right, one off in a row refused), and each of the
 //     ten types of llama.cpp's blocks (two a model, on w2's layers, the plan's codebooks the converter's): every form's
 //     text of each type checked right, the model's types alone compiled, a type's text off in a row refused by it.
 // Not held here: that the fastest form is taken (the timing's clock is the real one), a window's attention, the forms a
-// page remembers, a token's forms (T.465.3, T.465.4).
+// page remembers, a token's forms (T465.3, T465.4).
 //   node tests/gpu-forms-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.ts";
@@ -87,7 +87,7 @@ for (const features of [[], ["shader-f16", "subgroups"]]) {
 }
 console.log("ok: each check bites: an attention, a form and a quantization a little off are refused, and a form that writes nothing");
 
-// and takes what is a little off inside its line (T.465.1's review: a line drawn too tight passed): the attention off by
+// and takes what is a little off inside its line (T465.1's review: a line drawn too tight passed): the attention off by
 // 0.1% of the largest value in one head (its line 0.4%), a form's one row off by 3e-5 of itself (the float forms' line
 // 1e-4 of a row's size), the quantized codes off by one in one of 400 (1% of them may differ)
 {
@@ -113,7 +113,7 @@ console.log("ok: each check bites: an attention, a form and a quantization a lit
 }
 console.log("ok: what is a little off inside its line is taken, and a device's first attention wrong gives the next one");
 
-// ---- T.465.2: a model's own forms: ternary weights, and llama.cpp's blocks (the ten types, two a model on w2's layers)
+// ---- T465.2: a model's own forms: ternary weights, and llama.cpp's blocks (the ten types, two a model on w2's layers)
 {
   const { m } = await opened({ weights: "ternary" });
   await forms_.chooseAttention(m);

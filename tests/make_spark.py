@@ -1,5 +1,5 @@
 # make_spark.py
-# T.342: a made-up Spark-X2.5 (three local layers of every four that turn their whole heads by a base of their own, the
+# T342: a made-up Spark-X2.5 (three local layers of every four that turn their whole heads by a base of their own, the
 # others a quarter of each head; a gate of each head's output; the exact GELU in the FFN's gate) as files, for the checks
 # of forward.js that take a model by its files (tests/forward-check.ts, tests/threads-check.ts,
 # tests/gpu-hybrid-check.ts: <out>.bin, <out>.tokenizer.bin and <out>.json, as tests/perplexity_prepare.py writes them).

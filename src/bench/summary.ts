@@ -1,5 +1,5 @@
-// T.192: one line a section for the short report and the page's head.
-// (T.353: a part of src/bench.ts, which is the window that exports every name of these)
+// T192: one line a section for the short report and the page's head.
+// (T353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, threadsOf, times, timesFaster, noRatios } from "./cells.ts";
 import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.ts";
 import { tokenWrong, fastestMatVec } from "./gpu.ts";
@@ -14,7 +14,7 @@ import type { DeviceFound, GenerateFound, GpuAbout, LayerFound, LayerRow, LineFo
 type LayerTimed = Omit<LayerFound, "rows"> & { rows: (LayerRow & { msPerLayer: number; dispatches: number })[] };
 type PromptTimed = Omit<PromptFound, "rows"> & { rows: (PromptRow & { tokens: number; msPerToken: number; GFLOPS: number })[] };
 
-// ---- T.185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
+// ---- T185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
 // Each says the fastest and the ceilings; the tables with every row are in the whole report.
 // (gpuSummary()'s steps: each name has a result of its own kind, which the page keeps in one list: any)
 
@@ -91,7 +91,7 @@ export function gpuSummary(steps: Step<any>[], baseline: { token?: Baseline["tok
     one && most && `generated ${number(one.msPerToken, 2)} ms a token one a submission, ${number(most.msPerToken, 2)} with ${most.perSubmission}` +
       (none || samplingWrong ? "" : ` (${times(one.msPerToken / most.msPerToken)})`)].filter(Boolean);
   if (layerParts.length) lines.push(`GPU, ${layerParts.join("; ")}`);
-  // T.202: where the time of the fastest layer the steps' table broke down goes
+  // T202: where the time of the fastest layer the steps' table broke down goes
   const split: Found | undefined = find("the steps of a layer")?.result;
   const splitForm = (split?.forms ?? []).filter((form) => stepMs(form) !== undefined && !form.unsteady && !(check?.[form.check] && !check[form.check].ok))
     .sort((x, y) => x.ms - y.ms)[0];

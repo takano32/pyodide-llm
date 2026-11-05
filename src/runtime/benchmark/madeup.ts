@@ -1,4 +1,4 @@
-// benchmark/madeup.ts (T.375.2): the made-up model /benchmark/'s CPU section runs, and its plan. A module of
+// benchmark/madeup.ts (T375.2): the made-up model /benchmark/'s CPU section runs, and its plan. A module of
 // src/runtime/benchmark/sections.ts, with nothing of a worker in it, so that a test reads it too.
 //
 // A model of Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and values) with two layers
@@ -6,7 +6,7 @@
 // numbers in them.
 //
 // The plan is what Python makes for a model (src/python/engine/plan.py's forward_plan()). The section runs without
-// Pyodide, so T.628.5: python_facts.py makes it at build time, of the header there (python_facts.py's MADEUP), and
+// Pyodide, so T628.5: python_facts.py makes it at build time, of the header there (python_facts.py's MADEUP), and
 // writes it into src/runtime/built/facts/madeup.ts (the classifier under the embedding's name alone, the RoPE tables'
 // bytes in base64). What the section chooses for itself is laid over it here: kv_start, its context (Python's plan
 // grows the keys and values from 256). tests/plan-keys-check.ts still holds it to the plan Python makes.

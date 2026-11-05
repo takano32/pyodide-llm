@@ -1,4 +1,4 @@
-"""T.640.1: the rules of how a text begins, where an answer stops and which tokens a format writes as one
+"""T640.1: the rules of how a text begins, where an answer stops and which tokens a format writes as one
 (convert/beginning.py), and the options the engine gets of them (options_of()), each from values alone: a
 config.json, a Vocabulary and a template, with no weights and no header. The rules' history and the real models they
 hold to are in test_beginning.py, test_answer_end.py and test_tokenizer_says.py, which take them through the whole
@@ -34,7 +34,7 @@ def test_a_template_that_begins_with_a_token_of_its_own():
     # the template of chat_template.jinja is read before the tokenizer_config's
     plain = vocabulary(*MARKS, specials=MARKS, bos=0)
     assert beginning_and_stops(CONFIG, plain, CHATML) == beginning_and_stops(CONFIG, said)
-    # the token after an answer stops it (T.524), unless it is the one every text begins with
+    # the token after an answer stops it (T524), unless it is the one every text begins with
     restart = "{% for m in messages %}<|im_start|>{{ m.content }}{% endfor %}<|im_start|>"
     assert beginning_and_stops(CONFIG, plain, restart) == Beginning(1, [0, 2], "{prompt}<|im_start|>", ["<|im_start|>"])
     assert beginning_and_stops(CONFIG, plain, restart.replace("{% endfor %}", "<|im_end|>{% endfor %}")).stop_tokens == [0, 2]

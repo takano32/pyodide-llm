@@ -1,4 +1,4 @@
-"""The rule of tests/format_check.py for the IDs the page sends against the real ones (T.250's review)."""
+"""The rule of tests/format_check.py for the IDs the page sends against the real ones (T250's review)."""
 import sys
 from pathlib import Path
 
@@ -13,7 +13,7 @@ def test_the_same_ids_are_the_same():
 
 
 def test_one_more_token_in_front_is_the_bos_the_page_always_starts_with():
-    # the T.131 policy: a Qwen3's real tokenizer puts nothing in front, the page puts <|endoftext|>
+    # the T131 policy: a Qwen3's real tokenizer puts nothing in front, the page puts <|endoftext|>
     assert format_check.same_ids([ENDOFTEXT, IM_START, USER, NEWLINE], [IM_START, USER, NEWLINE])
 
 
@@ -31,10 +31,10 @@ def test_another_format_is_not_the_same():
 
 
 def test_nothing_may_stand_in_front_but_where_it_was_measured():
-    # T.312: exactly the real ids by default. <|endoftext|> in front of <|im_start|> is what a Qwen3.5 was sent before
-    # its entries began at the format's own first token (T.236: it costs the model much on plain text and moves its own
-    # answers), and what the 8B Qwen3s lost by (T.250's review); same_ids lets that by (the extra token is not the real
-    # first one), ids_match only for the entries of LENIENT (measured) and UNMEASURED (said, T.399)
+    # T312: exactly the real ids by default. <|endoftext|> in front of <|im_start|> is what a Qwen3.5 was sent before
+    # its entries began at the format's own first token (T236: it costs the model much on plain text and moves its own
+    # answers), and what the 8B Qwen3s lost by (T250's review); same_ids lets that by (the extra token is not the real
+    # first one), ids_match only for the entries of LENIENT (measured) and UNMEASURED (said, T399)
     real, old_design = [IM_START, USER, NEWLINE], [ENDOFTEXT, IM_START, USER, NEWLINE]
     for model_id in ("hf-qwen3.5-0.8b", "hf-qwen3.5-9b-thinking", "hf-granite-4.2-3b", "hf-minicpm5-1b-thinking", "hf-ternary-bonsai-2-27b",
                      "hf-hermes-3-llama-3.2-3b", "hf-neohorse-1-4b", "hf-agents-a1-4b", "hf-smollm3-3b", "hf-qwen3-8b",
@@ -42,7 +42,7 @@ def test_nothing_may_stand_in_front_but_where_it_was_measured():
         assert format_check.ids_match(model_id, real, real)
         assert not format_check.ids_match(model_id, old_design, real)
         assert format_check.lenient(model_id) is None
-    # where it was measured to cost little, the page's BOS in front is let by (T.131), and the doubled one is not
+    # where it was measured to cost little, the page's BOS in front is let by (T131), and the doubled one is not
     for model_id in ("hf-qwen3-4b", "hf-qwen3-4b-thinking-2507", "hf-qwen2.5-coder-7b-instruct", "hf-eurollm-1.7b-instruct"):
         assert format_check.ids_match(model_id, old_design, real)
         assert format_check.lenient(model_id)
@@ -54,14 +54,14 @@ def test_nothing_may_stand_in_front_but_where_it_was_measured():
     # no entry is in both
     assert not set(format_check.LENIENT) & set(format_check.UNMEASURED)
     assert not format_check.ids_match("hf-qwen3-4b", [IM_START, IM_START, USER, NEWLINE], real)
-    # --hf (T.269): the converter's BOS in front is what ?hf= sends for these families too
+    # --hf (T269): the converter's BOS in front is what ?hf= sends for these families too
     assert format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real, alone=True)
     assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real)
     assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1, 2] + real, real, alone=True)
 
 
 def test_every_key_names_an_entry_or_a_family_of_the_list():
-    # (T.312's review) an id gone from the list, or misspelt, fails here: src/models.ts read by Node, as main() does
+    # (T312's review) an id gone from the list, or misspelt, fails here: src/models.ts read by Node, as main() does
     ids = [entry["id"] for entry in format_check.entries()]
     for key in {**format_check.LENIENT, **format_check.UNMEASURED}:
         assert any(i.startswith(key) for i in ids) if key.endswith("-") else key in ids, key

@@ -1,4 +1,4 @@
-// gpu/linear.ts (T.271.2, T.271.3, T.568.2): a Qwen3.5's linear-attention layers on the GPU, a kind of gpu/kinds.ts's
+// gpu/linear.ts (T271.2, T271.3, T568.2): a Qwen3.5's linear-attention layers on the GPU, a kind of gpu/kinds.ts's
 // table: its matrices of q, k and v (into mixed) and of z, its gates (DELTA_GATES), its convolution (DELTA_CONV into
 // convolved) and its rows moved on (DELTA_CONV_STATE), the l2 norms of q and of k (HEAD_NORM), the delta rule over the
 // place's state (DELTA_NET into out), the norm of a value head, z's gate (SWIGLU: into z), its matrix out; a token's
@@ -10,7 +10,7 @@ import { ENGINE } from "../shaders/engine.ts";
 import type { GpuKind, Quantizing } from "./kinds.ts";
 import type { Pass } from "./device.ts";
 
-// T.565: the bundles of places' states of stateSize floats each, no bundle more than most bytes (a place a bundle at the
+// T565: the bundles of places' states of stateSize floats each, no bundle more than most bytes (a place a bundle at the
 // least): every bundle's bytes, and a place's bundle and its first float in it
 export function stateBundles(places: number, stateSize: number, most: number) {
   const per = Math.max(1, Math.floor(most / (stateSize * 4)));
@@ -25,7 +25,7 @@ export const linear: GpuKind = {
   async block(m) {
     const { plan } = m, B = plan.batch, { keyHeads, valueHeads, keyDim, valueDim, taps } = plan.linear!, places = plan.kinds.filter((kind) => kind === "linear").length;
     const keys = keyHeads * keyDim, read = valueHeads * valueDim, mixed = 2 * keys + read, groups = Math.ceil(mixed / 64);
-    // (T.573: a place's state is bound whole: one past a buffer the device binds is refused before anything is made, as
+    // (T573: a place's state is bound whole: one past a buffer the device binds is refused before anything is made, as
     // gpuOnlyUnfit() refuses it of a model on the GPU alone)
     if (4 * valueHeads * keyDim * valueDim > m.limit) throw new Error(`a linear-attention layer's state of ${4 * valueHeads * keyDim * valueDim} bytes is past a buffer of this GPU (${m.limit} bytes)`);
     const [gates, convolving, moving, rule, swiglu] = await within(Promise.all([ENGINE.DELTA_GATES, ENGINE.DELTA_CONV, ENGINE.DELTA_CONV_STATE, ENGINE.DELTA_NET,
@@ -36,7 +36,7 @@ export const linear: GpuKind = {
     m.device.queue.writeBuffer(units, 0, Float32Array.from({ length: 2 * keyDim }, (_, i) => (i < keyDim ? 1 / keyDim : 1 / Math.sqrt(keyDim))));
     const rowsBytes = places * taps * mixed * 4;
     const mixedOut = buffer(m, B * mixed * 4), convolved = buffer(m, B * mixed * 4), work = buffer(m, B * 2 * valueHeads * 4), out = buffer(m, B * read * 4);
-    // T.565: the state matrices in bundles of whole places, each no more than a buffer the device binds (m.limit, or
+    // T565: the state matrices in bundles of whole places, each no more than a buffer the device binds (m.limit, or
     // plan.force.stateBytes in the tests): the 27B's 48 places are 144 MiB, past the 128 MiB a phone's GPU binds. The
     // bundles one after another are the places in order, as the CPU stages them (place p: bundle p / per, at p % per)
     const stateSize = valueHeads * keyDim * valueDim, bundled = stateBundles(places, stateSize, plan.force.stateBytes ?? m.limit);
@@ -80,7 +80,7 @@ export const linear: GpuKind = {
           return false;
         };
       },
-      // T.271.3: a token's: the block's shaders on a token's vectors, the states and rows the block's (a token is a block
+      // T271.3: a token's: the block's shaders on a token's vectors, the states and rows the block's (a token is a block
       // of one: its q, k and v apart in a room of one token each), and the matrices of the normed stream written as they are
       async tokens({ params }) {
         const t = { mixed: buffer(m, mixed * 4), convolved: buffer(m, mixed * 4), z: buffer(m, read * 4), work: buffer(m, 2 * valueHeads * 4), out: buffer(m, read * 4) };
@@ -113,7 +113,7 @@ export const linear: GpuKind = {
           },
         };
       },
-      // T.271.3: a first layer of this kind goes on from rows of random numbers, ±1, and a state of random numbers, ±0.1,
+      // T271.3: a first layer of this kind goes on from rows of random numbers, ±1, and a state of random numbers, ±0.1,
       // both of its place 0; and it keeps no keys and values. As the CPU has it (linear.ts): mixed = wqkv · xn and z =
       // wz · xn; the gates beta = sigmoid(wb · xn) and decay = exp(decay × softplus(wa · xn + dt_bias)) of every value
       // head; the convolution of mixed over the rows (rows[1] to rows[taps - 1], then mixed) with SiLU; q and k each head

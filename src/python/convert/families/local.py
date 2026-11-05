@@ -1,4 +1,4 @@
-# convert/families/local.py (T.640.4): what the families whose layers are of two kinds, some attending a window of the
+# convert/families/local.py (T640.4): what the families whose layers are of two kinds, some attending a window of the
 # last positions and turning by a base of RoPE of their own (engine/layout.py's local_layers()), read of a config.json
 # the same way: a Gemma 3, a Gemma 4 and a Spark-X2.5. Each family's own reading (how its config.json lists the kinds,
 # what it takes where nothing is said) stays in its module.

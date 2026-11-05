@@ -1,6 +1,6 @@
-// tests/imports-check.ts (T.367.1): tests/imports.ts alone, on made-up texts and made-up folders (stand-ins for the
+// tests/imports-check.ts (T367.1): tests/imports.ts alone, on made-up texts and made-up folders (stand-ins for the
 // reading and the listing: nothing of the product is read). How a file takes its neighbours' names, what is refused
-// (T.587: the awaited imports with a ?v= of before T.367 too), what is left out of a text, the order of what takes from
+// (T587: the awaited imports with a ?v= of before T367 too), what is left out of a text, the order of what takes from
 // what, and a window held to its folder. Node only, under a second:
 //
 //   node tests/imports-check.ts
@@ -36,7 +36,7 @@ check("what is refused", () => {
     [`export { a } from "./x.js";\n`, /an export from another file/],
     [`const { a } = await import("./x.js");\n`, /an import this check does not know/],
     [`const { a } = await import(new URL("x.js", import.meta.url));\n`, /an import this check does not know/],
-    // (T.587: the form of a tree served as it is, from before T.367, is read no more)
+    // (T587: the form of a tree served as it is, from before T367, is read no more)
     [awaited("a", "x.js"), /an import this check does not know/],
     [awaited("a", "worker/state.js", FIRST), /an import this check does not know/],
   ]) assert.throws(() => importsOf(text, "f.js"), words, text);
@@ -93,7 +93,7 @@ check("a window that does not hold its folder", () => {
   // a ring; and the old form's lines in a file
   assert.throws(() => windowed("w.js", { ...but(FOLDER, { "w/a.js": `import { two } from "./b.js";\nexport const one = two;\n` }), more: ["k.js"] }), /wait for one another: w\/a\.js → w\/b\.js → w\/a\.js/);
   assert.throws(() => windowed("w.js", { ...but(FOLDER, { "w/a.js": `${awaited("K", "../k.js")}export const one = K;\n` }), more: ["k.js"] }), /w\/a\.js: an import this check does not know/);
-  // (a window's list of before T.367 is a promise kept, which is not looked at: its folder is then imported by nobody)
+  // (a window's list of before T367 is a promise kept, which is not looked at: its folder is then imported by nobody)
   assert.throws(() => windowed("w.js", { ...but(FOLDER, { "w.js": `${listOf("w", ["a", "b"])}export const none = 0;\n` }), more: ["k.js"] }), /w\/a\.js, w\/b\.js: in w\/, and neither w\.js nor a file it takes from takes anything of them/);
 });
 

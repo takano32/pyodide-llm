@@ -1,4 +1,4 @@
-# T.363.3: a GGUF whose matrices are in llama.cpp's blocks (the K- and i-quantized types), converted with the blocks left
+# T363.3: a GGUF whose matrices are in llama.cpp's blocks (the K- and i-quantized types), converted with the blocks left
 # the bytes they are (Conversion(blocks=True), convert/stream.py's Kept): what the form then says ("kinds", a type to
 # each layer; "tiled"), where the bytes go (the rows llama.cpp and the plan move, moved as bytes; a linear-attention
 # layer's output matrix left as the file has it, its input put in the file's order by the engine), the codebooks, and
@@ -209,7 +209,7 @@ def test_a_float32_file_keeps_the_blocks_too(saluki):
 
 
 def test_forward_js_is_given_such_a_checkpoint_with_its_kinds_and_its_order(saluki):
-    """T.363.5: the plan says every layer's type where it is and that the output matrix is tiled; one that says "tiled"
+    """T363.5: the plan says every layer's type where it is and that the output matrix is tiled; one that says "tiled"
     alone says that too (forward.js would multiply the output matrix by an input in the other order without)."""
     from test_external import Outside
     for conversion, more in ((saluki.kept, {}), (saluki.wide, {"tiled": True})):
@@ -355,8 +355,8 @@ def test_a_llamas_q_and_k_which_llama_cpp_turns_are_kept_where_they_are(arch):
 
 
 def test_a_granites_q_which_the_conversion_scales_is_widened_and_the_rest_kept():
-    """T.502.5: a Granite's GGUF keeps its multiplier apart and q as a Llama's (turned): the conversion scales q once
-    (T.253), which no bytes can do, so q is widened and every other matrix stays as its blocks. The logits are the
+    """T502.5: a Granite's GGUF keeps its multiplier apart and q as a Llama's (turned): the conversion scales q once
+    (T253), which no bytes can do, so q is widened and every other matrix stays as its blocks. The logits are the
     widened conversion's, to the bit."""
     from test_granite import granite_gguf
     config = dict(dim=256, hidden_dim=512, n_heads=4, vocab_size=40, n_layers=2)
@@ -396,7 +396,7 @@ def converted_both(file, config, kept="int8"):
 
 
 def test_a_gpt2s_matrices_which_llama_cpp_transposes_are_kept_and_c_attns_parts_cut_as_bytes():
-    """T.502, T.636: a GPT-2's GGUF holds its Conv1D matrices turned to (out, in), which the reader says ("transposed")
+    """T502, T636: a GPT-2's GGUF holds its Conv1D matrices turned to (out, in), which the reader says ("transposed")
     and the plan transposes back: the rows are the file's (wo, w1, w2) or a run of them (c_attn's part for q, k and
     v), so every matrix stays as its blocks, with the table of the tokens (shared with the classifier). On a GPT-2 of
     rows of whole blocks of 256 (dim 256, an FFN of 512). Both float32, as the Granite's above: the logits are the
@@ -416,7 +416,7 @@ def test_a_gpt2s_matrices_which_llama_cpp_transposes_are_kept_and_c_attns_parts_
 
 @pytest.mark.parametrize("rotary_pct, parallel", [(0.25, True), (1.0, False)])
 def test_a_neoxs_matrices_are_kept_and_its_q_k_and_v_moved_as_bytes(rotary_pct, parallel):
-    """T.502: a GPT-NeoX's GGUF holds query_key_value as all of q, then k, then v (the reader's "split"), and the plan
+    """T502: a GPT-NeoX's GGUF holds query_key_value as all of q, then k, then v (the reader's "split"), and the plan
     takes each a head after the other: moves of whole rows, so every matrix stays as its blocks, the classifier of its
     own too, and the rows of q, k and v are moved as bytes. The logits are the widened conversion's, to the bit."""
     from test_gguf import other_gguf
@@ -550,7 +550,7 @@ class Places:
 
 def test_saluki_27b_is_laid_out_with_its_blocks_kept_and_its_classifier_lands_past_4_gib():
     """The header the converter makes of the real file's head (tests/saluki_form.py's, the classifier first in the
-    file), without the 7.9 GB: the form it writes is the one T.363.2 sized, the checkpoint 7,956,712,492 bytes, and the
+    file), without the 7.9 GB: the form it writes is the one T363.2 sized, the checkpoint 7,956,712,492 bytes, and the
     first bytes fed, which end inside a block, are written where the classifier is. tests/smoke.ts asks the same inside
     Pyodide, whose NumPy has integers of 32 bits."""
     sink = Places()

@@ -1,4 +1,4 @@
-// int8-check.ts (T.644.1): the int8 and int6 kernels the default model takes at every token (kernel_relaxed.ts's
+// int8-check.ts (T644.1): the int8 and int6 kernels the default model takes at every token (kernel_relaxed.ts's
 // matmul_q8r, matmul_q8r_tile and matmul_q6r; kernel/matmul.ts's matmul_q8, matmul_q6, int8_sums and six_sums; and
 // kernel/quantize.ts's quantize_x, whose bytes they read) against the same arithmetic written out here, in the same
 // order, value by value: int8's numbers change with the order of the adds, so the model adds as the kernels do. Node and

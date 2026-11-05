@@ -1,11 +1,11 @@
-// forward/blocks.ts (T.502.2): what an engine makes once for the kernels of llama.cpp's blocks (T.363.5), apart from
+// forward/blocks.ts (T502.2): what an engine makes once for the kernels of llama.cpp's blocks (T363.5), apart from
 // createForward() (engine.ts), which calls it where the model has rows of such a type. A module of src/runtime/forward.ts.
 
 import { BLOCK_TABLES, SPREAD_THREADS, packingOf, spreadBytes } from "../jobs.ts";
 import type { Kernels } from "../jobs.ts";
 import type { Part, Plan, Tensor } from "../contracts/plan.ts";
 
-/** T.363.5: what the kernels of llama.cpp's blocks read besides a matrix: their tables, made here once of the
+/** T363.5: what the kernels of llama.cpp's blocks read besides a matrix: their tables, made here once of the
  * checkpoint's codebooks; and for the tile of the signed dot product, taken where this engine's relaxed SIMD multiplies
  * signed bytes by signed bytes exactly (every pair of bytes is asked, once: signed, the tests' answer instead), the bytes
  * each thread spreads a row into, for the widest row there is (0: none). alloc() takes the engine's memory. */

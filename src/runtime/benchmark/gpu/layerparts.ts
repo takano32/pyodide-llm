@@ -1,12 +1,12 @@
-// One layer of a token on the GPU (T.150, T.175, T.224): its shape, the forms it runs in (separate steps, fused, DP4A), their
+// One layer of a token on the GPU (T150, T175, T224): its shape, the forms it runs in (separate steps, fused, DP4A), their
 // shaders and pipelines, and the buffers and bind groups of one (layerParts()). The layer's check, its times and the
 // generated tokens all build on these.
-// (T.353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T.367.3)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
 import { shared, matrixBytes, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, fill, floats, pipelinesFor, validated } from "./device.ts";
 import { toHalf } from "./halves.ts";
 import type { Dispatch, ModelShape, Owned, Shape, Weights } from "./device.ts";
 import type { FlashShape, FlashVecShape } from "../../shaders/attention.ts";
-// T.368.7: the types of a layer's things, for the steps that build on them.
+// T368.7: the types of a layer's things, for the steps that build on them.
 // a layer's four matrices by their keys, and its shape
 export type MatrixKey = "qkv" | "o" | "gateUp" | "down";
 export type LayerShape = { dim: number; hidden: number; heads: number; kvHeads: number; headSize: number; kvDim: number; matrices: Record<MatrixKey, Shape> };
@@ -38,7 +38,7 @@ export type LayerVectors = { h: GPUBuffer; xb?: GPUBuffer; q: GPUBuffer; att: GP
 export type AttentionVectors = Pick<LayerVectors, "q" | "att" | "parts">;
 export type AttentionUniforms = { step: GPUBuffer; flash: GPUBuffer; positions?: number; vecParams?: (nwg: number) => GPUBuffer };
 export type LayerUniforms = AttentionUniforms & { qkv: GPUBuffer; o: GPUBuffer; gateUp: GPUBuffer; down: GPUBuffer; attentionNorm: GPUBuffer; ffnNorm: GPUBuffer; quantize: GPUBuffer[] };
-// T.202: a dispatch with what it is (named())
+// T202: a dispatch with what it is (named())
 export type Step = Dispatch & { step: string; kind: string; matrix?: MatrixKey };
 // the state a layer starts from (layerState()), and the check's data: that, the weights, the angles and eps
 export type LayerState = { h: Float32Array<ArrayBuffer>; norms: Float32Array<ArrayBuffer>; keys: Uint16Array<ArrayBuffer>; values: Uint16Array<ArrayBuffer> };
@@ -47,15 +47,15 @@ export type LayerData = LayerState & Partial<Record<MatrixKey, Weights>> & { ang
 type Held = { w: GPUBuffer; s: GPUBuffer; rows: number; n: number };
 export type Range = { w: GPUBufferBinding; s: GPUBufferBinding; rows: number; n: number };
 
-// ---- T.150: one layer of a generated token (Llama 3.2 1B's width, at position LAYER_POS), as its fourteen separate
+// ---- T150: one layer of a generated token (Llama 3.2 1B's width, at position LAYER_POS), as its fourteen separate
 // steps (RMSNorm, q, k, v, RoPE and the cache, the attention, o, the residual add, RMSNorm, gate, up, SwiGLU, down, the
-// residual add: the prompt's shaders and T.149's matrix × vector), fused into five (shaders/fused.ts's fusedMatVec: q, k
+// residual add: the prompt's shaders and T149's matrix × vector), fused into five (shaders/fused.ts's fusedMatVec: q, k
 // and v with the norm and RoPE, the attention, o with the add, gate and up with the norm and SwiGLU, down with the
-// add), each with the workgroup's reduction and, where subgroups are, with subgroupAdd; and T.175's forms on DP4A
+// add), each with the workgroup's reduction and, where subgroups are, with subgroupAdd; and T175's forms on DP4A
 // below (LAYER_KINDS). All read the same weights: a layer's four matrices (q, k and v one after the other; o; gate and up; down), the separate
-// steps a range of rows of them each. Timed as the matrix × vector is (T.149), n layers a submission, each on the next
+// steps a range of rows of them each. Timed as the matrix × vector is (T149), n layers a submission, each on the next
 // copy of the weights (copies that make MATVEC_BYTES, so that a layer is not read from the GPU's caches), a submission
-// of 2n less one of n, but the forms in turn (interleaved: T.150's review, as T.147's timeForms), so that a device that
+// of 2n less one of n, but the forms in turn (interleaved: T150's review, as T147's timeForms), so that a device that
 // warms up and slows down does so for all of them alike. The attention is the prompt's (flashTile, f32 in the
 // workgroup's memory and no subgroups, the same in every form: its cost is in every row alike).
 const LAYER_POS = 127, LAYER_MOST = 4096, EPS = 1e-5, THETA = 500000;
@@ -64,15 +64,15 @@ const layerShape = ({ dim, hidden, heads, kvHeads }: Omit<ModelShape, "layers">)
   return { dim, hidden, heads, kvHeads, headSize, kvDim,
     matrices: { qkv: [dim + 2 * kvDim, dim], o: [dim, dim], gateUp: [2 * hidden, dim], down: [dim, hidden] } };
 };
-// T.175: the same on ONNX Runtime's DP4A for small M (the matrix × vector that read Llama 3.2 1B's w1 at 96.8% of the
-// buffer's reads on the owner's Android, T.149, where llama.cpp's read a layer at 18.5%, T.150): its vector quantized
+// T175: the same on ONNX Runtime's DP4A for small M (the matrix × vector that read Llama 3.2 1B's w1 at 96.8% of the
+// buffer's reads on the owner's Android, T149, where llama.cpp's read a layer at 18.5%, T150): its vector quantized
 // before each matrix (QUANTIZE, four a layer), as separate steps (eighteen dispatches), fused but for the norms (eleven:
-// the matrices with T.150's writes, RMSNORM and QUANTIZE apart) and fused (nine: the norm with the quantizer,
+// the matrices with T150's writes, RMSNORM and QUANTIZE apart) and fused (nine: the norm with the quantizer,
 // NORM_QUANTIZE). Where a device has no packed int8 dot, those rows say so. llama.cpp's rows stay beside them.
-// base: whose matrix × vector; fused: the matrices with T.150's writes (fusedMatVec, fusedDp4aMatVec); normApart: the
-// norms dispatches of their own. T.150's llama.cpp form with the norms apart runs only where DP4A cannot (withoutDp4a:
-// T.175's review): there it is the layer a device without the packed int8 dot chooses from (the owner's Android on
-// llama.cpp's matrix: separate 9.27 ms, the norms apart 9.92, fused 10.61, T.150); elsewhere the DP4A one stands for what
+// base: whose matrix × vector; fused: the matrices with T150's writes (fusedMatVec, fusedDp4aMatVec); normApart: the
+// norms dispatches of their own. T150's llama.cpp form with the norms apart runs only where DP4A cannot (withoutDp4a:
+// T175's review): there it is the layer a device without the packed int8 dot chooses from (the owner's Android on
+// llama.cpp's matrix: separate 9.27 ms, the norms apart 9.92, fused 10.61, T150); elsewhere the DP4A one stands for what
 // folding the norm saves.
 const LAYER_KINDS: LayerKind[] = [{ name: "llama.cpp, separate steps", base: "llama.cpp", fused: false },
   { name: "llama.cpp, fused (T150), the norms apart", base: "llama.cpp", fused: true, normApart: true, withoutDp4a: true },
@@ -80,7 +80,7 @@ const LAYER_KINDS: LayerKind[] = [{ name: "llama.cpp, separate steps", base: "ll
   { name: "DP4A, separate steps", base: "DP4A", dp4a: true, fused: false },
   { name: "DP4A, fused (T175), the norms apart", base: "DP4A", dp4a: true, fused: true, normApart: true },
   { name: "DP4A, fused (T175)", base: "DP4A", dp4a: true, fused: true }];
-// T.224: each fused form the engine has (not withoutDp4a) twice, with the prompt's tiles for its attention and with
+// T224: each fused form the engine has (not withoutDp4a) twice, with the prompt's tiles for its attention and with
 // llama.cpp's decode form, flash_attn_vec (vecAttention()): the engine chooses the attention of a token on the device
 const layerForms = (): Form[] => {
   const subgroups = hasSubgroupId();
@@ -93,10 +93,10 @@ const layerForms = (): Form[] => {
 };
 // whether this device's shaders may use subgroups and subgroup_id
 const hasSubgroupId = () => shared.device.features.has("subgroups") && (navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ?? false);
-// T.224's review: the prompt's tiles for a head of headSize as the engine makes them on this device (src/runtime/gpu.js's
+// T224's review: the prompt's tiles for a head of headSize as the engine makes them on this device (src/runtime/gpu.js's
 // chooseAttention: f16 in the workgroup's memory where there is shader-f16, subgroups where there are and subgroup_id,
 // the first it tries), which it chooses a token's attention against; the layer rows' tiles are f32 without subgroups
-// (T.150), which the engine makes only where the first is not here. { name, shape }, or null where the two are one
+// (T150), which the engine makes only where the first is not here. { name, shape }, or null where the two are one
 function engineTiles(headSize: number): { shape: FlashShape; name: string } | null {
   const half = shared.device.features.has("shader-f16"), subgroups = hasSubgroupId();
   if (!half && !subgroups) return null;
@@ -105,7 +105,7 @@ function engineTiles(headSize: number): { shape: FlashShape; name: string } | nu
     subgroupMin: shared.adapter.info?.subgroupMinSize, subgroupMax: shared.adapter.info?.subgroupMaxSize });
   return shape.none ? null : { shape, name: `the prompt's tiles${half ? ", f16" : ""}${subgroups ? ", subgroups" : ""} (the engine's here)` };
 }
-// T.224: the attention of a token by llama.cpp's flash_attn_vec (shaders/attention.ts's flashVec and flashVecReduce), with
+// T224: the attention of a token by llama.cpp's flash_attn_vec (shaders/attention.ts's flashVec and flashVecReduce), with
 // subgroups where there are, else with the lanes of the workgroup standing for a subgroup; shape(headSize): its shape
 const vecAttention = (subgroups = hasSubgroupId()) => ({ subgroups, name: `flash_attn_vec${subgroups ? " (subgroups)" : ""}`,
   shape: (headSize: number) => shared.WGSL.flashVecShape({ headSize, subgroups, threads: Math.min(shared.device.limits.maxComputeInvocationsPerWorkgroup, shared.device.limits.maxComputeWorkgroupSizeX),
@@ -115,7 +115,7 @@ const tokenForm = (): Form => {
   const dp4a = shared.packed && shared.layerVerdicts?.[`a layer, ${DP4A_TOKEN}`]?.ok === true;
   return { ...LAYER_KINDS.find((kind) => (dp4a ? kind.name === DP4A_TOKEN : kind.name === "llama.cpp, fused (T150)"))!, subgroups: false };
 };
-// T.624.2: a plain matrix × vector (the separate steps' products and a matrix alone): the engine's text of a token's
+// T624.2: a plain matrix × vector (the separate steps' products and a matrix alone): the engine's text of a token's
 // matrix that writes its rows as they are (the classifier's: fusedMatVec, or on DP4A fusedDp4aMatVec, with the output
 // "write"), bound as the engine binds it: 3 the Params (shapeOf), 4 the vector's scales (DP4A), 5 the output. (Until
 // then the benchmark's copies of the two, shaders/matvec.ts's mulMatVec and ortDp4aMatVec, whose output was at 3)
@@ -133,10 +133,10 @@ const layerCodes = ({ dp4a, fused, normApart, subgroups }: Form): [PipeKey, stri
   return [["quantize", shared.WGSL.QUANTIZE], normApart ? ["norm", shared.WGSL.RMSNORM] : ["normQuantize", shared.WGSL.NORM_QUANTIZE],
     ["qkv", shared.WGSL.fusedDp4aMatVec({ output: "rope", weights: "int8" })], ["add", shared.WGSL.fusedDp4aMatVec({ output: "add", weights: "int8" })], ["glu", shared.WGSL.fusedDp4aMatVec({ output: "swiglu", weights: "int8" })]];
 };
-// T.175: a vector of n values quantized (QUANTIZE) into { xq, xs }: a thread a group of 32
+// T175: a vector of n values quantized (QUANTIZE) into { xq, xs }: a thread a group of 32
 const quantizing = (pipes: Pick<Pipes, "quantize">, group: Grouping, x: GPUBuffer, into: Quantized, uniform: GPUBuffer, n: number, step: GPUBuffer): Dispatch => [pipes.quantize, group(pipes.quantize, [[0, x], [1, into.xq], [2, into.xs], [3, uniform], [4, step]]), Math.ceil(n / shared.GROUP / 64), 1];
-// The dispatches of one layer of a token in a fused form (layer() and generate()): T.150's five (fusedMatVec), or on
-// DP4A (T.175) the norm and its quantizing (NORM_QUANTIZE, or with the norms apart RMSNORM and QUANTIZE), q, k and v
+// The dispatches of one layer of a token in a fused form (layer() and generate()): T150's five (fusedMatVec), or on
+// DP4A (T175) the norm and its quantizing (NORM_QUANTIZE, or with the norms apart RMSNORM and QUANTIZE), q, k and v
 // with RoPE and the cache, the attention, its output quantized, o with the add, the norm and its quantizing, gate and up
 // with SwiGLU, its output quantized, down with the add. m: the layer's matrices ({w, s, rows} each); cache: its keys and
 // values; v: the vectors (h, xb, q, att, g, the norms' weights, the angles, and quantized: the { xq, xs } of each
@@ -173,8 +173,8 @@ function fusedLayer(form: Form, pipes: Pipes, { dim, hidden, heads }: Pick<Layer
     ...normed(u.ffnNorm, gluIn), product("gate and up with SwiGLU", "gateUp", pipes.glu, m.gateUp, gluIn, u.gateUp, hidden, [[5, v.g]]),
     quantized(v.g, downIn, u.quantize[1], hidden), product("down with the residual's add", "down", pipes.add, m.down, downIn, u.down, dim, [[5, v.h]])];
 }
-// the attention of a fused layer on cache ({ keys, values }: buffers, or T.208's ranges of one) for a token that reads
-// u.positions: flash attention's tile, or (T.224, form.attention "vec") flash_attn_vec's parts of the positions, nwg a
+// the attention of a fused layer on cache ({ keys, values }: buffers, or T208's ranges of one) for a token that reads
+// u.positions: flash attention's tile, or (T224, form.attention "vec") flash_attn_vec's parts of the positions, nwg a
 // head, and where there is more than one their reduce (pipes.vecShape: its shape; v.parts, u.vecParams(nwg))
 function attentionSteps(form: Attending, pipes: AttentionPipes, heads: number, cache: Cache, v: AttentionVectors, u: AttentionUniforms, group: Grouping): Step[] {
   if (form.attention !== "vec") {
@@ -185,7 +185,7 @@ function attentionSteps(form: Attending, pipes: AttentionPipes, heads: number, c
     [pipes.vec, group(pipes.vec, [[0, v.q], [1, cache.keys], [2, cache.values], [3, v.parts], [4, v.att], [5, params], [6, u.step]]), heads * nwg, 1]),
   ...(nwg > 1 ? [named(`the attention's parts reduced (flash_attn_vec${which})`, "attention", [pipes.vecReduce, group(pipes.vecReduce, [[0, v.parts], [1, v.att], [2, params]]), heads, 1])] : [])];
 }
-// T.202: a dispatch of a fused layer with what it is (run() reads only its first five): step, its name in the steps'
+// T202: a dispatch of a fused layer with what it is (run() reads only its first five): step, its name in the steps'
 // table (the same name where two dispatches cost the same: the two norms, the quantizing of a vector of dim); kind,
 // "matrix" (with what is folded into its write), "attention" or "small"; matrix, the layer's matrix it reads
 function named(step: string, kind: string, dispatch: Dispatch, matrix?: MatrixKey): Step {
@@ -211,7 +211,7 @@ async function layerPipes(shape: Pick<LayerShape, "headSize">, form: Form): Prom
   // one at a time: each in an error scope of its own
   const pipes = { small: pipelinesFor().small } as Pipes;
   for (const [key, code] of [["flash", shared.WGSL.flashTile(flash)], ...layerCodes(form)] satisfies [PipeKey, string][]) pipes[key] = await compiled(code);
-  // T.224: flash_attn_vec and its reduce, where the form's attention is it
+  // T224: flash_attn_vec and its reduce, where the form's attention is it
   if (form.attention === "vec") {
     pipes.vecShape = vecAttention(form.vecSubgroups).shape(shape.headSize);
     if (pipes.vecShape.none) throw new Error(pipes.vecShape.none);
@@ -222,7 +222,7 @@ async function layerPipes(shape: Pick<LayerShape, "headSize">, form: Form): Prom
 }
 // A layer's buffers: copies of its four matrices (data: the check's weights, else random), the vectors, the norms'
 // weights, the angles of the position, the cache (positions up to pos), and the uniforms. owned: where they go to be
-// destroyed. dispatches(form, pipes, copy): one layer's, [pipeline, bind group, x, y] each. reach (T.208, the steps'
+// destroyed. dispatches(form, pipes, copy): one layer's, [pipeline, bind group, x, y] each. reach (T208, the steps'
 // table): the bytes every matrix's ranges (ranges()) make at the least, spare buffers of random weights beside the
 // copies where they fall short, and the attention's caches (caches()) as many.
 function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned[], data?: LayerData, reach = 0) {
@@ -257,15 +257,15 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   const cacheBytes = (pos + 1) * kvDim * 2;
   const v = { h: make(dim * 4), xb: make(dim * 4), q: make(dim * 4), k: make(kvDim * 4), v: make(kvDim * 4), att: make(dim * 4),
     t: make(dim * 4), g: make(hidden * 4), u: make(hidden * 4),
-    // T.202: where a matrix alone writes (gate and up's rows, the most) and a one-workgroup dispatch adds, read by nothing
+    // T202: where a matrix alone writes (gate and up's rows, the most) and a one-workgroup dispatch adds, read by nothing
     scratch: make(2 * hidden * 4), norms: make(2 * dim * 4), angles: make((pos + 1) * headSize * 4),
     keys: make(cacheBytes), values: make(cacheBytes),
-    // T.175: the DP4A forms' four quantized vectors, each its own (the check reads every one back)
+    // T175: the DP4A forms' four quantized vectors, each its own (the check reads every one back)
     quantized: [dim, dim, dim, hidden].map((n) => ({ xq: make(n), xs: make((n / shared.GROUP) * 4) })),
-    // T.224: flash_attn_vec's parts, as many as its shape with or without subgroups takes a head at the most
+    // T224: flash_attn_vec's parts, as many as its shape with or without subgroups takes a head at the most
     parts: make(Math.max(...[true, false].map((sub) => shared.WGSL.flashVecPartsBytes(vecAttention(sub).shape(headSize), heads)))) };
   const eps = data?.eps ?? EPS;
-  // RoPE's table on the GPU, a row a position up to pos (T.151: fusedMatVec reads the Step's row; ROPE, the prompt's,
+  // RoPE's table on the GPU, a row a position up to pos (T151: fusedMatVec reads the Step's row; ROPE, the prompt's,
   // takes the rows of its block's positions, here the row at pos bound on its own: a row of headSize 64 is 256 bytes,
   // the alignment of a binding's offset)
   shared.device.queue.writeBuffer(v.angles, 0, ropeTable(headSize, pos + 1));
@@ -289,7 +289,7 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   const flashParams = new ArrayBuffer(16);
   new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
   new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(headSize);
-  // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned (T.151: the
+  // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned (T151: the
   // position is the Step's)
   const fusedParams = (rows: number, n: number, second = 0, normAt = 0) => {
     const bytes = new ArrayBuffer(48);
@@ -297,7 +297,7 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
     new Float32Array(bytes, 16, 1)[0] = eps;
     return uniform(new Uint8Array(bytes));
   };
-  // T.224: flash_attn_vec's Params a count of parts, made as the forms ask for them
+  // T224: flash_attn_vec's Params a count of parts, made as the forms ask for them
   const vecParams = new Map<number, GPUBuffer>();
   const u = { step, positions: pos + 1, attentionNorm: normParams(0), ffnNorm: normParams(dim), rope: uniform(new Uint32Array([heads, kvHeads, headSize, headSize])),
     vecParams: (nwg: number) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg)!,
@@ -306,7 +306,7 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
     // QUANTIZE's (n, xStride) of dim and of hidden
     quantize: [dim, hidden].map((n) => uniform(new Uint32Array([n, n, 0, 0]))) };
   // the matrix × vector's Params (rows, words, perRow, and the rest of the engine's 48 bytes, which its "write" does
-  // not read: T.624.2) of each range the separate steps read, made once
+  // not read: T624.2) of each range the separate steps read, made once
   const shapes = new Map<string, GPUBuffer>();
   const shapeOf = (rows: number, n: number) => {
     const key = `${rows},${n}`;
@@ -315,7 +315,7 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   };
   const group: Grouping = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
     entries: entries.map(([binding, resource]) => ({ binding, resource: "offset" in resource ? resource : { buffer: resource as GPUBuffer } })) });
-  // over (T.202's review): a fused form's matrices bound elsewhere, { key: a range of ranges(key) }
+  // over (T202's review): a fused form's matrices bound elsewhere, { key: a range of ranges(key) }
   const dispatches = (form: Form, pipes: Pipes, copy: number, over: Partial<Matrices> = {}): (Dispatch | Step)[] => {
     const m = copiesOf[copy];
     if (form.fused) return fusedLayer(form, pipes, shape, { ...m, ...over }, v, v, u, group);
@@ -337,15 +337,15 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
       [pipes.swiglu, group(pipes.swiglu, [[0, v.g], [1, v.u], [2, u.swiglu], [3, u.step]]), Math.ceil(hidden / 64), 1],
       ...quantize(v.g, downIn, hidden), product(m.down, 0, dim, v.g, v.t, downIn), add];
   };
-  // T.202's review: every range of the copies' matrix buffers that the layer's matrix key can be bound to, the copies
+  // T202's review: every range of the copies' matrix buffers that the layer's matrix key can be bound to, the copies
   // one after another. The weights are random bytes, so a matrix read from any range of its size costs the same; a
   // step timed alone on one matrix goes through all of them before it reads one again, as a layer reads each of its
-  // matrices once in a round of its copies (T.149's review: a matrix read again soon is read from the GPU's caches, and
+  // matrices once in a round of its copies (T149's review: a matrix read again soon is read from the GPU's caches, and
   // o's two copies alone would be 9.4 MB a round, q, k and v's 14.2, down's 37.7). A range starts on a binding's
   // alignment, 256 bytes, its scales an eighth of the way in (so 2048 bytes of the weights)
-  // T.208: spare matrices (the largest's size, random) where the copies' ranges make fewer than reach bytes of a matrix:
-  // T.202 left gate and up two ranges of Llama 3.2 1B's, 75.5 MB a round (the copies' gate and up buffers alone), short
-  // of T.149's 128 MiB; two spares make it four, 151 MB, and the other matrices' rounds longer
+  // T208: spare matrices (the largest's size, random) where the copies' ranges make fewer than reach bytes of a matrix:
+  // T202 left gate and up two ranges of Llama 3.2 1B's, 75.5 MB a round (the copies' gate and up buffers alone), short
+  // of T149's 128 MiB; two spares make it four, 151 MB, and the other matrices' rounds longer
   const spares: Held[] = [];
   const ranges = (key: MatrixKey): Range[] => {
     const [rows, n] = shape.matrices[key], bytes = rows * n;
@@ -355,8 +355,8 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
   };
   const largest = (Object.entries(shape.matrices) as [MatrixKey, Shape][]).sort(([, a], [, b]) => b[0] * b[1] - a[0] * a[1])[0];
   while ((Object.entries(shape.matrices) as [MatrixKey, Shape][]).some(([key, size]) => ranges(key).length * matrixBytes(size) < reach)) spares.push(matrixOf(...largest));
-  // T.208: the attention's caches for the step timed alone, each a copy of the cache the layer starts from, in one
-  // buffer (a cache's keys, then its values, each on a binding's alignment), as many as make reach bytes: T.202 read the
+  // T208: the attention's caches for the step timed alone, each a copy of the cache the layer starts from, in one
+  // buffer (a cache's keys, then its values, each on a binding's alignment), as many as make reach bytes: T202 read the
   // one cache of 256 KB again and again, from the GPU's caches, where a token's 16 layers each read their own after
   // the other layers' weights. Made when first asked for (the steps' table only)
   let cacheRanges: { keys: GPUBufferBinding & { size: number }; values: GPUBufferBinding & { size: number } }[] | undefined;
@@ -373,9 +373,9 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
     shared.device.queue.submit([encoder.finish()]);
     return cacheRanges;
   };
-  // T.208: the attention alone on a cache of caches() (T.224: a form's, its dispatches)
+  // T208: the attention alone on a cache of caches() (T224: a form's, its dispatches)
   const attention = (form: Attending, pipes: AttentionPipes, cache: Cache) => attentionSteps(form, pipes, heads, cache, v, u, group);
-  // T.202: a matrix of the layer alone on a range of ranges(key), into the scratch buffer (no RoPE, cache, add or
+  // T202: a matrix of the layer alone on a range of ranges(key), into the scratch buffer (no RoPE, cache, add or
   // SwiGLU after it): its plain matrix × vector (pipeline: plainProduct's, on DP4A reading the quantized vector the
   // fused form reads), one dispatch over all its rows
   const alone = (form: Pick<Form, "dp4a">, pipeline: GPUComputePipeline, key: MatrixKey, { w, s, rows, n }: Range) => {
@@ -384,16 +384,16 @@ function layerParts(shape: LayerShape, pos: number, copies: number, owned: Owned
       [0, w], [1, s], [2, form.dp4a ? input.xq : key === "down" ? v.g : v.xb], [3, shapeOf(rows, n)], ...(form.dp4a ? [[4, input.xs]] satisfies Entry[] : []), [5, v.scratch]]),
       Math.ceil(rows / (form.dp4a ? shared.WGSL.ORT_DP4A_MATVEC_ROWS : shared.WGSL.MUL_MAT_VEC_ROWS)), 1], key);
   };
-  // T.202: a dispatch of one workgroup that adds a vector of dim into the scratch buffer (SMALL): what a step costs
+  // T202: a dispatch of one workgroup that adds a vector of dim into the scratch buffer (SMALL): what a step costs
   // in a chain of dispatches when it does next to nothing (its launch and the barrier before the next)
   const floor = (pipeline: GPUComputePipeline) => named("a dispatch of one workgroup (SMALL: a vector of dim added)", "floor", [pipeline, group(pipeline, [[0, v.t], [1, v.scratch]]), 1, 1]);
-  // T.202: the residual stream written back as it started, before a submission (the adds write over it), so that every
-  // submission starts alike. What these steps do does not depend on the values (unlike SAMPLE's work, T.191's review),
+  // T202: the residual stream written back as it started, before a submission (the adds write over it), so that every
+  // submission starts alike. What these steps do does not depend on the values (unlike SAMPLE's work, T191's review),
   // and the stream grows only by a bounded add a layer, so this keeps the submissions alike rather than their times
   const restart = () => shared.device.queue.writeBuffer(v.h, 0, start.h);
   return { vectors: v, reset, dispatches, ranges, caches, attention, alone, floor, restart, spares: spares.length };
 }
-// T.202: the matrices of a layer (layerShape's keys, in the order of the DP4A forms' quantized inputs, v.quantized), and
+// T202: the matrices of a layer (layerShape's keys, in the order of the DP4A forms' quantized inputs, v.quantized), and
 // as the steps' table names them
 const MATRIX_KEYS: MatrixKey[] = ["qkv", "o", "gateUp", "down"];
 const MATRIX_NAMES = { qkv: "q, k and v", o: "o", gateUp: "gate and up", down: "down" };
@@ -407,8 +407,8 @@ function layerAngles(headSize: number, pos: number) {
   }
   return angles;
 }
-// T.151: RoPE's table of positions 0 to count - 1, a row of layerAngles() each (as the model's GPU worker would hold the
-// CPU's, T.152)
+// T151: RoPE's table of positions 0 to count - 1, a row of layerAngles() each (as the model's GPU worker would hold the
+// CPU's, T152)
 function ropeTable(headSize: number, count: number) {
   const table = new Float32Array(count * headSize);
   for (let p = 0; p < count; p++) table.set(layerAngles(headSize, p), p * headSize);

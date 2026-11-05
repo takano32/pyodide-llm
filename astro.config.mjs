@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
 
-// T.433: the site's Python as the two archives the workers fetch (python_archive.py, T.367.2: src/runtime/built/), made
+// T433: the site's Python as the two archives the workers fetch (python_archive.py, T367.2: src/runtime/built/), made
 // when a build or the development server starts (an `astro dev` or `astro build` called without npm had none: "Could not
 // fetch engine.zip: 404"), and made again, and the page reloaded, whenever a .py of src/python/ changes under the
 // development server (it served the archives of its start, and said nothing). Under 0.1 s: made whole every time.
@@ -36,7 +36,7 @@ export default defineConfig({
   base: "/pyodide-llm/",
   vite: {
     plugins: [pythonArchives()],
-    // T.367.3: the runtime (src/runtime/) is bundled, a graph for each worker. A built file is always a file of its own
+    // T367.3: the runtime (src/runtime/) is bundled, a graph for each worker. A built file is always a file of its own
     // (never a data: URL in a worker's text), and a worker's files are named as Astro names the page's,
     // _astro/<name>.<hash>.<ext>: the shape public/coi.js's family() knows, so that the Service Worker drops the old
     // copy of a file when it keeps the new one (Vite's own <name>-<hash> matched nothing: tests/dist-check.ts).
@@ -63,7 +63,7 @@ export default defineConfig({
     define: {
       // The commit of the deployment: the ?v= of the Service Worker's registration (src/page/isolation.ts), so that a
       // new deployment installs its own, and the build a report names. The workers and what they read carry a hash
-      // of their own text in their names instead (T.367.3).
+      // of their own text in their names instead (T367.3).
       __BUILD__: JSON.stringify((process.env.GITHUB_SHA ?? "dev").slice(0, 7)),
     },
   },

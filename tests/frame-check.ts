@@ -1,4 +1,4 @@
-// T.622: a token's frame, array by array, as createForward() lays it out from the plan and as footprint() counts it from
+// T622: a token's frame, array by array, as createForward() lays it out from the plan and as footprint() counts it from
 // the header and the form (forward/memory.ts's frameOf(), which footprint() calls). The two make the packings whose
 // activations' scales the frame holds (xs) each its own way (the engine from the plan's tensors, footprint() from the
 // form's dtype and kinds), and memory-check.ts, in the full suite, holds what footprint() counts after the checkpoint only

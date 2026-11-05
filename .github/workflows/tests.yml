@@ -1,24 +1,24 @@
 name: Tests
 
-# T.188: the tests the deploy runs, and more, on any branch (--ref), without deploying: the development machine (an ARM
+# T188: the tests the deploy runs, and more, on any branch (--ref), without deploying: the development machine (an ARM
 # box of 2 cores, shared) runs none of them any more (the owner, 2026-09-27: "いったん、テスト CI だけにしねぇか？").
 # `extra` runs more commands after them, for a branch's own measurements (the same process takes the old and the new,
 # as AGENTS.md says).
 #
-# T.193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): by default the light
+# T193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): by default the light
 # suite, the very steps the deploy runs (tests/suite.sh light: pytest, the page's modules, smoke; then the build).
 # full=true, and the nightly schedule on main, run the full one (tests/suite.sh full: and forward-check shared, --plain
 # and --wide, gpu-default-check, threads-check). An empty full= is the default, light (a dispatch fills an empty input
-# with its default: T.192).
+# with its default: T192).
 #
 #   node tests/ci.ts run tests.yml [full=true] [extra="node tests/profile.ts"] [runner=ubuntu-24.04-arm] --ref <branch>
 #
-# T.238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
+# T238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
 # like tests/reference_27b.sh, which builds another program and fetches a model of its own), and minutes= is the job's
 # time limit (90 where it says nothing).
-# (T.628.8: only_extra makes no facts of the Python either: an extra that reads src/models.ts or the runtime begins with
+# (T628.8: only_extra makes no facts of the Python either: an extra that reads src/models.ts or the runtime begins with
 # `make kernels`, which writes them)
-# T.233: what the extra commands leave in .tmp/keep is kept with the run (an artifact, a week).
+# T233: what the extra commands leave in .tmp/keep is kept with the run (an artifact, a week).
 on:
   schedule:
     # every night at 03:17 in Japan (18:17 UTC; off the hour, when GitHub's schedules crowd), the full suite on main
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       full:
-        description: 'T.193: the full suite (forward-check, gpu-default-check, threads-check too), not only the light one the deploy runs'
+        description: 'T193: the full suite (forward-check, gpu-default-check, threads-check too), not only the light one the deploy runs'
         type: boolean
         required: false
         default: false
@@ -35,27 +35,27 @@ on:
         required: false
         default: ''
       runner:
-        description: 'the runner (optional), e.g. ubuntu-24.04-arm for arm64 (T.166: a kernel measured where it matters)'
+        description: 'the runner (optional), e.g. ubuntu-24.04-arm for arm64 (T166: a kernel measured where it matters)'
         required: false
         default: 'ubuntu-latest'
       only_extra:
-        description: 'T.238: run the extra commands alone: no models, no suite, no build'
+        description: 'T238: run the extra commands alone: no models, no suite, no build'
         type: boolean
         required: false
         default: false
       updated:
-        description: 'T.441: also run tests/updated-in-browser.ts in the three engines, as the nightly run does'
+        description: 'T441: also run tests/updated-in-browser.ts in the three engines, as the nightly run does'
         type: boolean
         required: false
         default: false
       minutes:
-        description: 'T.238: the time limit of the job in minutes (optional, 90)'
+        description: 'T238: the time limit of the job in minutes (optional, 90)'
         required: false
         default: '90'
 
 permissions:
   contents: read
-  # T.233: the extra commands may fetch what an earlier run kept (gh run download)
+  # T233: the extra commands may fetch what an earlier run kept (gh run download)
   actions: read
 
 jobs:
@@ -70,7 +70,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          # (T.630: 3.14, not 3.x: 3.15's unicodedata is Unicode 17, and the real tokenizers (0.23.3) splits the letters
+          # (T630: 3.14, not 3.x: 3.15's unicodedata is Unicode 17, and the real tokenizers (0.23.3) splits the letters
           # new in it as Unicode 16 has them: the full suite's every-code-point tests split 4,657 of them otherwise. Back
           # to 3.x once tokenizers knows Unicode 17)
           python-version: '3.14'
@@ -104,7 +104,7 @@ jobs:
           npm run build
           node tests/dist-check.ts
 
-      # T.441: a page left open across a deployment (tests/updated-in-browser.ts: 41 cases, the model page's and
+      # T441: a page left open across a deployment (tests/updated-in-browser.ts: 41 cases, the model page's and
       # /benchmark/'s), in the three engines, on the site just built: nightly, as nothing else runs it on a schedule
       - name: Install the browsers (nightly)
         if: ${{ (github.event_name == 'schedule' || inputs.updated == true || inputs.updated == 'true') && !(inputs.only_extra == true || inputs.only_extra == 'true') }}
@@ -128,7 +128,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash -c "$EXTRA"
 
-      # T.233: what the extra commands put in .tmp/keep stays with the run for a week (tests/page_27b.sh: the references
+      # T233: what the extra commands put in .tmp/keep stays with the run for a week (tests/page_27b.sh: the references
       # of the 27B, 50 minutes of a runner, which a later run takes with REFERENCES=<this run's id>)
       - name: Keep what the extra commands left in .tmp/keep
         if: ${{ always() && inputs.extra != '' }}

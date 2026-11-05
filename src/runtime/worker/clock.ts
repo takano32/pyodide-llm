@@ -1,11 +1,11 @@
-// worker/clock.ts (T.350): the seconds since a moment and those of a load's parts, and a turn of the event loop.
-// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T.367.3).
+// worker/clock.ts (T350): the seconds since a moment and those of a load's parts, and a turn of the event loop.
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import type { LoadSeconds } from "../contracts/messages.ts";
 
 export const since = (started: number) => (performance.now() - started) / 1000;
 
-// How long the load took, in seconds: Pyodide once per session, the others per load (T.460: a load begins with none of
+// How long the load took, in seconds: Pyodide once per session, the others per load (T460: a load begins with none of
 // them, so that a site's model after a conversion does not say the conversion's seconds). The download of a model
 // of this site runs while Pyodide loads and usually ends first, so its seconds are counted until the last byte
 // arrives (not until the bytes reach Python, which has to wait for Pyodide). The page says that the two overlap

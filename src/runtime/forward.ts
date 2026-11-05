@@ -1,8 +1,8 @@
-// forward.ts (T.93): one token's forward pass in JavaScript, on the SIMD kernels of kernels/*.ts, on a WebAssembly
+// forward.ts (T93): one token's forward pass in JavaScript, on the SIMD kernels of kernels/*.ts, on a WebAssembly
 // memory of its own that holds the weights. Python (llama2_numpy.Llama with external=) still reads the header, says
 // where every tensor is, tokenizes, samples and runs the generation loop; this file does what the engine's kernel_forward()
-// did until T.93 retired it, in the same order with the same kernels. What it saves is the Python between the
-// kernel calls (about 100 per token): 1.15 to 1.26 times the speed on int8 (T.93, stage 1a).
+// did until T93 retired it, in the same order with the same kernels. What it saves is the Python between the
+// kernel calls (about 100 per token): 1.15 to 1.26 times the speed on int8 (T93, stage 1a).
 //
 // A plain ES module: the worker imports it, and so does Node (tests/smoke.ts).
 //
@@ -10,12 +10,12 @@
 //   const { memory, base } = weightsMemory(size);              // then write the checkpoint at base
 //   const outside = external({ memory, base, size, kernels }); // what Llama(external=) takes
 
-// T.349: this file is the window of the forward pass: compileKernels(), external(), and every name it exported as one
+// T349: this file is the window of the forward pass: compileKernels(), external(), and every name it exported as one
 // file. The rest is in the modules of forward/: engine.ts (createForward(): one model's forward pass), threads.ts (its
 // software threads and the search for their number), gpuside.ts (its GPU's side), choice.ts (the GPU or the CPU, and
 // its times), paths.ts (what /benchmark/ times of the page's path), memory.ts (the memory a model takes) and alone.ts
 // (a model on the GPU alone). Each is a static import, as jobs.ts is: a bundler links them into
-// one file (T.367.3).
+// one file (T367.3).
 import { BATCH } from "./jobs.ts";
 export { BATCH };
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.ts";
@@ -30,7 +30,7 @@ import { tableHole } from "./forward/perlayer.ts";
 import type { Blocks, Compiled, Engine, Made } from "./forward/engine.ts";
 import type { Plan, TensorName } from "./contracts/plan.ts";
 import type { Rows } from "./forward/perlayer.ts";
-// (T.368.4) the types of what this window hands out, for the worker, which reads the module's own through
+// (T368.4) the types of what this window hands out, for the worker, which reads the module's own through
 // `import type * as Forward from "../forward.ts"`
 export type { Blocks, Compiled, Engine, Made, Trying } from "./forward/engine.ts";
 export type { Core, Kind, Kinds, Layers, Room, Step } from "./forward/kinds.ts";
@@ -49,13 +49,13 @@ export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNT
   aloneTakes, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
   aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, blocksForm, needsWide, pastWide,
   automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS, takesBlocks, tableHole, ringPositions };
-// T.329.2.2: a model whose table of every layer's inputs is not in the memory (tableHole(): one stretch of the
+// T329.2.2: a model whose table of every layer's inputs is not in the memory (tableHole(): one stretch of the
 // checkpoint), which holds the rest packed without it (stored bytes), a tensor at place(its offset in the checkpoint);
 // rows reads the table's from where the checkpoint is kept (perlayer.ts's Rows)
 export type Apart = { place(offset: number): number; stored: number; rows: Rows };
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
- * then int8 runs on matmul_q8. wide (T.101): the build for a 64-bit memory (simdkernel_*64.wasm). */
+ * then int8 runs on matmul_q8. wide (T101): the build for a 64-bit memory (simdkernel_*64.wasm). */
 export function compileKernels(plain: BufferSource, relaxed?: BufferSource | null, wide = false): Compiled {
   let relaxedModule: WebAssembly.Module | null = null;
   try {
@@ -66,7 +66,7 @@ export function compileKernels(plain: BufferSource, relaxed?: BufferSource | nul
   return { plain: new WebAssembly.Module(plain), relaxed: relaxedModule, wide };
 }
 
-/** T.363.5: the kernels of llama.cpp's blocks of one build (blockkernel_<kind>.wasm, blockkernel_relaxed_<kind>.wasm) as
+/** T363.5: the kernels of llama.cpp's blocks of one build (blockkernel_<kind>.wasm, blockkernel_relaxed_<kind>.wasm) as
  * modules: what a Compiled of the same build has as its blocks, for a model with such rows. The relaxed one is null
  * where relaxed SIMD is missing, as compileKernels()'s. */
 export function compileBlocks(plain: BufferSource, relaxed?: BufferSource | null): Blocks {
@@ -76,7 +76,7 @@ export function compileBlocks(plain: BufferSource, relaxed?: BufferSource | null
 
 /** What Llama(external=) takes: the size of the checkpoint, read() for the few bytes Python looks at itself, and
  * start(plan), which builds the forward pass. */
-/** T.156 direct ({ place, stored, onLost }, gpuOnlyWeights()): the layers' matrices are on the GPU alone, memory holds
+/** T156 direct ({ place, stored, onLost }, gpuOnlyWeights()): the layers' matrices are on the GPU alone, memory holds
  * the rest of the checkpoint (stored bytes) packed without them, a tensor at place(its offset in the checkpoint);
  * onLost(why) is told where the GPU stops (the model has to be loaded again on the CPU). */
 export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpuRemembered, gpuForce, halfKeys, direct, trying, apart, oneThread }:
@@ -87,14 +87,14 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, gpu
     read: (offset, length) => new Uint8Array(memory.buffer, base + place(offset), length).slice(),
     start: (plan) => {
       plan = plan.toJs ? plan.toJs({ dict_converter: Object.fromEntries }) : plan;
-      // (T.156: every tensor but those on the GPU alone where it is in memory; those keep their offsets in the
+      // (T156: every tensor but those on the GPU alone where it is in memory; those keep their offsets in the
       // checkpoint, which only the GPU's worker reads)
       if (direct) {
-        // (T.477: the entries `as const`, tuples, which Object.fromEntries types; an array of two it reads as any)
+        // (T477: the entries `as const`, tuples, which Object.fromEntries types; an array of two it reads as any)
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
           : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }] as const)) as Plan["tensors"];
       }
-      // (T.329.2.2: every tensor where it is in memory; the table of every layer's inputs is the hole, whose offsets
+      // (T329.2.2: every tensor where it is in memory; the table of every layer's inputs is the hole, whose offsets
       // place() leaves as they are in the checkpoint, which only apart.rows reads)
       if (apart) {
         plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}),

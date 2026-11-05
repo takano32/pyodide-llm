@@ -1,4 +1,4 @@
-// tests/gpu-worker-parts-check.ts (T.378.4): the parts of the model's GPU worker (src/runtime/gpu/) that hold its state,
+// tests/gpu-worker-parts-check.ts (T378.4): the parts of the model's GPU worker (src/runtime/gpu/) that hold its state,
 // each by itself on a stand-in for WebGPU that writes down what it is asked and keeps every buffer's bytes. It computes
 // nothing: no shader runs here, and nothing here says that a shader is right (CI's gpu-check does, on a device).
 // What is held is who holds what, and what each owner does when it is told that something happened:
@@ -14,7 +14,7 @@
 //     dispatches and its keys and values into the staging, or nowhere where the request was given up; keysIn();
 //   - requests.js: a prompt's block answered in the control area (done, failed, the beat), a request given up
 //     answered nowhere, and a device lost before or during the work read as it is then: failed, and said.
-//   - tokens.js (T.379.1), of what makes no pipeline: the WGSL of every form of a token's layer is the catalogue's
+//   - tokens.js (T379.1), of what makes no pipeline: the WGSL of every form of a token's layer is the catalogue's
 //     (shaders/engine.ts), and the matrices are those of the model's own packing of the weights.
 // Not here, because their work is checked against JavaScript by a device that computes: forms.js, the rest of tokens.js,
 // tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass) and start.js.
@@ -70,7 +70,7 @@ const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.js"));
   assert.equal(refused.calls.length, 0, "nothing is made on an adapter that is refused");
   assert.equal(device_.model, null, "and there is no record of a model");
 }
-// ---- device.js: a step past its time is told as late (T.380.1), which the checks of the forms throw on (it ends the whole
+// ---- device.js: a step past its time is told as late (T380.1), which the checks of the forms throw on (it ends the whole
 // attempt) where they note any other failure and go on to the next form: nothing here runs those 180 s, so the timer is a
 // stand-in that is fired by hand
 {
@@ -103,7 +103,7 @@ assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "held"
 assert.equal(m.device, gpu.device);
 assert.equal(m.memory, null, "no memory until start() hands one");
 assert.equal(m.ternary, false);
-assert.equal(m.own, null, "no shaders of its own: an int8 model's (T.547.2.3)");
+assert.equal(m.own, null, "no shaders of its own: an int8 model's (T547.2.3)");
 assert.equal(m.remembered, null, "nothing remembered where the page kept nothing");
 assert.equal(m.limit, 1 << 27, "the largest buffer the device binds");
 // (start()'s plan is another object than the one a model on the GPU alone was opened with)
@@ -180,7 +180,7 @@ const up = await upload(m);
   assert.equal(unbound.weights.together, null);
   assert.deepEqual(unbound.weights.joined, []);
 }
-// T.642.2: a matrix a token's layer reads whole (one piece: linear.ts's and convolution.ts's steps read pieces[0]) past a
+// T642.2: a matrix a token's layer reads whole (one piece: linear.ts's and convolution.ts's steps read pieces[0]) past a
 // buffer keeps the steps off, whichever kind's it is: the names a second copy of the kinds' matrices() but q, k and v
 // (gpu/kinds.ts), and the FFN's down and its up where it has no gate. A kind's matrix left out of the list tokensLayout
 // reads goes on to the checks after it, and says why they fail instead
@@ -204,7 +204,7 @@ const up = await upload(m);
   }
   console.log(`gpu-worker-parts-check: a token's ${cases.length} matrices read whole (the kinds' and the FFN's) past a buffer keep its steps off`);
 }
-// T.547.3.1: a stack whose layers are each of a packing of its own (Saluki's): each layer's rows as its packing holds them,
+// T547.3.1: a stack whose layers are each of a packing of its own (Saluki's): each layer's rows as its packing holds them,
 // Q4_K's blocks without scales and int8's with, the model's own shaders Q4_K's, and no layer joined for a token's step
 {
   standIn({ language: ["packed_4x8_integer_dot_product"] });
@@ -222,10 +222,10 @@ const up = await upload(m);
   assert.ok(same(first[0].data.subarray(0, q4k), new Uint8Array(layeredMemory.buffer, at, q4k)), "and its blocks as the memory holds them");
   assert.ok(same(second[0].data.subarray(0, int8), new Uint8Array(layeredMemory.buffer, at + q4k, int8)), "the int8 layer its values");
   assert.ok(same(second[1].data.subarray(0, scales), new Uint8Array(layeredMemory.buffer, at + q4k + int8, scales)), "and its scales");
-  // (T.547.3.2: q, k and v apart, k after q's 32 rows: 128 bytes, where this device binds at 256)
+  // (T547.3.2: q, k and v apart, k after q's 32 rows: 128 bytes, where this device binds at 256)
   assert.equal(layered.weights.unjoined, "k would not start where this GPU binds a buffer, after q", "such a stack's q and k are apart, k after q");
 }
-// (T.547.3.2's review: and where they start where the device binds: q, k and v apart, k after q's rows and v after
+// (T547.3.2's review: and where they start where the device binds: q, k and v apart, k after q's rows and v after
 // both, and gate and up apart, each its own buffer and none of them joined)
 {
   standIn({ language: ["packed_4x8_integer_dot_product"] });
@@ -311,7 +311,7 @@ console.log("gpu-worker-parts-check: weights.js makes m.weights: every matrix an
 }
 console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a checkpoint that comes in stretches of any size as whole words, and unwritten() says a word that waits");
 
-// ---- weights.js, ternary (T.533): the checkpoint holds a group's scale as a float16, the GPU as a float32 (the shaders
+// ---- weights.js, ternary (T533): the checkpoint holds a group's scale as a float16, the GPU as a float32 (the shaders
 // read float32s: their text and the device's key are what they were). Widened as they go up from the shared memory,
 // and as a model on the GPU alone's checkpoint comes, in stretches of any size: a half that a stretch cuts waits
 // for its other byte, as a word does
@@ -358,7 +358,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
     assert.equal(tablesUp, 96 * 64 + 96 * 2 * 4, "the table: its codes, and its scales as the GPU holds them (float32)");
     assert.equal(layersUp + tablesUp, a.weights.routes.reduce((sum, [start, stop, , , halves]) => sum + (stop - start) * (halves ? 2 : 1), 0), "every byte put up has a route, a half's twice");
     const steps = [1, 2, 3, 5, 7, 250, 1001, 4, 6, 4099, 1, 1];
-    // (T.299: and a byte at a time where the first byte of the first route of codes and of the first of halves comes
+    // (T299: and a byte at a time where the first byte of the first route of codes and of the first of halves comes
     // twice, before the rest of its word or half: counted, its word or half was written a byte short)
     const plainAt = a.weights.routes.find(([, , , , halves]) => !halves)[0], halfAt = a.weights.routes.find(([, , , , halves]) => halves)[0];
     for (const [step, twice] of [[steps, []], [[1], []], [[2], []], [[3], []], [[1], [plainAt, halfAt]]]) {
@@ -383,7 +383,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
         }
       }
     }
-    // (T.299: a byte that comes again after its word was written is written nowhere: it waits as a word of one byte, which
+    // (T299: a byte that comes again after its word was written is written nowhere: it waits as a word of one byte, which
     // the start reads as the checkpoint not all come, rather than a word written a byte short)
     {
       const [again, , target, at] = a.weights.routes.find(([, , , , halves]) => !halves), word = at - (at % 4);
@@ -405,7 +405,7 @@ console.log("gpu-worker-parts-check: a model on the GPU alone: routed() writes a
 }
 console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as float32s, from the shared memory and as the checkpoint of a model on the GPU alone comes in stretches of any size");
 
-// ---- weights.js, binary (T.634.3): a binary checkpoint (one bit a weight, llama2_numpy.pack_binary: weight 64 h + 4 c + p of
+// ---- weights.js, binary (T634.3): a binary checkpoint (one bit a weight, llama2_numpy.pack_binary: weight 64 h + 4 c + p of
 // a group of 128 at bit 4 h + p of its byte c, set for +1) goes up as ternary's codes (PQ2_0's order, the weight + 1: 0 or
 // 2), which ternary's shaders multiply: twice its bytes on the GPU, from the shared memory and as a model on the GPU
 // alone's checkpoint comes in stretches of any size (a group a stretch cuts goes a byte at a time, each byte of the codes
@@ -419,7 +419,7 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     }
     return out;
   };
-  // (T.634.3's review: and a Qwen3.5's linear-attention layer's matrices, the 1-bit Bonsai 27B's form: layer 0 attends, layer
+  // (T634.3's review: and a Qwen3.5's linear-attention layer's matrices, the 1-bit Bonsai 27B's form: layer 0 attends, layer
   // 1 is linear, each matrix of the layers of its kind, of and places)
   const BINARY = { wq: [Q_DIM, 256], wk: [KV_DIM, 256], wv: [KV_DIM, 256], wo: [DIM, 256], w1: [HIDDEN, 256], w3: [HIDDEN, 256], w2: [DIM, 256],
     wqkv: [3 * Q_DIM, 256], wz: [2 * Q_DIM, 256], wout: [DIM, 384] };
@@ -504,7 +504,7 @@ for (const layer of m.block.layers) {
   assert.equal(layer.gate[0].group.entries[2].resource.buffer, m.block.xq, "a packed form reads the quantized input");
   assert.equal(layer.gate[0].group.entries.length, 7, "and its scales");
   assert.deepEqual([layer.gateBias, layer.downBias], [undefined, undefined], "no bias where the model has no such vector");
-  assert.equal(typeof layer.step, "function", "the layer's kind's step (T.568.2: gpu/kinds.js)");
+  assert.equal(typeof layer.step, "function", "the layer's kind's step (T568.2: gpu/kinds.js)");
 }
 assert.equal(m.held, null, "nothing is held for end() before the cache is made");
 grow(m, 8);
@@ -513,7 +513,7 @@ assert.equal(firstCache.capacity, 8);
 assert.equal(firstCache.keys.length, LAYERS);
 assert.equal(firstCache.keys[0].size, 8 * KV_ROW);
 assert.equal(m.held, firstCache.owned, "grow() tells device.js which buffers the cache has now");
-// (T.568.2: an attending layer's step, what it asks block.js to dispatch for it: its products in order, q's reading the
+// (T568.2: an attending layer's step, what it asks block.js to dispatch for it: its products in order, q's reading the
 // quantized input; no bias and no norm of a head where the model has no such vector)
 {
   const products = [], biases = [], dispatched = [], quantized = [];
@@ -599,7 +599,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
 {
   const { cache: now } = m.block, row = KV_ROW, capacity = 16, from = 2, pos = 7;
   const address = plan.rows;  // (any place of the memory: [keys, values] of LAYERS × capacity rows)
-  // (T.261.4.2: where each layer's are: here the blocks of a cache of LAYERS × capacity rows each)
+  // (T261.4.2: where each layer's are: here the blocks of a cache of LAYERS × capacity rows each)
   const placesOf = (bytes) => Array.from({ length: LAYERS }, (_, l) => ({ keys: address + l * capacity * bytes, values: address + (LAYERS + l) * capacity * bytes, ring: 0 }));
   const halves = { places: placesOf(row), row, half: true };
   new Uint8Array(memory.buffer, address, 2 * LAYERS * capacity * row).set(random(2 * LAYERS * capacity * row));
@@ -610,7 +610,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(same(now.values[l].data.subarray(from * KV_ROW, pos * KV_ROW), new Uint8Array(memory.buffer, address + ((LAYERS + l) * capacity + from) * row, (pos - from) * KV_ROW)), `and its values`);
     assert.ok(now.keys[l].data.subarray(0, from * KV_ROW).every((byte) => byte === 0) && now.keys[l].data.subarray(pos * KV_ROW).every((byte) => byte === 0), "no other position is written");
   }
-  // a float32 cache (a grouped-query model's, T.160): narrowed to float16 on the way up
+  // a float32 cache (a grouped-query model's, T160): narrowed to float16 on the way up
   const floats = { places: placesOf(KV_DIM * 4), row: KV_DIM * 4, half: false };
   new Float32Array(memory.buffer, address, 2 * LAYERS * capacity * KV_DIM).forEach((_, i, all) => { all[i] = (i % 17) - 8; });
   keysIn(m, floats, from, pos);
@@ -620,7 +620,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     const want = new Float32Array(memory.buffer, floats.places[1].values + from * KV_DIM * 4, (pos - from) * KV_DIM);
     assert.ok(got.every((bits, i) => bits === half(want[i])), "a float32 cache's values go up as float16");
   }
-  // T.261.4.2: a layer whose window a ring of 3 positions holds (T.510.1: position p at p mod 3 and at p mod 3 + 3): the
+  // T261.4.2: a layer whose window a ring of 3 positions holds (T510.1: position p at p mod 3 and at p mod 3 + 3): the
   // last three positions before pos and no more, from where the oldest of them is, wrapped or not
   for (const late of [7, 8]) {
     const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
@@ -633,7 +633,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(same(now.values[0].data.subarray((late - ring) * KV_ROW, late * KV_ROW), rows.subarray((2 * ring + slot) * row, (3 * ring + slot) * row)), "and their values");
     assert.ok(now.keys[0].data.subarray(0, (late - ring) * KV_ROW).every((byte) => byte === 0), "none older: the ring no longer holds them");
   }
-  // T.558.2 (T.545.2's review): from past pos - ring (the GPU holds the ring's older positions already): from it alone,
+  // T558.2 (T545.2's review): from past pos - ring (the GPU holds the ring's older positions already): from it alone,
   // at its own slot; and from at pos or past it: nothing goes up
   {
     const ring = 3, rows = new Uint8Array(memory.buffer, address, 4 * ring * row);
@@ -646,7 +646,7 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
     assert.ok(same(now.keys[0].data.subarray(7 * KV_ROW, 9 * KV_ROW), rows.subarray(slot * row, (slot + 2) * row)), `positions 7 and 8 of a ring, from 7's slot ${slot}`);
     assert.ok(same(now.values[0].data.subarray(7 * KV_ROW, 9 * KV_ROW), rows.subarray((2 * ring + slot) * row, (2 * ring + slot + 2) * row)), "and their values");
     assert.ok(now.keys[0].data.subarray(0, 7 * KV_ROW).every((byte) => byte === 0) && now.keys[0].data.subarray(9 * KV_ROW).every((byte) => byte === 0), "nothing before from, nothing from pos on");
-    // (and a float32 ring, a grouped-query model's (T.160): narrowed to float16 on the way up, narrowIn() counting values
+    // (and a float32 ring, a grouped-query model's (T160): narrowed to float16 on the way up, narrowIn() counting values
     // where copyIn() counts bytes)
     const wide = KV_DIM * 4, floatRing = { places: [{ keys: address, values: address + 2 * ring * wide, ring }, ...placesOf(wide).slice(1)], row: wide, half: false };
     new Float32Array(memory.buffer, address, 4 * ring * KV_DIM).forEach((_, i, all) => { all[i] = (i % 23) - 11; });
@@ -751,7 +751,7 @@ console.log("gpu-worker-parts-check: requests.js answers a block in the control 
 }
 console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, the ones held and the device, in that order; a stop asked and a device lost are read by all as device.js holds them");
 
-// ---- T.379.1: tokens.js's forms of a token's layer compile the catalogue's texts, and the ones of the model's weights.
+// ---- T379.1: tokens.js's forms of a token's layer compile the catalogue's texts, and the ones of the model's weights.
 // (tokenCandidates() and tokenCodes() make no pipeline: which forms a device and a model may take, and each form's WGSL.)
 // Every text is a row's of shaders/engine.ts (what the device's key hashes), a ternary model's matrices are the rows of
 // the ternary packing and no other model's are: the worker gives the maker the packing, and a packing given the wrong
@@ -763,8 +763,8 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: { wgslLanguageFeatures: new Set(["packed_4x8_integer_dot_product", "subgroup_id"]) } } });
   let forms = 0, codes = 0;
-  // (T.547.2.4: and a model of llama.cpp's blocks besides int8, whose forms are DP4A's alone and have the matrices' keys
-  // again with ":" and a type after them, of its own rows: T.547.3.3, a type each of those it has; an int8 model has none)
+  // (T547.2.4: and a model of llama.cpp's blocks besides int8, whose forms are DP4A's alone and have the matrices' keys
+  // again with ":" and a type after them, of its own rows: T547.3.3, a type each of those it has; an int8 model has none)
   for (const [own, types] of [[null, []], ["ternary", []], ["blocks", ["Q4_K"]], ["blocks", ["Q2_K"]], ["blocks", ["Q4_K", "Q2_K"]]]) for (const layerNorm of [false, true]) {
     const ternary = own === "ternary", blocks = types;
     const candidates = tokenCandidates({ ternary, own, device: { features: new Set(["subgroups"]) }, plan: { layerNorm } });
@@ -772,7 +772,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
     if (blocks.length) assert.ok(candidates.every((form) => form.dp4a && !form.ternary), "a model of blocks' forms are DP4A's, of int8");
     for (const form of candidates) for (const apart of [false, true]) for (const gated of [false, true]) for (const floatHead of [false, true]) {
       forms += 1;
-      // (T.579: every role's matrices int8 or ternary, and of each type the model has)
+      // (T579: every role's matrices int8 or ternary, and of each type the model has)
       const roles = new Map(["qkv", "add", "glu", "classifier", "write", "mix"].map((role) => [role, new Set([ternary ? "ternary" : "int8", ...blocks])]));
       const made = tokenCodes(form, { apart, gated, layerNorm, floatHead, roles });
       const typeOf = (key) => key.split(":")[1];
@@ -788,7 +788,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
       }
     }
   }
-  // T.579: a form compiles the pipelines its model's matrices take and no other: a role all of blocks has no key of int8,
+  // T579: a form compiles the pipelines its model's matrices take and no other: a role all of blocks has no key of int8,
   // a type no matrix of a role has is no key of it, and a role the model has no matrix of (mix, write) none at all
   {
     const [form] = tokenCandidates({ ternary: false, own: "blocks", device: { features: new Set(["subgroups"]) }, plan: { layerNorm: false } });
@@ -796,7 +796,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
     const keys = tokenCodes(form, { apart: false, gated: true, layerNorm: false, floatHead: false, roles }).map(([key]) => key);
     assert.deepEqual(keys, ["normQuantize", "qkv:Q4_K", "qkv:IQ2_XS", "add", "add:Q4_K", "glu:IQ1_M", "classifier:Q2_K"], `${form.name}: the keys of a model of blocks are those its matrices take (${keys})`);
   }
-  // T.579's review: the roles tokenShape() gathers from the kinds' matrices(), the FFN and the classifier: what joins the
+  // T579's review: the roles tokenShape() gathers from the kinds' matrices(), the FFN and the classifier: what joins the
   // stream by "add", or (a norm behind it) by "write"; an LFM2's convolution's in by "mix", a Qwen3.5's gate by "mix" and
   // its linear-attention layers' by "write"; each matrix by the packings of its layers
   {
@@ -822,9 +822,9 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   if (was) Object.defineProperty(globalThis, "navigator", was); else delete globalThis.navigator;
   console.log(`gpu-worker-parts-check: tokens.js's ${forms} forms of a token's layer (by the model's packing, its norm and its shape) compile ${codes} texts, each a row of the catalogue and of the model's own packing`);
 }
-// ---- T.565: the bundles of a linear-attention layer's states (gpu/linear.ts's stateBundles()), as the 27B's go past a
+// ---- T565: the bundles of a linear-attention layer's states (gpu/linear.ts's stateBundles()), as the 27B's go past a
 // 128 MiB binding: 48 places of 3 MiB, 42 a bundle; the place after the first bundle's is the second's at 0, a place
-// past the first of the second bundle at its place in it (the made-up models' bundles are a place each: T.271.5's review)
+// past the first of the second bundle at its place in it (the made-up models' bundles are a place each: T271.5's review)
 {
   const { stateBundles } = await import(runtimeUrl("gpu/linear.js"));
   const size = 48 * 128 * 128, MiB = 2 ** 20, of = stateBundles(48, size, 128 * MiB);
@@ -835,7 +835,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   assert.deepEqual(stateBundles(3, size, MiB).bytes, [3 * MiB, 3 * MiB, 3 * MiB]);
   console.log("gpu-worker-parts-check: the 27B's 48 places of state go in bundles of 42 and 6 where a device binds 128 MiB, each place at its own in its bundle");
 }
-// ---- T.573: a linear-attention layer whose state alone is past a buffer the device binds is refused before anything is
+// ---- T573: a linear-attention layer whose state alone is past a buffer the device binds is refused before anything is
 // made (a model on both: gpuOnlyUnfit() refuses it of one on the GPU alone)
 {
   const { linear } = await import(runtimeUrl("gpu/linear.js"));

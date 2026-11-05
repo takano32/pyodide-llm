@@ -1,7 +1,7 @@
-// T.405: another model chosen while one is being fetched from Hugging Face and converted. The conversion stops (the
+// T405: another model chosen while one is being fetched from Hugging Face and converted. The conversion stops (the
 // page asks huggingface.co for nothing more), the model chosen comes to ready and answers, no error is drawn and none is
 // in the console; and the model left half converted, chosen again, is converted whole and answers. Two moments: as the
-// first request of the conversion goes out, and once a part of it is converted (T.374.2.1 looked at both with a tool
+// first request of the conversion goes out, and once a part of it is converted (T374.2.1 looked at both with a tool
 // thrown away). On this tree's dist/ (npm run build first), with the site's smallest model and a small GGUF of the list
 // (SmolLM2 135M Instruct, 145 MB from huggingface.co each time: a new profile keeps nothing).
 //
@@ -27,7 +27,7 @@ async function visit(name, moment) {
   // (a worker's requests too: the context sees them)
   context.on("request", (request) => { if (new URL(request.url()).hostname.endsWith("huggingface.co")) asked.push(Date.now()); });
   const status = () => page.evaluate(() => document.getElementById("status-text")?.textContent ?? "").catch(() => "");
-  // ready: Run is there to press, or an error; across the reload of the first visit (coi.js, T.93)
+  // ready: Run is there to press, or an error; across the reload of the first visit (coi.js, T93)
   const ready = async () => {
     for (;;) {
       try {

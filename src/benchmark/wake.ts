@@ -1,18 +1,18 @@
-// src/benchmark/wake.ts (T.194): keep the screen on while /benchmark/ runs, and count the seconds the page was hidden.
+// src/benchmark/wake.ts (T194): keep the screen on while /benchmark/ runs, and count the seconds the page was hidden.
 //
 // A phone that turns its screen off puts the page away: its timers and workers slow down or stop, and a section that
 // takes minutes then measures a device asleep. While sections run, the page asks for a Screen Wake Lock
 // (navigator.wakeLock.request("screen")); a browser without one, or one that refuses it (a battery saver, a page not
 // shown), changes nothing. The browser lets the lock go by itself when the page is hidden, so the page asks again
 // when it is shown. Whatever the lock did, the seconds the page was hidden while it ran go at the head of the report
-// ("hidden for N s"), so that a reader knows which numbers were taken on a device put away. T.173's page-memory
+// ("hidden for N s"), so that a reader knows which numbers were taken on a device put away. T173's page-memory
 // section stops by itself when the page is hidden (benchmark.astro), as before.
 //
 // A plain module with its document, navigator and clock handed in, so that tests/wake.ts runs it in Node alone.
 
 /** Starts counting and holding the screen on; `stop()` lets the lock go and ends the count. `hidden()` is the
  * milliseconds hidden so far, over every run of this page (a report holds the sections of every run). */
-// (T.480.1: what it reads of the document and of the navigator: the page's own, or a test's made-up ones)
+// (T480.1: what it reads of the document and of the navigator: the page's own, or a test's made-up ones)
 type Shown = { visibilityState: DocumentVisibilityState; addEventListener(type: "visibilitychange", listener: () => void): void };
 type Lock = { release?(): Promise<void>; addEventListener?(type: "release", listener: () => void): void };
 type Locking = { wakeLock?: { request(type: "screen"): Promise<Lock> } } | undefined;

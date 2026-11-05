@@ -1,6 +1,6 @@
-# T.505.1: llama.cpp's quantized types that are read and never kept: Q3_K, Q5_K and Q6_K (blocks of 256,
+# T505.1: llama.cpp's quantized types that are read and never kept: Q3_K, Q5_K and Q6_K (blocks of 256,
 # src/python/convert/superblocks.py's WIDENED) and Q4_0, Q4_1, Q5_0, Q5_1 and IQ4_NL (blocks of 32,
-# convert/readers.py), which a Q4_K_M, a Q5_K_M or a Q3_K_M file is made of besides the types T.362 reads. Each reader
+# convert/readers.py), which a Q4_K_M, a Q5_K_M or a Q3_K_M file is made of besides the types T362 reads. Each reader
 # against a reference written here one weight at a time from the form of its block, on blocks that go through every
 # scale and every value of a weight; a small Qwen3.5 whose matrices are of these types, through the GGUF's reader and
 # the stream to the checkpoint of a safetensors file of the same values; and that a conversion that keeps llama.cpp's
@@ -184,7 +184,7 @@ def blocks_of_these(name, scale=0x0C00):
 
 
 def as_a_mixed_file(seen, with_kept=()):
-    """A type to a tensor, by its layer and its role: the eight of this file, and with_kept's of T.362's among them (a
+    """A type to a tensor, by its layer and its role: the eight of this file, and with_kept's of T362's among them (a
     Q4_K_M file is Q4_K with Q6_K; a Q3_K_M one Q3_K with Q4_K, Q5_K and Q6_K). The gates' two small matrices Q8_0."""
     order = [*SLOW, *with_kept]
 
@@ -221,7 +221,7 @@ def test_a_gguf_of_these_types_is_the_safetensors_conversion_of_what_its_blocks_
 
 def test_a_conversion_that_keeps_blocks_widens_these_and_keeps_the_others():
     """blocks=True of a file of Q4_K and IQ4_XS with these types among them: a stack one of whose layers is of these
-    types is the file's dtype's whole, as a stack with a Q8_0 layer is; a stack all of whose layers are T.362's types
+    types is the file's dtype's whole, as a stack with a Q8_0 layer is; a stack all of whose layers are T362's types
     stays in its blocks. No row's kind is one of these, and the engine reads the checkpoint."""
     seen = {}
     model = Model(matrices=as_a_mixed_file(seen, with_kept=("Q4_K", "IQ4_XS")))

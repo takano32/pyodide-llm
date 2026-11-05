@@ -1,4 +1,4 @@
-// T.401 (1): an entry's bos and its format go together. The converter takes a model's BOS from the model's own chat
+// T401 (1): an entry's bos and its format go together. The converter takes a model's BOS from the model's own chat
 // template (convert/conversion.py's beginning(): the tokenizer's BOS where the template begins with it or with text,
 // the template's first token where it begins with another token the engine reads as one), and an entry's template
 // replaces the model's format without changing that BOS. So an entry that writes one of the two and leaves the other
@@ -24,7 +24,7 @@
 // So it is more a net that says a change than a finder of errors: FIRST copies the list's own (bos, repository) pairs,
 // and a bos taken off fails on the key, not on (b); the mark twice is met only where the converter's BOS or the
 // entry's stands in front of a mark (a format that begins with a role is not), and a bos that names another token of
-// the right kind passes. The texts of the rows were held to the real tokenizers on 2026-11-04 (TASKS.md's T.401)
+// the right kind passes. The texts of the rows were held to the real tokenizers on 2026-11-04 (TASKS.md's T401)
 //
 //   node tests/bos-check.ts
 import assert from "node:assert/strict";
@@ -68,7 +68,7 @@ const FIRST: Row[] = [
   { bos: 0, text: "<｜start▁of▁sentence｜>", repos: ["Takenoko12345678/Spark-X2.5-4B-Japanese", "XHToken/Spark-X2.5-1.7B",
     "XHToken/Spark-X2.5-4B", "XHToken/Spark-X2.6-1.7B", "XHToken/Spark-X2.6-4B"] },
   { bos: 151646, text: "<｜begin▁of▁sentence｜>", repos: ["deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"] },
-  // the entry's BOS is the template's first mark, and the format begins after it (T.264's form)
+  // the entry's BOS is the template's first mark, and the format begins after it (T264's form)
   { bos: 151644, text: "<|im_start|>", repos: ["AXCXEPT/Qwen3-EZO-8B-beta", "Aratako/Qwen3-8B-RP-v0.1", "Qwen/Qwen3-14B",
     "Qwen/Qwen3-8B", "abeja/ABEJA-Qwen3-14B-Agentic-256k-v0.1", "prism-ml/Bonsai-8B-unpacked",
     "prism-ml/Ternary-Bonsai-8B-unpacked", "shisa-ai/shisa-v2.1-qwen3-8b"] },
@@ -130,7 +130,7 @@ assert.deepEqual(left, [], `rows of FIRST no entry is: ${JSON.stringify(left)}`)
 for (const row of FIRST) assert.equal(new Set(row.repos).size, row.repos.length, `a repository twice in the row of ${row.text}`);
 
 // the ways to break it, each one entry at a time: every entry that writes a bos with a checked format is said when its
-// bos is taken off (the bos left to the converter, T.401's case), and every entry that leaves it is said when it is
+// bos is taken off (the bos left to the converter, T401's case), and every entry that leaves it is said when it is
 // given the format's first mark as its BOS (the mark twice)
 const checked = MODELS.filter((entry) => entry.template && (MARK.test(entry.template) || ROLE.test(entry.template)));
 let broken = 0;

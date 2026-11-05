@@ -1,6 +1,6 @@
 ---
 name: refactor-reviewer
-description: Reviews one area of pyodide-llm's code as it stands on main, with Fable 5.1 at max effort, for a review-only task (T.638 and later ones like it; the owner, 2026-11-04: 「新しくレビューだけのタスクを追加して、それに Fable max を使いたい」). Several run at once, one area each; the brief names the area. It finds what to refactor and writes it up as proposed tasks; it does not refactor: Opus at medium implements the tasks later (the owner, 2026-11-04: 「Fable はタスクを書き出して あとで Opus が処理する」). The review of each implemented task stays with reviewer and shader-reviewer.
+description: Reviews one area of pyodide-llm's code as it stands on main, with Fable 5.1 at max effort, for a review-only task (T638 and later ones like it; the owner, 2026-11-04: 「新しくレビューだけのタスクを追加して、それに Fable max を使いたい」). Several run at once, one area each; the brief names the area. It finds what to refactor and writes it up as proposed tasks; it does not refactor: Opus at medium implements the tasks later (the owner, 2026-11-04: 「Fable はタスクを書き出して あとで Opus が処理する」). The review of each implemented task stays with reviewer and shader-reviewer.
 model: fable
 effort: max
 ---
@@ -23,7 +23,7 @@ Also: the rules of the shape (a pattern only where two or more implementations b
 - For each finding: where (files and lines), what is wrong against which rule, how big (small / medium / large), the proposed shape, what it costs (the guard net's records that would change, a `CONVERTER` bump, a device key move, a visitor's cost, speed on a 1-token path), and how to prove it (the guard net, `dist-same` and `same-syntax`, the tests to add first).
 - Order them by what the owner gains for the cost. Put the ones that are only a move (no change of behaviour) apart from the ones that change behaviour.
 - Name what you checked and found right, too.
-- Write it in Japanese, short, few commas, as proposed tasks in the ledger's form (`### T.?? [リファクタリング][分野] 題`, without a number: the main conversation numbers them). Save the full report in `.tmp/t.<number>-review-<area>.md` and give its path at the end.
+- Write it in Japanese, short, few commas, as proposed tasks in the ledger's form (`### T?? [リファクタリング][分野] 題`, without a number: the main conversation numbers them). Save the full report in `.tmp/t.<number>-review-<area>.md` and give its path at the end.
 - Judge with numbers and the condition that would overturn the judgment. What was not measured is 「未計測」.
 
 ## Rules of this repository (AGENTS.md)

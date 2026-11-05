@@ -83,7 +83,7 @@ def test_the_tensor_order_of_quantize_matches_the_engine(tmp_path):
               config["n_kv_heads"], -config["vocab_size"], config["seq_len"])
     dim, hidden, layers, heads, kv_heads, vocab, seq_len = (abs(n) for n in header)
     kv, half = dim * kv_heads // heads, dim // heads // 2
-    # (T.492: each row's shape and what quantize.py makes of it, by its name in test_layout.py's ORDER, not their count alone:
+    # (T492: each row's shape and what quantize.py makes of it, by its name in test_layout.py's ORDER, not their count alone:
     # a row moved, or a vector taken for a matrix, is another file)
     rows = {"token_embedding_table": ((vocab, dim), True), "rms_att_weight": ((layers, dim), False), "wq": ((layers, dim, dim), True),
             "wk": ((layers, kv, dim), True), "wv": ((layers, kv, dim), True), "wo": ((layers, dim, dim), True),

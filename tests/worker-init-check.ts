@@ -1,4 +1,4 @@
-// T.462: the model's worker's start (src/runtime/worker/runtime.ts's init(), asked for by runtimeAsked()) run whole in
+// T462: the model's worker's start (src/runtime/worker/runtime.ts's init(), asked for by runtimeAsked()) run whole in
 // Node, which no check did: the others set by hand what init() sets. The worker runs in tests/worker-harness.ts's vm on
 // its made-up network: data.jsdelivr.com answers the version of Pyodide, engine.zip is made-up bytes (the made-up Pyodide
 // reads none of it, and the deploy's light suite runs before the build makes the archives), this tree's kernels
@@ -71,7 +71,7 @@ function started() {
   assert.equal(JSON.stringify(asked.packages), JSON.stringify([["numpy", { checkIntegrity: false }]]), "NumPy, fetched without integrity (the owner's choice, 2026-09-28)");
   assert.deepEqual(asked.unpacked, [[ARCHIVE.length, "zip"]], "engine.zip, unpacked whole");
   assert.deepEqual(asked.imported, ["llama2_numpy"], "the engine's window imported");
-  assert.deepEqual(asked.written.map(([path]) => path), ["/home/pyodide/simdkernel.so"], "the kernels for Python, beside it (T.644.2: no relaxed module)");
+  assert.deepEqual(asked.written.map(([path]) => path), ["/home/pyodide/simdkernel.so"], "the kernels for Python, beside it (T644.2: no relaxed module)");
   assert.equal(run("llama2_numpy"), module);
   assert.equal(run("pythonKernels"), "/home/pyodide/simdkernel.so");
   assert.equal(run("forwardModule"), forward, "forward.ts as it was handed in");

@@ -1,4 +1,4 @@
-"""GPT-NeoX (T.72): a GPT-2 that rotates part of every head, and may run its two branches in parallel.
+"""GPT-NeoX (T72): a GPT-2 that rotates part of every head, and may run its two branches in parallel.
 
 The reference is written from the Hugging Face tensors, the way transformers computes them, so it checks the
 converter (query_key_value holds q, k and v interleaved per head) and the engine together.
@@ -20,7 +20,7 @@ HEAD = DIM // HEADS
 
 
 def neox_model(rotary_pct=0.25, parallel=True, seed=0, dim=DIM, hidden=HIDDEN):
-    """Random Hugging Face tensors of a tiny GPT-NeoX, and its config.json. dim, hidden: wider ones (T.502: rows of
+    """Random Hugging Face tensors of a tiny GPT-NeoX, and its config.json. dim, hidden: wider ones (T502: rows of
     whole blocks of 256, as llama.cpp's K-quantized types need)."""
     rng = np.random.default_rng(seed)
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)

@@ -10,52 +10,52 @@
 // for that model (tests/make_hf_fixture.py writes them), which the page converts in the browser. "url" reads the same
 // model from huggingface.co by ?checkpoint=&tokenizer=, and an id that begins with hf- is fetched from there and
 // converted (hundreds of megabytes, or gigabytes). hf:<owner>/<repository>[@<revision>] opens a repository that is in
-// no list, by ?hf= (T.105: to try a model before it is added). "default" opens the page with no model named, as a first
-// visit does, and must open the list's DEFAULT_MODEL (T.511.6: a model fetched from Hugging Face and converted).
+// no list, by ?hf= (T105: to try a model before it is added). "default" opens the page with no model named, as a first
+// visit does, and must open the list's DEFAULT_MODEL (T511.6: a model fetched from Hugging Face and converted).
 //
 // Needs a browser for playwright-core (a devDependency): `npx playwright-core install chromium` once.
 // Mind the memory: a browser with Pyodide and a model takes 400 MB and more; keep `free -m` above 1 GB available.
 //
-// For CI (T.82), three environment variables, all optional:
+// For CI (T82), three environment variables, all optional:
 //   E2E_TIMEOUT    seconds this one run may take (default 900). Past it the run is recorded as timed out and the
 //                  process ends, so that one stuck model never takes the rest of the job with it.
 //   E2E_RESULTS    a file to append one JSON line to: the browser and its version, the model, the seconds to ready,
 //                  tok/s, the backend line, and what failed. tests/summary.ts turns those lines into one table.
 //   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
-//                  console go there, named after the browser and the model, and the status line as it changed (T.506:
+//                  console go there, named after the browser and the model, and the status line as it changed (T506:
 //                  what a page that no longer answers last said).
-//   E2E_SILENCE    seconds (T.506, default 120): a page that has answered the tool and then answers nothing for so long
+//   E2E_SILENCE    seconds (T506, default 120): a page that has answered the tool and then answers nothing for so long
 //                  is taken for gone (its process ended), and the run fails there with what its status line last said.
-//   E2E_BEAT       seconds (T.373, default 300) between the lines that say how far a run has come and what its status
+//   E2E_BEAT       seconds (T373, default 300) between the lines that say how far a run has come and what its status
 //                  line says (the first line, before the browser starts, says when it started).
-//   E2E_CONSOLE    a file every line of the page's console is appended to as it comes (T.380.2), whatever the run's end.
+//   E2E_CONSOLE    a file every line of the page's console is appended to as it comes (T380.2), whatever the run's end.
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
-//                  ready then go into the JSON line too (T.99: a model converted from Hugging Face must come from what
+//                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
 //                  this browser kept, the origin private file system or the Cache API).
-//   E2E_OFFLINE    when set (T.111): after the answer (the page as a visitor opens it: keeping copies is the default) the browser goes
+//   E2E_OFFLINE    when set (T111): after the answer (the page as a visitor opens it: keeping copies is the default) the browser goes
 //                  offline, loads the page again and must answer once more (Pyodide, NumPy and the page from the
-//                  service worker's copies, the model from the worker's cache). T.441: this tool's own server ends every
+//                  service worker's copies, the model from the worker's cache). T441: this tool's own server ends every
 //                  connection as well meanwhile (Playwright's Firefox reaches localhost offline).
-//   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T.107), added to what the model needs
-//                  and kept in the JSON line. With gpuTest=on (T.148: the tests' flag; the page takes the GPU by default,
+//   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
+//                  and kept in the JSON line. With gpuTest=on (T148: the tests' flag; the page takes the GPU by default,
 //                  and refuses a fallback adapter) a Chromium gets WebGPU without a GPU (SwiftShader, as
 //                  tests/bench-check.ts has it), the page takes it and every block of a prompt it can, and the run
 //                  fails unless the prompt went through it.
-//   E2E_PROMPT     a prompt to type instead of the page's own (T.333)
-//   E2E_TEXT       when set (T.333): the whole answer as well, on a line `text: <JSON>` (what an answer ends with: a mark
+//   E2E_PROMPT     a prompt to type instead of the page's own (T333)
+//   E2E_TEXT       when set (T333): the whole answer as well, on a line `text: <JSON>` (what an answer ends with: a mark
 //                  of the format written as text where a stop was missing)
-//   E2E_GPU        swiftshader (T.148): a Chromium gets SwiftShader's WebGPU without gpuTest=on, and the page must refuse
+//   E2E_GPU        swiftshader (T148): a Chromium gets SwiftShader's WebGPU without gpuTest=on, and the page must refuse
 //                  it (a fallback adapter: the CPU in the GPU's place) before it compiles anything, and answer on the CPU
 //                  (the status line says why: the fallback adapter, or a reason before it such as ?coi=off).
 //   E2E_THEN       model ids of the list, separated by spaces: after the answer they are chosen one after another
 //                  in the same page, as a visitor changes models, and each must answer too (the worker keeps one
-//                  memory from model to model, T.96). They write what the page sets for them, not 256 tokens.
-//   E2E_QUOTA      a number of bytes (the review of T.233; Chromium and the browsers of its channels): the quota of the site's
+//                  memory from model to model, T96). They write what the page sets for them, not 256 tokens.
+//   E2E_QUOTA      a number of bytes (the review of T233; Chromium and the browsers of its channels): the quota of the site's
 //                  origin is set to that, through the DevTools protocol (Storage.overrideQuotaForOrigin), so that a
-//                  conversion larger than it must be refused where the page keeps it (T.99: the origin private file
+//                  conversion larger than it must be refused where the page keeps it (T99: the origin private file
 //                  system, or the Cache API): the page must say it was not kept and go on to answer. With E2E_TWICE the
 //                  line "not kept for the second visit: <the reason the page gave>" says what the browser did.
-//   E2E_LONG       a number of words (T.115): the prompt is the numbers 1 to it, in place of the model's own, so that
+//   E2E_LONG       a number of words (T115): the prompt is the numbers 1 to it, in place of the model's own, so that
 //                  the keys and values grow to the end of a long context (a prompt past 2048 tokens takes the cache
 //                  of 4096 positions through its last doubling, where it needs the most memory), whatever token
 //                  would end the answer early. The answer may then take the whole context.
@@ -70,7 +70,7 @@ import { closed, leave, scratch } from "./leave.ts";
 import { serving } from "./serving.ts";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
-// an id the list does not have opens the page's default model, and the run passed on it (T.144: models.yml with a
+// an id the list does not have opens the page's default model, and the run passed on it (T144: models.yml with a
 // misspelt id answered with tiny-lm): such an id fails before a browser starts
 if (!/^(local|hf|url|default|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id === model)) {
   console.error(`FAILED\n- no model ${model} in src/models.ts (the page would open its default model instead)`);
@@ -80,7 +80,7 @@ if (!/^(local|hf|url|default|hf:.+)$/.test(model) && !MODELS.some((entry) => ent
 const expected = {
   stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   local: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
-  // (T.401: its files have a chat template, which writes the prompt as it is: the answer is the same text, after the
+  // (T401: its files have a chat template, which writes the prompt as it is: the answer is the same text, after the
   // prompt, which a model of a template is not shown back)
   hf: ", there was a little girl named Lily. She loved to play outside in the park.",
   url: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
@@ -89,11 +89,11 @@ const expected = {
 
 let server;
 let url = deployed;
-// T.441: while E2E_OFFLINE's visit is offline, this tool's own server ends every connection without an answer as well:
+// T441: while E2E_OFFLINE's visit is offline, this tool's own server ends every connection without an answer as well:
 // Playwright's Firefox goes on reaching localhost when it is told it is offline (tests/updated-in-browser.ts's offlineNow())
 let serverOffline = false;
 if (!url) {
-  // plain static files and no special headers, like GitHub Pages (T.391.6: tests/serving.ts)
+  // plain static files and no special headers, like GitHub Pages (T391.6: tests/serving.ts)
   server = await serving(undefined, { instead: () => (serverOffline ? "drop" : undefined) });
   url = server.url;
 }
@@ -101,14 +101,14 @@ if (!url) {
 const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
 const started = Date.now();
 // The time limit is set before the browser starts: a run that hangs in launch() or newPage() (the Windows WebKit of
-// T.70 looked like one) must end by it too, not by the job's own limit. Until the page exists there is nothing to
-// keep but the reason. (Fable's review of T.82.)
+// T70 looked like one) must end by it too, not by the job's own limit. Until the page exists there is nothing to
+// keep but the reason. (Fable's review of T82.)
 let browser, browserVersion = "", page;
-// (T.506: the status line as it changed, kept below once there is a page; here, for the time limit to read)
+// (T506: the status line as it changed, kept below once there is a page; here, for the time limit to read)
 const statusLines = [];
 let statusNow;
 const limit = Number(process.env.E2E_TIMEOUT ?? 900) * 1000;
-// T.373: a line before anything can hang, and one every five minutes until the run ends, with what the status line
+// T373: a line before anything can hang, and one every five minutes until the run ends, with what the status line
 // says: a run the job's own limit ends (its log is all there is then: no artifact is kept) still says how far it came.
 // (One WebKit run on the site just deployed said nothing for 47 minutes and left no log, run 37955775249.)
 console.log(`e2e: ${engine}, ${model}: started at ${new Date(started).toISOString()}, a limit of ${limit / 1000}s`);
@@ -130,15 +130,15 @@ const watchdog = setTimeout(async () => {
   exitAfter(2, `${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`);
 }, limit);
 const kind = playwright[channel ? "chromium" : engine], viewport = { width: 390, height: 844 };
-// T.135, T.148: a runner has no GPU; SwiftShader stands in (its speed means nothing), taken with ?gpuTest=on, refused without
-// (T.156's review: gpuTest=only too, a model the GPU can take on the GPU alone: the page's path of a model too large to
+// T135, T148: a runner has no GPU; SwiftShader stands in (its speed means nothing), taken with ?gpuTest=on, refused without
+// (T156's review: gpuTest=only too, a model the GPU can take on the GPU alone: the page's path of a model too large to
 // hold twice, its weights to the GPU as they come and a conversion kept as it came)
 const gpuTest = /(^|&)gpuTest=(on|only)(&|$)/.test(process.env.E2E_QUERY ?? "");
 const swiftShader = gpuTest || process.env.E2E_GPU === "swiftshader";
 const args = swiftShader && kind === playwright.chromium ? ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"] : [];
 if (process.env.E2E_TWICE) {
   // A profile on disk, as a visitor's browser has: Playwright's usual context is like private browsing, and WebKit
-  // kept nothing across a reload there (T.99)
+  // kept nothing across a reload there (T99)
   browser = await kind.launchPersistentContext(scratch("e2e-profile-"), { headless: true, channel, viewport, args });
   browserVersion = browser.browser()?.version() ?? "";  // Playwright says a persistent context may not know its browser
   page = browser.pages()[0] ?? await browser.newPage();
@@ -151,7 +151,7 @@ const errors = [];
 // every line of the console, for the artifacts of a failed run: the last ones say where it stopped
 const consoleLines = [];
 const remember = (line) => {
-  // (T.380.2, E2E_CONSOLE: a file every line is appended to as it comes, also of a run that passes: to hold a visit
+  // (T380.2, E2E_CONSOLE: a file every line is appended to as it comes, also of a run that passes: to hold a visit
   // where nothing failed to "nothing more on the console than before")
   if (process.env.E2E_CONSOLE) fs.appendFileSync(process.env.E2E_CONSOLE, `${line}\n`);
   consoleLines.push(`${((Date.now() - started) / 1000).toFixed(1)}s ${line}`);
@@ -161,18 +161,18 @@ page.on("pageerror", (error) => {
   errors.push(String(error));
   remember(`[pageerror] ${error}`);
 });
-// T.389: the parts of a model the worker said broke off and were fetched again (worker/sources.js). Firefox on Windows
-// breaks a body off now and then ("Error in input stream", T.97) and says so on the console in its own words too; with
+// T389: the parts of a model the worker said broke off and were fetched again (worker/sources.js). Firefox on Windows
+// breaks a body off now and then ("Error in input stream", T97) and says so on the console in its own words too; with
 // the worker's line beside it that is a break the page recovered from, and not a failure of the page.
 let refetched = 0;
 // (Firefox words it as `[JavaScript Error: "Failed to read data from the ReadableStream: “TypeError: Error in input stream”."]`,
 // as run 38046609290 printed it: not at the start of the text)
 const BROKEN_STREAM = /Failed to read data from the ReadableStream: /;
-let threadReports = 0;  // T.172: the page's lines about the worker's search for the number of threads
-// T.397: the worker loads Pyodide's jinja2 before it first converts a model, for the model's chat template. What it
+let threadReports = 0;  // T172: the page's lines about the worker's search for the number of threads
+// T397: the worker loads Pyodide's jinja2 before it first converts a model, for the model's chat template. What it
 // asked the CDN for (the wheel's name, as Pyodide's lock has it), and what it said where the package did not come
 let jinjaAsked, jinjaMissed;
-// T.360: what huggingface.co answered 404 of the files a conversion asks for that a repository may not have (the
+// T360: what huggingface.co answered 404 of the files a conversion asks for that a repository may not have (the
 // tokenizer's candidates, the template, the index of shards): the conduct takes that as "not there" and goes on, and
 // WebKit says each such answer on the console as an error, which is then no failure of the page
 const MAY_BE_MISSING = /^https:\/\/huggingface\.co\/[^?]+\/resolve\/[^/]+\/(tokenizer\.json|tokenizer\.model|spiece\.model|chat_template\.jinja|tokenizer_config\.json|[^/]+\.index\.json)$/;
@@ -192,7 +192,7 @@ page.on("console", (message) => {
   remember(`[${message.type()}] ${message.text()}`);
 });
 
-// T.506: what the status line said, as it changed (asked every two seconds, the last sixty kept). A page that stops
+// T506: what the status line said, as it changed (asked every two seconds, the last sixty kept). A page that stops
 // answering still leaves the line it last showed and when, and what led to it. And a page that has answered and then
 // answers nothing for E2E_SILENCE seconds is gone: the run fails there, not at its time limit. (A WebKit whose process
 // the runner ended, out of memory in the middle of a 27B's download, left "status: (no answer)", no picture and no
@@ -228,7 +228,7 @@ statusWatch.unref();
 // (where the browser does tell Playwright that the page's process ended, at once)
 page.on("crash", () => lost("the page crashed"));
 
-// What is left behind when a run fails: in CI nothing else of it remains (T.82)
+// What is left behind when a run fails: in CI nothing else of it remains (T82)
 async function keepArtifacts(reason) {
   const directory = process.env.E2E_ARTIFACTS;
   if (!directory) return;
@@ -249,7 +249,7 @@ function record(entry) {
   const file = process.env.E2E_RESULTS;
   if (!file) return;
   const extra = process.env.E2E_QUERY ? { query: process.env.E2E_QUERY } : {};
-  // (T.233's review: a results file in a folder that was not there threw here, in the very handler that records what threw: the
+  // (T233's review: a results file in a folder that was not there threw here, in the very handler that records what threw: the
   // handler ran again and again, 15,694 lines of "FAILED" in a log)
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, ...extra, ...entry }) + "\n");
@@ -268,7 +268,7 @@ process.on("uncaughtException", async (error) => {
 });
 
 const opens = model === "local" || model === "hf";
-// (T.511.6: "default" names nothing; what it opens is the list's default, and the checks of that model hold for it)
+// (T511.6: "default" names nothing; what it opens is the list's default, and the checks of that model hold for it)
 const id = model === "default" ? DEFAULT_MODEL.id : model;
 // the page asks before it fetches more than 500 MB
 page.on("dialog", (dialog) => dialog.accept());
@@ -296,7 +296,7 @@ if (process.env.E2E_QUOTA) {
     }
   }
 }
-// T.93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
+// T93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
 // a wait that the reload interrupts starts again on the new page
 const acrossReload = async (wait) => {
   for (;;) {
@@ -311,11 +311,11 @@ const acrossReload = async (wait) => {
 const idle = () => acrossReload(() => page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 0 }));
 await idle();
 if (opens) {
-  const repository = fileURLToPath(new URL("../", import.meta.url));  // (T.498: a path on Windows and with spaces too)
+  const repository = fileURLToPath(new URL("../", import.meta.url));  // (T498: a path on Windows and with spaces too)
   let chosen = [`${repository}stories260K.bin`, `${repository}tok512.bin`];
   if (model === "hf") {
     const directory = scratch("hf-fixture-");
-    // (T.385: stored as bfloat16, a type with a kernel's reader: the conversion is to read it on the kernel)
+    // (T385: stored as bfloat16, a type with a kernel's reader: the conversion is to read it on the kernel)
     execFileSync("python3", [`${repository}tests/make_hf_fixture.py`, directory, "BF16"]);
     chosen = fs.readdirSync(directory).map((name) => path.join(directory, name));
   }
@@ -324,7 +324,7 @@ if (opens) {
   await idle();
 }
 const readySeconds = (Date.now() - started) / 1000;
-// T.148: the model is ready before the GPU is: where there is a GPU to see, the status line's verdict on it first (the
+// T148: the model is ready before the GPU is: where there is a GPU to see, the status line's verdict on it first (the
 // layers on SwiftShader and its shaders compiled, with gpuTest=on: minutes; refused without it: at once)
 let gpuVerdict = null;
 if (swiftShader && kind === playwright.chromium) {
@@ -332,16 +332,16 @@ if (swiftShader && kind === playwright.chromium) {
   gpuVerdict = { seconds: (Date.now() - started) / 1000 - readySeconds, status: await page.evaluate(() => document.getElementById("status-text").textContent) };
   console.log(`the GPU's verdict ${gpuVerdict.seconds.toFixed(1)}s after ready: ${gpuVerdict.status}`);
 }
-// T.84: the worker's own breakdown (Pyodide, download, the conversion's share of it, Llama()) and its memory
+// T84: the worker's own breakdown (Pyodide, download, the conversion's share of it, Llama()) and its memory
 const reported = await page.evaluate(() => window.__ready ?? null).catch(() => null);
 // By default a model writes until its context is full (4096 tokens for llm-jp-3-150m). The test, and every tok/s in
 // the documents, is about 256 tokens: set that in the settings, as a visitor would. (Not with E2E_LONG: the 256
-// count the prompt too, and the long prompt is there to fill the context.) T.337: Agents-A1's format alone is 241
-// tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it. T.255: and for SmolLM3,
-// whose template's system turn is as long where it thinks. T.604: and 768 for Lumi v2, whose template's default system
+// count the prompt too, and the long prompt is there to fill the context.) T337: Agents-A1's format alone is 241
+// tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it. T255: and for SmolLM3,
+// whose template's system turn is as long where it thinks. T604: and 768 for Lumi v2, whose template's default system
 // turn makes a prompt of 499.
 const tokens = /^hf-lumi-v2-/.test(id) ? "768" : /^hf-(agents-a1|smollm3)-/.test(id) ? "512" : "256";
-// (T.577: not where the query says steps=: the page read it from the URL, models.yml's query=gpuTest=on&steps=16 for a
+// (T577: not where the query says steps=: the page read it from the URL, models.yml's query=gpuTest=on&steps=16 for a
 // GPU's steps on SwiftShader, which writes 256 tokens in more than the job's 30 minutes)
 const stepsSaid = /(^|&)steps=/.test(process.env.E2E_QUERY ?? "");
 if (!process.env.E2E_LONG && !stepsSaid) await page.evaluate((tokens) => {
@@ -349,14 +349,14 @@ if (!process.env.E2E_LONG && !stepsSaid) await page.evaluate((tokens) => {
   steps.value = tokens;
   steps.dispatchEvent(new Event("input"));
 }, tokens);
-// T.333: E2E_PROMPT, a prompt of the test's instead of the entry's (a short question, whose answer ends before the
+// T333: E2E_PROMPT, a prompt of the test's instead of the entry's (a short question, whose answer ends before the
 // 256 tokens: whether it stops at a stop token)
 if (process.env.E2E_PROMPT) await page.fill("#prompt", process.env.E2E_PROMPT);
 if (process.env.E2E_LONG) {
   await page.fill("#prompt", Array.from({ length: Number(process.env.E2E_LONG) }, (_, i) => i + 1).join(" "));
 }
-// T.172: until an answer's speed line is there, the button stays the stop button and the model stays chosen. The
-// worker's reports in the middle of a text (the search for the number of threads, which runs inside a text since T.93's
+// T172: until an answer's speed line is there, the button stays the stop button and the model stays chosen. The
+// worker's reports in the middle of a text (the search for the number of threads, which runs inside a text since T93's
 // stage 2b) once read as "the worker is idle": the button went back to Run, and a press started a second text on the
 // same engine. Every answer is watched (the first, E2E_THEN's, the offline one): the count of speed lines as it is
 // sent is the mark of "not answered yet". Whether a report came during the answer is in the console ("threads:") and
@@ -378,7 +378,7 @@ async function watchAnswer() {
   return async (name) => {
     const early = await page.evaluate(() => window.__early);
     if (early.length) failures.push(`${name}before the answer ended: ${[...new Set(early)].join(", ")}`);
-    // (T.378.5: and once it has ended they are back: the page draws the button from what its owner says is going on,
+    // (T378.5: and once it has ended they are back: the page draws the button from what its owner says is going on,
     // and the worker's idle is said and drawn in two lines)
     const late = await page.evaluate(() => [document.getElementById("run").getAttribute("aria-label") !== "Run" && "the button did not go back to Run",
       document.getElementById("model").disabled && "the choice of model did not come back"].filter(Boolean));
@@ -397,21 +397,21 @@ const result = await page.evaluate(() => ({
   text: document.querySelector(".model .bubble")?.textContent ?? "",
   // the closed line; the breakdown below it is in the same element
   meta: document.querySelector(".model .meta summary")?.textContent ?? "",
-  // the breakdown's line of the prompt (T.135: "prompt 40 tokens on WebGPU · …")
+  // the breakdown's line of the prompt (T135: "prompt 40 tokens on WebGPU · …")
   prompt: [...document.querySelectorAll(".model .meta *")].map((e) => e.textContent).find((t) => /^prompt \d/.test(t ?? "")) ?? "",
-  // T.152: and of the tokens written ("generated 60 tokens on WebGPU · …")
+  // T152: and of the tokens written ("generated 60 tokens on WebGPU · …")
   generated: [...document.querySelectorAll(".model .meta *")].map((e) => e.textContent).find((t) => /^generated \d/.test(t ?? "")) ?? "",
   error: document.querySelector(".error .bubble")?.textContent ?? "",
   // which kernels this browser got: "SIMD kernels, int8, relaxed SIMD", or less
   status: document.getElementById("status-text")?.textContent ?? "",
   pageScrolls: document.documentElement.scrollHeight > innerHeight,
-  // T.93: whether the service worker made the page cross-origin isolated (the software threads need it)
+  // T93: whether the service worker made the page cross-origin isolated (the software threads need it)
   isolated: self.crossOriginIsolated,
 }));
 if (result.error) failures.push(`the page reported: ${result.error}`);
 const recovered = errors.filter((text) => BROKEN_STREAM.test(text)).slice(0, refetched);
 if (recovered.length) console.log(`parts that broke off and were fetched again: ${refetched} (the browser's ${recovered.length} lines about them are no failure)`);
-// (T.360: as many lines of a 404 as the files huggingface.co said a repository has not, of those it may not have)
+// (T360: as many lines of a 404 as the files huggingface.co said a repository has not, of those it may not have)
 const missing = errors.filter((text) => /Failed to load resource: the server responded with a status of 404/.test(text)).slice(0, missingAnswered);
 if (missing.length) console.log(`files a repository may not have, answered 404: ${missingAnswered} (the browser's ${missing.length} lines about them are no failure)`);
 recovered.push(...missing);
@@ -419,15 +419,15 @@ const unexplained = errors.filter((text) => !recovered.includes(text) || (recove
 if (unexplained.length) failures.push(`console errors: ${unexplained.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
 if (result.pageScrolls) failures.push("the page itself scrolls");
-// (T.577: an answer the query cut short with steps= is the start of the expected text, which it does not reach)
+// (T577: an answer the query cut short with steps= is the start of the expected text, which it does not reach)
 const begins = (text, want) => text.startsWith(want) || (stepsSaid && want.startsWith(text.trim()) && text.trim().length > 0);
 if (expected[model] && !begins(result.text, expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
-// T.231's review: no check above says an answer is a real one. JavaScriptCore on x86-64 wrote "edListedlyedlyedList..." with a
+// T231's review: no check above says an answer is a real one. JavaScriptCore on x86-64 wrote "edListedlyedlyedList..." with a
 // ternary model and the run passed: an answer, a speed line, no error. 160 characters of any language have a dozen different
 // ones at the least (that one has 8); where fewer, the engine has gone wrong, or the model has fallen into a loop
 if (result.text.length >= 100 && new Set(result.text.slice(0, 160)).size < 10) failures.push(`the answer looks like nonsense: ${result.text.slice(0, 80)}`);
 if (gpuTest && !/on WebGPU/.test(result.prompt)) failures.push(`the prompt did not go through the GPU (${result.prompt || "no prompt line"}; ${result.status})`);
-// T.152: where the status says the GPU takes the answers (a model it takes them of), they went through it
+// T152: where the status says the GPU takes the answers (a model it takes them of), they went through it
 if (gpuTest && /answers on WebGPU/.test(result.status) && !/on WebGPU/.test(result.generated)) {
   failures.push(`the tokens did not go through the GPU (${result.generated || "no line of the tokens"}; ${result.status})`);
 }
@@ -435,13 +435,13 @@ if (gpuTest && /answers on WebGPU/.test(result.status) && !/on WebGPU/.test(resu
 if (swiftShader && !gpuTest && (!/prompts on the CPU \(/.test(gpuVerdict?.status ?? "") || /on WebGPU/.test(result.prompt))) {
   failures.push(`SwiftShader was not refused (${gpuVerdict?.status}; ${result.prompt})`);
 }
-// T.397: a model converted in this visit (nothing is kept in a new profile) had jinja2 asked for; where it did not
+// T397: a model converted in this visit (nothing is kept in a new profile) had jinja2 asked for; where it did not
 // come the conversion went on with the converter's own reader, which is said and is no failure
 if (/^hf([-:]|$)/.test(id)) {
   if (!jinjaAsked) failures.push("the conversion did not ask Pyodide for jinja2");
   console.log(jinjaMissed ?? `jinja2: ${jinjaAsked ?? "not asked for"}`);
 }
-// T.385: where the page runs on the SIMD kernels, a conversion widens every stored type that has a kernel's reader on
+// T385: where the page runs on the SIMD kernels, a conversion widens every stored type that has a kernel's reader on
 // the kernel (without it, the conversion is only slower, and nothing else says so). The ready message says how each
 // was read (a conversion kept before says nothing: it is not converted again)
 if (reported?.widened) {
@@ -458,7 +458,7 @@ if (model === "default") {
   if (opened !== DEFAULT_MODEL.id) failures.push(`a visit naming no model opened ${opened}, not the default ${DEFAULT_MODEL.id}`);
 }
 if (repository) {
-  // T.505.3: which file a repository nobody listed was opened by, as the page's list and its address say (a repository of
+  // T505.3: which file a repository nobody listed was opened by, as the page's list and its address say (a repository of
   // GGUFs alone: the best of them, chosen by the page)
   console.log(`opened: ${await page.evaluate(() => `${document.getElementById("model").selectedOptions[0]?.textContent} (${location.search})`)}`);
 }
@@ -498,7 +498,7 @@ let again = null;
 if (process.env.E2E_TWICE && !failures.length) {
   // what the browser holds, as the page lists it (src/runtime/kept.js)
   const listKept = () => page.evaluate(async () => {
-    // (T.367.3: kept.js is no file of the site now but a chunk of the worker's bundle, _astro/kept.<hash>.js: the page
+    // (T367.3: kept.js is no file of the site now but a chunk of the worker's bundle, _astro/kept.<hash>.js: the page
     // that is open has its own copy of it inside its script. The worker's text names the chunk it reads.)
     const worker = performance.getEntriesByType("resource").map((entry) => entry.name).find((name) => /\/_astro\/worker\.[\w-]+\.js$/.test(name));
     const chunk = worker && /kept\.[\w-]+\.js/.exec(await (await fetch(worker)).text())?.[0];
@@ -514,11 +514,11 @@ if (process.env.E2E_TWICE && !failures.length) {
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
   again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
     miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept(),
-    // T.111: the worker's own breakdown of the second load (Pyodide, the model), to see what the browser's cache saved
+    // T111: the worker's own breakdown of the second load (Pyodide, the model), to see what the browser's cache saved
     load: ready?.seconds ?? null };
   const parts = Object.entries(again.load ?? {}).map(([name, value]) => `${name} ${Number(value).toFixed(2)}s`).join(", ");
   console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
-  // (T.436: the second visit opens the model chosen last, E2E_THEN's last where there is one: that one is to be kept)
+  // (T436: the second visit opens the model chosen last, E2E_THEN's last where there is one: that one is to be kept)
   const opened = then.at(-1)?.model ?? id;
   if (/^hf[-:]/.test(opened) && !again.fromCache) failures.push(`${opened} not kept for the second visit: ${(opened === id && reported?.notKept) || ready?.keptMiss || "no reason given"}`);
 }
@@ -556,9 +556,9 @@ if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
 clearInterval(heartbeat);
 clearInterval(statusWatch);
-// T.141: browser.close() of WebKit on Windows did not return (three times in CI: the answer printed, then nothing),
+// T141: browser.close() of WebKit on Windows did not return (three times in CI: the answer printed, then nothing),
 // the watchdog was already stopped, the next run never started and the job ran into its limit. The close is given
-// fifteen seconds, and the process ends here rather than when nothing is left to wait for. (T.391.6: the one way of
+// fifteen seconds, and the process ends here rather than when nothing is left to wait for. (T391.6: the one way of
 // tests/leave.ts, as every tool that drives a browser ends.)
 await closed(() => browser.close());
 server?.close();

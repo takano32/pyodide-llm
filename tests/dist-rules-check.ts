@@ -1,4 +1,4 @@
-// tests/dist-rules-check.ts (T.367.3.1): tests/dist-check.ts and tests/bundle.ts held to made-up builds: what each
+// tests/dist-rules-check.ts (T367.3.1): tests/dist-check.ts and tests/bundle.ts held to made-up builds: what each
 // must say of a build that is wrong in one way, and of one that is right. No build is needed (dist-check.ts itself is
 // run on the real one after `npm run build`).
 import assert from "node:assert/strict";
@@ -61,7 +61,7 @@ const family = familyOf(coi);
     assert.equal(said.length, patterns.length, `${name}: ${said.join(" | ")}`);
     patterns.forEach((pattern, i) => assert.match(said[i], pattern, name));
   };
-  // (T.383) Python's bytecode, anywhere under it
+  // (T383) Python's bytecode, anywhere under it
   wrong("bytecode", { "models/x/__pycache__/a.cpython-312.pyc": "b" }, /^dist\/models\/x\/__pycache__\/a\.cpython-312\.pyc: Python's bytecode is served$/);
   wrong("a name without a family", { "_astro/helper-CZLQhea1.js": "export const x = 1;\n" }, /^_astro\/helper-CZLQhea1\.js: the Service Worker takes no name and hash apart/);
   wrong("two of a family", { "_astro/worker.AAAAAAAA.js": "export const another = 1;\n" }, /^_astro\/worker\.AAAAAAAA\.js and _astro\/worker\.DR4U5U7O\.js: one family/);
@@ -83,7 +83,7 @@ const family = familyOf(coi);
     assert.match(said[0], /^src\/runtime\/jobs\.js: a copyright line in a comment that a bundler drops/);
   }
   {
-    // (T.368.1: a source that is TypeScript is a source all the same)
+    // (T368.1: a source that is TypeScript is a source all the same)
     const { "src/runtime/jobs.js": gone, ...rest } = sources;
     const tree = written("a copyright line in a TypeScript source", { ...rest, "src/runtime/forward.js": 'import { J } from "./jobs.ts";\nexport const F = J;\n', "src/runtime/jobs.ts": "// Copyright (c) 2021 Someone\nexport const J: number = 1;\n",
       ...Object.fromEntries(Object.entries(good).map(([file, text]) => [`dist/${file}`, text])) });
@@ -95,7 +95,7 @@ const family = familyOf(coi);
   wrong("a minified worker", { "_astro/worker.DR4U5U7O.js": `${BUNDLED}${"const a=1;".repeat(600)}\n` }, /^_astro\/worker\.DR4U5U7O\.js is minified \(\d+ characters a line\)/);
   wrong("a lazy part bundled into another file", { "_astro/key.XnxXfX1x.js": null }, /^_astro\/key\.<hash>\.js is not there: key\.js was bundled into another file, and is fetched on every visit now/);
   wrong("a module of Node's asked for", { "_astro/helper.CZLQh-ea.js": 'const port = (await import("node:worker_threads")).parentPort;\n' }, /^_astro\/helper\.CZLQh-ea\.js asks for node:worker_threads: a module of Node's in a browser's file/);
-  // (T.448: and by its bare name, which Node takes as well; a name of Node's that is no module asked for is nothing)
+  // (T448: and by its bare name, which Node takes as well; a name of Node's that is no module asked for is nothing)
   wrong("a word of Node's in a string, no import", { "_astro/helper.CZLQh-ea.js": 'export const e = "events", p = "node:path", u = { from: "url" };\n' });
   wrong("a module of Node's asked for by its bare name", { "_astro/helper.CZLQh-ea.js": 'import { parentPort } from "worker_threads";\nexport const port = parentPort;\n' }, /^_astro\/helper\.CZLQh-ea\.js asks for worker_threads: a module of Node's in a browser's file/);
   wrong("the bundler's stand-in for a module of Node's", { "_astro/__vite-browser-external.CnCWOxrk.js": "export default {};\n", "_astro/rolldown-runtime.DBMA93yC.js": "export {};\n" },
@@ -125,7 +125,7 @@ const family = familyOf(coi);
   ok("a module as a build wrote it: the one chunk of its name, or why there is none");
 }
 
-// T.445: undeclared(), what the 9th rule reads of a built file: a name read and declared nowhere, and nothing else
+// T445: undeclared(), what the 9th rule reads of a built file: a name read and declared nowhere, and nothing else
 assert.deepEqual(undeclared("var a = 1; function f(b) { return a + b + c; }"), ["c"]);
 assert.deepEqual(undeclared("const { x = y, ...z } = o; class K { v = w; m(p) { return this.v + p + x + z; } }"), ["o", "w", "y"]);
 assert.deepEqual(undeclared("l: for (const i of list) { if (i) break l; } const g = function h() { return h; }; obj.prop; ({ key: 1 });"), ["list", "obj"]);

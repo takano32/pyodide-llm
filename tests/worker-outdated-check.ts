@@ -1,4 +1,4 @@
-// T.439: what the model's worker tells the page where it goes on, slower, without a file of its build that is gone
+// T439: what the model's worker tells the page where it goes on, slower, without a file of its build that is gone
 // (src/runtime/worker/outdated.js), by itself and where alone.js hands it a worker's error.
 //
 //   node tests/worker-outdated-check.ts        (Node only, under a second)
@@ -29,7 +29,7 @@ const here = { origin: "https://takano32.github.io" };
 const WORKER = "https://takano32.github.io/pyodide-llm/_astro/worker.BwFFQ8AO.js";
 const posted = [];
 globalThis.postMessage = (message) => posted.push(message);
-// outdated.js anew: what it holds (whether the page was told) is a visit's (T.584: tests/fresh.ts, on Node and on Bun)
+// outdated.js anew: what it holds (whether the page was told) is a visit's (T584: tests/fresh.ts, on Node and on Bun)
 const fresh = () => anew(runtimeUrl("worker/outdated.js"));
 // a server (tests/fakes/fetch.ts): what it was asked, and its answer to each (route(url, init, n): the n-th of that address)
 function server(route) {
@@ -255,7 +255,7 @@ for (const [isGone, event, told, askedFor] of [
   assert.ok(!/new Worker\(/.test(String(run("gpuOnlyBuffer"))));
   cases += 1;
 }
-// T.576: its plan is made first: a plan that throws (a packing the GPU takes not) leaves no worker and takes no memory
+// T576: its plan is made first: a plan that throws (a packing the GPU takes not) leaves no worker and takes no memory
 {
   const { run, context } = harness(true);
   context.stand = { forward: { gpuOnlyPlan() { throw new Error("a packing the GPU takes not"); }, needsWide() { throw new Error("a memory reckoned"); } } };
@@ -263,7 +263,7 @@ for (const [isGone, event, told, askedFor] of [
   const thrown = (() => { try { run("gpuOnlyBuffer")(100, [], {}, { tensors: {}, stored: 50, gpuOnly: 100 }); } catch (error) { return error; } })();
   assert.equal(thrown?.message, "a packing the GPU takes not", "gpuOnlyBuffer() throws its plan's error before it reckons a memory");
   assert.equal(workersMade.length, 0, "and opens no GPU's worker, which would be left");
-  // (T.576's review: and with a plan that does not throw, it is made before a memory is asked for, which comes before the
+  // (T576's review: and with a plan that does not throw, it is made before a memory is asked for, which comes before the
   // GPU's worker is opened)
   const order = [];
   const { run: runAgain, context: again } = harness(true);
@@ -276,7 +276,7 @@ for (const [isGone, event, told, askedFor] of [
   assert.deepEqual(order.slice(0, 2), ["plan, 0 workers", "memory"], `the plan before the memory and the worker (${order})`);
   cases += 1;
 }
-// T.581: what is reckoned of the header (layerWeightsOf()) before the worker too, and a worker whose writer cannot be
+// T581: what is reckoned of the header (layerWeightsOf()) before the worker too, and a worker whose writer cannot be
 // made (gpuOnlyWeights() throws) let go of at once: nothing is left
 for (const throwing of ["layerWeightsOf", "gpuOnlyWeights"]) {
   const { run, context } = harness(true);

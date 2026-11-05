@@ -1,20 +1,20 @@
-// shaders/run.ts (T.351): a run of generated tokens on the GPU (T.151) but for its sampling (sample.ts): the state a
+// shaders/run.ts (T351): a run of generated tokens on the GPU (T151) but for its sampling (sample.ts): the state a
 // pass hands the next and the settings of the sampling (with the JavaScript that writes them), the embedding of a token
-// or of a prompt's rows, and the outlier channels of a ternary classifier (T.232).
+// or of a prompt's rows, and the outlier channels of a ternary classifier (T232).
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { GET_BYTE_I32 } from "./prompt.ts";
 import { BLK_READ, SUPERBLOCKS } from "./superblocks.ts";
 import type { BlockPacking } from "./common.ts";
 
-// ---- T.151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
-// one compute pass: EMBED (the token's row of the embedding into the residual stream), the layers (fusedMatVec, T.150),
+// ---- T151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
+// one compute pass: EMBED (the token's row of the embedding into the residual stream), the layers (fusedMatVec, T150),
 // the final norm and the classifier (fusedMatVec, "write"), then SAMPLE (the repetition penalty, softmax, top-p and
 // the draw), which writes the token into `chosen` and the state the next pass starts from; between passes the state's
 // first four words are copied into the Step uniform that fusedMatVec and flashTile read (copyBufferToBuffer: a
 // uniform is not a shader's to write). What the CPU gets back: chosen[0 .. sampled) and the state, after the run.
-// For /benchmark/'s GPU section first (T.151), and for the model's GPU worker when it generates on the GPU (T.152).
+// For /benchmark/'s GPU section first (T151), and for the model's GPU worker when it generates on the GPU (T152).
 //
 // What the GPU does is the CPU's sampling (kernels/kernel.ts's penalize() and sample(), the engine's generate()),
 // token for token: the same random number (the CPU draws them, in order, one a sampled token: randoms[sampled]) picks
@@ -44,7 +44,7 @@ import type { BlockPacking } from "./common.ts";
 //     whose running sum passes the random number
 //   - gathering the tokens over the floor in the order of their index (for the pivots, and the order of equals):
 //     cumsum.wgsl's scan again, of the counts
-//   - T.546: a top-k, min-p and the presence penalty, in the CPU's order (top-k, top-p, min-p: kernels/kernel/sample.ts,
+//   - T546: a top-k, min-p and the presence penalty, in the CPU's order (top-k, top-p, min-p: kernels/kernel/sample.ts,
 //     llama.cpp's samplers' and transformers'): the top-k's k-th largest probability by the same pivots counting the
 //     tokens at or over each (where MLC's top_p_pivot sums them; WebLLM and TVM sort for a top-k: not taken), and of the
 //     tokens of that probability the first ones in the order of their index; the nucleus and the draw of those kept;
@@ -77,7 +77,7 @@ import type { BlockPacking } from "./common.ts";
  */
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T.191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -112,10 +112,10 @@ const STATE = /* wgsl */ `struct State {
   stopped: u32,   // 1 once a stop token was sampled, or a step was refused (not_finite): nothing changes after
   recent: array<u32, ${REPETITION_WINDOW}>,
 }`;
-/** T.219: the State's word that says a step was refused (read back with the ids: gpu/tokens.ts, forward/gpuside.ts) */
+/** T219: the State's word that says a step was refused (read back with the ids: gpu/tokens.ts, forward/gpuside.ts) */
 export const STATE_NOT_FINITE = 3;
 export const STATE_BYTES = 32 + 4 * REPETITION_WINDOW;
-/** T.152's review (T.160): float32 values into float16 bits, rounded to the nearest (ties to even), as the GPU's own keys
+/** T152's review (T160): float32 values into float16 bits, rounded to the nearest (ties to even), as the GPU's own keys
  * and values are (pack2x16float) where it rounds so: a float32 cache's keys and values going up to the GPU. out: a
  * Uint16Array as long as floats. Infinities and NaN stay so, what is past float16's largest becomes an infinity, and
  * what is below half its least subnormal 0. */
@@ -150,9 +150,9 @@ export function halvesOf(floats: ArrayLike<number>, out: Uint16Array) {
   return out;
 }
 /** The state a run starts from: the token it feeds first, at pos, and the history before it (BOS, the prompt and
- * the tokens sampled before, the fed token last: the penalty's window is its latest REPETITION_WINDOW). length (T.152:
+ * the tokens sampled before, the fed token last: the penalty's window is its latest REPETITION_WINDOW). length (T152:
  * the engine hands the latest of a longer history over): how long the history is, of which history is the end.
- * written (T.546): how many of its latest were sampled (the presence penalty's: the prompt's are not). */
+ * written (T546): how many of its latest were sampled (the presence penalty's: the prompt's are not). */
 export function samplingState({ token, pos, history, length = history.length, written = 0 }: { token: number; pos: number; history: ArrayLike<number>; length?: number; written?: number }) {
   const words = new Uint32Array(STATE_BYTES / 4), first = length - history.length;
   words.set([1, pos, written, 0, token, 0, length, 0]);
@@ -169,7 +169,7 @@ const SAMPLING = /* wgsl */ `struct Sampling {
 }`;
 export const SAMPLING_BYTES = 32 + 4 * STOPS_MOST;
 /** Sampling's bytes: the engine's settings (temperature 0: the most likely token; top-p outside (0, 1): no nucleus;
- * penalty 1: none; T.546: topK 0, minP 0 and presence 0: none) and its stop tokens. */
+ * penalty 1: none; T546: topK 0, minP 0 and presence 0: none) and its stop tokens. */
 export function samplingSettings({ vocab, temperature, topp, penalty = 1, topK = 0, minP = 0, presence = 0, stops = [] }: { vocab: number; temperature: number; topp: number; penalty?: number;
   topK?: number; minP?: number; presence?: number; stops?: ArrayLike<number> }) {
   if (stops.length > STOPS_MOST) throw new Error(`more than ${STOPS_MOST} stop tokens`);
@@ -181,11 +181,11 @@ export function samplingSettings({ vocab, temperature, topp, penalty = 1, topK =
 }
 
 // the token's row of the embedding (int8, groups of 32 with a float32 scale each, 4 to a u32) into the stream x.
-// Bindings: 0 the table, 1 its scales, 2 the state (its token), 3 x, 4 the row's width (x of a vec4). T.209: a table in
+// Bindings: 0 the table, 1 its scales, 2 the state (its token), 3 x, 4 the row's width (x of a vec4). T209: a table in
 // pieces of rows (past what the device binds: Llama 3.2 3B's 394 MB on the owner's Android, which binds 256 MiB) is
 // one dispatch a piece, y its first row and z its rows: the piece that holds the token writes its row, the others
-// nothing (z 0: the whole table, as before). llama.cpp's get_rows reads one table; the range is ours (T.209)
-// (T.624: embedInt8(false) is EMBED, the state's token; embedInt8(true) EMBED_ROWS, below)
+// nothing (z 0: the whole table, as before). llama.cpp's get_rows reads one table; the range is ours (T209)
+// (T624: embedInt8(false) is EMBED, the state's token; embedInt8(true) EMBED_ROWS, below)
 const embedInt8 = (block: boolean) => /* wgsl */ `
 ${block ? "" : `${STATE}\n`}@group(0) @binding(0) var<storage, read> table: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
@@ -212,14 +212,14 @@ ${block ? "    let out = wid.y * n;\n" : ""}    for (var word = lid.x; word < wo
     }
 }`;
 export const EMBED = embedInt8(false);
-// T.210: the rows of a prompt's block from the embedding, for a model on the GPU alone (the CPU holds no embedding
-// then): EMBED's loop (T.624: embedInt8(true), one maker of the two texts, as embedTernary's), a workgroup a token
+// T210: the rows of a prompt's block from the embedding, for a model on the GPU alone (the CPU holds no embedding
+// then): EMBED's loop (T624: embedInt8(true), one maker of the two texts, as embedTernary's), a workgroup a token
 // (workgroup_id.y) of ids, into its row of dst. Bindings: 0 the table, 1 its scales, 2 the block's ids, 3 x (the
-// block's rows, dense), 4 the row's width and (T.209) the piece's first row and rows.
+// block's rows, dense), 4 the row's width and (T209) the piece's first row and rows.
 // llama.cpp's get_rows.wgsl reads its row's index from idx and writes a row of dst for each (i_dst1: a row of the
-// output an index); the range of a piece is T.209's
+// output an index); the range of a piece is T209's
 export const EMBED_ROWS = embedInt8(true);
-// T.232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.ts's TERNARY_PACKED, above dp4a): a word is 16 codes of
+// T232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.ts's TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
 // CPU's embed() has it (src/runtime/forward/engine.ts's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
@@ -249,10 +249,10 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTernary(true);
 
-// ---- T.547.3.6: the embedding's row of a token from a table of llama.cpp's blocks (superblocks.ts's SUPERBLOCKS: a text a
+// ---- T547.3.6: the embedding's row of a token from a table of llama.cpp's blocks (superblocks.ts's SUPERBLOCKS: a text a
 // type), as EMBED's: bindings 0 the table's blocks (1, an IQ type's codebooks: its helpers bind them), 2 the state, 3 dst,
-// 4 the row's width and (T.209) the piece's first row and rows. A thread a group of 32 at a time: each half's values
-// times its scale, less its min, as the matrices' BLK takes them (superblocks.ts's BLOCK_COMMON). T.547.3.7, rows: EMBED_ROWS's, the rows of
+// 4 the row's width and (T209) the piece's first row and rows. A thread a group of 32 at a time: each half's values
+// times its scale, less its min, as the matrices' BLK takes them (superblocks.ts's BLOCK_COMMON). T547.3.7, rows: EMBED_ROWS's, the rows of
 // a prompt's block for a model on the GPU alone (binding 2 the block's ids, a workgroup a token, workgroup_id.y)
 export const embedBlocks = ({ weights, rows }: { weights: BlockPacking; rows: boolean }): string => {
   const { bytes, helpers, code } = SUPERBLOCKS[weights];
@@ -290,11 +290,11 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>${rows ? ", @builtin(workgro
 }`;
 };
 
-// ---- T.232: the outlier channels of a ternary classifier's input (T.92: a few weights of the final norm are several
+// ---- T232: the outlier channels of a ternary classifier's input (T92: a few weights of the final norm are several
 // times the others (Ternary Bonsai 1.7B's largest is 5.6 times its median, the 8B's 5.2), and a group of 32 quantized
 // to 8 bits with one of them loses the other 31). The CPU takes them out of the normed stream before it quantizes it
 // and multiplies their columns of the classifier in float32 (src/runtime/forward/engine.ts's picked and the kernel add_columns); an int8
-// model's GPU multiplies a classifier of floats instead (T.226: fusedMatVec), which reads int8 weights. For ternary
+// model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
 // weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
 // from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input
 // as it comes), so it is written apart, with what gpu.ts gives it:

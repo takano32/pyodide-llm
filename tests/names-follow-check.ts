@@ -1,7 +1,7 @@
-// T.438: a file named in another's text is named again there when it changes. T.367.4's "the site was updated" rests on
+// T438: a file named in another's text is named again there when it changes. T367.4's "the site was updated" rests on
 // it (src/runtime/updated.ts: a module or a worker that fails to come is taken for an update where the file that names it,
 // asked again, is gone): a built file's name is its text's hash, and a file that names another holds that name in its
-// text, so a change anywhere moves every name up to the page's scripts. Nothing held that but the hand of T.367.4 (seven
+// text, so a change anywhere moves every name up to the page's scripts. Nothing held that but the hand of T367.4 (seven
 // parts changed one at a time); a bundler or a naming that hashed a file without the names in it would leave an old page
 // a namer that is still there, and the line would say nothing.
 // So: the site built once as it is, and once more for every script of _astro/ that another file of _astro/ names, with that
@@ -32,7 +32,7 @@ const work = scratch("names-follow-");
 async function built(folder, touched) {
   const benchmark = touched?.startsWith("benchmark-"), name = touched?.replace(/^benchmark-/, "").replace(/\.[^.]+\.js$/, "");
   const touch = { name: "names-follow", renderChunk: (code, chunk) => (touched && chunk.name === name && Boolean(chunk.facadeModuleId?.includes("/runtime/benchmark/")) === benchmark
-    ? `${code}\nglobalThis.touched = "T.438";\n` : null) };
+    ? `${code}\nglobalThis.touched = "T438";\n` : null) };
   const outDir = path.join(work, folder);
   await build({ root, outDir, logLevel: "error", vite: { plugins: [touch], worker: { plugins: () => [touch] } } });
   const at = path.join(outDir, "_astro");

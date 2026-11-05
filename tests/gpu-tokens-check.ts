@@ -1,7 +1,7 @@
-// tests/gpu-tokens-check.ts (T.465.3): the model's GPU worker choosing the forms of a generated token's steps, on the
+// tests/gpu-tokens-check.ts (T465.3): the model's GPU worker choosing the forms of a generated token's steps, on the
 // stand-in device whose checks' dispatches are answered as the shaders would (tests/fakes/gpu-model.ts: the answers'
 // arithmetic is tests/gpu_answers.py's, in NumPy). As gpu-forms-check.ts does for a prompt's forms.
-//   - T.465.3, a token's attention (src/runtime/gpu/tokenattention.ts's chooseTokenAttention()): llama.cpp's decode form
+//   - T465.3, a token's attention (src/runtime/gpu/tokenattention.ts's chooseTokenAttention()): llama.cpp's decode form
 //     with subgroups (where the device has them) and without, and the prompt's tiles, each checked right at 40, 70, 300
 //     and 1100 positions (one part, two, and as many as the decode form takes, the reduce over them), timed, one taken
 //     (the decode form's parts and Params made with it); a model with a window (a Gemma 3) through it too. Each check
@@ -9,22 +9,22 @@
 //     nothing then), or the window left out (a Gemma 3's check through its window), is wrong and the others are taken;
 //     off inside the line is right. The answers take the workgroups as many as the work's, no more, and the reduce reads
 //     the parts the decode wrote, of the nwg and sums' start it had.
-//   - T.465.4, a token's layer (tokenforms.ts's chooseTokens()) of a Llama: the float forms (with subgroups and without)
+//   - T465.4, a token's layer (tokenforms.ts's chooseTokens()) of a Llama: the float forms (with subgroups and without)
 //     and the DP4A ones (the norm with the quantizer, and apart) each checked on the model's own first layer and head,
 //     greedy and sampled with the penalty, timed, one taken (the made-up memory's numbers ones a model could have:
 //     gpu-plans.ts's plausible). Each check bites: the stream off in one value (a float form's text: the DP4A forms stay
 //     right), a greedy token not the largest logit, a sampled token the CPU's walk does not reach, the penalty left off the
 //     logits; off inside the line is right.
-//   - T.465.6.1: a Qwen3's and a Gemma 3's token (biases, the norms of the heads and RoPE apart; GEGLU, the norms behind,
+//   - T465.6.1: a Qwen3's and a Gemma 3's token (biases, the norms of the heads and RoPE apart; GEGLU, the norms behind,
 //     a window and a local layer's RoPE): every form right and every dispatch answered (answers.missed), and a head's
-//     norm, a bias or a norm behind off is wrong. T.465.6.2: a GPT-2's and a GPT-NeoX's (LayerNorms with their biases,
+//     norm, a bias or a norm behind off is wrong. T465.6.2: a GPT-2's and a GPT-NeoX's (LayerNorms with their biases,
 //     GELU, learned positions, the parallel residual) the same, and a LayerNorm or a GELU off is wrong.
-//   - T.465.6.3: a ternary model's token (matrices and table ternary: its own forms) and a token of each of the ten types
+//   - T465.6.3: a ternary model's token (matrices and table ternary: its own forms) and a token of each of the ten types
 //     of llama.cpp's blocks (two on w2's layers a model): every form right, every dispatch answered, a product off wrong.
-//   - T.465.6.4: an LFM2's token (its convolution layers) and a Qwen3.5's (its linear-attention layers and the gate of
+//   - T465.6.4: an LFM2's token (its convolution layers) and a Qwen3.5's (its linear-attention layers and the gate of
 //     its attending ones' output; and with its states in bundles): every form right, every dispatch answered, and the
 //     convolution, its moved rows or the delta rule's state off is wrong.
-//   - T.465.6.5: classifiers with outlier channels (int8 and ternary), and a wide Llama of blocks on every matrix and its
+//   - T465.6.5: classifiers with outlier channels (int8 and ternary), and a wide Llama of blocks on every matrix and its
 //     table (q, k and v apart, and joined): every form right, every dispatch answered, and their parts off wrong.
 // Not held here: that the fastest is taken (the timing's clock is the real one); a model on the GPU alone is
 // gpu-start-check.ts's.
@@ -79,7 +79,7 @@ for (const [model, features] of [["llama", []], ["llama", ["subgroups"]], ["gemm
   // off by 0.1%: inside the line
   const near = await chosen({ spoil: { vec: off(flashVec(16), (out) => { out[16] += 0.001; }) } });
   assert.deepEqual(near.tokenAttention.attentions.filter(({ none }) => none), [], "off inside the line: right");
-  // (T.465.3's review) a decode form that reads every position, its window left out: wrong through the window of a
+  // (T465.3's review) a decode form that reads every position, its window left out: wrong through the window of a
   // Gemma 3's check, right for a Llama's, which has none
   const blind = { spoil: { vec: flashVec(16, { ignoring: true }) } };
   const gemma = await chosen({ model: "gemma3", ...blind }), llama = await chosen(blind);
@@ -87,7 +87,7 @@ for (const [model, features] of [["llama", []], ["llama", ["subgroups"]], ["gemm
   assert.deepEqual(llama.tokenAttention.attentions.filter(({ none }) => none), [], "no window: right");
 }
 console.log("ok: each check bites: the decode form a little off in a head, its reduce writing nothing, or its window left out, is wrong and the tiles taken; off inside the line is right");
-// ---- T.465.4: a token's layer (tokenforms.ts's chooseTokens()): each form checked on the model's own first layer and
+// ---- T465.4: a token's layer (tokenforms.ts's chooseTokens()): each form checked on the model's own first layer and
 // head (the memory's numbers a model could have: opened's sane), greedy and sampled
 // a Llama's prompt forms chosen and its block made, then a token's forms
 async function tokens(options = {}) {
@@ -116,7 +116,7 @@ const FLOAT = "llama.cpp, fused (T150)", DP4A = "DP4A, fused (T175)", FORMS = [F
   assert.ok(FORMS.includes(form.name));
   console.log(`ok: a Llama's token: ${FORMS.join(", ")} checked right on its first layer and head (greedy and sampled), ${form.name} taken`);
 }
-// T.465.6.1: a Qwen3 (biases of q, k and v, norms of the heads: q, k and v written, then ADD, HEAD_NORM and TOKEN_ROPE)
+// T465.6.1: a Qwen3 (biases of q, k and v, norms of the heads: q, k and v written, then ADD, HEAD_NORM and TOKEN_ROPE)
 // and a Gemma 3 (GEGLU, the norms behind the attention and the FFN, a window and a local layer's own RoPE): every form
 // right, every dispatch of theirs answered
 for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox", "lfm2", "qwen35", "qwen35 (states in bundles)"]) {
@@ -138,7 +138,7 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox", "lfm2", "qwen35
   // a Qwen3's head norm off in one value, a bias off, a Gemma 3's norm behind off: the forms wrong
   // (value i of the output at binding at: of q, k and v written one after the other, 33 is k's second, which the check
   // reads as it is; q's error is spread by the attention)
-  // (T.465.6.1's review: an error of q is spread by the attention, o and the FFN, and fell under a form's line one run in
+  // (T465.6.1's review: an error of q is spread by the attention, o and the FFN, and fell under a form's line one run in
   // five: the head norm's and the bias's go on a k row. The norm behind by 20% of the stream's largest: 5% left little
   // over the DP4A forms' line)
   const bump = (model, at, i = 1, share = 0.05) => (entries, x, y) => {
@@ -149,7 +149,7 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox", "lfm2", "qwen35
   };
   for (const [model, spoil, what] of [["qwen3", { headNorm: bump(rmsnorm({ inPlace: true }), 0, 33) }, "a head's norm"], ["qwen3", { bias: bump(bias, 0, 33) }, "a bias"],
     ["gemma3", { normAdd: bump(rmsnorm({ add: true }), 2, 1, 0.2) }, "a norm behind"],
-    // (T.465.6.2: a GPT-2's LayerNorm off in one value, a GPT-NeoX's GELU)
+    // (T465.6.2: a GPT-2's LayerNorm off in one value, a GPT-NeoX's GELU)
     ["gpt2", { layerNorm: (entries, x, y) => {
       // (the whole of it 10% off: one value off by 20% of the largest fell under a form's line one run in a few)
       layerNorm(entries, x, y);
@@ -197,7 +197,7 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox", "lfm2", "qwen35
     if (temperature(entries)) buffer.data.set(before);
   } } });
   assert.match(unpenalized.thrown ?? "", /the penalized logits are .* from JavaScript's/, "the penalty left off");
-  // (T.465.4's review) the head's logits off in row 0 (the check reads rows 0 and 95 of a vocabulary of 96): by 1% of the
+  // (T465.4's review) the head's logits off in row 0 (the check reads rows 0 and 95 of a vocabulary of 96): by 1% of the
   // largest logit in a float form's classifier (its line 1e-3 of it), by 10% in a DP4A form's (2e-2); the DP4A forms' stream off by 30% in an add;
   // a code of the norm and quantizer's turned; a key's exponent bit at position 1 turned; the embedding's row twice
   const verdicts = (m) => Object.fromEntries(m.tokenForm?.forms?.map(({ name, none }) => [name, none]) ?? []);
@@ -236,7 +236,7 @@ for (const model of ["llama", "qwen3", "gemma3", "gpt2", "neox", "lfm2", "qwen35
   assert.deepEqual(near.tokenForm.forms.filter(({ none }) => none), [], "off inside the line: right");
 }
 console.log("ok: each check bites: a token's stream off in one value (float and DP4A each), a greedy token not the largest logit, a sampled token the walk does not reach, the penalty left off, the logits off in a row (float and DP4A), a code of the quantizer, a key's bit, the embedding twice (a float form); off inside the line is right");
-// T.465.6.3: a ternary model's token (its matrices and table ternary: EMBED_TERNARY, the DP4A forms' ternary product), and
+// T465.6.3: a ternary model's token (its matrices and table ternary: EMBED_TERNARY, the DP4A forms' ternary product), and
 // each of the ten types of llama.cpp's blocks on w2's two layers (the DP4A product of each type: checkTokenBlocks' random
 // blocks, then the first layer): every form right, every dispatch answered, and the product off is wrong
 async function tokensOf(options) {
@@ -275,7 +275,7 @@ const tenth = (model, at) => (entries, x, y) => {
   const r = entries.find((entry) => entry.binding === at).resource, buffer = r.buffer ?? r;
   new Float32Array(buffer.data.buffer, buffer.data.byteOffset, buffer.size / 4).forEach((v, i, all) => { all[i] = v * 1.1; });
 };
-// T.465.6.4: an LFM2's convolution off (its output 10%), its rows not moved on (CONV_STATE writing nothing), a Qwen3.5's
+// T465.6.4: an LFM2's convolution off (its output 10%), its rows not moved on (CONV_STATE writing nothing), a Qwen3.5's
 // delta rule's state off (10%), its gates or its convolution off (10%), its rows not moved on: no form right
 {
 
@@ -283,7 +283,7 @@ const tenth = (model, at) => (entries, x, y) => {
     ["lfm2", { CONV_STATE: () => {} }, "its rows not moved on", /rows are not moved on by one/],
     // (its state: a scale of its output the norm of the value heads after it takes out)
     ["qwen35", { DELTA_NET: tenth(deltaNet, 2) }, "a delta rule's state off", /state/],
-    // (T.465.6.4's review: and each other shader of the kinds: the gates, the convolution, its rows moved on, SwiGLU apart)
+    // (T465.6.4's review: and each other shader of the kinds: the gates, the convolution, its rows moved on, SwiGLU apart)
     ["qwen35", { DELTA_GATES: tenth(deltaGates, 5) }, "the gates off", /state|stream/], ["qwen35", { DELTA_CONV: tenth(deltaConv, 3) }, "the convolution off", /state|stream/],
     ["qwen35", { DELTA_CONV_STATE: () => {} }, "its rows not moved on", /rows/]]) {
     const m = await tokens({ model, spoil });
@@ -292,8 +292,8 @@ const tenth = (model, at) => (entries, x, y) => {
   }
 }
 // (SwiGLU of z and the delta rule's output, 10% off: the float forms' line sees it in the stream, 8e-3 of its change
-// against 2e-3; the DP4A forms', 2e-2, mostly does not. The deploy of T.628.5: on a runner of CI the DP4A forms were
-// past their line too, and no form was taken: either is right, so long as the float form is wrong by its stream. T.631:
+// against 2e-3; the DP4A forms', 2e-2, mostly does not. The deploy of T628.5: on a runner of CI the DP4A forms were
+// past their line too, and no form was taken: either is right, so long as the float form is wrong by its stream. T631:
 // chooseTokens() sets tokenForm with no forms before it checks, so the forms say which; a run here took no form 1 in 5)
 {
   const m = await tokens({ model: "qwen35", spoil: { SWIGLU: tenth(swiglu, 0) } });
@@ -301,7 +301,7 @@ const tenth = (model, at) => (entries, x, y) => {
   else assert.match(m.thrown ?? "", /no layer of a token is right on this GPU.*stream/s, "qwen35: SwiGLU off, every form wrong");
 }
 console.log("ok: an LFM2's convolution off or its rows not moved on, a Qwen3.5's delta rule's state, gates, convolution or rows off: no form right; SwiGLU off: a float form wrong");
-// T.465.6.5: a classifier with the final norm's outlier channels (T.92): an int8 one multiplied in floats on every form
+// T465.6.5: a classifier with the final norm's outlier channels (T92): an int8 one multiplied in floats on every form
 // (floatHead), a ternary one with the channels taken out before it is quantized (TAKE_OUTLIERS) and their columns added
 // after (TERNARY_COLUMNS): every form right, every dispatch answered; the columns not added, the channels taken but left
 // in the stream: wrong
@@ -324,8 +324,8 @@ for (const [spoil, what] of [[{ TERNARY_COLUMNS: () => {} }, "the columns not ad
   assert.match(m.thrown ?? "", /the logits are/, `a ternary classifier: ${what}`);
 }
 console.log("ok: classifiers with outlier channels, int8 and ternary: every form right, every dispatch answered; the columns not added or the channels left in the stream: wrong");
-// T.465.6.5: a wide Llama (dim 256), of int8, and of llama.cpp's blocks on every matrix and its table: q, k and v each of
-// its own type (written apart, T.547.3.2), gate and up of two, o and down of others, the table of Q4_K (a token's row of
+// T465.6.5: a wide Llama (dim 256), of int8, and of llama.cpp's blocks on every matrix and its table: q, k and v each of
+// its own type (written apart, T547.3.2), gate and up of two, o and down of others, the table of Q4_K (a token's row of
 // it, embedBlocks, and the classifier's text of its type); and q and k of one type with v of another, gate and up of one
 // (q and k joined, v apart). Every form right, every dispatch answered; the classifier of blocks off, its row off: wrong
 const APART = { wq: "Q4_K", wk: "IQ2_XXS", wv: "Q2_K", w1: "IQ3_S", w3: "IQ4_XS", w2: "Q4_K", wo: "IQ1_M", classifier: "Q4_K" };

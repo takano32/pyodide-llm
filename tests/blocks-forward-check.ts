@@ -1,4 +1,4 @@
-// blocks-forward-check.ts (T.363.5)
+// blocks-forward-check.ts (T363.5)
 // The page's forward pass on models whose matrices are kept as llama.cpp's blocks (a type for each layer of a stack:
 // Underdog Saluki 27B's shape in small, and blocks beside rows of other kinds), on the real kernels: simdkernel_* and,
 // on the same memory, blockkernel_*. No Pyodide and no browser: the native Python makes the models, their plans (as
@@ -59,7 +59,7 @@ const spawn = (data) => new Promise((resolve) => {
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });
-// T.120: a software thread that takes a chunk and ends without counting it (tests/threads-check.ts's)
+// T120: a software thread that takes a chunk and ends without counting it (tests/threads-check.ts's)
 const dying = ({ memory, share }) => new Promise((resolve) => {
   const worker = new Worker(`
     const { parentPort, workerData: { memory, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");
@@ -107,7 +107,7 @@ try {
       if (threads > 1) assert.equal(await made.setThreads(threads), threads, `${name}: ${threads} threads`);
       return { made, memory, base };
     };
-    // T.363.5: every call of the blocks' kernels of an engine made with wrap: watching(the plan that is right), held to it
+    // T363.5: every call of the blocks' kernels of an engine made with wrap: watching(the plan that is right), held to it
     const watching = () => {
       const at = {}, memoryOf = () => at;
       const seen = { wrong: [], multiplied: new Map(), rows: 0, tables: 0, kernels: new Set() };
@@ -188,7 +188,7 @@ try {
 
     // ---- the numbers
     const first = await run();
-    // (T.364.3: the owner's words for such a model, whatever its other rows are)
+    // (T364.3: the owner's words for such a model, whatever its other rows are)
     assert.equal(first.backend, "SIMD kernels, llama.cpp's blocks, relaxed SIMD", `${name}: what the status line says of a model with rows of llama.cpp's blocks`);
     const line = whole ? LOOSE.whole : LOOSE.mixed, loose = far(first, wanted.floats);
     say(loose <= line, `${name}: forward.ts's logits are within ${loose.toExponential(2)} of the largest of NumPy's (the line ${line}; ` +
@@ -278,7 +278,7 @@ try {
     }
     assert.deepEqual(lines, [], `${name}: what the status line says, every way`);
     say(!differing.length, `${name}: the same logits to the bit ${taken.length} other ways (${taken.map(([what]) => what).join("; ")})${differing.length ? `: DIFFERS ${differing.join("; ")}` : ""}`);
-    // T.120: a software thread that stops in the middle of its chunk is given up, and the phase run again gives the same
+    // T120: a software thread that stops in the middle of its chunk is given up, and the phase run again gives the same
     if (plan.linear && !again) {
       const warned = console.warn;
       console.warn = () => {};
@@ -305,7 +305,7 @@ try {
     say(!whole || (first.placed <= bound && bound - first.placed < 2 ** 20 + 2 ** 17 && unsaid >= bound),
       `${name}: the engine placed ${first.placed} bytes after the checkpoint (${cache} of them keys and values), footprint() counted ${bound}` +
       ` (${unsaid} without Python's count of the int8 weights)`);
-    // T.622: and a token's frame as the engine laid it out from the plan, array by array as footprint() counts it from the
+    // T622: and a token's frame as the engine laid it out from the plan, array by array as footprint() counts it from the
     // form's kinds (frame-check.ts holds the other models; the activations' scales of the blocks' packings are here)
     const { made: framed } = await engine();
     say(JSON.stringify(framed.frame) === JSON.stringify(frameOf(header, options)), `${name}: a token's frame as the engine laid it out is the one footprint() counts`);

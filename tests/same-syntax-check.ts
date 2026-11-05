@@ -1,4 +1,4 @@
-// tests/same-syntax-check.ts (T.481): tests/same-syntax.ts on made-up texts, and once as the tool it is. Node alone,
+// tests/same-syntax-check.ts (T481): tests/same-syntax.ts on made-up texts, and once as the tool it is. Node alone,
 // under a second.
 //
 // What is the same code: types added, a file's specifiers renamed .ts, parentheses, the place of everything, the

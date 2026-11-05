@@ -1,6 +1,6 @@
-// T.244: keys and values that were no finite numbers in a float16 cache. The kernels' to_f16 writes a NaN or an infinity
+// T244: keys and values that were no finite numbers in a float16 cache. The kernels' to_f16 writes a NaN or an infinity
 // of float32's as an infinity, which the reads (halves4, half) take for 65536: a float32 cache keeps the NaN, and the
-// logits of every token that reads it are not finite (T.195's NOT_FINITE stops there), where a float16 one's were. So
+// logits of every token that reads it are not finite (T195's NOT_FINITE stops there), where a float16 one's were. So
 // to_f16 says how many it was handed, the cache keeps the first position they were at, and the logits of a token at or
 // after it are made NaN until that position is written anew. Node and the plain kernels alone, a second or two:
 //   - to_f16 counts a NaN, +inf and -inf of float32's, and nothing of a finite number however large (70000, which it

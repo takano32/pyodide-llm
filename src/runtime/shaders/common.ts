@@ -1,14 +1,14 @@
-// shaders/common.ts (T.351): what the shaders of every family share: the size of a group of weights, and the Step
+// shaders/common.ts (T351): what the shaders of every family share: the size of a group of weights, and the Step
 // struct that every step of a layer reads.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T.367.3:
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 
 export const GROUP = 32;
-// (T.379.2) how the weights of a matrix are packed, where a shader's text reads them packed: int8 (four to a u32, a
-// scale a group of 32; int6 is widened to it as it goes up, T.155) or ternary codes (sixteen to a u32, a scale a group
-// of 128, T.232). The name of the choice for every maker that has both: the prompt's DP4A tile and a token's DP4A matrix
-// (T.547.2.4: and Q4_K's blocks of 256, as they are; T.547.3.3: and every type of llama.cpp's
+// (T379.2) how the weights of a matrix are packed, where a shader's text reads them packed: int8 (four to a u32, a
+// scale a group of 32; int6 is widened to it as it goes up, T155) or ternary codes (sixteen to a u32, a scale a group
+// of 128, T232). The name of the choice for every maker that has both: the prompt's DP4A tile and a token's DP4A matrix
+// (T547.2.4: and Q4_K's blocks of 256, as they are; T547.3.3: and every type of llama.cpp's
 // blocks the GPU reads, BLOCK_PACKINGS, in the order of the catalogue: superblocks.ts's SUPERBLOCKS)
 export const BLOCK_PACKINGS = ["Q4_K", "Q2_K", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"] as const;
 export type BlockPacking = (typeof BLOCK_PACKINGS)[number];

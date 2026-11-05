@@ -1,4 +1,4 @@
-// tests/conducting-check.ts (T.374.4)
+// tests/conducting-check.ts (T374.4)
 // tests/conducting.ts alone: what the Node tools that convert a model in Pyodide (profile-convert.ts, page-27b.ts)
 // answer the conduct of a conversion with. The conduct is a stand-in that plays a list of requests behind the face
 // Pyodide gives a Python generator (next(answer), each request a proxy to be destroyed), the files are a folder under
@@ -61,7 +61,7 @@ try {
     assert.ok(answers[2] instanceof Uint8Array && !(answers[2] instanceof Buffer), "Pyodide refuses a Buffer where it takes a Uint8Array");
     assert.equal(answers[3], undefined);
     same(answers[4][0], 0, 100); assert.equal(answers[4][1], 1000);
-    same(answers[5][0], 100, 300);  // T.374.3: from where the bytes in hand end, not from the file's first byte
+    same(answers[5][0], 100, 300);  // T374.3: from where the bytes in hand end, not from the file's first byte
     same(answers[6][0], 900, 1000); assert.equal(answers[6][1], 1000);  // fewer where the file ends first
     assert.equal(answers[7], undefined);
     assert.equal(answers[8], 1000);
@@ -105,7 +105,7 @@ try {
     ok("a conduct that ends for want of a file says where, and what nothing answers ends the loop");
   }
   {
-    // T.422: converted() in a stand-in of Pyodide: the generator is closed and every proxy of it let go, the answerer
+    // T422: converted() in a stand-in of Pyodide: the generator is closed and every proxy of it let go, the answerer
     // closed, both where the conduct ends and where an answer fails (a steps.return() taken away went unseen before).
     // Not seen here: the real PyProxy's life (a return() after done, a second destroy()): page-27b.ts and
     // profile-convert.ts run converted() on real Pyodide, the way that ends alone

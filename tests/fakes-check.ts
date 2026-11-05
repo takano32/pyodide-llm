@@ -1,4 +1,4 @@
-// tests/fakes-check.ts (T.357.5): the stand-ins of tests/fakes/, each by itself. A check that runs the product on a
+// tests/fakes-check.ts (T357.5): the stand-ins of tests/fakes/, each by itself. A check that runs the product on a
 // stand-in sees what the stand-in lets it see: a Cache that stored half a part, a fetch that answered a request that
 // was cancelled, a clock that moved between tokens, a worker that heard nothing would each let a broken product pass,
 // and the checks that use them would not say so. What each does as the thing it stands for is held here; where each
@@ -66,7 +66,7 @@ const bytes = (...values) => Uint8Array.from(values);
   assert.deepEqual(map.get("whole"), bytes(1, 2, 3, 4, 5), "every chunk of a body is in the copy");
   const broke = new TypeError("Error in input stream");
   assert.equal(await failure(cache.put("broken", streamed([bytes(1, 2), bytes(3)], broke))), broke, "a body that breaks fails the put with its error");
-  // (T.495: stored, every copy put() stored, in order: none of a body that broke, and one written over is still there)
+  // (T495: stored, every copy put() stored, in order: none of a body that broke, and one written over is still there)
   assert.deepEqual(stored, [["whole", 5]], "a copy stored is written down; one of a body that broke is not");
   await cache.put("again", streamed([bytes(6, 7)]));
   await cache.put("again", streamed([bytes(8)]));
@@ -326,7 +326,7 @@ ok("a Worker's face: what it is posted is written down and answered on this thre
 }
 ok("Pyodide's proxies: each counts how it was let go and refuses to be read afterwards; a generator's face sends answers with next(), hands each request as a proxy to read one level deep, and closes with return()");
 
-// ---- WebGPU (T.568.1)
+// ---- WebGPU (T568.1)
 {
   const { calls, device, adapter } = standIn({ fallback: true, language: ["subgroup_id"] });
   assert.equal(await navigator.gpu.requestAdapter(), adapter, "navigator.gpu is the stand-in's");
@@ -342,7 +342,7 @@ ok("Pyodide's proxies: each counts how it was let go and refuses to be read afte
   const encoder = device.createCommandEncoder();
   encoder.copyBufferToBuffer(a, 8, b, 4, 8);
   encoder.clearBuffer(a, 8, 4);
-  // (T.465.1's review: a command buffer does its work when it is submitted, in order: nothing yet)
+  // (T465.1's review: a command buffer does its work when it is submitted, in order: nothing yet)
   assert.deepEqual([...new Uint32Array(b.data.buffer, 4, 2), ...new Uint32Array(a.data.buffer, 8, 2)], [0, 0, 2, 3], "nothing done as it is encoded");
   const pipeline = await device.createComputePipelineAsync({ compute: { module: device.createShaderModule({ code: "WGSL" }) } }), group = device.createBindGroup({ entries: [{ binding: 0, resource: { buffer: a } }] });
   const pass = encoder.beginComputePass();
@@ -362,7 +362,7 @@ ok("Pyodide's proxies: each counts how it was let go and refuses to be read afte
 }
 ok("WebGPU: navigator.gpu's adapter and device; a write of whole words within its buffer, counted in a typed array's elements; a copy, a clear, a pipeline, a dispatch and a submission written down, and a command buffer's work done as it is submitted");
 
-// ---- T.465.1: the shaders' answers (tests/gpu_answers.py through the bridge), each on numbers whose answer is known; a
+// ---- T465.1: the shaders' answers (tests/gpu_answers.py through the bridge), each on numbers whose answer is known; a
 // dispatch answered where its WGSL is named
 {
   const { flashTile, quantize, tiled } = await gpuAnswers();

@@ -1,5 +1,5 @@
 // node tests/kernel-registry-check.ts
-// T.375.4: the two tables of src/runtime/jobs.ts by themselves, with stand-ins for the kernels (they write down what
+// T375.4: the two tables of src/runtime/jobs.ts by themselves, with stand-ins for the kernels (they write down what
 // they are called with and compute nothing): no wasm, no model, no thread. About a second.
 //
 //   WORK    the kinds of jobs. Each kind's one call, its tile and its blocks against a second copy of what the kind is
@@ -44,9 +44,9 @@ const both = () => {
 // the second copy: every kind in the order of its number, the module it calls, and of a job
 // [kind, 1, 2, 3, 4, 5, 6, 7, 8, rows 9] and rows 20 to 30 what its kernel is handed. tile: of count 4 tokens, strides
 // 100 and 200. rowBytes: the bytes of a row n wide as the blocks count it (blockRows() before the table: float32 4 n,
-// ternary n / 4, any other n; T.620: int6 3 n / 4, 24 bytes a group of 32). tileRows: the rows a tile takes at once
-// (T.620: a prompt's chunks are cut in as many; 1 where not said). T: the ternary kernels' mask; W: the binary ones'
-// (T.634: binary n / 8).
+// ternary n / 4, any other n; T620: int6 3 n / 4, 24 bytes a group of 32). tileRows: the rows a tile takes at once
+// (T620: a prompt's chunks are cut in as many; 1 where not said). T: the ternary kernels' mask; W: the binary ones'
+// (T634: binary n / 8).
 const T = 3, B = 16, W = 2;
 const KINDS = [
   ["matmul_q8r", "relaxed", [1, 2, 3, 4, 5, 6, 7, 20, 30], { tile: ["matmul_q8r_tile", [1, 2, 3, 4, 5, 6, 7, 20, 30, 4, 100, 200]], rowBytes: (n) => n, tileRows: 4 }],
@@ -59,7 +59,7 @@ const KINDS = [
   ["delta_rule", "plain", [1, 2, 3, 4, 5, 6, 7, 8, 9, 20, 30], {}],
   ["matmul_t2r", "relaxed", [1, 2, 3, 4, 5, 7, 20, 30, T], { tile: ["matmul_t2r_tile", [1, 2, 3, 4, 5, 7, 20, 30, 4, 100, 200, T]], rowBytes: (n) => n / 4 }],
   ["matmul_t2", "plain", [1, 2, 3, 4, 5, 7, 20, 30, T], { rowBytes: (n) => n / 4 }],
-  // T.363.5: llama.cpp's blocks. The job's sixth argument is the type's number (B: IQ2_XXS's, 66 bytes a block of 256),
+  // T363.5: llama.cpp's blocks. The job's sixth argument is the type's number (B: IQ2_XXS's, 66 bytes a block of 256),
   // which the kernels take last; kernel: the kernel of a token's rows where it has another name than the kind; cold:
   // not warmed (the tables its kernels read are an engine's). The signed tile takes, last, the calling thread's own
   // bytes of the scratch at the job's last argument (the coordinator's: the scratch itself)
@@ -123,7 +123,7 @@ for (const [name, from, , { tile, rowBytes, tileRows = 1 }] of KINDS) {
   console.log(`ok: count tokens: a tile's one call (${tiles} cases), or blocks of 16 KB of rows with every token in turn (${blocks} cases, the blocks as they were before the table)`);
 }
 {
-  // T.363.5: the signed tile spreads a row into bytes of the calling thread's own: each thread's are after the one's
+  // T363.5: the signed tile spreads a row into bytes of the calling thread's own: each thread's are after the one's
   // before it, as many as a row n wide takes, and a thread past the room there is takes the other tile
   for (const [thread, n] of [[0, 256], [1, 256], [3, 5120], [SPREAD_THREADS - 1, 17408]]) {
     const { said, k, r } = both();
@@ -209,7 +209,7 @@ for name in QUANTIZED:
     if not dtype.rounds:
         rows = (rng.integers(-1, 2, (3, n)) * 0.5).astype(np.float32)
         rows[:, ::dtype.group(n)] = 0.5
-    if dtype.bits == 1:  # (T.634: binary, signs alone)
+    if dtype.bits == 1:  # (T634: binary, signs alone)
         rows = np.where(rows < 0, -0.5, 0.5).astype(np.float32)
     packed, scales = dtype.pack(rows)
     packed = np.ascontiguousarray(packed).reshape(-1)
@@ -219,14 +219,14 @@ for name in QUANTIZED:
 blocks = {name: {"short": kind.short, "group": kind.group(256), "row": [kind.stored_bytes(width, BLOCK)[0] for width in (256, 1024)], "scale": kind.scale, "type": SOURCES[name].ggml} for name, kind in BLOCKS.items()}
 from convert.grids import codebooks
 print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "places": codebooks()[1]}))`, python()], { cwd: fileURLToPath(new URL("..", import.meta.url)) }).toString());
-  // (T.547.3.4: the GPU's IQ texts read the codebooks by the word each grid begins at, superblocks.ts's IQ_WORDS, a second
+  // (T547.3.4: the GPU's IQ texts read the codebooks by the word each grid begins at, superblocks.ts's IQ_WORDS, a second
   // copy of convert/grids.py's places; and their bytes are engine/dtypes.py's CODEBOOKS)
   const { IQ_WORDS, CODEBOOK_BYTES } = await import(runtimeUrl("shaders.js"));
   assert.deepEqual(IQ_WORDS, Object.fromEntries(Object.keys(IQ_WORDS).map((name) => [name, places[name] / 4])), "where each grid begins in the codebooks, a word of 4 bytes (superblocks.ts's IQ_WORDS: convert/grids.py's codebooks() has them)");
   assert.equal(CODEBOOK_BYTES, codebooks, "the bytes of the codebooks (superblocks.ts's CODEBOOK_BYTES: engine/dtypes.py's CODEBOOKS)");
   const tabled = Object.keys(PACKED).filter((name) => PACKED[name].tabled !== undefined);
   assert.deepEqual(Object.keys(PACKED).filter((name) => !tabled.includes(name)).sort(), Object.keys(said).sort(), "the packings with scales of their own are the quantized dtypes of Python's registry (engine/dtypes.py), by the names a plan's tensors have");
-  // T.363.5: and the others llama.cpp's blocks, the kinds a row alone may have (engine/dtypes.py's BLOCKS): the name a
+  // T363.5: and the others llama.cpp's blocks, the kinds a row alone may have (engine/dtypes.py's BLOCKS): the name a
   // plan's tensor has, the type's number in a GGUF (the converter's SOURCES), a row's bytes, 256 weights to a block
   // with no scale after it, and one weight of it is never read alone
   assert.deepEqual(tabled.sort(), Object.keys(blocks).sort(), "the packings the kernels take with the engine's tables are llama.cpp's blocks of Python's registry");
@@ -246,10 +246,10 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
   assert.deepEqual([...stored].filter((name) => !Object.hasOwn(PACKED, name)).sort(), ["f16", "f32", "layers", "u8"], "contracts/plan.ts's Stored: the packings, float32 and float16 which are none, the codebooks' bytes, and a stack that is its layers");
   for (const [name, { group, row, packed, values, scale }] of Object.entries(said)) {
     const packing = PACKED[name];
-    // (T.533: ternary's scales are float16s)
+    // (T533: ternary's scales are float16s)
     assert.equal(packing.scale, scale, `${name}: the bytes of a group's scale (engine/dtypes.py's DTYPES is the owner: put jobs.ts's PACKED right)`);
     assert.deepEqual([128, 256, 1024].map((n) => packing.rowBytes(n)), row, `${name}: the bytes of a row`);
-    // (T.375.5: of a row 256 wide, which every packing has in its whole groups: an int8 row's groups are smaller where it is narrower)
+    // (T375.5: of a row 256 wide, which every packing has in its whole groups: an int8 row's groups are smaller where it is narrower)
     assert.equal(packing.group, group, `${name}: the weights a scale is of (engine/dtypes.py's DTYPES is the owner: put jobs.ts's PACKED right)`);
     // (the values from some byte on, as a tensor is somewhere in a checkpoint)
     for (const at of [0, 40]) {
@@ -271,7 +271,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     binary: { relaxed: "matmul_b1r", plain: "matmul_b1", sums: null, xs: 8,
       ready: [[["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]], [["quantize_x", [1, 2, 3, 96, 0]], ["interleave", [1, 2, 96]]]] },
   };
-  // T.363.5: llama.cpp's blocks, all alike: signed 8-bit activations and their sums either way, 16 bytes a group of 32
+  // T363.5: llama.cpp's blocks, all alike: signed 8-bit activations and their sums either way, 16 bytes a group of 32
   const summed = [["quantize_x", [1, 2, 3, 96, 0]], ["sums_x", [2, 1, 96]]];
   for (const name of Object.keys(BLOCK_TYPES)) FACTS[name] = { relaxed: "matmul_sbr", plain: "matmul_sb", signed: "matmul_sbw", sums: null, xs: 16, ready: [summed, summed] };
   assert.deepEqual(Object.keys(PACKED), Object.keys(FACTS));
@@ -290,26 +290,26 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       assert.deepEqual(said.map(([, kernel, args]) => [kernel, args]), fact.ready[i], `${name}: the activations made ready${relaxed ? ", relaxed" : ""}`);
     });
   }
-  // (the blocks of a packing's job count a row's bytes as the packing does: T.620, int6's too, which were counted as int8's)
+  // (the blocks of a packing's job count a row's bytes as the packing does: T620, int6's too, which were counted as int8's)
   for (const [name, packing] of Object.entries(PACKED)) {
     for (const kind of [packing.jobs.relaxed, packing.jobs.plain].map((number) => Object.keys(KIND)[number])) {
       assert.equal(WORK[kind].rowBytes(256, packing.tabled), packing.rowBytes(256), `${name}: a row in a block (${kind})`);
     }
   }
-  // T.375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
+  // T375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
   const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true },
-    // (T.634.3: binary on the GPU as ternary's codes, spread as they go up: gpu/packings.ts)
+    // (T634.3: binary on the GPU as ternary's codes, spread as they go up: gpu/packings.ts)
     binary: { as: "ternary", alone: true, dot: true } };
-  for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T.363.5: none of llama.cpp's blocks on the GPU,
-  GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T.547.2.3's Q4_K, as it is, by the packed int8 dot)
-  GPU.Q2_K = { as: "Q2_K", alone: false, dot: true };              // (T.547.3.3: and Q2_K's, the same way)
-  for (const name of ["IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"]) GPU[name] = { as: name, alone: false, dot: true };  // (T.547.3.4, T.547.3.5)
+  for (const name of Object.keys(BLOCK_TYPES)) GPU[name] = null;  // (T363.5: none of llama.cpp's blocks on the GPU,
+  GPU.Q4_K = { as: "Q4_K", alone: false, dot: true };              // but T547.2.3's Q4_K, as it is, by the packed int8 dot)
+  GPU.Q2_K = { as: "Q2_K", alone: false, dot: true };              // (T547.3.3: and Q2_K's, the same way)
+  for (const name of ["IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ1_S", "IQ1_M", "IQ4_XS"]) GPU[name] = { as: name, alone: false, dot: true };  // (T547.3.4, T547.3.5)
   assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
-  // (T.547.1's review: the GPU plan's packing names, contracts/gpu/protocol.ts's GpuPacking, are the packings with a gpu:
+  // (T547.1's review: the GPU plan's packing names, contracts/gpu/protocol.ts's GpuPacking, are the packings with a gpu:
   // a packing given one there and not the name, or the name and no gpu, is said here and by no type)
   assert.deepEqual([...contract("gpu/protocol.ts").literalsOf("GpuPacking")].sort(),
     Object.entries(PACKED).filter(([, { gpu }]) => gpu).map(([name]) => name).sort(), "GpuPacking's names are those of the packings the GPU holds");
-  // (T.547.2.2, T.547.2.1's review: and gpu/packings.ts's PACKINGS, how the GPU holds them, says PACKED's facts of the
+  // (T547.2.2, T547.2.1's review: and gpu/packings.ts's PACKINGS, how the GPU holds them, says PACKED's facts of the
   // checkpoint as PACKED does: a row's bytes there and a group's scale; its row on the GPU is the packing's gpu.as's
   // row, a float32 scale with every 32 of those bytes)
   const { PACKINGS } = await import(runtimeUrl("gpu/packings.js"));
@@ -319,7 +319,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       assert.deepEqual([held.stored(n), held.row(n), held.scales(n)], [PACKED[name].rowBytes(n), as.rowBytes(n), as.scale ? as.rowBytes(n) / 32 : 0], `${name}: a row of ${n} in the checkpoint and on the GPU`);
     }
     assert.deepEqual([held.scale, held.dot], [PACKED[name].scale, PACKED[name].gpu.dot], `${name}: a group's scale in the checkpoint, and the packed int8 dot`);
-    // (T.634.3's review: the packing on the GPU is PACKED's gpu.as, and a packing is spread on the CPU as it goes up where
+    // (T634.3's review: the packing on the GPU is PACKED's gpu.as, and a packing is spread on the CPU as it goes up where
     // its bytes there are other than the checkpoint's and the GPU does not widen it: binary's, and no other)
     assert.equal(held.on, PACKED[name].gpu.as ?? name, `${name}: the packing it is on the GPU`);
     assert.equal(held.spread, held.stored(1024) !== held.row(1024) && !held.widened, `${name}: spread on the CPU as it goes up`);
@@ -330,7 +330,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
     { int8: "biased", int6: "biased", ternary: "interleaved", binary: "interleaved", ...Object.fromEntries(Object.keys(BLOCK_TYPES).map((name) => [name, "summed"])) }, "how each packing's kernels take the activations");
   assert.deepEqual(["IQ2_XXS", "Q4_K"].map(aloneTakes), [false, false], "no model of llama.cpp's blocks on the GPU alone");
   assert.deepEqual(["int8", "int6", "ternary", "binary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 0.28125, 1.125, 1.125, 1.125, 1.125],
-    "on the GPU: int6 widened to int8, ternary as it is (T.533: its scales widened to float32), binary spread to ternary (T.634.3); what the GPU does not take is counted as int8");
+    "on the GPU: int6 widened to int8, ternary as it is (T533: its scales widened to float32), binary spread to ternary (T634.3); what the GPU does not take is counted as int8");
   assert.deepEqual(["int8", "int6", "ternary", "binary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, true, false, false, false], "the dtypes a model on the GPU alone may be of");
   assert.deepEqual(["int8", "int6", "ternary", "binary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 36e6 * (1.125 / 0.265625), 36e6 * (1.125 / 0.140625), 36e6],
     "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
@@ -445,7 +445,7 @@ print(json.dumps({"packed": out, "blocks": blocks, "codebooks": CODEBOOKS, "plac
       for (const t of Object.values(plan.tensors)) {
         if (!Object.hasOwn(PACKED, t.kind)) continue;
         const groups = t.shape.reduce((a, b) => a * b, 1) / t.group;
-        // (T.533: a float16 where the packing keeps its scales so, ternary; every one of scaleOf()'s is a float16's too)
+        // (T533: a float16 where the packing keeps its scales so, ternary; every one of scaleOf()'s is a float16's too)
         for (let g = 0; g < groups; g++) {
           if (PACKED[t.kind].scale === 2) view.setFloat16(base + t.scales + g * 2, scaleOf(g), true);
           else view.setFloat32(base + t.scales + g * 4, scaleOf(g), true);

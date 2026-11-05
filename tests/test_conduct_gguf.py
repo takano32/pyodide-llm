@@ -1,6 +1,6 @@
-# The conduct of a conversion (src/python/convert/conduct.py) on a GGUF's head (T.374.3): asked for in pieces that end
+# The conduct of a conversion (src/python/convert/conduct.py) on a GGUF's head (T374.3): asked for in pieces that end
 # ever further, each from where the last ended, until the converter reads all of it; what of the tensors came with it
-# fed to the conversion and not asked for again. Moved out of tests/test_conduct.py (T.420: 1,042 lines, past the 800 of AGENTS.md's measure), whose
+# fed to the conversion and not asked for again. Moved out of tests/test_conduct.py (T420: 1,042 lines, past the 800 of AGENTS.md's measure), whose
 # stand-ins and repository of one model it shares; the tests are the same.
 import struct
 
@@ -41,7 +41,7 @@ def marked(base, data):
 
 
 def test_a_ggufs_head_is_asked_for_in_pieces_that_end_ever_further_each_from_where_the_last_ended(monkeypatch):
-    """T.374.3: 2 MiB, then what is missing of 8, of 32, of 128: no byte twice. The stream begins where the last piece
+    """T374.3: 2 MiB, then what is missing of 8, of 32, of 128: no byte twice. The stream begins where the last piece
     ends (or the file, where that came first), and so does the count of what has arrived."""
     for base, ends in ((1000, [2]), (2 * MiB, [2]), (2 * MiB + 1, [2, 8]), (8 * MiB + 1, [2, 8, 32]), (32 * MiB + 1, [2, 8, 32, 128])):
         for data in (700, 200 * MiB):
@@ -74,7 +74,7 @@ def test_a_ggufs_head_is_asked_for_in_pieces_that_end_ever_further_each_from_whe
     (5000, 0, 4096),        # and after a second piece
 ])
 def test_the_tensors_that_came_with_a_ggufs_head_are_fed_and_not_asked_for_again(base, data, first, monkeypatch):
-    """T.374.3: every byte of the tensors reaches the conversion once and in the order of the file: first what came
+    """T374.3: every byte of the tensors reaches the conversion once and in the order of the file: first what came
     with the head, from the conduct, then the stream's parts, from whoever answers. No byte of the file is asked for
     twice, and none past what the pieces of the head and one stream cover."""
     monkeypatch.setattr(conducting, "GGUF_HEAD", first)
@@ -174,7 +174,7 @@ def test_a_server_that_answers_a_piece_short_is_asked_from_where_its_answer_ende
 
 
 def test_a_gguf_said_to_be_shorter_than_what_came_is_fed_what_its_size_allows(monkeypatch):
-    """T.419: an answerer that says a size smaller than the bytes in hand (a file that changed between two requests, or
+    """T419: an answerer that says a size smaller than the bytes in hand (a file that changed between two requests, or
     an answerer that is wrong): no stream that begins after its end is asked for, and what is fed ends at the size
     said. (Before, the stream asked for began at the end of the bytes in hand and ended at the size.)"""
     file = marked(40000, 30000)

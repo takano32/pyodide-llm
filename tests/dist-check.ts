@@ -1,11 +1,11 @@
-// tests/dist-check.ts (T.367.3.1): what a build wrote, held to what the Service Worker does with a file's name.
+// tests/dist-check.ts (T367.3.1): what a build wrote, held to what the Service Worker does with a file's name.
 //
 //   node tests/dist-check.ts [<dist>] [--tree <the tree it was built of>]      after `npm run build` (dist/, this tree)
 //
-// public/coi.js keeps a copy of this site's files for a visit without a network (T.111), and drops the old copy of a file
+// public/coi.js keeps a copy of this site's files for a visit without a network (T111), and drops the old copy of a file
 // when it keeps a new one: two addresses are "the same file" where family() gives them one name, and a file under
 // /_astro/ is <name>.<hash>.<ext> to it. A bundler's names are not the Service Worker's business until they disagree
-// with that, and then nothing fails where anyone looks (T.365 measured both):
+// with that, and then nothing fails where anyone looks (T365 measured both):
 //   - a name family() does not take apart is a family of its own for ever: every deployment leaves one more copy
 //     (Vite names a worker's files <name>-<hash>.js unless it is told otherwise: 27 files);
 //   - two files of one build in one family put each other's copy out: one is kept, the other's copy is deleted, and
@@ -25,8 +25,8 @@
 //   7. the built key module (the model's worker's), the built GPU worker and the built shaders module (/benchmark/'s)
 //      give the same deviceKey() as the sources, for 192 made-up devices.
 //   8. no file of dist/_astro/ asks for a module of Node's, or is the bundler's stand-in for one: the runtime is a
-//      browser's (T.367.5: what Node's tests need of a worker is tests/helper-node.ts's to give).
-//   9. (T.445) no file of the runtime in dist/_astro/ reads a name it declares nowhere, other than the ambient names the
+//      browser's (T367.5: what Node's tests need of a worker is tests/helper-node.ts's to give).
+//   9. (T445) no file of the runtime in dist/_astro/ reads a name it declares nowhere, other than the ambient names the
 //      runtime uses (tests/types.ts's AMBIENT): a name the bundler dropped from its declaration fails only in the
 //      branch that reads it, and the bundled GPU worker's branches (ternary, int6, outlier columns) run on no GPU of
 //      CI's. File-wide, not by scope (the bundles use var, which tests/names.ts's scopes refuse): a name declared in
@@ -72,10 +72,10 @@ export function families(files, family) {
 const under = (folder) => (!fs.existsSync(folder) ? [] : fs.readdirSync(folder, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile())
   .map((entry) => path.relative(folder, path.join(entry.parentPath, entry.name)).split(path.sep).join("/")).sort());
 
-// T.448: Node's own modules by name (worker_threads, fs, ...), as a pattern
+// T448: Node's own modules by name (worker_threads, fs, ...), as a pattern
 const NODE_MODULES = builtinModules.filter((name) => !name.startsWith("_") && !name.includes("/")).map((name) => name.replace(/^node:/, "")).join("|");
 
-/** T.445: the names a script reads that it declares nowhere, file-wide (a var, a let or a const, a function or a class
+/** T445: the names a script reads that it declares nowhere, file-wide (a var, a let or a const, a function or a class
  * and its parameters, a catch's, an import's) */
 export function undeclared(text) {
   const declared = new Set(), read = new Set();
@@ -133,7 +133,7 @@ export function distSaid(dist, tree = treeOf()) {
     const lines = got.toString("utf8").split("\n").length;
     if (got.length / lines > 200) said.push(`_astro/${name} is minified (${Math.round(got.length / lines)} characters a line): the workers are served as the bundler prints them (vite.worker's output.minify: false)`);
   }
-  // 6 (T.367.3's review): the parts that are read only when they are used stay chunks of their own. A static import of one
+  // 6 (T367.3's review): the parts that are read only when they are used stay chunks of their own. A static import of one
   // (or a bundler's choice to fold a small one in) puts it into the worker's text, and then every visit fetches and
   // evaluates it: the first request list is longer by it and nothing else fails. (key.js is the shaders' hash for the
   // device's key, read when a GPU is there; kept.js the store of converted models; gpu and shaders the GPU's worker.)
@@ -168,24 +168,24 @@ export function distSaid(dist, tree = treeOf()) {
     const there = chunk.notices.filter((one) => one === notice).length;
     if (there < owing.length) said.push(`_astro/${chunk.name} holds the code of ${[...new Set(owing)].join(", ")} with ${there} of the ${owing.length} notices "${notice.slice(0, 60)}…" (${notice.length} characters): served code keeps the copyright line and the whole licence text`);
   }
-  // 8 (T.367.5): Node's modules. A file of the runtime that imports one (helper.js had a branch for worker_threads) is
+  // 8 (T367.5): Node's modules. A file of the runtime that imports one (helper.js had a branch for worker_threads) is
   // built with a warning and no error: the bundler puts an empty module in its place, a chunk of its own, and a
   // fragment of its runtime that the importer then fetches on every visit.
   for (const [name, got] of bytes) {
     if (!name.endsWith(".js")) continue;
-    // (T.448: by its node: name, or by its bare name, which Node takes as well: worker_threads)
+    // (T448: by its node: name, or by its bare name, which Node takes as well: worker_threads)
     const asked = new RegExp(`\\b(?:from|import)\\s*\\(?\\s*["']((?:node:)?(?:${NODE_MODULES})(?:/[\\w/]*)?)["']`).exec(got.toString("utf8"))?.[1];
     if (asked) said.push(`_astro/${name} asks for ${asked}: a module of Node's in a browser's file (what the tests need of Node is theirs to give: tests/helper-node.ts)`);
     if (/^(__vite-browser-external|rolldown-runtime)\./.test(name)) said.push(`_astro/${name}: the bundler's stand-in for a module of Node's, or its own runtime for one: a file of the runtime imports a module a browser does not have`);
   }
-  // 9 (T.445): names read and declared nowhere in a file of the runtime (the pages' scripts read the DOM's names)
+  // 9 (T445): names read and declared nowhere in a file of the runtime (the pages' scripts read the DOM's names)
   for (const [name, got] of bytes) {
     if (!name.endsWith(".js") || name.includes(".astro_astro_type_script")) continue;
     const unknown = undeclared(got.toString("utf8")).filter((one) => !AMBIENT.has(one));
     if (unknown.length) said.push(`_astro/${name} reads ${unknown.join(", ")}, declared nowhere in it and no ambient name of the runtime (tests/types.ts's AMBIENT): a declaration the bundler dropped, or a new ambient name to add there`);
   }
   // 4: the built files, once each, the same bytes
-  // (T.628.1: the modules written into it, src/runtime/built/facts/, are bundled as a neighbour is, and fetched by no name)
+  // (T628.1: the modules written into it, src/runtime/built/facts/, are bundled as a neighbour is, and fetched by no name)
   const built = under(tree.built()).filter((file) => !file.startsWith("facts/"));
   for (const file of built) {
     const { name: stem, ext } = path.parse(file);
@@ -198,7 +198,7 @@ export function distSaid(dist, tree = treeOf()) {
     if (!ROOT.includes(name)) said.push(`${path.basename(dist)}/${name}: nothing asks for it there (the root holds ${ROOT.join(", ")}): a file of ${tree.folders.served}/ that is no longer served as it is?`);
   }
   for (const name of ["index.html", "benchmark/index.html", "coi.js", "_astro"]) if (!fs.existsSync(path.join(dist, name))) said.push(`${path.basename(dist)}/${name} is not there`);
-  // (T.383: and no bytecode Python left beside a source, anywhere: the zips leave it out, and a build that copies a
+  // (T383: and no bytecode Python left beside a source, anywhere: the zips leave it out, and a build that copies a
   // folder of Python would serve it)
   for (const name of under(dist)) if (/(^|\/)__pycache__\/|\.pyc$/.test(name)) said.push(`${path.basename(dist)}/${name}: Python's bytecode is served`);
   return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; ${notices} notices where their code is; the root holds nothing else, and no bytecode` };
@@ -219,7 +219,7 @@ export function keysOf(module) {
 }
 
 /** 7: the model's worker reads the device's key from one built module (key) and the GPU's worker
- * computes it in its own file (gpu: T.367.5, the shaders' parts linked into it), each with its own copy of the shaders'
+ * computes it in its own file (gpu: T367.5, the shaders' parts linked into it), each with its own copy of the shaders'
  * texts: what the page remembers of a device under the one's key is looked up under the other's, so the two and the
  * sources must give the same key for every device. And shaders, /benchmark/'s module of all of them, as the sources.
  * (gpu.<hash>.js is the worker itself, and a build keeps no export of a worker's entry: its text is imported here
@@ -238,7 +238,7 @@ export async function keysSaid(dist, tree = treeOf()) {
     if (!name || /^\s*(import|export)\b/m.test(text)) return {};  // (no key.js in it, or a file that is not whole by itself)
     return import(`data:text/javascript;base64,${Buffer.from(`${text}\nexport { ${name} as deviceKey };\n`).toString("base64")}`);
   };
-  // (T.448: the stand-in goes whatever happens: a module that throws as it loads leaves no global behind)
+  // (T448: the stand-in goes whatever happens: a module that throws as it loads leaves no global behind)
   try {
   for (const name of NAMES) {
     const url = builtModule(name, dist), module = await (name === "gpu" ? worker(url) : import(url));

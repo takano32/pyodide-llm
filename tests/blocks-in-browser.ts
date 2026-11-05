@@ -1,4 +1,4 @@
-// tests/blocks-in-browser.ts (T.364.3, T.502): a small model of llama.cpp's blocks opened by the built page in a real
+// tests/blocks-in-browser.ts (T364.3, T502): a small model of llama.cpp's blocks opened by the built page in a real
 // browser, as an entry of the list that keeps its GGUF's blocks is opened (Underdog Saluki 27B's, which is 7.9 GB and
 // runs in CI alone): the bundled worker converts the GGUF with its blocks kept, fetches the kernels of the blocks from
 // _astro/, answers, says "llama.cpp's blocks" in the status line, and (a second visit) loads what it kept.
@@ -27,7 +27,7 @@
 //   no-relaxed   ?without=relaxed: the kernels without relaxed SIMD (what Safari runs)
 //   widened      ?without=int8: the load does not run on the int8 kernels, so the blocks are widened, no kernel of
 //                theirs is fetched, and the line says float32
-//   gone         the kernels of the blocks answered 404 (T.502: the page was open while the site was deployed anew, and
+//   gone         the kernels of the blocks answered 404 (T502: the page was open while the site was deployed anew, and
 //                its build's files are gone): the load ends with the sentence of a site that was updated, before
 //                anything of the model is fetched
 //   refused      the same answered 500: the load ends with the server's word, as any built file's
@@ -62,7 +62,7 @@ fs.rmSync(work, { recursive: true, force: true });
 fs.mkdirSync(work, { recursive: true });
 execFileSync(process.env.PYTHON ?? "python", [path.join(root, "tests", "reference_saluki_numpy.py"), "made-up", work], { stdio: ["ignore", "ignore", "inherit"] });
 const REPOSITORY = "made-up/saluki", GGUF = "made-up-saluki.gguf";
-// (T.586: the listing of the repository, which a page asks before it opens one it does not list)
+// (T586: the listing of the repository, which a page asks before it opens one it does not list)
 const LISTING = `https://huggingface.co/api/models/${REPOSITORY}/tree/main`;
 const files = Object.fromEntries(fs.readdirSync(path.join(work, "gguf")).map((name) => [name, fs.readFileSync(path.join(work, "gguf", name))]));
 console.log(`the made-up model: ${Object.entries(files).map(([name, bytes]) => `${name} ${bytes.length.toLocaleString("en")} bytes`).join(", ")}`);
@@ -87,7 +87,7 @@ const asHub = (requests) => async (route) => {
   const listing = request.url() === LISTING;
   requests.push(`${request.method()} ${found?.[1] ?? request.url()}${range ? ` ${range[0]}` : ""}${file || listing ? "" : " (404)"}`);
   if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: CORS });
-  // (T.586: the files of the repository, as huggingface.co lists them, which a page asks before it opens one it does
+  // (T586: the files of the repository, as huggingface.co lists them, which a page asks before it opens one it does
   // not list, src/page/repository.ts's filesOf(): answered 404, that was a console error on every visit)
   if (listing) {
     return route.fulfill({ status: 200, headers: { ...CORS, "content-type": "application/json" },
@@ -175,7 +175,7 @@ for (const name of names.filter((name) => !VISITS[name].again)) {
   await context.addInitScript(asListed, { repo: REPOSITORY, weights: GGUF });
   const { page, ready } = await visit(name, context);
   console.log(`${name}: asked of huggingface.co: ${requests.join("; ")}`);
-  // (the listing of the repository is the page's, asked before the worker hears of the model: T.586)
+  // (the listing of the repository is the page's, asked before the worker hears of the model: T586)
   const ofModel = requests.filter((request) => request !== `GET ${LISTING}`);
   if (VISITS[name].ends ? ofModel.length : !requests.some((request) => request.startsWith(`GET ${GGUF}`))) {
     failures.push(VISITS[name].ends ? `${name}: the model was asked for although its kernels did not come` : `${name}: the GGUF was never asked for`);

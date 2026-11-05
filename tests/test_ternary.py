@@ -1,5 +1,5 @@
-# ternary (T.230): the weights of a ternary model as they are, two bits each, groups of 128 with a float32 scale each
-# (llama2_numpy.pack_ternary), and the GGUF types that hold such weights (PQ2_0, PTQ1_0, and T.286.1's Q1_0 of signs). Nothing is rounded on the
+# ternary (T230): the weights of a ternary model as they are, two bits each, groups of 128 with a float32 scale each
+# (llama2_numpy.pack_ternary), and the GGUF types that hold such weights (PQ2_0, PTQ1_0, and T286.1's Q1_0 of signs). Nothing is rounded on the
 # way: the NumPy engine widens a ternary checkpoint to exactly what a float32 checkpoint of the same values holds, so
 # the logits of the two are the same to the bit. The kernels (forward.js) are held to NumPy by tests/forward-check.ts
 # and tests/smoke.ts.
@@ -24,7 +24,7 @@ from engine.layout import suited, tensor_rows
 from llama2_numpy import (NOT_TERNARY, TERNARY_GROUP, Llama, checkpoint_dtype, external_tensors, pack_ternary, ternary,
                           unpack_ternary)
 
-# (T.634: and binary, one bit a weight, which every shape whose rows suit ternary suits too)
+# (T634: and binary, one bit a weight, which every shape whose rows suit ternary suits too)
 DTYPES = ("float32", "float16", "int8", "int6", "ternary", "binary")
 
 
@@ -49,7 +49,7 @@ def ptq1_0_blocks(values):
 
 
 def q1_0_blocks(values):
-    """ggml's Q1_0 (T.286.1) as llama.cpp writes it (ggml-quants.c's quantize_row_q1_0_ref): per 128 values d = the
+    """ggml's Q1_0 (T286.1) as llama.cpp writes it (ggml-quants.c's quantize_row_q1_0_ref): per 128 values d = the
     mean of their magnitudes as float16, and each value's sign alone, a set bit for one not below 0, value j in bit
     j % 8 of byte j // 8, after d. Written bit by bit, apart from the reader's arithmetic. And what the block then
     stands for: +d or -d."""
@@ -80,7 +80,7 @@ def test_packing_is_lossless_and_32_bytes_a_group():
 def test_ternary_takes_the_values_as_they_are_and_refuses_any_other():
     rng = np.random.default_rng(2)
     signs = rng.integers(-1, 2, size=(6, 256)).astype(np.float32)
-    # (T.533: the scales are float16s, PQ2_0's: the smallest subnormal one and a subnormal one among them)
+    # (T533: the scales are float16s, PQ2_0's: the smallest subnormal one and a subnormal one among them)
     scales = np.array([0.0078125, 3.0, 2.0 ** -24, 0.0, 65504.0, np.float16(1.5e-5)] * 2, dtype=np.float32)
     values = (signs.reshape(-1, 128) * scales[:, None]).reshape(6, 256)
     packed, got = ternary(values)
@@ -93,7 +93,7 @@ def test_ternary_takes_the_values_as_they_are_and_refuses_any_other():
         bad[0, 200] = spoil  # the second group, whose scale is 3
         with pytest.raises(ValueError, match="not ternary"):
             ternary(bad)
-    # T.533: ternary values of a scale a float16 does not hold (more digits, too small, too large)
+    # T533: ternary values of a scale a float16 does not hold (more digits, too small, too large)
     for scale in (3.0000002, 1e-30, 65536.0):
         with pytest.raises(ValueError, match="not ternary"):
             ternary((signs[:1, :128] * np.float32(scale)).astype(np.float32))
@@ -138,7 +138,7 @@ def test_ptq1_0_reads_every_byte_as_the_fork_does():
 
 
 def test_q1_0_reads_every_bit_of_every_byte_at_every_place_as_a_sign_of_its_scale():
-    """T.286.1: each byte value at each of the 16 places (256 blocks, block b's bytes all b, and once more each byte
+    """T286.1: each byte value at each of the 16 places (256 blocks, block b's bytes all b, and once more each byte
     alone in a block of 0s), under scales of float16 that are normal, subnormal, negative and 0: +d for a set bit, -d
     for a clear one, in the order of the bits; and the same values as the reference reader of tests/gguf_check.py."""
     blocks, expected = [], []
@@ -226,7 +226,7 @@ def test_the_engine_reads_ternary_as_the_float32_of_the_same_values():
     packed = with_original(file, published, vocabulary, "tokenizer.json", "ternary")
     wide = with_original(file, published, vocabulary, "tokenizer.json", "float32")
     # the float32 file holds the RoPE tables the converter made; the ternary one leaves them to the engine: the same
-    # tables (T.235), so the logits are the same to the bit
+    # tables (T235), so the logits are the same to the bit
     a = Llama(bytes(packed.checkpoint), packed.tokenizer, **packed.options)
     b = Llama(bytes(wide.checkpoint), wide.tokenizer, **wide.options)
     for pos, token in enumerate([1, 5, 9, 3]):
@@ -261,7 +261,7 @@ def test_weights_that_are_not_ternary_and_rows_that_are_not_groups_of_128_are_re
 
 
 def test_a_ternary_tensor_of_an_odd_number_of_groups_is_refused():
-    """T.542: a ternary group is 34 bytes (32 of values, a float16 scale), so a tensor of an odd number of groups ends 2
+    """T542: a ternary group is 34 bytes (32 of values, a float16 scale), so a tensor of an odd number of groups ends 2
     bytes off the 4 the next one (a float32 vector) is read on: refused, as a file of such rows is"""
     # (a vocabulary of 101 rows of one group: the embedding is 101 groups; of 102, 102)
     odd, even = [128, 256, 2, 4, 2, 101, 32], [128, 256, 2, 4, 2, 102, 32]
@@ -301,20 +301,20 @@ def test_a_ternary_file_is_told_apart_by_its_size(header, form):
     assert len(set(sizes.values())) == len(DTYPES), sizes
     for dtype, size in sizes.items():
         assert checkpoint_dtype(header, size, form) == dtype
-    # two bits and a quarter a weight: under a third of six bits; T.634: binary, one bit and a quarter, under ternary
+    # two bits and a quarter a weight: under a third of six bits; T634: binary, one bit and a quarter, under ternary
     assert sizes["ternary"] < sizes["int6"] / 3 and sizes["binary"] < sizes["ternary"]
 
 
 def test_no_shape_gives_two_dtypes_one_size():
     """checkpoint_dtype() tells the dtypes of one header apart by the file's size alone: over many shapes whose rows are
     whole groups of 128 (so that ternary is possible), with and without the biases and the norms of the heads, small
-    and large vocabularies and contexts, no two of the six (T.634: binary too) have one size."""
+    and large vocabularies and contexts, no two of the six (T634: binary too) have one size."""
     tried = 0
     for dim, hidden, layers, heads, vocab, context in itertools.product(
             (128, 256, 1024), (128, 384, 4096), (1, 2, 12), (1, 2, 8), (1, 300, 150000, -300, -150000), (1, 512, 1 << 18)):
         for form in ({}, {"bias": True}, {"qk_norm": True}, {"qk_norm": True, "head_dim": 128}, {"arch": "gpt2"}, {"arch": "neox"}):
             header = [dim, hidden, layers, heads, heads, vocab, context]
-            # (T.542: a shape with a tensor of an odd number of groups of 128 has no ternary file: refused)
+            # (T542: a shape with a tensor of an odd number of groups of 128 has no ternary file: refused)
             if not suited(tensor_rows(header, form), "ternary"):
                 continue
             sizes = sizes_of(header, form)

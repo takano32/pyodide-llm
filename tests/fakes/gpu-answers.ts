@@ -1,4 +1,4 @@
-// tests/fakes/gpu-answers.ts (T.465.1)
+// tests/fakes/gpu-answers.ts (T465.1)
 // The engine's shaders answered for tests/fakes/webgpu.ts's answer: a dispatch of a pipeline whose WGSL is named here
 // has its output written as that shader would write it, so that the model's GPU worker can choose its forms (gpu/forms.ts
 // checks each candidate's output before it takes it) on a device that runs no shader. For the checks that run those
@@ -12,7 +12,7 @@
 //   standIn({ answer: answers.answer })
 //
 // The same as the shaders: what each writes, where its bindings say, and nothing where the workgroups dispatched are
-// fewer than its work's tiles (T.465.1's review: a dispatch of too few, the worker's own count, is seen here). Simpler:
+// fewer than its work's tiles (T465.1's review: a dispatch of too few, the worker's own count, is seen here). Simpler:
 // the whole output or none (which tiles a shader numbers how is not held: CI's gpu-check is where the tiles are). A
 // pipeline of no WGSL named here is not answered (its output stays as it was written).
 import fs from "node:fs";
@@ -27,7 +27,7 @@ type Entry = { binding: number; resource: Buffer | { buffer: Buffer; offset?: nu
 type Model = (entries: Entry[], x: number, y: number) => void;
 type Pipeline = { code: string };
 
-// a binding's bytes: its buffer's, from its offset (a part of one, T.155's pieces of a matrix)
+// a binding's bytes: its buffer's, from its offset (a part of one, T155's pieces of a matrix)
 const bound = (entries: Entry[], binding: number): Uint8Array => {
   const { resource } = entries.find((entry) => entry.binding === binding)!;
   const whole = "buffer" in resource ? resource.buffer : resource, offset = "buffer" in resource ? resource.offset ?? 0 : 0;
@@ -50,14 +50,14 @@ const pythonOf = () => (loaded ??= (async () => {
   return py.pyimport("gpu_answers");
 })());
 
-// (T.465.3: a token's attention by parts, kept by its parts' buffer for the reduce that comes after: the process's, as
+// (T465.3: a token's attention by parts, kept by its parts' buffer for the reduce that comes after: the process's, as
 // the one Pyodide is, so that a model of one answerer and the reduce of another meet)
 const reducing = new Map<ArrayBufferLike, { out: Uint8Array; nwg: number; stats: number; size: number }>();
 
 export async function gpuAnswers() {
   const python = await pythonOf();
   // what Python returns (bytes, or a tuple of them) as Uint8Arrays, and the proxies let go
-  // (T.465.6.5's review: None, which Pyodide hands back as undefined, is no result: an embedding's row outside its piece)
+  // (T465.6.5's review: None, which Pyodide hands back as undefined, is no result: an embedding's row outside its piece)
   const called = (name: string, ...args: unknown[]): Uint8Array[] => {
     const result = python[name](...args);
     if (result === undefined || result === null) return [];
@@ -69,7 +69,7 @@ export async function gpuAnswers() {
   return {
     add(code: string, model: Model) { byCode.set(code, model); },
     addPipeline(pipeline: Pipeline, model: Model) { byPipeline.set(pipeline, model); },
-    // (the WGSL texts dispatched that were answered, in order; T.465.6: and those that were not, which a check may hold empty)
+    // (the WGSL texts dispatched that were answered, in order; T465.6: and those that were not, which a check may hold empty)
     seen, missed,
     answer(pipeline: Pipeline, entries: Entry[], x: number, y: number) {
       const model = byPipeline.get(pipeline) ?? byCode.get(pipeline.code);
@@ -85,13 +85,13 @@ export async function gpuAnswers() {
       const [out] = called("flash_tile", bound(entries, 0), bound(entries, 1), bound(entries, 2), heads, kvHeads, float(entries, 4, 2), window, tokens, pos, size);
       bound(entries, 3).set(out);
     },
-    // T.465.3: a token's attention by llama.cpp's decode form (flashVec): q, the keys, the values, the parts, out, the params
+    // T465.3: a token's attention by llama.cpp's decode form (flashVec): q, the keys, the values, the parts, out, the params
     // (heads, kv heads, scale, nwg, where the sums and largests start, window), the step (1, the token's position), a
-    // workgroup for each head and part, no more (T.465.3's review: those past the heads write into the parts' sums). The
+    // workgroup for each head and part, no more (T465.3's review: those past the heads write into the parts' sums). The
     // token's output is the prompt's attention of one token (gpu_answers.py's flash_tile); with one part it goes to out,
     // with more it is kept for the reduce (flashVecReduce: the parts, out, the params; a workgroup a head), which writes
     // it where the parts are that buffer, nwg and the sums' start as the decode had them, and the parts as large as nwg
-    // takes (T.465.3's review); a reduce of one part writes 0 (its parts were never written: no sum). ignoring: the window
+    // takes (T465.3's review); a reduce of one part writes 0 (its parts were never written: no sum). ignoring: the window
     // left out (a check's break: a form that reads every position)
     flashVec: (size: number, { ignoring = false } = {}): Model => (entries, x) => {
       const [heads, kvHeads, , nwg, stats, window] = words(entries, 5), [, pos] = words(entries, 6);
@@ -111,20 +111,20 @@ export async function gpuAnswers() {
       if (nwg !== kept.nwg || stats !== kept.stats || stats !== heads * nwg * kept.size || parts.length < heads * nwg * (kept.size + 2) * 4) return;
       bound(entries, 1).set(kept.out.subarray(0, bound(entries, 1).length));
     }) as Model,
-    // ---- T.465.4: a generated token's step (gpu_answers.py's embed, fused, fused_rope, sample)
+    // ---- T465.4: a generated token's step (gpu_answers.py's embed, fused, fused_rope, sample)
     // EMBED: the table, its scales, the state (its token), x, the shape (the row's width, the piece's first row and rows)
     embed: ((entries) => {
       const [n, first, rows] = words(entries, 4);
       const [row] = called("embed", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows);
       if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
     }) as Model,
-    // (T.465.6.5) embedBlocks of a type (a token's: the table, the state, x, the shape; binding 1 none)
+    // (T465.6.5) embedBlocks of a type (a token's: the table, the state, x, the shape; binding 1 none)
     embedBlocks: ({ weights: packing }: { weights: string }): Model => (entries) => {
       const [n, first, rows] = words(entries, 4);
       const [row] = called("embed_blocks", bound(entries, 0), bound(entries, 2), n, first, rows, packing);
       if (row) bound(entries, 3).set(row.subarray(0, bound(entries, 3).length));
     },
-    // (T.465.6.5) EMBED_ROWS: the table, its scales, the block's ids, x, the shape (the width, the piece's first row and
+    // (T465.6.5) EMBED_ROWS: the table, its scales, the block's ids, x, the shape (the width, the piece's first row and
     // rows): a workgroup a token down; ROPE (a prompt's block): q, k, v, the keys, the values, the angles, Rope, step
     embedRows: ((entries, x, y) => {
       const [n, first, rows] = words(entries, 4), x0 = bound(entries, 3);
@@ -137,7 +137,7 @@ export async function gpuAnswers() {
       const [q, keys, values] = called("rope", ...[0, 1, 2, 3, 4, 5, 6, 7].map((b) => bound(entries, b)));
       for (const [binding, made] of [[0, q], [3, keys], [4, values]] as const) bound(entries, binding).set(made.subarray(0, bound(entries, binding).length));
     }) as Model,
-    // (T.465.6.3) EMBED_TERNARY: as EMBED, of a ternary table
+    // (T465.6.3) EMBED_TERNARY: as EMBED, of a ternary table
     embedTernary: ((entries) => {
       const [n, first, rows] = words(entries, 4);
       const [row] = called("embed_ternary", bound(entries, 0), bound(entries, 1), bound(entries, 2), n, first, rows);
@@ -161,7 +161,7 @@ export async function gpuAnswers() {
     // the DP4A forms: RMSNORM (x, the weight, dst, the Norm, the step), NORM_QUANTIZE (x, the weight, the codes, their
     // scales, the Norm, the step; a workgroup a token), and fusedDp4aMatVec ({ output }: the weights, their scales, the
     // codes, the Params, the codes' scales, then dst or (rope) q, the keys, the values, the angles and the step)
-    // (T.465.6: the RMSNorm family, each row of the dispatch: RMSNORM into out, HEAD_NORM in place (x, the weight, the
+    // (T465.6: the RMSNorm family, each row of the dispatch: RMSNORM into out, HEAD_NORM in place (x, the weight, the
     // Norm, the step), RMSNORM_ADD added to out; a workgroup a row across, a token down)
     rmsnorm: ({ inPlace = false, add = false } = {}): Model => (entries, x, y) => {
       const [norm, step] = inPlace ? [2, 3] : [3, 4];
@@ -177,7 +177,7 @@ export async function gpuAnswers() {
       const [out] = called("add", bound(entries, 0), bound(entries, 1), bound(entries, 2), bound(entries, 3));
       bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
     }) as Model,
-    // (T.465.6.2) LAYER_NORM: x, the weight, the bias, out, the Norm, the step (a workgroup a row across, a token down);
+    // (T465.6.2) LAYER_NORM: x, the weight, the bias, out, the Norm, the step (a workgroup a row across, a token down);
     // GELU: the gate (in place), its Size (n), the step (64 values a workgroup across, a token down)
     layerNorm: ((entries, x, y) => {
       if (y < words(entries, 5)[0]) return;
@@ -189,7 +189,7 @@ export async function gpuAnswers() {
       const [out] = called("gelu", bound(entries, 0), bound(entries, 1), bound(entries, 2));
       bound(entries, 0).set(out.subarray(0, bound(entries, 0).length));
     }) as Model,
-    // ---- T.465.6.4: the kinds of layers that keep a state (gpu_answers.py's): an LFM2's SHORT_CONV (mixed, taps, rows,
+    // ---- T465.6.4: the kinds of layers that keep a state (gpu_answers.py's): an LFM2's SHORT_CONV (mixed, taps, rows,
     // out, Conv, step) and CONV_STATE (mixed, rows, Conv, step); a Qwen3.5's DELTA_GATES (x, wb, wa, dtBias, decay, work,
     // Gates, step: a workgroup a value head), DELTA_CONV and DELTA_CONV_STATE (as the two above), DELTA_NET (conv, work,
     // state, out, Delta, step: a workgroup a value head); SWIGLU (gate, up, Size, step)
@@ -235,7 +235,7 @@ export async function gpuAnswers() {
       const [gate] = called("swiglu", ...[0, 1, 2, 3].map((b) => bound(entries, b)));
       bound(entries, 0).set(gate.subarray(0, bound(entries, 0).length));
     }) as Model,
-    // (T.465.6.5) a ternary classifier's outlier channels: TAKE_OUTLIERS (x, picked, Outliers: one workgroup) and
+    // (T465.6.5) a ternary classifier's outlier channels: TAKE_OUTLIERS (x, picked, Outliers: one workgroup) and
     // TERNARY_COLUMNS (the table, its scales, picked, the logits, Outliers: 256 rows a workgroup)
     takeOutliers: ((entries, x) => {
       if (x < 1) return;
@@ -260,12 +260,12 @@ export async function gpuAnswers() {
       bound(entries, 2).set(codes.subarray(0, bound(entries, 2).length));
       bound(entries, 3).set(scales.subarray(0, bound(entries, 3).length));
     }) as Model,
-    // (T.465.6.3: weights, the matrix's packing: int8, ternary, or a type of llama.cpp's blocks, whose scales are in the
+    // (T465.6.3: weights, the matrix's packing: int8, ternary, or a type of llama.cpp's blocks, whose scales are in the
     // blocks: binding 1 holds the codebooks of an IQ type, and nothing of a K type)
     dp4a: ({ output, weights: packing = "int8" }: { output: string; weights?: string }): Model => (entries, x, y) => {
       const [rows] = words(entries, 3);
       if (x * y < Math.ceil(rows / 4)) return;
-      // (T.465.6.3's review: as tiled's, an IQ type's text binds the codebooks, a K type's nothing there)
+      // (T465.6.3's review: as tiled's, an IQ type's text binds the codebooks, a K type's nothing there)
       if (packing.startsWith("IQ") && !(has(entries, 1) && bound(entries, 1).length >= CODEBOOK_BYTES)) throw new Error(`gpu-answers: ${packing}'s token text without the codebooks bound`);
       if (packing.endsWith("_K") && has(entries, 1)) throw new Error(`gpu-answers: ${packing}'s token text binds something where none is`);
       const scales = has(entries, 1) ? bound(entries, 1) : undefined;
@@ -293,7 +293,7 @@ export async function gpuAnswers() {
       bound(entries, 1).set(codes.subarray(0, bound(entries, 1).length));
       bound(entries, 2).set(scales.subarray(0, bound(entries, 2).length));
     }) as Model,
-    // (T.465.2: the codebooks of llama.cpp's IQ types, as a checkpoint carries them: what a plan's codebooks are to hold)
+    // (T465.2: the codebooks of llama.cpp's IQ types, as a checkpoint carries them: what a plan's codebooks are to hold)
     codebooks: () => called("codebooks")[0],
     // ("none" to Python is undefined: a null is jsnull there)
     // a tiled form: the weights, their scales, x (packed: its codes, their scales at binding 6), y, the shape (rows, n / 4,
@@ -302,7 +302,7 @@ export async function gpuAnswers() {
     tiled: ({ packed, packing, tile }: { packed: boolean; packing: string; tile: { rows: number; tokens: number } }): Model => (entries, x, down) => {
       const [rows, quarter, , , xStride, yStride, add] = words(entries, 4), [tokens] = words(entries, 5), y = bound(entries, 3);
       if (x * down < Math.ceil(rows / tile.rows) * Math.ceil(tokens / tile.tokens)) return;
-      // (T.465.2's review: an IQ type's text binds the codebooks where an int8 one binds its scales, and a K type's binds
+      // (T465.2's review: an IQ type's text binds the codebooks where an int8 one binds its scales, and a K type's binds
       // nothing there: the answer reads its own tables, so a binding missing or wrong would pass unseen otherwise)
       if (packing.startsWith("IQ") && !(has(entries, 1) && bound(entries, 1).length >= CODEBOOK_BYTES)) throw new Error(`gpu-answers: ${packing}'s text without the codebooks bound`);
       if (packing.endsWith("_K") && has(entries, 1)) throw new Error(`gpu-answers: ${packing}'s text binds something where none is`);

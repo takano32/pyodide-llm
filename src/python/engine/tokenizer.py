@@ -63,15 +63,15 @@ def mark(char):
 
 
 class CharClasses(dict):
-    r"""What the pre-tokenizer's patterns tell apart, one character for each character (T.200): the ASCII letters,
+    r"""What the pre-tokenizer's patterns tell apart, one character for each character (T200): the ASCII letters,
     the apostrophe, the space, \r and \n as they are (the contractions and the line breaks name them) and ſ (U+017F,
     which (?i:'s) takes for s), any other whitespace "\t", any other letter (\p{L}) "a", a number (\p{N}) "0", a
-    combining mark (\p{M}) "~" (T.229: Qwen3.5's pattern takes one into a word, the others take it for anything else),
+    combining mark (\p{M}) "~" (T229: Qwen3.5's pattern takes one into a word, the others take it for anything else),
     anything else "!". A text goes through str.translate() with it, and the standard re module runs the patterns on
     what comes out: \p{L}, \p{N} and \p{M}, which re has not, become [A-Za-zſ], 0 and ~. A character is classed the
     first time it is seen.
 
-    Whitespace is what the real tokenizers' regex (Oniguruma) calls \s (T.206): str.isspace less \x1c to \x1f, which
+    Whitespace is what the real tokenizers' regex (Oniguruma) calls \s (T206): str.isspace less \x1c to \x1f, which
     Oniguruma takes for neither whitespace nor a letter nor a number."""
 
     def __missing__(self, code):
@@ -105,13 +105,13 @@ PATTERNS = {
     "qwen35": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ~]+|0| ?['!]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
 }
 DIGITS = re.compile("0|[^0]+")  # Digits(individual_digits) on the classes: every number a piece of its own
-THREES = re.compile("0{1,3}|[^0]+")  # Split(\p{N}{1,3}) on the classes: numbers cut off, three at a time (T.254)
+THREES = re.compile("0{1,3}|[^0]+")  # Split(\p{N}{1,3}) on the classes: numbers cut off, three at a time (T254)
 # the pre-tokenizers of two stages: what cuts the text first, and the pattern that then runs on each piece alone
 STAGED = {"gpt2-digits": (DIGITS, PATTERNS["gpt2"]), "minicpm5": (THREES, PATTERNS["llama3"])}
 
 
 class SparkClasses(dict):
-    r"""T.340: the classes Spark-X2.5's pre-tokenizer tells apart, which are others than CharClasses' (its patterns name
+    r"""T340: the classes Spark-X2.5's pre-tokenizer tells apart, which are others than CharClasses' (its patterns name
     punctuation and symbols, \p{P} and \p{S}, apart from what is neither; the ASCII letters apart from the others; and a
     block of the CJK ideographs and the kana, whatever their categories): the ASCII letters "A", any other letter "a",
     the ASCII punctuation and symbols "!" (all 32 of them, which its first pattern names one by one), any other
@@ -141,7 +141,7 @@ class SparkClasses(dict):
         return found
 
 
-# T.340: the block Spark-X2.5's second Split takes whole ([一-龥぀-ゟ゠-ヿ]+: the ideographs to U+9FA5, the hiragana
+# T340: the block Spark-X2.5's second Split takes whole ([一-龥぀-ゟ゠-ヿ]+: the ideographs to U+9FA5, the hiragana
 # and the katakana blocks)
 KANJI_KANA = ((0x4E00, 0x9FA5), (0x3040, 0x309F), (0x30A0, 0x30FF))
 SPARK_CLASSES = SparkClasses()
@@ -167,25 +167,25 @@ def isolated(pattern, classes, start, end):
 def pretokenize(text, pattern):
     r"""Split text the way the tokenizer.json's pre_tokenizer does. Those patterns need \p{L} and \p{N}, which the
     standard re module has not, so they run on the text's character classes (CharClasses) and the pieces are cut
-    from the text at the same places (T.200: a loop of Python over the characters did it before, a tenth as fast).
+    from the text at the same places (T200: a loop of Python over the characters did it before, a tenth as fast).
 
     "gpt2" is what ByteLevel(use_regex) applies:
         's|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
     "gpt2-digits" is the same after Digits(individual_digits), which SmolLM2 puts in front of it: every number is a
-    piece of its own, \p{N} as Rust's char::is_numeric says (², Ⅱ and ① too, not only \d: T.206), and GPT-2's
+    piece of its own, \p{N} as Rust's char::is_numeric says (², Ⅱ and ① too, not only \d: T206), and GPT-2's
     pattern runs on each piece as if the piece were the whole text.
     "qwen" is the pattern Qwen2 spells out (the contractions match whatever the case, digits come one by one,
     and a piece of anything-but-a-line-break may lead a word):
         (?i:'s|…)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
     "llama3" is Llama 3's, which is Qwen's with the digits taken up to three at a time (\p{N}{1,3}).
-    "qwen35" is Qwen3.5's (T.229), which is Qwen's with the combining marks (\p{M}) taken into the word they follow:
+    "qwen35" is Qwen3.5's (T229), which is Qwen's with the combining marks (\p{M}) taken into the word they follow:
         (?i:'s|…)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
-    "minicpm5" is MiniCPM5's (T.254), two Splits one after the other: \p{N}{1,3} cuts the numbers off first, up to
+    "minicpm5" is MiniCPM5's (T254), two Splits one after the other: \p{N}{1,3} cuts the numbers off first, up to
     three at a time, and then Llama 3's pattern with \p{N}+ for its numbers runs on each piece as if the piece were
     the whole text. A number piece is one piece either way, so the second stage here is Llama 3's pattern itself. It is
     not Llama 3's on the whole text: before a number, \s+(?!\S) ends at the piece's end and takes all of a run of
     spaces, where Llama 3's leaves the last one of them to stand alone ("a  1": "a", "  ", "1", not "a", " ", " ", "1").
-    "spark2_5" is Spark-X2.5's (T.340), three Splits and then Digits(individual_digits), each on every piece of the one
+    "spark2_5" is Spark-X2.5's (T340), three Splits and then Digits(individual_digits), each on every piece of the one
     before: \p{N}{1,3}, which with the Digits after it is every number a piece of its own (and nothing else has a number
     then); [一-龥぀-ゟ゠-ヿ]+, the ideographs and the kana; and
         [!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+|[\r\n]|\s+(?!\S)|\s+
@@ -205,26 +205,26 @@ def pretokenize(text, pattern):
     return [text[match.start():match.end()] for match in PATTERNS.get(pattern, PATTERNS["gpt2"]).finditer(classes)]
 
 
-# T.216: what may follow the pieces of a tokenizer.bin: this, the length of a sentencepiece model's precompiled_charsmap
+# T216: what may follow the pieces of a tokenizer.bin: this, the length of a sentencepiece model's precompiled_charsmap
 # (uint32) and the charsmap itself
 CHARSMAP = b"charsmap"
 
 
 class Charsmap:
-    """sentencepiece's normalizer, from the model's own precompiled_charsmap (T.216): the length of a Darts-clone double
+    """sentencepiece's normalizer, from the model's own precompiled_charsmap (T216): the length of a Darts-clone double
     array (uint32), the array, and the normalized texts, each ended by a NUL. The array's keys are UTF-8 texts and its
     values where their normalized text begins. At each place the longest key that begins there is replaced, and where
     none does, one character is kept: sentencepiece's Normalizer::NormalizePrefix, which walks the array as Darts-clone's
     commonPrefixSearch does (a unit: bit 31 a value, bits 0-7 its label, bit 8 a leaf below, and its offset from bit 10,
     shifted by 8 more where bit 9 says). The model's own map: not Python's NFKC, whose Unicode is another version (the
-    four letters T.126 found in tiny-lm), and not a table of the nmt_ kinds, which differ between models (rinna's)."""
+    four letters T126 found in tiny-lm), and not a table of the nmt_ kinds, which differ between models (rinna's)."""
 
     def __init__(self, blob):
         (size,) = struct.unpack_from("<I", blob)
         self.units = struct.unpack_from(f"<{size // 4}I", blob, 4)
         self.texts = bytes(blob[4 + size:])
         self.found = {}  # the normalized text at each value, read once
-        # T.222: the bytes a key may begin with, the root's children (the first step of the walk below). The text
+        # T222: the bytes a key may begin with, the root's children (the first step of the walk below). The text
         # between two of them is kept as it is, without a walk at each byte. No continuation byte of UTF-8 begins a
         # character, so the text is cut between characters, as the walk cuts it
         units, root = self.units, self.offset(self.units[0])
@@ -270,7 +270,7 @@ class Charsmap:
         return b"".join(out).decode("utf-8")
 
 
-# T.639.1: the settings of the reading a model is given with its options (a Llama's, the converter's), each under the
+# T639.1: the settings of the reading a model is given with its options (a Llama's, the converter's), each under the
 # name of the Tokenizer's argument it is: a setting that is added is a line here and an argument of the Tokenizer, whose
 # default is the default
 SETTINGS = {"tokenizer_kind": "kind", "nfkc": "nfkc", "nfc": "nfc", "pretokenizer": "pretokenizer",
@@ -282,7 +282,7 @@ class Tokenizer:
     """llama2.c's tokenizer.bin: sentencepiece pieces with their scores.
 
     kind="bpe" merges the best-scoring adjacent pair, like llama2.c (Llama 2 vocabulary; and a sentencepiece BPE model
-    written out as a tokenizer.json, whose converter writes minus the rank of a piece's merge as its score: T.257);
+    written out as a tokenizer.json, whose converter writes minus the rank of a piece's merge as its score: T257);
     kind="unigram" picks the segmentation with the best total score (sentencepiece unigram models);
     kind="bytebpe" is Hugging Face's byte-level BPE (GPT-2, SmolLM2, Qwen). It merges by the rank of the merge
     that makes the piece, which is the same loop as "bpe" (merged()) because the converter writes minus the rank as
@@ -297,22 +297,22 @@ class Tokenizer:
                  collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False):
         if kind not in TOKENIZER_KINDS:
             raise ValueError(f"Unsupported tokenizer kind: {kind!r} (the engine reads {', '.join(TOKENIZER_KINDS)})")
-        # T.639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
+        # T639.4: what the kind does, from its row of TOKENIZER_KINDS, taken apart once (encode() and decode() read it)
         self.kind, (self.encoding, self.decoding, self.prefixes, self.spaces, made) = kind, TOKENIZER_KINDS[kind]
         self.nfkc, self.nfc, self.pretokenizer = nfkc, nfc, pretokenizer
-        # T.265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
+        # T265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
         # do_lower_case, with a vocabulary that has no capital Latin letter, each of which was <unk> without it)
         self.lowercase = lowercase
-        # T.308: sentencepiece's dummy prefix stands before the text after a special token too, not only before the
+        # T308: sentencepiece's dummy prefix stands before the text after a special token too, not only before the
         # first text. "every": before every such stretch (a tokenizer.json whose normalizer begins each with "▁":
         # llm-jp-4's). "wanting": before every one that does not begin with a space already (a Metaspace that always
         # prepends, which is what transformers makes of a legacy Llama tokenizer: zephyr's, EuroLLM's). False: none
-        # besides the first. T.257: "never": not before the first either (a Gemma's sentencepiece model has no dummy
+        # besides the first. T257: "never": not before the first either (a Gemma's sentencepiece model has no dummy
         # prefix), and decode() takes no space off the beginning of what was written
         if prefixed not in (False, "every", "wanting", "never"):
             raise ValueError(f"Unsupported prefixed: {prefixed!r} (the stretches of text the dummy prefix stands before: every, wanting or never)")
         self.prefixed = prefixed
-        # T.400 (3): a Metaspace pre-tokenizer (a tokenizer.json's) puts no "▁" before the first text either where that
+        # T400 (3): a Metaspace pre-tokenizer (a tokenizer.json's) puts no "▁" before the first text either where that
         # text begins with a space already (the space is its "▁"); sentencepiece itself puts it there whatever the text
         # begins with (a tokenizer.model's, the engine's way where spaced is not said)
         self.spaced = spaced
@@ -330,7 +330,7 @@ class Tokenizer:
             self.vocab.append(bytes(data[offset:offset + length]))
             self.scores.append(score)
             offset += length
-        # T.216: the sentencepiece model's own normalizer, where the converter put it after the pieces
+        # T216: the sentencepiece model's own normalizer, where the converter put it after the pieces
         rest = bytes(data[offset:offset + len(CHARSMAP) + 4])
         self.charsmap = None
         if rest[:len(CHARSMAP)] == CHARSMAP:
@@ -358,8 +358,8 @@ class Tokenizer:
                 tokens.append(self.index[pieces[part]])
             elif part and (part := self.normalized(part)):
                 # sentencepiece's dummy prefix: the model saw every text start with a space (but not the text after a
-                # special token, unless its tokenizer puts one there as well: prefixed, T.308; and a model without the
-                # prefix saw none, T.257). A byte-level vocabulary has none: it spells the space as a character
+                # special token, unless its tokenizer puts one there as well: prefixed, T308; and a model without the
+                # prefix saw none, T257). A byte-level vocabulary has none: it spells the space as a character
                 if self.prefixes and self.prefixed != "never" and ((first and not (self.spaced and part.startswith(" "))) or self.prefixed == "every"
                                                                    or (self.prefixed and not part.startswith(" "))):
                     part = " " + part
@@ -369,7 +369,7 @@ class Tokenizer:
 
     def cut(self, specials):
         """(the pattern that cuts a text at these specials, {a special: its piece as the vocabulary spells it}), made
-        once for a tuple of them (T.257: a Gemma 3 has 6,406 added tokens, and writing the pattern out for each text
+        once for a tuple of them (T257: a Gemma 3 has 6,406 added tokens, and writing the pattern out for each text
         took 2 ms). The first of the alternatives that matches is taken, so the converter names the longest first. A
         sentencepiece vocabulary's pieces spell U+2581 as a space (the converter's tokenizer_bin()), a special's
         among them (a Gemma 3's runs of U+2581)."""
@@ -380,11 +380,11 @@ class Tokenizer:
         return self.cuts[specials]
 
     def normalized(self, text):
-        """The text as the model's normalizer makes it: a sentencepiece model's own map (charsmap, T.216: nmt_nfkc makes
+        """The text as the model's normalizer makes it: a sentencepiece model's own map (charsmap, T216: nmt_nfkc makes
         tabs, newlines and a few more characters a space, and drops or keeps the other control characters, as each
         model's map says), NFKC or NFC (a tokenizer.json's), and collapse: sentencepiece's remove_extra_whitespaces,
         runs of spaces one and none at either end. Without them a newline was spelled with byte + 3 in a vocabulary
-        with no byte pieces: rinna's った (the review of T.126). lowercase (T.265) comes first, as transformers' slow
+        with no byte pieces: rinna's った (the review of T126). lowercase (T265) comes first, as transformers' slow
         tokenizers lower the text before sentencepiece sees it."""
         if self.lowercase:
             text = text.lower()
@@ -398,7 +398,7 @@ class Tokenizer:
             text = re.sub(" {2,}", " ", text).strip(" ")
         if self.spaces:
             # sentencepiece writes a space as U+2581, so one written in the text is a space too (after the collapse,
-            # which sees spaces only; an nmt_ map made it one before). The pieces here spell it " " (T.216)
+            # which sees spaces only; an nmt_ map made it one before). The pieces here spell it " " (T216)
             text = text.replace("\u2581", " ")
         return text
 
@@ -418,12 +418,12 @@ class Tokenizer:
     def merged(self, tokens, pieces, index, floor):
         """The tokens with the best consecutive pair merged each iteration, according to the scores in vocab_scores
         (the first of equal scores), as long as a pair scores above floor. pieces: the tokens' pieces as index spells
-        them (bytes for "bpe", the byte-level BPE's text for "bytebpe": T.639.4, which merged in a loop of its own
+        them (bytes for "bpe", the byte-level BPE's text for "bytebpe": T639.4, which merged in a loop of its own
         that looked at every pair after each merge)."""
         # The pairs wait in a heap by (minus the score, where the pair's left piece began), so the best and
         # the first of equal ones comes out first; a merge pushes the two pairs next to it, and the pairs it ended
         # are left in the heap and passed over when they come out (stamp: a piece's stamp changes when it merges).
-        # T.200 had the scores in a list and took the best with max() and index(): 0.17 s for 1000 tokens (T.207).
+        # T200 had the scores in a list and took the best with max() and index(): 0.17 s for 1000 tokens (T207).
         # The pieces are a list linked by after and before, the first one never goes (a merge keeps the left piece).
         count = len(tokens)
         after, before, stamp, waiting = list(range(1, count + 1)), list(range(-1, count - 1)), [0] * count, []
@@ -467,7 +467,7 @@ class Tokenizer:
                 tokens.append(self.text_index[word])
                 continue
             # a byte the vocabulary lacks (SmolLM2 has no piece for 21 of them: 0x04, 0xF1, ...) is left out, and its
-            # neighbours may then merge, as Hugging Face's BPE does without byte_fallback or an unk_token (T.215)
+            # neighbours may then merge, as Hugging Face's BPE does without byte_fallback or an unk_token (T215)
             symbols = [char for char in word if char in self.text_index]
             tokens += self.merged([self.text_index[symbol] for symbol in symbols], symbols, self.text_index,
                                   self.UNMATCHABLE)
@@ -480,7 +480,7 @@ class Tokenizer:
 
     def unigram_pieces(self):
         """the Viterbi search's pieces as text, each the token index finds for it (the first of equal pieces), those
-        it can match only, and how long such a piece that begins with two given characters can be (T.200)"""
+        it can match only, and how long such a piece that begins with two given characters can be (T200)"""
         for piece, i in self.index.items():
             try:
                 text = piece.decode("utf-8")
@@ -493,7 +493,7 @@ class Tokenizer:
 
     def encode_unigram(self, text):
         # Viterbi: best[j] is the best total score of any segmentation of text[:j]. The pieces that begin at i are
-        # no longer than the reach of text[i:i + 2] (one character where no longer piece begins with those two) (T.200)
+        # no longer than the reach of text[i:i + 2] (one character where no longer piece begins with those two) (T200)
         n, pieces, scores, reach = len(text), self.pieces, self.scores, self.reach
         best = [0.0] + [-math.inf] * n
         back = [None] * (n + 1)
@@ -542,11 +542,11 @@ class Tokenizer:
 
 
 class Kind(NamedTuple):
-    """T.639.4: one of the Tokenizer's kinds, which it takes apart once when it is made"""
+    """T639.4: one of the Tokenizer's kinds, which it takes apart once when it is made"""
     encode: Callable  # (tokenizer, a stretch of normalized text) -> its tokens
     decode: Callable  # (tokenizer, the token before, the token, bos) -> the token's bytes
     prefixes: bool  # sentencepiece's dummy prefix may stand before a stretch of text (prefixed and spaced say where)
-    spaces: bool  # U+2581 is a space, in the text and in a special's spelling: the pieces spell it " " (T.216)
+    spaces: bool  # U+2581 is a space, in the text and in a special's spelling: the pieces spell it " " (T216)
     made: Optional[Callable]  # (tokenizer) makes the kind's own index of the pieces, once
 
 

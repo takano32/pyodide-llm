@@ -1,10 +1,10 @@
-# test_gpu_answers.py (T.465.6.4's review): tests/gpu_answers.py's answers of the kinds that keep a state, where the
+# test_gpu_answers.py (T465.6.4's review): tests/gpu_answers.py's answers of the kinds that keep a state, where the
 # checks that run them (gpu-tokens-check.ts) do not reach: a token's first layer is one token at place 0, so a state at
 # an `at` past the first place, a block of more tokens than the taps (and its `batch`) and an attending layer's output
 # gate after linear ones are never asked there. Held here in NumPy alone (the answers are the same Python the bridge calls):
 #   - the same numbers at another `at` give the same answer there (the convolutions' rows, the delta rule's state);
 #   - a block of two tokens is one token and then the next, its state carried (the convolutions and the delta rule);
-#   - OUTPUT_GATE and SWIGLU to their formulas; (T.465.6.5's review) the outlier channels, a prompt's rows and RoPE to
+#   - OUTPUT_GATE and SWIGLU to their formulas; (T465.6.5's review) the outlier channels, a prompt's rows and RoPE to
 #     numbers worked by hand.
 import numpy as np
 
@@ -97,7 +97,7 @@ def test_output_gate_and_swiglu_to_their_formulas():
     assert once[3:].tolist() == x[3:].tolist()
 
 
-# (T.465.6.5's review) the answers of the outlier channels, a prompt's rows and RoPE to numbers worked by hand
+# (T465.6.5's review) the answers of the outlier channels, a prompt's rows and RoPE to numbers worked by hand
 def test_outliers_rows_and_rope_to_numbers_worked_by_hand():
     # TAKE_OUTLIERS: channels 1 and 3 taken into picked, 0 in their places
     x, picked = G.take_outliers(f32([1, 2, 3, 4]), f32([0, 0, 0, 0]), u32(2, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0))

@@ -1,4 +1,4 @@
-# The families of models the converter takes (T.359), by config.json's model_type: the one table the shared flow
+# The families of models the converter takes (T359), by config.json's model_type: the one table the shared flow
 # (convert/config.py, plan.py, gguf.py, conversion.py) looks a model up in. A new family is a record here (Family, in
 # family.py) and nothing in those files: one that is a Llama but for a number or two is LLAMA._replace(...) in
 # llama.py, as a Granite and a SmolLM3 are.
@@ -44,7 +44,7 @@ def family_of(config):
 
 
 def of_layout(arch):
-    """The family that stands for a layout, for what is asked of a form alone (conversion_plan(), name_prefix()). T.393:
+    """The family that stands for a layout, for what is asked of a form alone (conversion_plan(), name_prefix()). T393:
     a name that is no layout's is refused in the engine's words (layout_of()), as every other way in refuses it, not
     read as a Llama."""
     layout_of(arch)

@@ -1,4 +1,4 @@
-// T.173: the page-memory section of /benchmark/: how much memory the page can hold before the browser refuses it or
+// T173: the page-memory section of /benchmark/: how much memory the page can hold before the browser refuses it or
 // ends the tab. A plain module, so that Node tests it alone (tests/page-memory.ts); the page's worker is
 // src/runtime/benchmark/memory.ts.
 //
@@ -8,7 +8,7 @@
 // part of "Run all" (it may end the tab): only its own button or ?run=memory runs it, and a page that finds a mark
 // does not run it again (a ?run=memory in the address would otherwise end the tab over and over).
 //
-// A page hidden (another app, the screen locked) or left (a reload, another page) stops the run at once (T.173's
+// A page hidden (another app, the screen locked) or left (a reload, another page) stops the run at once (T173's
 // review: the page's visibilitychange and pagehide settle `hidden`), and the run's finally removes the mark in the
 // microtasks right after the event, before the page can be put away: a phone ends a hidden page far sooner than one in
 // front, so a tab ended after that says nothing of the limit, and a page left is no tab ended. A mark found is then a
@@ -19,7 +19,7 @@ import type { Result } from "./dom.ts";
 import type { Stage } from "./section.ts";
 import type { MemoryGrown, ToMemory } from "../runtime/contracts/benchmark.ts";
 
-// (T.480.1: the section's data, what the worker answers a step with, and the tab's sessionStorage where there is one)
+// (T480.1: the section's data, what the worker answers a step with, and the tab's sessionStorage where there is one)
 export type MemoryData = { stop: "limit" | "refused" | "hidden" | "error" | "none" | "reloaded"; held: number; trying?: number; limit: number;
   maximum?: number | null; why?: string; seconds?: number };
 type Answered = { error: string; result?: undefined } | { error?: undefined; result: MemoryGrown };
@@ -51,7 +51,7 @@ export function forgetMark(storage: Storing) {
 
 /** Grow the worker's memory step by step up to limit, writing the mark before each step. ask(message) answers as the
  * worker does; storage is the tab's sessionStorage (null: none here, and nothing is grown: a tab ended without a
- * mark would report nothing). stage({stage, at, of}) is the page's progress (T.177). hidden settles when the page is
+ * mark would report nothing). stage({stage, at, of}) is the page's progress (T177). hidden settles when the page is
  * hidden or left (the page has then ended the worker): the run stops and removes its mark. What it returns is the
  * section's data: { stop: "limit" | "refused" | "hidden" | "error" | "none", held, trying?, limit, maximum?, why?,
  * seconds }; maximum is the bytes the memory was made with room for, null where the browser refused that. */
@@ -106,7 +106,7 @@ export function readMark(storage: Storing, now = Date.now): MemoryData | undefin
   }
 }
 
-// how a run ended (the owner chose the words that do not say more than the page knows, 2026-09-27: TASKS.md T.173)
+// how a run ended (the owner chose the words that do not say more than the page knows, 2026-09-27: TASKS.md T173)
 function ending(d: MemoryData) {
   switch (d.stop) {
     case "reloaded": return `the tab ended while it grew to ${mib(d.trying!)} and the page was loaded again: the browser ended it, most likely for its memory`;
@@ -133,7 +133,7 @@ export function memoryResult(d: MemoryData): Result {
   ].join("\n") };
 }
 
-/** The section's line of the report's summary (T.185) */
+/** The section's line of the report's summary (T185) */
 export function memorySummary(d: MemoryData | undefined) {
   if (!d || d.stop === "none" || d.stop === "error" || d.stop === "hidden") return [];
   return [`Page memory: held ${mib(d.held)}; ${ending(d)}`];

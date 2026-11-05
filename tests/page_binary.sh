@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_binary.sh (T.634.2): a 1-bit Bonsai of the list (its Q1_0 GGUF) converted as the page converts it, to the
+# tests/page_binary.sh (T634.2): a 1-bit Bonsai of the list (its Q1_0 GGUF) converted as the page converts it, to the
 # ternary dtype (what the list kept it as before) and to binary (what it keeps now), for CI (tests.yml's extra=, after
 # `make kernels`: the development machine runs no model of gigabytes):
 #

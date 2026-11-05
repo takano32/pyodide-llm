@@ -14,7 +14,7 @@ export const HF_JAPANESE: Entry[] = [
   { group: "hf", id: "hf-llm-jp-3-150m-instruct3", name: "llm-jp-3 150M instruct3", note: "answers instructions · 日本語 / English · fetches 305 MB → int8 171 MB",
     hf: hf("llm-jp/llm-jp-3-150m-instruct3", "5be263e1a3613cd5c163f41ad828c8de6a2aa6ec"), download: 304649360, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.249: rinna's GPT-2 below and above the small one. No GGUF of either was found: the safetensors
+  // T249: rinna's GPT-2 below and above the small one. No GGUF of either was found: the safetensors
   { group: "hf", id: "hf-japanese-gpt2-xsmall", name: "rinna japanese-gpt2 xsmall", note: "日本語 · fetches 156 MB → int8 42 MB",
     hf: hf("rinna/japanese-gpt2-xsmall", "8e91527b3276e0565154935e84a08bf0137ed99f", "spiece.model"), download: 155892312,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
@@ -38,7 +38,7 @@ export const HF_JAPANESE: Entry[] = [
   { group: "hf", id: "hf-llm-jp-3-440m-instruct3", name: "llm-jp-3 440M instruct3", note: "answers instructions · 日本語 / English · fetches 0.9 GB → int8 503 MB",
     hf: hf("llm-jp/llm-jp-3-440m-instruct3", "a308f143bd5824c4033b3a2efaa1c00afbb3aa9e"), download: 894519624, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // sarashina2.2 (T.79): the instruct one is published as a single shard with an index (T.78)
+  // sarashina2.2 (T79): the instruct one is published as a single shard with an index (T78)
   { group: "hf", id: "hf-sarashina2.2-0.5b", name: "SB Intuitions sarashina2.2 0.5B", note: "日本語 / English · fetches 845 MB (GGUF) → int8 0.9 GB",
     original: "sbintuitions/sarashina2.2-0.5b",
     hf: { repo: "mradermacher/sarashina2.2-0.5b-GGUF", revision: "2aed15b94f8c25b7582369f62d9801f3524e4721", weights: "sarashina2.2-0.5b.Q8_0.gguf",
@@ -51,7 +51,7 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "sbintuitions/sarashina2.2-0.5b-instruct-v0.1", revision: "e4b9aacc3f644893d0179847946ef6c58d868f29", tokenizer: "tokenizer.model" } },
     download: 845363072, conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
+  // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
   // model card runs it (no generation_config: transformers' defaults; a repetition penalty bends a translation)
   { group: "hf", id: "hf-cat-translate-0.8b", name: "CyberAgent CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 845 MB (GGUF) → int8 0.9 GB",
     original: "cyberagent/CAT-Translate-0.8b",
@@ -64,13 +64,13 @@ export const HF_JAPANESE: Entry[] = [
     hf: { repo: "mmnga/llm-jp-3-980m-instruct3-gguf", revision: "5966bc9958a7d313da9b8cb4679cfdf6814b6d42", weights: "llm-jp-3-980m-instruct3-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-3-980m-instruct3", revision: "c079dbf3f88aa2ab702b9696231fc3336c46b1be", tokenizer: "tokenizer.json" } }, download: 1054638240, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.126: a GPT-2 of 1.3B, whose activation is written gelu_fast (the same tanh approximation as gelu_new). Its
+  // T126: a GPT-2 of 1.3B, whose activation is written gelu_fast (the same tanh approximation as gelu_new). Its
   // table of positions holds 1024, which is its context
   { group: "hf", id: "hf-japanese-gpt-1b", name: "rinna japanese-gpt 1B", note: "日本語 · fetches 2.7 GB → int8 1.5 GB",
     hf: hf("rinna/japanese-gpt-1b", "33fc2e4b4e97e229d24a2973073a1361157ecef6", "spiece.model"), download: 2655791788,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T.81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
-  // itself (T.73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
+  // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
+  // itself (T73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
   // template alone leaves it out)
   { group: "hf", id: "hf-sarashina2.2-1b-instruct", name: "SB Intuitions sarashina2.2 1B Instruct", note: "answers instructions · 日本語 · fetches 1.5 GB (GGUF) → int8 1.6 GB",
     original: "sbintuitions/sarashina2.2-1b-instruct-v0.1",
@@ -84,10 +84,10 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "cyberagent/CAT-Translate-1.4b", revision: "254120945fd9a61278ac2171ab07c831d56838fa", tokenizer: "tokenizer.model" } }, download: 1498333088,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
-  // T.249: the base model of sarashina2.2 1B, and two Japanese base models of 2023. stockmark's GPT-NeoX rotates a
+  // T249: the base model of sarashina2.2 1B, and two Japanese base models of 2023. stockmark's GPT-NeoX rotates a
   // quarter of each head and has no parallel residual; mmnga's Q8_0 GGUF of it (2023) holds the very values, but with
   // q, k and v of a head in turns as Hugging Face has them, where today's llama.cpp writes all of q, then k, then v,
-  // which is what the converter undoes (T.136): read so, it wrote "のののの", so the safetensors. LINE's GPT-2, whose
+  // which is what the converter undoes (T136): read so, it wrote "のののの", so the safetensors. LINE's GPT-2, whose
   // table of positions holds 2048: its tokenizer puts nothing in front of a text, and the model writes nonsense after
   // <s> (1), the converter's BOS, and after nothing; after </s> (2) it writes Japanese (transformers on the original
   // says the same of all three), so that is the BOS here
@@ -95,7 +95,7 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/sarashina2.2-1b-GGUF", "9eaeb885b7b61d8ceb274bac21b9df4f42151e23", "sarashina2.2-1b.Q8_0.gguf",
       "sbintuitions/sarashina2.2-1b", "3bb836ad7475ba192926be66651e4730825df7da", "tokenizer.model"), download: 1498330464,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T.598: the rest of SB Intuitions' ladder of base models. sarashina2.2 3B from its safetensors (no Q8_0 of the base
+  // T598: the rest of SB Intuitions' ladder of base models. sarashina2.2 3B from its safetensors (no Q8_0 of the base
   // one), sarashina2.1 1B (the Sarashina Model NonCommercial License) and sarashina2 7B (heads all with their own keys
   // and values; its original holds PyTorch's shards alone) from Q8_0 GGUFs with the originals' vocabularies
   { group: "hf", id: "hf-sarashina2.1-1b", name: "SB Intuitions sarashina2.1 1B", note: "日本語 / English · fetches 1.5 GB (GGUF) → int8 1.6 GB",
@@ -117,13 +117,13 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-gguf", "d49108e627b7b6b7b6977184a6b81045b60a8582", "line-corp-japanese-large-lm-1.7b-q8_0.gguf",
       "line-corporation/japanese-large-lm-1.7b", "4288da0a536789f0615c730af0c6cbd9e475a7db", "spiece.model"), download: 1888727168,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T.517: LINE's instruction-sft of the same 1.7B (mmnga's Q8_0 GGUF, as the base model's), in the card's format and
+  // T517: LINE's instruction-sft of the same 1.7B (mmnga's Q8_0 GGUF, as the base model's), in the card's format and
   // with the card's sampling (0.7, 0.9, a repetition penalty of 1.1)
   { group: "hf", id: "hf-japanese-large-lm-1.7b-instruction-sft", name: "LINE japanese-large-lm 1.7B instruction-sft", note: "answers instructions · 日本語 · fetches 1.9 GB (GGUF) → int8 1.9 GB",
     ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-instruction-sft-gguf", "40b58a8229aee24065e22ba290994ee8066dcbe6", "line-corp-japanese-large-lm-1.7b-instruction-sft-q8_0.gguf",
       "line-corporation/japanese-large-lm-1.7b-instruction-sft", "6817da05bfe027aa82149fb32e1fc5bc2aa97398", "spiece.model"), download: 1888727232,
     conversion: {}, options: { bos: 2 }, generation: sampled(1.1), template: LINE_SFT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.249: EuroLLM, of 35 languages with Japanese among them. Its tokenizer.json is a BPE of sentencepiece's kind, so
+  // T249: EuroLLM, of 35 languages with Japanese among them. Its tokenizer.json is a BPE of sentencepiece's kind, so
   // the tokenizer.model; the special tokens of its format are the converter's (it reads the template too)
   { group: "hf", id: "hf-eurollm-1.7b-instruct", name: "EuroLLM 1.7B Instruct", note: "answers instructions · 日本語 / English and 33 more languages · fetches 1.8 GB (GGUF) → int8 1.9 GB",
     ...ggufOf("mradermacher/EuroLLM-1.7B-Instruct-GGUF", "2951f08f66429c934c8b01a94347161362430808", "EuroLLM-1.7B-Instruct.Q8_0.gguf",
@@ -137,15 +137,15 @@ export const HF_JAPANESE: Entry[] = [
     original: "SakanaAI/TinySwallow-1.5B-Instruct",
     hf: { repo: "SakanaAI/TinySwallow-1.5B-Instruct-GGUF", revision: "38c003aaf8be9d17af11dece1fbabeb873c567fa", weights: "tinyswallow-1.5b-instruct-q8_0.gguf" }, download: 1646573920,
     conversion: {}, options: QWEN3_OWN_BOS, template: TINYSWALLOW, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.600: the base model of RakutenAI 2.0 mini, from its safetensors (no GGUF of it). Its tokenizer carries the chat
+  // T600: the base model of RakutenAI 2.0 mini, from its safetensors (no GGUF of it). Its tokenizer carries the chat
   // template of the instruct one, which the converter would read: the plain text instead, with the BOS and stops the
-  // converter takes (the pair, as T.369 wants)
+  // converter takes (the pair, as T369 wants)
   { group: "hf", id: "hf-rakutenai-2.0-mini", name: "RakutenAI 2.0 mini", note: "日本語 / English · fetches 3.1 GB → int8 1.7 GB",
     original: "Rakuten/RakutenAI-2.0-mini",
     hf: hf("Rakuten/RakutenAI-2.0-mini", "3740b0473010eb05d59143858408358bead777ba", "tokenizer.model"), download: 3069389424,
     conversion: {}, options: { bos: 1, stop_tokens: [1, 2] }, generation: sampled(1.1), template: "{prompt}",
     prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T.125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
+  // T125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
   // context of 4096 the page gives it
   { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB",
     original: "Rakuten/RakutenAI-2.0-mini-instruct",
@@ -158,8 +158,8 @@ export const HF_JAPANESE: Entry[] = [
     hf: { repo: "mmnga/llm-jp-3.1-1.8b-instruct4-gguf", revision: "14ddbab20c68d8befdced79bd9daa3d7a1a29376", weights: "llm-jp-3.1-1.8b-instruct4-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-3.1-1.8b-instruct4", revision: "f19510db409090bb1737f24f868d17c4bdc86c8e", tokenizer: "tokenizer.json" } }, download: 1987023136,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.132: the large ones, in shards (T.105). Past 4 GiB with their forward pass they need a 64-bit memory (T.101),
-  // where the browser has one int8 (T.133), else six bits (T.98); the 7 to 8B ones do not fit a 32-bit memory even so
+  // T132: the large ones, in shards (T105). Past 4 GiB with their forward pass they need a 64-bit memory (T101),
+  // where the browser has one int8 (T133), else six bits (T98); the 7 to 8B ones do not fit a 32-bit memory even so
   { group: "hf", id: "hf-qwen2.5-3b-instruct", name: "Alibaba Qwen2.5 3B Instruct", note: "answers instructions · 日本語 / English · fetches 3.3 GB (GGUF) → int8 3.5 GB",
     original: "Qwen/Qwen2.5-3B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-3B-Instruct-GGUF", revision: "f302c64a2269a69fb27b2f9473b362f5bb8e78d8", weights: "Qwen2.5-3B-Instruct-Q8_0.gguf" }, download: 3285476512,
@@ -171,7 +171,7 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "sbintuitions/sarashina2.2-3b-instruct-v0.1", revision: "4f3626fb1b64b3e97c908e67f27b2d627ba2a999", tokenizer: "tokenizer.model" } }, download: 3568393312,
     conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.249: the middle ones. Shisa V2.1's Llama 3.2 3B reads its chat template itself, as Llama 3.2 does (today's date
+  // T249: the middle ones. Shisa V2.1's Llama 3.2 3B reads its chat template itself, as Llama 3.2 does (today's date
   // in the system turn); its card gives the model this name (the Llama license asks for it). CAT-Translate 3.3B is
   // the 0.8B's and 1.4B's larger sibling, from sarashina2.2 3B: no Q8_0 GGUF of it was found (only of its beta), so
   // the safetensors, in two shards
@@ -179,7 +179,7 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/shisa-v2.1-llama3.2-3b-GGUF", "b8cb9e4b9c90657829c0547f091e591a3d24849c", "shisa-v2.1-llama3.2-3b.Q8_0.gguf",
       "shisa-ai/shisa-v2.1-llama3.2-3b", "5f4f59bbe65834daf86a38efd06ff96f7c94c8c3"), download: 3421900096,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.607.6: AXCXEPT's EZO Llama 3.2 3B Instruct dpoE, Llama 3.2 3B Instruct tuned further on Japanese and English. It
+  // T607.6: AXCXEPT's EZO Llama 3.2 3B Instruct dpoE, Llama 3.2 3B Instruct tuned further on Japanese and English. It
   // reads its chat template itself, as Llama 3.2 does (the same template); the sampling of its generation_config.json
   // (0.6, top-p 0.9). mradermacher's Q8_0 with the original's vocabulary
   { group: "hf", id: "hf-ezo-llama-3.2-3b-instruct-dpoe", name: "AXCXEPT EZO Llama 3.2 3B Instruct dpoE", note: "answers instructions · 日本語 / English · fetches 3.4 GB (GGUF) → int8 3.6 GB",
@@ -191,7 +191,7 @@ export const HF_JAPANESE: Entry[] = [
     hf: hf("cyberagent/CAT-Translate-3.3b", "47e382331d005acd54a42cdf088a76aa88788e0c", "tokenizer.model"), download: 6711252920,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
-  // T.599: the top of CAT-Translate's ladder, a Mistral of CyberAgent's own with a template of its own (ChatML with a
+  // T599: the top of CAT-Translate's ladder, a Mistral of CyberAgent's own with a template of its own (ChatML with a
   // system turn, after <s>), which the converter reads, BOS and all; mradermacher's Q8_0 GGUF
   { group: "hf", id: "hf-cat-translate-7b", name: "CyberAgent CAT-Translate 7B", note: "translates 日本語 ⇄ English · fetches 8.0 GB (GGUF) → int8 8.4 GB",
     ...ggufOf("mradermacher/CAT-Translate-7b-GGUF", "cd7d970bc61657ad36b7f7f392c1bd9527dfe4ad", "CAT-Translate-7b.Q8_0.gguf",
@@ -202,7 +202,7 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mmnga/llm-jp-3-3.7b-instruct3-gguf", "7edef5a4f094ec8c1aed1e196c6a544675efbc2f", "llm-jp-3-3.7b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-3.7b-instruct3", "f5d5466a3316e0c898b4347ece6557a756921220"), download: 4022249856,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.607.7: AXCXEPT's two EZO of llm-jp-3 3.7B instruct, tuned further on instructions made from Japanese Wikipedia and
+  // T607.7: AXCXEPT's two EZO of llm-jp-3 3.7B instruct, tuned further on instructions made from Japanese Wikipedia and
   // FineWeb (Common for general use, Humanities for the humanities). The chat template of llm-jp-3's instruct (the same
   // text), so its format and stops; the sampling of their cards' code (0.7, top-p 0.95, a penalty of 1.05). ineair's Q8_0
   // with the original's vocabulary
@@ -216,15 +216,15 @@ export const HF_JAPANESE: Entry[] = [
       "AXCXEPT/llm-jp-3-3.7b-instruct-EZO-Humanities", "ade3da043ec830f0d4d54cfc0e9a91335dfe3f55"), download: 4022249984,
     conversion: {}, options: llmJp, generation: { steps: 0, temperature: 0.7, topp: 0.95, repetition_penalty: 1.05 }, template: LLM_JP_INSTRUCT,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.595: the next step of llm-jp-3's instruct3 ladder, with every head its own keys and values (MHA)
+  // T595: the next step of llm-jp-3's instruct3 ladder, with every head its own keys and values (MHA)
   { group: "hf", id: "hf-llm-jp-3-7.2b-instruct3", name: "llm-jp-3 7.2B instruct3", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.2 GB",
     ...ggufOf("mmnga/llm-jp-3-7.2b-instruct3-gguf", "368515ca8b89be62ee58cbdfbc225c762564c0c2", "llm-jp-3-7.2b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-7.2b-instruct3", "cdd4c7f3296fdc7785423a864bd9a86ce4c15915"), download: 7750991872,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
+  // T517: LINE's 3.6B, a GPT-NeoX (the whole head turns, no parallel residual, the classifier shared with the
   // embedding), and its instruction-sft. The safetensors: mmnga's Q8_0 GGUFs of both (2023-09) hold the very values,
   // but q, k and v of a head in turns as Hugging Face has them (gguf_check.py tensors, run 38731171773), stockmark's
-  // case of T.249. Their BOS is <s> (1), not the 1.7B's </s>: on the page's engine the first 1500 tokens of three Japanese
+  // case of T249. Their BOS is <s> (1), not the 1.7B's </s>: on the page's engine the first 1500 tokens of three Japanese
   // articles cost 3.0 to 3.2% more after <s> than after nothing, and 8.2 to 8.6% more after </s> (start_check.ts,
   // run 38736521555; nothing in front is no choice of the page's)
   { group: "hf", id: "hf-japanese-large-lm-3.6b", name: "LINE japanese-large-lm 3.6B", note: "日本語 · fetches 7.2 GB → int8 4.0 GB",
@@ -238,28 +238,28 @@ export const HF_JAPANESE: Entry[] = [
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.593: ELYZA's Qwen2.5 7B Instruct taught to answer without its steps of reasoning: the same template as the
+  // T593: ELYZA's Qwen2.5 7B Instruct taught to answer without its steps of reasoning: the same template as the
   // Qwen2.5's (its system message and all), so the same BOS and format. The sampling of its card's example (0.6, 0.95)
   { group: "hf", id: "hf-elyza-shortcut-1.0-qwen-7b", name: "ELYZA-Shortcut-1.0 Qwen 7B", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB",
     ...ggufOf("mmnga/ELYZA-Shortcut-1.0-Qwen-7B-gguf", "fc1fb43597cab7c9edbe71e41c109fadb83d3815", "ELYZA-Shortcut-1.0-Qwen-7B-Q8_0.gguf",
       "elyza/ELYZA-Shortcut-1.0-Qwen-7B", "d33448648d9b1b7d69cbadb3f1a8d6fb4c8a01ee"), download: 8098525440,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.599: CyberAgent's calm2-7b-chat (Llama, every head with its own keys and values): TheBloke's Q8_0 GGUF of 2023
+  // T599: CyberAgent's calm2-7b-chat (Llama, every head with its own keys and values): TheBloke's Q8_0 GGUF of 2023
   // with the original's vocabulary (NFC and one digit a piece), its card's turns (CALM2) and temperature 0.8
   { group: "hf", id: "hf-calm2-7b-chat", name: "CyberAgent calm2 7B chat", note: "answers instructions · 日本語 / English · fetches 7.5 GB (GGUF) → int8 7.9 GB",
     ...ggufOf("TheBloke/calm2-7B-chat-GGUF", "381297d42dd175be349ad277fd3437aebc1d07c9", "calm2-7b-chat.Q8_0.gguf",
       "cyberagent/calm2-7b-chat", "3e110c7624ff7a940badebfd5f9a91569f98cc56"), download: 7450895200,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.8, topp: 1.0, repetition_penalty: 1.0 }, template: CALM2,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
+  // T125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
   { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
     original: "Rakuten/RakutenAI-7B-chat",
     hf: { repo: "mradermacher/RakutenAI-7B-chat-GGUF", revision: "d118d842e84cd542a48c6a89464d95b98d37e4e7", weights: "RakutenAI-7B-chat.Q8_0.gguf",
           vocabulary: { repo: "Rakuten/RakutenAI-7B-chat", revision: "7093167c61a0be6161cb68928c939c03fe0ab87d", tokenizer: "tokenizer.model" } }, download: 7835496736,
     conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.601: rinna's Llama 3 Youko 8B (Llama 3 8B trained on Japanese, Meta's tokenizer): the instruct one reads its own
+  // T601: rinna's Llama 3 Youko 8B (Llama 3 8B trained on Japanese, Meta's tokenizer): the instruct one reads its own
   // template (the BOS, then Llama 3's turns with no system turn) and samples as its card (0.6, 0.9, a penalty of 1.1);
   // and the base one. mradermacher's Q8_0 GGUFs with the originals' vocabularies
   { group: "hf", id: "hf-llama-3-youko-8b-instruct", name: "rinna Llama 3 Youko 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB",
@@ -271,14 +271,14 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/llama-3-youko-8b-GGUF", "22d2d9dc444414874ab405308c0d99a5f631dcc3", "llama-3-youko-8b.Q8_0.gguf",
       "rinna/llama-3-youko-8b", "6af890bc6294b8f311e25a1462fcd38554d95b8e"), download: 8540770592,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T.601: rinna's youri 7B chat (Llama 2 7B trained on Japanese, Llama 2's vocabulary: Japanese takes more tokens a
+  // T601: rinna's youri 7B chat (Llama 2 7B trained on Japanese, Llama 2's vocabulary: Japanese takes more tokens a
   // letter). No chat template: its card's turns, which are LINE's (LINE_SFT), with its temperature of 0.5
   { group: "hf", id: "hf-youri-7b-chat", name: "rinna youri 7B chat", note: "answers instructions · 日本語 / English · fetches 7.2 GB (GGUF) → int8 7.6 GB",
     ...ggufOf("mradermacher/youri-7b-chat-GGUF", "689eb667771650908f76850f08919148380d109d", "youri-7b-chat.Q8_0.gguf",
       "rinna/youri-7b-chat", "12c3e0e288efbdb525aa98abcab0c92d8445fcbc", "tokenizer.model"), download: 7161090816,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 }, template: LINE_SFT,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.605: ELYZA's Llama 2 7B (2023), trained further on Japanese and taught to answer, and the fast one, whose
+  // T605: ELYZA's Llama 2 7B (2023), trained further on Japanese and taught to answer, and the fast one, whose
   // vocabulary has 13,043 more pieces for Japanese. No chat template: their card's turn (ELYZA_LLAMA2). mmnga's GGUFs,
   // the vocabulary of the originals (tokenizer.model; the fast one has tokenizer.json alone). The card's code is greedy;
   // the fast one's generation_config.json samples at 0.6 and a top-p of 0.9
@@ -294,7 +294,7 @@ export const HF_JAPANESE: Entry[] = [
       "elyza/ELYZA-japanese-Llama-2-7b-fast-instruct", "89de33d1ad568855853196802aeaecd799c6586f"), download: 7274877600,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.6, topp: 0.9, repetition_penalty: 1.0 }, template: ELYZA_LLAMA2,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.603: Lightblue's DeepSeek-R1 distills taught to think in the language they are asked in (the converter reads
+  // T603: Lightblue's DeepSeek-R1 distills taught to think in the language they are asked in (the converter reads
   // their template and BOS, <｜begin▁of▁sentence｜>, as for DeepSeek's own; their specials are written: LIGHTBLUE_R1;
   // their cards' temperature of 0.5 and repetition penalty of 1.1; mradermacher's GGUFs: mmnga's of the 7B says MIT
   // where the original says Apache-2.0), and ABEJA's Qwen2.5 7B trained on Japanese (Qwen2.5's template, its
@@ -305,8 +305,8 @@ export const HF_JAPANESE: Entry[] = [
       "lightblue/DeepSeek-R1-Distill-Qwen-7B-Japanese", "f5f497038d5da4221631058ff1e9b9563fe539d2"), download: 8098525856,
     conversion: {}, options: LIGHTBLUE_R1, generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.1 },
     prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
-  // T.610.3: CyberAgent's DeepSeek-R1 Distill Qwen 14B trained on Japanese (its int8 passes the 16 GiB a page gets:
-  // T.610). mmnga's Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to
+  // T610.3: CyberAgent's DeepSeek-R1 Distill Qwen 14B trained on Japanese (its int8 passes the 16 GiB a page gets:
+  // T610). mmnga's Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to
   // the original within 1e-3. The converter reads the BOS and the template itself (as DeepSeek's own distills, in
   // hf-classics.ts); the sampling of its generation_config.json
   { group: "hf", id: "hf-deepseek-r1-qwen-14b-japanese", name: "CyberAgent DeepSeek-R1 Distill Qwen 14B Japanese",
@@ -316,7 +316,7 @@ export const HF_JAPANESE: Entry[] = [
       "cyberagent/DeepSeek-R1-Distill-Qwen-14B-Japanese", "cc1ebcc1e37521c3f4f69145ce922ca8f01e4cd0"), download: 8988110464,
     conversion: { dtype: "int8", blocks: true }, loaded: 10801599532, rebuilt: true, options: {}, generation: thinking,
     prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
-  // T.610.4: ABEJA's Qwen3 14B trained further for agents (a context of 256k by its config's yarn, kept as it says), the
+  // T610.4: ABEJA's Qwen3 14B trained further for agents (a context of 256k by its config's yarn, kept as it says), the
   // two forms of Qwen3 14B's (its template is Qwen3's, enable_thinking and all) with its options and formats; its card
   // says ja alone. mmnga-o's Q4_K_M with llama.cpp's blocks kept as they are; rebuilt as Qwen3 14B's
   ...thinkingAndNot("hf-abeja-qwen3-14b-agentic", "ABEJA Qwen3 14B Agentic 256k v0.1",
@@ -326,8 +326,8 @@ export const HF_JAPANESE: Entry[] = [
     "4-bit weights · fetches 9.0 GB (GGUF), kept mostly as it is: 10.9 GB",
     { languages: "日本語", options: QWEN3_FROM_IM_START, conversion: { dtype: "int8", blocks: true }, loaded: 10869609516, rebuilt: true },
     { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
-  // T.610.5: llm-jp-3.1's 13B instruct4, the next step of the 1.8B's ladder (every head its own keys and values, MHA: its
-  // int8 passes the 16 GiB a page gets, T.610), with the 1.8B's options, format and sampling. mmnga's Q4_K_M with
+  // T610.5: llm-jp-3.1's 13B instruct4, the next step of the 1.8B's ladder (every head its own keys and values, MHA: its
+  // int8 passes the 16 GiB a page gets, T610), with the 1.8B's options, format and sampling. mmnga's Q4_K_M with
   // llama.cpp's blocks kept as they are (half of v and w2 widened to int8: 10.2 GB, where the IQ4_XS keeps every matrix
   // in 7.6 GB but wrote at about half the speed); rebuilt: four bits are not held to the original within 1e-3
   { group: "hf", id: "hf-llm-jp-3.1-13b-instruct4", name: "llm-jp-3.1 13B instruct4",
@@ -347,7 +347,7 @@ export const HF_JAPANESE: Entry[] = [
       "abeja/ABEJA-Qwen2.5-7b-Japanese-v0.1", "b0027a80acb4052482d4b55499100f568e937644"), download: 8098525568,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.7, topp: 0.8, top_k: 20, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.604: 2026's community 8Bs. DataPilot's ArrowCanaria (Llama 3.1 Swallow 8B v0.5 taught to chat, then GRPO: its
+  // T604: 2026's community 8Bs. DataPilot's ArrowCanaria (Llama 3.1 Swallow 8B v0.5 taught to chat, then GRPO: its
   // template, its card's sampling) and SousiOmine's Lumi v2 (llm-jp-4 8B base taught ChatML with thinking: its template,
   // whose default system turn it writes when there is none, and the maker's GGUF)
   { group: "hf", id: "hf-arrowcanaria-llama-8b-rl", name: "DataPilot ArrowCanaria Llama 8B RL v0.1",
@@ -362,7 +362,7 @@ export const HF_JAPANESE: Entry[] = [
       "SousiOmine/Lumi-v2-llm-jp-4-8b", "0af15b25d14de36972c39501e883da7f07efbe61"), download: 9132701152,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "17 × 24 はいくつですか？考えてから答えてください。", placeholder: ASK_JAPANESE },
-  // T.602: Sakana AI's other models. TinySwallow 1.5B's base one (its tokenizer has Qwen2.5's chat template: the plain
+  // T602: Sakana AI's other models. TinySwallow 1.5B's base one (its tokenizer has Qwen2.5's chat template: the plain
   // text, with the BOS and stops beside it), Karamaru (Llama-3-ELYZA-JP 8B taught to answer in the Japanese of the Edo
   // period: its template's system turn, and its card's sampling) and EvoLLM-JP 7B's two (merges of Mistral 7B's, the
   // card's format by hand: EVOLLM; mradermacher's GGUFs, whose cards name the originals' licenses: mmnga's say unknown).
@@ -384,7 +384,7 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/EvoLLM-JP-v1-7B-GGUF", "a498d0ca5ec60a8ca0e48cfd177df004884b9351", "EvoLLM-JP-v1-7B.Q8_0.gguf",
       "SakanaAI/EvoLLM-JP-v1-7B", "a7acd2604d3e9f0fca2987d2448ff5dc19778c21", "tokenizer.model"), download: 7695858048,
     conversion: {}, options: {}, generation: sampled(1.1), template: EVOLLM, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.607.1: DataPilot's ArrowPro-7B-KUJIRA, from NTQAI's chatntq-ja-7b-v1.0 (Mistral 7B), made for chat and to hold
+  // T607.1: DataPilot's ArrowPro-7B-KUJIRA, from NTQAI's chatntq-ja-7b-v1.0 (Mistral 7B), made for chat and to hold
   // against prompt injection. No chat template: its card's turn (ARROWPRO) and its sampling (1.0, top-p 0.95). mmnga's
   // Q8_0 with the original's vocabulary
   { group: "hf", id: "hf-arrowpro-7b-kujira", name: "DataPilot ArrowPro 7B KUJIRA", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
@@ -392,7 +392,7 @@ export const HF_JAPANESE: Entry[] = [
       "DataPilot/ArrowPro-7B-KUJIRA", "755e478ac9404cdd551126e20ea055dfa42ddd1d"), download: 7695857376,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: ARROWPRO,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.607.2: LocalNovelLLM-project's Vecteus v1, a Mistral 7B made to write novels (merges and LoRA on Japanese and
+  // T607.2: LocalNovelLLM-project's Vecteus v1, a Mistral 7B made to write novels (merges and LoRA on Japanese and
   // English, NSFW too by its card). Its tokenizer's template (USER: … ASSISTANT:) by the converter, with the BOS; the
   // card samples as transformers' default (1.0, no top-p). mmnga's Q8_0 with the original's vocabulary
   { group: "hf", id: "hf-vecteus-v1", name: "LocalNovelLLM-project Vecteus v1", note: "writes stories · 日本語 / English · fetches 7.7 GB (GGUF) → int8 8.2 GB",
@@ -400,7 +400,7 @@ export const HF_JAPANESE: Entry[] = [
       "Local-Novel-LLM-project/Vecteus-v1", "d3375ec5f7e149916e44cb0d47c8bda30b986f50", "tokenizer.model"), download: 7695857344,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 1.0, repetition_penalty: 1.0 },
     prompt: "猫が主人公の短い物語を書いてください。", placeholder: ASK_JAPANESE },
-  // T.607.3: nitky's Oumuamua 7B instruct v2, a merge of Mistral 7B models over Swallow-MS's Japanese vocabulary (42,800).
+  // T607.3: nitky's Oumuamua 7B instruct v2, a merge of Mistral 7B models over Swallow-MS's Japanese vocabulary (42,800).
   // No chat template: its card's turn (OUMUAMUA) and its sampling (temperature 0.1). mradermacher's Q8_0 with the
   // original's vocabulary
   { group: "hf", id: "hf-oumuamua-7b-instruct-v2", name: "nitky Oumuamua 7B instruct v2", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
@@ -408,7 +408,7 @@ export const HF_JAPANESE: Entry[] = [
       "nitky/Oumuamua-7b-instruct-v2", "315cee7d10fd84a130ab0973942ff76bb1582c49"), download: 7790108960,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 0.1, topp: 1.0, repetition_penalty: 1.0 }, template: OUMUAMUA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.607.4: umiyuki's Umievo-itr012-Gleipnir-7B, an evolutionary merge of four Japanese Mistral 7B models (Vecteus v1
+  // T607.4: umiyuki's Umievo-itr012-Gleipnir-7B, an evolutionary merge of four Japanese Mistral 7B models (Vecteus v1
   // among them). No chat template: its card's turn (GLEIPNIR) and its sampling (1.0, top-p 0.95). mmnga's Q8_0 with the
   // original's vocabulary
   { group: "hf", id: "hf-umievo-gleipnir-7b", name: "umiyuki Umievo itr012 Gleipnir 7B", note: "answers instructions · 日本語 · fetches 7.7 GB (GGUF) → int8 8.2 GB",
@@ -416,7 +416,7 @@ export const HF_JAPANESE: Entry[] = [
       "umiyuki/Umievo-itr012-Gleipnir-7B", "5187cc9e441f3d876eda345f52f53eda949c5aee"), download: 7695857408,
     conversion: {}, options: {}, generation: { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 }, template: GLEIPNIR,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
+  // T600: RakutenAI 7B's instruct (the chat's format untrimmed, as its card gives it by hand: no template) and base ones,
   // mradermacher's Q8_0 GGUFs as the chat's
   { group: "hf", id: "hf-rakutenai-7b-instruct", name: "RakutenAI 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB",
     ...ggufOf("mradermacher/RakutenAI-7B-instruct-GGUF", "3cc5940c04443a36791f79ffd8814cfb90d2ff97", "RakutenAI-7B-instruct.Q8_0.gguf",
@@ -427,7 +427,7 @@ export const HF_JAPANESE: Entry[] = [
     ...ggufOf("mradermacher/RakutenAI-7B-GGUF", "1923f28f1f2fc603cd661999c93090a090296a0b", "RakutenAI-7B.Q8_0.gguf",
       "Rakuten/RakutenAI-7B", "eb61524c1ab1a7c656457bd68be4a423371cbacb", "tokenizer.model"), download: 7835495872,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  // T.600: Stability AI's Japanese StableLM Gamma 7B (a Mistral 7B trained on Japanese), its instruct one in its card's
+  // T600: Stability AI's Japanese StableLM Gamma 7B (a Mistral 7B trained on Japanese), its instruct one in its card's
   // format (STABLELM_GAMMA) and sampling, and its base one; Q8_0 GGUFs with the originals' vocabularies (the instruct one's
   // of 2024-11: TheBloke's of 2023-10 holds the weights before Stability AI's update of 2024-01-24)
   { group: "hf", id: "hf-japanese-stablelm-instruct-gamma-7b", name: "Stability AI Japanese StableLM Instruct Gamma 7B",
@@ -447,8 +447,8 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "tokyotech-llm/Swallow-MS-7b-instruct-v0.1", revision: "008d006f9065e37e39e31bf117ae8689390953e8", tokenizer: "tokenizer.model" } }, download: 7790109536,
     conversion: {}, options: {}, generation: sampled(1.1), template: SWALLOW_MS,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // Swallow's own chat_template is read (T.73): a Japanese system message, and a second BOS before the user's turn,
-  // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T.132)
+  // Swallow's own chat_template is read (T73): a Japanese system message, and a second BOS before the user's turn,
+  // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T132)
   { group: "hf", id: "hf-llama-3.1-swallow-8b-instruct", name: "Science Tokyo Llama 3.1 Swallow 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB",
     original: "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5",
     hf: { repo: "mmnga/Llama-3.1-Swallow-8B-Instruct-v0.5-gguf", revision: "dc00f584312c641eb7af415f7f44bcc4487350cb", weights: "Llama-3.1-Swallow-8B-Instruct-v0.5-Q8_0.gguf",
@@ -460,7 +460,7 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-instruct", revision: "098f2b2cf33021eba19a6d3582aa3d071ccc0aff", tokenizer: "tokenizer.json" } }, download: 9132708384,
     conversion: {}, options: harmonyFromStart, generation: sampled(1.1), template: HARMONY_AFTER_START,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.592.2: llm-jp-4 8B thinking, the instruct's sibling that thinks in harmony's analysis channel (T.592.1), with the
+  // T592.2: llm-jp-4 8B thinking, the instruct's sibling that thinks in harmony's analysis channel (T592.1), with the
   // reasoning effort its template says by default (medium) and the sampling of the entries that think (its card names
   // none)
   { group: "hf", id: "hf-llm-jp-4-8b-thinking", name: "llm-jp-4 8B thinking", note: "thinks before it answers · 日本語 / English · fetches 9.1 GB (GGUF) → int8 9.7 GB",
@@ -469,7 +469,7 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-thinking", revision: "fc7c15c262710016c19bcda4372a96ff68875846", tokenizer: "tokenizer.json" } }, download: 9132708672,
     conversion: {}, options: harmonyThinkingFromStart, generation: thinking, template: HARMONY_THINKING_AFTER_START,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.304: llm-jp-4.1 8B thinking, of the same form, format and sampling as 4's. Its makers give a Q4_K_M and a BF16 alone
+  // T304: llm-jp-4.1 8B thinking, of the same form, format and sampling as 4's. Its makers give a Q4_K_M and a BF16 alone
   // (no Q8_0 yet: the owner's choice of 2026-10-31 is to take the Q4_K_M now with llama.cpp's blocks kept as they are, and the Q8_0
   // when there is one); rebuilt: four bits are not held to the original within 1e-3
   { group: "hf", id: "hf-llm-jp-4.1-8b-thinking", name: "llm-jp-4.1 8B thinking",
@@ -479,7 +479,7 @@ export const HF_JAPANESE: Entry[] = [
           vocabulary: { repo: "llm-jp/llm-jp-4.1-8b-thinking", revision: "7c19bc90e49b717381e4f474ee95964c05217a28", tokenizer: "tokenizer.json" } }, download: 5499918304,
     conversion: { dtype: "int8", blocks: true }, loaded: 6418383916, rebuilt: true, options: harmonyThinking, generation: thinking,
     template: HARMONY_THINKING, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
+  // T250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
   // answers at once unless told to think (the other way round from Qwen3's); CAT-Thinking, from Qwen3 Swallow, which
   // thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS. CAT-Thinking's options are
   // QWEN3_OWN_BOS and its format the converter's reading of the template. Shisa's sampling is its generation_config.json's;
@@ -493,7 +493,7 @@ export const HF_JAPANESE: Entry[] = [
   // (tests/gguf_check.py tensors: not the pinned original's weights). The original was uploaded in float32 on 2026-05-28
   // and "converted to bf16 from float32" on 2026-05-29 (the pinned revision holds the bf16): mradermacher's GGUF is of
   // 2026-05-28, mmnga-o's of 2026-06-02, which is llama.cpp's Q8_0 of the pinned weights (0 off the nearest reference)
-  // T.594: Tanuki-8B, made from scratch by the volunteers of the University of Tokyo's Matsuo Lab (GENIAC), its SFT and
+  // T594: Tanuki-8B, made from scratch by the volunteers of the University of Tokyo's Matsuo Lab (GENIAC), its SFT and
   // DPO. A Llama with llm-jp-3's form of Unigram tokenizer.json; the template (Alpaca in Japanese, with its default system
   // sentence) is read by the converter, jinja2 and the converter's own reader alike (full-width spaces inside its {{ }}).
   // The GGUF is the makers' team's Q8_0 (the card says its GGUFs may be worse: gguf_check.py tensors against the original)
@@ -512,7 +512,7 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START,
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T.607.5: AXCXEPT's Qwen3-EZO-8B-beta, Qwen3 8B trained further for multi-turn chat (its card: MT-Bench 9.08, JMT-Bench
+  // T607.5: AXCXEPT's Qwen3-EZO-8B-beta, Qwen3 8B trained further for multi-turn chat (its card: MT-Bench 9.08, JMT-Bench
   // 8.87). Its chat template is an older copy of Qwen3's (the same one turn), its generation_config.json Qwen3's thinking
   // sampling: twice as Qwen3 8B is, with the 8B's BOS (<|im_start|>) and formats. mradermacher's Q8_0 with the
   // original's vocabulary
@@ -521,7 +521,7 @@ export const HF_JAPANESE: Entry[] = [
       "AXCXEPT/Qwen3-EZO-8B-beta", "c7458182662d2fa15da5e41a17427319e6f265f5"), 8709519008,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB",
     { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
-  // T.607.8: Aratako's Qwen3 8B RP v0.1, Qwen3 8B tuned for role-play in Japanese (its card sets the character in the
+  // T607.8: Aratako's Qwen3 8B RP v0.1, Qwen3 8B tuned for role-play in Japanese (its card sets the character in the
   // system turn, which the page does not send: the visitor sets it in the message). Its chat template is the one of
   // Qwen3 EZO 8B beta (an older copy of Qwen3's); its card's code leaves enable_thinking out and answers at once, with no
   // thought, so one entry with that format (the template's own, after <|im_start|>), the 8B's BOS, and the card's
@@ -532,7 +532,7 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_THINKING_AFTER_START,
     generation: { steps: 0, temperature: 0.5, topp: 1.0, repetition_penalty: 1.0 },
     prompt: "あなたは魔法学校の新入生「桜」です。桜として、初めて会ったクラスメイトに自己紹介してください。", placeholder: ASK_JAPANESE },
-  // T.610.2: Shisa V2.1's 14B, Phi-4 made into a Llama (its int8 passes the 16 GiB a page gets: T.610). mradermacher's
+  // T610.2: Shisa V2.1's 14B, Phi-4 made into a Llama (its int8 passes the 16 GiB a page gets: T610). mradermacher's
   // Q4_K_M with llama.cpp's blocks kept as they are (as Qwen3 14B's); rebuilt: four bits are not held to the original
   // within 1e-3. Its format by hand, as the converter reads it but with the prompt trimmed (UNPHI4)
   { group: "hf", id: "hf-shisa-v2.1-unphi4-14b", name: "Shisa V2.1 unphi4 14B", note: "answers instructions · 日本語 / English · 4-bit weights · fetches 8.9 GB (GGUF), kept mostly as it is: 10.7 GB",

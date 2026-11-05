@@ -29,17 +29,17 @@ import numpy as np
 
 from engine.sampler import Sampling
 
-# T.520: the marks of a thought, in the formats of the list that think (Qwen3, Qwen3.5, DeepSeek-R1's distills, Granite
+# T520: the marks of a thought, in the formats of the list that think (Qwen3, Qwen3.5, DeepSeek-R1's distills, Granite
 # 4.2, SmolLM3, MiniCPM5, Spark-X...): a token each in their vocabularies.
 THOUGHT_OPENS, THOUGHT_CLOSES = "<think>", "</think>"
-# T.592.1: the marks of every kind of thought, the opening and the closing one. Harmony's (llm-jp-4's thinking forms)
+# T592.1: the marks of every kind of thought, the opening and the closing one. Harmony's (llm-jp-4's thinking forms)
 # is its analysis channel, which its format opens (three tokens: no model of the list opens it itself) and its <|end|>
 # closes; the answer is the final channel's message after it. The page folds the same (src/page/thought.ts' MARKS)
 THOUGHT_MARKS = ((THOUGHT_OPENS, THOUGHT_CLOSES), ("<|channel|>analysis<|message|>", "<|end|>"))
 
 
 def mark_of(model, mark):
-    """T.520: the token of a mark of a thought, where the model's vocabulary has it as one piece (None where it does
+    """T520: the token of a mark of a thought, where the model's vocabulary has it as one piece (None where it does
     not: a model that does not think, whose text may spell the mark out). Not only where it is among the specials: a
     DeepSeek-R1 distill's entry names other specials, and the model writes the token all the same."""
     try:
@@ -50,7 +50,7 @@ def mark_of(model, mark):
 
 
 def thought_marks(model, prompt):
-    """T.592.1: the tokens of the marks of the thought a run follows (opens: None where the model cannot write it as one
+    """T592.1: the tokens of the marks of the thought a run follows (opens: None where the model cannot write it as one
     token; closes: None where there is no thought to follow) and whether the prompt opened it: the first kind of
     THOUGHT_MARKS that the prompt ends in the opening mark of (and the model has the closing one of), else the first
     the model may open and close itself."""
@@ -69,7 +69,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     names (temperature, topp, repetition_penalty, top_k, min_p, presence_penalty), which says what each is and
     refuses what it cannot be. None of them is read here: the samplers have them.
 
-    thinking (T.520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought in its
+    thinking (T520): the budget of a thought, in tokens (0: none). A model that has the marks of a thought in its
     vocabulary (mark_of()) is followed in and out of it (the format may open it: a prompt that ends in <think>, or in
     harmony's analysis channel: thought_marks()); once a thought has this many tokens and is still open, the closing
     mark is written in place of the next draws, as llama.cpp's reasoning budget does, and the model goes on to its answer. The stats say how long the thought was (thought: None
@@ -89,7 +89,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
         raise ValueError(f"The prompt is {len(prompt_tokens)} tokens long, but only {steps - 1} fit.")
     if not (isinstance(thinking, int) and not isinstance(thinking, bool) and thinking >= 0):
         raise ValueError(f"thinking is a number of tokens, 0 or more (not {thinking!r}).")
-    # T.520: the thought, followed where the model has its closing mark: the token of each mark, whether a thought is
+    # T520: the thought, followed where the model has its closing mark: the token of each mark, whether a thought is
     # open (the format may have opened it), its tokens so far (None: no thought yet), and whether the budget closed it
     opens, closes, inside = thought_marks(model, prompt)
     thought = 0 if inside else None
@@ -102,19 +102,19 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
     run = model._run
     token, count, sampled, forced = model.bos, 0, 0, 0
     history = [model.bos]
-    written = []  # what was sampled: the presence penalty counts these, not the prompt's (T.274)
+    written = []  # what was sampled: the presence penalty counts these, not the prompt's (T274)
     start = sampling_start = time.perf_counter()
     first_token = None
     first = 0
     try:
         if model.forward_many is not None and len(prompt_tokens) > 1:
-            # T.108: the tokens of the prompt that make no logits (all but the last) go through the layers
-            # prompt_block() at a time (T.147: as many as the engine takes now); the text comes out as it would
+            # T108: the tokens of the prompt that make no logits (all but the last) go through the layers
+            # prompt_block() at a time (T147: as many as the engine takes now); the text comes out as it would
             # one by one, only a block at once
             fed = [model.bos] + prompt_tokens[:-1]
             at = 0
             while at < len(fed):
-                # asked again every block: where the GPU gives up, the CPU's blocks are short again (T.108)
+                # asked again every block: where the GPU gives up, the CPU's blocks are short again (T108)
                 block = fed[at:at + model.prompt_block()]
                 model.forward_many(block, at)
                 for pos in range(at, at + len(block)):
@@ -129,7 +129,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 at += len(block)
             first = len(fed)
             sampling_start = time.perf_counter()
-        # T.152: a step on the GPU (gpu_steps()'s) samples there with the random numbers drawn here, several at
+        # T152: a step on the GPU (gpu_steps()'s) samples there with the random numbers drawn here, several at
         # once (token_block()), where the GPU's sampler has all these settings; a step on the CPU is the forward
         # pass and the sampler's draw here. Both are made once, by the settings: no step reads one
         draw = model.sampler.drawing(sampling, rng)
@@ -144,7 +144,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 forced += 1
                 sampling_start = time.perf_counter()
             elif thinking and inside and thought >= thinking:
-                # T.520: the thought is as long as the budget: its closing mark in place of a draw
+                # T520: the thought is as long as the budget: its closing mark in place of a draw
                 model.forward(token, pos, need_logits=False)
                 chosen, cut = [closes], True
             else:
@@ -155,7 +155,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                         many = min(many, thinking - thought)  # (no step past the budget: the GPU draws several at once)
                     if many > 0:
                         chosen = on_gpu(token, pos, history, many, stops)
-                # (T.390: no tokens are no answer either: the loop would ask for the same step for ever)
+                # (T390: no tokens are no answer either: the loop would ask for the same step for ever)
                 if not chosen:
                     chosen = [draw(model.forward(token, pos), history, written)]
             ended = False
@@ -204,7 +204,7 @@ def generate(model, prompt="", steps=256, seed=None, echo=True, thinking=0, **se
                 "prompt_seconds": sampling_start - start,
                 "prompt_tokens_per_second": forced / (sampling_start - start) if sampling_start > start else 0.0,
                 "first_token_seconds": first_token - start if first_token is not None else 0.0,
-                # T.520: the tokens of the thought (to its closing mark, or all of it where it never closed; None: no
+                # T520: the tokens of the thought (to its closing mark, or all of it where it never closed; None: no
                 # thought), and whether the budget closed it
                 "thought": thought,
                 "thought_cut": cut,

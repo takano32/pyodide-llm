@@ -1,12 +1,12 @@
-// The sections "Storage" (T.137) and "Line" (T.118).
-// (T.353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
+// The sections "Storage" (T137) and "Line" (T118).
+// (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { MODELS } from "../models.ts";
 import { tableCell, unmeasured } from "../bench.ts";
 import { BASE, $, type Result } from "./dom.ts";
 import { ask, worker, fixed, model } from "./section.ts";
 import type { LineFetched, LinePaced } from "../runtime/contracts/benchmark.ts";
 
-// the storage section of T.137's stage 0 (the download it is compared with: huggingface.co from Japan, T.123, T.136)
+// the storage section of T137's stage 0 (the download it is compared with: huggingface.co from Japan, T123, T136)
 const DOWNLOAD_MBPS = 8.3;
 export async function storage(): Promise<Result> {
   const w = worker("benchmark/storage.js");
@@ -15,7 +15,7 @@ export async function storage(): Promise<Result> {
     if (info.error) return { status: "error", markdown: info.error };
     if (!info.result!.syncHandle) return { status: "none", markdown: "no private file system that a worker can write in place here" };
     const answer = await ask(w, { step: "run", mib: Number(($("size") as HTMLSelectElement).value) });
-    // T.446 (2): a browser whose private file system has the call but refuses it (Windows' Playwright WebKit: "NotSupportedError:
+    // T446 (2): a browser whose private file system has the call but refuses it (Windows' Playwright WebKit: "NotSupportedError:
     // Backend does not support this operation" as the file was opened) lacks the feature as one without the call does:
     // no failure. The model page keeps its conversions in the Cache API there (kept.ts)
     if (answer.error && /^NotSupportedError\b.*\(while opening the file \(createSyncAccessHandle\)\)/.test(answer.error)) {

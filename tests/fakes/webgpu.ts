@@ -1,4 +1,4 @@
-// tests/fakes/webgpu.ts (T.568.1)
+// tests/fakes/webgpu.ts (T568.1)
 // A stand-in for WebGPU as the model's GPU worker (src/runtime/gpu/) sees it: an adapter, and a device that writes
 // down what it is asked (calls: every buffer made, write (with a copy of its bytes), clear, copy, pipeline compiled, dispatch, submission, destroy, the
 // device gone) and keeps the bytes of every buffer. For the checks that run that worker's parts without a GPU:
@@ -8,13 +8,13 @@
 //
 //   It puts navigator.gpu on the global (an adapter that is a fallback where fallback is true, and the WGSL language
 //   features given), whose device every module of the worker then takes. lose(info) loses the device.
-//   T.465.1: answer(pipeline, entries, x, y, z), where given, is called for every dispatch of a command buffer as it is
+//   T465.1: answer(pipeline, entries, x, y, z), where given, is called for every dispatch of a command buffer as it is
 //   submitted, with the bind group's entries ({ binding, resource: a buffer or { buffer, offset, size } }): what a
 //   shader would write, a check of the worker's may write into the buffers' bytes (tests/fakes/gpu-answers.ts).
 //
 // The same as WebGPU: a write's offset and size of a typed array count its elements, and only whole words go (it
 // throws on another); a write past its buffer throws; a copy moves the bytes; a mapped range is a copy of the bytes.
-// The same too (T.465.1's review): what a command buffer does (its copies, clears and the answers of its dispatches) is
+// The same too (T465.1's review): what a command buffer does (its copies, clears and the answers of its dispatches) is
 // done when it is submitted, in the order it was encoded (a command buffer never submitted does nothing; a write of the
 // queue between the encoding and the submission comes first), while calls writes each down as it is encoded.
 // Simpler: no shader runs (a dispatch is written down, and the buffers stay as they were, but for what answer writes),

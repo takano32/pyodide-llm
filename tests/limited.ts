@@ -1,4 +1,4 @@
-// limited.ts (T.384)
+// limited.ts (T384)
 // Runs a Node script with a limit, so that no test of the suite waits forever: one run of the full suite stood still for
 // 88 minutes after a test's last line, with nothing in the log to say where (run 38024999470).
 //   node tests/limited.ts <seconds> <script> [arguments ...]
@@ -13,7 +13,7 @@ import path from "node:path";
 
 const [seconds, ...script] = process.argv.slice(2);
 const reports = fs.mkdtempSync(path.join(fs.existsSync(".tmp") ? ".tmp" : os.tmpdir(), "limited-"));
-// (T.584: Bun takes none of Node's reports: the limit is kept all the same, without the report of where the test stood)
+// (T584: Bun takes none of Node's reports: the limit is kept all the same, without the report of where the test stood)
 const reporting = process.versions.bun ? [] : ["--report-on-signal", "--report-signal=SIGUSR2", `--report-directory=${reports}`];
 const child = spawn(process.execPath, [...reporting, ...process.execArgv, ...script], { stdio: "inherit" });
 let stopped = false;
