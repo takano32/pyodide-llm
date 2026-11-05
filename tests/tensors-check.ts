@@ -25,11 +25,16 @@ const { KIND } = await import(runtimeUrl("jobs.js"));
 // ---- the stand-ins
 // a memory: the checkpoint from 0 to base + size, alloc() takes 64-byte lines after it and writes down what it took
 function roomOf(bytes = 1 << 16, top = 8192) {
-  const buffer = new ArrayBuffer(bytes), taken = [];
-  const F = new Float32Array(buffer), U = new Uint8Array(buffer), H = new Uint16Array(buffer);
-  return {
+  let buffer = new ArrayBuffer(bytes), F = new Float32Array(buffer), U = new Uint8Array(buffer), H = new Uint16Array(buffer);
+  const taken = [], room = {
     taken,
+    growing: false,
     alloc(size) {
+      if (room.growing) {  // the engine's memory grows at a take: the views of before are cut off, the numbers are in the new ones
+        const grown = new ArrayBuffer(bytes);
+        new Uint8Array(grown).set(U);
+        buffer = grown; F = new Float32Array(buffer); U = new Uint8Array(buffer); H = new Uint16Array(buffer);
+      }
       const at = top;
       top += Math.ceil(size / 64) * 64;
       assert.ok(top <= bytes, "the test's memory is large enough");
@@ -40,6 +45,7 @@ function roomOf(bytes = 1 << 16, top = 8192) {
     get U() { return U; },
     get H() { return H; },
   };
+  return room;
 }
 // kernels that write down every call (their arguments) and do nothing
 function kernelsOf() {
@@ -285,3 +291,23 @@ const planOf = (tensors, more = {}) => ({ dim: 128, vocab_size: 4, int8: true, s
 }
 
 console.log("tensors-check: ok");
+
+// ---- the memory grows at the take a widened copy is made with: the numbers are written in the views of after it
+{
+  const room = roomOf();
+  for (let i = 0; i < 128; i++) room.H[1024 / 2 + i] = f16(i - 64);
+  for (let i = 0; i < 128; i++) room.U[2048 + i] = (i - 64) & 255;
+  room.F[2304 / 4] = 0.5;
+  const tensors = {
+    h: { kind: "f16", offset: 1024, shape: [128], group: 32, scales: 0 },
+    q: { kind: "int8", offset: 2048, shape: [128], group: 128, scales: 2304 },
+  };
+  const { floats } = tensorsOf({ plan: planOf(tensors), base, room, k: kernelsOf().k, relaxed: null, tables: 0, spread: 0 });
+  room.growing = true;
+  const h = floats("h"), q = floats("q");
+  for (let i = 0; i < 128; i++) {
+    assert.equal(room.F[h / 4 + i], i - 64, `float16 ${i}, in the views after the memory grew`);
+    assert.equal(room.F[q / 4 + i], (i - 64) * 0.5, `int8 ${i}, in the views after the memory grew`);
+  }
+}
+console.log("tensors-check: ok (growing)");
