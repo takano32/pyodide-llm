@@ -8,7 +8,7 @@ import unicodedata
 import pytest
 
 from conftest import checkpoint_vocab_size, detokenize, model_file, pack_tokenizer, tiny_tokenizer
-from llama2_numpy import Tokenizer
+from llama2_numpy import BYTE_CHARS, Tokenizer, pretokenize
 
 TEXTS = [
     "hello world",
@@ -186,6 +186,60 @@ def test_made_up_vocabularies_follow_the_definition(kind):
             text = "".join(rng.choices(letters, k=rng.randrange(0, 30)))
             assert encode(text) == by_definition(tokenizer, text), (seed, text)
 
+
+
+# T.639.4: the byte-level BPE's merges, against the plain definition its loop was before it shared encode_bpe()'s heap
+
+def bytebpe_by_definition(tokenizer, text):
+    """Hugging Face's byte-level BPE as the engine reads it: each word of the pre-tokenizer apart, its bytes as the
+    characters of the byte <-> character table, a word the vocabulary has as one token where ignore_merges is said,
+    the characters it lacks left out, then the best pair merged again and again, the first of equal scores, and no
+    pair that scores Tokenizer.UNMATCHABLE (-1e8) or less (the converter's -1e9 for an added token never merges)"""
+    index = {}
+    for i, piece in enumerate(tokenizer.vocab):
+        index.setdefault(piece.decode("utf-8"), i)
+    tokens = []
+    for part in pretokenize(text, tokenizer.pretokenizer):
+        word = "".join(BYTE_CHARS[byte] for byte in part.encode("utf-8"))
+        if tokenizer.ignore_merges and word in index:
+            tokens.append(index[word])
+            continue
+        symbols = [char for char in word if char in index]
+        while True:
+            best = (Tokenizer.UNMATCHABLE, -1)
+            for i in range(len(symbols) - 1):
+                id = index.get(symbols[i] + symbols[i + 1])
+                if id is not None and tokenizer.scores[id] > best[0]:
+                    best = (tokenizer.scores[id], i)
+            if best[1] == -1:
+                break
+            symbols[best[1]:best[1] + 2] = [symbols[best[1]] + symbols[best[1] + 1]]
+        tokens += [index[symbol] for symbol in symbols]
+    return tokens
+
+
+def made_up_bytes(seed):
+    """a byte-level vocabulary of the bytes of a few characters (some of them lacking) and pieces of them, with
+    scores that tie, scores between -1e10 and -1e8 (where the two loops' lines were apart), and pieces written twice"""
+    rng = random.Random(seed)
+    letters = rng.sample(["a", "b", "c", " ", "  ", "é", "日", "本", "\U0001f600", "1", "'s"], rng.randrange(2, 8))
+    chars = sorted({BYTE_CHARS[byte] for letter in letters for byte in letter.encode("utf-8")})
+    scores = [0.0, -1.0, -1.0, -2.0, -3.0, -1e9, -1e8, -1e10, float("nan"), float("-inf")]
+    rows = [(rng.choice(scores), char.encode("utf-8")) for char in chars if rng.random() < 0.85]
+    for _ in range(rng.randrange(3, 60)):
+        piece = "".join(rng.choices(chars, k=rng.randrange(2, 7))).encode("utf-8")
+        rows.append((rng.choice(scores) if rng.random() < 0.5 else -float(rng.randrange(6)), piece))
+    rows += [(rng.choice(scores), rows[rng.randrange(len(rows))][1]) for _ in range(3)]  # pieces written twice
+    tokenizer = Tokenizer(pack_tokenizer(rows), len(rows), kind="bytebpe", ignore_merges=rng.random() < 0.5)
+    return tokenizer, letters + ["x"], rng
+
+
+def test_made_up_byte_level_vocabularies_follow_the_definition():
+    for seed in range(300):
+        tokenizer, letters, rng = made_up_bytes(seed)
+        for _ in range(25):
+            text = "".join(rng.choices(letters, k=rng.randrange(0, 30)))
+            assert tokenizer.encode_bytebpe(text) == bytebpe_by_definition(tokenizer, text), (seed, text)
 
 # ------------------------------------------------------------------ a sentencepiece model's normalizer (T.126, T.216)
 # a map as rinna's nmt_nfkc ones go (part of it): newlines, tabs, U+2581 and a few more a space, control characters
