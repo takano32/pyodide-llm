@@ -13,7 +13,7 @@ export const LINEAR = { keyHeads: 1, valueHeads: 2, keyDim: 16, valueDim: 16, ta
 export const MIXED = 2 * KEYS + READ, CONV_TAPS = 3;
 
 // (T547.1: a matrix's and a table's packing by name; six and ternary besides, which the trees before it read: they can
-// go once the net's other tree is never one before 351fc6cb)
+// go once the net's other tree is never one before 9b8c2ded)
 /** A plan as forward/gpuside.ts hands one (a Started), over a memory it lays out: kinds, every layer's kind; more, the
  * model's own; matrices and vectors, [rows, n, of] and [size, of] by name. */
 // a made-up model: every layer's kind, its matrices [rows, n, the kind of the layers it is in] and vectors [size, kind]

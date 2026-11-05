@@ -2,7 +2,7 @@
 their order: the worker keeps them as JSON) and the tokenizer.bin by its hash. The rules of the beginning, the stops
 and the format each have their tests (test_beginning.py, test_answer_end.py, test_tokenizer_says.py), which look at
 one key or two; these hold the rest, so that a change to how Conversion is put together moves nothing it gives.
-The values are those of the converter before T640.1 (commit f9bd3be1)."""
+The values are those of the converter before T640.1 (commit ee334f33)."""
 import hashlib
 import json
 
