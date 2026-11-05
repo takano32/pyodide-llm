@@ -282,7 +282,7 @@ export function add_columns(y: usize, rows: usize, a: usize, count: i32, n: i32)
 // 127 (−127..127, into xq: m k bytes of the caller's), and the 127 comes back as an integer: shifts[j] = 127 Σ_k w[j, k]
 // (the caller's), so Σ_k s w + shifts[j] is fxtranslate's Σ_k (s + 127) w, the same integer. It is exact in int32:
 // |s w| ≤ 127 · 128, two of them added in int16 are within ±32,512, and the whole is within 254 · 128 · k, below 2**31
-// for k up to 66,051 (the caller keeps to that). It is turned into a float32 once and multiplied by unquant
+// for k up to 66,052 (the caller keeps to that). It is turned into a float32 once and multiplied by unquant
 // (1 / (alpha · the weights' quantMult)), then the bias added (the one with the shift taken off: b − 127 · unquant · Σ w),
 // each a float32 operation: engine/translation.py's Affine, and so fxtranslate's numbers, to the bit. (A NaN of x is
 // an activation of 0 here and a NaN there: a NaN is broken on every path.)

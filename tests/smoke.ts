@@ -651,6 +651,15 @@ def translation_affines():
                 assert np.isnan(out[m * n:]).all(), f"affine_q8 wrote past out (k {k})"
                 assert np.array_equal(on(x[:m]).view(np.uint32), want.view(np.uint32)), f"KernelAffine is not Affine (k {k}, {m} rows)"
 translation_affines()
+# (and the Python side keeps to the int32 sums: 254 * 128 * k is below 2**31 up to k 66,052, and a wider affine is refused)
+from types import SimpleNamespace as _Weight
+from engine.translation import KernelAffine
+for _k, _refused in ((66052, False), (66053, True)):
+    try:
+        KernelAffine(_Weight(values=np.zeros((1, _k), np.int8), quant_mult=np.float32(50)), np.float32(2), None, simd["affine_q8"])
+        assert not _refused, f"an affine of {_k} inputs was not refused"
+    except ValueError:
+        assert _refused, f"an affine of {_k} inputs was refused"
 # T136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
 # subnormals, both zeros) once, with every int8 (-128 and 127 included) across the blocks, in odd numbers of blocks
 q8_0 = kernel_readers["Q8_0"]

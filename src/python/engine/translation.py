@@ -91,7 +91,7 @@ class Affine:
 
 class KernelAffine(Affine):
     """Affine on the SIMD kernel affine_q8 (T648.3): the same numbers to the bit, in one call a matrix. The kernel sums
-    in int32, exact while 254 · 128 · k is below 2**31 (k up to 66,051: Firefox's models are 2048 at most); the 127 of
+    in int32, exact while 254 · 128 · k is below 2**31 (k up to 66,052: Firefox's models are 2048 at most); the 127 of
     the activations' shift comes back as the integer 127 Σ_k W of each row (shifts)."""
 
     def __init__(self, weight, alpha, bias, kernel):
