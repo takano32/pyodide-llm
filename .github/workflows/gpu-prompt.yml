@@ -76,7 +76,10 @@ jobs:
     # T564: engines=dawn leaves the browsers out
     if: inputs.engines != 'dawn'
     runs-on: ${{ matrix.os }}
-    # T147: the made-up model's every tiled shader on SwiftShader; gpu-check waits for the page 90 minutes at most
+    # T147: the made-up model's every tiled shader on SwiftShader. T645: gpu-check takes 90 minutes at most from its start
+    # (--minutes), under this job's 120 less the setup's 20: past them it gives the verdicts of the models it got through
+    # and fails naming the model and the run it was at. Its progress (a model begun and done, every run with its seconds)
+    # goes to the log as it goes, "[<minutes> min] ..."
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -123,6 +126,8 @@ jobs:
         run: bash tests/gpu-real.sh $REAL
 
       - name: The prompt on the GPU against the CPU and NumPy
+        # (T645: over gpu-check's own 90 minutes, for what is not its wait: it is to stop first, and say where)
+        timeout-minutes: 97
         shell: bash
         env:
           MODELS: ${{ inputs.models }}
@@ -181,6 +186,8 @@ jobs:
         run: bash tests/gpu-real.sh $REAL
 
       - name: The prompt on the GPU against the CPU and NumPy, on Dawn
+        # (T645: as the browsers' step: gpu-check stops at its 90 minutes first and says where)
+        timeout-minutes: 97
         shell: bash
         env:
           MODELS: ${{ inputs.models }}

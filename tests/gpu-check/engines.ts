@@ -18,9 +18,9 @@ const root = new URL("../../", import.meta.url).pathname;
 const HARNESS = `\n${fs.readFileSync(new URL("./harness.js", import.meta.url), "utf8")}`;
 // an icon of its own: a browser without one asks for /favicon.ico (a 404 in the console of the real Chrome)
 const PAGE = `<!doctype html><meta charset="utf-8"><title>gpu-check</title><link rel="icon" href="data:,"><script type="module">
-const worker = new Worker("/harness.js", { type: "module" });
-worker.onmessage = ({ data }) => { window.__gpuCheck = data; };
-worker.onerror = (event) => { window.__gpuCheck = { error: event.message ?? "the harness did not start" }; };
+const got = window.__gpuCheck = { results: [] };
+worker.onmessage = ({ data }) => (data.line !== undefined ? console.log(data.line) : data.result ? got.results.push(data.result) : Object.assign(got, data));
+worker.onerror = (event) => Object.assign(got, { error: event.message ?? "the harness did not start", ended: true });
 </script>`;
 const types = { ".js": "text/javascript", ".wasm": "application/wasm", ".json": "application/json", ".html": "text/html; charset=utf-8" };
 const served = (cases, only, nanRounds) => http.createServer((req, res) => {
@@ -51,25 +51,56 @@ const served = (cases, only, nanRounds) => http.createServer((req, res) => {
   send(types[path.extname(file)] ?? "application/octet-stream", fs.readFileSync(file));
 }).listen(0);
 
-async function inBrowser({ engine, server, lines }) {
+// T645: what the harness posts, as it goes: its forms and the quantizers' answers first, a model's result as each is
+// through ({ result }), and { ended } at its end or with its error. Its progress lines (harness.js's PROGRESS) go to
+// stderr at once with the minutes since the tool began, and the last is kept: a run stopped at the tool's limit
+// (--minutes, under the job's: gpu-prompt.yml) has the verdicts of the models before and names where it stopped
+// (T645: gpu-prompt.yml's Chromium job ran into its limit and said nothing of where)
+const PROGRESS = "gpu-check progress: ";
+const began = performance.now();
+const watcher = (lines) => {
+  let last = "", model = "";
+  return {
+    line(text, shown) {
+      const at = text.indexOf(PROGRESS);
+      if (at < 0) return lines.push(shown);
+      last = text.slice(at + PROGRESS.length);
+      if (last.endsWith(" begun")) model = last.slice(0, -" begun".length);
+      process.stderr.write(`[${((performance.now() - began) / 60000).toFixed(1)} min] ${last}\n`);
+    },
+    stopped: (outcome, minutes) => ({ results: [], ...outcome, ended: true,
+      error: `gave up at the limit of ${minutes} minutes (--minutes): the harness was ${model ? `in ${model}, the last it said "${last}"` : "not yet at a model"}` }),
+  };
+};
+// the milliseconds left of the tool's limit (from its start: NumPy's answers take some of it)
+const left = (minutes) => Math.max(1000, minutes * 60000 - (performance.now() - began));
+
+async function inBrowser({ engine, server, lines, minutes }) {
   const playwright = await import("playwright-core");
   // Chromium's WebGPU without a GPU: SwiftShader (as tests/bench-check.ts has it)
   const WEBGPU = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"];
   const browser = await playwright.chromium.launch({ ...(engine === "chromium" ? {} : { channel: engine }), args: WEBGPU });
   const page = await browser.newPage();
-  page.on("console", (message) => lines.push(`[${message.type()}] ${message.text()}`));
+  const watch = watcher(lines);
+  page.on("console", (message) => watch.line(message.text(), `[${message.type()}] ${message.text()}`));
   page.on("pageerror", (error) => lines.push(`[pageerror] ${error.message}`));
   await page.goto(`http://localhost:${server.address().port}/`);
   // SwiftShader compiles a tiled shader in 10 to 90 s (T147): every shader of the made-up model takes some minutes
-  await page.waitForFunction(() => window.__gpuCheck, null, { timeout: 5400000 });
-  const result = await page.evaluate(() => window.__gpuCheck);
+  let result;
+  try {
+    await page.waitForFunction(() => window.__gpuCheck?.ended, null, { timeout: left(minutes) });
+    result = await page.evaluate(() => window.__gpuCheck);
+  } catch (error) {
+    if (error?.name !== "TimeoutError") throw error;
+    result = watch.stopped(await page.evaluate(() => window.__gpuCheck).catch(() => ({})), minutes);
+  }
   await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
   return result;
 }
 
 // T147: the harness in a worker thread of Node, WebGPU from Dawn (the npm package webgpu at --webgpu), the GPU's
 // worker (src/runtime/gpu.js) in a worker thread of its own, the modules from their files and the rest from the server
-async function inDawn({ webgpu, directory, server, only, nanRounds, lines }) {
+async function inDawn({ webgpu, directory, server, only, nanRounds, lines, minutes }) {
   const { Worker } = await import("node:worker_threads");
   if (!webgpu) throw new Error("--engine dawn wants --webgpu <the directory of the npm package webgpu>");
   const dir = path.join(directory, "dawn");
@@ -117,14 +148,22 @@ const ONLY = ${JSON.stringify(only ? only.split(",") : [])};
 const NAN_ROUNDS = ${JSON.stringify(nanRounds)};
 ${HARNESS.replaceAll('import("/runtime/', `import(${JSON.stringify(runtimeUrl("").href.replace(/\/?$/, "/"))} + "`)}
 `);
+  const watch = watcher(lines), got = { results: [] };
   return new Promise((resolve) => {
     const worker = new Worker(harnessFile);
-    worker.on("message", (data) => {
-      if (data.line !== undefined) return lines.push(`[log] ${data.line}`);
-      resolve(data);
+    const end = (outcome) => {
+      clearTimeout(limit);
+      resolve(outcome);
       worker.terminate();
+    };
+    const limit = setTimeout(() => end(watch.stopped(got, minutes)), left(minutes));
+    worker.on("message", (data) => {
+      if (data.line !== undefined) return watch.line(data.line, `[log] ${data.line}`);
+      if (data.result) return got.results.push(data.result);
+      Object.assign(got, data);
+      if (got.ended) end(got);
     });
-    worker.on("error", (error) => resolve({ error: String(error?.stack ?? error) }));
+    worker.on("error", (error) => end({ ...got, error: String(error?.stack ?? error), ended: true }));
   });
 }
 

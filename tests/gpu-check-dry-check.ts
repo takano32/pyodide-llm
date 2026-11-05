@@ -9,7 +9,8 @@
 //     the 1 and more of a wrong model), E16 small;
 //   - a run whose GPU did not open is the CPU's own run: the same keys and values block by block and all at once, to
 //     the digits printed, and the line says FAILED and why;
-//   - the steps are said to be on the CPU, the tables have a column a run and a row a layer, the seconds are said.
+//   - the steps are said to be on the CPU, the tables have a column a run and a row a layer, the seconds are said;
+//   - T645: stderr has the progress, each model begun and done in its order with its runs between.
 // It says nothing of a shader: no shader runs.
 //
 //   node tests/gpu-check-dry-check.ts      (about ten seconds: Pyodide's start; make kernels first)
@@ -60,6 +61,14 @@ for (const [id, layers] of Object.entries(MODELS)) {
   assert.ok(own.some((line) => line.startsWith("- CPU: forward.js on the CPU: ")) && own.some((line) => line.startsWith(`- ${String.fromCharCode(64 + of.length)}: no form, no attention: `)));
   assert.ok(own.some((line) => line.startsWith(`seconds of ${id}: NumPy (with its cache in float16, Q8 and H16) `)));
 }
+// T645: the progress on stderr, as the harness went: each model begun and done in its order, and its runs between
+const progress = ran.stderr.split("\n").filter((line) => /^\[\d+\.\d min\] /.test(line));
+Object.keys(MODELS).forEach((id, i) => {
+  const begun = progress.findIndex((line) => line.endsWith(`] ${id} (${i + 1} of ${Object.keys(MODELS).length}) begun`));
+  const done = progress.findIndex((line) => new RegExp(`\\] ${id} done in \\d+\\.\\d s$`).test(line));
+  assert.ok(begun >= 0 && done > begun, `${id}: no progress begun and done on stderr\n${progress.join("\n")}`);
+  assert.ok(progress.slice(begun, done).some((line) => line.includes(`] ${id}: a run, the CPU, in `)), `${id}: no run of the CPU in its progress`);
+});
 // what the made-up model alone is asked
 for (const start of ["  a GPU that answers late: not tried (", "  a fallback adapter without the tests' leave: prompts on the CPU (a fallback adapter", "  a GPU let go while it got ready: its worker ended in ",
   "  the shaders remembered: for this adapter not taken"]) {

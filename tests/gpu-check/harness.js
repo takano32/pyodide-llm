@@ -127,11 +127,22 @@ const quantizerProbe = async () => {
   device.destroy();
   return { rows };
 };
+// T645: what the harness is at, as it goes (tests/gpu-check/engines.ts streams these lines to the tool's stderr and keeps
+// the last, which names the model and the run where a run of the tool that stops at its limit stopped): a model as it
+// begins and ends, and every run of the harness's own run() with its seconds. Posted as a line (Dawn's worker thread
+// posts its console so; the page logs it from its own thread, whose console Playwright surely hears)
+const PROGRESS = "gpu-check progress: ";
+const progress = (text) => postMessage({ line: PROGRESS + text });
 try {
   const narrow = compileKernels(await fetched("/built/simdkernel_shared.wasm"), await fetched("/built/simdkernel_relaxed_shared.wasm"));
-  const results = [];
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
-  for (const c of await (await fetch("/cases.json")).json()) {
+  // (T645: posted before the models and each model's result as it is through, so that a run stopped at its limit still
+  // has the verdicts of the models before; the last message says the harness got to its end)
+  postMessage({ forms: formsOf(false), quantizers });
+  const all = await (await fetch("/cases.json")).json();
+  for (const [index, c] of all.entries()) {
+    const caseBegan = performance.now();
+    progress(`${c.id} (${index + 1} of ${all.length}) begun`);
     // (T634.3: a binary model is multiplied by ternary's shaders, its bits gone up as their codes)
     const plan = c.plan, ternary = c.dtype === "ternary" || c.dtype === "binary";
     // (T547.2.3: a model with Q4_K blocks among its matrices: its own tiles; T547.2.4: and the steps of DP4A alone)
@@ -431,6 +442,7 @@ try {
       const taken = asked ? engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 1, 0, 0.9, 1, [], []) : undefined;
       const out = { form, name, value: String(value), note, asked, why: engine.gpuTokensWhyNot, taken: taken ?? null, status: engine.gpuStatus };
       await engine.release();
+      progress(`${c.id}: a run, steps ${form} with ${value} in ${name}`);
       return out;
     };
     const run = async (gpu, gpuForce, gpuRemembered, steps = false) => {
@@ -474,7 +486,11 @@ try {
       // T205: the GPU's worker says it let go of its device before the next model is read (false: not within 5 s)
       out.ended = await engine.release();
       // T183: the seconds of the run, and of those until the GPU's worker said it was ready (its shaders compiled)
-      return { ...out, seconds: (performance.now() - started) / 1000, readySeconds };
+      const seconds = (performance.now() - started) / 1000;
+      const what = !gpu ? "the CPU" : gpuForce?.tokens ? `steps ${gpuForce.tokens}${gpuForce.tokenAttention ? `, ${gpuForce.tokenAttention}` : ""}`
+        : gpuForce?.attention ? `attention ${gpuForce.attention}` : gpuForce?.matrices ? `tiles ${gpuForce.matrices}` : gpuRemembered ? "remembered" : "chosen";
+      progress(`${c.id}: a run, ${what}, in ${seconds.toFixed(1)} s`);
+      return { ...out, seconds, readySeconds };
     };
     // T147: a GPU that answers late. forward.js gives its request up (stalledMs 1: the GPU's worker counts every 250
     // ms) and runs the block itself; the stop it posts never reaches the worker (a worker that went on before it read
@@ -545,6 +561,7 @@ try {
       }
       out.seconds = (performance.now() - began) / 1000;
       engine.release();
+      progress(`${c.id}: a run on the GPU alone${force.pieceBytes === 4096 ? " (pieces of 4096 bytes)" : cpu ? " (a CPU's reading made up)" : ""}, in ${((performance.now() - began) / 1000).toFixed(1)} s`);
       return out;
     };
     const gpu = [];
@@ -611,9 +628,10 @@ try {
       const period = ringPositions(layer.window ?? 0, c.plan.seq_len) / 2;
       return period ? Math.max(0, n - period + 1) : 0;
     });
-    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken, nanSeconds, heldFrom });
+    postMessage({ result: { id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken, nanSeconds, heldFrom } });
+    progress(`${c.id} done in ${((performance.now() - caseBegan) / 1000).toFixed(1)} s`);
   }
-  postMessage({ results, forms: formsOf(false), quantizers });
+  postMessage({ ended: true });
 } catch (error) {
-  postMessage({ error: String(error?.stack ?? error) });
+  postMessage({ error: String(error?.stack ?? error), ended: true });
 }

@@ -4,6 +4,7 @@
 //
 //   node tests/gpu-check.ts [model id | synthetic | made-up ...] [--engine chromium|chrome|msedge] [--forms <part,part>]
 //   node tests/gpu-check.ts ... --engine dawn --webgpu <the npm package webgpu's directory>
+//   ... [--minutes 90]   (T645: the tool's limit from its start; progress lines go to stderr as the harness goes)
 //   ... [--nan all|made-up|small|none]   (T241's review: where the rounds with a NaN or an infinity run; see gpu-check/models.ts's NAN_CHOICES)
 //
 // T147: --engine dawn runs the same in Node on Dawn (the npm package webgpu, not a dependency of this project: install
@@ -49,6 +50,9 @@ const engine = option("--engine", "chromium");
 // T147: --forms <part,part>: only the matrices' shaders whose names hold one of these (all of them by default)
 const only = option("--forms", "");
 const webgpu = option("--webgpu", "");
+// T645: the minutes the tool may take from its start, under its job's (gpu-prompt.yml: 120, of which the setup takes up to
+// 20); past them it gives the verdicts of the models through, and fails naming the model and the run it was at
+const minutes = Number(option("--minutes", "90"));
 // T241's review: where the rounds with a NaN or an infinity run (models.ts's NAN_CHOICES, and why)
 const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
@@ -67,7 +71,7 @@ const cases = ids.map((id) => referenceCase(py, directory, id));
 // ---- the browser or Dawn: what the harness posted
 const server = served(cases, only, nanRounds);
 const lines = [];
-const outcome = engine === "dawn" ? await inDawn({ webgpu, directory, server, only, nanRounds, lines }) : await inBrowser({ engine, server, lines });
+const outcome = engine === "dawn" ? await inDawn({ webgpu, directory, server, only, nanRounds, lines, minutes }) : await inBrowser({ engine, server, lines, minutes });
 server.close();
 if (lines.length) console.log(lines.join("\n"));
 // T147: the list of forms comes from an adapter of its own, which SwiftShader now and then does not give (AGENTS.md)
@@ -75,7 +79,8 @@ if (!outcome.error && !outcome.forms?.length) outcome.error = "no tiled shader t
 // (T226: an exit once what was printed has gone out. An exit at once cut the log of CI's Dawn job in the middle of a
 // line of the console, before the error: run 36867483459 failed, and nothing said why)
 // (tests/leave.ts, T357: the one place for it)
-if (outcome.error) {
+// (T645: an error after some models were through, the tool's limit among them, gives their verdicts first)
+if (outcome.error && !outcome.results?.length) {
   console.error(`FAILED\n- ${outcome.error}`);
   await leave(1);
 }
@@ -83,4 +88,8 @@ if (outcome.error) {
 // ---- the comparisons
 let failed = quantizersWrong(outcome);
 for (const result of outcome.results) failed = modelWrong(cases, result) || failed;
+if (outcome.error) {
+  console.error(`FAILED after ${outcome.results.length} of ${cases.length} models\n- ${outcome.error}`);
+  await leave(1);
+}
 await leave(failed ? 1 : 0);
