@@ -72,7 +72,7 @@ env:
 
 jobs:
   gpu:
-    name: ${{ matrix.os }} ${{ matrix.engine }}
+    name: ${{ matrix.os }} ${{ matrix.engine }}${{ matrix.part != '' && format(' {0}', matrix.part) || '' }}
     # T564: engines=dawn leaves the browsers out
     if: inputs.engines != 'dawn'
     runs-on: ${{ matrix.os }}
@@ -83,11 +83,12 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        # the models are built as the deployment builds them, on Linux; Chrome and Edge are the runner's own, in the full
-        # suite only (T193)
-        os: [ubuntu-latest]
-        engine: ${{ fromJSON((github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && '["chromium","chrome","msedge"]' || '["chromium"]') }}
+      # the models are built as the deployment builds them, on Linux; Chrome and Edge are the runner's own, in the full
+      # suite only (T193). T645 (b): the full suite's Chromium is two jobs, each half of its made-up models (gpu-check's
+      # --part: every other one), as the 24 took 73 minutes on SwiftShader (run 42077151273), at the edge of the tool's
+      # 90; the light suite's one model is one job. (Every combination is an include of its own, os too: an include that
+      # only adds engine and part to a combination of os would overwrite the one before it)
+      matrix: ${{ fromJSON((github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && '{"include":[{"os":"ubuntu-latest","engine":"chromium","part":"1/2"},{"os":"ubuntu-latest","engine":"chromium","part":"2/2"},{"os":"ubuntu-latest","engine":"chrome","part":""},{"os":"ubuntu-latest","engine":"msedge","part":""}]}' || '{"include":[{"os":"ubuntu-latest","engine":"chromium","part":""}]}') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -134,14 +135,16 @@ jobs:
           REAL: ${{ inputs.real }}
           FORMS: ${{ inputs.forms }}
           NAN: ${{ inputs.nan }}
+          PART: ${{ matrix.part }}
         run: |
-          echo "## ${{ matrix.os }} ${{ matrix.engine }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ${{ matrix.os }} ${{ matrix.engine }} ${{ matrix.part }}" >> "$GITHUB_STEP_SUMMARY"
           ids="$MODELS"
           for id in $REAL; do ids="$ids .tmp/real/$id.json"; done
           # T193: the suite's models when none are given: "synthetic" alone (light) or every made-up one (full)
           [ "$SUITE" = full ] && suite=made-up || suite=synthetic
-          echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-$suite}"
-          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          # (T645 (b): the part only splits the suite's made-up models: models named by models= or real= run in both parts)
+          echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-$suite}${PART:+, part $PART}"
+          node tests/gpu-check.ts ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} ${PART:+--part "$PART"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
   dawn:

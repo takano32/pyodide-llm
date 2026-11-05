@@ -10,13 +10,16 @@
 //   - a run whose GPU did not open is the CPU's own run: the same keys and values block by block and all at once, to
 //     the digits printed, and the line says FAILED and why;
 //   - the steps are said to be on the CPU, the tables have a column a run and a row a layer, the seconds are said;
-//   - T645: stderr has the progress, each model begun and done in its order with its runs between.
+//   - T645: stderr has the progress, each model begun and done in its order with its runs between;
+//   - T645 (b): --part k/n (gpu-check/models.ts's partOf) splits an engine's made-up models into parts that are all of
+//     them and none twice, and keeps Chromium's two heaviest apart (gpu-prompt.yml runs Chromium's in two jobs).
 // It says nothing of a shader: no shader runs.
 //
 //   node tests/gpu-check-dry-check.ts      (about ten seconds: Pyodide's start; make kernels first)
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { madeUpOn, partOf } from "./gpu-check/models.ts";
 
 const here = (name) => fileURLToPath(new URL(name, import.meta.url));
 const MODELS = { synthetic: 2, "synthetic-gpt2": 3, "synthetic-ternary": 3 };   // their layers
@@ -74,4 +77,20 @@ for (const start of ["  a GPU that answers late: not tried (", "  a fallback ada
   "  the shaders remembered: for this adapter not taken"]) {
   assert.equal(lines.filter((line) => line.startsWith(start)).length, 1, start);
 }
-console.log(`gpu-check-dry-check: ok (gpu-check ran to its verdicts with no device: ${Object.keys(MODELS).length} made-up models, ${runs} runs, each the CPU's own and said to have failed)`);
+// T645 (b): the parts of every engine's made-up models, as gpu-prompt.yml splits Chromium's
+for (const engine of ["chromium", "chrome", "msedge", "dawn"]) {
+  const all = madeUpOn(engine);
+  for (const n of [1, 2, 3]) {
+    const parts = Array.from({ length: n }, (_, k) => partOf(all, `${k + 1}/${n}`));
+    const joined = parts.flat();
+    assert.deepEqual([...joined].sort(), [...all].sort(), `${engine}: the ${n} parts are not all of its made-up models, each once: ${parts.map((p) => p.join(" ")).join(" | ")}`);
+    assert.ok(parts.every((p) => p.length >= Math.floor(all.length / n)), `${engine}: a part of ${n} is short`);
+  }
+}
+const [first, second] = ["1/2", "2/2"].map((part) => partOf(madeUpOn("chromium"), part));
+assert.ok(["synthetic-neox-256", "synthetic-saluki"].every((id) => first.includes(id) !== second.includes(id)) && first.includes("synthetic-neox-256") !== first.includes("synthetic-saluki"),
+  `Chromium's two heaviest made-up models (run 42077151273) are in one part: ${first.join(" ")} | ${second.join(" ")}`);
+assert.deepEqual(partOf(["a", "b"], ""), ["a", "b"]);
+for (const wrong of ["0/2", "3/2", "2", "1/0", "a/b"]) assert.throws(() => partOf(["a"], wrong), /--part/, `--part ${wrong} was taken`);
+
+console.log(`gpu-check-dry-check: ok (gpu-check ran to its verdicts with no device: ${Object.keys(MODELS).length} made-up models, ${runs} runs, each the CPU's own and said to have failed; --part splits the made-up models whole)`);

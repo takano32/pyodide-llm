@@ -5,6 +5,7 @@
 //   node tests/gpu-check.ts [model id | synthetic | made-up ...] [--engine chromium|chrome|msedge] [--forms <part,part>]
 //   node tests/gpu-check.ts ... --engine dawn --webgpu <the npm package webgpu's directory>
 //   ... [--minutes 90]   (T645: the tool's limit from its start; progress lines go to stderr as the harness goes)
+//   ... [--part k/n]   (T645 (b): of the made-up models "made-up" stands for, every n-th from the k-th; named models all)
 //   ... [--nan all|made-up|small|none]   (T241's review: where the rounds with a NaN or an infinity run; see gpu-check/models.ts's NAN_CHOICES)
 //
 // T147: --engine dawn runs the same in Node on Dawn (the npm package webgpu, not a dependency of this project: install
@@ -38,7 +39,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { leave } from "./leave.ts";
-import { NAN_CHOICES, madeUpOn } from "./gpu-check/models.ts";
+import { NAN_CHOICES, madeUpOn, partOf } from "./gpu-check/models.ts";
 import { referencePython, referenceCase } from "./gpu-check/reference.ts";
 import { served, inBrowser, inDawn } from "./gpu-check/engines.ts";
 import { quantizersWrong, modelWrong } from "./gpu-check/verdicts.ts";
@@ -54,13 +55,17 @@ const webgpu = option("--webgpu", "");
 // 20); past them it gives the verdicts of the models through, and fails naming the model and the run it was at
 const minutes = Number(option("--minutes", "90"));
 // T241's review: where the rounds with a NaN or an infinity run (models.ts's NAN_CHOICES, and why)
+// T645 (b): a part of the made-up models (models.ts's partOf): gpu-prompt.yml's full suite runs Chromium's in two jobs.
+// The checks of the harness that are no model's (the quantizers alone, the list of forms) run in every part: they take
+// seconds, and the forms are what every model's runs are made of
+const part = option("--part", "");
 const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
 // gpu-prompt.yml's suites name them so, and a made-up model added to models.ts's SYNTHETIC joins them)
-const madeUp = madeUpOn(engine);
+const madeUp = partOf(madeUpOn(engine), part);
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));
-if ((args.length ? args : ["made-up"]).includes("made-up")) console.log(`suite: "made-up" on ${engine} is ${madeUp.join(" ")}`);
+if ((args.length ? args : ["made-up"]).includes("made-up")) console.log(`suite: "made-up" on ${engine}${part ? `, part ${part},` : ""} is ${madeUp.join(" ")}`);
 
 // ---- Node: the plans and NumPy's answers
 const py = await referencePython();

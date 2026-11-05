@@ -338,5 +338,15 @@ const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm",
   // and anywhere they are named)
   "synthetic-binary-untied", "synthetic-qwen35-binary"];
 const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
+// T645 (b): a part of them, "k/n" (gpu-check's --part): every n-th from the k-th, so that the n parts of a list are all of
+// it and none twice. gpu-prompt.yml's full suite splits Chromium's into two jobs this way: on SwiftShader the 24 took 73
+// minutes of the tool's 90 (run 42077151273), and taking every other one keeps the two heaviest (synthetic-neox-256 and
+// synthetic-saluki, 8 and 7.5 minutes) apart. An empty part is the whole list
+const partOf = (list, part) => {
+  if (!part) return list;
+  const [k, n] = (part.match(/^(\d+)\/(\d+)$/) ?? []).slice(1).map(Number);
+  if (!(n >= 1 && k >= 1 && k <= n)) throw new Error(`--part ${part}: not k/n with 1 <= k <= n`);
+  return list.filter((_, i) => i % n === k - 1);
+};
 
-export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn };
+export { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn, partOf };
