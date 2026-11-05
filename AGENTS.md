@@ -454,7 +454,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 ### トークナイザ
 
-- **`encode()` を速く（T.200・T.207・T.222）。** BPE は対を heap に入れ、合併した所の両隣だけ入れ直す。unigram は語片を辞書で引き、試す長さを `reach` まで。前分割は文字を種類の 1 字に `str.translate` で写して標準の `re` で型を走らせる（`CharClasses`）。全符号位置を本物と比べる試験は `EVERY_CODE_POINT=1`（全部の組だけ）。
+- **`encode()` を速く（T.200・T.207・T.222）。** BPE は対を heap に入れ、合併した所の両隣だけ入れ直す（`merged()`: byte-level BPE も前分割の語ごとに同じ輪で、T.639.4。点数の線だけが違い、`bpe` は −1e10（llama2.c の）より上、`bytebpe` は `UNMATCHABLE`（−1e8）より上を合わせる: 変換器の −1e9 の語片は `bpe` では合わさり、`bytebpe` では合わさらない）。unigram は語片を辞書で引き、試す長さを `reach` まで。前分割は文字を種類の 1 字に `str.translate` で写して標準の `re` で型を走らせる（`CharClasses`）。全符号位置を本物と比べる試験は `EVERY_CODE_POINT=1`（全部の組だけ）。
 - **前分割の文字の種類を本物に合わせた（T.206）。** \x1c〜\x1f は空白でない、ſ（U+017F）は `(?i:'s)` で s と読む、`gpt2-digits` の数は `\p{N}`。Python の Unicode が割り当てていない文字は比べから外す。速くした代わりに unigram のコンストラクタが 11〜38 ms 遅く、Pyodide の持つ量が増えた（llm-jp-3 150M で 9.1 → 15.2 MiB）。
 - **語彙に無いバイトは落とす**（SmolLM2 の語彙は 1 バイトの語片が 21 無い。本物と同じく語に入れない）。
 - **sentencepiece の正規化は model の charsmap そのもので（T.216）。** 変換器が `precompiled_charsmap` を tokenizer.bin の後ろに付け、エンジンの `Charsmap` が double array をそのまま辿る。文の中の U+2581「▁」は空白（byte-level BPE を除く）。バイトの語片が無い語彙（rinna）は `collapse`・`unknown`。

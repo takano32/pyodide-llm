@@ -285,11 +285,13 @@ class Tokenizer:
     written out as a tokenizer.json, whose converter writes minus the rank of a piece's merge as its score: T.257);
     kind="unigram" picks the segmentation with the best total score (sentencepiece unigram models);
     kind="bytebpe" is Hugging Face's byte-level BPE (GPT-2, SmolLM2, Qwen). It merges by the rank of the merge
-    that makes the piece, which is the same loop as "bpe" because the converter writes minus the rank as the
-    score. Its vocabulary is written in the byte <-> character table above, so the pieces are plain text.
+    that makes the piece, which is the same loop as "bpe" (merged()) because the converter writes minus the rank as
+    the score; only it does not merge a pair into a piece that scores UNMATCHABLE or less. Its vocabulary is written
+    in the byte <-> character table above, so the pieces are plain text.
     """
 
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
+    UNMERGED = -1e10  # llama2.c's line: "bpe" merges a pair that scores above it (an unmatchable piece's -1e9 too)
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
                  collapse=False, unknown=None, lowercase=False, prefixed=False, spaced=False):
@@ -411,20 +413,25 @@ class Tokenizer:
                 tokens += [] if tokens[-1:] == [self.unknown] else [self.unknown]  # a run of them is one
             else:
                 tokens.extend(self.byte_tokens[byte] for byte in piece)
+        return self.merged(tokens, [self.vocab[token] for token in tokens], self.index, self.UNMERGED)
 
-        # Merge the best consecutive pair each iteration, according to the scores in vocab_scores (the first of equal
-        # scores). The pairs wait in a heap by (minus the score, where the pair's left piece began), so the best and
+    def merged(self, tokens, pieces, index, floor):
+        """The tokens with the best consecutive pair merged each iteration, according to the scores in vocab_scores
+        (the first of equal scores), as long as a pair scores above floor. pieces: the tokens' pieces as index spells
+        them (bytes for "bpe", the byte-level BPE's text for "bytebpe": T.639.4, which merged in a loop of its own
+        that looked at every pair after each merge)."""
+        # The pairs wait in a heap by (minus the score, where the pair's left piece began), so the best and
         # the first of equal ones comes out first; a merge pushes the two pairs next to it, and the pairs it ended
         # are left in the heap and passed over when they come out (stamp: a piece's stamp changes when it merges).
         # T.200 had the scores in a list and took the best with max() and index(): 0.17 s for 1000 tokens (T.207).
         # The pieces are a list linked by after and before, the first one never goes (a merge keeps the left piece).
-        pieces, count = [self.vocab[token] for token in tokens], len(tokens)
+        count = len(tokens)
         after, before, stamp, waiting = list(range(1, count + 1)), list(range(-1, count - 1)), [0] * count, []
 
         def pair(k, m):
             """the pieces k and m joined, if they merge: (minus the score, k, m, their stamps, the token)"""
-            id = self.index.get(pieces[k] + pieces[m])
-            if id is not None and self.scores[id] > -1e10:
+            id = index.get(pieces[k] + pieces[m])
+            if id is not None and self.scores[id] > floor:
                 return -self.scores[id], k, m, stamp[k], stamp[m], id
 
         for k in range(count - 1):
@@ -462,16 +469,8 @@ class Tokenizer:
             # a byte the vocabulary lacks (SmolLM2 has no piece for 21 of them: 0x04, 0xF1, ...) is left out, and its
             # neighbours may then merge, as Hugging Face's BPE does without byte_fallback or an unk_token (T.215)
             symbols = [char for char in word if char in self.text_index]
-            while len(symbols) > 1:
-                best_score, best_id, best_idx = self.UNMATCHABLE, -1, -1
-                for i in range(len(symbols) - 1):
-                    id = self.text_index.get(symbols[i] + symbols[i + 1])
-                    if id is not None and self.scores[id] > best_score:
-                        best_score, best_id, best_idx = self.scores[id], id, i
-                if best_idx == -1:
-                    break
-                symbols[best_idx:best_idx + 2] = [self.vocab[best_id].decode("utf-8", "replace")]
-            tokens += [self.text_index[symbol] for symbol in symbols]
+            tokens += self.merged([self.text_index[symbol] for symbol in symbols], symbols, self.text_index,
+                                  self.UNMATCHABLE)
         return tokens
 
     def text_pieces(self):
