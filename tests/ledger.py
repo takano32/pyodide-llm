@@ -2,7 +2,7 @@
 
 TASKS.md is read by people and agents alike, and at 4.5 MB nobody could read it
 any more (2026-10-15, the owner: split it, keep a table of contents). So a task
-that is done leaves TASKS.md for a file of its own, docs/tasks/T.<number>.md (a
+that is done leaves TASKS.md for a file of its own, docs/tasks/T<number>.md (a
 subtask stays in its parent's file: T329.2 goes to T329.md), and two tables of
 contents are made from the headings, never written by hand:
 
@@ -16,7 +16,7 @@ contents are made from the headings, never written by hand:
     python tests/ledger.py --check    fail if either table is not what index
                                       would write (the light suite runs this)
 
-A task's heading is a line "### T.<number> …" with "状態: …" in it. It is done
+A task's heading is a line "### T<number> …" with "状態: …" in it. It is done
 when its state begins with 完了, or for the few older ones that said it
 otherwise, when its number is in OLDER_DONE. Nothing is rewritten: a block of
 lines moves as it is, and split checks that every line of TASKS.md before is in
