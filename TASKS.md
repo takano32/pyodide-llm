@@ -1354,7 +1354,7 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T.638.1 の案） — 状態: 未着手（2026-11-04、T.638.1 のレビュー（Fable max）から。子タスク 12。取りかかる順は持ち主）
 - 案の場所・どの決まりに反するか・規模・形・費用・証明・覆す条件は [docs/notes/t638.1-review-engine-2026-11-04.md](docs/notes/t638.1-review-engine-2026-11-04.md) の同じ題の節。番号は報告の順（得 ÷ 費用の順、動きを変えない案が先）。
 - **子タスク**:
-  - T.639.1 [リファクタリング][CPU] `Llama.__init__` の 40 の引数を、3 つの表で振り分ける `**options` にする — 進行中（2026-11-04、Opus medium、ブランチ `t.639.1-refactor`）
+  - T.639.1 [リファクタリング][CPU] `Llama.__init__` の 40 の引数を、3 つの表で振り分ける `**options` にする — 反映済み（2026-11-05、Opus medium、`t.639.1-refactor` の 2 コミット）: `Llama(checkpoint, tokenizer, **options)` にした。38 の名前つきの引数を 4 つの表で振り分ける: 形は `FORM`（`form_of()`）、読み方は `engine/tokenizer.py` の新しい `SETTINGS`（Tokenizer の引数の名前へ）、計画は `Settings` の欄（Llama が作る `MADE` を除く `PLANNED`）、残りは `OWN`。どれにも無い名前は前と同じ TypeError で名指す。トークナイザの設定と FORM の鍵を足しても Llama には触らない（前は 2 か所ずつ）。予定した動きの違いは 1 つ: 形の鍵に明示の None を渡すと既定と読む（前は `head_dim=None` が `int(None)` で落ちた。`Dims` と `footprint()` はもとからこう読む）。署名を読んでいた試験 2 つ（`test_prefixed.py`・`test_qwen3.py`）は `OPTIONS` を読む形に。網の違いは窓口の署名と増えた試験 3 つ（`tests/test_parts.py`）だけで、`python`・`layouts`・`calls`・`choices` ほかは同じ。pytest 3385 passed、smoke ok、本線に載せ直して軽い組（Node 24、1285 秒）、実ブラウザ（開発機の Chrome 156: tiny-lm の 2 回目の訪問と既定のモデル）が通った。CI を省いた。訳: 触ったのは Python のエンジンの `__init__` だけで、手元の試験と実ブラウザが全部踏む。
   - T.639.2 [リファクタリング][CPU] 層ごとの事実を `plan.layer_facts()` の 1 表に寄せ、NumPy の forward が同じ表を読む — 未着手
   - T.639.3 [リファクタリング][CPU] Python が呼ばない relaxed のカーネルを読み込まない — 未着手
   - T.639.4 [リファクタリング][解析分割] Tokenizer の 3 つの種類を名前比べでなく種類の表で分け、byte-level BPE の 2 つ目の merge の輪を 1 つに — 未着手
