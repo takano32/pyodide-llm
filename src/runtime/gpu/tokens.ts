@@ -136,15 +136,13 @@ const TOKEN_FORMS: Candidate[] = [{ name: "llama.cpp, fused (T150)", dp4a: false
   { name: "DP4A, fused (T175), ternary", dp4a: true, subgroups: false, ternary: true },
   { name: "DP4A, fused (T175), ternary, the norms apart", dp4a: true, subgroups: false, ternary: true, normApart: true }];
 function tokenCandidates(m: Model) {
-  const features = navigator.gpu.wgslLanguageFeatures;
-  const subgroups = m.device.features.has("subgroups") && Boolean(features?.has("subgroup_id"));
-  const packed = Boolean(features?.has("packed_4x8_integer_dot_product"));
+  const { subgroups, packed } = m.features, ternary = m.own === "ternary";
   // (T226: NORM_QUANTIZE is RMSNorm's: a model with LayerNorm has its norms apart, and the form with them fused is
   // the same as the one with them apart)
   // (T271.1: a rotated basis turns every matrix's input as it quantizes it, ROTATE_QUANTIZE: the forms of DP4A with the
   // norms apart alone, where no norm is on a matrix's read)
   // (T547.2.4: a model of Q4_K blocks besides int8, the forms of DP4A alone: its blocks are read as packed int8 there)
-  return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === m.ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) && (form.dp4a || m.own !== "blocks") &&
+  return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) && (form.dp4a || m.own !== "blocks") &&
     (!m.plan.layerNorm || !form.dp4a || form.normApart) && (!m.plan.rotated || (form.dp4a && form.normApart)));
 }
 // T226: what of the model's form shapes a token's dispatches: apart, q, k and v are written as they are for what comes
@@ -157,7 +155,7 @@ function tokenCandidates(m: Model) {
 // shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS)
 // (T261.4.2: geglu, the gate's activation is GELU (a Gemma 3's); posts, the norms behind the attention and the FFN, so
 // that o and down write their rows as they are, which RMSNORM_ADD norms into the stream)
-const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && !m.ternary;
+const floatHead = (m: Model) => Boolean(m.plan.tokens!.outliers) && m.own !== "ternary";
 // (T568.2: what the kinds of the model's layers write besides (gpu/kinds.ts's writes()): mix, a matrix of the normed
 // stream written as it is (T545.2: an LFM2's convolution layers' matrix in; T271.3: a Qwen3.5's gate of its attending
 // layers' output); write, a matrix of a vector of the kind's own written as it is (a Qwen3.5's linear-attention layers')
@@ -278,7 +276,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   if (m.weights.positions) g.u.positions = uniform(m, new Uint32Array([plan.dim, 0, plan.dim, 0]));
   // T232: a ternary classifier's outlier channels (plan.tokens.channels, T92): the two dispatches around its matrix
   // (shaders/run.ts's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
-  const channels = m.ternary ? planned.channels ?? [] : [];
+  const channels = m.own === "ternary" ? planned.channels ?? [] : [];
   if (channels.length) {
     g.take = await within(validated(m, () => pipelineOf(m, ENGINE.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
     g.columns = await within(validated(m, () => pipelineOf(m, ENGINE.TERNARY_COLUMNS)), "compiling the outlier channels' columns");

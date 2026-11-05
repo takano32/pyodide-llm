@@ -98,11 +98,11 @@ const memory = { buffer: new SharedArrayBuffer(memoryBytes) };
 new Uint8Array(memory.buffer).set(random(memoryBytes));
 const m = await openDevice(plan);
 assert.equal(m, device_.model, "openDevice() returns the record the other modules read as model");
-assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "held", "info", "key", "limit", "memory", "own", "owned", "plan", "remembered", "ternary"],
+assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "features", "held", "info", "key", "limit", "memory", "own", "owned", "plan", "remembered"],
   "what device.js puts in the model's record: the device and what it said of itself, the plan and the memory, the buffers owned and held; the records are their owners'");
 assert.equal(m.device, gpu.device);
 assert.equal(m.memory, null, "no memory until start() hands one");
-assert.equal(m.ternary, false);
+assert.deepEqual(m.features, { subgroups: false, packed: false }, "T642.3: the device's subgroups and WGSL's packed dot, taken once: none here");
 assert.equal(m.own, null, "no shaders of its own: an int8 model's (T547.2.3)");
 assert.equal(m.remembered, null, "nothing remembered where the page kept nothing");
 assert.equal(m.limit, 1 << 27, "the largest buffer the device binds");
@@ -436,7 +436,8 @@ console.log("gpu-worker-parts-check: a ternary model's float16 scales go up as f
     const shared = { buffer: new SharedArrayBuffer(size) };
     new Uint8Array(shared.buffer).set(random(size));
     const model = await openDevice(binary(made));
-    assert.equal(model.ternary, true, "a binary model is multiplied by ternary's shaders, with their device's key");
+    assert.equal(model.own, "ternary", "a binary model is multiplied by ternary's shaders, with their device's key");
+    assert.deepEqual(model.features, { subgroups: false, packed: true }, "T642.3: WGSL's packed dot, said once in the record (the device has no subgroups)");
     handed(shared, model.plan);
     await uploadLayers(model);
     for (const [name, [rows, n]] of Object.entries(BINARY)) {
@@ -760,14 +761,14 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   const { tokenCandidates, tokenCodes } = await import(runtimeUrl("gpu/tokens.js"));
   const { ENGINE_SHADERS, TERNARY_SHADERS, BLOCK_SHADERS } = await import(runtimeUrl("shaders.js"));
   const rowOf = new Map([...ENGINE_SHADERS, ...TERNARY_SHADERS, ...BLOCK_SHADERS].map((row) => [row.text(), row]));
-  const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: { wgslLanguageFeatures: new Set(["packed_4x8_integer_dot_product", "subgroup_id"]) } } });
+  // (T642.3: what the device has is the record's features, which openDevice() took once: no navigator is read here)
+  const features = { subgroups: true, packed: true };
   let forms = 0, codes = 0;
   // (T547.2.4: and a model of llama.cpp's blocks besides int8, whose forms are DP4A's alone and have the matrices' keys
   // again with ":" and a type after them, of its own rows: T547.3.3, a type each of those it has; an int8 model has none)
   for (const [own, types] of [[null, []], ["ternary", []], ["blocks", ["Q4_K"]], ["blocks", ["Q2_K"]], ["blocks", ["Q4_K", "Q2_K"]]]) for (const layerNorm of [false, true]) {
     const ternary = own === "ternary", blocks = types;
-    const candidates = tokenCandidates({ ternary, own, device: { features: new Set(["subgroups"]) }, plan: { layerNorm } });
+    const candidates = tokenCandidates({ own, features, plan: { layerNorm } });
     assert.ok(candidates.length > 0, "a device with subgroups and the packed dot has forms of a token's layer");
     if (blocks.length) assert.ok(candidates.every((form) => form.dp4a && !form.ternary), "a model of blocks' forms are DP4A's, of int8");
     for (const form of candidates) for (const apart of [false, true]) for (const gated of [false, true]) for (const floatHead of [false, true]) {
@@ -791,7 +792,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
   // T579: a form compiles the pipelines its model's matrices take and no other: a role all of blocks has no key of int8,
   // a type no matrix of a role has is no key of it, and a role the model has no matrix of (mix, write) none at all
   {
-    const [form] = tokenCandidates({ ternary: false, own: "blocks", device: { features: new Set(["subgroups"]) }, plan: { layerNorm: false } });
+    const [form] = tokenCandidates({ own: "blocks", features, plan: { layerNorm: false } });
     const roles = new Map([["qkv", new Set(["Q4_K", "IQ2_XS"])], ["add", new Set(["int8", "Q4_K"])], ["glu", new Set(["IQ1_M"])], ["classifier", new Set(["Q2_K"])]]);
     const keys = tokenCodes(form, { apart: false, gated: true, layerNorm: false, floatHead: false, roles }).map(([key]) => key);
     assert.deepEqual(keys, ["normQuantize", "qkv:Q4_K", "qkv:IQ2_XS", "add", "add:Q4_K", "glu:IQ1_M", "classifier:Q2_K"], `${form.name}: the keys of a model of blocks are those its matrices take (${keys})`);
@@ -805,7 +806,7 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
     const shape = (kinds, matrices, vectors = {}, classifier = "int8") => {
       const plan = { kinds, matrices: Object.fromEntries(Object.entries(matrices).map(([name, packing]) => [name, Array.isArray(packing) ? matrix("layers", packing) : matrix(packing)])),
         vectors, tokens: { classifier: matrix(classifier) }, activation: "silu", layerNorm: false };
-      const { roles } = tokenShape({ plan, ternary: false, weights: { matrices: plan.matrices } });
+      const { roles } = tokenShape({ plan, own: null, weights: { matrices: plan.matrices } });
       return Object.fromEntries([...roles].map(([role, packings]) => [role, [...packings].sort()]));
     };
     const llama = { wq: "int8", wk: "int8", wv: "int8", wo: "int8", w1: "int8", w2: "int8", w3: "int8" };
@@ -819,7 +820,15 @@ console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, t
       { write: ["IQ1_M", "IQ2_XS", "Q4_K"], add: ["int8"], qkv: ["IQ3_S", "Q4_K", "int8"], mix: ["int8"], glu: ["int8"], classifier: ["Q2_K"] },
       "a Qwen3.5's of blocks: the linear layers' by write, the gate by mix, each matrix by its layers' packings, the classifier by its type");
   }
-  if (was) Object.defineProperty(globalThis, "navigator", was); else delete globalThis.navigator;
+  // T642.3: a device without subgroups has no form of them, and one without WGSL's packed dot no DP4A's (a model of its
+  // own shaders, ternary's or blocks', none at all: they are DP4A's)
+  for (const own of [null, "ternary", "blocks"]) for (const [subgroups, packed] of [[false, true], [true, false], [false, false]]) {
+    const names = tokenCandidates({ own, features: { subgroups, packed }, plan: { layerNorm: false } }).map((form) => form.name);
+    const all = tokenCandidates({ own, features, plan: { layerNorm: false } });
+    assert.deepEqual(names, all.filter((form) => (subgroups || !form.subgroups) && (packed || !form.dp4a)).map((form) => form.name),
+      `${own ?? "int8"}, subgroups ${subgroups}, packed ${packed}: the forms the device's features allow`);
+    if (!packed && own) assert.deepEqual(names, [], `a ${own} model has no form without the packed dot`);
+  }
   console.log(`gpu-worker-parts-check: tokens.js's ${forms} forms of a token's layer (by the model's packing, its norm and its shape) compile ${codes} texts, each a row of the catalogue and of the model's own packing`);
 }
 // ---- T565: the bundles of a linear-attention layer's states (gpu/linear.ts's stateBundles()), as the 27B's go past a

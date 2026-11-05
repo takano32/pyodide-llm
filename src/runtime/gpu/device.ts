@@ -52,10 +52,15 @@ type Base = {
   remembered: Remembered | null;
   adapter: Adapter;
   key: string;
-  ternary: boolean;
   // T547.2.3: the shaders the model has of its own (ternary's, or Q4_K's beside int8), which its key holds
+  // (T642.3: "ternary" is a ternary model's, or a binary one's, which goes up as ternary codes: there is no other field
+  // that says it)
   own: Own;
+  // T642.3: what the device and the browser's WGSL have, taken once here for the parts to read: subgroups (the
+  // device's feature and WGSL's subgroup_id), packed (WGSL's packed_4x8_integer_dot_product, DP4A)
+  features: Features;
 };
+type Features = { subgroups: boolean; packed: boolean };
 type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens?: TokenBuffers; tokenAttention?: TokenAttentionChosen; tokenForm?: TokenChoice };
 // T626: the record of a model, or of one on the GPU alone as it opens, before handed() puts start()'s plan and the
 // memory in (its memory null till then says which): what runs then (start.ts's open(), and routed() as the checkpoint's
@@ -171,9 +176,11 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     if (fallback && !plan.force.fallback) return say(REASONS.fallback);
     // T232: ternary weights are multiplied as packed int8 alone (shaders/prompt.ts's TERNARY_PACKED; T547.2.3: and Q4_K's
     // blocks, packings.ts's dot): said before anything goes up
-    const ternary = ternaryPlan(plan), own = ownOf(plan);
+    const own = ownOf(plan);
+    const language = navigator.gpu.wgslLanguageFeatures;
+    const packed = Boolean(language?.has("packed_4x8_integer_dot_product"));
     const dotted = Object.values(plan.matrices).flatMap(packingsOf).find((packing) => PACKINGS[packing].dot);
-    if (dotted && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
+    if (dotted && !packed) {
       return say(REASONS.packed(dotted));
     }
     // the largest buffer the device binds (T155: a matrix larger than it goes in pieces, piecesOf)
@@ -192,7 +199,8 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     // (T232: a ternary model's key holds its own shaders too; T547.2.3: and a model of Q4_K blocks its own)
     const key = deviceKey(adapter, device, own);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, ternary, own } satisfies Made as unknown as Model;
+    const features: Features = { subgroups: device.features.has("subgroups") && Boolean(language?.has("subgroup_id")), packed };
+    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, own, features } satisfies Made as unknown as Model;
     if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");

@@ -36,7 +36,7 @@ type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; fl
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
 async function chooseTokenAttention(m: Model): Promise<void> {
   const { device, plan } = m;
-  const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
+  const { subgroups } = m.features;
   const vec = (withSubgroups: boolean) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
     shape: flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
       subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize }) });

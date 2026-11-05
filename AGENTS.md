@@ -206,7 +206,7 @@
 | `worker/pool.ts`・`worker/alone.ts`・`worker/weights.ts` | 使い回すメモリといまのモデルのメモリ（`pooled()`・`weightsInPython()`）/ GPU だけのモデル・CPU に戻したモデル・読み込み中のモデルの鍵（`aloneBegan()`）/ 層ごとの埋め込みの表を読むファイル（`rowsNow`）・表をメモリに持つモデル・塊を広げる読み込み。向きは weights → alone → pool |
 | `forward/threads.ts`・`forward/gpuside.ts` | スレッドと本数の検索 / GPU の Worker・どちらに回すか・測り直し |
 | `forward/control.ts`・`forward/cache.ts` | 制御領域の語と待ち / KV のキャッシュ |
-| `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録（`m.weights`・`m.block`・`m.forms`・`m.tokens`: **持ち主のファイルがリテラルで作り、その鍵が宣言**。別の部品の記録には代入しない。層の種類が作る物は種類のファイルの閉包の中にあり、`m.block.kinds`・`m.tokens.kinds` に置くのは `block.ts`・`tokens.ts`） |
+| `gpu/device.ts` | `model`・`stopping`・`lost` と、モデルの記録（端末の事実 `m.features`（subgroups・packed int8 dot）と、モデル自身のシェーダ `m.own`（3 値と 1 ビットは `"ternary"`）は `openDevice()` が 1 回作る: `gpu/` の部品は `navigator.gpu` を直に読まない（端末の鍵と、鍵と同じ形の一覧 `devicePromptForms()` は `shaders/key.ts` が読む。T642.3）。`m.weights`・`m.block`・`m.forms`・`m.tokens`: **持ち主のファイルがリテラルで作り、その鍵が宣言**。別の部品の記録には代入しない。層の種類が作る物は種類のファイルの閉包の中にあり、`m.block.kinds`・`m.tokens.kinds` に置くのは `block.ts`・`tokens.ts`） |
 | `src/page/model.ts`・`answer.ts` | ページが持つモデルと読み込みの進み / 書いている答え（描く間合い: 最初はすぐ、その後 8 トークンか 32 ms ごと） |
 | `src/benchmark/running.ts` | 走っている run |
 

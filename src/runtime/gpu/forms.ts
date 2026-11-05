@@ -47,7 +47,7 @@ const candidates = (m: Model) => devicePromptForms(m.device, m.own).filter((form
 async function chooseAttention(m: Model) {
   const { device, plan } = m;
   const half = device.features.has("shader-f16");
-  const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
+  const { subgroups } = m.features;
   const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: threadsOf(device),
     subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize };
   const tried: string[] = [];
