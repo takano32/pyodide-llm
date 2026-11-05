@@ -1,7 +1,7 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
 import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.ts";
 import { atOnce, sampled, thinking } from "./sampling.ts";
-import type { Hf, OfHuggingFace, Sampled } from "../runtime/contracts/messages.ts";
+import type { Hf, OfHuggingFace, Sampled, Translation } from "../runtime/contracts/messages.ts";
 import type { Options } from "../runtime/contracts/python.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
 
@@ -14,7 +14,7 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 // original's; T634.2, wide: its forward pass at the context passes a 32-bit memory where its weights alone do not),
 // the engine's options, the template and the sampling of an answer, the prompt and the placeholder it
 // opens with
-// T643.1: the two kinds are two types, and an entry is one of them: what one kind has, the other says it has not
+// T643.1: the kinds are types (T648.4: three, with a translation model's), and an entry is one of them: what one kind has, the other says it has not
 // (?: undefined), so that either is read by the same names. generation: steps and temperature, which every entry says
 // (the page's settings start from them)
 export type Generation = Sampled & { steps: number; temperature: number };
@@ -44,6 +44,7 @@ export type Site = Shared & {
   weights?: undefined;
   loaded?: undefined;
   rebuilt?: undefined;
+  translation?: undefined;
 };
 // an entry of a model of Hugging Face, converted in the page: its repository, revision and file are named
 export type Remote = Shared & {
@@ -59,8 +60,28 @@ export type Remote = Shared & {
   checkpoint?: undefined;
   tokenizer?: undefined;
   bytes?: undefined;
+  translation?: undefined;
 };
-export type Entry = Site | Remote;
+// T648.4: an entry of a translation model of this site (Firefox Translations', `make models`): its files under
+// models/translations/ and its languages (translation), the bytes of its model's file, and the source of the list's
+// line of licenses; it answers with the translation of what was typed (no template, greedy: its generation says so)
+export type Translating = Shared & {
+  source: string;
+  translation: Translation;
+  bytes: number;
+  template?: undefined;
+  checkpoint?: undefined;
+  tokenizer?: undefined;
+  hf?: undefined;
+  original?: undefined;
+  download?: undefined;
+  conversion?: undefined;
+  shares?: undefined;
+  weights?: undefined;
+  loaded?: undefined;
+  rebuilt?: undefined;
+};
+export type Entry = Site | Remote | Translating;
 // what the entries a function below writes share, before their own id, name, note and sampling
 type Common = Omit<Remote, "id" | "name" | "note" | "generation">;
 // the weights a function below is given: a GGUF's with its original's vocabulary (ggufOf()), or a repository's (hf())

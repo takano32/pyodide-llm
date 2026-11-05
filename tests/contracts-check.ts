@@ -171,6 +171,7 @@ assert.match(differing("x", set("a"), set("a"), { b: "spread in" })[0], /listed 
   holds(py, "ConductModule", "src/python/convert/conduct.py (def conduct)", read(python("convert/conduct.py")).match(/^def (\w+)\(/gm).join("\n"));
   holds(py, "Llama", "src/python/engine/model.py", read(python("engine/model.py")));
   holds(py, "Conversion", "src/python/convert/conversion.py", read(python("convert/conversion.py")));
+  holds(py, "TranslatingModule", "src/python/engine/translating.py (def translation)", read(python("engine/translating.py")).match(/^def (\w+)\(/gm).join("\n"));
   holds(py, "Sink", "src/python/convert/checkpoint.py (sink.<name>)", read(python("convert/checkpoint.py")).match(/\bsink\.\w+\(/g).join("\n"));
   console.log(`contracts-check: contracts/python.ts's ${held} members are names of Python's sources, each one the worker uses`);
 }

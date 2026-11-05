@@ -6,7 +6,7 @@ import { threadsRequest, threadsFound } from "./request.ts";
 import { llama, engineNow } from "./loaded.ts";
 import { memoryShared } from "./pool.ts";
 import type { Paths, PathThreads, Status, ToWorker } from "../contracts/messages.ts";
-import type { Llama } from "../contracts/python.ts";
+import type { Answering, Llama } from "../contracts/python.ts";
 import type { Side } from "../forward.ts";
 
 // T368.3: a run of the writing: the ms of its tokens, and how many of them the GPU took
@@ -15,7 +15,7 @@ type Run = { ms: number; gpuTokens: number };
 // T45: a warm-up, then the measured run: the prompt, greedy, steps tokens (fewer where the model ends it first). The
 // warm-up runs its 8 steps (T184's review: return() on a generator that has not started runs none of it)
 // (T476: python, the model loaded now, which the caller relies on being there)
-export function timedGeneration(python: Llama, prompt: string, steps: number) {
+export function timedGeneration(python: Answering, prompt: string, steps: number) {
   warmUp(python, prompt);
   const begin = performance.now();
   const pieces = python.generate.callKwargs(prompt, { steps, temperature: 0, echo: false });
@@ -27,7 +27,7 @@ export function timedGeneration(python: Llama, prompt: string, steps: number) {
   }
   return { tokens, speed: tokens / ((performance.now() - begin) / 1000) };
 }
-function warmUp(python: Llama, prompt: string) {
+function warmUp(python: Answering, prompt: string) {
   const pieces = python.generate.callKwargs(prompt, { steps: 8, temperature: 0, echo: false });
   try {
     while (!pieces.next().done);
@@ -47,9 +47,11 @@ function warmUp(python: Llama, prompt: string) {
 const GPU_WAIT_S = 240, WRITING_RUNS = 3;
 export async function timedPaths({ prompt, counts, sampled }: Extract<ToWorker, { type: "paths" }>): Promise<Omit<Paths, "type" | "load">> {
   // (T476: the model loaded now and the forward module, which a load that made an engine has: taken once here)
-  const python = llama!, forward = forwardModule!;
+  const answering = llama!, forward = forwardModule!;
   const engine = engineNow();
-  if (!engine) return { error: `${python.backend} runs this model here: the page's path is the NumPy engine's` };
+  if (!engine) return { error: `${answering.backend} runs this model here: the page's path is the NumPy engine's` };
+  // (T648.4: forward.ts's engine is a Llama's: a translator has none)
+  const python = answering as Llama;
   if (engine.gpu && !engine.gpuReady) {
     postMessage({ type: "status", text: "the GPU gets ready" } satisfies Status);
     let timer: ReturnType<typeof setTimeout>;

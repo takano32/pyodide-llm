@@ -54,6 +54,17 @@ export type Llama = Proxy & {
   release?(): Promise<unknown> | undefined;
 };
 
+// T648.4: what the worker reads of the model loaded now, whichever engine answers: Python's Llama, or a translator of
+// Firefox Translations (src/python/engine/translating.py's Translation, which has these names and no more)
+export type Answering = Pick<Llama, "backend" | "seq_len" | "generate" | "stats" | "release" | "destroy">;
+
+// src/python/engine/translating.py: translation(model, source, target, language, **options), a translator of a model's
+// bytes and its vocabularies' (sentencepiece models), into language (its BCP 47 code); sentences: the source's sentences
+// of a text (the worker's Intl.Segmenter)
+export type TranslatingModule = Proxy & {
+  translation: { callKwargs(model: Bytes, source: Bytes, target: Bytes, language: string, options: { kernels?: string; disable?: string[]; sentences?: (text: string) => string[] }): Answering };
+};
+
 // src/python/llama2_numpy.py, the engine's window
 export type EngineWindow = Proxy & {
   // T92: how many channels of the classifier's input go as float32 at most
@@ -100,6 +111,7 @@ export type Pyodide = {
   pyimport(name: "llama2_numpy"): EngineWindow;
   pyimport(name: "llama2_convert"): ConverterWindow;
   pyimport(name: "convert.conduct"): ConductModule;
+  pyimport(name: "engine.translating"): TranslatingModule;
   pyimport(name: "jinja2"): Proxy;
   globals: { get(name: "bytearray"): (size: number) => Bytes };
   toPy(value: unknown): Proxy;

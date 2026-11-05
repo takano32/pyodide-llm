@@ -558,6 +558,8 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   assert.deepEqual([seconds(1.234), seconds(9.999), seconds(10), seconds(12.34)], ["1.23 s", "10.00 s", "10.0 s", "12.3 s"], "two decimals under 10 seconds, one above");
   const ready = { seconds: { pyodide: 1.5, download: 2.25, construct: 0.5 }, overlapped: false, fromCache: false };
   assert.deepEqual(loadLines(ready, {}), ["Pyodide 1.50 s · download 2.25 s", "Llama() 0.50 s"], "a model of the site");
+  assert.deepEqual(loadLines(ready, { translation: { folder: "", model: "", source: "", target: "", from: "en", to: "ja" } }),
+    ["Pyodide 1.50 s · download 2.25 s", "translation() 0.50 s"], "a translation model (T648.4)");
   assert.deepEqual(loadLines({ ...ready, overlapped: true }, { file: {} })[0], "Pyodide 1.50 s · read 2.25 s (at the same time)", "a file of the visitor's disk, fetched with Pyodide");
   assert.deepEqual(loadLines({ ...ready, notKept: "no room" }, { hf: {} }), ["Pyodide 1.50 s · fetch and conversion 2.25 s", "not kept for the next visit: no room", "Llama() 0.50 s"],
     "a model of Hugging Face, and why it is not kept");

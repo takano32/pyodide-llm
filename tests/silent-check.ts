@@ -164,6 +164,9 @@ const SILENT = {
     ["keepConverted", "keptModule.replaced(model).catch(() => [])", "T136: what was kept of the model's old source could not be listed: it stays and takes room, and the new one is kept or keep() says why not"],
     ["keepConverted", "keptModule.forget(old).catch(() => {})", "T136: an old copy that could not be deleted stays and takes room: keep() says so if the new one then does not fit"],
   ],
+  "src/runtime/worker/translate.ts": [
+    ["translated", "vocabularies.catch(() => {})", "T648.4: awaited below: a load that ends before that (cancelled, the runtime never came) leaves no unhandled rejection"],
+  ],
   "src/runtime/worker/load.ts": [
     ["checkpointLoaded", "tokenizerBytes.catch(() => {})", "awaited below: a load that ends before that (cancelled, the runtime never came) leaves no unhandled rejection"],
   ],

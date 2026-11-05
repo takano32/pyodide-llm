@@ -34,7 +34,11 @@ const LFM_OPEN = "LFM Open License v1.0";
 // ai.google.dev/gemma/terms; their metadata: gemma). unsloth's copies and GGUFs have the same words
 const GEMMA = "Gemma Terms of Use";
 const SARASHINA_NC = "Sarashina Model NonCommercial License Agreement";
+// T648.4: Mozilla's Firefox Translations models: mozilla/translations' README ("The models are released under the
+// MPL-2.0"), and the files' own LICENSE.txt this site serves beside them
+const MPL = "Mozilla Public License 2.0";
 export const LICENSES: Record<string, string> = {
+  "mozilla/translations": MPL,
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
   "llm-jp/llm-jp-3-980m-instruct3": APACHE, "rinna/japanese-gpt2-small": MIT, "rinna/japanese-gpt-neox-small": MIT,

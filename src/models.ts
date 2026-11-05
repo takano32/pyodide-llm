@@ -9,10 +9,11 @@ import { THOUGHT_BUDGET, thinks } from "./models/sampling.ts";
 import { HF_JAPANESE } from "./models/hf-japanese.ts";
 import { HF_CLASSICS } from "./models/hf-classics.ts";
 import { HF_FAMILIES } from "./models/hf-families.ts";
+import { TRANSLATIONS } from "./models/translations.ts";
 import type { Entry } from "./models/builders.ts";
 
 export { filled } from "./models/filled.ts";
-export type { Entry, Generation, Remote, Site } from "./models/builders.ts";
+export type { Entry, Generation, Remote, Site, Translating } from "./models/builders.ts";
 export { LICENSES, NOTICES } from "./models/licenses.ts";
 export { PAGE_MEMORY, modelBytes, SIX_OF_EIGHT, TERNARY_OF_EIGHT, DEVICE_MEMORY_CAP, weightsFor, memoryWarning, memoryFailure } from "./models/memory.ts";
 
@@ -46,7 +47,7 @@ export const GROUPS = { site: "Models of this site", original: "Unquantized orig
 // in the order they were added, more or less; MODELS below is the order of the list
 // T511.4: "desktop only" and "Chrome and Firefox" are not written in the parts: devicesOf() adds them to every note.
 // T520: nor the budget of a thought: every entry that thinks has the same one (THOUGHT_BUDGET)
-const LISTED: Entry[] = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
+const LISTED: Entry[] = [...BUILT, ...TRANSLATIONS, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
   .map((entry) => ({ ...entry, note: [entry.note, ...devicesOf(entry)].join(" · "),
     ...(thinks(entry) ? { generation: { ...entry.generation, thinking: THOUGHT_BUDGET } } : {}) }));
 

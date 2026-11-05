@@ -36,12 +36,13 @@ export function progressLine({ name, received, total, perSecond, converted }:
 const loadedHow = (data: Ready, model: Pick<Model, "hf" | "file">) => (model.hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : model.file ? "read" : "download");
 
 /** The load's breakdown under the status line, once the model is ready: Pyodide and the model's own fetch (and
- * whether the two ran at once), why the model is not kept for the next visit where it is not, and Llama() */
-export function loadLines(data: Ready, model: Pick<Model, "hf" | "file">) {
+ * whether the two ran at once), why the model is not kept for the next visit where it is not, and Llama() (T648.4:
+ * translation(), a translation model's: src/python/engine/translating.py) */
+export function loadLines(data: Ready, model: Pick<Model, "hf" | "file" | "translation">) {
   return [
     `Pyodide ${seconds(data.seconds.pyodide)} · ${loadedHow(data, model)} ${seconds(data.seconds.download)}${data.overlapped ? " (at the same time)" : ""}`,
     ...(data.notKept ? [`not kept for the next visit: ${data.notKept}`] : []),
-    `Llama() ${seconds(data.seconds.construct)}`,
+    `${model.translation ? "translation()" : "Llama()"} ${seconds(data.seconds.construct)}`,
   ];
 }
 

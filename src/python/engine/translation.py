@@ -251,12 +251,17 @@ class Translator:
         """The source's ids for text: its pieces and </s> (Marian puts no beginning before them)."""
         return [*self.source.encode(text), self.eos[0]]
 
-    def steps(self, ids, forced=None):
+    def context(self, ids):
+        """What every step of the decoder reads of the source: each layer's keys and values of the encoder's output."""
+        encoded = self.encode(ids)
+        return [(attention.k(encoded), attention.v(encoded)) for _, _, _, attention, _, _ in self.decoder]
+
+    def steps(self, ids, forced=None, context=None):
         """Each step's logits (the whole target vocabulary's, float32) for the source's ids. The token each step
         writes is the logits' first largest, or forced's (a list of the target's ids) while it lasts; it stops after
-        </s> or at the length's bound, min(⌈2 S⌉ + 4, 256) steps with S the source's ids."""
-        context = self.encode(ids)
-        context = [(attention.k(context), attention.v(context)) for _, _, _, attention, _, _ in self.decoder]
+        </s> or at the length's bound, min(⌈2 S⌉ + 4, 256) steps with S the source's ids. context: context(ids),
+        where it was made already (T648.4: the page times the encoder apart)."""
+        context = self.context(ids) if context is None else context
         cells = [np.zeros((1, self.dim), F) for _ in self.decoder]
         token = self.eos[1]  # (position 0 embeds nothing: it only stands in)
         for position in range(min(2 * len(ids) + 4, 256)):
@@ -276,19 +281,19 @@ class Translator:
             written.append(token)
         return written
 
+    def piece(self, token):
+        """The bytes a target's token writes: its piece, a byte piece as its byte; the unknown piece and </s> none."""
+        if token == self.eos[1] or token == self.target.index.get(b"<unk>"):
+            return b""
+        piece = self.target.vocab[token]
+        if len(piece) == 6 and piece.startswith(b"<0x") and piece.endswith(b">"):
+            return bytes([int(piece[3:5], 16)])
+        return piece
+
     def text(self, ids):
-        """The text of the target's ids: their pieces one after another, a byte piece as its byte, then UTF-8; the
-        unknown piece and </s> write nothing, and the text's first spaces are taken off."""
-        vocab, unknown = self.target.vocab, self.target.index.get(b"<unk>")
-        pieces = bytearray()
-        for token in ids:
-            if token in (self.eos[1], unknown):
-                continue
-            piece = vocab[token]
-            if len(piece) == 6 and piece.startswith(b"<0x") and piece.endswith(b">"):
-                piece = bytes([int(piece[3:5], 16)])
-            pieces += piece
-        return pieces.decode("utf-8", "replace").lstrip()
+        """The text of the target's ids: their pieces one after another (piece()), then UTF-8, and the text's first
+        spaces taken off."""
+        return b"".join(self.piece(token) for token in ids).decode("utf-8", "replace").lstrip()
 
     def translate(self, text):
         """text translated as one unit, greedily (the sentences are not cut apart: that is the page's, T648.4)."""

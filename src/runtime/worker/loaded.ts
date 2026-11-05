@@ -5,10 +5,11 @@
 import { pyodide } from "./runtime.ts";
 import { rowsLetGo } from "./weights.ts";
 import type { Outside } from "../forward.ts";
-import type { Llama } from "../contracts/python.ts";
+import type { Answering } from "../contracts/python.ts";
 
-// Python's Llama of the model loaded now (a PyProxy), or undefined
-export let llama: Llama | undefined;
+// Python's Llama of the model loaded now (a PyProxy), or undefined; T648.4: or a translator, which answers by the same
+// names (contracts/python.ts's Answering)
+export let llama: Answering | undefined;
 // T93: forward.ts's external() of it (the forward pass in JavaScript), or undefined where NumPy runs the model
 let outside: Outside | undefined;
 
@@ -16,7 +17,7 @@ let outside: Outside | undefined;
 export const engineNow = () => outside?.engine;
 
 /** A model was built: made is what the place of its weights made of it ({ llama, outside }, weights.js) */
-export function adopted(made: { llama: Llama; outside?: Outside }) {
+export function adopted(made: { llama: Answering; outside?: Outside }) {
   ({ llama, outside } = made);
 }
 

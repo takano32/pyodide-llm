@@ -38,10 +38,9 @@ from tree import python_folder  # noqa: E402
 sys.path.insert(0, python_folder(ROOT))
 import numpy as np  # noqa: E402
 
-from convert.tokenizer import sentencepiece_charsmap, sentencepiece_options, sentencepiece_pieces, tokenizer_bin  # noqa: E402
 from engine.kernels import load_kernels  # noqa: E402
 from engine.marian import read_marian  # noqa: E402
-from engine.tokenizer import Tokenizer  # noqa: E402
+from engine.translating import vocabulary  # noqa: E402
 from engine.translation import Translator  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "translations.json"
@@ -85,12 +84,8 @@ def files(name):
 
 
 def spm_tokenizer(path):
-    """The engine's Tokenizer of a sentencepiece model, as the converter reads one (convert/tokenizer.py)."""
-    model = path.read_bytes()
-    pieces = list(sentencepiece_pieces(model))
-    options = sentencepiece_options(model)
-    data = tokenizer_bin(pieces, len(pieces), charsmap=sentencepiece_charsmap(model))
-    return Tokenizer(data, len(pieces), kind=options.pop("tokenizer_kind"), **options)
+    """The engine's Tokenizer of a sentencepiece model, as the page reads one (engine/translating.py)."""
+    return vocabulary(path.read_bytes())
 
 
 def fx_text(translator, ids):

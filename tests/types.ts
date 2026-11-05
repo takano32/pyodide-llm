@@ -46,7 +46,7 @@ export const ANY_MOST = 24;
 
 // what a worker (and the page's main thread, for the two modules it runs too: kept.ts, updated.ts) has without
 // declaring it, as far as the runtime's files use it
-export const AMBIENT = new Set(("AbortController Array ArrayBuffer Atomics BigInt BigInt64Array Boolean Date Error FileSystemFileHandle Float32Array Float64Array " +
+export const AMBIENT = new Set(("AbortController Array ArrayBuffer Atomics BigInt BigInt64Array Boolean Date Error FileSystemFileHandle Float32Array Float64Array Intl " +
   "Infinity Int32Array Int8Array JSON Map Math MessageChannel NaN Number Object PerformanceObserver Promise ReadableStream Response Set SharedArrayBuffer String Symbol " +
   "TextEncoder TransformStream URL URLSearchParams Uint16Array Uint32Array Uint8Array WeakMap WebAssembly Worker WritableStream clearInterval clearTimeout console crypto " +
   "atob encodeURIComponent fetch globalThis navigator onmessage performance postMessage self setInterval setTimeout undefined").split(" "));

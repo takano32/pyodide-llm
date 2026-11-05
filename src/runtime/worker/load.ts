@@ -12,6 +12,7 @@ import { weightsBytes } from "./pool.ts";
 import { sourceOf, headerInts } from "./sources.ts";
 import type { SourceKind } from "./sources.ts";
 import { convert, converter } from "./convert.ts";
+import { translated } from "./translate.ts";
 import { lastLine, told } from "../failure.ts";
 import type { Thrown } from "../failure.ts";
 import type { Options } from "../contracts/python.ts";
@@ -43,9 +44,11 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
   // let go of the previous model first, so that two never have to fit in memory (loaded.ts)
   await letGo(signal);
   // T641.4: a model of Hugging Face is converted, every other kind's checkpoint is read as it is (its kind: sources.ts's
-  // SOURCES, which says what follows its ready); either says what its ready says besides
+  // SOURCES, which says what follows its ready); either says what its ready says besides. T648.4: a translation model
+  // is none of them, and is read by translate.ts
   let kind: SourceKind | undefined;
-  const said = model.hf ? await converted(model, signal, id) : await checkpointLoaded(model, (kind = sourceOf(model)), signal, id);
+  const said = model.translation ? await translated(model, signal, id)
+    : model.hf ? await converted(model, signal, id) : await checkpointLoaded(model, (kind = sourceOf(model)), signal, id);
   if (!(await gpuOnlyReady(model, id, engineNow()))) return load(model, signal, id);  // T156: the GPU failed on it alone
   // T329.2.2: its table was not all kept as it came (only a conversion keeps a table as it comes: always true for the others)
   if (!rowsReady(model)) return load(model, signal, id);

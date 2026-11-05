@@ -433,6 +433,40 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     assert.deepEqual(said.slice(kept).filter((line) => !/answered a range request with the whole file/.test(line)), [], "the two kinds said nothing on the console");
     context.stand.pyodide.toPy = toPy;
 
+    // T648.4: a translation model of the site: its model's parts and its vocabularies under models/translations/, the
+    // converter's archive placed (the vocabularies' reader), and Python's translation() of their bytes, into the
+    // language it names, with the switches and a cutter of the source's sentences, adopted as the model loaded now
+    {
+      const asked = [];
+      const translator = { backend: "int8, SIMD kernels (a stand-in)", seq_len: 256, destroy() {} };
+      context.stand.pyodide.pyimport = (name) => ({ destroy() {}, translation: { callKwargs: (...args) => { asked.push({ name, args }); return translator; } } });
+      run("llama2_convert = {}");
+      const translation = { id: "firefox-test", name: "A translation", bytes: BYTES, options: {},
+        translation: { folder: "en-ja-3.0", model: "model.enja.bin", source: "src.spm", target: "trg.spm", from: "en", to: "ja" } };
+      fresh((url) => new Response(url.endsWith(".spm") ? new Uint8Array(8) : file.slice(), { status: 200 }));
+      await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 67, model: translation, search: "" } });
+      await sleep(50);
+      assert.deepEqual([of("error"), of("status").filter((s) => s.load === 67).map((s) => s.text), of("ready").filter((r) => r.load === 67).map((r) => [r.backend, r.gpu, r.seq_len]), run("llama") === translator],
+        [[], ["Downloading A translation..."], [["int8, SIMD kernels (a stand-in)", "", 256]], true],
+        "a translation model: said as a download, ready with its own backend and no GPU's line, the model loaded now");
+      assert.deepEqual(requests.map((r) => r.url).filter((url) => url.includes("translations")).sort(), ["https://site.test/app/models/translations/en-ja-3.0/model.enja.bin.000",
+        "https://site.test/app/models/translations/en-ja-3.0/src.spm", "https://site.test/app/models/translations/en-ja-3.0/trg.spm"], "the model's parts and its two vocabularies under the root");
+      const [{ name, args }] = asked;
+      const options = args.at(-1);
+      assert.deepEqual(JSON.parse(JSON.stringify([name, args.length, args[3], options.kernels === run("pythonKernels"), options.disable, options.sentences("Hello. How are you?")])),
+        ["engine.translating", 5, "ja", true, ["relaxed"], ["Hello. ", "How are you?"]],  // (the switches of the first load's URL)
+        "translation() of the model, the two vocabularies and the target's language, with the kernels, the switches and the source's sentences");
+      // one vocabulary for both: asked for once, and handed twice
+      asked.length = 0;
+      requests.length = 0;
+      await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 68,
+        model: { ...translation, translation: { ...translation.translation, folder: "ja-en-3.1", source: "vocab.spm", target: "vocab.spm", from: "ja", to: "en" } } } });
+      await sleep(50);
+      assert.deepEqual([of("error"), requests.filter((r) => r.url.endsWith(".spm")).length, asked[0].args[1] === asked[0].args[2], asked[0].args[3]], [[], 1, true, "en"],
+        "a model of one vocabulary asks for it once and hands it as both");
+      delete context.stand.pyodide.pyimport;
+    }
+
     // a model of the site, once ready, drops what the Cache API holds of its parts at another size (and nothing of
     // the two kinds above, which have no parts)
     const deleted = [], stale = [{ url: "https://site.test/app/models/cached.000?bytes=8" }, { url: `https://site.test/app/models/cached.000?bytes=${BYTES}` }];
@@ -488,7 +522,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   }
   run("weightsPool = undefined; adopted({}); initialized = undefined;");
 }
-console.log("ok: load.js on stand-ins: a load to its ready (of the site, two files, two URLs), the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
+console.log("ok: load.js on stand-ins: a load to its ready (of the site, two files, two URLs, a translation model), the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
 
 // ---- T380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
 // cannot be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)

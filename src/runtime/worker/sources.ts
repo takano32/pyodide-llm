@@ -30,15 +30,18 @@ const CONNECTIONS = 8;
 // another size is fetched anew. Without the Cache API (some private modes) this is a plain fetch.
 // v2: llm-jp-3-150m got its whole context of 4096 tokens, which changed its header and not its size
 const MODEL_CACHE = "models-v2";
+// what a download reads of a model of this site: the name of its file under models/ (its parts are <name>.000, ...) and
+// its bytes (T648.4: a translation model's file is one too)
+type Parts = Pick<OfThisSite, "checkpoint" | "bytes">;
 
 // what an earlier version of this page stored
 globalThis.caches?.delete("models-v1").catch(() => {});
 
 // A part's bytes: PART_BYTES, the last one less
-const partBytes = (model: OfThisSite, part: number) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
-const partKey = (url: string, model: OfThisSite) => `${url}?bytes=${model.bytes}`;
+const partBytes = (model: Parts, part: number) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
+const partKey = (url: string, model: Parts) => `${url}?bytes=${model.bytes}`;
 
-async function fetchPart(url: string, model: OfThisSite, part: number, signal: AbortSignal) {
+async function fetchPart(url: string, model: Parts, part: number, signal: AbortSignal) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   const key = partKey(url, model);
   // a Cache API that fails here (T117 met it in the service worker) leaves the network to answer
@@ -67,13 +70,13 @@ async function fetchPart(url: string, model: OfThisSite, part: number, signal: A
   return res;
 }
 // a part that broke is not read from the cache again: the next try asks the network
-async function forgetPart(url: string, model: OfThisSite) {
+async function forgetPart(url: string, model: Parts) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   await cache?.delete(partKey(url, model)).catch(() => {});
 }
 
 // parts of this checkpoint that were cached for another size are of no use any more
-export async function dropStaleParts(model: OfThisSite) {
+export async function dropStaleParts(model: Parts) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   for (const request of (await cache?.keys().catch(() => undefined)) ?? []) {
     const url = new URL(request.url);
@@ -83,7 +86,7 @@ export async function dropStaleParts(model: OfThisSite) {
   }
 }
 
-export function download(model: OfThisSite, signal: AbortSignal, load: number) {
+export function download(model: Parts, signal: AbortSignal, load: number) {
   const parts = Math.ceil(model.bytes / PART_BYTES);
   const queue: [number, Uint8Array<ArrayBuffer>][] = [];
   const started = performance.now();
@@ -275,8 +278,8 @@ export const headerInts = (bytes: Uint8Array) => [...new Int32Array(bytes.slice(
 export type OpenedSource = { checkpoint: Source; tokenizer: Promise<ArrayBuffer>; header(): Promise<Uint8Array> };
 export type SourceKind = { verb: string; options?: Options; opened(signal: AbortSignal, load: number): OpenedSource | Promise<OpenedSource>; misread?(reason: string): string; ready?(): void };
 
-// a tokenizer.bin at a URL (name: what a failure calls it)
-const tokenizerAt = (url: string | URL, name: string, signal: AbortSignal) => fetch(url, { signal }).then((res) => {
+// a tokenizer.bin at a URL (name: what a failure calls it; T648.4: and a translation model's vocabulary)
+export const tokenizerAt = (url: string | URL, name: string, signal: AbortSignal) => fetch(url, { signal }).then((res) => {
   if (!res.ok) {
     throw new Error(`Could not fetch ${name}: ${res.status}`);
   }

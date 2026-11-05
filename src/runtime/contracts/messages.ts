@@ -20,17 +20,17 @@ import type { Options } from "./python.ts";
 
 // An item of src/models.ts as the page weighed it (src/page/address.ts's weighed()), or one the page made of a folder,
 // of two files, of a repository or of two URLs: as far as the worker reads it (T368.3; the list's own shape is that
-// file's, which is JavaScript still, and has more). One of four kinds, told apart by hf, file and url:
-export type Listed = OfThisSite | OfTwoFiles | OfTwoUrls | OfHuggingFace;
+// file's, and has more). One of five kinds, told apart by hf, file, url and translation:
+export type Listed = OfThisSite | OfTwoFiles | OfTwoUrls | OfHuggingFace | OfTranslation;
 // what every kind has: an id (an item's of the list; "local" for one the page made), its name, and what its engine
 // is made with (for a model that is converted, over what its conversion says: an item's options win)
 type Named = { id: string; name: string; options?: Options };
 // a model of this site: its parts under models/ (<checkpoint>.000, ...), their bytes together, its tokenizer's file
-export type OfThisSite = Named & { checkpoint: string; tokenizer: string; bytes: number; options: Options; hf?: undefined; file?: undefined; url?: undefined };
+export type OfThisSite = Named & { checkpoint: string; tokenizer: string; bytes: number; options: Options; hf?: undefined; file?: undefined; url?: undefined; translation?: undefined };
 // two files of the visitor's disk, a llama2.c checkpoint (bytes: its size) and its tokenizer.bin, read where they are
-export type OfTwoFiles = Named & { file: File; tokenizerFile: File; bytes: number; hf?: undefined; url?: undefined };
+export type OfTwoFiles = Named & { file: File; tokenizerFile: File; bytes: number; hf?: undefined; url?: undefined; translation?: undefined };
 // the same at two URLs (?checkpoint=&tokenizer=); bytes: the worker's own, what the server says the checkpoint's size is
-export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }; bytes?: number; tokenizer?: undefined; hf?: undefined; file?: undefined };
+export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }; bytes?: number; tokenizer?: undefined; hf?: undefined; file?: undefined; translation?: undefined };
 // A Hugging Face model, converted in the worker. hf: the names of its files, which Python's conduct reads
 // (src/python/convert/conduct.py), and where they are: huggingface.co's repository and revision (vocabulary: another
 // repository for the vocabulary, the config and the template, T136), or files: the Files of a folder of the visitor's
@@ -46,7 +46,13 @@ export type Hf = {
   vocabulary?: { repo: string; revision: string; config?: string; tokenizer?: string };
   files?: File[];
 };
-export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number; blocks?: boolean }; shares?: string[]; file?: undefined; url?: undefined };
+export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number; blocks?: boolean }; shares?: string[]; file?: undefined; url?: undefined; translation?: undefined };
+// T648.4: a translation model of this site (Firefox Translations', `make models`), which answers a text with its
+// translation: under models/translations/<folder>/, its model's file in parts of 8 MiB (bytes: their size together),
+// the sentencepiece models of the source's vocabulary and the target's (one file where the two are one), whole, and
+// the two languages, BCP 47 codes (from: what the source's sentences are cut by)
+export type Translation = { folder: string; model: string; source: string; target: string; from: string; to: string };
+export type OfTranslation = Named & { translation: Translation; bytes: number; hf?: undefined; file?: undefined; url?: undefined };
 
 // T93 stage 2: what the page asks about the number of threads: fixed (?threads=N), the count it remembers for this
 // device and model, and the logical cores to search from
