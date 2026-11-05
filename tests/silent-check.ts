@@ -102,21 +102,14 @@ const SILENT = {
     ["copy.onclick", "catch { copy.textContent = \"could not copy\"; }", "the clipboard refused: the button says so, and the table is on the page to select"],
   ],
   "src/page/isolation.ts": [
-    ["isolating", "catch {}", `${STORAGE}the address alone says whether the copies are kept`],
     ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T.371 is to say why there is one thread)"],
   ],
-  "src/page/receiver.ts": [
-    ["heardReady", "catch {}", `${STORAGE}the next visit weighs the GPU and the CPU again`],
-    ["heardGpu", "catch {}", `${STORAGE}the next visit times the shaders again`],
-    ["heardThreads", "catch {}", `${STORAGE}the next visit searches the threads again`],
-    ["heardDone", "catch {}", `${STORAGE}the tokens are weighed as many`],
-    ["heardError", "catch {}", "no session storage here: no second try without the Service Worker, and the error is shown as it is"],
-  ],
+  // (T.643.3: every read and write of the page's storage goes through these two, and each caller says what stands in:
+  // the address alone, a search of the threads again, the GPU's forms chosen again, the default model, no second try
+  // without the Service Worker)
   "src/page/remembered.ts": [
-    ["threadsFor", "catch {}", `${STORAGE}search again`],
-    ["gpuFor", "catch { return {}; }", `${STORAGE}or something else under the name: the GPU's forms are chosen again`],
-    ["remembered", "catch { return undefined; }", `${STORAGE}or something else under the name: the first model of the list opens`],
-    ["remember", "catch {}", `${STORAGE}the next visit opens the first model of the list`],
+    ["recall", "catch { return otherwise; }", `${STORAGE}or something else under the name: the caller's otherwise stands in, as nothing kept`],
+    ["keep", "catch { return false; }", `${STORAGE}or no room: nothing is kept, the next visit finds what it would without it, and the caller reads false`],
   ],
   "src/runtime/benchmark/gpu/device.ts": [
     ["(the module)", "shaders.catch(() => {})", "T.442: the shaders' module, started before any step awaits it: a failure before that awaiter would be unhandled. Every step awaits the same promise and says the failure (an update, by updated.ts)"],

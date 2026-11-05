@@ -350,6 +350,103 @@ console.log("page-parts-check: running.ts by itself: one run at a time, its sect
   cases += 1;
 }
 {
+  // T.643.3: remembered.ts's recall() and keep() are the page's only reads and writes of its storage, and the only two
+  // that catch: a storage that is not there, one that throws as it is read or written, a text that is no JSON. What the
+  // page keeps of a model stays under the names it had (a visitor's threads and GPU's forms are still read), and what
+  // each thing stands in with where nothing is kept
+  const remembered = new URL("../src/page/remembered.ts", import.meta.url).href;
+  const run = (script) => (cases += 1, JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", `
+    globalThis.location = { search: "" };
+    // a storage of a Map's, which says what it was asked; and one that throws at every call
+    const made = (thrown) => { const items = new Map(); const asked = [];
+      return { items, asked, getItem: (name) => { asked.push(["get", name]); if (thrown) throw new Error("no"); return items.has(name) ? items.get(name) : null; },
+        setItem: (name, text) => { asked.push(["set", name]); if (thrown) throw new Error("no"); items.set(name, String(text)); },
+        removeItem: (name) => { asked.push(["remove", name]); if (thrown) throw new Error("no"); items.delete(name); } }; };
+    const m = await import(${JSON.stringify(remembered)});
+    const out = {};
+    ${script}
+    console.log(JSON.stringify(out));`], { encoding: "utf8" })));
+  // recall() and keep(), with the place handed to them
+  const by = run(`
+    const here = made(false), refusing = made(true);
+    const gone = () => { throw new Error("SecurityError: no storage"); };
+    out.kept = m.keep("a", "1", () => here);
+    out.read = m.recall("a", (text) => text, "otherwise", () => here);
+    out.none = m.recall("b", (text) => text, "otherwise", () => here);
+    out.taken = [m.keep("a", null, () => here), m.recall("a", (text) => text, "otherwise", () => here)];
+    out.refused = [m.keep("a", "1", () => refusing), m.recall("a", (text) => text, "otherwise", () => refusing)];
+    out.gone = [m.keep("a", "1", gone), m.recall("a", (text) => text, "otherwise", gone)];
+    here.setItem("j", "not JSON");
+    out.notJson = m.recall("j", JSON.parse, "otherwise", () => here);
+    // (no localStorage at all: Node's own, without a flag; sessionStorage the same)
+    out.local = [m.keep("a", "1"), m.recall("a", (text) => text, "otherwise")];
+    out.session = [m.keep("a", "1", m.SESSION), m.recall("a", (text) => text, "otherwise", m.SESSION)];`);
+  assert.deepEqual(by, { kept: true, read: "1", none: null, taken: [true, null], refused: [false, "otherwise"], gone: [false, "otherwise"], notJson: "otherwise",
+    local: [false, "otherwise"], session: [false, "otherwise"] }, "recall() and keep() over a storage, one that refuses, none, and a text that is no JSON");
+  // the things the page keeps, under the names they had before T.643.3
+  const things = run(`
+    const store = made(false);
+    globalThis.localStorage = store;
+    const entry = { id: "tiny-lm" }, hf = { id: "local", name: "owner/name", hf: { repo: "owner/name", revision: "main", weights: "m-Q8_0.gguf" } };
+    out.before = [m.threadsFor(entry).remembered, m.gpuFor(entry)];
+    m.rememberThreads(entry, "tiny-lm", 4);
+    m.rememberThreads(hf, "local", 2);
+    m.rememberThreads(hf, "another", 3);
+    const cpu = { gbPerSecond: 9 };
+    m.rememberAlone(entry, { key: "k0", cpu });
+    m.rememberGpu(entry, { type: "gpu", load: 1, note: "", key: "k1", matrices: "M", attention: "A", tokens: "T", seconds: 1 });
+    out.chose = JSON.parse(store.items.get("gpu:tiny-lm"));
+    m.rememberAlone(entry, { key: "k2", cpu });
+    store.setItem("benchmark:cpu", JSON.stringify(cpu));
+    m.rememberUsage(10, 20);
+    m.rememberUsage(1, 2);
+    m.remember({ id: "tiny-lm" }, true);
+    // (a count of threads is kept under bench.ts's name, with this device's cores and browser: by the model's name here)
+    const names = Object.fromEntries(["tiny-lm", "hf:owner/name@main/m-Q8_0.gguf", "another"].map((name) => [m.threadsKey(name), \`threads:\${name}\`]));
+    out.items = Object.fromEntries([...store.items].map(([name, text]) => [names[name] ?? name, text]));
+    out.threads = [m.threadsFor(entry).remembered, m.threadsFor(hf).remembered, m.threadsFor({ id: "another" }).remembered];
+    out.after = m.gpuFor(entry);
+    const { threadsKey } = await import(${JSON.stringify(new URL("../src/bench.ts", import.meta.url).href)});
+    out.threadsKey = m.threadsKey("tiny-lm") === threadsKey("tiny-lm", navigator) && m.threadsKey("tiny-lm").startsWith("threads:tiny-lm:");
+    m.remember({ id: "local" });
+    out.local = store.items.has("model");
+    // something else under the names: read as nothing kept, and written over
+    store.setItem("gpu:tiny-lm", "not JSON"); store.setItem("gpu:usage", "{"); store.setItem(m.threadsKey("tiny-lm"), "many");
+    out.otherwise = [m.gpuFor(entry), m.threadsFor(entry).remembered];
+    m.rememberGpu(entry, { key: "k3", matrices: "M", attention: "A", tokens: "T" });
+    m.rememberUsage(1, 1);
+    out.over = [store.items.get("gpu:tiny-lm"), store.items.get("gpu:usage")];`);
+  assert.deepEqual(things.before, [0, {}], "nothing kept: no threads, and the GPU's forms, the CPU's speed and the usage unsaid");
+  const usage = JSON.parse(things.items["gpu:usage"]);
+  delete things.items["gpu:usage"];
+  assert.deepEqual(things.items, {
+    "threads:tiny-lm": "4", "threads:hf:owner/name@main/m-Q8_0.gguf": "2", "threads:another": "3",
+    "gpu:tiny-lm": JSON.stringify({ key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k2", cpu: { gbPerSecond: 9 } } }),
+    "benchmark:cpu": JSON.stringify({ gbPerSecond: 9 }), model: JSON.stringify({ id: "tiny-lm", kept: true }),
+  }, "the names and texts the page keeps (a model of ?hf= by its repository; the GPU's forms keep the verdict of the GPU alone, and it theirs)");
+  assert.ok(things.threadsKey, "the threads' name is bench.ts's, which /benchmark/ reads (T.190)");
+  assert.deepEqual(usage, { prompt: 10 * 0.8 + 1, written: 20 * 0.8 + 2 }, "the usage is added up, the older decayed (bench.ts's USAGE_DECAY)");
+  assert.deepEqual(things.chose, { key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k0", cpu: { gbPerSecond: 9 } } },
+    "what the GPU chose keeps the verdict of the GPU alone kept before it (and no more of the report than the forms)");
+  assert.deepEqual(things.threads, [4, 2, 3], "the threads read back by the name the next visit asks with");
+  assert.deepEqual(things.after, { remembered: { key: "k1", matrices: "M", attention: "A", tokens: "T", alone: { key: "k2", cpu: { gbPerSecond: 9 } } },
+    cpu: { gbPerSecond: 9 }, usage }, "what the worker is told of the GPU");
+  assert.equal(things.local, false, "a model of no id of the list is not remembered (the name is taken away)");
+  assert.deepEqual(things.otherwise, [{ cpu: { gbPerSecond: 9 } }, 0], "something else under the names: as nothing kept (and the CPU's speed beside them is still read)");
+  assert.deepEqual([JSON.parse(things.over[0]), JSON.parse(things.over[1])], [{ key: "k3", matrices: "M", attention: "A", tokens: "T" }, { prompt: 1, written: 1 }],
+    "and written over by what is kept now");
+  // a storage that throws at every call: nothing is thrown out of the page's parts, and each says its otherwise
+  const without = run(`
+    globalThis.localStorage = made(true);
+    const entry = { id: "tiny-lm" };
+    m.rememberThreads(entry, "tiny-lm", 4); m.rememberGpu(entry, { key: "k", matrices: "M", attention: "A", tokens: "T" });
+    m.rememberAlone(entry, { key: "k", cpu: {} }); m.rememberUsage(1, 1); m.remember(entry);
+    out.read = [m.threadsFor(entry).remembered, m.gpuFor(entry)];
+    out.asked = globalThis.localStorage.asked.length;`);
+  assert.deepEqual(without.read, [0, {}], "a storage that throws: no threads, nothing of the GPU");
+  assert.ok(without.asked >= 9, "and it was asked");
+}
+{
   // T.520: thought.ts by itself: an answer's thought where the format opened it or the model did, its end, and its line
   const { thoughtOf, thoughtLine } = await fresh("page/thought.ts");
   const none = { thought: null, closed: false };

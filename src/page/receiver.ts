@@ -2,10 +2,10 @@
 // of its reports. This module waits at its top level: whatever imports it runs after that wait, and the parts that
 // must not start before the worker (choose.ts, composer.ts and the script in index.astro) all import it.
 import { memoryFailure } from "../models.ts";
-import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHere, usedAfter } from "../bench.ts";
+import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, roundsHere } from "../bench.ts";
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
-import { gpuKey, keptAs, remember, threadsKey } from "./remembered.ts";
+import { SESSION, keep, recall, remember, rememberAlone, rememberGpu, rememberThreads, rememberUsage } from "./remembered.ts";
 import { arrived, arriving, becameReady, fromTemplate, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { STILL_MS, advanced, leftSaid, secondsLeft } from "./remaining.ts";
 import { answer, drew, idle, shape, undrawn, used, written, wrote } from "./answer.ts";
@@ -77,14 +77,7 @@ function heardBench(data: Bench) {
 }
 function heardReady(data: Ready) {
   becameReady(data);
-  if (aloneOnReady?.load === data.load) {
-    try {
-      const kept = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null") ?? {};
-      localStorage.setItem(gpuKey(model), JSON.stringify({ ...kept, alone: aloneOnReady!.alone }));
-    } catch {
-      // no storage here: the next visit weighs the two again
-    }
-  }
+  if (aloneOnReady?.load === data.load) rememberAlone(model, aloneOnReady.alone);
   aloneOnReady = undefined;
   // for tests/e2e.ts: how long each part of the load took, and the WebAssembly memory then (T.84). Not shown
   (window as any).__ready = data;
@@ -127,14 +120,7 @@ function heardGpu(data: GpuChose | GpuSaid) {
       textContent: `WebGPU ${seconds(data.seconds)} · ${data.matrices}${data.remembered ? " (remembered)" : ""} · ${data.attention}` +
         (data.tokens ? ` · a token by ${data.tokens}` : ""),
     }));
-    try {
-      // (T.152: and the layer of a token)
-      // (T.156: with what it kept of a model on the GPU alone: its own key says when it no longer holds)
-      const alone = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null")?.alone;
-      localStorage.setItem(gpuKey(model), JSON.stringify({ key: data.key, matrices: data.matrices, attention: data.attention, tokens: data.tokens, alone }));
-    } catch {
-      // no storage here: the next visit times them again
-    }
+    rememberGpu(model, data);
   }
 }
 function heardThreadsCompared(data: ThreadsCompared) {
@@ -150,12 +136,7 @@ function heardThreads(data: Threads) {
   console.info(`threads: ${data.count} for ${data.model}, searched from ${data.from === "remembered" ?
     "the count remembered from an earlier visit" : `${data.hint} (the logical cores)`}`);
   // what the worker found for this device and model: the next visit starts with it
-  try {
-    // (T.508.3: the model loaded now by the name its next visit asks with: a model of ?hf= is "local" to the worker)
-    localStorage.setItem(threadsKey(data.model === model.id ? keptAs(model) : data.model), String(data.count));
-  } catch {
-    // no storage here: the next visit searches again
-  }
+  rememberThreads(model, data.model, data.count);
 }
 function heardDone(data: Done) {
   if (undrawn) drawNow();  // (T.554: the last tokens, before the line under the answer)
@@ -165,12 +146,7 @@ function heardDone(data: Done) {
   threadsNow(data.threads);
   showStatus(data.gpu);  // T.148: the prompts timed on either side may have moved the GPU's verdict
   // T.156: how the page is used, for a model on the GPU alone
-  try {
-    const kept = JSON.parse(localStorage.getItem(USAGE_KEY) ?? "null");
-    localStorage.setItem(USAGE_KEY, JSON.stringify(usedAfter(kept, data.prompt_tokens, data.tokens - data.prompt_tokens)));
-  } catch {
-    // no storage here: the tokens are weighed as many
-  }
+  rememberUsage(data.prompt_tokens, data.tokens - data.prompt_tokens);
   // the settings this very answer was written with: with the seed the same text can be asked for again
   const how = used.temperature ? `temp ${used.temperature}` : "greedy";
   meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
@@ -191,15 +167,8 @@ function heardError(data: Failed) {
   failed(Boolean(data.reloading));
   // Pyodide that never finishes loading under the service worker (iOS Safari, 2026-09-25: its NumPy step): once,
   // the page goes on without the worker, which is the one-core version the site runs on anyway (policy 6)
-  let fallback: boolean | undefined = false;
-  try {
-    fallback = data.pyodide && self.crossOriginIsolated && !sessionStorage.getItem("coi-fallback");
-    if (fallback) {
-      sessionStorage.setItem("coi-fallback", "1");
-    }
-  } catch {
-    // no session storage here: no second try either
-  }
+  // (no session storage here, or a mark that could not be written: no second try either)
+  const fallback = data.pyodide && self.crossOriginIsolated && !recall("coi-fallback", Boolean, true, SESSION) && keep("coi-fallback", "1", SESSION);
   if (fallback) {
     statusText.textContent = "Pyodide did not load under the service worker: trying again without it...";
     navigator.serviceWorker?.getRegistrations().then(async (registrations) => {

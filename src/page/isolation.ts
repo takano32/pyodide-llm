@@ -1,5 +1,6 @@
 // src/page/isolation.ts (T.355): the service worker (public/coi.js) and the one reload of a first visit.
 import { parameters } from "./address.ts";
+import { keep, recall } from "./remembered.ts";
 
 declare const __BUILD__: string;
 
@@ -35,14 +36,10 @@ export async function isolating(): Promise<boolean> {
     // T.111: it keeps copies for offline use, on every visit (the owner, 2026-09-25). ?offline=off turns that off
     // (remembered, so that every later visit registers the same one; it then throws the copies away), ?offline=on
     // back on.
-    let offline = parameters.get("offline") !== "off";
-    try {
-      if (parameters.get("offline") === "off") localStorage.setItem("offline", "off");
-      if (parameters.get("offline") === "on") localStorage.removeItem("offline");
-      offline &&= localStorage.getItem("offline") !== "off";
-    } catch {
-      // no storage: only the address says
-    }
+    // (no storage: only the address says)
+    if (parameters.get("offline") === "off") keep("offline", "off");
+    if (parameters.get("offline") === "on") keep("offline", null);
+    const offline = parameters.get("offline") !== "off" && recall("offline", (text) => text !== "off", true);
     await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}coi.js?v=${__BUILD__}${offline ? "" : "&offline=0"}`,
       { scope: import.meta.env.BASE_URL });
     if (self.crossOriginIsolated) {
