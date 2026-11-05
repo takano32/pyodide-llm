@@ -1386,7 +1386,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **トークナイザ**: PLaMo 自身の `tokenizer.jsonl`（1 行に [語片, 点数, 種類]）と `tokenization_plamo.py`（Aho–Corasick で全部の語片を引き、点数を `round(score·1e4)` の整数にした Viterbi、`<0xNN>` のバイトの語片で落ちる）。unigram の読みに近いが、**点数を整数に丸めた同点の選び方**と前処理の有無を本物と全符号位置で合わせる要がある（T614 の「重いのは PLaMo 自身のトークナイザ」）。BOS 1（`<|plamo:bos|>`）、止まり [1, 16]。
 - **書式**: chat_template は翻訳の頼みの形だけ（system も道具も断る）: `<|plamo:bos|><|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input[<|plamo:key|>lang<|plamo:val|>{原文の言語}]<|plamo:msg|>{原文}<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>{訳文の言語}[<|plamo:key|>form<|plamo:val|>polite|plain]<|plamo:msg|>`。訳文の言語は必須、原文の言語・文脈・用語集・敬体と常体は任意。ページでは向きごとの項目に手書きの書式（T648 と同じく「英→日」「日→英」の項目）が素直。
 - **ライセンス**: PLaMo Community License（`license: other`）。第 4 条: 第三者に提供するときは**本契約の写しを渡し、「Built with PLaMo」をウェブサイトか UI か文書に書き、作ったモデルの名前に「PLaMo」を入れる**。第 3 条: 商用は PFN への登録と売上 10 億円以下。第 5 条: 生成物を公表するならこのモデルの生成物と明示。**T608 では持ち主が「Built with PLaMo」の表示の求めを訳に足さないと決めた**（2026-11-03）: その線を変えるかと表示の置き場は持ち主（方針 8 は「ライセンスで一覧から外さない」）。
-- **子タスクの案**（決めの後に番号を付ける）: (1) plamo3 の家族（T614: 変換器の `Family`、norm の 1 を畳む、局所と全体の層、yarn）と transformers のモデル自身のコードとの比べ（Spark-X2.5 の形: `reference_<家族>.py`）、(2) PLaMo のトークナイザの読み手（本物と全符号位置で）、(3) 一覧の項目（向きごとの書式、止まり、名前に「PLaMo」）とライセンスの表示、(4) GGUF の Q4_K_M を塊のまま持つか（Saluki の道。T513: 小さいモデルは int8 のほうが速い）を測って決める。
+- **持ち主の決め**（2026-11-05、選択肢で）: (1) 表示は **About と項目の note**: About のモデルとライセンスの欄に「Built with PLaMo」とライセンスの写しへの道、項目の note にも「Built with PLaMo」。名前は「PFN PLaMo 3 Translate 0.8B English → Japanese」の形（T608 の「表示を理由に足さない」はこの家族では変える）。(2) 大きさは **3 つとも**（0.8B・2B・8B）。T614（plamo3 の形）の仕事はこのタスクの中でする。
+- **子タスク**（取りまとめ役の分け方。.1 と .2 は触るファイルが重ならないので並べる）:
+  - T649.1 [追加][解析分割] PLaMo のトークナイザ（`tokenizer.jsonl`、点数を整数に丸めた Viterbi とバイトの語片）を変換器と engine の読みに。本物の `tokenization_plamo.py` と全符号位置で同じ ID — 未着手
+  - T649.2 [追加][変換] plamo3 の家族（norm の 1 を畳む、8 層に 1 つの全体の層と窓 2048、局所と全体の RoPE と yarn）と、モデル自身の `modeling_plamo.py` との logits の比べ — 未着手
+  - T649.3 [追加][モデル] 一覧の項目（3 つの大きさ × 英→日・日→英、手書きの書式、止まり [1, 16]）と「Built with PLaMo」の表示（About・note）とライセンスの写し — 未着手
+  - T649.4 [性能][モデル] GGUF の Q4_K_M を塊のまま持つ形と int8 を測って、項目をどちらにするか決める — 未着手
 
 ### T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 未着手（2026-11-05、T642.1 の CI で気づいた。規模 小）
 - 毎晩の main（run 41558881370・41741355606）と `full=true` のブランチ（T642.1 の 41929632184）で、`ubuntu-latest chromium` のジョブだけが 93 分で落ちる（`tests/gpu-check/engines.ts:64` の `page.waitForFunction: Timeout 5400000ms exceeded`、ログには途中の結果が出ない）。Chrome・Edge（約 8〜11 分）と Dawn（lavapipe、37〜51 分）は同じ作り物で通る。軽い組の Chromium は 10 分ほどで通る（41820927444）。作り物が増えた（T547 の塊の作り物・T574 の 27B の形・T558.1 の輪）ことで SwiftShader の Chromium が期限を越えたと読む（未確認: どの作り物で止まったかはログに出ない）。
