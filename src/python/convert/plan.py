@@ -1,10 +1,100 @@
 # The plan of a conversion: which tensor of the source goes where in the checkpoint, and what is done to it on the way.
+from typing import Callable, NamedTuple
+
 import numpy as np
 
 from engine.layout import CODES, TABLE, Dims, form_of, linear_form
 from engine.layers import rope_frequencies, rope_magnitude, rotated_form, rotated_widths
 from convert.families import family_of, of_layout
 from convert.config import head_size, normalize, rotary_dim
+
+
+class Transform(NamedTuple):
+    """One of the transforms a step of the plan names (TRANSFORMS): apply(values, step, head_size) is what it makes
+    of a tensor, source(shape, step) the shape it must be given to make one of shape. moves_rows: it moves whole rows
+    and changes no value, what a row kept in a GGUF's blocks may come by (T.363, convert/stream.py's stays()).
+    turns_back: it turns back, alone, a tensor the reader hands on transposed (T.636). piecewise: every row is the same
+    whatever piece of the tensor it comes in, so the tensor goes piece by piece, as it comes (T.261)."""
+    apply: Callable
+    source: Callable
+    moves_rows: bool = False
+    turns_back: bool = False
+    piecewise: bool = False
+
+
+def heads_of(values, step, head_size):
+    # GPT-NeoX's query_key_value holds (heads, 3, head_size, dim) or (heads, 3, head_size): take one of the
+    # three, and interleave the halves of the part that RoPE rotates (Hugging Face stores it as rotate_half does)
+    parts, index, heads, rot = step[1:]
+    if values.shape[0] % (heads * parts) or rot > values.shape[0] // heads // parts:
+        raise ValueError(f"{values.shape[0]} rows are not {heads} heads of {parts} parts that turn {rot} rows.")
+    taken = values.reshape(heads, parts, values.shape[0] // heads // parts, -1)[:, index]
+    if rot:
+        rotated = taken[:, :rot].reshape(heads, 2, rot // 2, -1).transpose(0, 2, 1, 3).reshape(heads, rot, -1)
+        taken = np.concatenate([rotated, taken[:, rot:]], axis=1)
+    return taken.reshape(-1, values.shape[-1]) if values.ndim > 1 else taken.reshape(-1)
+
+
+def part_of(values, step, head_size):
+    index, parts = step[1], step[2]
+    width = values.shape[1] // parts
+    return values[:, index * width:(index + 1) * width].T
+
+
+def row_of(values, step, head_size):
+    index, parts = step[1], step[2]
+    length = values.shape[0] // parts
+    return values[index * length:(index + 1) * length]
+
+
+def rows_of(values, step, head_size):
+    start, stop, total = step[1:]
+    if values.shape[0] != total:
+        raise ValueError(f"{values.shape[0]} rows are not the {total} that rows {start} to {stop} are taken of.")
+    return values[start:stop]
+
+
+def same_shape(shape, step):
+    return tuple(shape)
+
+
+# The transforms by the name a step of the plan begins with (see transformed()). A new one is a line here; whoever
+# reads a step (transformed(), source_shape(), convert/stream.py's piecewise() and stays()) looks it up.
+TRANSFORMS = {
+    # (T.331: ("permute", heads, size) of heads of their own size, a Gemma 4's wide layers')
+    "permute": Transform(
+        lambda values, step, head_size: permute_heads(values, step[1], step[2] if len(step) > 2 else head_size),
+        same_shape, moves_rows=True),
+    "transpose": Transform(lambda values, step, head_size: values.T, lambda shape, step: tuple(reversed(shape)),
+                           turns_back=True),
+    # (one of the stacked parts, and the rows of all of them are one tensor)
+    "heads": Transform(heads_of, lambda shape, step: (shape[0] * step[1], *shape[1:]), moves_rows=True),
+    "part": Transform(part_of, lambda shape, step: (shape[1], shape[0] * step[2]), turns_back=True),
+    "row": Transform(row_of, lambda shape, step: (shape[0] * step[2],)),
+    "rows": Transform(rows_of, lambda shape, step: (step[3], *shape[1:])),
+    # T.253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
+    "scale": Transform(lambda values, step, head_size: np.asarray(values, dtype=np.float32) * np.float32(step[1]),
+                       same_shape, piecewise=True),
+    # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
+    "one": Transform(lambda values, step, head_size: np.asarray(values, dtype=np.float32) + np.float32(1.0), same_shape),
+    # g = -exp(A_log) * softplus(...): the factor, as llama.cpp's GGUF holds it too (ssm_a)
+    "decay": Transform(lambda values, step, head_size: -np.exp(np.asarray(values, dtype=np.float32)), same_shape),
+    # conv1d.weight is (channels, 1, taps): a row of all the channels for each tap, the oldest token's first
+    "taps": Transform(lambda values, step, head_size: np.asarray(values).reshape(values.shape[0], -1).T,
+                      lambda shape, step: (shape[1], 1, shape[0])),
+}
+
+
+def transform_of(step):
+    """The Transform a step names: a name nobody wrote must not quietly take a slice of rows (T.77)."""
+    if step[0] not in TRANSFORMS:
+        raise ValueError(f"there is no transform called {step[0]!r}")
+    return TRANSFORMS[step[0]]
+
+
+def steps_of(transform):
+    """The steps of a transform, one after the other: none for None, the one a step alone is, or a tuple's."""
+    return () if transform is None else transform if isinstance(transform[0], tuple) else (transform,)
 
 
 def transformed(values, transform, head_size):
@@ -19,78 +109,19 @@ def transformed(values, transform, head_size):
     A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
     one after the other. ("permute" and "heads" move whole rows and change no value: what a row kept in a GGUF's blocks
     may come by, T.363.) ("rows", start, stop, total): rows start to stop of a tensor of total rows (T.342: a Spark-X2.5's
-    q_k_v_proj, q, k and v one after the other, which are not of one size).
+    q_k_v_proj, q, k and v one after the other, which are not of one size). Each is a line of TRANSFORMS (T.640.2).
     """
-    if transform is None:
-        return values
-    if isinstance(transform[0], tuple):
-        for step in transform:
-            values = transformed(values, step, head_size)
-        return values
-    if transform[0] == "permute":
-        # (T.331: ("permute", heads, size) of heads of their own size, a Gemma 4's wide layers')
-        return permute_heads(values, transform[1], transform[2] if len(transform) > 2 else head_size)
-    if transform[0] == "transpose":
-        return values.T
-    if transform[0] == "heads":
-        # GPT-NeoX's query_key_value holds (heads, 3, head_size, dim) or (heads, 3, head_size): take one of the
-        # three, and interleave the halves of the part that RoPE rotates (Hugging Face stores it as rotate_half does)
-        parts, index, heads, rot = transform[1:]
-        if values.shape[0] % (heads * parts) or rot > values.shape[0] // heads // parts:
-            raise ValueError(f"{values.shape[0]} rows are not {heads} heads of {parts} parts that turn {rot} rows.")
-        taken = values.reshape(heads, parts, values.shape[0] // heads // parts, -1)[:, index]
-        if rot:
-            rotated = taken[:, :rot].reshape(heads, 2, rot // 2, -1).transpose(0, 2, 1, 3).reshape(heads, rot, -1)
-            taken = np.concatenate([rotated, taken[:, rot:]], axis=1)
-        return taken.reshape(-1, values.shape[-1]) if values.ndim > 1 else taken.reshape(-1)
-    if transform[0] == "part":
-        index, parts = transform[1], transform[2]
-        width = values.shape[1] // parts
-        return values[:, index * width:(index + 1) * width].T
-    if transform[0] == "row":
-        index, parts = transform[1], transform[2]
-        length = values.shape[0] // parts
-        return values[index * length:(index + 1) * length]
-    if transform[0] == "rows":
-        start, stop, total = transform[1:]
-        if values.shape[0] != total:
-            raise ValueError(f"{values.shape[0]} rows are not the {total} that rows {start} to {stop} are taken of.")
-        return values[start:stop]
-    if transform[0] == "scale":
-        # T.253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
-        return np.asarray(values, dtype=np.float32) * np.float32(transform[1])
-    if transform[0] == "one":
-        # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
-        return np.asarray(values, dtype=np.float32) + np.float32(1.0)
-    if transform[0] == "decay":
-        # g = -exp(A_log) * softplus(...): the factor, as llama.cpp's GGUF holds it too (ssm_a)
-        return -np.exp(np.asarray(values, dtype=np.float32))
-    if transform[0] == "taps":
-        # conv1d.weight is (channels, 1, taps): a row of all the channels for each tap, the oldest token's first
-        return np.asarray(values).reshape(values.shape[0], -1).T
-    # a name nobody wrote must not quietly take a slice of rows (T.77)
-    raise ValueError(f"there is no transform called {transform[0]!r}")
+    for step in steps_of(transform):
+        values = transform_of(step).apply(values, step, head_size)
+    return values
 
 
 def source_shape(shape, transform):
     """The shape the Hugging Face tensor must have to become a tensor of this shape."""
-    if transform is None or transform[0] in ("permute", "one", "decay", "scale"):
-        return tuple(shape)
-    if isinstance(transform[0], tuple):
-        for step in reversed(transform):
-            shape = source_shape(shape, step)
-        return tuple(shape)
-    if transform[0] == "heads":  # one of the stacked parts, and the rows of all of them are one tensor
-        return (shape[0] * transform[1], *shape[1:])
-    if transform[0] == "taps":
-        return (shape[1], 1, shape[0])
-    if transform[0] == "rows":
-        return (transform[3], *shape[1:])
-    if transform[0] == "transpose":
-        return tuple(reversed(shape))
-    if transform[0] == "part":
-        return (shape[1], shape[0] * transform[2])
-    return (shape[0] * transform[2],)
+    shape = tuple(shape)
+    for step in reversed(steps_of(transform)):
+        shape = tuple(transform_of(step).source(shape, step))
+    return shape
 
 
 def permute_heads(w, heads, head_size):

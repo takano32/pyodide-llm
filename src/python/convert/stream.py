@@ -9,7 +9,7 @@ from convert.checkpoint import Writer, checkpoint_size
 from convert.readers import SOURCES, source_of
 from convert.sources import header_rotated
 from convert.config import check_config, checkpoint_header, head_size, normalize
-from convert.plan import checkpoint_form, made, model_plan, source_shape, transformed
+from convert.plan import checkpoint_form, made, model_plan, source_shape, steps_of, transform_of, transformed
 from convert.gguf import rope_freqs_agree
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
@@ -32,8 +32,8 @@ def piecewise(transform):
     """Whether a tensor with this transform goes piece by piece, as it comes: one with none, and (T.261) one that is
     multiplied by a number and nothing else, whose every row is the same whatever piece it comes in (a Gemma's
     embedding, a table of 262,144 rows, which would otherwise be held whole in float32). Every other transform is
-    given its whole tensor, as before."""
-    return transform is None or transform[0] == "scale"
+    given its whole tensor, as before: a tuple of steps too. Which transform is so is its line of TRANSFORMS."""
+    return transform is None or not isinstance(transform[0], tuple) and transform_of(transform).piecewise
 
 
 def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
@@ -279,11 +279,12 @@ def stays(info, transform):
     along the columns (a Qwen3.5's ssm_out, by half a block) are no such move: they stay where they are, and the form
     says so (kept_form()'s "tiled"). T.636: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in) and the reader
     turns to Hugging Face's (in, out) ("transposed"), is turned back by its one step of the plan, a transpose or one
-    of c_attn's parts: its rows are the file's, or a run of them."""
-    steps = () if transform is None else transform if isinstance(transform[0], tuple) else (transform,)
+    of c_attn's parts: its rows are the file's, or a run of them. Which transforms are so are TRANSFORMS' moves_rows
+    and turns_back."""
+    steps = steps_of(transform)
     if info.get("transposed"):
-        return info["dtype"] in BLOCKS and len(steps) == 1 and steps[0][0] in ("transpose", "part")
-    return info["dtype"] in BLOCKS and all(step[0] in ("permute", "heads") for step in steps)
+        return info["dtype"] in BLOCKS and len(steps) == 1 and transform_of(steps[0]).turns_back
+    return info["dtype"] in BLOCKS and all(transform_of(step).moves_rows for step in steps)
 
 
 def held(info):
