@@ -138,6 +138,7 @@
 - T.617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T.618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T.619 [追加][モデル] LFM3（lfm3） — 候補
+- T.645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 未着手
 - T.639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T.638.1 の案） — 未着手
 - T.640 [リファクタリング][変換] 変換器のリファクタリング（T.638.2 の案） — 未着手
 - T.641 [リファクタリング][CPU] worker と CPU の forwardのリファクタリング（T.638.3 の案） — 未着手
@@ -1345,6 +1346,10 @@ T.175（レビュー中）→ T.184 → T.185 → T.186 → 負けた形を外�
 ### T.619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T.591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
 
+
+### T.645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 未着手（2026-11-05、T.642.1 の CI で気づいた。規模 小）
+- 毎晩の main（run 41558881370・41741355606）と `full=true` のブランチ（T.642.1 の 41929632184）で、`ubuntu-latest chromium` のジョブだけが 93 分で落ちる（`tests/gpu-check/engines.ts:64` の `page.waitForFunction: Timeout 5400000ms exceeded`、ログには途中の結果が出ない）。Chrome・Edge（約 8〜11 分）と Dawn（lavapipe、37〜51 分）は同じ作り物で通る。軽い組の Chromium は 10 分ほどで通る（41820927444）。作り物が増えた（T.547 の塊の作り物・T.574 の 27B の形・T.558.1 の輪）ことで SwiftShader の Chromium が期限を越えたと読む（未確認: どの作り物で止まったかはログに出ない）。
+- 直す案: (a) 作り物ごとに結果を書き出して止まった所が分かるようにし、(b) Chromium の全部の組を 2 つのジョブに割るか、SwiftShader で重い作り物（Dawn だけで約 5 分の `synthetic-qwen35-rotated-1024` など）を Chromium から外す。AGENTS.md の落とし穴「道具の期限は包むジョブより短く」も見る。
 
 ### T.639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T.638.1 の案） — 状態: 未着手（2026-11-04、T.638.1 のレビュー（Fable max）から。子タスク 12。取りかかる順は持ち主）
 - 案の場所・どの決まりに反するか・規模・形・費用・証明・覆す条件は [docs/notes/t638.1-review-engine-2026-11-04.md](docs/notes/t638.1-review-engine-2026-11-04.md) の同じ題の節。番号は報告の順（得 ÷ 費用の順、動きを変えない案が先）。
