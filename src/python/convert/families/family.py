@@ -1,6 +1,7 @@
 # What a family of models is to the converter (T.359): one record of all that differs between one model_type of
 # config.json and another, which convert/config.py, plan.py, gguf.py and conversion.py look up and ask, instead of
 # comparing names themselves. And what of a config.json every family reads the same way.
+import math
 from types import MappingProxyType
 from typing import Any, Callable, NamedTuple, Optional
 
@@ -32,6 +33,16 @@ def yarn(config):
     if scaling.get("rope_type", scaling.get("type")) != "yarn":
         return None
     return {key: value for key, value in scaling.items() if key not in ("rope_type", "type") and value is not None}
+
+
+def finite(value):
+    """A number of config.json that is one: an int or a float (not a bool), finite."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def positive(value):
+    """A finite number of config.json above 0."""
+    return finite(value) and value > 0
 
 
 def f32(value):

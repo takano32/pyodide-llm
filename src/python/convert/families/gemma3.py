@@ -2,12 +2,11 @@
 # FFN with a norm behind each as well as in front, a GELU in the gate, and local layers (engine/layers.py has the rule).
 import math
 
-from convert.families.family import Family, f32, head_size, refuse
+from convert.families.family import Family, head_size, refuse
 from convert.families.llama import gguf_config
+from convert.families.local import (FULL, SLIDING, by_kind, local_agrees, local_check, local_options, scaling_of,
+                                    without_rope)
 
-# the two kinds of a Gemma 3's layers, by config.json's names: one that attends a window of the last positions, and
-# one that attends them all
-SLIDING, FULL = "sliding_attention", "full_attention"
 # (what transformers' Gemma3TextConfig says where a config.json says nothing)
 THETA, LOCAL_THETA, PATTERN = 1000000.0, 10000.0, 6
 
@@ -27,37 +26,19 @@ def gemma3_config(config):
         pattern = config.get("sliding_window_pattern", config.get("_sliding_window_pattern", PATTERN))
         if isinstance(pattern, int) and not isinstance(pattern, bool) and pattern > 0:
             kinds = [SLIDING if (layer + 1) % pattern else FULL for layer in range(layers)]
-    rope = config.get("rope_parameters") if isinstance(config.get("rope_parameters"), dict) else {}
-    of = lambda kind: rope.get(kind) if isinstance(rope.get(kind), dict) else {}
-    scaling = next(({**of(kind)} for kind in (FULL, SLIDING)
-                    if of(kind).get("rope_type", of(kind).get("type", "default")) != "default"), config.get("rope_scaling"))
-    rest = {key: value for key, value in config.items() if key not in ("rope_parameters", "rope_scaling")}
-    return {**rest, "layer_types": kinds, **({"rope_scaling": scaling} if scaling else {}),
+    of = by_kind(config)
+    scaling = scaling_of(config, of)
+    return {**without_rope(config), "layer_types": kinds, **({"rope_scaling": scaling} if scaling else {}),
             "rope_theta": of(FULL).get("rope_theta", config.get("rope_theta", THETA)),
             "rope_local_base_freq": of(SLIDING).get("rope_theta", config.get("rope_local_base_freq", LOCAL_THETA)),
             "tie_word_embeddings": config.get("tie_word_embeddings", True),
             "rms_norm_eps": config.get("rms_norm_eps", 1e-6), "head_dim": config.get("head_dim") or 256}
 
 
-def local(config):
-    """The engine's option "local" from a Gemma 3's (normalized) config.json: the sliding-attention layers, their
-    window and the base RoPE turns them by (engine/layout.py's local_layers()). None for a model without any."""
-    layers = [layer for layer, kind in enumerate(config["layer_types"]) if kind == SLIDING]
-    return {"layers": layers, "window": config["sliding_window"], "rope_theta": float(config["rope_local_base_freq"])} \
-        if layers else None
-
-
-def gemma3_options(config):
-    # the file does not say which layers are local ones (only where there are any)
-    said = local(config)
-    return {"local": said} if said else {}
-
-
 def gemma3_check(config):
     """T.261: what transformers' Gemma3 computes and the engine has not (scores capped by a tanh, or the logits;
     attention in both directions; scores scaled by another number than the size of a head, which is what the engine
     divides them by: Gemma 3 27B's 168), and a config.json that does not say its layers."""
-    number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
     if config.get("hidden_activation", "gelu_pytorch_tanh") != "gelu_pytorch_tanh":
         refuse(f"its activation is {config['hidden_activation']}, not gelu_pytorch_tanh")
     if config.get("attention_bias"):
@@ -66,14 +47,7 @@ def gemma3_check(config):
         refuse("it caps its attention's scores or its logits")
     if config.get("use_bidirectional_attention"):
         refuse("it attends in both directions")
-    kinds = config.get("layer_types")
-    if not isinstance(kinds, list) or len(kinds) != config["num_hidden_layers"] or set(kinds) - {SLIDING, FULL}:
-        refuse("its layers are not sliding-attention layers and full-attention layers, one kind for every layer")
-    window = config.get("sliding_window")
-    if SLIDING in kinds and (not isinstance(window, int) or isinstance(window, bool) or window <= 0):
-        refuse("its config.json has no usable sliding_window")
-    if not number(config.get("rope_theta")) or not number(config.get("rope_local_base_freq")):
-        refuse("its config.json has no usable base of RoPE")
+    local_check(config)
     if config.get("query_pre_attn_scalar", head_size(config)) != head_size(config):
         refuse(f"it scales its attention's scores by {config['query_pre_attn_scalar']}, not by the size of its heads")
 
@@ -138,15 +112,14 @@ def gemma3_gguf_marks(config):
 def gemma3_agrees(own, config):
     # T.261: which layers are local ones, their window and their base, which are no tensor; and a cap of the logits,
     # which the engine has not (a GGUF with one would go through as the original without)
-    said = lambda c: local(c) and {**local(c), "rope_theta": f32(local(c)["rope_theta"])}
-    return [("sliding-attention layers", said(own), said(config)),
+    return [local_agrees(own, config),
             ("cap of the logits", own.get("final_logit_softcapping") or None, config.get("final_logit_softcapping") or None)]
 
 
 # T.261: its GGUF by transformers' names of it. llama.cpp calls the norm behind the attention post_attention_norm and the
 # one behind the FFN post_ffw_norm; ffn_norm is the one in front of the FFN (transformers' pre_feedforward_layernorm,
 # where a Llama's ffn_norm is its post_attention_layernorm)
-GEMMA3 = Family("Gemma 3", "gemma3", gemma3_sources, gemma3_check, before=gemma3_config, options=gemma3_options,
+GEMMA3 = Family("Gemma 3", "gemma3", gemma3_sources, gemma3_check, before=gemma3_config, options=local_options,
                 free_heads=True,
                 gguf="gemma3", gguf_config=gemma3_gguf_config, gguf_marks=gemma3_gguf_marks, agrees=gemma3_agrees,
                 gguf_names=({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",

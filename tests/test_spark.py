@@ -21,7 +21,8 @@ from test_gguf import metadata_value, q8_0_blocks, unigram, with_original
 import llama2_convert
 from llama2_convert import Safetensors, check_config, checkpoint_form, checkpoint_size, normalize
 from llama2_numpy import FORM, GELU_ERF, LAYOUTS, PARTLY, Llama, checkpoint_dtype, form_of, gelu_erf, tensor_rows
-from convert.families.spark import local, turns
+from convert.families.local import local
+from convert.families.spark import turns
 
 # more than the window (4), and a token that comes again
 TOKENS = [0, 5, 7, 9, 11, 5, 5, 300, 2, 17, 4]

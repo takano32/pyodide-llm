@@ -21,8 +21,10 @@ import math
 
 import numpy as np
 
-from convert.families.family import Family, f32, refuse
-from convert.families.gemma3 import FULL, LOCAL_THETA, SLIDING, THETA, local
+from convert.families.family import Family, positive, refuse
+from convert.families.gemma3 import LOCAL_THETA, THETA
+from convert.families.local import (FULL, SLIDING, by_kind, local_agrees, local_check, local_options, rope_type,
+                                    scaling_of, without_rope)
 from engine.layers import rope_frequencies
 
 # transformers' Gemma4TextConfig, where config.json says nothing (configuration_gemma4.py)
@@ -52,18 +54,12 @@ def gemma4_config(config):
         kinds = [SLIDING if (layer + 1) % 6 else FULL for layer in range(layers)]
     if isinstance(kinds, list) and kinds:
         kinds = [*kinds[:-1], FULL]  # (transformers makes the last layer a full-attention one, whatever it is said to be)
-    rope = config.get("rope_parameters") if isinstance(config.get("rope_parameters"), dict) else {}
-    of = lambda kind: rope.get(kind) if isinstance(rope.get(kind), dict) else {}
-    if not rope and "rope_theta" not in config:
-        rope = {SLIDING: {"rope_type": "default", "rope_theta": LOCAL_THETA},
-                FULL: {"rope_type": "proportional", "partial_rotary_factor": PROPORTION, "rope_theta": THETA}}
+    of = by_kind(config, {SLIDING: {"rope_type": "default", "rope_theta": LOCAL_THETA},
+                          FULL: {"rope_type": "proportional", "partial_rotary_factor": PROPORTION, "rope_theta": THETA}})
     full, sliding = of(FULL), of(SLIDING)
-    kind = lambda said: said.get("rope_type", said.get("type", "default"))
-    scaling = next(({**said} for said, plain in ((full, ("default", "proportional")), (sliding, ("default",)))
-                    if said and kind(said) not in plain), config.get("rope_scaling"))
-    proportion = full.get("partial_rotary_factor", PROPORTION) if kind(full) == "proportional" else config.get("rope_proportion", 1.0)
-    rest = {key: value for key, value in config.items() if key not in ("rope_parameters", "rope_scaling")}
-    return {**rest, "layer_types": kinds, **({"rope_scaling": scaling} if scaling else {}),
+    scaling = scaling_of(config, of, {FULL: ("default", "proportional")})
+    proportion = full.get("partial_rotary_factor", PROPORTION) if rope_type(full) == "proportional" else config.get("rope_proportion", 1.0)
+    return {**without_rope(config), "layer_types": kinds, **({"rope_scaling": scaling} if scaling else {}),
             "rope_theta": full.get("rope_theta", config.get("rope_theta", THETA)),
             "rope_local_base_freq": sliding.get("rope_theta", config.get("rope_local_base_freq", LOCAL_THETA)),
             "rope_proportion": proportion,
@@ -127,9 +123,7 @@ def gemma4_options(config):
     """What the file cannot say: the local layers (as a Gemma 3's), how much of a full-attention layer's head RoPE turns,
     and the cap of the logits."""
     config = gemma4_config(config)
-    said = {"rotary": rotary(config)}
-    if local(config):
-        said["local"] = local(config)
+    said = {"rotary": rotary(config), **local_options(config)}
     if config.get("final_logit_softcapping"):
         said["softcap"] = float(config["final_logit_softcapping"])
     return said
@@ -137,7 +131,6 @@ def gemma4_options(config):
 
 def gemma4_check(config):
     """What transformers' Gemma 4 computes and the engine has not, and a config.json that does not say its layers."""
-    number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
     if config.get("hidden_activation", "gelu_pytorch_tanh") != "gelu_pytorch_tanh":
         refuse(f"its activation is {config['hidden_activation']}, not gelu_pytorch_tanh")
     if config.get("attention_bias"):
@@ -146,15 +139,7 @@ def gemma4_check(config):
         refuse("it attends in both directions")
     if config.get("attention_k_eq_v") or config.get("enable_moe_block") or config.get("num_global_key_value_heads"):
         refuse("its layers are not the ones of a Gemma 4 E2B or E4B")
-    kinds = config.get("layer_types")
-    if not isinstance(kinds, list) or len(kinds) != config["num_hidden_layers"] or set(kinds) - {SLIDING, FULL}:
-        refuse("its layers are not sliding-attention layers and full-attention layers, one kind for every layer")
-    window = config.get("sliding_window")
-    if SLIDING in kinds and (not isinstance(window, int) or isinstance(window, bool) or window <= 0):
-        refuse("its config.json has no usable sliding_window")
-    if not number(config.get("rope_theta")) or not number(config.get("rope_local_base_freq")) \
-            or not number(config.get("rope_proportion")) or config["rope_proportion"] > 1 or rotary(config) < 2:
-        refuse("its config.json has no usable base of RoPE")
+    local_check(config, lambda c: positive(c.get("rope_proportion")) and c["rope_proportion"] <= 1 and rotary(c) >= 2)
     size, wide_size = config["head_dim"], config["global_head_dim"]
     if not isinstance(wide_size, int) or isinstance(wide_size, bool) or wide_size <= 0 or wide_size % 2:
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
@@ -277,8 +262,7 @@ def gemma4_agrees(own, config):
     (The sizes of the wide heads, of the FFNs and of every layer's own input are the tensors' shapes; how much of a
     head turns is the rope_freqs table's.)"""
     own, config = gemma4_config(own), gemma4_config(config)
-    said = lambda c: local(c) and {**local(c), "rope_theta": f32(local(c)["rope_theta"])}
-    return [("sliding-attention layers", said(own), said(config)),
+    return [local_agrees(own, config),
             ("cap of the logits", own.get("final_logit_softcapping") or None, config.get("final_logit_softcapping") or None),
             ("layers that read another's keys and values", shared(own), shared(config))]
 

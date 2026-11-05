@@ -8,7 +8,7 @@
 # them.
 import math
 
-from convert.families.family import Family, f32, head_size, nothing, refuse
+from convert.families.family import Family, f32, finite, head_size, nothing, refuse
 
 
 # What each row of a layout is made of, by the row's name (so that a row moved in the file takes its source with it):
@@ -161,11 +161,10 @@ def granite_check(config):
     """T.253: what the engine has not (see GRANITE_ONES), and a multiplier of the scores that is no number to scale
     q by. transformers' Granite has heads of dim / heads only (its config has no head_dim)."""
     check(config)
-    number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
     for key in GRANITE_ONES:
-        if not number(config.get(key, 1.0)) or config.get(key, 1.0) != 1.0:
+        if not finite(config.get(key, 1.0)) or config.get(key, 1.0) != 1.0:
             refuse(f"its {key} is {config[key]}, and of a Granite's multipliers the engine has the attention's only")
-    if not number(config.get("attention_multiplier", 1.0)) or config.get("attention_multiplier", 1.0) <= 0:
+    if not finite(config.get("attention_multiplier", 1.0)) or config.get("attention_multiplier", 1.0) <= 0:
         refuse("its config.json has no usable attention_multiplier")
     dim, heads = config["hidden_size"], config["num_attention_heads"]
     if dim % heads or head_size(config) != dim // heads:
