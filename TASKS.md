@@ -1348,13 +1348,32 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
 
 
-### T648 [追加][モデル] Firefox の翻訳モデル（Firefox Translations、旧 Bergamot）の日英を動かす — 状態: 進行中（2026-11-05、調べの段。持ち主「Firefox の翻訳モデル（Mozilla の Firefox Translations、旧 Bergamot）を pyodide-llm で動かせるようにしたい。まず調べて TASKS.md にタスクとして書き、子タスクに分けて進めてほしい」）
+### T648 [追加][モデル] Firefox の翻訳モデル（Firefox Translations、旧 Bergamot）の日英を動かす — 状態: 進行中（2026-11-05、調べが済み、持ち主の決めを待つ。持ち主「Firefox の翻訳モデル（Mozilla の Firefox Translations、旧 Bergamot）を pyodide-llm で動かせるようにしたい。まず調べて TASKS.md にタスクとして書き、子タスクに分けて進めてほしい」）
 - **目的**（持ち主）: 日英の翻訳を、いまの LLM（Shisa や CAT-Translate）より桁で速く小さいモデルで。日英のモデルは int8 で 1 本約 44 MB（en-ja 43,849,787 バイト・ja-en 43,977,787 バイト）、ネイティブの fxtranslate（Rust）で CPU 2 コアで 1 文約 0.2 秒。pyodide-llm の CAT-Translate 0.8B は 1 文約 4 秒。
 - **入手先**: 一覧は Remote Settings の `translations-models-v2`、実体は `firefox-settings-attachments.cdn.mozilla.net` + `attachment.location`（zstd、sha256 は `attachment.hash`）。en-ja は `srcvocab`・`trgvocab` が別、ja-en は `vocab` が 1 本（どちらも sentencepiece）、モデルは `model.*.intgemm.alphas.bin`。ライセンスは MPL-2.0（mozilla/translations の README）。取得の実例は takano32/bergamot-vs-shisa の `scripts/fetch_models.py`（手元の `~/GitHub/bergamot-vs-shisa/models/` に展開済み）。
 - **いまとの違い**（持ち主）: Marian のエンコーダ・デコーダ形（デコーダが浅い）で、エンコーダとクロスアテンションの道が新しく要る。重みは Marian 独自の二進形式で intgemm の int8 と係数（alphas）。指示文もチャットテンプレートも無い翻訳専用。
 - **確かめずに決めないこと**（持ち主）: 層の数と幅、デコーダが普通の注意か SSRU か、ショートリストの有無、二進形式の中身。参考: mozilla/translations の `inference`、bergamot-translator（アーカイブ済み）、slimt、fxtranslate、Firefox の WASM の推論エンジン。
 - **正しさと速さの基準**（持ち主）: fxtranslate か Firefox の推論エンジンと同じ原文で同じ訳（貪欲法）。原文は bergamot-vs-shisa の `data/sentences.jsonl`（100 文、日英 50 本ずつ）、訳は `results/bergamot.jsonl`。速さはモデル一覧と同じ測り方で 1 文あたりの秒。
 - **進め方**: 実装の前に、調べた結果と子タスクの分け方をここに書いて持ち主に見せる。調べは 2 つ（モデルの二進形式と形: `docs/notes/t648-firefox-translations-format-2026-11-05.md`、推論の手順と参考の実装と載せる道筋: `docs/notes/t648-firefox-translations-engines-2026-11-05.md`）。
+
+- **調べた結果**（2026-11-05、Opus medium の 2 人: `docs/notes/t648-firefox-translations-format-2026-11-05.md`（二進形式と形）・`docs/notes/t648-firefox-translations-engines-2026-11-05.md`（推論の手順・参考の実装・載せる道筋））:
+  - **形**: Marian の transformer。エンコーダは自己注意、デコーダは SSRU（自己注意なし）と原文への注意、norm は post（足してから LayerNorm、eps 1e-6）、FFN は ReLU、位置は正弦波（sin の半分と cos の半分、デコーダの位置 0 は 0 のベクトル）、head は 8。BOS は無く、答えのステップが持つ状態は層ごとの SSRU の 1 本だけ。原文への注意の K・V は 1 文に 1 回作る。
+  - **寸法**: en-ja はエンコーダ 6 層・デコーダ 4 層・幅 384・FFN 1536、語彙は原文 32000 と訳文 32000 で別（デコーダの埋め込みを出力と共有）。手元の ja-en は **Android 向けの 3.1**（`base-memory`、同じ寸法、語彙 64000 が 1 本で全部が共有）で、**デスクトップの Firefox が使うのは 3.0**（`base`、幅 512・FFN 2048・デコーダ 2 層・59.5 MB）。
+  - **二進形式**: 版・項目の数・見出し（各 32 バイト: 名前・形・型）・データは 256 にそろえる。型は float32・int8（設定だけ）・intgemm8。設定は `special:model.yml`。**重みの int8 は行列ごとに係数 1 つ**（W ≈ int8 / quantMult、値は −127〜127）、並びは転置で戻る（ファイルにタイルの並びは無い: intgemm の prepared B は読み込みの時に作る）。活性値の係数（alphas、`<行列>_QuantMultA`）は行列ごとの固定の値で、積は (A_int8 · W_int8) / (qa · qb) + bias。
+  - **ショートリスト**: Remote Settings に `lex.50.50.*.s2t.bin` がある（手元の取得の道具が取っていないだけ）。Firefox はいつも使い、fxtranslate の既定と `results/bergamot.jsonl` は使わない。使うと 100 文のうち 38 文（en-ja 33・ja-en 5）の訳が変わる。
+  - **語彙**: sentencepiece の unigram、nmt_nfkc、バイトの語片あり、bos と pad は無い（0 が `</s>`）。pyodide-llm の読み手で試した 13 文は sentencepiece と同じ ID（全符号位置は未確認）。
+  - **探索**: Firefox は貪欲法（`beam-size: 1`）、fxtranslate も貪欲法だけ。長さの上限は min(⌈2S⌉+4, 256)。長い文は文に切ってから 127 トークンずつ（fxtranslate は ICU4X、Firefox は `Intl.Segmenter`）。
+  - **`results/bergamot.jsonl` の出どころ**: fxtranslate 0.5.0、貪欲、ショートリストなし、`translate_long`、出力の層も int8、ja-en は Android の 3.1。同じ wheel で作り直すと 100 文の全部が同じ訳（この機械の行列積は scalar の道で厳密）。
+  - **int8 の掛け方で訳が合う数**（NumPy の参照、fxtranslate の `translate()` と 100 文、ショートリストなし）: intgemm をまねた形（固定の係数で ±127 に量子化 + 127 ずらし、i32 で厳密に足して 1 回だけ float に）は ja-en 47/50・en-ja 42/50、pyodide-llm の int8（群 32、活性値の係数を毎回測る）は 35/50・29/50、float は 36/50・27/50。**fxtranslate と同じ訳を出すには、固定の係数の量子化と行全体の i32 の和のカーネルが 1 つ要る**（relaxed の道は 0〜254 を持てない）。重みは同じ整数のまま群の係数を全部 1/qB にすれば損なく詰め直せる。残りの食い違いはほぼ同点の取り違えと読むが、fxtranslate のトークンの ID と比べられていない（fxtranslate をソースから建てるのは手元の許可が外のコードとして止めた）。
+  - **置き場**: Remote Settings の添付の CDN は CORS の見出しを返さないので、ページは直に取れない: ビルドで取ってサイトに置く（`make models`、2 本で約 88 MB。サイトは約 840 MB、目安 1 GB）。ライセンスは MPL-2.0。
+- **載せる道筋（取りまとめ役の勧め）**: 翻訳のエンジンは別に作る。層の輪は Python の NumPy、アフィンだけを ctypes のカーネルに（`createForward()` とその決まりには触らない）。モデルが 44〜60 MB なので 1 コアと 32 ビットのメモリで足りる。速さが要るなら後で JavaScript の forward に移す（その時に層の種類の表へ）。
+- **子タスク**（順に。決めの後に番号どおり進める）:
+  - T648.1 [追加][変換] Marian の二進形式とショートリストの読み手（変換しない: 重みはファイルの int8 のまま） — 未着手
+  - T648.2 [追加][CPU] NumPy の参照のエンジンと、100 文を fxtranslate の訳と比べる道具（貪欲法、intgemm をまねた量子化） — 未着手
+  - T648.3 [性能][CPU] 固定の係数で量子化し、行全体を i32 で厳密に足す int8 のカーネル（fxtranslate と同じ数） — 未着手
+  - T648.4 [追加][モデル] ページと一覧の項目（翻訳: 書式なし、貪欲法だけ、日→英と英→日の 2 項目） — 未着手
+  - T648.5 [追加][モデル] `make models` でモデルとショートリストを取ってサイトに置く（取得の長さと sha256） — 未着手
+- **持ち主に決めてもらうこと**: (1) 正しさの基準の訳をショートリストなし（fxtranslate の既定と `results/bergamot.jsonl`）にするかありにするか（Firefox と同じ）、(2) ja-en を Android の 3.1（手元・`bergamot.jsonl` と同じ・en-ja と同じ寸法）にするかデスクトップの 3.0（幅 512、Firefox のデスクトップと同じ）にするか、(3) 「同じ訳」の線（100/100 を求めるか、ほぼ同点の取り違えを記録して通すか）。
 
 ### T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 未着手（2026-11-05、T642.1 の CI で気づいた。規模 小）
 - 毎晩の main（run 41558881370・41741355606）と `full=true` のブランチ（T642.1 の 41929632184）で、`ubuntu-latest chromium` のジョブだけが 93 分で落ちる（`tests/gpu-check/engines.ts:64` の `page.waitForFunction: Timeout 5400000ms exceeded`、ログには途中の結果が出ない）。Chrome・Edge（約 8〜11 分）と Dawn（lavapipe、37〜51 分）は同じ作り物で通る。軽い組の Chromium は 10 分ほどで通る（41820927444）。作り物が増えた（T547 の塊の作り物・T574 の 27B の形・T558.1 の輪）ことで SwiftShader の Chromium が期限を越えたと読む（未確認: どの作り物で止まったかはログに出ない）。
