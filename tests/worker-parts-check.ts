@@ -391,12 +391,18 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   // (localOptions(): the dtype the header and the size give), the status line says what is done with them
   {
     const kept = said.length;
+    // (what localOptions() hands Python: the checkpoint's header among them, read where each kind has it)
+    const toPy = context.stand.pyodide.toPy, handed = [];
+    context.stand.pyodide.toPy = (value) => { handed.push(JSON.stringify([...value])); return toPy(value); };
+    const headerHanded = () => handed.includes(JSON.stringify(HEADER));
     const two = { id: "local", name: "Two files", bytes: BYTES, options: {}, file: new File([file], "model.bin"), tokenizerFile: new File([new Uint8Array(8)], "tok.bin") };
     await load({ load: 64, model: two });
     assert.deepEqual([of("error"), requests.length, of("status").map((s) => s.text), of("ready").map((r) => [r.load, r.overlapped]), built.at(-1).options.dtype, run("llama") === built.at(-1)],
       [[], 0, ["Reading Two files..."], [[64, false]], "float32", true],
       "two files of the visitor's: read without a request, said as read, ready, built with the dtype of their own");
     assert.deepEqual(of("progress").at(-1), { type: "progress", load: 64, received: BYTES, total: BYTES }, "the reading of two files tells its progress to the end");
+    assert.ok(headerHanded(), "the header of two files was not read from the first of them");
+    handed.length = 0;
 
     const CHECKPOINT = "https://elsewhere.test/m.bin", TOKENIZER = "https://elsewhere.test/tok.bin";
     const ranged = (url, init) => {
@@ -416,6 +422,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       [CHECKPOINT, "bytes=0-27", true, true],
       "two URLs: the header first, by a range request, then the tokenizer and the checkpoint's bytes in range requests");
     assert.deepEqual(of("progress").at(-1), { type: "progress", load: 65, received: BYTES, total: BYTES }, "the download of two URLs tells its progress to the end");
+    assert.ok(headerHanded(), "the header of two URLs was not the first range request's bytes");
     // a server whose answer to the range request says a size no checkpoint has: the load fails before anything else is asked
     fresh(() => new Response(new Uint8Array(20), { status: 206, headers: { "Content-Range": "bytes 0-19/20" } }));
     await context.onmessage({ data: { type: "load", root: "https://site.test/app/", load: 66, model: { ...urls, url: { ...urls.url } } } });
@@ -424,6 +431,18 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
       [`${CHECKPOINT} does not answer range requests, so its size is unknown.`, [], false], "a checkpoint at a URL of no size fails before its tokenizer is asked for");
     messages.splice(0, messages.length, ...messages.filter((message) => message.type !== "error"));
     assert.deepEqual(said.slice(kept).filter((line) => !/answered a range request with the whole file/.test(line)), [], "the two kinds said nothing on the console");
+    context.stand.pyodide.toPy = toPy;
+
+    // a model of the site, once ready, drops what the Cache API holds of its parts at another size (and nothing of
+    // the two kinds above, which have no parts)
+    const deleted = [], stale = [{ url: "https://site.test/app/models/cached.000?bytes=8" }, { url: `https://site.test/app/models/cached.000?bytes=${BYTES}` }];
+    const store = { match: async () => undefined, put: async () => {}, delete: async () => {}, keys: async () => stale };
+    context.caches = { open: async () => ({ ...store, delete: async (request) => { deleted.push(typeof request === "string" ? request : request.url); } }), delete: async () => true };
+    await load({ load: 67, model: model("cached") });
+    await sleep(20);
+    delete context.caches;
+    assert.deepEqual([of("error"), of("ready").map((r) => r.load), deleted], [[], [67], ["https://site.test/app/models/cached.000?bytes=8"]],
+      "a model of the site did not drop its parts of another size once it was ready (and those of its own size only)");
   }
 
   // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks alone.js
