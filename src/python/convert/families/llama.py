@@ -8,7 +8,7 @@
 # them.
 import math
 
-from convert.families.family import Family, as_stored, f32, head_size, refuse
+from convert.families.family import Family, f32, head_size, nothing, refuse
 
 
 # What each row of a layout is made of, by the row's name (so that a row moved in the file takes its source with it):
@@ -121,19 +121,15 @@ def gguf_turned(config):
     rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned. A Granite's as a Llama's (T.253:
     its converter is the Llama's), and a SmolLM3's (T.255)."""
     turns = {"attn_q": config["num_attention_heads"], "attn_k": config.get("num_key_value_heads")}
-
-    def stored(entry, info, target, parts):
-        if len(parts) == 4 and parts[2] in turns:
-            entry["turned"] = turns[parts[2]]
-    return stored
+    return {f"{name}.{part}": {"turned": heads} for name, heads in turns.items() for part in ("weight", "bias")}
 
 
 LLAMA = Family("Llama", "llama", llama_sources, check, found=found, free_heads=True, scaled=True,
                gguf="llama", gguf_names=(GGUF_NAMES, "model.layers.{}.", GGUF_LAYER), gguf_config=gguf_config,
-               gguf_stored=gguf_turned)
+               gguf_marks=gguf_turned)
 # (a Mistral's GGUF says "llama")
 MISTRAL = LLAMA._replace(title="Mistral", renamed=True, after=windowed, gguf=None)
-QWEN2 = LLAMA._replace(title="Qwen2", check=lambda config: check(config, biased=True), gguf="qwen2", gguf_stored=as_stored)
+QWEN2 = LLAMA._replace(title="Qwen2", check=lambda config: check(config, biased=True), gguf="qwen2", gguf_marks=nothing)
 # T.203 (T.136's fourth stage): a Qwen3 is a Qwen2 without the biases that normalizes each head of q and k (T.124).
 # llama.cpp leaves q, k and the two norms in Hugging Face's order, as a Qwen2's; the head's size is key_length
 QWEN3 = QWEN2._replace(title="Qwen3", check=check, gguf="qwen3", gguf_names=(

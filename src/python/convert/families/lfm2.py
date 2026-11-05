@@ -90,13 +90,10 @@ def lfm2_gguf_config(key, tensors):
     return config
 
 
-def lfm2_gguf_stored(config):
-    def stored(entry, info, target, parts):
-        if target.endswith("conv.conv.weight") and len(info["shape"]) == 2:
-            # T.260: an LFM2's convolution comes without its axis of one too, (channels, taps) for Hugging Face's
-            # (channels, 1, taps); nothing else of an LFM2 is stored another way than the original has it
-            entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
-    return stored
+def lfm2_gguf_marks(config):
+    # T.260: an LFM2's convolution comes without its axis of one too, (channels, taps) for Hugging Face's (channels,
+    # 1, taps); nothing else of an LFM2 is stored another way than the original has it
+    return {"shortconv.conv.weight": {"axis": 1}}
 
 
 def lfm2_agrees(own, config):
@@ -111,7 +108,7 @@ def lfm2_agrees(own, config):
 # Face's order, as a Qwen3's (its converter is no child of the Llama's: conversion/lfm2.py at f1cee994)
 LFM2 = Family("LFM2", "lfm2", lfm2_sources, lfm2_check, before=lfm2_config,
               form={"convolution": convolution},
-              gguf="lfm2", gguf_config=lfm2_gguf_config, gguf_stored=lfm2_gguf_stored, agrees=lfm2_agrees,
+              gguf="lfm2", gguf_config=lfm2_gguf_config, gguf_marks=lfm2_gguf_marks, agrees=lfm2_agrees,
               gguf_names=({"token_embd.weight": "model.embed_tokens.weight",
                            "token_embd_norm.weight": "model.embedding_norm.weight", "output.weight": "lm_head.weight"},
                           "model.layers.{}.",

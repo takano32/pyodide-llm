@@ -129,30 +129,50 @@ def qwen35_gguf_config(key, tensors):
     return config
 
 
-def qwen35_gguf_stored(config):
-    heads = linear(config)
+# T.236: its GGUF by the names of the language model saved alone ("model." in front). llama.cpp calls the second norm
+# post_attention_norm here, the linear-attention layer's q, k and v attn_qkv, its z attn_gate, and the rest ssm_* after
+# the state-space models it shares code with. A name with a dot is all of a tensor's name after its layer (llama.cpp
+# writes dt_bias as ssm_dt.bias, and A_log as ssm_a without a ".weight")
+QWEN35_GGUF_LAYER = {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
+                     "post_attention_norm": "post_attention_layernorm", "attn_qkv": "linear_attn.in_proj_qkv",
+                     "attn_gate": "linear_attn.in_proj_z", "ssm_alpha": "linear_attn.in_proj_a",
+                     "ssm_beta": "linear_attn.in_proj_b", "ssm_conv1d": "linear_attn.conv1d",
+                     "ssm_norm": "linear_attn.norm", "ssm_out": "linear_attn.out_proj",
+                     "ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}
+# T.236: llama.cpp writes a Qwen3.5's norms with the 1 added that the model adds to them: all but the norm of a
+# linear-attention layer's value heads (ssm_norm), which has none
+QWEN35_NORMS = ("output_norm.weight", "attn_norm.weight", "ffn_norm.weight", "post_attention_norm.weight",
+                "attn_q_norm.weight", "attn_k_norm.weight")
 
-    def stored(entry, info, target, parts):
-        # T.236: llama.cpp writes a Qwen3.5's norms with the 1 added that the model adds to them (all but the norm
-        # of a linear-attention layer's value heads, which has none), A_log as -exp(A_log), and the convolution
-        # (channels, 1, taps) without its axis of one. The first two are steps of the plan (transformed()'s "one"
-        # and "decay") that are done already: no float32 comes back from them to the bit, so they are not undone
-        # to be done again, as a turned q is
-        if target.endswith("norm.weight") and not target.endswith("linear_attn.norm.weight"):
-            entry["done"] = "one"
-        if target.endswith("linear_attn.A_log"):
-            entry["done"] = "decay"
-        if target.endswith("linear_attn.conv1d.weight") and len(info["shape"]) == 2:
-            entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
-        # T.245: and where a key head has more value heads than one (the 4B and up: 2 or 3), it writes the value
-        # heads in another order (untiled()) in every tensor that has them along an axis. Put back whole, as a
-        # turned q is: it is a move of values, which comes back to the bit
-        per, part = heads["value_heads"] // heads["key_heads"], target.rsplit("linear_attn.", 1)[-1]
-        if per > 1 and "linear_attn." in target and part in QWEN35_TILED:
-            after_keys, of_a_head, axis = QWEN35_TILED[part]
-            entry["tiled"] = (2 * heads["key_heads"] * heads["key_dim"] if after_keys else 0, heads["key_heads"],
-                              per, heads["value_dim"] if of_a_head else 1, axis)
-    return stored
+
+def qwen35_own(part):
+    """llama.cpp's name after the layer of a linear-attention layer's tensor, by Hugging Face's after "linear_attn."
+    (QWEN35_TILED's): of the table above, the other way round. A name the table has not is a KeyError."""
+    named = {target: name for name, target in QWEN35_GGUF_LAYER.items() if target.startswith("linear_attn.")}
+    whole = "linear_attn." + part
+    if whole in named:
+        return named[whole]  # (ssm_dt.bias, ssm_a)
+    begin, end = whole.rsplit(".", 1)
+    return f"{named[begin]}.{end}"
+
+
+def qwen35_gguf_marks(config):
+    """T.236: the norms with the 1 added (QWEN35_NORMS), A_log as -exp(A_log), and the convolution (channels, 1, taps)
+    without its axis of one. The first two are steps of the plan (transformed()'s "one" and "decay") that are done
+    already: no float32 comes back from them to the bit, so they are not undone to be done again, as a turned q is.
+    T.245: and where a key head has more value heads than one (the 4B and up: 2 or 3), llama.cpp writes the value
+    heads in another order (untiled()) in every tensor that has them along an axis. Put back whole, as a turned q is:
+    it is a move of values, which comes back to the bit."""
+    heads = linear(config)
+    marks = {**{name: {"done": "one"} for name in QWEN35_NORMS}, "ssm_a": {"done": "decay"},
+             "ssm_conv1d.weight": {"axis": 1}}
+    per = heads["value_heads"] // heads["key_heads"]
+    if per > 1:
+        for part, (after_keys, of_a_head, axis) in QWEN35_TILED.items():
+            marks.setdefault(qwen35_own(part), {})["tiled"] = (
+                2 * heads["key_heads"] * heads["key_dim"] if after_keys else 0, heads["key_heads"], per,
+                heads["value_dim"] if of_a_head else 1, axis)
+    return marks
 
 
 def qwen35_agrees(own, config):
@@ -162,19 +182,10 @@ def qwen35_agrees(own, config):
             ("linear-attention layers", linear(own), linear(config))]
 
 
-# T.236: its GGUF by the names of the language model saved alone ("model." in front). llama.cpp calls the second norm
-# post_attention_norm here, the linear-attention layer's q, k and v attn_qkv, its z attn_gate, and the rest ssm_* after
-# the state-space models it shares code with. A name with a dot is all of a tensor's name after its layer (llama.cpp
-# writes dt_bias as ssm_dt.bias, and A_log as ssm_a without a ".weight")
+# T.236: its GGUF by the names of the language model saved alone (QWEN35_GGUF_LAYER)
 QWEN35 = Family("Qwen3.5", "qwen35", qwen35_sources, qwen35_check, after=defaults, prefix=qwen35_prefix,
                 form={"linear": linear}, free_heads=True,
-                gguf="qwen35", gguf_config=qwen35_gguf_config, gguf_stored=qwen35_gguf_stored, agrees=qwen35_agrees,
-                gguf_names=(GGUF_NAMES, "model.layers.{}.",
-                            {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
-                             "post_attention_norm": "post_attention_layernorm", "attn_qkv": "linear_attn.in_proj_qkv",
-                             "attn_gate": "linear_attn.in_proj_z", "ssm_alpha": "linear_attn.in_proj_a",
-                             "ssm_beta": "linear_attn.in_proj_b", "ssm_conv1d": "linear_attn.conv1d",
-                             "ssm_norm": "linear_attn.norm", "ssm_out": "linear_attn.out_proj",
-                             "ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}))
+                gguf="qwen35", gguf_config=qwen35_gguf_config, gguf_marks=qwen35_gguf_marks, agrees=qwen35_agrees,
+                gguf_names=(GGUF_NAMES, "model.layers.{}.", QWEN35_GGUF_LAYER))
 # config.json of the vision-language model as it is published: its text_config is the Qwen3.5 above
 QWEN35_WHOLE = QWEN35._replace(renamed=True, before=language_model, after=same, gguf=None)

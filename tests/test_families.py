@@ -15,6 +15,7 @@ import llama2_convert
 import llama2_numpy
 from convert import families
 from convert.families.llama import GRANITE, LLAMA, MISTRAL, QWEN2, QWEN3, SMOLLM3, gguf_config
+from convert.gguf import MARKS
 from llama2_convert import (FAMILIES, Family, Safetensors, architecture, check_config, conversion_plan, family_of,
                             gguf_model, normalize)
 from llama2_numpy import FORM, TABLE, Dims, tensor_rows
@@ -265,6 +266,21 @@ def test_a_gguf_of_a_family_is_marked_where_llama_cpp_stores_it_otherwise(arch):
     assert {name: marked for name, marked in marks.items() if marked} == MARKED.get(arch, {})
 
 
+@pytest.mark.parametrize("arch", list(families.GGUF))
+def test_the_marks_of_a_family_name_tensors_of_its_table_and_marks_there_are(arch):
+    """T.640.3: a name of gguf_marks() that gguf_names has not (a spelling of it gone wrong) would mark nothing and say
+    nothing; a mark MARKS has not would be a KeyError of the first GGUF that has the tensor only. Said here of every
+    family, whichever GGUF its own tests write. (A Qwen3.5 of two value heads to a key head: the marks of the tiles.)"""
+    _, family = families.GGUF[arch]
+    config = {**BASE, "num_key_value_heads": 2, "linear_num_key_heads": 2, "linear_num_value_heads": 4}
+    names, _, layers = family.gguf_names
+    read = lambda name: name in names or name in layers or (name.rsplit(".", 1)[0] in layers and name.rsplit(".", 1)[-1]
+                                                             in ("weight", "bias"))
+    marks = family.gguf_marks(config)
+    assert all(read(name) for name in marks), sorted(name for name in marks if not read(name))
+    assert {mark for marked in marks.values() for mark in marked} <= set(MARKS)
+
+
 def family_target(family, name):
     """Hugging Face's name of a GGUF's tensor by a family's table, as gguf_model() looks it up."""
     names, layer, layers = family.gguf_names
@@ -290,8 +306,8 @@ def test_a_llama_with_a_little_more_is_the_llamas_record_but_for_that():
                               and getattr(family, field) != getattr(LLAMA, field)}
     assert differs(GRANITE) == {"title", "check", "scale", "gguf", "gguf_config", "agrees"}
     assert differs(SMOLLM3) == {"title", "check", "options", "gguf", "gguf_config", "agrees"}
-    assert differs(QWEN2) == {"title", "check", "gguf", "gguf_stored"}
-    assert differs(QWEN3) == {"title", "gguf", "gguf_names", "gguf_stored"}
+    assert differs(QWEN2) == {"title", "check", "gguf", "gguf_marks"}
+    assert differs(QWEN3) == {"title", "gguf", "gguf_names", "gguf_marks"}
     assert differs(MISTRAL) == {"title", "renamed", "after", "gguf"}
 
 

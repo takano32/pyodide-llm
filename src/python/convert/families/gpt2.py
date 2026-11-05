@@ -103,22 +103,16 @@ def neox_gguf_config(key, tensors):
             "tie_word_embeddings": "output.weight" not in tensors}
 
 
-def gpt2_gguf_stored(config):
-    def stored(entry, info, target, parts):
-        if len(parts) == 4 and parts[-1] == "weight" and parts[2] in ("attn_qkv", "attn_output", "ffn_up", "ffn_down"):
-            # GPT-2's matrices are Conv1D, (in, out): llama.cpp stores them the other way round, as every other
-            # model's. Back to Hugging Face's, so that the plan transposes them once, as it does a safetensors' own
-            entry["shape"], entry["transposed"] = list(reversed(info["shape"])), True
-    return stored
+def gpt2_gguf_marks(config):
+    # GPT-2's matrices are Conv1D, (in, out): llama.cpp stores them the other way round, as every other model's. Back
+    # to Hugging Face's, so that the plan transposes them once, as it does a safetensors' own
+    return {f"{name}.weight": {"transposed": True} for name in ("attn_qkv", "attn_output", "ffn_up", "ffn_down")}
 
 
-def neox_gguf_stored(config):
-    def stored(entry, info, target, parts):
-        if len(parts) == 4 and parts[2] == "attn_qkv":
-            # GPT-NeoX's query_key_value holds q, k and v of every head in turn; llama.cpp stores all of q, then k,
-            # then v (the matrix and its bias). Back to Hugging Face's order, like the turned q and k of a Llama
-            entry["split"] = config["num_attention_heads"]
-    return stored
+def neox_gguf_marks(config):
+    # GPT-NeoX's query_key_value holds q, k and v of every head in turn; llama.cpp stores all of q, then k, then v
+    # (the matrix and its bias). Back to Hugging Face's order, like the turned q and k of a Llama
+    return {f"attn_qkv.{part}": {"split": config["num_attention_heads"]} for part in ("weight", "bias")}
 
 
 def layer_norm_agrees(own, config):
@@ -136,7 +130,7 @@ def neox_agrees(own, config):
 
 
 GPT2 = Family("GPT-2", "gpt2", gpt2_sources, gpt2_check, after=gpt2_names, prefix=gpt2_prefix,
-              gguf="gpt2", gguf_config=gpt2_gguf_config, gguf_stored=gpt2_gguf_stored, agrees=layer_norm_agrees,
+              gguf="gpt2", gguf_config=gpt2_gguf_config, gguf_marks=gpt2_gguf_marks, agrees=layer_norm_agrees,
               gguf_names=({"token_embd.weight": "wte.weight", "position_embd.weight": "wpe.weight",
                            "output_norm.weight": "ln_f.weight", "output_norm.bias": "ln_f.bias",
                            "output.weight": "lm_head.weight"}, "h.{}.",
@@ -145,7 +139,7 @@ GPT2 = Family("GPT-2", "gpt2", gpt2_sources, gpt2_check, after=gpt2_names, prefi
 NEOX = Family("GPT-NeoX", "neox", neox_sources, neox_check, after=neox_names, classifier="embed_out.weight",
               # GPT-NeoX may run its two branches in parallel: the file does not say
               options=lambda config: {"parallel_residual": bool(config.get("use_parallel_residual", True))},
-              gguf="gptneox", gguf_config=neox_gguf_config, gguf_stored=neox_gguf_stored, agrees=neox_agrees,
+              gguf="gptneox", gguf_config=neox_gguf_config, gguf_marks=neox_gguf_marks, agrees=neox_agrees,
               gguf_names=({"token_embd.weight": "gpt_neox.embed_in.weight",
                            "output_norm.weight": "gpt_neox.final_layer_norm.weight",
                            "output_norm.bias": "gpt_neox.final_layer_norm.bias", "output.weight": "embed_out.weight"},

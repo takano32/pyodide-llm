@@ -102,6 +102,28 @@ def gguf_read(data):
     return metadata, tensors, (at + alignment - 1) // alignment * alignment
 
 
+# T.640.3: what a mark of a family's gguf_marks() puts in a tensor's entry of the header, of the GGUF's own entry (info).
+# The plan puts back "turned" (a Llama's q and k in llama2.c's order), "split" (a GPT-NeoX's query_key_value as all of
+# q, then k, then v) and "tiled" (a Qwen3.5's value heads in llama.cpp's order), takes a "transposed" matrix as a
+# Conv1D's own and leaves out the step that is "done" already. "axis": where the axis of one goes back that llama.cpp
+# leaves out of a convolution (channels, taps), when the GGUF has it without
+MARKS = {
+    "turned": lambda entry, info, heads: entry.update(turned=heads),
+    "split": lambda entry, info, heads: entry.update(split=heads),
+    "tiled": lambda entry, info, tile: entry.update(tiled=tile),
+    "done": lambda entry, info, step: entry.update(done=step),
+    "transposed": lambda entry, info, yes: entry.update(shape=list(reversed(info["shape"])), transposed=yes),
+    "axis": lambda entry, info, at: len(info["shape"]) == 2 and entry.update(
+        shape=[*info["shape"][:at], 1, *info["shape"][at:]]),
+}
+
+
+def gguf_own(name, names):
+    """A GGUF tensor's name as a family's gguf_marks() says it: the whole name outside the layers (in gguf_names), all of
+    it after "blk.<layer>." in one."""
+    return name if name in names else ".".join(name.split(".")[2:])
+
+
 def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
     """The safetensors-like header (Hugging Face's names, offsets from base) and the config.json of a GGUF.
     rope_freqs: keep llama.cpp's table of Llama 3's RoPE scaling in the header, to be checked against the original's
@@ -144,7 +166,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
                 config["rope_scaling"] = scaling
     names, layer, layers = family.gguf_names
     # what llama.cpp stores of this family otherwise than Hugging Face has it, marked in the tensor's entry
-    stored = family.gguf_stored(config)
+    marks = family.gguf_marks(config)
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
             raise ValueError(f"{name} is stored as ggml type {info['type']}, which is not read.")
@@ -164,7 +186,8 @@ def gguf_model(metadata, tensors, base, rope_freqs=False, table=None):
                              f"{SOURCES[dtype].values}.")
         size = SOURCES[dtype].bytes(math.prod(info["shape"]))
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
-        stored(entry, info, target, parts)
+        for mark, value in marks.get(gguf_own(name, names), {}).items():
+            MARKS[mark](entry, info, value)
         header[target] = entry
     # T.237: a rotated basis is the header's to say (header_rotated), next to the tensors it is about. Whether a
     # linear-attention layer has more value heads than key heads: whether T.245's order of them is there to put back

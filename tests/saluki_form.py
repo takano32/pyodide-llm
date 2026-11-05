@@ -61,16 +61,28 @@ def header(first="lm_head.weight"):
     import llama2_convert
     import llama2_numpy
     from convert.families.qwen35 import QWEN35
+    from convert.gguf import MARKS
     from convert.plan import source_shape
     plain = {key: value for key, value in FORM.items() if key != "kinds"}
     plan, shapes = llama2_convert.conversion_plan(HEADER, plain, "model.", 64)
-    rows, stored, entries = llama2_numpy.tensor_rows(HEADER, plain), QWEN35.gguf_stored(CONFIG), {}
+    rows, marks, entries = llama2_numpy.tensor_rows(HEADER, plain), QWEN35.gguf_marks(CONFIG), {}
+    names, _, layers = QWEN35.gguf_names
+    whole, after = {target: name for name, target in names.items()}, {target: name for name, target in layers.items()}
+
+    def own(name):
+        """llama.cpp's name of a tensor as the marks say it, by Hugging Face's (the family's table the other way)."""
+        if name in whole:
+            return whole[name]
+        part = name.split(".", 3)[3]  # (after "model.layers.<layer>.")
+        begin, end = part.rsplit(".", 1)
+        return after[part] if part in after else f"{after[begin]}.{end}"
     for row, parts, shape in zip(rows, plan, shapes):
         for layer, (name, transform) in enumerate(parts or ()):
             kind = KINDS.get(row.name, "Q8_0" if row.name in ("wb", "wa") else "F32")
             found = source_shape(shape[1:] if len(parts) > 1 else shape, transform)
             entries[name] = {"dtype": kind if isinstance(kind, str) else kind[layer], "shape": list(found)}
-            stored(entries[name], {"shape": list(found)}, name, None)
+            for mark, value in marks.get(own(name), {}).items():
+                MARKS[mark](entries[name], {"shape": list(found)}, value)
     at = 0
     for name in sorted(entries, key=lambda name: name != first):
         entry = entries[name]

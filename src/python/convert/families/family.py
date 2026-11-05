@@ -47,11 +47,6 @@ def nothing(config):
     return {}
 
 
-def as_stored(config):
-    """A family whose tensors a GGUF holds as Hugging Face does: nothing to put back."""
-    return lambda entry, info, target, parts: None
-
-
 class Family(NamedTuple):
     """A family of models, by what the shared flow asks of it. A family that is another but for a few of these is
     that one's record with those replaced (a Granite is LLAMA._replace(...)): no class, and nothing to write for what
@@ -104,10 +99,11 @@ class Family(NamedTuple):
     # (key, tensors) -> config.json as the GGUF's metadata says it, by the names normalize() reads. key(name,
     # default): the value of "<architecture>.<name>"
     gguf_config: Optional[Callable] = None
-    # (config, as gguf_config made it) -> a function (entry, info, target, parts) that marks in a tensor's entry of
-    # the header what llama.cpp stores otherwise than Hugging Face (convert/gguf.py's gguf_model()). info: the GGUF's
-    # own entry, target: Hugging Face's name, parts: the GGUF's name cut at its dots
-    gguf_stored: Callable = as_stored
+    # (config, as gguf_config made it) -> what llama.cpp stores of this family otherwise than Hugging Face (T.640.3),
+    # as {llama.cpp's name of a tensor: {mark: value}}: a name of gguf_names' outside the layers, or a layer's all
+    # after "blk.<layer>." (attn_q.weight, a Qwen3.5's ssm_a). convert/gguf.py's MARKS says what each mark puts in the
+    # tensor's entry of the header (gguf_model()). {}: a family whose tensors a GGUF holds as Hugging Face does
+    gguf_marks: Callable = nothing
     # (config) -> the rope_freqs table llama.cpp writes of this family's RoPE, where it writes one that is not a Llama
     # 3's scaling (T.529: a Gemma 4's proportional RoPE, the pairs that do not turn divided by 1e30). The table is then
     # held to this as it streams past, whether or not the GGUF has the original's config.json beside it

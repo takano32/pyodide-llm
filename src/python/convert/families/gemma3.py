@@ -123,15 +123,16 @@ def gemma3_gguf_config(key, tensors):
     return config
 
 
-def gemma3_gguf_stored(config):
-    def stored(entry, info, target, parts):
-        # T.261: llama.cpp writes a Gemma 3's norms with the 1 added that the model adds to them (Gemma3Model's
-        # norm_shift: every tensor whose name ends in norm.weight), a step of the plan that is done already. Nothing
-        # else of a Gemma 3 is stored another way than the original has it: q and k in Hugging Face's order, and the
-        # embedding as it is (llama.cpp multiplies the row at run time)
-        if target.endswith("norm.weight"):
-            entry["done"] = "one"
-    return stored
+# T.261: llama.cpp writes a Gemma 3's norms with the 1 added that the model adds to them (Gemma3Model's norm_shift:
+# every tensor whose name ends in norm.weight), a step of the plan that is done already: these, by its names. Nothing
+# else of a Gemma 3 is stored another way than the original has it: q and k in Hugging Face's order, and the embedding
+# as it is (llama.cpp multiplies the row at run time)
+GEMMA3_NORMS = ("output_norm.weight", "attn_norm.weight", "post_attention_norm.weight", "ffn_norm.weight",
+                "post_ffw_norm.weight", "attn_q_norm.weight", "attn_k_norm.weight")
+
+
+def gemma3_gguf_marks(config):
+    return {name: {"done": "one"} for name in GEMMA3_NORMS}
 
 
 def gemma3_agrees(own, config):
@@ -147,7 +148,7 @@ def gemma3_agrees(own, config):
 # where a Llama's ffn_norm is its post_attention_layernorm)
 GEMMA3 = Family("Gemma 3", "gemma3", gemma3_sources, gemma3_check, before=gemma3_config, options=gemma3_options,
                 free_heads=True,
-                gguf="gemma3", gguf_config=gemma3_gguf_config, gguf_stored=gemma3_gguf_stored, agrees=gemma3_agrees,
+                gguf="gemma3", gguf_config=gemma3_gguf_config, gguf_marks=gemma3_gguf_marks, agrees=gemma3_agrees,
                 gguf_names=({"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
                              "output.weight": "lm_head.weight"},
                             "model.layers.{}.",
