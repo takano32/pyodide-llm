@@ -18,6 +18,7 @@ const root = new URL("../../", import.meta.url).pathname;
 const HARNESS = `\n${fs.readFileSync(new URL("./harness.js", import.meta.url), "utf8")}`;
 // an icon of its own: a browser without one asks for /favicon.ico (a 404 in the console of the real Chrome)
 const PAGE = `<!doctype html><meta charset="utf-8"><title>gpu-check</title><link rel="icon" href="data:,"><script type="module">
+const worker = new Worker("/harness.js", { type: "module" });
 const got = window.__gpuCheck = { results: [] };
 worker.onmessage = ({ data }) => (data.line !== undefined ? console.log(data.line) : data.result ? got.results.push(data.result) : Object.assign(got, data));
 worker.onerror = (event) => Object.assign(got, { error: event.message ?? "the harness did not start", ended: true });

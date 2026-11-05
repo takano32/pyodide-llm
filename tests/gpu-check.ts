@@ -75,6 +75,8 @@ const outcome = engine === "dawn" ? await inDawn({ webgpu, directory, server, on
 server.close();
 if (lines.length) console.log(lines.join("\n"));
 // T147: the list of forms comes from an adapter of its own, which SwiftShader now and then does not give (AGENTS.md)
+// (T645 review: a harness that ended without an error but short of its models is an error, not a pass of the ones it gave)
+if (!outcome.error && outcome.results?.length !== cases.length) outcome.error = `the harness ended after ${outcome.results?.length ?? 0} of ${cases.length} models`;
 if (!outcome.error && !outcome.forms?.length) outcome.error = "no tiled shader to force: the harness got no GPU adapter (run it again)";
 // (T226: an exit once what was printed has gone out. An exit at once cut the log of CI's Dawn job in the middle of a
 // line of the console, before the error: run 36867483459 failed, and nothing said why)
