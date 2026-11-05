@@ -138,7 +138,7 @@ def test_a_broken_model_is_refused_by_name():
     refused(data[:-1], "is .* bytes long where its heads say")
     refused(data + b"\0", "is .* bytes long where its heads say")
     filled = bytearray(data)
-    filled[len(data) - len(SETTINGS) - 1] = 1  # the last 0 after none_QuantMultA
+    filled[len(data) - len(SETTINGS) - 2] = 1  # the last 0 after none_QuantMultA
     refused(bytes(filled), "none_QuantMultA is followed by bytes that are not 0")
     refused(data[:40], "ends inside its items' heads")
     # two items of a name, an intgemm8 that is no matrix, settings that are not there or not read
