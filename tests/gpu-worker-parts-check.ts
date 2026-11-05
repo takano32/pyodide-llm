@@ -114,6 +114,16 @@ assert.notEqual(m.plan, opened, "and its plan");
 assert.deepEqual(m.plan, plan);
 handed(memory, plan);
 {
+  // (T642.3's review: features.subgroups is the device's feature and WGSL's subgroup_id together, features.packed WGSL's packed dot
+  // alone; one of the two without the other is no subgroups, which the attention's forms and a token's would otherwise choose)
+  for (const [device, id, subgroups] of [[true, true, true], [true, false, false], [false, true, false]]) {
+    const there = standIn({ language: [...(id ? ["subgroup_id"] : []), "packed_4x8_integer_dot_product"] });
+    if (device) there.device.features.add("subgroups");
+    const opened = await openDevice(plan);
+    assert.deepEqual(opened.features, { subgroups, packed: true }, `the device ${device ? "has" : "lacks"} subgroups and WGSL ${id ? "has" : "lacks"} subgroup_id: subgroups ${subgroups}`);
+  }
+}
+{
   // (what the page kept counts for the same adapter and shaders alone)
   const again = standIn();
   const kept = await openDevice({ ...plan, remembered: { key: m.key, matrices: "a form" } });
@@ -123,7 +133,7 @@ handed(memory, plan);
   assert.equal(again.calls.length, 0);
   assert.equal(device_.model, other, "the record is the one opened last");
 }
-console.log("gpu-worker-parts-check: device.js makes the model's record of 12 fields, refuses a fallback adapter before anything is made, and takes the memory and the plan as handed()");
+console.log("gpu-worker-parts-check: device.js makes the model's record of 13 fields, refuses a fallback adapter before anything is made, and takes the memory and the plan as handed()");
 
 // ---- weights.js: m.weights, from the shared memory
 const up = await upload(m);
