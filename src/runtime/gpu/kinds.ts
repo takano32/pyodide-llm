@@ -115,7 +115,9 @@ export type First = {
 //   widest()  the widest vector its layers quantize besides the stream, the attention's output and the FFN's
 //   matrices() its matrices of a token's step by the pipeline each takes (tokens.ts's tokenShape(), T.579): qkv, q, k
 //             and v; mix, a matrix of the normed stream written as it is; write, of a vector of its own; join, the matrix
-//             whose output joins the stream (Stepping's joining())
+//             whose output joins the stream (Stepping's joining()); and but qkv, the matrices a token's layer reads
+//             whole, one piece (weights.ts's tokensLayout(), T.642.2: of its plan's matrices alone, as a model on the
+//             GPU alone is opened)
 //   block()   what it makes once of a prompt's block (its shaders, its buffers: nothing of m.block yet), which says
 //             the state its layers keep (states: as the CPU stages them; none where they keep none), binds its layer l
 //             once the forms are chosen (layer(): its step), makes its own of a token (tokens()) and checks its first
@@ -129,7 +131,7 @@ export type KindBlock = {
 export type GpuKind = {
   cached?: boolean;
   widest?(plan: Started): number;
-  matrices(plan: Started): Partial<Record<"qkv" | "mix" | "write" | "join", TensorName[]>>;
+  matrices(plan: Pick<Started, "matrices">): Partial<Record<"qkv" | "mix" | "write" | "join", TensorName[]>>;
   block(m: Model): Promise<KindBlock>;
 };
 

@@ -9,6 +9,7 @@ import { sixDispatch, sixValues } from "../shaders/steps.ts";
 import { CODEBOOK_BYTES } from "../shaders/superblocks.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { PACKINGS, CODES, packingAt, packingsOf, spreadBits } from "./packings.ts";
+import { GPU_KINDS } from "./kinds.ts";
 import type { Model, Open, Bound } from "./device.ts";
 import type { GpuPacking, Matrix, Started, Table, Tables, Vector, Vectors } from "../contracts/gpu/protocol.ts";
 import type { TensorName } from "../contracts/plan.ts";
@@ -395,9 +396,13 @@ function tokensLayout(m: Open): Together | null {
   };
   // (T.226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
-  // (T.545.2: and an LFM2's matrices in and out of its convolution layers; T.271.3: a Qwen3.5's of its linear-attention
-  // layers and the gate of its output)
-  const whole: TensorName[] = ["wo", "w2", ...(gated ? [] : ["w1" as const]), "win", "wout", "wqkv", "wz", "wg"];
+  // (T.642.2: the matrices a token's layer reads whole, each one piece: the kinds' (gpu/kinds.ts's matrices(): every one
+  // but q, k and v, which are joined or apart below; T.545.2 an LFM2's in and out of its convolution layers, T.271.3 a
+  // Qwen3.5's of its linear-attention layers and the gate of its output) and the FFN's down, and its up where it has no
+  // gate. Every kind's: a matrix the model has not is passed over, and a model on the GPU alone of attending layers
+  // alone is opened with no kinds, forward/alone.ts's gpuOnlyPlan())
+  const whole = new Set<TensorName>([...Object.values(GPU_KINDS).flatMap((kind) =>
+    Object.entries(kind.matrices(m.plan)).flatMap(([role, names]) => (role === "qkv" ? [] : names))), "w2", ...(gated ? [] : ["w1" as const])]);
   for (const name of whole) if ((m.weights.matrices[name]?.pieces.length ?? 1) > 1) return why(`${name} is past a buffer of this GPU`);
   const homes: Together["homes"] = {}, sizes: Together["sizes"] = {}, matrices = m.weights.matrices;
   // T.547.2.4: matrices are one of a packing alone (a matrix's shader reads one): q, k and v one where they are; q and
