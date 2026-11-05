@@ -141,7 +141,9 @@ function heardDone(data: Done) {
   // T156: how the page is used, for a model on the GPU alone
   rememberUsage(data.prompt_tokens, data.tokens - data.prompt_tokens);
   // the settings this very answer was written with: with the seed the same text can be asked for again (lines.ts: the words)
-  const { summary, breakdown, seed } = answerMeta(data, used, model.name);
+  // T648.4: a translation model translates greedily whatever the settings say (the owner, 2026-11-05: its line says
+  // greedy)
+  const { summary, breakdown, seed } = answerMeta(data, model.translation ? { ...used, temperature: 0 } : used, model.name);
   meta(answer!, summary, breakdown, seed);
 }
 function heardError(data: Failed) {
