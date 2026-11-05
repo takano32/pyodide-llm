@@ -98,7 +98,8 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
   same("contracts/messages.ts's FromWorker, to the kinds the worker posts", new Set(declared.keys()), new Set(sent.keys()));
   const elsewhere = {
     done: from(stats, "the engine's stats"),
-    ready: from(returnedBy(only("convert"), "convert"), "worker/convert.js's convert()"),
+    ready: { ...from(returnedBy(only("convert"), "convert"), "worker/convert.js's convert()"),
+      ...from(returnedBy(only("load"), "checkpointLoaded"), "worker/load.js's checkpointLoaded()") },
     paths: from(returnedBy(only("timing"), "timedPaths"), "worker/timing.js's timedPaths()"),
     "threads-compared": from(handedTo(forward("threads.js"), "onCompared"), "forward/threads.js's verdict"),
     gpu: from(givenTo(forward("gpuside.js"), "gpuChosen"), "forward/gpuside.js's gpuChosen"),

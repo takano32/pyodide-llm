@@ -165,7 +165,7 @@ const SILENT = {
     ["keepConverted", "keptModule.forget(old).catch(() => {})", "T136: an old copy that could not be deleted stays and takes room: keep() says so if the new one then does not fit"],
   ],
   "src/runtime/worker/load.ts": [
-    ["load", "tokenizerBytes.catch(() => {})", "awaited below: a load that ends before that (cancelled, the runtime never came) leaves no unhandled rejection"],
+    ["checkpointLoaded", "tokenizerBytes.catch(() => {})", "awaited below: a load that ends before that (cancelled, the runtime never came) leaves no unhandled rejection"],
   ],
   "src/runtime/worker/pyodide.ts": [
     ["prefetchNumpy", "catch {}", "a head start only: Pyodide's own loadPackage fetches the wheel next, and its failure is told"],

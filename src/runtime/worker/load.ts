@@ -3,23 +3,23 @@
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady, forwardModule, blockKernels } from "./runtime.ts";
-import { threadsRequest, root, switchesNow } from "./request.ts";
+import { threadsRequest, switchesNow } from "./request.ts";
 import { llama, engineNow, adopted, letGo } from "./loaded.ts";
 import { since, took, secondsSoFar, loadStarted } from "./clock.ts";
 import { pythonBuffer, weightsBuffer, loadBegan, runsPacked, rowsReady } from "./weights.ts";
 import { weightsDrained, gpuOnlyReady } from "./alone.ts";
 import { weightsBytes } from "./pool.ts";
-import { sized, fetchRange } from "./ranges.ts";
-import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
+import { sourceOf, headerInts } from "./sources.ts";
+import type { SourceKind } from "./sources.ts";
 import { convert, converter } from "./convert.ts";
-import type { Sized } from "./sources.ts";
 import { lastLine, told } from "../failure.ts";
 import type { Thrown } from "../failure.ts";
-import type { GpuChose, GpuSaid, Listed, OfTwoFiles, OfTwoUrls, Ready, Status, Threads, ThreadsCompared } from "../contracts/messages.ts";
+import type { Options } from "../contracts/python.ts";
+import type { GpuChose, GpuSaid, Listed, OfHuggingFace, OfThisSite, OfTwoFiles, OfTwoUrls, Ready, Status, Threads, ThreadsCompared } from "../contracts/messages.ts";
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.
-async function localOptions(model: OfTwoFiles | OfTwoUrls, vocabulary: Uint8Array, head: Uint8Array) {
+async function localOptions(model: OfThisSite | OfTwoFiles | OfTwoUrls, vocabulary: Uint8Array, head: Uint8Array): Promise<Options> {
   const header = pyodide.toPy(headerInts(head));
   const pieces = pyodide.toPy(vocabulary);
   try {
@@ -42,55 +42,47 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
   await loadBegan(model);
   // let go of the previous model first, so that two never have to fit in memory (loaded.ts)
   await letGo(signal);
-  if (model.hf) {
-    postMessage({ type: "status", load: id, text: `${model.name}: ${model.hf.repo ? "fetching from Hugging Face and converting" : "converting"}...` } satisfies Status);
-    await runtimeReady();
-    signal.throwIfAborted();
-    const converted = await convert(model, signal, id);
-    if (!(await gpuOnlyReady(model, id, engineNow()))) return load(model, signal, id);  // T156: the GPU failed on it alone
-    if (!rowsReady(model)) return load(model, signal, id);  // T329.2.2: its table was not all kept as it came
-    await startThreads(model);
-    postMessage({
-      type: "ready", load: id, pyodide: pyodide.version, backend: llama!.backend, seq_len: llama!.seq_len,
-      seconds: secondsSoFar(), heap: heapBytes(), threads: threadsNow(), gpu: watchGpu(id), ...converted,
-    } satisfies Ready);
-    return;
-  }
-  postMessage({ type: "status", load: id, text: `${model.file ? "Reading" : "Downloading"} ${model.name}...` } satisfies Status);
+  // T641.4: a model of Hugging Face is converted, every other kind's checkpoint is read as it is (its kind: sources.ts's
+  // SOURCES, which says what follows its ready); either says what its ready says besides
+  let kind: SourceKind | undefined;
+  const said = model.hf ? await converted(model, signal, id) : await checkpointLoaded(model, (kind = sourceOf(model)), signal, id);
+  if (!(await gpuOnlyReady(model, id, engineNow()))) return load(model, signal, id);  // T156: the GPU failed on it alone
+  // T329.2.2: its table was not all kept as it came (only a conversion keeps a table as it comes: always true for the others)
+  if (!rowsReady(model)) return load(model, signal, id);
+  await startThreads(model);
+  postMessage({
+    type: "ready", load: id, pyodide: pyodide.version, backend: llama!.backend, seq_len: llama!.seq_len,
+    seconds: secondsSoFar(), heap: heapBytes(), threads: threadsNow(), gpu: watchGpu(id), ...said,
+  } satisfies Ready);
+  kind?.ready?.();
+}
+
+// A model of Hugging Face, converted in the worker (convert.ts), which adopts the model it builds
+async function converted(model: OfHuggingFace, signal: AbortSignal, id: number) {
+  postMessage({ type: "status", load: id, text: `${model.name}: ${model.hf.repo ? "fetching from Hugging Face and converting" : "converting"}...` } satisfies Status);
+  await runtimeReady();
+  signal.throwIfAborted();
+  return convert(model, signal, id);
+}
+
+// A llama2.c checkpoint and its tokenizer.bin, of whichever kind (sources.ts's SOURCES), read into the place of its
+// weights and adopted as the model loaded now
+async function checkpointLoaded(model: OfThisSite | OfTwoFiles | OfTwoUrls, kind: SourceKind, signal: AbortSignal, id: number) {
+  postMessage({ type: "status", load: id, text: `${kind.verb} ${model.name}...` } satisfies Status);
   const downloadStarted = performance.now();
-  let head;  // the checkpoint's header (T115); a download of this site's tells it when its first part comes
-  if (model.url) {
-    // the size of a file somewhere else is what its server says
-    const first = await fetchRange(model.url.checkpoint, 0, HEADER_BYTES, signal);
-    head = first.bytes;
-    model.bytes = (await sized(model.url.checkpoint, first, signal)).total;
-    if (!(model.bytes > 28)) {
-      throw new Error(`${model.url.checkpoint} does not answer range requests, so its size is unknown.`);
-    }
-  }
-  const checkpoint = model.file ? readFile(model, signal, id) : model.url ? readUrl(model as Sized, signal, id) : download(model, signal, id);
-  const tokenizerBytes = model.file ? model.tokenizerFile.arrayBuffer()
-    : fetch(model.url ? model.url.tokenizer : new URL(`models/${model.tokenizer}`, root), { signal }).then((res) => {
-      if (!res.ok) {
-        throw new Error(`Could not fetch ${model.url?.tokenizer ?? model.tokenizer}: ${res.status}`);
-      }
-      return res.arrayBuffer();
-    });
+  const { checkpoint, tokenizer: tokenizerBytes, header } = await kind.opened(signal, id);
   tokenizerBytes.catch(() => {});
   let options, weights;
   try {
     await runtimeReady();
     signal.throwIfAborted();
-    if (model.file) {
-      head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
-    }
-    options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head!) : model.options;
-    head ??= await checkpoint.header;
+    const head = await header();  // the checkpoint's header (T115)
+    options = kind.options ?? await localOptions(model, new Uint8Array(await tokenizerBytes), head);
     signal.throwIfAborted();
     // T363.5: a checkpoint whose options give rows the kinds of llama.cpp's blocks (a visitor's file with its settings)
     // runs on the kernels of those, fetched for it; where NumPy computes, the readers of the blocks are the converter's
     if (forwardModule?.takesBlocks(options?.kinds)) await (runsPacked() ? blockKernels() : converter(signal));
-    weights = weightsBuffer(model.bytes!, headerInts(head!), options);
+    weights = weightsBuffer(model.bytes!, headerInts(head), options);
   } catch (error) {
     // T129 (3): a load that ends before its weights have a place (the runtime never came, the file is none the engine
     // takes, the memory said no) fetches no more of the model, as a part that failed for good stops the others. What
@@ -114,28 +106,17 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
     try {
       adopted(weights.llama(tokenizer.buffer, { kernels: pythonKernels, disable: switchesNow(), ...options }));
     } catch (err) {
-      if (!model.file) {
+      if (!kind.misread) {
         throw err;
       }
-      // the checkpoint has passed its check, so it is the second file or the settings
-      const reason = lastLine((err as Thrown).message ?? err);
-      throw new Error(`${model.tokenizerFile.name} does not work as the tokenizer.bin of ${model.file.name} (${reason})`);
+      throw new Error(kind.misread(lastLine((err as Thrown).message ?? err)));
     }
     took("construct", since(constructStarted));
   } finally {
     weights.destroy();
     tokenizer?.buffer.destroy();
   }
-  if (!(await gpuOnlyReady(model, id, engineNow()))) return load(model, signal, id);  // T156: the GPU failed on it alone
-  await startThreads(model);
-  postMessage({
-    type: "ready", load: id, pyodide: pyodide.version, backend: llama!.backend, seq_len: llama!.seq_len,
-    seconds: secondsSoFar(), heap: heapBytes(), threads: threadsNow(), gpu: watchGpu(id),
-    overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
-  } satisfies Ready);
-  if (!model.file && !model.url) {
-    dropStaleParts(model);
-  }
+  return { overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted };
 }
 
 // The number of threads of the model just loaded (stage 2): ?threads=N fixes it; a count the page remembers for

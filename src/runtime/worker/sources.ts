@@ -1,16 +1,17 @@
 // worker/sources.ts (T350): where the bytes of a llama2.c checkpoint come from: the parts of this site's models
 // (download(), with the Cache API), a file of the visitor's disk (readFile()) and a URL (readUrl()). Each gives a source
-// whose into(write) writes every byte where it belongs.
+// whose into(write) writes every byte where it belongs. T641.4: what a load does with each kind is the table SOURCES.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { root } from "./request.ts";
 import { Failure, failureOf, told } from "../failure.ts";
 import { since } from "./clock.ts";
 import { weightsRoom } from "./alone.ts";
-import { innerAbort, worthRetrying, inOrder } from "./ranges.ts";
+import { innerAbort, worthRetrying, inOrder, fetchRange, sized } from "./ranges.ts";
 import type { Thrown } from "../failure.ts";
 import type { Write } from "./weights.ts";
 import type { OfThisSite, OfTwoFiles, OfTwoUrls, Progress } from "../contracts/messages.ts";
+import type { Options } from "../contracts/python.ts";
 
 // T368.3: a source of a checkpoint: into(write) writes every byte where it belongs (write: the place of the weights,
 // weights.ts); seconds: how long its bytes took, once they are in. A download of this site's has besides: overlapped
@@ -264,3 +265,60 @@ export function readUrl(model: Sized, signal: AbortSignal, load: number) {
 // after the checkpoint (forward.ts's footprint()), which the memory is chosen by.
 export const HEADER_BYTES = 28;
 export const headerInts = (bytes: Uint8Array) => [...new Int32Array(bytes.slice(0, HEADER_BYTES).buffer)];
+
+// T641.4: a kind of a llama2.c checkpoint's source, as a load uses it (load.ts tells the kinds apart nowhere but by
+// sourceOf(), once). verb: the status line's word for what is done with it. opened(signal, load): its checkpoint's
+// source and its tokenizer.bin's bytes, both on their way (a URL's server is asked its size first), and header(): the
+// checkpoint's first bytes, asked for once the runtime is there. options: what its engine is made with, the list's (none:
+// its files' own, load.ts's localOptions()). misread(reason): what is said where the engine refuses the two as one model (none:
+// the engine's error as it is). ready(): what follows its ready.
+export type OpenedSource = { checkpoint: Source; tokenizer: Promise<ArrayBuffer>; header(): Promise<Uint8Array> };
+export type SourceKind = { verb: string; options?: Options; opened(signal: AbortSignal, load: number): OpenedSource | Promise<OpenedSource>; misread?(reason: string): string; ready?(): void };
+
+// a tokenizer.bin at a URL (name: what a failure calls it)
+const tokenizerAt = (url: string | URL, name: string, signal: AbortSignal) => fetch(url, { signal }).then((res) => {
+  if (!res.ok) {
+    throw new Error(`Could not fetch ${name}: ${res.status}`);
+  }
+  return res.arrayBuffer();
+});
+
+export const SOURCES = {
+  // a model of this site: its parts under models/ (their download runs while Pyodide loads, and tells the header when
+  // its first part comes); parts of it cached for another size are dropped once it is ready
+  site: (model: OfThisSite): SourceKind => ({
+    verb: "Downloading", options: model.options,
+    opened(signal, load) {
+      const checkpoint = download(model, signal, load);
+      return { checkpoint, tokenizer: tokenizerAt(new URL(`models/${model.tokenizer}`, root), model.tokenizer, signal), header: () => checkpoint.header };
+    },
+    ready() {
+      dropStaleParts(model);
+    },
+  }),
+  // two files of the visitor's disk, read where they are; the engine that refuses them refuses the second as the
+  // tokenizer.bin of the first (the checkpoint has passed its check by then)
+  file: (model: OfTwoFiles): SourceKind => ({
+    verb: "Reading",
+    opened: (signal, load) => ({
+      checkpoint: readFile(model, signal, load), tokenizer: model.tokenizerFile.arrayBuffer(),
+      header: async () => new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer()),
+    }),
+    misread: (reason) => `${model.tokenizerFile.name} does not work as the tokenizer.bin of ${model.file.name} (${reason})`,
+  }),
+  // two URLs: the size of a file somewhere else is what its server says to the first range request, which brings
+  // the header too
+  url: (model: OfTwoUrls): SourceKind => ({
+    verb: "Downloading",
+    async opened(signal, load) {
+      const first = await fetchRange(model.url.checkpoint, 0, HEADER_BYTES, signal);
+      model.bytes = (await sized(model.url.checkpoint, first, signal)).total;
+      if (!(model.bytes > 28)) {
+        throw new Error(`${model.url.checkpoint} does not answer range requests, so its size is unknown.`);
+      }
+      return { checkpoint: readUrl(model as Sized, signal, load), tokenizer: tokenizerAt(model.url.tokenizer, model.url.tokenizer, signal), header: async () => first.bytes };
+    },
+  }),
+};
+/** The kind of a llama2.c checkpoint's source that a model of the list, the visitor's two files or two URLs is */
+export const sourceOf = (model: OfThisSite | OfTwoFiles | OfTwoUrls) => (model.file ? SOURCES.file(model) : model.url ? SOURCES.url(model) : SOURCES.site(model));
