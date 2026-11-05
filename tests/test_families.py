@@ -210,6 +210,71 @@ def test_a_gguf_of_a_family_feeds_every_row_and_names_nothing_the_plan_has_not(m
     assert all(any(name == begin or name.startswith(begin + ".") for name in every) for begin in begun)
 
 
+# T.640.3: what llama.cpp stores of a family otherwise than Hugging Face has it, marked in the tensor's entry of the
+# header, written a second time on purpose: by the GGUF architecture, a tensor's name after its layer (or its whole
+# name outside the layers) and the marks of its entry. A tensor of a family's table that is not here has none
+MARKED = {
+    **{arch: {f"{name}.{part}": {"turned": heads} for name, heads in (("attn_q", 8), ("attn_k", 2))
+              for part in ("weight", "bias")} for arch in ("llama", "granite", "smollm3")},
+    "qwen35": {**{name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "ffn_norm.weight",
+                                                       "post_attention_norm.weight", "attn_q_norm.weight",
+                                                       "attn_k_norm.weight")},
+               "ssm_a": {"done": "decay", "tiled": (0, 2, 2, 1, 0)},  # (a whole name, as ssm_dt.bias)
+               "ssm_conv1d.weight": {"shape": [64, 1, 8], "tiled": (16, 2, 2, 4, 0)},
+               "attn_qkv.weight": {"tiled": (16, 2, 2, 4, 0)}, "attn_gate.weight": {"tiled": (0, 2, 2, 4, 0)},
+               "ssm_alpha.weight": {"tiled": (0, 2, 2, 1, 0)}, "ssm_beta.weight": {"tiled": (0, 2, 2, 1, 0)},
+               "ssm_dt.bias": {"tiled": (0, 2, 2, 1, 0)}, "ssm_out.weight": {"tiled": (0, 2, 2, 4, 1)}},
+    "lfm2": {"shortconv.conv.weight": {"shape": [64, 1, 8]}},
+    "gemma3": {name: {"done": "one"} for name in ("output_norm.weight", "attn_norm.weight", "post_attention_norm.weight",
+                                                  "ffn_norm.weight", "post_ffw_norm.weight", "attn_q_norm.weight",
+                                                  "attn_k_norm.weight")},
+    "gpt2": {f"{name}.weight": {"shape": [8, 64], "transposed": True}
+             for name in ("attn_qkv", "attn_output", "ffn_up", "ffn_down")},
+    "gptneox": {f"attn_qkv.{part}": {"split": 8} for part in ("weight", "bias")},
+}
+
+
+def gguf_of_every_name(family):
+    """Every tensor a family's table of llama.cpp's names reads, of layer 0, as F32 (64, 8): a layer's name alone
+    (a whole one: a Qwen3.5's ssm_a, or ssm_dt.bias with its dot), and with a weight and a bias after it where it has
+    no dot."""
+    names, _, layers = family.gguf_names
+    every = [*names, *(f"blk.0.{name}{part}" for name in layers for part in ("", *(() if "." in name else (".weight", ".bias"))))]
+    return {name: {"type": 0, "shape": [64, 8], "offset": 0} for name in every}
+
+
+@pytest.mark.parametrize("arch", list(families.GGUF))
+def test_a_gguf_of_a_family_is_marked_where_llama_cpp_stores_it_otherwise(arch):
+    """The marks of the header (the GGUF's shape put back, and what the plan undoes or leaves out: turned, split,
+    transposed, tiled, done) by the second copy above: a mark a family's table spells wrongly, or a norm it leaves
+    unmarked, changes a GGUF's numbers and is caught here, not only by a model's test of its own."""
+    _, family = families.GGUF[arch]
+    key = lambda name: f"{arch}.{name}"
+    metadata = {"general.architecture": arch, key("block_count"): 4, key("embedding_length"): 64,
+                key("attention.head_count"): 8, key("attention.head_count_kv"): [0, 0, 2, 2] if arch == "lfm2" else 2,
+                key("feed_forward_length"): 128, key("context_length"): 256, key("attention.key_length"): 8,
+                key("ssm.time_step_rank"): 4, key("ssm.group_count"): 2, key("ssm.state_size"): 4,
+                key("ssm.inner_size"): 16, key("ssm.conv_kernel"): 4, key("full_attention_interval"): 4}
+    tensors = gguf_of_every_name(family)
+    header, _ = gguf_model(metadata, tensors, 0)
+    names, _, _ = family.gguf_names
+    after = lambda name: name if name in names else ".".join(name.split(".")[2:])
+    marks = {after(name): {mark: value for mark, value in header[target].items() if mark not in ("dtype", "data_offsets")
+                           and not (mark == "shape" and value == tensors[name]["shape"])}
+             for name in tensors for target in [family_target(family, name)]}
+    assert {name: marked for name, marked in marks.items() if marked} == MARKED.get(arch, {})
+
+
+def family_target(family, name):
+    """Hugging Face's name of a GGUF's tensor by a family's table, as gguf_model() looks it up."""
+    names, layer, layers = family.gguf_names
+    if name in names:
+        return names[name]
+    parts = name.split(".")
+    whole = ".".join(parts[2:])
+    return layer.format(parts[1]) + (layers[whole] if whole in layers else f"{layers[parts[2]]}.{parts[3]}")
+
+
 def test_the_refusal_of_a_gguf_names_the_families_that_have_one():
     with pytest.raises(ValueError) as refusal:
         gguf_model({"general.architecture": "mamba"}, {}, 0)
