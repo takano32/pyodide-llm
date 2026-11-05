@@ -65,6 +65,7 @@ PROMPT = "The meeting has been rescheduled to next Monday because the room was n
 LANGUAGES = {"source_lang": "en", "target_lang": "ja"}
 NEW_TOKENS = 16
 LONG = 2304  # the positions of the long text: past the window of 2048
+LONG_SPLIT = 2040  # the code's second way through the long text: so many at once, the rest a token at a time
 # the positions of the long text whose logits are compared: around the window, where a sliding layer first leaves a
 # position out, and to the end
 LONG_AT = (0, 1, 255, 1023, 2046, 2047, 2048, 2049, 2050, 2100, 2200, 2302, 2303)
@@ -231,6 +232,27 @@ def long_run(llama, ids, at):
     return np.stack([kept[position] for position in at])
 
 
+def stepped_logits(model, ids, at, split):
+    """the model's code on ids its second way: the first split positions at once, then one at a time on its cache (so
+    the window's edge is crossed a token at a time): its logits at the positions `at`"""
+    import torch
+
+    kept = {}
+    with torch.no_grad():
+        out = model(input_ids=torch.tensor([ids[:split]]), use_cache=True,
+                    logits_to_keep=torch.tensor([position for position in at if position < split] or [0]))
+        early = [position for position in at if position < split]
+        for i, position in enumerate(early):
+            kept[position] = out.logits[0, i].float().numpy()
+        cache = out.past_key_values
+        for position in range(split, len(ids)):
+            out = model(input_ids=torch.tensor([[ids[position]]]), past_key_values=cache, use_cache=True)
+            cache = out.past_key_values
+            if position in at:
+                kept[position] = out.logits[0, -1].float().numpy()
+    return np.stack([kept[position] for position in at])
+
+
 def long_failed(llama, ids, at, theirs, their_states, line):
     """The engine through the long text, its logits at `at` against the model's code (within line) and its keys and
     values at the end against the code's (within the least of States). True where either is not."""
@@ -367,11 +389,23 @@ def real(directory, positions, name, with_faults):
     long = ([BOS] + ids_of(tokenizer, text))[:LONG]
     at = [position for position in LONG_AT if position < len(long)]
     long_theirs, long_states = kept_logits(model, long, at, model_states)
-    failed |= long_failed(llama, long, at, long_theirs, long_states, line)
+    # the long text's own line: ten times what the code's two computations of it differ by (over 2304 positions the
+    # float32 sums of the two drift further apart than over 96), and no less than the short text's
+    split = min(LONG_SPLIT, len(long) - 16)  # (a shorter text, the dry run's, still steps its last 16)
+    long_floor = differences(stepped_logits(model, long, at, split), long_theirs)[0]
+    long_line = line_of(long_floor, line)
+    # (the code's two ways apart by more than the short text's line: the reference itself is not to be trusted, and a
+    # line ten times that would let a wrong engine by)
+    suspect = not long_floor <= line
+    failed |= suspect
+    say(f"long: its code with the first {split} positions at once and then token by token against its code at once: "
+        f"largest difference {long_floor:.2e}; the line {long_line:.1e}"
+        + (f" — FAILED (its two ways past the short text's line {line:.1e})" if suspect else ""))
+    failed |= long_failed(llama, long, at, long_theirs, long_states, long_line)
     del model
     gc.collect()
     if with_faults:
-        failed |= faults(make, ids, whole, stepped_states, line, state_floor, (long, at, long_theirs, long_states))
+        failed |= faults(make, ids, whole, stepped_states, line, state_floor, (long, at, long_theirs, long_states, long_line))
     del llama, checkpoint
     path.unlink()
     return failed
@@ -496,7 +530,7 @@ def faults(make, ids, whole, states, line, state_floor, long):
     """Every fault's distance from the model's code's numbers, and whether what the right engine is held to (the logits
     within line, the states within theirs) catches it. True where one gets by."""
     lines = HELD.lines(state_floor)
-    long_ids_, at, long_theirs, long_states = long
+    long_ids_, at, long_theirs, long_states, long_line = long
     long_lines = dict.fromkeys(HELD.names, HELD.least)
     slipped, weakest = [], None
     for name, fault in [*FAULTS.items(), *LONG_FAULTS.items(), *NOTED.items()]:
@@ -508,9 +542,10 @@ def faults(make, ids, whole, states, line, state_floor, long):
         largest, _, agree, _ = differences(ours, reference)
         apart = HELD.apart(llama, count, their_states)
         # how many times past its line the fault is, by the logits and by the states: what catches it is the larger
-        by_logits = largest / line if np.isfinite(largest) else float("inf")
+        logits_line = long_line if name in LONG_FAULTS else line
+        by_logits = largest / logits_line if np.isfinite(largest) else float("inf")
         by_states = max((apart[state] / held[state] if np.isfinite(apart[state]) else float("inf")) for state in HELD.names)
-        caught = not largest <= line or bool(HELD.past(apart, held))
+        caught = not largest <= logits_line or bool(HELD.past(apart, held))
         margin = max(by_logits, by_states)
         if name in NOTED:
             say(f"noted ({name}): logits {largest:.2e} from its code's ({by_logits:.1f} times the line), the same most likely "

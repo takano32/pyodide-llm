@@ -322,7 +322,10 @@ def parts(work):
         out.append((f"WRONG ({what}): gemma3 real", lambda: reference_gemma3.real(work / "gemma3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): gemma4 real", lambda: reference_gemma4.real(work / "gemma4" / "dry", 96, "dry", False), ("returned", True), said, wrong))
         out.append((f"WRONG ({what}): spark real", lambda: reference_spark.real(work / "spark" / "dry", 96, "dry", False), ("returned", True), said, wrong))
-        out.append((f"WRONG ({what}): plamo3 real", lambda: reference_plamo3.real(work / "plamo3" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+        # (PLaMo 3's long text measures its own line by the code's two ways through it: a transformers off everywhere is
+        # off in one of them, and that line says FAILED too)
+        out.append((f"WRONG ({what}): plamo3 real", lambda: reference_plamo3.real(work / "plamo3" / "dry", 96, "dry", False), ("returned", True),
+                    [("FAILED", None)] if "logits" in wrong else said, wrong))
     # the long pass alone: one line says FAILED, the long text's
     said, wrong = [("FAILED", 1), ("^[a-z0-9]+: long: .* FAILED", 1)], {"kept": 1e-2}
     out.append(("WRONG (the long pass 1e-2 off): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
