@@ -16,7 +16,7 @@ FXTRANSLATE_PYTHON is (bergamot-vs-shisa's .venv by default), which nothing here
 A translation is compared as fxtranslate's text: fxtranslate writes a byte piece as its text ("<0xE2><0x98><0x95>"
 for ☕: ja-en's sentence 97), and the engine's text() writes the byte. The check says where the two texts differ
 besides. Where a translation differs, the first step whose token differs is said with the two tokens' logits and
-the gap (fxtranslate's tokens are its text cut into the target's pieces again: fxtranslate gives no ids).
+the gap (fxtranslate gives no ids: theirs is the step's best token whose piece goes on with their text).
 """
 import argparse
 import json
@@ -95,18 +95,36 @@ def fx_text(translator, ids):
 
 
 def first_difference(translator, ids, theirs):
-    """Where fxtranslate's translation (its text cut into pieces again) leaves the engine's greedy path: the step, the
-    two tokens, their logits and the gap; None where the pieces of their text are the engine's path."""
-    forced = [*translator.target.encode(theirs), translator.eos[1]]
-    for step, logits in enumerate(translator.steps(ids, forced)):
+    """Where the engine's greedy path leaves fxtranslate's text: the first step whose token does not go on with their
+    text, the engine's token and its logit, and the step's best token that does (</s> where their text has ended),
+    its logit and the gap. fxtranslate gives no ids, so its own token there is not known: the best that goes on is
+    the nearest the engine came to writing their text."""
+    vocab, eos, unknown = translator.target.vocab, translator.eos[1], translator.target.index.get(b"<unk>")
+    wanted = theirs.encode("utf-8")
+    written = b""
+
+    def goes_on(token):
+        if token == eos:
+            return written.lstrip() == wanted
+        piece = b"" if token == unknown else vocab[token]
+        return wanted.startswith((written + piece).lstrip())
+
+    def said(token):
+        return f"{vocab[token].decode('utf-8', 'replace')!r} ({token})"
+
+    for step, logits in enumerate(translator.steps(ids)):
         ours = int(np.argmax(logits))
-        if step >= len(forced):
+        if not goes_on(ours):
+            going = [token for token in range(len(logits)) if goes_on(token)]
+            if not going:
+                return f"step {step}: ours {said(ours)} {logits[ours]:.4f}, and no token goes on with their text"
+            best = max(going, key=lambda token: logits[token])
+            return (f"step {step}: ours {said(ours)} {logits[ours]:.4f}, the best of theirs {said(best)} "
+                    f"{logits[best]:.4f}, gap {logits[ours] - logits[best]:.4f}")
+        if ours == eos:
             break
-        if ours != forced[step]:
-            piece = lambda t: translator.target.vocab[t].decode("utf-8", "replace")
-            return (f"step {step}: ours {piece(ours)!r} ({ours}) {logits[ours]:.4f}, theirs {piece(forced[step])!r} "
-                    f"({forced[step]}) {logits[forced[step]]:.4f}, gap {logits[ours] - logits[forced[step]]:.4f}")
-    return None
+        written += b"" if ours == unknown else vocab[ours]
+    return "the same text, written by other tokens"
 
 
 def write(names):
@@ -143,7 +161,7 @@ def check(names, limit):
                 continue
             failed = True
             print(f"  {name} sentence {sentence['id']} ({sentence['src_lang']}): DIFFERENT\n    ours   {fx_text(translator, written)}\n"
-                  f"    theirs {their}\n    {first_difference(translator, ids, their) or 'their pieces are our path'}")
+                  f"    theirs {their}\n    {first_difference(translator, ids, their)}")
         seconds = (time.perf_counter() - began) / max(len(sentences), 1)
         print(f"{name}: {same} of {len(sentences)} the same as fxtranslate's ({seconds:.2f} s a sentence)"
               + (f"; the engine's own text writes the bytes of sentences {own}" if own else ""), flush=True)
