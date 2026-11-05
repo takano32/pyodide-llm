@@ -393,7 +393,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 - **実行時の部品**: `src/runtime/<窓口>/` に置いて窓口か隣から静的に import（届かないファイルは検査が落とす）。新しいグローバルは `AMBIENT`。状態を持つなら持ち主の形で、`tests/*-parts-check.ts` に部品の試験。
 - **Python の部品**: パッケージのフォルダに置くだけ。外に出す名前は窓口の import に。`make python`。
-- **ページの部品**: `src/page/` に置き、`index.astro` が順に名指しで読む。持ち主の関数は誰かが呼んでいること。確かめは実ブラウザ。**ページの保存（`localStorage`・`sessionStorage`）を読み書きするのは `remembered.ts` の `recall(名前, 読み方, 無いときの値, 置き場)`・`keep(名前, 文か null, 置き場)` だけ**（T.643.3: catch はこの 2 つで、`silent-check` の `SILENT` の行も 2 つ。覚える物ごとの関数（`rememberGpu()`・`rememberThreads()` など）も `remembered.ts` に置き、呼ぶ側が無いときの値を選ぶ。鍵の名前は訪問者の端末が持っているので変えない。`isolation.ts` の Service Worker の登録の try の中の `sessionStorage` は登録の catch が持つ）。
+- **ページの部品**: `src/page/` に置き、`index.astro` が順に名指しで読む。持ち主の関数は誰かが呼んでいること。確かめは実ブラウザ。**モデルのページ（`src/page/`）の保存（`localStorage`・`sessionStorage`）を読み書きするのは `remembered.ts` の `recall(名前, 読み方, 無いときの値, 置き場)`・`keep(名前, 文か null, 置き場)` だけ**（T.643.3: catch はこの 2 つで、`silent-check` の `SILENT` の行も 2 つ。覚える物ごとの関数（`rememberGpu()`・`rememberThreads()` など）も `remembered.ts` に置き、呼ぶ側が無いときの値を選ぶ。鍵の名前は訪問者の端末が持っているので変えない。前の値が読めなければ新しい値で上書きする。`/benchmark/`（`src/benchmark/`）はまだ直に読み書きする。`isolation.ts` の Service Worker の登録の try の中の `sessionStorage` は登録の catch が持つ）。
 - **1 ファイルを `.ts` にする**（`src/` の `.js` は T.480 で無くなった。次に要るのは `public/coi.js` のような束ねない物だけで、これは `// @ts-check` のまま）: `git mv` と名指す行を 1 コミット、型を足す（文を変えない）、`npm run types`・build・`dist-same`・`same-syntax`・軽い組・網。
 
 ### 試験の作り物・偽物・道具を足す
