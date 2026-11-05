@@ -140,7 +140,7 @@
 - T619 [追加][モデル] LFM3（lfm3） — 候補
 - T648 [追加][モデル] Firefox の翻訳モデル（Firefox Translations、旧 Bergamot）の日英を動かす — 進行中
 - T649 [追加][モデル] PLaMo 3 Translate（0.8B・2B・8B）を動かす — 未着手
-- T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 未着手
+- T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 進行中
 - T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 未着手
 - T640 [リファクタリング][変換] 変換器のリファクタリング（T638.2 の案） — 未着手
 - T641 [リファクタリング][CPU] worker と CPU の forwardのリファクタリング（T638.3 の案） — 未着手
@@ -1393,9 +1393,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - T649.3 [追加][モデル] 一覧の項目（3 つの大きさ × 英→日・日→英、手書きの書式、止まり [1, 16]）と「Built with PLaMo」の表示（About・note）とライセンスの写し — 未着手
   - T649.4 [性能][モデル] GGUF の Q4_K_M を塊のまま持つ形と int8 を測って、項目をどちらにするか決める — 未着手
 
-### T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 未着手（2026-11-05、T642.1 の CI で気づいた。規模 小）
+### T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 進行中（(a) は反映済み、(b) は未着手）（2026-11-05、T642.1 の CI で気づいた。規模 小）
 - 毎晩の main（run 41558881370・41741355606）と `full=true` のブランチ（T642.1 の 41929632184）で、`ubuntu-latest chromium` のジョブだけが 93 分で落ちる（`tests/gpu-check/engines.ts:64` の `page.waitForFunction: Timeout 5400000ms exceeded`、ログには途中の結果が出ない）。Chrome・Edge（約 8〜11 分）と Dawn（lavapipe、37〜51 分）は同じ作り物で通る。軽い組の Chromium は 10 分ほどで通る（41820927444）。作り物が増えた（T547 の塊の作り物・T574 の 27B の形・T558.1 の輪）ことで SwiftShader の Chromium が期限を越えたと読む（未確認: どの作り物で止まったかはログに出ない）。
 - 直す案: (a) 作り物ごとに結果を書き出して止まった所が分かるようにし、(b) Chromium の全部の組を 2 つのジョブに割るか、SwiftShader で重い作り物（Dawn だけで約 5 分の `synthetic-qwen35-rotated-1024` など）を Chromium から外す。AGENTS.md の落とし穴「道具の期限は包むジョブより短く」も見る。
+- **(a) — 反映済み**（2026-11-05、Opus medium、`t645-gpu-timeout` の 1 コミットとレビューの直し 1 つ: `tests/gpu-check/harness.js` が作り物ごとに結果と進み（作り物の始まりと終わり、run ごとの秒）を送り、`tests/gpu-check/engines.ts` がページと Dawn の両方でそれを集めて stderr に「[分 min] …」で書く。道具の期限は始まりから `--minutes`（既定 90、NumPy の答えを作る時間も数える）で、検査の手順は 97 分、ジョブは 120 分。期限を越えたら済んだ作り物の判定を出してから「FAILED after k of n models」と止まった作り物と最後の run を名指して落ちる（`tests/gpu-check.ts`）。`gpu-check-dry-check` が begun と done の順を見る。手元は dry-check と `--minutes 0.4` の壊し方（1 of 3 で止まった所を名指した）。CI: `gpu-prompt.yml full=true` 42077151273（chrome 10.3 分・msedge 15.6 分・dawn 28.6 分・chromium 75.5 分、全部通った: 前の 93 分の失敗は 1 つの作り物が止まったのでなく合計が期限の際にあった）。 レビュー（Sonnet low、2026-11-05）: must-fix 1 つ: `tests/gpu-check/engines.ts` のページの文から Worker を作る行が消えていて、Chromium の道はハーネスが始まらずに 90 分待つ形だった（dry-check はページの道を通らない）。行を戻した。should 1 つ: ハーネスが error なしで終わり結果が作り物の数より少ないときに通る道を、`tests/gpu-check.ts` が error にした（`b3d10aa0`）。期限で止まったときは結果が 0 でも 1 以上でも exit 1、全体の判定（`quantizersWrong`・`forms`）は抜けていない、ページと Dawn の道は同じ形に届く、期限の並び（道具 90 < 手順 97 < ジョブ 120、NumPy の時間も含めて数える）と `pipefail`、落とし穴の 2 つにも合う。）
+- **Chromium の作り物ごとの秒**（42077151273、SwiftShader）: synthetic-neox-256 474・synthetic-saluki 450・synthetic-saluki-tables 309・synthetic-qwen35 243・synthetic-qwen35-short 234・synthetic-iq-rest 208・synthetic-iq2 188・synthetic-lfm2 178・synthetic-lfm2-short2 174・synthetic-lfm2-short 173、24 の作り物で 73.3 分。重さは広く散っていて、上の 2 つで 15 分。
+- **(b) — 未着手**: 期限まで 15 分ほどしか無い。取りまとめ役の勧めは、Chromium のジョブを matrix で 2 つに割る（gpu-check に `--part 1/2`、作り物の並びを交互に分ける: どちらのジョブも検査は減らない）。作り物を `DAWN_ONLY` に移す形は Chromium（SwiftShader）の道で見るものが減るので次の手。
 
 ### T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 状態: 未着手（2026-11-04、T638.1 のレビュー（Fable max）から。子タスク 12。取りかかる順は持ち主）
 - 案の場所・どの決まりに反するか・規模・形・費用・証明・覆す条件は [docs/notes/t638.1-review-engine-2026-11-04.md](docs/notes/t638.1-review-engine-2026-11-04.md) の同じ題の節。番号は報告の順（得 ÷ 費用の順、動きを変えない案が先）。
