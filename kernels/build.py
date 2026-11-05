@@ -2,7 +2,7 @@
 # compile with AssemblyScript, then prepend the custom section "dylink.0" that Emscripten's loader looks for
 # (WASM_DYLINK_MEM_INFO with memory size, memory alignment, table size and table alignment all zero).
 #
-#   python3 kernels/build.py <output directory>      ->  simdkernel.so, simdkernel_relaxed.wasmlib
+#   python3 kernels/build.py <output directory>      ->  simdkernel.so (Python's), and the plain modules forward.ts compiles
 #
 # The relaxed module is NOT named *.so on purpose: Pyodide's package installer pre-loads every .so of a wheel,
 # and a browser without relaxed SIMD fails to compile it.
