@@ -138,6 +138,7 @@
 - T617 [追加][モデル] rinna の gpt-neox（3.6B instruction-ppo・bilingual 4B）の `<NL>` — 未着手
 - T618 [追加][モデル] Qwen v1（rinna nekomata 7B） — 候補
 - T619 [追加][モデル] LFM3（lfm3） — 候補
+- T648 [追加][モデル] Firefox の翻訳モデル（Firefox Translations、旧 Bergamot）の日英を動かす — 進行中
 - T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 未着手
 - T639 [リファクタリング][CPU] Python のエンジンのリファクタリング（T638.1 の案） — 未着手
 - T640 [リファクタリング][変換] 変換器のリファクタリング（T638.2 の案） — 未着手
@@ -1346,6 +1347,14 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T619 [追加][モデル] LFM3（lfm3） — 状態: 候補（2026-10-30、T591 から。規模 中）
 - LiquidAI の LFM3-1.7B は新しい model_type `lfm3`（畳み込みに、窓と head の一部を回す attention）。ja の順位に入る世界のモデル。LFM2 の層と Spark の部分の回転の組み合わせで書ける見込み。
 
+
+### T648 [追加][モデル] Firefox の翻訳モデル（Firefox Translations、旧 Bergamot）の日英を動かす — 状態: 進行中（2026-11-05、調べの段。持ち主「Firefox の翻訳モデル（Mozilla の Firefox Translations、旧 Bergamot）を pyodide-llm で動かせるようにしたい。まず調べて TASKS.md にタスクとして書き、子タスクに分けて進めてほしい」）
+- **目的**（持ち主）: 日英の翻訳を、いまの LLM（Shisa や CAT-Translate）より桁で速く小さいモデルで。日英のモデルは int8 で 1 本約 44 MB（en-ja 43,849,787 バイト・ja-en 43,977,787 バイト）、ネイティブの fxtranslate（Rust）で CPU 2 コアで 1 文約 0.2 秒。pyodide-llm の CAT-Translate 0.8B は 1 文約 4 秒。
+- **入手先**: 一覧は Remote Settings の `translations-models-v2`、実体は `firefox-settings-attachments.cdn.mozilla.net` + `attachment.location`（zstd、sha256 は `attachment.hash`）。en-ja は `srcvocab`・`trgvocab` が別、ja-en は `vocab` が 1 本（どちらも sentencepiece）、モデルは `model.*.intgemm.alphas.bin`。ライセンスは MPL-2.0（mozilla/translations の README）。取得の実例は takano32/bergamot-vs-shisa の `scripts/fetch_models.py`（手元の `~/GitHub/bergamot-vs-shisa/models/` に展開済み）。
+- **いまとの違い**（持ち主）: Marian のエンコーダ・デコーダ形（デコーダが浅い）で、エンコーダとクロスアテンションの道が新しく要る。重みは Marian 独自の二進形式で intgemm の int8 と係数（alphas）。指示文もチャットテンプレートも無い翻訳専用。
+- **確かめずに決めないこと**（持ち主）: 層の数と幅、デコーダが普通の注意か SSRU か、ショートリストの有無、二進形式の中身。参考: mozilla/translations の `inference`、bergamot-translator（アーカイブ済み）、slimt、fxtranslate、Firefox の WASM の推論エンジン。
+- **正しさと速さの基準**（持ち主）: fxtranslate か Firefox の推論エンジンと同じ原文で同じ訳（貪欲法）。原文は bergamot-vs-shisa の `data/sentences.jsonl`（100 文、日英 50 本ずつ）、訳は `results/bergamot.jsonl`。速さはモデル一覧と同じ測り方で 1 文あたりの秒。
+- **進め方**: 実装の前に、調べた結果と子タスクの分け方をここに書いて持ち主に見せる。調べは 2 つ（モデルの二進形式と形: `docs/notes/t648-firefox-translations-format-2026-11-05.md`、推論の手順と参考の実装と載せる道筋: `docs/notes/t648-firefox-translations-engines-2026-11-05.md`）。
 
 ### T645 [バグ][遠隔試験] `gpu-prompt.yml` の全部の組で、Chromium のジョブが作り物の全部を回すと 90 分の期限を越える — 状態: 未着手（2026-11-05、T642.1 の CI で気づいた。規模 小）
 - 毎晩の main（run 41558881370・41741355606）と `full=true` のブランチ（T642.1 の 41929632184）で、`ubuntu-latest chromium` のジョブだけが 93 分で落ちる（`tests/gpu-check/engines.ts:64` の `page.waitForFunction: Timeout 5400000ms exceeded`、ログには途中の結果が出ない）。Chrome・Edge（約 8〜11 分）と Dawn（lavapipe、37〜51 分）は同じ作り物で通る。軽い組の Chromium は 10 分ほどで通る（41820927444）。作り物が増えた（T547 の塊の作り物・T574 の 27B の形・T558.1 の輪）ことで SwiftShader の Chromium が期限を越えたと読む（未確認: どの作り物で止まったかはログに出ない）。
