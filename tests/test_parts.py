@@ -332,7 +332,7 @@ def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeyp
     assert reference.sampler is Llama.sampler
     assert not {"forward", "sampler", "generate", "forward_many", "gpu_steps"} & set(vars(reference))
     # with the kernels: their sampler, on the model itself
-    monkeypatch.setattr(engine.model, "load_kernels", lambda path, relaxed: kernels_in_numpy(vocab=MODEL_VOCAB))
+    monkeypatch.setattr(engine.model, "load_kernels", lambda path: kernels_in_numpy(vocab=MODEL_VOCAB))
     for external in (None, Outside(checkpoint)):
         llama = Llama(None if external else checkpoint, tokenizer, kernels="simdkernel.so", external=external)
         assert isinstance(vars(llama)["sampler"], KernelSampler)
@@ -352,7 +352,7 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
     checkpoint, tokenizer = files()
     kernels_made = []
     monkeypatch.setattr(engine.model, "load_kernels",
-                        lambda path, relaxed: kernels_made.append(kernels_in_numpy(vocab=MODEL_VOCAB)) or kernels_made[-1])
+                        lambda path: kernels_made.append(kernels_in_numpy(vocab=MODEL_VOCAB)) or kernels_made[-1])
     started = Outside(checkpoint) if outside else None
     outside_engine = started and started.engine
     llama = Llama(None if outside else checkpoint, tokenizer, external=started, kernels="simdkernel.so" if kernels else None)
@@ -411,7 +411,7 @@ def test_a_dropped_model_is_freed_without_a_collection(monkeypatch, kind):
     hold it back: a cycle of references keeps all of it until Python's collector runs, which in the page is a model's
     worth of memory at the moment the next one is read (AGENTS.md: the worker collects, and should not have to)."""
     checkpoint, tokenizer = files()
-    monkeypatch.setattr(engine.model, "load_kernels", lambda path, relaxed: kernels_in_numpy(vocab=MODEL_VOCAB))
+    monkeypatch.setattr(engine.model, "load_kernels", lambda path: kernels_in_numpy(vocab=MODEL_VOCAB))
     kernels = "simdkernel.so" if "sampler" in kind else None
     gc.collect()
     gc.disable()

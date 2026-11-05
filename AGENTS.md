@@ -425,7 +425,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 - **最適化の寄与（T.52）。** `?without=kernels,int8,relaxed,sampler` で 1 つずつ外せる（知らない名前は `ValueError`）。tiny-lm 48.6 → 187 → 248 → 315 → 416 tok/s。ステータス行は何が動いたかを必ず言う。
 - **OS 5 種 × ブラウザ 5 種で動く（`browsers.yml`、表は `kernels/README.md`）。** relaxed SIMD の無いブラウザ（本物の Safari）は `matmul_q8` で動く。Windows ARM の Playwright の Chromium と WebKit は x86-64 のエミュレーションで 3 分の 1。ランナーの速さは OS をまたいで比べない。
 - **ダウンロード。** 分割並列は約 1.8 倍速い。モデルの取得は Pyodide の読み込みより先に始まる（T.68）。**準備完了の内訳の秒数は、それぞれが実際に動いていた時間だけ**。NumPy の wheel は版を解決した直後に `pyodide-lock.json` から URL を組んで先読みする。
-- **SIMD カーネル。** Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込む（AssemblyScript の出力に `dylink.0` を付ける）。カーネルにアドレスを渡す配列は Python 側で必ず保持する。Python の `kernels=` はいまサンプリングのため。
+- **SIMD カーネル。** Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込む（AssemblyScript の出力に `dylink.0` を付ける）。カーネルにアドレスを渡す配列は Python 側で必ず保持する。Python の `kernels=` はいまサンプリングのため（と変換器の詰め手・読み手）。**Python のサイドモジュールは `simdkernel.so` の 1 つで、relaxed のものは作らない**（T.644.2: Python は relaxed のカーネルを呼ばない。relaxed は forward.ts が自分でコンパイルする `simdkernel_relaxed_*.wasm` で、`?without=relaxed` もそちらが読む）。
 
 ### HF からの取得と変換
 

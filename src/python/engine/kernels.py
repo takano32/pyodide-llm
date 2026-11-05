@@ -28,7 +28,7 @@ from engine.dtypes import DTYPES
 from engine.packing import halves_of
 
 
-def load_kernels(path, without_relaxed=False):
+def load_kernels(path):
     """The WASM SIMD kernels of kernels/*.ts, as ctypes functions, or None when they cannot be used.
 
     They are Emscripten side modules: ctypes.CDLL links them into Pyodide's own memory, so they work in place
@@ -57,15 +57,8 @@ def load_kernels(path, without_relaxed=False):
             kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16", "ternary_x", "binary_x") else None
     except Exception:
         return None
-    if without_relaxed:
-        return kernels
-    try:
-        # a browser without relaxed SIMD (shipping Safari) refuses to compile this one: then int8 uses matmul_q8
-        relaxed = ctypes.CDLL(path.replace(".so", "_relaxed.wasmlib")).matmul_q8r
-        relaxed.argtypes, relaxed.restype = [p, p, p, p, p, p, i32, i32, i32], None
-        kernels["matmul_q8r"] = relaxed
-    except Exception:
-        pass
+    # (T.644.2: no relaxed SIMD here. The forward pass and its int8 products are forward.ts's, on kernels it compiles
+    # itself; Python's are the sampling's and the converter's, none of which is relaxed)
     return kernels
 
 

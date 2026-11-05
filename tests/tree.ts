@@ -41,7 +41,7 @@
 //   tree.pythonFiles("llama2_numpy")   the module's files under tree.python(): its window, then every .py of its
 //                                      package's folder (a commit of before the packages has the window alone)
 //   placePython(pyodide, tree, modules)   those files into Pyodide's file system, where `import` finds them
-//   placeKernels(pyodide, tree)        simdkernel.so and simdkernel_relaxed.wasmlib of its built files, beside them
+//   placeKernels(pyodide, tree)        simdkernel.so of its built files, beside them
 //
 // and for this tree, by name:   import { runtime, runtimeUrl, python, built, served } from "./tree.ts";
 //
@@ -148,7 +148,7 @@ export function placePython(pyodide, tree, modules = Object.keys(RULE.packages),
 }
 
 /** The kernels Pyodide loads as side modules (ctypes), of a tree's built files, into Pyodide's file system */
-export function placeKernels(pyodide, tree, names = ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
+export function placeKernels(pyodide, tree, names = ["simdkernel.so"]) {
   for (const name of names) pyodide.FS.writeFile(name, fs.readFileSync(tree.built(name)));
 }
 

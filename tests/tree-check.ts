@@ -218,10 +218,10 @@ for (const [name, { files, folders }] of Object.entries(LAYOUTS)) {
   assert.deepEqual([...written.keys()], tree.pythonFiles("llama2_numpy").map((name) => `before/${name}`), "under a folder of its own, where two trees are placed");
   assert.ok(made.includes("before") && made.includes("before/engine"));
   // the kernels Pyodide loads, from wherever the tree's built files are
-  const builtTree = treeOf(madeUp("kernels", { "public/forward.js": "", "any/where/simdkernel.so": "built .so", "any/where/simdkernel_relaxed.wasmlib": "built .wasmlib" }));
+  const builtTree = treeOf(madeUp("kernels", { "public/forward.js": "", "any/where/simdkernel.so": "built .so", "any/where/simdkernel_plain.wasm": "built .wasm" }));
   written.clear();
   placeKernels(pyodide, builtTree);
-  assert.deepEqual([...written], [["simdkernel.so", "built .so"], ["simdkernel_relaxed.wasmlib", "built .wasmlib"]]);
+  assert.deepEqual([...written], [["simdkernel.so", "built .so"]], "the one Python loads, and no other built file");
   assert.throws(() => placeKernels(pyodide, builtTree, ["simdkernel_other.so"]), /no simdkernel_other\.so in any\/where\/ \(the built files\)/);
   // a commit of before the packages: the window alone; a module whose window is missing is said
   const old = treeOf(madeUp("one file", { "public/forward.js": "", "public/llama2_numpy.py": "all of it" }));

@@ -56,7 +56,6 @@ if __name__ == "__main__":
     here, out = Path(__file__).parent, Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)  # (src/runtime/built/ is no folder of a fresh checkout: nothing built is committed)
     side_module(here / "kernel.ts", out / "simdkernel.so", "simd")
-    side_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed.wasmlib", "simd,relaxed-simd")
     plain_module(here / "kernel.ts", out / "simdkernel_plain.wasm", "simd")
     plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_plain.wasm", "simd,relaxed-simd")
     plain_module(here / "kernel.ts", out / "simdkernel_shared.wasm", "simd,relaxed-simd", shared=True)

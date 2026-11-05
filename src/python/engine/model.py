@@ -250,7 +250,7 @@ class Llama:
         # (T.229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
         suitable = not quantized or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
                                         and (self.linear is None or linear_widths(self.linear)[2] % 32 == 0))
-        kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
+        kernels = load_kernels(kernels) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
         # (only forward.js computes on them: the NumPy forward widens every matrix)

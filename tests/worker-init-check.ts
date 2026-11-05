@@ -71,7 +71,7 @@ function started() {
   assert.equal(JSON.stringify(asked.packages), JSON.stringify([["numpy", { checkIntegrity: false }]]), "NumPy, fetched without integrity (the owner's choice, 2026-09-28)");
   assert.deepEqual(asked.unpacked, [[ARCHIVE.length, "zip"]], "engine.zip, unpacked whole");
   assert.deepEqual(asked.imported, ["llama2_numpy"], "the engine's window imported");
-  assert.deepEqual(asked.written.map(([path]) => path), ["/home/pyodide/simdkernel.so", "/home/pyodide/simdkernel_relaxed.wasmlib"], "the two kernels for Python, beside it");
+  assert.deepEqual(asked.written.map(([path]) => path), ["/home/pyodide/simdkernel.so"], "the kernels for Python, beside it (T.644.2: no relaxed module)");
   assert.equal(run("llama2_numpy"), module);
   assert.equal(run("pythonKernels"), "/home/pyodide/simdkernel.so");
   assert.equal(run("forwardModule"), forward, "forward.ts as it was handed in");

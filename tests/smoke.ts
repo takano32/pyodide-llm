@@ -426,7 +426,7 @@ assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits)
 # the kernels' sampler follows a history that grows by a token a step past its window (its ring of the latest tokens,
 # written one number a step) as NumPy's does, which reads the history's end every time
 assert isinstance(vars(fast)["sampler"], llama2_numpy.KernelSampler) and isinstance(llama2_numpy.Llama.sampler, llama2_numpy.NumpySampler)
-in_numpy, on_kernels = llama2_numpy.NumpySampler(), llama2_numpy.KernelSampler(llama2_numpy.load_kernels("simdkernel.so", False), fast.vocab_size)
+in_numpy, on_kernels = llama2_numpy.NumpySampler(), llama2_numpy.KernelSampler(llama2_numpy.load_kernels("simdkernel.so"), fast.vocab_size)
 # (the repetition penalty alone: the ring follows the one list; then with a presence penalty over the sampled tokens,
 # a second list, as generate() hands the two)
 for settings in (llama2_numpy.Sampling(repetition_penalty=1.3), llama2_numpy.Sampling(repetition_penalty=1.3, presence_penalty=0.5)):
@@ -555,7 +555,7 @@ patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"
 # T.162: swiglu and gelu four at a time (vexp) are their scalar tails (fexp) to the bit, over both sides of exp's clamps
 # (-87 and 88), large and small numbers, zeros and infinities: each value alone (n = 1) takes the tail
-simd = llama2_numpy.load_kernels("simdkernel.so", without_relaxed=True)
+simd = llama2_numpy.load_kernels("simdkernel.so")
 edges = np.array([0.0, -0.0, 1e-30, -1e-30, 43.4, 43.6, 44.0, -43.6, -44.0, 86.9, 87.0, 87.1, 88.0, 88.1, 89.0, 200.0,
                   -86.9, -87.0, -87.1, -88.0, -88.1, -89.0, -200.0, 3e38, -3e38, np.inf, -np.inf], dtype=np.float32)
 inputs = np.concatenate([edges, np.linspace(-120, 120, 4001, dtype=np.float32),

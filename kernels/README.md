@@ -33,8 +33,10 @@ or different, and whether `src/runtime/built/`'s are this tree's. (The division 
 five builds of `kernel.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their
 names, and AssemblyScript's name of a function begins with its file.)
 
-`make kernels` compiles them into `src/runtime/built/simdkernel.so` and `src/runtime/built/simdkernel_relaxed.wasmlib` (a few KB, not
-committed). `build.py` needs no Emscripten: it compiles with AssemblyScript and prepends the `dylink.0` section
+`make kernels` compiles them into `src/runtime/built/simdkernel.so` (the side module Python loads with ctypes, for the
+sampling and the converter; T.644.2: no relaxed one, which nothing in Python called) and the plain modules that
+`src/runtime/forward.ts` compiles itself (`simdkernel_*.wasm`, `simdkernel_relaxed_*.wasm`), none of them
+committed. `build.py` needs no Emscripten: it compiles with AssemblyScript and prepends the `dylink.0` section
 that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.4 and 314.0.7.
 
 ## Measured (2026-09-19, phone-class ARM CPU, one thread)
@@ -252,9 +254,9 @@ views into the downloaded buffer and are never widened. Per matmul the input is 
 (`quantize_x`, shared by q/k/v and by w1/w3) and multiplied by `matmul_q8`. With relaxed SIMD, `matmul_q8r`
 multiplies int8 by 7-bit unsigned values: activations get a bias of 64, and `corrections = -64 * sum of the
 group` (an int32 a group, T.197; before it the float32 `scale * sum`) takes it out again, added to the group's
-integer sum before that is scaled. The relaxed module is loaded in `try/except`: a browser without relaxed SIMD
-(shipping Safari) refuses to compile it, which arrives in Python as `OSError` (verified by switching the
-feature off in Firefox), and int8 then runs on `matmul_q8`.
+integer sum before that is scaled. The relaxed module is `src/runtime/forward.ts`'s: a browser without relaxed SIMD
+(shipping Safari) refuses to compile it, and int8 then runs on `matmul_q8` (`?without=relaxed` does the same).
+(Until T.644.2 Python loaded a side module of it as well, in `try/except`, and called nothing of it.)
 
 What quantizing the activations costs (2026-09-19, T.55; `node tests/perplexity.ts [model]`, 1499 tokens from the
 beginnings of three Japanese Wikipedia articles, contexts of 512 tokens, Pyodide in Node):

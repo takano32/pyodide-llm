@@ -10,7 +10,6 @@ import { answeredGone, updated } from "./updated.ts";
 
 export const BUILT = {
   "simdkernel.so": new URL("./built/simdkernel.so", import.meta.url),
-  "simdkernel_relaxed.wasmlib": new URL("./built/simdkernel_relaxed.wasmlib", import.meta.url),
   "simdkernel_plain.wasm": new URL("./built/simdkernel_plain.wasm", import.meta.url),
   "simdkernel_relaxed_plain.wasm": new URL("./built/simdkernel_relaxed_plain.wasm", import.meta.url),
   "simdkernel_shared.wasm": new URL("./built/simdkernel_shared.wasm", import.meta.url),

@@ -81,17 +81,14 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
 // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
 // (T.463: a function of its own, which tests/worker-parts-check.ts runs on a made-up network)
 async function placeKernels() {
-  for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"] satisfies Built[]) {
-    // (also where it is gone, T.367.4: NumPy answers, and T.439: where the site was updated the page is told why it is
-    // slower; any other failure goes on to NumPy saying nothing, as it did. T.442: a body cut short as well, as where it
-    // did not come: that ended the start before)
-    const kernel = await built(name).then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));
-    if (kernel) {
-      pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(kernel));
-      // (T.463: Python loads the plain one, and the relaxed one beside it where it is there: the relaxed one alone is
-      // no kernels it can load, and NumPy answers)
-      if (name === "simdkernel.so") pythonKernels = "/home/pyodide/simdkernel.so";
-    }
+  // (T.644.2: the one module; Python's kernels are the sampling's and the converter's, and none of them is relaxed.
+  // Also where it is gone, T.367.4: NumPy answers, and T.439: where the site was updated the page is told why it is
+  // slower; any other failure goes on to NumPy saying nothing, as it did. T.442: a body cut short as well, as where it
+  // did not come: that ended the start before)
+  const kernel = await built("simdkernel.so").then((res) => res.arrayBuffer()).catch((error) => void wentWithout(error));
+  if (kernel) {
+    pyodide.FS.writeFile("/home/pyodide/simdkernel.so", new Uint8Array(kernel));
+    pythonKernels = "/home/pyodide/simdkernel.so";
   }
 }
 
