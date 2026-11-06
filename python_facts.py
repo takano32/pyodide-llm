@@ -39,8 +39,11 @@ from convert.version import CONVERTER  # noqa: E402
 from convert.superblocks import SUPERBLOCKS  # noqa: E402
 from engine import dtypes as D  # noqa: E402
 from engine import layout as L  # noqa: E402
+from engine.layers import rope_frequencies, rope_magnitude  # noqa: E402
+from engine.model import KV_START, OWN  # noqa: E402
+from engine.plan import forward_plan  # noqa: E402
+from engine.tensors import rope_tables  # noqa: E402
 import llama2_convert  # noqa: E402
-import llama2_numpy  # noqa: E402
 
 # (a small model of each kind of the layers that keep a state, whose rows the facts are read from: an architecture of
 # such layers has no rows without them; a new kind of them is a line here too, or this fails by its name)
@@ -71,36 +74,20 @@ def facts():
 MADEUP = [2048, 8192, 2, 32, 8, 32000, 64]
 
 
-class Planned(Exception):
-    """The plan is in hand: no engine is built."""
-
-
-class External:
-    """forward.js as far as the plan, for Llama(external=): the file's size, read(offset, length) of it (its header, and
-    the final norm's weight Llama looks at for outlier channels: ones, so none), and start(plan), which keeps it."""
-
-    def __init__(self, size, header):
-        self.size, self.header, self.plan = size, header, None
-
-    def read(self, offset, length):
-        return struct.pack("<7i", *self.header) if offset == 0 else struct.pack(f"<{length // 4}f", *[1.0] * (length // 4))
-
-    def start(self, plan):
-        self.plan = plan
-        raise Planned()
-
-
 def madeup():
-    size = llama2_convert.checkpoint_size(MADEUP, "int8", dict(llama2_numpy.FORM))
-    external = External(size, MADEUP)
-    try:
-        llama2_numpy.Llama(None, b"", dtype="int8", external=external)
-    except Planned:
-        pass
-    plan = dict(external.plan)
+    """The plan of MADEUP as Llama(external=) makes it of an int8 file (T640.9: engine/plan.py's forward_plan(), called
+    as it is): the matrices stay int8, room for KV_START positions, RoPE over the whole head by the default theta (an
+    int8 file has no tables), and a final norm of ones (read(), which forward_plan() looks at for outlier channels:
+    none)."""
+    form = dict(L.FORM)
+    dims = L.Dims(MADEUP, form)
+    tables = rope_tables(dims.arch, dims.seq_len, dims.head_size, dims.head_size, rope_magnitude(OWN["rope_scaling"]),
+                         "int8", lambda width: rope_frequencies(width, OWN["rope_theta"], OWN["rope_scaling"]))
+    ones = lambda offset, length: struct.pack(f"<{length // 4}f", *[1.0] * (length // 4))
+    plan = forward_plan(dims, "int8", ones, int8=True, kv_start=KV_START, rotary=dims.head_size, tables=tables)
     plan["tensors"] = {name: tensor for name, tensor in plan["tensors"].items() if name != "wcls"}
     plan["derived"] = {name: base64.b64encode(bytes(value)).decode() for name, value in plan["derived"].items()}
-    return {"header": MADEUP, "size": size, "plan": plan}
+    return {"header": MADEUP, "size": llama2_convert.checkpoint_size(MADEUP, "int8", form), "plan": plan}
 
 
 # (a row that is whole groups of every dtype's)
