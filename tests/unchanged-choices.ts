@@ -9,7 +9,10 @@ import path from "node:path";
 import { treeOf } from "./tree.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
-const f = await import(treeOf(root).runtimeUrl("forward.js"));
+// (T641.10: the window, and the parts whose names only the tests read: choice.ts, paths.ts, alone.ts)
+const tree = treeOf(root);
+const f = { ...await import(tree.runtimeUrl("forward.js")), ...await import(tree.runtimeUrl("forward/choice.js")),
+  ...await import(tree.runtimeUrl("forward/paths.js")), ...await import(tree.runtimeUrl("forward/alone.js")) };
 const found = {};
 const attempt = (name, make) => { try { found[name] = JSON.stringify(make()) ?? "undefined"; } catch (error) { found[name] = `throws ${error.message}`; } };
 

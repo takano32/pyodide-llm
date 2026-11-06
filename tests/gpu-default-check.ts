@@ -195,7 +195,8 @@ if (isMainThread) {
   process.exit(code);
 } else {
   const { memory, base, size, plan, forwardFile, tokenizer, options, quick } = workerData;
-  const { compileKernels, createForward, endSearch, timePrompts, external, OUTSIDE_VOCABULARY } = await import(forwardFile);
+  const { compileKernels, createForward, endSearch, timePrompts, external } = await import(forwardFile);
+  const { OUTSIDE_VOCABULARY } = await import(path.join(path.dirname(forwardFile), "forward", "alone.ts"));  // (T641.10: the part, beside the window)
   const { pathTable } = await import(path.join(root, "src/bench.ts"));
   const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   const spawn = (data) => new Promise((resolve) => {

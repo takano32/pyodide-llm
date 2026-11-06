@@ -18,7 +18,8 @@ import { runtime, runtimeUrl } from "./tree.ts";
 
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
-const { createForward, GPU_BLOCK, GPU_TOKENS } = await import(forwardFile);
+const { createForward, GPU_BLOCK } = await import(forwardFile);
+const { GPU_TOKENS } = await import(path.join(path.dirname(forwardFile), "forward", "choice.ts"));  // (T641.10: the part, beside the window)
 const { CONTROL_BYTES, QUIT, GPU_DONE, GPU_FAILED } = await import(runtimeUrl("jobs.ts"));
 const { plansOf, planOf, FORM, empty } = plans(new URL("..", import.meta.url));
 

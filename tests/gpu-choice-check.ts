@@ -3,8 +3,11 @@
 // Made-up times: the CPU's ms a token of its blocks, gpu.js's two blocks timed as it starts, the blocks the GPU then ran.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-const { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
-  PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } = await import(runtimeUrl("forward.js"));
+const { aloneHolds, aloneVerdict, footprint, gpuBytes, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer,
+  USAGE_UNKNOWN, weightsPlace } = await import(runtimeUrl("forward.js"));
+// (T641.10: what only the tests read, from the parts)
+const { gpuLine, PROMPTS_CPU, PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes } = await import(runtimeUrl("forward/choice.js"));
+const { BOTH_ON_8, cpuReadBytes } = await import(runtimeUrl("forward/alone.js"));
 const { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
   tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
 import { usedAfter } from "../src/bench.ts";
