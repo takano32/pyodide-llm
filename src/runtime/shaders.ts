@@ -35,7 +35,7 @@ import { QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, RMSNO
   DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET, DELTA_THREADS, OUTPUT_GATE } from "./shaders/steps.ts";
 import { FLASH_Q_TILE, flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES, flashVecShape, flashVecSplits,
   flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, TOKEN_ATTENTION_PAST, TOKEN_ATTENTION_STEEP,
-  TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff } from "./shaders/attention.ts";
+  TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff, promptAttentionData, promptAttentionOff } from "./shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS, TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE,
   fusedDp4aMatVec } from "./shaders/fused.ts";
 import { ORT_MATVEC_ROWS, mulMatVec, ortMatVec } from "./shaders/matvec.ts";
@@ -55,7 +55,7 @@ export { GROUP, BLOCK_PACKINGS, TILE, WIDEN, PACKED, BATCHED, REG_TILES, regTile
   quantizedLikeCpu, TILED_LINE, tiledOff, ARGMAX, EMPTY, SMALL, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, FLASH_Q_TILE,
   flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES, flashVecShape, flashVecSplits, flashVecPartsBytes,
   flashVecParams, flashVec, flashVecReduce, TOKEN_ATTENTION_PAST, TOKEN_ATTENTION_STEEP, TOKEN_ATTENTION_PEAK,
-  tokenAttentionData, tokenAttentionOff, SWIGLU, GELU, RMSNORM_ADD, GEGLU, SHORT_CONV, CONV_STATE, DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET, DELTA_THREADS, OUTPUT_GATE, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP, SHARED_PER_LOOP,
+  tokenAttentionData, tokenAttentionOff, promptAttentionData, promptAttentionOff, SWIGLU, GELU, RMSNORM_ADD, GEGLU, SHORT_CONV, CONV_STATE, DELTA_GATES, DELTA_CONV, DELTA_CONV_STATE, DELTA_NET, DELTA_THREADS, OUTPUT_GATE, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP, SHARED_PER_LOOP,
   GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING, GLOBAL_CEILING, MUL_MAT_VEC_ROWS,
   ORT_MATVEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVec, ortMatVec, TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE,
   fusedDp4aMatVec, REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, floatOfHalf, samplingState,

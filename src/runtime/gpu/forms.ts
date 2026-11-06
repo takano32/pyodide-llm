@@ -6,9 +6,8 @@ import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform,
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
 import { SUPERBLOCKS, CODEBOOK_BYTES } from "../shaders/superblocks.ts";
-import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
+import { FLASH_Q_TILE, flashShape, promptAttentionData, promptAttentionOff } from "../shaders/attention.ts";
 import { ENGINE } from "../shaders/engine.ts";
-import { floatOfHalf } from "../shaders/halves.ts";
 import { PACKINGS, packingAt, isBlock, blocksOf } from "./packings.ts";
 import { devicePromptForms } from "../shaders/key.ts";
 import type { Model } from "./device.ts";
@@ -81,64 +80,42 @@ async function chooseAttention(m: Model) {
   throw new Error(`no attention is right on this GPU (${tried.join("; ") || `none named ${plan.force.attention}`})`);
 }
 
-// The attention on made-up numbers against JavaScript's: 9 tokens at positions 61 to 69 (two tiles of 4 and one
-// token of a third), 4 heads of q on 2 of keys and values, 70 positions (a KV_TILE of 64 and a part of one) of keys and
-// values as float16 of random bits between 2^-3 and 4 in size. Each token's output against its softmax over the
-// positions up to its own, no more than LINE of the largest |value| of its head: f16 weights in the workgroup's
-// memory are within 2^-10 of theirs (each rounded either way, WGSL leaves the direction to the device) and so the
-// output within about 1e-3 of the largest value (the sum of the weights is float32), while a wrong mask, head or
-// tile is off by a tenth and more.
+// The attention on made-up numbers against JavaScript's (T642.12: the numbers and the answer are shaders/attention.ts's
+// promptAttentionData() and promptAttentionOff(), beside a token's; here the request and the line): 9 tokens at
+// positions 61 to 69 (two tiles of 4 and one token of a third), 4 heads of q on 2 of keys and values, 70 positions (a
+// KV_TILE of 64 and a part of one) of keys and values as float16 of random bits between 2^-3 and 4 in size. Each
+// token's output against its softmax over the positions up to its own, no more than LINE of the largest |value| of its
+// head: f16 weights in the workgroup's memory are within 2^-10 of theirs (each rounded either way, WGSL leaves the
+// direction to the device) and so the output within about 1e-3 of the largest value (the sum of the weights is
+// float32), while a wrong mask, head or tile is off by a tenth and more.
 // T261.4: a model with layers that attend a window (a Gemma 3's) has the check's tokens attend the last WINDOW
 // positions alone: the first tile of positions begins at 49 (61 - 13 + 1, where the first token's window does), each
 // row of a tile has a window of its own (one position on from the row before), and the positions before are not read
 const LINE = 4e-3, WINDOW = 13;
 async function checkAttention(m: Model, pipeline: GPUComputePipeline) {
-  const { plan } = m, size = plan.headSize, heads = 4, kvHeads = 2, tokens = 9, pos = 61, positions = pos + tokens;
+  const { plan } = m, size = plan.headSize, heads = 4, kvHeads = 2, tokens = 9, pos = 61;
   const window = plan.windows?.some((w) => w > 0) ? WINDOW : 0;
-  const kvDim = kvHeads * size, qDim = heads * size, scale = 1 / Math.sqrt(size);
-  const q = new Float32Array(tokens * qDim).map(() => Math.random() * 2 - 1);
-  const halfBits = () => ((Math.random() < 0.5 ? 0x8000 : 0) | ((12 + ((Math.random() * 5) | 0)) << 10) | ((Math.random() * 1024) | 0));
-  const keys = new Uint16Array(positions * kvDim).map(halfBits), values = new Uint16Array(positions * kvDim).map(halfBits);
+  const sizes = { heads, kvHeads, size, tokens, pos, window }, qDim = heads * size;
+  const data = promptAttentionData(sizes);
   const owned: GPUBuffer[] = [];
-  const make = (data: GPUAllowSharedBufferSource, usage = STORAGE | COPY_DST) => {
-    const made = buffer(m, data.byteLength, usage, owned);
-    m.device.queue.writeBuffer(made, 0, data);
+  const make = (bytes: GPUAllowSharedBufferSource, usage = STORAGE | COPY_DST) => {
+    const made = buffer(m, bytes.byteLength, usage, owned);
+    m.device.queue.writeBuffer(made, 0, bytes);
     return made;
   };
   try {
     const out = buffer(m, tokens * qDim * 4, STORAGE | COPY_SRC, owned);
     const params = new ArrayBuffer(16);
     new Uint32Array(params, 0, 2).set([heads, kvHeads]);
-    new Float32Array(params, 8, 1)[0] = scale;
+    new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(size);
     new Uint32Array(params, 12, 1)[0] = window;
-    const group = bind(m, pipeline, [make(q), make(keys), make(values), out, uniform(m, params, owned),
+    const group = bind(m, pipeline, [make(data.q), make(data.keys), make(data.values), out, uniform(m, params, owned),
       uniform(m, new Uint32Array([tokens, pos, 0, 0]), owned)]);
     const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
     dispatch(pass, pipeline, group, heads * Math.ceil(tokens / FLASH_Q_TILE));
     pass.end();
     m.device.queue.submit([encoder.finish()]);
-    const got = new Float32Array(await readBack(m, out, tokens * qDim * 4));
-    const k = Float32Array.from(keys, floatOfHalf), v = Float32Array.from(values, floatOfHalf);
-    let worst = 0;
-    for (let t = 0; t < tokens; t++) {
-      for (let h = 0; h < heads; h++) {
-        const kv = Math.floor(h / (heads / kvHeads)) * size, row = t * qDim + h * size, seen = pos + t + 1, from = window ? Math.max(0, seen - window) : 0;
-        const scores = new Float64Array(seen).fill(-Infinity);
-        for (let p = from; p < seen; p++) {
-          scores[p] = 0;
-          for (let d = 0; d < size; d++) scores[p] += q[row + d] * scale * k[p * kvDim + kv + d];
-        }
-        const most = Math.max(...scores);
-        let sum = 0, largest = 0;
-        for (let p = 0; p < seen; p++) sum += (scores[p] = Math.exp(scores[p] - most));  // (exp(-Infinity): 0, outside a window)
-        for (let p = 0; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(v[p * kvDim + kv + d]));
-        for (let d = 0; d < size; d++) {
-          let want = 0;
-          for (let p = 0; p < seen; p++) want += scores[p] * v[p * kvDim + kv + d];
-          worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);
-        }
-      }
-    }
+    const worst = promptAttentionOff(new Float32Array(await readBack(m, out, tokens * qDim * 4)), data, sizes);
     return worst <= LINE ? null : `its output is ${worst.toExponential(2)} of the largest value from JavaScript's (line ${LINE})`;
   } finally {
     owned.forEach((b) => b.destroy());

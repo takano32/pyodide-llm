@@ -17,6 +17,8 @@ type Subgroups = { subgroupMin?: number; subgroupMax?: number };
 // (T261.4.2: window, the last positions a layer attends: 0 or none, every one)
 type AttentionSizes = { heads: number; kvHeads: number; size: number; positions: number; window?: number };
 type AttentionData = { q: ArrayLike<number>; keys: ArrayLike<number>; values: ArrayLike<number> };
+// (T642.12) a prompt's: tokens at pos to pos + tokens - 1, each attending the positions up to its own
+type PromptAttentionSizes = { heads: number; kvHeads: number; size: number; tokens: number; pos: number; window?: number };
 
 // T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
 // T135's (one workgroup a head and token) wrote every score to memory and read it three times, and read the same keys
@@ -757,14 +759,17 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
 export const TOKEN_ATTENTION_PAST = 8, TOKEN_ATTENTION_STEEP = 40, TOKEN_ATTENTION_PEAK = 33;
 export function tokenAttentionData({ heads, kvHeads, size, positions, steep = [] }: AttentionSizes & { steep?: number[] }) {
   const q = new Float32Array(heads * size).map((_, i) => (Math.random() * 2 - 1) * (steep.includes(Math.floor(i / size)) ? TOKEN_ATTENTION_STEEP : 1));
-  const halfBits = () => ((Math.random() < 0.5 ? 0x8000 : 0) | ((12 + ((Math.random() * 5) | 0)) << 10) | ((Math.random() * 1024) | 0));
   const rows = (positions + TOKEN_ATTENTION_PAST) * kvHeads * size;
-  const keys = new Uint16Array(rows).map(halfBits);
+  const keys = new Uint16Array(rows).map(randomHalfBits);
   for (const h of steep.filter(() => positions > TOKEN_ATTENTION_PEAK)) {
     const kv = Math.floor(h / (heads / kvHeads)) * size, at = TOKEN_ATTENTION_PEAK * kvHeads * size + kv;
     for (let d = 0; d < size; d++) keys[at + d] = q[h * size + d] < 0 ? 0xc400 : 0x4400;  // ±4 in float16
   }
-  return { q, keys, values: new Uint16Array(rows).map(halfBits) };
+  return { q, keys, values: new Uint16Array(rows).map(randomHalfBits) };
+}
+// the bits of a float16 between 2^-3 and 4 in size, of either sign (the keys and values of the checks of an attention)
+function randomHalfBits() {
+  return (Math.random() < 0.5 ? 0x8000 : 0) | ((12 + ((Math.random() * 5) | 0)) << 10) | ((Math.random() * 1024) | 0);
 }
 /** T224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
  * (tokenAttentionData's, heads of q on kvHeads, each head of q to kvHeads' own, the token reading positions) in float64:
@@ -789,6 +794,44 @@ export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: A
       // (Math.max keeps a NaN, as the comment above says: `if (!(off <= worst)) worst = off` let the next value take its
       // place, and a NaN in one head, or in the first values of the last, passed: T224's review)
       worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);
+    }
+  }
+  return worst;
+}
+/** T642.12: the made-up numbers of a check of a prompt's attention (gpu/forms.ts's checkAttention()), beside a token's:
+ * q of tokens × heads × size (±1), and the keys and values of the positions up to the last token's
+ * ([position][kvHeads × size], float16 of random bits between 2^-3 and 4 in size). */
+export function promptAttentionData({ heads, kvHeads, size, tokens, pos }: PromptAttentionSizes) {
+  const q = new Float32Array(tokens * heads * size).map(() => Math.random() * 2 - 1);
+  const rows = (pos + tokens) * kvHeads * size;
+  const keys = new Uint16Array(rows).map(randomHalfBits), values = new Uint16Array(rows).map(randomHalfBits);
+  return { q, keys, values };
+}
+/** T642.12: how far got (a prompt's attention output, tokens × heads × size, from the GPU) is from the attention of
+ * data (promptAttentionData's, heads of q on kvHeads, token t at pos + t reading the positions up to its own: the last
+ * window of them where window is not 0) in float64: the largest difference of a head's output over the largest |value|
+ * of its head over all the positions (those of the last token). NaN where got holds one (Math.max keeps it). */
+export function promptAttentionOff(got: ArrayLike<number>, { q, keys, values }: AttentionData, { heads, kvHeads, size, tokens, pos, window = 0 }: PromptAttentionSizes) {
+  const kvDim = kvHeads * size, qDim = heads * size, scale = 1 / Math.sqrt(size), positions = pos + tokens;
+  const k = Float32Array.from(keys, floatOfHalf), v = Float32Array.from(values, floatOfHalf);
+  let worst = 0;
+  for (let t = 0; t < tokens; t++) {
+    for (let h = 0; h < heads; h++) {
+      const kv = Math.floor(h / (heads / kvHeads)) * size, row = t * qDim + h * size, seen = pos + t + 1, from = window ? Math.max(0, seen - window) : 0;
+      const scores = new Float64Array(seen).fill(-Infinity);
+      for (let p = from; p < seen; p++) {
+        scores[p] = 0;
+        for (let d = 0; d < size; d++) scores[p] += q[row + d] * scale * k[p * kvDim + kv + d];
+      }
+      const most = Math.max(...scores);
+      let sum = 0, largest = 0;
+      for (let p = 0; p < seen; p++) sum += (scores[p] = Math.exp(scores[p] - most));  // (exp(-Infinity): 0, outside a window)
+      for (let p = 0; p < positions; p++) for (let d = 0; d < size; d++) largest = Math.max(largest, Math.abs(v[p * kvDim + kv + d]));
+      for (let d = 0; d < size; d++) {
+        let want = 0;
+        for (let p = 0; p < seen; p++) want += scores[p] * v[p * kvDim + kv + d];
+        worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);
+      }
     }
   }
   return worst;
