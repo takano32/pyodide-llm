@@ -2,6 +2,7 @@
 // what the page shows of a model as it is chosen.
 import { $, fit, prompt, select } from "./dom.ts";
 import { parameters } from "./address.ts";
+import { addressWith } from "./parameters.ts";
 import { type Model, longest, model } from "./model.ts";
 import { type Settings, FIELDS, changedFrom, defaults, linkSettings } from "./fields.ts";
 
@@ -56,6 +57,8 @@ const without = new Set((parameters.get("without") ?? "").split(",").map((name) 
 if (parameters.get("kernel") === "off") {
   without.add("kernels");
 }
+// (the model of the list the page has, which the reload opens: the address of one of no list says it already)
+const namedModel = () => (model.id !== "local" ? { model: model.id } : {});
 const switches = [...document.querySelectorAll<HTMLInputElement>("#engine input[data-switch]")];
 for (const box of switches) {
   const name = box.dataset.switch!;
@@ -63,17 +66,11 @@ for (const box of switches) {
   box.disabled = name !== "kernels" && without.has("kernels");  // the other three are ways of using the kernels
   box.onchange = () => {
     box.checked ? without.delete(name) : without.add(name);
-    const url = new URL(location.href);
-    url.searchParams.delete("kernel");
     // the panel's four first, in their order, then whatever else the URL had (kv16, for measuring)
     const names = [...switches.map((each) => each.dataset.switch!).filter((each) => without.has(each)),
                    ...[...without].filter((each) => !switches.some((box) => box.dataset.switch === each))];
-    names.length ? url.searchParams.set("without", names.join(",")) : url.searchParams.delete("without");
-    url.searchParams.delete("bench");  // T119: the reload is to run with the switches, not to measure again
-    if (model.id !== "local") {
-      url.searchParams.set("model", model.id);
-    }
-    location.assign(url);
+    // (T119: the reload is to run with the switches, not to measure again)
+    location.assign(addressWith(location.href, { kernel: null, without: names.length ? names.join(",") : null, bench: null, ...namedModel() }));
   };
 }
 // T98: the bits of a converted model, from ?bits= (weighed() reads it) and back to it, the same way
@@ -81,13 +78,7 @@ const asked = ["6", "8"].includes(parameters.get("bits") ?? "") ? parameters.get
 for (const choice of document.querySelectorAll<HTMLInputElement>('#engine input[name="bits"]')) {
   choice.checked = choice.value === asked;
   choice.onchange = () => {
-    const url = new URL(location.href);
-    choice.value ? url.searchParams.set("bits", choice.value) : url.searchParams.delete("bits");
-    url.searchParams.delete("bench");
-    if (model.id !== "local") {
-      url.searchParams.set("model", model.id);
-    }
-    location.assign(url);
+    location.assign(addressWith(location.href, { bits: choice.value || null, bench: null, ...namedModel() }));
   };
 }
 const panel = $("settings");

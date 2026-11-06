@@ -2,12 +2,14 @@
 import { weightsFor } from "../models.ts";
 import { SAFETENSORS, noteOf } from "./repository.ts";
 import type { Model, Unlisted } from "./model.ts";
+import type { Address } from "./parameters.ts";
 
 // A model that is in no list, named in the URL: ?hf=<owner>/<repository>[&revision=][&file=] is a Hugging Face model that
 // the page converts (whatever the converter refuses, it refuses in words; T505.3: &file= names the file that is the
 // model, a GGUF, where it is not the repository's model.safetensors), ?checkpoint=<url>&tokenizer=<url> are
 // files in llama2.c's format somewhere that allows cross-origin range requests. &template= wraps the prompt.
-export const parameters = new URLSearchParams(location.search);
+// (T643.9: the names it takes are those of parameters.ts's table, and no other)
+export const parameters: Address = new URLSearchParams(location.search);
 export const requested = parameters.get("model");
 // ?bench=1 measures this model with and without the kernels, ?bench=full every step of T52 (T45)
 export const benchmark = parameters.get("bench");
@@ -30,8 +32,6 @@ export const FILE = /^(?=.{1,256}$)(?!\.+(\/|$))[\w.\-]+(\/(?!\.+(\/|$))[\w.\-]+
 // T505.3: file is the file a link or the sheet names for the model (a GGUF, which needs nothing else of the repository).
 // With none it is model.safetensors, until the repository is looked at (repository.ts's looked(): one without
 // safetensors is opened by the best GGUF it has)
-/** A model as one of a repository nobody listed, where it is one (and not a file of the disk, or of the list). */
-export const unlisted = (entry: Model | undefined) => ((entry as Partial<Unlisted> | undefined)?.hf?.repo && entry!.id === "local" ? (entry as Unlisted) : undefined);
 export function hfEntry(repository: string, revision: string, link: { template?: string; prompt?: string; file?: string } = {}): Unlisted {
   const common = { id: "local", options: {}, prompt: link.prompt ?? "", placeholder: "", template: link.template };
   const weights = link.file || SAFETENSORS;

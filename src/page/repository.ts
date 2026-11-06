@@ -8,6 +8,7 @@
 // those it has, or the one the visitor named (?hf=owner/name&file=name.gguf, the third field of the sheet).
 // Which requests a conversion then makes, and in which order, is the conduct's to say (src/python/convert/conduct.py):
 // what is decided here is the one name it is handed, hf.weights.
+import type { Model, Unlisted } from "./model.ts";
 
 /** The file the conversion of a repository asks for where nobody named one, and the index that stands for its shards. */
 export const SAFETENSORS = "model.safetensors";
@@ -58,6 +59,8 @@ export function bestGguf(files: Listed[]) {
 }
 
 type Entry = { name: string; note?: string; download?: number; hf: { repo?: string; revision?: string; weights?: string } };
+/** A model as one of a repository nobody listed, where it is one (and not a file of the disk, or of the list). */
+export const unlisted = (entry: Model | undefined) => ((entry as Partial<Unlisted> | undefined)?.hf?.repo && entry!.id === "local" ? (entry as Unlisted) : undefined);
 /** Whether a model is one nobody named a file of: its conversion asks for model.safetensors. */
 export const unnamed = (entry: Entry) => entry.hf.weights === SAFETENSORS;
 /** What the page says of a model of a repository beside its name: where it is from, the revision that is not main,

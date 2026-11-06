@@ -23,7 +23,7 @@ export const LIMITS: Record<keyof Sampled, { low: number; high: number; whole?: 
   thinking: { low: 0, high: 1 << 20, whole: true },
 };
 /** What the link's parameters set of the settings. */
-export function linkSettings(parameters: { get(name: string): string | null }): Sampled {
+export function linkSettings(parameters: { get(name: keyof Sampled): string | null }): Sampled {
   const linked: Sampled = {};
   for (const [name, { low, high, whole }] of Object.entries(LIMITS) as [keyof Sampled, typeof LIMITS[keyof Sampled]][]) {
     const given = parameters.get(name);

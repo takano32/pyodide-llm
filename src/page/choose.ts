@@ -2,8 +2,9 @@
 // for a repository of Hugging Face, the buttons of the intro. Each ends in the select's change, which tells the worker.
 import { DEFAULT_MODEL, MODELS, UNASKED_BYTES, asksBefore, memoryWarning } from "../models.ts";
 import { $, files, progress, run, select, statusText } from "./dom.ts";
-import { FILE, REPOSITORY, REVISION, fromUrl, hfEntry, unlisted, weighed } from "./address.ts";
-import { looked, unnamed } from "./repository.ts";
+import { FILE, REPOSITORY, REVISION, fromUrl, hfEntry, weighed } from "./address.ts";
+import { looked, unlisted, unnamed } from "./repository.ts";
+import { addressOf } from "./parameters.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
 import { type Model, type Unlisted, chose, loads, model, opensWith } from "./model.ts";
 import { stillKept } from "./list.ts";
@@ -72,40 +73,10 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(".intro .choos
   };
 }
 
-// The URL names the model the page has, however it was chosen (the list, the sheet, the folder), so that a reload
-// (every switch of the panel reloads) or a shared link opens that model and no other (the review of T75 and T88:
-// after ?hf=, choosing a model of the list and then a switch reloaded the Hugging Face model). A file of the disk
-// has no address: its URL names nothing, and a reload opens the model remembered before it.
+// The URL names the model the page has, however it was chosen (parameters.ts's addressOf(): a reload or a shared link
+// opens that model and no other)
 function nameInUrl(current: Model) {
-  const url = new URL(location.href);
-  for (const name of ["model", "hf", "revision", "file", "checkpoint", "tokenizer", "template", "prompt"]) {
-    url.searchParams.delete(name);
-  }
-  const { hf, url: address, template } = current;
-  if (current.id !== "local") {
-    url.searchParams.set("model", current.id);
-  } else if (hf?.repo || address) {
-    if (hf?.repo) {
-      url.searchParams.set("hf", hf.repo);
-      if (hf.revision !== "main") {
-        url.searchParams.set("revision", hf.revision);
-      }
-      // T505.3: and the file, where it is not the model.safetensors a repository is opened by: the one the visitor
-      // named, or the GGUF that was the best there when the repository was looked at
-      if (!unnamed(unlisted(current)!)) {
-        url.searchParams.set("file", hf.weights);
-      }
-    } else {
-      url.searchParams.set("checkpoint", address!.checkpoint);
-      url.searchParams.set("tokenizer", address!.tokenizer);
-    }
-    for (const [name, value] of [["template", template], ["prompt", current.prompt]] as const) {
-      if (value) {
-        url.searchParams.set(name, value);
-      }
-    }
-  }
-  history.replaceState(null, "", url);
+  history.replaceState(null, "", addressOf(current, location.href));
 }
 
 // T88: the last entry of the Hugging Face group asks which repository, in a sheet like the settings'

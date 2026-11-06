@@ -683,4 +683,43 @@ console.log(`page-parts-check: folder.ts by itself: the models of a folder, of l
   cases += 10;
 }
 console.log(`page-parts-check: fields.ts by itself: the settings a link sets, and the sheet's fields`);
+{
+  // T643.9: parameters.ts, the names of the model page's address in one table, and the address the page writes for the
+  // model it has. (The second copy of the names, as bookmarks, links and the README hold them: none is renamed.)
+  const { NAMES, MODEL_NAMES, addressWith, addressOf } = await fresh("page/parameters.ts");
+  assert.deepEqual(NAMES, {
+    model: "model", hf: "model", revision: "model", file: "model", checkpoint: "model", tokenizer: "model", template: "model", prompt: "model",
+    without: "engine", kernel: "engine", bits: "engine", threads: "engine", bench: "visit", coi: "visit", offline: "visit", gpuTest: "visit",
+  }, "the names of the model page's address, and what each is for");
+  assert.deepEqual(MODEL_NAMES, ["model", "hf", "revision", "file", "checkpoint", "tokenizer", "template", "prompt"], "the names that name a model");
+  const page = "https://takano32.github.io/pyodide-llm/";
+  const at = (search) => `${page}${search}`;
+  const everything = "?model=x&hf=o/n&revision=r&file=f.gguf&checkpoint=https%3A%2F%2Fa%2Fm.bin&tokenizer=https%3A%2F%2Fa%2Ft.bin&template=t&prompt=p&kernel=off&seed=7&gpuTest=on";
+  const listed = { id: "tiny-lm", name: "Tiny", prompt: "Once" };
+  assert.equal(addressOf(listed, at(everything)), at("?kernel=off&seed=7&gpuTest=on&model=tiny-lm"),
+    "a model of the list: every name of a model goes, the rest stay as they were, and ?model= names it");
+  const hf = (weights, revision = "main") => ({ id: "local", name: "o/n", prompt: "", hf: { repo: "o/n", revision, weights, config: "config.json" } });
+  assert.equal(addressOf(hf("model.safetensors"), at("?model=tiny-lm&bits=6")), at("?bits=6&hf=o%2Fn"), "a repository's model.safetensors at main: the repository alone");
+  assert.equal(addressOf({ ...hf("n-Q8_0.gguf", "v1"), template: "<s>{prompt}", prompt: "Hi" }, at("")),
+    at("?hf=o%2Fn&revision=v1&file=n-Q8_0.gguf&template=%3Cs%3E%7Bprompt%7D&prompt=Hi"), "the revision that is not main, the file that is not model.safetensors, the link's template and prompt");
+  const urls = { id: "local", name: "m.bin", prompt: "Once upon a time", url: { checkpoint: "https://a/m.bin", tokenizer: "https://a/t.bin" } };
+  assert.equal(addressOf(urls, at("?hf=o/n")), at("?checkpoint=https%3A%2F%2Fa%2Fm.bin&tokenizer=https%3A%2F%2Fa%2Ft.bin&prompt=Once+upon+a+time"), "two files somewhere: their addresses");
+  const folder = { id: "local", name: "mine", prompt: "x", hf: { files: [], weights: "model.safetensors" } };
+  assert.equal(addressOf(folder, at(everything)), at("?kernel=off&seed=7&gpuTest=on"), "a folder of the disk has no address: no name of a model is left");
+  assert.equal(addressWith(at("?kernel=off&bench=1&without=relaxed"), { kernel: null, without: "kernels,relaxed", bench: null, model: "tiny-lm" }),
+    at("?without=kernels%2Crelaxed&model=tiny-lm"), "a switch of the panel: names taken away, set where they were, added after");
+  // the page reads its address through address.ts's parameters (tsc holds it to the table) and writes it through
+  // parameters.ts: no other part reads or writes a name of it by itself (the worker gets it whole, as search, and reads
+  // its own names)
+  const fs = await import("node:fs");
+  const folderOfPage = fileURLToPath(new URL("../src/page/", import.meta.url));
+  for (const file of fs.readdirSync(folderOfPage).sort()) {
+    if (file === "address.ts" || file === "parameters.ts") continue;
+    const text = fs.readFileSync(folderOfPage + file, "utf8");
+    assert.ok(!/searchParams|URLSearchParams|location\.search/.test(text.replace(/search: location\.search/g, "")),
+      `${file} reads or writes the page's address by itself: through address.ts's parameters and parameters.ts's functions`);
+  }
+  cases += 9;
+}
+console.log(`page-parts-check: parameters.ts by itself: the names of the address, and the address of the model the page has`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);

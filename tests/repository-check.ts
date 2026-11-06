@@ -14,11 +14,11 @@
 // whether huggingface.co lets a page read its list (CORS).
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { PAGES, QUANTIZATIONS, SAFETENSORS, bestGguf, filesOf, looked, noteOf, quantization, settled, unnamed } from "../src/page/repository.ts";
+import { PAGES, QUANTIZATIONS, SAFETENSORS, bestGguf, filesOf, looked, noteOf, quantization, settled, unlisted, unnamed } from "../src/page/repository.ts";
 import { keptName, keptNames } from "../src/runtime/kept.ts";
 // (the page's module reads its address where it is loaded: there is none here)
 globalThis.location ??= { search: "" };
-const { FILE, FILE_MOST, hfEntry, unlisted } = await import("../src/page/address.ts");
+const { FILE, FILE_MOST, hfEntry } = await import("../src/page/address.ts");
 
 // ---- the order, written a second time: the owner's four (2026-10-13: Q8_0, else Q6_K, Q5_K_M, Q4_K_M) keep their
 // order among themselves; the floats and a ternary model's own types stand right after Q8_0; what is below four bits
