@@ -24,11 +24,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import math
-import struct
 
 import numpy as np
 
-from engine.tokenizer import CHARSMAP
+from engine.tokenizer import charsmap_after, pieces_of
 from engine.dtypes import DTYPES, KINDS, PACKED, dtype_of
 from engine.layout import (CLASSIFIER, EMBEDDING, MATRIX, TABLE, Dims, check_suited, file_size, form_of, layout_of, placed,
                            stateful_form, suited, tensor_rows)
@@ -182,17 +181,12 @@ def check_tokenizer(tokenizer, header):
     """
     vocab_size = abs(int(list(header)[5]))
     offset, pieces = 4, 0
-    while offset + 8 <= len(tokenizer):
-        if pieces == vocab_size and bytes(tokenizer[offset:offset + len(CHARSMAP)]) == CHARSMAP:
-            # T216: a sentencepiece model's normalizer after the pieces, to the end
-            (size,) = struct.unpack_from("<I", tokenizer, offset + len(CHARSMAP))
-            offset += len(CHARSMAP) + 4 + size
+    for _, _, end in pieces_of(tokenizer):
+        if pieces == vocab_size and charsmap_after(tokenizer, offset)[0] is not None:
             break
-        _, length = struct.unpack_from("<fi", tokenizer, offset)
-        if length < 0 or offset + 8 + length > len(tokenizer):
-            raise ValueError("The smaller file is not a llama2.c tokenizer.bin.")
-        offset += 8 + length
-        pieces += 1
+        offset, pieces = end, pieces + 1
+    if pieces == vocab_size:
+        offset = charsmap_after(tokenizer, offset)[1]  # T216: a sentencepiece model's normalizer after the pieces, to the end
     if offset != len(tokenizer) or pieces == 0:
         raise ValueError("The smaller file is not a llama2.c tokenizer.bin.")
     if pieces != vocab_size:

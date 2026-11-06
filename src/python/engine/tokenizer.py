@@ -212,6 +212,31 @@ def pretokenize(text, pattern):
 CHARSMAP = b"charsmap"
 
 
+def pieces_of(data):
+    """The pieces of a tokenizer.bin, one (score, piece, end) at a time: its score, its bytes and where it ends, after
+    the 4 bytes of max_token_length; as far as the file holds whole pieces (T639.7: the one walk Tokenizer and
+    check_tokenizer() read). It does not know the vocabulary's size, so past the last piece it reads what follows
+    (charsmap_after()'s) as pieces: the reader stops at the size it knows."""
+    offset = 4
+    while offset + 8 <= len(data):
+        score, length = struct.unpack_from("<fi", data, offset)
+        end = offset + 8 + length
+        if length < 0 or end > len(data):
+            return
+        yield score, bytes(data[offset + 8:end]), end
+        offset = end
+
+
+def charsmap_after(data, offset):
+    """(a sentencepiece model's precompiled_charsmap, where it ends) if the tokenizer.bin has one at offset, after its
+    pieces (T216), else (None, offset)."""
+    if bytes(data[offset:offset + len(CHARSMAP)]) != CHARSMAP or offset + len(CHARSMAP) + 4 > len(data):
+        return None, offset
+    (size,) = struct.unpack_from("<I", data, offset + len(CHARSMAP))
+    start = offset + len(CHARSMAP) + 4
+    return bytes(data[start:start + size]), start + size
+
+
 class Charsmap:
     """sentencepiece's normalizer, from the model's own precompiled_charsmap (T216): the length of a Darts-clone double
     array (uint32), the array, and the normalized texts, each ended by a NUL. The array's keys are UTF-8 texts and its
@@ -348,21 +373,15 @@ class Tokenizer:
         # of them as one; the others spell it in bytes
         self.unknown = unknown
         self.ignore_merges = ignore_merges
-        self.vocab, self.scores = [], []
-        offset = 4  # skip max_token_length
-        for _ in range(vocab_size):
-            score, length = struct.unpack_from("<fi", data, offset)
-            offset += 8
-            self.vocab.append(bytes(data[offset:offset + length]))
+        self.vocab, self.scores, offset = [], [], 4
+        for _, (score, piece, offset) in zip(range(vocab_size), pieces_of(data)):
+            self.vocab.append(piece)
             self.scores.append(score)
-            offset += length
+        if len(self.vocab) != vocab_size:
+            raise ValueError(f"This tokenizer.bin holds {len(self.vocab)} whole pieces, not the {vocab_size} of the vocabulary.")
         # T216: the sentencepiece model's own normalizer, where the converter put it after the pieces
-        rest = bytes(data[offset:offset + len(CHARSMAP) + 4])
-        self.charsmap = None
-        if rest[:len(CHARSMAP)] == CHARSMAP:
-            (size,) = struct.unpack_from("<I", rest, len(CHARSMAP))
-            start = offset + len(CHARSMAP) + 4
-            self.charsmap = Charsmap(bytes(data[start:start + size]))
+        charsmap, _ = charsmap_after(data, offset)
+        self.charsmap = None if charsmap is None else Charsmap(charsmap)
         # first occurrence wins, like list.index() in llama2.py
         self.index = {}
         for i, piece in enumerate(self.vocab):
