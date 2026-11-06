@@ -11,7 +11,9 @@
 //     engines' words for a memory that ran out, a stack overflow that is none, Emscripten's ExitStatus, a thing that is
 //     no error at all), each with the kind and the very sentence the worker's one catch said of it before;
 //   - in the sources: nothing puts a mark on an Error (Object.assign, or a property set on one that was caught), nothing
-//     but failure.ts reads the words of Pyodide's exceptions, and every kind is made somewhere and read somewhere else.
+//     but failure.ts reads the words of Pyodide's exceptions, and every kind is made somewhere and read somewhere else;
+//   - T641.16: every Failure that may be of the kind "refused" says whether another try may help (again), but those of
+//     UNSAID, each with why: the loops that fetch again read again === false, and nothing told a missing one before.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -129,7 +131,71 @@ console.log(`failure-check: failureOf() reads ${CASES.length} things that are th
     // (refused is the kind of whatever has no other, which nothing asks for by name)
     if (kind !== "refused") assert.ok(read.has(kind), `no file reads the kind "${kind}": a kind nobody reads is not one`);
   }
+  // T641.16: a refused Failure says again. The loops that fetch a part again (worker/ranges.ts, worker/sources.ts) stop
+  // where failureOf(error).again === false, and an again left unsaid reads as "another try may help": a status of the
+  // 400s would be asked for twice more. So every new Failure( whose kind may be "refused" writes again in what it says
+  // more (again: …, or again by its name), but those of UNSAID: [the file, the kind as written, why it may say nothing].
+  const UNSAID = [
+    ["src/runtime/failure.ts", 'memory ? "memory" : "refused"', "failureOf(): what was caught tells nothing of another try, so nothing is said (and a retry loop tries again)"],
+  ];
+  const refusing = [], unsaid = new Set();
+  for (const [name, text] of texts) {
+    for (const { index } of text.matchAll(/new Failure\(/g)) {
+      const [kind, ...rest] = argumentsAt(text, index + "new Failure(".length);
+      if (!/"refused"/.test(kind)) continue;
+      const exempt = UNSAID.find(([file, written]) => file === name && written === kind.trim());
+      if (exempt) {
+        unsaid.add(exempt);
+        continue;
+      }
+      refusing.push(name);
+      assert.ok(rest.length >= 2 && /(?:^|[{,]\s*)again\s*(?:[:,}]|$)/.test(rest[1].trim().replace(/^\{\s*/, "{")),
+        `${name}: new Failure(${kind.trim()}, …) does not say again: a refused Failure says whether another try may help ({ again: false } where it is answered the same; src/runtime/failure.ts), or is put in UNSAID with why`);
+    }
+  }
+  for (const exempt of UNSAID) assert.ok(unsaid.has(exempt), `UNSAID names ${exempt[0]}'s new Failure(${exempt[1]}, …), which is gone: take it out`);
+  assert.ok(refusing.length >= 2, `only ${refusing.length} refused Failures were found: the reading of new Failure( is broken`);
+  console.log(`failure-check: ${refusing.length} refused Failures say again (${refusing.join(", ")}), ${UNSAID.length} left unsaid with why`);
   const lines = kinds.map((kind) => `${kind} (made ${(made.get(kind) ?? []).length || "by failureOf()"}, read ${(read.get(kind) ?? []).length})`);
   console.log(`failure-check: ${sources.length} sources put no mark on an Error and read no exception's words but failure.ts; the kinds: ${lines.join(", ")}`);
 }
 console.log("failure-check: ok");
+
+// The arguments of a call whose "(" ends just before at, as their texts: commas inside brackets, strings and templates
+// (and their ${…}) do not split them. Read of the code without comments, as the checks below read it.
+function argumentsAt(text, at) {
+  const parts = [];
+  let depth = 0, start = at, i = at;
+  const skipString = (quote) => {
+    for (i++; i < text.length && text[i] !== quote; i++) {
+      if (text[i] === "\\") i++;
+      else if (quote === "`" && text[i] === "$" && text[i + 1] === "{") {
+        i += 2;
+        let inner = 1;
+        for (; i < text.length && inner > 0; i++) {
+          if (text[i] === "{") inner++;
+          else if (text[i] === "}") inner--;
+          else if (text[i] === "`" || text[i] === '"' || text[i] === "'") skipString(text[i]);
+        }
+        i--;
+      }
+    }
+  };
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'" || c === "`") skipString(c);
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      if (depth === 0) {
+        parts.push(text.slice(start, i));
+        return parts;
+      }
+      depth--;
+    } else if (c === "," && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  throw new Error(`a call that does not end: ${text.slice(at - 12, at + 60)}`);
+}
+
