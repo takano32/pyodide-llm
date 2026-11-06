@@ -24,10 +24,10 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.first.outputs.page_url || steps.again.outputs.page_url }}
     runs-on: ubuntu-latest
     # T262: a deploy is 3 to 4 minutes; without a limit of its own a stuck step held the queue for GitHub's 360
-    # T652: the build and the tests take up to 15 minutes, and Pages' own step up to deploy-pages' timeout below
+    # T652: the build and the tests take up to 15 minutes, and Pages' step 10 minutes a try, two tries at most
     timeout-minutes: 50
     steps:
       - name: Checkout
@@ -78,9 +78,14 @@ jobs:
         with:
           path: 'dist'
 
+      # T652: Pages sat in "syncing_files" or "updating_pages" past the action's 10 minutes 3 times on 2026-11-06
+      # (the site is about 1 GB); the action caps its own timeout at 10 minutes, so a second try deploys again
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: first
+        continue-on-error: true
         uses: actions/deploy-pages@v5
-        # T652: Pages sat in "syncing_files" past the action's 10 minutes twice on 2026-11-06 (the site is about 1 GB)
-        with:
-          timeout: 1800000
+
+      - name: Deploy to GitHub Pages again
+        id: again
+        if: steps.first.outcome == 'failure'
+        uses: actions/deploy-pages@v5
