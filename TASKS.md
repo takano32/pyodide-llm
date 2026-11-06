@@ -1455,7 +1455,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - T643.20 [リファクタリング][モデル] 試験の id の一覧を規則に（塊の項目の費用を 5 ファイルから 3 に） — 未着手
   - T643.21 [リファクタリング][モデル] 窓口の中身を部品へ、`sources()`・`devicesOf()`・`DEFAULT_MODEL` の式を素直に — 未着手
   - T643.22 [リファクタリング][モデル] builder の落とし穴: 引数の順・`{}` の意味・2 つの形の 3 通りの手組み — 未着手
-  - T643.23 [リファクタリング][モデル] 死んだ・重なる物とコメントの古い名前 — 未着手
+  - T643.23 [リファクタリング][モデル] 死んだ・重なる物とコメントの古い名前 — 反映済み（2026-11-06、Opus medium、1 コミット: `src/models.ts` の窓口から使い手の無い `DEVICE_MEMORY_CAP` を外し、`formats.ts` の `HARMONY` の export を外した。一覧の重なる文字を定数に（TinyLlama の template を `ZEPHYR`、LFM2.5 2.6B を `` `${CHATML}<think>` ``、SmolLM3 と Shisa V2.1 Qwen3 8B の generation を `thinking`）。コメントの古い名前（`formats.js`・`kept.js`、`src/bench/` と `src/benchmark/model.ts`・`index.astro` の `.js`）を `.ts` に。`messages.ts` の「JavaScript still」は前の子タスクで消えていた。`address.ts` の generation の写しと `section.ts` の Worker の表の `.js` の鍵は残した（依存とコードの鍵が変わるので別の子タスクに）。網は予定どおり `models` の `DEVICE_MEMORY_CAP` の消えた分だけで、`said-texts` は 1361 文で同じ。CI を省いた。訳: コメントと同じ値の定数だけで、手元の型検査・page-parts・page-modules・models-check・bench・imports-check・build・dist-check と網で全部見られる。レビュー（Sonnet low、2026-11-06）: OK、直しなし。定数に替えた 4 項目は前の literal と文字・値とも同じ、外した 2 つの export は `tests/` にもほかの読み手にも無く、コメントが名指す名前は今の木に在る。）
   - T643.24 [リファクタリング][モデル] 一覧のファイルを家族で分け直す（`hf-japanese.ts` 65 KB） — 未着手
   - T643.25 [リファクタリング][モデル] 誰も教えないものを教える（試験だけ） — 未着手
   - T643.26 [リファクタリング][遠隔試験] error の知らせの行が Service Worker を外す枝で `"away"` を返すことを試験で見る（T643.2 のレビューの should: 返し忘れると再読み込みの後にエラーの吹き出しが出るが、`Hearing` の型は `void | "away"` で tsc も `page-parts-check` も通す。枝は `data.pyodide && crossOriginIsolated && !sessionStorage` のときだけで e2e にも出ない。行を `heard.ts` などの純な部品に出して偽の data で呼ぶか、文の検査で見る） 同じ形の穴がもう 1 つ: error の行が `keep()` の結果を読んで、印を書けなければやり直さないこと（T643.3 のレビュー） — 未着手
