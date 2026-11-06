@@ -2,12 +2,13 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 // (T643.11: each asks its worker and hands the answers to src/bench/storage.ts's tables)
 import { MODELS } from "../models.ts";
+import type { Remote } from "../models.ts";
 import { storageNone, storageResult, lineResult } from "../bench.ts";
 import { BASE, $ } from "./dom.ts";
 import type { Result } from "../bench.ts";
 import { ask, worker, model } from "./section.ts";
 
-export async function storage(): Promise<Result> {
+export async function storage(): Promise<Result<"storage">> {
   const w = worker("benchmark/storage.js");
   try {
     const none = storageNone(await ask(w, { step: "info" }));
@@ -21,9 +22,9 @@ export async function storage(): Promise<Result> {
 // the line: the first part of the chosen model of the site, and 32 MiB of a model on huggingface.co (the one of the
 // list the line section names; any large file would do)
 const LINE_MODEL = "hf-qwen2.5-0.5b-instruct", RATES = [1, 4, 8], PACED_SECONDS = 4;
-export async function line(): Promise<Result> {
+export async function line(): Promise<Result<"line">> {
   const entry = model();
-  const remote: any = MODELS.find((m: any) => m.id === LINE_MODEL) ?? MODELS.find((m: any) => m.hf && m.download > 64e6);
+  const remote = MODELS.find((m): m is Remote => m.hf !== undefined && m.id === LINE_MODEL) ?? MODELS.find((m): m is Remote => m.hf !== undefined && m.download > 64e6)!;
   const w = worker("benchmark/sections.js");
   try {
     return lineResult(await ask(w, { step: "line", rates: RATES, seconds: PACED_SECONDS,

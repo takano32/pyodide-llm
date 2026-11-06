@@ -3,8 +3,8 @@
 import { memoryResult, holdMemory, memoryLimit } from "./page-memory.ts";
 import { parameters } from "./dom.ts";
 import type { Result } from "../bench.ts";
-import { type Stage, staged, ask, worker } from "./section.ts";
-import type { ToMemory } from "../runtime/contracts/benchmark.ts";
+import { staged, ask, worker } from "./section.ts";
+import type { Staged, ToMemory } from "../runtime/contracts/benchmark.ts";
 
 // T173: the tab's sessionStorage, where it works (null: the page-memory section does not run)
 export const tabStorage = (() => {
@@ -16,7 +16,7 @@ export const tabStorage = (() => {
     return null;
   }
 })();
-export async function pageMemory(): Promise<Result> {
+export async function pageMemory(): Promise<Result<"memory">> {
   const w = worker("benchmark/memory.js");
   // T173's review: a page hidden (another app, the screen locked) or left (a reload, another page) stops the run in
   // the event itself, and the memory is let go at once: a phone ends a hidden page far sooner, so a tab ended then is
@@ -35,7 +35,7 @@ export async function pageMemory(): Promise<Result> {
   if (document.visibilityState === "hidden") stop();
   try {
     return memoryResult(await holdMemory({ ask: (message: ToMemory) => ask(w, message), storage: tabStorage, hidden,
-      limit: memoryLimit(parameters.get("memoryMB")), stage: (s: Stage) => staged("memory", s) } as Parameters<typeof holdMemory>[0])) as Result;
+      limit: memoryLimit(parameters.get("memoryMB")), stage: (s: Staged) => staged("memory", s) }));
   } finally {
     document.removeEventListener("visibilitychange", onVisibility);
     removeEventListener("pagehide", stop);

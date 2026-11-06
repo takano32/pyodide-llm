@@ -6,7 +6,6 @@ import { tokenWrong, fastestMatVec } from "./gpu.ts";
 import { stepMs, less, layerSplit } from "./layersteps.ts";
 import type { GpuFound } from "./gpusection.ts";
 import type { Baseline, CpuMeasured } from "./cpu.ts";
-import type { Found } from "./layersteps.ts";
 import type { DeviceFound, GpuAbout, LayerFound, LayerRow, LineFound, PromptFound, PromptRow, StorageRun, TokenFound } from "../runtime/contracts/benchmark.ts";
 
 // a layer's and a prompt's rows as the GPU's lines read them: the times of a row that ran (one that did not has none,
@@ -91,9 +90,9 @@ export function gpuSummary(found: GpuFound, baseline: { token?: Baseline["token"
       (none || samplingWrong ? "" : ` (${times(one.msPerToken / most.msPerToken)})`)].filter(Boolean);
   if (layerParts.length) lines.push(`GPU, ${layerParts.join("; ")}`);
   // T202: where the time of the fastest layer the steps' table broke down goes
-  const split = found["layer steps"]?.result as Found | undefined;
+  const split = found["layer steps"]?.result;
   const splitForm = (split?.forms ?? []).filter((form) => stepMs(form) !== undefined && !form.unsteady && !(check?.[form.check] && !check[form.check].ok))
-    .sort((x, y) => x.ms - y.ms)[0];
+    .sort((x, y) => x.ms! - y.ms!)[0];
   if (splitForm && !none) {
     const parts = layerSplit(split!, splitForm), two = (value: number | undefined) => (value === undefined ? "?" : number(value, 2));
     lines.push(`GPU, where the time of a layer ${splitForm.form} goes: ${two(parts.layer)} ms, the matrices alone ${two(parts.alone)}, fusing adds ${two(less(parts.matrices, parts.alone))}, ` +

@@ -2,6 +2,7 @@
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, tableCell, unmeasured } from "./cells.ts";
 import type { Answer, CpuCeilings, CpuFound, CpuRow } from "../runtime/contracts/benchmark.ts";
+import { STATE } from "./sections.ts";
 import type { Result } from "./sections.ts";
 
 // the CPU section's result where it measured (the worker's CpuFound without its none), and what cpuBaseline() answers
@@ -15,7 +16,6 @@ export type Baseline = { why: string; token?: undefined; prompt?: undefined }
 // T157: the GPU section of /benchmark/ against the CPU section's forward pass (forward.ts itself, relaxed SIMD and the
 // software threads, as the model page runs it). Before T157 the CPU of the GPU's token table was one thread of
 // matmul_q8 doubled, which read low: 1.44× on the owner's Android where the CPU section's numbers make about 1.0×.
-const STATES = { none: "found nothing to run on here", wrong: "computed something wrong", error: "failed" };
 
 /** The counts of software threads the CPU section measures: 1, 2, 4 and on, doubling, up to the logical cores, and
  * the cores themselves where they are no power of two (T157's review: the owner's Android has 8, and 2 to 4 threads
@@ -34,7 +34,7 @@ const steadyCeiling = (ceiling: Ceiling | undefined, key: "GBps" | "GMACs"): num
 // what a CPU row reads a token, GB/s (before T163's review a result had no tokenMegabytes: the checkpoint's bytes),
 // and a prompt's G MAC/s (a multiply-add for each weight of the layers and token)
 const tokenReads = (r: CpuMeasured, row: CpuRow) => row.GBps! * (r.tokenMegabytes ?? r.megabytes) / r.megabytes;
-const promptGMACsOf = (r: CpuMeasured, row: CpuRow) => (r.layerWeights && row.promptMsPerToken! > 0 ? r.layerWeights / (row.promptMsPerToken! / 1000) / 1e9 : undefined);
+const promptGMACsOf = (r: Pick<CpuMeasured, "layerWeights">, row: Pick<CpuRow, "promptMsPerToken">) => (r.layerWeights && row.promptMsPerToken! > 0 ? r.layerWeights / (row.promptMsPerToken! / 1000) / 1e9 : undefined);
 
 /**
  * The CPU section's Markdown (the lines), from its result r ({backend, shared, megabytes, tokenMegabytes, layerWeights,
@@ -87,7 +87,7 @@ export function cpuTable(r: CpuMeasured): string[] {
 
 /** The CPU section from its worker's answer (T643.11: from the page's part, src/benchmark/cpu.ts): its table, and
  * what it says went wrong itself (T227: the logits not finite, a ceiling's loop cut short), which makes it WRONG. */
-export function cpuResult(answer: Answer<CpuFound>): Result {
+export function cpuResult(answer: Answer<CpuFound>): Result<"cpu"> {
   if (answer.error) return { status: "error", markdown: answer.error };
   const r = answer.result!;
   if (r.none) return { status: "none", markdown: r.none };
@@ -97,16 +97,11 @@ export function cpuResult(answer: Answer<CpuFound>): Result {
   const said = [...(notFinite ? ["**The logits were not finite numbers: the forward pass computed something wrong.**"] : []),
     ...(cutShort ? ["**A ceiling's loop did not do its work (its checksum or its time): the compiler cut it short, and its number is no ceiling.**"] : [])];
   // (r.none was ruled out above, which TypeScript does not narrow on: a string's truth)
-  const lines = [...cpuTable(r as CpuMeasured), ...said.flatMap((line) => ["", line])];
-  return { status: said.length ? "wrong" : "ok", data: r, markdown: lines.join("\n"), said };
+  const measured = r as CpuMeasured;
+  const lines = [...cpuTable(measured), ...said.flatMap((line) => ["", line])];
+  return { status: said.length ? "wrong" : "ok", data: measured, markdown: lines.join("\n"), said };
 }
 
-/**
- * The CPU the GPU is held against: of the CPU section's rows, the fastest count of software threads for a token and,
- * each on its own, for a prompt's tokens 16 at once. section: the page's result of the CPU section ({status, data}),
- * or undefined where it has not run. Where it gives nothing to hold against, { why } says so, and no estimate stands
- * in for it.
- */
 /** T156: where /benchmark/ keeps its CPU section's fastest reading of the weights (cpuBaseline().token: { GBps,
  * threads }) for the model page, which holds a model on the GPU alone against it (the same estimate as the GPU
  * section's GPU ÷ CPU, T157) */
@@ -117,10 +112,16 @@ export const USAGE_KEY = "gpu:usage";
 export const USAGE_DECAY = 0.8;
 /** T156: the use kept (USAGE_KEY's value, or nothing) after a generation of prompt tokens and written ones */
 export const usedAfter = (kept: { prompt?: number; written?: number } | null | undefined, prompt: number, written: number) => ({ prompt: (kept?.prompt ?? 0) * USAGE_DECAY + prompt, written: (kept?.written ?? 0) * USAGE_DECAY + written });
-export function cpuBaseline(section: Result | undefined): Baseline {
+/**
+ * The CPU the GPU is held against: of the CPU section's rows, the fastest count of software threads for a token and,
+ * each on its own, for a prompt's tokens 16 at once. section: the page's result of the CPU section ({status, data}),
+ * or undefined where it has not run. Where it gives nothing to hold against, { why } says so, and no estimate stands
+ * in for it.
+ */
+export function cpuBaseline(section: Result<"cpu"> | undefined): Baseline {
   if (!section) return { why: "run the CPU section for it" };
-  if (section.status !== "ok") return { why: `the CPU section ${STATES[section.status] ?? section.status}` };
-  const rows: MeasuredRow[] = (section.data?.rows ?? []).filter((row: CpuRow) => Number.isFinite(row.msPerToken) && row.msPerToken! > 0);
+  if (section.status !== "ok") return { why: `the CPU section ${STATE[section.status].said}` };
+  const rows = (section.data?.rows ?? []).filter((row): row is MeasuredRow => Number.isFinite(row.msPerToken) && row.msPerToken! > 0);
   const fastest = (key: "msPerToken" | "promptMsPerToken") => rows.filter((row) => Number.isFinite(row[key]) && row[key] > 0).sort((a, b) => a[key] - b[key])[0];
   const token = fastest("msPerToken"), prompt = fastest("promptMsPerToken");
   if (!token) return { why: "the CPU section measured no token" };
@@ -128,5 +129,14 @@ export function cpuBaseline(section: Result | undefined): Baseline {
   return { token: { threads: token.threads, msPerToken: token.msPerToken, GBps: token.GBps, isolated },
            ...(prompt ? { prompt: { threads: prompt.threads, msPerToken: prompt.promptMsPerToken, isolated } } : {}) };
 }
+/** T156: what the page keeps under CPU_SPEED_KEY of the CPU section's result: its fastest reading of the weights for a
+ * token ({ GBps, threads }) and a prompt's G MAC/s at its fastest (its model's layers' multiply-adds a token, over its
+ * ms); undefined where it measured no token or was not cross-origin isolated (its one thread is no page's). */
+export function cpuSpeed(section: Result<"cpu"> | undefined): { GBps: number; threads: number; promptGMACs: number | undefined } | undefined {
+  const { token, prompt } = cpuBaseline(section);
+  if (!token?.isolated) return undefined;
+  const promptGMACs = prompt && section?.data ? promptGMACsOf(section.data, { promptMsPerToken: prompt.msPerToken }) : undefined;
+  return { GBps: token.GBps, threads: token.threads, promptGMACs };
+}
 
-export { STATES, steadyCeiling, tokenReads, promptGMACsOf };
+export { steadyCeiling, tokenReads, promptGMACsOf };

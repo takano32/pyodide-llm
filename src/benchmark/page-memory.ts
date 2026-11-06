@@ -16,13 +16,11 @@
 // looks the same).
 import { tableCell } from "../bench/cells.ts";
 import type { Result } from "../bench/sections.ts";
-import type { Stage } from "./section.ts";
-import type { MemoryGrown, ToMemory } from "../runtime/contracts/benchmark.ts";
+import type { Answer, MemoryGrown, Staged, ToMemory } from "../runtime/contracts/benchmark.ts";
 
 // (T480.1: the section's data, what the worker answers a step with, and the tab's sessionStorage where there is one)
 export type MemoryData = { stop: "limit" | "refused" | "hidden" | "error" | "none" | "reloaded"; held: number; trying?: number; limit: number;
   maximum?: number | null; why?: string; seconds?: number };
-type Answered = { error: string; result?: undefined } | { error?: undefined; result: MemoryGrown };
 type Storing = Pick<Storage, "getItem" | "setItem" | "removeItem"> | null | undefined;
 
 export const MEMORY_MARK = "benchmark-memory";
@@ -57,8 +55,8 @@ export function forgetMark(storage: Storing) {
  * seconds }; maximum is the bytes the memory was made with room for, null where the browser refused that. */
 export async function holdMemory({ ask, storage, limit = MEMORY_MOST, stage = () => {}, pause = MEMORY_PAUSE_MS,
                                    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now,
-                                   hidden = new Promise(() => {}) }: { ask: (message: ToMemory) => Promise<Answered>; storage: Storing; limit?: number;
-                                   stage?: (stage: Stage) => void; pause?: number; sleep?: (ms: number) => Promise<unknown>; now?: () => number;
+                                   hidden = new Promise(() => {}) }: { ask: (message: ToMemory) => Promise<Answer<MemoryGrown>>; storage: Storing; limit?: number;
+                                   stage?: (stage: Staged) => void; pause?: number; sleep?: (ms: number) => Promise<unknown>; now?: () => number;
                                    hidden?: Promise<unknown> }): Promise<MemoryData> {
   if (!storage) return { stop: "none", held: 0, limit, why: "no sessionStorage in this tab: a tab the browser ended could not say how far it got" };
   const began = now(), of = limit / MEMORY_STEP;
@@ -117,7 +115,7 @@ function ending(d: MemoryData) {
 }
 
 /** The section's result for the page: { status, markdown, data } */
-export function memoryResult(d: MemoryData): Result {
+export function memoryResult(d: MemoryData): Result<"memory"> {
   if (d.stop === "none") return { status: "none", markdown: d.why!, data: d };
   if (d.stop === "error") return { status: "error", markdown: `${d.why} (after holding ${mib(d.held)})`, data: d };
   if (d.stop === "hidden") return { status: "error", data: d, markdown:

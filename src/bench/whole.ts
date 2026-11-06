@@ -10,7 +10,7 @@ import { warnings, warningsBlock } from "./warnings.ts";
 import { shortReport, reportUrl, reportTooLong } from "./report.ts";
 import { SECTIONS, STATE, TITLES } from "./sections.ts";
 import { memorySummary } from "../benchmark/page-memory.ts";
-import type { Name, Result } from "./sections.ts";
+import type { Name, Result, Results, SectionData } from "./sections.ts";
 import type { Environment } from "./rounds.ts";
 import type { BenchRow } from "../runtime/contracts/messages.ts";
 
@@ -22,25 +22,26 @@ export type Whole = { markdown: string; summary: string; href: string; long: boo
 
 // T185: a section's lines of the summary, from the data its tables are made of; a section that did not measure says
 // its state and the first line of why. The GPU's CPU beside it is the CPU section's, as in its tables.
-const SUMMARIES: Partial<Record<Name, (data: any, results: Partial<Record<Name, Result>>) => string[]>> = {
+const SUMMARIES: { [Section in Name]?: (data: SectionData[Section], results: Results) => string[] } = {
   device: deviceSummary, cpu: cpuSummary, storage: storageSummary, line: lineSummary, memory: memorySummary,
   gpu: (data, results) => gpuSummary(data.found, cpuBaseline(results.cpu), { lost: data.lost }),
 };
-function summaryOf(name: Name, result: Result, results: Partial<Record<Name, Result>>): string[] {
-  const lines = result.data && SUMMARIES[name] ? SUMMARIES[name]!(result.data, results) : [];
+function summaryOf<Section extends Name>(name: Section, result: Result<Section>, results: Results): string[] {
+  const summary = SUMMARIES[name];
+  const lines = result.data && summary ? summary(result.data, results) : [];
   if (result.status === "ok" && lines.length) return lines;
   const why = tableCell(result.markdown.split("\n")[0]).slice(0, 200);
-  return [`${TITLES[name]}: ${STATE[result.status]}${lines.length || !why ? "" : `: ${why}`}`, ...lines];
+  return [`${TITLES[name]}: ${STATE[result.status].shown}${lines.length || !why ? "" : `: ${why}`}`, ...lines];
 }
 
 /** One report: the model's table first (as ?bench=1 writes it, which tests/reports.ts reads), then every section.
  * results: the sections' results; measured: the model section's, where it measured; environment: the machine's
  * (environmentOf()); hidden: the line of the seconds the page was hidden (T194: "" where it never was). */
 export function reportOf({ results, measured, environment, hidden }:
-  { results: Partial<Record<Name, Result>>; measured?: Measured; environment: Environment; hidden: string }): Whole {
+  { results: Results; measured?: Measured; environment: Environment; hidden: string }): Whole {
   // the model section's table is the one on top; the section itself only where it did not measure
   const shown = SECTIONS.filter((name) => results[name] && (name !== "model" || results[name]!.status !== "ok"));
-  const sections = shown.map((name) => `#### ${TITLES[name]}${results[name]!.status === "ok" ? "" : ` (${STATE[results[name]!.status]})`}\n\n${results[name]!.markdown}`);
+  const sections = shown.map((name) => `#### ${TITLES[name]}${results[name]!.status === "ok" ? "" : ` (${STATE[results[name]!.status].shown})`}\n\n${results[name]!.markdown}`);
   // T184: the model page's own path right under the rounds' table (a table of its own: parseReport() reads the first)
   // T194: the seconds the page was hidden while it ran, right under the machine (no line when it never was)
   const head = [benchMarkdown(measured?.rows ?? [], environment), ...(hidden ? [hidden] : []), ...(measured?.paths ? [measured.paths] : [])].join("\n\n");

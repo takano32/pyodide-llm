@@ -1,13 +1,12 @@
 // T227: what came out WRONG, failed, unsteady or skipped in a run, listed once at the report's head.
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
-import { STATES } from "./cpu.ts";
+import { cellsOf } from "./cells.ts";
+import { STATE } from "./sections.ts";
 import type { Result } from "./sections.ts";
 
 // a section as warnings() reads it: its title, its state (sections.ts's Result), its Markdown, and what it says went wrong itself
 type Written = { title: string; status?: Result["status"]; markdown?: string; said?: string[] };
 
-// a | that tableCell() escaped stays in its cell (T214: a skipped round's reason is the words of a cell)
-const cells = (line: string): string[] => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));
 
 // T227: the words the page writes where something did not come out right
 const MARKED = /\b(?:WRONG|FAILED|failed|unsteady|skipped)\b/;
@@ -53,11 +52,11 @@ export function warnings(sections: Written[]): string[] {
     lines.forEach((line, i) => {
       if (!line.startsWith("|")) {
         for (const sentence of line.split(/(?<=\.) (?=[A-Z"])/)) if (marked(sentence)) add(sentence.replace(/^- /, ""));
-      } else if (lines[i + 1]?.startsWith("|---")) head = cells(line);
-      else if (marked(line)) add(cells(line).map((cell, j) => cell && `${head[j] ? `${head[j]}: ` : ""}${cell}`).filter(Boolean).join("; "));
+      } else if (lines[i + 1]?.startsWith("|---")) head = cellsOf(line);
+      else if (marked(line)) add(cellsOf(line).map((cell, j) => cell && `${head[j] ? `${head[j]}: ` : ""}${cell}`).filter(Boolean).join("; "));
     });
     // a section the page calls WRONG or failed with none of the above: its state at the least
-    if (out.length === before && (status === "wrong" || status === "error")) add(STATES[status], 0);
+    if (out.length === before && (status === "wrong" || status === "error")) add(STATE[status].said, 0);
   }
   // (a sort keeps the order of equals: the sections' own)
   return [...new Set(out.sort((a, b) => a.rank - b.rank).map(({ text }) => text))];
@@ -71,5 +70,3 @@ export function warningsBlock(warned: string[], kept = warned.length): string {
   const more = rest ? [`- ${kept ? `… and ${rest} more` : `${rest} of them`}, in the whole report below`] : [];
   return ["#### Warnings", "", ...warned.slice(0, kept).map((line) => `- ${line}`), ...more].join("\n");
 }
-
-export { cells };

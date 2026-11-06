@@ -9,14 +9,14 @@ import type { Answer, LineFetched, LineFound, LinePaced, StorageInfo, StorageRun
 export const DOWNLOAD_MBPS = 8.3;
 
 /** Why the storage section does not run here, from its worker's first answer (undefined: it runs). */
-export function storageNone(info: Answer<StorageInfo>): Result | undefined {
+export function storageNone(info: Answer<StorageInfo>): Result<"storage"> | undefined {
   if (info.error) return { status: "error", markdown: info.error };
   if (!info.result!.syncHandle) return { status: "none", markdown: "no private file system that a worker can write in place here" };
   return undefined;
 }
 
 /** The storage section from its worker's answer to the run: the writes and the read back, or what failed. */
-export function storageResult(answer: Answer<StorageRun>): Result {
+export function storageResult(answer: Answer<StorageRun>): Result<"storage"> {
   // T446 (2): a browser whose private file system has the call but refuses it (Windows' Playwright WebKit: "NotSupportedError:
   // Backend does not support this operation" as the file was opened) lacks the feature as one without the call does:
   // no failure. The model page keeps its conversions in the Cache API there (kept.ts)
@@ -37,7 +37,7 @@ export function storageResult(answer: Answer<StorageRun>): Result {
 }
 
 /** The line section from its worker's answer: the two fetches and the paced reads, or what failed. */
-export function lineResult(answer: Answer<LineFound>): Result {
+export function lineResult(answer: Answer<LineFound>): Result<"line"> {
   if (answer.error) return { status: "error", markdown: answer.error };
   const r = answer.result!;
   const fetched = (name: string, f: LineFetched | null) => f?.error ? `| ${name} | ${tableCell(unmeasured(f.error))} | | |`

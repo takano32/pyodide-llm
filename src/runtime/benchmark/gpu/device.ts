@@ -17,7 +17,9 @@ shaders.catch(() => {});
 import type * as Shaders from "../../shaders.ts";
 import type { PromptForm, Tile } from "../../shaders/prompt.ts";
 import type { Features } from "../../shaders/key.ts";
-import type { Alive, GpuAbout, Lost, GpuInfo, GpuModel, LayerRow, Verdict } from "../../contracts/benchmark.ts";
+import type { Alive, GpuAbout, Lost, GpuInfo, LayerRow, Verdict } from "../../contracts/benchmark.ts";
+import { MODELS } from "./models.ts";
+import type { ModelShape } from "./models.ts";
 // What the steps share, as a step reads it: every step awaits load() (the shaders' module, its GROUP and TILE) and
 // gpu() (the device and its adapter) before anything else, and reads them as there from then on. Until then they are
 // undefined, which is what the object is made with (Unset: the same fields, none of them set).
@@ -26,8 +28,8 @@ type Shared = { WGSL: typeof Shaders; GROUP: number; TILE: number; device: GPUDe
 type Unset = { [Field in keyof Shared]: Shared[Field] extends boolean ? boolean : undefined };
 // (an adapter of before GPUAdapterInfo said whether it is a fallback said so itself)
 type Older = GPUAdapter & { isFallbackAdapter?: boolean };
-// a model's shape, as the legacy header has it; a matrix's [rows, n]; its weights where a check gives them
-export type ModelShape = { dim: number; hidden: number; layers: number; heads: number; kvHeads: number };
+// a model's shape (gpu/models.ts's); a matrix's [rows, n]; its weights where a check gives them
+export type { ModelShape };
 export type Shape = [rows: number, n: number];
 export type Weights = { w: Uint8Array<ArrayBuffer>; s: Float32Array<ArrayBuffer> };
 // a dispatch: what run() takes
@@ -80,13 +82,7 @@ async function load(): Promise<void> {
   ({ GROUP: shared.GROUP, TILE: shared.TILE } = shared.WGSL);
 }
 
-// the shapes of the models in the list that the measurement stands for (legacy header: dim, hidden, layers, heads,
-// kv heads, vocab), and the int8 matrices of a layer, [rows, n]
-const MODELS: Record<GpuModel, ModelShape & { vocab: number }> = {
-  "llm-jp-3 150M": { dim: 512, hidden: 2048, layers: 12, heads: 8, kvHeads: 8, vocab: 99584 },
-  "Llama 3.2 1B": { dim: 2048, hidden: 8192, layers: 16, heads: 32, kvHeads: 8, vocab: 128256 },
-  "Llama 3.2 3B": { dim: 3072, hidden: 8192, layers: 28, heads: 24, kvHeads: 8, vocab: 128256 },
-};
+// the int8 matrices of a layer of a model, [rows, n] (the models the measurement stands for: gpu/models.ts's MODELS)
 const layerMatrices = ({ dim, hidden, heads, kvHeads }: ModelShape): Shape[] => {
   const kvDim = (dim / heads) * kvHeads;
   return [[dim, dim], [kvDim, dim], [kvDim, dim], [dim, dim], [hidden, dim], [hidden, dim], [dim, hidden]];

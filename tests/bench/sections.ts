@@ -7,6 +7,7 @@ import { benchMarkdown, cpuBaseline, cpuSummary, cpuTable, deviceSummary, gpuSum
          SECTIONS, STATE, TITLES, deviceResult, cpuResult as cpuOf, DOWNLOAD_MBPS, storageNone, storageResult, lineResult, overheadMarkdown,
          ceilingsMarkdown, promptMarkdown, BRIDGE_ROUNDS, gpuNone, gpuResult, gpuMarkdown, reportOf } from "../../src/bench.ts";
 import fs from "node:fs";
+import { MODELS } from "../../src/models.ts";
 import { rows, pageText } from "./rounds.ts";
 import { layerRight, layerCeilings } from "./gpu.ts";
 import { real } from "./path.ts";
@@ -180,7 +181,20 @@ assert.deepEqual(SECTIONS, ["device", "cpu", "model", "gpu", "storage", "line", 
   assert.deepEqual(sections.map(([name]) => name), [...SECTIONS], "benchmark.astro's sections are SECTIONS, in their order");
   assert.deepEqual(sections.map(([, title]) => title), SECTIONS.map((name) => TITLES[name]), "benchmark.astro's <h2> of each section is its TITLES");
 }
-assert.deepEqual(STATE, { ok: "done", none: "not in this browser", wrong: "WRONG", error: "failed" });
+assert.deepEqual(STATE, { ok: { shown: "done" }, none: { shown: "not in this browser", said: "found nothing to run on here" },
+  wrong: { shown: "WRONG", said: "computed something wrong" }, error: { shown: "failed", said: "failed" } });
+// T643.15: the models the page names by their ids are in the list, of the kind it reads: the model the page opens with
+// (benchmark.astro's BENCH_MODEL, one of the site's) and the line section's model on huggingface.co (storage.ts's
+// LINE_MODEL). One that is gone is no error on the page: it opens another (and the line another large file of the list)
+{
+  const named = (file, constant) => {
+    const found = new RegExp(`const ${constant} = "([^"]+)"`).exec(fs.readFileSync(new URL(`../../src/${file}`, import.meta.url), "utf8"));
+    assert.ok(found, `${file} names its ${constant}`);
+    return MODELS.find((entry) => entry.id === found[1]);
+  };
+  assert.ok(named("pages/benchmark.astro", "BENCH_MODEL")?.checkpoint, "benchmark.astro's BENCH_MODEL is a model of the site in the list");
+  assert.ok(named("benchmark/storage.ts", "LINE_MODEL")?.hf, "src/benchmark/storage.ts's LINE_MODEL is a model on huggingface.co in the list");
+}
 // the page's wiring, which only a browser runs (and no runner makes anything WRONG: the --wrong of tests/bench-check.ts, a
 // step of preview.yml, does): each section hands its worker's answer to its table, the GPU section is written again
 // after the CPU section, and the report is reportOf()'s

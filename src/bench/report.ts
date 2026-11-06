@@ -1,7 +1,7 @@
 // The report: the issue's body and link, how long a link may be, the short report, and reading reports back (T91).
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
-import { number } from "./cells.ts";
-import { cells, warningsBlock } from "./warnings.ts";
+import { number, cellsOf } from "./cells.ts";
+import { warningsBlock } from "./warnings.ts";
 import type { Environment } from "./rounds.ts";
 
 // T91: where a visitor sends the result, and the one table the results make.
@@ -81,7 +81,7 @@ export function parseReport(body: string): Report | undefined {
   const rows: Report["rows"] = [];
   for (const line of lines.slice(head + 2)) {
     if (!line.startsWith("|")) break;
-    const [name, speed, ready, backend] = cells(line);
+    const [name, speed, ready, backend] = cellsOf(line);
     // T214: a skipped round has no speed, and its last column is why
     rows.push(speed === "skipped" ? { name, speed: NaN, ready, backend: "", skip: backend } : { name, speed: Number(speed), ready, backend });
   }

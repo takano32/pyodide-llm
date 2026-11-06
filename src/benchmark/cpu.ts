@@ -6,7 +6,7 @@ import type { Result } from "../bench.ts";
 import { ask, worker } from "./section.ts";
 
 // ---- the sections: each one starts its worker, asks, ends it, and says what it found as Markdown
-export async function device(): Promise<Result> {
+export async function device(): Promise<Result<"device">> {
   const w = worker("benchmark/sections.js");
   try {
     return deviceResult(await ask(w, { step: "device" }));
@@ -15,7 +15,7 @@ export async function device(): Promise<Result> {
   }
 }
 
-export async function cpu(): Promise<Result> {
+export async function cpu(): Promise<Result<"cpu">> {
   const w = worker("benchmark/sections.js");
   try {
     return cpuResult(await ask(w, { step: "cpu", threads: threadCounts(navigator.hardwareConcurrency) }));
