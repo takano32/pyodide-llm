@@ -142,7 +142,11 @@ console.log(`failure-check: failureOf() reads ${CASES.length} things that are th
   for (const [name, text] of texts) {
     for (const { index } of text.matchAll(/new Failure\(/g)) {
       const [kind, ...rest] = argumentsAt(text, index + "new Failure(".length);
-      if (!/"refused"/.test(kind)) continue;
+      // a kind that is no string of its own could be "refused" unseen: only failureOf()'s (in UNSAID) is one
+      if (!/"refused"/.test(kind)) {
+        assert.ok(/^\s*"[a-z-]+"\s*$/.test(kind), `${name}: new Failure(${kind.trim()}, …) has a kind that is not a string: this check cannot tell whether it is "refused"`);
+        continue;
+      }
       const exempt = UNSAID.find(([file, written]) => file === name && written === kind.trim());
       if (exempt) {
         unsaid.add(exempt);
