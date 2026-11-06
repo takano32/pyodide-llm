@@ -115,9 +115,9 @@ export type First = {
 //   widest()  the widest vector its layers quantize besides the stream, the attention's output and the FFN's
 //   matrices() its matrices of a token's step by the pipeline each takes (tokens.ts's tokenShape(), T579): qkv, q, k
 //             and v; mix, a matrix of the normed stream written as it is; write, of a vector of its own; join, the matrix
-//             whose output joins the stream (Stepping's joining()); of its plan's matrices alone, as a model on the
-//             GPU alone is opened. (weights.ts's tokensLayout() holds whole, one piece, every matrix of the plan but q,
-//             k, v, gate and up, whichever role it has: T642.15)
+//             whose output joins the stream (Stepping's joining()). It is given the plan's matrices alone, as a model on
+//             the GPU alone is opened with no more. (weights.ts's tokensLayout() holds whole, one piece, every matrix
+//             of the plan but q, k, v, gate and up, whichever role it has: T642.15)
 //   block()   what it makes once of a prompt's block (its shaders, its buffers: nothing of m.block yet), which says
 //             the state its layers keep (states: as the CPU stages them; none where they keep none), binds its layer l
 //             once the forms are chosen (layer(): its step), makes its own of a token (tokens()) and checks its first
