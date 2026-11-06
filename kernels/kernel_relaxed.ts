@@ -6,22 +6,7 @@ import { sixFirst, sixSecond, sixTops } from "./six";
 import { codes, fourSums } from "./ternary";
 import { bitCodes } from "./binary";
 import { half, halves4 } from "./kernel/halves";
-
-const GS: i32 = 32;
-
-// T167: the four int32 lanes of each of four groups' dot products added up into one lane per group: [sum d0, sum d1,
-// sum d2, sum d3] (a transpose by shuffles and two adds, as sums4 in kernel/attention.ts for float32; integers, so the order of
-// the adds does not matter). A group's sum is at most 32 × 128 × 127 = 520192, within float32's exact integers.
-// @ts-ignore: decorator
-@inline function groupSums(d0: v128, d1: v128, d2: v128, d3: v128): v128 {
-  const s01 = i32x4.add(v128.shuffle<i32>(d0, d1, 0, 4, 1, 5), v128.shuffle<i32>(d0, d1, 2, 6, 3, 7));  // d0 l0+l2, d1 l0+l2, d0 l1+l3, d1 l1+l3
-  const s23 = i32x4.add(v128.shuffle<i32>(d2, d3, 0, 4, 1, 5), v128.shuffle<i32>(d2, d3, 2, 6, 3, 7));
-  return i32x4.add(v128.shuffle<i32>(s01, s23, 0, 1, 4, 5), v128.shuffle<i32>(s01, s23, 2, 3, 6, 7));
-}
-// @ts-ignore: decorator
-@inline function laneSum(d: v128): i32 {
-  return i32x4.extract_lane(d, 0) + i32x4.extract_lane(d, 1) + i32x4.extract_lane(d, 2) + i32x4.extract_lane(d, 3);
-}
+import { GS, hsum, laneSum, groupSums } from "./kernel/math";
 
 // activations from quantize_x(bias = 64). wc = -64 * sum(group weights), an int32 a group (int8_sums, six_sums),
 // removes that bias again: dot(w, q - 64) = dot(w, q) - 64 * sum(w). T197: it is added to the group's integer sum
@@ -57,7 +42,7 @@ export function matmul_q8r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
       const sums = i32x4.add(groupSums(d0, d1, d2, d3), v128.load(crow + (<usize>g << 2)));
       facc = f32x4.add(facc, f32x4.mul(f32x4.convert_i32x4_s(sums), scales));
     }
-    let sum: f32 = f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3);
+    let sum = hsum(facc);
     for (; g < ng; g++) {
       const o = <usize>(g * GS);
       let acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(row + o), v128.load(xq + o), i32x4.splat(0));
@@ -211,7 +196,7 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
       const sums = i32x4.add(groupSums(d0, d1, d2, d3), v128.load(crow + (<usize>g << 2)));
       facc = f32x4.add(facc, f32x4.mul(f32x4.convert_i32x4_s(sums), scales));
     }
-    let sum: f32 = f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3);
+    let sum = hsum(facc);
     for (; g < ng; g++) {
       const whole = laneSum(dot6(row + <usize>g * 24, xq + <usize>(g * GS))) + load<i32>(crow + (<usize>g << 2));
       sum += <f32>whole * (load<f32>(srow + (<usize>g << 2)) * load<f32>(xs + (<usize>g << 2)));
@@ -262,7 +247,7 @@ export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
     for (; g < groups; g++) {
       facc = group128(facc, row + (<usize>g << 5), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
     }
-    store<f32>(xout + (<usize>i << 2), f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3));
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
   }
 }
 
@@ -284,10 +269,6 @@ export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
 @inline function scaled(lo: v128, hi: v128, xs: usize, sums: usize, at: usize, d: v128): v128 {
   const whole = i32x4.add(fourSums(lo, hi), v128.load(xs + sums + at));
   return f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d);
-}
-// @ts-ignore: decorator
-@inline function sumOf(facc: v128): f32 {
-  return f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3);
 }
 export function matmul_t2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
   const groups = n >> 7, mask = i8x16.splat(<i8>three), count4 = count & ~3;
@@ -315,10 +296,10 @@ export function matmul_t2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
         f3 = f32x4.add(f3, scaled(a3, planes(x3 + o + 64, c0, c1, c2, c3), s3, sums, at, d));
       }
       const out = xout + <usize>t * outStride + (<usize>i << 2);
-      store<f32>(out, sumOf(f0));
-      store<f32>(out + outStride, sumOf(f1));
-      store<f32>(out + 2 * outStride, sumOf(f2));
-      store<f32>(out + 3 * outStride, sumOf(f3));
+      store<f32>(out, hsum(f0));
+      store<f32>(out + outStride, hsum(f1));
+      store<f32>(out + 2 * outStride, hsum(f2));
+      store<f32>(out + 3 * outStride, hsum(f3));
     }
     for (; t < count; t++) matmul_t2r(xout + <usize>t * outStride, xq + <usize>t * f, xs + <usize>t * f, wq, ws, n, i, i + 1, three);
   }
@@ -360,7 +341,7 @@ export function matmul_b1r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
     for (; g < groups; g++) {
       facc = bits128(facc, row + (<usize>g << 4), xq + (<usize>g << 7), sums, xs, <usize>g << 4, f32x4.splat(half(srow + (<usize>g << 1))), mask);
     }
-    store<f32>(xout + (<usize>i << 2), sumOf(facc));
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
   }
 }
 
@@ -391,10 +372,10 @@ export function matmul_b1r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws
         f3 = f32x4.add(f3, scaled(a3, planes(x3 + o + 64, c0, c1, c2, c3), s3, sums, at, d));
       }
       const out = xout + <usize>t * outStride + (<usize>i << 2);
-      store<f32>(out, sumOf(f0));
-      store<f32>(out + outStride, sumOf(f1));
-      store<f32>(out + 2 * outStride, sumOf(f2));
-      store<f32>(out + 3 * outStride, sumOf(f3));
+      store<f32>(out, hsum(f0));
+      store<f32>(out + outStride, hsum(f1));
+      store<f32>(out + 2 * outStride, hsum(f2));
+      store<f32>(out + 3 * outStride, hsum(f3));
     }
     for (; t < count; t++) matmul_b1r(xout + <usize>t * outStride, xq + <usize>t * f, xs + <usize>t * f, wq, ws, n, i, i + 1, two);
   }

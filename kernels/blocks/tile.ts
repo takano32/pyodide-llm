@@ -2,7 +2,8 @@
 // matmul_sbr_tile (T363.1's "rb tile": on every CPU) and matmul_sbw_tile ("sw tile": where the engine's relaxed dot
 // product multiplies signed bytes by signed bytes, which signed_dots asks). Each number is matmul_sbr's to the bit.
 // blocks/types.ts has what a type is and the arithmetic.
-import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, vectorAt, groupSums, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
+import { V_BITS, V_FIRST, V_THREE, V_FIFTEEN, K2, K4, XXS2, XS2, S2, XXS3, S3, S1, M1, XS4, Relaxed, Q2_K, Q4_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ3_S, IQ2_S, IQ4_XS, IQ1_M, bytesOf, sizeOf, bySixteen, hasSigns, hasMinimums, vectorAt, four, signedBy, dotAdd, magnitudes, minuses, weights, scaleOf, minimumOf, blockScale, blockMinimum } from "./types";
+import { groupSums } from "../kernel/math";
 import { matmul_sbr } from "./token";
 
 // ---- a prompt's tokens (T108), four at a time against one reading of a row: token t's activations and their scales

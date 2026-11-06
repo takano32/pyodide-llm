@@ -21,6 +21,11 @@ const HALF_SCALE: f32 = 5.192296858534828e33;  // 2^112 (0x77800000)
 @inline function half(p: usize): f32 {
   return reinterpret<f32>((<i32>load<i16>(p) << 13) & HALF_BITS) * HALF_SCALE;
 }
+// the same of a half's 16 bits, in the low bits of an i32 (the blocks' IQ1_M puts its d together from four words)
+// @ts-ignore: decorator
+@inline function halfOf(bits: i32): f32 {
+  return reinterpret<f32>(((bits << 16 >> 16) << 13) & HALF_BITS) * HALF_SCALE;
+}
 
 // T110: float32 to float16, rounded to the nearest (ties to even), as NumPy's astype(float16) does: the keys and
 // values of a token, into the cache. Too large a number becomes infinity (a key never is one). T244: and how many of
@@ -86,4 +91,4 @@ export function finite_f16(x: usize, n: i32): i32 {
   return <i32>(!v128.any_true(found) && rest == 0);
 }
 
-export { halves4, half };
+export { halves4, half, halfOf };

@@ -10,7 +10,9 @@ copied and there is no JavaScript glue. When they cannot be loaded, NumPy does t
 
 `kernel.ts` is a window (T356): the kernels are in `kernel/`, by what they are, and `kernel.ts` names every one of
 them in the order of the module's exports. `kernel_relaxed.ts` is one file. `six.ts`, `ternary.ts` and `binary.ts` are what both
-import (the widening of an int6 group, of a ternary one and, T634, of a binary one). `blocks.ts` and `blocks_relaxed.ts` are the windows of
+import (the widening of an int6 group, of a ternary one and, T634, of a binary one). `kernel_relaxed.ts` and `blocks/` take
+the small things of `kernel/math.ts` and `kernel/halves.ts` too (T644.5: one copy of each, compiled into every module
+that imports it, all `@inline`). `blocks.ts` and `blocks_relaxed.ts` are the windows of
 two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 
 | file | what is in it |
@@ -18,11 +20,11 @@ two modules of their own, over `blocks/` (T363.4: "llama.cpp's blocks" below).
 | `kernel/matmul.ts` | the matrix products without relaxed SIMD (`matmul_f32`, `matmul_q8`, `matmul_q6`, `matmul_t2`, `matmul_b1`) and what they take beside the weights: `int8_sums` and `six_sums` (the corrections of the relaxed products), `interleave` (the activations as the ternary products read them), `add_columns` (the classifier's outlier columns); `affine_q8` (T648.3: Firefox Translations' int8 affine as fxtranslate multiplies it, the activations quantized with the matrix's fixed alpha and summed exactly in int32; Python's `engine/translation.py` calls it) |
 | `kernel/quantize.ts` | numbers from one form to another: `widen_bf16`, `widen_q8_0`, `widen_pq2_0`, `widen_ptq1_0` (a checkpoint's stored forms to float32), `quantize_x` (the converter's int8, and the activations of every int8 product), `quantize6_x`, `ternary_x`, `binary_x` |
 | `kernel/attention.ts` | `rope`, `attention`, `attention_f16` |
-| `kernel/halves.ts` | float16: `to_f16`, `from_f16`, `finite_f16`, and the widening `attention_f16` reads the cache with |
+| `kernel/halves.ts` | float16: `to_f16`, `from_f16`, `finite_f16`, and the widening `attention_f16` reads the cache with (`halves4`, `half`, and `halfOf` of a half's bits, which the blocks read their scales with) |
 | `kernel/activations.ts` | one vector between the matrix products: `rmsnorm`, `layernorm`, `gelu`, `swiglu`, `geglu` (a Gemma's gate), `add_inplace`, `rotate` and `unrotate` (the rotated basis) |
 | `kernel/stateful.ts` | the layers with a state: `gate`, `convolve`, `delta_rule` (Qwen3.5), `short_conv` (LFM2) |
 | `kernel/sample.ts` | `argmax`, `penalize`, `sample` |
-| `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
+| `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum (`hsum`, and `laneSum` of int32s), four groups' integer sums at once (`groupSums`), `fexp` and `vexp`, the largest of floats |
 
 A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.ts` fails when the
 window and the files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). The Makefile's rule

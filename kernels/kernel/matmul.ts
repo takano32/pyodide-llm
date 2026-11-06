@@ -8,7 +8,7 @@ import { sixFirst, sixSecond, sixTops } from "../six";
 import { codes, fourSums } from "../ternary";
 import { bitCodes } from "../binary";
 import { half, halves4 } from "./halves";
-import { GS, hsum } from "./math";
+import { GS, hsum, laneSum } from "./math";
 
 // W (d,n) @ x (n,) -> xout, rows [r0, r1)
 export function matmul_f32(xout: usize, x: usize, w: usize, n: i32, r0: i32, r1: i32): void {
@@ -41,7 +41,7 @@ export function six_sums(out: usize, w: usize, groups: i32): void {
     const p = w + <usize>g * 24, low = v128.load(p), t = sixTops(p);
     const pairs = i16x8.add(i16x8.extadd_pairwise_i8x16_s(sixFirst(low, t)), i16x8.extadd_pairwise_i8x16_s(sixSecond(low, t)));
     const quads = i32x4.extadd_pairwise_i16x8_s(pairs);
-    const sum = i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
+    const sum = laneSum(quads);
     store<i32>(out + (<usize>g << 2), -64 * sum);
   }
 }
@@ -53,7 +53,7 @@ export function int8_sums(out: usize, w: usize, groups: i32): void {
     const p = w + (<usize>g << 5);
     const pairs = i16x8.add(i16x8.extadd_pairwise_i8x16_s(v128.load(p)), i16x8.extadd_pairwise_i8x16_s(v128.load(p + 16)));
     const quads = i32x4.extadd_pairwise_i16x8_s(pairs);
-    const sum = i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
+    const sum = laneSum(quads);
     store<i32>(out + (<usize>g << 2), -64 * sum);
   }
 }
@@ -112,7 +112,7 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 // @ts-ignore: decorator
 @inline function sumOf32(a: v128, b: v128): i32 {
   const quads = i32x4.extadd_pairwise_i16x8_s(i16x8.add(i16x8.extadd_pairwise_i8x16_s(a), i16x8.extadd_pairwise_i8x16_s(b)));
-  return i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
+  return laneSum(quads);
 }
 // Plane r of a block of 64: byte r of every dword of the four 16-byte vectors (activations 4 c + r for c = 0..15), a byte of
 // every dword shifted down and masked to 0..255, then narrowed from 32 bits to 16 and to 8 (the values pass the narrowing
@@ -323,7 +323,7 @@ export function affine_q8(out: usize, x: usize, xq: usize, m: i32, k: i32, w: us
         acc = i32x4.add(acc, i32x4.extadd_pairwise_i16x8_s(i16x8.add(i16x8.extmul_low_i8x16_s(r, s), i16x8.extmul_high_i8x16_s(r, s))));
         c += 16;
       }
-      let sum = i32x4.extract_lane(acc, 0) + i32x4.extract_lane(acc, 1) + i32x4.extract_lane(acc, 2) + i32x4.extract_lane(acc, 3) + shift;
+      let sum = laneSum(acc) + shift;
       for (; c < k; c++) sum += <i32>load<i8>(row + <usize>c) * <i32>load<i8>(xr + <usize>c);
       store<f32>(out + ((<usize>i * <usize>n + <usize>j) << 2), unquant * <f32>sum + b);
     }
