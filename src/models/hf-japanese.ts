@@ -547,8 +547,9 @@ export const HF_JAPANESE: Entry[] = [
     conversion: {}, options: QWEN3_OWN_BOS, template: CHATML,
     generation: { steps: 0, temperature: 0.8, topp: 0.95, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T649.3: PFN's PLaMo 3 Translate (PFN and NICT's PLaMo 3 trained to translate), three sizes, each both ways
-  ...plamo3Translate("0.8B", "cc8e88169807d5a272e8ff06db12eb0129b67f81", 1780709128, "1.0"),
-  ...plamo3Translate("2B", "355637cc04db67195ba87a97da85eaf1d52a22e8", 5757219984, "3.2"),
-  ...plamo3Translate("8B", "681bd55cf01f5412aab8881e6a4a276c948fabc1", 17063540224, "9.6"),
+  // T649.3: PFN's PLaMo 3 Translate (PFN and NICT's PLaMo 3 trained to translate), three sizes, each both ways (T649.4:
+  // the original's revision, then its Q4_K_M GGUF's)
+  ...plamo3Translate("0.8B", "cc8e88169807d5a272e8ff06db12eb0129b67f81", "dbeb0856cb0b004b484f190bb71dd65876297013", 573123200, 710892588),
+  ...plamo3Translate("2B", "355637cc04db67195ba87a97da85eaf1d52a22e8", "232fbd7916519edecddfdae0beae7e76fe70453f", 1807199392, 2270399532),
+  ...plamo3Translate("8B", "681bd55cf01f5412aab8881e6a4a276c948fabc1", "2234f168757f570714b333049c9d018161ec5277", 5280442080, 6634161196),
 ];

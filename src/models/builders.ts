@@ -230,16 +230,24 @@ const bonsai = (repo: string, name: string, quantization: string, dtype: Dtype, 
 export const hf = (repo: string, revision: string, tokenizer = "tokenizer.json"): Remote["hf"] => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
 /** T649.3: PFN's PLaMo 3 Translate in one of its sizes, twice: English into Japanese and Japanese into English (the
  * owner's T649 (1): its maker PFN in front and PLaMo in the name, as the PLaMo Community License asks of a model built
- * with it, and "Built with PLaMo" in the note and on the line of its license in About). The original's bfloat16
- * safetensors converted to int8 in the page (its GGUFs are 4 bits and below: T649.4) and its own tokenizer.jsonl
- * (T649.1). The format is the request of its chat template, the BOS (1) in front (formats.ts's plamoTranslate); greedy,
- * as every example of its card translates (do_sample=False, temperature 0). The two share their weights (shares). int8:
- * the converted checkpoint's bytes in GB, as the note says them */
-export function plamo3Translate(size: string, revision: string, download: number, int8: string): Entry[] {
-  const repo = `pfnet/plamo-3-translate-${size.toLowerCase()}`, id = `hf-plamo-3-translate-${size.toLowerCase()}`;
-  const note = `日本語, English, translation only, fetches ${(download / 1e9).toFixed(1)} GB → int8 ${int8} GB, Built with PLaMo`;
-  const common: Omit<Common, "prompt" | "placeholder"> = { group: "hf", hf: hf(repo, revision, "tokenizer.jsonl"), download, conversion: {}, options: plamo,
-    shares: [`${id}-en-ja`, `${id}-ja-en`] };
+ * with it, and "Built with PLaMo" in the note and on the line of its license in About). T649.4 (the owner's T649 (6)):
+ * the weights from PFN's own Q4_K_M GGUF, llama.cpp's blocks kept as they are (conversion.blocks, as Underdog Saluki
+ * 27B's: the embedding, wo, w1 and w3, about 58% of the weights) and the rest widened to int8 (wq, wk, wv, w2 and the
+ * classifier, Q6_K or of a stack with a layer of it); a third of the int8's fetch, about 0.7 of its memory, 0.8 to
+ * 0.87 times its speed of writing. The GGUF's first revisions are not served (their LFS copies answer 403): these are
+ * the ones of 2026-11-06, which changed nothing but the chat template. The vocabulary (its own tokenizer.jsonl, T649.1),
+ * config.json and chat template the original's (hf.vocabulary); rebuilt: tests/gguf_check.py tensors holds a Q8_0 to
+ * its original within 1e-3, which 4 bits are not (Q4_K 0.07 to 0.08 of it, Q6_K 0.02: TASKS.md's T649.4). The format
+ * is the request of its chat template, the BOS (1) in front (formats.ts's plamoTranslate); greedy, as every example of
+ * its card translates (do_sample=False, temperature 0). The two share their weights (shares). download: the GGUF's
+ * bytes; loaded: the checkpoint's (tests/quant_sizes.py) */
+export function plamo3Translate(size: string, original: string, gguf: string, download: number, loaded: number): Entry[] {
+  const lower = size.toLowerCase(), repo = `pfnet/plamo-3-translate-${lower}`, id = `hf-plamo-3-translate-${lower}`;
+  const said = (bytes: number) => bytes < 1e9 ? `${Math.round(bytes / 1e6)} MB` : `${(bytes / 1e9).toFixed(1)} GB`;
+  const note = `日本語, English, translation only, 4-bit weights, fetches ${said(download)} (GGUF), kept mostly as it is: ${said(loaded)}, Built with PLaMo`;
+  const common: Omit<Common, "prompt" | "placeholder"> = { group: "hf",
+    ...ggufOf(`${repo}-GGUF`, gguf, `plamo-3-translate-${lower}-Q4_K_M.gguf`, repo, original, "tokenizer.jsonl"), download,
+    conversion: { dtype: "int8", blocks: true }, loaded, rebuilt: true, options: plamo, shares: [`${id}-en-ja`, `${id}-ja-en`] };
   return [
     { ...common, id: `${id}-en-ja`, name: `PFN PLaMo 3 Translate ${size} English → Japanese`, note, generation: greedy,
       template: plamoTranslate("en", "ja"), prompt: "The weather is nice today. Let's go for a walk.",

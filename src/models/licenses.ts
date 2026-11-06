@@ -42,6 +42,8 @@ const MPL = "Mozilla Public License 2.0";
 const PLAMO = "PLaMo Community License";
 export const LICENSES: Record<string, string> = {
   "pfnet/plamo-3-translate-0.8b": PLAMO, "pfnet/plamo-3-translate-2b": PLAMO, "pfnet/plamo-3-translate-8b": PLAMO,
+  // (T649.4: and PFN's GGUFs of them, under the same license and with the same LICENSE/en, to the byte)
+  "pfnet/plamo-3-translate-0.8b-GGUF": PLAMO, "pfnet/plamo-3-translate-2b-GGUF": PLAMO, "pfnet/plamo-3-translate-8b-GGUF": PLAMO,
   "mozilla/translations": MPL,
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -288,12 +290,17 @@ const GEMMA_NOTICE = "Gemma is provided under and subject to the Gemma Terms of 
 // the note of each of its entries)
 const PLAMO_NOTICE = "Built with PLaMo";
 export const NOTICES: Partial<Record<string, string>> = { "google/gemma-3-270m-it": GEMMA_NOTICE, "google/gemma-3-1b-it": GEMMA_NOTICE,
-  "pfnet/plamo-3-translate-0.8b": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b": PLAMO_NOTICE };
+  "pfnet/plamo-3-translate-0.8b": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b": PLAMO_NOTICE,
+  "pfnet/plamo-3-translate-0.8b-GGUF": PLAMO_NOTICE, "pfnet/plamo-3-translate-2b-GGUF": PLAMO_NOTICE, "pfnet/plamo-3-translate-8b-GGUF": PLAMO_NOTICE };
 // T649.3: where About's link of a license goes instead of the repository, for a license that asks for a copy of itself
 // to be given with the model (the PLaMo Community License's Article 4 (1)(i)): its English text in the repository, at
-// the revision the list pins (tests/models-check.ts holds them to the entries)
+// the revision the list pins (tests/models-check.ts holds them to the entries). T649.4: the line of the original (the
+// vocabulary's) and that of the GGUF (the weights') each link their own, the same text
 export const LICENSE_TEXTS: Partial<Record<string, string>> = {
   "pfnet/plamo-3-translate-0.8b": "https://huggingface.co/pfnet/plamo-3-translate-0.8b/blob/cc8e88169807d5a272e8ff06db12eb0129b67f81/LICENSE/en",
   "pfnet/plamo-3-translate-2b": "https://huggingface.co/pfnet/plamo-3-translate-2b/blob/355637cc04db67195ba87a97da85eaf1d52a22e8/LICENSE/en",
   "pfnet/plamo-3-translate-8b": "https://huggingface.co/pfnet/plamo-3-translate-8b/blob/681bd55cf01f5412aab8881e6a4a276c948fabc1/LICENSE/en",
+  "pfnet/plamo-3-translate-0.8b-GGUF": "https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/blob/dbeb0856cb0b004b484f190bb71dd65876297013/LICENSE/en",
+  "pfnet/plamo-3-translate-2b-GGUF": "https://huggingface.co/pfnet/plamo-3-translate-2b-GGUF/blob/232fbd7916519edecddfdae0beae7e76fe70453f/LICENSE/en",
+  "pfnet/plamo-3-translate-8b-GGUF": "https://huggingface.co/pfnet/plamo-3-translate-8b-GGUF/blob/2234f168757f570714b333049c9d018161ec5277/LICENSE/en",
 };

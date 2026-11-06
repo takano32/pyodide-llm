@@ -61,14 +61,17 @@ for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES na
 // "Built with PLaMo" in their note and on their line of About (its Article 4 (1)(ii); the owner's T649 (1)), with
 // PLaMo in their names (4 (1)(iii))
 for (const [repo, link] of Object.entries(LICENSE_TEXTS)) {
-  const pinned = MODELS.filter((entry) => entry.hf?.repo === repo);
-  assert.ok(pinned.length && pinned.every((entry) => link!.includes(`/blob/${entry.hf!.revision}/`)), `LICENSE_TEXTS: ${repo}'s text is not at its entries' revision`);
+  // (T649.4: a repository the weights come from, or the one of their vocabulary)
+  const pinned = MODELS.flatMap((entry) => [entry.hf, entry.hf?.vocabulary]).filter((from) => from?.repo === repo);
+  assert.ok(pinned.length && pinned.every((from) => link!.includes(`/blob/${from!.revision}/`)), `LICENSE_TEXTS: ${repo}'s text is not at its entries' revision`);
 }
 for (const entry of MODELS.filter((entry) => LICENSES[sourceOf(entry)!] === "PLaMo Community License")) {
   assert.match(entry.note, /, Built with PLaMo( ·|$)/, entry.id);
   assert.match(entry.name, /PLaMo/, entry.id);
   assert.equal(NOTICES[sourceOf(entry)!], "Built with PLaMo", entry.id);
   assert.ok(LICENSE_TEXTS[sourceOf(entry)!], entry.id);
+  // (T649.4: and the line of the original its vocabulary comes from)
+  if (entry.original) assert.ok(NOTICES[entry.original] === "Built with PLaMo" && LICENSE_TEXTS[entry.original], entry.id);
 }
 const listed = sources();
 assert.equal(listed.length, used.size, "one line per source");
@@ -127,7 +130,7 @@ assert.match(memoryWarning(largest, 4), /needs about 7,500 MB of memory, and thi
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
 assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
-  ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-llm-jp-4.1-8b-thinking", "hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"],
+  ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"],
   "rebuilt is for a GGUF no check can hold to its original");
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
@@ -178,11 +181,11 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
     assert.equal(memoryWarning(entry, undefined), "");
   }
   assert.ok(thinks.template.endsWith("<think>\n") && answers.template === `${thinks.template}\n</think>\n\n`, "a Qwen3.5's two formats, no system turn");
-  assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-llm-jp-4.1-8b-thinking", thinks.id, answers.id, "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"], "the entries whose blocks are kept");
+  assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", thinks.id, answers.id, "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"], "the entries whose blocks are kept");
   // loaded: read before the note, of an entry that says it, and nothing of any other entry changed by it: each still
   // says its size by its file or by its note's words
   // (T333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
-  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", thinks.id, answers.id].sort());
+  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", thinks.id, answers.id].sort());
   for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary|1-bit) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);  // (T634.2: 1-bit, a binary one's)
 }
 // T333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the
