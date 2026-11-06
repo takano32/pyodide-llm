@@ -18,8 +18,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "python"))
 from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_form, checkpoint_header, checkpoint_size,  # noqa: E402
-                            convert_weights, normalize, sentencepiece_charsmap, sentencepiece_pieces, tokenizer_bin,
-                            tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces, unturned_layers)
+                            convert_weights, family_of, normalize, sentencepiece_charsmap, sentencepiece_pieces, tokenizer_bin,
+                            tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces)
 from convert.conduct import TOKENIZERS  # noqa: E402 (a part, read as the parts read one another: the window does not hand it out)
 
 
@@ -110,7 +110,8 @@ def convert_tokenizer(directory, out_path, vocab_size):
 def options_note(directory):
     """T255: the file of a SmolLM3 is a Llama's, and only the options (src/models.ts) say which layers RoPE leaves alone: a
     model listed without them runs as a Llama, writes worse text and throws nothing. The line to say it, or None."""
-    left = unturned_layers(normalize(json.loads((directory / "config.json").read_text())))
+    config = normalize(json.loads((directory / "config.json").read_text()))
+    left = family_of(config).options(config).get("unturned", [])
     return f"options: unturned {left} (to be given to the engine with the file: the file does not say it)" if left else None
 
 

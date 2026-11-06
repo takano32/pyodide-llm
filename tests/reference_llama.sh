@@ -7,7 +7,7 @@
 #   bash tests/reference_llama.sh --run tests/chat_nll.py <arguments>
 #   (the review of T253: another tool that needs torch and this transformers, with what they need, as python gets it)
 #
-# transformers at the commit the Granite's attention was read from (llama2_convert.py, above query_scale()); numpy,
+# transformers at the commit the Granite's attention was read from (convert/families/llama.py, the Granite's scale()); numpy,
 # tokenizers and pytest (the unit tests' helpers) are the workflow's own. The downloads and the float32 checkpoint go
 # to /mnt where the runner has it (Granite 4.2 3B: 7.3 GB of safetensors and 14.6 GB of float32), else to the runner's
 # temporary directory.

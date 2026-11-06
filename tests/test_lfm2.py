@@ -15,8 +15,8 @@ from test_convert import converted, reader, safetensors_file, streamed
 from test_gguf import fed, metadata_value, q8_0_blocks, unigram, with_original
 
 import llama2_convert
-from llama2_convert import (Safetensors, architecture, check_config, checkpoint_form, checkpoint_size, convolution_layers,
-                            head_size, layout, normalize)
+from llama2_convert import (Safetensors, check_config, checkpoint_form, checkpoint_size, family_of, head_size, layout,
+                            normalize)
 from llama2_numpy import FORM, Llama, checkpoint_dtype, convolution_form, form_of, slots_of
 from engine.layout import SHORT_CONVOLUTION
 
@@ -325,8 +325,8 @@ def test_the_published_configs_read_as_transformers_reads_them(model):
                   max_position_embeddings=128000, bos_token_id=1, eos_token_id=7)
     config = normalize({**common, **said})
     check_config(config)
-    assert architecture(config) == "lfm2" and config["intermediate_size"] == hidden
-    assert convolution_layers(config) == {"layers": layers, "taps": 3}
+    assert family_of(config).arch == "lfm2" and config["intermediate_size"] == hidden
+    assert family_of(config).form["convolution"](config) == {"layers": layers, "taps": 3}
     assert config["rope_theta"] == said.get("rope_parameters", said).get("rope_theta") and "rope_scaling" not in config
     assert config["rms_norm_eps"] == 1e-5 and config["tie_word_embeddings"] is True
     assert head_size(config) == 64

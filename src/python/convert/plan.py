@@ -74,7 +74,7 @@ TRANSFORMS = {
     # (T649.4: a run of whole rows, the values as they are: a PLaMo 3's q, k and v of its qkv_proj, or the gate and the
     # up of its gate_up_proj, stay in a GGUF's blocks)
     "rows": Transform(rows_of, lambda shape, step: (step[3], *shape[1:]), moves_rows=True),
-    # T253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
+    # T253: a Granite's q by its family's scale(), in float32 whatever the tensor was stored as
     "scale": Transform(lambda values, step, head_size: np.asarray(values, dtype=np.float32) * np.float32(step[1]),
                        same_shape, piecewise=True),
     # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
@@ -173,7 +173,7 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
     Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table,
     and CODES for the codebooks of llama.cpp's blocks (T363: made(), below, has the values of both).
     And the shapes of the rows. The sources are the layout's family's, by the row's name (convert/families/). scale:
-    what q is multiplied by (query_scale(), T253), for a layout without biases and without norms of its heads."""
+    what q is multiplied by (the family's scale(), T253), for a layout without biases and without norms of its heads."""
     form = form_of(form)
     arch, d = form["arch"], Dims(header, form)
     rows = d.rows()

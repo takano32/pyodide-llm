@@ -214,8 +214,8 @@ export const HF_FAMILIES: Entry[] = [
     { options: qwen35, conversion: { dtype: "int8", blocks: true }, loaded: 7956712492, rebuilt: true },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, SALUKI_SAMPLING),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
-  // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
-  // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a
+  // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (the Granite's
+  // scale() in convert/families/llama.py). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a
   // 32-bit memory in six bits (Safari); the 8B does not
   ...thinkingAndNot("hf-granite-4.2-3b", "IBM Granite 4.2 3B",
     ggufOf("ibm-granite/granite-4.2-3b-GGUF", "c40945d71cd90f249a56985e8155551a9188dc30", "granite-4.2-3b-Q8_0.gguf",

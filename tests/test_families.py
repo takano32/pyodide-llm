@@ -17,7 +17,7 @@ import llama2_numpy
 from convert import families
 from convert.families.llama import GRANITE, LLAMA, MISTRAL, QWEN2, QWEN3, SMOLLM3, gguf_config
 from convert.gguf import MARKS
-from llama2_convert import (FAMILIES, Family, Safetensors, architecture, check_config, conversion_plan, family_of,
+from llama2_convert import (FAMILIES, Family, Safetensors, check_config, conversion_plan, family_of,
                             gguf_model, normalize)
 from llama2_numpy import FORM, TABLE, Dims, tensor_rows
 
@@ -134,7 +134,7 @@ def test_a_model_type_resolves_to_its_family_and_the_family_says_what_it_is(mode
     assert family is FAMILIES[model_type]
     assert (family.title, family.arch, family.gguf, family.classifier) == (title, arch, gguf, classifier)
     assert {flag for flag in FLAGS if getattr(family, flag)} == true
-    assert architecture({"model_type": model_type}) == arch
+    assert family_of({"model_type": model_type}).arch == arch
     assert all(getattr(family, flag) in (True, False) for flag in FLAGS)
 
 
@@ -145,7 +145,7 @@ def test_an_unknown_model_type_is_refused_in_the_words_it_was():
             check_config(normalize(config))
         assert str(refusal.value) == f"This model cannot be converted: it is {said}, and only {SUPPORTED} models are supported."
         # (its layout and its plan are a Llama's until then: nothing else is asked of an unknown name)
-        assert family_of(config) is LLAMA and architecture(config) == "llama"
+        assert family_of(config) is LLAMA and family_of(config).arch == "llama"
 
 
 def test_a_name_that_normalize_gives_another_is_taken_under_the_other_only():
@@ -347,17 +347,17 @@ def test_a_llama_with_a_little_more_is_the_llamas_record_but_for_that():
 
 @by_type
 def test_what_only_a_family_says_is_asked_of_no_other(model_type):
-    """q's scale, the layers RoPE leaves alone and the two forms, by the names the window always had for them."""
+    """q's scale, the layers RoPE leaves alone and the two forms, as the family answers them."""
     config = {**BASE, "model_type": model_type, "attention_multiplier": 0.5, "no_rope_layers": [1, 0, 1, 0],
               "layer_types": ["conv", "conv", "full_attention", "full_attention"], "use_parallel_residual": False}
     if family_of(config).arch == "qwen35":
         del config["layer_types"]  # (an LFM2's kinds of layers are none of a Qwen3.5's)
     family = family_of(config)
-    assert (llama2_convert.query_scale(config) != 1.0) == (model_type == "granite")
-    assert llama2_convert.query_scale(config) == (0.5 * math.sqrt(32) if model_type == "granite" else 1.0)
-    assert llama2_convert.unturned_layers(config) == ([1, 3] if model_type == "smollm3" else [])
-    assert (llama2_convert.linear_layers(config) is not None) == (family.arch == "qwen35")
-    assert (llama2_convert.convolution_layers(config) is not None) == (family.arch == "lfm2")
+    assert (family.scale(config) != 1.0) == (model_type == "granite")
+    assert family.scale(config) == (0.5 * math.sqrt(32) if model_type == "granite" else 1.0)
+    assert family.options(config).get("unturned", []) == ([1, 3] if model_type == "smollm3" else [])
+    assert ("linear" in family.form and family.form["linear"](config) is not None) == (family.arch == "qwen35")
+    assert ("convolution" in family.form and family.form["convolution"](config) is not None) == (family.arch == "lfm2")
     assert set(family.form) == {"qwen35": {"linear"}, "lfm2": {"convolution"},
                                 "gemma4": {"wide", "double", "kv_shared", "per_layer"}}.get(family.arch, set()) <= set(FORM)
     assert set(family.options(config)) == {"smollm3": {"unturned"}, "gpt_neox": {"parallel_residual"},
@@ -417,7 +417,7 @@ def test_a_model_type_that_is_no_name_is_refused_as_an_unknown_one():
     """A list or a dict as model_type is hashable by no table: the refusal, not a TypeError from the lookup."""
     for model_type in (["llama"], {"a": 1}):
         config = {**BASE, "model_type": model_type}
-        assert family_of(config) is LLAMA and architecture(config) == "llama"
+        assert family_of(config) is LLAMA and family_of(config).arch == "llama"
         assert normalize(config)["model_type"] == model_type
         with pytest.raises(ValueError, match="only Llama, Mistral"):
             check_config(config)

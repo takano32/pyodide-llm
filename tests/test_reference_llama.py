@@ -10,7 +10,7 @@ from test_convert import converted, reader, safetensors_file
 from test_granite import granite
 
 import reference_llama as R
-from llama2_convert import Safetensors, query_scale
+from llama2_convert import Safetensors
 from llama2_numpy import Llama
 
 TOKENS = [1, 5, 7, 9, 5, 11, 3, 3, 8, 2, 14, 15, 1, 6, 22, 30]
@@ -74,7 +74,7 @@ def test_every_weak_fault_the_check_must_see_is_seen_and_the_weights_are_put_bac
     whole = np.array([llama.forward(token, pos).copy() for pos, token in enumerate(TOKENS)])
     states = R.engine_cache(llama, len(TOKENS))
     before = (llama.wq, llama.wk)
-    missed = R.weak_errors("t", llama, TOKENS, whole, states, 1e-3, 1e-4, query_scale(published))
+    missed = R.weak_errors("t", llama, TOKENS, whole, states, 1e-3, 1e-4, R.q_scale(published))
     assert missed == []
     assert llama.wq is before[0] and llama.wk is before[1], "the matrices themselves stand in again"
     assert np.array_equal(np.array([llama.forward(token, pos) for pos, token in enumerate(TOKENS)]), whole)
@@ -90,5 +90,5 @@ def test_a_fault_the_check_cannot_see_is_named_where_it_must(capsys):
     llama, _, published = engine_of(dim=64, n_layers=4, n_kv_heads=2, shared=False)
     whole = np.array([llama.forward(token, pos).copy() for pos, token in enumerate(TOKENS)])
     states = R.engine_cache(llama, len(TOKENS))
-    missed = R.weak_errors("t", llama, TOKENS, whole, states, 1e3, 1e3, query_scale(published))
+    missed = R.weak_errors("t", llama, TOKENS, whole, states, 1e3, 1e3, R.q_scale(published))
     assert len(missed) == 4 and any("FAILED" in line for line in capsys.readouterr().out.splitlines())

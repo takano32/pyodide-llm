@@ -1,6 +1,6 @@
 """A Granite (T253: IBM's, transformers' model_type "granite") is a Llama whose attention multiplies its scores by
 config.json's attention_multiplier where a Llama divides them by the root of a head's size. The converter multiplies q
-by attention_multiplier * sqrt(head) (llama2_convert.query_scale), and the file, the options and the engine are a
+by attention_multiplier * sqrt(head) (the family's scale(), convert/families/llama.py), and the file, the options and the engine are a
 Llama's. Its other three multipliers (the embedding's, the branches', the logits') the engine has not: a model whose
 are not 1 is refused. The real model against transformers: tests/reference_llama.py, in CI."""
 import json
@@ -14,13 +14,18 @@ from test_convert import converted, hugging_face, reader, safetensors_file, stre
 from test_gguf import fed, gguf_file, unigram, with_original
 
 import llama2_convert
-from llama2_convert import Conversion, Safetensors, check_config, query_scale
+from llama2_convert import Conversion, Safetensors, check_config, family_of
 from llama2_numpy import Llama
 
 ONES = dict(embedding_multiplier=1.0, residual_multiplier=1.0, logits_scaling=1.0)
 # dim 32 in 4 heads of 8: 0.0625 * sqrt(8) is no power of two (Granite 4.2 8B's kind); dim 64 in 4 heads of 16:
 # 1/64 * 4 is one (Granite 4.2 3B's kind, 1/64 * 8); grouped queries and a classifier of its own, as both have
 MODELS = [(dict(), 0.0625), (dict(n_kv_heads=2, shared=False), 0.3), (dict(dim=64, n_kv_heads=1, shared=False), 1 / 64)]
+
+
+def query_scale(config):
+    """What the conversion multiplies q by: the family's scale()."""
+    return family_of(config).scale(config)
 
 
 def granite(settings, weights, multiplier, **more):

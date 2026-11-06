@@ -18,7 +18,7 @@
 #
 # Two parts, every line of the log beginning with "reference:".
 #   made-up: tiny random Granites of transformers' own class (GraniteForCausalLM), whose attention multiplies its
-#     scores by attention_multiplier (T253: the converter puts it into q, llama2_convert.query_scale). transformers'
+#     scores by attention_multiplier (T253: the converter puts it into q, the Granite family's scale()). transformers'
 #     logits, over the whole text at once and token by token with its cache, against the engine converted the way the
 #     page converts. And the same tensors converted as a Llama's, which must be another model: the comparison sees the
 #     multiplier. A Granite 4.1's other multipliers are refused.
@@ -262,6 +262,11 @@ def faults_seen(label, llama, tokens, whole, theirs, line, lined, faults):
     return missed
 
 
+def q_scale(config):
+    """What the conversion multiplies q by (T253): the family's scale(), 1.0 for every model but a Granite."""
+    return llama2_convert.family_of(config).scale(config)
+
+
 def weak_errors(label, llama, tokens, whole, theirs, line, lined, scale):
     """The faults a conversion of a Granite could have that are weak (T253's review): what q was multiplied by 0.1%, 0.01%
     and 0.001% off, one head's, one layer's q left as it was, one key head's scale 1% off. Returns the faults the check did
@@ -373,14 +378,14 @@ def made_up(name, settings, positions=80):
         f"(keys up to {top['keys']:.3g}, values {top['values']:.3g}); transformers' own two: keys {floors['keys'][0]:.2e}, values "
         f"{floors['values'][0]:.2e}; the line {lined:.1e}{'' if ok else ' — FAILED'}")
     if WEAK:
-        failed |= bool(weak_errors(f"made-up ({name})", llama, tokens, whole, cache_whole, line, lined, llama2_convert.query_scale(published)))
+        failed |= bool(weak_errors(f"made-up ({name})", llama, tokens, whole, cache_whole, line, lined, q_scale(published)))
     largest, mean, same, _ = differences(as_a_llama, whole)
     seen = largest > 100 * line
     failed |= not seen
     say(f"made-up ({name}), the same tensors converted as a Llama's against transformers: largest difference "
         f"{largest:.2e}, the same most likely token at {same} of {positions}"
         f"{' (another model, as it must be)' if seen else ' — FAILED: the comparison does not see the multiplier'}")
-    say(f"made-up ({name}): what q was multiplied by {llama2_convert.query_scale(published):.6g}, options "
+    say(f"made-up ({name}): what q was multiplied by {q_scale(published):.6g}, options "
         f"{json.dumps({key: options[key] for key in ('arch', 'bias', 'head_dim', 'rope_theta', 'rms_norm_eps') if key in options})}")
     # Granite 4.1's kind: the three multipliers the engine has not
     for key, value in (("embedding_multiplier", 12.0), ("residual_multiplier", 0.22), ("logits_scaling", 10.0)):
@@ -457,7 +462,7 @@ def real(entry, directory, positions, layers=0):
     template = entry.get("template") or options.get("template")
     options.pop("template", None)
     say(f"{id}: converted in {seconds:.1f} s, {path.stat().st_size} bytes, what q was multiplied "
-        f"by {llama2_convert.query_scale(llama2_convert.normalize(json.loads(config))):.6g}, options {options_shown(options)}")
+        f"by {q_scale(llama2_convert.normalize(json.loads(config))):.6g}, options {options_shown(options)}")
     say(f"{id}: the format of {'the list' if entry.get('template') else 'the converter'}: {json.dumps(template)}")
     llama = Llama(np.memmap(path, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
     specials = llama.specials
@@ -543,7 +548,7 @@ def real(entry, directory, positions, layers=0):
         f"{'' if ok else ' — FAILED'}")
     say(f"{id}: the largest key {top['keys']:.4g} and the largest value {top['values']:.4g} of any layer (a float16 holds 65504)")
     if WEAK and not GGUF:
-        missed = weak_errors(id, llama, ids, whole, cache_whole, line, lined, llama2_convert.query_scale(llama2_convert.normalize(json.loads(config))))
+        missed = weak_errors(id, llama, ids, whole, cache_whole, line, lined, q_scale(llama2_convert.normalize(json.loads(config))))
         failed |= bool(missed)
         say(f"{id}: weak faults the check must see and did not: {missed or 'none'}")
     if llama.unturned:

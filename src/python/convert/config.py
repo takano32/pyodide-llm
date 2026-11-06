@@ -4,44 +4,6 @@ from convert.families import FAMILIES, family_of, named
 from convert.families.family import head_size, refuse, rotary_dim, yarn  # noqa: F401
 
 
-def architecture(config):
-    """Which set of tensors and which forward: "llama" (Qwen2 is a Llama with biases), "gpt2", or "neox"
-    (GPT-NeoX: a GPT-2 with RoPE over part of each head, and optionally the two branches in parallel), or "qwen35"
-    (T229: Qwen3.5 and Qwen3.8, a Qwen3 most of whose layers are linear-attention ones), or "lfm2" (T260: Liquid AI's
-    LFM2 and LFM2.5, a Qwen3 some of whose layers are convolution layers)."""
-    return family_of(config).arch
-
-
-# What a family says of a config.json, asked by the names these had as functions of every config: each is the
-# family's answer, and nothing of another family's.
-def query_scale(config):
-    """What the conversion multiplies q by (T253), 1.0 for every model but a Granite (families/llama.py)."""
-    return family_of(config).scale(config)
-
-
-def unturned_layers(config):
-    """T255: the layers of a SmolLM3 whose q and k RoPE does not turn, in order (families/llama.py). None of another
-    model's."""
-    return family_of(config).options(config).get("unturned", [])
-
-
-def made(config, key):
-    make = family_of(config).form.get(key)
-    return make(config) if make else None
-
-
-def linear_layers(config):
-    """FORM's "linear" from a Qwen3.5's (normalized) config.json (families/qwen35.py). None for the other
-    architectures."""
-    return made(config, "linear")
-
-
-def convolution_layers(config):
-    """FORM's "convolution" from an LFM2's (normalized) config.json (families/lfm2.py). None for the other
-    architectures."""
-    return made(config, "convolution")
-
-
 def normalize(config):
     """config.json by the names the rest of the converter reads, whatever its family calls them (GPT-2 spells its
     config.json differently). Twice is once."""

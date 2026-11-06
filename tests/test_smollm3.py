@@ -13,7 +13,7 @@ from test_external import Outside
 from test_gguf import fed, gguf_file, unigram, with_original
 
 import llama2_convert
-from llama2_convert import Conversion, check_config, normalize, unturned_layers
+from llama2_convert import Conversion, check_config, family_of, normalize
 from llama2_numpy import Llama
 
 # the published 3B's kind (grouped queries, the classifier shared), a list that is no interval, and a classifier of
@@ -74,6 +74,7 @@ def test_the_file_is_the_llamas_and_only_the_options_know(dtype):
 
 def test_the_layers_are_the_lists_zeros_or_every_interval_th():
     layers = dict(num_hidden_layers=12)
+    unturned_layers = lambda config: family_of(config).options(config).get("unturned", [])
     assert unturned_layers({"model_type": "smollm3", **layers}) == [3, 7, 11]  # transformers' default interval, 4
     assert unturned_layers({"model_type": "smollm3", "no_rope_layer_interval": 5, **layers}) == [4, 9]
     assert unturned_layers({"model_type": "smollm3", "no_rope_layer_interval": 4, "no_rope_layers": [0] + [1] * 11, **layers}) == [0]

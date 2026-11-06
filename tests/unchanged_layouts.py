@@ -14,7 +14,7 @@
 #   external  external_tensors(): the places before the model is built (a Llama's; the others' refusal)
 #   source    conversion_plan(): the names of the Hugging Face tensors each one is made of and what is done to them
 # and, since the file's header and form come from a config.json and the unit tests read few of them:
-#   config    normalize(), checkpoint_header(), checkpoint_form(), query_scale(), unturned_layers() and rotary_dim()
+#   config    normalize(), checkpoint_header(), checkpoint_form(), the family's scale() and unturned layers, and rotary_dim()
 #             of made-up config.json files of every family (an LFM2's FFN by block_multiple_of among them)
 #   window    which of a history's tokens penalize() reaches (the repetition penalty's window)
 # A refusal is an answer too, and it is compared by the class of its exception alone (the review of T357, T359): its
@@ -219,7 +219,8 @@ for name, (config, tensors) in CONFIGS.items():
         said(f"config {name}: header for a context of {context}", lambda: C.checkpoint_header(config, source, context))
     said(f"config {name}: form", lambda: C.checkpoint_form(config, source))
     said(f"config {name}: q's scale, the layers RoPE leaves, the values it turns",
-         lambda: [C.query_scale(normal), C.unturned_layers(normal), C.rotary_dim(normal), C.head_size(normal)])
+         lambda: [C.family_of(normal).scale(normal), C.family_of(normal).options(normal).get("unturned", []),
+                 C.rotary_dim(normal), C.head_size(normal)])
 
 # ---- the repetition penalty's window: a history of 200 different tokens, and which of them the penalty reached
 logits = np.ones(256, dtype=np.float32)

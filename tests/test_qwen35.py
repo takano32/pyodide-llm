@@ -18,8 +18,8 @@ from made_up import unigram
 from test_convert import converted, reader, safetensors_file, streamed
 
 import llama2_convert
-from llama2_convert import (Safetensors, architecture, check_config, checkpoint_form, checkpoint_size, head_size, linear_layers,
-                            normalize, rotary_dim, transformed)
+from llama2_convert import (Safetensors, check_config, checkpoint_form, checkpoint_size, family_of, head_size, normalize,
+                            rotary_dim, transformed)
 from llama2_numpy import FORM, Llama, checkpoint_dtype, form_of, linear_form, slots_of
 from engine.layout import GATED_DELTA
 
@@ -348,12 +348,12 @@ QWEN38_27B = {
 def test_the_published_27b_reads_as_the_shape_that_was_planned_for_it():
     config = normalize({"model_type": "qwen3_5", "tie_word_embeddings": False, "text_config": QWEN38_27B})
     check_config(config)  # "swish" is silu: not refused
-    assert architecture(config) == "qwen35"
+    assert family_of(config).arch == "qwen35"
     assert (config["num_hidden_layers"], config["hidden_size"], config["intermediate_size"], config["vocab_size"]) == (64, 5120, 17408, 248320)
     assert (config["num_attention_heads"], config["num_key_value_heads"], head_size(config)) == (24, 4, 256)
     assert rotary_dim(config) == 64 and config["rope_theta"] == 10000000
     assert config["bos_token_id"] == 248044
-    assert linear_layers(config) == {"every": 4, "key_heads": 16, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv": 4}
+    assert family_of(config).form["linear"](config) == {"every": 4, "key_heads": 16, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv": 4}
 
 
 def test_the_layers_follow_transformers_where_the_config_leaves_them_out():

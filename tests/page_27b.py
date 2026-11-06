@@ -59,7 +59,8 @@ def bytes_first(raw):
 
 def tiled(header, config):
     """The mark gguf_model() takes off a rotated GGUF's output matrices, put back."""
-    linear = llama2_convert.linear_layers(llama2_convert.normalize(json.loads(config)))
+    normal = llama2_convert.normalize(json.loads(config))
+    linear = llama2_convert.family_of(normal).form["linear"](normal)
     after_keys, of_a_head, axis = llama2_convert.QWEN35_TILED["out_proj.weight"]
     header = json.loads(header)
     marked = [name for name in header if name.endswith("linear_attn.out_proj.weight")]

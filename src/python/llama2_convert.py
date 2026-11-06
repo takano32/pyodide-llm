@@ -33,9 +33,7 @@ from convert.sources import Arrays, ROTATED, Safetensors, Shards, joined_shards 
 from convert.families import FAMILIES, family_of  # noqa: F401
 from convert.families.family import Family  # noqa: F401
 from convert.families.qwen35 import QWEN35_TILED  # noqa: F401
-from convert.config import (architecture, check_config, checkpoint_header, convolution_layers,  # noqa: F401
-                            head_size, linear_layers, normalize, query_scale, rotary_dim,
-                            unturned_layers, yarn)
+from convert.config import check_config, checkpoint_header, head_size, normalize, rotary_dim, yarn  # noqa: F401
 from convert.plan import checkpoint_form, conversion_plan, permute_heads, rope_table, transformed  # noqa: F401
 from convert.families.llama import has_bias, has_qk_norm  # noqa: F401
 from convert.stream import (PIECE, Kept, Stream, convert_weights, left_to_do, unsplit,  # noqa: F401
