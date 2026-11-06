@@ -163,7 +163,6 @@ ENTRANCES = {
     "tensor_rows()": lambda arch: tensor_rows(HEADER, {"arch": arch}),
     "checkpoint_dtype()": lambda arch: checkpoint_dtype(HEADER, 1 << 20, {"arch": arch}),
     "external_tensors()": lambda arch: external_tensors(HEADER, "int8", {"arch": arch}),
-    "the converter's layout()": lambda arch: llama2_convert.layout(*HEADER, arch=arch),
     "the converter's checkpoint_size()": lambda arch: llama2_convert.checkpoint_size(HEADER, "int8", {"arch": arch}),
     "the converter's Writer": lambda arch: llama2_convert.Writer(None, HEADER, "float32", {"arch": arch}, sink=type(
         "Sink", (), {"open": lambda *_: None, "write": lambda *_: None})()),
@@ -222,7 +221,6 @@ def test_a_form_without_its_architectures_layers_or_with_anothers_is_refused_in_
     assert refusal(Dims, HEADER, form) == sentence
     assert refusal(tensor_rows, HEADER, form) == sentence
     assert refusal(external_tensors, HEADER, "int8", form) == sentence
-    assert refusal(llama2_convert.layout, *HEADER, **form) == sentence
     assert refusal(Llama, struct.pack("<7i", *HEADER), None, **form) == sentence
     # (checkpoint_dtype() says of whatever it refuses that it is no checkpoint, in front)
     assert refusal(checkpoint_dtype, HEADER, 1 << 20, form) == f"This is not a llama2.c checkpoint: {sentence}"
@@ -338,7 +336,6 @@ def test_an_architecture_that_is_anothers_record_but_for_a_fact(monkeypatch):
     assert tensor_rows(HEADER, form) == tensor_rows(HEADER)
     assert checkpoint_dtype(HEADER, file_size(tensor_rows(HEADER), "float16"), form) == "float16"
     assert external_tensors(HEADER, "int8", form) == external_tensors(HEADER, "int8")
-    assert llama2_convert.layout(*HEADER, **form) == llama2_convert.layout(*HEADER)
     yarn = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 12}
     checkpoint, tokenizer = made_up(HEADER, form, "float16"), pack_tokenizer(tiny_vocab(320))
     plain = Llama(checkpoint, tokenizer, dtype="float16", arch="plain", rope_scaling=yarn)

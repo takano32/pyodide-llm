@@ -449,15 +449,16 @@ def theirs(directory, ids_file):
 
 
 def tensors_apart(ours, other, options):
-    """Two float32 checkpoints of one header, tensor by tensor of llama2_convert.layout(): [(index, shape, relative
+    """Two float32 checkpoints of one header, tensor by tensor of tensor_rows(): [(index, shape, relative
     difference, the same to the bit)], read a piece at a time."""
-    from llama2_numpy import form_of
+    from llama2_numpy import form_of, tensor_rows
 
     a, b = (np.memmap(path, dtype=np.uint8, mode="r") for path in (ours, other))
     header = struct.unpack("<7i", bytes(a[:28]))
     failed = bytes(a[:28]) != bytes(b[:28]) or len(a) != len(b)
     out, offset = [], 28
-    for index, (shape, _) in enumerate(llama2_convert.layout(*header, **form_of(options))):
+    for index, row in enumerate(tensor_rows(header, form_of(options))):
+        shape = row.shape
         size = 4 * math.prod(shape)
         difference = norm = 0.0
         same = True

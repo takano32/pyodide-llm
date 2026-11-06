@@ -8,8 +8,8 @@ from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_we
 from made_up import qwen2, unigram  # noqa: F401 (the other tests take it from here)
 from test_convert import converted, reader, safetensors_file, streamed
 
-from llama2_convert import Safetensors, checkpoint_header, checkpoint_size, has_bias, layout
-from llama2_numpy import Llama, checkpoint_dtype
+from llama2_convert import Safetensors, checkpoint_header, checkpoint_size, has_bias
+from llama2_numpy import Llama, checkpoint_dtype, tensor_rows
 
 CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=False)]
 
@@ -66,6 +66,6 @@ def test_the_conversion_tells_the_engine_about_the_biases():
 def test_without_the_flag_the_engine_reads_the_file_it_always_read():
     settings, weights = synthetic_weights()
     checkpoint = pack_checkpoint(settings, weights)
-    assert [shape for shape, _ in layout(*struct.unpack_from("<7i", checkpoint, 0))] \
-        == [shape for shape, _ in layout(*struct.unpack_from("<7i", checkpoint, 0), bias=False)]
+    assert [row.shape for row in tensor_rows(struct.unpack_from("<7i", checkpoint, 0))] \
+        == [row.shape for row in tensor_rows(struct.unpack_from("<7i", checkpoint, 0), {"bias": False})]
     assert checkpoint_size(struct.unpack_from("<7i", checkpoint, 0), "float32") == len(checkpoint)

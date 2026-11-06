@@ -119,7 +119,7 @@ def test_the_bytes_of_a_row_are_its_kinds():
     sizes = {"float32": 4 * count, "float16": 2 * count, "int8": count + 4 * count // 32, "int6": count * 24 // 32 + 4 * count // 32,
              "ternary": count * 32 // 128 + 2 * count // 128, "binary": count * 16 // 128 + 2 * count // 128}
     for dtype, size in sizes.items():
-        assert placed([wq], dtype)[0].size == size == llama2_convert.tensor_bytes(wq.shape, True, dtype)
+        assert placed([wq], dtype)[0].size == size
     assert file_size(rows, "int8") == checkpoint_size([128, 256, 2, 4, 4, 320, 24], "int8")
 
 

@@ -9,9 +9,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from engine_plans import engine_plan  # noqa: E402
 
-import llama2_convert  # noqa: E402
 import llama2_numpy  # noqa: E402
-from llama2_convert import Writer, checkpoint_size, conversion_plan, layout  # noqa: E402
+from llama2_convert import Writer, checkpoint_size, conversion_plan  # noqa: E402
 from llama2_numpy import (ATTENDING, EVERY, FORM, MATRIX, QUANTIZED, STATEFUL, TABLE, VECTOR, Dims, Row, after,  # noqa: E402
                           checkpoint_dtype, external_tensors, file_size, kind_of, placed, suited, tensor_rows)
 
@@ -93,7 +92,7 @@ def test_the_engine_holds_every_row_where_the_writer_puts_it(name, header, form,
 def test_the_converter_has_a_source_for_every_row_by_its_name(name, header, form, more):
     rows, d = tensor_rows(header, form), Dims(header, form)
     plan, shapes = conversion_plan(header, form, rotary=more.get("rotary", 0))
-    assert shapes == [row.shape for row in rows] == [shape for shape, _ in layout(*header, **{**FORM, **form})]
+    assert shapes == [row.shape for row in rows] == [row.shape for row in tensor_rows(header, {**FORM, **form})]
     for row, parts in zip(rows, plan):
         assert (parts is None) == (row.role == TABLE)
         if parts is not None:
@@ -138,7 +137,7 @@ def test_a_packed_dtype_needs_rows_of_whole_groups_wherever_it_is_asked():
             engine_plan(llama2_numpy, header, dtype, {}, {}, checkpoint_size(header, dtype))
         with pytest.raises(ValueError, match="not a llama2.c checkpoint"):
             checkpoint_dtype(header, checkpoint_size(header, dtype))
-    assert any(row.role == MATRIX for row in rows) and llama2_convert.tensor_bytes((4, 64), True, "int6") == 8 * 28
+    assert any(row.role == MATRIX for row in rows) and placed([Row("", MATRIX, (4, 64))], "int6")[0].size == 8 * 28
 
 
 # The order of each layout's file, written down a second time on purpose: every reader takes the order from the rows,
@@ -171,9 +170,3 @@ ORDER = {
 def test_the_file_is_in_the_order_it_always_was(name, header, form, more):
     assert " ".join(row.name for row in tensor_rows(header, form)) == ORDER[name]
 
-
-def test_layout_refuses_a_key_that_is_no_part_of_the_form():
-    # (T359 review: layout() took keyword arguments, so a misspelt key was a TypeError; the form is a dict now, which
-    # form_of() reads by FORM's keys alone)
-    with pytest.raises(TypeError, match="bais"):
-        layout(64, 128, 2, 4, 4, 100, 16, bais=True)

@@ -6,10 +6,9 @@ import sys
 import numpy as np
 import pytest
 
-import quantize
 from conftest import ROOT, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
 from test_layout import ORDER
-from llama2_numpy import Llama, group32
+from llama2_numpy import Llama, group32, kind_of, tensor_rows
 
 MATRICES = ["token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2", "w3"]
 NORMS = ["rms_att_weight", "rms_ffn_weight", "rms_final_weight"]
@@ -84,14 +83,16 @@ def test_the_tensor_order_of_quantize_matches_the_engine(tmp_path):
     dim, hidden, layers, heads, kv_heads, vocab, seq_len = (abs(n) for n in header)
     kv, half = dim * kv_heads // heads, dim // heads // 2
     # (T492: each row's shape and what quantize.py makes of it, by its name in test_layout.py's ORDER, not their count alone:
-    # a row moved, or a vector taken for a matrix, is another file)
+    # a row moved, or a vector taken for a matrix, is another file. T640.8: quantize.py writes by the rows, and a row is a
+    # matrix to it where it is packed: True a matrix, False a vector kept float32, None a table left out)
     rows = {"token_embedding_table": ((vocab, dim), True), "rms_att_weight": ((layers, dim), False), "wq": ((layers, dim, dim), True),
             "wk": ((layers, kv, dim), True), "wv": ((layers, kv, dim), True), "wo": ((layers, dim, dim), True),
             "rms_ffn_weight": ((layers, dim), False), "w1": ((layers, hidden, dim), True), "w2": ((layers, dim, hidden), True),
             "w3": ((layers, hidden, dim), True), "rms_final_weight": ((dim,), False), "freq_cis_real": ((seq_len, half), None),
             "freq_cis_imag": ((seq_len, half), None), "wcls": ((vocab, dim), True)}
     expected = [rows[name] for name in ORDER["llama, its own classifier"].split()]
-    assert [(tuple(shape), matrix) for shape, matrix in quantize.layout(*header)] == expected
+    kinds = {"int8": True, "float32": False, None: None}
+    assert [(row.shape, kinds[kind_of(row, "int8")]) for row in tensor_rows(header)] == expected
 
 
 def test_int8_embedding_row_is_widened_when_the_classifier_is_separate(tmp_path):

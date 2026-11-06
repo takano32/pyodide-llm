@@ -23,7 +23,7 @@ from llama2_numpy import (DTYPES, EITHER, FORM, QUANTIZED, TERNARY_GROUP, convol
                           dtype_of, form_of, linear_form, linear_widths, pack6, quantize, quantize6,
                           rope_frequencies, rope_magnitude, rotated_form, rotated_widths, sign_bits,
                           ternary)
-from convert.checkpoint import IS_MATRIX, Writer, checkpoint_size, layout, tensor_bytes  # noqa: F401
+from convert.checkpoint import Writer, checkpoint_size  # noqa: F401
 from convert.template import (DAY, Loop, Namespace, Undefined, Unsupported, arithmetic, compare,  # noqa: F401
                               evaluate, jinja_environment, matching, one_turn, one_turn_template,
                               render, rendered, run)
