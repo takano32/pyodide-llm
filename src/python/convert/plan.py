@@ -168,11 +168,12 @@ def checkpoint_form(config, source):
     return form
 
 
-def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.0):
+def conversion_plan(header, form, prefix, rotary=0, scale=1.0):
     """For every row of the checkpoint (engine/layout.py's tensor_rows()), in file order: the tensors of the Hugging
     Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table,
     and CODES for the codebooks of llama.cpp's blocks (T363: made(), below, has the values of both).
-    And the shapes of the rows. The sources are the layout's family's, by the row's name (convert/families/). scale:
+    And the shapes of the rows. The sources are the layout's family's, by the row's name (convert/families/). prefix:
+    what stands in front of the source's names (name_prefix(): no default, a GPT-2's "transformer." is no other's). scale:
     what q is multiplied by (the family's scale(), T253), for a layout without biases and without norms of its heads."""
     form = form_of(form)
     arch, d = form["arch"], Dims(header, form)

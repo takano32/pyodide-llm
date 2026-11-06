@@ -9,7 +9,7 @@
 
 What goes in is found by walking: a module's window and every .py under its package's folder. No list is kept (the
 worker had one, public/python.js, and a test to hold it to the folder: a part that was not listed was not fetched).
-tests/python-archive-check.mjs holds the archives to what the tools walk (tests/tree.mjs) and to every .py there is.
+tests/python-archive-check.ts holds the archives to what the tools walk (tests/tree.ts) and to every .py there is.
 
 The same sources give the same bytes, on any day and whatever the files' dates and modes are: the names in order, every
 date 1980-01-01, every mode 644, deflate at level 9. So an archive's bytes change when the Python does and not

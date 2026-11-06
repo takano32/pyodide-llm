@@ -17,9 +17,9 @@ from convert.config import head_size, normalize, yarn
 from convert.tokenizer import UNMATCHABLE, tokenizer_bin
 
 
-# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0, PQ2_0 or F16
-# Llama, Granite, Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is
-# held to.
+# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. What is read of it is what the
+# families of convert/families/ that name a GGUF architecture need (FAMILIES, by their gguf), in the types of
+# convert/readers.py's SOURCES; tests/gguf_check.py is the separate reference this is held to.
 class Incomplete(Exception):
     """The GGUF header goes on past the bytes given: fetch more and try again."""
 

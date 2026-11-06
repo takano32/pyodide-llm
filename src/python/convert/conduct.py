@@ -181,7 +181,7 @@ def gguf_head(name, read):
     raise Incomplete()
 
 
-def after(name, header, base, data, size, conversion=None):
+def weights_after_head(name, header, base, data, size, conversion=None):
     """The Weights of one GGUF whose beginning (data) is in hand: what follows its head there is fed from here, and
     the rest of the file streamed. (The head may be read whole from fewer bytes than base: the tensors begin at a
     multiple of 32, and what stands before that is padding. Nothing is in hand then, and the stream begins at base.)
@@ -196,13 +196,13 @@ def after(name, header, base, data, size, conversion=None):
 def gguf_alone(hf, config, make):
     """T74: a GGUF holds the configuration and the vocabulary before its tensors: no config.json and no tokenizer."""
     conversion, data, size = yield from gguf_head(hf["weights"], lambda head: Conversion.from_gguf(head, **make))
-    return after(hf["weights"], None, conversion.base, data, size, conversion)
+    return weights_after_head(hf["weights"], None, conversion.base, data, size, conversion)
 
 
 def gguf_with_vocabulary(hf, config, make):
     """T136: the GGUF's header as a safetensors one, once the original's config.json agrees with it."""
     (header, base), data, size = yield from gguf_head(hf["weights"], lambda head: gguf_weights(head, config))
-    return after(hf["weights"], header, base, data, size)
+    return weights_after_head(hf["weights"], header, base, data, size)
 
 
 def one_file(hf, config, make):

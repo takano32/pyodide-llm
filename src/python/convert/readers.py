@@ -1,7 +1,7 @@
 # How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0, the
 # two ternary types and ggml's Q1_0 of signs (T286.1), llama.cpp's K- and i-quantized types that convert/superblocks.py reads, T362, and its older types of
 # blocks of 32, T505.1), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T359): the GGUF's type id, the size of its
-# blocks, the refusal that lists what is read, and its reader on the kernels come from the entry.
+# blocks and its reader on the kernels come from the entry (a refusal names no type: T501).
 from typing import Callable, NamedTuple
 
 import numpy as np

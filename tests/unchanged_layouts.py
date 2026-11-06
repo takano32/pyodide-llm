@@ -142,7 +142,8 @@ for name, headers, form, engine, source in FAMILIES:
         whole = {**L.FORM, **form}
         said(f"{case}: layout", lambda: [[list(row.shape), matrix(row)] for row in L.tensor_rows(header, whole)])
         if source is not None:
-            said(f"{case}: source", lambda: C.conversion_plan(header, whole, **source))
+            # (a case that names no prefix has the one conversion_plan() took when none was given until T640.12)
+            said(f"{case}: source", lambda: C.conversion_plan(header, whole, **{"prefix": "transformer.", **source}))
         for dtype in DTYPES:
             size = said(f"{case}, {dtype}: size", lambda: C.checkpoint_size(header, dtype, whole))
             said(f"{case}, {dtype}: places", lambda: written(C.Writer(

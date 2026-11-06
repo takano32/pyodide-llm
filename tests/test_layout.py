@@ -91,7 +91,7 @@ def test_the_engine_holds_every_row_where_the_writer_puts_it(name, header, form,
 @cases
 def test_the_converter_has_a_source_for_every_row_by_its_name(name, header, form, more):
     rows, d = tensor_rows(header, form), Dims(header, form)
-    plan, shapes = conversion_plan(header, form, rotary=more.get("rotary", 0))
+    plan, shapes = conversion_plan(header, form, "", rotary=more.get("rotary", 0))
     assert shapes == [row.shape for row in rows] == [row.shape for row in tensor_rows(header, {**FORM, **form})]
     for row, parts in zip(rows, plan):
         assert (parts is None) == (row.role == TABLE)
@@ -120,7 +120,7 @@ def test_a_layout_is_made_of_another_and_a_row_without_a_source_is_refused(monke
     tensors = external_tensors(header, "int8", form)
     assert tensors["post_norm"]["kind"] == "f32" and tensors["rms_ffn_weight"]["offset"] == tensors["post_norm"]["offset"] + 4 * 4 * 256
     with pytest.raises(ValueError, match="no source for the row post_norm"):
-        conversion_plan(header, form)
+        conversion_plan(header, form, "")
 
 
 def test_a_packed_dtype_needs_rows_of_whole_groups_wherever_it_is_asked():

@@ -47,7 +47,7 @@ class Safetensors:
         return tuple(self.tensors[name]["shape"])
 
     def rows(self, name, start, stop):
-        """Rows start..stop of a tensor (all of a vector), as float32 or float16."""
+        """Rows start..stop of a tensor (all of a vector), as its type's reader in SOURCES reads them."""
         info = self.tensors[name]
         stored = source_of(name, info["dtype"])
         shape = self.shape(name)
