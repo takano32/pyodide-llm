@@ -302,7 +302,8 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     globalThis.location ??= { search: "" };
     const { weighed } = await import("../src/page/address.ts"), { MODELS } = await import("../src/models.ts");
     const listed = MODELS.filter((entry) => entry.conversion?.blocks);
-    assert.deepEqual(listed.map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"]);
+    // (T643.20: every such entry of the list, whichever they are: models-check holds what makes one)
+    assert.ok(listed.some(({ id }) => id === "hf-underdog-saluki-27b"), "the list has such entries");
     fresh(kernel);
     for (const entry of listed) {
       const handed = weighed(entry);

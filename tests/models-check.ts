@@ -186,9 +186,9 @@ assert.equal(modelBytes(largest), 7.2e9);
 assert.match(memoryWarning(largest, 4), /needs about 7,500 MB of memory, and this device has 4 GB:/);
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
-assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id),
-  ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b", "hf-underdog-saluki-27b-thinking", "hf-underdog-saluki-27b", "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"],
-  "rebuilt is for a GGUF no check can hold to its original");
+// (rebuilt beside the entries whose blocks are kept: below, by their rule)
+assert.deepEqual(MODELS.filter((entry) => entry.rebuilt && !entry.conversion?.blocks).map(({ id }) => id),
+  ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"], "rebuilt is for a GGUF no check can hold to its original");
 // its two forms share one conversion (kept.ts's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
@@ -238,11 +238,22 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
     assert.equal(memoryWarning(entry, undefined), "");
   }
   assert.ok(thinks.template.endsWith("<think>\n") && answers.template === `${thinks.template}\n</think>\n\n`, "a Qwen3.5's two formats, no system turn");
-  assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", thinks.id, answers.id, "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"], "the entries whose blocks are kept");
+  // T643.20: an entry whose blocks are kept is so by a rule of its own fields, not by a list of ids to write again
+  // for every such entry: its conversion keeps int8 rows beside the blocks, it says what it takes once loaded, and it is
+  // rebuilt (a GGUF of about 4 bits, which gguf.yml's 1e-3 cannot hold to its original), its weights the conversion's
+  const kept = MODELS.filter((entry) => entry.conversion?.blocks);
+  assert.ok(kept.includes(thinks) && kept.includes(answers), "Saluki's two keep their blocks");
+  for (const entry of kept) {
+    assert.deepEqual(entry.conversion, { dtype: "int8", blocks: true }, `${entry.id}: its conversion`);
+    assert.ok(entry.loaded > 0 && entry.rebuilt && entry.weights === undefined, `${entry.id}: loaded, rebuilt and no weights`);
+  }
   // loaded: read before converted, of an entry that says it, and nothing of any other entry changed by it: each still
-  // says its size by its file or by converted (T643.17: the note's words before)
-  // (T333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
-  assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", "llm-jp-3-150m-f16", thinks.id, answers.id].sort());
+  // says its size by its file or by converted (T643.17: the note's words before). Beside the entries whose blocks are
+  // kept, only these (a second copy on purpose: an entry that says loaded for another reason is a choice to name here):
+  // Gemma 4's two, whose table of every layer's inputs stays in the kept file (T333: below), and the site's float16
+  // llm-jp-3 150M
+  assert.deepEqual(MODELS.filter((entry) => entry.loaded && !entry.conversion?.blocks).map(({ id }) => id).sort(),
+    ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "llm-jp-3-150m-f16"]);
   for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.ok(entry.converted > 0, `${entry.id}: its size is converted`);
 }
 // T333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the
