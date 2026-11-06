@@ -179,6 +179,7 @@ const SILENT = {
   "src/runtime/worker/runtime.ts": [
     ["compileKernelsHere", "catch { wideKernels = undefined; }", "T101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
       "keeps the 32-bit ones; a model past 4 GB is then refused with its own sentence"],
+    ["dropRemovedParts", "catch {}", "T653: the parts of the two checkpoints the site no longer serves: if they cannot be read or deleted they stay on the disk, and nothing reads them"],
     ["init", "globalThis.caches?.delete(\"models-v1\").catch(() => {})", "what an earlier version of the page stored: if it cannot be deleted it stays, and nothing reads it"],
     ["init", "engine.catch(() => {})", "awaited below (placePython): a load that ends before that leaves no unhandled rejection"],
   ],

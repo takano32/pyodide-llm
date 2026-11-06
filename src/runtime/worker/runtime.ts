@@ -148,12 +148,27 @@ const STARTS: Starts = {
   }),
 };
 
+// T653: the site no longer serves these two checkpoints (their entries take Hugging Face's files), and nothing else
+// asks for their parts: what a visit kept of them in sources.ts's MODEL_CACHE ("models-v2") would stay on its disk
+const REMOVED_CHECKPOINTS = ["llm-jp-3-150m.f16", "stories42M.f32"];
+async function dropRemovedParts() {
+  if (typeof globalThis.caches?.open !== "function") return;
+  try {
+    const cache = await globalThis.caches.open("models-v2");
+    for (const request of await cache.keys()) {
+      const path = new URL(request.url).pathname;
+      if (REMOVED_CHECKPOINTS.some((name) => path.includes(`/models/${name}.`))) await cache.delete(request);
+    }
+  } catch {}
+}
+
 async function init(search: string, starts: Starts) {
   const started = performance.now();
   // (T641.8: the two this worker began as its modules were imported, now with its first load: before anything awaits)
   adapterAsked = askAdapter();
   // what an earlier version of the page stored (sources.ts's MODEL_CACHE is the one now)
   globalThis.caches?.delete("models-v1").catch(() => {});
+  void dropRemovedParts();
   const asked = new URLSearchParams(search);
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
   if (parts >= 1 && parts <= 64) hfPartBytes = Math.round(parts * 1024 * 1024);
