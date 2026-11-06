@@ -92,7 +92,8 @@ def entries():
         # (the tokenizer the entry's vocabulary names, as the page asks for it: T649.4, PLaMo's tokenizer.jsonl, which
         # the conduct's candidates leave out)
         found[id] = {**found[of], "id": id, "hf": {"repo": original["repo"], "revision": original["revision"],
-                     "weights": weights, "config": "config.json", "tokenizer": original["tokenizer"]}}
+                     "weights": weights, "config": "config.json",
+                     **({"tokenizer": original["tokenizer"]} if original["tokenizer"] != "tokenizer.json" else {})}}
     return [found[id] for id in MODELS]
 
 
