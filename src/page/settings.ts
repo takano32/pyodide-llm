@@ -3,63 +3,35 @@
 import { $, fit, prompt, select } from "./dom.ts";
 import { parameters } from "./address.ts";
 import { type Model, longest, model } from "./model.ts";
-import type { Sampled } from "../runtime/contracts/messages.ts";
+import { type Settings, FIELDS, changedFrom, defaults, linkSettings } from "./fields.ts";
 
 // The generation settings. They start as the model's own and go back to them with every change of model, except
 // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
-// steps: 0 stands for as many tokens as the model's context holds, which is the default of every model
-// T274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
-// (the worker's contract has their names: one that is added is added there)
-type Settings = Sampled & { steps: number; temperature: number; topp: number; repetition_penalty: number };
-const defaults = (current: Model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...current.generation });
-// The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
-// (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=; T520: &thinking=, the budget of a
-// thought in tokens, 0 for none). A value that is not a number, or outside what the field allows, is
-// ignored. They survive a change of model, like the seed: the link said what to run with.
-const LIMITS: Record<string, [number, number]> = { temperature: [0, 1.5], topp: [0.05, 1], steps: [0, 1 << 20],
-                                                   repetition_penalty: [1, 2], seed: [0, 0xffffffff],
-                                                   top_k: [0, 1 << 20], min_p: [0, 1], presence_penalty: [0, 2],
-                                                   thinking: [0, 1 << 20] };
-const fromLink: Partial<Settings> = {};
-for (const [name, [low, high]] of Object.entries(LIMITS)) {
-  const given = parameters.get(name);
-  const value = given === null ? NaN : Number(given);
-  if (given !== null && Number.isFinite(value) && value >= low && value <= high) {
-    (fromLink as Record<string, number>)[name] = ["steps", "seed", "top_k", "thinking"].includes(name) ? Math.round(value) : value;
-  }
-}
+// What the link sets (fields.ts) survives a change of model, like the seed: the link said what to run with.
+const fromLink = linkSettings(parameters);
 const defaultsWithLink = (current: Model): Settings => ({ ...defaults(current), ...fromLink });
 export let settings = defaultsWithLink(model);
 const field = (id: string) => $(id) as HTMLInputElement;
 export function showSettings() {
   field("steps").max = String(longest);
-  field("temperature").value = String(settings.temperature);
-  const steps = settings.steps > 0 ? Math.min(settings.steps, longest) : longest;
-  field("steps").value = String(steps);
-  field("topp").value = String(settings.topp);
-  field("penalty").value = String(settings.repetition_penalty);
+  for (const { id, key, said, shown } of FIELDS) {
+    const value = shown ? shown(settings[key], longest) : settings[key];
+    field(id).value = String(value);
+    $(`${id}-value`).textContent = said(value);
+  }
   if (document.activeElement !== field("seed")) {
     field("seed").value = settings.seed === undefined ? "" : String(settings.seed);
   }
-  $("temperature-value").textContent = settings.temperature ? settings.temperature.toFixed(2) : "greedy";
-  $("steps-value").textContent = String(steps);
-  $("topp-value").textContent = settings.topp.toFixed(2);
-  $("penalty-value").textContent = settings.repetition_penalty.toFixed(2);
-  const usual = defaults(model);
-  // "all of the context" is the same setting whether it is written as 0 or as the length of the context
-  const whole = (count: number) => (count <= 0 || count >= longest ? 0 : count);
-  const changed = (Object.keys({ ...usual, ...settings }) as (keyof Settings)[])
-    .some((key) => (key === "steps" ? whole(settings.steps) !== whole(usual.steps) : settings[key] !== usual[key]));
-  $("settings-open").classList.toggle("changed", changed);
+  $("settings-open").classList.toggle("changed", changedFrom(settings, defaults(model), longest));
 }
 export function fixSeed(seed: number) {
   settings.seed = seed;
   showSettings();
 }
-for (const [id, key] of [["temperature", "temperature"], ["steps", "steps"], ["topp", "topp"], ["penalty", "repetition_penalty"]] as const) {
+for (const { id, key, taken } of FIELDS) {
   field(id).oninput = () => {
     const value = Number(field(id).value);
-    settings[key] = key === "steps" && value >= longest ? 0 : value;
+    settings[key] = taken ? taken(value, longest) : value;
     showSettings();
   };
 }

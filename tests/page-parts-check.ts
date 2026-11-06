@@ -650,4 +650,37 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   cases += 13;
 }
 console.log(`page-parts-check: folder.ts by itself: the models of a folder, of llama2.c's form and of Hugging Face's`);
+{
+  // T643.7: fields.ts, the generation settings' tables: what a link sets of them (each setting the worker is sent:
+  // tsc holds LIMITS to Sampled's keys), and the sheet's fields, which index.astro's markup must have
+  const { LIMITS, linkSettings, FIELDS, changedFrom, defaults } = await fresh("page/fields.ts");
+  const link = (search) => linkSettings(new URLSearchParams(search));
+  // (the second copy of the URL's names, as links that are out in the world say them)
+  assert.deepEqual(Object.keys(LIMITS), ["temperature", "topp", "steps", "repetition_penalty", "seed", "top_k", "min_p", "presence_penalty", "thinking"],
+    "the names a link may set");
+  assert.deepEqual(link("temperature=0.7&seed=1234&steps=128"), { temperature: 0.7, steps: 128, seed: 1234 }, "T43's link");
+  assert.deepEqual(link("temperature=0.25&seed=1233.5&steps=127.6"), { temperature: 0.25, steps: 128, seed: 1234 }, "steps and the seed are whole numbers, the temperature is not");
+  assert.deepEqual(link("topp=0.05&repetition_penalty=2&top_k=20.4&min_p=0.05&presence_penalty=1.5&thinking=511.6"),
+    { topp: 0.05, repetition_penalty: 2, top_k: 20, min_p: 0.05, presence_penalty: 1.5, thinking: 512 }, "the ends of a range are in it; whole ones are rounded");
+  assert.deepEqual(link("temperature=1.51&topp=0.04&seed=-1&steps=x&min_p=&repetition_penalty=Infinity&seed=4294967296"), { min_p: 0 },
+    "outside a range, not a number, or infinite: left out (an empty value is 0, as Number reads it)");
+  assert.deepEqual(link("kernel=off&model=tiny-lm"), {}, "no setting, nothing set");
+  const usual = defaults({ generation: { steps: 0, temperature: 0.7 } });
+  assert.deepEqual(usual, { topp: 0.9, repetition_penalty: 1.0, steps: 0, temperature: 0.7 }, "a model's own settings: its card's over the page's");
+  assert.deepEqual([changedFrom({ ...usual, steps: 4096 }, usual, 4096), changedFrom({ ...usual, steps: 5000 }, usual, 4096), changedFrom(usual, usual, 4096)],
+    [false, false, false], "all of the context, as 0 or as its length, is the same setting");
+  assert.deepEqual([changedFrom({ ...usual, steps: 128 }, usual, 4096), changedFrom({ ...usual, seed: 1 }, usual, 4096), changedFrom({ ...usual, temperature: 0 }, usual, 4096)],
+    [true, true, true], "anything else that differs");
+  const said = Object.fromEntries(FIELDS.map(({ id, said }) => [id, [said(0), said(0.7)]]));
+  assert.deepEqual(said, { temperature: ["greedy", "0.70"], steps: ["0", "0.7"], topp: ["0.00", "0.70"], penalty: ["0.00", "0.70"] }, "the words of each field's output");
+  const steps = FIELDS.find((each) => each.id === "steps");
+  assert.deepEqual([steps.shown(0, 4096), steps.shown(128, 4096), steps.shown(9000, 4096), steps.taken(4096, 4096), steps.taken(128, 4096)], [4096, 128, 4096, 0, 128],
+    "steps: shown within the context, and the context's length is 0 again");
+  const markup = (await import("node:fs")).readFileSync(fileURLToPath(new URL("../src/pages/index.astro", import.meta.url)), "utf8");
+  for (const { id } of FIELDS) {
+    assert.ok(markup.includes(`<input id="${id}" type="range"`) && markup.includes(`<output id="${id}-value">`), `index.astro has the field ${id} and its output`);
+  }
+  cases += 10;
+}
+console.log(`page-parts-check: fields.ts by itself: the settings a link sets, and the sheet's fields`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);
