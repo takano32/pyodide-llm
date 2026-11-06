@@ -20,6 +20,7 @@
 //   posted(trees, to)                    Map of the type -> { keys, spreads } of every postMessage({ type: "...", ... })
 //   told(trees)                          the texts `data.type` is compared with
 //   tabled(trees, name)                  the keys of the object literal named name: a receiver's table of rows
+//   heardOff(trees)(name, at)            what the functions of those files read of the at-th parameter of one (T641.15)
 //   differing(what, declared, written, more)   both ways; more: { key: why it is not written there }. The lines.
 //
 // Only what these checks need of TypeScript's types is read: anything else in the place of a type asked for throws.
@@ -269,6 +270,86 @@ export function told(trees, name = "data") {
     });
   }
   return types;
+}
+
+/** T641.15: what the functions of some files read of a value handed to one of them, followed through the calls among
+ * them. heardOff(trees)(name, at) is { keys, handed } of the at-th parameter of the function of that name (a function
+ * declaration or a const of an arrow), or of a function node given instead of the name (and its file): keys, the keys read off it
+ * (`p.key`, `p?.key`, a pattern `{ a, b }` in its place or `const { a, b } = p`), with what the functions of these
+ * files it is handed to read of it (`f(p)`, and `f({ a, ...p })` as all f reads but a); handed, where it goes that is not
+ * followed (assigned, handed to a function of no file here or to a name two functions have, a rest of a pattern), as
+ * "file: what". Tests of it as a
+ * whole (`!p`, `p === x`, `typeof p`) are reads of no key. A name of the parameter that a function inside hides is
+ * still read as the parameter (none of the page's does). */
+export function heardOff(trees) {
+  const functions = new Map();
+  for (const { file, program } of trees) {
+    walk(program, (node) => {
+      const named = node.type === "FunctionDeclaration" && node.id ? [node.id.name, node]
+        : node.type === "VariableDeclarator" && node.id.type === "Identifier" && /^(Arrow)?Function(Expression)?$/.test(node.init?.type ?? "") ? [node.id.name, node.init] : null;
+      if (!named) return;
+      // (two of one name, the inner functions of two others: a value handed to that name is not followed)
+      functions.set(named[0], functions.has(named[0]) ? null : { file, node: named[1] });
+    });
+  }
+  const fileOf = new Map([...functions.values()].filter(Boolean).map(({ file, node }) => [node, file]));
+  const callee = (call) => call.callee.type === "Identifier" && functions.get(call.callee.name);
+  const skipped = ["loc", "start", "end", "extra", "leadingComments", "trailingComments", "innerComments"];
+  function follow(fn, at, into, seen) {
+    if (seen.has(fn.node) && seen.get(fn.node).has(at)) return;
+    seen.set(fn.node, (seen.get(fn.node) ?? new Set()).add(at));
+    const pattern = (node) => {
+      for (const property of node.properties) {
+        if (property.type === "ObjectProperty" && !property.computed) into.keys.add(keyName(property));
+        else into.handed.push(`${fn.file}: the rest of a pattern`);
+      }
+    };
+    const parameter = fn.node.params[at];
+    if (!parameter) return;
+    if (parameter.type === "ObjectPattern") return pattern(parameter);
+    if (parameter.type !== "Identifier") return void into.handed.push(`${fn.file}: a parameter that is a ${parameter.type}`);
+    const name = parameter.name;
+    // (down the body with the nodes above each: a spread's call is two above the name)
+    const down = (node, above) => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) return void node.forEach((child) => down(child, above));
+      if (node.type === "Identifier" && node.name === name) return use(node, above);
+      const next = node.type ? [node, ...above] : above;
+      for (const key of Object.keys(node)) if (!skipped.includes(key)) down(node[key], next);
+    };
+    const use = (node, [parent, grand, great]) => {
+      if (/MemberExpression$/.test(parent.type) && parent.object === node) {
+        if (!parent.computed) into.keys.add(parent.property.name);
+        else into.handed.push(`${fn.file}: ${name}[…]`);
+      } else if ((/MemberExpression$/.test(parent.type) && parent.property === node && !parent.computed) || (/Property$/.test(parent.type) && parent.key === node && !parent.computed)) {
+        // (a key of the same spelling: no read of it)
+      } else if (/CallExpression$/.test(parent.type) && parent.arguments.includes(node) && callee(parent)) {
+        follow(callee(parent), parent.arguments.indexOf(node), into, seen);
+      } else if (parent.type === "SpreadElement" && grand?.type === "ObjectExpression" && /CallExpression$/.test(great?.type ?? "") && great.arguments.includes(grand) && callee(great)) {
+        // (what the literal says itself is none of the value's to say)
+        const own = new Set(grand.properties.filter((property) => property.type !== "SpreadElement" && !property.computed).map(keyName));
+        const inner = { keys: new Set(), handed: into.handed };
+        follow(callee(great), great.arguments.indexOf(grand), inner, seen);
+        for (const key of inner.keys) if (!own.has(key)) into.keys.add(key);
+      } else if (parent.type === "VariableDeclarator" && parent.init === node && parent.id.type === "ObjectPattern") {
+        pattern(parent.id);
+      } else if (parent.type === "UnaryExpression" || (parent.type === "BinaryExpression" && /^[!=]==?$/.test(parent.operator))) {
+        // (the value tested as a whole)
+      } else {
+        into.handed.push(`${fn.file}: ${generated(parent)}`);
+      }
+    };
+    down(fn.node.body, [fn.node]);
+  }
+  const generated = (node) => node.type === "AssignmentExpression" && node.left.type === "MemberExpression" ? `assigned to …${node.left.property.name ?? ""}`
+    : /CallExpression$/.test(node.type) ? `handed to ${node.callee.name ?? node.callee.property?.name ?? "a call"}()` : `in a ${node.type}`;
+  return (name, at = 0, file = undefined) => {
+    const fn = typeof name === "string" ? functions.get(name) : { file: fileOf.get(name) ?? file, node: name };
+    if (!fn) throw new Error(`no function named ${name}(): tests/contracts.ts follows a value into the one`);
+    const into = { keys: new Set(), handed: [] };
+    follow(fn, at, into, new Map());
+    return into;
+  };
 }
 
 const sorted = (names) => [...names].sort();

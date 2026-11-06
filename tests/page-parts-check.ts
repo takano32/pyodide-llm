@@ -533,6 +533,62 @@ console.log(`page-parts-check: thought.ts by itself: a thought, its end and its 
   cases += 3;
 }
 {
+  // T641.15: the keys of each report against what the pages read of it. worker-modules-check holds the type's keys to
+  // what the worker posts; this holds them to what a page does with them: a key the worker says and nothing reads is
+  // in the type and written by the worker for nobody, and a key a page reads that the worker stops saying fails here
+  // as well as in tsc. What a page reads of a report: what its row of receiver.ts's HEARD reads, followed into the
+  // functions of src/page/ it is handed to (lines.ts, model.ts, draw.ts, remembered.ts), and heard.ts's two that every
+  // report goes through first; /benchmark/'s paths, src/bench/path.ts's two that take it whole (src/benchmark/model.ts
+  // hands them what the worker said). Where a report goes that is not followed is listed, and must be (HANDED)
+  const { contract, heardOff, treeOf, walk } = await import("./contracts.ts");
+  const fs = await import("node:fs");
+  const folder = (name) => {
+    const place = fileURLToPath(new URL(`../src/${name}/`, import.meta.url));
+    return fs.readdirSync(place).filter((file) => file.endsWith(".ts")).sort().map((file) => treeOf(file, (one) => place + one));
+  };
+  const page = folder("page"), bench = folder("bench");
+  const pageReads = heardOff(page), benchReads = heardOff(bench);
+  const declared = contract("messages.ts").membersOf("FromWorker");
+  // where a report goes and is not followed: what heardOff() says of it -> why
+  const HANDED = { "receiver.ts: assigned to …__ready": "ready, to tests/e2e.ts and tests/blocks-in-browser.ts (window.__ready): the keys it reads are ELSEWHERE's" };
+  // the keys no page reads, by the kind: why each is in the type all the same
+  const e2e = fs.readFileSync(fileURLToPath(new URL("./e2e.ts", import.meta.url)), "utf8");
+  const ELSEWHERE = {
+    ready: Object.fromEntries(["heap", "keptIn", "keptMiss", "widened"].map((key) => [key, "tests/e2e.ts reads it off window.__ready"])),
+    done: { prompt_seconds: "Python's generate() says it (Stats are its stats: worker-modules-check); the page says the prompt's tok/s" },
+    gpu: { tokenAttention: "forward/gpuside.ts says it for the tests (T224), and none reads it off the page", tablePieces: "forward/gpuside.ts says it (T209), and nothing reads it off the page" },
+    "threads-compared": { model: "the page reads the verdicts of the model it loads, and threads' model alone" },
+  };
+  for (const key of Object.keys(ELSEWHERE.ready)) assert.match(e2e, new RegExp(`\\?\\.${key}\\b`), `tests/e2e.ts reads ${key} off window.__ready no more: ELSEWHERE says it does`);
+  const receiverTree = page.find(({ file }) => file === "receiver.ts");
+  let table;
+  walk(receiverTree.program, (node) => {
+    if (node.type === "VariableDeclarator" && node.id.name === "HEARD") table = node.init;
+  });
+  const first = ["ofThisLoad", "endsWork"].map((name) => pageReads(name));
+  const handed = new Set(), lines = [];
+  for (const property of table.properties) {
+    const kind = property.key.name ?? property.key.value, row = property.value;
+    const readings = [...first, row.type === "Identifier" ? pageReads(row.name) : pageReads(row, 0, "receiver.ts"),
+      ...(kind === "paths" ? [benchReads("pathTable"), benchReads("pathWarnings")] : [])];
+    const read = new Set(readings.flatMap(({ keys }) => [...keys]));
+    readings.forEach(({ handed: where }) => where.forEach((one) => handed.add(one)));
+    // (heard.ts reads every report's load, which a report of no load has not: `load?: undefined`, which the type's
+    // keys leave out; tsc holds what the rows read, and this as well)
+    const own = new Set(readings.slice(first.length).flatMap(({ keys }) => [...keys]));
+    own.delete("type");
+    const keys = declared.get(kind), more = ELSEWHERE[kind] ?? {};
+    const unread = [...keys].filter((key) => !read.has(key) && !(key in more)), untyped = [...own].filter((key) => !keys.has(key));
+    const stale = Object.keys(more).filter((key) => read.has(key) || !keys.has(key));
+    if (unread.length) lines.push(`"${kind}": in the type, posted by the worker, and read by no page: ${unread.join(", ")}`);
+    if (untyped.length) lines.push(`"${kind}": read by a page and not in the type: ${untyped.join(", ")}`);
+    if (stale.length) lines.push(`"${kind}": listed in ELSEWHERE as read by no page, and a page reads it now or the type has it no more: ${stale.join(", ")}`);
+  }
+  assert.deepEqual(lines, [], "the keys of each report of contracts/messages.ts's FromWorker, to what the pages read of it");
+  assert.deepEqual([...handed].sort(), Object.keys(HANDED).sort(), "where a report goes that this check does not follow (HANDED)");
+  cases += 2;
+}
+{
   // T468.2: lines.ts, the status line's words: a ready model's, and a load's as it fetches and converts
   const { readyStatus, progressLine } = await fresh("page/lines.ts");
   const { SLOWER } = await fresh("runtime/updated.ts");
