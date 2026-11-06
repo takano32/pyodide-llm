@@ -28,7 +28,7 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, SETTINGS, Tokenizer
-from engine.layout import (GELU, GELU_ERF, PARTLY, PROPORTIONAL, Dims, FORM, file_size, form_of, layout_of, linear_form, linear_widths, local_layers,
+from engine.layout import (GELU, GELU_ERF, PARTLY, PROPORTIONAL, Dims, FORM, file_size, form_of, linear_widths, local_layers,
                            stateful_kinds, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, gelu_erf, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
@@ -87,6 +87,72 @@ def turned_heads(v, cos, sin, facts, partly):
     if partly and not facts["local"]:
         return partial_rope(v.reshape(-1, facts["head"]), cos, sin, facts["rotary"])
     return rope(v, cos, sin)
+
+
+# T639.8: the stages of making a Llama, each a function of what it is given (the Dims, the facts of its layers), so
+# that each can be tried alone
+def switches(disable):
+    """The optimizations to leave out (T52: SWITCHES' names) as a tuple of str: a ValueError for any other name, so
+    that a typo never quietly measures the wrong thing."""
+    disable = tuple(str(name) for name in disable)
+    unnamed = [name for name in disable if name not in SWITCHES]
+    if unnamed:
+        raise ValueError(f"There is no optimization called {unnamed[0]!r}: {', '.join(SWITCHES)}.")
+    return disable
+
+
+def suited(dims, quantized):
+    """Whether the int8 kernels can take the matrices of a model of these numbers (engine/layout.py's Dims): those of
+    a quantized file in groups of 32 only (T229: and a linear-attention layer's output matrix, whose rows are as long
+    as its value heads together). Those of a file that is not quantized always."""
+    return not quantized or (all(width % 32 == 0 for width in (dims.dim, dims.q_dim, dims.kv_dim, dims.hidden_dim))
+                             and (dims.linear is None or linear_widths(dims.linear)[2] % 32 == 0))
+
+
+def turned_by(rotated):
+    """What a model's matrices read their input as (T237): the input itself, or, in a rotated basis (rotated_form()'s),
+    the input turned by the signs of its width and the block. Of the signs and the block themselves, not of a model: a
+    function that held the model would be a cycle of references, and the weights would then stay until a collection."""
+    if rotated is None:
+        return lambda v: v
+    signs, block = rotated["signs"], rotated["block"]
+    return lambda v: rotate(v, signs[v.size], block)
+
+
+def numpy_caches(dims, layers):
+    """The keys and the values the NumPy forward pass keeps of a model (its Dims, its layers' facts: layer_facts()),
+    room for KV_START positions to begin with: an array for the layers that attend (the linear-attention layers and the
+    convolution layers have none), or T331 one for each, of the size of its heads, where they differ or T330 some read
+    another's (None for those)."""
+    attending = [facts for facts in layers if facts["kind"] == ATTENTION]
+    positions = min(KV_START, dims.seq_len)
+    if dims.wide is None and dims.sharing is None:
+        keys = np.zeros((len(attending), dims.n_kv_heads, positions, dims.head_size), dtype=np.float32)
+        return keys, np.zeros_like(keys)
+    keys = [np.zeros((dims.n_kv_heads, positions, facts["head"]), dtype=np.float32) if facts["kept"] >= 0 else None
+            for facts in attending]
+    return keys, [None if each is None else np.zeros_like(each) for each in keys]
+
+
+def numpy_states(dims, layers):
+    """(the name of the reference's step of the layers that keep a state, {the attribute: its state}) of a model (its
+    Dims, its layers' facts) as STATEFUL_LAYERS has them; (None, {}) of one whose layers all attend."""
+    if dims.stateful_kind is None:
+        return None, {}
+    step, states = STATEFUL_LAYERS[dims.stateful_kind]
+    attending = sum(facts["kind"] == ATTENTION for facts in layers)
+    return step, states(getattr(dims, dims.stateful_kind), dims.n_layers - attending, dims.dim)
+
+
+def backend_text(backend, disable, kernels):
+    """What the line under an answer says ran it: the forward pass's backend, then the sampling where it is NumPy's
+    though there are kernels (or forward.js) to sample on, then what was left out (disable: switches()'), since the
+    line has to say what the numbers are the numbers of."""
+    if kernels and "sampler" in disable:
+        backend += ", NumPy sampling"
+    if disable:
+        backend += " (without " + ", ".join(name for name in SWITCHES if name in disable) + ")"
+    return backend
 
 
 # T639.1: what a Llama is given besides its two files, by whose it is, each in one table: the form's (engine/layout.py's
@@ -207,52 +273,49 @@ class Llama:
         strange = [name for name in options if name not in OPTIONS]
         if strange:
             raise TypeError(f"Llama.__init__() got an unexpected keyword argument {strange[0]!r}")
-        # what the file cannot say (engine/layout.py's FORM, each with its default), and with it for every layer (does
-        # it keep a state: a linear-attention layer or a convolution one, its place in the stacks of its kind's
-        # tensors). The form is held to its architecture in the Dims: one without the layers its architecture has, or
-        # with another's, is refused
+        # what the file cannot say (engine/layout.py's FORM, each with its default), held to its architecture in the
+        # Dims below: one without the layers its architecture has, or with another's, is refused
         form = form_of(options)
-        arch, linear = form["arch"], form["linear"]
+        arch = form["arch"]
         # how the text is read: the tokenizer's own settings, by the Tokenizer's names (the tokenizer is made last, below)
         reading = {SETTINGS[name]: value for name, value in options.items() if name in SETTINGS}
         # the plan's (Settings') and the Llama's own
         planned = {name: options.get(name, default) for name, default in PLANNED.items()}
-        disable, rotary, parallel_residual, unturned, local, softcap = (planned[name] for name in (
-            "disable", "rotary", "parallel_residual", "unturned", "local", "softcap"))
+        rotary, parallel_residual, unturned, local, softcap = (planned[name] for name in (
+            "rotary", "parallel_residual", "unturned", "local", "softcap"))
         own = {name: options.get(name, default) for name, default in OWN.items()}
         dtype, rope_theta, rope_scaling, bos, stop_tokens, specials, kernels, external = own.values()
         if external is not None:
             head = external.read(0, 28)
             checkpoint = bytes(plain(head))
-            if "kernels" in tuple(str(name) for name in disable):
+            if "kernels" in tuple(str(name) for name in planned["disable"]):
                 raise ValueError("Without the kernels the weights have to be in Python: load them there instead.")
-        (self.dim, self.hidden_dim, self.n_layers, self.n_heads,
-         self.n_kv_heads, vocab_size, self.seq_len) = struct.unpack_from("<7i", checkpoint, 0)
-        # negative vocab size is hacky way of signaling unshared weights. bit yikes.
-        shared_weights = vocab_size > 0
-        self.vocab_size = abs(vocab_size)
-        self.head_size = int(form["head_dim"]) or self.dim // self.n_heads
-        dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
-        self.q_dim, kv_dim = self.n_heads * self.head_size, self.n_kv_heads * self.head_size
-
-        disable = tuple(str(name) for name in disable)
-        unnamed = [name for name in disable if name not in SWITCHES]
-        if unnamed:
-            raise ValueError(f"There is no optimization called {unnamed[0]!r}: {', '.join(SWITCHES)}.")
-        self.disabled = disable
+        header = struct.unpack_from("<7i", checkpoint, 0)
+        self.disabled = disable = switches(planned["disable"])
         # the file's dtype by its name (engine/dtypes.py). int6 (T98) and ternary (T230) are int8 with the values
         # packed: past where the bytes are read, a quantized file is int8
         stored = dtype_of(dtype)
         quantized = stored in QUANTIZED
-        # the architecture's facts (engine/layout.py's Layout), which is all of the architecture that is read below
-        layout = layout_of(arch)
-        # The int8 kernels work on groups of 32 only
-        # (the numbers of linear-attention layers, read here for what is sized by them below: the Dims, further down,
-        # holds them to the architecture)
-        self.linear = linear_form(linear)
-        # (T229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
-        suitable = not quantized or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
-                                        and (self.linear is None or linear_widths(self.linear)[2] % 32 == 0))
+        # T255: the layers whose q and k go into the scores as their matrices (and norms) leave them
+        # (these two read the header's layers alone, and refuse before the Dims below as they did before it was first)
+        self.unturned = unturned_layers(arch, header[2], unturned)
+        # T261: the layers that attend a window of the last positions and have RoPE tables of their own (None: none)
+        self.local = local_layers(arch, header[2], local)
+        # T639.8: the numbers the rows are made of (engine/layout.py's Dims), worked out once: what follows reads them
+        # there. The architecture's facts (engine/layout.py's Layout) are the Dims' too
+        dims = Dims(header, form)
+        layout = dims.layout
+        (self.dim, self.hidden_dim, self.n_layers, self.n_heads, self.n_kv_heads, self.vocab_size, self.seq_len,
+         self.head_size, self.q_dim) = (dims.dim, dims.hidden_dim, dims.n_layers, dims.n_heads, dims.n_kv_heads,
+                                        dims.vocab_size, dims.seq_len, dims.head_size, dims.q_dim)
+        dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
+        # (a negative vocabulary in the header: the classifier is a tensor of its own)
+        shared_weights = dims.shared
+        # the numbers of its layers that keep a state, under their kind's name: linear (T229, a Qwen3.5's
+        # linear-attention layers), convolution (T260, an LFM2's convolution layers); None, of a model without
+        for kind in stateful_kinds():
+            setattr(self, kind, getattr(dims, kind))
+        suitable = suited(dims, quantized)
         kernels = load_kernels(kernels) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
@@ -261,21 +324,13 @@ class Llama:
 
         self.arch, self.parallel_residual = arch, parallel_residual
         # T237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
-        self.rotated = rotated_form(form["rotated"], rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
+        self.rotated = rotated_form(form["rotated"], rotated_widths(dim, self.q_dim, hidden_dim, dims.linear))
         if self.rotated is not None and not layout.rotatable:
             raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2, GPT-NeoX or LFM2 has one.")
-        # (the signs and the block themselves, not this model: a function that held the model would be a cycle of
-        # references, and the weights would then stay until a collection)
-        signs, block = (self.rotated["signs"], self.rotated["block"]) if self.rotated else (None, None)
-        self.turned = (lambda v: v) if self.rotated is None else (lambda v: rotate(v, signs[v.size], block))
+        self.turned = turned_by(self.rotated)
         self.rms_norm_eps = float(planned["rms_norm_eps"])
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
-        # T255: the layers whose q and k go into the scores as their matrices (and norms) leave them
-        self.unturned = unturned_layers(arch, n_layers, unturned)
-        # T261: the layers that attend a window of the last positions and have RoPE tables of their own (None: none)
-        self.local = local_layers(arch, n_layers, local)
-        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
         self.slots = dims.slots
         self.wide = dims.wide  # (T331: the wide heads' form, None of a model without)
         if form["tiled"]:
@@ -291,10 +346,6 @@ class Llama:
         # "window", "rotary"), and its FFN's width ("double") and place ("ffn"). Worked out here once, and read by the
         # NumPy forward pass at every layer (layer_facts() refuses shared layers that attend another window: T518)
         self.layers = layer_facts(dims, settings)
-        # the numbers of its layers that keep a state, under their kind's name: linear (T229, a Qwen3.5's
-        # linear-attention layers), convolution (T260, an LFM2's convolution layers); None, of a model without
-        for kind in stateful_kinds():
-            setattr(self, kind, getattr(dims, kind))
         # what of the forward pass differs by the architecture, as the reference reads it at every token: the kind of
         # its norms and of its FFN, and whether RoPE turns the heads of q and k whole, in part or not at all
         self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
@@ -335,7 +386,7 @@ class Llama:
         # T261: and those of the local layers, which no file has
         self.local_cis = local_tables(self.seq_len, self.head_size, self.local["rope_theta"], rope_frequencies) \
             if self.local else None
-        self.backend = "NumPy"
+        backend = "NumPy"
         if external is not None:
             if file_size(self.rows, stored) != int(external.size):
                 raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for "
@@ -344,27 +395,17 @@ class Llama:
             # (the plan is made here and handed over: nothing in Python keeps it)
             outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, settings._replace(
                 tables=tables, local_tables=self.local_cis)), external)
-            self.backend, self._external = outside.backend, (outside.engine, outside.logits)
+            backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):
                     setattr(self, name, getattr(outside, name))
         else:
             # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
-            # (the linear-attention layers and the convolution layers have no keys and values)
-            attending = [facts for facts in self.layers if facts["kind"] == ATTENTION]
-            if dims.wide is None and dims.sharing is None:
-                self.key_cache = np.zeros((len(attending), self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
-                self.value_cache = np.zeros_like(self.key_cache)
-            else:
-                # T331: a layer's keys and values are of the size of its heads: one array for each; T330: none for a
-                # layer that reads another's
-                self.key_cache = [np.zeros((self.n_kv_heads, min(KV_START, self.seq_len), facts["head"]), dtype=np.float32)
-                                  if facts["kept"] >= 0 else None for facts in attending]
-                self.value_cache = [None if keys is None else np.zeros_like(keys) for keys in self.key_cache]
-            if dims.stateful_kind is not None:
-                # their states (STATEFUL_LAYERS), each an attribute of its name. state_at: the next position
-                self.stateful, states = STATEFUL_LAYERS[dims.stateful_kind]
-                states = states(getattr(dims, dims.stateful_kind), n_layers - len(attending), dim)
+            self.key_cache, self.value_cache = numpy_caches(dims, self.layers)
+            # the states of its layers that keep one (STATEFUL_LAYERS), each an attribute of its name. state_at: the
+            # next position
+            self.stateful, states = numpy_states(dims, self.layers)
+            if self.stateful is not None:
                 self.states = tuple(states)
                 for name, state in states.items():
                     setattr(self, name, state)
@@ -372,11 +413,7 @@ class Llama:
         # the sampler: the kernels' where there are kernels, in the reference's place
         if kernels and "sampler" not in disable:
             self.sampler = KernelSampler(kernels, self.vocab_size)
-        if (kernels or external is not None) and "sampler" in disable:
-            self.backend += ", NumPy sampling"
-        if disable:
-            # the line has to say what the numbers are the numbers of
-            self.backend += " (without " + ", ".join(name for name in SWITCHES if name in disable) + ")"
+        self.backend = backend_text(backend, disable, bool(kernels) or external is not None)
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, **reading)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
         self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
