@@ -307,13 +307,15 @@ globalThis.postMessage = (message) => posted.push(message);
 assert.equal(globalThis.navigator?.gpu, undefined, "this check wants a Node without WebGPU");
 const window_ = await import(tree.runtimeUrl("gpu.js"));
 assert.equal(handlers.length, 1, "gpu.js sets its receiver once, as it loads: nothing is awaited before it");
-for (const [name, value] of Object.entries(window_)) assert.notEqual(value, undefined, `gpu.js exports ${name} undefined`);
+// (T642.13: the window is its receiver alone and exports nothing: a name only a check reads is read from its module, as heldFloats is
+// from gpu/tokenforms.ts. An export put back would make this fail, not pass as an export that is not undefined)
+assert.deepEqual(Object.keys(window_), [], "gpu.js exports nothing: a check reads a name from the module that owns it");
 for (let i = 0; i < 100 && !closed; i++) await new Promise((resolve) => setTimeout(resolve, 10));
 await new Promise((resolve) => setTimeout(resolve, 50));
 assert.deepEqual(posted, [{ type: "unusable", reason: "no WebGPU in a worker here" }, { type: "ended" }],
   "the start and the stop that came as the receiver was set were answered once each, in their order");
 assert.equal(closed, 1, "the worker ended once");
-console.log(`gpu-modules-check: gpu.js links (${Object.keys(window_).length} export), and a start and its stop are answered once each, in order`);
+console.log(`gpu-modules-check: gpu.js links (it exports nothing), and a start and its stop are answered once each, in order`);
 // ---- T568.2: the GPU's kinds in the CPU's order: the state of the layers that keep one is staged by the CPU in the order of
 // its table (forward/kinds.ts's LAYER_KINDS) and taken up by the GPU in the order of its own (gpu/kinds.ts's GPU_KINDS).
 // No model has two kinds that keep a state yet, so two orders would pass every other check
