@@ -1,6 +1,6 @@
 // src/page/choosing.ts (T643.10): what choosing a model decides, apart from the elements that are chosen with. It reads
 // no element, no address and no storage, so Node imports it (tests/page-parts-check.ts); choose.ts asks it and draws.
-import { DEFAULT_MODEL, MODELS, UNASKED_BYTES, memoryWarning } from "../models.ts";
+import { DEFAULT_MODEL, MODELS, asksBefore, memoryWarning } from "../models.ts";
 import { REPOSITORY, REVISION } from "./repository.ts";
 import type { Model } from "./model.ts";
 
@@ -17,7 +17,7 @@ export const chosenOf = (value: string, local: Model | undefined): Model => (val
  * how much memory it has (Chromium only). `weighed` is the model as the worker gets it (address.ts's weighed()). */
 export function askedFirst(weighed: Model, kept: boolean, deviceMemory: number | undefined) {
   const download = kept ? 0 : (weighed.download ?? 0);
-  const asks = [download > UNASKED_BYTES && `${weighed.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
+  const asks = [asksBefore({ download }) && `${weighed.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
                 memoryWarning(weighed, deviceMemory)].filter(Boolean);
   return asks.length ? `${asks.join(" ")} Go on?` : undefined;
 }
