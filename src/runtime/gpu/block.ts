@@ -306,9 +306,9 @@ const BLOCK_ROUNDS = 3;
 async function timeBlocks(m: Model) {
   const { batch, seqLen } = m.plan, counts = [...new Set([Math.min(16, batch, seqLen), Math.min(batch, seqLen)])], times: number[][] = counts.map(() => []);
   const timed = async (count: number) => {
-    const began = performance.now();
+    const began = m.now();
     await block(m, count, 0, () => false, true);
-    return performance.now() - began;
+    return m.now() - began;
   };
   for (const count of counts) await timed(count);
   for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {

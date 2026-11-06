@@ -18,7 +18,7 @@
 // done when it is submitted, in the order it was encoded (a command buffer never submitted does nothing; a write of the
 // queue between the encoding and the submission comes first), while calls writes each down as it is encoded.
 // Simpler: no shader runs (a dispatch is written down, and the buffers stay as they were, but for what answer writes),
-// a pipeline is its WGSL ({ code }), a bind group its entries, and no error scope ever holds an error.
+// a pipeline is its WGSL and its override constants ({ code, constants }), a bind group its entries, and no error scope ever holds an error.
 import assert from "node:assert/strict";
 
 export function standIn({ fallback = false, language = [], answer = null } = {}) {
@@ -55,7 +55,8 @@ export function standIn({ fallback = false, language = [], answer = null } = {})
     },
     createShaderModule: ({ code }) => ({ code }),
     async createComputePipelineAsync({ compute }) {
-      const pipeline = { code: compute.module.code, getBindGroupLayout: () => ({}) };
+      // (T642.4: and its override constants where it has any: two forms of one text differ by them)
+      const pipeline = { code: compute.module.code, ...(compute.constants ? { constants: compute.constants } : {}), getBindGroupLayout: () => ({}) };
       calls.push(["pipeline", pipeline]);
       return pipeline;
     },

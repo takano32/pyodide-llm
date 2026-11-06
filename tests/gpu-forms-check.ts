@@ -12,8 +12,9 @@
 //   - T465.2: a model's own forms: ternary weights (its forms checked right, one off in a row refused), and each of the
 //     ten types of llama.cpp's blocks (two a model, on w2's layers, the plan's codebooks the converter's): every form's
 //     text of each type checked right, the model's types alone compiled, a type's text off in a row refused by it.
-// Not held here: that the fastest form is taken (the timing's clock is the real one), a window's attention, the forms a
-// page remembers, a token's forms (T465.3, T465.4).
+//   - T642.4: the fastest form taken, by a clock the timings read (tests/fakes/gpu-model.ts's costs), on a fallback
+//     adapter (a pair a form) and on one that is no fallback (PAIRS pairs).
+// Not held here: a window's attention, the forms a page remembers, a token's forms (T465.3, T465.4).
 //   node tests/gpu-forms-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.ts";
@@ -141,4 +142,34 @@ for (const types of PAIRS_OF_TYPES) {
   await assert.rejects(forms_.chooseMatrices(spoilt), new RegExp(`wrong: its ${types[1]} text: products`), `${types[1]}'s text off in one row`);
 }
 console.log(`ok: llama.cpp's blocks: each of the ten types' texts checked right on the forms the device makes (${PAIRS_OF_TYPES.flat().join(", ")}), and each second of a pair off in a row refused by its text`);
+// ---- T642.4: the fastest form taken, by the clock the timings read (gpu-model.ts's costs: a dispatch of the form
+// asked for 1 ms (its text and its constants), another form's 2 ms, the quantization's none, so that it alone is the fastest): the first form the device makes right, and the last.
+// A fallback adapter times each by one pair after one pass to warm up: three submissions, the clock read twice each;
+// one that is no fallback (a pass of 20 ms a dispatch, TIMED_MS at the least: n stays 1) by the pass that sets n and
+// PAIRS pairs
+{
+  // (a pipeline of form: its text, and its override constants (llama.cpp's tiles are one text of two sizes))
+  const formOf = ({ code, constants }, form) => code === form.code && JSON.stringify(constants ?? {}) === JSON.stringify(form.constants ?? {});
+  const { m: first } = await opened();
+  const right = devicePromptForms(first.device, first.own).filter(({ none }) => !none);
+  // (the costs: a dispatch of the target ms, of another form twice that, of what is no form's (the quantization) none)
+  const costsOf = (target, ms) => (pipeline) => (formOf(pipeline, target) ? ms : right.some((form) => formOf(pipeline, form)) ? 2 * ms : 0);
+  for (const target of [right[0], right.at(-1)]) {
+    const { m, clock } = await opened({ costs: costsOf(target, 1) });
+    await forms_.chooseAttention(m);
+    const before = clock.reads;
+    await forms_.chooseMatrices(m);
+    assert.equal(m.forms.form.name, target.name, `the fastest of ${right.length} taken: ${target.name}`);
+    const ms = Object.fromEntries(m.forms.tried.map(({ name, ms }) => [name, ms]));
+    assert.ok(right.every(({ name }) => name === target.name || ms[name] > ms[target.name]), `${target.name}: the least ms (${JSON.stringify(ms)})`);
+    assert.equal(clock.reads - before, right.length * 3 * 2, "a fallback adapter: one pass to warm up and one pair a form");
+  }
+  const { m, clock } = await opened({ fallback: false, costs: costsOf(right[0], 20) });
+  await forms_.chooseAttention(m);
+  const before = clock.reads;
+  await forms_.chooseMatrices(m);
+  assert.equal(m.forms.form.name, right[0].name, "no fallback: the fastest taken");
+  assert.equal(clock.reads - before, right.length * (2 + 2 * forms_.PAIRS) * 2, "no fallback: a pass to warm up, one that sets n, and PAIRS pairs a form");
+  console.log(`ok: T642.4: the fastest of ${right.length} forms taken by the clock (${right[0].name}, ${right.at(-1).name}), one pair each on a fallback adapter, ${forms_.PAIRS} on another`);
+}
 console.log("gpu-forms-check: ok");

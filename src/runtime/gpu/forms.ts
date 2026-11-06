@@ -343,10 +343,10 @@ async function timeForms(m: Model, forms: Tiled[]) {
         }
       }
       pass.end();
-      const began = performance.now();
+      const began = m.now();
       device.queue.submit([encoder.finish()]);
       await device.queue.onSubmittedWorkDone();
-      return performance.now() - began;
+      return m.now() - began;
     };
     const passes: number[] = [], differences: number[][] = forms.map(() => []);
     for (let i = 0; i < forms.length; i++) {

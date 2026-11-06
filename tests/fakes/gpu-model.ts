@@ -7,8 +7,14 @@
 //
 //   const { m, answers } = await opened({ model, features, spoil, weights })
 //
+// T642.4, costs: the ms a dispatch takes, by its pipeline (costs({ code, constants }): its WGSL and its override constants), read by a clock that goes on by the
+// dispatches of each submission as it is submitted (made()'s now, which opened() hands to openDevice(): the clock of
+// the worker's timings that choose a form, and start()'s). Without costs the worker reads performance.now. fallback:
+// false, an adapter that is no fallback (forms.ts's and tokenattention.ts's n doubled and PAIRS pairs, BLOCK_ROUNDS
+// rounds: every pass answered too, so the costs are best large).
+//
 // The same as the worker's: the plan as forward/gpuside.ts hands one (tests/fakes/gpu-plans.ts's), the device's
-// options of each form. Simpler: a fallback adapter that the plan allows (forms.ts and tokenattention.ts time each right
+// options of each form. Simpler: a fallback adapter that the plan allows (where fallback is not false) (forms.ts and tokenattention.ts time each right
 // one by a pair of one pass there: every pass of a timing would be answered too), whose timing is no device's.
 import { runtimeUrl } from "../tree.ts";
 import { standIn } from "./webgpu.ts";
@@ -43,15 +49,23 @@ type Spoil = { attention?: Answer; halves?: Answer; quantize?: Answer; vec?: Ans
 // (T465.6.5, blocks: a type of llama.cpp's blocks by a matrix's name, or "classifier" for the table: the wide Llama's)
 // (T465.6.5, direct: a model on the GPU alone, its plan as forward/alone.ts makes one: its tables the checkpoint's)
 type Opened = { model?: string; features?: string[]; spoil?: Spoil; weights?: "ternary" | string[] | null; sane?: boolean; outliers?: boolean; blocks?: Record<string, string>;
-  direct?: boolean };
+  direct?: boolean; costs?: (pipeline: { code: string; constants?: Record<string, number> }) => number; fallback?: boolean };
 // (T465.5) the stand-in device with a made-up model's plan and memory, and the answers of every form the device may
 // check (registered before the worker makes its record: start.ts makes it in openDevice()); opened() and start's check
-export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {}, direct = false }: Opened = {}) {
+export async function made({ model = "llama", features = [], spoil = {}, weights = null, sane = false, outliers = false, blocks = {}, direct = false, costs, fallback = true }: Opened = {}) {
   const answers = await gpuAnswers();
   const { flashTile, quantize, tiled } = answers;
   // (a fallback adapter, which the plan allows as the tests' gpuForce does: forms.ts times each right form by one pair of
   // one pass there, and every pass of a timing would be answered too)
-  const { device, adapter, lose } = standIn({ fallback: true, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
+  const { device, adapter, lose, calls } = standIn({ fallback, language: ["packed_4x8_integer_dot_product", "subgroup_id"], answer: answers.answer });
+  // (T642.4: the clock, its time the costs of the dispatches submitted so far; reads, how many times it was read)
+  let time = 0, counted = 0;
+  const clock = { reads: 0, now: costs ? () => (clock.reads++, time) : undefined };
+  if (costs) {
+    device.onSubmit = () => {
+      for (; counted < calls.length; counted++) if (calls[counted][0] === "dispatch") time += costs(calls[counted][1]);
+    };
+  }
   for (const feature of features) device.features.add(feature);
   const { plan, bytes } = planned(MODELS[model], direct);
   plan.force = { fallback: true };
@@ -161,15 +175,15 @@ export async function made({ model = "llama", features = [], spoil = {}, weights
       answers.add(code, spoil.block ? spoil.block(block, packing) : block);
     }
   }
-  return { answers, device, adapter, plan, memory, lose };
+  return { answers, device, adapter, plan, memory, lose, clock };
 }
 export async function opened(options: Opened = {}) {
-  const { answers, plan, memory } = await made(options);
-  const m = await device_.openDevice(plan);
+  const { answers, plan, memory, clock } = await made(options);
+  const m = await device_.openDevice(plan, undefined, clock.now);
   device_.handed(memory, plan);
   await upload(m);
   await block_.prepare(m);
-  return { m, answers };
+  return { m, answers, clock };
 }
 
 // (T465.4) the block's layers bound with the prompt's form chosen, and its cache made, as start.ts has them before a

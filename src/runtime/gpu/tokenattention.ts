@@ -168,10 +168,10 @@ async function timeTokenAttention(m: Model, right: TokenAttention[]) {
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let i = 0; i < n; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
       pass.end();
-      const began = performance.now();
+      const began = m.now();
       device.queue.submit([encoder.finish()]);
       await device.queue.onSubmittedWorkDone();
-      return performance.now() - began;
+      return m.now() - began;
     };
     const counts: number[] = [], differences: number[][] = items.map(() => []);
     for (const item of items) {

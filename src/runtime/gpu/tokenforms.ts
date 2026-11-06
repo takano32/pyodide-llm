@@ -114,9 +114,9 @@ async function timeTokens(m: Model, forms: TokenForm[]) {
   const randoms = new Float32Array(most).map(() => Math.fround(Math.random()) % 1);
   roomFor(m, most);
   const timed = async (form: TokenForm) => {
-    const began = performance.now();
+    const began = m.now();
     await runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms });
-    return performance.now() - began;
+    return m.now() - began;
   };
   for (const form of forms) await timed(form);
   const times: number[][] = forms.map(() => []);

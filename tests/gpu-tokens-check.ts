@@ -26,8 +26,9 @@
 //     convolution, its moved rows or the delta rule's state off is wrong.
 //   - T465.6.5: classifiers with outlier channels (int8 and ternary), and a wide Llama of blocks on every matrix and its
 //     table (q, k and v apart, and joined): every form right, every dispatch answered, and their parts off wrong.
-// Not held here: that the fastest is taken (the timing's clock is the real one); a model on the GPU alone is
-// gpu-start-check.ts's.
+//   - T642.4: the fastest attention and layer of a token taken, by a clock the timings read (tests/fakes/gpu-model.ts's
+//     costs), one pair each on a fallback adapter.
+// Not held here: a model on the GPU alone is gpu-start-check.ts's.
 //   node tests/gpu-tokens-check.ts
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.ts";
@@ -37,6 +38,7 @@ import { gpuAnswers } from "./fakes/gpu-answers.ts";
 const forms_ = await import(runtimeUrl("gpu/forms.ts"));
 const tokenAttention_ = await import(runtimeUrl("gpu/tokenattention.ts"));
 const tokenForms_ = await import(runtimeUrl("gpu/tokenforms.ts"));
+const tokens_ = await import(runtimeUrl("gpu/tokens.ts"));
 const { flashVec, sample, embed, normQuantize, rmsnorm, bias, layerNorm, gelu, shortConv, convState, deltaNet, deltaGates, deltaConv, deltaConvState, swiglu } = await gpuAnswers();
 
 // the decode form's output (binding 4) off where spoiled() says, after the right answer wrote it
@@ -347,4 +349,33 @@ for (const [said, blocks] of [["int8", {}], ["each matrix its own type", APART],
   assert.match(row.m.thrown ?? "", /no layer of a token is right on this GPU/, "a token's row of a table of blocks off");
 }
 console.log("ok: a wide Llama of int8 and of llama.cpp's blocks on every matrix and its table (q, k and v apart, and q and k joined): every form right, every dispatch answered; the classifier of blocks or its row off: wrong");
+// ---- T642.4: the fastest taken, by the clock the timings read (gpu-model.ts's costs). A token's attention: the
+// prompt's tiles 1 ms a dispatch and the decode form's 10, then the other way round; each length timed by one pair after
+// one pass to warm up on a fallback adapter (the clock read twice a submission). A token's layer: the dispatches of a
+// form's texts 1 ms and another form's 10 (what no form has, the attention's, none), for the first form and the last
+{
+  const { m: plain } = await opened();
+  await forms_.chooseAttention(plain);
+  const tiles = plain.forms.attention.pipeline.code;
+  for (const [fast, taken] of [[true, TILES], [false, VEC]]) {
+    const { m, clock } = await opened({ costs: ({ code }) => (code === tiles) === fast ? 1 : 10 });
+    await forms_.chooseAttention(m);
+    const before = clock.reads;
+    await tokenAttention_.chooseTokenAttention(m);
+    assert.equal(m.tokenAttention.attention.name, taken, `the fastest attention of a token taken: ${taken}`);
+    const lengths = new Set([128, 2048].map((n) => Math.min(n, m.plan.seqLen))).size;
+    assert.equal(clock.reads - before, m.tokenAttention.attentions.length * lengths * 3 * 2, "a fallback adapter: one pass to warm up and one pair a form and length");
+  }
+  const { m: first } = await opened({ features: ["subgroups"] });
+  const forms = tokens_.tokenCandidates(first), shape = tokens_.tokenShape(first);
+  const codes = forms.map((form) => new Set(tokens_.tokenCodes(form, shape).map(([, code]) => code)));
+  assert.equal(forms.length, FORMS.length);
+  for (const at of [0, forms.length - 1]) {
+    const m = await tokens({ features: ["subgroups"], costs: ({ code }) => (codes[at].has(code) ? 1 : codes.some((own) => own.has(code)) ? 10 : 0) });
+    assert.equal(m.thrown, undefined);
+    assert.equal(m.tokenForm.form.name, forms[at].name, `the fastest form of a token taken: ${forms[at].name}`);
+    assert.ok(m.tokenForm.forms.every(({ name, ms }) => name === forms[at].name || ms > m.tokenForm.ms), `${forms[at].name}: the least ms`);
+  }
+  console.log(`ok: T642.4: the fastest taken by the clock: a token's attention (${TILES}, ${VEC}: one pair a length on a fallback adapter) and its layer (${forms[0].name}, ${forms.at(-1).name})`);
+}
 console.log("gpu-tokens-check: ok");

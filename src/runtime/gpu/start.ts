@@ -2,7 +2,7 @@
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end, whyOf } from "./device.ts";
+import { model, stopping, lost, stopAsked, handed, within, clock, openDevice, describe, unusable, end, whyOf } from "./device.ts";
 import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from "./weights.ts";
 import { chooseAttention, chooseMatrices, formsSaid } from "./forms.ts";
 import { prepare, bindLayers, grow, timeBlocks } from "./block.ts";
@@ -26,12 +26,13 @@ let opening: Promise<void> | null = null, opened = false, failure: string | null
 // the bytes that open() put up, for start() to say with the rest
 let openedBytes = 0;
 const backlog: Stretch[] = [];
-function open(plan: Opened, shared: SharedArrayBuffer) {
+// (T642.4: now, the clock of the record openDevice() makes here: a check's where one hands it)
+function open(plan: Opened, shared: SharedArrayBuffer, now = clock) {
   starting = true;
   flow = new BigInt64Array(shared);
   opening = (async () => {
     try {
-      if (!(await openDevice({ ...plan, tokens: true }, (reason) => { failure = reason; }))) {
+      if (!(await openDevice({ ...plan, tokens: true }, (reason) => { failure = reason; }, now))) {
         failure ??= "the GPU's worker was stopped";
         return;
       }
@@ -69,8 +70,9 @@ function take(data: Stretch) {
   else model!.device.queue.onSubmittedWorkDone().then(done, done);
 }
 let startAsked = false;
-async function start(memory: WebAssembly.Memory, plan: Started) {
-  const began = performance.now();
+// (T642.4: now, the clock of its seconds and of the record openDevice() makes here: a check's where one hands it)
+async function start(memory: WebAssembly.Memory, plan: Started, now = clock) {
+  const began = now();
   starting = startAsked = true;
   try {
     let bytes: number;
@@ -83,7 +85,7 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
       handed(memory, plan);
       bytes = openedBytes + (await uploadRest(model));
     } else {
-      if (!(await openDevice(plan))) return;
+      if (!(await openDevice(plan, unusable, now))) return;
       handed(memory, plan);
       bytes = await upload(model!);
     }
@@ -118,7 +120,7 @@ async function start(memory: WebAssembly.Memory, plan: Started) {
       if (stopping) return end();
     }
     if (lost) return unusable(lost);
-    postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
+    postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (now() - began) / 1000,
       ...formsSaid(m), blocks, tokens: tokensSaid(m), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined } satisfies FromGpu);
   } catch (error) {
     unusable(whyOf(error));

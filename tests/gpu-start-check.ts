@@ -12,6 +12,7 @@
 //     scope start() pushes first) and the device lost: "unusable", with why. The ready message's fields (the adapter, the
 //     device's key, nothing remembered, a form timed and none wrong or failed) and the error scopes all popped.
 //   - T465.6.5: a model on the GPU alone (open(), take() of its checkpoint, start()): ready, every dispatch answered.
+//   - T642.4: start()'s seconds and a block's ms by the clock it is handed (tests/fakes/gpu-model.ts's costs).
 // Not held here: a stop in the middle, the forms a page remembered and force.quick, the order of the steps, timeBlocks'
 // rounds of a device that is no fallback; of a model on the GPU alone, the layers after the first where the checkpoint
 // routed them (the check compares the first layer and the tables only), the prompt's rows and RoPE (EMBED_ROWS, ROPE:
@@ -33,14 +34,17 @@ globalThis.close = () => { closed += 1; };
 // a model's start on the stand-in, and what it posted
 // (on: what to do to the device before start(): its error scopes held as a stack, which each case reads after)
 let scopes = [];
+// (T642.4: the clock start() was handed, gpu-model.ts's, where the options ask for costs)
+let clock;
 async function started(options = {}, on = (device, lose) => {}) {
   posted.length = 0;
-  const { plan, memory, device, lose } = await made({ sane: true, ...options });
+  const { plan, memory, device, lose, clock: given } = await made({ sane: true, ...options });
+  clock = given;
   scopes = [];
   device.pushErrorScope = (filter) => { scopes.push(filter); };
   device.popErrorScope = async () => (scopes.pop(), null);
   on(device, lose);
-  await start_.start(memory, plan);
+  await start_.start(memory, plan, clock.now);
   // (a "progress" after each step, which the page's watch reads as the worker being alive: T135's GPU_QUIET_MS)
   const steps = posted.filter(({ type }) => type === "progress").length;
   assert.ok(steps > 0, "a start says it is going on");
@@ -48,7 +52,8 @@ async function started(options = {}, on = (device, lose) => {}) {
 }
 
 {
-  const [ready, ...more] = await started({ features: ["subgroups"] });
+  // (T642.4: every dispatch 1 ms by the clock handed: what is timed is the dispatches it submitted)
+  const [ready, ...more] = await started({ features: ["subgroups"], costs: () => 1 });
   assert.deepEqual(more, [], "one message");
   assert.equal(ready.type, "ready", `ready, not ${JSON.stringify(ready).slice(0, 300)}`);
   // (T465.5's review: a form the device does not make is said so, and every other is timed: none wrong, none failed)
@@ -62,6 +67,9 @@ async function started(options = {}, on = (device, lose) => {}) {
   assert.ok(ready.tokens?.form && ready.tokens.attention, `a token's form and attention: ${JSON.stringify(ready.tokens)?.slice(0, 300)}`);
   assert.equal(ready.tokensWhy, null, "no reason a token stays on the CPU");
   assert.ok(ready.bytes > 0 && ready.seconds >= 0);
+  // (T642.4: start()'s seconds and a block's ms by the clock handed, not performance.now: whole dispatches)
+  assert.equal(ready.seconds * 1000, clock.now(), "start()'s seconds by the clock handed");
+  assert.ok(ready.blocks.every(({ ms }) => Number.isInteger(ms) && ms > 0), `the blocks' ms by it: ${JSON.stringify(ready.blocks)}`);
   console.log(`ok: start(): ready, the prompt's ${ready.form} and ${ready.attention}, ${ready.blocks.length} block sizes timed, a token by ${ready.tokens.form}`);
 }
 {

@@ -59,6 +59,9 @@ type Base = {
   // T642.3: what the device and the browser's WGSL have, taken once here for the parts to read: subgroups (the
   // device's feature and WGSL's subgroup_id), packed (WGSL's packed_4x8_integer_dot_product, DP4A)
   features: Features;
+  // T642.4: the clock the timings that choose a form read (forms.ts, tokenattention.ts, block.ts, tokenforms.ts):
+  // performance.now, but where a check hands openDevice() another (createForward()'s clock is the CPU's, the same way)
+  now: () => number;
 };
 type Features = { subgroups: boolean; packed: boolean };
 type Model = Base & { weights: Weights; block: Block; forms: Forms; tokens?: TokenBuffers; tokenAttention?: TokenAttentionChosen; tokenForm?: TokenChoice };
@@ -161,7 +164,9 @@ function within<T>(promise: Promise<T>, what: string): Promise<T> {
 
 // The device, the model's record (model), and the error scopes the layers' buffers go up in; undefined where there is
 // none (say(why): unusable() by default) or the worker is stopping
-async function openDevice(plan: Started | Opening, say: (reason: string) => void = unusable): Promise<Model | void> {
+// (T642.4: the clock of the record, a check's where one hands it: performance.now otherwise)
+const clock = () => performance.now();
+async function openDevice(plan: Started | Opening, say: (reason: string) => void = unusable, now: () => number = clock): Promise<Model | void> {
     if (!self.navigator?.gpu) return say(REASONS.noWebGpu);
     // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
@@ -200,7 +205,7 @@ async function openDevice(plan: Started | Opening, say: (reason: string) => void
     const key = deviceKey(adapter, device, own);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
     const features: Features = { subgroups: device.features.has("subgroups") && Boolean(language?.has("subgroup_id")), packed };
-    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, own, features } satisfies Made as unknown as Model;
+    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, own, features, now } satisfies Made as unknown as Model;
     if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
@@ -342,6 +347,6 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
   pass.dispatchWorkgroups(x, y, z);
 }
 
-export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
+export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, clock, openDevice,
   describe, unusable, end, whyOf, buffer, uniform, normShape, copyIn, spreadIn, narrowIn, widenIn, widenedHalves, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Open, Bound, Whole, Pass, Opening };

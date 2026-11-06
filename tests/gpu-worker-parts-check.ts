@@ -98,7 +98,7 @@ const memory = { buffer: new SharedArrayBuffer(memoryBytes) };
 new Uint8Array(memory.buffer).set(random(memoryBytes));
 const m = await openDevice(plan);
 assert.equal(m, device_.model, "openDevice() returns the record the other modules read as model");
-assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "features", "held", "info", "key", "limit", "memory", "own", "owned", "plan", "remembered"],
+assert.deepEqual(Object.keys(m).sort(), ["adapter", "device", "fallback", "features", "held", "info", "key", "limit", "memory", "now", "own", "owned", "plan", "remembered"],
   "what device.js puts in the model's record: the device and what it said of itself, the plan and the memory, the buffers owned and held; the records are their owners'");
 assert.equal(m.device, gpu.device);
 assert.equal(m.memory, null, "no memory until start() hands one");
@@ -106,6 +106,7 @@ assert.deepEqual(m.features, { subgroups: false, packed: false }, "T642.3: the d
 assert.equal(m.own, null, "no shaders of its own: an int8 model's (T547.2.3)");
 assert.equal(m.remembered, null, "nothing remembered where the page kept nothing");
 assert.equal(m.limit, 1 << 27, "the largest buffer the device binds");
+assert.equal(m.now, device_.clock, "T642.4: the timings' clock, performance.now's where none is handed");
 // (start()'s plan is another object than the one a model on the GPU alone was opened with)
 const opened = m.plan;
 handed(memory, { ...plan });
@@ -132,8 +133,9 @@ handed(memory, plan);
   assert.equal(other.remembered, null, "what the page kept of another device is not remembered");
   assert.equal(again.calls.length, 0);
   assert.equal(device_.model, other, "the record is the one opened last");
+  assert.equal((await openDevice(plan, () => {}, () => 7)).now(), 7, "T642.4: the clock handed to openDevice() is the record's");
 }
-console.log("gpu-worker-parts-check: device.js makes the model's record of 13 fields, refuses a fallback adapter before anything is made, and takes the memory and the plan as handed()");
+console.log("gpu-worker-parts-check: device.js makes the model's record of 14 fields, refuses a fallback adapter before anything is made, and takes the memory and the plan as handed()");
 
 // ---- weights.js: m.weights, from the shared memory
 const up = await upload(m);
