@@ -47,7 +47,13 @@ if __name__ == "__main__":
     assert file_size(rows, dtype_of("float32")) == len(data), "not a float32 legacy checkpoint"
     out = File(sys.argv[2])
     writer = Writer(None, header, dtype, sink=out)
-    with out.f:
-        for index, place in enumerate(placed(rows, dtype_of("float32"))):
-            tensor = np.frombuffer(data, dtype=np.float32, count=math.prod(place.row.shape), offset=place.offset)
-            writer.write(index, 0, tensor)
+    try:
+        with out.f:
+            for index, place in enumerate(placed(rows, dtype_of("float32"))):
+                tensor = np.frombuffer(data, dtype=np.float32, count=math.prod(place.row.shape), offset=place.offset)
+                writer.write(index, 0, tensor)
+    except BaseException:
+        # the file is made at its full size before it is written (zeros), so one left half-written would pass for a
+        # checkpoint, and make would take it for done
+        Path(out.path).unlink(missing_ok=True)
+        raise
