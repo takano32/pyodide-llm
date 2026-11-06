@@ -414,6 +414,55 @@ const ok = (line) => {
   ok("a load that a newer one cancels says nothing, and the newer one speaks for itself");
 }
 
+// ---- T641.5: the one chain of loads (worker.ts's startLoad), which a load the page asks for and each round of the
+// benchmark go through. A load begins once the one before it (cancelled by it) has cleaned up, and once a run that is
+// going on has ended; a newer load cancels the one going on. load() stands in: it waits to be cancelled (or for a
+// while), then takes a while to clean up, as a load that frees its buffer a few turns after the abort does
+{
+  const small = { id: "small-chained", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
+  const log = [];
+  context.stand = {
+    load: async (model, signal, id) => {
+      log.push(`begin ${id}`);
+      await Promise.race([sleep(1000), new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }))]);
+      await sleep(500);
+      log.push(`${signal.aborted ? "cancelled" : "ended"} ${id}`);
+      if (signal.aborted) throw new Error("cancelled");
+    },
+    timed: () => ({ tokens: 1, speed: 1 }),
+    llama: { backend: "a stand-in" },
+    pyodide: { version: "a stand-in" },
+  };
+  run("stand.realLoad = load; stand.realTimed = timedGeneration; initialized = Promise.resolve(); load = stand.load; timedGeneration = stand.timed;");
+  fresh(() => new Response("", { status: 404 }));
+  const before = messages.length;
+  // two loads, one after the other: the second waits for the first to have cleaned up
+  await Promise.all([context.onmessage({ data: { type: "load", load: 41, model: small } }), context.onmessage({ data: { type: "load", load: 42, model: small } })]);
+  assert.deepEqual(log, ["begin 41", "cancelled 41", "begin 42", "ended 42"], "a load began before the one it cancelled had cleaned up");
+  // a load while a run goes on: the run is asked to stop, and the load waits for it to end
+  log.length = 0;
+  context.stand.run = sleep(800).then(() => { log.push("run ended"); });
+  run("generating = stand.run; stopped = false;");
+  const loading = context.onmessage({ data: { type: "load", load: 43, model: small } });
+  assert.equal(run("stopped"), true, "a load did not ask the run going on to stop");
+  await loading;
+  assert.deepEqual(log, ["run ended", "begin 43", "ended 43"], "a load began before the run going on had ended");
+  run("generating = undefined; stopped = false;");
+  // the benchmark's rounds go through the same chain: a round cancels the load going on, and waits for it
+  log.length = 0;
+  const going = context.onmessage({ data: { type: "load", load: 44, model: small } });
+  run("adopted({ llama: stand.llama }); pyodide = stand.pyodide;");
+  await context.onmessage({ data: { type: "bench", load: 44, model: small, prompt: "a prompt", steps: 1,
+    rounds: [{ name: "one", without: [] }, { name: "two", without: ["relaxed"] }] } });
+  await going;
+  assert.deepEqual(log, ["begin 44", "cancelled 44", "begin 44", "ended 44", "begin 44", "ended 44"], "a round of the benchmark did not wait for the load before it");
+  assert.deepEqual(messages.slice(before).filter(({ type }) => type === "error"), [], "the chain said an error");
+  assert.equal(JSON.stringify(messages.slice(before).filter(({ type }) => type === "bench").map(({ rows }) => rows.map(({ name }) => name))), '[["one","two"]]',
+    "the benchmark did not report its two rounds");
+  run("initialized = undefined; load = stand.realLoad; timedGeneration = stand.realTimed; adopted({}); pyodide = undefined;");
+  ok("a load begins once the one it cancelled has cleaned up and the run going on has ended, and so does each round of the benchmark");
+}
+
 // ---- T378.3 (T156's path, which nothing ran outside a browser): the GPU stops under a run of a model that is on the GPU
 // alone. The page is told so in the owner's words, the model is on the CPU from now on (alone.js's own list, which
 // worker.js tells by onCpuFromNow), and the load the page last asked for is asked for again, by its own message. A
