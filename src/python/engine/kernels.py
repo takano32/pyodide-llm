@@ -55,7 +55,7 @@ def load_kernels(path):
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
-            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16", "ternary_x", "binary_x") else None
+            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16", "ternary_x", "binary_x", "to_f16") else None
     except Exception:
         return None
     # (T644.2: no relaxed SIMD here. The forward pass and its int8 products are forward.ts's, on kernels it compiles

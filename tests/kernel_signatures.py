@@ -33,9 +33,7 @@ NAMES = {ctypes.c_void_p: "usize", ctypes.c_int32: "i32", ctypes.c_float: "f32",
 WASM = {0x7F: "i32", 0x7E: "i64", 0x7D: "f32", 0x7C: "f64", 0x7B: "v128"}
 AS_WASM = {"usize": "i32", "i32": "i32", "f32": "f32", "f64": "f64"}
 # (kernel, what differs) -> why it is left as it is. T639.11 changes no product code: these are for the owner to decide
-KNOWN = {
-    ("to_f16", "returns"): "to_f16 returns an i32 that Python never reads (its restype is None): ctypes drops it",
-}
+KNOWN = {}
 
 
 class Recorded:
