@@ -24,7 +24,7 @@ export type Whole = { markdown: string; summary: string; href: string; long: boo
 // its state and the first line of why. The GPU's CPU beside it is the CPU section's, as in its tables.
 const SUMMARIES: Partial<Record<Name, (data: any, results: Partial<Record<Name, Result>>) => string[]>> = {
   device: deviceSummary, cpu: cpuSummary, storage: storageSummary, line: lineSummary, memory: memorySummary,
-  gpu: (data, results) => gpuSummary(data.steps, cpuBaseline(results.cpu), { lost: data.lost }),
+  gpu: (data, results) => gpuSummary(data.found, cpuBaseline(results.cpu), { lost: data.lost }),
 };
 function summaryOf(name: Name, result: Result, results: Partial<Record<Name, Result>>): string[] {
   const lines = result.data && SUMMARIES[name] ? SUMMARIES[name]!(result.data, results) : [];

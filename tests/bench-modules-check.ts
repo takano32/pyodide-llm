@@ -16,7 +16,9 @@
 //   - (T368.7) a message a section's worker posts to the page without `satisfies` a type of contracts/benchmark.ts: a
 //     worker's own postMessage() takes anything, and tsc holds only a message that says so;
 //   - that the window links in Node with every export defined, and that a message given to the steps' onmessage as it
-//     is set is answered once;
+//     is set is answered once (T643.12: a step that is none of its table's, as failed);
+//   - (T643.12) that the window's table of steps, STEPS, has a row for every step of contracts/benchmark.ts's
+//     ToBenchGpu and BenchGpuResults and no other (tsc holds it closed too; this reads that nothing is spread into it);
 //   - a name that a module of src/bench/ uses and neither declares nor imports: those are JavaScript (T480), which tsc
 //     reads for its shapes and does not check, and the tables are functions (a name that is nowhere is a
 //     ReferenceError only when that table is written).
@@ -29,7 +31,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parse } from "@babel/parser";
-import { contract } from "./contracts.ts";
+import { contract, tabled } from "./contracts.ts";
 import { windowed } from "./imports.ts";
 import { treeOf } from "./tree.ts";
 import { typed, untyped } from "./untyped.ts";
@@ -116,6 +118,17 @@ if (END === ".ts") {
   console.log(`bench-modules-check: the ${posts} messages the sections' workers post (${posting.length} files) each satisfy a type of contracts/benchmark.ts`);
 }
 
+// ---- T643.12: the window's table of steps, a row for each step the contract says
+{
+  const benchmark = contract("benchmark.ts");
+  const rows = tabled([{ program: programs.get(WINDOW) }], "STEPS");
+  assert.equal(rows.unknown, 0, `${WINDOW}'s STEPS spreads in rows this check does not read`);
+  const keys = [...rows.keys].sort();
+  assert.deepEqual(keys, [...benchmark.membersOf("ToBenchGpu", "step").keys()].sort(), `${WINDOW}'s STEPS against contracts/benchmark.ts's ToBenchGpu`);
+  assert.deepEqual(keys, [...benchmark.keysOf("BenchGpuResults")].sort(), `${WINDOW}'s STEPS against contracts/benchmark.ts's BenchGpuResults`);
+  console.log(`bench-modules-check: ${WINDOW}'s STEPS has a row for each of the ${keys.length} steps of ToBenchGpu and BenchGpuResults`);
+}
+
 // ---- the window in Node: it links, and what its onmessage is given
 const handlers = [], posted = [];
 Object.defineProperty(globalThis, "onmessage", { configurable: true, get: () => handlers.at(-1), set(handler) {
@@ -128,7 +141,7 @@ const window_ = await import(tree.runtimeUrl(at("gpu.js")));
 assert.equal(handlers.length, 1, `${WINDOW} sets the steps' onmessage once, as it loads: nothing is awaited before it`);
 for (const [name, value] of Object.entries(window_)) assert.notEqual(value, undefined, `${WINDOW} exports ${name} undefined`);
 for (let i = 0; i < 100 && !posted.length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
-assert.deepEqual(posted, [{ step: "no such step", result: undefined }], "the message given as the steps' onmessage was set was answered by it, once");
+assert.deepEqual(posted, [{ step: "no such step", error: "no such step is no step of this worker" }], "the message given as the steps' onmessage was set was answered by it, once, as failed");
 console.log(`bench-modules-check: ${WINDOW} links (${Object.keys(window_).length} exports), and a message given as its onmessage is set is answered once`);
 
 // ---- src/bench/: the tables' modules use what they declare or import

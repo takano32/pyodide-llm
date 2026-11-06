@@ -518,6 +518,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 ### `/benchmark/`
 
 - **ページの部品は聞いて描くだけ（T643.11）。** 節の Markdown・状態（ok・none・wrong・error）・`said` と報告の組み立ては `src/bench/` の純な関数（`deviceResult()`・`cpuResult()`・`storageNone()`・`storageResult()`・`lineResult()`・`gpuNone()`・`gpuResult()`・`gpuMarkdown()`・`reportOf()`）で、`tests/bench.ts` が作り物の答えで直に試す。ページの文として読むのは配線（どの関数に答えを渡すか）だけ。表や判定を足すなら `src/bench/` に置く（DOM・Worker・`localStorage` を読まない）。
+- **GPU の節の段は表（T643.12）。** ページが頼む段の並びは `src/bench/gpusection.ts` の `gpuPlan()`（アダプタの答えと頼むモデルから、名前と知らせの組の並び: 数えてから 1 つ目を頼むので「N / N」は数え違えない）で、答えは段の鍵で持つ（`GpuFound`: 1 回の段はその鍵に、`bandwidth` と `token` は頼んだ順の並びに。`gpuKept()`）。表と要約（`gpuMarkdown()`・`gpuSummary()`）は鍵で読み、段の名前（訪問者に見える進みの文と表の列）を比べない。Worker の窓口（`src/runtime/benchmark/gpu.ts`）は表 `STEPS` を引くだけで、表に無い段は失敗で答える。**段を足すなら**: 契約の `ToBenchGpu` と `BenchGpuResults` に 1 行（`STEPS` の書き忘れは tsc、鍵の突き合わせは `bench-modules-check`）、`STEPS` に 1 行と自分のファイル、`gpuPlan()` に 1 行、表は `src/bench/` に置いて `gpuMarkdown()` から鍵で読む。
 - **計測のページは 1 つ（T134）。** 節は止まっても次へ進む（節の Worker が 5 分何も言わなければ failed）。**報告の URL は GitHub のログインの飛び先にして 7,000 文字まで**（超えると return_to が黙って落ちる: 超えたら要約 `shortReport()` で、全文はクリップボードから）。
 - **警告は報告の頭に 1 か所（T227）。** `warnings()` は節の行を WRONG・failed・unsteady・skipped の語で拾うので、**ページに失敗を書くときはその語のどれかを入れる**（使わない所は `said` で渡す）。
 - **節の進みの知らせは `{stage, at, of}`**。**Worker に答えでない知らせを足すときは、`ask()` の除く条件に入れる**。回線を絞る形は応答の本文を決めた速さでしか読まない（WebKit は読まれなくても受け取り続けるので絞れない）。実行中は Screen Wake Lock を頼み、隠れていた秒は報告の頭に 1 行。

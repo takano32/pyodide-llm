@@ -4,10 +4,10 @@ import { number, threadsOf, times, timesFaster, noRatios } from "./cells.ts";
 import { steadyCeiling, tokenReads, promptGMACsOf } from "./cpu.ts";
 import { tokenWrong, fastestMatVec } from "./gpu.ts";
 import { stepMs, less, layerSplit } from "./layersteps.ts";
-import type { Step } from "./cells.ts";
+import type { GpuFound } from "./gpusection.ts";
 import type { Baseline, CpuMeasured } from "./cpu.ts";
 import type { Found } from "./layersteps.ts";
-import type { DeviceFound, GenerateFound, GpuAbout, LayerFound, LayerRow, LineFound, PromptFound, PromptRow, StorageRun, Verdicts } from "../runtime/contracts/benchmark.ts";
+import type { DeviceFound, GpuAbout, LayerFound, LayerRow, LineFound, PromptFound, PromptRow, StorageRun, TokenFound } from "../runtime/contracts/benchmark.ts";
 
 // a layer's and a prompt's rows as the GPU's lines read them: the times of a row that ran (one that did not has none,
 // and is left out by them)
@@ -16,7 +16,6 @@ type PromptTimed = Omit<PromptFound, "rows"> & { rows: (PromptRow & { tokens: nu
 
 // ---- T185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
 // Each says the fastest and the ceilings; the tables with every row are in the whole report.
-// (gpuSummary()'s steps: each name has a result of its own kind, which the page keeps in one list: any)
 
 const yesNo = (value: unknown) => (value ? "yes" : "no");
 
@@ -48,16 +47,15 @@ export function cpuSummary(r: CpuMeasured): string[] {
 }
 
 /**
- * The GPU section's lines, from its steps (as the page's gpuMarkdown() takes them): the adapter and the check; a token
- * of each model with the CPU beside it (tokenTable()'s estimate) and the fastest matrix × vector of the widest shape;
- * the fastest layer and the gain of several tokens a submission; the fastest prompt at the most tokens. No ratio where
- * noRatios() says none or the check found the row WRONG; a step that failed or was not measured has no line (the whole
- * report says why). baseline: cpuBaseline(); gpu: { lost }.
+ * The GPU section's lines, from its steps as the page keeps them (gpusection.ts's GpuFound): the adapter and the
+ * check; a token of each model with the CPU beside it (tokenTable()'s estimate) and the fastest matrix × vector of the
+ * widest shape; the fastest layer and the gain of several tokens a submission; the fastest prompt at the most tokens.
+ * No ratio where noRatios() says none or the check found the row WRONG; a step that failed or was not measured has no
+ * line (the whole report says why). baseline: cpuBaseline(); gpu: { lost }.
  */
-export function gpuSummary(steps: Step<any>[], baseline: { token?: Baseline["token"]; prompt?: Baseline["prompt"] } = {}, gpu: { lost?: string } = {}): string[] {
-  const find = (name: string) => steps.find((s) => s.name === name);
-  const a: Partial<GpuAbout> = find("the adapter")?.result ?? {};
-  const checkStep: Step<Verdicts> | undefined = find("the shaders against JavaScript"), check = checkStep?.result;
+export function gpuSummary(found: GpuFound, baseline: { token?: Baseline["token"]; prompt?: Baseline["prompt"] } = {}, gpu: { lost?: string } = {}): string[] {
+  const a: Partial<GpuAbout> = found.info?.result ?? {};
+  const checkStep = found.check, check = checkStep?.result;
   const none = noRatios({ fallback: a.fallback, lost: gpu.lost });
   const verdicts = Object.entries(check ?? {});
   const bad = verdicts.filter(([, v]) => v.error || !v.ok).map(([k, v]) => `${k} ${v.error ? "FAILED" : "WRONG"}`);
@@ -66,24 +64,25 @@ export function gpuSummary(steps: Step<any>[], baseline: { token?: Baseline["tok
     `shader-f16 ${yesNo(a.features?.includes("shader-f16"))}, subgroups ${yesNo(a.features?.includes("subgroups"))}${sizes}; ` +
     (check ? `the check ${verdicts.length - bad.length} of ${verdicts.length} ok${bad.length ? ` (${bad.join(", ")})` : ""}` : `not checked (${checkStep?.error ?? "not run"})`) +
     (gpu.lost ? `; the device was lost (${gpu.lost})` : "")];
-  // a token of each model, widened (the table's first row of each): its tok/s and the CPU's estimate beside it
+  // a token of each model, widened and its id read back (the table's first row of each): its tok/s and the CPU's
+  // estimate beside it
   const cpu = baseline.token;
-  const tokens = steps.filter((s) => /^a token of [^,]+$/.test(s.name) && s.result?.tokPerSecond > 0).map((s) => {
-    const t = s.result, cpuTok = cpu && t.GB > 0 ? cpu.GBps / t.GB : undefined;
+  const tokens = found.token.filter((s) => s.result?.kind !== "packed" && !s.result?.sample && (s.result?.tokPerSecond ?? 0) > 0).map((s) => {
+    const t = s.result as Required<TokenFound>, cpuTok = cpu && t.GB > 0 ? cpu.GBps / t.GB : undefined;
     const ratio = none || tokenWrong(t, check) || !cpuTok ? "" : ` (${times(t.tokPerSecond / cpuTok)} the CPU)`;
     return `${s.name.replace(/^a token of /, "")} ${number(t.tokPerSecond)} tok/s${ratio}`;
   });
-  const widest = steps.filter((s) => s.name.startsWith("bandwidth: ")).at(-1);
+  const widest = found.bandwidth.at(-1);
   const best = widest && fastestMatVec(widest, check);
-  const reads = find("the device's ceilings")?.result?.global;
-  const share = best && !gpu.lost && !a.fallback && reads?.GBps > 0 && !reads.unsteady ? ` (${number((100 * best.GBps!) / reads.GBps, 0)}% of reading a buffer)` : "";
+  const reads = found.ceilings?.result?.global;
+  const share = best && !gpu.lost && !a.fallback && (reads?.GBps ?? 0) > 0 && !reads!.unsteady ? ` (${number((100 * best.GBps!) / reads!.GBps!, 0)}% of reading a buffer)` : "";
   if (tokens.length || best) {
-    lines.push(`GPU, a token: ${[...tokens, best && `the fastest matrix × vector of ${widest.name.replace(/^bandwidth: /, "")} ${best.shader}, ${number(best.GBps)} GB/s${share}`].filter(Boolean).join("; ")}`);
+    lines.push(`GPU, a token: ${[...tokens, best && `the fastest matrix × vector of ${widest!.name.replace(/^bandwidth: /, "")} ${best.shader}, ${number(best.GBps)} GB/s${share}`].filter(Boolean).join("; ")}`);
   }
-  const layer: LayerTimed | undefined = find("a layer of a token")?.result;
+  const layer = found.layer?.result as LayerTimed | undefined;
   const fastestLayer = (layer?.rows ?? []).filter((row) => row.msPerLayer > 0 && !row.unsteady && !(check?.[row.check] && !check[row.check].ok))
     .sort((x, y) => x.msPerLayer - y.msPerLayer)[0];
-  const generated: GenerateFound | undefined = find("tokens generated on the GPU")?.result;
+  const generated = found.generate?.result;
   const one = generated?.rows?.find((row) => row.perSubmission === 1);
   const most = generated?.rows?.filter((row) => row.perSubmission > 1 && row.msPerToken > 0).sort((x, y) => x.msPerToken - y.msPerToken)[0];
   const samplingWrong = ["sampling", "tokens on the GPU"].some((key) => check?.[key] && !check[key].ok);
@@ -92,7 +91,7 @@ export function gpuSummary(steps: Step<any>[], baseline: { token?: Baseline["tok
       (none || samplingWrong ? "" : ` (${times(one.msPerToken / most.msPerToken)})`)].filter(Boolean);
   if (layerParts.length) lines.push(`GPU, ${layerParts.join("; ")}`);
   // T202: where the time of the fastest layer the steps' table broke down goes
-  const split: Found | undefined = find("the steps of a layer")?.result;
+  const split = found["layer steps"]?.result as Found | undefined;
   const splitForm = (split?.forms ?? []).filter((form) => stepMs(form) !== undefined && !form.unsteady && !(check?.[form.check] && !check[form.check].ok))
     .sort((x, y) => x.ms - y.ms)[0];
   if (splitForm && !none) {
@@ -100,7 +99,7 @@ export function gpuSummary(steps: Step<any>[], baseline: { token?: Baseline["tok
     lines.push(`GPU, where the time of a layer ${splitForm.form} goes: ${two(parts.layer)} ms, the matrices alone ${two(parts.alone)}, fusing adds ${two(less(parts.matrices, parts.alone))}, ` +
       `the attention ${two(parts.attention)}, the norms and quantizing ${two(parts.small)}, the chain ${two(parts.chain)}`);
   }
-  const prompt: PromptTimed | undefined = find("a prompt all at once")?.result;
+  const prompt = found.prompt?.result as PromptTimed | undefined;
   const promptTokens = Math.max(0, ...(prompt?.rows ?? []).filter((row) => row.tokens).map((row) => row.tokens));
   const fastestPrompt = (prompt?.rows ?? []).filter((row) => row.tokens === promptTokens && !row.again && row.msPerToken > 0 && !(check?.[row.shader] && !check[row.shader].ok))
     .sort((x, y) => x.msPerToken - y.msPerToken)[0];

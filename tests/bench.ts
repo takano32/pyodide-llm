@@ -7,7 +7,7 @@ import { FULL_ROUNDS, MEMORY_UNSAID, PASTE, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO
          generateTable, gpuSkipped, layerCheckNumbers, layerStepsTable, layerTable, matVecTable, PATH_PROMPTS, PATH_WRITES, pathTable, reportTooLong, reportUrl, reportsTable, roundsHere, roundsTable, tableCell, threadCounts, threadsKey, threadsLine, times, timesFaster, tokenTable,
          checkVerdict, pathWarnings, warnings, warningsBlock, drift, DRIFT_LINE,
          SECTIONS, STATE, TITLES, deviceResult, cpuResult as cpuOf, DOWNLOAD_MBPS, storageNone, storageResult, lineResult, overheadMarkdown, ceilingsMarkdown, promptMarkdown,
-         BRIDGE_ROUNDS, gpuNone, gpuResult, gpuMarkdown, reportOf } from "../src/bench.ts";
+         BRIDGE_ROUNDS, gpuPlan, gpuKept, gpuNone, gpuResult, gpuMarkdown, reportOf } from "../src/bench.ts";
 import fs from "node:fs";
 import { runtimeUrl } from "./tree.ts";
 
@@ -640,8 +640,12 @@ const PROMPT_SHADERS = ["batched (T135)", "llama.cpp tiles 32×32, f16", "llama.
 const aPrompt = { name: "a prompt all at once", result: { GB: 0.14, weights: 121.6e6, rows: [...PROMPT_SHADERS.flatMap((shader, i) => [1, 16, 64].map((tokens, j) =>
   ({ shader, packed: shader.startsWith("ORT"), tokens, ms: 12.3 + i * 7 + j * 11, msPerToken: 3.21 - j * 0.9 - i * 0.1, GFLOPS: 34 + i * 20 + j * 40 }))),
   { shader: "batched (T135), again at the end", again: true, tokens: 64, ms: 101.2, msPerToken: 0.5, GFLOPS: 154 }] } };
-const aSteps = [{ name: "the adapter", result: { adapter: "arm · valhall", fallback: false, packed: true, features: ["shader-f16", "subgroups"], subgroupSizes: [16, 16] } },
-  { name: "the shaders against JavaScript", result: aCheck }, ...aBandwidths, ...aTokens, aLayer, aGenerate, { name: "the device's ceilings", result: aCeilings }, aPrompt];
+// T643.12: the GPU section's steps as the page keeps them, by the step's key (src/bench/gpusection.ts's GpuFound)
+const aFound = { info: { name: "the adapter", result: { adapter: "arm · valhall", fallback: false, packed: true, features: ["shader-f16", "subgroups"], subgroupSizes: [16, 16] } },
+  check: { name: "the shaders against JavaScript", result: aCheck }, bandwidth: aBandwidths, token: aTokens, layer: aLayer, generate: aGenerate,
+  ceilings: { name: "the device's ceilings", result: aCeilings }, prompt: aPrompt };
+// the same steps with another check's verdicts
+const checkedBy = (found, result) => ({ ...found, check: { ...found.check, result } });
 const aStorage = { mib: 256, pieces: 32, sequential: { seconds: 0.95 }, scattered: { seconds: 1.15 }, scatteredFlushEach: { seconds: 1.64 }, read: { seconds: 0.12 } };
 const aLine = { site: { bytes: 8.4e6, firstByteMs: 162, MBps: 12.7 }, hf: { bytes: 33.6e6, firstByteMs: 863, MBps: 8.4 },
   paced: [1, 4, 8].map((rate, i) => ({ rate, MBps: [1, 4, 7.6][i] })) };
@@ -649,7 +653,7 @@ const aBaseline = cpuBaseline({ status: "ok", data: aCpu });
 const aHead = [benchMarkdown(rows, android), pathTable(real, "tiny-lm 29M")].join("\n\n");
 const aWhole = [aHead, "#### CPU", ...cpuTable(aCpu), "#### GPU", ...matVecTable(aBandwidths, aCheck, aCeilings), ...tokenTable(aTokens, aBaseline),
   ...layerTable(aLayer, aCheck, aCeilings), ...generateTable(aGenerate, aCheck)].join("\n");
-const aLines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(aSteps, aBaseline), ...storageSummary(aStorage), ...lineSummary(aLine)];
+const aLines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(aFound, aBaseline), ...storageSummary(aStorage), ...lineSummary(aLine)];
 const aSummary = shortReport(aHead, aLines);
 assert.ok(reportTooLong(aWhole, android), "a GPU's whole report is too long for the link");
 assert.ok(loginUrl(aWhole, android, aSummary).length <= REPORT_LIMIT, `${loginUrl(aWhole, android, aSummary).length}`);
@@ -670,21 +674,21 @@ assert.deepEqual(aLines, [
   "Storage: writes 283 MB/s in order, 233 far apart, 164 with a flush each piece; read back 2237 MB/s",
   "Line: this site 12.7 MB/s (first byte 162 ms), huggingface.co 8.4 MB/s (first byte 863 ms); huggingface.co read no faster than 1, 4, 8 MB/s: 1.00, 4.00, 7.60"]);
 // no ratio on a fallback adapter or after a lost device, and a WRONG row is never the fastest nor held against the CPU
-const onFallbackAdapter = gpuSummary([{ ...aSteps[0], result: { ...aSteps[0].result, fallback: true } }, ...aSteps.slice(1)], aBaseline);
+const onFallbackAdapter = gpuSummary({ ...aFound, info: { ...aFound.info, result: { ...aFound.info.result, fallback: true } } }, aBaseline);
 assert.ok(onFallbackAdapter[0].includes("a fallback adapter: nothing timed") && !onFallbackAdapter.slice(1).join().includes("the CPU)") && !onFallbackAdapter.join().includes("% of"), onFallbackAdapter.join("\n"));
-const afterLost = gpuSummary(aSteps, aBaseline, { lost: "gone" });
+const afterLost = gpuSummary(aFound, aBaseline, { lost: "gone" });
 assert.ok(afterLost[0].endsWith("; the device was lost (gone)") && !/\(\d[\d.]*×/.test(afterLost.join()) && !afterLost.join().includes("% of"), afterLost.join("\n"));
 // T202: the summary says where the fastest broken-down layer's time goes (the norms apart: 3.25 ms, its small steps
 // 0.375, its chain −0.125), not after a lost device
-const withSteps = gpuSummary([...aSteps, stepsStep], aBaseline);
+const withSteps = gpuSummary({ ...aFound, "layer steps": stepsStep }, aBaseline);
 assert.ok(withSteps.includes("GPU, where the time of a layer DP4A, fused (T175), the norms apart goes: 3.25 ms, the matrices alone 2.00, fusing adds 0.75, " +
   "the attention 0.25, the norms and quantizing 0.38, the chain -0.13"), withSteps.join("\n"));
-assert.ok(!gpuSummary([...aSteps, stepsStep], aBaseline, { lost: "gone" }).join().includes("where the time"));
-const wrongDp4a = gpuSummary(aSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: { ...aCheck, "ORT DP4A small M (engine), 4 rows": { ok: false, worstRelative: 1 }, "ORT DP4A 64×64, subgroups": { ok: false, worstRelative: 1 } } } : s)), aBaseline);
+assert.ok(!gpuSummary({ ...aFound, "layer steps": stepsStep }, aBaseline, { lost: "gone" }).join().includes("where the time"));
+const wrongDp4a = gpuSummary(checkedBy(aFound, { ...aCheck, "ORT DP4A small M (engine), 4 rows": { ok: false, worstRelative: 1 }, "ORT DP4A 64×64, subgroups": { ok: false, worstRelative: 1 } }), aBaseline);
 assert.ok(wrongDp4a[0].includes("the check 18 of 20 ok (ORT DP4A small M (engine), 4 rows WRONG, ORT DP4A 64×64, subgroups WRONG)"), wrongDp4a[0]);
 assert.ok(!wrongDp4a[1].includes("ORT DP4A small M") && !wrongDp4a[3].includes("ORT DP4A 64×64, subgroups"), wrongDp4a.join("\n"));
 // a GPU section with only its adapter and check (the fallback's), or with no check: no undefined, no NaN
-for (const lines of [gpuSummary(aSteps.slice(0, 2), {}), gpuSummary([{ name: "the adapter", result: {} }, { name: "the shaders against JavaScript", error: "lost" }], {}),
+for (const lines of [gpuSummary({ info: aFound.info, check: aFound.check, bandwidth: [], token: [] }, {}), gpuSummary({ info: { name: "the adapter", result: {} }, check: { name: "the shaders against JavaScript", error: "lost" }, bandwidth: [], token: [] }, {}),
   cpuSummary({ ...aCpu, ceilings: { error: "no" } }), cpuSummary({ ...aCpu, shared: false, rows: aCpu.rows.slice(0, 1), ceilings: {} }),
   lineSummary({ site: { error: "x" }, hf: { error: "y" }, paced: [] }), lineSummary({ ...aLine, paced: [{ rate: 1, slower: true }] })]) {
   assert.ok(!lines.join().includes("undefined") && !lines.join().includes("NaN"), lines.join("\n"));
@@ -738,7 +742,7 @@ assert.ok(t225Whole.startsWith(`${aHead}\n\n#### Warnings\n\n${t225Warned.map((l
 assert.deepEqual(parseReport(reportBody(t225Whole)), parseReport(reportBody(aWhole)));
 assert.equal(reportsTable([{ number: 1, url: "u", body: reportBody(t225Whole) }]).split("\n").length, 3);
 // the summary: the same list between the top and the sections' lines, within the link's limit; here all of it fits
-const t225Lines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(aSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: t225Check } : s)), aBaseline),
+const t225Lines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(checkedBy(aFound, t225Check), aBaseline),
   ...storageSummary(aStorage), ...lineSummary(aLine)];
 const t225Summary = shortReport(aHead, t225Lines, t225Warned, android);
 assert.ok(reportTooLong(t225Whole, android));
@@ -822,7 +826,7 @@ const probeWrong = probeWarned.filter((line) => line.startsWith("GPU: ") && line
 assert.equal(probeWrong.length, 12, probeWarned.join("\n"));
 assert.deepEqual(probeWarned.slice(0, 12), probeWrong, "the WRONG ones come first");
 assert.ok(probeWarned.length > 12 && probeWarned.slice(12).every((line) => line.startsWith("Model: ") && line.includes("unsteady")), "then the rough times");
-const probeLines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(aSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: probeCheck } : s)), aBaseline),
+const probeLines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(checkedBy(aFound, probeCheck), aBaseline),
   ...storageSummary(aStorage), ...lineSummary(aLine)];
 const probeSummary = shortReport(roughHead, probeLines, probeWarned, android);
 const probeKept = probeSummary.split("\n").filter((line) => probeWarned.some((one) => line === `- ${one}`));
@@ -924,12 +928,12 @@ assert.deepEqual([cpuRight.status, cpuRight.said, cpuRight.markdown, cpuRight.da
 assert.deepEqual(cpuOf({ result: { none: "no kernels" } }), { status: "none", markdown: "no kernels" });
 assert.deepEqual(cpuOf({ error: "x" }), { status: "error", markdown: "x" });
 // the GPU section: its Markdown is the tables' (the GPU ÷ CPU from the CPU section's result), and what it says went wrong
-const gpuAdapter = { name: "the adapter", result: { ...aSteps[0].result, worker: true, maxStorageBufferBindingSize: 2 ** 30, maxBufferSize: 2 ** 31, maxComputeWorkgroupStorageSize: 32768, maxComputeInvocationsPerWorkgroup: 256 } };
-const gpuSteps = [gpuAdapter, ...aSteps.slice(1)];
+const gpuAdapter = { name: "the adapter", result: { ...aFound.info.result, worker: true, maxStorageBufferBindingSize: 2 ** 30, maxBufferSize: 2 ** 31, maxComputeWorkgroupStorageSize: 32768, maxComputeInvocationsPerWorkgroup: 256 } };
+const gpuFound = { ...aFound, info: gpuAdapter };
 const noBridge = { error: "not measured: the page is not cross-origin isolated" };
-const gpuRight = gpuResult(gpuSteps, noBridge, undefined, cpuRight);
+const gpuRight = gpuResult(gpuFound, noBridge, undefined, cpuRight);
 assert.equal(gpuRight.status, "ok");
-assert.deepEqual(gpuRight.data, { steps: gpuSteps, bridge: noBridge, lost: undefined });
+assert.deepEqual(gpuRight.data, { found: gpuFound, bridge: noBridge, lost: undefined });
 assert.deepEqual(gpuRight.said, []);
 const gpuLines = gpuRight.markdown.split("\n");
 assert.equal(gpuLines[0], "**Adapter**: arm · valhall; max binding 1024 MiB, max buffer 2048 MiB, workgroup memory 32 KiB, 256 threads a workgroup, packed int8 dot yes, shader-f16 yes, subgroups yes (16 wide)");
@@ -938,32 +942,32 @@ for (const table of [matVecTable(aBandwidths, aCheck, aCeilings, {}), tokenTable
   assert.ok(gpuRight.markdown.includes(table.join("\n")), table[0]);
 }
 assert.equal(gpuLines.at(-1), `**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): not measured: the page is not cross-origin isolated`);
-assert.ok(gpuResult(gpuSteps, { microseconds: 12.345 }, undefined, cpuRight).markdown.endsWith("2000 round trips): 12.3 µs each"));
+assert.ok(gpuResult(gpuFound, { microseconds: 12.345 }, undefined, cpuRight).markdown.endsWith("2000 round trips): 12.3 µs each"));
 assert.ok(gpuRight.markdown.includes("the CPU, 16 tokens at once: 7.90 ms with 1 (31 GOPS), 4.60 ms with 2 (53 GOPS), 3.90 ms with 4 (62 GOPS), 4.40 ms with 8 (55 GOPS)"), "the prompt's CPU is the CPU section's rows");
-assert.ok(gpuResult(gpuSteps, noBridge, undefined, undefined).markdown.includes("the CPU, 16 tokens at once: run the CPU section for it. "), "no CPU section: none");
-assert.ok(gpuResult(gpuSteps, noBridge, undefined, undefined).markdown.includes("GPU ÷ CPU: not measured (run the CPU section for it)"), "no CPU section: no ratio");
+assert.ok(gpuResult(gpuFound, noBridge, undefined, undefined).markdown.includes("the CPU, 16 tokens at once: run the CPU section for it. "), "no CPU section: none");
+assert.ok(gpuResult(gpuFound, noBridge, undefined, undefined).markdown.includes("GPU ÷ CPU: not measured (run the CPU section for it)"), "no CPU section: no ratio");
 // a verdict not ok is the section's WRONG and its own warning (the verdicts that are not ok, said); a check that failed, or a
 // verdict that could not be checked, or a lost device, fail it
 const wrongCheck = { ...aCheck, "ORT DP4A 64×64": { ok: false, worstRelative: 1 } };
-const gpuWrong = gpuResult(gpuSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: wrongCheck } : s)), noBridge, undefined, cpuRight);
+const gpuWrong = gpuResult(checkedBy(gpuFound, wrongCheck), noBridge, undefined, cpuRight);
 assert.equal(gpuWrong.status, "wrong");
 assert.deepEqual(gpuWrong.said, [checkVerdict(["ORT DP4A 64×64", wrongCheck["ORT DP4A 64×64"]])]);
 assert.deepEqual(warnings([{ title: "GPU", ...gpuWrong }]).slice(0, 1), [`GPU: ${checkVerdict(["ORT DP4A 64×64", wrongCheck["ORT DP4A 64×64"]])}`]);
-const unchecked = gpuResult([gpuAdapter, { name: "the shaders against JavaScript", error: "lost it" }], noBridge, undefined, cpuRight);
+const unchecked = gpuResult({ info: gpuAdapter, check: { name: "the shaders against JavaScript", error: "lost it" }, bandwidth: [], token: [] }, noBridge, undefined, cpuRight);
 assert.equal(unchecked.status, "error");
 assert.deepEqual(unchecked.said, ["**Shaders against JavaScript**: not checked (lost it)"]);
-assert.equal(gpuResult(gpuSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: { ...aCheck, x: { ok: false, worstRelative: 0, error: "no tile" } } } : s)), noBridge, undefined, cpuRight).status, "error");
-const gpuLost = gpuResult(gpuSteps, noBridge, "the device went away: x", cpuRight);
+assert.equal(gpuResult(checkedBy(gpuFound, { ...aCheck, x: { ok: false, worstRelative: 0, error: "no tile" } }), noBridge, undefined, cpuRight).status, "error");
+const gpuLost = gpuResult(gpuFound, noBridge, "the device went away: x", cpuRight);
 assert.equal(gpuLost.status, "error");
 assert.deepEqual(gpuLost.said, ["**The device was lost** (the device went away: x): the times measured after it are not the GPU's."]);
 // written again after the CPU section: the same Markdown and said as the section's own, with that CPU
-assert.deepEqual(gpuMarkdown(gpuSteps, noBridge, undefined, cpuRight), { markdown: gpuRight.markdown, said: gpuRight.said });
-assert.notEqual(gpuMarkdown(gpuSteps, noBridge, undefined, undefined).markdown, gpuRight.markdown);
+assert.deepEqual(gpuMarkdown(gpuFound, noBridge, undefined, cpuRight), { markdown: gpuRight.markdown, said: gpuRight.said });
+assert.notEqual(gpuMarkdown(gpuFound, noBridge, undefined, undefined).markdown, gpuRight.markdown);
 // no GPU here: why, in the words the page says
-assert.deepEqual(gpuNone({ worker: false }, [{ name: "the adapter", result: { worker: false } }]), { status: "none", markdown: "no WebGPU in a worker here" });
-assert.deepEqual(gpuNone({ worker: true }, [{ name: "the adapter", result: { worker: true } }]), { status: "none", markdown: "navigator.gpu gave no adapter" });
-assert.deepEqual(gpuNone(undefined, [{ name: "the adapter", error: "boom" }]), { status: "none", markdown: "boom" });
-assert.equal(gpuNone(gpuAdapter.result, [gpuAdapter]), undefined);
+assert.deepEqual(gpuNone({ name: "the adapter", result: { worker: false } }), { status: "none", markdown: "no WebGPU in a worker here" });
+assert.deepEqual(gpuNone({ name: "the adapter", result: { worker: true } }), { status: "none", markdown: "navigator.gpu gave no adapter" });
+assert.deepEqual(gpuNone({ name: "the adapter", error: "boom" }), { status: "none", markdown: "boom" });
+assert.equal(gpuNone(gpuAdapter), undefined);
 // the tables of the GPU's besides, ceilings and prompt, each not measured where its step failed or did not run
 assert.deepEqual(overheadMarkdown({ name: "x", error: "a | b" }), ["**Besides the weights**: failed: a | b"]);
 assert.deepEqual(ceilingsMarkdown(undefined), ["**The device's ceilings**: not measured"]);
@@ -994,7 +998,7 @@ assert.ok(theReport.markdown.includes(`#### This browser\n\n${aResults.device.ma
 assert.ok(theReport.markdown.indexOf("#### This browser") < theReport.markdown.indexOf("#### CPU") && theReport.markdown.indexOf("#### CPU") < theReport.markdown.indexOf("#### GPU")
   && theReport.markdown.indexOf("#### GPU") < theReport.markdown.indexOf("#### Storage") && theReport.markdown.indexOf("#### Storage") < theReport.markdown.indexOf("#### Line"), "the sections in the page's order");
 assert.equal(theReport.summary, shortReport([benchMarkdown(rows, android), aMeasured.paths].join("\n\n"), [...deviceSummary(aDevice), "CPU: WRONG", ...cpuSummary(cpuNotFinite.data),
-  "GPU: WRONG", ...gpuSummary(gpuWrong.data.steps, cpuBaseline(cpuNotFinite)), `Storage: not in this browser: ${tableCell(aResults.storage.markdown).slice(0, 200)}`, ...lineSummary(aLine)], wholeWarned, android));
+  "GPU: WRONG", ...gpuSummary(gpuWrong.data.found, cpuBaseline(cpuNotFinite)), `Storage: not in this browser: ${tableCell(aResults.storage.markdown).slice(0, 200)}`, ...lineSummary(aLine)], wholeWarned, android));
 assert.equal(theReport.href, reportUrl(theReport.markdown, android, theReport.summary));
 assert.deepEqual([theReport.long, theReport.longer], [reportTooLong(theReport.markdown, android), reportTooLong(theReport.markdown, android) && reportTooLong(theReport.summary, android)]);
 assert.ok(theReport.long && !theReport.longer, "a GPU's report is too long, its summary is not");
@@ -1025,8 +1029,8 @@ for (const [what, pattern] of [
   ["", /return cpuResult\(await ask\(/],
   ["", /return storageResult\(await ask\(/],
   ["", /return lineResult\(await ask\(/],
-  ["the GPU section's steps go to gpuResult() with the CPU section's result", /return gpuResult\(steps, bridge, lost, results\.cpu\);/],
-  ["and are written again after the CPU section", /Object\.assign\(g, gpuMarkdown\(g\.data\.steps, g\.data\.bridge, g\.data\.lost, results\.cpu\)\);/],
+  ["the GPU section's steps go to gpuResult() with the CPU section's result", /return gpuResult\(found, bridge, lost, results\.cpu\);/],
+  ["and are written again after the CPU section", /Object\.assign\(g, gpuMarkdown\(g\.data\.found, g\.data\.bridge, g\.data\.lost, results\.cpu\)\);/],
   ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
   ["the report is reportOf()'s", /reportOf\(\{ results, measured, environment, hidden: hiddenLine\(awake\.hidden\(\)\) \}\)/],
   // T242's review: the worker makes its shared memory for the loads it is told follow, without a gigabyte for a next model
@@ -1048,4 +1052,26 @@ for (const [page, text] of [["index.astro", pageText("index.astro")], ["benchmar
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
 assert.equal(noCeilings.at(-1), "failed: out of memory second \\| line");
 assert.deepEqual(warnings([{ title: "CPU", status: "ok", markdown: noCeilings.join("\n") }]), ["CPU: failed: out of memory second \\| line"]);
+// T643.12: the steps the page asks after the adapter's, counted before the first (T192: by hand, the last two read "N / N"):
+// the check alone on a fallback adapter (T182), and otherwise every step, a token of each model twice where the packed
+// int8 dot is; and each kept by its key, the bandwidths and the tokens in the order asked
+const MODELS2 = ["llm-jp-3 150M", "Llama 3.2 1B"];
+assert.deepEqual(gpuPlan({ packed: true, fallback: true }, MODELS2), [{ name: "the shaders against JavaScript", message: { step: "check" } }]);
+const planned = gpuPlan({ packed: true, fallback: false }, MODELS2);
+assert.deepEqual(planned.map(({ name }) => name), ["the shaders against JavaScript", "bandwidth: llm-jp-3 150M w1", "bandwidth: Llama 3.2 1B w1", "bandwidth: Llama 3.2 1B classifier",
+  "a token of llm-jp-3 150M", "a token of llm-jp-3 150M, packed int8", "a token of Llama 3.2 1B", "a token of Llama 3.2 1B, packed int8", "a token of Llama 3.2 1B, chosen on the GPU",
+  "a layer of a token", "the steps of a layer", "tokens generated on the GPU", "what a token costs besides the weights", "the device's ceilings", "a prompt all at once"]);
+assert.deepEqual(planned.map(({ message }) => message.step), ["check", "bandwidth", "bandwidth", "bandwidth", "token", "token", "token", "token", "token",
+  "layer", "layer steps", "generate", "overhead", "ceilings", "prompt"]);
+assert.deepEqual(planned.filter(({ message }) => message.step === "token").map(({ message }) => [message.model, message.kind, message.sample]),
+  [["llm-jp-3 150M", "widen", undefined], ["llm-jp-3 150M", "packed", undefined], ["Llama 3.2 1B", "widen", undefined], ["Llama 3.2 1B", "packed", undefined], ["Llama 3.2 1B", "widen", true]]);
+assert.deepEqual(planned[1].message, { step: "bandwidth", shape: [2048, 512] });
+assert.deepEqual(planned.at(-1).message, { step: "prompt", counts: [1, 16, 64] });
+assert.equal(gpuPlan({ packed: false, fallback: false }, [...MODELS2, "Llama 3.2 3B"]).length, 15 - 2 + 1, "without the packed dot a token of each model once, and the 3B where it is asked for");
+const keptFound = { bandwidth: [], token: [] };
+for (const [i, { name, message }] of planned.entries()) gpuKept(keptFound, message.step, { name, result: i });
+assert.deepEqual(keptFound.bandwidth.map(({ result }) => result), [1, 2, 3]);
+assert.deepEqual(keptFound.token.map(({ name }) => name), planned.slice(4, 9).map(({ name }) => name));
+assert.deepEqual(Object.keys(keptFound), ["bandwidth", "token", "check", "layer", "layer steps", "generate", "overhead", "ceilings", "prompt"]);
+assert.deepEqual([keptFound.check, keptFound.prompt], [{ name: "the shaders against JavaScript", result: 0 }, { name: "a prompt all at once", result: 14 }]);
 console.log("ok");

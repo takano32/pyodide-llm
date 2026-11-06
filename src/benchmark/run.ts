@@ -96,8 +96,8 @@ async function runSections(names: readonly Name[]) {
     // T157: the GPU section's tables hold the GPU against the CPU section; a CPU section run after it (on its own
     // button) writes them again, and the report with them
     const g = results.gpu;
-    if (name === "cpu" && g?.data?.steps) {
-      Object.assign(g, gpuMarkdown(g.data.steps, g.data.bridge, g.data.lost, results.cpu));
+    if (name === "cpu" && g?.data?.found) {
+      Object.assign(g, gpuMarkdown(g.data.found, g.data.bridge, g.data.lost, results.cpu));
       parts.gpu.out.innerHTML = rendered(g.markdown);
     }
     report();

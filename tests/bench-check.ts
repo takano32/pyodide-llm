@@ -241,7 +241,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     }
     // the shaders against JavaScript are the GPU section's check of its own results: with an adapter they must run
     // (and every tiled shader of T146 among them: one the runner's adapter could not make fails here too)
-    const check = results.gpu?.data?.steps?.find((s) => s.name === "the shaders against JavaScript");
+    const check = results.gpu?.data?.found?.check;
     if (check?.error || Object.values(check?.result ?? {}).some((v) => v.error)) failed = true;
     // T175: the numbers the layer's verdicts rest on, a line each (CI's logs are where they are read: the owner, 2026-09-27):
     // the stream's and the cache's differences, each quantized vector's scales and values off by 1, and the DP4A fused

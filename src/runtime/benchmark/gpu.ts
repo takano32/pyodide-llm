@@ -54,10 +54,10 @@ import { check } from "./gpu/check.ts";
 import { overhead, ceilings } from "./gpu/ceilings.ts";
 import { prompt } from "./gpu/prompt.ts";
 // T368.7: what the page asks and what it is answered (contracts/benchmark.ts): a step's result by the step's name, or
-// undefined for a step that is none of them
+// what failed (T643.12: a step that is none of them is answered so)
 import type { Thrown } from "./gpu/device.ts";
 import type { Answer, BenchGpuResults, Bridged, ToBenchGpu } from "../contracts/benchmark.ts";
-type Result = BenchGpuResults[keyof BenchGpuResults] | undefined;
+type Result = BenchGpuResults[keyof BenchGpuResults];
 
 // (these are pure: tests/gpu-choice-check.ts holds the rounding of the cache to what a device may choose, and
 // tests/layer-check.ts holds the layer check's judgement to devices that are JavaScript too)
@@ -85,21 +85,37 @@ async function bridge(memory: SharedArrayBuffer, rounds: number): Promise<Bridge
   return { waitAsync: true };
 }
 
+// T643.12: the steps by their name, a row each (tsc holds the table closed to ToBenchGpu's steps, and each row's result
+// to BenchGpuResults; tests/bench-modules-check.ts holds its keys to both): a step is "a row of the table and a file of
+// its own". A step that is none of them is answered as failed.
+type Step = ToBenchGpu["step"];
+type Asked<Name extends Step> = Extract<ToBenchGpu, { step: Name }>;
+const STEPS: { [Name in Step]: (message: Asked<Name>) => Promise<BenchGpuResults[Name]> } = {
+  info: () => info(),
+  check: () => check(),
+  bandwidth: ({ shape }) => bandwidth(shape),
+  token: (message) => token(message.model, message.kind, message),
+  layer: () => layer(),
+  "layer steps": () => layerSteps(),
+  generate: () => generate(),
+  overhead: () => overhead(),
+  prompt: ({ counts }) => prompt(counts),
+  ceilings: () => ceilings(),
+  bridge: ({ memory, rounds }) => bridge(memory, rounds),
+};
+function stepOf<Name extends Step>(message: Asked<Name>): Promise<BenchGpuResults[Name]> | undefined {
+  return Object.hasOwn(STEPS, message.step) ? STEPS[message.step as Name](message) : undefined;
+}
+
 onmessage = async ({ data }: MessageEvent<ToBenchGpu>) => {
   try {
     await load();
-    let result: Result;
-    if (data.step === "info") result = await info();
-    else if (data.step === "check") result = await check();
-    else if (data.step === "bandwidth") result = await bandwidth(data.shape);
-    else if (data.step === "token") result = await token(data.model, data.kind, data);
-    else if (data.step === "layer") result = await layer();
-    else if (data.step === "layer steps") result = await layerSteps();
-    else if (data.step === "generate") result = await generate();
-    else if (data.step === "overhead") result = await overhead();
-    else if (data.step === "prompt") result = await prompt(data.counts);
-    else if (data.step === "ceilings") result = await ceilings();
-    else if (data.step === "bridge") result = await bridge(data.memory, data.rounds);
+    const asked = stepOf(data);
+    if (!asked) {
+      postMessage({ step: data.step, error: `${data.step} is no step of this worker` } satisfies Answer<Result>);
+      return;
+    }
+    const result: Result = await asked;
     postMessage({ step: data.step, result } satisfies Answer<Result>);
   } catch (error) {
     postMessage({ step: data.step, error: String((error as Thrown)?.message ?? error) } satisfies Answer<Result>);
