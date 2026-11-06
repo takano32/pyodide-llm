@@ -88,7 +88,7 @@ export type Steps = { step(stepping: Stepping): Pass[] };
 // model has it; RMSNorm with the model's epsilon; behind(), a norm behind, where the model has it; the largest of a
 // list and how far one is from another), and the line of the form checked. And what an attending first layer reads:
 // the keys and values of position 0 in its cache (random float16s, widened), those the step wrote at pos (as floats),
-// and held(), the device's own float16 of a value where it is one of the value's neighbours (tokenforms.ts's heldFloats)
+// and held(), the device's own float16 of a value where it is one of the value's neighbours (reference.ts's heldFloats)
 export type Checking = {
   x0: Float64Array; xn: Float64Array; pos: number; line: number;
   row0: [Float64Array, Float64Array]; got: [Float64Array, Float64Array]; held(x: Float64Array, got: ArrayLike<number>): Float64Array;

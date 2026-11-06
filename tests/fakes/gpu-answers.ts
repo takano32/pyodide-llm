@@ -10,6 +10,7 @@
 //   answers.add(code, model)        a pipeline of this WGSL is answered by model (one of answers.flashTile(size),
 //   answers.addPipeline(p, model)   answers.quantize, answers.tiled({ packed, packing })), or a pipeline object itself
 //   standIn({ answer: answers.answer })
+//   answers.called(name, ...args)   a function of gpu_answers.py itself: what it returns, as Uint8Arrays
 //
 // The same as the shaders: what each writes, where its bindings say, and nothing where the workgroups dispatched are
 // fewer than its work's tiles (T465.1's review: a dispatch of too few, the worker's own count, is seen here). Simpler:
@@ -71,6 +72,9 @@ export async function gpuAnswers() {
     addPipeline(pipeline: Pipeline, model: Model) { byPipeline.set(pipeline, model); },
     // (the WGSL texts dispatched that were answered, in order; T465.6: and those that were not, which a check may hold empty)
     seen, missed,
+    // (T642.11) a function of gpu_answers.py called as it is, on bytes (Uint8Arrays) and numbers: what it returns, as
+    // Uint8Arrays (tests/gpu-reference-check.ts holds src/runtime/gpu/reference.ts to them)
+    called,
     answer(pipeline: Pipeline, entries: Entry[], x: number, y: number) {
       const model = byPipeline.get(pipeline) ?? byCode.get(pipeline.code);
       if (!model) return void missed.push(pipeline.code);

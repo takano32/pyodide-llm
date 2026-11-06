@@ -1,7 +1,7 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, widenedHalves, bind, dispatch, whyOf } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, rowBytes, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch, whyOf } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { PACKINGS, packingAt, blocksOf } from "./packings.ts";
 import { floatOfHalf } from "../shaders/halves.ts";
@@ -15,12 +15,11 @@ import { ORT_DP4A_MATVEC_ROWS } from "../shaders/fused.ts";
 import { ENGINE } from "../shaders/engine.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
-import { rotateLikeCpu, unrotateLikeCpu } from "../shaders/rotate.ts";
+import { referenceOf, heldFloats, largest, off, checkCandidates, checkRows } from "./reference.ts";
 import type { Model } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import type { TokenBuffers, TokenForm } from "./tokens.ts";
-import type { GpuPacking, Table, TokensChosen, Tried, Vectors } from "../contracts/gpu/protocol.ts";
-import type { TensorName } from "../contracts/plan.ts";
+import type { Table, TokensChosen, Tried } from "../contracts/gpu/protocol.ts";
 
 // T466: this module's two records: m.tokens, what tokens.ts's tokenBuffers() made, and m.tokenForm, the form of a
 // token's layer chosen here with its ms a step and what each form came to (null until chooseTokens() has them, and
@@ -28,13 +27,6 @@ import type { TensorName } from "../contracts/plan.ts";
 type TokenChoice = { form: TokenForm | null; ms: number | undefined; forms: Tried[] | null };
 // T156, T210: what a model on the GPU alone reads back for the check (firstLayer(), tableRows()); nothing of another
 type Back = { firstLayer?: Awaited<ReturnType<typeof firstLayer>>; tableRows?: Awaited<ReturnType<typeof tableRows>> };
-// the check's own: what says how a row is packed (a plan's matrix or table), a row as [its int8 values, its scales],
-// and a list of numbers as its sums read one (an array or a typed array)
-type Spec = { n: number; packing: GpuPacking };
-type Row = [ArrayLike<number>, Float32Array];
-type Numbers = ArrayLike<number> & { reduce(step: (sum: number, value: number) => number, from: number): number; map(each: (value: number, i: number) => number): Numbers };
-// (Math.f16round is newer than the lib this is checked against, and than some browsers: heldFloats() asks)
-type Rounding = Math & { f16round?: (value: number) => number };
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
 // taken (m.tokenForm.form), with what each came to (m.tokenForm.forms) and its ms a step (m.tokenForm.ms). plan.remembered.tokens: the
@@ -146,24 +138,8 @@ async function timeTokens(m: Model, forms: TokenForm[]) {
 //      random number's share of the mass (T151's line: the GPU's exp and its float32 sums).
 // The reason it is wrong, or null.
 const LAYER_LINE = 2e-3, LOGITS_LINE = 1e-3, DP4A_LINE = 2e-2;
-// T225's review: WGSL leaves it to the device which of its two float16 neighbours a float32 becomes (§15.7.6 Floating
-// Point Conversion: "WGSL does not specify whether the higher or lower representable value is chosen, and different
-// instances of such a conversion may choose differently"; pack2x16float is such a conversion), and Direct3D, where
-// Chrome on Windows runs WebGPU, converts toward zero (D3D11.3 functional specification 3.2.2: "Round-to-zero must be
-// used during conversion to another float format"; Dawn's HLSL writer makes pack2x16float of f32tof16). The position's
-// keys and values the GPU writes are then 1 float16 spacing from the nearest's on about half of their numbers, and the
-// stream computed from the nearest's was up to 3.2 times the line off the GPU's (CI, Dawn on lavapipe with every
-// conversion cut toward zero: a llama.cpp form on llm-jp-3 150M 6.5e-3 at the line 2e-3; with the GPU's own keys and
-// values 2.3e-6, as src/runtime/benchmark/gpu/halves.ts's heldHalves takes them: T225). So the reference takes the device's own
-// float16 (got, as floats) of a value where it is within a float16 spacing of the value and the float32 sums' noise
-// (HALF_SLACK of the largest: about 10 times a sum of 2112 products's), and the nearest where it is not: a wrong key
-// or value is as far from the line as before, and the keys' and values' lines below are unchanged.
-const HALF_SLACK = 1e-5;
-function heldFloats(x: Float64Array, got: ArrayLike<number>) {
-  const round16 = (Math as Rounding).f16round ?? ((value: number) => value), slack = HALF_SLACK * x.reduce((top, value) => Math.max(top, Math.abs(value)), 0);
-  return x.map((value, i) => (Math.abs(got[i] - value) <= 2 ** (Math.max(Math.floor(Math.log2(Math.abs(value))), -14) - 10) + slack ? got[i] : round16(value)));
-}
-export { heldFloats };  // (tests/gpu-choice-check.ts)
+// (the reference takes the device's own float16 of a key or value where it is one of the value's neighbours: T225's
+// review, reference.ts's heldFloats)
 // T156: the first layer's matrices, { name: [values, scales] } as the bytes of their rows (rowBytes: int8, or T232
 // ternary codes) and a Float32Array each, read back from their buffers (a piece after another: the rows in order)
 async function firstLayer(m: Model) {
@@ -181,10 +157,6 @@ async function firstLayer(m: Model) {
   }
   return out;
 }
-// the tokens whose rows of the embedding the first layer's check may take (of the second half of the vocabulary: see
-// below), and the rows of the classifier it holds to JavaScript's (every 256th, and the last)
-const checkCandidates = (vocab: number) => [...Array(64).keys()].map((i) => vocab - 1 - Math.floor((i * vocab) / 128));
-const checkRows = (vocab: number) => [...new Set([...[...Array(Math.ceil(vocab / 256)).keys()].map((i) => i * 256), vocab - 1])];
 // T210: those rows of the tables of a model on the GPU alone, which are there only: { embedding, classifier }, Maps of
 // a row to [the bytes of its values (rowBytes: int8, or T232 ternary codes), its scales], read back in one copy each
 // (a row of a piece at a time)
@@ -272,91 +244,13 @@ async function checkTokenBlocks(m: Model) {
 async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
   const { plan, device } = m, g = m.tokens!, planned = plan.tokens!, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize;
   const kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
-  const floats = (address: number, n: number) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
-  // row r of a matrix or a table ({ n, packing }, its values and scales at [valuesAt, scalesAt] in the shared
-  // memory): [its int8 values, its scales (one a group of 32 weights; T232, ternary: of 128)]; (T156) of a matrix read
-  // back from the GPU (firstLayer: [values, scales]); (T210) of a table's rows read back (tableRows)
-  const stored = (spec: Spec) => PACKINGS[spec.packing].stored(spec.n), scalesOf = (spec: Spec) => PACKINGS[spec.packing].scales(spec.n);
-  // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are (T547.2.4: Q4_K's
-  // blocks as their weights, whose one scale is 1: ONE)
-  // (T547.3.4: an IQ type's of the model's codebooks)
-  const codebooks = m.plan.codebooks && m.memory ? new Uint8Array(m.memory.buffer, m.plan.codebooks, CODEBOOK_BYTES).slice() : undefined;
-  const valuesOf = (spec: Spec, bytes: Uint8Array) => PACKINGS[spec.packing].values(bytes, codebooks), ONE = Float32Array.of(1);
-  const inMemory = (spec: Spec, [valuesAt, scalesAt]: [number, number]) => (r: number): Row => [
-    valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
-    // (T533: ternary's scales are float16s there, which went up widened)
-    !scalesOf(spec) ? ONE : PACKINGS[spec.packing].scale === 2 ? widenedHalves(new Uint16Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 2, scalesOf(spec)), new Float32Array(scalesOf(spec)))
-      : new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
-  // (T634.3: what is read back is the packing on the GPU's: binary's ternary codes)
-  const onGpu = (spec: Spec): Spec => ({ ...spec, packing: PACKINGS[spec.packing].on });
-  const readBackRows = (given: Spec, [values, scales]: [Uint8Array, Float32Array]) => (r: number): Row => {
-    const spec = onGpu(given);
-    return [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))), scalesOf(spec) ? scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec)) : ONE];
-  };
-  const tableSpec = (name: "embedding" | "classifier") => (name === "embedding" ? planned.embedding ?? planned.classifier : planned.classifier);
-  const tableRow = (name: "embedding" | "classifier") => (back.tableRows ? (r: number): Row => {
-    const [bytes, scales] = back.tableRows![name].get(r)!;
-    // (T547.3.7: a table of blocks' one scale of 1, as inMemory's)
-    return [valuesOf(onGpu(tableSpec(name)), bytes), scalesOf(tableSpec(name)) ? scales : ONE];
-  } : inMemory(tableSpec(name), tableSpec(name).at));
-  // T271.1: a rotated basis's signs of a width (float32, Python's, each times 1 / sqrt(block)), and R x, as the CPU's
-  // rotate (the matrices read it)
-  const signsOf = (n: number) => new Float32Array(m.memory.buffer, plan.rotated!.signs.find(({ width }) => width === n)!.at, n);
-  const turned = (x: ArrayLike<number>, n: number) => (plan.rotated ? rotateLikeCpu(x, signsOf(n), plan.rotated.block) : x);
-  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first; T271.1,
-  // in a rotated basis R x). The vector's groups are of 32; a row's scales cover as many of them each as they are fewer
-  // (one; T232, ternary: four)
-  const product = (n: number, rowOf: (r: number) => Row, given: ArrayLike<number>, rows: number[], packed = form.dp4a) => {
-    const x = turned(given, n), q = packed ? quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / GROUP;
-    return Float64Array.from(rows, (r) => {
-      const [w, s] = rowOf(r), each = perRow / s.length;
-      let sum = 0;
-      for (let b = 0; b < perRow; b++) {
-        let part = 0;
-        for (let i = b * GROUP; i < (b + 1) * GROUP; i++) part += w[i] * (q ? q.xq[i] : x[i]);
-        sum += part * s[Math.floor(b / each)] * (q ? q.xs[b] : 1);
-      }
-      return sum;
-    });
-  };
-  const all = (n: number) => [...Array(n).keys()];
-  const matmul = (name: TensorName, x: ArrayLike<number>) => {
-    const matrix = plan.matrices[name]!, first = { ...matrix, packing: packingAt(matrix, 0) };
-    return product(matrix.n, back.firstLayer ? readBackRows(first, back.firstLayer[name]) : inMemory(first, matrix.layers[0]), x, all(matrix.rows));
-  };
-  const rms = (x: Float64Array, weights: Float64Array) => {
-    const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length + plan.eps);
-    return x.map((v, i) => weights[i] * (s * v));
-  };
-  // T226: the stream's norm, RMSNorm or (T154) LayerNorm with its bias, as the CPU's kernels have them
-  const norm = (x: Float64Array, weights: Float64Array, bias: Float64Array | 0 | undefined) => {
-    if (!plan.layerNorm) return rms(x, weights);
-    const mean = x.reduce((sum, v) => sum + v, 0) / x.length;
-    const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + (v - mean) ** 2, 0) / x.length + plan.eps);
-    return x.map((v, i) => weights[i] * (s * (v - mean)) + (bias as Float64Array)[i]);
-  };
-  // the first layer's vector of a name (plan.vectors), where the model has it; and a vector with it added
-  const vectorOf = (name: keyof Vectors) => plan.vectors[name] && floats(plan.vectors[name].at, plan.vectors[name].size);
-  const plus = (x: Float64Array, name: keyof Vectors) => {
-    vectorOf(name)?.forEach((b, i) => { x[i] += b; });
-    return x;
-  };
-  const largest =(xs: Numbers) => xs.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
-  const off = (got: ArrayLike<number>, want: Numbers) => largest(want.map((v, i) => got[i] - v));
+  // JavaScript's layer and head, of the shared memory and what was read back (T642.11: reference.ts's)
+  const reference = referenceOf({ plan, memory: () => m.memory.buffer, packed: form.dp4a, back }), { matmul, vectorOf, plus, rms, behind } = reference;
   const owned: GPUBuffer[] = [];
   try {
     // 1. the first layer at position 1
-    // a token of the second half of the vocabulary whose row is large: the rows of tokens no text has (llm-jp-3's
-    // last) are nearly 0, and their keys and values then float16's subnormals (a check of them was 15% off, CI)
-    const embeddingRow = tableRow("embedding");
-    // (T547.3.6's review: of a table of llama.cpp's blocks, whose one scale is 1, by its weights themselves)
-    const sizeOf = (t: number) => {
-      const [values, scales] = embeddingRow(t), of = scales.length === 1 ? values : scales;
-      let sum = 0;
-      for (let i = 0; i < of.length; i++) sum += Math.abs(of[i]);
-      return sum;
-    };
-    const token = checkCandidates(vocab).reduce((best, t) => (sizeOf(t) > sizeOf(best) ? t : best));
+    // (a token of the second half of the vocabulary whose row is large: reference.ts's largestToken)
+    const token = reference.largestToken(vocab);
     const pos = 1;
     const halfBits = () => (Math.random() < 0.5 ? 0x8000 : 0) | ((13 + ((Math.random() * 3) | 0)) << 10) | ((Math.random() * 1024) | 0);
     const row0 = [0, 1].map(() => new Uint16Array(kvDim).map(halfBits));
@@ -379,27 +273,11 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     readH.unmap();
     const [gotK, gotV] = kv!.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), floatOfHalf));
     // JavaScript's layer
-    const [eRow, eScales] = embeddingRow(token);
-    // (T226: with GPT-2's learned position of pos, as the CPU's embed() adds it)
-    const x0 = Float64Array.from(eRow, (v, i) => v * eScales[Math.floor((i * eScales.length) / eRow.length)]);
-    if (planned.positions) floats(planned.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
-    // (T271.1: the embedding of a rotated basis holds R^-1 of its rows, turned back as the CPU's embed() does)
-    if (plan.rotated) x0.set(unrotateLikeCpu(x0, signsOf(dim), plan.rotated.block));
-    const xn = norm(x0, vectorOf("attention")!, vectorOf("attentionBias"));
-    // (T261.4.2: a Gemma 3's norm behind the attention and behind the FFN, of what joins the stream)
-    const behind = (x: Float64Array, name: keyof Vectors) => (vectorOf(name) ? rms(x, vectorOf(name)!) : x);
+    const x0 = reference.embedded(token, pos), xn = reference.norm(x0, vectorOf("attention")!, vectorOf("attentionBias"));
     const { o, k, v, wrong } = await first.then({ x0, xn, pos, line, row0: [Float64Array.from(row0[0], floatOfHalf), Float64Array.from(row0[1], floatOfHalf)], got: [gotK, gotV],
       held: heldFloats, matmul, vectorOf, plus, rms, behind, largest, off });
     if (wrong) return wrong;
-    const h1 = x0.map((value, i) => value + o[i]);
-    // (T154: GPT-NeoX's parallel residual, the FFN's norm of the layer's input; no gate, w1's bias and GELU as
-    // the shaders have it)
-    const xn2 = norm(plan.parallel ? x0 : h1, vectorOf("ffn")!, vectorOf("ffnBias"));
-    const gate = plus(matmul("w1", xn2), "b1"), up = plan.matrices.w3 && matmul("w3", xn2);
-    const gelu = (value: number) => 0.5 * value * (1 + Math.tanh(Math.min(9.010913, Math.max(-9.010913, 0.7978845608028654 * (value + 0.044715 * value ** 3)))));
-    // (T261.4.2: GELU in the gate, a Gemma 3's GEGLU)
-    const activated = gate.map(!up ? gelu : plan.activation === "gelu" ? (value, i) => gelu(value) * up[i] : (value, i) => (value / (1 + Math.exp(-value))) * up[i]);
-    const down = behind(plus(matmul("w2", activated), "b2"), "ffnPost"), h2 = h1.map((value, i) => value + down[i]);
+    const h2 = reference.ffn(x0, o);
     const stream = off(h, h2) / largest(h2.map((value, i) => value - x0[i]));
     if (!(stream <= line)) return `the first layer's stream is ${stream.toExponential(2)} of its change from JavaScript's (line ${line})`;
     const keyOff = k ? off(gotK, k) / largest(k) : 0, valueOff = v ? off(gotV, v!) / largest(v!) : 0;
@@ -426,19 +304,7 @@ async function checkTokens(m: Model, form: TokenForm, back: Back = {}) {
     const greedy = await run(samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
     // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
     const packedHead = form.dp4a && !floatHead(m);
-    const normedStream = norm(Float64Array.from(stream2), floats(planned.final, dim), planned.finalBias && floats(planned.finalBias, dim));
-    // T232: a ternary classifier's outlier channels as the CPU has them (src/runtime/forward/engine.ts's picked): taken out of the normed
-    // stream before it is quantized, and their columns of the table multiplied apart, in floats
-    const taken = g.take ? planned.channels.map((c): [number, number] => {
-      const value = normedStream[c];
-      normedStream[c] = 0;
-      return [c, value];
-    }) : [];
-    const want = product(dim, tableRow("classifier"), normedStream, rows, packedHead);
-    rows.forEach((r, j) => {
-      const [w, s] = tableRow("classifier")(r);
-      for (const [c, value] of taken) want[j] += value * w[c] * s[Math.floor((c * s.length) / w.length)];
-    });
+    const want = reference.logits(stream2, rows, packedHead, !!g.take);
     const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = packedHead ? DP4A_LINE : LOGITS_LINE;
     if (!(logitsOff <= logitsLine)) return `the logits are ${logitsOff.toExponential(2)} of their largest from JavaScript's (line ${logitsLine})`;
     if (greedy.id !== argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${argmaxLikeCpu(greedy.logits)}`;

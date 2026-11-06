@@ -206,6 +206,9 @@ page_modules() {
   # T465.3, T465.4: the same of a generated token's forms: its attention (tokenattention.ts) and its layer (tokenforms.ts)
   # (about 55 s)
   node tests/gpu-tokens-check.ts
+  # T642.11: reference.ts, the JavaScript a token's check holds the GPU to, by itself against gpu_answers.py's NumPy:
+  # a matrix's rows (int8, ternary, Q4_K) as they are and quantized, the norms, GELU (about 10 s)
+  node tests/gpu-reference-check.ts
   # T465.5: start.ts's start() whole on it: ready with every form chosen, a token's forms wrong, no attention right (about 12 s)
   node tests/gpu-start-check.ts
   # T357.3: the parts of the tool that checks the GPU in CI (tests/gpu-check.ts, which runs there alone), each by itself

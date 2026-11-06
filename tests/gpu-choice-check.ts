@@ -225,12 +225,12 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     "K and V 90 to the nearest float16, 102 toward zero, 0 away from it, 0 farther");
   assert.equal(farthest([1, 2.5], [1, 2]), 0.25);
   assert.ok(Number.isNaN(farthest([NaN, 1], [1, 2])), "a NaN is not within any line");
-  // the engine's own check of a form (src/runtime/gpu/tokenforms.js's checkTokens: the first layer's keys and values at position 1) takes
+  // the engine's own check of a form (src/runtime/gpu/tokenforms.ts's checkTokens: the first layer's keys and values at position 1) takes
   // the same rule on floats (heldFloats): the device's float16 where it is a neighbour, the nearest where not. Toward zero
   // the stream of a float form on llm-jp-3 150M came to 3.2 times its line off the nearest's (CI, Dawn with every
   // conversion cut toward zero), and the form was refused
   {
-    const { heldFloats } = await import(runtimeUrl("gpu/tokenforms.js"));  // (T642.13: from its module, not the worker's window)
+    const { heldFloats } = await import(runtimeUrl("gpu/reference.ts"));  // (T642.13: from its module, not the worker's window; T642.11: reference.ts's)
     const asked = (how) => Float64Array.from(values, (x) => toFloat(how(x)));
     for (const how of [nearest, inwards, outwards]) assert.deepEqual([...heldFloats(values, asked(how))], [...asked(how)], `${how.name}: the device's own`);
     const largest = values.reduce((most, x) => Math.max(most, Math.abs(x)), 0), top = [...values.keys()].filter((i) => Math.abs(values[i]) >= largest / 4);
