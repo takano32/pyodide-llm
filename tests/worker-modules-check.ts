@@ -28,7 +28,7 @@ import assert from "node:assert/strict";
 import { parse } from "@babel/parser";
 import { treeOf, python } from "./tree.ts";
 import { workerScripts } from "./worker-source.ts";
-import { contract, differing, givenTo, handedTo, posted as postedBy, readOff, returnedBy, takenBy, told, treeOf as syntaxOf, walk } from "./contracts.ts";
+import { contract, differing, givenTo, handedTo, posted as postedBy, readOff, returnedBy, tabled, takenBy, treeOf as syntaxOf, walk } from "./contracts.ts";
 import fs from "node:fs";
 import { namesOf } from "./names.ts";
 import { untyped } from "./untyped.ts";
@@ -133,7 +133,11 @@ console.log(`worker-modules-check: ${files.size} files, ${lets.length} variables
   // what the worker is sent: the kinds its receiver tells apart, and the keys it reads off a message (worker.js's
   // receiver, request.js's loadAsked(), and what generate() and timedPaths() take of the message they are handed)
   const asked = typed.membersOf("ToWorker");
-  same("contracts/messages.ts's ToWorker, to the kinds worker.js tells apart", new Set(asked.keys()), told(only("worker.ts")));
+  // (T641.14: worker.ts's receiver is the table REPLIES, a row for each type; tsc holds it closed, and this reads that
+  // nothing is spread into it that it does not say)
+  const rows = tabled(only("worker.ts"), "REPLIES");
+  assert.equal(rows.unknown, 0, "worker.ts's REPLIES spreads in rows this check does not read");
+  same("contracts/messages.ts's ToWorker, to the rows of worker.ts's REPLIES", new Set(asked.keys()), rows.keys);
   const read = new Set([...readOff(only("worker.ts", "request"), "data"), ...takenBy(only("worker.ts"), "generate"), ...takenBy(only("timing"), "timedPaths")]);
   read.delete("type");
   const keys = new Set([...asked.values()].flatMap((one) => [...one]));

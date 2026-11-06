@@ -19,6 +19,7 @@
 // And what the JavaScript and the TypeScript of the runtime write and read of a message, by their syntax trees:
 //   posted(trees, to)                    Map of the type -> { keys, spreads } of every postMessage({ type: "...", ... })
 //   told(trees)                          the texts `data.type` is compared with
+//   tabled(trees, name)                  the keys of the object literal named name: a receiver's table of rows
 //   differing(what, declared, written, more)   both ways; more: { key: why it is not written there }. The lines.
 //
 // Only what these checks need of TypeScript's types is read: anything else in the place of a type asked for throws.
@@ -240,6 +241,20 @@ export function takenBy(trees, name) {
   }
   if (found !== 1) throw new Error(`${found} functions named ${name}(): tests/contracts.ts reads what the one takes`);
   return keys;
+}
+
+/** the keys of the object literal a file names `name` (`const REPLIES = { init: …, load: … }`): what a receiver that is a
+ * table of rows by the message's type (worker.ts's, T641.14) tells its messages apart by. { keys, unknown }: unknown
+ * counts what the literal holds that is not a key (a spread of something not a literal) */
+export function tabled(trees, name) {
+  const found = [];
+  for (const { program } of trees) {
+    walk(program, (node) => {
+      if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.id.name === name) found.push(node.init);
+    });
+  }
+  if (found.length !== 1 || found[0]?.type !== "ObjectExpression") throw new Error(`${found.length} object literals named ${name}: tests/contracts.ts reads the keys of the one`);
+  return literalKeys(found[0]);
 }
 
 /** every text a file compares `<name>.type` with (`data.type === "load"`): what a receiver tells its messages apart by */

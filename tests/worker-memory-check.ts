@@ -387,6 +387,33 @@ const ok = (line) => {
   run("adopted({})");
 }
 
+// ---- T641.14: the worker's receiver is a table of rows by the message's type (worker.ts's REPLIES). A type it has no
+// row for, one the object's prototype has among them, is said to the page as an error, and nothing else is done
+{
+  for (const type of ["unheard", "toString"]) {
+    const before = messages.length;
+    await context.onmessage({ data: { type } });
+    assert.deepEqual(messages.slice(before).map(({ type, load, message }) => [type, load, message]),
+      [["error", undefined, `The worker does not know the message ${JSON.stringify(type)}.`]], `a message of the type ${type} was not said`);
+  }
+  ok("a message of a type the worker has no row for is said as an error");
+}
+
+// ---- T641.14: a load that a newer load cancels says nothing: its row hands the receiver the load's signal (heard), and
+// the receiver's catch reads it. The newer load fails here (no runtime), and is the only one said
+{
+  const small = { id: "small-cancelled", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
+  run("initialized = Promise.reject(new Error('no runtime in this check')); initialized.catch(() => {})");
+  fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+  const before = messages.length;
+  const first = context.onmessage({ data: { type: "load", load: 31, model: small } });
+  const second = context.onmessage({ data: { type: "load", load: 32, model: small } });
+  await Promise.all([first, second]);
+  assert.deepEqual(messages.slice(before).filter(({ type }) => type === "error").map(({ load, message }) => [load, message]),
+    [[32, "no runtime in this check"]], "a cancelled load said something, or the load that replaced it said nothing");
+  ok("a load that a newer one cancels says nothing, and the newer one speaks for itself");
+}
+
 // ---- T378.3 (T156's path, which nothing ran outside a browser): the GPU stops under a run of a model that is on the GPU
 // alone. The page is told so in the owner's words, the model is on the CPU from now on (alone.js's own list, which
 // worker.js tells by onCpuFromNow), and the load the page last asked for is asked for again, by its own message. A

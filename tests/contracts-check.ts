@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse } from "@babel/parser";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { contract, contractOf, differing, givenTo, handedTo, literalKeys, posted, readOff, returnedBy, takenBy, told, treeOf as syntaxOf, walk } from "./contracts.ts";
+import { contract, contractOf, differing, givenTo, handedTo, literalKeys, posted, readOff, returnedBy, tabled, takenBy, told, treeOf as syntaxOf, walk } from "./contracts.ts";
 import { python, runtime } from "./tree.ts";
 
 const sorted = (set) => [...set].sort();
@@ -68,7 +68,9 @@ const worker = tree(`
   postMessage({ type: "ready", late: true });
   made.postMessage({ type: "start", plan });
   postMessage(notALiteral);
-  self.onmessage = ({ data }) => { if (data.type === "load" || "stop" === data.type) use(data.model, data?.load); else if (other.type === "no") 0; };
+  const ROWS = { load(data) { use(data.model, data?.load); }, stop: () => {}, ...more };
+  self.onmessage = ({ data }) => ROWS[data.type](data);
+  other.onmessage = ({ data }) => { if (data.type === "load" || "stop" === data.type) 0; else if (other.type === "no") 0; };
 `);
 const both = posted(worker);
 assert.deepEqual(sorted(both.keys()), ["ready", "start"]);
@@ -76,6 +78,8 @@ assert.deepEqual([sorted(both.get("ready").keys), both.get("ready").spreads], [[
 assert.deepEqual(sorted(posted(worker, "owner").keys()), ["ready"], "a worker's own postMessage()");
 assert.deepEqual(sorted(posted(worker, "worker").keys()), ["start"], "what is posted to a worker");
 assert.deepEqual(sorted(told(worker)), ["load", "stop"]);
+assert.deepEqual([sorted(tabled(worker, "ROWS").keys), tabled(worker, "ROWS").unknown], [["load", "stop"], 1], "a table's rows, and what is spread in");
+assert.throws(() => tabled(worker, "NOWHERE"), /0 object literals named NOWHERE/);
 assert.deepEqual(sorted(readOff(worker, "data")), ["load", "model", "type"]);
 assert.deepEqual(sorted(returnedBy(worker, "result")), ["early", "late", "maybe"], "a function's own returns, not those of a function inside it");
 assert.deepEqual(sorted(takenBy(worker, "taking")), ["prompt", "type"]);

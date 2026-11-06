@@ -84,105 +84,129 @@ async function generate({ type, prompt, ...options }: Extract<ToWorker, { type: 
                 ...llama!.stats.toJs({ dict_converter: Object.fromEntries }) } satisfies Done);
 }
 
-self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
-  let signal: AbortSignal | undefined;
-  try {
-    if (data.type === "init" || data.type === "load") {
-      lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
-      loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.ts)
-      // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
-      // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
-      loading?.abort();
-      loading = new AbortController();
-      signal = loading.signal;
-      // the model downloads while Pyodide loads
-      runtimeAsked(data.search);
-      // never take the model away from a run that is going on
-      stopped = generating !== undefined;
-      // The cancelled load frees its buffer a few turns of the event loop after the abort. Without waiting for
-      // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
-      // whole model with every change of mind (587 MB after four of them).
-      const previous = unloaded;
-      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal!, data.load));
-      unloaded = current.catch(() => {});
-      await current;
-    } else if (data.type === "bench") {
-      // T45: the same model, measured again for every combination of switches the page asked for. The model is
-      // built once per round from the checkpoint that is already in the Cache API, so only the engine changes.
-      // One at a time: a second request while the rounds run would end a round's threads under its coordinator
-      if (benching) {
-        return;
-      }
-      roundsBegan();
-      const rows: BenchRow[] = [];
-      try {
-        for (const round of data.rounds) {
-          // T214: a round the page skips (src/bench.ts's roundsHere(): NumPy's float32 weights where the browser does
-          // not say its memory) is a row that says why, with nothing loaded
-          if (round.skip !== undefined) {
-            rows.push({ name: round.name, without: round.without, skip: round.skip });
-            continue;
-          }
-          // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
-          loading?.abort();
-          loading = new AbortController();
-          signal = loading.signal;
-          roundBegan(round.without);
-          const started = performance.now();
-          const previous = unloaded;
-          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal!, data.load));
-          unloaded = current.catch(() => {});
-          await current;
-          const ready = since(started);
-          const { tokens, speed } = timedGeneration(llama!, data.prompt, data.steps);
-          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama!.backend, seconds: ready });
-        }
-      } finally {
-        // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
-        // load with a round's switches off while the panel shows them on (the page's again: request.ts)
-        roundsEnded();
-      }
-      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version } satisfies Bench);
-    } else if (data.type === "paths") {
-      // T184: the model page's own path, on the model as the first load left it (the GPU too), before the rounds:
-      // its prompts and its writing as the page chooses, on the CPU only and on the GPU only
-      if (benching || pathing || !llama) {
-        return;
-      }
-      pathing = true;
-      try {
-        postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) } satisfies Paths);
-      } finally {
-        pathing = false;
-      }
-    } else if (data.type === "generate") {
-      if (!llama) {
-        throw new Error("The model is not ready.");
-      }
-      // messages keep arriving while this runs, hence the promise the other branches look at
-      stopped = false;
-      generating = generate(data);
-      try {
-        await generating;
-      } catch (err) {
-        // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
-        const lost = gpuOnlyLost();
-        if (!lost) throw err;
-        onCpuFromNow(lastLoad!.model);
-        postMessage({ type: "error", load: lastLoad!.load, reloading: true,
-          message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` } satisfies Failed);
-        generating = undefined;
-        self.onmessage!({ data: lastLoad } as MessageEvent<ToWorker>);
-      } finally {
-        generating = undefined;
-      }
-    } else if (data.type === "stop") {
-      // a stop that arrives before a run starts, or after it ended, must not cut the next one short
-      stopped = generating !== undefined;
+// What the worker does with each message of the page, by its type (T641.14, the page's HEARD's form, T643.2): the table
+// is closed, so a message that contracts/messages.ts's ToWorker adds and this table writes no row for fails tsc. A row
+// is handed the message and what it heard: the signal of the load it began, if any, which the catch below reads (a
+// cancelled load has nothing to report). A type the table does not know (a page of no build of this site) is said.
+type Asks = { [Ask in ToWorker as Ask["type"]]: Ask };
+type Heard = { signal?: AbortSignal };
+type Replying = { [Type in keyof Asks]: (data: Asks[Type], heard: Heard) => void | Promise<void> };
+
+async function loadOf(data: Asks["init" | "load"], heard: Heard) {
+  lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
+  loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.ts)
+  // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
+  // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
+  loading?.abort();
+  loading = new AbortController();
+  const signal = heard.signal = loading.signal;
+  // the model downloads while Pyodide loads
+  runtimeAsked(data.search);
+  // never take the model away from a run that is going on
+  stopped = generating !== undefined;
+  // The cancelled load frees its buffer a few turns of the event loop after the abort. Without waiting for
+  // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
+  // whole model with every change of mind (587 MB after four of them).
+  const previous = unloaded;
+  const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+  unloaded = current.catch(() => {});
+  await current;
+}
+
+const REPLIES: Replying = {
+  init: loadOf,
+  load: loadOf,
+  async bench(data, heard) {
+    // T45: the same model, measured again for every combination of switches the page asked for. The model is
+    // built once per round from the checkpoint that is already in the Cache API, so only the engine changes.
+    // One at a time: a second request while the rounds run would end a round's threads under its coordinator
+    if (benching) {
+      return;
     }
+    roundsBegan();
+    const rows: BenchRow[] = [];
+    try {
+      for (const round of data.rounds) {
+        // T214: a round the page skips (src/bench.ts's roundsHere(): NumPy's float32 weights where the browser does
+        // not say its memory) is a row that says why, with nothing loaded
+        if (round.skip !== undefined) {
+          rows.push({ name: round.name, without: round.without, skip: round.skip });
+          continue;
+        }
+        // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
+        loading?.abort();
+        loading = new AbortController();
+        const signal = heard.signal = loading.signal;
+        roundBegan(round.without);
+        const started = performance.now();
+        const previous = unloaded;
+        const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+        unloaded = current.catch(() => {});
+        await current;
+        const ready = since(started);
+        const { tokens, speed } = timedGeneration(llama!, data.prompt, data.steps);
+        rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama!.backend, seconds: ready });
+      }
+    } finally {
+      // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
+      // load with a round's switches off while the panel shows them on (the page's again: request.ts)
+      roundsEnded();
+    }
+    postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version } satisfies Bench);
+  },
+  async paths(data) {
+    // T184: the model page's own path, on the model as the first load left it (the GPU too), before the rounds:
+    // its prompts and its writing as the page chooses, on the CPU only and on the GPU only
+    if (benching || pathing || !llama) {
+      return;
+    }
+    pathing = true;
+    try {
+      postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) } satisfies Paths);
+    } finally {
+      pathing = false;
+    }
+  },
+  async generate(data) {
+    if (!llama) {
+      throw new Error("The model is not ready.");
+    }
+    // messages keep arriving while this runs, hence the promise the other rows look at
+    stopped = false;
+    generating = generate(data);
+    try {
+      await generating;
+    } catch (err) {
+      // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
+      const lost = gpuOnlyLost();
+      if (!lost) throw err;
+      onCpuFromNow(lastLoad!.model);
+      postMessage({ type: "error", load: lastLoad!.load, reloading: true,
+        message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` } satisfies Failed);
+      generating = undefined;
+      void receive(lastLoad!);
+    } finally {
+      generating = undefined;
+    }
+  },
+  stop() {
+    // a stop that arrives before a run starts, or after it ended, must not cut the next one short
+    stopped = generating !== undefined;
+  },
+};
+/** The row of a message's type, given the message (one function for every type: tsc pairs the two by the type's name) */
+const reply = <Type extends keyof Asks>(type: Type, data: Asks[Type], heard: Heard) => REPLIES[type](data, heard);
+
+async function receive(data: ToWorker) {
+  const heard: Heard = {};
+  try {
+    if (!Object.hasOwn(REPLIES, data.type)) {
+      throw new Error(`The worker does not know the message ${JSON.stringify(data.type)}.`);
+    }
+    await reply(data.type, data, heard);
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
-    if (!signal?.aborted) {
+    if (!heard.signal?.aborted) {
       // what it is and what is said of it, whatever was thrown (failure.ts reads them all: a sentence for the reader,
       // the memory that ran out, T90, an error of this site's own that crossed Python, a runtime that did not load)
       const failure = failureOf(err);
@@ -192,5 +216,6 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
                     ...(failure.kind === "memory" && { memory: true, heap: heapBytes() }) } satisfies Failed);
     }
   }
-};
+}
+self.onmessage = ({ data }: MessageEvent<ToWorker>) => receive(data);
 // (T350) what came while the modules were fetched
