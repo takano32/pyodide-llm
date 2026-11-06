@@ -82,6 +82,36 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
     if (found) assert.equal(entry.weights, KEPT[found[1]], `${entry.id}: its note's ${found[1]} is the dtype it keeps`);
   }
 }
+// T643.25: what nothing else told. (i) Every entry of Hugging Face says what it fetches (download: the type asks for a
+// number, not one past 0), and its note says that ("fetches N MB" or "N GB", at the digits it writes), with "(GGUF)"
+// where its file is a GGUF and only there. (ii) An entry's options are the engine's keys the list writes (Options is
+// open: a misspelled stop_token would go to Python unread); a key the list starts to write is one more name here
+{
+  const FETCHES = / fetches ([\d.]+) (MB|GB)( \(GGUF\))?/;
+  for (const entry of MODELS.filter((entry) => entry.hf)) {
+    assert.ok(Number.isFinite(entry.download) && entry.download! > 0, `${entry.id}: says what it fetches (download)`);
+    const found = FETCHES.exec(entry.note);
+    assert.ok(found, `${entry.id}: its note says what it fetches`);
+    const digits = found[1].split(".")[1]?.length ?? 0, unit = found[2] === "GB" ? 1e9 : 1e6;
+    assert.equal(found[1], (entry.download! / unit).toFixed(digits), `${entry.id}: its note's fetches is download (${entry.download})`);
+    assert.equal(Boolean(found[3]), entry.hf!.weights.endsWith(".gguf"), `${entry.id}: its note says (GGUF) where it fetches a GGUF, and only there`);
+  }
+  const KEYS = ["bos", "dtype", "rope_scaling", "specials", "stop_tokens", "tokenizer_kind"];
+  for (const entry of MODELS) for (const key of Object.keys(entry.options)) assert.ok(KEYS.includes(key), `${entry.id}: options.${key} is not a key the list writes`);
+}
+// (iv) T523, T535: a name begins with its maker (docs/notes/t535-maker-names-advice-2026-10-15.md's table, a second
+// copy: a maker the list adds is one more name here), or with a name that says its maker (rule 3 there). The words are
+// the owner's; this says only that one was not left out
+{
+  const MAKERS = ["ABEJA", "Alibaba", "Andrej Karpathy", "Aratako", "Atemoya", "AXCXEPT", "CyberAgent", "DataPilot", "EleutherAI",
+    "Ellis Hoag", "Google", "Hugging Face", "IBM", "LINE", "Lightblue", "Liquid AI", "LocalNovelLLM-project", "Matsuo Lab", "Meta",
+    "Mozilla Firefox", "Nous Research", "OpenAI", "OpenBMB", "PFN", "Prism ML", "SB Intuitions", "Sakana AI", "Science Tokyo",
+    "Shanghai AI Lab", "SousiOmine", "Stability AI", "Stockmark", "TokenRhythm", "Underdog", "nitky", "rinna", "umiyuki"];
+  const NAMING = ["DeepSeek-R1", "ELYZA-", "EuroLLM", "Llama 3.2 Shisa", "Llama-3-ELYZA-JP", "Mistral", "RakutenAI", "Shisa", "Spark-X", "TinyLlama", "llm-jp-"];
+  for (const { id, name } of MODELS) {
+    assert.ok(MAKERS.some((maker) => name.startsWith(`${maker} `)) || NAMING.some((naming) => name.startsWith(naming)), `${id}: "${name}" begins with no maker of MAKERS`);
+  }
+}
 const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
 for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES names ${repo}, which no model uses`);
 // T649.3: a license's text in About is at the revision its entries pin, and the PLaMo Community License's entries say

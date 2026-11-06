@@ -218,6 +218,11 @@ CARDS = {"hf-japanese-large-lm-1.7b-instruction-sft": LINE_CARD, "hf-japanese-la
          "hf-oumuamua-7b-instruct-v2": OUMUAMUA_CARD, "hf-umievo-gleipnir-7b": GLEIPNIR_CARD}
 # the cards' formats read by the real sentencepiece of spiece.model (which must be there); the others by the fast tokenizer
 CARDS_SPIECE = {"hf-japanese-large-lm-1.7b-instruction-sft", "hf-japanese-large-lm-3.6b-instruction-sft"}
+# T643.25: the token an entry with no format names as its BOS (its options' bos, which no template checks), as the
+# real tokenizer spells it (a second copy of the list's: LINE's 1.7B begins with </s>, its 3.6B with <s>, T249). An
+# entry with a bos and no format that is not here fails, and so does one whose bos spells another token.
+BOS_PIECES = {"hf-rakutenai-2.0-mini": "<s>", "hf-tinyswallow-1.5b": "<|endoftext|>",
+              "hf-japanese-large-lm-1.7b": "</s>", "hf-japanese-large-lm-3.6b": "<s>"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -351,6 +356,16 @@ def main():
         # (T312: a base model's entry whose format is what was typed, where its tokenizer has its instruct's template.
         # Whether the entry is a base model is not looked at: any entry whose format is "{prompt}" alone reads so)
         if not template or template == "{prompt}":
+            # (T643.25: the entry's own bos, which nothing else checks, against the real tokenizer's spelling)
+            if not alone and "bos" in entry.get("options", {}):
+                spelled = reference_of(folder).convert_ids_to_tokens([options["bos"]])[0]
+                if spelled != BOS_PIECES.get(entry["id"]):
+                    print(f"DIFF {entry['id']}: no format, and its bos {options['bos']} is {spelled!r}, not "
+                          f"{BOS_PIECES.get(entry['id'])!r} (BOS_PIECES)", flush=True)
+                    failed.append(entry["id"])
+                    continue
+                print(f"none {entry['id']}: no format, its bos {options['bos']} is {spelled!r}", flush=True)
+                continue
             print(f"none {entry['id']}: no format (what was typed is continued as it is)", flush=True)
             continue
         tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
