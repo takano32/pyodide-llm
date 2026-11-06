@@ -1019,6 +1019,18 @@ const edge = Array.from({ length: 4000 }, (_, i) => 4000 + i).filter((pad) => { 
 assert.ok(edge.length > 10, "there is a report that fits the link with a summary that does not");
 for (const pad of edge) assert.deepEqual([padded(pad).long, padded(pad).longer], [false, false], `a report that fits (padded by ${pad})`);
 assert.deepEqual(SECTIONS, ["device", "cpu", "model", "gpu", "storage", "line", "memory"]);
+// T643.16: the sections' elements are written by hand in benchmark.astro, and nothing else says they match SECTIONS and
+// TITLES: run.ts makes a section's parts from each <section data-section> (a name of SECTIONS with no element is a
+// section whose parts[name] is missing when it runs), the page's progress reads the element's <h2>, and the report reads
+// TITLES. So the markup's sections are SECTIONS in their order, each with its <h2> written as TITLES says.
+{
+  const markup = fs.readFileSync(new URL("../src/pages/benchmark.astro", import.meta.url), "utf8");
+  const opened = [...markup.matchAll(/<section\b[^>]*>/g)].map(([tag]) => tag);
+  const sections = [...markup.matchAll(/<section data-section="([^"]*)">\s*<h2>([^<]*)<\/h2>/g)].map(([, name, title]) => [name, title]);
+  assert.equal(sections.length, opened.length, `benchmark.astro: every <section> is <section data-section="…"> with its <h2> first (${opened.join(" ")})`);
+  assert.deepEqual(sections.map(([name]) => name), [...SECTIONS], "benchmark.astro's sections are SECTIONS, in their order");
+  assert.deepEqual(sections.map(([, title]) => title), SECTIONS.map((name) => TITLES[name]), "benchmark.astro's <h2> of each section is its TITLES");
+}
 assert.deepEqual(STATE, { ok: "done", none: "not in this browser", wrong: "WRONG", error: "failed" });
 // the page's wiring, which only a browser runs (and no runner makes anything WRONG: the --wrong of tests/bench-check.ts, a
 // step of preview.yml, does): each section hands its worker's answer to its table, the GPU section is written again
