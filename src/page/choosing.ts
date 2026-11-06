@@ -3,6 +3,7 @@
 import { DEFAULT_MODEL, MODELS, asksBefore, memoryWarning } from "../models.ts";
 import { REPOSITORY, REVISION } from "./repository.ts";
 import type { Model } from "./model.ts";
+import { type Converted, type Kept, serves } from "../runtime/kept.ts";
 
 /** the select's last entry of the Hugging Face group: it opens the sheet that asks which repository (T88) */
 export const OTHER = "hf-other";
@@ -11,6 +12,12 @@ export const OTHER = "hf-other";
 export const shownForOther = (current: Model, localListed: boolean) => (current.id === "local" && !localListed ? DEFAULT_MODEL.id : current.id);
 /** the model an entry of the select names: "local" is the one of the disk or of a repository, the others the list's */
 export const chosenOf = (value: string, local: Model | undefined): Model => (value === "local" ? local! : MODELS.find(({ id }) => id === value)!);
+
+/** T643.5: the ids of the entries (weighed as they would be loaded now: their bits) that one of the kept conversions
+ * serves (under this converter). The select says so in its words, and choosing such an entry asks for no download:
+ * the fact is this set, not the words. */
+export const keptOf = (stored: readonly Kept[], entries: readonly (Converted & { id: string })[]): ReadonlySet<string> =>
+  new Set(entries.filter((entry) => stored.some((one) => serves(one, entry))).map(({ id }) => id));
 
 /** What is asked before a model is loaded, or nothing: a large download (what is fetched, from whom, and that the
  * conversion happens here), unless the browser kept it; T90: and one that probably does not fit in a device that says

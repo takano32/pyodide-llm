@@ -750,7 +750,7 @@ console.log(`page-parts-check: fields.ts by itself: the settings a link sets, an
 console.log(`page-parts-check: parameters.ts by itself: the names of the address, and the address of the model the page has`);
 {
   // T643.10: choosing.ts, what choosing a model decides apart from the select and the sheet (choose.ts draws it)
-  const { OTHER, shownForOther, chosenOf, askedFirst, sheetSays } = await fresh("page/choosing.ts");
+  const { OTHER, shownForOther, chosenOf, askedFirst, sheetSays, keptOf } = await fresh("page/choosing.ts");
   const { UNASKED_BYTES } = await import("../src/models.ts");
   assert.equal(OTHER, "hf-other", "the select's entry that opens the sheet (index.astro's option)");
   const listText = (await import("node:fs")).readFileSync(fileURLToPath(new URL("../src/page/list.ts", import.meta.url)), "utf8");
@@ -777,7 +777,19 @@ console.log(`page-parts-check: parameters.ts by itself: the names of the address
   assert.deepEqual(sheetSays("o", "main", ""), { wrong: "name", words: "owner/name, as huggingface.co spells it" }, "a name that is no owner/name");
   assert.deepEqual(sheetSays("o/n", "a b", ""), { wrong: "revision", words: "a branch, a tag or a commit" }, "a revision that is none");
   assert.deepEqual(sheetSays("o", "a b", ""), { wrong: "name", words: "owner/name, as huggingface.co spells it" }, "the name is said first");
-  cases += 17;
+  // T643.5: which entries the browser kept is a set of ids, made from what was kept and not from the select's words
+  const { keptName, CONVERTER } = await import("../src/runtime/kept.ts");
+  const [one, other] = MODELS.filter(({ hf, shares }) => hf && !shares);
+  const as = (entry, dtype) => ({ ...entry, conversion: { ...entry.conversion, dtype } });
+  const stored = (entry, converter = CONVERTER) => ({ name: keptName(as(entry, "int8")), where: "opfs", manifest: { id: entry.id, converter } });
+  assert.deepEqual([...keptOf([stored(one)], [as(one, "int8"), as(other, "int8")])], [one.id], "an entry kept as it would be loaded is in the set, one not kept is not");
+  assert.deepEqual([...keptOf([stored(one)], [as(one, "int6")])], [], "nor one kept under other bits than it would be loaded with");
+  assert.deepEqual([...keptOf([stored(one, CONVERTER - 1)], [as(one, "int8")])], [], "nor one an older converter kept");
+  assert.deepEqual([...keptOf([], [as(one, "int8")])], [], "nothing kept, nothing in the set");
+  const chooseText = (await import("node:fs")).readFileSync(fileURLToPath(new URL("../src/page/choose.ts", import.meta.url)), "utf8");
+  assert.ok(!chooseText.includes("kept in this browser") && /keptEntries\.has\(select\.value\)/.test(chooseText),
+    "choose.ts reads list.ts's set of what was kept, not the words the select shows");
+  cases += 22;
 }
-console.log(`page-parts-check: choosing.ts by itself: the sheet's entry, the model an entry names, what is asked first, the sheet's fields`);
+console.log(`page-parts-check: choosing.ts by itself: the sheet's entry, the model an entry names, what is asked first, what was kept, the sheet's fields`);
 console.log(`page-parts-check: opening.ts: the URL's model, the one remembered, the default\npage-parts-check: ok (${cases} cases)`);

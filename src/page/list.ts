@@ -5,7 +5,7 @@ import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
 import { type Model, type Unlisted, model } from "./model.ts";
 import { forget, keptModels, outdated, serves } from "../runtime/kept.ts";
-import { OTHER } from "./choosing.ts";
+import { OTHER, keptOf } from "./choosing.ts";
 
 // What the worker kept of its conversions (src/runtime/kept.ts: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
@@ -21,18 +21,19 @@ const forgotten = (one: Parameters<typeof forget>[0]) => forget(one).then(() => 
   console.warn(`kept: ${one.name} could not be deleted (${String(error)}): it is still kept`);
   return false;
 });
+/** T643.5: the ids of the list's entries this browser kept as they would be loaded now (showKept() sets it): what
+ * choose.ts reads, and not the select's words */
+export let keptEntries: ReadonlySet<string> = new Set();
 export async function showKept() {
   let models = await listed();
   // T116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
   for (const one of models.filter((one) => outdated(one))) await forgotten(one);
   models = models.filter((one) => !outdated(one));
+  // kept as it would be loaded now: under its bits (?bits=, or either the worker may choose), by this converter
+  keptEntries = keptOf(models, MODELS.filter((entry): entry is Remote => !!entry.hf).map((entry) => weighed(entry)));
   for (const option of select.querySelectorAll("option")) {
     const entry = MODELS.find(({ id }) => id === option.value);
-    if (entry?.hf) {
-      // kept as it would be loaded now: under its bits (?bits=, or either the worker may choose), by this converter
-      const found = models.some((one) => serves(one, weighed(entry)));
-      option.textContent = `${entry.name} — ${entry.note}${found ? " · kept in this browser" : ""}`;
-    }
+    if (entry?.hf) option.textContent = `${entry.name} — ${entry.note}${keptEntries.has(entry.id) ? " · kept in this browser" : ""}`;
   }
   $("kept").hidden = models.length === 0;
   $("kept-list").textContent = "";
