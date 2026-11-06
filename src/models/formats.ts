@@ -1,9 +1,22 @@
 // The formats the list's entries send their prompts in, and the engine's options that go with them (the tokens a
 // format writes, where an answer stops): one turn of each model's chat template, as the real one renders it.
 
+import type { Dtype } from "../runtime/contracts/form.ts";
+
+// T643.18: the engine's options an entry writes, closed to the six keys the list writes (a key spelt wrong, stop_token,
+// is an error of tsc's; tests/models-check.ts's KEYS is the second copy): bos, the token every text begins with;
+// dtype, a site model's file's; rope_scaling, {} alone (PLAIN_ROPE: no scaling); specials; stop_tokens; tokenizer_kind
+export type ListOptions = {
+  bos?: number;
+  dtype?: Dtype;
+  rope_scaling?: Record<string, never>;
+  specials?: string[];
+  stop_tokens?: number[];
+  tokenizer_kind?: "unigram";
+};
 export const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
 export const STORY = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
-export const unigram = { tokenizer_kind: "unigram" };
+export const unigram = { tokenizer_kind: "unigram" } satisfies ListOptions;
 // An instruction-tuned model answers instead of continuing, when its input has the form it was trained on: template
 // wraps what the visitor typed ({prompt}), for one turn and no more. The forms are the chat_template of each model.
 export const LLM_JP_INSTRUCT = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。\n\n### 指示:\n{prompt}\n\n### 応答:\n";
@@ -16,7 +29,7 @@ export const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assista
 // the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, a Qwen3's
 // QWEN3_FROM_IM_START and Hermes 3's, T252's review): the format begins after it (T250's review)
 export const CHATML_AFTER_START = "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
-export const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
+export const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] } satisfies ListOptions;
 // T369 (T264): the converter gives a model whose chat template it read the template's own first token as its BOS, and
 // the format from the next token on, so that the page sends the ids of transformers' apply_chat_template: a Qwen opened
 // with ?hf= begins with <|im_start|> and no <|endoftext|> in front. The entries of the list that had the converter's BOS
@@ -38,7 +51,7 @@ export const QWEN3_THINKING_2507 = `${CHATML}<think>\n`;
 // so the real ids begin with <|user|>: that is the BOS here and the format is what follows it (T264's form; the
 // converter says the same of them since T400: an entry says both or neither, the bos and the format)
 export const SARASHINA = "{prompt}</s><|assistant|>";
-export const sarashina = { bos: 9, specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] };
+export const sarashina = { bos: 9, specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] } satisfies ListOptions;
 export const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
 // llm-jp-4's chat_template is OpenAI's harmony (T132), with a system message of the model's name, its knowledge cutoff
 // and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to
@@ -96,7 +109,7 @@ export const ELYZA_LLAMA2 = "[INST] <<SYS>>\nあなたは誠実で優秀な日�
 export const LIGHTBLUE_R1 = {
   specials: ["<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>", "<｜Assistant｜>", "</tool_call>", "<|file_sep|>",
     "<tool_call>", "<|fim_pad|>", "</think>", "<｜User｜>", "<think>", "<|EOT|>", "<|im_end|>"],
-};
+} satisfies ListOptions;
 // T602: EvoLLM-JP has no chat template, and its card renders its messages (with this system one) with
 // apply_chat_template under transformers 4.38.2, whose default for a LlamaTokenizer was Llama 2's format: the system in
 // the user's turn, the turn stripped, and no space after [/INST]
@@ -120,7 +133,7 @@ export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";
 // the list has had it, and the answer stops at it and at <|im_end|> (4): said here since T369, for the converter alone
 // begins with <|im_start|> now (T264)
 export const EUROLLM = "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
-export const eurollm = { bos: 1, stop_tokens: [1, 4] };
+export const eurollm = { bos: 1, stop_tokens: [1, 4] } satisfies ListOptions;
 // T250: Llama-3-ELYZA-JP's template is Llama 3's (no date, the turns trimmed), and its card always passes this system
 // message, as Swallow-MS's does: one turn of it as the real Jinja writes it with that message
 export const ELYZA = "<|start_header_id|>system<|end_header_id|>\n\nあなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、" +
@@ -139,11 +152,11 @@ export const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>
 // 8B (Qwen3 Swallow's, continued on Japanese text) 0.4% (tests/answer_check.ts, tests/start_check.ts). For those the BOS
 // is the format's own first token, <|im_start|> (151644), and the formats begin after it (as Qwen3.5's, T236): the page
 // sends the very IDs the real template makes. The answer stops at <|im_end|>, at <|endoftext|> and at the mark of a new turn
-export const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] };
+export const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] } satisfies ListOptions;
 // T610.2: Phi-4's ChatML (Shisa V2.1 unphi4 14B), <|im_sep|> after the role. BOS the template's first token, <|im_start|>,
 // as the converter makes it, and its stops (<|endoftext|>, <|im_end|>); the prompt trimmed, since the real tokenizer's
 // special tokens strip the spaces beside them (lstrip, rstrip), which the page's tokenizer does not
-export const UNPHI4 = { bos: 100264, stop_tokens: [100257, 100265] };
+export const UNPHI4 = { bos: 100264, stop_tokens: [100257, 100265] } satisfies ListOptions;
 export const UNPHI4_AFTER_START = "user<|im_sep|>{prompt:trim}<|im_end|><|im_start|>assistant<|im_sep|>";
 export const QWEN3_THINKING_AFTER_START = CHATML_AFTER_START;
 export const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</think>\n\n`;
@@ -169,7 +182,7 @@ export const QWEN35_THINKING = "user\n{prompt:trim}<|im_end|>\n<|im_start|>assis
 export const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 export const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
-    "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
+    "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] } satisfies ListOptions;
 // T255: SmolLM3's chat_template is past the converter's reader (it asks whether a text is in a variable it may not have
 // set), so one turn by hand, as the real Jinja writes it with enable_thinking true and with false and no system turn
 // (tests/format_check.py, strict). It writes a system turn of its own first: the day (strftime_now: {date:…}, the
@@ -200,7 +213,7 @@ export const SMOLLM3_AT_ONCE = smollm3Format("/no_think", "You are a helpful AI 
   "<think>\n\n</think>\n");
 export const smollm3 = { bos: 128011, stop_tokens: [128000, 128001, 128011, 128012],
   specials: ["</tool_response>", "<tool_response>", "</tool_call>", "<|im_start|>", "<tool_call>", "<|im_end|>", "</think>",
-    "</code>", "<think>", "<code>"] };
+    "</code>", "<think>", "<code>"] } satisfies ListOptions;
 // T337: Agents-A1-4B's chat_template is Qwen3.5's with one thing more: where the messages have no system turn it writes
 // this one (the template's own default: the card's recommended one is the same but names tavily_search and is dated
 // 2026-07-13. The date is fixed in the template). So the page sends it too,
@@ -237,7 +250,7 @@ export const GRANITE_THINKING = "system\n<|im_end|>\n<|im_start|>user\n{prompt}<
 export const GRANITE_AT_ONCE = "system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think></think>";
 export const granite = { bos: 100256, stop_tokens: [100256, 100257, 100283],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "</tool_call>",
-    "<|filename|>", "<|im_start|>", "<|reponame|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
+    "<|filename|>", "<|im_start|>", "<|reponame|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] } satisfies ListOptions;
 // T260: Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers; the engine's arch "lfm2"). The real
 // tokenizer begins every text with <|startoftext|> (1), the converter's BOS, and the chat_template writes it first:
 // the page sends the very ids the real template makes. The templates of the 230M, the 350M and the 1.2B Instruct call
@@ -250,8 +263,8 @@ export const granite = { bos: 100256, stop_tokens: [100256, 100257, 100283],
 // at the BOS. The cards: temperature 0.1 and a repetition penalty of 1.05 (and a top-k of 50, which the page's sampler
 // has not; no top-p), the 700M's 0.3 (and a min-p it has not either)
 export const lfm25 = { specials: ["<|tool_call_start|>", "<|tool_call_end|>", "<|im_start|>", "<|im_end|>", "</think>", "<think>",
-  "Mathias", "python"] };
-export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "python"] };
+  "Mathias", "python"] } satisfies ListOptions;
+export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "python"] } satisfies ListOptions;
 // A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, CAT-Thinking 8B; a Qwen3 of Qwen's own has
 // bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own, <|endoftext|>
 // (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the answer stops at
@@ -260,7 +273,7 @@ export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "py
 // <|im_start|> now, as QWEN3_FROM_IM_START does by hand. What it costs is the
 // model's: QWEN3_FROM_IM_START (above) says which are worse for it. Where a model of this family is added,
 // tests/start_check.ts and tests/answer_check.ts say whether this BOS is one it can bear
-export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
+export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] } satisfies ListOptions;
 // T235 (the owner, 2026-10-11): a plain RoPE, whatever config.json's rope_scaling says. The engine makes the RoPE tables
 // of a file that has none (every dtype of the page: int8, 6-bit, ternary) from the options, and an entry's options win
 // over the converter's and over those of a conversion kept before (worker/convert.ts), so this takes the converter's
@@ -268,7 +281,7 @@ export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 // (the angles of rope_theta alone, cos and sin times 1). Not null: Pyodide makes JavaScript's null a jsnull, which is
 // not None. The conversion is the same bytes and the same options either way (CONVERTER stays), and ?hf= of the same
 // repository, which has no entry, keeps config.json's scaling
-export const PLAIN_ROPE = { rope_scaling: {} };
+export const PLAIN_ROPE = { rope_scaling: {} } satisfies ListOptions;
 // T343: XHToken's Spark-X2.5. Its chat_template calls a macro (render_content), which the converter's own reader
 // refuses, and jinja2 reads (where a browser could not fetch jinja2, there would be no format): so one turn by hand, as
 // the real Jinja writes it with enable_thinking true (the default: "<think>" after the answer's mark) and with false
@@ -291,15 +304,15 @@ export const spark = { bos: 0, stop_tokens: [0, 1],
   specials: ["<｜start▁of▁sentence｜>", "<｜end▁of▁sentence｜>", "</tool_response>", "<tool_response>", "<|Developer|>",
     "<｜fim▁begin｜>", "</arg_value>", "</tool_call>", "<｜fim▁hole｜>", "<arg_value>", "<tool_call>", "<｜fim▁end｜>",
     "</arg_key>", "<|System|>", "<arg_key>", "</think>", "<System>", "<|Tool|>", "<|User|>", "<think>", "<|Bot|>", "<User>",
-    "<Bot>", "<unk>"] };
-export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
+    "<Bot>", "<unk>"] } satisfies ListOptions;
+export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] } satisfies ListOptions;
 // T592.2: where it thinks, its <|end|> (11) closes the thought and <|start|> (10) begins the final channel after it:
 // neither stops, and a turn ends with <|return|> (2) or <|call|> (13)
-export const harmonyThinking = { ...harmony, stop_tokens: [1, 2, 13] };
+export const harmonyThinking = { ...harmony, stop_tokens: [1, 2, 13] } satisfies ListOptions;
 // T399: the instruct's, from the template's first token (HARMONY_AFTER_START); the stops are harmony's
-export const harmonyFromStart = { ...harmony, bos: 10 };
-export const harmonyThinkingFromStart = { ...harmonyThinking, bos: 10 };
-export const llmJp = { stop_tokens: [1, 2, 7] };
+export const harmonyFromStart = { ...harmony, bos: 10 } satisfies ListOptions;
+export const harmonyThinkingFromStart = { ...harmonyThinking, bos: 10 } satisfies ListOptions;
+export const llmJp = { stop_tokens: [1, 2, 7] } satisfies ListOptions;
 // T649.3: PLaMo 3 Translate's request (its chat_template.jinja: a translation of one text, no system turn), one
 // direction an entry. The BOS (<|plamo:bos|>, 1) is the entry's and the format begins after it, as the real
 // apply_chat_template(…, source_lang=…, target_lang=…) writes it (tests/format_check.py's TEMPLATE_SAYS holds the two
@@ -312,4 +325,4 @@ export const llmJp = { stop_tokens: [1, 2, 7] };
 export const plamoTranslate = (source: string, target: string) =>
   `<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input<|plamo:key|>lang<|plamo:val|>${source}<|plamo:msg|>{prompt}` +
   `<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>${target}<|plamo:msg|>`;
-export const plamo = { bos: 1, stop_tokens: [1, 16] };
+export const plamo = { bos: 1, stop_tokens: [1, 16] } satisfies ListOptions;

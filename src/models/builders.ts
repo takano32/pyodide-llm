@@ -1,8 +1,8 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
+import type { ListOptions } from "./formats.ts";
 import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25, plamo, plamoTranslate } from "./formats.ts";
 import { atOnce, greedy, sampled, thinking } from "./sampling.ts";
 import type { Hf, OfHuggingFace, Sampled, Translation } from "../runtime/contracts/messages.ts";
-import type { Options } from "../runtime/contracts/python.ts";
 import type { Dtype } from "../runtime/contracts/form.ts";
 
 // An entry of the list (src/models.ts, which exports this type): an id, a name and a note (the note of the list: the
@@ -29,7 +29,7 @@ type Shared = {
   japanese: boolean;
   thinks?: boolean;
   wide?: boolean;
-  options: Options;
+  options: ListOptions;
   template?: string;
   generation: Generation;
   prompt: string;
