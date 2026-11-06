@@ -8,6 +8,7 @@ import { BINARY_OF_EIGHT } from "../src/models/memory.ts";
 import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.ts";
 import { BUILT } from "../src/models/built.ts";
 import { HF_JAPANESE } from "../src/models/hf-japanese.ts";
+import { HF_JAPANESE_LARGE } from "../src/models/hf-japanese-large.ts";
 import { HF_CLASSICS } from "../src/models/hf-classics.ts";
 import { HF_FAMILIES } from "../src/models/hf-families.ts";
 
@@ -416,7 +417,7 @@ for (const id of ["hf-smollm3-3b-thinking", "hf-smollm3-3b"]) {
     assert.equal(entry.note.split(/ · desktop only| · Chrome and Firefox/).length, 1 + Boolean(desktop) + Boolean(browsers), `${entry.id}: the words once each, at the note's end`);
   }
   // no part of the list writes them itself (the rule adds them; written by hand, a note would say them twice)
-  for (const entry of [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]) {
+  for (const entry of [...BUILT, ...HF_JAPANESE, ...HF_JAPANESE_LARGE, ...HF_CLASSICS, ...HF_FAMILIES]) {
     assert.ok(!/desktop only|Chrome and Firefox/.test(entry.note), `${entry.id}'s note says "desktop only" or "Chrome and Firefox" by hand: devicesOf() adds them`);
   }
   // the lines a second time, by the entries on either side of each (TASKS.md's T511.4): the largest without and the

@@ -6,6 +6,7 @@ import { modelBytes, devicesOf } from "./memory.ts";
 import { BUILT } from "./built.ts";
 import { THOUGHT_BUDGET, thinks } from "./sampling.ts";
 import { HF_JAPANESE } from "./hf-japanese.ts";
+import { HF_JAPANESE_LARGE } from "./hf-japanese-large.ts";
 import { HF_CLASSICS } from "./hf-classics.ts";
 import { HF_FAMILIES } from "./hf-families.ts";
 import { TRANSLATIONS } from "./translations.ts";
@@ -16,7 +17,7 @@ export const GROUPS = { site: "Models of this site", original: "Unquantized orig
 
 // T511.4: "desktop only" and "Chrome and Firefox" are not written in the parts: devicesOf() adds them to every note.
 // T520: nor the budget of a thought: every entry that thinks has the same one (THOUGHT_BUDGET)
-const LISTED: Entry[] = [...BUILT, ...TRANSLATIONS, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES]
+const LISTED: Entry[] = [...BUILT, ...TRANSLATIONS, ...HF_JAPANESE, ...HF_JAPANESE_LARGE, ...HF_CLASSICS, ...HF_FAMILIES]
   .map((entry) => ({ ...entry, note: [entry.note, ...devicesOf(entry)].join(" · "),
     ...(thinks(entry) ? { generation: { ...entry.generation, thinking: THOUGHT_BUDGET } } : {}) }));
 
