@@ -1,8 +1,8 @@
 // The CPU section's table (T134, T158), and what it leaves for the model page to estimate a CPU's speed from (T157).
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
 import { number, tableCell, unmeasured } from "./cells.ts";
-import type { CpuFound, CpuRow } from "../runtime/contracts/benchmark.ts";
-import type { Result } from "../benchmark/dom.ts";
+import type { Answer, CpuCeilings, CpuFound, CpuRow } from "../runtime/contracts/benchmark.ts";
+import type { Result } from "./sections.ts";
 
 // the CPU section's result where it measured (the worker's CpuFound without its none), and what cpuBaseline() answers
 // a ceiling of CpuCeilings, whichever its rate
@@ -83,6 +83,22 @@ export function cpuTable(r: CpuMeasured): string[] {
     `| relaxed_dot, registers only | 1 | ${ceiling(c.dotRegisters, "GMACs", "G MAC/s")} |`,
     `| f32 multiply + add, registers only | 1 | ${ceiling(c.fma, "GMACs", "G MAC/s")} |`);
   return lines;
+}
+
+/** The CPU section from its worker's answer (T643.11: from the page's part, src/benchmark/cpu.ts): its table, and
+ * what it says went wrong itself (T227: the logits not finite, a ceiling's loop cut short), which makes it WRONG. */
+export function cpuResult(answer: Answer<CpuFound>): Result {
+  if (answer.error) return { status: "error", markdown: answer.error };
+  const r = answer.result!;
+  if (r.none) return { status: "none", markdown: r.none };
+  const c: CpuCeilings = r.ceilings ?? {};
+  const cutShort = [...(c.read ?? []), c.dot, c.dotRegisters, c.fma].some((one) => one?.cutShort);
+  const notFinite = r.rows!.some((row) => row.finite === false);
+  const said = [...(notFinite ? ["**The logits were not finite numbers: the forward pass computed something wrong.**"] : []),
+    ...(cutShort ? ["**A ceiling's loop did not do its work (its checksum or its time): the compiler cut it short, and its number is no ceiling.**"] : [])];
+  // (r.none was ruled out above, which TypeScript does not narrow on: a string's truth)
+  const lines = [...cpuTable(r as CpuMeasured), ...said.flatMap((line) => ["", line])];
+  return { status: said.length ? "wrong" : "ok", data: r, markdown: lines.join("\n"), said };
 }
 
 /**

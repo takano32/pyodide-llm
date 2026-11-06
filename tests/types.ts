@@ -42,7 +42,7 @@ import { typed, untyped } from "./untyped.ts";
 const root = fileURLToPath(new URL("..", import.meta.url));
 export const PROGRAMS = ["tsconfig.page.json", "tsconfig.worker.json", "tsconfig.sw.json"];
 // T473: the most times `any` may be written in the TypeScript sources
-export const ANY_MOST = 24;
+export const ANY_MOST = 21;
 
 // what a worker (and the page's main thread, for the two modules it runs too: kept.ts, updated.ts) has without
 // declaring it, as far as the runtime's files use it

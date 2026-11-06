@@ -1,7 +1,8 @@
 // The section "Model": the model page's worker itself, the page's path timed and the rounds (T184, T190).
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable, drift } from "../bench.ts";
-import { BASE, $, parameters, type Result } from "./dom.ts";
+import { BASE, $, parameters } from "./dom.ts";
+import type { Result } from "../bench.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
 import { UPDATED } from "../runtime/updated.ts";
 import type { BenchRow, ModelWorker, Progress, Round, ToWorker } from "../runtime/contracts/messages.ts";

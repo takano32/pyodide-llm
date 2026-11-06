@@ -107,7 +107,7 @@
 | `src/pages/index.astro` と `src/page/` | チャット風のページ。持ち主の `model.ts`（ページが持ちうるモデルの型 `Model`: 一覧の項目・一覧に無いリポジトリ・フォルダ・ディスクの 2 つのファイル・URL の 2 つ。T643.1）・`answer.ts`、純な部品（Node が import できる）`remaining.ts`・`repository.ts`・`thought.ts`・`folder.ts`・`heard.ts`（知らせのどれを読み、どれが仕事の終わりか: T468.1）・`lines.ts`（ステータス行・読み込みの内訳・答えの下の行の言葉の全部: T643.4。`draw.ts`・`receiver.ts` は描くだけで、`page-parts-check` が e2e の読む文の形も見る）、ほかに `dom`・`markdown`・`address`・`remembered`・`opening`・`list`・`settings`・`draw`・`isolation`・`receiver`・`choose`・`composer`、最後に最初の読み込みの `first`（T474: `index.astro` の中では tsc が読まなかった） |
 | `src/pages/benchmark.astro`・`src/benchmark/`・`src/runtime/benchmark/` | `/benchmark/`: 端末の計測を 1 回・1 つの報告に（節: 機能・CPU・モデル・GPU・保存・回線・Page memory）。節ごとに Worker を作って閉じる。`?run=all`・`?model=`・`?size=`・`?large`・`?full` |
 | `src/models.ts` と `src/models/` | モデル一覧。窓口が組み立てて並べ替え、`DEFAULT_MODEL` を名指す。`formats.ts`・`sampling.ts`・`builders.ts`（項目の型 `Entry = Site | Remote | Translating`: ほかの種類が持つ欄は `?: undefined` と言う。T643.1、翻訳のモデルは T648.4）・`filled.ts`・`licenses.ts`・`memory.ts` と一覧の `built.ts`・`translations.ts`（T648.4: Firefox の翻訳のモデル 3 本）・`hf-japanese.ts`・`hf-classics.ts`・`hf-families.ts` |
-| `src/bench.ts` と `src/bench/` | ベンチの報告の組み立て（T480.2 で TypeScript に: ページと worker の両方のプログラムが読む） |
+| `src/bench.ts` と `src/bench/` | ベンチの報告の組み立て（T480.2 で TypeScript に: ページと worker の両方のプログラムが読む）。`/benchmark/` の節の表と判定（`device`・`cpu` の `cpuResult()`・`storage`（保存と回線）・`prompt`・`gpusection`）、節の名前・題・状態の語（`sections`）、報告の全体（`whole` の `reportOf()`）もここ（T643.11）: ページの部品（`src/benchmark/`）は Worker に聞いて答えを渡し、返った物を描くだけ |
 | `public/coi.js` | サイト全体の Service Worker（COOP・COEP、このサイトと jsDelivr の応答の写し `offline-v1`、別のビルドの写しを捨てる。`?coi=off`・`?offline=off`）。**触る前に落とし穴の「Service Worker」の項を読む** |
 | `astro.config.mjs`・`tsconfig.*.json`・`package.json` | 束の設定（worker は `format: "es"`、名前は `_astro/[name].[hash].js`、`minify: false`、`assetsInlineLimit: 0`、開発サーバの COOP・COEP）/ 型検査の 3 つのプログラム / `npm run build`・`dev`・`types` |
 | `README.md` と `docs/` | 訪問者向け（英語）: `architecture.md`・`performance.md`・`quantization.md`・`webgpu.md`。日本語の内部の文書は `docs/notes/`、済んだタスクは `docs/tasks/` |
@@ -516,6 +516,7 @@ legacy 形式はメタデータを持たない: dtype は見出しから計算�
 
 ### `/benchmark/`
 
+- **ページの部品は聞いて描くだけ（T643.11）。** 節の Markdown・状態（ok・none・wrong・error）・`said` と報告の組み立ては `src/bench/` の純な関数（`deviceResult()`・`cpuResult()`・`storageNone()`・`storageResult()`・`lineResult()`・`gpuNone()`・`gpuResult()`・`gpuMarkdown()`・`reportOf()`）で、`tests/bench.ts` が作り物の答えで直に試す。ページの文として読むのは配線（どの関数に答えを渡すか）だけ。表や判定を足すなら `src/bench/` に置く（DOM・Worker・`localStorage` を読まない）。
 - **計測のページは 1 つ（T134）。** 節は止まっても次へ進む（節の Worker が 5 分何も言わなければ failed）。**報告の URL は GitHub のログインの飛び先にして 7,000 文字まで**（超えると return_to が黙って落ちる: 超えたら要約 `shortReport()` で、全文はクリップボードから）。
 - **警告は報告の頭に 1 か所（T227）。** `warnings()` は節の行を WRONG・failed・unsteady・skipped の語で拾うので、**ページに失敗を書くときはその語のどれかを入れる**（使わない所は `said` で渡す）。
 - **節の進みの知らせは `{stage, at, of}`**。**Worker に答えでない知らせを足すときは、`ask()` の除く条件に入れる**。回線を絞る形は応答の本文を決めた速さでしか読まない（WebKit は読まれなくても受け取り続けるので絞れない）。実行中は Screen Wake Lock を頼み、隠れていた秒は報告の頭に 1 行。

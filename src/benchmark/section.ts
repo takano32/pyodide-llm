@@ -3,7 +3,8 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import "./isolation.ts";
 import { MODELS } from "../models.ts";
-import { $, type Name, type Result } from "./dom.ts";
+import { $ } from "./dom.ts";
+import type { Name, Result } from "../bench.ts";
 import { current, runAt, runNames, sectionAt } from "./running.ts";
 import { unstarted } from "../runtime/updated.ts";
 import type { Answer, Asked, Said } from "../runtime/contracts/benchmark.ts";
@@ -128,6 +129,4 @@ export function stalled(): { promise: Promise<Result>; stop: () => void } {
   });
   return { promise, stop: () => clearInterval(timer) };
 }
-export const fixed = (value: unknown, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
-export const yes = (value: boolean | undefined) => (value ? "yes" : "none");
 export const model = () => MODELS.find((entry: any) => entry.id === ($("model") as HTMLSelectElement).value) as any;

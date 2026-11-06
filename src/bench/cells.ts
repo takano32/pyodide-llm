@@ -1,7 +1,7 @@
 // What the tables of /benchmark/ share: a number, a ratio, a cell's words, why there are no ratios, the threads' words.
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
 
-const number = (value: number | null | undefined, digits = 1): string => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
+const number = (value: unknown, digits = 1): string => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
 
 /** "4 software threads", "1 software thread (not cross-origin isolated)" */
 export const threadsOf = ({ threads, isolated }: { threads: number; isolated: boolean }) =>
@@ -42,4 +42,7 @@ export const tableCell = (text: unknown): string => String(text).replace(/\|/g, 
  * lists it), or it was not run. */
 export const unmeasured = (error: string | undefined): string => (error ? `failed: ${error}` : "not measured");
 
-export { number };
+/** Whether this browser has a thing, as the tables of /benchmark/ say it ("yes", "none"). */
+const yes = (value: boolean | undefined): string => (value ? "yes" : "none");
+
+export { number, yes };

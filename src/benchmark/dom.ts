@@ -1,5 +1,6 @@
 // What the parts of /benchmark/'s script stand on: the deployment's ?v= (the Service Worker's), the elements by id, the URL's parameters, the
-// sections' names, what a section's result is, the results, and the choices the URL makes.
+// sections the run-all runs, the results, and the choices the URL makes (the sections' names and what a section's result is are
+// src/bench/sections.ts's, T643.11).
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 
 declare const __BUILD__: string;
@@ -9,14 +10,10 @@ export const BASE = import.meta.env.BASE_URL;
 export const V = `?v=${__BUILD__}`;
 export const $ = (id: string) => document.getElementById(id)!;
 export const parameters = new URLSearchParams(location.search);
-export const SECTIONS = ["device", "cpu", "model", "gpu", "storage", "line", "memory"] as const;
-export type Name = typeof SECTIONS[number];
+import { SECTIONS } from "../bench.ts";
+import type { Name, Result } from "../bench.ts";
 // T173: "Run all" and ?run=all leave the page-memory section out (it may end the tab): its button or ?run=memory runs it
 export const ALL = SECTIONS.filter((name) => name !== "memory");
-// ok: measured; none: the browser has no such thing (said, and the run goes on); wrong: a result that cannot be
-// right (a shader against JavaScript, a piece read back); error: a section that failed
-// said (T227): the lines of the Markdown with which the section itself says what went wrong, for the report's warnings
-export type Result = { status: "ok" | "none" | "wrong" | "error"; markdown: string; data?: any; said?: string[] };
 export const results: Partial<Record<Name, Result>> = {};
 (window as any).__benchmark = { results, done: false };
 

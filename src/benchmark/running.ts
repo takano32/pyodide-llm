@@ -2,7 +2,7 @@
 // began. The owner of that: run.ts says what happens to the functions below, and section.ts and run.ts read these by
 // the names they import (a static import of src/ is a live binding); neither sets one. No clock is read here (the time
 // is told) and nothing of a page: Node imports this file as it is (tests/page-parts-check.ts).
-import type { Name } from "./dom.ts";
+import type { Name } from "../bench.ts";
 
 // the section that is running, and when it began
 export let current: Name | undefined = undefined;

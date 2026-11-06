@@ -7,7 +7,7 @@
 // tables), path.js (the page's own path), summary.js (a line a section) and cells.js (what the tables share).
 export { threadsOf, times, timesFaster, noRatios, tableCell, unmeasured } from "./bench/cells.ts";
 export { ROUNDS, FULL_ROUNDS, MEMORY_UNSAID, DRIFT_LINE, roundsHere, environmentOf, benchMarkdown, roundsTable, drift } from "./bench/rounds.ts";
-export { threadCounts, cpuTable, CPU_SPEED_KEY, USAGE_KEY, USAGE_DECAY, usedAfter, cpuBaseline } from "./bench/cpu.ts";
+export { threadCounts, cpuTable, cpuResult, CPU_SPEED_KEY, USAGE_KEY, USAGE_DECAY, usedAfter, cpuBaseline } from "./bench/cpu.ts";
 export type { CpuMeasured, Baseline } from "./bench/cpu.ts";
 export { warnings, warningsBlock } from "./bench/warnings.ts";
 export { REPOSITORY, QUESTIONS, reportBody, REPORT_LIMIT, TOO_LONG, PASTE, reportTooLong, reportUrl, loginUrl,
@@ -17,3 +17,12 @@ export { layerStepsTable } from "./bench/layersteps.ts";
 export { generateTable } from "./bench/generate.ts";
 export { threadsKey, threadsHow, threadsLine, PATH_PROMPTS, PATH_WRITES, gpuSkipped, pathTable, pathWarnings } from "./bench/path.ts";
 export { deviceSummary, cpuSummary, gpuSummary, storageSummary, lineSummary } from "./bench/summary.ts";
+export { SECTIONS, STATE, TITLES } from "./bench/sections.ts";
+export type { Name, Result } from "./bench/sections.ts";
+export { deviceResult } from "./bench/device.ts";
+export { DOWNLOAD_MBPS, storageNone, storageResult, lineResult } from "./bench/storage.ts";
+export { overheadMarkdown, ceilingsMarkdown, promptMarkdown } from "./bench/prompt.ts";
+export { BRIDGE_ROUNDS, gpuNone, gpuResult, gpuMarkdown } from "./bench/gpusection.ts";
+export type { Bridge } from "./bench/gpusection.ts";
+export { reportOf } from "./bench/whole.ts";
+export type { Measured, Whole } from "./bench/whole.ts";

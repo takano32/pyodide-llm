@@ -2,16 +2,18 @@
 // loaded again by the page-memory section, and ?run=.
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { forgetMark, readMark, memoryResult } from "./page-memory.ts";
-import { cpuBaseline, CPU_SPEED_KEY } from "../bench.ts";
-import { $, parameters, SECTIONS, type Name, ALL, type Result, results } from "./dom.ts";
+import { cpuBaseline, CPU_SPEED_KEY, gpuMarkdown, STATE } from "../bench.ts";
+import { $, parameters, ALL, results } from "./dom.ts";
+import { SECTIONS } from "../bench.ts";
+import type { Name, Result } from "../bench.ts";
 import { runAt, runBegan, runEnded, sectionAt, sectionBegan } from "./running.ts";
 import { parts, rendered, clock, staged, ticked, live, stalled } from "./section.ts";
 import { device, cpu } from "./cpu.ts";
 import { modelSection } from "./model.ts";
-import { gpu, gpuMarkdown } from "./gpu.ts";
+import { gpu } from "./gpu.ts";
 import { storage, line } from "./storage.ts";
 import { tabStorage, pageMemory } from "./memory.ts";
-import { STATE, report, awake } from "./report.ts";
+import { report, awake } from "./report.ts";
 
 // what src/bench/cpu.ts's cpuBaseline() answers: the CPU section's fastest token and prompt, or why there is none
 type Baseline = { why?: string; token?: { threads: number; msPerToken: number; GBps: number; isolated: boolean };
@@ -95,7 +97,7 @@ async function runSections(names: readonly Name[]) {
     // button) writes them again, and the report with them
     const g = results.gpu;
     if (name === "cpu" && g?.data?.steps) {
-      Object.assign(g, gpuMarkdown(g.data.steps, g.data.bridge, g.data.lost));
+      Object.assign(g, gpuMarkdown(g.data.steps, g.data.bridge, g.data.lost, results.cpu));
       parts.gpu.out.innerHTML = rendered(g.markdown);
     }
     report();

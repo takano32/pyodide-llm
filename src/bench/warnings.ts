@@ -1,9 +1,9 @@
 // T227: what came out WRONG, failed, unsteady or skipped in a run, listed once at the report's head.
 // (T353: a part of src/bench.ts, which is the window that exports every name of these)
 import { STATES } from "./cpu.ts";
-import type { Result } from "../benchmark/dom.ts";
+import type { Result } from "./sections.ts";
 
-// a section as warnings() reads it: its title, its state (src/benchmark/dom.ts's Result), its Markdown, and what it says went wrong itself
+// a section as warnings() reads it: its title, its state (sections.ts's Result), its Markdown, and what it says went wrong itself
 type Written = { title: string; status?: Result["status"]; markdown?: string; said?: string[] };
 
 // a | that tableCell() escaped stays in its cell (T214: a skipped round's reason is the words of a cell)
