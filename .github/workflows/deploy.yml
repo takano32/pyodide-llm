@@ -14,6 +14,8 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # T652: the job "again" starts this workflow once more
+  actions: write
 
 # a deploy is not cancelled halfway (Pages); GitHub folds the queue to the newest waiting one (T193)
 concurrency:
@@ -24,11 +26,13 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.first.outputs.page_url || steps.again.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      pages: ${{ steps.deployment.outcome }}
     runs-on: ubuntu-latest
     # T262: a deploy is 3 to 4 minutes; without a limit of its own a stuck step held the queue for GitHub's 360
-    # T652: the build and the tests take up to 15 minutes, and Pages' step 10 minutes a try, two tries at most
-    timeout-minutes: 50
+    # T652: the build and the tests take up to 15 minutes, and Pages' step up to the action's 10
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -78,14 +82,23 @@ jobs:
         with:
           path: 'dist'
 
-      # T652: Pages sat in "syncing_files" or "updating_pages" past the action's 10 minutes 3 times on 2026-11-06
-      # (the site is about 1 GB); the action caps its own timeout at 10 minutes, so a second try deploys again
+      # T652: Pages sat in "syncing_files" or "updating_pages" past the action's 10 minutes 5 times in 11 deploys on
+      # 2026-11-06 (the site is about 1 GB). The action caps its own timeout at 10 minutes and cancels the deployment
+      # as it gives up, so a second try in the same run finds it cancelled, and a rerun of the job finds two
+      # artifacts: the job "again" starts a new run instead, which went through each time it was tried
       - name: Deploy to GitHub Pages
-        id: first
-        continue-on-error: true
+        id: deployment
         uses: actions/deploy-pages@v5
 
-      - name: Deploy to GitHub Pages again
-        id: again
-        if: steps.first.outcome == 'failure'
-        uses: actions/deploy-pages@v5
+  again:
+    needs: deploy
+    # once, and only for Pages' step: a push's deploy whose Pages step failed starts a new run by dispatch, and
+    # that run does not start another (a failure of the tests or the build is not tried again)
+    if: failure() && github.event_name == 'push' && needs.deploy.outputs.pages == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start the deploy once more
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
