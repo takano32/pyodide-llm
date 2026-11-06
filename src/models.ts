@@ -51,8 +51,9 @@ const LISTED: Entry[] = [...BUILT, ...TRANSLATIONS, ...HF_JAPANESE, ...HF_CLASSI
   .map((entry) => ({ ...entry, note: [entry.note, ...devicesOf(entry)].join(" · "),
     ...(thinks(entry) ? { generation: { ...entry.generation, thinking: THOUGHT_BUDGET } } : {}) }));
 
-/** T128: whether a model writes Japanese (its note says 日本語: Japanese alone, with English, or translating). */
-export const writesJapanese = (entry: Entry) => (entry.note ?? "").includes("日本語");
+/** T128: whether a model writes Japanese (T643.17: its own word, `japanese`; its note says 日本語 where it does, Japanese
+ * alone, with English, or translating, which tests/models-check.ts holds to it). */
+export const writesJapanese = (entry: Pick<Entry, "japanese">) => entry.japanese;
 /** The models as the list shows them (T128, the owner's order): the groups in the order of GROUPS, and within each
  * the ones that write Japanese from light to heavy, then the English-only ones from light to heavy, by modelBytes()
  * (int8 for a conversion, three times the file for a float16 original). The first is tiny-lm, the lightest. */

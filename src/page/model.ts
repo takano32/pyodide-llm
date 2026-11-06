@@ -16,9 +16,12 @@ import type { Options } from "../runtime/contracts/python.ts";
 type Unread = { file?: undefined; tokenizerFile?: undefined; url?: undefined };
 // what a model of a visitor's files or a link has besides the worker's kind of it
 type Made = { note: string; options: Options; generation: Generation; prompt: string; placeholder: string; template?: string; group?: undefined;
-  download?: undefined; conversion?: undefined; weights?: undefined; loaded?: undefined; wide?: undefined };
-export type Unlisted = Omit<Remote, "download" | "hf"> & Unread & { download?: number; hf: { repo: string; revision: string; weights: string; config: string } };
-export type Folder = Omit<Remote, "download" | "hf"> & Unread & { download?: undefined; hf: Omit<Hf, "repo" | "revision"> & { repo?: undefined; revision?: undefined; files: File[]; weights: string } };
+  download?: undefined; conversion?: undefined; weights?: undefined; converted?: undefined; loaded?: undefined; wide?: undefined;
+  japanese?: undefined; thinks?: undefined };
+// (T643.17: none of them is in the list's order, so none says whether it writes Japanese)
+type Unsorted = { japanese?: undefined };
+export type Unlisted = Omit<Remote, "download" | "hf" | "japanese"> & Unread & Unsorted & { download?: number; hf: { repo: string; revision: string; weights: string; config: string } };
+export type Folder = Omit<Remote, "download" | "hf" | "japanese"> & Unread & Unsorted & { download?: undefined; hf: Omit<Hf, "repo" | "revision"> & { repo?: undefined; revision?: undefined; files: File[]; weights: string } };
 export type Model = (typeof MODELS[number] & Unread) | Unlisted | Folder | (OfTwoFiles & Made) | (OfTwoUrls & Made & { tokenizerFile?: undefined });
 /** T553: what the reports of a fetch say so far: when the first came and its bytes, when the last came and its bytes,
  * when the bytes last grew (ms of the page's clock), and the speed in bytes a second (none before two reports). */

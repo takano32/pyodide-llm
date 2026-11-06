@@ -15,12 +15,12 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3-4b", "Alibaba Qwen3 4B",
     ggufOf("Qwen/Qwen3-4B-GGUF", "bc640142c66e1fdd12af0bd68f40445458f3869b", "Qwen3-4B-Q8_0.gguf",
       "Qwen/Qwen3-4B", "1cfa9a7208912126459214e8b04321603b3df60c"), 4280404704,
-    "fetches 4.3 GB (GGUF) → int8 4.5 GB"),
+    "fetches 4.3 GB (GGUF) → int8 4.5 GB", { converted: 4.5e9 }),
   ...thinkingAndNot("hf-qwen3-8b", "Alibaba Qwen3 8B",
     ggufOf("Qwen/Qwen3-8B-GGUF", "7c41481f57cb95916b40956ab2f0b139b296d974", "Qwen3-8B-Q8_0.gguf",
       "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218"), 8709518112,
     "fetches 8.7 GB (GGUF) → int8 9.2 GB",
-    { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
+    { converted: 9.2e9, options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   // T610.1: the 14B, whose int8 passes the 16 GiB a page gets (T610): Alibaba's own Q4_K_M with llama.cpp's blocks kept
   // as they are (as Underdog Saluki 27B's), the stacks with a layer of Q6_K widened to int8. rebuilt: four bits are not
   // held to the original within 1e-3. Its BOS and format as the 8B's
@@ -34,27 +34,27 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3-swallow-8b", "Science Tokyo Qwen3 Swallow 8B RL",
     ggufOf("mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf", "3fc755c6ab3780ebad6671130fc1b630bbd1575b", "Qwen3-Swallow-8B-RL-v0.2-Q8_0.gguf",
       "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2", "9218f4843b6f93369a0b0999d8f58d61487ea71c"), 8709519968,
-    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { converted: 9.2e9, generation: thinking }),
   // T606: the rest of Qwen3 Swallow 8B v0.2, the same template and card sampling as the RL one: the SFT one (mmnga-o's
   // Q8_0), the CPT one (tatsuyaaaaaaa's Q8_0; its card asks it in chat with thinking as the others) and the medical one
   // (taught medicine on top of the RL one: its safetensors alone)
   ...thinkingAndNot("hf-qwen3-swallow-8b-sft", "Science Tokyo Qwen3 Swallow 8B SFT",
     ggufOf("mmnga-o/Qwen3-Swallow-8B-SFT-v0.2-gguf", "70d77c73962e9e7571ee3c4f25324f270fcdbe53", "Qwen3-Swallow-8B-SFT-v0.2-Q8_0.gguf",
       "tokyotech-llm/Qwen3-Swallow-8B-SFT-v0.2", "496cd5558fef4af1d426e96327d7a74681063280"), 8709519968,
-    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { converted: 9.2e9, generation: thinking }),
   ...thinkingAndNot("hf-qwen3-swallow-8b-cpt", "Science Tokyo Qwen3 Swallow 8B CPT",
     ggufOf("tatsuyaaaaaaa/Qwen3-Swallow-8B-CPT-v0.2-gguf", "b7783aa6ea2fd09d5f8994634475c918e10d1bd9", "Qwen3-Swallow-8B-CPT-v0.2_Q8_0.gguf",
       "tokyotech-llm/Qwen3-Swallow-8B-CPT-v0.2", "95c7dae19b632152dcf058df2f7b1a69fc79e36f"), 8709519616,
-    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { generation: thinking }),
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB", { converted: 9.2e9, generation: thinking }),
   ...thinkingAndNot("hf-medical-qwen3-swallow-8b", "Science Tokyo Medical Qwen3 Swallow 8B",
     { hf: hf("tokyotech-llm/Medical-Qwen3-Swallow-8B", "f9a3d4dc38270d39196a8c5b5e14f56088fd0876") }, 16381525680,
-    "fetches 16.4 GB → int8 9.2 GB", { generation: thinking }),
-  { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Alibaba Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
+    "fetches 16.4 GB → int8 9.2 GB", { converted: 9.2e9, generation: thinking }),
+  { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Alibaba Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB", japanese: true, converted: 4.5e9,
     ...ggufOf("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 4280405600,
     conversion: {}, options: QWEN3_OWN_BOS, template: CHATML, generation: atOnce, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // its chat_template begins the answer with <think> itself
-  { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Alibaba Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB",
+  { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Alibaba Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB", japanese: true, thinks: true, converted: 4.5e9,
     ...ggufOf("unsloth/Qwen3-4B-Thinking-2507-GGUF", "f40adb104d4d44aee52f398b60597c5866a973a3", "Qwen3-4B-Thinking-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 4280405632,
     conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_THINKING_2507, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
@@ -67,22 +67,22 @@ export const HF_FAMILIES: Entry[] = [
   // from; as ternary they fit a 32-bit memory with their forward pass (2.2 and 3.3 GiB at 4096 positions; widened to
   // int8 they were 5.3 and 10.1 GiB, on a 64-bit one)
   ternaryBonsai("1.7B", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "3aca840085293d026ce6f6b80fafdae937fd2eeb", 463290464,
-    "fetches 463 MB (GGUF) → ternary 457 MB"),
+    "fetches 463 MB (GGUF) → ternary 457 MB", 457e6),
   ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
-    "fetches 1.1 GB (GGUF) → ternary 1.1 GB"),
+    "fetches 1.1 GB (GGUF) → ternary 1.1 GB", 1.1e9),
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
-    "fetches 2.2 GB (GGUF) → ternary 2.2 GB", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+    "fetches 2.2 GB (GGUF) → ternary 2.2 GB", 2.2e9, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T286.2: and the 1-bit Bonsai 1.7B, the same Qwen3 1.7B with every weight a sign (Q1_0): fetched as 1.125 bits a
   // weight, held as binary (T634.2: the same 1.125 bits; ternary before, twice that)
   binaryBonsai("1.7B", "210a9e99f79cb184909d49595906526eb2b3dd9a", "a7f720bd688d7563714f3118edd97b83d06f0615", 248302272,
-    "fetches 248 MB (GGUF) → 1-bit 242 MB", false),
+    "fetches 248 MB (GGUF) → 1-bit 242 MB", 242e6, false),
   // T286.3: the 1-bit Bonsai 4B, the Qwen3 4B's shape as the ternary 4B (heads wider than dim / heads); it answers
   // Japanese, unlike the 1.7B
   binaryBonsai("4B", "78f2c2bacd0904ffaba24b4873ed975e5818354a", "b2529e9641629dce5e6be5fa44492bc249f1a58a", 572270624,
-    "fetches 572 MB (GGUF) → 1-bit 566 MB", true),
+    "fetches 572 MB (GGUF) → 1-bit 566 MB", 566e6, true),
   // T286.4: the 1-bit Bonsai 8B, a Qwen3 8B: it begins at <|im_start|> as the ternary 8B does, and answers Japanese
   binaryBonsai("8B", "48516770dd04643643e9f9019a2a349cf26c5dbd", "376f381570d6115bc03f82adcfa4af0c7672ae54", 1158654496,
-    "fetches 1.2 GB (GGUF) → 1-bit 1.2 GB", true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
+    "fetches 1.2 GB (GGUF) → 1-bit 1.2 GB", 1.2e9, true, { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
@@ -96,7 +96,7 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3.5-0.8b", "Alibaba Qwen3.5 0.8B",
     ggufOf("unsloth/Qwen3.5-0.8B-GGUF", "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0", "Qwen3.5-0.8B-Q8_0.gguf",
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
-    "fetches 812 MB (GGUF) → int8 850 MB", { options: qwen35 },
+    "fetches 812 MB (GGUF) → int8 850 MB", { converted: 850e6, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T511.2: a person's unofficial Japanese fine-tune of the Qwen3.5 0.8B (Takenoko12345678's v2.5: fewer Chinese
   // words and refusals, a short Japanese thought). The maker's own Q8_0 GGUF, the vocabulary and config.json of the
@@ -106,7 +106,7 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5-GGUF", "101c43b482a00d8d7cb5f1fb0de9e7c1bf30e447",
       "Qwen3.5-0.8B-Japanese-SFT-v2.5-Q8_0.gguf",
       "Takenoko12345678/Qwen3.5-0.8B-Japanese-SFT-v2.5", "b069f75cda9f72cb979be84a78411ee48f75ff50"), 811842912,
-    "fetches 812 MB (GGUF) → int8 850 MB", { options: qwen35 },
+    "fetches 812 MB (GGUF) → int8 850 MB", { converted: 850e6, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_JA_SFT_SAMPLING),
   // T247: the other sizes of Qwen3.5 whose int8 a 64-bit memory of 16 GiB holds (the 27B's Q8_0 is 28.6 GB, and the
   // larger ones are mixtures of experts, which the engine has not). The same vocabulary, format and form as the 0.8B.
@@ -118,17 +118,17 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-qwen3.5-2b", "Alibaba Qwen3.5 2B",
     ggufOf("unsloth/Qwen3.5-2B-GGUF", "f6d5376be1edb4d416d56da11e5397a961aca8ae", "Qwen3.5-2B-Q8_0.gguf",
       "Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc"), 2012012800,
-    "fetches 2.0 GB (GGUF) → int8 2.1 GB", { options: qwen35 },
+    "fetches 2.0 GB (GGUF) → int8 2.1 GB", { converted: 2.1e9, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-qwen3.5-4b", "Alibaba Qwen3.5 4B",
     ggufOf("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf",
       "Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"), 4482403488,
-    "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
+    "fetches 4.5 GB (GGUF) → int8 4.7 GB", { converted: 4.7e9, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-qwen3.5-9b", "Alibaba Qwen3.5 9B",
     ggufOf("unsloth/Qwen3.5-9B-GGUF", "3885219b6810b007914f3a7950a8d1b469d598a5", "Qwen3.5-9B-Q8_0.gguf",
       "Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"), 9527502048,
-    "fetches 9.5 GB (GGUF) → int8 10.1 GB", { options: qwen35 },
+    "fetches 9.5 GB (GGUF) → int8 10.1 GB", { converted: 10.1e9, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T335: TokenRhythm's NeoHorse-1, the Qwen3.5 4B and 9B trained further for tools, code and instructions (text
   // only: the language model saved alone, its tensors named "model.layers…" where Qwen3.5's are
@@ -141,12 +141,12 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-neohorse-1-4b", "TokenRhythm NeoHorse-1 4B",
     ggufOf("TokenRhythm/NeoHorse-1-4B-GGUF", "3c5d58ca82e580b5b0b3ce6eeffd34ac7d0fd95a", "NeoHorse-1-4B-Q8_0.gguf",
       "TokenRhythm/NeoHorse-1-4B", "56f0584bb40578a2c33b1b40a08ccd17243ad710"), 4482403072,
-    "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
+    "fetches 4.5 GB (GGUF) → int8 4.7 GB", { converted: 4.7e9, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-neohorse-1-9b", "TokenRhythm NeoHorse-1 9B",
     ggufOf("TokenRhythm/NeoHorse-1-9B-GGUF", "ddcb4c939b5392c86a9d2733c7c0ed30db2554fd", "NeoHorse-1-9B-Q8_0.gguf",
       "TokenRhythm/NeoHorse-1-9B", "ba5b6e40d88a6ddf4591e176738254a3bc715765"), 9527501632,
-    "fetches 9.5 GB (GGUF) → int8 10.1 GB", { options: qwen35 },
+    "fetches 9.5 GB (GGUF) → int8 10.1 GB", { converted: 10.1e9, options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T337: InternScience's Agents-A1-4B, a Qwen3.5 4B trained further for agents' work (the same config.json, the
   // tensors named as Qwen3.5's, a vision tower the converter passes over). The maker's own Q8_0 GGUF (its mmproj, the
@@ -159,7 +159,7 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-agents-a1-4b", "Shanghai AI Lab Agents-A1 4B",
     ggufOf("InternScience/Agents-A1-4B-Q8_0-GGUF", "a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54", "Agents-A1-4B-Q8_0.gguf",
       "InternScience/Agents-A1-4B", "945c40a4aa6f534d434a353207b8d42ecf7a5293"), 4482404032,
-    "fetches 4.5 GB (GGUF) → int8 4.7 GB", { options: qwen35 },
+    "fetches 4.5 GB (GGUF) → int8 4.7 GB", { converted: 4.7e9, options: qwen35 },
     { thinking: AGENTS_A1_THINKING, atOnce: AGENTS_A1_AT_ONCE }, AGENTS_A1_SAMPLING),
   // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three
   // value heads to a key head, T245), whose matrices are stored in a rotated basis (T237: the engine turns every
@@ -183,7 +183,7 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.2 GB",
-    { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
+    { converted: 7.2e9, options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
   // T286.5: Prism ML's 1-bit Bonsai 27B, a Qwen3.6 27B (a Qwen3.5 in its form, as Bonsai 2's) with every weight a
   // sign times a scale of its 128 (Q1_0, the embedding and the classifier too): 3.8 GB to fetch, kept binary as the
   // smaller 1-bit Bonsai are (T634.2: 3.88 GB, ternary's 7.24 before; with its forward pass at 4096 positions 4.18 GiB,
@@ -195,7 +195,7 @@ export const HF_FAMILIES: Entry[] = [
     ggufOf("prism-ml/Bonsai-27B-gguf", "f10afb355f104535e3e3e98cf7ab7795c72bd292", "Bonsai-27B-Q1_0.gguf",
       "prism-ml/Bonsai-27B-unpacked", "d619b27283ac02b4199ced97a89419529dc0bfac"), 3803452480,
     "1-bit weights · fetches 3.8 GB (GGUF) → 1-bit 3.9 GB",
-    { options: qwen35, weights: "binary", wide: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
+    { converted: 3.9e9, options: qwen35, weights: "binary", wide: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_27B_SAMPLING),
   // T364.3: Conway Research's Underdog Saluki 27B, the same Qwen3.8 27B at 2.3 bits a weight: a GGUF of llama.cpp's
   // K- and i-quantized blocks, ten types of them, a type to a matrix or to a layer of one (T361). Kept as the file
   // has them (conversion.blocks, T363: 7.96 GB, where int8 would be 30 GB) and multiplied by kernels of their own, on
@@ -220,12 +220,12 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-granite-4.2-3b", "IBM Granite 4.2 3B",
     ggufOf("ibm-granite/granite-4.2-3b-GGUF", "c40945d71cd90f249a56985e8155551a9188dc30", "granite-4.2-3b-Q8_0.gguf",
       "ibm-granite/granite-4.2-3b", "e459acceac81e5fe67c07d9cfc72329a332e7eb1"), 3892651552,
-    "fetches 3.9 GB (GGUF) → int8 4.1 GB", { options: granite },
+    "fetches 3.9 GB (GGUF) → int8 4.1 GB", { converted: 4.1e9, options: granite },
     { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
   ...thinkingAndNot("hf-granite-4.2-8b", "IBM Granite 4.2 8B",
     ggufOf("ibm-granite/granite-4.2-8b-GGUF", "93f3f6a8938ee922b784cf4e5b4203cd3428df8f", "granite-4.2-8b-Q8_0.gguf",
       "ibm-granite/granite-4.2-8b", "f8de16cdcdbc6c779ca517604e050d82cc119e44"), 9345613952,
-    "fetches 9.3 GB (GGUF) → int8 9.9 GB", { options: granite },
+    "fetches 9.3 GB (GGUF) → int8 9.9 GB", { converted: 9.9e9, options: granite },
     { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
   // T254: MiniCPM5, whose tokenizer.json cuts the numbers off before Llama 3's pattern runs (the engine's "minicpm5").
   // OpenBMB's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals; the vocabulary is the
@@ -234,11 +234,11 @@ export const HF_FAMILIES: Entry[] = [
   ...miniCpm5("hf-minicpm5-1b", "OpenBMB MiniCPM5 1B",
     ggufOf("openbmb/MiniCPM5-1B-GGUF", "3d55fac80935ae6456986ad2384b5cbcc4d6c948", "MiniCPM5-1B-Q8_0.gguf",
       "openbmb/MiniCPM5-1B", "87179e5c1f455ef22e6223592d2d61351b525bfc"), 1153529216,
-    "fetches 1.2 GB (GGUF) → int8 1.2 GB", { thinking: 0.9, atOnce: 0.7 }),
+    "fetches 1.2 GB (GGUF) → int8 1.2 GB", 1.2e9, { thinking: 0.9, atOnce: 0.7 }),
   ...miniCpm5("hf-minicpm5-2b", "OpenBMB MiniCPM5 2B",
     ggufOf("openbmb/MiniCPM5-2B-GGUF", "2079a22f3beaa4e306449978533478fe0522f4b3", "MiniCPM5-2B-Q8_0.gguf",
       "openbmb/MiniCPM5-2B", "f97400052a43d642bbc6e9975e2397e3ae6a6b52"), 2679710688,
-    "fetches 2.7 GB (GGUF) → int8 2.8 GB", { thinking: 1.0, atOnce: 1.0 }),
+    "fetches 2.7 GB (GGUF) → int8 2.8 GB", 2.8e9, { thinking: 1.0, atOnce: 1.0 }),
   // T260: Liquid AI's LFM2.5 (and the LFM2 700M), whose cards name Japanese among their languages; the 1.2B JP is
   // their Japanese chat model. Liquid AI's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals.
   // On the CPU alone (their convolution layers have no shader yet). The 230M's GGUF holds weights of a fuller
@@ -247,21 +247,21 @@ export const HF_FAMILIES: Entry[] = [
   // the check allows 1e-3): since T307 the check holds every value of it to what such weights can give, and it is
   // taken (until then the 230M came from the original's safetensors, 459 MB)
   lfm2("hf-lfm2.5-230m", "Liquid AI LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
-    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB"),
+    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB", 259e6),
   lfm2("hf-lfm2.5-350m", "Liquid AI LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
-    "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB"),
+    "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB", 399e6),
   lfm2("hf-lfm2-700m", "Liquid AI LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
-    "86f49fc9a3800c3a325b7320bde179c318062583", 791565248, "fetches 792 MB (GGUF) → int8 836 MB",
+    "86f49fc9a3800c3a325b7320bde179c318062583", 791565248, "fetches 792 MB (GGUF) → int8 836 MB", 836e6,
     { options: lfm2Old, template: CHATML }, 0.3),
   lfm2("hf-lfm2.5-1.2b-instruct", "Liquid AI LFM2.5 1.2B Instruct", "LFM2.5-1.2B-Instruct", "8ed288026e23958ad9dfa92d53ed773a8eee7125",
-    "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
+    "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9),
   lfm2("hf-lfm2.5-1.2b-jp", "Liquid AI LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
-    "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", {}),
+    "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9, {}),
   // T596.2: Liquid AI's LFM2.5 2.6B, the step above the 1.2B, which its card says always thinks before it answers (its
   // template begins the answer with <think>). Another vocabulary than the smaller LFM2's (byte-level BPE of 124,894
   // pieces, Llama 3's pattern): the BOS (<|startoftext|>), the stops and the specials are the converter's; the template
   // is written out, as Liquid AI's calls macros. The sampling is the card's (temperature 0.1, top-k 50, penalty 1.1)
-  { group: "hf", id: "hf-lfm2.5-2.6b", name: "Liquid AI LFM2.5 2.6B", note: "thinks · 日本語 / English · fetches 2.9 GB (GGUF) → int8 3.0 GB",
+  { group: "hf", id: "hf-lfm2.5-2.6b", name: "Liquid AI LFM2.5 2.6B", note: "thinks · 日本語 / English · fetches 2.9 GB (GGUF) → int8 3.0 GB", japanese: true, thinks: true, converted: 3.0e9,
     ...ggufOf("LiquidAI/LFM2.5-2.6B-GGUF", "e7caca5d835a3901a8e0d63e94009429bafafdfc", "LFM2.5-2.6B-Q8_0.gguf",
       "LiquidAI/LFM2.5-2.6B", "b212e75975bbda9676a94d3cb7b2ca25b65fed48"), download: 2874779648,
     conversion: {}, options: {}, template: "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>",
@@ -274,7 +274,7 @@ export const HF_FAMILIES: Entry[] = [
   ...(["Japanese", "English"] as const).map((to): Entry => ({
     group: "hf", id: `hf-lfm2-350m-enjp-mt-to-${to.toLowerCase()}`,
     name: `Liquid AI LFM2 350M ENJP-MT (${to === "Japanese" ? "English → Japanese" : "Japanese → English"})`,
-    note: `translates ${to === "Japanese" ? "English → 日本語" : "日本語 → English"} · fetches 379 MB (GGUF) → int8 399 MB`,
+    note: `translates ${to === "Japanese" ? "English → 日本語" : "日本語 → English"} · fetches 379 MB (GGUF) → int8 399 MB`, japanese: true, converted: 399e6,
     ...ggufOf("LiquidAI/LFM2-350M-ENJP-MT-GGUF", "889c88c3d3681b4f342ae210a1d2a1369aba0e10", "LFM2-350M-ENJP-MT-Q8_0.gguf",
       "LiquidAI/LFM2-350M-ENJP-MT", "80367784d525777ad7565b24534ba5810eeac59f"), download: 379215648,
     conversion: {}, shares: ["hf-lfm2-350m-enjp-mt-to-japanese", "hf-lfm2-350m-enjp-mt-to-english"], options: lfm2Old,
@@ -288,7 +288,7 @@ export const HF_FAMILIES: Entry[] = [
   // its card says it is the best at Japanese chat under 1B (Shaberi 4.51, the LFM2-350M's 3.76)
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m", "Shisa V2.1c LFM2 350M", "shisa-v2.1c-lfm2-350m",
     "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 379216512,
-    "fetches 379 MB (GGUF) → int8 399 MB"),
+    "fetches 379 MB (GGUF) → int8 399 MB", 399e6),
   // T528: and the same model lighter, beside it (the owner: "どっちも配ればいいんじゃないの？"): the same repository's
   // Q4_K_M, llama.cpp's blocks kept as they are (conversion.blocks, as Underdog Saluki 27B's) where the page has kernels
   // for them (Q4_K: q, k, the attention's and the convolutions' matrices, w1 and w3), the rest widened to int8 (the
@@ -299,28 +299,28 @@ export const HF_FAMILIES: Entry[] = [
   // it); what holds it is TASKS.md's T528: that check read for its orders and errors, and T513's measures
   shisaLfm2("hf-shisa-v2.1c-lfm2-350m-q4", "Shisa V2.1c LFM2 350M (4-bit)", "shisa-v2.1c-lfm2-350m",
     "a902123e67f297bfce7e1961104ebb4fee2ba538", "38445ae70be89a0d3d870707696a8f967eb08d5e", 229311104,
-    "4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB", "Q4_K_M",
+    "4-bit weights · fetches 229 MB (GGUF), kept mostly as it is: 282 MB", undefined, "Q4_K_M",
     { conversion: { dtype: "int8", blocks: true }, loaded: 281641004, rebuilt: true }),
   // T511.3: and its 1.2B (from LFM2-1.2B), the 1B class's best at Japanese chat as Shisa's card measures (Shaberi 5.35)
   shisaLfm2("hf-shisa-v2.1-lfm2-1.2b", "Shisa V2.1 LFM2 1.2B", "shisa-v2.1-lfm2-1.2b",
     "292863c4c1d3b63357027b384f336a52498252b2", "4a433b919681b37f43088cf2c57cbe92a8d859d5", 1246254048,
-    "fetches 1.2 GB (GGUF) → int8 1.3 GB"),
+    "fetches 1.2 GB (GGUF) → int8 1.3 GB", 1.3e9),
   // T261.3: Gemma 3's two smallest (the text models), on the CPU alone (no shader has their norms behind the layers, a
   // GELU in the gate or the window yet: T261.4). unsloth's Q8_0 GGUFs, which tests/gguf_check.py tensors held to
   // unsloth's copies of the originals
   gemma3("270M", "c90975dbd40c0c7b275fefaae758c3415c906238", "23cf460f6bb16954176b3ddcc8d4f250501458a9", 291546144,
-    "fetches 292 MB (GGUF) → int8 302 MB"),
+    "fetches 292 MB (GGUF) → int8 302 MB", 302e6),
   gemma3("1B", "f0b45be0aac41bd6a100a4b5734cad5f67255bfb", "5b11413a10db4e486ef16a20101fd028f8f2499c", 1069306400,
-    "fetches 1.1 GB (GGUF) → int8 1.1 GB"),
+    "fetches 1.1 GB (GGUF) → int8 1.1 GB", 1.1e9),
   // T333: Gemma 4's two smallest (E2B, E4B), on the CPU alone (no shader has their layers yet: T334). T329.3 held the
   // E2B to transformers (logits 1.10e-4, the most likely token 96 of 96) and ran it in three browsers from ?hf=. loaded:
   // the int8 checkpoint without the table of every layer's inputs, which stays in the kept file (the converter's sizes
   // of the real headers and forward.ts's tableHole()): E2B 5,207,962,792 bytes less 2,642,411,520, E4B 8,397,500,612 less 3,170,893,824
   // T529: the weights from ggml-org's Q8_0 GGUFs (llama.cpp's own), which tests/gguf_check.py tensors held to the originals
   gemma4("E2B", "3e22461f65e89153144f8adb70e3b8c2cc9845a7", "b4243c156154b6dca9324415f8c7ccc098b4aed1", 4967497152, 2565551272,
-    "fetches 5.0 GB (GGUF) → int8 5.2 GB (2.6 GB in memory)"),
+    "fetches 5.0 GB (GGUF) → int8 5.2 GB (2.6 GB in memory)", 5.2e9),
   gemma4("E4B", "ee0ef6023621cff504d758262d4e04895a5af4a2", "b8093469224f83f5c38f691eb906c380e9e63114", 8031242688, 5226606788,
-    "fetches 8.0 GB (GGUF) → int8 8.4 GB (5.2 GB in memory)"),
+    "fetches 8.0 GB (GGUF) → int8 8.4 GB (5.2 GB in memory)", 8.4e9),
   // T343: XHToken's Spark-X2.5 (T339 to T342: a Llama with a gate a head after the attention, an erf GELU in the FFN, and
   // three layers of four that see the last 512 positions alone, with a RoPE of their own; on the CPU alone, T344).
   // XHToken's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals (their q and k in the HF order,
@@ -332,12 +332,12 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-spark-x2.5-1.7b", "Spark-X2.5 1.7B",
     ggufOf("XHToken/Spark-X2.5-1.7B-GGUF", "1f7fa33b1245c14730da39e125714ad3a327901b", "Spark-X2.5-1.7B-Q8_0.gguf",
       "XHToken/Spark-X2.5-1.7B", "14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8"), 1820112704,
-    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark, languages: "日本語 / English / 中文" },
+    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { converted: 1.9e9, options: spark, languages: "日本語 / English / 中文" },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
   ...thinkingAndNot("hf-spark-x2.5-4b", "Spark-X2.5 4B",
     ggufOf("XHToken/Spark-X2.5-4B-GGUF", "9826e0be84e6e6e8b9668abc91421109a1df1e2d", "Spark-X2.5-4B-Q8_0.gguf",
       "XHToken/Spark-X2.5-4B", "0bcb35678590218655dff3765b9e61c83b35e9c4"), 4375021152,
-    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark, languages: "日本語 / English / 中文" },
+    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { converted: 4.6e9, options: spark, languages: "日本語 / English / 中文" },
     { thinking: SPARK_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
   // T597.2: XHToken's Spark-X2.6, the next training of X2.5 (the same config.json, tokenizer and family): its template
   // differs in the thinking form alone (SPARK26_THINKING). XHToken's own Q8_0 GGUFs. The cards name English and Chinese
@@ -345,18 +345,18 @@ export const HF_FAMILIES: Entry[] = [
   ...thinkingAndNot("hf-spark-x2.6-1.7b", "Spark-X2.6 1.7B",
     ggufOf("XHToken/Spark-X2.6-1.7B-GGUF", "cdc3d8893fba4ce0687f1b49ce1e18b29cae96d0", "Spark-X2.6-1.7B-Q8_0.gguf",
       "XHToken/Spark-X2.6-1.7B", "3b9c837215b1a216ba48bca05607c8c509fef0d4"), 1820113440,
-    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { options: spark, languages: "日本語 / English / 中文" },
+    "fetches 1.8 GB (GGUF) → int8 1.9 GB", { converted: 1.9e9, options: spark, languages: "日本語 / English / 中文" },
     { thinking: SPARK26_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
   ...thinkingAndNot("hf-spark-x2.6-4b", "Spark-X2.6 4B",
     ggufOf("XHToken/Spark-X2.6-4B-GGUF", "0e8aa39a34063946ce07bbaaff392093b11b6829", "Spark-X2.6-4B-Q8_0.gguf",
       "XHToken/Spark-X2.6-4B", "d10f96e0abf4cb7ca0a06a442bc5cf55645fd74d"), 4375021824,
-    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { options: spark, languages: "日本語 / English / 中文" },
+    "fetches 4.4 GB (GGUF) → int8 4.6 GB", { converted: 4.6e9, options: spark, languages: "日本語 / English / 中文" },
     { thinking: SPARK26_THINKING, atOnce: SPARK_AT_ONCE }, SPARK_SAMPLING),
   // T597.1: an unofficial Japanese fine-tune of the 4B by one person (Atemoya, the maker of the Qwen3.5 0.8B Japanese SFT
   // v2.5): two merged LoRA stages, after which its card says no Chinese letters leak into its Japanese chat (18% before).
   // The original's tokenizer (but <unk>'s flag) and chat template; the card says to answer at once (enable_thinking
   // false), so that form alone, with the card's sampling for chat (the original's)
-  { group: "hf", id: "hf-spark-x2.5-4b-japanese", name: "Atemoya Spark-X2.5 4B Japanese", note: "answers at once · 日本語 / English · fetches 4.4 GB (GGUF) → int8 4.6 GB",
+  { group: "hf", id: "hf-spark-x2.5-4b-japanese", name: "Atemoya Spark-X2.5 4B Japanese", note: "answers at once · 日本語 / English · fetches 4.4 GB (GGUF) → int8 4.6 GB", japanese: true, converted: 4.6e9,
     ...ggufOf("Takenoko12345678/Spark-X2.5-4B-Japanese-GGUF", "79fd825680c88ba3b4f823202f0ef94aa90ba006", "Spark-X2.5-4B-Japanese-Q8_0.gguf",
       "Takenoko12345678/Spark-X2.5-4B-Japanese", "bfb70f0adf24aa4fb155f2a8481e1fa5c63766c1"), download: 4375021120,
     conversion: {}, options: spark, template: SPARK_AT_ONCE, generation: SPARK_SAMPLING.atOnce,

@@ -13,13 +13,13 @@ const INTO_JAPANESE = "Type text to translate into Japanese (e.g. The weather is
 const INTO_ENGLISH = "英語に訳す文を入力（例: 今日はいい天気ですね。）";
 
 export const TRANSLATIONS: Entry[] = [
-  { id: "firefox-en-ja", name: "Mozilla Firefox Translations English → Japanese", note: "日本語, English, translation only, 44 MB",
+  { id: "firefox-en-ja", name: "Mozilla Firefox Translations English → Japanese", note: "日本語, English, translation only, 44 MB", japanese: true,
     source: SOURCE, bytes: 43849787, options: {}, generation: GREEDY, prompt: "The weather is nice today. Let's go for a walk.", placeholder: INTO_JAPANESE,
     translation: { folder: "en-ja-3.0", model: "model.enja.intgemm.alphas.bin", source: "srcvocab.enja.spm", target: "trgvocab.enja.spm", from: "en", to: "ja" } },
-  { id: "firefox-ja-en", name: "Mozilla Firefox Translations Japanese → English (desktop)", note: "日本語, English, translation only, 60 MB",
+  { id: "firefox-ja-en", name: "Mozilla Firefox Translations Japanese → English (desktop)", note: "日本語, English, translation only, 60 MB", japanese: true,
     source: SOURCE, bytes: 59504955, options: {}, generation: GREEDY, prompt: "今日はいい天気ですね。散歩に行きましょう。", placeholder: INTO_ENGLISH,
     translation: { folder: "ja-en-3.0", model: "model.jaen.intgemm.alphas.bin", source: "vocab.jaen.spm", target: "vocab.jaen.spm", from: "ja", to: "en" } },
-  { id: "firefox-ja-en-android", name: "Mozilla Firefox Translations Japanese → English (Android)", note: "日本語, English, translation only, 44 MB",
+  { id: "firefox-ja-en-android", name: "Mozilla Firefox Translations Japanese → English (Android)", note: "日本語, English, translation only, 44 MB", japanese: true,
     source: SOURCE, bytes: 43977787, options: {}, generation: GREEDY, prompt: "今日はいい天気ですね。散歩に行きましょう。", placeholder: INTO_ENGLISH,
     translation: { folder: "ja-en-3.1", model: "model.jaen.intgemm.alphas.bin", source: "vocab.jaen.spm", target: "vocab.jaen.spm", from: "ja", to: "en" } },
 ];

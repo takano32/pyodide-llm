@@ -53,6 +53,22 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
   assert.ok(thinking.length >= 27, `only ${thinking.length} entries that think were found`);
   for (const entry of MODELS) {
     assert.equal(entry.generation?.thinking, thinking.includes(entry) ? 4096 - 512 : undefined, `${entry.id}: the budget of a thought`);
+    assert.equal(Boolean(entry.thinks), thinking.includes(entry), `${entry.id}: thinks, by its name or its format`);
+  }
+}
+// T643.17: the facts the page reads of an entry are its own words (japanese: the list's order; thinks: the budget of a
+// thought; converted: what a conversion takes once loaded, in the dtype it keeps), and its note, which says them for a
+// visitor, is held to them here: 日本語 where it writes Japanese and only there, "thinks" first where it thinks and
+// only there, and "int8 N MB" (or "ternary", "1-bit", of an entry that keeps its weights so) where it says converted
+{
+  const SIZE = /(int8|ternary|1-bit) ([\d.]+) (MB|GB)/, KEPT = { int8: undefined, ternary: "ternary", "1-bit": "binary" };
+  for (const entry of MODELS) {
+    assert.equal(typeof entry.japanese, "boolean", `${entry.id}: says whether it writes Japanese`);
+    assert.equal(entry.note.includes("日本語"), entry.japanese, `${entry.id}: its note says 日本語 where it writes Japanese, and only there`);
+    assert.equal(/^thinks\b/.test(entry.note), Boolean(entry.thinks), `${entry.id}: its note begins "thinks" where it thinks, and only there`);
+    const found = SIZE.exec(entry.note);
+    assert.equal(found ? Number(`${found[2]}e${found[3] === "GB" ? 9 : 6}`) : undefined, entry.converted, `${entry.id}: its note's size is converted`);
+    if (found) assert.equal(entry.weights, KEPT[found[1]], `${entry.id}: its note's ${found[1]} is the dtype it keeps`);
   }
 }
 const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
@@ -80,7 +96,7 @@ assert.equal(listed.reduce((n, { names }) => n + names.length, 0),
   "every model on the line of each repository it comes from: a GGUF on two, or three where its vocabulary is a copy's");
 
 // T90: every model knows how much memory it takes, so the warning never silently skips one
-for (const entry of MODELS) assert.ok(modelBytes(entry) > 0, `${entry.id}: no size (bytes, or "int8 N MB" in the note)`);
+for (const entry of MODELS) assert.ok(modelBytes(entry) > 0, `${entry.id}: no size (bytes, loaded or converted)`);
 const byId = (id) => MODELS.find((entry) => entry.id === id);
 const big = byId("hf-qwen2.5-1.5b-instruct");
 assert.equal(modelBytes(big), 1.7e9);
@@ -102,10 +118,10 @@ assert.equal(weightsFor(byId("tiny-lm"), "6", 2), undefined, "a model of the sit
 assert.equal(weightsFor(small, undefined, undefined), undefined, "nothing told: the worker chooses (T115)");
 assert.equal(weightsFor(small, "6", 8), "int6", "?bits=6");
 assert.equal(weightsFor(qwen, "8", 2), "int8", "?bits=8 even where it does not fit");
-assert.equal(weightsFor({ hf: {}, conversion: { dtype: "float16" }, note: "int8 4.2 GB" }, "6", 2), "float16", "the settings of a visitor's files win (T119)");
+assert.equal(weightsFor({ hf: {}, conversion: { dtype: "float16" }, converted: 4.2e9 }, "6", 2), "float16", "the settings of a visitor's files win (T119)");
 assert.equal(weightsFor(qwen, undefined, 8), undefined, "1.7 GB fits in half of 8 GB: the worker chooses");
 assert.equal(weightsFor(qwen, undefined, 2), "int6", "not in half of 2 GB");
-assert.equal(weightsFor({ hf: {}, note: "int8 4.2 GB" }, undefined, undefined), undefined, "past a 32-bit memory: the worker, which knows the header, chooses");
+assert.equal(weightsFor({ hf: {}, converted: 4.2e9 }, undefined, undefined), undefined, "past a 32-bit memory: the worker, which knows the header, chooses");
 assert.equal(modelBytes({ ...qwen, conversion: { dtype: "int6" } }), modelBytes(qwen) * SIX_OF_EIGHT);
 // T230: a ternary model is converted to the ternary dtype, its weights as they are, on any device and whatever fits;
 // ?bits=8 and ?bits=6 widen them (to compare), and the memory is then four times as much (and 7/9 of that)
@@ -182,11 +198,11 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   }
   assert.ok(thinks.template.endsWith("<think>\n") && answers.template === `${thinks.template}\n</think>\n\n`, "a Qwen3.5's two formats, no system turn");
   assert.deepEqual(MODELS.filter((entry) => entry.conversion?.blocks).map(({ id }) => id), ["hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", thinks.id, answers.id, "hf-llm-jp-3.1-13b-instruct4", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-qwen3-14b-thinking", "hf-qwen3-14b"], "the entries whose blocks are kept");
-  // loaded: read before the note, of an entry that says it, and nothing of any other entry changed by it: each still
-  // says its size by its file or by its note's words
+  // loaded: read before converted, of an entry that says it, and nothing of any other entry changed by it: each still
+  // says its size by its file or by converted (T643.17: the note's words before)
   // (T333: and Gemma 4's two, whose table of every layer's inputs stays in the kept file: below)
   assert.deepEqual(MODELS.filter((entry) => entry.loaded).map(({ id }) => id).sort(), ["hf-gemma-4-e2b", "hf-gemma-4-e4b", "hf-shisa-v2.1c-lfm2-350m-q4", "hf-plamo-3-translate-0.8b-en-ja", "hf-plamo-3-translate-0.8b-ja-en", "hf-plamo-3-translate-2b-en-ja", "hf-plamo-3-translate-2b-ja-en", "hf-plamo-3-translate-8b-en-ja", "hf-plamo-3-translate-8b-ja-en", "hf-llm-jp-4.1-8b-thinking", "hf-qwen3-14b-thinking", "hf-qwen3-14b", "hf-shisa-v2.1-unphi4-14b", "hf-deepseek-r1-qwen-14b-japanese", "hf-abeja-qwen3-14b-agentic-thinking", "hf-abeja-qwen3-14b-agentic", "hf-llm-jp-3.1-13b-instruct4", thinks.id, answers.id].sort());
-  for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.match(entry.note, /(int8|ternary|1-bit) [\d.]+ (MB|GB)/, `${entry.id}: its size is its note's`);  // (T634.2: 1-bit, a binary one's)
+  for (const entry of MODELS.filter((entry) => !entry.loaded && !entry.bytes)) assert.ok(entry.converted > 0, `${entry.id}: its size is converted`);
 }
 // T333: Gemma 4's E2B and E4B, Google's originals (not gated, Apache 2.0) converted in the page. What they take is the
 // int8 checkpoint without the table of every layer's inputs, which stays in the kept file (loaded, a second time here:
@@ -234,8 +250,10 @@ for (const id of ["hf-bonsai-27b-thinking", "hf-bonsai-27b"]) assert.deepEqual(b
   assert.ok(memoryWarning(light, 1).includes("needs about 582 MB") && memoryWarning(light, 2) === "", "a 1 GB device is warned, as of the default");
   assert.ok(MODELS.indexOf(light) < MODELS.indexOf(heavy), "the lighter before the default (the list's order: what it takes once loaded)");
 }
-// T364.3: loaded, an entry's own word of what it takes once loaded: read before the note, and after a site's file
-assert.equal(modelBytes({ note: "int8 1.7 GB", loaded: 5 }), 5);
+// T364.3: loaded, an entry's own word of what it takes once loaded: read before converted, and after a site's file
+assert.equal(modelBytes({ converted: 1.7e9, loaded: 5 }), 5);
+// T643.17: and nothing of the note (the size a visitor reads there is held to converted above)
+assert.equal(modelBytes({ hf: {}, note: "int8 1.7 GB" }), undefined, "a note is no size");
 assert.equal(modelBytes({ bytes: 7, loaded: 5 }), 7, "a file of this site is its bytes");
 // T235 (the owner, 2026-10-11): the three Ternary Bonsai of the list turn by a plain RoPE: rope_scaling: {} beside the
 // tokens each had (the 8B's own BOS kept), which an empty object says to the engine and null would not (a jsnull in
@@ -257,7 +275,7 @@ for (const id of ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]
 assert.ok(!("rope_scaling" in qwen35) && !("rope_scaling" in QWEN3_OWN_BOS) && !("rope_scaling" in QWEN3_FROM_IM_START));
 // T133: Chromium says at most 8 GB: a device at the cap may have any more, so six bits are not asked for there, and
 // only a model past 8 GB is warned of
-const seven = { name: "7B", hf: {}, note: "int8 9.2 GB" }, three = { name: "3B", hf: {}, note: "int8 3.6 GB" };
+const seven = { name: "7B", hf: {}, converted: 9.2e9 }, three = { name: "3B", hf: {}, converted: 3.6e9 };
 assert.equal(weightsFor(three, undefined, 8), undefined, "at the cap: the worker chooses (int8 on a 64-bit memory)");
 assert.equal(weightsFor(three, undefined, 4), "int6", "4 GB is told as it is");
 assert.equal(memoryWarning(three, 8), "", "3.9 GB on a device of 8 GB or more");
@@ -318,7 +336,7 @@ MODELS.slice(1).forEach((entry, i) => {
   assert.ok(a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] <= b[2]))),
     `${before.id} comes before ${entry.id}, out of the order of T128`);
 });
-assert.ok(writesJapanese({ note: "translates 日本語 ⇄ English" }) && !writesJapanese({ note: "English" }));
+assert.ok(writesJapanese({ japanese: true, note: "English" }) && !writesJapanese({ japanese: false, note: "translates 日本語 ⇄ English" }), "an entry's word, not its note's (T643.17)");
 // T537 (the owner's choice of 2026-10-15): a note's languages are its card's (docs/notes/t537-note-languages-2026-10-15.md).
 // Spark-X2.5's GGUF cards say English and Chinese, with the thinkingAndNot() note's form. T539 (the owner's "日本語いけるやつは
 // 日本語も書こう", 2026-10-15): a model that answered Japanese questions in Japanese here says 日本語 too, whatever its card

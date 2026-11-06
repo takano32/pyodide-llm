@@ -5,7 +5,7 @@ import type { Dtype } from "../runtime/contracts/form.ts";
 
 // T643.1: what is read here of a model: an entry of the list, or a model the page made of a visitor's files or a link
 // (src/page/model.ts's Model), whose kinds say no more of these than an entry's do
-type Weighed = Pick<Entry, "name" | "note" | "options" | "weights" | "wide"> & { bytes?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
+type Weighed = Pick<Entry, "name" | "options" | "weights" | "wide"> & { bytes?: number; converted?: number; loaded?: number; hf?: object; conversion?: { dtype?: Dtype } };
 
 // T116, T643.6: what a model fetches from Hugging Face anew (`download`) past this many bytes is asked for before the
 // page starts it: a choice says what will be fetched, and a model remembered from the last visit, or the large GGUF of
@@ -22,20 +22,20 @@ export const asksBefore = (entry: { download?: number }) => (entry.download ?? 0
 export const PAGE_MEMORY = 300e6;
 const megabytes = (bytes: number) => `${Math.round(bytes / 1e6).toLocaleString("en")} MB`;
 /** The bytes of a model once loaded: `bytes` of a file of this site, or `loaded` of a conversion that says its size
- * itself (T364.3: one kept as its file has it, llama.cpp's blocks, whose note is worded for a visitor and whose size no
- * ?bits= changes), or the "int8 N MB" its note gives for a conversion ("ternary N MB" for a ternary model, T230: four
- * times that as int8, where ?bits= asks for it). undefined when none says (a file of the visitor's). */
+ * itself (T364.3: one kept as its file has it, llama.cpp's blocks, whose size no ?bits= changes), or `converted`, the
+ * bytes of a conversion's weights in its own dtype (`weights`: ternary for a ternary model, T230, four times that as
+ * int8 where ?bits= asks for it; else int8). T643.17: the entry's words, not its note's (which says them for a visitor,
+ * "int8 N MB", and tests/models-check.ts holds to them). undefined when none says (a file of the visitor's). */
 export function modelBytes(entry: Weighed): number | undefined {
   // a float16 original is widened to float32 when loaded, next to the file it came from: llm-jp-3 150M's 305 MB
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
   if (entry.loaded) return entry.loaded;
-  // (T634.2: "1-bit N MB" for a binary model, as int8 that over BINARY_OF_EIGHT)
-  const found = /(int8|ternary|1-bit) ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
-  if (!found) return undefined;
-  const said = Number(found[2]) * (found[3] === "GB" ? 1e9 : 1e6), asked = entry.conversion?.dtype;
-  if (found[1] !== "int8" && !["int8", "int6"].includes(asked!)) return said;
-  const int8 = found[1] === "ternary" ? said / TERNARY_OF_EIGHT : found[1] === "1-bit" ? said / BINARY_OF_EIGHT : said;
+  const said = entry.converted, asked = entry.conversion?.dtype;
+  if (!said) return undefined;
+  if (entry.weights && !["int8", "int6"].includes(asked!)) return said;
+  // (T634.2: a binary model's, as int8 that over BINARY_OF_EIGHT)
+  const int8 = entry.weights === "ternary" ? said / TERNARY_OF_EIGHT : entry.weights === "binary" ? said / BINARY_OF_EIGHT : said;
   return asked === "int6" ? int8 * SIX_OF_EIGHT : int8;
 }
 
