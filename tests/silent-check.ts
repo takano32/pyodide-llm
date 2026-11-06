@@ -155,10 +155,8 @@ const SILENT = {
     ["gone", "catch { return false; }", "T367.4's line: a HEAD that fails (offline, a dropped line, blocked) does not say the file is gone, and the failure that asked is told as it was"],
   ],
   "src/runtime/worker.ts": [
-    ["loadOf", "generating?.catch(() => {})", "only waited for here: the generation's own failure is posted by the message that started it"],
-    ["loadOf", "current.catch(() => {})", "unloaded is what the next load waits for: this load's failure is thrown by `await current` on the next line"],
-    ["bench", "generating?.catch(() => {})", "only waited for here: the generation's own failure is posted by the message that started it"],
-    ["bench", "current.catch(() => {})", "unloaded is what the next load waits for: this load's failure is thrown by `await current` on the next line"],
+    ["startLoad", "generating?.catch(() => {})", "only waited for here: the generation's own failure is posted by the message that started it"],
+    ["startLoad", "current.catch(() => {})", "unloaded is what the next load waits for: this load's failure is thrown where the load is awaited (startLoad returns it)"],
   ],
   "src/runtime/worker/convert.ts": [
     ["keepConverted", "keptModule.replaced(model).catch(() => [])", "T136: what was kept of the model's old source could not be listed: it stays and takes room, and the new one is kept or keep() says why not"],

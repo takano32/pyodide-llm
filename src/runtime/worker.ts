@@ -47,7 +47,7 @@ import { failureOf } from "./failure.ts";
 import { since, breathe } from "./worker/clock.ts";
 import { load, threadsNow, heapBytes } from "./worker/load.ts";
 import { timedGeneration, timedPaths } from "./worker/timing.ts";
-import type { Bench, BenchRow, Done, Failed, Paths, Token, ToWorker } from "./contracts/messages.ts";
+import type { Bench, BenchRow, Done, Failed, Listed, Paths, Token, ToWorker } from "./contracts/messages.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
@@ -94,25 +94,33 @@ type Asks = { [Ask in ToWorker as Ask["type"]]: Ask };
 type Heard = { signal?: AbortSignal };
 type Replying = { [Type in keyof Asks]: (data: Asks[Type], heard: Heard) => void | Promise<void> };
 
-async function loadOf(data: Asks["init" | "load"], heard: Heard) {
-  lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
-  loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.ts)
-  // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
-  // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
+/**
+ * The one chain of loads (T641.5: a model the page chose and each round of the benchmark): the latest load wins,
+ * so the one that is going on is cancelled (its download stops, and its parts that are complete stay in the cache),
+ * and this one waits for it to have cleaned up and for a run that is going on to end before it begins. Its signal is
+ * put in what the message heard, which the catch of receive() reads
+ */
+function startLoad(model: Listed, id: number, heard: Heard) {
   loading?.abort();
   loading = new AbortController();
   const signal = heard.signal = loading.signal;
-  // the model downloads while Pyodide loads
-  runtimeAsked(data.search);
-  // never take the model away from a run that is going on
-  stopped = generating !== undefined;
   // The cancelled load frees its buffer a few turns of the event loop after the abort. Without waiting for
   // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
   // whole model with every change of mind (587 MB after four of them).
   const previous = unloaded;
-  const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+  const current = previous.then(() => generating?.catch(() => {})).then(() => load(model, signal, id));
   unloaded = current.catch(() => {});
-  await current;
+  return current;
+}
+
+async function loadOf(data: Asks["init" | "load"], heard: Heard) {
+  lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
+  loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.ts)
+  // the model downloads while Pyodide loads, which is loaded once, whatever happens to the model asked for first
+  runtimeAsked(data.search);
+  // never take the model away from a run that is going on
+  stopped = generating !== undefined;
+  await startLoad(data.model, data.load, heard);
 }
 
 const REPLIES: Replying = {
@@ -136,15 +144,9 @@ const REPLIES: Replying = {
           continue;
         }
         // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
-        loading?.abort();
-        loading = new AbortController();
-        const signal = heard.signal = loading.signal;
         roundBegan(round.without);
         const started = performance.now();
-        const previous = unloaded;
-        const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
-        unloaded = current.catch(() => {});
-        await current;
+        await startLoad(data.model, data.load, heard);
         const ready = since(started);
         const { tokens, speed } = timedGeneration(llama!, data.prompt, data.steps);
         rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama!.backend, seconds: ready });
